@@ -62,6 +62,8 @@ const PREVIOUS_HELP_ROWS: readonly string[] = [
   "/image  Attach an image to the next message",
   "/mcp  List MCP servers",
   "/agents  List agents",
+  // US-005: the compaction command sits between `/agents` and `/jobs`.
+  "/compact  compact the conversation history",
   "/jobs  Show nax jobs and background tasks",
   "/quit  Quit nax chat",
 ];
@@ -221,6 +223,8 @@ describe("runSlashCommand for /help with the memory built-in", () => {
       ...PREVIOUS_HELP_ROWS.slice(0, PREVIOUS_HELP_ROWS.indexOf("/quit  Quit nax chat")),
       "/memory  Show memory notes and sync status",
       "/quit  Quit nax chat",
+      // US-004: the chat's steering key is the listing's last line, after every command.
+      "ctrl+s  steer the running turn (or interrupt and send)",
     ];
     expect(shown).toEqual([expected.join("\n")]);
   });

@@ -180,6 +180,24 @@ export interface SessionConfigureInput {
   readonly effort?: string;
 }
 
+/**
+ * What one manual compaction cost and what it bought (US-002).
+ *
+ * `tokensBefore`/`tokensAfter` are estimates over the stored history
+ * (`estimateContextTokens`), so they are comparable with each other and with the
+ * compaction threshold, not with a provider's billed count. `usage` and
+ * `costUsd` are the summarizer call's own, unchanged: nothing else was spent.
+ * A no-op compaction reports `compacted: false`, equal token counts, zero usage
+ * and zero cost — no model call was made, so zero is the honest answer.
+ */
+export interface CompactResult {
+  readonly compacted: boolean;
+  readonly tokensBefore: number;
+  readonly tokensAfter: number;
+  readonly usage: TokenUsage;
+  readonly costUsd: number;
+}
+
 export interface AgentSession {
   /**
    * Sets the model and/or effort on the live session without a new process. Refuses, in order:
@@ -188,8 +206,27 @@ export interface AgentSession {
    * `AGENT_SESSION_CAPABILITY_UNSUPPORTED` (the backend cannot). The facade always provides this method.
    */
   configure?(input: SessionConfigureInput): Promise<void>;
+  /**
+   * Compacts the stored conversation history on demand (US-002): the finished
+   * exploration is replaced by one summary plus the recent window, so the next
+   * turn starts small without waiting for the context limit. Refuses, in order:
+   * `AGENT_SESSION_CLOSED`, `AGENT_SESSION_BUSY` (a turn, a command, a configure
+   * or another compact is in flight), then `AGENT_SESSION_CAPABILITY_UNSUPPORTED`
+   * (the backend cannot). Holds the session's single slot while it runs, so
+   * `send()` refuses `AGENT_SESSION_BUSY`. The facade always provides this method.
+   */
+  compact?(): Promise<CompactResult>;
   /** Run through the session's Bash tool without a model turn. The facade always provides this method. */
   runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
+  /**
+   * Adds text to the running TURN's pending steers (US-001), injected as a user
+   * message at the turn's next safe boundary. Throws `AGENT_SESSION_CLOSED` on a
+   * closed session and `AGENT_SESSION_INVALID_OPTIONS` for empty or
+   * whitespace-only text; answers `unsupported` for a backend with no mid-turn
+   * input, and `no_turn` when no turn claim is active (a `runCommand` or
+   * `compact` in flight is not a turn). The facade always provides this method.
+   */
+  steer?(text: string): import("./steer-channel.ts").SteerResult;
   readonly id: string;
   /** The backend that opened this session (`kind` and its capability summary). */
   readonly backend: BackendInfo;

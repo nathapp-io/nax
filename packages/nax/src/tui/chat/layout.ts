@@ -58,7 +58,7 @@ import {
 } from "./layout-lines";
 import { listingLines } from "./layout-listing";
 import { userTextSpans } from "./layout-mentions";
-import { interruptedLines, statusLines, welcomeLines } from "./layout-status";
+import { interruptedLines, statusLines, turnStatsLines, welcomeLines } from "./layout-status";
 import { renderMarkdown } from "./markdown";
 import { MIN_LAYOUT_WIDTH, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import type { ChatColorToken, ChatTheme } from "./theme";
@@ -291,6 +291,8 @@ function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly S
       return backgroundLines(entry, context);
     case "interrupted":
       return interruptedLines(context);
+    case "turn-stats":
+      return turnStatsLines(entry, context);
   }
 }
 

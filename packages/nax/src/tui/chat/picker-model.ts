@@ -84,6 +84,8 @@ export interface PickerModelInput {
   readonly query?: string;
   /** The host's models, in catalogue order — the model picker's rows. */
   readonly models: readonly string[];
+  /** The models used recently, newest first, with the effort each was used at (US-006). */
+  readonly recents?: readonly string[];
   /** The model the session is on, marked `(current)`. */
   readonly currentModel: string;
   /** The permission mode the session is on, marked `(current)`. */
@@ -106,28 +108,63 @@ export function displayText(text: string): string {
   return oneLine(sanitizeText(text));
 }
 
-/** One row per base, retaining first-seen order and the current session's original id. */
-function modelEntries(input: PickerModelInput): readonly PickerEntry[] {
-  const choices = new Map<string, string>();
-  const currentBase = parseModelSpec(input.currentModel).model;
+/** One model row's inputs: the base it names, the id it re-selects, and where it came from. */
+interface ModelRow {
+  readonly base: string;
+  readonly original: string;
+  /** Named by the recent-model list rather than by the catalogue. */
+  readonly recent: boolean;
+}
+
+/**
+ * One row per base: the recently used bases first (newest first), then the catalogue's
+ * remainder in catalogue order. A recent base the host no longer offers has no row at all, and
+ * a base both lists name is listed once — by its recent row.
+ */
+function modelRows(input: PickerModelInput): readonly ModelRow[] {
+  const catalogue = new Map<string, string>();
   for (const original of input.models) {
     const base = parseModelSpec(original).model;
-    if (!choices.has(base)) choices.set(base, original);
+    if (!catalogue.has(base)) catalogue.set(base, original);
   }
-  return Array.from(choices, ([base, first]) => {
-    const current = base === currentBase;
-    const original = current ? input.currentModel : first;
-    const effortLabel = input.pending?.get(base) ?? parseModelSpec(original).effort ?? "default";
-    const note = input.modelNote?.(base);
-    return {
-      value: base,
-      label: displayText(isChatAcpModel(base) ? acpModelLabel(base) : base),
-      original,
-      effortLabel,
-      detail: displayText(note === undefined ? `effort ${effortLabel}` : `unavailable: ${note}`),
-      current,
-    };
-  });
+  const recents = new Map<string, string>();
+  for (const stored of input.recents ?? []) {
+    const base = parseModelSpec(stored).model;
+    if (!catalogue.has(base) || recents.has(base)) continue;
+    recents.set(base, stored);
+  }
+  return [
+    ...Array.from(recents, ([base, original]) => ({ base, original, recent: true })),
+    ...Array.from(catalogue)
+      .filter(([base]) => !recents.has(base))
+      .map(([base, original]) => ({ base, original, recent: false })),
+  ];
+}
+
+/**
+ * One row: its base, the id choosing it re-selects, and the effort that id carries. A recent
+ * row re-selects the id it was used with, so the remembered effort comes back; a catalogue row
+ * defers to the session's own id, whose effort may have been cycled since the catalogue was read.
+ */
+function modelEntry(input: PickerModelInput, row: ModelRow, currentBase: string): PickerEntry {
+  const current = row.base === currentBase;
+  const original = current && !row.recent ? input.currentModel : row.original;
+  const effortLabel = input.pending?.get(row.base) ?? parseModelSpec(original).effort ?? "default";
+  const note = input.modelNote?.(row.base);
+  const detail = note !== undefined ? `unavailable: ${note}` : `${row.recent ? "recent · " : ""}effort ${effortLabel}`;
+  return {
+    value: row.base,
+    label: displayText(isChatAcpModel(row.base) ? acpModelLabel(row.base) : row.base),
+    original,
+    effortLabel,
+    detail: displayText(detail),
+    current,
+  };
+}
+
+function modelEntries(input: PickerModelInput): readonly PickerEntry[] {
+  const currentBase = parseModelSpec(input.currentModel).model;
+  return modelRows(input).map((row) => modelEntry(input, row, currentBase));
 }
 
 /** Shared by rendering and queued input: both resolve the same case-insensitive matches. */

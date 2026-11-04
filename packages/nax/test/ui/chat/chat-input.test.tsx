@@ -202,7 +202,10 @@ describe("ChatInput submit", () => {
     expect(input.editor().text).toBe("   ");
   });
 
-  test("AC-7 keeps the text and does not submit while busy", () => {
+  test("AC-7 keeps the text and does not submit while busy, when no onQueue prop is given", () => {
+    // The baseline the chat screen's queue is built on: a caller that offers no `onQueue` gets
+    // today's busy drop. The queue's own cases (test/ui/chat/message-queue.test.tsx) cover the
+    // callback the screen passes.
     const input = mount({ busy: true });
     input.type("hello");
     input.type(RETURN);

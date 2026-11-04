@@ -223,6 +223,10 @@ describe("resolveChatTheme — glyphs", () => {
     expect(glyphs.spinner).toEqual(UNICODE_SPINNER);
   });
 
+  test("AC-15 the Unicode set marks a busy terminal title with ✳", () => {
+    expect(theme({}, 3).glyphs.busy).toBe("✳");
+  });
+
   test("AC-12: NAX_ASCII=1 selects the ASCII bullet and spinner", () => {
     const resolved = theme({ NAX_ASCII: "1" }, 3);
     expect(resolved.glyphs.bullet).toBe("*");
@@ -245,6 +249,10 @@ describe("resolveChatTheme — glyphs", () => {
     expect(glyphs.codeSide).toBe("|");
     expect(glyphs.codeBottom).toBe("+");
     expect(glyphs.spinner).toEqual(ASCII_SPINNER);
+  });
+
+  test("AC-16 the ASCII set marks a busy terminal title with a plain star", () => {
+    expect(theme({ NAX_ASCII: "1" }, 3).glyphs.busy).toBe("*");
   });
 
   test("AC-12 (edge): NAX_ASCII values other than '1' keep the Unicode set", () => {

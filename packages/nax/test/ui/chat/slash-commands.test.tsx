@@ -203,7 +203,7 @@ describe("slash command routing", () => {
   });
   test("AC-16 US-024 AC-14 help lists every command with its description", async () => {
     const ui = mount();
-    // Tall enough for the whole listing: the seventeen-row listing outgrows the default frame,
+    // Tall enough for the whole listing: the eighteen-row listing outgrows the default frame,
     // and the first row scrolls out of a viewport the test is not asking about.
     await ui.resize(80, 40);
     await ui.line("/help");
@@ -213,6 +213,9 @@ describe("slash command routing", () => {
   });
   test("effort help appears between model and sessions", async () => {
     const ui = mount();
+    // Tall enough for the whole listing: one more built-in pushed the first row out of the
+    // default frame's viewport.
+    await ui.resize(80, 40);
     await ui.line("/help");
     expect(ui.lastFrame()).toContain(
       "/model  Switch model\n/effort  Switch reasoning effort\n/sessions  List saved sessions",
@@ -380,8 +383,9 @@ describe("agents command", () => {
   test("US-011 AC-15 US-024 AC-15 help lists /agents between /mcp and /quit", async () => {
     const ui = mount();
     await ui.line("/help");
+    // US-005 put `/compact` between `/agents` and `/jobs`.
     expect(ui.lastFrame()).toContain(
-      "/mcp  List MCP servers\n/agents  List agents\n/jobs  Show nax jobs and background tasks\n/memory  Show memory notes and sync status\n/quit  Quit nax chat",
+      "/mcp  List MCP servers\n/agents  List agents\n/compact  compact the conversation history\n/jobs  Show nax jobs and background tasks\n/memory  Show memory notes and sync status\n/quit  Quit nax chat",
     );
   });
 

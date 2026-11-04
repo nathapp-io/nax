@@ -27,6 +27,12 @@ export type SlashOutcome =
   /** `/model`, `/resume`, `/mode` and `/effort` without arguments, and `/jobs`, open the named picker. */
   | { kind: "picker"; picker: PickerKind }
   /**
+   * `/compact` asks the screen to compact the conversation (US-005). The screen runs it
+   * because the screen owns the turn slot a compaction holds while it runs — the same slot a
+   * send holds, which is what makes a line typed meanwhile queue.
+   */
+  | { kind: "compact" }
+  /**
    * `/image` asks the screen to attach a picture: read from the clipboard, or from the file
    * `path` names. The command reads nothing itself — the screen's attach hook owns the reads,
    * the placeholder and the notices.
@@ -65,6 +71,7 @@ export const COMMANDS = [
   "image",
   "mcp",
   "agents",
+  "compact",
   "jobs",
   "memory",
   "quit",
@@ -88,6 +95,7 @@ export const COMMAND_DESCRIPTIONS = {
   image: "Attach an image to the next message",
   mcp: "List MCP servers",
   agents: "List agents",
+  compact: "compact the conversation history",
   jobs: "Show nax jobs and background tasks",
   memory: "Show memory notes and sync status",
   quit: "Quit nax chat",
@@ -170,34 +178,51 @@ const ACP_OWN_FEATURES: Readonly<Record<string, string>> = {
   agents: "subagents",
 };
 
+/**
+ * The built-ins an ACP brain answers with its own command (US-005): the line goes to the
+ * agent exactly as typed, the way any command it does not own does. `/compact` is one — an
+ * ACP agent compacts its own session, so nax never compacts it on the agent's behalf.
+ */
+const ACP_FORWARDED: ReadonlySet<string> = new Set(["compact"]);
+
 function isBuiltin(name: string): boolean {
   return COMMANDS.some((builtin) => builtin === name);
 }
 
 /**
  * What an ACP brain does with a slash line before the built-in switch sees it: the native-only
- * built-ins say they are not available, and a line that is not a built-in goes to the agent as typed.
- * `undefined` means the line is an ordinary built-in and runs as on a native brain.
+ * built-ins say they are not available, a line the agent owns goes to it as typed, and a line
+ * that is not a built-in at all does the same. `undefined` means the line is an ordinary
+ * built-in and runs as on a native brain.
  */
 function acpDispatch(
   command: SlashCommand,
   brain: ChatAcpModel,
   show: (text: string) => void,
 ): { readonly outcome: SlashOutcome | undefined } | undefined {
-  if (!isBuiltin(command.name)) return { outcome: { kind: "send", message: `/${command.name}${command.rest}` } };
+  if (!isBuiltin(command.name) || ACP_FORWARDED.has(command.name)) {
+    return { outcome: { kind: "send", message: `/${command.name}${command.rest}` } };
+  }
   const own = ACP_OWN_FEATURES[command.name];
   if (own === undefined) return undefined;
   show(`/${command.name} is not available on ${acpAgentLabel(brain.agent)}: it uses its own ${own}`);
   return { outcome: undefined };
 }
 
+/**
+ * The one key `/help` names that is not a command (US-004): ctrl+s steers the running turn,
+ * or interrupts it and sends the draft. It is the listing's last line, after the commands.
+ */
+const STEER_HINT = "ctrl+s  steer the running turn (or interrupt and send)";
+
 function formatHelp(host: ChatHost, brain: ChatAcpModel | undefined): string {
   const builtins = COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`);
-  if (brain) return builtins.join("\n");
+  if (brain) return [...builtins, STEER_HINT].join("\n");
   return [
     ...builtins,
     ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
     ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
+    STEER_HINT,
   ].join("\n");
 }
 
@@ -331,6 +356,10 @@ export async function runSlashCommand(
     case "agents":
       show(formatAgentsListing(host.agents?.() ?? []));
       break;
+    case "compact":
+      // The screen owns the compaction: it holds the turn slot while it runs, so a line typed
+      // meanwhile queues, and it is the only place the result's tokens reach the footer.
+      return { kind: "compact" };
     case "jobs":
       return jobsCommand({ host, show });
     case "memory":

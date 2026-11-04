@@ -58,7 +58,12 @@ export type TranscriptEntry =
    * visible whole. `open` is that listing's own expansion, over the transcript's.
    */
   | { kind: "listing"; title: string; text: string; collapsible?: boolean; open?: boolean }
-  | { kind: "interrupted" };
+  | { kind: "interrupted" }
+  /**
+   * One finished turn's measurement (US-007): `48.2 tok/s · 1.3k out · 14s`, drawn as a
+   * muted row under the reply it measures rather than as anything the model said.
+   */
+  | { kind: "turn-stats"; text: string };
 
 type ToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;
 

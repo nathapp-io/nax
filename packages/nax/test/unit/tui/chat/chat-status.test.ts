@@ -8,6 +8,7 @@ import {
   formatJobStrip,
   formatTokens,
   IDLE_STATUS,
+  isSubagentEvent,
   reduceTurnStatus,
   shortModel,
   type TurnPhase,
@@ -306,6 +307,17 @@ describe("reduceTurnStatus subagent events", () => {
     const before = reduceTurnStatus(IDLE_STATUS, turnStart({ at: AT }));
     const status = reduceTurnStatus(before, toolCall({ name: "Bash", metadata: { subagentTask: "scan" } }));
     expect(status).toBe(before);
+  });
+
+  /**
+   * US-007 AC-14: `decodeRate` folds the same streams, so it needs the predicate. Sharing it
+   * must not change what the status does with a nested event — the input object comes back.
+   */
+  test("US-007 AC-14 keeps the identity now the shared predicate is exported", () => {
+    const before = reduceTurnStatus(IDLE_STATUS, turnStart({ at: AT }));
+    const nested = usage(100, 10, { metadata: { subagentTask: "scan" } });
+    expect(isSubagentEvent(nested)).toBe(true);
+    expect(reduceTurnStatus(before, nested)).toBe(before);
   });
 });
 

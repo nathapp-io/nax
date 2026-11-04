@@ -34,7 +34,7 @@ import {
   historyFromTranscript,
   type TranscriptIdentity,
   transcriptDocFor,
-  transcriptModelIdentity,
+  transcriptIdentityFor,
 } from "./transcript-identity.ts";
 import { createTurnAccumulator, type TurnAccumulator } from "./turn-accumulator.ts";
 import { dispatchTurnEndOnError } from "./turn-end-event.ts";
@@ -190,11 +190,7 @@ export async function runNativeTurn(
   // nax#2150 (P3 spec 8.3): so does a recorded different model — the loop
   // applies that guarantee to every store's document (historyFromTranscript),
   // whatever the session layer above decided.
-  const transcriptIdentity: TranscriptIdentity = {
-    owner: deps.sessionState.transcriptOwners.get(handle.id),
-    model: transcriptModelIdentity(handle.modelDef?.model),
-    ...(deps.sessionState.carryHistoryAcrossModels.has(handle.id) ? { carryAcrossModels: true } : {}),
-  };
+  const transcriptIdentity: TranscriptIdentity = transcriptIdentityFor(deps.sessionState, handle);
   let messages: NativeTranscriptMessage[] = [
     ...historyFromTranscript(await store.load(handle.id), transcriptIdentity, handle.id),
   ];

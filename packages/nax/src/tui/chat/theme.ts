@@ -55,6 +55,8 @@ export interface ChatGlyphs {
   readonly warning: string;
   readonly error: string;
   readonly thinking: string;
+  /** The marker the terminal title takes while a turn runs (US-008). */
+  readonly busy: string;
   readonly ellipsis: string;
   readonly rule: string;
   readonly codeTop: string;
@@ -166,6 +168,7 @@ const UNICODE_GLYPHS: ChatGlyphs = {
   warning: "⚠",
   error: "✗",
   thinking: "✻",
+  busy: "✳",
   ellipsis: "…",
   rule: "─",
   codeTop: "┌",
@@ -197,6 +200,7 @@ const ASCII_GLYPHS: ChatGlyphs = {
   warning: "!",
   error: "x",
   thinking: "*",
+  busy: "*",
   ellipsis: "...",
   rule: "-",
   codeTop: "+",

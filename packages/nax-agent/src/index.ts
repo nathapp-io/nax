@@ -387,6 +387,7 @@ export type {
   ApprovalDecidedBy,
   CostSource,
   CommandRunResult,
+  CompactResult,
   CreateAgentSessionOptions,
   EmbedderTool,
   EmbedderToolContext,
@@ -450,6 +451,7 @@ export {
   type TrackedSpawnDeadlineOptions,
   type TurnResult,
 } from "#src/session/session-types";
+export type { SteerChannel, SteerResult } from "#src/session/steer-channel";
 export { attachTurnSpend, type FailedTurnSpend, readTurnSpend } from "#src/session/turn-spend";
 export type {
   JSONSchema,

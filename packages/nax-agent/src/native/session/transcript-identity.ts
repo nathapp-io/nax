@@ -6,7 +6,9 @@
 
 import type { ConversationMessage } from "@nathapp/nax-ai";
 import { getLogger, NaxError } from "#src/infra/index";
+import type { SessionHandle } from "#src/session/session-types";
 import { parseModelSpec } from "../models.ts";
+import type { NativeSessionState } from "./session.ts";
 import type { TranscriptDoc } from "./transcript-types.ts";
 
 /**
@@ -110,5 +112,22 @@ export function transcriptDocFor(
     ...(identity.model !== undefined ? { model: identity.model } : {}),
     savedAt: new Date().toISOString(),
     messages: [...messages],
+  };
+}
+
+/**
+ * The identity a session's transcript is loaded and saved under (US-002).
+ *
+ * One builder, because a turn's save and a manual compaction's save must claim
+ * exactly the same identity: the owner the invocation recorded (nax#1877) and
+ * the model that produced the history (nax#2150). A compaction that saved under
+ * a different identity would write a transcript the very next turn refuses to
+ * resume.
+ */
+export function transcriptIdentityFor(state: NativeSessionState, handle: SessionHandle): TranscriptIdentity {
+  return {
+    owner: state.transcriptOwners.get(handle.id),
+    model: transcriptModelIdentity(handle.modelDef?.model),
+    ...(state.carryHistoryAcrossModels.has(handle.id) ? { carryAcrossModels: true } : {}),
   };
 }

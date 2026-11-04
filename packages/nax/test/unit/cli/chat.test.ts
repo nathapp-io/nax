@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { createSessionStorage } from "@nathapp/nax-agent";
 import { makeInteractionChain, makeLogger, makeNaxConfig, withTempDir } from "@test/helpers";
 import chalk from "chalk";
@@ -68,6 +69,9 @@ async function fixture() {
     ),
     createChatStorage: mock(() => storage),
     createAcpCatalog: (_input: Parameters<typeof api._chatCommandDeps.createAcpCatalog>[0]) => stubAcpCatalog(),
+    // A stub, so no chat command test reads or writes the real recent-model file.
+    createRecentModelStore: (_input: Parameters<typeof api._chatCommandDeps.createRecentModelStore>[0]) =>
+      stubRecentStore(),
     createChatHost: mock((_input: Parameters<typeof createChatHost>[0]) => host),
     // Chat command tests touch no real global nax directory: the memory mirror
     // lives there, so the host is declined at the seam rather than composed.
@@ -101,6 +105,10 @@ async function fixture() {
       keepOpen = true;
     },
   };
+}
+
+function stubRecentStore() {
+  return { load: async () => [], save: async () => {} };
 }
 
 function stubAcpCatalog(): AcpCatalog {
@@ -663,5 +671,39 @@ describe("chatCommand model discovery", () => {
       expect.objectContaining({ models: override ? ["p1/m1", "local/x"] : ["p1/m1"] }),
     );
     expect(f.deps.setExitCode).not.toHaveBeenCalled();
+  });
+});
+
+describe("chatCommand recent models", () => {
+  test("AC-26 composes the store beside the ACP catalog, in the chat sessions directory", async () => {
+    const f = await fixture();
+    const store = stubRecentStore();
+    const createRecentModelStore = mock((_input: Parameters<typeof f.deps.createRecentModelStore>[0]) => store);
+    await f.chatCommand({}, { ...f.deps, createRecentModelStore });
+    expect(createRecentModelStore).toHaveBeenCalledTimes(1);
+    expect(createRecentModelStore.mock.calls[0]?.[0].path).toBe(
+      join(resolveChatSessionsDir(f.deps.env), "chat-recent-models.json"),
+    );
+  });
+
+  test("AC-27 AC-28 loads once before the host and hands the list over as recents.initial", async () => {
+    const f = await fixture();
+    const pending = Promise.withResolvers<readonly string[]>();
+    const entered = Promise.withResolvers<void>();
+    const load = mock(() => {
+      entered.resolve();
+      return pending.promise;
+    });
+    const store = { load, save: async () => {} };
+    const running = f.chatCommand({}, { ...f.deps, createRecentModelStore: () => store });
+    // Also detects an implementation that creates the host before the list has loaded.
+    await Promise.race([entered.promise, running]);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(f.deps.createChatHost).not.toHaveBeenCalled();
+    pending.resolve(["a/x[high]"]);
+    await running;
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(f.deps.createChatHost).toHaveBeenCalledTimes(1);
+    expect(f.deps.createChatHost.mock.calls[0]?.[0].recents).toEqual({ store, initial: ["a/x[high]"] });
   });
 });

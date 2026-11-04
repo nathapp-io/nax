@@ -13,6 +13,13 @@ import { nativeBackend } from "#src/session/native-backend";
 
 export const MODEL = "openai/gpt-5.4-mini";
 
+/**
+ * The usage every scripted complete() (the compaction summary call) reports.
+ * Exported so a test can assert a summary's spend was reported UNCHANGED rather
+ * than re-typing the numbers (US-002 AC-3).
+ */
+export const SUMMARY_USAGE = { inputTokens: 7, outputTokens: 3 } as const;
+
 const RESOLVED: ResolvedModel = {
   id: "gpt-5.4-mini",
   provider: "openai",
@@ -31,8 +38,12 @@ export interface ScriptedProvider {
   readonly requests: ClientRequest[];
   /** Requests that went through complete() -- the compaction summary call. */
   readonly completeRequests: ClientRequest[];
-  /** Replies for complete() calls, in order. */
-  pushComplete(...texts: string[]): void;
+  /**
+   * Replies for complete() calls, in order. An `Error` entry makes that call
+   * reject with it, which is how a test drives "the summarizer failed" without
+   * reaching into the client.
+   */
+  pushComplete(...replies: (string | Error)[]): void;
   /** Replies, one per round-trip request, in order. */
   push(...rounds: Round[]): void;
 }
@@ -76,7 +87,7 @@ export function installScriptedProvider(options: ScriptedProviderOptions = {}): 
   const requests: ClientRequest[] = [];
   const completeRequests: ClientRequest[] = [];
   let queue: readonly Round[] = [];
-  let completeQueue: readonly string[] = [];
+  let completeQueue: readonly (string | Error)[] = [];
   const resolved: ResolvedModel =
     options.contextWindow === undefined ? RESOLVED : { ...RESOLVED, contextWindow: options.contextWindow };
   const client: Client = {
@@ -95,10 +106,11 @@ export function installScriptedProvider(options: ScriptedProviderOptions = {}): 
     },
     complete: async (_model, req): Promise<CompleteResult> => {
       completeRequests.push(req);
-      const [text, ...rest] = completeQueue;
+      const [reply, ...rest] = completeQueue;
       completeQueue = rest;
-      if (text === undefined) throw new Error("round trips must stream");
-      return { text, usage: { inputTokens: 7, outputTokens: 3 }, stopReason: "stop" };
+      if (reply === undefined) throw new Error("round trips must stream");
+      if (reply instanceof Error) throw reply;
+      return { text: reply, usage: SUMMARY_USAGE, stopReason: "stop" };
     },
     validate: () => {},
   };
@@ -107,8 +119,8 @@ export function installScriptedProvider(options: ScriptedProviderOptions = {}): 
   return {
     requests,
     completeRequests,
-    pushComplete: (...texts) => {
-      completeQueue = [...completeQueue, ...texts];
+    pushComplete: (...replies) => {
+      completeQueue = [...completeQueue, ...replies];
     },
     push: (...rounds) => {
       queue = [...queue, ...rounds];

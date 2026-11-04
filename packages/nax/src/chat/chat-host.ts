@@ -1,22 +1,18 @@
 import type {
   CommandRunResult,
-  ImageAttachment,
+  CompactResult,
   LoopHandlerSet,
-  SandboxState,
   SessionEvent,
-  SessionMeta,
   SessionStorage,
+  SteerResult,
   ToolProvider,
 } from "@nathapp/nax-agent";
 import { lookupContextWindow } from "@/agents/catalog";
-import { getProjectKey, type NaxConfig } from "@/config";
+import { getProjectKey } from "@/config";
 import { NaxError } from "@/errors";
-import type { InteractionChain } from "@/interaction";
-import type { Logger } from "@/logger";
 import { projectOutputDir } from "@/runtime";
 import {
   ACP_RUN_COMMAND_UNSUPPORTED,
-  type AcpCatalog,
   type AcpRefreshResult,
   acpRefusal,
   assertAcpInstalled,
@@ -29,12 +25,16 @@ import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatBackgroundTasks, createHostTasks } from "./background";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
+import type { ChatHost, ChatHostDeps, ChatHostState, ChatSendOptions, ChatSessionRow } from "./chat-host-types";
 import { type ChatLedger, createChatLedger } from "./chat-ledger";
 import type { ChatMode } from "./chat-mode";
 import { tierModels } from "./chat-models";
 import { createCloseConfirm } from "./close-confirm";
 import { type ContextWindowCache, createContextWindowCache } from "./context-window-cache";
 import { createHostMemory, type HostMemory } from "./host-memory";
+import { createHostQueue, type HostQueue } from "./host-queue";
+import { createHostRecents, type HostRecents } from "./host-recents";
+import { createHostCompacting, createHostSteering, type HostCompacting, type HostSteering } from "./host-steer-compact";
 import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
@@ -62,82 +62,8 @@ export const _chatHostDeps = {
   lookupContextWindow,
 };
 
-export interface ChatHostState {
-  readonly sessionId: string;
-  readonly mode: ChatMode;
-  readonly model: string;
-  readonly meta: SessionMeta;
-  readonly sandbox?: SandboxState;
-  /** The session model's catalog context window; absent when the catalog cannot say. */
-  readonly contextWindow?: number;
-}
-
-export interface ChatSessionRow {
-  readonly sessionId: string;
-  readonly title: string | null;
-  readonly updatedAt: string | null;
-  readonly heldByPid?: number;
-}
-
-export interface ChatSendOptions {
-  readonly title?: string;
-  /** Images to send with this message; an absent or empty list sends the text alone. */
-  readonly images?: readonly ImageAttachment[];
-}
-
-/** Shared-session chat lifecycle, independent of the terminal shell. */
-export interface ChatHost {
-  readonly repoRoot: string;
-  readonly catalog?: ChatResources["catalog"];
-  readonly naxPlugins?: ChatResources["naxPlugins"];
-  readonly mcp?: ChatResources["mcp"];
-  /** The memory host this chat writes notes through; absent when memory is off or unavailable. */
-  readonly memory?: ChatResources["memory"];
-  readonly models: readonly string[];
-  readonly asks: ChatAskController;
-  readonly jobs?: ChatJobs;
-  readonly runAsks?: ChatRunAsks;
-  readonly tasks?: ChatBackgroundTasks;
-  readonly confirmBeforeClose?: () => Promise<boolean>;
-  current(): ChatHostState;
-  history?(): ChatHistory;
-  effortLevels?(model: string): readonly EffortLevel[];
-  refreshAcpModels?(): Promise<readonly AcpRefreshResult[]>;
-  /** Why the model cannot be used right now (an ACP agent that is not installed or not logged in), if it cannot. */
-  modelNote?(model: string): string | undefined;
-  /** One row per catalog agent in catalog order, resolved against the chat session's current model. */
-  agents?(): readonly ChatAgentRow[];
-  start(input: { mode: ChatMode; model: string }): Promise<void>;
-  clear(): Promise<void>;
-  resume(input: { id?: string }): Promise<void>;
-  notice(): string | undefined;
-  resourceNotice?(): string | undefined;
-  switchTo(input: { mode?: ChatMode; model?: string }): Promise<void>;
-  send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void>;
-  /** Whether the open session reads images; `false` when no session is open or it cannot say. */
-  acceptsImages?(): Promise<boolean>;
-  runCommand?(command: string, onEvent: (event: SessionEvent) => void): Promise<CommandRunResult>;
-  cancel(): void;
-  listSessions(): Promise<readonly ChatSessionRow[]>;
-  close(): Promise<void>;
-}
-
-export interface ChatHostDeps {
-  readonly naxEntry?: readonly string[];
-  readonly resources?: ChatResources;
-  readonly models?: readonly string[];
-  /** The ACP agents offered as chat models; absent on a host that offers native models only. */
-  readonly acp?: AcpCatalog;
-  readonly effortLevels?: ReadonlyMap<string, readonly EffortLevel[]>;
-  readonly config: NaxConfig;
-  readonly cwd: string;
-  readonly repoRoot: string;
-  readonly chain: InteractionChain | null;
-  readonly open?: typeof openChatSession;
-  readonly storage: SessionStorage;
-  readonly now: () => Date;
-  readonly logger: Pick<Logger, "warn">;
-}
+/** The host's contract lives in `chat-host-types.ts`; re-exported here so imports do not move. */
+export type { ChatHost, ChatHostDeps, ChatHostState, ChatSendOptions, ChatSessionRow } from "./chat-host-types";
 
 class NativeChatHost implements ChatHost {
   readonly repoRoot: string;
@@ -156,6 +82,13 @@ class NativeChatHost implements ChatHost {
   private readonly hygiene: ReturnType<typeof createSessionHygiene>;
   private readonly open: typeof openChatSession;
   private readonly loopHandlers: LoopHandlerSet;
+  private readonly steering: HostSteering;
+  private readonly compacting: HostCompacting;
+  /**
+   * Serializes every read-modify-write of the session metadata's spend — a turn's write and
+   * a compaction's — so neither can replace what the other added.
+   */
+  private readonly accounting: HostQueue;
   private readonly projectKey: string;
   private readonly outputDir: string;
   private readonly runs?: SubagentRuns;
@@ -163,6 +96,9 @@ class NativeChatHost implements ChatHost {
   private readonly contextWindows: ContextWindowCache;
   /** The index every open carries and every subagent session is told; the host only calls it. */
   private readonly hostMemory: HostMemory;
+  /** US-006: the recent models, newest first; absent when the composition supplied no store. */
+  readonly recentModels?: () => readonly string[];
+  private readonly recents?: HostRecents;
   private turnListener?: (event: SessionEvent) => void;
   private sending = false;
   private handle?: ChatSessionHandle;
@@ -182,6 +118,22 @@ class NativeChatHost implements ChatHost {
   constructor(private readonly deps: ChatHostDeps) {
     this.hygiene = createSessionHygiene(deps);
     this.open = reportAcpOpens(deps.open ?? openChatSession, deps.acp);
+    // Read through a getter: a switch, a resume and a clear all replace the handle.
+    this.steering = createHostSteering({ session: () => this.handle?.session });
+    this.accounting = createHostQueue();
+    this.compacting = createHostCompacting({
+      session: () => this.handle?.session,
+      handle: () => this.handle,
+      storage: deps.storage,
+      ledger: () => this.ledger,
+      now: deps.now,
+      queue: this.accounting,
+      // A switch during the compaction leaves the new handle's own metadata alone.
+      adopt: (meta) => {
+        const handle = this.handle;
+        if (handle !== undefined && handle.meta.sessionId === meta.sessionId) this.handle = { ...handle, meta };
+      },
+    });
     this.repoRoot = deps.repoRoot;
     this.catalog = deps.resources?.catalog;
     this.naxPlugins = deps.resources?.naxPlugins;
@@ -189,6 +141,12 @@ class NativeChatHost implements ChatHost {
     this.memory = deps.resources?.memory;
     this.contextWindows = createContextWindowCache(() => _chatHostDeps.lookupContextWindow);
     this.hostMemory = createHostMemory({ memory: deps.resources?.memory, logger: deps.logger });
+    this.recents =
+      deps.recents === undefined
+        ? undefined
+        : createHostRecents({ store: deps.recents.store, initial: deps.recents.initial, logger: deps.logger });
+    const recents = this.recents;
+    if (recents !== undefined) this.recentModels = () => recents.recentModels();
     this.nativeModels = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
@@ -344,6 +302,7 @@ class NativeChatHost implements ChatHost {
     await this.jobs?.attach();
     this.resumeNotice = undefined;
     await this.contextWindows.prime(next.meta.model);
+    await this.recents?.recordOpen(next.meta.model);
   }
 
   /** The arguments every open shares; the memory index is passed in, never re-read, so
@@ -428,6 +387,7 @@ class NativeChatHost implements ChatHost {
         ? "The last turn was interrupted. Send a message to continue it."
         : undefined;
     await this.contextWindows.prime(resumed.meta.model);
+    await this.recents?.recordOpen(resumed.meta.model);
   }
 
   private async reopen(
@@ -484,6 +444,7 @@ class NativeChatHost implements ChatHost {
     }
     this.asks.setMode(outcome.handle.meta.mode === "full" ? "full" : "guarded");
     await this.contextWindows.prime(outcome.handle.meta.model);
+    await this.recents?.switched(from.model, outcome);
     if (outcome.error !== undefined) throw outcome.error;
   }
 
@@ -493,7 +454,9 @@ class NativeChatHost implements ChatHost {
   }
 
   async send(message: string, onEvent: (event: SessionEvent) => void, options?: ChatSendOptions): Promise<void> {
-    const handle = this.requireHandle();
+    // Validate before taking the shared turn state, so the error a caller gets does not
+    // depend on what is queued ahead of it.
+    this.requireHandle();
     const ledger = this.ledger;
     if (!ledger) throw new NaxError("[chat] ledger is not initialized", "CHAT_SESSION_NOT_OPEN", { stage: "chat" });
     // Reject before touching the shared listener and nested-spend state: they belong to
@@ -501,15 +464,24 @@ class NativeChatHost implements ChatHost {
     if (this.sending) {
       throw new NaxError("[chat] a turn is already running", "CHAT_TURN_BUSY", { stage: "chat" });
     }
-    this.hygiene.markSent(handle.meta.sessionId);
     this.sending = true;
     this.turnListener = onEvent;
     const runs = this.runs;
-    let meta: SessionMeta;
     try {
-      meta = await runChatTurn({
+      // Claim the session's turn here, before any `await`. The slot is what `steer` answers
+      // from and what `cancel` acts on, and both keys can arrive in the same batch as the
+      // return that started this turn: queued behind the accounting instead, the claim would
+      // appear a microtask later, the key would find no turn, and the turn would then run
+      // uncancelled.
+      const handle = this.requireHandle();
+      this.hygiene.markSent(handle.meta.sessionId);
+      // Only the turn's metadata write is queued (`queue`), never the turn: the write is the
+      // other read-modify-write of the same `costUsd`, and a compaction that settled a
+      // moment ago must not be overwritten by this turn's base.
+      const meta = await runChatTurn({
         handle,
         storage: this.deps.storage,
+        queue: this.accounting,
         message,
         title: options?.title,
         images: options?.images,
@@ -519,6 +491,16 @@ class NativeChatHost implements ChatHost {
         now: this.deps.now().toISOString(),
         ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
       });
+      // Adopt the persisted accounting once the queue has written it. A same-session switch
+      // keeps its settings and live session, but still receives this turn's spend; a
+      // different session must never receive the retired session's metadata.
+      if (this.handle === handle) this.handle = { ...handle, meta };
+      else if (this.handle?.meta.sessionId === meta.sessionId) {
+        this.handle = {
+          ...this.handle,
+          meta: { ...this.handle.meta, costUsd: meta.costUsd, title: meta.title, updatedAt: meta.updatedAt },
+        };
+      }
     } finally {
       try {
         // A cancelled tool batch abandons its nested run without waiting for it: drain
@@ -531,7 +513,6 @@ class NativeChatHost implements ChatHost {
         runs?.takeCost();
       }
     }
-    if (this.handle === handle) this.handle = { ...handle, meta };
   }
 
   /** Delegated so the capability read never throws when no session is open. */
@@ -547,6 +528,24 @@ class NativeChatHost implements ChatHost {
       routeAskEvent(event, this.asks);
       onEvent(event);
     });
+  }
+
+  /**
+   * US-004: hand text to the running turn. The session's own answer travels back unchanged —
+   * `no_turn` without an open session rather than the facade's not-open error, because a key
+   * handler asks this on every ctrl+s and must not have to catch.
+   */
+  steer(text: string): SteerResult {
+    return this.steering.steer(text);
+  }
+
+  /**
+   * US-005: compact the conversation now, and record what it spent. The session's own result
+   * travels back unchanged — `tokensBefore`/`tokensAfter` are what the screen shows and what
+   * the footer's context reading becomes.
+   */
+  compact(): Promise<CompactResult> {
+    return this.compacting.compact();
   }
 
   cancel(): void {

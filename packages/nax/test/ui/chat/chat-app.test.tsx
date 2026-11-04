@@ -192,13 +192,14 @@ describe("chat shell", () => {
     ui.type("\r");
     expect(ui.send).toHaveBeenCalledWith("a\nb", expect.any(Function));
   });
-  test("AC-4 keeps draft and ignores Enter during a turn", () => {
+  test("AC-4 queues a busy return, clearing the prompt and drawing it above the input", () => {
     const ui = mount();
     ui.start();
     ui.type("draft");
     ui.type("\r");
     expect(ui.send).toHaveBeenCalledTimes(1);
-    expect(ui.lastFrame()).toContain("> draft");
+    expect(ui.lastFrame()).toContain("queued · draft");
+    expect(ui.lastFrame()).not.toContain("> draft");
   });
   test("AC-5 joins streamed assistant deltas", () => {
     const ui = mount();
@@ -372,5 +373,83 @@ describe("chat shell", () => {
     ui.type("next");
     ui.type("\r");
     expect(ui.send).toHaveBeenLastCalledWith("next", expect.any(Function));
+  });
+});
+
+describe("terminal title busy marker", () => {
+  /**
+   * A mounted screen with the callback `renderChat` passes it, and a host whose send is gated
+   * so a case says exactly when the turn ends. `onBusyChange` is what the title is rewritten
+   * from, so the recorded calls are the title's own history.
+   */
+  function mountTitled() {
+    const fake = fakeHost();
+    const onBusyChange = mock((_busy: boolean) => {});
+    const ui = render(<ChatApp host={fake.host} onBusyChange={onBusyChange} />);
+    const start = () => {
+      act(() => {
+        ui.stdin.write("hello");
+      });
+      act(() => {
+        ui.stdin.write("\r");
+      });
+    };
+    const emit = (body: SessionEventBody) => act(() => fake.emit(body));
+    const finish = async (): Promise<void> => {
+      await Promise.resolve(
+        act(async () => {
+          fake.finish();
+        }),
+      );
+    };
+    return { ...fake, ui, onBusyChange, start, emit, finish };
+  }
+
+  test("AC-11 reports the screen busy once a turn is running", () => {
+    const titled = mountTitled();
+    // Nothing is reported before the first turn: `renderChat` has not taken the title yet.
+    expect(titled.onBusyChange).not.toHaveBeenCalled();
+    titled.start();
+    expect(titled.onBusyChange.mock.calls).toEqual([[true]]);
+  });
+
+  test("AC-12 its last call once the turn ends is the idle one", async () => {
+    const titled = mountTitled();
+    titled.start();
+    titled.emit({ type: "text_delta", round: 1, text: "done" });
+    titled.emit({
+      type: "turn_end",
+      status: "completed",
+      output: "done",
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costUsd: 0,
+    });
+    await titled.finish();
+    expect(titled.onBusyChange.mock.calls).toEqual([[true], [false]]);
+  });
+
+  test("reports a change once, not on every render", async () => {
+    const titled = mountTitled();
+    titled.start();
+    titled.emit({ type: "text_delta", round: 1, text: "more" });
+    await Promise.resolve(
+      act(async () => {
+        titled.ui.rerender(<ChatApp host={titled.host} onBusyChange={titled.onBusyChange} />);
+      }),
+    );
+    expect(titled.onBusyChange.mock.calls).toEqual([[true]]);
+  });
+
+  test("says nothing at all when it was given no callback", () => {
+    // The same screen over a non-TTY: there is no title to keep current, and no write happens.
+    const fake = fakeHost();
+    const ui = render(<ChatApp host={fake.host} />);
+    act(() => {
+      ui.stdin.write("hello");
+    });
+    act(() => {
+      ui.stdin.write("\r");
+    });
+    expect(fake.send).toHaveBeenCalledTimes(1);
   });
 });

@@ -10,7 +10,7 @@
  * Same-session model and mode notices share one drawn-state comparison after control refresh.
  */
 
-import type { ImageAttachment, SessionEvent } from "@nathapp/nax-agent";
+import type { CompactResult, ImageAttachment, SessionEvent, SteerResult, TurnEndStatus } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { Box, useInput, useStdout } from "ink";
 import { type ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -24,8 +24,10 @@ import { bottomBlocked, bottomRowsFor, menuRowsFor, viewportActive } from "./bot
 import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
   footerModel,
+  formatTokens,
   headerLines,
   IDLE_STATUS,
+  isSubagentEvent,
   reduceTurnStatus,
   type TurnStatus,
   WORKING_TICK_MS,
@@ -33,12 +35,29 @@ import {
 } from "./chat-status";
 import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
 import { FixedRow } from "./FixedRow";
-import { type ImageDraft, imagesForSend, splitLeadingPlaceholders, titleWithoutPlaceholders } from "./image-draft";
+import {
+  EMPTY_IMAGE_DRAFT,
+  type ImageDraft,
+  imagesForSend,
+  splitLeadingPlaceholders,
+  titleWithoutPlaceholders,
+} from "./image-draft";
 import { prepareImageSend } from "./image-send";
 import { layoutTranscript } from "./layout";
 import { type EditorState, EMPTY_EDITOR } from "./line-editor";
 import { MentionMenu } from "./MentionMenu";
 import { needsMentionExpansion, sentEntries } from "./mention-send";
+import {
+  type DiscardedSteers,
+  type MessageQueue,
+  pushDiscardedSteer,
+  pushQueued,
+  queueRowLines,
+  queueToPrompt,
+  type SteeringRow,
+  steeringRowLines,
+  takeQueued,
+} from "./message-queue";
 import type { MouseEvents } from "./mouse-input";
 import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
@@ -57,6 +76,7 @@ import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
 import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
+import { turnStatsEntry } from "./turn-stats";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useImageAttach } from "./use-image-attach";
 import { useJobs } from "./use-jobs";
@@ -77,6 +97,11 @@ export interface ChatAppProps {
   readonly cwd?: string;
   /** Absent: no home prefix to shorten the header's path with. */
   readonly home?: string;
+  /**
+   * Told when the screen starts and stops working, so the terminal title can carry a busy
+   * marker (US-008). Absent on a terminal with no title to keep current.
+   */
+  readonly onBusyChange?: (busy: boolean) => void;
 }
 
 /** Environment seam; sampled once per mounted screen. */
@@ -102,6 +127,16 @@ const DEFAULT_ROWS = 24;
 const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
 const TURN_BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const QUIT = "quit";
+/** What a host that cannot compact is told, and what a compaction with nothing to drop reports. */
+const COMPACTION_UNAVAILABLE = "compaction is not available in this session";
+const NOTHING_TO_COMPACT = "nothing to compact";
+/** What `/compact` says while it runs, before the theme's ellipsis. */
+const COMPACTING = "compacting";
+const COMPACTED = "compacted";
+/** The separator a compaction's before/after counts are joined with. */
+const COMPACT_ARROW = "→";
+/** What a busy return carrying a picture is told: a picture travels with a plain send only. */
+const IMAGES_NOT_QUEUED = "images cannot be queued; send it after the turn ends";
 /** What a slash line with a picture attached is told: an image travels with a plain message only. */
 const IMAGES_PLAIN_ONLY = "images can only be sent with a plain message";
 /**
@@ -116,6 +151,8 @@ const TELL_NAX_HINT = "tell nax what to do instead";
 const CTRL_O = "o";
 /** And ctrl+v as `v` with the ctrl modifier: the clipboard image's key. */
 const CTRL_V = "v";
+/** And ctrl+s as `s`: the key that steers the running turn, or interrupts it and sends next. */
+const CTRL_S = "s";
 /** The theme a caller that passes none gets; resolved once, since it is a pure constant. */
 const DEFAULT_THEME = resolveChatTheme({ env: {}, colorLevel: 0 });
 
@@ -152,6 +189,20 @@ interface TerminalSize {
   readonly rows: number;
 }
 
+/** No line is waiting for a turn: the queue a screen opens with, and the one it drains to. */
+const EMPTY_QUEUE: MessageQueue = [];
+
+/** No steer is waiting for the running turn: the list a screen opens with. */
+const EMPTY_STEERING: readonly SteeringRow[] = [];
+
+/** How a turn's send settled, for the queue: whether it reached the host at all. */
+interface TurnOutcome {
+  /** False when the send never happened — a prepare step refused it, or it rejected. */
+  readonly sent: boolean;
+  /** The status of the turn's own `turn_end`, or undefined when the stream ended without one. */
+  readonly status: TurnEndStatus | undefined;
+}
+
 /** The stream's size, with the assumed defaults where it cannot report one. */
 function terminalSize(stdout: { columns?: number; rows?: number }): TerminalSize {
   return { columns: stdout.columns || DEFAULT_COLUMNS, rows: stdout.rows || DEFAULT_ROWS };
@@ -167,9 +218,50 @@ function stopTurn(status: TurnStatus): TurnStatus {
   return status.running ? { ...status, running: false } : status;
 }
 
+/**
+ * The status a running compaction shows (US-005): the working line's own `compacting` phase,
+ * with no turn behind it. The context total survives, so the footer's reading does not blink
+ * out while the compaction runs; the result's `tokensAfter` replaces it when it settles.
+ */
+function compactingStatus(current: TurnStatus): TurnStatus {
+  return {
+    running: true,
+    startedAt: new Date().toISOString(),
+    phase: "compacting",
+    inputTokens: 0,
+    outputTokens: 0,
+    streamedChars: 0,
+    ...(current.contextTokens === undefined ? {} : { contextTokens: current.contextTokens }),
+  };
+}
+
+/** What a finished compaction reports: how much history it replaced, and with how much. */
+function compactedNotice(result: CompactResult): string {
+  const before = formatTokens(result.tokensBefore);
+  const after = formatTokens(result.tokensAfter);
+  return `${COMPACTED}: ${before} ${COMPACT_ARROW} ${after} tokens`;
+}
+
 /** Notices wait until neither a turn, a bottom-region surface nor host control owns the screen. */
 function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean; canControl: boolean }): boolean {
   return !input.turnRunning && !input.bottomBlocked && input.canControl;
+}
+
+/**
+ * The rows the queue draws above the input. An ask card or a picker replaces the input, and
+ * the queue drawn above it with it: nothing is drawn then, so nothing is reserved either.
+ */
+function queueLinesFor(queue: MessageQueue, blocked: boolean): readonly string[] {
+  return blocked ? EMPTY_QUEUE : queueRowLines(queue);
+}
+
+/**
+ * The rows the steers the running turn has not taken yet draw above the queue (US-004). They
+ * are reserved and drawn beside the queue's, and left out with it when an ask card or a picker
+ * replaces the input and the rows above it.
+ */
+function steeringLinesFor(steering: readonly SteeringRow[], blocked: boolean): readonly string[] {
+  return blocked ? EMPTY_QUEUE : steeringRowLines(steering);
 }
 
 /** An ask card, a picker, or any menu drawn under the input, claims the bottom region. */
@@ -204,6 +296,7 @@ export function ChatApp({
   version = NAX_VERSION,
   cwd = host.repoRoot,
   home = "",
+  onBusyChange,
 }: ChatAppProps): ReactElement {
   const { stdout } = useStdout();
   const [tmux] = useState(() => Boolean(_chatAppDeps.tmux()));
@@ -215,6 +308,10 @@ export function ChatApp({
   const [status, setStatus] = useState<TurnStatus>(IDLE_STATUS);
   const [draft, setDraft] = useState<InputDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
+  /** The lines typed while a turn was running, drawn above the input until it finishes. */
+  const [queued, setQueued] = useState<MessageQueue>(EMPTY_QUEUE);
+  /** The steers the running turn has not taken yet, drawn above the queue (US-004). */
+  const [steering, setSteering] = useState<readonly SteeringRow[]>(EMPTY_STEERING);
   const [clearArmed, setClearArmed] = useState(false);
   const [answerDraft, setAnswerDraft] = useState<QuestionAnswer>(NO_ANSWER);
   /** What an empty input offers instead of its placeholder: a declined ask's instruction. */
@@ -239,9 +336,50 @@ export function ChatApp({
    */
   const promptRevision = useRef(0);
   const sending = useRef(false);
+  /**
+   * The queue as it stands, ahead of React: the drain runs after a send's `await`s, and it
+   * must read the lines queued in that window — the newest state, not the last render's.
+   */
+  const queueRef = useRef<MessageQueue>(EMPTY_QUEUE);
+  /**
+   * The steers the turn running now discarded, in the order they were steered (US-004). One
+   * turn's pending steers settle together — `applied` resolving `false` one callback at a time,
+   * in arrival order — so they are placed as one group rather than prepended one by one, which
+   * would reverse them. The group is scoped to its own turn: every send starts it empty, so a
+   * line a later turn discards goes ahead of the queue that turn inherited rather than joining
+   * the group of the turn before it.
+   */
+  const discardedSteers = useRef<DiscardedSteers | undefined>(undefined);
+  /**
+   * The status of the turn's own `turn_end` in the send now running, reset by every send. A
+   * nested call's `turn_end` is not the turn's (`isSubagentEvent`), and a send that settles
+   * without one leaves it undefined: only a turn observed to have completed drains the queue.
+   */
+  const turnEnd = useRef<TurnEndStatus | undefined>(undefined);
+  /**
+   * The live events of the turn running now (US-007), which is what its decode speed is
+   * measured from. Every send starts a new list, and a nested call's event never joins it:
+   * a subagent's rounds are not this turn's, so they neither measure its speed nor end it.
+   *
+   * A mutable list, not a replaced one: it is a ref rather than state, so nothing renders from
+   * it, and a long turn appends thousands of deltas — copying the list on every one of them
+   * would cost more than the whole turn.
+   */
+  const turnEvents = useRef<SessionEvent[]>([]);
+  /**
+   * The line a ctrl+s interrupted the running turn for (US-004). A brain that cannot steer
+   * takes the key as interrupt-and-send: the line waits here until that turn settles, then
+   * goes first — ahead of anything queued, which stays queued behind it.
+   */
+  const interruptSend = useRef<string | undefined>(undefined);
   const [, refresh] = useState(0);
 
   const update = useCallback(() => refresh((revision) => revision + 1), []);
+  /** Replace the queue, for this batch and for the next render — as `editorRef` does the draft. */
+  const replaceQueue = useCallback((next: MessageQueue) => {
+    queueRef.current = next;
+    setQueued(next);
+  }, []);
   const appendAll = useCallback((added: readonly TranscriptEntry[]) => {
     setEntries((rows) => [...rows, ...added]);
   }, []);
@@ -283,9 +421,24 @@ export function ChatApp({
   // down, once the layer that names esc's action can be read without a cycle.
   const workingShown = status.running;
   const usableRows = size.rows - FRAME_SLACK_ROWS;
+  /**
+   * The rows the queue draws above the input, and the height it claims: like the working line,
+   * it is reserved out of the usable rows before the bottom region's budget is measured, so a
+   * queue never eats the prompt's own room. An ask card or a picker replaces the input, and
+   * the queue with it — nothing is drawn then, so nothing is reserved either.
+   */
+  const queueLines = queueLinesFor(queued, bottomBlocked(ask, picker.model));
+  const steeringLines = steeringLinesFor(steering, bottomBlocked(ask, picker.model));
+  /** The steering rows then the queue's: everything the screen draws above the input. */
+  const aboveInputLines = [...steeringLines, ...queueLines];
   const bottomBudget = Math.max(
     1,
-    usableRows - HEADER_ROWS - (workingShown ? WORKING_ROWS : 0) - FOOTER_ROWS - MIN_VIEWPORT_ROWS,
+    usableRows -
+      HEADER_ROWS -
+      (workingShown ? WORKING_ROWS : 0) -
+      aboveInputLines.length -
+      FOOTER_ROWS -
+      MIN_VIEWPORT_ROWS,
   );
   const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
   /** A menu with no row budget cannot own keys. */
@@ -321,18 +474,25 @@ export function ChatApp({
    * working line and the screen's own guard, so the hint and the action cannot disagree. A
    * turn whose keys cannot control it is not esc's to stop, and the mention picker's claim is
    * its esc ownership rather than its drawn rows: its no-git diagnostic line claims no key.
+   *
+   * `running` is the turn ownership the caller trusts. Everything drawn passes the frame's own
+   * `turnRunning`; a key handler passes the synchronous `sending` ref, because a return, the
+   * text typed after it and a chord can arrive in one batch, and the render that preceded that
+   * batch still says the turn is idle. Only the turn's ownership is read that way — a card, a
+   * picker and a menu still claim their keys from the frame, and the control guard is
+   * unchanged — so a batched key cannot stop a turn nobody owns or steal an overlay's escape.
    */
-  function escLayerNow(): EscLayer {
+  function escLayer(running: boolean): EscLayer {
     return topEscLayer({
       ask: escAsk(ask),
       askFromSession: askedBySession(ask),
       picker: picker.model?.kind,
       mentionShown: mention.ownsNavigation(),
       menuShown: menuShown(),
-      turnRunning: turnRunning && keys.canControl(),
+      turnRunning: running && keys.canControl(),
     });
   }
-  const escHint = escHintText(escLayerNow());
+  const escHint = escHintText(escLayer(turnRunning));
   // The working line is drawn from the turn status alone, so its presence is unchanged; only
   // its text takes the layer's hint, and `esc to interrupt` stays when the layer has none.
   const working = workingLine(status, nowMs, theme.glyphs, escHint);
@@ -346,8 +506,9 @@ export function ChatApp({
     active: () => !bottomBlocked(ask, picker.model),
   });
 
-  // Ctrl+o toggles detail; ctrl+v attaches a clipboard image; escape interrupts only when no
-  // bottom surface or control owns it. The hook decides whether the key is theirs to answer.
+  // Ctrl+o toggles detail; ctrl+v attaches a clipboard image; ctrl+s steers the running turn
+  // (or interrupts it and sends the draft next); escape interrupts only when no bottom surface
+  // or control owns it. The hook decides whether a key is theirs to answer.
   useInput((input, key) => {
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
@@ -357,10 +518,15 @@ export function ChatApp({
       void imageAttach.attach();
       return;
     }
+    if (key.ctrl && input === CTRL_S) {
+      steerRunningTurn();
+      return;
+    }
     // Only a bare running turn is the screen's own escape. A card, a picker and a menu each
     // own escape themselves and answer it in their own handler, so a key they close must
-    // never also reach the turn.
-    if (!key.escape || escLayerNow().kind !== "turn") return;
+    // never also reach the turn. The turn's ownership is read synchronously, like every other
+    // key-time fact: the frame's answer is a render old when a batch carries several keys.
+    if (!key.escape || escLayer(sending.current).kind !== "turn") return;
     host.cancel();
   });
 
@@ -373,6 +539,18 @@ export function ChatApp({
       stdout.off("resize", onResize);
     };
   }, [stdout]);
+  /**
+   * The terminal title's busy marker (US-008): what the screen reports when it starts or stops
+   * working. Only a *change* is reported — the title is rewritten from it, so an idle mount
+   * says nothing (the caller has not taken the title yet) and a re-render says nothing either.
+   * Nothing is reported after the screen unmounts, which is when the title is given back.
+   */
+  const reportedBusy = useRef(false);
+  useEffect(() => {
+    if (reportedBusy.current === turnRunning) return;
+    reportedBusy.current = turnRunning;
+    onBusyChange?.(turnRunning);
+  }, [turnRunning, onBusyChange]);
   // Rebuild before notice effects append, but never reset mount notices or same-id live rows.
   useLayoutEffect(() => {
     if (transcriptSession.current === state.sessionId) return;
@@ -414,11 +592,24 @@ export function ChatApp({
   }, [status.running]);
 
   /** Every session event lands in the transcript and in the turn status, and nothing else. */
-  const handleEvent = useCallback((event: SessionEvent) => {
-    setEntries((rows) => reduceTranscript(rows, event));
-    setStatus((current) => reduceTurnStatus(current, event));
-    if (event.type === "turn_start") setNowMs(Date.now());
-  }, []);
+  const handleEvent = useCallback(
+    (event: SessionEvent) => {
+      setEntries((rows) => reduceTranscript(rows, event));
+      setStatus((current) => reduceTurnStatus(current, event));
+      if (event.type === "turn_start") setNowMs(Date.now());
+      // A nested call's events are its own: they measure nothing for this turn's statistics.
+      if (!isSubagentEvent(event)) turnEvents.current.push(event);
+      // The queue's own reading of the turn: what the top-level `turn_end` said, so a send that
+      // settles without one — a rejection, a runner that threw — never looks completed.
+      if (event.type === "turn_end" && !isSubagentEvent(event)) {
+        turnEnd.current = event.status;
+        // What the turn decoded, as one muted row under the reply it measured (US-007).
+        const stats = turnStatsEntry(turnEvents.current, event);
+        if (stats !== undefined) append(stats);
+      }
+    },
+    [append],
+  );
 
   /** A slash command's shown text, listed or noticed, and the session `clear` resets. */
   async function runCommand(command: SlashCommand): Promise<void> {
@@ -431,6 +622,10 @@ export function ChatApp({
     sink.flush();
     if (!ready) return;
     if (outcome === undefined) return;
+    if (outcome.kind === "compact") {
+      await compactTurn();
+      return;
+    }
     if (outcome.kind === "picker") {
       picker.open(outcome.picker);
       return;
@@ -491,8 +686,19 @@ export function ChatApp({
    * for the next message by the time the answer lands; overwriting that draft would delete an
    * edit the refusal never saw. The newer prompt then stays, and the refused line travels with
    * the notice as `dropped` so it is named in the transcript instead of vanishing.
+   *
+   * `owns` is false for a queued line: it was typed for an earlier turn, and the prompt standing
+   * now is the user's next message, whatever its revision count. A refusal never overwrites that
+   * prompt — the refused line and whatever is still queued go back above it, oldest first, so the
+   * user's own draft survives and the refused line is theirs to fix.
    */
-  function imagePrepare(text: string, draft: ImageDraft, revision: number): () => Promise<PreparedSend> {
+  function imagePrepare(input: {
+    readonly text: string;
+    readonly draft: ImageDraft;
+    readonly revision: number;
+    readonly owns: boolean;
+  }): () => Promise<PreparedSend> {
+    const { text, draft, revision, owns } = input;
     return async () => {
       const result = await prepareImageSend({
         text,
@@ -504,14 +710,30 @@ export function ChatApp({
         model: host.current().model,
       });
       if (result.kind === "refuse") {
+        if (!owns) {
+          restoreRefused(text);
+          return { notice: result.notice };
+        }
         if (promptRevision.current === revision) {
           restorePrompt(text);
           return { notice: result.notice };
         }
         return { notice: result.notice, dropped: text };
       }
-      return { message: result.message, images: result.images, draft };
+      return { message: result.message, images: result.images, ...(owns ? { draft } : {}) };
     };
+  }
+
+  /**
+   * A queued line the prepare step refused: it goes back into the prompt above the draft
+   * standing there, ahead of whatever is still queued behind it, and the queue empties — the
+   * same restoration a turn that did not complete performs. The live draft is never overwritten:
+   * it is the user's next message, not the refused line's.
+   */
+  function restoreRefused(text: string): void {
+    const queue = queueRef.current;
+    replaceQueue(EMPTY_QUEUE);
+    restorePrompt(queueToPrompt([text, ...queue], editorRef.current.text));
   }
 
   /**
@@ -530,28 +752,56 @@ export function ChatApp({
   }
 
   /**
+   * A non-slash message's send: the plain two-argument call, or the one prepared for the images
+   * and mentions the line carries. `ownsDraft` is false for a queued line, which takes none of
+   * the prompt's pictures (`submitted` is empty) and hands no draft over, so nothing the user
+   * attached since is emptied.
+   */
+  async function sendLine(input: {
+    readonly message: string;
+    readonly line: string;
+    readonly submitted: ImageDraft;
+    readonly ownsDraft: boolean;
+  }): Promise<void> {
+    const { message, line, submitted, ownsDraft } = input;
+    const composed: ComposedSend = ownsDraft ? { message, draft: submitted } : { message };
+    noteUserTurn();
+    if (imagesForSend(submitted, line).images.length === 0 && !needsMentionExpansion(message)) {
+      await sendTurn(composed);
+      return;
+    }
+    // The prompt's count as the line leaves it, so a refusal that lands later can tell whether
+    // the user has redrawn the prompt since (see `imagePrepare`).
+    const prepare = imagePrepare({
+      text: message,
+      draft: submitted,
+      revision: promptRevision.current,
+      owns: ownsDraft,
+    });
+    await sendTurn(composed, prepare);
+  }
+
+  /**
    * A non-slash message's send. One that carries a placeholder image or a mention is prepared —
    * expanded once against the cwd the screen was handed and the repo the host reports, with the
    * images its placeholders still name — while a plain one keeps today's exact call; either way
    * the typed text stays the title and the draft history. The draft is read once here, so what
    * the send consumed is what the reset takes back however long the preparation takes.
+   *
+   * `ownsDraft` is false for a line that came off the queue. That line was typed for an earlier
+   * turn, so the pictures in the prompt now belong to the user's next message: a queued send
+   * takes none of them and — because it hands over no draft — empties none of them either.
    */
-  async function submit(message: string): Promise<void> {
+  async function submit(message: string, ownsDraft = true): Promise<void> {
     // A slash line after the leading placeholders is the line that runs; the images it is
     // refused for are the ones *it* names, not the ones it left in the prompt.
     const { line, lead } = submittedLine(message);
     const command = parseSlashCommand(line);
-    const submitted = imageAttach.current();
+    // A queued line owns none of the prompt's pictures: they are the next message's.
+    const submitted = ownsDraft ? imageAttach.current() : EMPTY_IMAGE_DRAFT;
     const images = imagesForSend(submitted, line).images;
     if (!command) {
-      noteUserTurn();
-      if (images.length === 0 && !needsMentionExpansion(message)) {
-        await sendTurn({ message, draft: submitted });
-        return;
-      }
-      // The prompt's count as the line leaves it, so a refusal that lands later can tell
-      // whether the user has redrawn the prompt since (see `imagePrepare`).
-      await sendTurn({ message, draft: submitted }, imagePrepare(message, submitted, promptRevision.current));
+      await sendLine({ message, line, submitted, ownsDraft });
       return;
     }
     // The image refusal comes before every command effect, `quit` included: a slash line never
@@ -575,6 +825,222 @@ export function ChatApp({
       return;
     }
     await runCommand(command);
+  }
+
+  /**
+   * A plain return while a turn runs, taken by the input before it drops the line. The text is
+   * held for the next turn, and `true` tells the input to empty the prompt — the line is the
+   * queue's now, so leaving it in the prompt would send it twice.
+   *
+   * A line whose draft still holds the picture it names is refused instead: an image travels
+   * with a plain send that the screen prepares, and a queued line is submitted later, from a
+   * prompt and a draft that may have moved on. The user is told to send it when the turn ends,
+   * and the draft — the picture and the text — stays exactly as it was.
+   */
+  function queueReturn(text: string): boolean {
+    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
+      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
+      return false;
+    }
+    replaceQueue(pushQueued(queueRef.current, text));
+    return true;
+  }
+
+  /**
+   * What ctrl+s would steer with, or undefined when the key does nothing at all: an empty
+   * prompt and a slash line are return's business — a command is never steered into a turn —
+   * and a whitespace-only draft is no message.
+   */
+  function steerText(): string | undefined {
+    const text = editorRef.current.text;
+    if (text.trim() === "") return undefined;
+    return parseSlashCommand(text) === null ? text : undefined;
+  }
+
+  /**
+   * ctrl+s (US-004): hand the typed line to the turn that is running, or — with nothing
+   * running — send it exactly as a return would.
+   *
+   * Which of the two it is comes from `sending`, never from the rendered `busy` flag: a return,
+   * the text typed after it and this chord can arrive in one batch, and the flag of the render
+   * that preceded that batch still says idle while `sendTurn` has already taken the turn. The
+   * draft is cleared only once something has taken the line — a steer, the pending interrupt
+   * send, the queue, or the input's own submit — so a batched line is never emptied and dropped.
+   *
+   * A brain that steers takes the line where the turn is, and the prompt empties at once: the
+   * steering row above the queue says what the turn has not applied yet, and settles the way
+   * the turn did. A brain that cannot (`unsupported`, `no_turn`, or no `steer` at all) is
+   * interrupted the way escape interrupts it, with the line held to be sent first once that
+   * turn settles — see `drainQueue` — or queued behind that pending send when one is already
+   * waiting. A picture in the draft is refused with the queue's own notice, and a steer that
+   * rejects leaves the draft exactly as it was: the line never reached the turn, so it is still
+   * the user's to edit or send.
+   */
+  function steerRunningTurn(): void {
+    const text = steerText();
+    if (text === undefined) return;
+    if (!sending.current) {
+      // No send of the screen's is in flight: the same path a return takes, prompt emptied and
+      // history kept.
+      inputHandle.current?.submit(text);
+      return;
+    }
+    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
+      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
+      return;
+    }
+    let result: SteerResult | undefined;
+    try {
+      result = host.steer?.(text);
+    } catch (error) {
+      append({ kind: "error", text: errorMessage(error) });
+      return;
+    }
+    // The line goes somewhere it is held now, whatever the brain answered: leaving it in the
+    // prompt would steer, queue or send it twice.
+    inputHandle.current?.edit(EMPTY_EDITOR);
+    if (result?.status === "accepted") {
+      trackSteer(result, text);
+      return;
+    }
+    // A send is already waiting to interrupt this turn. It could not be steered, and a second
+    // pending send would have to replace it — so this line takes the queue instead, behind the
+    // first one, and neither is lost.
+    if (interruptSend.current !== undefined) {
+      replaceQueue(pushQueued(queueRef.current, text));
+      return;
+    }
+    interruptSend.current = text;
+    // The turn to cancel is the one `sending` owns, not the one the last render reported: this
+    // key can arrive in the same batch as the return that started that turn. A card, a picker
+    // and a menu still own escape from the frame, and the control guard still applies.
+    if (escLayer(sending.current).kind === "turn") host.cancel();
+  }
+
+  /**
+   * The steering row of one accepted steer, and what the turn's own answer does with it: an
+   * applied steer is the turn's text, so it earns the transcript row a typed one would; an
+   * unapplied steer never reached the turn, so it goes ahead of the queue and is sent next. A
+   * rejected promise is read the same way — nothing can place the line, and the user's own
+   * words are never dropped.
+   */
+  function trackSteer(result: Extract<SteerResult, { status: "accepted" }>, text: string): void {
+    const { steerId } = result;
+    setSteering((rows) => [...rows, { steerId, text }]);
+    const settled = (taken: boolean): void => {
+      setSteering((rows) => rows.filter((row) => row.steerId !== steerId));
+      if (taken) appendAll(sentEntries(text));
+      else discardSteer(text);
+    };
+    void result.applied.then(settled, () => settled(false));
+  }
+
+  /**
+   * A steer the turn did not take, at the front of the queue — in the order the user steered
+   * it. The group is kept whole (`pushDiscardedSteer`): a turn resolves every steer still
+   * pending in arrival order, and prepending each as it lands would draw the last one first,
+   * reversing a correction relative to the instruction it corrects.
+   */
+  function discardSteer(text: string): void {
+    const placed = pushDiscardedSteer(discardedSteers.current, queueRef.current, text);
+    discardedSteers.current = placed.group;
+    replaceQueue(placed.queue);
+  }
+
+  /**
+   * `/compact` (US-005): shed the conversation's history now, holding the turn slot while it
+   * runs so a line typed meanwhile queues exactly as it does during a turn.
+   *
+   * The status carries the working line's `compacting` phase, so the screen says what it is
+   * doing and the footer offers the same escape a turn does. The result's `tokensAfter`
+   * becomes the footer's context reading: no session event carries it, and the compaction is
+   * the only thing that can measure it. `finally` releases the slot and drains the queue
+   * however the compaction settled — a rejection must not strand the input.
+   *
+   * A host with no `compact` at all, and one asked while a turn runs, both answer with a
+   * notice and leave the turn slot alone.
+   */
+  async function compactTurn(): Promise<void> {
+    const compact = host.compact;
+    if (compact === undefined) {
+      append({ kind: "notice", text: COMPACTION_UNAVAILABLE });
+      return;
+    }
+    if (sending.current) {
+      append({ kind: "notice", text: TURN_BUSY_NOTICE });
+      return;
+    }
+    sending.current = true;
+    setBusy(true);
+    setStatus(compactingStatus);
+    append({ kind: "notice", text: `${COMPACTING}${theme.glyphs.ellipsis}` });
+    let settled = false;
+    try {
+      const result = await compact.call(host);
+      setStatus((current) => ({ ...current, contextTokens: result.tokensAfter }));
+      append({ kind: "notice", text: result.compacted ? compactedNotice(result) : NOTHING_TO_COMPACT });
+      settled = true;
+    } catch (error) {
+      append({ kind: "error", text: errorMessage(error) });
+    } finally {
+      sending.current = false;
+      // A queued model or mode switch is applied here, before the queue is drained, exactly
+      // as a turn's own `finally` does — so a line queued after a switch goes on the model
+      // the user switched to. It also clears the interrupt and quit-arm bookkeeping.
+      await keys.finishTurn();
+      setBusy(false);
+      setStatus(stopTurn);
+      // A settled compaction releases the queue as a completed turn does; a rejected one
+      // hands the queued lines back to the prompt, where the user can send them again.
+      drainQueue(settled ? { sent: true, status: "completed" } : { sent: false, status: undefined });
+    }
+  }
+
+  /**
+   * What the queue does once a send has settled, and the one place that decides it.
+   *
+   * A turn observed to have `completed` releases one message — the oldest — through `submit`,
+   * the same path a typed return takes, so it expands its mentions, earns its own `user` row
+   * and becomes the title and the history entry exactly as a typed line would. One message per
+   * turn, in order: the rest wait for the next send's own end.
+   *
+   * Anything else — `cancelled`, `errored`, `timed_out`, a send that rejected, or a stream that
+   * ended without a `turn_end` at all — sends nothing. The queued lines go back into the
+   * prompt, the oldest first and above whatever has been typed since, so nothing the user wrote
+   * is lost and they can edit it before returning. Restoring also empties the queue, which is
+   * what keeps a later drain from sending a line twice.
+   */
+  function drainQueue(outcome: TurnOutcome): void {
+    // A line that interrupted this turn goes first (US-004), whatever the turn's own outcome
+    // was: the user asked for it before anything they queued earlier, and the queue stays
+    // queued behind it. `submit` is the typed-return path, so it earns its own user row.
+    const interrupted = interruptSend.current;
+    if (interrupted !== undefined && !sending.current) {
+      interruptSend.current = undefined;
+      setDraft((current) => ({ ...current, history: [...current.history, interrupted] }));
+      void submit(interrupted, false);
+      return;
+    }
+    const queue = queueRef.current;
+    if (queue.length === 0) return;
+    if (!outcome.sent || outcome.status !== "completed") {
+      replaceQueue(EMPTY_QUEUE);
+      restorePrompt(queueToPrompt(queue, editorRef.current.text));
+      return;
+    }
+    // A send another path already started owns the turn; the queue waits for its own end.
+    if (sending.current) return;
+    const taken = takeQueued(queue);
+    if (taken === undefined) return;
+    replaceQueue(taken.rest);
+    // The line leaves the queue as a typed one would leave the prompt, so it joins the
+    // prompt's history too: up recalls what was queued. The newest draft is read here — the
+    // user may have typed since — and only its history changes, which is why the editor and
+    // the browse position are carried over as they stand.
+    setDraft((current) => ({ ...current, history: [...current.history, taken.text] }));
+    // A queued line owns no draft: the pictures in the prompt are the next message's, so this
+    // send must neither carry them nor empty them.
+    void submit(taken.text, false);
   }
 
   /**
@@ -614,7 +1080,17 @@ export function ChatApp({
     if (sending.current) return false;
     sending.current = true;
     setBusy(true);
+    turnEnd.current = undefined;
+    // A new send starts a new turn, and a discarded group belongs to the turn that discarded
+    // it: whatever an earlier turn discarded stays where it sits in the queue, and the first
+    // steer *this* turn discards starts a group of its own at the front, ahead of it. Without
+    // this, an interrupt-send that preserved the queue would hand the new turn the old turn's
+    // group and append its own correction behind the one it was correcting.
+    discardedSteers.current = undefined;
+    // The statistics are this send's own: a turn is measured from its own events alone.
+    turnEvents.current = [];
     let started = false;
+    let sent = false;
     try {
       const prepared = prepare ? await prepare() : composed;
       if ("notice" in prepared) {
@@ -631,15 +1107,19 @@ export function ChatApp({
         handleEvent(event);
       };
       await sendMessage(prepared, title, onEvent);
+      sent = true;
       return true;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
       return started;
     } finally {
       sending.current = false;
+      // A queued model or mode switch is applied here, before the queue is drained, so the
+      // message a user queued after switching models is sent on the model they switched to.
       await keys.finishTurn();
       setBusy(false);
       setStatus(stopTurn);
+      drainQueue({ sent, status: turnEnd.current });
     }
   }
 
@@ -757,7 +1237,7 @@ export function ChatApp({
   const bottomRows = bottomRowsFor({
     ask: cardRows,
     picker: picker.model,
-    input: inputBottomRows + menuRows + mentionView.rows,
+    input: aboveInputLines.length + inputBottomRows + menuRows + mentionView.rows,
     budget: bottomBudget,
   });
   const viewportHeight = Math.max(
@@ -828,6 +1308,18 @@ export function ChatApp({
         </Box>
       ) : (
         <Box height={bottomRows} overflow="hidden" flexDirection="column">
+          {steeringLines.map((text, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the steering rows are positional and drawn in arrival order.
+            <FixedRow key={index}>
+              <StyledLineView line={[{ text, color: "muted" }]} theme={theme} />
+            </FixedRow>
+          ))}
+          {queueLines.map((text, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the queue's rows are positional and drawn oldest first.
+            <FixedRow key={index}>
+              <StyledLineView line={[{ text, color: "muted" }]} theme={theme} />
+            </FixedRow>
+          ))}
           <ChatInput
             draft={draft}
             onDraftChange={changeDraft}
@@ -836,6 +1328,10 @@ export function ChatApp({
               setHint(undefined);
               void submit(message);
             }}
+            onQueue={queueReturn}
+            // A return can arrive in the same batch as the one that started a turn, before
+            // any redraw: the turn's owner is `sending`, not the rendered `busy` flag.
+            busyNow={() => sending.current}
             width={columns}
             theme={theme}
             active={!keys.locked}
