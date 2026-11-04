@@ -13,6 +13,7 @@ import type { CiWaitResult } from "../workflow/ci-wait";
 import { botRunDir } from "../workflow/paths";
 import type { buildPrStepContext } from "../workflow/pr-step-context";
 import { _workflowDeps } from "../workflow/step-context";
+import type { CallerRulingsFile, CallerRulingsReport } from "./caller-rulings";
 import { initBotInteractionChain } from "./chat-asks";
 import type { PrCheckout } from "./checkout";
 import { listCiConfigFiles } from "./checkout-state";
@@ -43,6 +44,7 @@ export type BotReviewResult =
       readonly checksSource: BotCheckSource | null;
       readonly artifactPath: string;
       readonly logPath?: string;
+      readonly callerRulings?: CallerRulingsReport;
     } & PostReviewOutcome)
   | { readonly outcome: "not-reviewed" | "refused"; readonly reason: string };
 
@@ -52,6 +54,8 @@ export interface BotReviewInput {
   readonly inPlace?: boolean;
   readonly costLimitUsd?: number;
   readonly decisions?: readonly BotDecision[];
+  /** Validated `--rulings` file: settles workflow items as if a repository writer had replied. */
+  readonly callerRulings?: CallerRulingsFile;
   readonly dir: string;
   readonly pr: number;
   readonly profiles: readonly string[];
@@ -284,6 +288,7 @@ async function reviewEnvironment(
       cwd: repoRoot,
       staticMode,
       ctx,
+      callerRulings: input.callerRulings,
     },
     _botReviewDeps.recordPrRulings,
   );
@@ -397,6 +402,7 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     quality: state.verdict.quality,
     staticMode: env.review.staticMode,
     checksSource: env.checks?.source ?? null,
+    ...(env.post.callerRulings === undefined ? {} : { callerRulings: env.post.callerRulings }),
     artifactPath: join(env.post.stateDir, BOT_REVIEW_FILENAME),
   };
 }

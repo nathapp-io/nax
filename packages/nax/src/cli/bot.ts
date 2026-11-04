@@ -1,6 +1,13 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type Command, Option } from "commander";
-import type { BotFixCycleResult, loadBotDecisions, runBotFix, runBotFixCycle, runBotReview } from "@/bot";
+import type {
+  BotFixCycleResult,
+  loadBotDecisions,
+  loadCallerRulings,
+  runBotFix,
+  runBotFixCycle,
+  runBotReview,
+} from "@/bot";
 import { parseProfileList } from "@/config";
 import { NaxError } from "@/errors";
 import { initLogger } from "@/logger";
@@ -18,6 +25,7 @@ export interface BotCliDeps {
   runBotFix: typeof runBotFix;
   runBotFixCycle: typeof runBotFixCycle;
   loadBotDecisions: typeof loadBotDecisions;
+  loadCallerRulings: typeof loadCallerRulings;
 }
 
 // Load orchestration only on invocation: help stays cheap and the CLI barrel does
@@ -40,6 +48,7 @@ export const _botCliDeps: BotCliDeps = {
   runBotFix: async (input) => (await import("@/bot")).runBotFix(input),
   runBotFixCycle: async (input) => (await import("@/bot")).runBotFixCycle(input),
   loadBotDecisions: async (path) => (await import("@/bot")).loadBotDecisions(path),
+  loadCallerRulings: async (path) => (await import("@/bot")).loadCallerRulings(path),
 };
 
 export interface BotReviewOptions {
@@ -49,13 +58,15 @@ export interface BotReviewOptions {
   readonly profile?: string[];
   readonly model?: string;
   readonly decisions?: string;
+  /** Caller rulings file; `bot review` only. */
+  readonly rulings?: string;
   readonly inPlace?: boolean;
   /** Review the whole range from the merge base, ignoring an earlier review (nax#2667). */
   readonly full?: boolean;
 }
 
 /** `nax bot fix` shares the bot inputs, but never `--full`: its re-review is incremental. Decisions reach only that re-review. */
-export interface BotFixOptions extends Omit<BotReviewOptions, "full"> {
+export interface BotFixOptions extends Omit<BotReviewOptions, "full" | "rulings"> {
   readonly trust?: boolean;
   readonly rereview?: boolean;
   readonly fresh?: boolean;
@@ -106,10 +117,12 @@ async function loadDecisionsOption(options: { readonly decisions?: string }, dep
 export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
   return withBotInput(options, deps, async (input) => {
     const decisions = await loadDecisionsOption(options, deps);
+    const callerRulings = options.rulings === undefined ? undefined : await deps.loadCallerRulings(options.rulings);
     const result = await deps.runBotReview({
       ...input,
       ...(options.full === true && { full: true }),
       ...(decisions === undefined ? {} : { decisions }),
+      ...(callerRulings === undefined ? {} : { callerRulings }),
     });
     if (result.outcome !== "posted") {
       deps.logErr(result.reason);
@@ -118,6 +131,7 @@ export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDe
     deps.log(
       `nax bot review: PR #${input.pr} — ${result.inlineFindings} findings posted, ${result.threadsAnswered} threads answered (intent ${result.intent}, quality ${result.quality})`,
     );
+    if (result.callerRulings) deps.log(callerRulingsSummary(result.callerRulings));
     deps.log(`nax bot review: artifact ${result.artifactPath}`);
     if (result.checksSource === "none") {
       deps.logErr("nax bot review: no check commands found on the base branch; nax bot fix will refuse");
@@ -125,6 +139,13 @@ export async function botReviewCommand(options: BotReviewOptions, deps: BotCliDe
     if (result.logPath !== undefined) deps.log(`nax bot review: log ${result.logPath}`);
     return 0;
   });
+}
+
+function callerRulingsSummary(
+  report: NonNullable<Extract<Awaited<ReturnType<typeof runBotReview>>, { outcome: "posted" }>["callerRulings"]>,
+): string {
+  if (report.ignored !== undefined) return `nax bot review: caller rulings — ignored (${report.ignored})`;
+  return `nax bot review: caller rulings — ${report.applied.length} applied, ${report.skipped.length} skipped`;
 }
 
 export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
@@ -206,6 +227,7 @@ export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliD
   });
   withBotOptions(group.command("review <pr>").description("Review a pull request and post findings"))
     .option("--decisions <path>", "Caller decisions file")
+    .option("--rulings <path>", "Caller rulings file: settles workflow open items as if a repository writer had ruled")
     .option("--full", "Review the whole range from the merge base, ignoring an earlier review")
     .action(async (pr: string, options: Omit<BotReviewOptions, "pr">) => {
       deps.exit(await botReviewCommand({ ...options, pr }, deps));

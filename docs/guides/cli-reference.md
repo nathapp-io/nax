@@ -508,6 +508,75 @@ waits for CI.
 
 ---
 
+### `nax bot review <pr>`
+
+Review a pull request and post findings. `--decisions <path>` feeds a caller decisions file into the
+review (`nax bot fix` accepts it for its post-push re-review).
+
+#### `nax bot review <pr> --rulings <path>`
+
+Settle workflow open items on a nax workflow draft PR as if a repository writer had replied on each
+item's thread. Without this flag an item is settled only by a thread reply from a user with write
+access; a caller that runs nax under an App or bot identity has no such user. The file is the
+caller's statement of who ruled and what they ruled.
+
+```json
+{
+  "version": 1,
+  "headSha": "<40-hex PR head the rulings were made against>",
+  "rulings": [
+    {
+      "item": "D-1",
+      "key": "w-D-1.1a2b3c4d",
+      "ruling": "confirm: read 4f2e1aa store.ts:88; test green",
+      "by": "orchestrator:alice",
+      "at": "2026-11-04T09:30:00Z"
+    }
+  ]
+}
+```
+
+| Field | Rule |
+|:------|:-----|
+| `headSha` | 40 hex characters. Must equal the PR's current head, or nothing is applied |
+| `item` | The item id shown in the PR's item index (`D-1`, `B3`, ...) |
+| `key` | Optional. The full item key from the index, hash included; a mismatch skips the ruling |
+| `ruling` | 1 to 2000 characters. Its first non-empty line uses the same grammar as a thread reply: `fixed <sha>`, `waive: <reason>`, `confirm`, `override: <reason>` or `verified` |
+| `by` | 1 to 100 characters, one line. A provenance label shown on the item's thread |
+| `at` | ISO-8601 timestamp of the ruling. More than 5 minutes in the future makes the file invalid |
+
+At most 100 rulings, at most one per item, file at most 262,144 bytes. A file that breaks any of
+these fails the command with `[bot] Invalid rulings file <path>: <problem>` (code
+`BOT_RULINGS_INVALID`); an unreadable path fails with `BOT_RULINGS_READ_FAILED`.
+
+Each applied ruling takes the same recording path as a writer's reply: the same dispositions, the
+same `fixed <sha>` check, the same checklist tick, and an echo on the item's thread that names the
+source, for example `Recorded: waived — accepted risk (caller ruling by orchestrator:alice)`. Only a
+PR carrying the workflow marker and an item index is affected, and never in static mode.
+
+| Situation | Result |
+|:----------|:-------|
+| PR is untrusted (reviewed without running code) | Whole file ignored, a warning is logged, reported as `ignored: "untrusted-pr"` |
+| `headSha` differs from the PR head | Whole file ignored, reported as `ignored: "head-mismatch"` |
+| `item` not in the current index | Skipped, `unknown-item` |
+| `key` given and different from the index key | Skipped, `stale-key` |
+| Item already settled | Skipped, `already-settled`; nothing is re-recorded |
+| `key` omitted and two open threads share the `item` id | Skipped, `ambiguous-item`; give the full `key` |
+| An authorized writer replied on the item's thread after `at` (any reply, ruling keyword or not) | Writer wins, skipped as `superseded-by-writer`; the reply is read through the normal ruling path |
+| The echo could not be posted | Skipped, `echo-failed`; the item stays open |
+| The recorder failed before reaching the ruling | Skipped, `recorder-failed`; rulings echoed before the failure stay `applied` |
+
+A caller ruling wins over older writer replies. The review artifact (`bot-review.json`) gains
+`callerRulings: { applied: [{ item, disposition }], skipped: [{ item, reason }], ignored? }`, absent
+when the flag is not given, and the command prints a line such as
+`nax bot review: caller rulings — 2 applied, 1 skipped`.
+
+**Trust.** nax trusts the caller that supplies this file; the caller is responsible for who may rule.
+This is the same trust model as `--decisions`. `nax bot fix` does not take `--rulings`: applied
+rulings are recorded on the PR's threads, so its re-review reads them there.
+
+---
+
 ### `nax precheck -f <name>`
 
 Validate your project is ready to run — checks git, PRD, CLI tools, deps, test/lint/typecheck scripts.

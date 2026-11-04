@@ -7,6 +7,7 @@ import { getLogger } from "@/logger";
 import type { PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import type { CiWaitResult } from "../workflow/ci-wait";
+import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
 import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import { commentKey, findingKey, threadKey } from "./render";
@@ -53,6 +54,8 @@ export interface BotReviewEvent {
 export interface BotReviewArtifact {
   readonly version: 1 | 2 | 3;
   readonly rulings?: PostReviewInput["rulings"];
+  /** What a `--rulings` file did; absent when the flag was not given. */
+  readonly callerRulings?: CallerRulingsReport;
   /** What the review actually covered (nax#2667); optional to every earlier reader. */
   readonly scope?: BotReviewScope;
   readonly incrementalSince?: string;
@@ -83,6 +86,7 @@ export interface PostReviewInput {
   /** Fail closed on fixed workflow items when the review read non-writer comments. */
   readonly itemFixedBlocked?: boolean;
   readonly rulings?: { recorded: number; open: number; asked: number };
+  readonly callerRulings?: CallerRulingsReport;
   /** What the review actually covered (nax#2667); absent when the caller does not classify it. */
   readonly scope?: BotReviewScope;
   /** The already-reviewed head an incremental review starts after. */
@@ -191,6 +195,7 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
   const artifact: BotReviewArtifact = {
     version: 3,
     ...(input.rulings === undefined ? {} : { rulings: input.rulings }),
+    ...(input.callerRulings === undefined ? {} : { callerRulings: input.callerRulings }),
     ...(input.scope === undefined ? {} : { scope: input.scope }),
     ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     checks: input.staticMode ? null : (input.checks ?? null),

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeMockCallContext, makeNaxConfig } from "@test/helpers";
+import { CallerRecordingError } from "@/bot/caller-rulings";
 import { readReviewRulings } from "@/bot/review-rulings";
 import type { RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
 import { resolveWorkflowConfig } from "@/config";
@@ -115,5 +116,63 @@ describe("readReviewRulings", () => {
     const record = mock<typeof recordPrRulings>(async () => outcome);
     expect(await readReviewRulings({ ...input(), staticMode: true }, record)).toEqual({});
     expect(record).not.toHaveBeenCalled();
+  });
+
+  describe("caller rulings", () => {
+    const file = {
+      version: 1 as const,
+      headSha: "a".repeat(40),
+      rulings: [{ item: "D-1", ruling: "confirm", by: "orch", at: "2026-01-02T00:00:00Z" }],
+    };
+    test("an untrusted PR ignores the whole file and never records", async () => {
+      const record = mock<typeof recordPrRulings>(async () => outcome);
+      const result = await readReviewRulings({ ...input(), staticMode: true, callerRulings: file }, record);
+      expect(result).toEqual({ callerRulings: { applied: [], skipped: [], ignored: "untrusted-pr" } });
+      expect(record).not.toHaveBeenCalled();
+    });
+    test("a head mismatch applies nothing but still records thread rulings", async () => {
+      const record = mock<typeof recordPrRulings>(async () => outcome);
+      const stale = { ...file, headSha: "b".repeat(40) };
+      const result = await readReviewRulings({ ...input(), callerRulings: stale }, record);
+      expect(result.callerRulings).toEqual({ applied: [], skipped: [], ignored: "head-mismatch" });
+      expect(record.mock.calls[0]?.[0]).not.toHaveProperty("callerRulings");
+      expect(result.itemStatus).toBeDefined();
+    });
+    test("a matching head passes the entries to the recorder and returns its report", async () => {
+      const report = { applied: [{ item: "D-1", disposition: "confirmed" as const }], skipped: [] };
+      const record = mock<typeof recordPrRulings>(async () => ({ ...outcome, callerRulings: report }));
+      const result = await readReviewRulings({ ...input(), callerRulings: file }, record);
+      expect(record.mock.calls[0]?.[0].callerRulings).toEqual(file.rulings);
+      expect(result.callerRulings).toEqual(report);
+    });
+    test("a PR without the workflow marker skips every entry", async () => {
+      const base = input();
+      const plain = { ...base, info: { ...base.info, body: "plain" }, callerRulings: file };
+      const result = await readReviewRulings(
+        plain,
+        mock<typeof recordPrRulings>(async () => outcome),
+      );
+      expect(result.callerRulings).toEqual({ applied: [], skipped: [{ item: "D-1", reason: "unknown-item" }] });
+    });
+    test("omits the report entirely without a file", async () => {
+      const result = await readReviewRulings(
+        input(),
+        mock<typeof recordPrRulings>(async () => outcome),
+      );
+      expect(result).not.toHaveProperty("callerRulings");
+    });
+    test("a recorder failure without progress marks every entry recorder-failed", async () => {
+      const result = await readReviewRulings({ ...input(), callerRulings: file }, async () => {
+        throw new Error("down");
+      });
+      expect(result.callerRulings?.skipped).toEqual([{ item: "D-1", reason: "recorder-failed" }]);
+    });
+    test("a recorder failure keeps the progress the recorder reported", async () => {
+      const progress = { applied: [{ item: "D-1", disposition: "confirmed" as const }], skipped: [] };
+      const result = await readReviewRulings({ ...input(), callerRulings: file }, async () => {
+        throw new CallerRecordingError(new Error("down"), progress);
+      });
+      expect(result.callerRulings).toEqual(progress);
+    });
   });
 });
