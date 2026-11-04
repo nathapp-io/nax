@@ -42,16 +42,19 @@ function forgeProgram(cmd: readonly string[]): "gh" | "glab" | undefined {
 
 /**
  * The token environment for a `gh` / `glab` spawn — `undefined` for every other
- * program (including `git`, whose credentials are `botGit`'s business) and when
- * nothing was injected, so an uninjected run behaves exactly as before. The
- * token goes in the environment, never in `cmd`, so it cannot reach a log line
- * or another process's argv.
+ * program (including `git`, whose credentials are `botGit`'s business), when
+ * nothing was injected, and when the captured identity is login-only and so
+ * carries no token: the spawn keeps its ambient environment exactly as it would
+ * with no identity, leaving the host's own credentials in place. The token goes
+ * in the environment, never in `cmd`, so it cannot reach a log line or another
+ * process's argv.
  */
 function tokenEnv(cmd: readonly string[]): Record<string, string> | undefined {
   const identity = injectedForgeIdentity();
   const program = forgeProgram(cmd);
-  if (identity === undefined || program === undefined) return undefined;
-  return Object.fromEntries(FORGE_TOKEN_ENV[program].map((name) => [name, identity.token]));
+  const token = identity?.token;
+  if (token === undefined || program === undefined) return undefined;
+  return Object.fromEntries(FORGE_TOKEN_ENV[program].map((name) => [name, token]));
 }
 
 /**

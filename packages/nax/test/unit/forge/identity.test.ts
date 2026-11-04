@@ -309,3 +309,126 @@ describe("captureForgeIdentity", () => {
     expect(injectedForgeIdentity()).toBeUndefined();
   });
 });
+
+/**
+ * `NAX_FORGE_IDENTITY=login-only`: nax is told who it is acting as and adds no
+ * credential of its own, leaving the host's ambient `gh` / `glab` / git
+ * credentials in place.
+ */
+describe("captureForgeIdentity in login-only mode (US-001)", () => {
+  /** The only accepted mode value; spelled here so a rename cannot silently pass. */
+  const LOGIN_ONLY = "login-only";
+
+  test("AC-1: captures the login alone, with no token property at all", async () => {
+    const identity = await captureForgeIdentity({
+      [FORGE_IDENTITY_ENV.mode]: LOGIN_ONLY,
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+    });
+
+    expect(identity).toStrictEqual({ login: LOGIN });
+    expect(Object.hasOwn(identity ?? {}, "token")).toBe(false);
+    expect(injectedForgeIdentity()).toBe(identity);
+  });
+
+  test("AC-2: captures the optional user id alongside the login", async () => {
+    const identity = await captureForgeIdentity({
+      [FORGE_IDENTITY_ENV.mode]: LOGIN_ONLY,
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+      [FORGE_IDENTITY_ENV.userId]: "42",
+    });
+
+    expect(identity).toStrictEqual({ login: LOGIN, id: 42 });
+    expect(typeof identity?.id).toBe("number");
+  });
+
+  test("AC-3: accepts the mode with surrounding whitespace", async () => {
+    const identity = await captureForgeIdentity({
+      [FORGE_IDENTITY_ENV.mode]: `  ${LOGIN_ONLY}  `,
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+    });
+
+    expect(identity).toStrictEqual({ login: LOGIN });
+  });
+
+  test("AC-4: rejects a mode other than login-only", async () => {
+    const error = await rejection({
+      [FORGE_IDENTITY_ENV.mode]: "token",
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+    });
+
+    expect(error.code).toBe("FORGE_IDENTITY_INVALID");
+    expect(error.message).toContain("NAX_FORGE_IDENTITY must be login-only");
+  });
+
+  test("AC-5: rejects login-only mode without a login", async () => {
+    const error = await rejection({ [FORGE_IDENTITY_ENV.mode]: LOGIN_ONLY });
+
+    expect(error.code).toBe("FORGE_IDENTITY_INVALID");
+    expect(error.message).toContain("NAX_FORGE_IDENTITY=login-only requires NAX_FORGE_LOGIN");
+  });
+
+  test("AC-6: rejects a token file in login-only mode, after consuming it, without leaking the token", async () => {
+    const path = tokenFile(`${TOKEN}\n`);
+
+    const error = await rejection({
+      [FORGE_IDENTITY_ENV.mode]: LOGIN_ONLY,
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+      [FORGE_IDENTITY_ENV.tokenFile]: path,
+    });
+
+    expect(error.message).toContain("NAX_FORGE_IDENTITY=login-only does not take NAX_FORGE_TOKEN_FILE");
+    expect(existsSync(path)).toBe(false);
+    expect(error.message).not.toContain(TOKEN);
+    expect(JSON.stringify(error.context)).not.toContain(TOKEN);
+  });
+
+  test("AC-7: the ambient-token rejection still wins over the mode rules, without leaking the token", async () => {
+    const error = await rejection({
+      [FORGE_IDENTITY_ENV.mode]: LOGIN_ONLY,
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+      [FORGE_IDENTITY_ENV.rejectedToken]: TOKEN,
+    });
+
+    expect(error.message).toContain("NAX_FORGE_TOKEN is not supported");
+    expect(error.message).not.toContain(TOKEN);
+    expect(JSON.stringify(error.context)).not.toContain(TOKEN);
+  });
+
+  test("AC-8: rejects a malformed user id in login-only mode", async () => {
+    const error = await rejection({
+      [FORGE_IDENTITY_ENV.mode]: LOGIN_ONLY,
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+      [FORGE_IDENTITY_ENV.userId]: "0",
+    });
+
+    expect(error.message).toContain("NAX_FORGE_USER_ID must be a positive integer");
+  });
+
+  test("AC-9: a rejected login-only capture clears an identity captured earlier", async () => {
+    await captureForgeIdentity({
+      [FORGE_IDENTITY_ENV.tokenFile]: tokenFile(`${TOKEN}\n`),
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+    });
+    expect(injectedForgeIdentity()).toBeDefined();
+
+    await rejection({ [FORGE_IDENTITY_ENV.mode]: LOGIN_ONLY });
+
+    expect(_forgeIdentity.current).toBeUndefined();
+    expect(injectedForgeIdentity()).toBeUndefined();
+  });
+
+  test("AC-10: a login without the mode and without a token file still requires the token file", async () => {
+    const error = await rejection({ [FORGE_IDENTITY_ENV.login]: LOGIN });
+
+    expect(error.message).toContain("NAX_FORGE_LOGIN requires NAX_FORGE_TOKEN_FILE");
+  });
+
+  test("AC-11: a whitespace-only mode counts as absent, so the token-file rule applies", async () => {
+    const error = await rejection({
+      [FORGE_IDENTITY_ENV.mode]: "   ",
+      [FORGE_IDENTITY_ENV.login]: LOGIN,
+    });
+
+    expect(error.message).toContain("NAX_FORGE_LOGIN requires NAX_FORGE_TOKEN_FILE");
+  });
+});

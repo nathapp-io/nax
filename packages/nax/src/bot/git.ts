@@ -1,3 +1,4 @@
+import type { InjectedForgeIdentity } from "@/forge";
 import { injectedForgeIdentity } from "@/forge";
 import { gitWithTimeout } from "@/utils/git";
 
@@ -43,6 +44,23 @@ const NO_TERMINAL_PROMPT = { GIT_TERMINAL_PROMPT: "0" } as const;
  */
 const BOT_GIT_CREDENTIAL_ARGV = ["-c", "credential.helper=", "-c", `credential.helper=${NAX_BOT_CREDENTIAL_HELPER}`];
 
+/**
+ * The environment overlay for one git spawn. Nothing is added when there is no
+ * captured identity or the verb never reaches the network. A captured identity
+ * always turns the terminal prompt off; only one that carries a token also gets
+ * `NAX_FORGE_GIT_TOKEN` for `NAX_BOT_CREDENTIAL_HELPER` to read — a login-only
+ * identity leaves the credential to the host's own helper.
+ */
+function envOverlayFor(
+  identity: InjectedForgeIdentity | undefined,
+  networkVerb: boolean,
+): Record<string, string> | undefined {
+  if (identity === undefined || !networkVerb) return undefined;
+  return identity.token === undefined
+    ? { ...NO_TERMINAL_PROMPT }
+    : { ...NO_TERMINAL_PROMPT, [BOT_GIT_TOKEN_ENV]: identity.token };
+}
+
 export function botGit(
   args: string[],
   workdir: string,
@@ -50,12 +68,15 @@ export function botGit(
   maxBytes?: number,
 ): ReturnType<typeof gitWithTimeout> {
   const identity = injectedForgeIdentity();
-  // The token reaches git only for a network verb of a captured identity. It goes
-  // through the environment, never argv: argv is visible in `ps` and in git's own
-  // error output, and a `-c` value would persist in `.git/config`.
-  const authenticated = identity !== undefined && BOT_GIT_NETWORK_VERBS.has(args[0] ?? "");
+  const networkVerb = BOT_GIT_NETWORK_VERBS.has(args[0] ?? "");
+  // The token reaches git only for a network verb of a captured identity that has
+  // one. It goes through the environment, never argv: argv is visible in `ps` and
+  // in git's own error output, and a `-c` value would persist in `.git/config`.
+  // A login-only identity installs no helper at all, so git falls back to the
+  // host's ambient credential helper.
+  const authenticated = identity?.token !== undefined && networkVerb;
   const prefix = authenticated ? [...BOT_GIT_HOOKS_OFF, ...BOT_GIT_CREDENTIAL_ARGV] : [...BOT_GIT_HOOKS_OFF];
-  const envOverlay = authenticated ? { ...NO_TERMINAL_PROMPT, [BOT_GIT_TOKEN_ENV]: identity.token } : undefined;
+  const envOverlay = envOverlayFor(identity, networkVerb);
   // nax-git-env-allow: handed to gitWithTimeout, which hardens it
   return gitWithTimeout(args, workdir, timeoutMs, maxBytes, ["git", ...prefix, ...args], envOverlay);
 }

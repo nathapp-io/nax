@@ -1,11 +1,14 @@
 /**
  * The forge identity nax is told to act as, captured once at CLI start.
  *
- * The caller passes a token through a file (`NAX_FORGE_TOKEN_FILE`) rather than
- * the environment because a token in nax's environment reaches everything nax
- * spawns. `captureForgeIdentity` reads and deletes that file before any command
- * runs, so a run never holds the token on disk, and rejects the environment
- * routes (`NAX_FORGE_TOKEN`) that cannot be hidden from child processes.
+ * Two ways in. The caller either passes a token through a file
+ * (`NAX_FORGE_TOKEN_FILE`) — the token never travels through nax's environment,
+ * which reaches everything nax spawns, and `captureForgeIdentity` reads and
+ * deletes that file before any command runs — or declares `login-only`
+ * (`NAX_FORGE_IDENTITY=login-only`), where the host already refreshes its own
+ * `gh` / `glab` / git credentials and nax needs only to know who it is.
+ * `NAX_FORGE_TOKEN` is rejected either way: an environment token is inherited by
+ * every child process and cannot be hidden from them.
  *
  * Validation order is the contract: every rule is checked in the order the
  * brief states, and the first failure decides the message. The token file is
@@ -23,9 +26,16 @@ const FORGE_IDENTITY_INVALID = "FORGE_IDENTITY_INVALID";
 /** `NAX_FORGE_USER_ID` is a bare positive integer — no sign, no padding, no exponent. */
 const USER_ID_PATTERN = /^[1-9][0-9]*$/;
 
-/** The identity captured from the environment; absent when nothing was injected. */
+/** The one accepted `NAX_FORGE_IDENTITY` value: nax adds no credential of its own. */
+const LOGIN_ONLY_MODE = "login-only";
+
+/**
+ * The identity captured from the environment; absent when nothing was injected.
+ * A login-only identity carries no `token` key at all, which is what tells every
+ * consumer to leave the host's ambient credentials alone.
+ */
 export interface InjectedForgeIdentity {
-  readonly token: string;
+  readonly token?: string;
   readonly login?: string;
   readonly id?: number;
 }
@@ -34,6 +44,8 @@ export const FORGE_IDENTITY_ENV = {
   tokenFile: "NAX_FORGE_TOKEN_FILE",
   login: "NAX_FORGE_LOGIN",
   userId: "NAX_FORGE_USER_ID",
+  /** `login-only` is the only accepted value; absent means the token-file rules apply. */
+  mode: "NAX_FORGE_IDENTITY",
   /** Never accepted: an environment token is inherited by every child process. */
   rejectedToken: "NAX_FORGE_TOKEN",
 } as const;
@@ -93,6 +105,15 @@ async function consumeTokenFile(path: string): Promise<TokenFileContents> {
   return raw === undefined ? { readFailed: true } : { readFailed: false, token: raw.trim() };
 }
 
+/** The `NAX_FORGE_USER_ID` format check on its own: no pairing rules, no token file. */
+function parseUserId(userId: string): number {
+  const id = Number(userId);
+  if (!USER_ID_PATTERN.test(userId) || id > Number.MAX_SAFE_INTEGER) {
+    throw invalid(`${FORGE_IDENTITY_ENV.userId} must be a positive integer`);
+  }
+  return id;
+}
+
 /** Rule 4–6: the login/id pairing and the id format. Returns the parsed id. */
 function validateAccount(
   tokenFile: string | undefined,
@@ -111,11 +132,32 @@ function validateAccount(
     throw invalid(`${FORGE_IDENTITY_ENV.userId} requires ${FORGE_IDENTITY_ENV.login}`);
   }
   if (userId === undefined) return undefined;
-  const id = Number(userId);
-  if (!USER_ID_PATTERN.test(userId) || id > Number.MAX_SAFE_INTEGER) {
-    throw invalid(`${FORGE_IDENTITY_ENV.userId} must be a positive integer`);
+  return parseUserId(userId);
+}
+
+/**
+ * Rule 2a: `NAX_FORGE_IDENTITY=login-only`. The caller asserts the host's ambient
+ * `gh` / `glab` / git credentials are this login's, so nax captures who it is and
+ * nothing else — no token, and no token file to consume (rule 1 already deleted
+ * one if it was given, so that a refusal cannot leave it on disk).
+ */
+function loginOnlyIdentity(
+  mode: string,
+  tokenFile: string | undefined,
+  login: string | undefined,
+  userId: string | undefined,
+): InjectedForgeIdentity {
+  if (mode !== LOGIN_ONLY_MODE) {
+    throw invalid(`${FORGE_IDENTITY_ENV.mode} must be ${LOGIN_ONLY_MODE}`);
   }
-  return id;
+  if (tokenFile !== undefined) {
+    throw invalid(`${FORGE_IDENTITY_ENV.mode}=${LOGIN_ONLY_MODE} does not take ${FORGE_IDENTITY_ENV.tokenFile}`);
+  }
+  if (login === undefined) {
+    throw invalid(`${FORGE_IDENTITY_ENV.mode}=${LOGIN_ONLY_MODE} requires ${FORGE_IDENTITY_ENV.login}`);
+  }
+  const id = userId === undefined ? undefined : parseUserId(userId);
+  return { login, ...(id === undefined ? {} : { id }) };
 }
 
 /** Rule 7: the token file, once every cheaper input rule has passed. */
@@ -141,6 +183,7 @@ export async function captureForgeIdentity(
   const tokenFile = present(env[FORGE_IDENTITY_ENV.tokenFile]);
   const login = present(env[FORGE_IDENTITY_ENV.login]);
   const userId = present(env[FORGE_IDENTITY_ENV.userId]);
+  const mode = present(env[FORGE_IDENTITY_ENV.mode]);
 
   // Rule 1 first: whatever the rest of the input says, the file is consumed.
   const contents = tokenFile === undefined ? undefined : await consumeTokenFile(tokenFile);
@@ -149,6 +192,13 @@ export async function captureForgeIdentity(
     throw invalid(
       `${FORGE_IDENTITY_ENV.rejectedToken} is not supported; pass the token through ${FORGE_IDENTITY_ENV.tokenFile}`,
     );
+  }
+
+  // Rule 2a: the login-only mode owns the rest of the input when it is present.
+  if (mode !== undefined) {
+    const identity = loginOnlyIdentity(mode, tokenFile, login, userId);
+    _forgeIdentity.current = identity;
+    return identity;
   }
 
   // Rule 3: nothing injected — behaviour is exactly as before this feature.
