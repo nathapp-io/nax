@@ -53,7 +53,7 @@ import { NaxError } from "@/errors";
 import type { KodaApprovals } from "./koda-approvals";
 import { type KodaClient, type KodaResponse, kodaStatusOf } from "./koda-http";
 import { findActiveKodaNote } from "./koda-lookup";
-import { type KodaMemoryItem, kodaHitOf, parseKodaItems } from "./koda-mapping";
+import { type KodaMemoryItem, kodaHitOf, parseKodaRecords } from "./koda-mapping";
 import { pullKodaPage } from "./koda-pull";
 import type { MemoryLogger } from "./paths";
 
@@ -339,7 +339,7 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
       text,
       size: Math.min(input.limit, SEARCH_SIZE_MAX),
     });
-    const records = parseKodaItems(isRecord(answer.data) ? answer.data.items : undefined);
+    const records = parseKodaRecords(isRecord(answer.data) ? answer.data.records : undefined);
     return hitsOf(records, input.limit);
   }
 

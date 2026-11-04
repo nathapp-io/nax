@@ -144,6 +144,26 @@ export function parseKodaItems(value: unknown): readonly KodaMemoryItem[] {
   return value.filter(isKodaRow);
 }
 
+/**
+ * Parse a list page's `records`.
+ *
+ * The same shape check as {@link parseKodaItems}, for the other route: koda's paginated
+ * `GET projects/<slug>/memory` answers its rows in `data.records`, where only the export
+ * feed answers `data.items`. The error names the list route so a bad answer is traced to it.
+ *
+ * @param value - The page's `data.records`
+ */
+export function parseKodaRecords(value: unknown): readonly KodaMemoryItem[] {
+  if (!Array.isArray(value)) {
+    throw new NaxError(
+      `[memory] koda answered a list page whose records are not an array (got ${valueKindOf(value)})`,
+      "MEMORY_KODA_BAD_RESPONSE",
+      { stage: STAGE, received: valueKindOf(value) },
+    );
+  }
+  return value.filter(isKodaRow);
+}
+
 /** A row's `field` when it is a string, else `undefined` — the test every required field takes. */
 function stringField(item: KodaMemoryItem, field: keyof KodaMemoryItem): string | undefined {
   const value: unknown = item[field];

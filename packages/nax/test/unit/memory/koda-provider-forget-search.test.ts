@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { isMemoryPushRejected, type MemoryHit, type MemoryProvider, type MemoryWriteRequest } from "@nathapp/nax-agent";
-import { assertDefined, type MockLogger, makeLogger } from "@test/helpers";
+import { assertDefined, kodaListData, type MockLogger, makeLogger } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { _kodaClientDeps, createKodaClient, kodaStatusOf } from "@/memory/koda-http";
 import { findActiveKodaNote, MEMORY_KODA_LOOKUP_MAX_PAGES } from "@/memory/koda-lookup";
@@ -94,7 +94,7 @@ describe("createKodaMemoryProvider — search", () => {
 
   /** The `GET projects/<slug>/memory` answer, carrying `records` in koda's rank order. */
   function searchAnswer(records: readonly KodaMemoryItem[]): Response {
-    return jsonAnswer({ ret: 0, data: { items: records, hasNext: false } });
+    return jsonAnswer({ ret: 0, data: kodaListData(records) });
   }
 
   /** The provider under test; the forget and search paths record no approval. */
@@ -197,7 +197,7 @@ describe("findActiveKodaNote", () => {
 
   /** One search page, carrying `records` and koda's `hasNext` flag. */
   function pageAnswer(records: readonly KodaMemoryItem[], hasNext = false): Response {
-    return jsonAnswer({ ret: 0, data: { items: records, hasNext } });
+    return jsonAnswer({ ret: 0, data: kodaListData(records, { hasNext }) });
   }
 
   /** Answer each lookup request with the next queued page, recording every call. */
@@ -300,7 +300,7 @@ describe("findActiveKodaNote", () => {
     ["an empty id", { id: "", subject: "replay-budget", scope: "project" }],
     ["an id that is not a string", { id: 7, subject: "replay-budget", scope: "project" }],
   ])("a matching row with %s is a bad response, not a row to retire (AC-16)", async (_label, record) => {
-    stubPages([jsonAnswer({ ret: 0, data: { items: [record], hasNext: false } })]);
+    stubPages([jsonAnswer({ ret: 0, data: kodaListData([record]) })]);
 
     const error = await rejectionOf(lookup());
 
@@ -308,10 +308,10 @@ describe("findActiveKodaNote", () => {
   });
 
   test.each([
-    ["no hasNext flag", { items: [] }],
-    ["a null hasNext", { items: [], hasNext: null }],
-    ["a hasNext that is not a boolean", { items: [], hasNext: "true" }],
-    ["a hasNext of zero", { items: [], hasNext: 0 }],
+    ["no hasNext flag", { records: [] }],
+    ["a null hasNext", { records: [], hasNext: null }],
+    ["a hasNext that is not a boolean", { records: [], hasNext: "true" }],
+    ["a hasNext of zero", { records: [], hasNext: 0 }],
   ])("a page with %s is a bad response, not the last page (AC-16)", async (_label, data) => {
     stubPages([jsonAnswer({ ret: 0, data })]);
 
@@ -346,7 +346,7 @@ describe("createKodaMemoryProvider — forget", () => {
 
   /** The forget lookup's answer, carrying `records`. */
   function lookupAnswer(records: readonly KodaMemoryItem[]): Response {
-    return jsonAnswer({ ret: 0, data: { items: records, hasNext: false } });
+    return jsonAnswer({ ret: 0, data: kodaListData(records) });
   }
 
   /** The `GET projects/<slug>` answer, carrying the project id. */
@@ -502,10 +502,10 @@ describe("createKodaMemoryProvider — forget", () => {
   });
 
   test.each([
-    ["a matching row with no id", { items: [{ subject: "replay-budget", scope: "project" }], hasNext: false }],
-    ["a matching row with an empty id", { items: [{ id: "", subject: "replay-budget", scope: "project" }] }],
-    ["an answer with no hasNext flag", { items: [] }],
-    ["an answer whose hasNext is not a boolean", { items: [], hasNext: "false" }],
+    ["a matching row with no id", { records: [{ subject: "replay-budget", scope: "project" }], hasNext: false }],
+    ["a matching row with an empty id", { records: [{ id: "", subject: "replay-budget", scope: "project" }] }],
+    ["an answer with no hasNext flag", { records: [] }],
+    ["an answer whose hasNext is not a boolean", { records: [], hasNext: "false" }],
   ])("a malformed lookup answer — %s — leaves the entry queued and sends no retire (AC-16)", async (_label, data) => {
     stubForget({ lookup: () => jsonAnswer({ ret: 0, data }) });
 

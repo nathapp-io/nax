@@ -74,7 +74,7 @@ import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
 import { createHostWrites } from "./host-writes";
 import { createKodaApprovals } from "./koda-approvals";
 import { createKodaClient, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
-import { createKodaMemoryProvider } from "./koda-provider";
+import { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
 import { createMcpIdMap } from "./mcp-id-map";
 import { createMcpMemoryProvider } from "./mcp-provider";
 import { type MemoryDirs, type MemoryLogger, memoryDirs } from "./paths";
@@ -84,7 +84,8 @@ import { type RepoNotes, readRepoNotes } from "./repo-notes";
 export interface MemoryStatus {
   readonly enabled: true;
   readonly provider: string;
-  readonly writeMode: "direct" | "proposal";
+  /** The configured mode, or `"koda"` when koda answers it per agent and nax holds no mode of its own. */
+  readonly writeMode: "direct" | "proposal" | "koda";
   readonly projectDir: string;
   readonly userDir: string;
   readonly lastPullAt: string | null;
@@ -468,6 +469,18 @@ function syncParts(input: HostInput): Promise<MemorySyncResult> {
 }
 
 /**
+ * The write mode the status reports.
+ *
+ * With the koda provider the mode is koda's answer for the calling agent (`GET .../memory/write-mode`),
+ * never `memory.writeMode`, which the provider ignores. Status stays an offline read, so it says
+ * koda decides rather than asking: a status that needs the network would hang or fail exactly when
+ * the user is checking why a sync does not work.
+ */
+function statusWriteMode(input: HostInput): MemoryStatus["writeMode"] {
+  return input.parts.provider.id.startsWith(MEMORY_KODA_PROVIDER_PREFIX) ? "koda" : input.config.writeMode;
+}
+
+/**
  * What the surfaces report about a host without calling one of its reads.
  *
  * The note counts are the mirror's own — a repo note is the repository's, and is
@@ -484,7 +497,7 @@ async function readStatus(reads: HostReads, input: HostInput): Promise<MemorySta
   return {
     enabled: true,
     provider: input.parts.provider.id,
-    writeMode: input.config.writeMode,
+    writeMode: statusWriteMode(input),
     projectDir: input.parts.dirs.projectDir,
     userDir: input.parts.dirs.userDir,
     lastPullAt: sync.lastPullAt,

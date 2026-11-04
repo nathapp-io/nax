@@ -34,7 +34,7 @@
 import type { MemoryScope } from "@nathapp/nax-agent";
 import { NaxError } from "@/errors";
 import type { KodaClient } from "./koda-http";
-import { type KodaMemoryItem, parseKodaItems } from "./koda-mapping";
+import { type KodaMemoryItem, parseKodaRecords } from "./koda-mapping";
 
 const STAGE = "memory";
 
@@ -63,9 +63,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The answer's rows; an answer whose `items` is not an array is a response no caller can use. */
-function itemsOf(data: unknown): readonly KodaMemoryItem[] {
-  return parseKodaItems(isRecord(data) ? data.items : undefined);
+/** The answer's rows; an answer whose `records` is not an array is a response no caller can use. */
+function recordsOf(data: unknown): readonly KodaMemoryItem[] {
+  return parseKodaRecords(isRecord(data) ? data.records : undefined);
 }
 
 /** A lookup answer the provider cannot use: thrown as a transient rejection, never as an answer. */
@@ -96,7 +96,7 @@ function hasNextPage(data: unknown, input: FindActiveKodaNoteInput): boolean {
 /**
  * The first record of this page that is this slug's own row of this scope.
  *
- * `parseKodaItems` checks the container only, so a row that matches but carries no usable `id`
+ * `parseKodaRecords` checks the container only, so a row that matches but carries no usable `id`
  * has to be refused here: the retire route addresses the row by id, and a missing one would be
  * sent as the literal `undefined`, whose `404` the provider would read as "already retired"
  * and report as a delivered forget for a row still active in koda.
@@ -144,7 +144,7 @@ export async function findActiveKodaNote(input: FindActiveKodaNoteInput): Promis
       size: LOOKUP_PAGE_SIZE,
       current: page,
     });
-    const match = matchOf(itemsOf(answer.data), input);
+    const match = matchOf(recordsOf(answer.data), input);
     if (match !== undefined) return match;
     if (!hasNextPage(answer.data, input)) return null;
   }

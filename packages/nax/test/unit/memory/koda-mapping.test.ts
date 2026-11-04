@@ -14,6 +14,7 @@ import {
   MEMORY_KODA_DECISIONS_MAX,
   mergeKodaDecisions,
   parseKodaItems,
+  parseKodaRecords,
   reconcileKodaNotes,
 } from "@/memory/koda-mapping";
 
@@ -377,5 +378,18 @@ describe("parseKodaItems", () => {
 
   test("drops an element that is not an object", () => {
     expect(parseKodaItems([row(), "not a row", null])).toEqual([row()]);
+  });
+});
+
+describe("parseKodaRecords", () => {
+  test("a list page without a records array is a bad response that names the list route", () => {
+    const error = thrownBy(() => parseKodaRecords(undefined));
+    expect(error.code).toBe("MEMORY_KODA_BAD_RESPONSE");
+    expect(error.message).toContain("list page");
+    expect(error.message).not.toContain("export page");
+  });
+
+  test("returns the array's rows and drops an element that is not an object", () => {
+    expect(parseKodaRecords([row(), "not a row", null])).toEqual([row()]);
   });
 });

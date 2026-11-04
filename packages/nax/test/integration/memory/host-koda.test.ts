@@ -13,7 +13,15 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createMemoryStore, type MemoryNote } from "@nathapp/nax-agent";
-import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeNaxConfig, makeTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  kodaListData,
+  type MockLogger,
+  makeLogger,
+  makeNaxConfig,
+  makeTempDir,
+} from "@test/helpers";
 import { type MemoryCliDeps, memoryStatusCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
 import { createMemoryHost, type MemoryHost } from "@/memory";
@@ -67,7 +75,7 @@ const EMPTY_PAGE: Answer = () => jsonAnswer({ ret: 0, data: { items: [], nextCur
 const WRITABLE: Answer = () => jsonAnswer({ ret: 0, data: { mode: "direct" } });
 const PROJECT_ANSWER: Answer = () => jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
 const SAVED: Answer = () => jsonAnswer({ ret: 0, data: { id: "k7" } }, 201);
-const NO_HITS: Answer = () => jsonAnswer({ ret: 0, data: { items: [] } });
+const NO_HITS: Answer = () => jsonAnswer({ ret: 0, data: kodaListData([]) });
 
 /** The routes a case may replace; every other request answers its happy default. */
 interface KodaRoute {
@@ -218,7 +226,7 @@ describe("a koda-backed memory host", () => {
       search: () =>
         jsonAnswer({
           ret: 0,
-          data: { items: [noteRow({ id: "k9", subject: "koda-alpha", description: "alpha from koda" })] },
+          data: kodaListData([noteRow({ id: "k9", subject: "koda-alpha", description: "alpha from koda" })]),
         }),
     });
     const host = await open();
@@ -264,6 +272,13 @@ describe("a koda-backed memory host", () => {
 
     expect(hits.map((hit) => hit.slug)).toEqual(["local-alpha"]);
     expect(remoteWarns().map((call) => call.data?.provider)).toEqual([`koda:${PROJECT}`]);
+  });
+
+  test("status reports that koda decides the write mode, not the local default (#2791)", async () => {
+    stubKoda({ writeMode: () => jsonAnswer({ ret: 0, data: { mode: "proposal" } }) });
+    const host = await open();
+
+    expect((await host.status()).writeMode).toBe("koda");
   });
 
   test("AC-13 nax memory status --json reports the koda provider", async () => {
