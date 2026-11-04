@@ -59,6 +59,8 @@ export interface AgentSessionHostPorts {
 export interface CreateAgentSessionOptions {
   /** The driver: `nativeBackend({ model })`, or an ACP backend. Native-only options live on the backend. */
   readonly backend: SessionBackend;
+  /** Cancels creation/resume only while opening; ignored once the backend has opened. */
+  readonly openSignal?: AbortSignal;
   /** The store key. Generated when absent. Letters, digits, `.`, `_`, `-`; starts with a letter or digit; at most 128 characters. */
   readonly sessionId?: string;
   readonly profile: AgentSessionProfile;
