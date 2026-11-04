@@ -59,6 +59,16 @@ export interface OpenRouterRouting {
   preferred_max_latency?: number | { p50?: number; p75?: number; p90?: number; p99?: number };
 }
 
+/** Per-level token budgets, hand-mirrored from nax-ai's ThinkingBudgets.
+ * Config code cannot import nax-ai; validation remains owned by nax-ai.
+ */
+export interface CatalogThinkingBudgets {
+  minimal?: number;
+  low?: number;
+  medium?: number;
+  high?: number;
+}
+
 /**
  * One complete catalog entry for a model the bundled pi-ai snapshot does not
  * know. Complete, not a patch: nax-ai's `normaliseCatalog` replaces any
@@ -92,6 +102,10 @@ export interface CatalogModelOverride {
    * Mirrored from nax-ai's ThinkingFormat; omit to inherit the provider's format.
    */
   thinkingFormat?: "openai" | "qwen" | "qwen-chat-template" | "deepseek" | "zai" | "openrouter";
+  /** Wire field receiving the thinking token budget on openai-completions models. */
+  thinkingBudgetField?: string;
+  /** Model-owned token budgets for declared reasoning levels. */
+  thinkingBudgets?: CatalogThinkingBudgets;
 }
 
 /** Provider-scoped catalog overrides — maps 1:1 onto nax-ai's `ProviderOverride[]`. */

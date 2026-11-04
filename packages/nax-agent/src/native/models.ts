@@ -140,6 +140,9 @@ export function toProviderOverrides(overrides: readonly ProviderCatalogOverride[
       ...(model.maxTokens !== undefined ? { maxTokens: model.maxTokens } : {}),
       ...(model.input !== undefined ? { input: model.input } : {}),
       ...(model.thinkingFormat !== undefined ? { thinkingFormat: model.thinkingFormat } : {}),
+      ...(model.thinkingBudgetField !== undefined ? { thinkingBudgetField: model.thinkingBudgetField } : {}),
+      // Copy model declarations so later config mutations cannot change client budgets.
+      ...(model.thinkingBudgets !== undefined ? { thinkingBudgets: { ...model.thinkingBudgets } } : {}),
       supportsTools: model.supportsTools,
       thinkingLevels: model.thinkingLevels,
       // nax#2191: forwarded verbatim. nax-ai's `assertOverrideModelRouting`
