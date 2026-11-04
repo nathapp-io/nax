@@ -64,6 +64,20 @@ function isoDay(step: number): string {
   return new Date(Date.UTC(2026, 0, 1) + step * 86_400_000).toISOString();
 }
 
+/** The statuses a mirror line may carry (nax-agent's `MEMORY_DECISION_STATUSES`). */
+const DECISION_STATUSES = ["active", "superseded", "rejected"] as const;
+
+/**
+ * The mirror's decision contract, restated: `DecisionSchema` in nax-agent's
+ * `memory/records.ts` requires six non-empty strings and a status in range. A line that
+ * fails it is dropped when the mirror decodes `decisions.jsonl`, so writing one loses the
+ * decision it replaced.
+ */
+function isStorableDecision(decision: MemoryDecision): boolean {
+  const fields = [decision.id, decision.subject, decision.predicate, decision.object, decision.updatedAt];
+  return fields.every((field) => field.length > 0) && DECISION_STATUSES.some((status) => status === decision.status);
+}
+
 /** The NaxError `run` throws; fails the test when it returns instead. */
 function thrownBy(run: () => unknown): NaxError {
   try {
@@ -213,6 +227,14 @@ describe("reconcileKodaNotes", () => {
     expect(result.notes[0]?.source).toBe("nax run x");
   });
 
+  test("reads a sourceType that is not a string as absent (F1)", () => {
+    // A row reaches the mapping through parseKodaItems, which checks the container only,
+    // so a non-string sourceType is a shape this page must still reconcile.
+    const items = parseKodaItems([{ ...row(), sourceType: 42 }]);
+    const result = reconcileKodaNotes(items, "project", new Map());
+    expect(result.notes.map((note) => [note.id, note.source])).toEqual([["k1", "koda"]]);
+  });
+
   test("is not a note of the page: a DECISION row yields no note", () => {
     expect(reconcileKodaNotes([decisionRow()], "project", new Map())).toEqual({ notes: [], skipped: 0 });
   });
@@ -308,6 +330,36 @@ describe("mergeKodaDecisions", () => {
   test("ignores rows of other kinds", () => {
     const fact = row({ kind: "FACT", id: "f1" });
     expect(mergeKodaDecisions([], [fact])).toEqual({ decisions: undefined, skipped: 0 });
+  });
+
+  test("does not replace a current decision with a row the mirror would refuse (F2)", () => {
+    const result = mergeKodaDecisions([currentDecision()], [decisionRow({ id: "d1", object: "" })]);
+    expect(result.decisions).toBeUndefined();
+    expect(result.skipped).toBe(1);
+  });
+
+  test("keeps the current decision while applying the page's other decisions (F2)", () => {
+    const current = currentDecision();
+    const result = mergeKodaDecisions([current], [decisionRow({ id: "d1", object: "" }), decisionRow({ id: "d2" })]);
+    expect(result.decisions?.map((decision) => decision.id)).toEqual(["d2", "d1"]);
+    expect(result.decisions?.[1]).toEqual(current);
+    expect(result.skipped).toBe(1);
+  });
+
+  test("answers only decisions the mirror can store and decode (F2)", () => {
+    const rows = [
+      decisionRow({ id: "d2" }),
+      decisionRow({ id: "d3", subject: "" }),
+      decisionRow({ id: "d4", updatedAt: "" }),
+      decisionRow({ id: "", object: "no id" }),
+    ];
+    const result = mergeKodaDecisions([currentDecision()], rows);
+    expect(result.decisions?.every(isStorableDecision)).toBe(true);
+    expect(result.decisions?.map((decision) => decision.id)).toEqual(["d2", "d1"]);
+    expect(result.skipped).toBe(3);
+    // The mirror writes one JSON line per decision and decodes it with a schema that
+    // requires every field to be a non-empty string, so the round trip has to survive.
+    expect(JSON.parse(JSON.stringify(result.decisions))).toEqual(result.decisions);
   });
 });
 

@@ -21,7 +21,10 @@
  *   slug code point.
  *
  * `DECISION` rows never become notes; `mergeKodaDecisions` merges them into the
- * mirror's `decisions.jsonl` instead, by id, newest first.
+ * mirror's `decisions.jsonl` instead, by id, newest first. An active row must
+ * satisfy the mirror's decision contract (six non-empty strings, a status in
+ * range) before it replaces anything: the store writes what it is given, so one
+ * it would later refuse would take the decision it replaced with it.
  *
  * Internal to `src/memory/`: the pull composes it, the barrel re-exports it.
  */
@@ -41,6 +44,19 @@ const DECISION_KIND = "DECISION";
 const STATUS_ACTIVE = "active";
 const STATUS_SUPERSEDED = "superseded";
 const STATUS_REJECTED = "rejected";
+
+/**
+ * The statuses a mirror line may carry.
+ *
+ * `MEMORY_DECISION_STATUSES` is not exported from the `@nathapp/nax-agent` entry,
+ * so the list is restated here; `satisfies` against a decision's own `status`
+ * field keeps it a subset of the statuses that entry does express.
+ */
+const KODA_DECISION_STATUSES = [
+  "active",
+  "superseded",
+  "rejected",
+] as const satisfies readonly MemoryDecision["status"][];
 
 /** The source a row is recorded under when its `sourceType` is absent or blank. */
 const DEFAULT_SOURCE = "koda";
@@ -133,6 +149,10 @@ function isDeleted(item: KodaMemoryItem): boolean {
 /**
  * The note's `source`: `sourceType` with whitespace runs collapsed to one space,
  * cut to `MEMORY_SOURCE_MAX_CHARS`, or {@link DEFAULT_SOURCE} when that is blank.
+ *
+ * The caller reads `sourceType` through `stringField`, so a row that carries
+ * anything but a string — `parseKodaItems` checks the container only — reads as
+ * absent instead of throwing and taking the whole page with it.
  */
 function sourceOf(sourceType: string | undefined): string {
   const collapsed = (sourceType ?? "").replace(WHITESPACE_RUN, " ").trim();
@@ -174,7 +194,7 @@ function readNoteRow(item: KodaMemoryItem): NoteRow | undefined {
     body,
     updatedAt,
     status,
-    source: sourceOf(item.sourceType),
+    source: sourceOf(stringField(item, "sourceType")),
     deleted: isDeleted(item),
   };
 }
@@ -290,11 +310,27 @@ function readDecisionRow(item: KodaMemoryItem): DecisionRow | undefined {
   const status = stringField(item, "status");
   if (id === undefined || subject === undefined || predicate === undefined) return undefined;
   if (object === undefined || updatedAt === undefined || status === undefined) return undefined;
+  // An empty id addresses no line, so it can neither set nor remove one.
+  if (id === "") return undefined;
   return {
     id,
     active: status === STATUS_ACTIVE && !isDeleted(item),
     decision: { id, subject, predicate, object, updatedAt, status: STATUS_ACTIVE },
   };
+}
+
+/**
+ * True when `decision` is a line the mirror's `decisions.jsonl` accepts.
+ *
+ * `DecisionSchema` (`packages/nax-agent/src/memory/records.ts`) requires six
+ * non-empty strings and a status in range. The store writes what it is given, so
+ * an active row that fails the contract would be persisted and then dropped when
+ * the mirror next decodes the file — losing the decision it replaced.
+ */
+function isStorableDecision(decision: MemoryDecision): boolean {
+  const fields = [decision.id, decision.subject, decision.predicate, decision.object, decision.updatedAt];
+  if (fields.some((field) => field === "")) return false;
+  return KODA_DECISION_STATUSES.some((status) => status === decision.status);
 }
 
 /** Newest first, ties by id, cut to the number of decisions the mirror keeps. */
@@ -331,9 +367,18 @@ export function mergeKodaDecisions(
       skipped += 1;
       continue;
     }
+    if (row.active) {
+      // A row the mirror would refuse cannot replace the decision it names: it is
+      // skipped, so the current decision stays exactly as the mirror has it.
+      if (!isStorableDecision(row.decision)) {
+        skipped += 1;
+        continue;
+      }
+      merged.set(row.id, row.decision);
+    } else {
+      merged.delete(row.id);
+    }
     touched = true;
-    if (row.active) merged.set(row.id, row.decision);
-    else merged.delete(row.id);
   }
   if (!touched) return { decisions: undefined, skipped };
   return { decisions: orderedDecisions(merged.values()), skipped };
