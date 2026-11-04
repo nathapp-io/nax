@@ -47,8 +47,8 @@ export interface ClientOptions {
   readonly transportRetries?: number;
 }
 
-/** Everything on ProtocolRequest except `model`, which the client supplies. */
-export type ClientRequest = Omit<ProtocolRequest, "model">;
+/** Model identity and thinking budgets are supplied by the client, not the caller. */
+export type ClientRequest = Omit<ProtocolRequest, "model" | "thinkingBudgets">;
 
 export interface Client {
   model(provider: string, model: string): Promise<ResolvedModel>;
@@ -116,11 +116,16 @@ export function createClient(options: ClientOptions): Client {
     const protocol = await registry.resolve(model.protocol);
     const thinking = req.thinking !== undefined ? clampThinkingLevel(req.thinking, model.thinkingLevels) : undefined;
 
+    // Type omission alone cannot strip a stray property from an untyped caller.
+    const { thinkingBudgets: _callerBudgets, ...callerRequest } = req as ClientRequest & {
+      readonly thinkingBudgets?: unknown;
+    };
     const protocolRequest: ProtocolRequest = {
-      ...req,
+      ...callerRequest,
       model: model.id,
       provider: model.provider,
       ...(thinking !== undefined ? { thinking } : {}),
+      ...(model.thinkingBudgets !== undefined ? { thinkingBudgets: model.thinkingBudgets } : {}),
     };
 
     yield* retryTransportFaults(() => protocol.stream(protocolRequest), {

@@ -7,6 +7,7 @@
  * it without the interface having already picked a side.
  */
 
+import type { ThinkingBudgets } from "../providers/types.ts";
 import type { StopReason, TokenUsage } from "../types.ts";
 
 /** JSON Schema draft 2020-12 object. Structural — nax-ai does not validate it. */
@@ -189,6 +190,8 @@ export interface ProtocolRequest {
    * least thinking the model allows.
    */
   readonly thinking?: ThinkingLevel;
+  /** Model-owned token budgets, never a caller-supplied request override. */
+  readonly thinkingBudgets?: ThinkingBudgets;
   readonly cacheRetention?: CacheRetention;
   /**
    * Extra headers for this request.

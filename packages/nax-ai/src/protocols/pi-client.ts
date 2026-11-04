@@ -233,6 +233,7 @@ export function toPiOptions(req: ProtocolRequest): SimpleStreamOptions {
     ...(req.toolChoice !== undefined ? { toolChoice: req.toolChoice } : {}),
     ...(req.maxTokens !== undefined ? { maxTokens: req.maxTokens } : {}),
     ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+    ...(req.thinkingBudgets !== undefined ? { thinkingBudgets: { ...req.thinkingBudgets } } : {}),
     ...(req.cacheRetention !== undefined ? { cacheRetention: req.cacheRetention } : {}),
     ...(req.signal !== undefined ? { signal: req.signal } : {}),
     ...(req.headers !== undefined ? { headers: { ...req.headers } } : {}),
