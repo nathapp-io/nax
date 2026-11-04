@@ -15,6 +15,7 @@ import type { ThinkingLevel } from "../protocols/types.ts";
 import {
   assertOverrideModelProvider,
   assertOverrideModelRouting,
+  assertOverrideModelThinkingBudget,
   assertOverrideModelThinkingFormat,
 } from "./override-model.ts";
 import type { Pricing, ProviderAuth, ProviderOverride, ResolvedModel, ResolvedProvider } from "./types.ts";
@@ -116,6 +117,7 @@ export function normaliseCatalog(raw: readonly RawProvider[], overrides: readonl
       assertOverrideModelProvider(override.provider, model);
       assertOverrideModelRouting(model);
       assertOverrideModelThinkingFormat(model);
+      assertOverrideModelThinkingBudget(model);
       const input = model.input ?? models.get(override.provider)?.get(model.id)?.input;
       setModel(override.provider, input !== undefined ? { ...model, input } : model);
     }

@@ -105,6 +105,7 @@ export type {
   ProviderOverride,
   ResolvedModel,
   ResolvedProvider,
+  ThinkingBudgets,
   ThinkingFormat,
 } from "./providers/types.ts";
 export type {
