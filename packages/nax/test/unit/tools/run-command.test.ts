@@ -5,6 +5,7 @@ import {
   compileToolPolicy,
   createRunCommandTool as createBareRunCommandTool,
   createCodingToolRuntime,
+  type DeclaredCommandRequest,
   substituteCommand,
 } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
@@ -194,18 +195,39 @@ describe("run() names the declared command that accepts a rejected value key", (
     expect(result.content).not.toContain("is a placeholder in:");
   });
 
+  // The success path must not reach the real quality runner. `bun test
+  // 'a.test.ts'` is a NAME FILTER, not a path, so it re-runs whatever slice of
+  // this very suite the filter matches (493 tests across 30 files here) in a
+  // child process -- 1.2s warm and idle, and past the 5s per-test timeout on a
+  // loaded CI worker once the confined run adds four of them in parallel. That
+  // is what timed this test out in CI. Recording the request keeps the point
+  // of the test (a declared value is not rejected) and pins the substitution
+  // it produces.
   test("a value the current command DOES declare is unaffected", async () => {
+    const requests: DeclaredCommandRequest[] = [];
     const tool = createRunCommandTool(
       new Map([
         ["test", "bun test"],
         ["testScoped", "bun test {{files}}"],
       ]),
+      {
+        runDeclaredCommand: async (request) => {
+          requests.push(request);
+          return { success: true, exitCode: 0, output: "" };
+        },
+      },
     );
-    const result = await tool.run(
-      { command: "testScoped", values: { files: "a.test.ts" } },
-      { root: process.cwd(), resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
-    );
-    expect(result.isError).toBeFalsy();
+    // An empty temp root, so `a.test.ts` is not an existing file and keeps its
+    // raw token instead of being absolutised: the assertion below then depends
+    // on the substitution rule, not on what happens to sit in the cwd.
+    await withTempDir(async (root) => {
+      const result = await tool.run(
+        { command: "testScoped", values: { files: "a.test.ts" } },
+        { root, resolvedPaths: [], maxBytes: 4096, maxFileBytes: 1024 },
+      );
+      expect(result.isError).toBeFalsy();
+      expect(requests.map((request) => request.command)).toEqual(["bun test 'a.test.ts'"]);
+    });
   });
 });
 
