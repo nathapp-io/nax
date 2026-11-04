@@ -3,7 +3,7 @@
   "feature": "chat-acp-subagents",
   "branchName": "feat/chat-acp-subagents",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-04T14:36:47.257Z",
+  "updatedAt": "2026-11-04T14:45:55.712Z",
   "userStories": [
     {
       "id": "US-001",
@@ -160,14 +160,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A small pure policy module with explicit ordered decisions, but read-only selection and enforcement capability are access-control decisions requiring strict three-session isolation."
+        "reasoning": "A small pure policy module with explicit ordered decisions, but read-only selection and enforcement capability are access-control decisions requiring strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-model.ts",
@@ -187,7 +190,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fddc296fc2a8bab0e8ecb8cbd887fdae9c0f1b24"
     },
     {
       "id": "US-004",
