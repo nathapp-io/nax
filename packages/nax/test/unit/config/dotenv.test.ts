@@ -107,3 +107,29 @@ describe("resolveEnvVars — mcp.servers entries stay literal (US-002)", () => {
     expect(out).toEqual({ name: "/demo", mcp: { servers: { a: { url: "https://h", headers: { X: reference } } } } });
   });
 });
+
+describe("resolveEnvVars — memory.koda.headers stay literal (US-012)", () => {
+  const reference = "$" + "{HOME_X}";
+  const bare = "$" + "HOME_X";
+
+  test("a braced reference inside memory.koda.headers is not expanded", () => {
+    const out = resolveEnvVars(
+      { memory: { koda: { headers: { Authorization: `Bearer ${reference}` } } } },
+      { HOME_X: "/demo" },
+    );
+
+    expect(out).toEqual({ memory: { koda: { headers: { Authorization: `Bearer ${reference}` } } } });
+  });
+
+  test("a bare reference inside memory.koda.headers is not expanded either", () => {
+    const out = resolveEnvVars({ memory: { koda: { headers: { "X-Key": `${bare}/x` } } } }, { HOME_X: "/demo" });
+
+    expect(out).toEqual({ memory: { koda: { headers: { "X-Key": `${bare}/x` } } } });
+  });
+
+  test("memory.koda.url is still expanded — only the credential map is literal", () => {
+    const out = resolveEnvVars({ memory: { koda: { url: reference, project: "rs-stock" } } }, { HOME_X: "/demo" });
+
+    expect(out).toEqual({ memory: { koda: { url: "/demo", project: "rs-stock" } } });
+  });
+});

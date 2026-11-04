@@ -458,7 +458,15 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "memory.enabled":
     "Master switch. false means no memory host, no memory tools, no index section and no sync (default: true)",
   "memory.provider":
-    'Where notes live: "local" keeps them in the local mirror, "mcp" keeps them on the MCP server named by memory.mcp (default: local)',
+    'Where notes live: "local" keeps them in the local mirror, "mcp" keeps them on the MCP server named by memory.mcp, "koda" keeps them in the koda project named by memory.koda (default: local)',
+  "memory.koda":
+    "The koda project that holds this repository's memories and how to reach it. nax chat and koda threads share one memory with koda as the source of truth; nax keeps a per-project mirror of it",
+  "memory.koda.url":
+    "koda API root including its global prefix, e.g. https://koda.example/api. Global-only: it belongs in ~/.nax/config.json and cannot be set in a project, profile or per-package config. Plain http is accepted only to a loopback host",
+  "memory.koda.project":
+    "koda project slug (lowercase letters, digits and dashes) that holds this repository's memories. `nax memory link <koda-project>` writes it into the project config; it is allowed in every config layer",
+  "memory.koda.headers":
+    'Static request headers carrying the agent key to koda, e.g. {"Authorization": "Bearer <key>"}, sent literally with no environment-variable expansion and no auth credential source. Global-only: belongs in ~/.nax/config.json. `nax config` masks every value',
   "memory.mcp.server":
     'Id of the mcp.servers entry that holds the memories. Must be defined in mcp.servers; used when memory.provider is "mcp"',
   "memory.mcp.tools.search": "Tool the memory server exposes to search memories (default: search_memory)",

@@ -2,7 +2,7 @@
  * US-001 — the `memory` config block.
  *
  * Pins the repository-wide memory defaults, the `.strict()` rejections that keep
- * a future feature's keys (`stages`, `koda`) out until its schema owns them, the
+ * a future feature's key (`stages`) out until its schema owns it, the
  * `memoryConfigOf` accessor every reader goes through (`NaxConfig.memory` is
  * optional on the hand-written interface), and the `FIELD_DESCRIPTIONS`
  * entries that make the block discoverable in `nax config`.
@@ -11,11 +11,22 @@
  * switch: it defaults on, an explicit `false` survives the parse, a
  * non-boolean fails on its own path, and `stages` stays an unknown key now that
  * the run switch exists.
+ *
+ * The `memory.koda` block (`memory-koda-provider` US-001) covers the third
+ * provider: `"koda"` is a valid `memory.provider`, a complete koda block parses
+ * with `headers` defaulted, and an incomplete one is reported at the missing
+ * key. `koda` no longer appears among the rejections — its schema owns the key.
  */
 
 import { describe, expect, test } from "bun:test";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
-import { MemoryConfigSchema, memoryConfigOf, NaxConfigSchema } from "@/config";
+import {
+  KODA_PROJECT_SLUG_RE,
+  MemoryConfigSchema,
+  MemoryKodaConfigSchema,
+  memoryConfigOf,
+  NaxConfigSchema,
+} from "@/config";
 
 const DEFAULT_MEMORY = {
   enabled: true,
@@ -37,15 +48,28 @@ function memoryIssuePaths(input: Record<string, unknown>): PropertyKey[][] {
   return result.success ? [] : result.error.issues.map((issue) => issue.path);
 }
 
+/**
+ * The complete koda config of memory-koda-provider US-001: the global `url` a
+ * user puts in `~/.nax/config.json`, and the `project` `nax memory link` writes
+ * into the project layer.
+ */
+const KODA_CONFIG = {
+  memory: { provider: "koda", koda: { url: "https://koda.example/api", project: "rs-stock" } },
+} as const;
+
 describe("memory config defaults (AC-1)", () => {
   test("NaxConfigSchema.parse({}).memory equals the documented defaults", () => {
     expect(NaxConfigSchema.parse({}).memory).toEqual(DEFAULT_MEMORY);
   });
 });
 
-describe("memory config rejections (AC-2..AC-6)", () => {
-  test("AC-2: provider 'koda' fails on ['memory', 'provider']", () => {
-    expect(memoryIssuePaths({ provider: "koda" })).toContainEqual(["memory", "provider"]);
+describe("memory config validation (AC-2..AC-6)", () => {
+  // memory-koda-provider US-001 AC-1 replaced the "koda is not a provider"
+  // rejection: the enum accepts "koda" once memory.koda names a url and a project.
+  test("AC-2: provider 'koda' with memory.koda url and project parses", () => {
+    const result = NaxConfigSchema.safeParse(KODA_CONFIG);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.memory.provider).toBe("koda");
   });
 
   test("AC-3: writeMode 'auto' fails on ['memory', 'writeMode']", () => {
@@ -290,11 +314,11 @@ describe("memory.mcp field validation (US-001 AC-10..AC-13)", () => {
     expect(paths).toContainEqual(["memory", "mcp", "args", "text"]);
   });
 
-  test("AC-13: provider 'koda' still fails at ['memory','provider']", () => {
-    expect(issuesOf({ memory: { provider: "koda" } }).map((issue) => issue.path)).toContainEqual([
-      "memory",
-      "provider",
-    ]);
+  test("AC-13: provider 'koda' with no memory.koda fails at ['memory','koda','url'] (memory-koda-provider AC-4)", () => {
+    expect(issuesOf({ memory: { provider: "koda" } })).toContainEqual({
+      path: ["memory", "koda", "url"],
+      message: 'memory.provider "koda" needs memory.koda.url in ~/.nax/config.json',
+    });
   });
 
   test("custom tool and argument names survive the parse", () => {
@@ -334,5 +358,122 @@ describe("config barrel exports (AC-16)", () => {
     expect(typeof memoryConfigOf).toBe("function");
     expect(typeof MemoryConfigSchema.parse).toBe("function");
     expect(MemoryConfigSchema.parse({})).toEqual(DEFAULT_MEMORY);
+  });
+});
+
+/** `{ memory: { provider: "koda", koda } }` — the koda config under test, with the block as given. */
+function kodaInput(koda: Record<string, unknown>, memory: Record<string, unknown> = {}) {
+  return { memory: { provider: "koda", koda, ...memory } };
+}
+
+/**
+ * The koda provider block (memory-koda-provider US-001). `"koda"` is a valid
+ * `memory.provider` now, and `validateMemoryProvider` requires the url and the
+ * project that make it reachable. AC-1 and AC-4 live in the two replaced tests
+ * above ("memory config validation" / "memory.mcp field validation").
+ */
+describe("memory.koda provider (memory-koda-provider US-001 AC-2, AC-3, AC-5..AC-11)", () => {
+  test("koda AC-2: memory.koda parses to { url, project, headers: {} }", () => {
+    expect(NaxConfigSchema.parse(KODA_CONFIG).memory.koda).toEqual({
+      url: "https://koda.example/api",
+      project: "rs-stock",
+      headers: {},
+    });
+  });
+
+  test("koda AC-3: the default memory block has no koda key", () => {
+    expect("koda" in NaxConfigSchema.parse({}).memory).toBe(false);
+  });
+
+  test("koda AC-5: provider 'koda' with a url but no project fails at ['memory','koda','project']", () => {
+    expect(issuesOf(kodaInput({ url: "https://koda.example/api" }))).toContainEqual({
+      path: ["memory", "koda", "project"],
+      message: 'memory.provider "koda" needs memory.koda.project (run nax memory link <koda-project>)',
+    });
+  });
+
+  test("koda AC-6: provider 'koda' with no memory.koda raises both the url and the project issue", () => {
+    const paths = issuesOf({ memory: { provider: "koda" } }).map((issue) => issue.path);
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        ["memory", "koda", "url"],
+        ["memory", "koda", "project"],
+      ]),
+    );
+  });
+
+  test("koda AC-7: url 'ftp://koda.example' fails under ['memory','koda','url']", () => {
+    const paths = issuesOf(kodaInput({ url: "ftp://koda.example", project: "rs-stock" })).map((issue) =>
+      issue.path.slice(0, 3),
+    );
+    expect(paths).toContainEqual(["memory", "koda", "url"]);
+  });
+
+  test("koda AC-8: project 'RS_Stock' fails under ['memory','koda','project']", () => {
+    const paths = issuesOf(kodaInput({ url: "https://koda.example/api", project: "RS_Stock" })).map((issue) =>
+      issue.path.slice(0, 3),
+    );
+    expect(paths).toContainEqual(["memory", "koda", "project"]);
+  });
+
+  test("koda AC-9: an extra key memory.koda.token fails — the block is strict", () => {
+    const koda = { url: "https://koda.example/api", project: "rs-stock", token: "secret" };
+    expect(NaxConfigSchema.safeParse(kodaInput(koda)).success).toBe(false);
+  });
+
+  test("koda AC-10: writeMode 'proposal' is valid with provider 'koda'", () => {
+    expect(
+      NaxConfigSchema.safeParse(
+        kodaInput({ url: "https://koda.example/api", project: "rs-stock" }, { writeMode: "proposal" }),
+      ).success,
+    ).toBe(true);
+  });
+
+  test("koda AC-11: a koda block under provider 'local' is valid and unused", () => {
+    expect(NaxConfigSchema.safeParse({ memory: { provider: "local", koda: { project: "rs-stock" } } }).success).toBe(
+      true,
+    );
+  });
+});
+
+describe("memory.koda url rules (memory-koda-provider US-001 AC-15, AC-16)", () => {
+  test("koda AC-15: a remote plain-http url reports the https-unless-loopback message", () => {
+    expect(issuesOf(kodaInput({ url: "http://koda.example/api", project: "rs-stock" }))).toContainEqual({
+      path: ["memory", "koda", "url"],
+      message: "memory.koda.url must use https unless the host is loopback",
+    });
+  });
+
+  test("koda AC-16: a loopback plain-http url is accepted", () => {
+    expect(
+      NaxConfigSchema.safeParse(kodaInput({ url: "http://localhost:8030/api", project: "rs-stock" })).success,
+    ).toBe(true);
+  });
+});
+
+describe("memory defaults survive the koda provider (memory-koda-provider US-001 AC-17, AC-18)", () => {
+  test("koda AC-17: the default memory block keeps the existing local defaults", () => {
+    expect(NaxConfigSchema.parse({}).memory).toEqual(DEFAULT_MEMORY);
+  });
+
+  test("koda AC-18: an MCP config with writeMode 'proposal' still fails at ['memory','writeMode']", () => {
+    expect(issuesOf(mcpConfig({ writeMode: "proposal" }))).toContainEqual({
+      path: ["memory", "writeMode"],
+      message: 'memory.writeMode "proposal" needs a provider that holds pending writes; provider "mcp" does not',
+    });
+  });
+});
+
+describe("memory.koda exports from @/config (memory-koda-provider US-001 AC-12..AC-14)", () => {
+  test("koda AC-12: KODA_PROJECT_SLUG_RE accepts 'rs-stock'", () => {
+    expect(KODA_PROJECT_SLUG_RE.test("rs-stock")).toBe(true);
+  });
+
+  test("koda AC-13: KODA_PROJECT_SLUG_RE rejects '-rs'", () => {
+    expect(KODA_PROJECT_SLUG_RE.test("-rs")).toBe(false);
+  });
+
+  test("koda AC-14: MemoryKodaConfigSchema parses { project } to { project, headers: {} }", () => {
+    expect(MemoryKodaConfigSchema.parse({ project: "rs-stock" })).toEqual({ project: "rs-stock", headers: {} });
   });
 });

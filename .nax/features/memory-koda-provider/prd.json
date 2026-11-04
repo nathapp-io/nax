@@ -1,0 +1,895 @@
+{
+  "project": "nax-monorepo",
+  "feature": "memory-koda-provider",
+  "branchName": "feat/memory-koda-provider",
+  "createdAt": "2026-11-04T00:00:00.000Z",
+  "updatedAt": "2026-11-04T11:57:59.945Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Configure the koda memory provider",
+      "description": "**Goal** — Add the optional koda schema, runtime types, validation and public config exports.\n\n**Motivation** — The user ruled (2026-11-02) that nax chat and koda threads share ONE memory with koda as the source of truth, and that nax pulls a per-project mirror (pull architecture, design 6.5).\n\n**Approach** — `MemoryKodaConfigSchema` (new, in `src/config/schemas-memory.ts`) is `.strict()`: `url` is an optional `https:` URL, or an `http:` URL to a loopback host (the existing `isRemotePlainHttp`, `src/config/schemas-model.ts:184`, decides; a remote plain-http url fails with the message `memory.koda.url must use https unless the host is loopback`, because the bearer key travels with every request); `project` is an optional string matching `KODA_PROJECT_SLUG_RE` (`^[a-z0-9][a-z0-9-]{0,99}$`, koda's slug rule); `headers` is an optional record of strings defaulting to `{}`. `memory.provider` accepts `\"local\" | \"mcp\" | \"koda\"`. `memory.koda` has no default and is absent from `NaxConfigSchema.parse({}).memory`. The file's header comment, which says `koda` is rejected until this feature, is updated.\n\nNew cross-section rules in `validateMemoryProvider`:\n\n| Condition | Issue path | Message |\n|---|---|---|\n| `memory.provider` is `\"koda\"` and `memory.koda.url` is absent | `[\"memory\", \"koda\", \"url\"]` | `memory.provider \"koda\" needs memory.koda.url in ~/.nax/config.json` |\n| `memory.provider` is `\"koda\"` and `memory.koda.project` is absent | `[\"memory\", \"koda\", \"project\"]` | `memory.provider \"koda\" needs memory.koda.project (run nax memory link <koda-project>)` |\n\nProposal write mode is allowed with `\"koda\"` (koda holds pending writes).\n\nThe `@/config` barrel (`src/config/index.ts`) also exports `KODA_PROJECT_SLUG_RE`, `MemoryKodaConfigSchema` and the type `MemoryKodaConfig`, beside the existing memory exports.\n\n`MemoryConfigSchema.provider` — Target: `z.enum([\"local\", \"mcp\", \"koda\"]).default(\"local\")`, plus `koda: MemoryKodaConfigSchema.optional()`. `validateMemoryProvider(data, ctx)` — Target: the four MCP rules plus the two koda rules above; `MemoryProviderInput.memory` gains `koda?: { url?: string; project?: string }`.\n\nReplace the two existing tests asserting that koda fails at the provider enum with acceptance of a complete koda configuration and missing-url validation of an incomplete one. Keep existing local/MCP defaults, strictness and validation behavior.\n\n**Scope** — In: schemas-memory.ts, runtime-types-memory.ts, config barrel and existing schema tests. Out: global-only layer enforcement and descriptions (US-012), HTTP client (US-002), provider and host composition (US-005–US-009). Credential sources for `memory.koda.headers` other than literal values: no `${VAR}` expansion and no `auth`/exec credential source.\n\n**Interface** —\n```typescript\nexport const KODA_PROJECT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,99}$/;\n```\n`MemoryKodaConfig = { url?: string; project?: string; headers: Record<string, string> }`. `MemoryConfig.provider` becomes `\"local\" | \"mcp\" | \"koda\"`, and gains `koda?: MemoryKodaConfig`.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.safeParse of { memory: { provider: \"koda\", koda: { url: \"https://koda.example/api\", project: \"rs-stock\" } } } succeeds and the parsed memory.provider is \"koda\".",
+        "[unit] The parsed memory.koda of that config equals { url: \"https://koda.example/api\", project: \"rs-stock\", headers: {} }.",
+        "[unit] NaxConfigSchema.parse({}).memory has no koda key.",
+        "[unit] NaxConfigSchema.safeParse of { memory: { provider: \"koda\" } } reports the message 'memory.provider \"koda\" needs memory.koda.url in ~/.nax/config.json' at the path [\"memory\", \"koda\", \"url\"].",
+        "[unit] NaxConfigSchema.safeParse of { memory: { provider: \"koda\", koda: { url: \"https://koda.example/api\" } } } reports the message 'memory.provider \"koda\" needs memory.koda.project (run nax memory link <koda-project>)' at the path [\"memory\", \"koda\", \"project\"].",
+        "[unit] NaxConfigSchema.safeParse of { memory: { provider: \"koda\" } } raises both the url issue and the project issue.",
+        "[unit] NaxConfigSchema.safeParse of a koda config with memory.koda.url set to \"ftp://koda.example\" fails with an issue whose path starts with [\"memory\", \"koda\", \"url\"].",
+        "[unit] NaxConfigSchema.safeParse of a koda config with memory.koda.project set to \"RS_Stock\" fails with an issue whose path starts with [\"memory\", \"koda\", \"project\"].",
+        "[unit] NaxConfigSchema.safeParse of a koda config with an extra key memory.koda.token fails (the block is strict).",
+        "[unit] NaxConfigSchema.safeParse of a koda config with memory.writeMode: \"proposal\" succeeds.",
+        "[unit] NaxConfigSchema.safeParse of { memory: { provider: \"local\", koda: { project: \"rs-stock\" } } } succeeds (a koda block under another provider is valid and unused).",
+        "[unit] KODA_PROJECT_SLUG_RE, imported from @/config, accepts \"rs-stock\".",
+        "[unit] KODA_PROJECT_SLUG_RE rejects \"-rs\".",
+        "[unit] MemoryKodaConfigSchema, imported from @/config, parses { project: \"rs-stock\" } to { project: \"rs-stock\", headers: {} }.",
+        "[unit] NaxConfigSchema.safeParse of a koda config with memory.koda.url \"http://koda.example/api\" reports the message 'memory.koda.url must use https unless the host is loopback'.",
+        "[unit] NaxConfigSchema.safeParse of a koda config with memory.koda.url \"http://localhost:8030/api\" succeeds.",
+        "[unit] NaxConfigSchema.parse({}).memory remains { enabled: true, provider: \"local\", writeMode: \"direct\", indexBytes: 24576, askOnSave: true, inRun: true }, preserving the existing local defaults.",
+        "[unit] An otherwise valid existing MCP configuration with memory.writeMode proposal still fails at [\"memory\", \"writeMode\"] with 'memory.writeMode \"proposal\" needs a provider that holds pending writes; provider \"mcp\" does not'."
+      ],
+      "tags": [
+        "memory",
+        "config",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Additive schema/type/barrel changes follow existing patterns, but URL policy protects credential transport and requires strict security isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-memory.ts",
+        "packages/nax/src/config/runtime-types-memory.ts",
+        "packages/nax/src/config/index.ts",
+        "packages/nax/src/config/schemas-model.ts",
+        "packages/nax/test/unit/config/schemas-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "NaxConfigSchema.safeParse accepts http://127.0.0.1:8030/api and http://[::1]:8030/api as loopback koda URLs.",
+        "KODA_PROJECT_SLUG_RE accepts a 100-character lowercase alphanumeric slug and rejects a 101-character slug."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/schemas-memory.test.ts",
+          "reason": "the test \"AC-2: provider 'koda' fails on ['memory', 'provider']\" (line 47) and the test \"AC-13: provider 'koda' still fails at ['memory','provider']\" (line 293) assert that `\"koda\"` is not a valid provider. This feature makes it valid; both tests are replaced by assertions that `provider: \"koda\"` with `memory.koda.url` and `memory.koda.project` parses, and that `provider: \"koda\"` with no `memory.koda` block fails at `[\"memory\", \"koda\", \"url\"]`."
+        },
+        {
+          "path": "packages/nax/src/config/schemas-memory.ts",
+          "reason": "adds `MemoryKodaConfigSchema`, `KODA_PROJECT_SLUG_RE`, `\"koda\"` in the provider enum and the two koda rules; the header comment stops saying `koda` is rejected."
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types-memory.ts",
+          "reason": "`MemoryConfig.provider` widens to `\"local\" | \"mcp\" | \"koda\"`, `MemoryConfig` gains `koda?: MemoryKodaConfig`, and `MemoryKodaConfig` is added."
+        },
+        {
+          "path": "packages/nax/src/config/index.ts",
+          "reason": "the config barrel also exports `KODA_PROJECT_SLUG_RE`, `MemoryKodaConfigSchema` and the type `MemoryKodaConfig`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "809014c9b76fc94597cadcfde280766ca0e32647"
+    },
+    {
+      "id": "US-002",
+      "title": "Implement the koda HTTP client",
+      "description": "**Goal** — Add the injectable, bounded, header-safe HTTP client for koda's response envelope.\n\n**Motivation** — Today a note saved in nax chat or a `nax run` lives only in one machine's mirror (`local`) or in an MCP server that koda cannot read.\n\n**Approach** —\n- URL: `url` with trailing `/` removed, then `/`, then `path`; query keys appended in insertion order with `URLSearchParams`, keys whose value is `undefined` skipped.\n- Headers: the configured headers plus `accept: application/json`; a `post` adds `content-type: application/json` and the JSON-encoded body.\n- A 2xx answer whose body parses as JSON resolves `{ status, data: body.data }`.\n- A 2xx answer whose body is not JSON throws `NaxError` `MEMORY_KODA_BAD_RESPONSE`.\n- A non-2xx answer throws `NaxError` `MEMORY_KODA_HTTP` with `context.status` set to the HTTP status and the message `[memory] koda <METHOD> <path> answered <status>: <message>`, where `<message>` is the body's `message` when it is a string, else the response's status text.\n- No answer within `timeoutMs` aborts the request and throws `MEMORY_KODA_TIMEOUT`; a fetch that rejects throws `MEMORY_KODA_UNREACHABLE` with the rejection as `cause`.\n- `kodaStatusOf(error)` returns `context.status` of a `MEMORY_KODA_HTTP` error, else `undefined`.\n- Header values never appear in any error message, error context or log line.\n\nThe host builds the client with `MEMORY_KODA_REQUEST_TIMEOUT_MS` (4 s), well under sync's 10 s per-operation race (`MEMORY_OP_TIMEOUT_MS`), so a save's two requests (project id, then `POST memory`) settle inside one race.\n\nEvery path is relative to `memory.koda.url`, the API root including koda's global prefix (`https://koda.example/api`); a success body is `{ \"ret\": 0, \"data\": <payload> }`; an error body is `{ \"ret\": <code>, \"message\": \"<text>\" }`. Use a cancellable deadline that rejects even when the injected fetch ignores its AbortSignal; consume losing promises and clean up timers. Do not reinterpret application ret as an HTTP status.\n\n**Scope** — In: koda-http.ts and its unit tests. Out: provider write rejection classification (US-005/US-006), config trust policy (US-001/US-012), provider composition (US-009). Retries or backoff inside the provider: a transient failure leaves the entry in the outbox for the next sync.\n\n**Interface** —\n```typescript\nexport interface KodaResponse { readonly status: number; readonly data: unknown }\nexport interface KodaClient {\n  get(path: string, query?: Readonly<Record<string, string | number | undefined>>): Promise<KodaResponse>;\n  post(path: string, body: unknown): Promise<KodaResponse>;\n}\nexport function createKodaClient(input: {\n  readonly url: string;\n  readonly headers: Readonly<Record<string, string>>;\n  readonly timeoutMs: number;\n}): KodaClient;\nexport function kodaStatusOf(error: unknown): number | undefined;\nexport const MEMORY_KODA_REQUEST_TIMEOUT_MS = 4000;\nexport const _kodaClientDeps: { fetch: (input: string, init: RequestInit) => Promise<Response> };\n```",
+      "acceptanceCriteria": [
+        "[unit] createKodaClient({ url: \"https://k.example/api/\", headers: {}, timeoutMs: 1000 }).get(\"projects/rs/memory/export\", { since: undefined, take: 200 }) calls _kodaClientDeps.fetch once with the URL https://k.example/api/projects/rs/memory/export?take=200.",
+        "[unit] get with query { kind: \"NOTE\", subject: \"a b\" } calls fetch with the URL ending ?kind=NOTE&subject=a+b.",
+        "[unit] get sends method GET, the configured headers and accept: application/json, and no body.",
+        "[unit] post(\"memory\", { a: 1 }) sends method POST, the header content-type: application/json and the body {\"a\":1}.",
+        "[unit] A 200 answer with body {\"ret\":0,\"data\":{\"id\":\"p1\"}} resolves { status: 200, data: { id: \"p1\" } }.",
+        "[unit] A 202 answer with body {\"ret\":0,\"data\":{\"id\":\"apr_1\"}} resolves with status 202.",
+        "[unit] A 200 answer whose body is not json rejects with NaxError code MEMORY_KODA_BAD_RESPONSE.",
+        "[unit] A 422 answer with body {\"ret\":-2,\"message\":\"description is required\"} rejects with NaxError code MEMORY_KODA_HTTP whose message is '[memory] koda POST memory answered 422: description is required'.",
+        "[unit] A 503 answer with a non-JSON body rejects with code MEMORY_KODA_HTTP whose message ends with the response's status text.",
+        "[unit] kodaStatusOf of the error from a 422 answer returns 422.",
+        "[unit] kodaStatusOf of a MEMORY_KODA_TIMEOUT error returns undefined.",
+        "[unit] A fetch that never settles makes get reject with code MEMORY_KODA_TIMEOUT after timeoutMs.",
+        "[unit] When get times out, the abort signal passed to fetch is aborted.",
+        "[unit] A fetch that rejects with TypeError(\"connection refused\") makes get reject with code MEMORY_KODA_UNREACHABLE whose cause is that TypeError.",
+        "[unit] With headers { Authorization: \"Bearer s3cr3t-key\" }, the error from a 401 answer has a message and a serialised context that do not include the text s3cr3t-key.",
+        "[unit] MEMORY_KODA_REQUEST_TIMEOUT_MS is 4000."
+      ],
+      "tags": [
+        "memory",
+        "http",
+        "security",
+        "credentials"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small transport abstraction with timeout/error semantics; authentication header secrecy triggers the security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/plugins/builtin/reporter-shared/post-json.ts",
+        "packages/nax/src/memory/mcp-provider.ts",
+        "packages/nax/src/errors.ts",
+        "packages/nax/src/memory/host-remote-search.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax/test/unit/memory/koda-http.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a non-2xx response message echoes a configured header value, the thrown error message and serialized context contain no copy of that header value.",
+        "When a request settles before its deadline, no later timeout rejection is emitted."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f6855ba097298a9d91d179872ca0e97026af72f9"
+    },
+    {
+      "id": "US-003",
+      "title": "Reconcile export notes and merge decisions",
+      "description": "**Goal** — Add pure feed parsing, per-slug NOTE reconciliation and incremental DECISION merging.\n\n**Motivation** — The provider seam, the outbox and the sync loop were built for exactly this provider; `local` never exercises a remote cursor and `mcp` has none, so this is also the first provider that pulls.\n\n**Approach** — nax-agent's sync applies a page's notes by slug, and a tombstone deletes the slug's note unconditionally (`syncMemory`, `packages/nax-agent/src/memory/sync.ts:332`). koda's feed carries rows for ids the mirror no longer holds (a superseded predecessor; an older retired note soft-deleted later), so applying rows one by one would let such a row delete a newer note. The mapping therefore reconciles a page into at most one note per slug, with these rules, in this order:\n\n| # | Row | Effect |\n|---|---|---|\n| R1 | `kind` is not `\"NOTE\"`, or `scope` is not the page's scope | not a note of this page (DECISION rows go to the decision merge) |\n| R2 | `subject` fails `MEMORY_SLUG_RE`, `predicate` is not one of `user`, `feedback`, `project`, `reference`, or a required field (`id`, `subject`, `predicate`, `object`, `description`, `updatedAt`, `status`) is missing or not a string | skipped and counted |\n| R3 | `status` is `\"superseded\"` | adds no note. When its `id` equals the slug's current id (the current note of this page if one is set, else the mirror's note id), the slug's current id becomes *unknown*: its successor may be an active row or a tombstone later in the page |\n| R4 | `status` is `\"active\"` and `deletedAt` is absent | becomes the slug's current note, status `active` |\n| R5 | `status` is `\"rejected\"`, or `deletedAt` is present | a tombstone, applied only when its `id` equals the slug's current id (the current note of this page if one is set, else the mirror's note id for the slug), or when R3 made that id unknown. A tombstone that applies sets the current note to the row with status `rejected` (`deleted` when `deletedAt` is present); one that does not apply is ignored |\n| R6 | output | the current note of every slug that has one, in slug code-point order |\n\nA row maps to a `MemoryNote` as: `id` = row `id`; `slug` = `subject`; `type` = `predicate`; `scope` = the page's scope; `description` = `description`; `body` = `object`; `updatedAt` = `updatedAt`; `source` = `sourceType` with whitespace runs collapsed to one space, cut to `MEMORY_SOURCE_MAX_CHARS`, or `\"koda\"` when absent or blank.\n\nThe mirror ids R5 compares against are read before the page is reconciled: the provider reads the mirror note of every distinct slug the page's rows of this scope name, through the `readNote` it was given, and passes the ids as a map.\n\nA local edit that koda answered `202` sits in the mirror as `pending` until the proposal resolves; a pull whose page carries the slug's unchanged active row (R4) replaces the pending edit with that row. The approved row arrives later through the feed. This is accepted behaviour.\n\n**Decisions.** `DECISION` rows are merged only on project pages. A `DECISION` row whose `id`, `subject`, `predicate`, `object`, `updatedAt` or `status` is missing or not a string is skipped and counted with the note skips. A page with no valid `DECISION` row answers `decisions` undefined, so `decisions.jsonl` is not rewritten. A page with one or more merges them into the mirror's current decisions (`readDecisions`; sync writes `decisions.jsonl` after each page, so a later page sees the earlier one) by `id`: an `active` row with no `deletedAt` sets `{ id, subject, predicate, object, updatedAt, status: \"active\" }`; any other row removes its id. The merged list is ordered by `updatedAt` descending then `id`, and cut to `MEMORY_KODA_DECISIONS_MAX` (500). Rows of other kinds (`FACT`, `PREFERENCE`, `CONSTRAINT`, `INCIDENT_PATTERN`) are ignored.\n\n`MEMORY_NOTE_TYPES` is not exported from the `@nathapp/nax-agent` entry, which is why `KODA_NOTE_TYPES` is declared here (the pattern `NOTE_TYPES` follows in `src/cli/memory-cli-deps.ts`).\n\n**Scope** — In: pure mapping module and unit tests; no external calls. Out: kodaHitOf/search (US-006), feed I/O and mirror reads (US-007), proposal resolution (US-008). Mirroring koda memory kinds other than `NOTE` and `DECISION` (`FACT`, `PREFERENCE`, `CONSTRAINT`, `INCIDENT_PATTERN`). Keeping a pending local edit visible while its proposal is open: a pull carrying the slug's unchanged active row replaces it until the approved row arrives. A supersession and a retirement of one note that land on two different export pages: R3/R5 track an unknown current id within one page only, so the stale active note survives until the next change to that slug.\n\n**Interface** —\n```typescript\nexport interface KodaMemoryItem {\n  readonly id: string;\n  readonly kind: string;               // \"NOTE\" | \"DECISION\" | other koda kinds\n  readonly scope: string;              // \"project\" | \"user\"\n  readonly subject: string;\n  readonly predicate: string;\n  readonly object: string;\n  readonly description?: string;\n  readonly status: string;             // \"active\" | \"superseded\" | \"rejected\"\n  readonly updatedAt: string;\n  readonly deletedAt?: string | null;\n  readonly sourceType?: string;\n}\nexport const KODA_NOTE_TYPES = [\"user\", \"feedback\", \"project\", \"reference\"] as const satisfies readonly MemoryNoteType[];\nexport const MEMORY_KODA_DECISIONS_MAX = 500;\n/** Shape check only: an array of objects. Throws MEMORY_KODA_BAD_RESPONSE when `value` is not an array. */\nexport function parseKodaItems(value: unknown): readonly KodaMemoryItem[];\nexport function reconcileKodaNotes(\n  items: readonly KodaMemoryItem[],\n  scope: MemoryScope,\n  mirrorIds: ReadonlyMap<string, string>,   // slug -> the mirror note's id\n): { readonly notes: readonly MemoryNote[]; readonly skipped: number };\nexport function mergeKodaDecisions(\n  current: readonly MemoryDecision[],\n  items: readonly KodaMemoryItem[],\n): { readonly decisions: readonly MemoryDecision[] | undefined; readonly skipped: number };\n```",
+      "acceptanceCriteria": [
+        "[unit] reconcileKodaNotes of one NOTE row { id: \"k1\", kind: \"NOTE\", scope: \"project\", subject: \"replay-budget\", predicate: \"project\", object: \"Budget 2,048 MiB.\", description: \"replay budget\", status: \"active\", updatedAt: \"2026-11-04T01:00:00.000Z\", sourceType: \"nax-chat\" } for scope project and an empty mirror map returns { notes: [{ id: \"k1\", slug: \"replay-budget\", type: \"project\", scope: \"project\", description: \"replay budget\", body: \"Budget 2,048 MiB.\", updatedAt: \"2026-11-04T01:00:00.000Z\", source: \"nax-chat\", status: \"active\" }], skipped: 0 }.",
+        "[unit] A NOTE row with scope: \"user\" on a project page yields no note.",
+        "[unit] A row whose predicate is \"fact\" makes reconcileKodaNotes return { notes: [], skipped: 1 }.",
+        "[unit] A row whose subject is \"Bad Slug\" makes reconcileKodaNotes return { notes: [], skipped: 1 }.",
+        "[unit] A NOTE row with no description makes reconcileKodaNotes return { notes: [], skipped: 1 }.",
+        "[unit] A row with status: \"superseded\" whose id equals the mirror's id for its slug yields no note.",
+        "[unit] Rows in feed order [superseded k1, active k2] for one slug, with the mirror holding k1, yield one note with id k2 and status active.",
+        "[unit] Rows in feed order [active k2, rejected k1] for one slug yield one note with id k2 and status active (a stale tombstone does not apply).",
+        "[unit] Rows in feed order [superseded k1, deleted k2] for one slug (k2 with deletedAt), with the mirror holding k1, yield one note with id k2 and status deleted.",
+        "[unit] A rejected row k1 with the mirror holding k1 for its slug and no other row yields one note with id k1 and status rejected.",
+        "[unit] A row k1 with status: \"active\" and a deletedAt value, with the mirror holding k1, yields one note with status deleted.",
+        "[unit] A rejected row k1 with the mirror holding k9 for its slug yields no note.",
+        "[unit] A rejected row k1 with no mirror note for its slug yields no note.",
+        "[unit] Rows for slugs b-note and a-note yield notes in the order a-note, b-note.",
+        "[unit] A row with sourceType absent yields source \"koda\".",
+        "[unit] A row with sourceType \"nax  run\\n x\" yields source \"nax run x\".",
+        "[unit] mergeKodaDecisions(current, items) with items holding no DECISION row returns decisions undefined.",
+        "[unit] mergeKodaDecisions with current [d1 active] and an active DECISION row d2 with a later updatedAt returns decisions [d2, d1].",
+        "[unit] mergeKodaDecisions with current [d1 active] and a DECISION row d1 with status: \"superseded\" returns decisions [].",
+        "[unit] mergeKodaDecisions with an active DECISION row d1 carrying deletedAt removes d1.",
+        "[unit] mergeKodaDecisions with only a DECISION row lacking object returns { decisions: undefined, skipped: 1 }.",
+        "[unit] mergeKodaDecisions with 501 active decisions returns decisions equal to the 500 with the newest updatedAt (MEMORY_KODA_DECISIONS_MAX), newest first.",
+        "[unit] parseKodaItems of a value that is not an array throws NaxError code MEMORY_KODA_BAD_RESPONSE."
+      ],
+      "tags": [
+        "memory",
+        "mapping",
+        "reconciliation"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Pure but stateful per-slug reconciliation must distinguish stale tombstones, matching supersessions and page-local unknown ids; decision merging adds a separate incremental algorithm.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/types.ts",
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax/src/memory/mcp-results.ts",
+        "packages/nax/src/cli/memory-cli-deps.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/koda-mapping.ts",
+        "packages/nax/test/unit/memory/koda-mapping.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A sourceType consisting only of whitespace maps to source koda.",
+        "A sourceType longer than MEMORY_SOURCE_MAX_CHARS maps to a source no longer than MEMORY_SOURCE_MAX_CHARS.",
+        "mergeKodaDecisions orders decisions with equal updatedAt by id in code-point order.",
+        "A superseded row whose id differs from the current note id does not allow a subsequent stale tombstone to delete that current note."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "29de442495e95b85a51d82306b013f6fc121a210"
+    },
+    {
+      "id": "US-004",
+      "title": "Persist pending koda proposal records",
+      "description": "**Goal** — Add durable, versioned records for 202 saves so rejected proposals can later be reconciled.\n\n**Motivation** — Today a note saved in nax chat or a `nax run` lives only in one machine's mirror (`local`) or in an MCP server that koda cannot read.\n\n**Approach** — A `202` save means koda opened an approval request and wrote no row. If it is executed, the row appears in the export feed and a later pull replaces the mirror's pending note. If it is rejected, nothing ever appears, so the provider records each `202` save in `koda-approvals.json` in the project mirror directory:\n\n```json\n{ \"version\": 1, \"approvals\": [ { \"approvalId\": \"apr_1\", \"scope\": \"project\", \"slug\": \"replay-budget\", \"clientId\": \"c_9\" } ] }\n```\n\nA record for a scope and slug that already has one replaces it. The file is written to a temporary path and renamed into place (the `mcp-id-map.ts` pattern). An unreadable or invalid file reads as no approvals and is logged at warn once per `KodaApprovals` instance.\n\nKeep list order meaningful for the later oldest-record-first resolution budget. Use the project mirror directory for records of both scopes, not separate user-scope files. Reuse the established atomic persistence pattern and logger contract.\n\n**Scope** — In: koda-approvals.ts, its persistence seam and tests. Out: recording saves in the provider (US-005), checking remote approval status/restoration (US-008), reset preservation and relink deletion (US-010/US-011). De-duplicating koda approval requests when a `202` save is re-pushed because its first answer was lost.\n\n**Interface** —\n```typescript\nexport interface KodaApproval { readonly approvalId: string; readonly scope: MemoryScope; readonly slug: string; readonly clientId: string }\nexport interface KodaApprovals {\n  list(): Promise<readonly KodaApproval[]>;\n  record(entry: KodaApproval): Promise<void>;\n  drop(approvalIds: readonly string[]): Promise<void>;\n}\nexport function createKodaApprovals(input: { readonly dir: string; readonly logger: MemoryLogger }): KodaApprovals;\nexport const _kodaApprovalsDeps: { write(path: string, text: string): Promise<void>; rename(from: string, to: string): Promise<void> };\n```",
+      "acceptanceCriteria": [
+        "[unit] createKodaApprovals({ dir, logger }).list() on a directory with no koda-approvals.json resolves [].",
+        "[unit] record({ approvalId: \"apr_1\", scope: \"project\", slug: \"a\", clientId: \"c1\" }) followed by list() resolves exactly that one record.",
+        "[unit] After record, the file koda-approvals.json in dir parses as { \"version\": 1, \"approvals\": [ ... ] } holding the record.",
+        "[unit] Recording apr_2 for the same scope and slug as apr_1 leaves one record, apr_2.",
+        "[unit] Recording for slug a in scope project and slug a in scope user leaves two records.",
+        "[unit] drop([\"apr_1\"]) removes that record and keeps the others.",
+        "[unit] A write goes through _kodaApprovalsDeps.write to a temporary path and _kodaApprovalsDeps.rename onto koda-approvals.json.",
+        "[unit] A koda-approvals.json holding not json makes list() resolve [] and log one warn.",
+        "[unit] A file with version: 2 makes list() resolve [] and log one warn.",
+        "[unit] Two list() calls on one instance over the same invalid file log the warn once.",
+        "[unit] When koda-approvals.json is unreadable or has an invalid version-1 approvals shape, list() resolves [] with a warn emitted at most once per KodaApprovals instance."
+      ],
+      "tags": [
+        "memory",
+        "persistence",
+        "proposals"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Versioned local persistence follows the existing id-map atomic-write pattern; these records track memory proposals rather than granting local permissions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/mcp-id-map.ts",
+        "packages/nax/src/memory/paths.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/koda-approvals.ts",
+        "packages/nax/test/unit/memory/koda-approvals.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When record is called for a different scope/slug, existing records retain their relative list order.",
+        "When two record calls for different slugs overlap on one KodaApprovals instance, a later list returns both records.",
+        "When rename fails, the previously persisted koda-approvals.json remains unchanged."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0e89bca5996697efbe46a8a565a0f4e9a8384a03"
+    },
+    {
+      "id": "US-005",
+      "title": "Implement koda reachability and save delivery",
+      "description": "**Goal** — Create the koda provider with identity, reachability, cached project-id lookup and direct/proposal saves.\n\n**Motivation** — The provider seam, the outbox and the sync loop were built for exactly this provider; `local` never exercises a remote cursor and `mcp` has none, so this is also the first provider that pulls.\n\n**Approach** — `memory.provider: \"koda\"` makes the host compose a koda provider for the koda project named by `memory.koda.project`. The mirror stays the store every surface reads; the index, `get` and local keyword search are unchanged. koda's wire contract (verified against koda `c51cf74e`):\n\n- every path is relative to `memory.koda.url`, the API root including koda's global prefix (`https://koda.example/api`);\n- authentication is the configured headers, normally `Authorization: Bearer <agent key>`. The agent needs a project role carrying `project.read` (for `GET projects/<slug>`), `memory.read` and `memory.create`; superseding or retiring a row another principal owns also needs `memory.update`;\n- a success body is `{ \"ret\": 0, \"data\": <payload> }`; an error body is `{ \"ret\": <code>, \"message\": \"<text>\" }`;\n- routes address the project by **slug** in the path; `POST memory` and the retire body take the project **id**, which the provider learns once from `GET projects/<slug>`.\n\n`reachable` — `GET projects/<slug>/memory/write-mode`; `true` on a 2xx whose `data.mode` is `\"direct\"` or `\"proposal\"`, `false` otherwise (a throw included). It checks the key and the membership, which `GET health` would not.\n\n`push` save — `POST memory` with the body below; `201` resolves `{ id: <koda id>, status: \"active\" }`; `202` records the approval and resolves `{ id: <clientId>, status: \"pending\" }`.\n\nThe provider id is `koda:<project>`, so `nax memory status` prints `provider: koda:rs-stock`.\n\n**Write mode is koda's.** koda decides direct vs proposal from its own approval policy for the calling agent; the request's `writeMode` is not sent. A `201` is active and a `202` is pending whatever `memory.writeMode` says locally. `memory.writeMode` keeps its existing local meaning (how an offline save is marked while it waits in the outbox).\n\n**Idempotency.** koda has no client idempotency key. The save carries `sourceId: <clientId>`: koda returns the existing row for an identical restatement (same object, predicate, description, sourceType and sourceId), so re-pushing a queued entry whose first answer was lost does not create a second row. A note's koda id changes on every content change (supersession), which is why the mirror stays keyed by scope and slug.\n\n### Save request body (the wire shape)\n```json\n{\n  \"projectId\": \"<koda project id from GET projects/<slug>>\",\n  \"kind\": \"NOTE\",\n  \"subject\": \"<slug>\",\n  \"predicate\": \"<type: user | feedback | project | reference>\",\n  \"object\": \"<body>\",\n  \"description\": \"<description>\",\n  \"scope\": \"<project | user>\",\n  \"sourceType\": \"<note.source, e.g. nax-chat>\",\n  \"sourceId\": \"<clientId>\"\n}\n```\nEvery key is always present, with exactly these names. `projectId` is sent for user-scope notes too (koda requires it for membership). No other key is sent.\n\n### Error classification (provider)\n| Answer | save |\n|---|---|\n| `400`, `403`, `413`, `422` | `MEMORY_PUSH_REJECTED` with koda's message |\n| `409` | `MEMORY_PUSH_REJECTED` |\n| `404` | rethrown (transient: a wrong slug or lost membership is a config problem; the entry stays queued) |\n| `401`, `408`, `429`, `5xx`, timeout, unreachable, bad response | rethrown (transient) |\n\n`403` is permanent for a write: koda refuses a principal that lacks `memory.create`, or lacks `memory.update` on another principal's row, and the drain stops at the first transient failure, so a transient `403` would block every later write. A rejected entry is retried by the user through the outbox's existing rejected-entry handling. `401` (a bad key) stays transient: fixing the key delivers everything queued. Any failure of the forget lookup itself is transient.\n\n`GET projects/<slug>` answer without a string `data.id` → `MEMORY_KODA_BAD_RESPONSE`; the project id is not memoised.\n\nUS-005 creates `koda-provider.ts` with `pull` resolving `{ notes: [], done: true }` and `search` resolving `[]`; US-006 replaces `search` and adds the forget; US-007 replaces `pull` with a call to `pullKodaPage`; US-008 adds proposal resolution to `pullKodaPage`. Tests drive the provider over a real createKodaClient with _kodaClientDeps.fetch stubbed and real createKodaApprovals in a temporary directory; assert requests and recorded file.\n\n**Scope** — In: provider shell, project-id memoisation, reachable, save delivery, 202 recording and error classification. Out: forget/search (US-006), pull (US-007), proposal resolution (US-008), host composition (US-009). Retries or backoff inside the provider: a transient failure leaves the entry in the outbox for the next sync. A degraded mode for a koda older than `c51cf74e`: the provider needs koda #376-#379 deployed; an older koda answers `400` to a `NOTE` save and the outbox marks it rejected. De-duplicating koda approval requests when a `202` save is re-pushed because its first answer was lost.\n\n**Interface** —\n```typescript\nexport const MEMORY_KODA_PROVIDER_PREFIX = \"koda:\";\nexport const MEMORY_KODA_APPROVAL_CHECKS_MAX = 20;\nexport interface CreateKodaMemoryProviderInput {\n  readonly client: KodaClient;\n  readonly project: string;                                   // koda project slug\n  readonly approvals: KodaApprovals;\n  readonly readNote: (scope: MemoryScope, slug: string) => Promise<MemoryNote | null>;\n  readonly readDecisions: () => Promise<readonly MemoryDecision[]>;\n  readonly logger: MemoryLogger;\n}\nexport function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): MemoryProvider;\n```",
+      "acceptanceCriteria": [
+        "[unit] createKodaMemoryProvider({ project: \"rs-stock\", ... }).id is \"koda:rs-stock\".",
+        "[unit] MEMORY_KODA_PROVIDER_PREFIX is \"koda:\" and MEMORY_KODA_APPROVAL_CHECKS_MAX is 20.",
+        "[unit] reachable() requests GET projects/rs-stock/memory/write-mode and resolves true when data.mode is \"proposal\".",
+        "[unit] reachable() resolves false when the answer is a 401.",
+        "[unit] reachable() resolves false when the 200 answer's data.mode is absent.",
+        "[unit] A save push first requests GET projects/rs-stock, then POST memory with the body { \"projectId\": \"p1\", \"kind\": \"NOTE\", \"subject\": \"replay-budget\", \"predicate\": \"project\", \"object\": \"<body>\", \"description\": \"<description>\", \"scope\": \"project\", \"sourceType\": \"nax-chat\", \"sourceId\": \"c1\" }, where p1 is data.id of the project answer and c1 is the request's clientId.",
+        "[unit] The POST memory body has exactly the nine keys of the save request body and no writeMode key, also when the request's writeMode is \"proposal\".",
+        "[unit] A user-scope save sends \"scope\": \"user\" and the project id.",
+        "[unit] Two saves on one provider request GET projects/rs-stock once.",
+        "[unit] A GET projects/rs-stock answer without a string data.id rejects the save with MEMORY_KODA_BAD_RESPONSE, and the next save requests the project again.",
+        "[unit] A 201 save answer with data.id \"k7\" resolves { id: \"k7\", status: \"active\" }.",
+        "[unit] A 202 save answer with data.id \"apr_1\" resolves { id: \"c1\", status: \"pending\" }.",
+        "[unit] A 202 save answer records { approvalId: \"apr_1\", scope: \"project\", slug: \"replay-budget\", clientId: \"c1\" } in the provider's approvals.",
+        "[unit] A 422 save answer rejects with an error isMemoryPushRejected recognises, whose message includes koda's message.",
+        "[unit] A 403 save answer rejects with an error isMemoryPushRejected recognises.",
+        "[unit] A 409 save answer rejects with an error isMemoryPushRejected recognises.",
+        "[unit] A 401 save answer rejects with an error isMemoryPushRejected does not recognise.",
+        "[unit] A 404 save answer rejects with an error isMemoryPushRejected does not recognise.",
+        "[unit] A 503 save answer rejects with an error isMemoryPushRejected does not recognise.",
+        "[unit] For save answers 400 and 413, push rejects with MEMORY_PUSH_REJECTED whose message includes koda's message.",
+        "[unit] For save answers 408, 429 and other 5xx responses, or timeout, unreachable and bad-response errors, push rethrows a transient error rather than MEMORY_PUSH_REJECTED.",
+        "[unit] When the write-mode probe throws because koda is unreachable, rejects the key, or denies project membership, reachable() resolves false.",
+        "[integration] When syncMemory drains saves answered 400/403/409/413/422, the outbox marks those entries rejected and continues delivering later queued writes.",
+        "[integration] When a save fails transiently with 401/404/408/429/5xx, timeout, unreachable or bad response, syncMemory retains its queued outbox entry and records the error."
+      ],
+      "tags": [
+        "memory",
+        "provider",
+        "api",
+        "security"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One provider module follows the existing MCP factory pattern over supplied HTTP and approval interfaces; credentialed reachability and permission-refusal classification still require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/provider-types.ts",
+        "packages/nax/src/memory/mcp-provider.ts",
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax/src/memory/koda-approvals.ts",
+        "packages/nax/src/memory/paths.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/koda-provider.ts",
+        "packages/nax/test/unit/memory/koda-provider-save.test.ts"
+      ],
+      "suggestedCriteria": [
+        "reachable() resolves true when the probe answers data.mode direct.",
+        "When a save answers 201 while request.writeMode is proposal, push returns active without recording an approval.",
+        "When a save answers 202 while request.writeMode is direct, push returns pending and records its approval."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "395e2a7575fa0f26967e21113eaadc70c130be71"
+    },
+    {
+      "id": "US-006",
+      "title": "Deliver forgets and search koda notes",
+      "description": "**Goal** — Add exact-match paginated lookup, remote retire delivery and full-text search to the provider.\n\n**Motivation** — Today a note saved in nax chat or a `nax run` lives only in one machine's mirror (`local`) or in an MCP server that koda cannot read.\n\n**Approach** — `push` forget — finds the slug's active note (forget lookup, below); none resolves `{ id: <clientId>, status: \"deleted\" }`; else `POST memory/notes/<id>/retire`: `201` resolves `deleted`, `202` resolves `pending`, `404` and `409` resolve `deleted`.\n\n### Retire request body\n`POST memory/notes/<koda id>/retire` with `{ \"projectId\": \"<koda project id>\", \"reason\": \"<reason>\" }`; `reason` is omitted when the forget's reason is the empty string.\n\n### Forget lookup (`src/memory/koda-lookup.ts`)\n`GET projects/<slug>/memory` with query `kind=NOTE`, `subject=<slug>`, `scope=<scope>`, `status=active`, `size=100` and `current=<page>` starting at `1`. A forget runs the lookup first; only when it finds a row does it fetch the project id (`GET projects/<slug>`, memoised) and send the retire. The `404`/`409` → `deleted` mapping applies to the retire request only: a `404` from the lookup or from `GET projects/<slug>` is transient like any other failure of those requests. A forget can cost up to `MEMORY_KODA_LOOKUP_MAX_PAGES` + 2 requests, which may outlast sync's 10 s race; the retry is safe because retiring an already retired note answers `409` → `deleted`. koda's `subject` filter is a prefix match, so the answer is the first record whose `subject` equals the slug exactly and whose `scope` equals the scope. The lookup asks the next page while no record matches and the answer's `data.hasNext` is `true`, up to `MEMORY_KODA_LOOKUP_MAX_PAGES` pages; no match with `hasNext` false resolves `null`; reaching the page cap without a match throws `NaxError` `MEMORY_KODA_LOOKUP_EXHAUSTED` (transient). It is used by the forget and by proposal resolution.\n\n### Error classification (provider)\n| Answer | forget (retire) |\n|---|---|\n| `400`, `403`, `413`, `422` | `MEMORY_PUSH_REJECTED` with koda's message |\n| `409` | resolves `deleted` (the note is no longer active) |\n| `404` | resolves `deleted` (the note is gone) |\n| `401`, `408`, `429`, `5xx`, timeout, unreachable, bad response | rethrown (transient) |\n\n`403` is permanent for a write: koda refuses a principal that lacks `memory.create`, or lacks `memory.update` on another principal's row, and the drain stops at the first transient failure, so a transient `403` would block every later write. A rejected entry is retried by the user through the outbox's existing rejected-entry handling. `401` (a bad key) stays transient: fixing the key delivers everything queued. Any failure of the forget lookup itself is transient.\n\n`search` — `GET projects/<slug>/memory` with `text`, `kind=NOTE` and the scope; records mapped to hits in koda's rank order.\n\n**Hits.** A search record maps to `{ slug: subject, scope: record scope, type: predicate, description, status: \"active\", score: <records.length - index>, snippet: <object with whitespace runs collapsed, first 200 characters> }`; a record that fails R2 maps to `null` and is dropped. R2: `subject` fails `MEMORY_SLUG_RE`, `predicate` is not one of `user`, `feedback`, `project`, `reference`, or a required field (`id`, `subject`, `predicate`, `object`, `description`, `updatedAt`, `status`) is missing or not a string. Search trims blank text to no request, sends at most the first 100 characters of text, caps size at 100, and cuts mapped hits to the requested limit. The query insertion order is kind, scope, text, size. Add kodaHitOf to the mapping module created by US-003. Test provider search/forget over the real client with injected fetch, asserting request order/body and mapped hits.\n\n**Scope** — In: koda-lookup.ts, kodaHitOf, provider forget/search and operation tests. Out: export pull (US-007), approval resolution (US-008), host search changes. Retries or backoff inside the provider: a transient failure leaves the entry in the outbox for the next sync. Remote search of user-scope notes: the host asks a provider's `search` only for project-scope and unscoped queries (`host-remote-search.ts`), and that is unchanged. Tracking proposal forgets: a rejected proposal forget leaves the note active in koda and in the mirror, and needs no reconciliation.\n\n**Interface** —\n```typescript\nexport function findActiveKodaNote(input: {\n  readonly client: KodaClient;\n  readonly project: string;            // koda project slug\n  readonly scope: MemoryScope;\n  readonly slug: string;\n}): Promise<KodaMemoryItem | null>;\nexport const MEMORY_KODA_LOOKUP_MAX_PAGES = 10;\nexport function kodaHitOf(record: KodaMemoryItem, index: number, total: number): MemoryHit | null;\n```",
+      "acceptanceCriteria": [
+        "[unit] findActiveKodaNote for scope project and slug replay-budget requests the URL <url>/projects/rs-stock/memory?kind=NOTE&subject=replay-budget&scope=project&status=active&size=100&current=1.",
+        "[unit] findActiveKodaNote skips a record whose subject is replay-budget-2 and returns the record whose subject is replay-budget.",
+        "[unit] findActiveKodaNote whose first page has no match and hasNext: true requests current=2 and returns the match found there.",
+        "[unit] findActiveKodaNote with no match and hasNext: false resolves null.",
+        "[unit] findActiveKodaNote whose pages all have hasNext: true and no match rejects with MEMORY_KODA_LOOKUP_EXHAUSTED after MEMORY_KODA_LOOKUP_MAX_PAGES (10) requests.",
+        "[unit] A forget push whose lookup finds nothing resolves { id: <clientId>, status: \"deleted\" } and sends no request other than the lookup.",
+        "[unit] A forget whose lookup finds record k7 sends POST memory/notes/k7/retire with the JSON body { \"projectId\": \"p1\", \"reason\": \"stale\" }.",
+        "[unit] A forget whose reason is \"\" sends the retire body { \"projectId\": \"p1\" }.",
+        "[unit] A 201 retire answer resolves { id: <clientId>, status: \"deleted\" }.",
+        "[unit] A 202 retire answer resolves { id: <clientId>, status: \"pending\" }.",
+        "[unit] A 404 retire answer resolves { id: <clientId>, status: \"deleted\" }.",
+        "[unit] A 409 retire answer resolves { id: <clientId>, status: \"deleted\" }.",
+        "[unit] A 422 retire answer, and equivalently each 400 or 413 retire answer, rejects with an error isMemoryPushRejected recognises whose message includes koda's message.",
+        "[unit] A 403 retire answer rejects with an error isMemoryPushRejected recognises.",
+        "[unit] A forget whose lookup finds k7 and whose GET projects/rs-stock answers 404 rejects with an error isMemoryPushRejected does not recognise, and sends no retire.",
+        "[unit] A 500 answer to the forget lookup, any other forget-lookup failure (including 404), and retire failures 401/408/429/5xx/timeout/unreachable/bad response reject with an error isMemoryPushRejected does not recognise.",
+        "[unit] search({ scope: \"project\", text: \"replay budget\", limit: 5 }) requests the URL <url>/projects/rs-stock/memory?kind=NOTE&scope=project&text=replay+budget&size=5.",
+        "[unit] search with a 150-character text sends its first 100 characters as text.",
+        "[unit] search with limit: 500 sends size=100.",
+        "[unit] search with text \"   \" resolves [] without a request.",
+        "[unit] A search answer with records [r1, r2] resolves hits in that order with scores 2 and 1.",
+        "[unit] A search answer with three valid records and limit: 2 resolves two hits.",
+        "[unit] kodaHitOf of a record whose object is 300 characters with line breaks returns a snippet of at most 200 characters containing no line break.",
+        "[unit] kodaHitOf of a record whose predicate is \"decision\" returns null."
+      ],
+      "tags": [
+        "memory",
+        "provider",
+        "search",
+        "security"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Bounded sequential lookup, retire and search use established client/mapping contracts across three modules; credentialed writes and update-permission refusals retain the strict security strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-provider.ts",
+        "packages/nax/src/memory/koda-mapping.ts",
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax/src/memory/host-remote-search.ts",
+        "packages/nax-agent/src/memory/provider-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/koda-lookup.ts",
+        "packages/nax/test/unit/memory/koda-provider-forget-search.test.ts"
+      ],
+      "suggestedCriteria": [
+        "findActiveKodaNote ignores an exact-subject row whose scope differs from the requested scope.",
+        "A 202 forget resolves pending without adding a record to koda-approvals.json.",
+        "When a search response contains an invalid R2 record between valid records, the invalid hit is omitted while valid hits retain their rank order and original-position scores."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "55a6f93b480d07c6012cd60209d54afce23e0119"
+    },
+    {
+      "id": "US-007",
+      "title": "Pull and checkpoint koda export pages",
+      "description": "**Goal** — Implement provider pull through a dedicated export-page adapter with note reconciliation and project decision merging.\n\n**Motivation** — The provider seam, the outbox and the sync loop were built for exactly this provider; `local` never exercises a remote cursor and `mcp` has none, so this is also the first provider that pulls.\n\n**Approach** — `GET projects/<slug>/memory/export` with query `since=<cursor>` (omitted when the cursor is `null`) and `take=<min(take, 500)>`. The answer's `data` is `{ items: KodaMemoryItem[], nextCursor: string | null, hasMore: boolean }`, ordered by `(updatedAt, id)` ascending. Each row appears once, at its latest `updatedAt`: a supersession, retirement or soft delete rewrites the row in place and moves it to the end of the feed. koda withholds rows changed in the last 5 seconds (`MEMORY_EXPORT_SETTLE_MS`), so a write shows up on a later sync. Rows of both scopes arrive in one feed (the project's rows, plus the calling principal's user-scope rows); there is no scope parameter, so a user-scope pull reads the same feed as a project pull and keeps only the user rows. The page answers `{ notes, decisions?, nextCursor: data.nextCursor ?? undefined, done: data.hasMore !== true }`.\n\nThe mirror ids R5 compares against are read before the page is reconciled: the provider reads the mirror note of every distinct slug the page's rows of this scope name, through the `readNote` it was given, and passes the ids as a map. Read once for each distinct slug passing R2, as required by the acceptance criterion. Reconcile through reconcileKodaNotes rather than applying raw rows. R2 requires a valid MEMORY_SLUG_RE subject, predicate user/feedback/project/reference, and string id/subject/predicate/object/description/updatedAt/status; R1 ignores non-NOTE or wrong-scope rows. Matching superseded ids make the slug's current id unknown within this page; active rows replace it, and rejected/deleted tombstones apply only to matching or unknown ids. Output at most one note per slug in code-point order.\n\n**Decisions.** `DECISION` rows are merged only on project pages. A `DECISION` row whose `id`, `subject`, `predicate`, `object`, `updatedAt` or `status` is missing or not a string is skipped and counted with the note skips. A page with no valid `DECISION` row answers `decisions` undefined, so `decisions.jsonl` is not rewritten. A page with one or more merges them into the mirror's current decisions (`readDecisions`; sync writes `decisions.jsonl` after each page, so a later page sees the earlier one) by `id`: an `active` row with no `deletedAt` sets `{ id, subject, predicate, object, updatedAt, status: \"active\" }`; any other row removes its id. The merged list is ordered by `updatedAt` descending then `id`, and cut to `MEMORY_KODA_DECISIONS_MAX` (500). Rows of other kinds (`FACT`, `PREFERENCE`, `CONSTRAINT`, `INCIDENT_PATTERN`) are ignored.\n\nExport answer whose `data.items` is not an array or whose `data.hasMore` is not a boolean → `MEMORY_KODA_BAD_RESPONSE`; sync keeps the last checkpointed cursor. Export row that fails R2, or an invalid `DECISION` row → skipped, counted, logged at warn once per page with the count. Do not call readDecisions for user pages.\n\nUS-007 replaces `pull` with a call to `pullKodaPage`; US-008 adds proposal resolution to `pullKodaPage`. The pull is kept out of koda-provider.ts for the 600-line cap. Exercise reconcileKodaNotes and mergeKodaDecisions through a real provider with fetch stubbed, and use syncMemory over a real store for the stale-tombstone integration regression.\n\n**Scope** — In: koda-pull.ts, provider delegation, feed validation and mapping integration tests. Out: resolving proposals (US-008), composing the host (US-009). Any change in `packages/nax-agent`. Mirroring koda memory kinds other than `NOTE` and `DECISION` (`FACT`, `PREFERENCE`, `CONSTRAINT`, `INCIDENT_PATTERN`). Keeping a pending local edit visible while its proposal is open: a pull carrying the slug's unchanged active row replaces it until the approved row arrives. A supersession and a retirement of one note that land on two different export pages: R3/R5 track an unknown current id within one page only, so the stale active note survives until the next change to that slug.\n\n**Interface** —\n```typescript\nexport function pullKodaPage(\n  input: CreateKodaMemoryProviderInput,\n  request: { readonly scope: MemoryScope; readonly cursor: string | null; readonly take: number },\n): Promise<MemoryPage>;\n```",
+      "acceptanceCriteria": [
+        "[unit] The provider's pull({ scope: \"project\", cursor: null, take: 200 }) requests GET projects/rs-stock/memory/export?take=200 with no since.",
+        "[unit] pull with cursor: \"c_abc\" and take: 200 requests the export with since=c_abc and take=200.",
+        "[unit] pull with take: 900 requests the export with take=500.",
+        "[unit] An export answer { items: [<active project NOTE k1>], nextCursor: \"n1\", hasMore: true } resolves a page with one active note k1, nextCursor \"n1\" and done false.",
+        "[unit] An export answer with hasMore: false and nextCursor: null resolves done true and nextCursor undefined.",
+        "[unit] A project pull whose items include a user-scope NOTE returns no note for it.",
+        "[unit] A user pull over an answer holding a user-scope NOTE returns that note.",
+        "[unit] A pull calls readNote once for each distinct slug named by a row of the pull's scope that passes R2.",
+        "[unit] A rejected row k1 in a pull yields a note with status rejected when readNote returns a note with id k1.",
+        "[unit] A project pull whose items include an active DECISION row returns decisions merged with what readDecisions returned.",
+        "[unit] A project pull whose items include no DECISION row returns decisions undefined.",
+        "[unit] A user pull whose items include a DECISION row returns decisions undefined and does not call readDecisions.",
+        "[unit] An export answer whose data.items is absent rejects with MEMORY_KODA_BAD_RESPONSE.",
+        "[unit] An export answer whose data.hasMore is the string \"false\" rejects with MEMORY_KODA_BAD_RESPONSE.",
+        "[unit] A page with one invalid NOTE row logs one warn naming the skipped count 1.",
+        "[integration] syncMemory over a store and the koda provider whose fetch answers the probe and an export page [active k1 for slug a, rejected k0 for slug a] with the mirror holding k0 for slug a leaves the mirror note a with id k1.",
+        "[integration] When an export page has non-array data.items or non-boolean data.hasMore, syncMemory leaves the scope's cursor at the last successfully checkpointed page.",
+        "[unit] A page with invalid NOTE and DECISION rows emits one warn containing their combined skipped count."
+      ],
+      "tags": [
+        "memory",
+        "sync",
+        "provider",
+        "reconciliation"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "First cursor-based provider integrates feed validation, mirror reads, note reconciliation, decisions and checkpoint semantics without changing the shared sync engine.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-provider.ts",
+        "packages/nax/src/memory/koda-mapping.ts",
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax-agent/src/memory/sync.ts",
+        "packages/nax-agent/src/memory/store.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/koda-pull.ts",
+        "packages/nax/test/unit/memory/koda-provider-pull.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Two successive project pages merge decisions against the state written by the preceding page rather than against a snapshot from the beginning of the pull.",
+        "A user pull sends no scope query parameter to the export route."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1f232bdc5a992071e48f1f532cd29b5a6bd3339f"
+    },
+    {
+      "id": "US-008",
+      "title": "Resolve proposals and restore rejected edits",
+      "description": "**Goal** — Resolve recorded save proposals at each scope's last export page and restore or remove rejected pending notes.\n\n**Motivation** — The user ruled (2026-11-02) that nax chat and koda threads share ONE memory with koda as the source of truth, and that nax pulls a per-project mirror (pull architecture, design 6.5).\n\n**Approach** — A `202` save means koda opened an approval request and wrote no row. If it is executed, the row appears in the export feed and a later pull replaces the mirror's pending note. If it is rejected, nothing ever appears, so the provider records each `202` save in `koda-approvals.json` in the project mirror directory.\n\nAt the last page of a pull (`done`), the provider resolves at most `MEMORY_KODA_APPROVAL_CHECKS_MAX` (20) recorded approvals of that pull's scope, oldest record first, by asking `GET approvals/<approvalId>` and reading `data.status`:\n\n| koda status | Effect |\n|---|---|\n| `pending`, `approved` | kept (`approved` can still settle to `executed` or `failed`) |\n| `executed` | dropped (the row arrives through the feed) |\n| `rejected`, `expired`, `cancelled`, `failed` | dropped when restoration is unnecessary or succeeds; restore the slug below when eligible; keep the record if the restoring lookup throws |\n| `404` | dropped; nothing restored |\n| any other failure | kept; logged at warn |\n\n**Restoring a slug.** Only when the mirror's note for that scope and slug still has `id` equal to the record's `clientId` and status `pending`, and the page has no note for that slug already, the provider calls `findActiveKodaNote` for the slug: an active row is added to the page as that slug's note (status `active`), which puts back the note an edit proposal had replaced locally; no active row adds a tombstone for the slug: the mirror's pending note itself with `status: \"rejected\"` (every field comes from that note, so sync's record check accepts it). A lookup that throws keeps the record (retried on a later pull) and adds nothing.\n\nResolving at the scope's own last page matters: sync writes a page's notes to the page's scope, so a user-scope note on a project page would land in the project mirror.\n\nA local edit that koda answered `202` sits in the mirror as `pending` until the proposal resolves; a pull whose page carries the slug's unchanged active row (R4) replaces the pending edit with that row. The approved row arrives later through the feed. This is accepted behaviour.\n\nUse the real createKodaApprovals to seed records, drive the provider's pull through a real HTTP client with injected fetch, and assert status/lookup requests, retained or dropped records, and returned notes. The restoring lookup is the US-006 exact-subject/scope paginated helper, not a new lookup implementation. Retain the approval on any restoring-lookup error and warn.\n\n**Scope** — In: last-page approval resolution in koda-pull.ts and regression tests through syncMemory. Out: record format/atomic persistence (US-004), save recording (US-005), new CLI behavior (US-010/US-011). Tracking proposal forgets: a rejected proposal forget leaves the note active in koda and in the mirror, and needs no reconciliation. Keeping a pending local edit visible while its proposal is open: a pull carrying the slug's unchanged active row replaces it until the approved row arrives.\n\n**Interface** — Extend the existing pull entry point, without changing its signature:\n```typescript\nexport function pullKodaPage(\n  input: CreateKodaMemoryProviderInput,\n  request: { readonly scope: MemoryScope; readonly cursor: string | null; readonly take: number },\n): Promise<MemoryPage>;\n```\nUse existing `KodaApprovals.list(): Promise<readonly KodaApproval[]>`, `record(entry: KodaApproval): Promise<void>`, `drop(approvalIds: readonly string[]): Promise<void>` and `MEMORY_KODA_APPROVAL_CHECKS_MAX = 20`.",
+      "acceptanceCriteria": [
+        "[unit] A last project page (hasMore: false) with a recorded project approval apr_1 requests GET approvals/apr_1.",
+        "[unit] A page with hasMore: true requests no approval.",
+        "[unit] A last user page requests only the approvals recorded for scope user.",
+        "[unit] A last page with 25 recorded approvals of its scope requests MEMORY_KODA_APPROVAL_CHECKS_MAX (20) of them, the oldest records first.",
+        "[unit] An approval answered pending keeps the record.",
+        "[unit] An approval answered approved keeps the record.",
+        "[unit] An approval answered executed drops the record and adds no note.",
+        "[unit] An approval answered 404 drops the record and adds no note.",
+        "[unit] An approval answered 500, or any other status-read failure except 404, keeps the record and logs a warn.",
+        "[unit] An approval answered rejected drops the record when no restoring lookup is needed or its required restoring lookup succeeds.",
+        "[unit] An approval answered failed, whose mirror note has id equal to its clientId and status pending, with no active koda row for the slug, adds to the page the mirror's pending note with status \"rejected\" and every other field unchanged.",
+        "[unit] An approval answered rejected, whose mirror note is pending with its clientId, with an active koda row k1 for the slug, adds k1 to the page as the slug's note with status active.",
+        "[unit] An approval answered expired whose mirror note has a different id adds no note and makes no lookup request.",
+        "[unit] An approval answered cancelled for a slug the page already holds a note for adds no second note and makes no lookup request.",
+        "[unit] An approval answered rejected whose restoring lookup answers 500, or throws another failure, keeps the record and adds no note, with a warn logged for the lookup failure.",
+        "[integration] syncMemory over a store holding a pending note a with id c1, a recorded approval apr_1 for it answered rejected, an empty export page and no active koda row, leaves no project note a in the mirror."
+      ],
+      "tags": [
+        "memory",
+        "proposals",
+        "sync",
+        "reconciliation"
+      ],
+      "dependencies": [
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Remote proposal state, persistent records, scope isolation and conditional mirror restoration form a cross-module state machine; this consumes koda decisions rather than implementing access control.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-pull.ts",
+        "packages/nax/src/memory/koda-approvals.ts",
+        "packages/nax/src/memory/koda-lookup.ts",
+        "packages/nax/src/memory/koda-provider.ts",
+        "packages/nax-agent/src/memory/sync.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/koda-pull-approvals.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A terminal proposal status for a mirror note with matching id but status active causes no restoring lookup.",
+        "An executed approval whose row is not yet visible in the settled feed is dropped without synthesizing a note."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "59d88380a1b09ea872f63fe9bc1306aa8e32bb38"
+    },
+    {
+      "id": "US-009",
+      "title": "Compose koda-backed memory hosts",
+      "description": "**Goal** — Wire the completed koda provider into the existing host, public memory barrel and status surface.\n\n**Motivation** — The user ruled (2026-11-02) that nax chat and koda threads share ONE memory with koda as the source of truth, and that nax pulls a per-project mirror (pull architecture, design 6.5).\n\n**Approach** — `composeMemory` gains a third branch. For `provider: \"koda\"` it builds, through `_memoryHostDeps`:\n\n```typescript\nconst client = _memoryHostDeps.createKodaClient({ url, headers, timeoutMs: MEMORY_KODA_REQUEST_TIMEOUT_MS });\nconst approvals = _memoryHostDeps.createKodaApprovals({ dir: dirs.projectDir, logger: input.logger });\nconst provider = _memoryHostDeps.createKodaMemoryProvider({\n  client, project, approvals,\n  readNote: (scope, slug) => store.readNote(scope, slug),\n  readDecisions: () => store.readDecisions(),\n  logger: input.logger,\n});\n```\n\nA config that reaches the host with `provider: \"koda\"` but no `url` or no `project` (a bypassed load) throws `NaxError` `MEMORY_KODA_CONFIG_MISSING` at host creation. A koda-backed host owns no pool; `close()` stays the existing no-op for it. `host.search` already asks a provider that has `search` for project-scope and unscoped queries (`host-remote-search.ts`), so koda's hits are merged first with no host change beyond composition.\n\n`composeMemory` / `_memoryHostDeps` (`src/memory/host.ts`) — Target: `_memoryHostDeps` gains `createKodaClient`, `createKodaApprovals`, `createKodaMemoryProvider`; `composeMemory` takes the koda branch for `provider: \"koda\"`.\n\n`src/memory/index.ts` barrel — Target: also exports `createKodaClient`, `kodaStatusOf`, `MEMORY_KODA_REQUEST_TIMEOUT_MS`, `createKodaApprovals`, `createKodaMemoryProvider`, `MEMORY_KODA_PROVIDER_PREFIX`.\n\nFailure behavior through existing guards: koda unreachable, wrong key, lost membership at sync → `reachable` is `false`; sync records `unreachable`; the session runs on the mirror; writes stay queued. Search fails → the host's existing remote-search guard logs a warn and answers from the mirror.\n\nComposition tests stub the three added _memoryHostDeps entries, trigger createMemoryHost and assert the exact client, approvals, store-reader and logger arguments. Integration cases use real client/provider/store with fetch stubbed to prove pull, save delivery, remote-first search and unreachable queue preservation. Trigger memoryStatusCommand with --json and assert its provider id. Respect host.ts's existing 498/600-line budget; keep pull behavior in koda-pull.ts.\n\n**Scope** — In: host composition/seams, memory barrel, host-koda tests and existing status action integration. Out: provider algorithms (US-005–US-008), new admin commands (US-010/US-011), host remote-search routing changes. Remote search of user-scope notes: the host asks a provider's `search` only for project-scope and unscoped queries (`host-remote-search.ts`), and that is unchanged. Showing koda's own write mode, or a mismatch with `memory.writeMode`, in `nax memory status`. Changes to the `nax-memory` tool instructions, the chat, the run stages or the ACP surfaces: they read the host and need none.\n\n**Interface** — Preserve `createMemoryHost(input: CreateMemoryHostInput): Promise<MemoryHost | null>` and MemoryHost's public methods; add the three factories to `_memoryHostDeps` and the six named barrel exports above. The provider identity is `koda:<project>`.",
+      "acceptanceCriteria": [
+        "[unit] createMemoryHost with memory.provider: \"koda\", memory.koda { url: \"https://k/api\", project: \"rs-stock\", headers: { Authorization: \"Bearer x\" } } calls _memoryHostDeps.createKodaClient once with { url: \"https://k/api\", headers: { Authorization: \"Bearer x\" }, timeoutMs: MEMORY_KODA_REQUEST_TIMEOUT_MS }.",
+        "[unit] createMemoryHost for the configured koda provider calls _memoryHostDeps.createKodaApprovals once with dir equal to the host's dirs.projectDir.",
+        "[unit] createMemoryHost for koda project rs-stock calls _memoryHostDeps.createKodaMemoryProvider once with project \"rs-stock\", the client and the approvals the two stubs returned.",
+        "[unit] The readNote handed to the provider resolves the note the mirror store holds for a scope and slug.",
+        "[unit] The readDecisions handed to the provider resolves the decisions the mirror store holds.",
+        "[unit] The host's providerId is \"koda:rs-stock\".",
+        "[unit] A host with provider: \"koda\" calls neither createMcpPool nor createLocalMemoryProvider.",
+        "[unit] createMemoryHost with provider: \"koda\" and no memory.koda.project (config built without the schema) rejects with NaxError code MEMORY_KODA_CONFIG_MISSING.",
+        "[unit] close() on a koda-backed host resolves and can be called twice.",
+        "[integration] host.sync() on a koda-backed host whose stubbed fetch answers the write-mode probe and one export page holding an active project NOTE writes that note into the mirror, and host.getNote(\"project\", <slug>) returns it.",
+        "[integration] host.save of a note on a koda-backed host followed by host.sync() with fetch answering 201 leaves the mirror note with the koda id and status active.",
+        "[integration] host.search on a koda-backed host returns the koda hit ahead of a local hit with a different slug.",
+        "[cli] memoryStatusCommand with --json for a repository configured with provider: \"koda\" and project rs-stock prints a document whose provider is \"koda:rs-stock\".",
+        "[unit] createKodaClient, kodaStatusOf, MEMORY_KODA_REQUEST_TIMEOUT_MS, createKodaApprovals, createKodaMemoryProvider and MEMORY_KODA_PROVIDER_PREFIX are importable from the @/memory barrel.",
+        "[unit] createMemoryHost with provider koda but no memory.koda.url rejects with MEMORY_KODA_CONFIG_MISSING at host creation.",
+        "[integration] When a koda sync probe fails because the server is unreachable, the key is wrong or membership is lost, host.sync() reports unreachable while existing mirror reads remain available and writes stay queued.",
+        "[integration] When koda search fails, host.search logs a warn through the existing remote-search guard and returns the mirror's local hits.",
+        "[unit] createMemoryHost preserves providerId \"local\" for an existing local configuration and \"mcp:om\" for an existing valid MCP configuration naming server om, unchanged by adding the koda branch."
+      ],
+      "tags": [
+        "memory",
+        "host",
+        "integration",
+        "security"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-008"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The existing composeMcp branch, dependency seam and no-pool close behavior make the host/barrel extension standard composition; forwarding authentication headers preserves the strict security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/src/memory/index.ts",
+        "packages/nax/test/unit/memory/host-mcp.test.ts",
+        "packages/nax/src/memory/host-remote-search.ts",
+        "packages/nax/src/cli/memory.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/host-koda.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/memory/host.ts",
+          "reason": "`_memoryHostDeps` gains `createKodaClient`, `createKodaApprovals` and `createKodaMemoryProvider`; `composeMemory` gains the koda branch."
+        },
+        {
+          "path": "packages/nax/src/memory/index.ts",
+          "reason": "the barrel gains the koda exports listed under Integration."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bab761a931068dff1ce1ecf900922284c29323bc"
+    },
+    {
+      "id": "US-010",
+      "title": "Link repositories to koda projects",
+      "description": "**Goal** — Add nax memory link with safe raw-config persistence, credentialed project probing and guarded forced relinking.\n\n**Motivation** — Today a note saved in nax chat or a `nax run` lives only in one machine's mirror (`local`) or in an MCP server that koda cannot read.\n\n**Approach** — `nax memory link <koda-project> [-d <dir>] [--force] [--json]`, in this order:\n\n1. `<koda-project>` failing `KODA_PROJECT_SLUG_RE` → stderr `[memory] \"<koda-project>\" is not a koda project slug`, exit 1, nothing written.\n2. Resolves the repo root with `deps.findProjectDir` and reads `<repoRoot>/.nax/config.json` through `_memoryAdminDeps.readText` BEFORE loading the config (the loader throws on invalid project JSON first); unparsable JSON → stderr `[memory] cannot link: <path> is not valid JSON`, and JSON that is not an object (an array, `null`, a number) → stderr `[memory] cannot link: <path> is not a JSON object`; both exit 1, nothing written. Absent reads as `{}`. This parsed object is the *raw project config*.\n3. Loads the merged config as the other `nax memory` subcommands do. A load error (for example a project already linked while the global `url` is missing) is reported through the existing `withMemoryErrors` path, exit 1.\n4. No `memory.koda.url` in the loaded config → stderr `[memory] memory.koda.url is not set in ~/.nax/config.json`, exit 1, nothing written.\n5. The raw project config already names a different `memory.koda.project` and `--force` is not set → stderr `[memory] already linked to koda project \"<old>\"; pass --force to relink (the project mirror is rebuilt)`, exit 1, nothing written. With `--force` (a *forced relink*: a different project is replaced), the host for the current config is opened; memory disabled (no host) skips this check and step 8; when its `status().queued + status().rejected > 0` → stderr `[memory] <n> writes are not delivered; run nax memory sync (or nax memory forget) before relinking`, exit 1, nothing written.\n6. Probes `GET projects/<koda-project>/memory/write-mode` with a client built from the loaded `url` and `headers` (`MEMORY_PROBE_TIMEOUT_MS`); a throw, or a 2xx whose `data.mode` is not `\"direct\"` or `\"proposal\"` (the rule `reachable()` uses) → stderr `[memory] koda project \"<koda-project>\" is not reachable: <reason>`, exit 1, nothing written.\n7. Sets `memory.provider` to `\"koda\"` and `memory.koda.project` to the slug **in the raw project config from step 2** — never the merged config, which holds the global `url` and `headers` — keeping every other key and value of it; writes `JSON.stringify(config, null, 2)` plus a newline through `_memoryAdminDeps.writeText` to `config.json.tmp` and `_memoryAdminDeps.rename` onto `config.json`.\n8. Only a forced relink (step 5's case) then removes the host's `dirs.projectDir` through `_memoryAdminDeps.removePath`, so the next sync pulls the new project from the start (project A's export cursor would otherwise decode in project B and skip its older rows).\n9. stdout `linked <repoRoot> to koda project <slug> (write mode: <mode>)`, or with `--json` one document `{ \"project\": \"<slug>\", \"writeMode\": \"<mode>\", \"configPath\": \"<path>\" }`; exit 0.\n\nLinking the same project again rewrites the same values, needs no `--force`, and removes nothing, also when `--force` is passed. Linking a project whose config names provider `local` or `mcp` (no koda project) needs no `--force`; the notes already in the mirror stay local (Out of Scope: migration).\n\n`registerMemoryCommand` (`src/cli/memory.ts:176`) — Target: also calls `registerMemoryAdminCommands(memory, deps)`, which adds `link` and `reset` after `approve`. This story registers only link; US-011 adds reset. Update the four existing subcommand-name assertions in memory-read.test.ts, memory-forget.test.ts, memory-save.test.ts and memory-smoke-fixes.test.ts to gain link after approve.\n\nTests trigger memoryLinkCommand with _kodaClientDeps.fetch, _memoryAdminDeps and the host stubbed; one case executes the command through the registered Commander program. Avoid importing shared plumbing from memory.ts and closing an import cycle. Use existing withMemoryErrors and host lifecycle cleanup for thrown failures.\n\n**Scope** — In: memory-admin.ts link implementation, admin filesystem seam, registration and link tests. Out: reset action (US-011), global-only guard (US-012), host/provider algorithms (US-005–US-009). Resetting the user mirror: `nax memory reset` and a forced relink remove project mirror files only. Guarding `nax memory reset` or a forced `nax memory link` against another nax process using the same mirror at the same time. Preserving comments or formatting in `.nax/config.json` when `nax memory link` rewrites it (the file is plain JSON, rewritten with two-space indentation). Migrating notes already in a `local` or `mcp` mirror into koda when a project is first linked: they stay in the mirror and are not pushed. Inferring the koda project from the git remote; `nax memory link` takes the slug as an argument. Approval records after a forced relink: the relink removes `koda-approvals.json` with the rest of the project mirror (the approvals belong to the old koda project), so a user-scope note pending in the old project stays `pending` in the user mirror until forgotten.\n\n**Interface** —\n```typescript\nexport const _memoryAdminDeps: {\n  readText(path: string): Promise<string | null>;          // null when the file does not exist\n  writeText(path: string, text: string): Promise<void>;    // creates parent directories\n  rename(from: string, to: string): Promise<void>;\n  listDir(path: string): Promise<readonly string[]>;       // entry names; [] when the directory does not exist\n  removePath(path: string): Promise<void>;                 // recursive; a missing path is not an error\n};\nexport interface MemoryLinkOptions { readonly dir: string; readonly json?: boolean; readonly force?: boolean }\nexport function memoryLinkCommand(slug: string, opts: MemoryLinkOptions, deps?: MemoryCliDeps): Promise<number>;\nexport function registerMemoryAdminCommands(memory: Command, deps?: MemoryCliDeps): Command;\n```",
+      "acceptanceCriteria": [
+        "[cli] memoryLinkCommand(\"rs-stock\", { dir }) with a global memory.koda.url and a probe answering {\"ret\":0,\"data\":{\"mode\":\"direct\"}} writes <repoRoot>/.nax/config.json whose memory.provider is \"koda\" and memory.koda.project is \"rs-stock\", and returns 0.",
+        "[cli] The link keeps every other key of the raw project config, including other memory keys.",
+        "[cli] With a global config holding memory.koda.url and memory.koda.headers, the written project config has no memory.koda.url key and no memory.koda.headers key.",
+        "[cli] The link writes <repoRoot>/.nax/config.json when the file does not exist.",
+        "[cli] The written text is JSON.stringify(config, null, 2) followed by one newline.",
+        "[cli] The link writes through _memoryAdminDeps.writeText to config.json.tmp and _memoryAdminDeps.rename onto config.json.",
+        "[cli] The link probes GET <url>/projects/rs-stock/memory/write-mode with the global config's headers.",
+        "[cli] The link prints 'linked <repoRoot> to koda project rs-stock (write mode: direct)'.",
+        "[cli] With --json, the link prints one document { \"project\": \"rs-stock\", \"writeMode\": \"direct\", \"configPath\": \"<path>\" }.",
+        "[cli] memoryLinkCommand(\"RS stock\", ...) prints '[memory] \"RS stock\" is not a koda project slug' to stderr, returns 1 and calls _memoryAdminDeps.writeText zero times.",
+        "[cli] With no memory.koda.url in the loaded config, the link prints '[memory] memory.koda.url is not set in ~/.nax/config.json' to stderr, returns 1 and writes nothing.",
+        "[cli] With the probe answered 403, the link prints a stderr line starting '[memory] koda project \"rs-stock\" is not reachable:', returns 1 and writes nothing.",
+        "[cli] With the probe answered 200 and data.mode \"other\", the link prints a stderr line starting '[memory] koda project \"rs-stock\" is not reachable:', returns 1 and writes nothing.",
+        "[cli] With _memoryAdminDeps.readText returning { broken for the project config, the link prints '[memory] cannot link: <path> is not valid JSON' to stderr, returns 1 and writes nothing.",
+        "[cli] With _memoryAdminDeps.readText returning [1] for the project config, the link prints '[memory] cannot link: <path> is not a JSON object' to stderr, returns 1 and writes nothing.",
+        "[cli] With the project config naming memory.koda.project \"other\" and no --force, the link prints '[memory] already linked to koda project \"other\"; pass --force to relink (the project mirror is rebuilt)' to stderr, returns 1 and writes nothing.",
+        "[cli] With the project config naming \"other\", --force, and a host status of queued: 1, rejected: 0, the link prints '[memory] 1 writes are not delivered; run nax memory sync (or nax memory forget) before relinking' to stderr, returns 1 and writes nothing.",
+        "[cli] With the project config naming \"other\", --force and nothing undelivered, the link writes the config and then calls _memoryAdminDeps.removePath with the host's dirs.projectDir.",
+        "[cli] With the project config already naming \"rs-stock\" and --force, the link succeeds and calls _memoryAdminDeps.removePath zero times.",
+        "[cli] Running nax memory link rs-stock through the program registerMemoryCommand builds reaches memoryLinkCommand with the slug rs-stock, observable as a write-mode probe for projects/rs-stock/memory/write-mode and a persisted memory.koda.project of rs-stock.",
+        "[cli] When the probe throws, memoryLinkCommand prints '[memory] koda project \"rs-stock\" is not reachable: <reason>', returns 1 and writes nothing.",
+        "[cli] When merged-config loading throws, memoryLinkCommand reports the error through the existing withMemoryErrors path, returns 1 and writes nothing.",
+        "[cli] The first eight subcommand names produced by registerMemoryCommand are [\"status\", \"list\", \"show\", \"sync\", \"save\", \"forget\", \"approve\", \"link\"], preserving the existing command order when link is added after approve."
+      ],
+      "tags": [
+        "memory",
+        "cli",
+        "config",
+        "security"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Multi-step CLI state transition combines raw/merged config, authenticated probing, atomic persistence and destructive relink safety; credential handling mandates strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/memory.ts",
+        "packages/nax/src/cli/memory-cli-deps.ts",
+        "packages/nax/test/unit/cli/memory-read.test.ts",
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax/src/memory/host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/memory-admin.ts",
+        "packages/nax/test/unit/cli/memory-admin-link.test.ts"
+      ],
+      "suggestedCriteria": [
+        "With a different raw project slug, --force and memory disabled, linking probes and writes successfully without opening a usable host or deleting a mirror.",
+        "When the atomic config rename fails during a forced relink, the command returns 1 and does not remove the old project mirror.",
+        "Linking an already named project without --force succeeds without removing any mirror entries.",
+        "When raw project JSON is invalid, deps.loadConfig is not called before the command reports its required JSON error."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/cli/memory.ts",
+          "reason": "`registerMemoryCommand` also calls `registerMemoryAdminCommands(memory, deps)` after the read and write subcommands."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/memory-read.test.ts",
+          "reason": "the subcommand-name list asserted at line 299 (`[\"status\", \"list\", \"show\", \"sync\", \"save\", \"forget\", \"approve\"]`) gains `\"link\"` after `\"approve\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/memory-forget.test.ts",
+          "reason": "the subcommand-name list asserted at line 359 gains `\"link\"` after `\"approve\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/memory-save.test.ts",
+          "reason": "the subcommand-name list asserted near line 287 gains `\"link\"` after `\"approve\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/memory-smoke-fixes.test.ts",
+          "reason": "the subcommand-name list asserted near line 336 gains `\"link\"` after `\"approve\"`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0c2c152894b019ac14594f79cbaa716fbe8d9d2c"
+    },
+    {
+      "id": "US-011",
+      "title": "Reset and rebuild the koda project mirror",
+      "description": "**Goal** — Add nax memory reset with provider/delivery guards, approval preservation and outcome-sensitive resync.\n\n**Motivation** — The user ruled (2026-11-02) that nax chat and koda threads share ONE memory with koda as the source of truth, and that nax pulls a per-project mirror (pull architecture, design 6.5).\n\n**Approach** — `nax memory reset [-d <dir>] [--json]`:\n\n1. Opens the host as the other subcommands do; memory disabled keeps the existing disabled error (`memoryDisabledError`) and exit code.\n2. A provider id not starting with `koda:` → stderr `[memory] reset needs memory.provider \"koda\": the <provider id> mirror is the only copy of its notes`, exit 1, nothing deleted.\n3. `status().queued + status().rejected > 0` → stderr `[memory] <n> writes are not delivered; run nax memory sync (or nax memory forget) before reset`, exit 1, nothing deleted.\n4. Removes every entry `_memoryAdminDeps.listDir` lists in the host's `dirs.projectDir`, through `_memoryAdminDeps.removePath`, except `koda-approvals.json` (records of proposals still pending in koda, including user-scope ones whose notes live in the untouched user mirror), then runs `host.sync()` and prints its result exactly as `nax memory sync` does (`formatMemorySyncResult`, or one JSON document with `--json`).\n5. Exit `0` when the sync outcome is `\"synced\"`, else `1` (an `unreachable` reset leaves an empty mirror, which the user must hear about).\n\nAdd memoryResetCommand to memory-admin.ts and register reset after link. Update memory-read.test.ts, memory-forget.test.ts, memory-save.test.ts and memory-smoke-fixes.test.ts registration-name assertions to gain reset after link. Use the existing filesystem seam created by US-010; listDir answers entry names and [] for a missing directory, removePath is recursive and tolerates missing paths. Preserve koda-approvals.json bytes by never deleting or rewriting it in the reset phase. Join listed entries beneath dirs.projectDir, not userDir or the mirror root. Reuse formatting, not memorySyncCommand's exit rule: ordinary sync treats unreachable/locked as exit 0, but reset must report every non-synced outcome as exit 1.\n\nTests trigger memoryResetCommand with _memoryAdminDeps and host stubbed, assert guards/deletion order/preserved bytes/results, and run the subcommand through the registered Commander program. Keep the shared host lifecycle and error contract.\n\n**Scope** — In: reset action, admin registration and reset tests. Out: link behavior (US-010), provider pull/approval algorithms (US-007/US-008), changes to ordinary sync exit behavior. Resetting the user mirror: `nax memory reset` and a forced relink remove project mirror files only. Guarding `nax memory reset` or a forced `nax memory link` against another nax process using the same mirror at the same time.\n\n**Interface** —\n```typescript\nexport function memoryResetCommand(opts: MemoryCliOptions, deps?: MemoryCliDeps): Promise<number>;\nexport function registerMemoryAdminCommands(memory: Command, deps?: MemoryCliDeps): Command;\n```\nUse the existing `_memoryAdminDeps` readText/writeText/rename/listDir/removePath contract without replacing the seam object.",
+      "acceptanceCriteria": [
+        "[cli] memoryResetCommand({ dir }) on a host whose provider id is \"local\" prints '[memory] reset needs memory.provider \"koda\": the local mirror is the only copy of its notes' to stderr, returns 1 and calls _memoryAdminDeps.removePath zero times.",
+        "[cli] memoryResetCommand on a koda host whose status reports queued: 1, rejected: 1 prints '[memory] 2 writes are not delivered; run nax memory sync (or nax memory forget) before reset' to stderr, returns 1 and removes nothing.",
+        "[cli] memoryResetCommand with memory disabled prints the existing memory-disabled error and returns the same exit code nax memory sync returns when memory is disabled.",
+        "[cli] memoryResetCommand on a koda host with nothing undelivered removes every entry of dirs.projectDir except koda-approvals.json.",
+        "[cli] The reset keeps koda-approvals.json in dirs.projectDir byte-identical.",
+        "[cli] The reset leaves dirs.userDir untouched.",
+        "[cli] The reset calls host.sync() once, after the removal.",
+        "[cli] The reset prints the sync result as formatMemorySyncResult renders it.",
+        "[cli] With --json, the reset prints the sync result as one JSON document.",
+        "[cli] The reset returns 0 when the sync outcome is \"synced\".",
+        "[cli] The reset returns 1 when the sync outcome is \"unreachable\".",
+        "[cli] Running nax memory reset through the program registerMemoryCommand builds reaches memoryResetCommand, and the memory command's subcommand names are [\"status\", \"list\", \"show\", \"sync\", \"save\", \"forget\", \"approve\", \"link\", \"reset\"].",
+        "[cli] The reset returns 1 when its sync outcome is locked or failed, while still printing the sync result."
+      ],
+      "tags": [
+        "memory",
+        "cli",
+        "recovery"
+      ],
+      "dependencies": [
+        "US-010"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Guarded filesystem deletion and resync follow the existing CLI/host abstractions; no authentication or permission policy is implemented in this action.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/memory-admin.ts",
+        "packages/nax/src/cli/memory-read.ts",
+        "packages/nax/src/memory/format.ts",
+        "packages/nax/src/cli/memory-cli-deps.ts",
+        "packages/nax/test/unit/cli/memory-read.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/memory-admin-reset.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A host whose provider id is mcp:om is refused without deleting any path.",
+        "When projectDir is missing, reset performs no removePath calls and still calls host.sync once.",
+        "When removal of a project entry throws, reset returns 1 through withMemoryErrors and does not call host.sync."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/memory-read.test.ts",
+          "reason": "the subcommand-name list asserted at line 299 gains `\"reset\"` after `\"link\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/memory-forget.test.ts",
+          "reason": "the subcommand-name list asserted at line 359 gains `\"reset\"` after `\"link\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/memory-save.test.ts",
+          "reason": "the subcommand-name list asserted near line 287 gains `\"reset\"` after `\"link\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/memory-smoke-fixes.test.ts",
+          "reason": "the subcommand-name list asserted near line 336 gains `\"reset\"` after `\"link\"`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "65f4c84948059743bd983e88e21e15abc9a12979"
+    },
+    {
+      "id": "US-012",
+      "title": "Enforce global-only koda credentials and describe config",
+      "description": "**Goal** — Prevent non-global layers from choosing the koda credential destination or headers and expose all koda settings in config descriptions.\n\n**Motivation** — The user ruled (2026-11-02) that nax chat and koda threads share ONE memory with koda as the source of truth, and that nax pulls a per-project mirror (pull architecture, design 6.5).\n\n**Approach** — **Global only.** `rejectGlobalOnlyKeys(layerConf, layerName)` (`src/config/global-only-keys.ts`) also throws `NaxError` `MEMORY_KODA_CONFIG_NOT_GLOBAL` with the message `memory.koda.<key> belongs in ~/.nax/config.json and cannot be set in <layerName>` when the layer sets `memory.koda.url` or `memory.koda.headers`. It already runs on the project, profile, package and CLI layers (`loader.ts:139`, `:197`, `:346`, `:461`, `profile.ts:112`). `memory.koda.project` is allowed in every layer. `nax config` already masks every value of a `headers` map (`maskProfileValues`, `src/cli/config-profile.ts`), so no masking change is needed.\n\n`FIELD_DESCRIPTIONS` (`src/cli/config-descriptions.ts`) gains `memory.koda`, `memory.koda.url`, `memory.koda.project` and `memory.koda.headers`, and the `memory.provider` description names `\"koda\"`.\n\nGlobal/project example:\n```jsonc\n// ~/.nax/config.json (global)\n\"memory\": {\n  \"koda\": {\n    \"url\": \"https://koda.example/api\",\n    \"headers\": { \"Authorization\": \"Bearer <agent key>\" }\n  }\n}\n// <repo>/.nax/config.json (project) — what `nax memory link rs-stock` writes\n\"memory\": { \"provider\": \"koda\", \"koda\": { \"project\": \"rs-stock\" } }\n```\n\nExtend the existing global-only guard instead of duplicating layer checks. It must preserve trust/auth refusals and return allowed inputs unchanged. Validate the nested presence of url/headers safely against raw layer data; do not log their values. Tests extend existing global-only/config-description suites and exercise loadConfig with a temporary global directory so literal credentials do not reach the real user's configuration.\n\n**Scope** — In: global-only-keys.ts, FIELD_DESCRIPTIONS and guard/loader integration tests. Out: schema and runtime types (US-001), HTTP headers/errors (US-002), writing raw project config during link (US-010), changes to the existing masking implementation. Credential sources for `memory.koda.headers` other than literal values: no `${VAR}` expansion and no `auth`/exec credential source.\n\n**Interface** — Preserve the existing guard signature:\n```typescript\nexport function rejectGlobalOnlyKeys<T extends Record<string, unknown>>(layerConf: T, layerName: string): T;\n```\nNew refusal code: `MEMORY_KODA_CONFIG_NOT_GLOBAL`. New description keys: `memory.koda`, `memory.koda.url`, `memory.koda.project`, `memory.koda.headers`.",
+      "acceptanceCriteria": [
+        "[unit] rejectGlobalOnlyKeys({ memory: { koda: { url: \"https://k/api\" } } }, \"project\") throws NaxError with code MEMORY_KODA_CONFIG_NOT_GLOBAL and the message 'memory.koda.url belongs in ~/.nax/config.json and cannot be set in project'.",
+        "[unit] rejectGlobalOnlyKeys({ memory: { koda: { headers: { Authorization: \"Bearer x\" } } } }, \"profile:p\") throws NaxError with code MEMORY_KODA_CONFIG_NOT_GLOBAL and a message naming memory.koda.headers and profile:p.",
+        "[unit] rejectGlobalOnlyKeys({ memory: { koda: { project: \"rs-stock\" } } }, \"project\") returns its input unchanged.",
+        "[integration] loadConfig for a repository whose .nax/config.json sets memory.koda.url rejects with code MEMORY_KODA_CONFIG_NOT_GLOBAL.",
+        "[integration] loadConfig with a global config setting memory.koda.url and memory.koda.headers and a project config setting memory.provider: \"koda\" and memory.koda.project resolves memory.koda to the union of the two layers.",
+        "[unit] FIELD_DESCRIPTIONS has a non-empty entry for memory.koda.",
+        "[unit] FIELD_DESCRIPTIONS has a non-empty entry for memory.koda.url.",
+        "[unit] FIELD_DESCRIPTIONS has a non-empty entry for memory.koda.project.",
+        "[unit] FIELD_DESCRIPTIONS has a non-empty entry for memory.koda.headers.",
+        "[unit] The FIELD_DESCRIPTIONS entry for memory.provider mentions \"koda\".",
+        "[unit] rejectGlobalOnlyKeys continues to throw TRUST_CONFIG_NOT_GLOBAL for a non-global trust key and AUTH_CONFIG_NOT_GLOBAL for a non-global auth key, preserving the existing global-only refusals."
+      ],
+      "tags": [
+        "memory",
+        "config",
+        "security",
+        "credentials"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The additive guard follows existing config patterns but enforces the credential/destination trust boundary across all non-global layers.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/global-only-keys.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/src/config/loader.ts",
+        "packages/nax/src/cli/config-profile.ts",
+        "packages/nax/test/unit/config/global-only-keys.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A non-global layer setting memory.koda.headers to {} is rejected with MEMORY_KODA_CONFIG_NOT_GLOBAL.",
+        "Package and CLI layers setting memory.koda.url or memory.koda.headers are rejected with MEMORY_KODA_CONFIG_NOT_GLOBAL naming the offending layer.",
+        "When a guard rejects a headers map, its error message and serialized context contain no configured header value.",
+        "nax config display masks memory.koda.headers.Authorization while leaving the header name readable."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/global-only-keys.ts",
+          "reason": "`rejectGlobalOnlyKeys` also rejects `memory.koda.url` and `memory.koda.headers`."
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "adds the four `memory.koda` entries and names `\"koda\"` in the `memory.provider` entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "30085cbd39b2509b6aa69cd30ab3f77865ac0af1"
+    }
+  ],
+  "analysis": "Repository exploration: codebase-memory MCP is unavailable in this session, so findings were verified by direct file reads and text search rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. This is an enhancement to an already shipped memory subsystem, not greenfield. The authoritative feature spec is .nax/features/memory-koda-provider/spec.md:1. All twelve stories modify only packages/nax; packages/nax-agent is read-only contract context. No koda repository changes, package version changes, new dependencies, or nax-agent API changes are needed.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:151-159 documents the 600-line hard source limit, 800-line hard test limit, short functions, named constants, stage-prefixed NaxError and injectable _deps for external operations. packages/nax/package.json:49 defines the wrapped test runner, :55 the targeted unit command, and :80 the check:all gate. Use Bun-native I/O patterns in nax, bun:test, shared @test/helpers, temporary NAX_GLOBAL_CONFIG_DIR isolation, and restore dependency seams/environment after tests. Never run bare bun test or bun run nax. Coverage is a separate CI gate; do not run test:coverage inside NAX_SANDBOXED=1. Provider, config, and CLI stories must create behavior alongside tests; there is no test-only story. Security-related stories use strict three-session-tdd even when their complexity is medium.\n\nConfig impact: packages/nax/src/config/schemas-memory.ts:65 currently accepts only local/mcp; :96 memoryConfigOf is the defaults accessor; :102 defines the partially checked cross-section input; :121 implements four independent MCP validations. Retain those rules and defaults while adding an optional strict koda block and independent missing-url/missing-project issues. packages/nax/src/config/schemas.ts:528 owns the memory default and :594 invokes validateMemoryProvider, so no second schema/default source is needed. packages/nax/src/config/runtime-types-memory.ts:32 is the handwritten MemoryConfig union and must stay aligned with the schema. packages/nax/src/config/index.ts:56 and :141-149 are the export sites. packages/nax/src/config/schemas-model.ts:184 exposes isRemotePlainHttp with loopback exceptions declared at :179; reuse it, rather than inventing another host classifier. packages/nax/test/unit/config/schemas-memory.test.ts:47 and :293 deliberately reject koda today and must be replaced, not left as contradictory regressions; :240 pins the existing MCP proposal refusal, which stays.\n\nCredentials and layer trust: packages/nax/src/config/global-only-keys.ts:6 currently rejects trust/auth and returns its input. Extend it to reject nested memory.koda.url and headers whenever set in a non-global layer, including empty header maps. Existing call sites cover project (loader.ts:139), CLI (:197), package (:346 and :461), and profile (profile.ts:112); do not add a second layer policy. Existing tests include test/unit/config/global-only-keys.test.ts:83 and loader-auth-global-only.test.ts. The header masker at packages/nax/src/cli/config-profile.ts:147-175 already masks every value of any headers map, including Authorization, so no masking change is required. packages/nax/src/cli/config-descriptions.ts:455-475 is the memory descriptions block; it currently mentions only local/mcp. Credentials remain literal global headers; preserve opaque values and never emit them into transport errors, context, logs, or generated project config. A remote HTTP API is rejected because credentials travel with every request.\n\nProvider contract: packages/nax-agent/src/memory/provider-types.ts:14-45 supplies MemoryWriteRequest, MemoryPushResult, MemoryPage, and MemoryProvider. Its error contract (:8-10) makes only MEMORY_PUSH_REJECTED permanent; other throws remain queued. MemoryNote/MemoryDecision/MemoryHit and vocabulary/limits are in packages/nax-agent/src/memory/types.ts:9-73 and :88-110. The public entry supplies the types, MEMORY_SLUG_RE, MEMORY_SOURCE_MAX_CHARS, MEMORY_PROBE_TIMEOUT_MS=2000 and MEMORY_OP_TIMEOUT_MS=10000, but not MEMORY_NOTE_TYPES; declare the typed KODA_NOTE_TYPES locally, as NOTE_TYPES does in packages/nax/src/cli/memory-cli-deps.ts:40. The new HTTP client is a small injected fetch adapter, not an MCP client or LLM client. projects/<slug> routes use the project slug; save/retire bodies use a memoised string project id from GET projects/<slug>. Clear failed project-id attempts rather than caching invalid results. Reachability must probe the project write-mode route, not health, because membership matters. koda owns write mode: do not send request.writeMode, and map 201/202 independently of local writeMode. sourceId=clientId provides identical-restatement replay safety, not a general idempotency API.\n\nExisting implementation patterns: packages/nax/src/memory/mcp-provider.ts:44 defines the permanent rejection pattern and :51-159 implements the existing remote provider. packages/nax/src/plugins/builtin/reporter-shared/post-json.ts:9 is an injectable fetch seam and :48-77 demonstrates header-safe transport logging, but its swallow-on-error semantics are not the new client's contract. packages/nax/src/memory/mcp-id-map.ts:51 provides file seams, :109-123 uses temporary-file-plus-rename, and :132-165 serialises mutations and rereads disk. Follow this persistence style for versioned koda-approvals.json, preserving record order and replacing by (scope, slug). Invalid/unreadable approval files warn once per instance and read as empty. Unlike MCP ids, koda approvals for both scopes live in the PROJECT mirror directory.\n\nPull correctness is the highest-risk algorithm: packages/nax-agent/src/memory/sync.ts:316-340 applies each page by slug, not by remote id; :332-333 deletes a tombstoned slug unconditionally. Therefore a raw stale predecessor tombstone can erase a newer note unless the provider reconciles each feed page first. Read distinct valid NOTE slug ids from the mirror before reconciling. Apply R1-R6 in feed order, with separate unknown-current-id state after a matching superseded predecessor, emit at most one note per slug in code-point order, and never persist page-local reconciliation state across pages. packages/nax-agent/src/memory/sync.ts:355-369 checkpoint each applied page and retain the previous cursor when a pull fails. Each scope has an independent cursor although koda returns a combined feed with no scope query. Validate items array and boolean hasMore before returning a page. User pages must not return decisions or project approval resolutions. Merge DECISION rows by id only on project pages, rereading decisions between pages, sorting updatedAt descending then id, limiting to 500, and returning undefined when no valid decision rows occur. packages/nax-agent/src/memory/store.ts:141-146 exposes the required reads and writeDecisions; do not modify it. Note/decision row validation skips malformed records and emits one counted warn per page. Existing mcp-results.ts:41-83 is a parser pattern, not the target koda wire format.\n\nProposal lifecycle: a 202 save writes no koda row, so recording approvalId/scope/slug/clientId is necessary to resolve rejection. Resolve at most 20 oldest same-scope approvals only on that scope's last page. Pending/approved remain, executed/404 drop without restoration, terminal rejected/expired/cancelled/failed drop only after any required restoring lookup succeeds. Restore only a still-pending mirror note whose id matches clientId and whose slug is absent from the page: use the exact active remote row, or the entire pending note with status rejected as the tombstone. A failed restoring lookup keeps the record and warns. koda's five-second settle window means executed may drop before the row appears; eventual feed delivery is intended. An unchanged active row may overwrite a pending edit before proposal resolution; do not attempt to preserve that edit. The lookup uses a prefix subject query but must verify exact subject and scope, paginate up to ten pages, and treat lookup/project lookup failures as transient; only the RETIRE request maps 404/409 to deleted.\n\nHost composition: packages/nax/src/memory/host.ts:148-180 exposes _memoryHostDeps; :243-265 composes MCP; :268-279 builds store/outbox and currently chooses MCP or local. Add a third branch using the same store/outbox, no new runtime resource owner, and fail on bypassed missing koda config at creation. :377-383 already provides no-op idempotent close without a pool; :466-498 exposes the unchanged host API. packages/nax/src/memory/host-remote-search.ts:27-57 already invokes provider.search for project/unscoped requests, catches failures with one warn, and :63-72 merges remote hits before local slugs; do not modify it to add user remote search. packages/nax/src/memory/index.ts:8-20 is the barrel to extend. Existing test/unit/memory/host-mcp.test.ts:100-128 demonstrates temp global-dir isolation, factory stubs and restoration; use it to test the new branch, plus real-client/store integration. Consumers remain compatible: src/cli/chat.ts:30, src/chat/host-memory.ts:26, src/chat/resources.ts:2, src/tui/chat/slash-commands.ts:17, and src/execution/lifecycle/run-setup.ts:36 import the host/barrel and need no feature changes.\n\nCLI integration: packages/nax/src/cli/memory.ts:116 reports status via host.status and :176-199 registers read/write groups; register the new admin group afterward so link/reset follow approve. packages/nax/src/cli/memory-cli-deps.ts:63-72 defines MemoryCliDeps, :161-165 resolves root/config, :193-213 closes hosts in finally, and :236-243 translates thrown errors to Error: <message> and exit 1. Do not create a memory-admin -> memory registrar import cycle; use shared deps plumbing. Link has a special ordering constraint: validate slug, resolve root and parse raw project JSON BEFORE merged-config load, then check url/relink queue, probe, atomically rewrite only raw project data, and only afterward delete the old project mirror for a forced DIFFERENT-project relink. Loading merged config before parsing would lose the required invalid-JSON message. Persisting merged data would leak global URL/headers and violate US-012. A disabled current host skips queue/removal steps, but not the new project's probe/config write. Same-project linking, even with force, never clears anything. Link from local/mcp preserves existing mirror notes and performs no migration.\n\nReset must preserve koda-approvals.json byte-for-byte and never touch userDir. Reject non-koda ids and any queued/rejected writes before deletion; remove only entries listed under projectDir, then sync once. packages/nax/src/cli/memory-read.ts:74-84 formats sync output but normally exits 0 for unreachable/locked; reset intentionally differs and exits 0 ONLY for synced. test/unit/cli/memory-read.test.ts:262 pins disabled errors, :269 locks the existing locked exit behavior, and :293-309 asserts registration names. Four registration assertions in memory-read, memory-forget, memory-save and memory-smoke-fixes tests must gain link in US-010 and reset in US-011.\n\nImplementation order is the binding DAG, with independent config/HTTP/mapping/approvals foundations first, then save, forget/search, pull, proposal resolution, host and CLI. US-012 depends only on US-001 and supplies the global-only credential enforcement independently; do not silently change dependencies to serialize it after link. Intermediate US-005 intentionally has inert pull/search until its dependency successors implement them. New files and tests are explicitly assigned through expectedFiles; upstream-created files are context, not duplicate outputs. Tests exercise real createKodaClient with fetch stubbed, real approval files, and real mapping through the provider rather than mocking the seam under test. Two targeted syncMemory integration regressions prove stale tombstones cannot erase successors and rejected saves leave no pending note.\n\nCompatibility and rollout: existing local/mcp behavior and memory defaults remain unchanged. Deployment needs koda main c51cf74e (#376-#380 contract); old servers are not supported by a degraded mode. Users configure global URL/headers, then run nax memory link <slug>. Existing local/mcp notes are not exported. Forced relink clears project cursors/approvals only after a safe config write and delivery check; reset preserves pending proposal records to permit later resolution. No provider-local retry/backoff: transient transport/auth/lookup failures retain the outbox entry until later sync, while 400/403/413/422 save/retire and save 409 become permanent refusals so later writes can drain. Invalid feed structure must not advance the checkpoint. Residual deliberately deferred risks include cross-process reset/relink races, page-boundary supersession/retirement reconciliation, duplicate approval requests after lost 202 responses, and user-mirror pending records abandoned by forced relink. The supplied wire save body contains nine keys; maintain that exact shape and no extra writeMode. No test commands were executed while drafting; only repository inspection and PRD output are performed.\n\nSecond-pass manual fidelity audit: all 196 numbered source criteria in spec.md:770-999 remain at their original story/ordinal positions (US-001 1-16, US-002 1-16, US-003 1-23, US-004 1-10, US-005 1-19, US-006 1-24, US-007 1-16, US-008 1-16, US-009 1-14, US-010 1-20, US-011 1-12, US-012 1-10), including trailing regression qualifiers. Failure-table coverage and explicit backward-compatibility criteria bring the total to 215; no story exceeds 24 criteria. The rejected-approval drop criterion is qualified by the specified restoring-lookup failure exception, preventing an unconditional drop from contradicting retention on lookup failure. Existing local/MCP config defaults, provider selection, command registration order and global-only trust/auth refusals now have explicit regression assertions. The link registration assertion uses the first-eight prefix, so it remains true after US-011 appends reset. All 19 feature exclusions remain verbatim; nearby exclusions are echoed into relevant scope sections. All spec-recommended context files are included, within five paths per story, and created files remain outputs rather than same-story context. The binding story ids, workdirs and dependency arrays are unchanged. US-005, US-006 and US-009 use medium complexity because their modules follow existing provider/composition patterns; strict security TDD remains mandatory for their credential-related paths. This audit was manual: no executable JSON validator or shell is exposed in the current tool set.",
+  "outOfScope": [
+    "A degraded mode for a koda older than `c51cf74e`: the provider needs koda #376-#379 deployed; an older koda answers `400` to a `NOTE` save and the outbox marks it rejected.",
+    "Migrating notes already in a `local` or `mcp` mirror into koda when a project is first linked: they stay in the mirror and are not pushed.",
+    "Remote search of user-scope notes: the host asks a provider's `search` only for project-scope and unscoped queries (`host-remote-search.ts`), and that is unchanged.",
+    "Showing koda's own write mode, or a mismatch with `memory.writeMode`, in `nax memory status`.",
+    "Credential sources for `memory.koda.headers` other than literal values: no `${VAR}` expansion and no `auth`/exec credential source.",
+    "Resetting the user mirror: `nax memory reset` and a forced relink remove project mirror files only.",
+    "Approval records after a forced relink: the relink removes `koda-approvals.json` with the rest of the project mirror (the approvals belong to the old koda project), so a user-scope note pending in the old project stays `pending` in the user mirror until forgotten.",
+    "A supersession and a retirement of one note that land on two different export pages: R3/R5 track an unknown current id within one page only, so the stale active note survives until the next change to that slug.",
+    "Guarding `nax memory reset` or a forced `nax memory link` against another nax process using the same mirror at the same time.",
+    "De-duplicating koda approval requests when a `202` save is re-pushed because its first answer was lost.",
+    "Tracking proposal forgets: a rejected proposal forget leaves the note active in koda and in the mirror, and needs no reconciliation.",
+    "Keeping a pending local edit visible while its proposal is open: a pull carrying the slug's unchanged active row replaces it until the approved row arrives.",
+    "Mirroring koda memory kinds other than `NOTE` and `DECISION` (`FACT`, `PREFERENCE`, `CONSTRAINT`, `INCIDENT_PATTERN`).",
+    "Inferring the koda project from the git remote; `nax memory link` takes the slug as an argument.",
+    "Preserving comments or formatting in `.nax/config.json` when `nax memory link` rewrites it (the file is plain JSON, rewritten with two-space indentation).",
+    "Changes to the `nax-memory` tool instructions, the chat, the run stages or the ACP surfaces: they read the host and need none.",
+    "Retries or backoff inside the provider: a transient failure leaves the entry in the outbox for the next sync.",
+    "Any change in the koda repository.",
+    "Any change in `packages/nax-agent`."
+  ],
+  "routingProfile": "native-codex-ds"
+}

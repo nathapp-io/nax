@@ -30,13 +30,25 @@ export interface MemoryMcpConfig {
   };
 }
 
+/** `memory.koda` — the koda project that holds the memories, and how to reach it. */
+export interface MemoryKodaConfig {
+  /** koda's API root *including* its global prefix (`https://koda.example/api`). Global-only. */
+  url?: string;
+  /** koda project slug; written by `nax memory link`. */
+  project?: string;
+  /** Static request headers (the bearer agent key), carried literally. Global-only. */
+  headers: Record<string, string>;
+}
+
 export interface MemoryConfig {
   /** Master switch: false means no host, no tools, no prompt section and no sync. */
   enabled: boolean;
-  /** Where notes live: the local store, or an MCP server named by `mcp`. */
-  provider: "local" | "mcp";
-  /** The MCP server behind `provider: "mcp"`; unused under `"local"`. */
+  /** Where notes live: the local store, an MCP server named by `mcp`, or a koda project named by `koda`. */
+  provider: "local" | "mcp" | "koda";
+  /** The MCP server behind `provider: "mcp"`; unused under `"local"` and `"koda"`. */
   mcp?: MemoryMcpConfig;
+  /** The koda project behind `provider: "koda"`; unused under the other providers. */
+  koda?: MemoryKodaConfig;
   /** `direct` writes a save immediately; `proposal` queues it for `nax memory approve`. */
   writeMode: "direct" | "proposal";
   /** Byte cap for the memory index injected into the chat prompt. */

@@ -2,11 +2,19 @@
  * The memory host: the object every memory surface reads through.
  *
  * A host is pure composition. It resolves the mirror directories once, builds
- * the store, the outbox and the local provider over them, and then answers every
- * read from that composition — the mirror's notes merged with the repository's
- * committed team notes. Nothing is cached: each call re-reads the mirror and the
- * repository, so a note a teammate commits mid-session, or one another nax
- * process saves, is visible on the next call rather than after a restart.
+ * the store, the outbox and the configured provider over them, and then answers
+ * every read from that composition — the mirror's notes merged with the
+ * repository's committed team notes. Nothing is cached: each call re-reads the
+ * mirror and the repository, so a note a teammate commits mid-session, or one
+ * another nax process saves, is visible on the next call rather than after a
+ * restart.
+ *
+ * The provider behind that composition is whichever one `memory.provider` names:
+ * the built-in local provider, an MCP server (with the pool such a host owns and
+ * closes), or a koda project — whose client, proposal record and provider are
+ * composed here and which owns no pool, so its `close` is the ordinary no-op.
+ * koda's remote search needs nothing from this file: `host.search` already asks a
+ * provider that implements `search` for its project-scope hits.
  *
  * A repo note never shadows the agent's own: `notes("project")` holds every
  * mirror note, and from the repository only the slugs the mirror does not
@@ -64,6 +72,9 @@ import { NaxError } from "@/errors";
 import { createMcpPool, type McpPool } from "@/mcp";
 import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
 import { createHostWrites } from "./host-writes";
+import { createKodaApprovals } from "./koda-approvals";
+import { createKodaClient, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
+import { createKodaMemoryProvider } from "./koda-provider";
 import { createMcpIdMap } from "./mcp-id-map";
 import { createMcpMemoryProvider } from "./mcp-provider";
 import { type MemoryDirs, type MemoryLogger, memoryDirs } from "./paths";
@@ -150,6 +161,9 @@ export const _memoryHostDeps: {
   createMcpPool: typeof createMcpPool;
   createMcpIdMap: typeof createMcpIdMap;
   createMcpMemoryProvider: typeof createMcpMemoryProvider;
+  createKodaClient: typeof createKodaClient;
+  createKodaApprovals: typeof createKodaApprovals;
+  createKodaMemoryProvider: typeof createKodaMemoryProvider;
   /** How long a remote search may run before the host gives up on it and answers from the mirror. */
   remoteSearchTimeoutMs: number;
 } = {
@@ -165,6 +179,9 @@ export const _memoryHostDeps: {
   createMcpPool,
   createMcpIdMap,
   createMcpMemoryProvider,
+  createKodaClient,
+  createKodaApprovals,
+  createKodaMemoryProvider,
   remoteSearchTimeoutMs: MEMORY_OP_TIMEOUT_MS,
 };
 
@@ -265,6 +282,41 @@ function composeMcp(input: CreateMemoryHostInput, dirs: MemoryDirs): { provider:
   return { provider, pool };
 }
 
+/**
+ * The koda provider, the client that reaches it and the record of the saves it answered with a `202`.
+ *
+ * koda owns the memories; the mirror stays the store every surface reads, so the provider is
+ * handed the host's own reads — `readNote` and `readDecisions` over this mirror — and koda's
+ * proposal records live beside it, in the project mirror directory.
+ *
+ * Config load guarantees both the url and the project (`validateMemoryProvider`); a bypassed
+ * load fails here, at host creation, rather than on the first write.
+ */
+function composeKoda(input: CreateMemoryHostInput, dirs: MemoryDirs, store: MemoryStore): MemoryProvider {
+  const koda = memoryConfigOf(input.config).koda;
+  if (koda?.url === undefined || koda.project === undefined) {
+    throw new NaxError(
+      '[memory] memory.provider "koda" needs memory.koda.url and memory.koda.project',
+      "MEMORY_KODA_CONFIG_MISSING",
+      { stage: "memory", project: koda?.project, hasUrl: koda?.url !== undefined },
+    );
+  }
+  const client = _memoryHostDeps.createKodaClient({
+    url: koda.url,
+    headers: koda.headers ?? {},
+    timeoutMs: MEMORY_KODA_REQUEST_TIMEOUT_MS,
+  });
+  const approvals = _memoryHostDeps.createKodaApprovals({ dir: dirs.projectDir, logger: input.logger });
+  return _memoryHostDeps.createKodaMemoryProvider({
+    client,
+    project: koda.project,
+    approvals,
+    readNote: (scope, slug) => store.readNote(scope, slug),
+    readDecisions: () => store.readDecisions(),
+    logger: input.logger,
+  });
+}
+
 /** Resolve the directories and build the store, the outbox and the configured provider over them. */
 async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts> {
   const dirs = await _memoryHostDeps.memoryDirs({ config: input.config, repoRoot: input.repoRoot });
@@ -274,7 +326,9 @@ async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts>
     logger: input.logger,
   });
   const outbox = _memoryHostDeps.createMemoryOutbox({ dir: store.paths.outboxDir });
-  if (memoryConfigOf(input.config).provider === "mcp") return { dirs, store, outbox, ...composeMcp(input, dirs) };
+  const provider = memoryConfigOf(input.config).provider;
+  if (provider === "mcp") return { dirs, store, outbox, ...composeMcp(input, dirs) };
+  if (provider === "koda") return { dirs, store, outbox, provider: composeKoda(input, dirs, store) };
   return { dirs, store, outbox, provider: _memoryHostDeps.createLocalMemoryProvider(store) };
 }
 

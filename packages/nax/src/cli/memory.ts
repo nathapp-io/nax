@@ -5,7 +5,8 @@
  * chat session has neither, so this group is the other surface. This file registers the group
  * and holds the two listing subcommands — `status` reports what the mirror holds, `list`
  * prints what it holds — while the other files beside it add their own: `memory-read.ts`
- * (`show`, `sync`) and `memory-write.ts` (`save`, `forget`, `approve`).
+ * (`show`, `sync`), `memory-write.ts` (`save`, `forget`, `approve`) and `memory-admin.ts`
+ * (`link`).
  *
  * The command is a thin shell, as `nax cost` is: the plumbing every subcommand shares — the
  * `--dir` / `--json` flags, the repository-root resolution, the host and the error contract —
@@ -21,6 +22,7 @@ import type { MemoryNote, MemoryNoteType, MemoryScope } from "@nathapp/nax-agent
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import { formatMemoryNoteLine, formatMemoryStatus, type MemoryHost, pendingForgetKey } from "@/memory";
+import { registerMemoryAdminCommands } from "./memory-admin";
 import {
   _memoryCliDeps,
   type MemoryCliDeps,
@@ -195,5 +197,6 @@ export function registerMemoryCommand(program: Command, deps: MemoryCliDeps = _m
     });
   registerMemoryReadCommands(memory, deps);
   registerMemoryWriteCommands(memory, deps);
+  registerMemoryAdminCommands(memory, deps);
   return memory;
 }
