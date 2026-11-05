@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-dispatch",
   "branchName": "feat/chat-polish-and-dispatch",
   "createdAt": "2026-11-05T00:00:00.000Z",
-  "updatedAt": "2026-11-05T04:03:06.425Z",
+  "updatedAt": "2026-11-05T04:10:53.598Z",
   "userStories": [
     {
       "id": "US-001",
@@ -497,14 +497,17 @@
       "dependencies": [
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Shared session-model resolution and live event decoration span host, dispatch and transcript boundaries; strict isolation guards parity and existing session behavior."
+        "reasoning": "Shared session-model resolution and live event decoration span host, dispatch and transcript boundaries; strict isolation guards parity and existing session behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/chat-host.ts",
@@ -531,7 +534,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e42022c8ff494ca23f9f4d3a764d988f56fa5f2c"
     },
     {
       "id": "US-010",
