@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as resources from "@/resources";
 import { buildResourceCatalog, type ResourceOrigin, type ResourcePackage, type SkillResource } from "@/resources";
+import { originLabel } from "@/resources/listing";
 
 const origins: ResourceOrigin[] = [
   { kind: "claude-project" },
@@ -49,6 +50,20 @@ const pkg: ResourcePackage = {
   hooks: [{ kind: "hooks", events: ["Start", "Stop"], path: "/sp/hooks.json", origin }],
   diagnostics: [{ severity: "warn", path: "/sp/plugin.json", message: "plugin warning", origin }],
 };
+
+describe("originLabel", () => {
+  test("AC-10: labels the nax built-in origin", () => {
+    expect(originLabel({ kind: "nax-builtin" })).toBe("built-in");
+  });
+
+  test("AC-11: still labels a user skill", () => {
+    expect(originLabel({ kind: "claude-user" })).toBe("user");
+  });
+
+  test("AC-12: still labels a nax plugin resource", () => {
+    expect(originLabel({ kind: "nax-plugin", plugin: "kit" })).toBe("nax-plugin kit");
+  });
+});
 
 describe("formatSkillsListing", () => {
   test("US-015 AC-1/2 lists qualified names, all four origin labels and paths", () => {

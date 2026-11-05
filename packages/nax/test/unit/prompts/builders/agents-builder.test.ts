@@ -98,6 +98,14 @@ describe("buildAgentsInstructions", () => {
   });
 });
 
+describe("buildGeneralAgentPrompt", () => {
+  test("AC-9: returns the fixed prompt of the built-in general agent", () => {
+    expect(prompts.buildGeneralAgentPrompt()).toBe(
+      "You are a general-purpose subagent. Complete the task you are given with the tools you have, then reply with a concise final answer: the agent that called you reads only your last message.",
+    );
+  });
+});
+
 describe("buildSubagentInstructions", () => {
   test("ends with the agent's prompt", () => {
     const text = prompts.buildSubagentInstructions({ agent, mode: "guarded", rulesIndex: [] });

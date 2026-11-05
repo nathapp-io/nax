@@ -2,7 +2,8 @@ import { basename } from "node:path";
 import type { NaxPlugin } from "@/plugins";
 import type { ResourceCatalog, ResourceDiagnostic, ResourceOrigin, ResourcePackage } from "./types";
 
-function originLabel(origin: ResourceOrigin): string {
+/** Display label of an origin; exported for the built-in agent, which no listing prints. */
+export function originLabel(origin: ResourceOrigin): string {
   switch (origin.kind) {
     case "claude-project":
       return "project";
@@ -12,6 +13,8 @@ function originLabel(origin: ResourceOrigin): string {
       return `plugin ${origin.plugin}`;
     case "nax-plugin":
       return `nax-plugin ${origin.plugin}`;
+    case "nax-builtin":
+      return "built-in";
   }
 }
 

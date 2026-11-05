@@ -2,7 +2,9 @@ export type ResourceOrigin =
   | { readonly kind: "claude-project" }
   | { readonly kind: "claude-user" }
   | { readonly kind: "claude-plugin"; readonly plugin: string; readonly marketplace: string }
-  | { readonly kind: "nax-plugin"; readonly plugin: string };
+  | { readonly kind: "nax-plugin"; readonly plugin: string }
+  /** A resource nax itself supplies; it has no file on disk and never joins a catalog. */
+  | { readonly kind: "nax-builtin" };
 
 export interface SkillResource {
   readonly kind: "skill";
