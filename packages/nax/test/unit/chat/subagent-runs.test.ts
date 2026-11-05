@@ -23,7 +23,7 @@ import {
 } from "@test/helpers";
 import { createChatAskController } from "@/chat/ask-controller";
 import type { ChatLedger } from "@/chat/chat-ledger";
-import { createSubagentRuns, type SubagentRunsDeps } from "@/chat/subagent-runs";
+import { _subagentRunsDeps, createSubagentRuns, type SubagentRunsDeps } from "@/chat/subagent-runs";
 import { _subagentSessionDeps } from "@/chat/subagent-session";
 
 const reviewer = makeAgentResource({ name: "reviewer" });
@@ -286,5 +286,48 @@ describe("createSubagentRuns usage, cost and tool events", () => {
     expect(forwardedResult.isError).toBe(result.isError);
     expect(forwardedCall.metadata).toEqual({ subagent: reviewer.qualifiedName, subagentTask: "check it" });
     expect(forwardedResult.metadata).toEqual({ subagent: reviewer.qualifiedName, subagentTask: "check it" });
+  });
+});
+
+describe("SubagentRuns.run model override", () => {
+  withDepsRestore(_subagentRunsDeps);
+  const haiku = makeAgentResource({ name: "haiku-agent", model: "haiku" });
+
+  function setup(config = makeNaxConfig()) {
+    const runSubagent = mock(async (_input: { model: string }) => ({ content: "ok" }));
+    _subagentRunsDeps.runSubagent = runSubagent as unknown as typeof _subagentRunsDeps.runSubagent; // test-ratchet-allow: as-unknown-as
+    const asks = createChatAskController({ mode: "guarded", answer: () => {} });
+    return { runSubagent, runs: createSubagentRuns(runsDeps({ asks, config })) };
+  }
+
+  test.each([
+    ["AC-7", "openai-codex/gpt-6-luna", "openai-codex/gpt-6-luna"],
+    ["AC-8", "acp:codex", "acp:codex"],
+  ])("%s passes %s through", async (_ac, requested, expected) => {
+    const { runSubagent, runs } = setup();
+    await runs.run(haiku, "t", undefined, requested);
+    expect(runSubagent.mock.calls[0]?.[0].model).toBe(expected);
+  });
+
+  test("AC-9 a tier name resolves through models.native", async () => {
+    const config = makeNaxConfig({ models: { native: { balanced: "openai/gpt-x" } } });
+    const { runSubagent, runs } = setup(config);
+    await runs.run(haiku, "t", undefined, "sonnet");
+    expect(runSubagent.mock.calls[0]?.[0].model).toBe("openai/gpt-x");
+  });
+
+  test("AC-10 an unresolvable override is refused before any session", async () => {
+    const { runSubagent, runs } = setup();
+    const result = await runs.run(haiku, "t", undefined, "gpt-6-luna");
+    expect(result.isError).toBe(true);
+    expect(result.content).toStartWith("[chat] unknown model gpt-6-luna");
+    expect(runSubagent).not.toHaveBeenCalled();
+  });
+
+  test("AC-11 without an override the frontmatter model resolves", async () => {
+    const config = makeNaxConfig({ models: { native: { fast: "openai/fast-x" } } });
+    const { runSubagent, runs } = setup(config);
+    await runs.run(haiku, "t");
+    expect(runSubagent.mock.calls[0]?.[0].model).toBe("openai/fast-x");
   });
 });

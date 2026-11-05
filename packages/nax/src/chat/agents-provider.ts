@@ -8,7 +8,12 @@ const MAX_AVAILABLE_AGENTS = 20;
 export interface AgentsProviderOptions {
   readonly catalog: ResourceCatalog;
   /** Runs the nested agent; the nested session lifecycle lives behind it. */
-  readonly run: (agent: AgentResource, task: string, signal: AbortSignal | undefined) => Promise<ToolResult>;
+  readonly run: (
+    agent: AgentResource,
+    task: string,
+    signal: AbortSignal | undefined,
+    model?: string,
+  ) => Promise<ToolResult>;
 }
 
 function failure(content: string): ToolResult {
@@ -24,18 +29,20 @@ export function createAgentsProvider(options: AgentsProviderOptions): ToolProvid
   const { catalog } = options;
   const tool: ProviderTool = {
     localName: "run",
-    description: "Run a named catalog agent on a self-contained task and return its final answer.",
+    description:
+      "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent.",
     inputSchema: {
       type: "object",
-      properties: { agent: { type: "string" }, task: { type: "string" } },
+      properties: { agent: { type: "string" }, task: { type: "string" }, model: { type: "string" } },
       required: ["agent", "task"],
       additionalProperties: false,
     },
     async run(input, ctx) {
-      const { agent: name, task } = input;
+      const { agent: name, task, model } = input;
       if (!nonEmptyString(name) || !nonEmptyString(task)) {
         return failure("[chat] run requires agent: string and task: string");
       }
+      if (model !== undefined && !nonEmptyString(model)) return failure("[chat] run model must be a non-empty string");
       const agent = catalog.findAgent(name);
       if (!agent) {
         const available = catalog.agents
@@ -44,7 +51,7 @@ export function createAgentsProvider(options: AgentsProviderOptions): ToolProvid
           .join(", ");
         return failure(`unknown agent ${name}; available: ${available}`);
       }
-      return options.run(agent, task, ctx.signal);
+      return model === undefined ? options.run(agent, task, ctx.signal) : options.run(agent, task, ctx.signal, model);
     },
   };
   return {
