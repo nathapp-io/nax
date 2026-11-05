@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-dispatch",
   "branchName": "feat/chat-polish-and-dispatch",
   "createdAt": "2026-11-05T00:00:00.000Z",
-  "updatedAt": "2026-11-05T03:36:09.854Z",
+  "updatedAt": "2026-11-05T03:43:01.439Z",
   "userStories": [
     {
       "id": "US-001",
@@ -247,14 +247,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Pure presentation reducers and existing rate-window logic consume an upstream event without changing permissions or session lifecycle."
+        "reasoning": "Pure presentation reducers and existing rate-window logic consume an upstream event without changing permissions or session lifecycle.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/chat-status.ts",
@@ -267,7 +270,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c91e5ae7174633a8109de02d9e1f7adaa464db1b"
     },
     {
       "id": "US-006",
