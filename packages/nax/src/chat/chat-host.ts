@@ -19,6 +19,7 @@ import {
   isChatAcpModel,
   reportAcpOpens,
 } from "./acp";
+import { withAgentCallModel } from "./agent-call-model";
 import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
@@ -487,7 +488,7 @@ class NativeChatHost implements ChatHost {
         images: options?.images,
         asks: this.asks,
         ledger,
-        onEvent,
+        onEvent: runs ? withAgentCallModel(onEvent, runs.modelFor) : onEvent,
         now: this.deps.now().toISOString(),
         ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
       });

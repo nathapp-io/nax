@@ -539,3 +539,133 @@ describe("native manual compaction: a fresh session", () => {
     expect(provider.completeRequests).toEqual([]);
   });
 });
+
+describe("native manual compaction: keeps the last turn", () => {
+  function shortTurnsDoc(): TranscriptDoc {
+    return {
+      model: MODEL,
+      savedAt: SAVED_AT,
+      messages: [
+        { role: "user", content: "first question" },
+        { role: "assistant", content: text(200, "a") },
+        { role: "user", content: "second question" },
+        { role: "assistant", content: text(200, "b") },
+        { role: "user", content: "third question" },
+        { role: "assistant", content: "third answer" },
+      ],
+    };
+  }
+
+  test("AC-7, AC-8: three short turns compact, keeping the third verbatim", async () => {
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    provider.pushComplete("short summary");
+    provider.push(textRound("carrying on"));
+    const store = await seeded("k-7", shortTurnsDoc());
+    const session = await openSession("k-7", store);
+
+    const result = await compactNow(session)();
+
+    expect(result.compacted).toBe(true);
+    expect(result.tokensAfter).toBeLessThan(result.tokensBefore);
+    await collect(session.send("next"));
+    const messages = requestMessages(provider, 0);
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining("short summary") });
+    expect(messages[1]).toEqual({ role: "user", content: "third question" });
+    const contents = messages.map((message) => message.content);
+    expect(contents).not.toContain("first question");
+    expect(contents).not.toContain("second question");
+  });
+
+  test("AC-9: a single turn is a no-op with no summarizer call", async () => {
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    const store = await seeded("k-9", {
+      model: MODEL,
+      savedAt: SAVED_AT,
+      messages: [
+        { role: "user", content: "q" },
+        { role: "assistant", content: "a" },
+      ],
+    });
+    const session = await openSession("k-9", store);
+
+    const result = await compactNow(session)();
+
+    expect(result.compacted).toBe(false);
+    expect(result.costUsd).toBe(0);
+    expect(provider.completeRequests).toEqual([]);
+  });
+
+  test("AC-10: [user, summary, assistant] has no last turn to keep and is a no-op", async () => {
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    const store = await seeded("k-10", {
+      model: MODEL,
+      savedAt: SAVED_AT,
+      messages: [
+        { role: "user", content: "the opening" },
+        { role: "user", content: `${COMPACTION_SUMMARY_PREFIX}earlier\n</summary>\n` },
+        { role: "assistant", content: "done" },
+      ],
+    });
+    const session = await openSession("k-10", store);
+
+    const result = await compactNow(session)();
+
+    expect(result.compacted).toBe(false);
+    expect(provider.completeRequests).toEqual([]);
+  });
+
+  test("AC-11: a last turn larger than the keep budget is cut inside the turn", async () => {
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    provider.pushComplete("big turn summary");
+    provider.push(textRound("carrying on"));
+    const store = await seeded("k-11", {
+      model: MODEL,
+      savedAt: SAVED_AT,
+      messages: [
+        { role: "user", content: "early" },
+        { role: "assistant", content: "early answer" },
+        { role: "user", content: text(800, "u") },
+        { role: "assistant", content: text(800, "a") },
+      ],
+    });
+    const session = await openSession("k-11", store);
+
+    const result = await compactNow(session)();
+
+    expect(result.compacted).toBe(true);
+    await collect(session.send("next"));
+    const messages = requestMessages(provider, 0);
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining("big turn summary") });
+    const first = messages[1];
+    expect(first === undefined ? undefined : [text(800, "u"), text(800, "a")]).toContain(first?.content);
+  });
+
+  test("AC-12: automatic compaction does not fire below compactAtPercent on the same history", async () => {
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    provider.push(textRound("answer"));
+    const store = await seeded("k-12", shortTurnsDoc());
+    const session = await openSession("k-12", store);
+
+    await collect(session.send("next"));
+
+    expect(provider.completeRequests).toEqual([]);
+  });
+
+  test("AC-13: a rejecting summarizer propagates and leaves history unchanged", async () => {
+    const provider = installScriptedProvider({ contextWindow: WINDOW });
+    const failure = new Error("summarizer offline");
+    provider.pushComplete(failure);
+    provider.push(textRound("uncompacted"));
+    const store = await seeded("k-13", shortTurnsDoc());
+    const session = await openSession("k-13", store);
+
+    const caught = await compactNow(session)().then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+
+    expect(caught).toBe(failure);
+    await collect(session.send("next"));
+    expect(requestMessages(provider, 0)).toEqual([...shortTurnsDoc().messages, { role: "user", content: "next" }]);
+  });
+});

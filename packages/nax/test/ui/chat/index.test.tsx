@@ -76,6 +76,16 @@ function stubScreen(isTTY = true) {
     cleanup: () => {},
     clear: () => {},
   };
+  const timers: { cb: () => void; ms: number; cleared: boolean }[] = [];
+  _renderChatDeps.setTimeout = (cb: () => void, ms: number): unknown => {
+    const timer = { cb, ms, cleared: false };
+    timers.push(timer);
+    return timer;
+  };
+  _renderChatDeps.clearTimeout = (handle: unknown): void => {
+    for (const timer of timers) if (timer === handle) timer.cleared = true;
+    order.push("clear");
+  };
   _renderChatDeps.write = (text: string): void => {
     writes.push(text);
     order.push(`write:${text}`);
@@ -100,6 +110,7 @@ function stubScreen(isTTY = true) {
     order,
     writes,
     exitHandlers,
+    timers,
     instance,
     renderMock,
     unmounts: () => unmounts,
@@ -290,6 +301,89 @@ describe("renderChat terminal title", () => {
     busy(true);
     busy(false);
     expect(screen.writes).toEqual(afterRestore);
+  });
+
+  const frameTitle = (frame: string) => `\u001b]0;${frame} nax · repo\u0007`;
+  const live = (screen: ReturnType<typeof stubScreen>) => screen.timers.filter((t) => !t.cleared);
+
+  test("US-007 AC-7: busy(true) writes the static title and arms one 400 ms timeout", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    busyOf(screen)(true);
+    expect(screen.writes.at(-1)).toBe("\u001b]0;✳ nax · repo\u0007");
+    expect(screen.timers.map((t) => t.ms)).toEqual([400]);
+    view.unmount();
+  });
+
+  test("US-007 AC-8: each tick writes the next frame and re-arms", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    busyOf(screen)(true);
+    const frames = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs.spinner;
+    for (let i = 0; i < 3; i++) {
+      screen.timers[i]?.cb();
+      expect(screen.writes.at(-1)).toBe(frameTitle(frames[i] as string));
+      expect(screen.timers).toHaveLength(i + 2);
+      expect(screen.timers[i + 1]?.ms).toBe(400);
+    }
+    view.unmount();
+  });
+
+  test("US-007 AC-9: a second busy(true) arms no second timeout", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    const busy = busyOf(screen);
+    busy(true);
+    busy(true);
+    expect(screen.timers).toHaveLength(1);
+    view.unmount();
+  });
+
+  test("US-007 AC-10/11: busy(false) clears the timeout, writes idle; a stale tick does nothing", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    const busy = busyOf(screen);
+    busy(true);
+    busy(false);
+    expect(screen.timers[0]?.cleared).toBe(true);
+    expect(screen.writes.at(-1)).toBe(IDLE_TITLE);
+    const before = [...screen.writes];
+    screen.timers[0]?.cb();
+    expect(screen.writes).toEqual(before);
+    expect(screen.timers).toHaveLength(1);
+    view.unmount();
+  });
+
+  test("US-007 AC-12: unmount while busy clears the timeout before POP_TITLE; later tick is silent", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    busyOf(screen)(true);
+    view.unmount();
+    expect(screen.order.indexOf("clear")).toBeGreaterThan(-1);
+    expect(screen.order.indexOf("clear")).toBeLessThan(screen.order.indexOf(`write:${POP_TITLE}`));
+    const before = [...screen.writes];
+    screen.timers[0]?.cb();
+    expect(screen.writes).toEqual(before);
+    expect(live(screen)).toHaveLength(0);
+    expect(screen.timers).toHaveLength(1);
+  });
+
+  test("US-007 AC-13: off a TTY no timeout is armed", () => {
+    const screen = stubScreen(false);
+    const view = renderChat({ host: chatHost() });
+    view.unmount();
+    expect(screen.timers).toHaveLength(0);
+  });
+
+  test("US-007 AC-14: busy(true) after unmount arms nothing and writes nothing", () => {
+    const screen = stubScreen();
+    const view = renderChat({ host: chatHost() });
+    const busy = busyOf(screen);
+    view.unmount();
+    const before = [...screen.writes];
+    busy(true);
+    expect(screen.timers).toHaveLength(0);
+    expect(screen.writes).toEqual(before);
   });
 
   test("AC-14: with no cwd prop the title names the host's repo root", () => {

@@ -67,6 +67,14 @@ describe("buildAgentsInstructions", () => {
     expect(first).toContain("nax-agents__run");
   });
 
+  test("AC-13 second line names provider/model, the native example and acp:<agent>; list follows", () => {
+    const out = lines(prompts.buildAgentsInstructions([agent]));
+    expect(out[1]).toBe(
+      "Pass model to run an agent on another model: provider/model for the nax native agent (openai-codex/gpt-6-luna is native), acp:<agent> for an installed ACP agent.",
+    );
+    expect(out[2]).toBe("- reviewer: Reviews diffs");
+  });
+
   test("lists each agent as a '- name: description' line", () => {
     expect(lines(prompts.buildAgentsInstructions([agent]))).toContain("- reviewer: Reviews diffs");
   });

@@ -71,13 +71,52 @@ describe("streamComplete", () => {
     });
   });
 
-  test("taps only text and thinking deltas, in stream order", async () => {
+  test("taps text, thinking and tool-input deltas, in stream order", async () => {
     const deltas: StreamDelta[] = [];
     await streamComplete(clientStreaming(script), model, req, (d) => void deltas.push(d));
     expect(deltas).toEqual([
       { type: "thinking_delta", text: "hm" },
       { type: "text_delta", text: "he" },
+      { type: "tool_input_delta", callId: "c1", name: "Read", chars: 1 },
       { type: "text_delta", text: "llo" },
+    ]);
+  });
+
+  const partial = (id: string, len: number): ProtocolEvent => ({
+    type: "tool-call-partial",
+    id,
+    name: "Write",
+    rawInput: "x".repeat(len),
+  });
+  const tapped = async (partials: ProtocolEvent[]): Promise<StreamDelta[]> => {
+    const deltas: StreamDelta[] = [];
+    const events: ProtocolEvent[] = [...partials, { type: "done", stopReason: "stop" }];
+    await streamComplete(clientStreaming(events), model, req, (d) => void deltas.push(d));
+    return deltas;
+  };
+
+  test("emits the growth of rawInput per partial, with no text field", async () => {
+    const deltas = await tapped([partial("c1", 5), partial("c1", 12)]);
+    expect(deltas).toEqual([
+      { type: "tool_input_delta", callId: "c1", name: "Write", chars: 5 },
+      { type: "tool_input_delta", callId: "c1", name: "Write", chars: 7 },
+    ]);
+    for (const d of deltas) {
+      expect("text" in d).toBe(false);
+      expect("rawInput" in d).toBe(false);
+    }
+  });
+
+  test("a partial that did not grow, or shrank, yields no delta", async () => {
+    expect(await tapped([partial("c1", 5), partial("c1", 5), partial("c1", 3)])).toHaveLength(1);
+  });
+
+  test("partials are measured per id", async () => {
+    const deltas = await tapped([partial("c1", 12), partial("c2", 4), partial("c1", 13)]);
+    expect(deltas.map((d) => (d.type === "tool_input_delta" ? [d.callId, d.chars] : null))).toEqual([
+      ["c1", 12],
+      ["c2", 4],
+      ["c1", 1],
     ]);
   });
 

@@ -196,13 +196,14 @@ describe("buildJobsInstructions", () => {
 });
 
 describe("workflow text preservation", () => {
-  test("US-004 AC-11 retains the exact four original lines", () => {
+  test("US-004 AC-11 retains the four original lines then the repo line", () => {
     expect(buildWorkflowInstructions()).toBe(
       [
         "Call `nax-workflow__state` before proposing any workflow step, and call it again after any workflow step ends, so what you propose matches the feature's real state.",
         "The nax loop runs in this order: brainstorm → spec-writing → spec-review (at most two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.",
         "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without the user's explicit approval of that launch.",
         "nax never merges a PR and never releases; the user merges the PR and the user releases.",
+        "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
       ].join("\n"),
     );
   });

@@ -5,6 +5,7 @@ import { errorMessage, isProcessAlive } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { countStories, loadPRD } from "@/prd";
 import { gitWithTimeout } from "@/utils/git";
+import { resolveTargetRepo } from "../target-repo";
 import type { ChainAdmission } from "./chain-controller";
 import { buildJobArgv, type JobLaunchInput, parseJobInput } from "./job-argv";
 import type { ChatJob, ChatJobKind } from "./job-types";
@@ -95,6 +96,7 @@ async function startApproved(
       kind: input.kind,
       target: "feature" in input ? input.feature : String(input.pr),
       argv,
+      cwd: options.repoRoot,
       sessionId: options.sessionId(),
       approvedAt: auto ? auto.approvedAt : options.now().toISOString(),
       ...(auto ? { chainId: auto.chainId, chainStep: auto.step } : {}),
@@ -216,8 +218,12 @@ async function launchReason(prepared: Prepared, options: JobsProviderOptions): P
 /** Parse, prepare, check busy state, then use chain admission or a host card. */
 export async function launchJob(
   request: { readonly kind: ChatJobKind; readonly raw: Record<string, unknown>; readonly signal?: AbortSignal },
-  options: JobsProviderOptions,
+  chatOptions: JobsProviderOptions,
 ): Promise<ToolResult> {
+  const target = await resolveTargetRepo(chatOptions.repoRoot, request.raw.repo);
+  if ("error" in target) return { isError: true, content: target.error };
+  // Everything below runs against the resolved root, exactly as it did against the chat's own.
+  const options: JobsProviderOptions = { ...chatOptions, repoRoot: target.root };
   const parsed = parseJobInput(request.kind, request.raw);
   if ("error" in parsed) return { isError: true, content: parsed.error };
   const prepared = await prepareTarget(parsed, options);

@@ -107,6 +107,13 @@ export type SessionEventBody =
   | { readonly type: "turn_start" }
   | { readonly type: "text_delta"; readonly round: number; readonly text: string }
   | { readonly type: "thinking_delta"; readonly round: number; readonly text: string }
+  | {
+      readonly type: "tool_input_delta";
+      readonly round: number;
+      readonly callId: string;
+      readonly name: string;
+      readonly chars: number;
+    }
   | { readonly type: "stream_reset"; readonly round: number; readonly attempt: number }
   | { readonly type: "tool_call"; readonly callId: string; readonly name: string; readonly input: unknown }
   | { readonly type: "tool_result"; readonly callId: string; readonly isError: boolean; readonly preview: string }

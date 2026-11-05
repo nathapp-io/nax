@@ -42,6 +42,23 @@ describe("streamed text", () => {
   });
 });
 
+describe("tool input deltas", () => {
+  const inputDelta = (chars: number) => ev({ type: "tool_input_delta", round: 1, callId: "c1", name: "Write", chars });
+
+  test("a tool_input_delta emits nothing", async () => {
+    expect(await translator().translate(inputDelta(5))).toEqual([]);
+    expect(await translator().translate(inputDelta(7))).toEqual([]);
+  });
+
+  test("a text delta after a tool_input_delta still becomes one message chunk", async () => {
+    const t = translator();
+    await t.translate(inputDelta(5));
+    expect(await t.translate(ev({ type: "text_delta", round: 1, text: "done" }))).toEqual([
+      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "done" } },
+    ]);
+  });
+});
+
 describe("tool calls", () => {
   test("a call is in_progress with kind, title, locations, raw input and its diff", async () => {
     const input = { path: "src/a.ts", old_string: "a", new_string: "b" };

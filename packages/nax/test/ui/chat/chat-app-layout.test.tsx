@@ -289,7 +289,7 @@ describe("ChatApp full-screen layout", () => {
     const ui = await harness({ state: { contextWindow: 200000 } });
     await ui.start();
     ui.emit({ type: "usage", round: 1, inputTokens: 36000, outputTokens: 0, costUsd: 0 });
-    expect(ui.rows().at(-1)).toContain("18% ctx");
+    expect(ui.rows().at(-1)).toContain("36.0k/200k ctx (18%)");
   });
 
   test("AC-16 a nested tool call renders under its agent card", async () => {

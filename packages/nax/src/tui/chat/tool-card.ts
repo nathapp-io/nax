@@ -105,27 +105,29 @@ function grepArg(input: unknown): string | undefined {
   return path === undefined ? `"${pattern}"` : `"${pattern}", ${path}`;
 }
 
-function agentArg(input: unknown): string | undefined {
+function agentArg(input: unknown, model?: string): string | undefined {
   const agent = stringField(input, "agent");
   const task = stringField(input, "task");
-  return agent === undefined || task === undefined ? undefined : `${agent}: ${task}`;
+  return agent === undefined || task === undefined
+    ? undefined
+    : `${agent}${model === undefined ? "" : ` [${model}]`}: ${task}`;
 }
 
 /** The argument the call carries, derived per tool; undefined when it carries none. */
-function rawArg(name: string, input: unknown): string | undefined {
+function rawArg(name: string, input: unknown, model?: string): string | undefined {
   if (PATH_TOOLS.has(name)) return stringField(input, "path");
   if (name === "Bash") return firstLine(stringField(input, "command"));
   if (name === "Grep") return grepArg(input);
   if (name === "Glob") return stringField(input, "pattern");
   if (name === "Git") return stringField(input, "subcommand");
-  if (name === AGENT_RUN_TOOL) return agentArg(input);
+  if (name === AGENT_RUN_TOOL) return agentArg(input, model);
   if (name === SKILL_LOAD_TOOL) return stringField(input, "name");
   return undefined;
 }
 
 /** `rawArg`, flattened to one line and elided at `TOOL_ARG_LIMIT` characters. */
-function toolArg(name: string, input: unknown): string | undefined {
-  const value = rawArg(name, input);
+function toolArg(name: string, input: unknown, model?: string): string | undefined {
+  const value = rawArg(name, input, model);
   if (value === undefined) return undefined;
   const flat = oneLine(value);
   return flat.length > TOOL_ARG_LIMIT ? `${flat.slice(0, TOOL_ARG_LIMIT)}${ELLIPSIS}` : flat;
@@ -336,7 +338,7 @@ export function diffLines(oldText: string, newText: string): readonly DiffLine[]
 
 /** The card for one tool entry. `expanded` lifts the line caps and widens the ok summary. */
 export function toolCardModel(entry: ToolEntry, options: { expanded: boolean }): ToolCardModel {
-  const arg = toolArg(entry.name, entry.input);
+  const arg = toolArg(entry.name, entry.input, entry.model);
   const tone = toolTone(entry.status);
   const succeeded = tone === "success";
   const summary = succeeded ? okSummary(entry, options.expanded) : { shown: nonResultSummary(entry, tone), hidden: 0 };

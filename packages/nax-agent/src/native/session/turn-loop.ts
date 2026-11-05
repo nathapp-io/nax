@@ -203,11 +203,15 @@ export async function runNativeTurn(
   // fires, exactly as they were installed before any round trip ran.
   const spinFlags: SpinFlags = { stopped: false, warned: false };
   const invalidCallBudget = createInvalidCallBudget();
+  const unreadToolCall = { sent: false };
   const loopEvents = deps.loopEvents ?? createLoopEventRegistry();
   registerBuiltinLoopHandlers(loopEvents, {
     sessionName: handle.id,
     sessionState: deps.sessionState,
     budget: invalidCallBudget,
+    unreadToolCall,
+    // `tools` is declared below; read at dispatch, it is the array round trips send.
+    toolNames: () => tools.map((tool) => tool.name),
     ...(deps.spinBreaker !== undefined ? { spinBreaker: deps.spinBreaker } : {}),
     ...(deps.loopHandlers !== undefined ? { loopHandlers: deps.loopHandlers } : {}),
     ...(deps.loopHandlerContext !== undefined ? { loopHandlerContext: deps.loopHandlerContext } : {}),

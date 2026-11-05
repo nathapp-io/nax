@@ -86,16 +86,16 @@ describe("buildJobNotice — chain line", () => {
 });
 
 describe("buildJobsInstructions — chain lines", () => {
-  test("US-012 AC-16 opt-in adds a ninth, last answer-tool line", () => {
+  test("US-012 AC-16 opt-in adds a tenth, last answer-tool line", () => {
     const enabled = lines(buildJobsInstructions({ answerAsks: true }));
-    expect(enabled).toHaveLength(9);
-    expect(enabled[8]).toContain("nax-jobs__answer_ask");
-    expect(enabled.slice(0, 8)).toEqual(lines(buildJobsInstructions()));
+    expect(enabled).toHaveLength(10);
+    expect(enabled[9]).toContain("nax-jobs__answer_ask");
+    expect(enabled.slice(0, 9)).toEqual(lines(buildJobsInstructions()));
   });
 
-  test("US-012 AC-17 explicit false preserves the original eight lines", () => {
+  test("US-012 AC-17 explicit false preserves the original nine lines", () => {
     expect(buildJobsInstructions({ answerAsks: false })).toBe(buildJobsInstructions());
-    expect(lines(buildJobsInstructions())).toHaveLength(8);
+    expect(lines(buildJobsInstructions())).toHaveLength(9);
   });
 
   test("AC-4 carries the nax-jobs__chain approval line", () => {
@@ -116,10 +116,10 @@ describe("buildJobsInstructions — chain lines", () => {
     );
   });
 
-  test("AC-8 returns exactly eight lines, the chain lines last", () => {
+  test("AC-8 returns exactly nine lines, the chain lines last", () => {
     const instructionLines = lines(buildJobsInstructions());
-    expect(instructionLines).toHaveLength(8);
-    expect(instructionLines.slice(5)).toEqual(CHAIN_INSTRUCTIONS);
+    expect(instructionLines).toHaveLength(9);
+    expect(instructionLines.slice(6)).toEqual(CHAIN_INSTRUCTIONS);
   });
 
   test("AC-4..AC-8 the five original instruction lines are preserved verbatim", () => {
@@ -130,6 +130,11 @@ describe("buildJobsInstructions — chain lines", () => {
       "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
       "Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
     ]);
+  });
+
+  test("AC-14 the repo line immediately precedes the chain lines", () => {
+    const l = lines(buildJobsInstructions());
+    expect(l[5]).toContain("pass repo with that folder's path");
   });
 
   test("the chain lines reach the @/prompts barrel text", () => {

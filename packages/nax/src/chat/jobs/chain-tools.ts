@@ -1,6 +1,7 @@
 /** Repo-scoped chain proposals: validate the whole proposal before host approval. */
 import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { resolveTargetRepo } from "../target-repo";
 import { buildChainStepArgv, CHAIN_STEP_FIELDS, type ChainStepInput, parseChainStepInput } from "./chain-argv";
 import type { ChatChains } from "./chain-controller";
 import { CHAIN_CHECK_MAX_LENGTH, CHAIN_MAX_STEPS, type ChainStep } from "./chain-types";
@@ -45,6 +46,20 @@ function parseStep(raw: unknown, step: number): ParsedStep | InputError {
   return { input, ...(checkBefore === undefined ? {} : { checkBefore }) };
 }
 
+type StepTarget = { readonly input: ChainStepInput; readonly options: Options; readonly prdExists: boolean };
+
+/** Resolves the step's repo, then its plan spec, against that repo. */
+async function resolveStepTarget(entry: ParsedStep, step: number, options: Options): Promise<StepTarget | InputError> {
+  const { input } = entry;
+  const target = await resolveTargetRepo(options.repoRoot, input.repo);
+  if ("error" in target) return stepError(step, target.error);
+  const stepOptions = { ...options, repoRoot: target.root };
+  if (input.kind !== "plan") return { input, options: stepOptions, prdExists: false };
+  const resolved = await resolvePlanSpec(input.feature, input.spec, stepOptions);
+  if ("error" in resolved) return stepError(step, resolved.error);
+  return { input: { ...input, spec: resolved.spec }, options: stepOptions, prdExists: resolved.prdExists };
+}
+
 async function resolveSteps(
   parsed: readonly ParsedStep[],
   options: Options,
@@ -52,14 +67,11 @@ async function resolveSteps(
   const steps: ChainStep[] = [];
   const existingPlanPrds: { step: number; feature: string }[] = [];
   for (const [index, entry] of parsed.entries()) {
-    let { input } = entry;
-    if (input.kind === "plan") {
-      const resolved = await resolvePlanSpec(input.feature, input.spec, options);
-      if ("error" in resolved) return stepError(index + 1, resolved.error);
-      if (resolved.prdExists) existingPlanPrds.push({ step: index + 1, feature: input.feature });
-      input = { ...input, spec: resolved.spec };
-    }
-    const argv = buildChainStepArgv(input, options);
+    const resolved = await resolveStepTarget(entry, index + 1, options);
+    if ("error" in resolved) return resolved;
+    const { input, options: stepOptions } = resolved;
+    if (resolved.prdExists && input.kind === "plan") existingPlanPrds.push({ step: index + 1, feature: input.feature });
+    const argv = buildChainStepArgv(input, stepOptions);
     const prless = (input.kind === "bot_review" || input.kind === "bot_fix") && input.pr === undefined;
     // The bot PR token follows the two command tokens, independently of the entry length.
     steps.push({

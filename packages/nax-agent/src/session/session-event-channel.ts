@@ -18,7 +18,7 @@
 import { AgentSessionError } from "./agent-session-errors.ts";
 import type { SessionEvent } from "./agent-session-types.ts";
 
-type DeltaEvent = Extract<SessionEvent, { readonly type: "text_delta" | "thinking_delta" }>;
+type DeltaEvent = Extract<SessionEvent, { readonly type: "text_delta" | "thinking_delta" | "tool_input_delta" }>;
 
 export interface SessionEventChannelOptions {
   /** Undelivered control events tolerated before onStall fires. */
@@ -40,11 +40,26 @@ export interface SessionEventChannel {
 const DONE: IteratorReturnResult<undefined> = { done: true, value: undefined };
 
 function isDelta(event: SessionEvent | undefined): event is DeltaEvent {
-  return event !== undefined && (event.type === "text_delta" || event.type === "thinking_delta");
+  return (
+    event !== undefined &&
+    (event.type === "text_delta" || event.type === "thinking_delta" || event.type === "tool_input_delta")
+  );
 }
 
 function canMergeInto(into: DeltaEvent, next: DeltaEvent): boolean {
-  return into.type === next.type && into.round === next.round;
+  if (into.type !== next.type || into.round !== next.round) return false;
+  if (into.type === "tool_input_delta" && next.type === "tool_input_delta") return into.callId === next.callId;
+  return true;
+}
+
+function mergeDeltas(into: DeltaEvent, next: DeltaEvent): DeltaEvent {
+  if (into.type === "tool_input_delta" && next.type === "tool_input_delta") {
+    return { ...into, chars: into.chars + next.chars };
+  }
+  if (into.type !== "tool_input_delta" && next.type !== "tool_input_delta") {
+    return { ...into, text: into.text + next.text };
+  }
+  return into;
 }
 
 export function createSessionEventChannel(options: SessionEventChannelOptions): SessionEventChannel {
@@ -79,7 +94,7 @@ export function createSessionEventChannel(options: SessionEventChannelOptions): 
       if (tail !== undefined && canMergeInto(tail, event)) {
         // Replace, don't mutate: DeltaEvent.text is readonly. O(1) — a
         // string concat, not a buffer copy.
-        tail = { ...tail, text: tail.text + event.text };
+        tail = mergeDeltas(tail, event);
         return;
       }
       if (tail !== undefined) queue.push(tail);

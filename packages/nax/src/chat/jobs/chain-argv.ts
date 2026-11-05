@@ -9,10 +9,10 @@ export type ChainStepInput =
   | (Omit<Extract<JobLaunchInput, { kind: "bot_fix" }>, "pr"> & { readonly pr?: number });
 
 export const CHAIN_STEP_FIELDS: Readonly<Record<ChatJobKind, readonly string[]>> = {
-  plan: ["feature", "spec", "profiles"],
-  run: ["feature", "profiles", "maxIterations", "maxCost"],
-  bot_review: ["pr", "profiles", "model", "decisions"],
-  bot_fix: ["pr", "profiles", "model", "trust", "noRereview"],
+  plan: ["feature", "spec", "profiles", "repo"],
+  run: ["feature", "profiles", "maxIterations", "maxCost", "repo"],
+  bot_review: ["pr", "profiles", "model", "decisions", "repo"],
+  bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
 };
 const TEMPORARY_PR = 1;
 const BOT_PR_OFFSET = 2;

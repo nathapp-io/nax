@@ -1,5 +1,7 @@
 /** Repo-scoped checkout-write exclusion while plan/run jobs are active. */
+
 import type { LoopHandlerSet } from "@nathapp/nax-agent";
+import { isWithinRootCanonical } from "../target-repo";
 import type { ChatJobs } from "./job-runner";
 
 export const GUARDED_WRITE_TOOLS: readonly string[] = Object.freeze(["Write", "Edit", "Delete", "GitCommit"]);
@@ -13,7 +15,7 @@ export function createJobWriteGuard(jobs: Pick<ChatJobs, "running">, repoRoot: s
         if (!("call" in payload) || !GUARDED_WRITE_TOOLS.includes(payload.call.name)) return { kind: "allow" };
         const job = jobs
           .running()
-          .filter((job) => job.cwd === repoRoot && (job.kind === "plan" || job.kind === "run"))
+          .filter((job) => isWithinRootCanonical(job.cwd, repoRoot) && (job.kind === "plan" || job.kind === "run"))
           .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
         if (!job) return { kind: "allow" };
         return {

@@ -36,7 +36,7 @@ const REPO_ROOT = "/repo";
 /** The window the footer reads a context percentage from. */
 const WINDOW = 100_000;
 /** 84_200 of 100_000 is 84%; 12_100 is the 12% the footer must show after the compaction. */
-const AFTER_PERCENT = "12% ctx";
+const AFTER_PERCENT = "12.1k/100k ctx (12%)";
 
 /** What the screen says while a compaction runs, and how it reports the two outcomes. */
 const COMPACTING = `compacting${THEME.glyphs.ellipsis}`;

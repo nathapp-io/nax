@@ -282,3 +282,34 @@ describe("reduceTranscript immutability", () => {
     expect(after).toBe(before);
   });
 });
+
+describe("reduceTranscript on tool_input_delta", () => {
+  test("AC-5 returns the same entries array", () => {
+    const entries = reduce(textDelta("hi"));
+    const event: SessionEvent = {
+      ...base(),
+      type: "tool_input_delta",
+      round: 1,
+      callId: "c1",
+      name: "Write",
+      chars: 40,
+    };
+    expect(reduceTranscript(entries, event)).toBe(entries);
+  });
+});
+
+describe("reduceTranscript agent call model", () => {
+  test("AC-10 a top-level call's metadata.subagentModel becomes the entry's model", () => {
+    const entries = reduceTranscript(
+      [],
+      toolCall({ name: "nax-agents__run", metadata: { subagentModel: "openai/gpt-x" } }),
+    );
+    expect(entries[0]).toMatchObject({ kind: "tool", model: "openai/gpt-x" });
+  });
+
+  test("AC-11 a call without the metadata has no model key", () => {
+    const entries = reduceTranscript([], toolCall({ name: "nax-agents__run" }));
+    expect(entries[0]).toBeDefined();
+    expect("model" in (entries[0] ?? {})).toBe(false);
+  });
+});

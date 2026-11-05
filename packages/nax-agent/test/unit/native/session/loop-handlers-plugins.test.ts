@@ -105,6 +105,8 @@ function install(registry: LoopEventRegistry, over: InstallOverrides = {}): void
     budget: createInvalidCallBudget(),
     ...(over.spinBreaker !== undefined ? { spinBreaker: over.spinBreaker } : {}),
     onSpinStop: () => {},
+    toolNames: () => [],
+    unreadToolCall: { sent: false },
     ...(over.loopHandlers !== undefined ? { loopHandlers: over.loopHandlers } : {}),
     ...(over.loopHandlerContext !== undefined ? { loopHandlerContext: over.loopHandlerContext } : {}),
     ...(over.signal !== undefined ? { signal: over.signal } : {}),

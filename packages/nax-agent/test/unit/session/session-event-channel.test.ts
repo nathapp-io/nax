@@ -14,6 +14,8 @@ function ev(body: SessionEventBody): SessionEvent {
 
 const text = (t: string, round = 1): SessionEvent => ev({ type: "text_delta", round, text: t });
 const thinking = (t: string, round = 1): SessionEvent => ev({ type: "thinking_delta", round, text: t });
+const input = (callId: string, chars: number, round = 1): SessionEvent =>
+  ev({ type: "tool_input_delta", round, callId, name: "Write", chars });
 const result = (callId: string): SessionEvent => ev({ type: "tool_result", callId, isError: false, preview: "ok" });
 
 function channel(extra: Partial<SessionEventChannelOptions> = {}) {
@@ -78,6 +80,38 @@ describe("createSessionEventChannel", () => {
     ch.push(text("e", 3));
     ch.end();
     expect(await drain(ch)).toEqual([text("ab"), thinking("xy"), text("cd", 2), text("e", 3)]);
+  });
+
+  test("tool_input_delta events with the same round and callId merge, summing chars", async () => {
+    const { ch } = channel();
+    ch.push(input("c1", 5));
+    ch.push(input("c1", 7));
+    ch.end();
+    expect(await drain(ch)).toEqual([input("c1", 12)]);
+  });
+
+  test("tool_input_delta events with different callId stay separate", async () => {
+    const { ch } = channel();
+    ch.push(input("c1", 5));
+    ch.push(input("c2", 7));
+    ch.end();
+    expect(await drain(ch)).toEqual([input("c1", 5), input("c2", 7)]);
+  });
+
+  test("a tool_input_delta then a text_delta stay two ordered events", async () => {
+    const { ch } = channel();
+    ch.push(input("c1", 5));
+    ch.push(text("a"));
+    ch.end();
+    expect(await drain(ch)).toEqual([input("c1", 5), text("a")]);
+  });
+
+  test("10,000 tool_input_delta events for one call do not stall the channel", async () => {
+    const { ch, calls } = channel({ controlCap: 2 });
+    for (let i = 0; i < 10_000; i += 1) ch.push(input("c1", 1));
+    ch.end();
+    expect(calls.stalled).toBe(0);
+    expect(await drain(ch)).toEqual([input("c1", 10_000)]);
   });
 
   test("a waiting consumer receives each delta as it is pushed", async () => {

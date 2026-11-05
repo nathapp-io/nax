@@ -4,7 +4,15 @@ import { createElement } from "react";
 import { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
 import { ChatApp, type ChatAppProps } from "./ChatApp";
 import { createMouseInput, DISABLE_MOUSE, ENABLE_MOUSE } from "./mouse-input";
-import { chatTitle, POP_TITLE, PUSH_TITLE, setTitleSequence } from "./terminal-title";
+import {
+  chatTitle,
+  chatTitleFrame,
+  POP_TITLE,
+  PUSH_TITLE,
+  setTitleSequence,
+  TITLE_FRAME_MS,
+  titleFrames,
+} from "./terminal-title";
 import { resolveChatTheme } from "./theme";
 
 export { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
@@ -16,6 +24,8 @@ export const _renderChatDeps = {
   render,
   stdin: (): NodeJS.ReadStream => process.stdin,
   createMouseInput,
+  setTimeout: (handler: () => void, ms: number): unknown => setTimeout(handler, ms),
+  clearTimeout: (handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>),
   write: (text: string): void => {
     process.stdout.write(text);
   },
@@ -72,9 +82,44 @@ export function renderChat(props: ChatAppProps): Instance {
     if (!isTTY || restored) return;
     _renderChatDeps.write(setTitleSequence(chatTitle(project, busy, glyphs)));
   };
+  const frames = titleFrames(glyphs);
+  let timer: unknown;
+  let armed = 0;
+  let frameIndex = 0;
+  const stopFrames = (): void => {
+    if (timer === undefined) return;
+    _renderChatDeps.clearTimeout(timer);
+    timer = undefined;
+    armed += 1;
+  };
+  // A re-armed setTimeout, never setInterval: the handle must stay cancellable (forbidden-patterns-source).
+  const armFrame = (): void => {
+    armed += 1;
+    const mine = armed;
+    timer = _renderChatDeps.setTimeout(() => {
+      // A tick whose timeout was cleared (or replaced) must neither write nor re-arm.
+      if (restored || mine !== armed || timer === undefined) return;
+      timer = undefined;
+      const frame = frames[frameIndex % frames.length] as string;
+      frameIndex += 1;
+      _renderChatDeps.write(setTitleSequence(chatTitleFrame(project, frame)));
+      armFrame();
+    }, TITLE_FRAME_MS);
+  };
+  const onBusy = (busy: boolean): void => {
+    if (!isTTY || restored) return;
+    showTitle(busy);
+    if (!busy) {
+      stopFrames();
+    } else if (timer === undefined) {
+      frameIndex = 0;
+      armFrame();
+    }
+  };
   const restore = (): void => {
     if (restored) return;
     restored = true;
+    stopFrames();
     removeExit?.();
     if (isTTY) _renderChatDeps.write(DISABLE_MOUSE);
     _renderChatDeps.write(LEAVE_ALT_SCREEN);
@@ -83,7 +128,7 @@ export function renderChat(props: ChatAppProps): Instance {
   };
   try {
     const instance = _renderChatDeps.render(
-      createElement(ChatApp, { ...props, mouse: mouse.events, ...(isTTY ? { onBusyChange: showTitle } : {}) }),
+      createElement(ChatApp, { ...props, mouse: mouse.events, ...(isTTY ? { onBusyChange: onBusy } : {}) }),
       {
         exitOnCtrlC: false,
         // Rewrite only the rows that changed. The standard path erases and redraws the

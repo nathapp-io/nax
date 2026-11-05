@@ -55,3 +55,16 @@ export function chatTitle(project: string, busy: boolean, glyphs: ChatGlyphs): s
   const title = `${APP_NAME}${TITLE_SEPARATOR}${withoutControls(project)}`;
   return busy ? `${glyphs.busy}${BUSY_SEPARATOR}${title}` : title;
 }
+
+/** How long each busy-marker frame stays in the title. */
+export const TITLE_FRAME_MS = 400;
+
+/** The busy-marker frames: the theme's spinner when it animates, else the one static marker. */
+export function titleFrames(glyphs: ChatGlyphs): readonly string[] {
+  return glyphs.spinner.length >= 2 ? glyphs.spinner : [glyphs.busy];
+}
+
+/** The title with one animation frame as its busy marker: `✶ nax · my-repo`. */
+export function chatTitleFrame(project: string, frame: string): string {
+  return `${frame}${BUSY_SEPARATOR}${APP_NAME}${TITLE_SEPARATOR}${withoutControls(project)}`;
+}

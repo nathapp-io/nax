@@ -6,6 +6,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir, featuresDir } from "@/config";
 import { buildWorkflowInstructions } from "@/prompts";
 import { validateFeatureName } from "@/utils/feature-name";
+import { resolveTargetRepo, targetOutputDir } from "../target-repo";
 import { type FeatureStateOptions, readFeatureState, readWorkflowStateList } from "./feature-state";
 
 const MAX_KNOWN_FEATURES = 20;
@@ -51,7 +52,13 @@ function exists(path: string, kind: "directory" | "file"): boolean {
   }
 }
 
-async function readState(input: Record<string, unknown>, options: FeatureStateOptions): Promise<ToolResult> {
+async function readState(input: Record<string, unknown>, base: FeatureStateOptions): Promise<ToolResult> {
+  const target = await resolveTargetRepo(base.repoRoot, input.repo);
+  if ("error" in target) return failure(target.error);
+  const options: FeatureStateOptions =
+    target.root === base.repoRoot
+      ? base
+      : { ...base, repoRoot: target.root, outputDir: await targetOutputDir(target.root) };
   const { feature } = input;
   if (!("feature" in input) || feature === null || (typeof feature === "string" && !feature.trim())) {
     return { content: JSON.stringify(await readWorkflowStateList(options), null, 2) };
@@ -82,7 +89,7 @@ export function createWorkflowProvider(options: FeatureStateOptions): ToolProvid
       "Read where a nax feature stands (spec, PRD, last run, workflow verdict, branch). Omit feature to list recently active features. Read-only; call it before proposing any nax plan/run/bot step.",
     inputSchema: {
       type: "object",
-      properties: { feature: { type: "string" } },
+      properties: { feature: { type: "string" }, repo: { type: "string" } },
       additionalProperties: false,
     },
     run: async (input) => readState(input, options),

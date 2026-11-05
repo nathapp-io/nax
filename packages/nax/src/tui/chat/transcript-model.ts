@@ -45,6 +45,8 @@ export type TranscriptEntry =
       status: "running" | "ok" | "error";
       open?: boolean;
       preview?: string;
+      /** The model a top-level agent call runs on, when the host named it. */
+      model?: string;
       endedAt?: string;
       children: readonly ToolChild[];
     }
@@ -158,6 +160,7 @@ function applyToolCall(entries: readonly TranscriptEntry[], event: EventOf<"tool
     const child: ToolChild = { callId: event.callId, name: event.name, input: event.input, status: "running" };
     return replaceIn(ended, parent.index, { ...parent.entry, children: [...parent.entry.children, child] });
   }
+  const model = stringField(event.metadata, "subagentModel");
   return [
     ...ended,
     {
@@ -168,6 +171,7 @@ function applyToolCall(entries: readonly TranscriptEntry[], event: EventOf<"tool
       input: event.input,
       startedAt: event.at,
       status: "running",
+      ...(model === undefined ? {} : { model }),
       children: [],
     },
   ];

@@ -36,6 +36,8 @@ import { type SpinBreaker, spinTerminalNotice } from "#src/infra/spin-breaker/in
 import { type InvalidCallBudget, normalizeNullOptionals } from "./handle-invalid-tool-call.ts";
 import {
   type BeforeToolOutcome,
+  type BeforeTurnEndPatch,
+  type BeforeTurnEndPayload,
   type LoopEventRegistry,
   type LoopHandlerContext,
   type LoopHandlerSet,
@@ -82,6 +84,10 @@ export interface BuiltinLoopHandlerDeps {
    * gets no way to abort the turn.
    */
   readonly signal?: AbortSignal;
+  /** The names of the tools the turn's round trips declare; read at dispatch. */
+  readonly toolNames: () => readonly string[];
+  /** Per-turn flag: the unread tool-call follow-up has been offered once. */
+  readonly unreadToolCall: { sent: boolean };
 }
 
 /** The state the installed handlers read. `current` is replaced every turn. */
@@ -141,6 +147,9 @@ export function registerBuiltinLoopHandlers(registry: LoopEventRegistry, deps: B
   // identical bad calls stayed invisible.
   registry.register("before_tool", ({ call, tools }) => repairInvalidCall(state, call, tools));
   registry.register("before_tool", ({ call }) => observeSpin(state, call));
+  // Registered before the plugin entries, so a plugin's own followUp (a later
+  // handler's patch overwrites an earlier one) wins.
+  registry.register("before_turn_end", (payload) => unreadToolCallFollowUp(state, payload));
   // US-003: the plugin entries go between the built-in pair above and the
   // built-in truncation below, so a call a built-in already refused is never
   // offered to a plugin — `dispatchBeforeTool` returns on the first
@@ -162,6 +171,21 @@ export function registerBuiltinLoopHandlers(registry: LoopEventRegistry, deps: B
   registry.register("after_tool", (payload) =>
     createTruncationHandler(state.current.sessionState, state.current.sessionName)(payload),
   );
+}
+
+const TOOL_CALL_MARKER = "<tool_call>";
+
+function unreadToolCallFollowUp(state: BuiltinTurnState, payload: BeforeTurnEndPayload): BeforeTurnEndPatch {
+  const { unreadToolCall, toolNames } = state.current;
+  if (payload.ended !== "completed" || payload.stopped || unreadToolCall.sent) return {};
+  const last = payload.messages.at(-1);
+  if (last?.role !== "assistant" || !last.content.includes(TOOL_CALL_MARKER)) return {};
+  // Set before returning: a follow-up the loop drops at the cap still counts as sent.
+  unreadToolCall.sent = true;
+  const names = toolNames();
+  return {
+    followUp: `Your reply contains a ${TOOL_CALL_MARKER} block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: ${names.length > 0 ? names.join(", ") : "(none)"}.`,
+  };
 }
 
 function repairInvalidCall(

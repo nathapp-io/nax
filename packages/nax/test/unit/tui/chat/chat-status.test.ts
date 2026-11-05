@@ -511,11 +511,11 @@ describe("footerModel right", () => {
   });
 
   const CONTEXT_CASES: Array<[number, string, ChatColorToken]> = [
-    [36_000, "18% ctx", "muted"],
-    [140_000, "70% ctx", "muted"],
-    [150_000, "75% ctx", "warning"],
-    [180_000, "90% ctx", "warning"],
-    [190_000, "95% ctx", "danger"],
+    [36_000, "36.0k/200k ctx (18%)", "muted"],
+    [140_000, "140.0k/200k ctx (70%)", "muted"],
+    [150_000, "150.0k/200k ctx (75%)", "warning"],
+    [180_000, "180.0k/200k ctx (90%)", "warning"],
+    [190_000, "190.0k/200k ctx (95%)", "danger"],
   ];
 
   test.each(CONTEXT_CASES)("shows %i context tokens as %s", (contextTokens, text, color) => {
@@ -527,14 +527,24 @@ describe("footerModel right", () => {
     expect(right.find((span) => span.text.includes(text))?.color).toBe(color);
   });
 
-  const NO_CONTEXT_CASES: Array<[string, Partial<ChatHostState>, TurnStatus]> = [
-    ["an unknown token count", { contextWindow: CONTEXT_WINDOW }, IDLE_STATUS],
-    ["an unknown context window", {}, { ...IDLE_STATUS, contextTokens: 36_000 }],
-    ["a zero context window", { contextWindow: 0 }, { ...IDLE_STATUS, contextTokens: 36_000 }],
+  const NO_CONTEXT_CASES: Array<[string, Partial<ChatHostState>, TurnStatus, string]> = [
+    ["an unknown token count", { contextWindow: CONTEXT_WINDOW }, IDLE_STATUS, "m1 · $0.42"],
+    ["an unknown context window", {}, { ...IDLE_STATUS, contextTokens: 36_000 }, "m1 · 36.0k ctx · $0.42"],
+    [
+      "a zero context window",
+      { contextWindow: 0 },
+      { ...IDLE_STATUS, contextTokens: 36_000 },
+      "m1 · 36.0k ctx · $0.42",
+    ],
   ];
 
-  test.each(NO_CONTEXT_CASES)("shows no percentage for %s", (_name, state, status) => {
-    expect(plainText(footer({ state, status }).right)).toBe("m1 · $0.42");
+  test.each(NO_CONTEXT_CASES)("shows no percentage for %s", (_name, state, status, expected) => {
+    expect(plainText(footer({ state, status }).right)).toBe(expected);
+  });
+
+  test("an unknown window shows the bare token span muted", () => {
+    const { right } = footer({ status: { ...IDLE_STATUS, contextTokens: 36_000 } });
+    expect(right.find((span) => span.text.includes("36.0k ctx"))?.color).toBe("muted");
   });
 });
 
@@ -705,5 +715,36 @@ describe("workingLine", () => {
 
   test("ticks the screen every 250 ms", () => {
     expect(WORKING_TICK_MS).toBe(250);
+  });
+});
+
+function toolInputDelta(chars: number, options: EventOptions = {}): SessionEvent {
+  return { ...base(options), type: "tool_input_delta", round: 1, callId: "c1", name: "Write", chars };
+}
+
+describe("reduceTurnStatus on tool_input_delta", () => {
+  const thinking = runningStatus({ streamedChars: 5 });
+
+  test("AC-1 enters writing and adds the chars", () => {
+    const next = reduceTurnStatus(thinking, toolInputDelta(40));
+    expect(next.phase).toBe("writing");
+    expect(next.streamedChars).toBe(45);
+  });
+
+  test("AC-2 the working line reads Writing…", () => {
+    const next = reduceTurnStatus(thinking, toolInputDelta(40));
+    expect(workingText(next, 0)).toContain("Writing…");
+  });
+
+  test("AC-3 a subagent's delta leaves the status unchanged", () => {
+    const event = toolInputDelta(40, { metadata: { subagentTask: "t" } });
+    expect(reduceTurnStatus(thinking, event)).toBe(thinking);
+  });
+
+  test("AC-4 a following tool_call enters the tool phase", () => {
+    const writing = reduceTurnStatus(thinking, toolInputDelta(40));
+    const next = reduceTurnStatus(writing, toolCall({ name: "Write" }));
+    expect(next.phase).toBe("tool");
+    expect(next.toolName).toBe("Write");
   });
 });

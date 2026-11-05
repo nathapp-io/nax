@@ -23,15 +23,23 @@ import {
 } from "@nathapp/nax-ai";
 import type { StreamDelta, StreamDeltaSink } from "./session/turn-types.ts";
 
-function deltaOf(event: ProtocolEvent): StreamDelta | undefined {
+function deltaOf(event: ProtocolEvent, seen: Map<string, number>): StreamDelta | undefined {
   if (event.type === "text-delta") return { type: "text_delta", text: event.text };
   if (event.type === "thinking-delta") return { type: "thinking_delta", text: event.text };
+  if (event.type === "tool-call-partial") {
+    const length = event.rawInput.length;
+    const previous = seen.get(event.id) ?? 0;
+    if (length <= previous) return undefined;
+    seen.set(event.id, length);
+    return { type: "tool_input_delta", callId: event.id, name: event.name, chars: length - previous };
+  }
   return undefined;
 }
 
 async function* tap(events: AsyncIterable<ProtocolEvent>, onDelta: StreamDeltaSink): AsyncIterable<ProtocolEvent> {
+  const seen = new Map<string, number>();
   for await (const event of events) {
-    const delta = deltaOf(event);
+    const delta = deltaOf(event, seen);
     if (delta !== undefined) {
       try {
         onDelta(delta);

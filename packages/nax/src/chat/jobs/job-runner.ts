@@ -1,10 +1,11 @@
 /** Repo-scoped detached jobs. Records and log paths are machine-local. */
-import { closeSync, mkdirSync, openSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, realpathSync } from "node:fs";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { CHAT_ASKS_FLAG, writeChatHeartbeat } from "@/interaction";
 import { getLogger } from "@/logger";
 import { buildJobNotice } from "@/prompts";
+import { isWithinRoot } from "../target-repo";
 import { readRunProgress, resolveJobOutcome } from "./job-outcome";
 import { jobAsksDir, jobLogPath, jobsDir, newJobId, readJobRecords, writeJobRecord } from "./job-store";
 import type { ChatJob, ChatJobKind } from "./job-types";
@@ -23,6 +24,8 @@ export interface StartJobRequest {
   readonly kind: ChatJobKind;
   readonly target: string;
   readonly argv: readonly string[];
+  /** Directory the child runs in; defaults to the runner's repoRoot. */
+  readonly cwd?: string;
   readonly sessionId: string;
   readonly approvedAt: string;
   readonly chainId?: string;
@@ -133,7 +136,7 @@ class DetachedJobs implements ChatJobs {
     try {
       // nax-git-env-allow: request.argv invokes nax plan/run/bot, not git.
       return _jobRunnerDeps.spawn(request.argv, {
-        cwd: this.options.repoRoot,
+        cwd: request.cwd ?? this.options.repoRoot,
         detached: true,
         stdin: secret ? "pipe" : "ignore",
         stdout: fd,
@@ -182,7 +185,7 @@ class DetachedJobs implements ChatJobs {
       schemaVersion: 1,
       id,
       logPath,
-      cwd: this.options.repoRoot,
+      cwd: request.cwd ?? this.options.repoRoot,
       pid: child.pid,
       startedAt: this.options.now().toISOString(),
       state: "running",
@@ -282,7 +285,7 @@ class DetachedJobs implements ChatJobs {
     );
     const current = this.records.get(job.id) ?? job;
     const merged: ChatJob = disk?.cancelRequested ? { ...current, cancelRequested: true } : current;
-    const outcome = await resolveJobOutcome(merged, { exitCode }, this.options.repoRoot);
+    const outcome = await resolveJobOutcome(merged, { exitCode }, job.cwd);
     const terminal: ChatJob = {
       ...(this.records.get(job.id) ?? merged),
       ...(merged.cancelRequested ? { cancelRequested: true } : {}),
@@ -345,7 +348,7 @@ class DetachedJobs implements ChatJobs {
         stage: "chat",
       });
     }
-    if (this.ownedIds.has(id) || (await readRunProgress(job, this.options.repoRoot))) return null;
+    if (this.ownedIds.has(id) || (await readRunProgress(job, job.cwd))) return null;
     return new NaxError(
       `job ${id} was started by another chat and its pid cannot be verified; stop it from that chat or by hand`,
       "CHAT_JOB_UNVERIFIED",
@@ -417,10 +420,19 @@ class DetachedJobs implements ChatJobs {
     this.attachment ??= this.loadRecords();
     return this.attachment;
   }
+  /** True when the real cwd is the real repoRoot or inside it; a vanished cwd is not ours to load. */
+  private ownsCwd(cwd: string): boolean {
+    try {
+      return isWithinRoot(realpathSync(cwd), realpathSync(this.options.repoRoot));
+    } catch {
+      // A cwd that no longer exists cannot be proven contained.
+      return false;
+    }
+  }
   private async loadRecords(): Promise<void> {
     const records = await readJobRecords(this.options.outputDir);
     for (const job of records) {
-      if (job.cwd !== this.options.repoRoot || this.records.has(job.id)) continue;
+      if (!this.ownsCwd(job.cwd) || this.records.has(job.id)) continue;
       this.records.set(job.id, job);
       if (job.state === "running" && !_jobRunnerDeps.isProcessAlive(job.pid)) {
         await this.mutate(job.id, () => this.finalizeAttached(job, false));
@@ -432,12 +444,12 @@ class DetachedJobs implements ChatJobs {
   private async finalizeAttached(job: ChatJob, notify: boolean): Promise<void> {
     this.clearGrace(job.id);
     const disk = (await readJobRecords(this.options.outputDir)).find(
-      (record) => record.id === job.id && record.cwd === this.options.repoRoot,
+      (record) => record.id === job.id && record.cwd === job.cwd,
     );
     if (disk && disk.state !== "running") {
       this.records.set(job.id, disk);
     } else {
-      const outcome = await resolveJobOutcome(job, {}, this.options.repoRoot);
+      const outcome = await resolveJobOutcome(job, {}, job.cwd);
       const terminal: ChatJob = { ...job, ...outcome, endedAt: this.options.now().toISOString() };
       await writeJobRecord(this.options.outputDir, terminal);
       this.records.set(job.id, terminal);
@@ -494,7 +506,7 @@ class DetachedJobs implements ChatJobs {
     }
   }
   private async refreshProgress(job: ChatJob): Promise<void> {
-    const metrics = await readRunProgress(job, this.options.repoRoot);
+    const metrics = await readRunProgress(job, job.cwd);
     const current = this.records.get(job.id);
     if (this.disposed || current?.state !== "running" || !metrics) return;
     if (

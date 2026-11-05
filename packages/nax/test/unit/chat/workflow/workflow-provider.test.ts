@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { _targetRepoDeps, targetOutputDir } from "@/chat/target-repo";
 import { _featureStateDeps, type FeatureStateOptions } from "@/chat/workflow/feature-state";
 import { featureDir, featuresDir } from "@/config";
 import { buildWorkflowInstructions } from "@/prompts";
@@ -59,7 +60,7 @@ describe("createWorkflowProvider", () => {
   test("AC-5 exact schema", async () => {
     expect((await stateTool()).inputSchema).toEqual({
       type: "object",
-      properties: { feature: { type: "string" } },
+      properties: { feature: { type: "string" }, repo: { type: "string" } },
       additionalProperties: false,
     });
   });
@@ -244,6 +245,115 @@ describe("createWorkflowProvider", () => {
     expect(await run({ feature: "nope" })).toEqual({
       isError: true,
       content: `unknown feature nope; known: ${expected}, +2 more`,
+    });
+  });
+  describe("repo argument", () => {
+    const origLoad = _targetRepoDeps.loadConfig;
+    afterEach(() => {
+      _targetRepoDeps.loadConfig = origLoad;
+    });
+    const verdictReads: { root: string; out: string }[] = [];
+    beforeEach(() => {
+      verdictReads.length = 0;
+      _featureStateDeps.loadRunVerdict = async (root, name, resolve) => {
+        verdictReads.push({ root, out: await resolve(root) });
+        return originalDeps.loadRunVerdict(root, name, resolve);
+      };
+    });
+    function nested() {
+      const nestedRoot = join(options.repoRoot, "repos", "nax");
+      mkdirSync(join(nestedRoot, ".nax"), { recursive: true });
+      _targetRepoDeps.loadConfig = async () => makeNaxConfig({ name: "nested", outputDir: join(nestedRoot, "out") });
+      return nestedRoot;
+    }
+    async function writeVerdict(root: string, url: string) {
+      const runDir = join(featureDir(root, "f1"), "workflow", "run-1");
+      await Bun.write(
+        join(runDir, "result.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          runId: "run-1",
+          feature: "f1",
+          stories: {},
+          featureWorkflow: {
+            step: "done",
+            startedAt: "2026-01-01T00:00:00Z",
+            seed: null,
+            gateFindings: [],
+            reviewRan: true,
+            rulings: [],
+            reviewOpen: [],
+            cannotVerify: [],
+            flaggedDecisions: [],
+            finalGateFindings: [],
+            reasons: [],
+            storyStates: [],
+            url,
+          },
+        }),
+      );
+    }
+    test("AC-14/17 reads nested feature and its output dir", async () => {
+      const nestedRoot = nested();
+      mkdirSync(featureDir(nestedRoot, "f1"), { recursive: true });
+      const runs = join(await targetOutputDir(nestedRoot), "features", "f1", "runs");
+      await Bun.write(join(runs, "2026-run.jsonl"), "{}\n");
+      await writeVerdict(nestedRoot, "https://example.test/nested-pr");
+      await writeVerdict(options.repoRoot, "https://example.test/outer-pr");
+      const result = await run({ feature: "f1", repo: "repos/nax" });
+      expect(JSON.parse(result.content).workflow).toMatchObject({
+        runId: "run-1",
+        url: "https://example.test/nested-pr",
+      });
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(result.content)).toMatchObject({ name: "f1" });
+      expect(result.content).toContain("2026-run");
+      expect(verdictReads).toEqual([{ root: realpathSync(nestedRoot), out: await targetOutputDir(nestedRoot) }]);
+    });
+    test("AC-18 lists nested features", async () => {
+      const nestedRoot = nested();
+      mkdirSync(featureDir(nestedRoot, "nf"), { recursive: true });
+      const result = await run({ repo: "repos/nax" });
+      expect(result.content).toContain("nf");
+    });
+    test("AC-19/21 rejects non-nax repo without reading", async () => {
+      features("f1");
+      const touched: string[] = [];
+      _featureStateDeps.file = ((path: string) => {
+        touched.push(`file ${path}`);
+        return originalDeps.file(path);
+      }) as typeof originalDeps.file;
+      _featureStateDeps.readdir = ((...args: Parameters<typeof originalDeps.readdir>) => {
+        touched.push("readdir");
+        return originalDeps.readdir(...args);
+      }) as typeof originalDeps.readdir;
+      _featureStateDeps.git = async (...args) => {
+        touched.push("git");
+        return originalDeps.git(...args);
+      };
+      mkdirSync(join(options.repoRoot, "plain"));
+      expect(await run({ feature: "f1", repo: "plain" })).toEqual({
+        isError: true,
+        content: "[chat] repo plain is not a nax project: no .nax directory",
+      });
+      expect(await run({ feature: "f1", repo: "nope" })).toEqual({
+        isError: true,
+        content: "[chat] repo nope does not exist",
+      });
+      expect(verdictReads).toEqual([]);
+      expect(touched).toEqual([]);
+    });
+    test("AC-22 no repo reads original options", async () => {
+      features("f1");
+      await writeVerdict(options.repoRoot, "https://example.test/outer-pr");
+      const result = JSON.parse((await run({ feature: "f1" })).content);
+      expect(result.name).toBe("f1");
+      expect(result.warnings).toEqual([]);
+      expect(result.workflow).toMatchObject({ runId: "run-1", url: "https://example.test/outer-pr" });
+      expect(verdictReads).toEqual([{ root: options.repoRoot, out: options.outputDir }]);
+    });
+    test("AC-20 instructions mention repo", () => {
+      expect(buildWorkflowInstructions()).toContain("pass repo with that folder's path");
     });
   });
 });

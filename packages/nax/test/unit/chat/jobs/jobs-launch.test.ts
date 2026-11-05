@@ -114,7 +114,7 @@ describe("createJobsProvider", () => {
       type: "object",
       additionalProperties: false,
       required: [required],
-      properties: { ...properties, profiles: { type: "array", items: { type: "string" } } },
+      properties: { ...properties, profiles: { type: "array", items: { type: "string" } }, repo: { type: "string" } },
     });
   });
   test("plan prefers feature spec over legacy and explicit spec over both", async () => {
@@ -210,6 +210,7 @@ describe("createJobsProvider", () => {
       kind: "run",
       target: "f1",
       argv: runArgv(),
+      cwd: options.repoRoot,
       sessionId: "chat-1",
       approvedAt: options.now().toISOString(),
     });

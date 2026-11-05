@@ -47,7 +47,9 @@ function catalogOf(...agents: AgentResource[]) {
 const okResult: ToolResult = { content: "done", audit: { executed: ["x"] } };
 
 function setup(agents: AgentResource[]) {
-  const run = mock(async (_agent: AgentResource, _task: string, _signal: AbortSignal | undefined) => okResult);
+  const run = mock(
+    async (_agent: AgentResource, _task: string, _signal: AbortSignal | undefined, _model?: string) => okResult,
+  );
   const provider = createAgentsProvider({ catalog: catalogOf(...agents), run });
   return { run, provider };
 }
@@ -200,5 +202,49 @@ describe("createAgentsProvider over a parsed catalog", () => {
     await runTool(provider, { agent: "reviewer", task: "go" });
     expect(run.mock.calls[0]?.[0].prompt).toBe("Check tests.");
     expect(await provider.instructions?.("/w")).toContain("- reviewer: Reviews tests");
+  });
+});
+
+describe("createAgentsProvider model override", () => {
+  const BAD_MODEL = "[chat] run model must be a non-empty string";
+  test("AC-1 schema has model: string and required stays [agent, task]", async () => {
+    const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
+    expect(Object.entries(tool?.inputSchema.properties ?? {}).find(([key]) => key === "model")?.[1]).toEqual({
+      type: "string",
+    });
+    expect(tool?.inputSchema.required).toEqual(["agent", "task"]);
+  });
+  test("AC-2 description names the native example and acp:<agent>", async () => {
+    const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
+    expect(tool?.description).toContain("openai-codex/gpt-6-luna");
+    expect(tool?.description).toContain("acp:<agent>");
+  });
+  test("AC-3 passes the AgentResource and model as the fourth argument", async () => {
+    const reviewer = agent("reviewer");
+    const { run, provider } = setup([reviewer]);
+    const controller = new AbortController();
+    await runTool(
+      provider,
+      { agent: "reviewer", task: "check it", model: "openai-codex/gpt-6-luna" },
+      controller.signal,
+    );
+    expect(run.mock.calls[0]).toEqual([reviewer, "check it", controller.signal, "openai-codex/gpt-6-luna"]);
+    expect(run.mock.calls[0]?.[0]).toBe(reviewer);
+  });
+  test("AC-4 without model calls run with exactly three arguments", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { agent: "reviewer", task: "t" });
+    expect(run.mock.calls[0]).toHaveLength(3);
+  });
+  test.each([
+    ["AC-5 a non-string model", 7],
+    ["AC-6 a blank model", "  "],
+  ])("%s is an error result and run is not called", async (_label, model) => {
+    const { run, provider } = setup([agent("reviewer")]);
+    expect(await runTool(provider, { agent: "reviewer", task: "t", model })).toEqual({
+      isError: true,
+      content: BAD_MODEL,
+    });
+    expect(run).not.toHaveBeenCalled();
   });
 });

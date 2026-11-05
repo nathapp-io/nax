@@ -13,6 +13,7 @@
  * The lookup arrives as a getter so the host's `_chatHostDeps` seam keeps
  * working: a stub installed after the cache was built is still the one called.
  */
+import { parseModelSpec } from "@nathapp/nax-agent";
 import type { lookupContextWindow } from "@/agents/catalog";
 import { isChatAcpModel } from "./acp";
 
@@ -20,7 +21,8 @@ import { isChatAcpModel } from "./acp";
 function catalogModel(model: string): { readonly provider: string; readonly name: string } | undefined {
   const split = model.indexOf("/");
   if (split <= 0 || isChatAcpModel(model)) return undefined;
-  return { provider: model.slice(0, split), name: model.slice(split + 1) };
+  const base = parseModelSpec(model).model;
+  return { provider: base.slice(0, split), name: base.slice(split + 1) };
 }
 
 /** One host's windows, keyed by the model string a session reports. */

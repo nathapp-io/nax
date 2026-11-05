@@ -96,6 +96,7 @@ function activityOf(event: TurnEvent, toolNames: Map<string, string>): Activity 
       return usageActivity(event);
     case "stream_reset":
     case "compaction":
+    case "tool_input_delta":
       return undefined;
   }
 }

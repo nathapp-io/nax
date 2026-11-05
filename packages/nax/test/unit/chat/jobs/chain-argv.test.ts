@@ -6,6 +6,14 @@ const ctx = { naxEntry: ["bun", "/n.ts"], repoRoot: "/r" };
 const argv = ["bun", "/n.ts", "bot", "review", "<pr>", "-d", "/r"];
 
 describe("parseChainStepInput", () => {
+  test("AC-1 accepts repo and keeps it", () => {
+    expect(parseChainStepInput("run", { feature: "f1", repo: "repos/nax" })).toEqual({
+      kind: "run",
+      feature: "f1",
+      profiles: [],
+      repo: "repos/nax",
+    });
+  });
   test("AC-12 omits absent PR without losing profiles", () => {
     expect(parseChainStepInput("bot_review", { profiles: ["p"] })).toEqual({ kind: "bot_review", profiles: ["p"] });
   });
@@ -31,10 +39,10 @@ describe("parseChainStepInput", () => {
   });
   test("defines exactly the launch schema fields", () => {
     expect(CHAIN_STEP_FIELDS).toEqual({
-      plan: ["feature", "spec", "profiles"],
-      run: ["feature", "profiles", "maxIterations", "maxCost"],
-      bot_review: ["pr", "profiles", "model", "decisions"],
-      bot_fix: ["pr", "profiles", "model", "trust", "noRereview"],
+      plan: ["feature", "spec", "profiles", "repo"],
+      run: ["feature", "profiles", "maxIterations", "maxCost", "repo"],
+      bot_review: ["pr", "profiles", "model", "decisions", "repo"],
+      bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
     });
   });
 });

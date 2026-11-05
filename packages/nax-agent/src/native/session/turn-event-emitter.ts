@@ -44,10 +44,9 @@ const REDACTION_SCAN_BYTES = TOOL_RESULT_PREVIEW_BYTES * 16;
 const UNANSWERED_PREVIEW = "Not answered: the turn ended.";
 
 /** One streamed delta, before the loop stamps its round. */
-export interface StreamDelta {
-  readonly type: "text_delta" | "thinking_delta";
-  readonly text: string;
-}
+export type StreamDelta =
+  | { readonly type: "text_delta" | "thinking_delta"; readonly text: string }
+  | { readonly type: "tool_input_delta"; readonly callId: string; readonly name: string; readonly chars: number };
 
 export type StreamDeltaSink = (delta: StreamDelta) => void;
 
