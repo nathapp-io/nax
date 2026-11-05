@@ -33,6 +33,13 @@ export const AGENTS_RUN_PARENT_SESSION_ID = "nax-agents-run";
 export const AGENTS_RUN_NO_ANSWER =
   "No one is attached to answer. Continue without an answer, or stop and say what you need.";
 
+/**
+ * The largest delay a runtime timer can represent, `2^31 - 1` ms (about 24.8 days).
+ * `setTimeout` cannot hold anything above it: it clamps the delay to 1 ms and warns
+ * (`TimeoutOverflowWarning`), so an oversized `--timeout` would cancel the run at once.
+ */
+export const AGENTS_RUN_MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 export type AgentsRunStatus = "completed" | "failed" | "cancelled" | "timeout";
 
 export type DeniedAsk =
@@ -155,6 +162,19 @@ interface Supervision {
 }
 
 /**
+ * The delay to arm for `timeoutSeconds`, never one the runtime timer cannot hold.
+ *
+ * A `--timeout` this large is bounded by the session's own turn limit anyway — the turn ends
+ * `timed_out` at that limit, which the run reports as `timeout` — so clamping the delay changes
+ * no outcome, while passing the raw product through would cancel the run immediately instead.
+ */
+function timerDelayMs(timeoutSeconds: number): number {
+  const delayMs = timeoutSeconds * 1000;
+  if (!Number.isFinite(delayMs)) return AGENTS_RUN_MAX_TIMER_DELAY_MS;
+  return Math.min(delayMs, AGENTS_RUN_MAX_TIMER_DELAY_MS);
+}
+
+/**
  * Link the caller's signal to an internal controller and arm the run's own timeout, if it has one.
  *
  * The nested session is always given the internal signal, so either reason reaches it. The
@@ -183,7 +203,7 @@ function superviseRun(input: AgentsRunTaskInput, deps: typeof _agentsRunExecDeps
     timer = deps.setTimeout(() => {
       supervision.timedOut = true;
       supervision.controller.abort();
-    }, input.timeoutSeconds * 1000);
+    }, timerDelayMs(input.timeoutSeconds));
   }
   return supervision;
 }

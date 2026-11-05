@@ -19,7 +19,13 @@ import {
   type ScriptedSession,
   withDepsRestore,
 } from "@test/helpers";
-import { _agentsRunExecDeps, AGENTS_RUN_NO_ANSWER, type AgentsRunTaskInput, runAgentTask } from "@/cli/agents-run-exec";
+import {
+  _agentsRunExecDeps,
+  AGENTS_RUN_MAX_TIMER_DELAY_MS,
+  AGENTS_RUN_NO_ANSWER,
+  type AgentsRunTaskInput,
+  runAgentTask,
+} from "@/cli/agents-run-exec";
 
 type RunSubagentInput = Parameters<typeof _agentsRunExecDeps.runSubagent>[0];
 type RunSubagentResult = Awaited<ReturnType<typeof _agentsRunExecDeps.runSubagent>>;
@@ -315,6 +321,29 @@ describe("runAgentTask timeout", () => {
     await runAgentTask(input());
 
     expect(timers.armed()).toBe(0);
+  });
+
+  test.each([
+    { seconds: 30, delayMs: 30_000 },
+    { seconds: 3_600, delayMs: 3_600_000 },
+    { seconds: 86_400, delayMs: 86_400_000 },
+    // Just under the limit a runtime timer can represent: armed exactly as asked.
+    { seconds: 2_147_483, delayMs: 2_147_483_000 },
+    // 2_147_484 s is 2_147_484_000 ms, past the 2_147_483_647 ms a runtime timer can hold.
+    { seconds: 2_147_484, delayMs: AGENTS_RUN_MAX_TIMER_DELAY_MS },
+    { seconds: 100_000_000, delayMs: AGENTS_RUN_MAX_TIMER_DELAY_MS },
+  ])("F1: --timeout $seconds s is armed as a delay the runtime can represent", async ({ seconds, delayMs }) => {
+    const delays: number[] = [];
+    _agentsRunExecDeps.setTimeout = (_callback, armedDelayMs) => {
+      delays.push(armedDelayMs);
+      return 0;
+    };
+    stubRun(async () => ({ content: "done" }));
+
+    await runAgentTask(input({ timeoutSeconds: seconds }));
+
+    expect(delays).toEqual([delayMs]);
+    expect(delayMs).toBeLessThanOrEqual(AGENTS_RUN_MAX_TIMER_DELAY_MS);
   });
 });
 
