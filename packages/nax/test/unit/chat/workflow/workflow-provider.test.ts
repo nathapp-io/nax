@@ -266,12 +266,45 @@ describe("createWorkflowProvider", () => {
       _targetRepoDeps.loadConfig = async () => makeNaxConfig({ name: "nested", outputDir: join(nestedRoot, "out") });
       return nestedRoot;
     }
+    async function writeVerdict(root: string, url: string) {
+      const runDir = join(featureDir(root, "f1"), "workflow", "run-1");
+      await Bun.write(
+        join(runDir, "result.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          runId: "run-1",
+          feature: "f1",
+          stories: {},
+          featureWorkflow: {
+            step: "done",
+            startedAt: "2026-01-01T00:00:00Z",
+            seed: null,
+            gateFindings: [],
+            reviewRan: true,
+            rulings: [],
+            reviewOpen: [],
+            cannotVerify: [],
+            flaggedDecisions: [],
+            finalGateFindings: [],
+            reasons: [],
+            storyStates: [],
+            url,
+          },
+        }),
+      );
+    }
     test("AC-14/17 reads nested feature and its output dir", async () => {
       const nestedRoot = nested();
       mkdirSync(featureDir(nestedRoot, "f1"), { recursive: true });
       const runs = join(await targetOutputDir(nestedRoot), "features", "f1", "runs");
       await Bun.write(join(runs, "2026-run.jsonl"), "{}\n");
+      await writeVerdict(nestedRoot, "https://example.test/nested-pr");
+      await writeVerdict(options.repoRoot, "https://example.test/outer-pr");
       const result = await run({ feature: "f1", repo: "repos/nax" });
+      expect(JSON.parse(result.content).workflow).toMatchObject({
+        runId: "run-1",
+        url: "https://example.test/nested-pr",
+      });
       expect(result.isError).not.toBe(true);
       expect(JSON.parse(result.content)).toMatchObject({ name: "f1" });
       expect(result.content).toContain("2026-run");
@@ -285,6 +318,19 @@ describe("createWorkflowProvider", () => {
     });
     test("AC-19/21 rejects non-nax repo without reading", async () => {
       features("f1");
+      const touched: string[] = [];
+      _featureStateDeps.file = ((path: string) => {
+        touched.push(`file ${path}`);
+        return originalDeps.file(path);
+      }) as typeof originalDeps.file;
+      _featureStateDeps.readdir = ((...args: Parameters<typeof originalDeps.readdir>) => {
+        touched.push("readdir");
+        return originalDeps.readdir(...args);
+      }) as typeof originalDeps.readdir;
+      _featureStateDeps.git = async (...args) => {
+        touched.push("git");
+        return originalDeps.git(...args);
+      };
       mkdirSync(join(options.repoRoot, "plain"));
       expect(await run({ feature: "f1", repo: "plain" })).toEqual({
         isError: true,
@@ -295,10 +341,15 @@ describe("createWorkflowProvider", () => {
         content: "[chat] repo nope does not exist",
       });
       expect(verdictReads).toEqual([]);
+      expect(touched).toEqual([]);
     });
     test("AC-22 no repo reads original options", async () => {
       features("f1");
-      expect(JSON.parse((await run({ feature: "f1" })).content).name).toBe("f1");
+      await writeVerdict(options.repoRoot, "https://example.test/outer-pr");
+      const result = JSON.parse((await run({ feature: "f1" })).content);
+      expect(result.name).toBe("f1");
+      expect(result.warnings).toEqual([]);
+      expect(result.workflow).toMatchObject({ runId: "run-1", url: "https://example.test/outer-pr" });
       expect(verdictReads).toEqual([{ root: options.repoRoot, out: options.outputDir }]);
     });
     test("AC-20 instructions mention repo", () => {

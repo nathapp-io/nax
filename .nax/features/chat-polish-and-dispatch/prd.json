@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-dispatch",
   "branchName": "feat/chat-polish-and-dispatch",
   "createdAt": "2026-11-05T00:00:00.000Z",
-  "updatedAt": "2026-11-05T04:10:53.598Z",
+  "updatedAt": "2026-11-05T04:10:56.873Z",
   "userStories": [
     {
       "id": "US-001",
@@ -579,7 +579,10 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "New canonical-path access boundary and per-project artifact/config routing require strict security TDD, including symlink escape and prefix-confusion tests."
+        "reasoning": "New canonical-path access boundary and per-project artifact/config routing require strict security TDD, including symlink escape and prefix-confusion tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/workflow/workflow-provider.ts",
@@ -602,7 +605,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c211a237095d18c3a5d9dba777fb7e5704fc5338"
     },
     {
       "id": "US-011",
