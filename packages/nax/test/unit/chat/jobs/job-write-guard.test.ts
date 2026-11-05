@@ -88,3 +88,18 @@ describe("createJobWriteGuard", () => {
     ).toEqual({ kind: "allow" });
   });
 });
+
+describe("createJobWriteGuard nested cwd", () => {
+  async function invokeAt(cwd: string, root: string) {
+    const { createJobWriteGuard } = await import("@/chat/jobs/job-write-guard");
+    const entry = createJobWriteGuard({ running: () => [{ ...RUN, cwd }] }, root)[0];
+    if (!entry) throw new Error("missing guard entry");
+    return entry.handler({ call: { id: "c", name: "Write", input: {} }, tools: [] }, { sessionName: "chat" });
+  }
+  test("AC-17 blocks Write while a run job's cwd is inside repoRoot", async () => {
+    expect(await invokeAt("/w/chat/repos/nax", "/w/chat")).toMatchObject({ kind: "block" });
+  });
+  test("AC-18 allows Write when the cwd is a sibling-prefix directory", async () => {
+    expect(await invokeAt("/w/chat-evil", "/w/chat")).toEqual({ kind: "allow" });
+  });
+});

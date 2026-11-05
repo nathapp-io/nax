@@ -94,7 +94,7 @@ describe("createJobRunner attachment and polling", () => {
     expect(clock.pending()).toBe(1);
   });
   test("AC-6 ignores other repositories", async () => {
-    await writeJobRecord(outputDir, { ...job, cwd: join(repoRoot, "other") });
+    await writeJobRecord(outputDir, { ...job, cwd: `${repoRoot}-sibling` });
     await jobs.attach();
     expect(jobs.list()).toEqual([]);
   });

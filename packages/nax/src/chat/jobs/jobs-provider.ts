@@ -24,11 +24,19 @@ export interface JobsProviderOptions {
   readonly now: () => Date;
 }
 const profiles = { type: "array", items: { type: "string" } };
+const repo = { type: "string" };
 const schemas = {
-  plan: { feature: { type: "string" }, spec: { type: "string" }, profiles },
-  run: { feature: { type: "string" }, profiles, maxIterations: { type: "integer" }, maxCost: { type: "number" } },
-  bot_review: { pr: { type: "integer" }, profiles, model: { type: "string" }, decisions: { type: "string" } },
+  plan: { feature: { type: "string" }, spec: { type: "string" }, profiles, repo },
+  run: {
+    feature: { type: "string" },
+    profiles,
+    maxIterations: { type: "integer" },
+    maxCost: { type: "number" },
+    repo,
+  },
+  bot_review: { pr: { type: "integer" }, profiles, model: { type: "string" }, decisions: { type: "string" }, repo },
   bot_fix: {
+    repo,
     pr: { type: "integer" },
     profiles,
     model: { type: "string" },
