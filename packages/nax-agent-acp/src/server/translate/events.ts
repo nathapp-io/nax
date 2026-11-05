@@ -157,6 +157,10 @@ export function createEventTranslator(deps: EventTranslatorDeps): EventTranslato
         return [{ sessionUpdate: "agent_message_chunk", content: { type: "text", text: event.text } }];
       case "thinking_delta":
         return [{ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: event.text } }];
+      case "tool_input_delta":
+        // The call's arguments are still streaming; the call itself arrives as `tool_call`.
+        // Only its name and a character count are carried, so there is nothing to publish.
+        return [];
       case "stream_reset":
         return [streamResetUpdate(event, deps.clientUpdates.notices)];
       case "tool_call":
