@@ -3,7 +3,7 @@
   "feature": "agents-run",
   "branchName": "feat/agents-run",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-05T10:36:45.906Z",
+  "updatedAt": "2026-11-05T10:47:28.865Z",
   "userStories": [
     {
       "id": "US-001",
@@ -417,14 +417,17 @@
         "US-003",
         "US-006"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Standard composition uses existing factories but determines effective tool access, requiring the access-control security override."
+        "reasoning": "Standard composition uses existing factories but determines effective tool access, requiring the access-control security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/chat.ts",
@@ -445,7 +448,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6bd735531a14c4015748767e23d70e7acfd1537e"
     },
     {
       "id": "US-008",
