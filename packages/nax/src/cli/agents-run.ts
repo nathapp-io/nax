@@ -24,9 +24,9 @@ import { resolveAgentsRunTask } from "./agents-run-task";
 /** SIGINT and SIGTERM end the run as `cancelled`; US-009 registers them. */
 type AgentsRunSignal = "SIGINT" | "SIGTERM";
 
-/** A stream this command writes to, calling back once it has accepted the text. */
-interface TextSink {
-  write(text: string, callback: () => void): unknown;
+/** A stream this command writes to, calling back once it has accepted the text — or failed to. */
+export interface TextSink {
+  write(text: string, callback: (error?: Error | null) => void): unknown;
 }
 
 const USAGE_ERROR_CODE = "AGENTS_RUN_USAGE";
@@ -35,10 +35,17 @@ const TIMEOUT_TEXT_PATTERN = /^[1-9][0-9]*$/;
 const TIMEOUT_USAGE_MESSAGE = "--timeout must be a positive whole number of seconds";
 const UNTRUSTED_CODE = "PROJECT_UNTRUSTED";
 
-/** Write `text` exactly as given, resolving once the stream has accepted it. */
-function writeText(stream: TextSink, text: string): Promise<void> {
-  return new Promise<void>((accepted) => {
-    stream.write(text, () => accepted());
+/**
+ * Write `text` exactly as given to `stream`, resolving once it has accepted the text and
+ * rejecting with the sink's own error when the write failed — a callback that carries an error
+ * means the text was not delivered, so reporting it as acceptance would hide a lost message.
+ */
+export function writeText(stream: TextSink, text: string): Promise<void> {
+  return new Promise<void>((accepted, failed) => {
+    stream.write(text, (error) => {
+      if (error) failed(error);
+      else accepted();
+    });
   });
 }
 
@@ -166,17 +173,27 @@ async function composeAndRun(
 /**
  * Report a failure the way the design's table says. An untrusted project names its root and the
  * command that would trust it; every other error is its own one-line message. Both exit 2.
+ *
+ * The code is recorded before anything is written: it is what a caller gates on, and the stream
+ * that would report a failed write is the one that just failed. For the same reason a rejected
+ * write is caught here rather than propagated — there is nowhere left to report it to, and
+ * rethrowing would replace the real usage error the caller is being told about.
  */
 async function reportFailure(error: unknown, cwd: string, deps: AgentsRunCommandDeps): Promise<void> {
-  if (error instanceof NaxError && error.code === UNTRUSTED_CODE) {
-    const root = typeof error.context?.root === "string" ? error.context.root : cwd;
-    const hint = typeof error.context?.hint === "string" ? error.context.hint : `run: nax trust add ${root}`;
-    await deps.writeErr(`Project not trusted: ${root}\n`);
-    await deps.writeErr(`${hint}\n`);
-  } else {
-    await deps.writeErr(`${errorMessage(error)}\n`);
-  }
   deps.setExitCode(EXIT_USAGE_OR_CONFIG);
+  try {
+    if (error instanceof NaxError && error.code === UNTRUSTED_CODE) {
+      const root = typeof error.context?.root === "string" ? error.context.root : cwd;
+      const hint = typeof error.context?.hint === "string" ? error.context.hint : `run: nax trust add ${root}`;
+      await deps.writeErr(`Project not trusted: ${root}\n`);
+      await deps.writeErr(`${hint}\n`);
+    } else {
+      await deps.writeErr(`${errorMessage(error)}\n`);
+    }
+  } catch {
+    // The sink that would report the failed write is the sink that failed; the exit code above
+    // is the only channel left, and it is already recorded.
+  }
 }
 
 /**

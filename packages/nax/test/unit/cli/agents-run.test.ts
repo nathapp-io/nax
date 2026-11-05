@@ -18,7 +18,7 @@ import {
   makeTempDir,
   useUntrustedRegistry,
 } from "@test/helpers";
-import { _agentsRunCommandDeps, type AgentsRunOptions, agentsRunCommand } from "@/cli/agents-run";
+import { _agentsRunCommandDeps, type AgentsRunOptions, agentsRunCommand, writeText } from "@/cli/agents-run";
 import type { AgentsRunResult, AgentsRunTaskInput } from "@/cli/agents-run-exec";
 import { NaxError } from "@/errors";
 import { _trustGateDeps, type TrustChoice } from "@/trust";
@@ -325,6 +325,19 @@ describe("agentsRunCommand", () => {
     });
   });
 
+  describe("the writers", () => {
+    test("F1: a stderr sink that fails still records exit code 2 and does not throw", async () => {
+      const { deps } = makeDeps();
+      deps.ensureTrusted.mockRejectedValue(
+        new NaxError("project not trusted", "PROJECT_UNTRUSTED", { stage: "trust", root: "/r" }),
+      );
+      deps.writeErr.mockRejectedValue(new Error("sink failed"));
+      await agentsRunCommand("spec-reviewer", options(), deps);
+      expect(deps.setExitCode).toHaveBeenCalledWith(2);
+      expect(deps.writeOut).not.toHaveBeenCalled();
+    });
+  });
+
   describe("the run itself", () => {
     test("a valid call hands the composed input to runAgentTask", async () => {
       const { deps } = makeDeps();
@@ -333,6 +346,32 @@ describe("agentsRunCommand", () => {
       expect(deps.runAgentTask).toHaveBeenCalledWith(TASK_INPUT);
       expect(deps.setExitCode).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("writeText", () => {
+  test("F1: writes the text exactly as given and resolves when the sink accepts it", async () => {
+    const written: string[] = [];
+    const sink = {
+      write: (text: string, callback: (error?: Error | null) => void): boolean => {
+        written.push(text);
+        callback();
+        return true;
+      },
+    };
+    await writeText(sink, "bad config\n");
+    expect(written).toEqual(["bad config\n"]);
+  });
+
+  test("F1: rejects with the sink's error when the write failed", async () => {
+    const failure = new Error("sink failed");
+    const sink = {
+      write: (_text: string, callback: (error?: Error | null) => void): boolean => {
+        callback(failure);
+        return false;
+      },
+    };
+    await expect(writeText(sink, "bad config\n")).rejects.toBe(failure);
   });
 });
 
