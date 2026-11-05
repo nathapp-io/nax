@@ -118,6 +118,10 @@ export async function acpSubagentSessionOptions(
       ...(input.memoryIndex !== undefined ? { memoryIndex: input.memoryIndex } : {}),
     }),
     transcriptStore: createTranscriptStore(),
+    // A stuck ACP startup must not outlive the run's `--timeout` or ignore SIGINT/SIGTERM:
+    // creation is bounded by the same signal, and `runSubagent` still cancels a live turn
+    // through `session.cancel()`. `createAgentSession` unlinks it once the open returns.
+    ...(input.signal !== undefined ? { openSignal: input.signal } : {}),
     metadata: { parentSessionId: input.parentSessionId, subagent: input.agent.qualifiedName },
     approvalTimeoutMs: input.config.execution.approvalTimeout,
   };

@@ -164,6 +164,17 @@ describe("acpSubagentSessionOptions session shape", () => {
     const created = await options({ config: makeNaxConfig({ execution: { approvalTimeout: 777_000 } }) });
     expect(created.approvalTimeoutMs).toBe(777_000);
   });
+
+  // B2 (whole-branch review): an ACP startup that stalls must not outlive the run's
+  // `--timeout` or ignore SIGINT/SIGTERM, so the run's signal bounds creation too.
+  test("B2: forwards the run's signal as openSignal", async () => {
+    const controller = new AbortController();
+    expect((await options({ signal: controller.signal })).openSignal).toBe(controller.signal);
+  });
+
+  test("B2: omits openSignal when the run carries no signal", async () => {
+    expect(await options()).not.toHaveProperty("openSignal");
+  });
 });
 
 describe("acpSubagentSessionOptions provider delivery", () => {

@@ -100,6 +100,7 @@ export {
   DEFAULT_CONFIG,
   isUnrecognizedLiteralModel,
   McpConfigSchema,
+  modelEntryId,
   NaxConfigSchema,
   PlanConfigSchema,
   resolveConfiguredModel,

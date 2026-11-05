@@ -164,6 +164,19 @@ describe("runSubagent ACP transport", () => {
     expect(sessionOptions().profile).toBe("ask");
     expect(acpBackendMock.mock.calls[0]?.[0]).toEqual({ agent: "cursor", allowUnsandboxed: true, inheritEnv: true });
   });
+
+  // B2 (whole-branch review): an ACP startup that stalls must be cancellable, so the run's
+  // signal reaches session creation and not only the turn.
+  test("B2: forwards the run's signal as openSignal", async () => {
+    const controller = new AbortController();
+    await run({ signal: controller.signal });
+    expect(sessionOptions().openSignal).toBe(controller.signal);
+  });
+
+  test("B2: omits openSignal when the run carries no signal", async () => {
+    await run();
+    expect(sessionOptions()).not.toHaveProperty("openSignal");
+  });
 });
 
 describe("runSubagent ACP read-only refusal", () => {

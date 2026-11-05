@@ -106,6 +106,10 @@ async function subagentSessionOptions(
     profile: settings.profile,
     workdir: input.cwd,
     transcriptStore: deps.createMemoryTranscriptStore(),
+    // The caller's signal also bounds session CREATION: a slow or stuck open must not outlive
+    // `--timeout` or ignore SIGINT/SIGTERM. It is unlinked once the session exists, so the turn
+    // is still cancelled through `session.cancel()` (runOnSession) — never through opening.
+    ...(input.signal !== undefined ? { openSignal: input.signal } : {}),
     metadata: { parentSessionId: input.parentSessionId, subagent: input.agent.qualifiedName },
     approvalTimeoutMs: input.config.execution.approvalTimeout,
     instructions: buildSubagentInstructions({

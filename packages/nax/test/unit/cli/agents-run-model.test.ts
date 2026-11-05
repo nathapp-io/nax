@@ -42,6 +42,41 @@ function expectUnknownOverride(balanced?: string): void {
   }
 }
 
+/**
+ * The object form config validation actually admits: every `models.native` id carries its
+ * provider in the model string, because the native path reads the provider from there and
+ * ignores the sibling field (`validateNativeModelIds`).
+ */
+const objectTiers = () =>
+  makeNaxConfig({
+    models: {
+      native: {
+        fast: { provider: "openai", model: "openai/gpt-5.4-mini" },
+        balanced: { provider: "openai", model: "openai/gpt-5.4" },
+        powerful: { provider: "openai", model: "openai/gpt-5.5" },
+      },
+    },
+  });
+
+const FAMILY_TIERS = [
+  ["haiku", "openai/gpt-5.4-mini"],
+  ["sonnet", "openai/gpt-5.4"],
+  ["opus", "openai/gpt-5.5"],
+] as const;
+
+describe("resolveAgentsRunModel object tiers", () => {
+  test("B1: the object-tier fixture passes config validation", () => {
+    expect(NaxConfigSchema.safeParse(objectTiers()).success).toBe(true);
+  });
+
+  test.each(FAMILY_TIERS)(
+    "B1: %s resolves to its tier's qualified id without repeating the provider",
+    (family, expected) => {
+      expect(resolveAgentsRunModel({ agent: agent(family), config: objectTiers() })).toBe(expected);
+    },
+  );
+});
+
 describe("resolveAgentsRunModel", () => {
   test("AC-1: resolves an agent family model through its configured tier", () => {
     expect(resolveAgentsRunModel({ agent: agent("haiku"), config: config("openai/gpt-bal") })).toBe("openai/gpt-fast");

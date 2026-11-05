@@ -1,5 +1,5 @@
 import { resolveSubagentModel } from "@/chat";
-import type { NaxConfig } from "@/config";
+import { modelEntryId, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { AgentResource } from "@/resources/types";
 
@@ -33,6 +33,5 @@ export function resolveAgentsRunModel(input: {
   if (balanced === undefined) {
     throw new NaxError(MISSING_PARENT_MODEL, "AGENTS_RUN_USAGE", { stage: "agents-run" });
   }
-  if (typeof balanced === "string") return balanced;
-  return balanced.model.includes("/") ? balanced.model : `${balanced.provider}/${balanced.model}`;
+  return modelEntryId(balanced);
 }

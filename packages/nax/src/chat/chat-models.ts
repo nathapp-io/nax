@@ -1,5 +1,5 @@
 import { parseModelSpec } from "@nathapp/nax-agent";
-import type { NaxConfig } from "@/config";
+import { modelEntryId, type NaxConfig } from "@/config";
 import { type EffortLevel, effortLevelsFor, type SupportedEffort } from "./chat-effort";
 
 /** Explicit local declarations take precedence, including an empty declaration. */
@@ -30,7 +30,7 @@ export function tierModels(config: Pick<NaxConfig, "models">): readonly string[]
   const tiers = config.models.native;
   const models = (["fast", "balanced", "powerful"] as const).flatMap((tier) => {
     const entry = tiers?.[tier];
-    return entry === undefined ? [] : [typeof entry === "string" ? entry : `${entry.provider}/${entry.model}`];
+    return entry === undefined ? [] : [modelEntryId(entry)];
   });
   return Object.freeze([...new Set(models)]);
 }
