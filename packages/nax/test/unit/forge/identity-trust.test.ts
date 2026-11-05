@@ -145,6 +145,42 @@ describe("readCurrentUser with an injected identity", () => {
   });
 });
 
+describe("readCurrentUser with a login-only identity (US-001)", () => {
+  test("AC-17 a token-less GitHub identity answers from the login and the id, without running a command", async () => {
+    const { deps, calls } = harness({ identity: { login: LOGIN, id: 42 } });
+
+    const user = await readCurrentUser(gh, deps, "/repo");
+
+    expect(user).toEqual({ login: LOGIN, id: 42 });
+    expect(calls).toEqual([]);
+  });
+
+  test("AC-18 a token-less GitLab identity answers from the login alone, without running a command", async () => {
+    const { deps, calls } = harness({ identity: { login: "group-bot" } });
+
+    const user = await readCurrentUser(gl, deps, "/repo");
+
+    expect(user).toEqual({ login: "group-bot" });
+    expect(Object.hasOwn(user, "id")).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  test("AC-21 ambient credentials belonging to another account are not detected, and no command runs", async () => {
+    // The explicit login-only opt-in is the caller's assertion that the ambient
+    // `gh` credentials are the injected account's: an App installation token
+    // cannot call `/user`, so asking would answer with the wrong account.
+    const { deps, calls } = harness({
+      identity: { login: LOGIN },
+      replies: [ok({ login: "different-account" })],
+    });
+
+    const user = await readCurrentUser(gh, deps, "/repo");
+
+    expect(user).toEqual({ login: LOGIN });
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("classifyPrTrust with an injected identity", () => {
   test("AC-6 a PR authored by the injected login is the current user", async () => {
     const { deps, calls } = harness({ identity: { token: TOKEN, login: LOGIN } });

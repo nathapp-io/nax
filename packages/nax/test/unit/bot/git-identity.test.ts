@@ -16,7 +16,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import { _fixInputDeps, botGit, checkPushAccess, NAX_BOT_CREDENTIAL_HELPER } from "@/bot";
-import { _forgeIdentity, captureForgeIdentity } from "@/forge";
+import { _forgeIdentity, captureForgeIdentity, FORGE_IDENTITY_ENV } from "@/forge";
 import { _gitDeps } from "@/utils/git";
 
 /** The token every forge-identity test uses. */
@@ -60,6 +60,11 @@ async function captureIdentity(): Promise<void> {
   const path = join(dir, "forge-token");
   writeFileSync(path, `${TOKEN}\n`);
   await captureForgeIdentity({ NAX_FORGE_TOKEN_FILE: path, NAX_FORGE_LOGIN: LOGIN });
+}
+
+/** Capture a login-only identity: nax learns who it is and adds no credential of its own. */
+async function captureLoginOnlyIdentity(): Promise<void> {
+  await captureForgeIdentity({ [FORGE_IDENTITY_ENV.mode]: "login-only", [FORGE_IDENTITY_ENV.login]: LOGIN });
 }
 
 /** Observe the spawn rather than the value `botGit` decided to pass on. */
@@ -166,5 +171,68 @@ describe("botGit credential injection", () => {
       exitCode: 1,
     });
     expect(spawn.calls).toHaveLength(1);
+  });
+});
+
+/**
+ * `NAX_FORGE_IDENTITY=login-only`: the host refreshes its own `git` credentials,
+ * so nax installs no helper — but a network verb must still fail fast on an
+ * expired ambient credential instead of blocking on a terminal that is not there.
+ */
+describe("botGit with a login-only identity (US-001)", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const name of [TOKEN_KEY, NO_PROMPT_KEY]) {
+      savedEnv[name] = process.env[name];
+      delete process.env[name];
+    }
+  });
+
+  afterEach(() => {
+    for (const name of [TOKEN_KEY, NO_PROMPT_KEY]) {
+      const value = savedEnv[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  test("AC-14 a push keeps the plain hooks-off prefix, with no credential.helper of nax's", async () => {
+    await captureLoginOnlyIdentity();
+    const spawn = stubSpawn();
+    await botGit(PUSH, "/repo");
+    const withIdentity = spawn.calls[0]?.cmd;
+
+    _forgeIdentity.current = undefined;
+    await botGit(PUSH, "/repo");
+
+    expect(withIdentity).toEqual([...HOOKS_OFF_ARGV, ...PUSH]);
+    expect(withIdentity).toEqual(spawn.calls[1]?.cmd);
+    expect(withIdentity?.join(" ")).not.toContain("credential.helper");
+  });
+
+  test("AC-15 a fetch turns the terminal prompt off and adds no token of nax's", async () => {
+    await captureLoginOnlyIdentity();
+    const spawn = stubSpawn();
+
+    await botGit(["fetch", "origin"], "/repo");
+
+    expect(spawn.lastEnv()[NO_PROMPT_KEY]).toBe("0");
+    expect(TOKEN_KEY in spawn.lastEnv()).toBe(false);
+  });
+
+  test("AC-16 a non-network verb's environment is the same as with no identity captured", async () => {
+    await captureLoginOnlyIdentity();
+    const spawn = stubSpawn();
+
+    await botGit(["status"], "/repo");
+    const withIdentity = spawn.lastEnv();
+
+    _forgeIdentity.current = undefined;
+    await botGit(["status"], "/repo");
+
+    expect(spawn.calls).toHaveLength(2);
+    expect(spawn.lastEnv()).toEqual(withIdentity);
+    expect(NO_PROMPT_KEY in withIdentity).toBe(false);
   });
 });

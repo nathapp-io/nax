@@ -99,4 +99,26 @@ describe("CLI startup forge identity", () => {
     expect(stdout).toContain(NAX_VERSION);
     expect(existsSync(tokenPath)).toBe(false);
   }, 60_000);
+
+  test("AC-19: an unknown identity mode refuses to start and names the accepted value", async () => {
+    const { exitCode, stderr } = await runCli(
+      ["--version"],
+      runEnv({ NAX_FORGE_IDENTITY: "other", NAX_FORGE_LOGIN: LOGIN }),
+    );
+
+    expect(exitCode).toBe(1);
+    expect(stderr.split("\n").some((line) => line.startsWith(INVALID_PREFIX))).toBe(true);
+    expect(stderr).toContain("NAX_FORGE_IDENTITY must be login-only");
+  }, 60_000);
+
+  test("AC-20: login-only mode starts the CLI with no token file of its own", async () => {
+    const { exitCode, stdout, stderr } = await runCli(
+      ["--version"],
+      runEnv({ NAX_FORGE_IDENTITY: "login-only", NAX_FORGE_LOGIN: LOGIN }),
+    );
+
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain(NAX_VERSION);
+  }, 60_000);
 });

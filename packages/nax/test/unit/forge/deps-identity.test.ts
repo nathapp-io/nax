@@ -65,6 +65,14 @@ async function captureIdentity(login: string | undefined): Promise<void> {
   });
 }
 
+/** Capture a login-only identity: nax learns who it is and adds no token of its own. */
+async function captureLoginOnlyIdentity(login: string): Promise<void> {
+  await captureForgeIdentity({
+    [FORGE_IDENTITY_ENV.mode]: "login-only",
+    [FORGE_IDENTITY_ENV.login]: login,
+  });
+}
+
 describe("defaultForgeDeps.identity", () => {
   test("AC-13 returns the value held in _forgeIdentity.current", () => {
     expect(defaultForgeDeps.identity?.()).toBeUndefined();
@@ -124,6 +132,29 @@ describe("defaultRun with a captured identity", () => {
       stdout: "api user",
       stderr: "",
     });
+  });
+});
+
+describe("defaultRun with a login-only identity (US-001)", () => {
+  test("AC-12 gh keeps the ambient GH_TOKEN: nax adds no token of its own", async () => {
+    // Set in the parent environment; the file's afterEach restores whatever the
+    // developer's own environment had, so a leaked value cannot outlive the test.
+    process.env.GH_TOKEN = "ambient-token";
+    await captureLoginOnlyIdentity(LOGIN);
+    const gh = fixture("gh", "printf '%s' \"$GH_TOKEN\"");
+
+    const result = await defaultForgeDeps.run([gh], { cwd: dir });
+
+    expect(result).toEqual({ exitCode: 0, stdout: "ambient-token", stderr: "" });
+  });
+
+  test("AC-13 glab sees no GITLAB_TOKEN at all", async () => {
+    await captureLoginOnlyIdentity(LOGIN);
+    const glab = fixture("glab", "env | grep '^GITLAB_TOKEN=' || printf 'absent'");
+
+    const result = await defaultForgeDeps.run([glab], { cwd: dir });
+
+    expect(result).toEqual({ exitCode: 0, stdout: "absent", stderr: "" });
   });
 });
 
