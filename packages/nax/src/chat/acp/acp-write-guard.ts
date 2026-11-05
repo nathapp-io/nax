@@ -7,7 +7,7 @@
 
 import type { ChatApproval } from "../ask-controller";
 import type { ChatJobs } from "../jobs";
-import { isWithinRoot } from "../target-repo";
+import { isWithinRootCanonical } from "../target-repo";
 import { isChatAcpModel } from "./acp-model";
 
 /** The ACP tool kinds that write to the checkout. */
@@ -23,7 +23,7 @@ export function acpWriteRefusal(
   // The same newest-blocking-job selection as createJobWriteGuard (sharing it is out of scope).
   const job = jobs
     .running()
-    .filter((job) => isWithinRoot(job.cwd, repoRoot) && (job.kind === "plan" || job.kind === "run"))
+    .filter((job) => isWithinRootCanonical(job.cwd, repoRoot) && (job.kind === "plan" || job.kind === "run"))
     .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0];
   if (!job) return undefined;
   return `[nax-jobs] ${event.tool} refused: nax ${job.kind} job ${job.id} is running in this checkout; wait for it to end or cancel it`;

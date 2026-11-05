@@ -11,6 +11,7 @@ import { featureDir } from "@/config";
 
 let root: string;
 let nested: string;
+const outsideDirs: string[] = [];
 let chains: ChatChains;
 let options: JobsProviderOptions;
 const originalGit = _jobsLaunchDeps.git;
@@ -81,6 +82,7 @@ afterEach(() => {
   _jobsLaunchDeps.git = originalGit;
   _jobsLaunchDeps.lockHolder = originalLock;
   cleanupTempDir(root);
+  for (const dir of outsideDirs.splice(0)) cleanupTempDir(dir);
 });
 
 async function invoke(name: string, input: Record<string, unknown>) {
@@ -128,7 +130,9 @@ describe("chain steps with repo", () => {
     ["link", "[chat] step 2: repo link is outside"],
     ["plain", "[chat] step 2: repo plain is not a nax project: no .nax directory"],
   ])("AC-6 step 2 repo %p is rejected: prefixed, no card, no launch, no read", async (repo, message) => {
-    symlinkSync(realpathSync(makeTempDir("chain-outside-")), join(root, "link"));
+    const outside = realpathSync(makeTempDir("chain-outside-"));
+    outsideDirs.push(outside);
+    symlinkSync(outside, join(root, "link"));
     const reads: string[] = [];
     const exists = _jobsLaunchDeps.exists;
     _jobsLaunchDeps.exists = async (p: string) => {

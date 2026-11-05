@@ -99,6 +99,19 @@ describe("createJobWriteGuard nested cwd", () => {
   test("AC-17 blocks Write while a run job's cwd is inside repoRoot", async () => {
     expect(await invokeAt("/w/chat/repos/nax", "/w/chat")).toMatchObject({ kind: "block" });
   });
+  test("AC-17b blocks Write when repoRoot is a symlink spelling of the real cwd parent", async () => {
+    const { mkdirSync, symlinkSync, realpathSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { makeTempDir, cleanupTempDir } = await import("@test/helpers");
+    const base = realpathSync(makeTempDir("guard-symlink-"));
+    try {
+      mkdirSync(join(base, "real", "repo"), { recursive: true });
+      symlinkSync(join(base, "real"), join(base, "link"));
+      expect(await invokeAt(join(base, "real", "repo"), join(base, "link"))).toMatchObject({ kind: "block" });
+    } finally {
+      cleanupTempDir(base);
+    }
+  });
   test("AC-18 allows Write when the cwd is a sibling-prefix directory", async () => {
     expect(await invokeAt("/w/chat-evil", "/w/chat")).toEqual({ kind: "allow" });
   });

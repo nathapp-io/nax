@@ -13,6 +13,19 @@ export function isWithinRoot(path: string, root: string): boolean {
   return path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
 }
 
+/** Containment after canonicalizing both sides (symlink spellings); falls back to the given spelling. */
+export function isWithinRootCanonical(path: string, root: string): boolean {
+  const canon = (p: string): string => {
+    try {
+      return realpathSync(p);
+    } catch {
+      // Missing path: compare the spelling as given.
+      return p;
+    }
+  };
+  return isWithinRoot(canon(path), canon(root));
+}
+
 function realOrNull(path: string): string | null {
   try {
     return realpathSync(path);

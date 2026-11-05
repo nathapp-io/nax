@@ -174,15 +174,18 @@ describe("launch tools with repo", () => {
   ])("AC-20 repo %p is rejected with no side effects", async (repo, message) => {
     const outside = realpathSync(makeTempDir("jobs-launch-outside-"));
     symlinkSync(outside, join(options.repoRoot, "link"));
-    for (const kind of ["plan", "run", "bot_review", "bot_fix"]) {
-      const result = await launch(kind, { feature: "f1", pr: 1, repo });
-      expect(result.isError).toBe(true);
-      expect(result.content.startsWith(message)).toBe(true);
+    try {
+      for (const kind of ["plan", "run", "bot_review", "bot_fix"]) {
+        const result = await launch(kind, { feature: "f1", pr: 1, repo });
+        expect(result.isError).toBe(true);
+        expect(result.content.startsWith(message)).toBe(true);
+      }
+      expect(approve).not.toHaveBeenCalled();
+      expect(start).not.toHaveBeenCalled();
+      expect(existsPaths).toEqual([]);
+      expect(lockRoots).toEqual([]);
+    } finally {
+      cleanupTempDir(outside);
     }
-    expect(approve).not.toHaveBeenCalled();
-    expect(start).not.toHaveBeenCalled();
-    expect(existsPaths).toEqual([]);
-    expect(lockRoots).toEqual([]);
-    cleanupTempDir(outside);
   });
 });
