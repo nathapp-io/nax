@@ -95,8 +95,13 @@ describe("native unread tool-call follow-up", () => {
 
     const events = await collect(session.send("hi"));
 
+    const end = turnEndOf(events);
+    // The error is part of the assertion so a failure names its cause.
+    expect({ status: end.status, error: end.status === "errored" ? end.error : undefined }).toEqual({
+      status: "completed",
+      error: undefined,
+    });
     expect(provider.requests).toHaveLength(2);
-    expect(turnEndOf(events).status).toBe("completed");
   });
 
   test("AC-4: plain text sends one request", async () => {
