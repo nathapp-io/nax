@@ -160,6 +160,15 @@ describe("toolCardModel arg", () => {
     expect(model.arg).toBe("explorer: find x");
   });
 
+  test("AC-12 an agent call with a model names it in brackets", () => {
+    const model = card({ name: "nax-agents__run", input: { agent: "explorer", task: "find x" }, model: "openai/gpt-x" });
+    expect(model.arg).toBe("explorer [openai/gpt-x]: find x");
+  });
+
+  test("AC-13 an agent call without a model keeps the plain text", () => {
+    expect(card({ name: "nax-agents__run", input: { agent: "explorer", task: "find x" } }).arg).toBe("explorer: find x");
+  });
+
   test("uses a skill call's name", () => {
     const model = card({ name: "nax-skills__load", input: { name: "review" } });
     expect(model.title).toBe("Skill");

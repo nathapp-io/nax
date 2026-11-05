@@ -23,6 +23,7 @@ import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatBackgroundTasks, createHostTasks } from "./background";
+import { withAgentCallModel } from "./agent-call-model";
 import { type ChatAgentRow, listAgentRows } from "./chat-agents-listing";
 import { clampModelEffort, EFFORT_LEVELS, type EffortLevel, withEffort } from "./chat-effort";
 import type { ChatHost, ChatHostDeps, ChatHostState, ChatSendOptions, ChatSessionRow } from "./chat-host-types";
@@ -487,7 +488,7 @@ class NativeChatHost implements ChatHost {
         images: options?.images,
         asks: this.asks,
         ledger,
-        onEvent,
+        onEvent: runs ? withAgentCallModel(onEvent, runs.modelFor) : onEvent,
         now: this.deps.now().toISOString(),
         ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
       });

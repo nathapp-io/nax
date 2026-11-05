@@ -331,3 +331,24 @@ describe("SubagentRuns.run model override", () => {
     expect(runSubagent.mock.calls[0]?.[0].model).toBe("openai/fast-x");
   });
 });
+
+describe("SubagentRuns.modelFor", () => {
+  const asks = () => createChatAskController({ mode: "guarded", answer: () => {} });
+  const make = () => createSubagentRuns(runsDeps({ asks: asks() }));
+
+  test("AC-1 an agent without a model resolves to the parent session's model", () => {
+    expect(make().modelFor("reviewer")).toBe("anthropic/chat");
+  });
+
+  test("AC-2 an explicit provider/model override is returned", () => {
+    expect(make().modelFor("reviewer", "openai-codex/gpt-6-luna")).toBe("openai-codex/gpt-6-luna");
+  });
+
+  test("AC-3 an unknown agent returns undefined", () => {
+    expect(make().modelFor("nobody")).toBeUndefined();
+  });
+
+  test("AC-4 a refused override returns undefined", () => {
+    expect(make().modelFor("reviewer", "gpt-6-luna")).toBeUndefined();
+  });
+});

@@ -212,6 +212,8 @@ export interface SubagentHostOptions {
   readonly runAgent?: string;
   /** The task text the scripted chat session hands the `run` tool; defaults to `"check it"`. */
   readonly task?: string;
+  /** Events the scripted chat session emits itself, after its run call and before its `turn_end`. */
+  readonly chatEvents?: readonly SessionEvent[];
   /** Events the nested session emits before it ends its turn. */
   readonly nestedEvents?: readonly SessionEvent[];
   /** Keep the nested turn open until `releaseNested()` or the nested session is cancelled. */
@@ -394,6 +396,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
           : await pendingRun,
       );
     }
+    for (const event of options.chatEvents ?? []) yield event;
     if (options.holdChat) await chatGate.promise;
     if (control.chatThrows) throw new Error("chat send failed");
     yield turnEndEvent("chat done", control.chatCostUsd);

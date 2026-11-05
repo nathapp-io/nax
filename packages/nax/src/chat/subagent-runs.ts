@@ -46,6 +46,11 @@ export interface SubagentRunsDeps {
 export interface SubagentRuns {
   /** Run one agent task for the chat session; wires asks, usage, cost and tool events. */
   run(agent: AgentResource, task: string, signal?: AbortSignal, model?: string): Promise<ToolResult>;
+  /**
+   * The model `run` would use for this agent and override, or undefined for an unknown agent
+   * or a refused override. Opens no session.
+   */
+  modelFor(agentName: string, override?: string): string | undefined;
   /** The nested session that issued this request id, if one is still running. */
   sessionFor(requestId: string): AgentSession | undefined;
   /** Spend of nested turns since the last call; resets to 0. */
@@ -91,6 +96,16 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   /** Every run in flight, from before its session opens until it has closed it. */
   const inFlight = new Map<Promise<unknown>, { controller: AbortController; session?: AgentSession }>();
   let spentUsd = 0;
+
+  function resolveFor(agent: AgentResource, current: SubagentRunsCurrent, override?: string) {
+    const requested = override ?? agent.model;
+    return resolveSubagentModel({
+      ...(requested !== undefined ? { requested } : {}),
+      parentModel: current.model,
+      aliases: deps.config.agent?.modelAliases ?? {},
+      tiers: deps.config.models.native,
+    });
+  }
 
   function release(session: AgentSession): void {
     active.delete(session);
@@ -167,13 +182,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     const listener = deps.turnListener();
     const forward =
       listener === undefined ? undefined : (event: SessionEvent) => listener(taggedActivity(event, agent, task));
-    const requested = override ?? agent.model;
-    const { model, source } = resolveSubagentModel({
-      ...(requested !== undefined ? { requested } : {}),
-      parentModel: current.model,
-      aliases: deps.config.agent?.modelAliases ?? {},
-      tiers: deps.config.models.native,
-    });
+    const { model, source } = resolveFor(agent, current, override);
     if (override !== undefined && source === "fallback") {
       return {
         isError: true,
@@ -216,6 +225,12 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
 
   const runs: SubagentRuns = {
     run,
+    modelFor(agentName, override) {
+      const agent = deps.catalog.findAgent(agentName);
+      if (agent === undefined) return undefined;
+      const { model, source } = resolveFor(agent, deps.current(), override);
+      return override !== undefined && source === "fallback" ? undefined : model;
+    },
     sessionFor: (requestId) => owners.get(requestId),
     takeCost() {
       const taken = spentUsd;

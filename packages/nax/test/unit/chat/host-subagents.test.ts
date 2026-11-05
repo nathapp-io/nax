@@ -520,3 +520,18 @@ describe("usageEvent costSource", () => {
     });
   });
 });
+
+describe("chat host agent call model", () => {
+  test("AC-9 send delivers the run tool_call with metadata.subagentModel", async () => {
+    const call: SessionEvent = {
+      ...toolCallEvent("run-1"),
+      name: "nax-agents__run",
+      input: { agent: "reviewer", task: "t" },
+    };
+    const h = setup({ agents: [reviewer], skipRun: true, chatEvents: [call] });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const seen: SessionEvent[] = [];
+    await h.host.send("go", (event) => seen.push(event));
+    expect(forwardedToolCall(seen, "run-1")?.metadata).toEqual({ subagentModel: CHAT_MODEL });
+  });
+});

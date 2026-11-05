@@ -297,3 +297,19 @@ describe("reduceTranscript on tool_input_delta", () => {
     expect(reduceTranscript(entries, event)).toBe(entries);
   });
 });
+
+describe("reduceTranscript agent call model", () => {
+  test("AC-10 a top-level call's metadata.subagentModel becomes the entry's model", () => {
+    const entries = reduceTranscript(
+      [],
+      toolCall({ name: "nax-agents__run", metadata: { subagentModel: "openai/gpt-x" } }),
+    );
+    expect(entries[0]).toMatchObject({ kind: "tool", model: "openai/gpt-x" });
+  });
+
+  test("AC-11 a call without the metadata has no model key", () => {
+    const entries = reduceTranscript([], toolCall({ name: "nax-agents__run" }));
+    expect(entries[0]).toBeDefined();
+    expect("model" in (entries[0] ?? {})).toBe(false);
+  });
+});
