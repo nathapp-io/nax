@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-dispatch",
   "branchName": "feat/chat-polish-and-dispatch",
   "createdAt": "2026-11-05T00:00:00.000Z",
-  "updatedAt": "2026-11-05T03:43:01.439Z",
+  "updatedAt": "2026-11-05T03:49:55.070Z",
   "userStories": [
     {
       "id": "US-001",
@@ -304,14 +304,17 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Bounded cache normalization and pure formatting extraction use existing patterns; token counts are display data, not credential tokens."
+        "reasoning": "Bounded cache normalization and pure formatting extraction use existing patterns; token counts are display data, not credential tokens.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/context-window-cache.ts",
@@ -346,7 +349,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fd6ea3b1c432b9c58d74f98b9aee8ec32fb38855"
     },
     {
       "id": "US-007",
