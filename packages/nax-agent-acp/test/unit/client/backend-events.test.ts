@@ -102,7 +102,11 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
       },
     ]);
     const events = await driveTurn(o.session, "go");
-    expect(types(events)).toEqual([
+    // A pending call's input growth shows Writing (US-005): one or more deltas come
+    // between turn_start and the call, and the rest of the order is unchanged. The
+    // facade's channel merges adjacent deltas, so the count is not pinned.
+    const shown = events.filter((e) => e.type !== "tool_input_delta");
+    expect(types(shown)).toEqual([
       "turn_start",
       "tool_call",
       "tool_result",
@@ -111,6 +115,14 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
       "usage",
       "turn_end",
     ]);
+    const at = (type: SessionEvent["type"]) => events.findIndex((e) => e.type === type);
+    const deltas = events.flatMap((e, i) => (e.type === "tool_input_delta" ? [{ e, i }] : []));
+    expect(deltas.length).toBeGreaterThan(0);
+    expect(
+      deltas.every(
+        ({ e, i }) => e.callId === "toolu_1" && e.name === "Read" && i > at("turn_start") && i < at("tool_call"),
+      ),
+    ).toBe(true);
     expect(find(events, "tool_call")).toMatchObject({
       callId: "toolu_1",
       name: "Read",
