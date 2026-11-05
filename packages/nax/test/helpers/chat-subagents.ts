@@ -15,6 +15,7 @@ import { join } from "node:path";
 import {
   type AgentSession,
   type AnswerReply,
+  type AnswerStatus,
   type CostSource,
   type CreateAgentSessionOptions,
   createMemoryTranscriptStore,
@@ -179,7 +180,12 @@ export function approvalResolvedEvent(requestId: string): SessionEvent {
 export function makeScriptedSession(
   id: string,
   script: () => AsyncIterable<SessionEvent>,
-  hooks: { onCancel?: () => void; closeGate?: Promise<void> } = {},
+  hooks: {
+    onCancel?: () => void;
+    closeGate?: Promise<void>;
+    /** Decides the `AnswerStatus` `answer` returns; the call is recorded either way. Default `accepted`. */
+    answer?: (requestId: string, reply: AnswerReply) => AnswerStatus;
+  } = {},
 ): ScriptedSession {
   const session: ScriptedSession = {
     id,
@@ -191,7 +197,7 @@ export function makeScriptedSession(
     send: () => script(),
     answer(requestId, reply) {
       session.answers.push([requestId, reply]);
-      return "accepted";
+      return hooks.answer?.(requestId, reply) ?? "accepted";
     },
     cancel() {
       session.cancelCalls++;

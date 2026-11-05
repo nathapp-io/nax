@@ -148,11 +148,12 @@ describe("runAgentTask", () => {
       expect(AGENTS_RUN_PARENT_SESSION_ID).toBe("nax-agents-run");
     });
 
-    test("carries the run's signal into the nested session", async () => {
-      const controller = new AbortController();
+    test("always hands the nested session a signal to cancel the turn with", async () => {
+      // US-004 owns the linkage: the run gives the session its own controller's signal, which
+      // aborts on the command's `--timeout` as well as on the caller's signal.
       const script = stubRun();
-      await runAgentTask(input({ signal: controller.signal }));
-      expect(script.calls[0]?.signal).toBe(controller.signal);
+      await runAgentTask(input());
+      expect(script.calls[0]?.signal).toBeInstanceOf(AbortSignal);
     });
   });
 
