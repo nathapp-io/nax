@@ -86,7 +86,9 @@ timeout or an unreachable provider it does not pull.
 parked. A rejected write is never retried on its own, and `nax memory link --force` and
 `nax memory reset` refuse while one is held. `nax memory requeue` puts it back in the queue
 for the next sync; `nax memory discard` drops it for good. A parked or discarded forget leaves
-the note active on the provider, so a later sync brings it back into the mirror.
+the note active on the provider, so parking or discarding a write makes the next sync read that
+scope in full, and the mirror takes the provider's copy. Once a newer write of the same note is
+delivered, an older rejected one is dropped, so it can never be requeued over the newer one.
 
 ### Proposal mode
 

@@ -49,6 +49,8 @@ function rejectedTargetOf(op: RejectedOp, slug: string | undefined, opts: Memory
   const all = opts.all === true;
   if (slug === undefined && !all) throw rejectedUsageError(`${op} needs a slug or --all`);
   if (slug !== undefined && all) throw rejectedUsageError(`${op} takes a slug or --all, not both`);
+  if (all && opts.scope !== undefined)
+    throw rejectedUsageError("--scope names one note's scope; --all takes every scope");
   if (slug === undefined) return "all";
   return { scope: parseNoteScope(opts.scope) ?? DEFAULT_REJECTED_SCOPE, slug };
 }
@@ -112,7 +114,10 @@ function withRejectedFlags(command: Command, allHelp: string): Command {
   return command
     .argument("[slug]", "The note whose rejected writes to act on")
     .option("--all", allHelp, false)
-    .option("--scope <scope>", `The scope the note is in: ${NOTE_SCOPES.join(", ")}`, DEFAULT_REJECTED_SCOPE)
+    .option(
+      "--scope <scope>",
+      `The scope the note is in: ${NOTE_SCOPES.join(", ")} (default ${DEFAULT_REJECTED_SCOPE})`,
+    )
     .option("-d, --dir <path>", "Project directory", memoryDefaultDir())
     .option("--json", "Emit one machine-readable document", false);
 }

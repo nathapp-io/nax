@@ -33,6 +33,7 @@ import type {
   MemoryScope,
   MemoryStore,
 } from "@nathapp/nax-agent";
+import { rewindPullCursor } from "@nathapp/nax-agent/internal";
 import { PROJECT_NAX_DIR } from "@/config";
 import { NaxError } from "@/errors";
 import type { MemoryLogger } from "./paths";
@@ -171,7 +172,7 @@ export function createHostWrites(input: HostWritesInput): HostWrites {
     forget: (request) => forget(input, request),
     approve: (request) => approve(input, request),
     requeue: (target) => requeue(input.outbox, target),
-    discard: (target) => discard(input.outbox, target),
+    discard: (target) => discard(input, target),
   };
 }
 
@@ -198,11 +199,13 @@ async function requeue(outbox: MemoryOutbox, target: MemoryRejectedTarget): Prom
 
 /**
  * Drop rejected entries for good. Only `rejected` ones: a queued write is still on its way and
- * is never dropped here. A discarded forget leaves its note active on the provider, so the next
- * pull brings it back into the mirror; a discarded save leaves the mirror's copy as it is.
+ * is never dropped here. Each scope a discard touched has its pull rewound: a discarded forget
+ * leaves its note active on the provider, and an incremental pull would never send that note
+ * again, so the next sync reads the scope in full and the mirror takes the provider's copy.
  */
-async function discard(outbox: MemoryOutbox, target: MemoryRejectedTarget): Promise<number> {
-  const matches = (await outbox.list()).filter((entry) => rejectedMatches(entry, target));
-  for (const entry of matches) await outbox.remove(entry.clientId);
+async function discard(input: HostWritesInput, target: MemoryRejectedTarget): Promise<number> {
+  const matches = (await input.outbox.list()).filter((entry) => rejectedMatches(entry, target));
+  for (const entry of matches) await input.outbox.remove(entry.clientId);
+  for (const scope of new Set(matches.map((entry) => entry.scope))) await rewindPullCursor(input.store, scope);
   return matches.length;
 }

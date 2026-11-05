@@ -130,6 +130,16 @@ describe("nax memory requeue", () => {
   });
 });
 
+describe("nax memory requeue and discard flags", () => {
+  test("--scope with --all is a usage error: --all already names every scope", async () => {
+    const h = harness();
+    await runMemory(h, ["requeue", "--all", "--scope", "user"]);
+    expect(h.codes).toEqual([1]);
+    expect(h.opened).toEqual([]);
+    expect(h.err.join("\n")).toContain("--scope names one note's scope");
+  });
+});
+
 describe("nax memory discard", () => {
   test("drops one note's rejected writes and warns a discarded forget's note can come back", async () => {
     const h = harness(1);

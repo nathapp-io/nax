@@ -128,6 +128,10 @@ function entryKey(entry: MemoryOutboxEntry): string {
 /**
  * Apply one answered push: a refusal is kept on the entry with its reason, a delivery is
  * mirrored and removed. Answers the tally with the entry counted.
+ *
+ * A delivery also retires every older rejected write of the same note: the newer write is now
+ * the provider's, so the older one is superseded, and requeueing it would replay stale content
+ * over it (a forget would delete what was just saved).
  */
 async function settle(
   input: MemoryDrainInput,
@@ -141,7 +145,32 @@ async function settle(
   }
   await applyPushed(input, entry, outcome.result);
   await input.outbox.remove(entry.clientId);
+  await dropSuperseded(input.outbox, entry);
   return { ...tally, pushed: tally.pushed + 1 };
+}
+
+/** Remove the rejected writes of `delivered`'s note that were taken before it. */
+async function dropSuperseded(outbox: MemoryOutbox, delivered: MemoryOutboxEntry): Promise<void> {
+  const key = entryKey(delivered);
+  for (const entry of await outbox.list()) {
+    if (entry.state === "rejected" && entryKey(entry) === key && entry.seq < delivered.seq) {
+      await outbox.remove(entry.clientId);
+    }
+  }
+}
+
+/**
+ * Start this scope's next pull from the beginning.
+ *
+ * A pull skips a held key, and the cursor moves past it; that is safe only while the held write
+ * is still on its way. Once it is parked or discarded, the provider's copy of that note — which
+ * an incremental pull would never send again — is the one the mirror must take, so the scope is
+ * read in full. A direct forget deleted its note when it was queued; this brings it back.
+ */
+export async function rewindPullCursor(store: MemoryStore, scope: MemoryScope): Promise<void> {
+  const state = await store.readSyncState();
+  const cursor = scope === "user" ? { ...state.cursor, user: null } : { ...state.cursor, project: null };
+  await store.writeSyncState({ ...state, cursor });
 }
 
 /**
@@ -163,11 +192,12 @@ export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult>
       tally = await settle(input, entry, outcome, tally);
       continue;
     }
-    const proof = outcome.badResponse
-      ? await proveAndPark(input, { head: entry, rest: queue.slice(index + 1), error: outcome.reason, timers }, tally)
-      : null;
-    if (proof === null)
-      return { ...tally, failure: outcome.reason, ...(outcome.badResponse ? { answered: true } : {}) };
+    const candidate = { head: entry, rest: queue.slice(index + 1), proven, error: outcome.reason, timers };
+    const proof: ProofOutcome = outcome.badResponse
+      ? await proveAndPark(input, candidate, tally)
+      : { kind: "stopped", answered: false };
+    if (proof.kind === "stopped")
+      return { ...tally, failure: outcome.reason, ...(proof.answered ? { answered: true } : {}) };
     proven.add(proof.clientId);
     tally = proof.tally;
   }
@@ -178,6 +208,8 @@ export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult>
 interface ParkCandidate {
   readonly head: MemoryOutboxEntry;
   readonly rest: readonly MemoryOutboxEntry[];
+  /** Entries an earlier proof this run already delivered: never a proof a second time. */
+  readonly proven: ReadonlySet<string>;
   readonly error: string;
   readonly timers: MemoryTimers;
 }
@@ -191,31 +223,39 @@ interface ParkCandidate {
  * When the provider answers that write — delivered or refused — the bad response is the head's
  * alone, so it is parked as `rejected` and the drain carries on. When the proof fails too, or
  * there is none to try, the failure is the provider's (a contract mismatch answers every write
- * badly) and nothing is parked; the proof's own failure is not counted against it.
+ * badly) and nothing is parked; the proof's own failure is not counted against it. A proof that
+ * fails on an outage makes the stop an outage too, so the sync does not pull after it.
  */
 async function proveAndPark(
   input: MemoryDrainInput,
   candidate: ParkCandidate,
   tally: DrainTally,
-): Promise<{ readonly clientId: string; readonly tally: DrainTally } | null> {
-  const { head, rest, error, timers } = candidate;
+): Promise<ProofOutcome> {
+  const { head, rest, proven, error, timers } = candidate;
   const count = await input.outbox.recordBadResponse(head.clientId, error);
-  if (count < MEMORY_PUSH_MAX_BAD_RESPONSES) return null;
-  const proof = rest.find((entry) => entryKey(entry) !== entryKey(head));
-  if (proof === undefined) return null;
+  if (count < MEMORY_PUSH_MAX_BAD_RESPONSES) return { kind: "stopped", answered: true };
+  const proof = rest.find((entry) => !proven.has(entry.clientId) && entryKey(entry) !== entryKey(head));
+  if (proof === undefined) return { kind: "stopped", answered: true };
   const outcome = await pushEntry(input, proof, timers);
-  if (outcome.kind === "failed") return null;
+  if (outcome.kind === "failed") return { kind: "stopped", answered: outcome.badResponse };
   const settled = await settle(input, proof, outcome, tally);
   const parked = await park(input, head, `parked after ${count} bad responses: ${error}`);
   return {
+    kind: "parked",
     clientId: proof.clientId,
     tally: { ...settled, rejected: settled.rejected + 1, parked: [...settled.parked, parked] },
   };
 }
 
+/** What a proof came to: the head parked behind a delivered proof, or the drain stopped. */
+type ProofOutcome =
+  | { readonly kind: "parked"; readonly clientId: string; readonly tally: DrainTally }
+  | { readonly kind: "stopped"; readonly answered: boolean };
+
 /** Mark `entry` rejected with `reason`, warning once: a parked forget leaves its note live on the provider. */
 async function park(input: MemoryDrainInput, entry: MemoryOutboxEntry, reason: string): Promise<MemoryParkedEntry> {
   await input.outbox.markRejected(entry.clientId, reason);
+  await rewindPullCursor(input.store, entry.scope);
   const { clientId, kind, scope, slug } = entry;
   warnQuietly(input.logger, "memory sync parked an outbox entry the provider keeps answering badly", {
     clientId,

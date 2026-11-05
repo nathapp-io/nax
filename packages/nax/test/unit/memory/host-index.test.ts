@@ -322,6 +322,20 @@ describe("host index, sync and status", () => {
     expect(await discard({ scope: "project", slug: "old-fact" })).toBe(0);
   });
 
+  test("discarding rewinds that scope's pull, so the provider's copy of the note comes back", async () => {
+    await openHost();
+    const state = await mirror().readSyncState();
+    await mirror().writeSyncState({ ...state, cursor: { project: "c-project", user: "c-user" } });
+    const refused = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    await outbox().markRejected(refused.clientId, "parked after 3 bad responses: x");
+    const discard = host.discard;
+    assertDefined(discard, "host.discard");
+
+    await discard("all");
+
+    expect((await mirror().readSyncState()).cursor).toEqual({ project: null, user: "c-user" });
+  });
+
   test("reports how many repo notes were skipped", async () => {
     await openHost();
     writeRepoNote("bad.md", "no frontmatter here\n");

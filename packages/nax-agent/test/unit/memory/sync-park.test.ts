@@ -74,11 +74,11 @@ interface Harness {
   readonly input: MemorySyncInput;
 }
 
-function harness(dir: string, push: MemoryProviderScript["push"]): Harness {
+function harness(dir: string, push: MemoryProviderScript["push"], pull?: MemoryProviderScript["pull"]): Harness {
   const logger = makeLogger();
   const store = createMemoryStore({ projectDir: join(dir, "project"), logger });
   const outbox = createMemoryOutbox({ dir: store.paths.outboxDir, now: () => new Date(STAMP) });
-  const provider = makeMemoryProvider({ push });
+  const provider = makeMemoryProvider(pull === undefined ? { push } : { push, pull });
   const input: MemorySyncInput = {
     store,
     outbox,
@@ -214,7 +214,9 @@ describe("syncMemory step 3 (parking a repeated bad response)", () => {
       // The proof is the first write for another key; the same-key save waits, then follows.
       const order = h.provider.push.mock.calls.map(([request]) => request.clientId);
       expect(order).toEqual([...repeated("client-f1", limit), "client-s2", "client-s1"]);
-      expect(await h.outbox.list()).toMatchObject([{ clientId: "client-f1", state: "rejected" }]);
+      // The newer save of the same note was delivered, so the parked forget is superseded and
+      // dropped: a requeue can never replay it over the newer write.
+      expect(await h.outbox.list()).toEqual([]);
     });
   });
 
@@ -264,6 +266,67 @@ describe("syncMemory step 3 (parking a repeated bad response)", () => {
       expect(await store.readNote("project", "export-window")).toEqual(note("export-window"));
       // The run still records why it failed, after the pull cleared the last error.
       expect((await store.readSyncState()).lastError).toBe(BAD_MESSAGE);
+    });
+  });
+
+  test("parking rewinds that scope's pull, so a parked direct forget's note comes back", async () => {
+    await withTempDir(async (dir) => {
+      const limit = MEMORY_PUSH_MAX_BAD_RESPONSES;
+      // The provider still holds the note; it only sends it on a pull from the beginning.
+      const pull = ({ cursor }: { readonly cursor: string | null }) =>
+        cursor === null
+          ? { notes: [note("replay-budget")], nextCursor: "c-full", done: true }
+          : { notes: [], nextCursor: cursor, done: true };
+      const h = harness(dir, [...repeated(badResponse(), limit), ANSWER_ACTIVE], pull);
+      const state = await h.store.readSyncState();
+      await h.store.writeSyncState({ ...state, cursor: { project: "c-old", user: null } });
+      // A direct forget already took the note out of the mirror when it was queued.
+      await h.outbox.enqueue(forgetRequest("replay-budget", "client-f1"));
+      await h.outbox.enqueue(saveRequest("export-window", "client-s1"));
+
+      for (let run = 0; run < limit; run += 1) await syncMemory(h.input);
+
+      expect(await h.store.readNote("project", "replay-budget")).toEqual(note("replay-budget"));
+      expect((await h.store.readSyncState()).cursor.project).toBe("c-full");
+    });
+  });
+
+  test("an entry a proof already delivered is never pushed again as a second proof", async () => {
+    await withTempDir(async (dir) => {
+      const limit = MEMORY_PUSH_MAX_BAD_RESPONSES;
+      const h = harness(dir, [badResponse(), ANSWER_ACTIVE, badResponse()]);
+      await h.outbox.enqueue(saveRequest("replay-budget", "client-a1"));
+      await h.outbox.enqueue(saveRequest("replay-budget", "client-a2"));
+      await h.outbox.enqueue(saveRequest("export-window", "client-b1"));
+      // Both writes of the first note are one bad response from the limit.
+      for (const clientId of ["client-a1", "client-a2"]) {
+        for (let n = 1; n < limit; n += 1) await h.outbox.recordBadResponse(clientId, BAD_MESSAGE);
+      }
+
+      const result = await syncMemory(h.input);
+
+      expect(h.provider.push.mock.calls.map(([request]) => request.clientId)).toEqual([
+        "client-a1",
+        "client-b1",
+        "client-a2",
+      ]);
+      expect(result).toMatchObject({ outcome: "failed", pushed: 1, rejected: 1 });
+    });
+  });
+
+  test("a proof that fails on an outage parks nothing and skips the pull", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, [badResponse(), new Error("connection reset by peer")]);
+      await h.outbox.enqueue(saveRequest("replay-budget", "client-a1"));
+      await h.outbox.enqueue(saveRequest("export-window", "client-b1"));
+      for (let n = 1; n < MEMORY_PUSH_MAX_BAD_RESPONSES; n += 1) {
+        await h.outbox.recordBadResponse("client-a1", BAD_MESSAGE);
+      }
+
+      const result = await syncMemory(h.input);
+
+      expect(result).toMatchObject({ outcome: "failed", rejected: 0 });
+      expect(h.provider.pull).not.toHaveBeenCalled();
     });
   });
 

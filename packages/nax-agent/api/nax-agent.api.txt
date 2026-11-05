@@ -1082,6 +1082,7 @@ resolveSessionSandbox
 resolveWithin
 retainTranscript
 retryTransportFault
+rewindPullCursor
 runArgv
 runExecBranch
 runLogin
