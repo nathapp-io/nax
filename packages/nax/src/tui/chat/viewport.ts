@@ -112,3 +112,26 @@ export function visibleRange(total: number, height: number, offset: number): { s
   const end = Math.min(total, Math.max(total - offset, 0));
   return { start: Math.max(end - height, 0), end };
 }
+
+/** Which bottom-row marker a window draws, if any. */
+export type ViewportMarker = "unseen" | "scroll";
+
+/**
+ * The marker needs a row that is not the window's only line of content: below this many rows
+ * a scrolled-up window draws no scroll marker, so the one row it has stays transcript text.
+ */
+export const MIN_SCROLL_MARKER_ROWS = 2;
+
+/**
+ * Which bottom-row marker a window of `rows` rows draws for this state, if any. Lines that
+ * arrived while scrolled up are what the user has not read, so they win over the plain
+ * "there is more below" hint.
+ */
+export function viewportMarker(
+  state: { readonly offset: number; readonly unseen: number },
+  rows: number,
+): ViewportMarker | undefined {
+  if (state.unseen > 0) return "unseen";
+  if (state.offset > 0 && rows >= MIN_SCROLL_MARKER_ROWS) return "scroll";
+  return undefined;
+}

@@ -1,5 +1,5 @@
 import { displayWidth, plainText, type Span, type StyledLine } from "./styled-line";
-import { visibleRange } from "./viewport";
+import { viewportMarker, visibleRange } from "./viewport";
 
 export interface TranscriptPoint {
   readonly line: number;
@@ -23,10 +23,16 @@ export function transcriptPointAt(geometry: ViewportGeometry, x: number, y: numb
   const row = y - 1 - top;
   if (x < 1 || row < 0 || row >= height) return undefined;
   const { start, end } = visibleRange(total, height, offset);
-  const marker = unseen > 0 ? 1 : 0;
+  const marker = viewportMarker({ offset, unseen }, height) !== undefined ? 1 : 0;
   const count = Math.max(0, end - start - marker);
   if (row >= count) return undefined;
   return { line: start + row, column: x - 1 };
+}
+
+/** True when the cell (x, y) is the bottom marker row ViewportRows drew for this geometry. */
+export function markerRowAt(geometry: ViewportGeometry, x: number, y: number): boolean {
+  const row = y - 1 - geometry.top;
+  return x >= 1 && row === geometry.height - 1 && viewportMarker(geometry, geometry.height) !== undefined;
 }
 
 function ordered(selection: Selection): readonly [TranscriptPoint, TranscriptPoint] {

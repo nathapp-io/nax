@@ -10,18 +10,28 @@
  * The window is exactly `height` rows: the visible lines with blank rows padded at the bottom
  * while the transcript is shorter than the window. Every row is one physical row — an empty
  * line still takes its row, and anything measuring wider than the window is clipped rather
- * than wrapped — so the height the caller allocated is the height drawn. While lines are
- * unseen the bottom row becomes the muted `↓ <n> new lines (End)` marker, naming the key
- * that returns to them.
+ * than wrapped — so the height the caller allocated is the height drawn. The bottom row is a
+ * muted marker whenever the view has left the bottom: `↓ <n> new lines (End)` while lines are
+ * unseen, `↓ Scroll to bottom (End)` otherwise, each naming the key that returns to them. A
+ * left press on that row is that key — the wheel subscription is what sees the mouse, so it
+ * folds in the same `end` action.
  */
 import { Box, type Key, Text, useInput } from "ink";
-import { type ReactElement, type ReactNode, useEffect, useState } from "react";
+import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
 import type { MouseEvents } from "./mouse-input";
-import { highlightLine } from "./selection";
+import { highlightLine, markerRowAt, type ViewportGeometry } from "./selection";
 import { type StyledLine, StyledLineView } from "./styled-line";
 import type { ChatTheme } from "./theme";
 import { useMouseSelection } from "./use-mouse-selection";
-import { INITIAL_VIEWPORT, reduceViewport, type ViewportAction, type ViewportState, visibleRange } from "./viewport";
+import {
+  INITIAL_VIEWPORT,
+  reduceViewport,
+  type ViewportAction,
+  type ViewportMarker,
+  type ViewportState,
+  viewportMarker,
+  visibleRange,
+} from "./viewport";
 
 /** The shortest window the view will draw; ChatApp guarantees at least this many rows. */
 const MIN_VIEWPORT_ROWS = 1;
@@ -35,6 +45,7 @@ const BLANK_ROW = " ";
 /** The chat glyph set carries no arrow, and the marker's text is fixed by the design. */
 const UNSEEN_MARKER = "↓";
 const UNSEEN_LABEL = "new lines (End)";
+const SCROLL_LABEL = "Scroll to bottom (End)";
 
 export interface TranscriptViewportProps {
   readonly lines: readonly StyledLine[];
@@ -92,6 +103,22 @@ function afterContent(memory: ViewportMemory, total: number, height: number): Vi
   return { ...memory, state, total, height };
 }
 
+/** The `end` action folded into the memory: the window returns to the newest line. */
+function endMemory(memory: ViewportMemory): ViewportMemory {
+  return { ...memory, state: reduceViewport(memory.state, { type: "end" }, memory.total, memory.height) };
+}
+
+/** The window as drawn from this memory, which is what the mouse hit-test and selection see. */
+function geometryOf(memory: ViewportMemory, top: number): ViewportGeometry {
+  return {
+    top,
+    height: memory.height,
+    total: memory.total,
+    offset: memory.state.offset,
+    unseen: memory.state.unseen,
+  };
+}
+
 /**
  * The memory the frame's props settle into. The content change is folded in first — so a line
  * count that moved in the same frame as the token is accounted for — and then a bumped token
@@ -100,13 +127,13 @@ function afterContent(memory: ViewportMemory, total: number, height: number): Vi
 function nextMemory(memory: ViewportMemory, total: number, height: number, token: number): ViewportMemory {
   const content = memory.total === total && memory.height === height ? memory : afterContent(memory, total, height);
   if (content.token === token) return content;
-  const state = reduceViewport(content.state, { type: "end" }, content.total, content.height);
-  return { ...content, state, token };
+  return { ...endMemory(content), token };
 }
 
 interface ViewportRowsProps {
   readonly visible: readonly StyledLine[];
   readonly rows: number;
+  readonly offset: number;
   readonly unseen: number;
   readonly theme: ChatTheme;
 }
@@ -115,7 +142,7 @@ interface ViewportRowsProps {
  * One row of the window. The fixed height plus clipped overflow keeps the window at exactly
  * `rows` physical rows: an empty line (the gap `layoutTranscript` puts between entries, and
  * a line whose spans are all empty) still takes its row instead of collapsing, and a line,
- * or the unseen marker, that measures wider than the window is clipped rather than wrapped
+ * or the marker, that measures wider than the window is clipped rather than wrapped
  * into rows the height budget never allocated.
  */
 function ViewportRow({ children }: { readonly children: ReactNode }): ReactElement {
@@ -126,11 +153,16 @@ function ViewportRow({ children }: { readonly children: ReactNode }): ReactEleme
   );
 }
 
-/** The `rows`-tall window: visible lines, blank padding, then the bottom unseen marker. */
-function ViewportRows({ visible, rows, unseen, theme }: ViewportRowsProps): ReactElement {
-  const showingUnseen = unseen > 0;
-  const body = showingUnseen ? visible.slice(0, -1) : visible;
-  const padding = Math.max(0, rows - body.length - (showingUnseen ? 1 : 0));
+/** What the marker row says: how much is unseen, or that there is more below the window. */
+function markerLabel(marker: ViewportMarker, unseen: number): string {
+  return marker === "unseen" ? `${UNSEEN_MARKER} ${unseen} ${UNSEEN_LABEL}` : `${UNSEEN_MARKER} ${SCROLL_LABEL}`;
+}
+
+/** The `rows`-tall window: visible lines, blank padding, then the bottom marker row. */
+function ViewportRows({ visible, rows, offset, unseen, theme }: ViewportRowsProps): ReactElement {
+  const marker = viewportMarker({ offset, unseen }, rows);
+  const body = marker === undefined ? visible : visible.slice(0, -1);
+  const padding = Math.max(0, rows - body.length - (marker === undefined ? 0 : 1));
   return (
     <Box flexDirection="column">
       {body.map((line, index) => (
@@ -145,13 +177,13 @@ function ViewportRows({ visible, rows, unseen, theme }: ViewportRowsProps): Reac
           <Text>{BLANK_ROW}</Text>
         </ViewportRow>
       ))}
-      {showingUnseen ? (
+      {marker === undefined ? null : (
         <ViewportRow>
           <Text wrap="truncate" color={theme.colors.muted}>
-            {`${UNSEEN_MARKER} ${unseen} ${UNSEEN_LABEL}`}
+            {markerLabel(marker, unseen)}
           </Text>
         </ViewportRow>
-      ) : null}
+      )}
     </Box>
   );
 }
@@ -182,9 +214,20 @@ export function TranscriptViewport({
   if (memory.total !== total || memory.height !== rows || memory.token !== followToken) {
     setMemory(nextMemory(memory, total, rows, followToken));
   }
+  // The mouse subscription is bound once per active session, so `top` reaches it through a
+  // ref: reading the prop here would keep the value the effect was created with.
+  const latestTop = useRef(top);
+  latestTop.current = top;
   useEffect(() => {
     if (!active || !mouse) return;
     return mouse.subscribe((event) => {
+      if (event.kind === "press" && event.button === "left") {
+        const { x, y } = event;
+        setMemory((previous) =>
+          markerRowAt(geometryOf(previous, latestTop.current), x, y) ? endMemory(previous) : previous,
+        );
+        return;
+      }
       if (event.kind !== "wheelUp" && event.kind !== "wheelDown") return;
       const action: ViewportAction = { type: event.kind };
       setMemory((previous) => ({
@@ -210,11 +253,19 @@ export function TranscriptViewport({
     lines,
     onCopy,
     onClick: (point) => onClick?.(point.line),
-    geometry: { top, height: rows, total, offset: memory.state.offset, unseen: memory.state.unseen },
+    geometry: geometryOf(memory, top),
   });
   const { start, end } = visibleRange(total, rows, memory.state.offset);
   const visible = lines
     .slice(start, end)
     .map((line, index) => (selection ? highlightLine(line, start + index, selection) : line));
-  return <ViewportRows visible={visible} rows={rows} unseen={memory.state.unseen} theme={theme} />;
+  return (
+    <ViewportRows
+      visible={visible}
+      rows={rows}
+      offset={memory.state.offset}
+      unseen={memory.state.unseen}
+      theme={theme}
+    />
+  );
 }

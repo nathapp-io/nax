@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { highlightLine, type Selection, selectedText, transcriptPointAt } from "@/tui/chat/selection";
+import { highlightLine, markerRowAt, type Selection, selectedText, transcriptPointAt } from "@/tui/chat/selection";
 import { plainText, type StyledLine } from "@/tui/chat/styled-line";
 
 const geometry = { top: 3, height: 10, total: 50, offset: 0, unseen: 0 };
@@ -18,11 +18,32 @@ describe("transcriptPointAt", () => {
     ["AC-5", { ...geometry, top: 0, total: 4 }, 1, 1, { line: 0, column: 0 }],
     ["AC-6", { ...geometry, unseen: 2 }, 1, 13, undefined],
     ["scrolled", { ...geometry, offset: 3 }, 1, 4, { line: 37, column: 0 }],
+    ["AC-7 scroll-marker row", { ...geometry, offset: 3 }, 1, 13, undefined],
+    ["AC-8 line above the scroll marker", { ...geometry, offset: 3 }, 1, 12, { line: 45, column: 0 }],
     ["short marker", { ...geometry, top: 0, total: 4, unseen: 2 }, 1, 1, { line: 0, column: 0 }],
     ["short marker padding", { ...geometry, top: 0, total: 4, unseen: 2 }, 1, 4, undefined],
     ["short marker bottom", { ...geometry, top: 0, total: 4, unseen: 2 }, 1, 10, undefined],
   ] as const)("%s", (_name, view, x, y, expected) => expect(transcriptPointAt(view, x, y)).toEqual(expected));
 });
+describe("markerRowAt", () => {
+  const scrolled = { ...geometry, offset: 3 };
+  test.each([
+    { ac: "AC-9", view: scrolled, x: 1, y: 13, expected: true },
+    { ac: "AC-10", view: scrolled, x: 1, y: 12, expected: false },
+    { ac: "AC-11", view: geometry, x: 1, y: 13, expected: false },
+  ] as const)("$ac markerRowAt($x, $y) is $expected", ({ view, x, y, expected }) => {
+    expect(markerRowAt(view, x, y)).toBe(expected);
+  });
+
+  test("a press left of the window is never the marker row", () => {
+    expect(markerRowAt(scrolled, 0, 13)).toBe(false);
+  });
+
+  test("the unseen marker row is a marker row too", () => {
+    expect(markerRowAt({ ...geometry, unseen: 2 }, 1, 13)).toBe(true);
+  });
+});
+
 describe("selectedText", () => {
   test("AC-7 inclusive", () => expect(selectedText(lines, selection)).toBe("world\nsecond"));
   test("AC-8 reversed", () =>
