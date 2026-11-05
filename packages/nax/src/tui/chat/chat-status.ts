@@ -12,13 +12,16 @@
  */
 import { parseModelSpec, type SessionEvent } from "@nathapp/nax-agent";
 import { acpModelLabel, type ChatHostState, isChatAcpModel, sessionTitleText } from "@/chat";
+import { contextSpan, formatTokens } from "./context-span";
 import { oneLine, resolveWidth } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
-import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
+import { type ChatGlyphs, resolveChatTheme } from "./theme";
 import { toolTitle } from "./tool-card";
 
 /** What the turn is doing. Only meaningful while `running`. */
 export type TurnPhase = "thinking" | "writing" | "tool" | "approval" | "compacting" | "retrying";
+
+export { formatTokens, formatWindow } from "./context-span";
 
 export interface TurnStatus {
   readonly running: boolean;
@@ -48,10 +51,7 @@ const APPROVAL: TurnPhase = "approval";
 const COMPACTING: TurnPhase = "compacting";
 const RETRYING: TurnPhase = "retrying";
 
-const TOKEN_UNIT = 1000;
-const TOKEN_DECIMALS = 1;
 const CHARS_PER_ESTIMATED_TOKEN = 4;
-const TOKEN_SUFFIX = "k";
 
 /** Footer columns reserved for the model name alone, excluding its effort suffix. */
 const SHORT_MODEL_MAX = 24;
@@ -138,13 +138,6 @@ export function reduceTurnStatus(status: TurnStatus, event: SessionEvent): TurnS
   }
 }
 
-/** A token count for display: `999`, `1.2k` (one decimal from a thousand up). */
-export function formatTokens(n: number): string {
-  const rounded = Math.round(n);
-  if (rounded < TOKEN_UNIT) return `${rounded}`;
-  return `${(rounded / TOKEN_UNIT).toFixed(TOKEN_DECIMALS)}${TOKEN_SUFFIX}`;
-}
-
 /**
  * Display parts retain even unknown effort levels without treating their text as a path.
  * An ACP brain is named by its agent label (`Codex · gpt-5.5`), never as a path.
@@ -187,10 +180,6 @@ const SEPARATOR = " · ";
 const SANDBOX_OFF = "sandbox off";
 const SANDBOX_UNAVAILABLE = "sandbox unavailable";
 
-/** A context meter reads as a warning past 70% and as danger past 90%. */
-const CONTEXT_WARNING_ABOVE = 70;
-const CONTEXT_DANGER_ABOVE = 90;
-const PERCENT = 100;
 const COST_DECIMALS = 2;
 const COST_PREFIX = "$";
 
@@ -253,24 +242,6 @@ function leftLine(input: {
   const gesture = hintSpan(hint, copiedChars, layerHint);
   const spans: Span[] = [modeSpan(state, glyphs), { text: SEPARATOR, color: "muted" }, gesture];
   return sandbox === undefined ? spans : [...spans, sandbox];
-}
-
-/** The rounded share of the model's window the turn has used, when both numbers are known. */
-function contextPercent(state: ChatHostState, status: TurnStatus): number | undefined {
-  const { contextWindow } = state;
-  if (contextWindow === undefined || contextWindow <= 0 || status.contextTokens === undefined) return undefined;
-  return Math.round((status.contextTokens / contextWindow) * PERCENT);
-}
-
-function percentColor(percent: number): ChatColorToken {
-  if (percent > CONTEXT_DANGER_ABOVE) return "danger";
-  return percent > CONTEXT_WARNING_ABOVE ? "warning" : "muted";
-}
-
-function contextSpan(state: ChatHostState, status: TurnStatus): Span | undefined {
-  const percent = contextPercent(state, status);
-  if (percent === undefined) return undefined;
-  return { text: `${SEPARATOR}${percent}% ctx`, color: percentColor(percent) };
 }
 
 function costSpan(state: ChatHostState): Span {

@@ -87,4 +87,25 @@ describe("createContextWindowCache", () => {
     expect(second).toHaveBeenCalledWith("openai", "b");
     expect(cache.get("openai/b")).toBe(2);
   });
+
+  test("an effort suffix never reaches the lookup, and get is keyed by the full model", async () => {
+    const lookup = mock<Lookup>(async () => 1_000_000);
+    const cache = createContextWindowCache(() => lookup);
+
+    await cache.prime("opencode-go/deepseek-v4.1-flash[high]");
+
+    expect(lookup).toHaveBeenCalledWith("opencode-go", "deepseek-v4.1-flash");
+    expect(cache.get("opencode-go/deepseek-v4.1-flash[high]")).toBe(1_000_000);
+  });
+
+  test("a rejecting lookup on an effort-qualified model leaves its window unknown", async () => {
+    const lookup = mock<Lookup>(async () => {
+      throw new Error("catalog unavailable");
+    });
+    const cache = createContextWindowCache(() => lookup);
+
+    await cache.prime("opencode-go/deepseek-v4.1-flash[high]");
+
+    expect(cache.get("opencode-go/deepseek-v4.1-flash[high]")).toBeUndefined();
+  });
 });

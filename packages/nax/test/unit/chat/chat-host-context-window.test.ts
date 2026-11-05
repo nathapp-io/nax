@@ -47,6 +47,14 @@ describe("chat host context window", () => {
     return harness;
   }
 
+  test("AC-16 an effort-qualified start model reports the catalog window of its bare name", async () => {
+    windows.set("opencode-go/deepseek-v4.1-flash", 1_000_000);
+    const h = setup();
+    await h.host.start({ mode: "guarded", model: "opencode-go/deepseek-v4.1-flash[high]" });
+    expect(lookup).toHaveBeenCalledWith("opencode-go", "deepseek-v4.1-flash");
+    expect(h.host.current().contextWindow).toBe(1_000_000);
+  });
+
   test("AC-5 AC-6 start exposes the session model's context window and looks it up by provider and model", async () => {
     const h = setup();
     await h.host.start({ mode: "guarded", model: "anthropic/m1" });
