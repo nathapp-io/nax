@@ -307,8 +307,40 @@ interface AgentsRunCliOptions {
  * test from terminating the runner.
  */
 function exitForParserError(error: CommanderError, deps: AgentsRunCommandDeps): never {
-  deps.setExitCode(error.exitCode === 0 ? 0 : EXIT_USAGE_OR_CONFIG);
+  leave(error.exitCode === 0 ? 0 : EXIT_USAGE_OR_CONFIG, deps);
+  throw error;
+}
+
+/** Record `code` and leave; the caller's rethrow keeps Commander's own exit unreachable. */
+function leave(code: number, deps: AgentsRunCommandDeps): void {
+  deps.setExitCode(code);
   deps.exit();
+}
+
+/** The name the run subcommand is registered under. */
+const RUN_COMMAND = "run";
+
+/**
+ * Whether the invocation on this parent selects the `run` subcommand.
+ *
+ * `Command.args` holds what the parent was handed: the name of the command being dispatched, then
+ * the operands it is about to parse (`["agents", "run", …]`), then the tokens no command has
+ * recognised yet. The run command's name is therefore the parent's first operand.
+ */
+function selectsRun(agents: Command): boolean {
+  const args = agents.parent?.args ?? [];
+  const firstOperand = args[0] === agents.name() ? args[1] : args[0];
+  return firstOperand === RUN_COMMAND;
+}
+
+/**
+ * The parent owns `-d, --dir`, so a missing value there is raised on it — before `run` is
+ * dispatched — and the run subcommand's own handler never sees it. Inside a run invocation it is
+ * the same usage error, so it exits 2. The listing command keeps the code Commander chose.
+ */
+function exitForAgentsParserError(error: CommanderError, agents: Command, deps: AgentsRunCommandDeps): never {
+  if (selectsRun(agents)) exitForParserError(error, deps);
+  leave(error.exitCode, deps);
   throw error;
 }
 
@@ -335,9 +367,13 @@ function parentDir(command: Command): string {
  * The ordered checks stay in `agentsRunCommand`: registration declares options and forwards them,
  * so nothing here can pre-empt the order the design fixes (the `--timeout` text, then trust, then
  * the config, the catalog and the agent). What registration does own is the exit code of a parser
- * failure, which {@link exitForParserError} maps to 2.
+ * failure: {@link exitForParserError} maps the run subcommand's own, and
+ * {@link exitForAgentsParserError} the parent's, which is where a missing `--dir` value lands.
  */
 export function registerAgentsRunCommand(agents: Command, deps: AgentsRunCommandDeps = _agentsRunCommandDeps): Command {
+  // Installed before `run` exists, so the subcommand would inherit it too; `run` overrides it
+  // below with the same mapping.
+  agents.exitOverride((error: CommanderError): never => exitForAgentsParserError(error, agents, deps));
   return agents
     .command("run <agent>")
     .description("Run one agent on one task, unattended, and print its result")

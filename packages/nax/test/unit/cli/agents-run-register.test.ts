@@ -383,12 +383,15 @@ describe("registerAgentsRunCommand", () => {
   /**
    * F1: every way Commander can refuse the run before its action starts, with the message it
    * reports. A parser failure is a usage error like any other, so it leaves with 2 — not with
-   * Commander's default 1.
+   * Commander's default 1. The `--dir` cases are raised on the *parent*, which owns that option,
+   * before `run` is dispatched.
    */
   const PARSER_ERRORS = [
     ["a missing <agent>", ["agents", "run"], "missing required argument 'agent'"],
     ["an unknown option", ["agents", "run", "spec-reviewer", "--bogus"], "unknown option '--bogus'"],
     ["--task without its value", ["agents", "run", "spec-reviewer", "--task"], "argument missing"],
+    ["--dir without its value", ["agents", "run", "spec-reviewer", "--task", "t", "--dir"], "argument missing"],
+    ["-d without its value", ["agents", "run", "spec-reviewer", "--task", "t", "-d"], "argument missing"],
   ] as const;
 
   test.each(PARSER_ERRORS)("F1: %s leaves with 2 and runs nothing", async (_title, argv, message) => {
@@ -411,6 +414,24 @@ describe("registerAgentsRunCommand", () => {
     await expect(program.parseAsync(["agents", "run", "--help"], { from: "user" })).rejects.toThrow();
 
     expect(harness.deps.setExitCode).toHaveBeenCalledWith(0);
+    expect(harness.deps.exit).toHaveBeenCalledTimes(1);
+    expect(harness.deps.runAgentTask).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The parent's parser errors are remapped only inside a run invocation: the listing command
+   * keeps the code Commander chose, which is what it had before this registration existed.
+   */
+  test.each([
+    ["an unknown option", ["agents", "--bogus"], "unknown option '--bogus'"],
+    ["a missing --dir value", ["agents", "--dir"], "argument missing"],
+  ] as const)("F1: the listing command's %s still leaves with 1", async (_title, argv, message) => {
+    const harness = makeHarness();
+    const { program } = makeProgram(harness);
+
+    await expect(program.parseAsync([...argv], { from: "user" })).rejects.toThrow(message);
+
+    expect(harness.deps.setExitCode).toHaveBeenCalledWith(1);
     expect(harness.deps.exit).toHaveBeenCalledTimes(1);
     expect(harness.deps.runAgentTask).not.toHaveBeenCalled();
   });
