@@ -344,6 +344,7 @@ describe("the memory command's registration", () => {
       "link",
       "reset",
       "requeue",
+      "discard",
     ]);
     expect(typeof _memoryCliDeps.createMemoryHost).toBe("function");
   });

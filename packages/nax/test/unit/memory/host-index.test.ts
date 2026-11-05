@@ -309,6 +309,19 @@ describe("host index, sync and status", () => {
     expect(await requeue("all")).toBe(0);
   });
 
+  test("discards only rejected entries: a queued write is never dropped", async () => {
+    await openHost();
+    await queueForget("project", "old-fact");
+    const refused = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    await outbox().markRejected(refused.clientId, "no such note");
+    const discard = host.discard;
+    assertDefined(discard, "host.discard");
+
+    expect(await discard("all")).toBe(1);
+    expect(await host.status()).toMatchObject({ queued: 1, rejected: 0 });
+    expect(await discard({ scope: "project", slug: "old-fact" })).toBe(0);
+  });
+
   test("reports how many repo notes were skipped", async () => {
     await openHost();
     writeRepoNote("bad.md", "no frontmatter here\n");

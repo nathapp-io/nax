@@ -7,7 +7,8 @@
  * temporary directory. So the classification the unit file pins request by request is
  * asserted here at the seam the drain actually reads: a permanent refusal marks the
  * entry rejected and the drain carries on to the next one, and every transient failure
- * leaves the entry queued, stops the drain and records the error in `sync.json`.
+ * leaves the entry queued, stops the drain and records the error in `sync.json`. A contract
+ * mismatch that answers every forget badly (#2791) never parks one (#2793).
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -15,6 +16,7 @@ import { join } from "node:path";
 import {
   createMemoryOutbox,
   createMemoryStore,
+  MEMORY_PUSH_MAX_BAD_RESPONSES,
   type MemoryNote,
   type MemoryOutbox,
   type MemoryProvider,
@@ -209,5 +211,46 @@ describe("syncMemory over the koda provider", () => {
     assertDefined(failure, "the run's recorded error");
     expect(await queued(koda.outbox)).toEqual([["c1", "queued"]]);
     expect((await koda.store.readSyncState()).lastError).toBe(failure);
+  });
+
+  test("a lookup contract mismatch answers every forget badly, and no forget is ever parked (#2791, #2793)", async () => {
+    // The shape koda answered before #2791 was fixed: `items`, not `records`. Every forget's
+    // lookup is a bad response, so the proof write fails too and nothing may park.
+    stubFetch(async (call) => {
+      if (call.url.endsWith(`/projects/${PROJECT}/memory/write-mode`))
+        return jsonAnswer({ ret: 0, data: { mode: "direct" } });
+      if (call.url.includes("/memory/export"))
+        return jsonAnswer({ ret: 0, data: { items: [], nextCursor: null, hasMore: false } });
+      if (call.url.includes(`/projects/${PROJECT}/memory?`))
+        return jsonAnswer({ ret: 0, data: { items: [], hasNext: false } });
+      return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
+    });
+    for (const [slug, clientId] of [
+      [FIRST_SLUG, "f1"],
+      [SECOND_SLUG, "f2"],
+    ] as const) {
+      await koda.outbox.enqueue({
+        kind: "forget",
+        clientId,
+        scope: "project",
+        slug,
+        writeMode: "direct",
+        reason: "stale",
+      });
+    }
+
+    const runs = MEMORY_PUSH_MAX_BAD_RESPONSES + 2;
+    for (let run = 0; run < runs; run += 1) {
+      const result = await koda.sync();
+      expect(result.outcome).toBe("failed");
+      expect(result.parked).toBeUndefined();
+    }
+
+    expect(await queued(koda.outbox)).toEqual([
+      ["f1", "queued"],
+      ["f2", "queued"],
+    ]);
+    // The provider answered, so every run still pulled the export feed.
+    expect(calls.filter((call) => call.url.includes("/memory/export")).length).toBeGreaterThanOrEqual(runs);
   });
 });

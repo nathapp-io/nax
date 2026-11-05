@@ -38,7 +38,7 @@ import {
   withMemoryHost,
 } from "./memory-cli-deps";
 import { registerMemoryReadCommands } from "./memory-read";
-import { registerMemoryRequeueCommand } from "./memory-requeue";
+import { registerMemoryRejectedCommands } from "./memory-rejected";
 import { registerMemoryWriteCommands } from "./memory-write";
 
 /** What `list` takes on top of the group's flags: one note type and one scope, both optional. */
@@ -199,6 +199,6 @@ export function registerMemoryCommand(program: Command, deps: MemoryCliDeps = _m
   registerMemoryReadCommands(memory, deps);
   registerMemoryWriteCommands(memory, deps);
   registerMemoryAdminCommands(memory, deps);
-  registerMemoryRequeueCommand(memory, deps);
+  registerMemoryRejectedCommands(memory, deps);
   return memory;
 }

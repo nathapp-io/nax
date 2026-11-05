@@ -71,7 +71,7 @@ import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { createMcpPool, type McpPool } from "@/mcp";
 import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
-import { createHostWrites, type MemoryRequeueTarget } from "./host-writes";
+import { createHostWrites, type MemoryRejectedTarget } from "./host-writes";
 import { createKodaApprovals } from "./koda-approvals";
 import { createKodaClient, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
 import { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
@@ -124,10 +124,11 @@ export interface MemoryHost {
   }): Promise<MemoryForgetResult>;
   approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;
   /**
-   * Put rejected outbox entries back in the queue (`nax memory requeue`); answers how many.
-   * Optional so a hand-built host (a test double) stays valid; `createMemoryHost` always sets it.
+   * Requeue (`nax memory requeue`) or drop (`nax memory discard`) rejected outbox entries;
+   * each answers how many. Optional so a hand-built host (a test double) stays valid.
    */
-  requeue?(target: MemoryRequeueTarget): Promise<number>;
+  requeue?(target: MemoryRejectedTarget): Promise<number>;
+  discard?(target: MemoryRejectedTarget): Promise<number>;
   /**
    * Every note a forget still holds, keyed `"<scope>/<slug>"`: the mirror's own pending-forget
    * record (a proposal forget, answered and recorded) plus the ones this mirror has queued and
@@ -583,6 +584,7 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     forget: writes.forget,
     approve: writes.approve,
     requeue: writes.requeue,
+    discard: writes.discard,
     forgetPendingKeys: () => readForgetPendingKeys(parts),
     close: closeOnce(parts.pool),
   };

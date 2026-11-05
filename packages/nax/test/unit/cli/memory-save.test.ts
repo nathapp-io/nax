@@ -295,6 +295,7 @@ describe("registerMemoryCommand — the write subcommands", () => {
       "link",
       "reset",
       "requeue",
+      "discard",
     ]);
   });
 });

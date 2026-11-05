@@ -103,6 +103,11 @@ export interface DrainResult {
   readonly parked: readonly MemoryParkedEntry[];
   /** The message of the failure that ended the drain; absent when every entry was delivered. */
   readonly failure?: string;
+  /**
+   * Whether the failure was a bad response: the provider answered, just not usably. Absent for
+   * an outage. A sync still pulls after an answered failure, never after an outage.
+   */
+  readonly answered?: boolean;
 }
 
 /** What a drain has moved so far: the counters and the entries it parked. */
@@ -161,7 +166,8 @@ export async function drainOutbox(input: MemoryDrainInput): Promise<DrainResult>
     const proof = outcome.badResponse
       ? await proveAndPark(input, { head: entry, rest: queue.slice(index + 1), error: outcome.reason, timers }, tally)
       : null;
-    if (proof === null) return { ...tally, failure: outcome.reason };
+    if (proof === null)
+      return { ...tally, failure: outcome.reason, ...(outcome.badResponse ? { answered: true } : {}) };
     proven.add(proof.clientId);
     tally = proof.tally;
   }

@@ -29,7 +29,7 @@
  * permanent — retrying would repeat it — so the entry is marked with the reason and
  * the drain continues. Anything else, a timeout included, is transient: the drain
  * stops, the entry stays `queued` for the next run, `sync.json` records why, and
- * the run ends `failed` — after the index is refreshed, so a forget still waiting
+ * the run ends `failed` (after a bad response the pull still runs; see `sync-drain.ts`) — after the index is refreshed, so a forget still waiting
  * is visible as `(forget pending)`. One transient kind repeats: a bad response, an
  * answer that arrived but cannot be used (`isMemoryBadResponse`). It is counted on
  * the entry, and the entry that meets `MEMORY_PUSH_MAX_BAD_RESPONSES` of them is
@@ -371,6 +371,12 @@ async function finish(
   return { ...outcome, ...counts, ...parkedField(parked) };
 }
 
+/** The failures a run met, in step order, as one message; `undefined` when it met none. */
+function joinFailures(...failures: readonly (string | undefined)[]): string | undefined {
+  const met = failures.filter((failure): failure is string => failure !== undefined);
+  return met.length === 0 ? undefined : met.join("; ");
+}
+
 /** Hand the lock back if this run took it; a failed release is logged, never thrown. */
 async function releaseQuietly(input: MemorySyncInput, release: ReleaseLock): Promise<void> {
   try {
@@ -409,12 +415,17 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     if (!(await providerAnswers(input.provider, timers))) return await recordUnreachable(input);
     const drain = await drainOutbox(input);
     const counts: MemorySyncCounts = { ...noCounts(), pushed: drain.pushed, rejected: drain.rejected };
-    // A drain that stopped early says nothing about the provider's own changes: no pull.
-    if (drain.failure !== undefined) return await failRun(input, counts, drain.parked, drain.failure);
+    // A drain stopped by an outage says nothing about the provider's own changes: no pull. One
+    // stopped by a bad response was answered, so the pull still runs — the stuck write's key is
+    // held, so its note is not overwritten — and the run still ends failed, naming it.
+    if (drain.failure !== undefined && drain.answered !== true) {
+      return await failRun(input, counts, drain.parked, drain.failure);
+    }
     const pull = await pullAll(input);
     counts.pulled = pull.pulled;
     counts.skipped = pull.skipped;
-    if (pull.failure !== undefined) return await failRun(input, counts, drain.parked, pull.failure);
+    const failure = joinFailures(drain.failure, pull.failure);
+    if (failure !== undefined) return await failRun(input, counts, drain.parked, failure);
     return await finish(input, counts, drain.parked);
   } catch (error) {
     const message = errorMessage(error);

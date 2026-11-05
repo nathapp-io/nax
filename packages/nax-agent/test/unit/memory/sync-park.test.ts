@@ -127,11 +127,11 @@ describe("syncMemory step 3 (parking a repeated bad response)", () => {
           { clientId: "client-s1", state: "queued" },
         ]);
       }
-      // The entry behind it was never attempted, and no run pulled.
+      // The entry behind it was never attempted; the provider answered, so each run still pulled.
       expect(h.provider.push.mock.calls.map(([request]) => request.clientId)).toEqual(
         repeated("client-f1", MEMORY_PUSH_MAX_BAD_RESPONSES - 1),
       );
-      expect(h.provider.pull).not.toHaveBeenCalled();
+      expect(h.provider.pull).toHaveBeenCalledTimes(MEMORY_PUSH_MAX_BAD_RESPONSES - 1);
     });
   });
 
@@ -185,7 +185,7 @@ describe("syncMemory step 3 (parking a repeated bad response)", () => {
       expect(entries.map((entry) => entry.state)).toEqual(["queued", "queued"]);
       expect(entries[0]?.badResponses).toBe(runs);
       expect(entries[1]?.badResponses).toBeUndefined();
-      expect(h.provider.pull).not.toHaveBeenCalled();
+      expect(h.provider.pull).toHaveBeenCalledTimes(runs);
     });
   });
 
@@ -238,6 +238,35 @@ describe("syncMemory step 3 (parking a repeated bad response)", () => {
     });
   });
 
+  test("a write stuck on bad responses does not stop the mirror pulling, and its note stays held", async () => {
+    await withTempDir(async (dir) => {
+      const logger = makeLogger();
+      const store = createMemoryStore({ projectDir: join(dir, "project"), logger });
+      const outbox = createMemoryOutbox({ dir: store.paths.outboxDir, now: () => new Date(STAMP) });
+      // The provider still holds the note the queued forget retires, and has a new one.
+      const page = { notes: [note("replay-budget"), note("export-window")], done: true };
+      const provider = makeMemoryProvider({ push: badResponse(), pull: page });
+      await outbox.enqueue(forgetRequest("replay-budget", "client-f1"));
+
+      const result = await syncMemory({
+        store,
+        outbox,
+        provider,
+        logger,
+        now: () => new Date(STAMP),
+        pid: SYNC_PID,
+        isAlive: () => false,
+      });
+
+      expect(result).toMatchObject({ outcome: "failed", pushed: 0, pulled: 1, error: BAD_MESSAGE });
+      // The held forget's note is not brought back; the other note arrived.
+      expect(await store.readNote("project", "replay-budget")).toBeNull();
+      expect(await store.readNote("project", "export-window")).toEqual(note("export-window"));
+      // The run still records why it failed, after the pull cleared the last error.
+      expect((await store.readSyncState()).lastError).toBe(BAD_MESSAGE);
+    });
+  });
+
   test("timeouts and outages never count toward the limit", async () => {
     await withTempDir(async (dir) => {
       const outage = new NaxError("koda POST memory timed out after 4000ms", "MEMORY_KODA_TIMEOUT", {
@@ -252,6 +281,8 @@ describe("syncMemory step 3 (parking a repeated bad response)", () => {
       }
 
       expect(await h.outbox.list()).toEqual([queued]);
+      // An outage says nothing about the provider's own changes: no run pulled.
+      expect(h.provider.pull).not.toHaveBeenCalled();
     });
   });
 

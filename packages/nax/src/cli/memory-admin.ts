@@ -168,7 +168,10 @@ interface UndeliveredWrites {
  */
 async function undeliveredWrites(host: MemoryHost): Promise<UndeliveredWrites> {
   const { queued, rejected } = await host.status();
-  const steps = rejected > 0 ? "run nax memory requeue --all, then nax memory sync" : "run nax memory sync";
+  const steps =
+    rejected > 0
+      ? "run nax memory requeue --all then nax memory sync, or nax memory discard --all,"
+      : "run nax memory sync";
   const total = queued + rejected;
   return { total, advice: `${total} writes are not delivered (${queued} queued, ${rejected} rejected); ${steps}` };
 }

@@ -64,8 +64,8 @@ export interface HostWritesInput {
   readonly operations: MemoryWriteOperations;
 }
 
-/** Which rejected outbox entries a requeue puts back: one note's, or every one. */
-export type MemoryRequeueTarget = { readonly scope: MemoryScope; readonly slug: string } | "all";
+/** Which rejected outbox entries a requeue or a discard acts on: one note's, or every one. */
+export type MemoryRejectedTarget = { readonly scope: MemoryScope; readonly slug: string } | "all";
 
 /** The write surface a host exposes: one method per host write. */
 export interface HostWrites {
@@ -77,7 +77,9 @@ export interface HostWrites {
   }): Promise<MemoryForgetResult>;
   approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;
   /** Put the rejected entries `target` names back in the queue; answers how many were requeued. */
-  requeue(target: MemoryRequeueTarget): Promise<number>;
+  requeue(target: MemoryRejectedTarget): Promise<number>;
+  /** Drop the rejected entries `target` names from the outbox; answers how many were dropped. */
+  discard(target: MemoryRejectedTarget): Promise<number>;
 }
 
 /** The refusal for a slug only the repository holds: the note is the repository's to edit. */
@@ -169,11 +171,12 @@ export function createHostWrites(input: HostWritesInput): HostWrites {
     forget: (request) => forget(input, request),
     approve: (request) => approve(input, request),
     requeue: (target) => requeue(input.outbox, target),
+    discard: (target) => discard(input.outbox, target),
   };
 }
 
 /** Whether a rejected entry is one `target` names. */
-function requeueMatches(entry: MemoryOutboxEntry, target: MemoryRequeueTarget): boolean {
+function rejectedMatches(entry: MemoryOutboxEntry, target: MemoryRejectedTarget): boolean {
   if (entry.state !== "rejected") return false;
   return target === "all" || (entry.scope === target.scope && entry.slug === target.slug);
 }
@@ -184,11 +187,22 @@ function requeueMatches(entry: MemoryOutboxEntry, target: MemoryRequeueTarget): 
  * A parked entry (one a provider kept answering badly) and a refused one are both `rejected`;
  * requeueing either restores the write as it was taken, and the next sync decides it afresh.
  */
-async function requeue(outbox: MemoryOutbox, target: MemoryRequeueTarget): Promise<number> {
-  const matches = (await outbox.list()).filter((entry) => requeueMatches(entry, target));
+async function requeue(outbox: MemoryOutbox, target: MemoryRejectedTarget): Promise<number> {
+  const matches = (await outbox.list()).filter((entry) => rejectedMatches(entry, target));
   let requeued = 0;
   for (const entry of matches) {
     if (await outbox.requeue(entry.clientId)) requeued += 1;
   }
   return requeued;
+}
+
+/**
+ * Drop rejected entries for good. Only `rejected` ones: a queued write is still on its way and
+ * is never dropped here. A discarded forget leaves its note active on the provider, so the next
+ * pull brings it back into the mirror; a discarded save leaves the mirror's copy as it is.
+ */
+async function discard(outbox: MemoryOutbox, target: MemoryRejectedTarget): Promise<number> {
+  const matches = (await outbox.list()).filter((entry) => rejectedMatches(entry, target));
+  for (const entry of matches) await outbox.remove(entry.clientId);
+  return matches.length;
 }
