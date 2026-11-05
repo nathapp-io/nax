@@ -65,9 +65,13 @@ function namedByAllowedTools(allowedTools: readonly string[] | undefined, provid
   return allowedTools.some((entry) => entry.startsWith(`${providerId}__`));
 }
 
+/** The provider ids this subagent may be handed: an unattended run also gets the skills provider. */
+function deliveredProviderIds(input: AcpSubagentSessionInput): readonly string[] {
+  return input.unattended === true ? ACP_UNATTENDED_SUBAGENT_PROVIDER_IDS : ACP_SUBAGENT_PROVIDER_IDS;
+}
+
 /** The chat's providers this subagent may see, in the order the chat listed them. */
-function deliveredProviders(input: AcpSubagentSessionInput): readonly ToolProvider[] {
-  const ids = input.unattended === true ? ACP_UNATTENDED_SUBAGENT_PROVIDER_IDS : ACP_SUBAGENT_PROVIDER_IDS;
+function deliveredProviders(input: AcpSubagentSessionInput, ids: readonly string[]): readonly ToolProvider[] {
   return input.toolProviders.filter(
     (provider) => ids.includes(provider.id) && namedByAllowedTools(input.allowedTools, provider.id),
   );
@@ -90,7 +94,12 @@ export async function acpSubagentSessionOptions(
   createTranscriptStore: () => TranscriptStore,
 ): Promise<CreateAgentSessionOptions> {
   const { acp } = input;
-  const resolved = await _acpSubagentDeps.chatAcpTools(deliveredProviders(input), input.cwd);
+  // The resolver re-filters against an allow-list of its own, so it must be handed this
+  // subagent's list — the chat's would drop the skills provider an unattended run carries.
+  const providerIds = deliveredProviderIds(input);
+  const resolved = await _acpSubagentDeps.chatAcpTools(deliveredProviders(input, providerIds), input.cwd, {
+    providerIds,
+  });
   return {
     backend: _acpSubagentDeps.acpBackend({
       agent: acp.agent,
