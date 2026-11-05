@@ -25,7 +25,7 @@ export type MemoryNoteLine = Pick<MemoryNote, "scope" | "slug" | "type" | "descr
 export function formatMemoryStatus(status: MemoryStatus, index?: string): string {
   const lines = [
     `provider: ${status.provider}`,
-    `write mode: ${status.writeMode}`,
+    `write mode: ${status.writeMode === "koda" ? "decided by koda" : status.writeMode}`,
     `mirror: ${status.projectDir}`,
     `user notes: ${status.userDir}`,
     `last sync: ${status.lastPullAt ?? "never"}`,

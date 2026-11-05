@@ -18,7 +18,15 @@ import {
   type MemoryProvider,
   type MemoryScope,
 } from "@nathapp/nax-agent";
-import { assertDefined, cleanupTempDir, type LogCall, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  kodaListData,
+  type LogCall,
+  type MockLogger,
+  makeLogger,
+  makeTempDir,
+} from "@test/helpers";
 import { createKodaApprovals, type KodaApproval, type KodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient } from "@/memory/koda-http";
 import type { KodaMemoryItem } from "@/memory/koda-mapping";
@@ -96,9 +104,9 @@ const UNREACHABLE: Answer = () => {
   throw new Error("socket hang up");
 };
 
-/** A lookup page carrying `items`, and saying whether more follow. */
+/** A lookup page carrying `records`, and saying whether more follow. */
 function lookupPage(items: readonly unknown[]): Answer {
-  return () => jsonAnswer({ ret: 0, data: { items, hasNext: false, current: 1 } });
+  return () => jsonAnswer({ ret: 0, data: kodaListData(items) });
 }
 
 /** One koda NOTE row for `slug`, with the fields a case cares about overridden. */

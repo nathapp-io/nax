@@ -27,7 +27,7 @@ import {
   syncMemory,
 } from "@nathapp/nax-agent";
 import { _memoryStoreDeps } from "@nathapp/nax-agent/internal";
-import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, kodaListData, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import { createKodaApprovals, type KodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient } from "@/memory/koda-http";
 import { createKodaMemoryProvider } from "@/memory/koda-provider";
@@ -173,7 +173,7 @@ describe("syncMemory over the koda provider's export pages", () => {
       if (url.pathname.includes("/approvals/"))
         return jsonAnswer({ ret: 0, data: { status: over.status ?? "rejected" } });
       if (url.pathname.endsWith("/memory")) {
-        return jsonAnswer({ ret: 0, data: { items: over.lookup ?? [], hasNext: false, current: 1 } });
+        return jsonAnswer({ ret: 0, data: kodaListData(over.lookup ?? []) });
       }
       return jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
     });

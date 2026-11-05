@@ -64,6 +64,8 @@ nax memory approve <slug> [--scope S]
 nax memory sync
 ```
 
+With the koda provider, koda decides the write mode per agent, so `nax memory status` prints `write mode: decided by koda` and `--json` reports `"writeMode": "koda"`.
+
 Every command takes `-d, --dir <path>` (the project directory) and `--json`. Types are
 `user`, `feedback`, `project` and `reference`; scopes are `project` (the default) and `user`.
 A slug is 1-64 lower-case letters, digits or `-`.

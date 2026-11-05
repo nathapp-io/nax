@@ -47,6 +47,11 @@ describe("formatMemoryStatus", () => {
     expect(lines).toContain("last sync: never");
   });
 
+  test("a koda-linked status says koda decides the write mode instead of naming a local one", () => {
+    const lines = formatMemoryStatus({ ...STATUS, writeMode: "koda" }).split("\n");
+    expect(lines).toContain("write mode: decided by koda");
+  });
+
   test("AC-14 a clean last sync prints no last error line", () => {
     const lines = formatMemoryStatus({ ...STATUS, lastError: null }).split("\n");
     expect(lines.filter((line) => line.startsWith("last error:"))).toEqual([]);
