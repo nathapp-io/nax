@@ -1,6 +1,7 @@
 /** Repo-scoped chain proposals: validate the whole proposal before host approval. */
 import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { resolveTargetRepo } from "../target-repo";
 import { buildChainStepArgv, CHAIN_STEP_FIELDS, type ChainStepInput, parseChainStepInput } from "./chain-argv";
 import type { ChatChains } from "./chain-controller";
 import { CHAIN_CHECK_MAX_LENGTH, CHAIN_MAX_STEPS, type ChainStep } from "./chain-types";
@@ -53,13 +54,16 @@ async function resolveSteps(
   const existingPlanPrds: { step: number; feature: string }[] = [];
   for (const [index, entry] of parsed.entries()) {
     let { input } = entry;
+    const target = await resolveTargetRepo(options.repoRoot, input.repo);
+    if ("error" in target) return stepError(index + 1, target.error);
+    const stepOptions = { ...options, repoRoot: target.root };
     if (input.kind === "plan") {
-      const resolved = await resolvePlanSpec(input.feature, input.spec, options);
+      const resolved = await resolvePlanSpec(input.feature, input.spec, stepOptions);
       if ("error" in resolved) return stepError(index + 1, resolved.error);
       if (resolved.prdExists) existingPlanPrds.push({ step: index + 1, feature: input.feature });
       input = { ...input, spec: resolved.spec };
     }
-    const argv = buildChainStepArgv(input, options);
+    const argv = buildChainStepArgv(input, stepOptions);
     const prless = (input.kind === "bot_review" || input.kind === "bot_fix") && input.pr === undefined;
     // The bot PR token follows the two command tokens, independently of the entry length.
     steps.push({

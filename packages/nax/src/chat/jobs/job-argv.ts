@@ -4,7 +4,9 @@ import { NaxError } from "@/errors";
 import { validateFeatureName } from "@/utils/feature-name";
 import type { ChatJobKind } from "./job-types";
 
-export type JobLaunchInput =
+export type JobLaunchInput = JobLaunchBody & { readonly repo?: string };
+
+type JobLaunchBody =
   | { readonly kind: "plan"; readonly feature: string; readonly spec?: string; readonly profiles: readonly string[] }
   | {
       readonly kind: "run";
@@ -63,7 +65,7 @@ function parsePlan(
   feature: string,
   raw: Record<string, unknown>,
   profiles: readonly string[],
-): JobLaunchInput | InputError {
+): JobLaunchBody | InputError {
   if (raw.spec === undefined) return { kind: "plan", feature, profiles };
   if (!validRelativePath(raw.spec)) return { error: "[chat] spec must be a repo-relative path" };
   return { kind: "plan", feature, profiles, spec: raw.spec };
@@ -73,7 +75,7 @@ function parseRun(
   feature: string,
   raw: Record<string, unknown>,
   profiles: readonly string[],
-): JobLaunchInput | InputError {
+): JobLaunchBody | InputError {
   const { maxIterations, maxCost } = raw;
   if (
     maxIterations !== undefined &&
@@ -100,7 +102,7 @@ function parseBot(
   kind: "bot_review" | "bot_fix",
   raw: Record<string, unknown>,
   profiles: readonly string[],
-): JobLaunchInput | InputError {
+): JobLaunchBody | InputError {
   const pr = typeof raw.pr === "string" && /^\d+$/.test(raw.pr) ? Number(raw.pr) : raw.pr;
   if (typeof pr !== "number" || !Number.isSafeInteger(pr) || pr <= 0) {
     return { error: "[chat] pr must be a positive integer" };
@@ -129,6 +131,15 @@ function parseBot(
 
 /** Validates feature names only; target existence and featureDir checks belong to jobs-launch. */
 export function parseJobInput(kind: ChatJobKind, raw: Record<string, unknown>): JobLaunchInput | InputError {
+  const parsed = parseJobBody(kind, raw);
+  if ("error" in parsed || raw.repo === undefined) return parsed;
+  // Keep repo so later stages can resolve it; resolveTargetRepo owns the containment rules.
+  if (typeof raw.repo !== "string") return { error: "[chat] repo must be a non-empty string" };
+  // The spread of a union widens it; the shape is unchanged.
+  return { ...parsed, repo: raw.repo } as JobLaunchInput;
+}
+
+function parseJobBody(kind: ChatJobKind, raw: Record<string, unknown>): JobLaunchBody | InputError {
   if (kind === "plan" || kind === "run") {
     if (typeof raw.feature !== "string") return { error: "[chat] feature must be a string" };
     try {
