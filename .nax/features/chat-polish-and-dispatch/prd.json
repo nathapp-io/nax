@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-dispatch",
   "branchName": "feat/chat-polish-and-dispatch",
   "createdAt": "2026-11-05T00:00:00.000Z",
-  "updatedAt": "2026-11-05T03:15:12.421Z",
+  "updatedAt": "2026-11-05T03:30:06.130Z",
   "userStories": [
     {
       "id": "US-001",
@@ -84,14 +84,17 @@
         "session"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two production modules extend the existing registry/state.current pattern without a new abstraction; session continuation and stop boundaries retain strict TDD under the session override."
+        "reasoning": "Two production modules extend the existing registry/state.current pattern without a new abstraction; session continuation and stop boundaries retain strict TDD under the session override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/loop-handlers.ts",
@@ -114,7 +117,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "17e9ae2964972d115d28906a8158a11b07a3df2f"
     },
     {
       "id": "US-003",
