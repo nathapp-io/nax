@@ -392,6 +392,21 @@ describe("registerAgentsRunCommand", () => {
     ["--task without its value", ["agents", "run", "spec-reviewer", "--task"], "argument missing"],
     ["--dir without its value", ["agents", "run", "spec-reviewer", "--task", "t", "--dir"], "argument missing"],
     ["-d without its value", ["agents", "run", "spec-reviewer", "--task", "t", "-d"], "argument missing"],
+    [
+      "--dir before the subcommand, missing again after it",
+      ["agents", "--dir", "/tmp", "run", "spec-reviewer", "--task", "t", "--dir"],
+      "argument missing",
+    ],
+    [
+      "-d before the subcommand, missing again after it",
+      ["agents", "-d", "/tmp", "run", "spec-reviewer", "--task", "t", "-d"],
+      "argument missing",
+    ],
+    [
+      "an inline --dir before the subcommand, missing after it",
+      ["agents", "--dir=/tmp", "run", "spec-reviewer", "--task", "t", "--dir"],
+      "argument missing",
+    ],
   ] as const;
 
   test.each(PARSER_ERRORS)("F1: %s leaves with 2 and runs nothing", async (_title, argv, message) => {
@@ -416,6 +431,26 @@ describe("registerAgentsRunCommand", () => {
     expect(harness.deps.setExitCode).toHaveBeenCalledWith(0);
     expect(harness.deps.exit).toHaveBeenCalledTimes(1);
     expect(harness.deps.runAgentTask).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The parent's own option may precede the subcommand name. Commander gives the parent every
+   * token the program did not recognise, so `--dir /tmp` sits in front of `run` there and the
+   * subcommand has to be found past it — the same ordering that reaches the handler above.
+   */
+  test.each([
+    ["--dir", ["agents", "--dir", "/tmp", "run", "spec-reviewer", "--task", "t"]],
+    ["-d", ["agents", "-d", "/tmp", "run", "spec-reviewer", "--task", "t"]],
+    ["--dir=/tmp", ["agents", "--dir=/tmp", "run", "spec-reviewer", "--task", "t"]],
+  ] as const)("F1: a parent %s before the subcommand still runs the task", async (_title, argv) => {
+    const harness = makeHarness();
+    harness.resolveRun(COMPLETED);
+    const { program } = makeProgram(harness);
+
+    await program.parseAsync([...argv], { from: "user" });
+
+    expect(harness.deps.ensureTrusted).toHaveBeenCalledWith("/tmp");
+    expect(harness.deps.runAgentTask).toHaveBeenCalledTimes(1);
   });
 
   /**

@@ -15,7 +15,7 @@
  */
 import { dirname, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import type { Command, CommanderError } from "commander";
+import type { Command, CommanderError, Option } from "commander";
 import { findProjectDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type AgentResource, loadResourceCatalog, type ResourceCatalog } from "@/resources";
@@ -320,17 +320,70 @@ function leave(code: number, deps: AgentsRunCommandDeps): void {
 /** The name the run subcommand is registered under. */
 const RUN_COMMAND = "run";
 
+/** A token that can only be an option, never an option's value. */
+function looksLikeOption(token: string): boolean {
+  return token.length > 1 && token.startsWith("-");
+}
+
+/**
+ * The parent's own option that `token` names, and whether the token carries the value itself.
+ *
+ * The bare `-d` and `--dir` spellings match an option exactly; the inline forms Commander also
+ * accepts — `--dir=/tmp` and `-d/tmp` — are recognised here from the option's own flags.
+ */
+function parentOption(agents: Command, token: string): { option: Option; inline: boolean } | undefined {
+  const exact = agents.options.find((candidate) => candidate.short === token || candidate.long === token);
+  if (exact !== undefined) return { option: exact, inline: false };
+  const equals = token.indexOf("=");
+  if (token.startsWith("--") && equals > 2) {
+    const name = token.slice(0, equals);
+    const option = agents.options.find(
+      (candidate) => candidate.long === name && (candidate.required || candidate.optional),
+    );
+    if (option !== undefined) return { option, inline: true };
+  }
+  const short = token.slice(0, 2);
+  if (token.length > 2 && token.startsWith("-") && !token.startsWith("--")) {
+    const option = agents.options.find((candidate) => candidate.short === short && candidate.required);
+    if (option !== undefined) return { option, inline: true };
+  }
+  return undefined;
+}
+
+/**
+ * The first operand among the tokens the parent is about to parse — its subcommand name.
+ *
+ * Commander hands the parent every token the program did not recognise, in order, so the parent's
+ * own options appear among them with their values (`--dir /tmp run …`). This walks them the way
+ * Commander does: a bare `-d`/`--dir` takes the next token as its value, an inline `--dir=/tmp`
+ * does not, and the first token that is not one of the parent's options is the first operand.
+ * `undefined` means the parent has no operand at all — the listing command, not a subcommand.
+ */
+function firstOperand(agents: Command, tokens: readonly string[]): string | undefined {
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === undefined) return undefined;
+    const match = parentOption(agents, token);
+    if (match === undefined) return token;
+    if (match.inline) continue;
+    const next = tokens[index + 1];
+    const takesValue = match.option.required || (match.option.optional && next !== undefined && !looksLikeOption(next));
+    if (takesValue) index += 1;
+  }
+  return undefined;
+}
+
 /**
  * Whether the invocation on this parent selects the `run` subcommand.
  *
  * `Command.args` holds what the parent was handed: the name of the command being dispatched, then
- * the operands it is about to parse (`["agents", "run", …]`), then the tokens no command has
- * recognised yet. The run command's name is therefore the parent's first operand.
+ * the tokens it is about to parse (`["agents", "run", …]`), then the ones no command recognised
+ * yet. The run command's name is the first of those tokens that is not a parent option.
  */
 function selectsRun(agents: Command): boolean {
   const args = agents.parent?.args ?? [];
-  const firstOperand = args[0] === agents.name() ? args[1] : args[0];
-  return firstOperand === RUN_COMMAND;
+  const start = args[0] === agents.name() ? 1 : 0;
+  return firstOperand(agents, args.slice(start)) === RUN_COMMAND;
 }
 
 /**
