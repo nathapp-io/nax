@@ -29,8 +29,13 @@
  * permanent — retrying would repeat it — so the entry is marked with the reason and
  * the drain continues. Anything else, a timeout included, is transient: the drain
  * stops, the entry stays `queued` for the next run, `sync.json` records why, and
- * the run ends `failed` — after the index is refreshed, so a forget still waiting
- * is visible as `(forget pending)`.
+ * the run ends `failed` (after a bad response the pull still runs; see `sync-drain.ts`) — after the index is refreshed, so a forget still waiting
+ * is visible as `(forget pending)`. One transient kind repeats: a bad response, an
+ * answer that arrived but cannot be used (`isMemoryBadResponse`). It is counted on
+ * the entry, and the entry that meets `MEMORY_PUSH_MAX_BAD_RESPONSES` of them is
+ * parked as `rejected` — but only once the next write for another key is answered,
+ * which proves the fault is the entry's and not the provider's. Writes of the same
+ * key never overtake it, so per-key `seq` order still holds.
  *
  * Step 4 asks the provider for what changed elsewhere, one page at a time. The cursor
  * each page hands back is checkpointed before the next page is asked for, so the disk
@@ -49,14 +54,14 @@
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
-import { applyPushed } from "./delivery.ts";
 import { refreshMemoryIndex } from "./index-render.ts";
 import { acquireMirrorLocks, type ReleaseLock, storeLockTargets } from "./mirror-lock.ts";
-import { isMemoryPushRejected, parseMemoryNoteRecord } from "./note.ts";
-import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
-import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
+import { parseMemoryNoteRecord } from "./note.ts";
+import type { MemoryOutbox } from "./outbox.ts";
+import type { MemoryPage, MemoryProvider } from "./provider-types.ts";
 import type { MemoryStore, MemorySyncState } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./support.ts";
+import { drainOutbox, type MemoryParkedEntry } from "./sync-drain.ts";
 import { claimSync, releaseSync } from "./sync-flight.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
@@ -102,6 +107,8 @@ export interface MemorySyncResult {
   readonly skipped: number;
   /** The message of the failure that ended the run, when it ended in one. */
   readonly error?: string;
+  /** The entries this run parked; absent when it parked none. They are counted in `rejected`. */
+  readonly parked?: readonly MemoryParkedEntry[];
 }
 
 /** What a run holds when it took no lock: releasing nothing is releasing successfully. */
@@ -117,6 +124,11 @@ interface MemorySyncCounts {
 
 function noCounts(): MemorySyncCounts {
   return { pushed: 0, rejected: 0, pulled: 0, skipped: 0 };
+}
+
+/** The `parked` field a result carries: only when the run parked something. */
+function parkedField(parked: readonly MemoryParkedEntry[]): Pick<MemorySyncResult, "parked"> {
+  return parked.length === 0 ? {} : { parked };
 }
 
 /** A run that stopped before it moved anything. */
@@ -156,83 +168,6 @@ async function recordUnreachable(input: MemorySyncInput): Promise<MemorySyncResu
 async function recordLastError(input: MemorySyncInput, message: string): Promise<void> {
   const state = await input.store.readSyncState();
   await input.store.writeSyncState({ ...state, lastError: message });
-}
-
-/**
- * The write an entry stands for, as the provider takes it.
- *
- * The entry carries the queue's own bookkeeping — its sequence, when it was taken,
- * whether it is still queued — and none of that is the provider's to read, so the
- * request is projected from the fields the two shapes share rather than forwarded.
- */
-function requestOf(entry: MemoryOutboxEntry): MemoryWriteRequest {
-  return {
-    kind: entry.kind,
-    clientId: entry.clientId,
-    scope: entry.scope,
-    slug: entry.slug,
-    writeMode: entry.writeMode,
-    ...(entry.note === undefined ? {} : { note: entry.note }),
-    ...(entry.reason === undefined ? {} : { reason: entry.reason }),
-  };
-}
-
-/** What one push came to: the provider's answer, a permanent refusal, or a transient failure. */
-type PushOutcome =
-  | { readonly kind: "pushed"; readonly result: MemoryPushResult }
-  | { readonly kind: "rejected"; readonly reason: string }
-  | { readonly kind: "failed"; readonly reason: string };
-
-/**
- * One entry, pushed through the operation race.
- *
- * `MEMORY_PUSH_REJECTED` is the provider saying it will never accept this write, so
- * it is separated here from every other throw and from the `MEMORY_TIMEOUT` the race
- * raises: only the first is worth keeping on the entry, and only the others are worth
- * another attempt.
- */
-async function pushEntry(input: MemorySyncInput, entry: MemoryOutboxEntry, timers: MemoryTimers): Promise<PushOutcome> {
-  try {
-    const pushed = input.provider.push(requestOf(entry));
-    return { kind: "pushed", result: await raceTimeout(pushed, MEMORY_OP_TIMEOUT_MS, timers) };
-  } catch (error) {
-    const reason = errorMessage(error);
-    return isMemoryPushRejected(error) ? { kind: "rejected", reason } : { kind: "failed", reason };
-  }
-}
-
-/** What a drain delivered, and the transient failure that stopped it early. */
-interface DrainResult {
-  readonly pushed: number;
-  readonly rejected: number;
-  /** The message of the failure that ended the drain; absent when every entry was delivered. */
-  readonly failure?: string;
-}
-
-/**
- * Step 3: deliver every queued write, oldest first.
- *
- * `list()` answers with the rejected entries too — they are the record of a refusal —
- * so only `queued` entries are pushed: nothing here retries a permanent one.
- */
-async function drainOutbox(input: MemorySyncInput): Promise<DrainResult> {
-  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  let pushed = 0;
-  let rejected = 0;
-  for (const entry of await input.outbox.list()) {
-    if (entry.state !== "queued") continue;
-    const outcome = await pushEntry(input, entry, timers);
-    if (outcome.kind === "failed") return { pushed, rejected, failure: outcome.reason };
-    if (outcome.kind === "rejected") {
-      await input.outbox.markRejected(entry.clientId, outcome.reason);
-      rejected += 1;
-      continue;
-    }
-    await applyPushed(input, entry, outcome.result);
-    await input.outbox.remove(entry.clientId);
-    pushed += 1;
-  }
-  return { pushed, rejected };
 }
 
 /** The cursor pair with one scope moved: the other scope's cursor is carried over untouched. */
@@ -407,9 +342,14 @@ async function pullAll(input: MemorySyncInput): Promise<PullResult> {
  * has to see — a forget left queued renders as `(forget pending)` — and the counters are
  * the work that was done before the step that failed.
  */
-async function failRun(input: MemorySyncInput, counts: MemorySyncCounts, failure: string): Promise<MemorySyncResult> {
+async function failRun(
+  input: MemorySyncInput,
+  counts: MemorySyncCounts,
+  parked: readonly MemoryParkedEntry[],
+  failure: string,
+): Promise<MemorySyncResult> {
   await recordLastError(input, failure);
-  return await finish(input, counts, failure);
+  return await finish(input, counts, parked, failure);
 }
 
 /**
@@ -418,10 +358,23 @@ async function failRun(input: MemorySyncInput, counts: MemorySyncCounts, failure
  * `failure` is the step that stopped early, if any: the counters are what did move
  * before it stopped.
  */
-async function finish(input: MemorySyncInput, counts: MemorySyncCounts, failure?: string): Promise<MemorySyncResult> {
+async function finish(
+  input: MemorySyncInput,
+  counts: MemorySyncCounts,
+  parked: readonly MemoryParkedEntry[],
+  failure?: string,
+): Promise<MemorySyncResult> {
   const heldForgets = await input.outbox.heldKeys("forget");
   await refreshMemoryIndex(input.store, { heldForgets });
-  return failure === undefined ? { outcome: "synced", ...counts } : { outcome: "failed", ...counts, error: failure };
+  const outcome =
+    failure === undefined ? { outcome: "synced" as const } : { outcome: "failed" as const, error: failure };
+  return { ...outcome, ...counts, ...parkedField(parked) };
+}
+
+/** The failures a run met, in step order, as one message; `undefined` when it met none. */
+function joinFailures(...failures: readonly (string | undefined)[]): string | undefined {
+  const met = failures.filter((failure): failure is string => failure !== undefined);
+  return met.length === 0 ? undefined : met.join("; ");
 }
 
 /** Hand the lock back if this run took it; a failed release is logged, never thrown. */
@@ -462,13 +415,18 @@ export async function syncMemory(input: MemorySyncInput): Promise<MemorySyncResu
     if (!(await providerAnswers(input.provider, timers))) return await recordUnreachable(input);
     const drain = await drainOutbox(input);
     const counts: MemorySyncCounts = { ...noCounts(), pushed: drain.pushed, rejected: drain.rejected };
-    // A drain that stopped early says nothing about the provider's own changes: no pull.
-    if (drain.failure !== undefined) return await failRun(input, counts, drain.failure);
+    // A drain stopped by an outage says nothing about the provider's own changes: no pull. One
+    // stopped by a bad response was answered, so the pull still runs — the stuck write's key is
+    // held, so its note is not overwritten — and the run still ends failed, naming it.
+    if (drain.failure !== undefined && drain.answered !== true) {
+      return await failRun(input, counts, drain.parked, drain.failure);
+    }
     const pull = await pullAll(input);
     counts.pulled = pull.pulled;
     counts.skipped = pull.skipped;
-    if (pull.failure !== undefined) return await failRun(input, counts, pull.failure);
-    return await finish(input, counts);
+    const failure = joinFailures(drain.failure, pull.failure);
+    if (failure !== undefined) return await failRun(input, counts, drain.parked, failure);
+    return await finish(input, counts, drain.parked);
   } catch (error) {
     const message = errorMessage(error);
     warnQuietly(input.logger, "memory sync failed", { path: lock, error: message });

@@ -49,6 +49,7 @@ export * from "#src/internal/strip-control-chars";
 export * from "#src/internal/thenable";
 export { parseMemoryNoteRecord } from "#src/memory/note";
 export { _memoryStoreDeps } from "#src/memory/store";
+export { rewindPullCursor } from "#src/memory/sync-drain";
 export * from "#src/native/adapter-deps";
 export * from "#src/native/auth";
 export * from "#src/native/client";

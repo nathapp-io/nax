@@ -62,6 +62,8 @@ nax memory save --slug <slug> --type <type> --description <text> (--body <text> 
 nax memory forget <slug> --reason <text> [--scope S]
 nax memory approve <slug> [--scope S]
 nax memory sync
+nax memory requeue (<slug> [--scope S] | --all)
+nax memory discard (<slug> [--scope S] | --all)
 ```
 
 With the koda provider, koda decides the write mode per agent, so `nax memory status` prints `write mode: decided by koda` and `--json` reports `"writeMode": "koda"`.
@@ -69,6 +71,24 @@ With the koda provider, koda decides the write mode per agent, so `nax memory st
 Every command takes `-d, --dir <path>` (the project directory) and `--json`. Types are
 `user`, `feedback`, `project` and `reference`; scopes are `project` (the default) and `user`.
 A slug is 1-64 lower-case letters, digits or `-`.
+
+### Rejected writes
+
+A write the provider refuses is kept in the outbox as `rejected`, with the reason. A sync
+also parks a write as `rejected` when the provider keeps answering it with a response it
+cannot use (3 times), but only after the next queued write for a different note goes through,
+which shows the fault is that write's and not the provider's. A provider that answers every
+write badly (a version mismatch, for example) parks nothing: the queue waits. The sync still
+pulls the provider's changes while it waits, and leaves the waiting write's note alone. After a
+timeout or an unreachable provider it does not pull.
+
+`nax memory status` lists each rejected write and why, and `nax memory sync` names any it
+parked. A rejected write is never retried on its own, and `nax memory link --force` and
+`nax memory reset` refuse while one is held. `nax memory requeue` puts it back in the queue
+for the next sync; `nax memory discard` drops it for good. A parked or discarded forget leaves
+the note active on the provider, so parking or discarding a write makes the next sync read that
+scope in full, and the mirror takes the provider's copy. Once a newer write of the same note is
+delivered, an older rejected one is dropped, so it can never be requeued over the newer one.
 
 ### Proposal mode
 

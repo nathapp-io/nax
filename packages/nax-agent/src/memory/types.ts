@@ -112,6 +112,14 @@ export const MEMORY_PROBE_TIMEOUT_MS = 2000;
 export const MEMORY_OP_TIMEOUT_MS = 10_000;
 export const MEMORY_PULL_PAGE_SIZE = 200;
 export const MEMORY_PULL_MAX_PAGES = 50;
+/**
+ * How many bad responses one outbox entry may meet before a sync parks it as `rejected`.
+ *
+ * A bad response is an answer that arrived but cannot be used (`isMemoryBadResponse`): it
+ * repeats the same way every run, so an entry that keeps meeting one would hold the head of the
+ * queue forever. Outages never count toward it, so a provider that is down is never given up on.
+ */
+export const MEMORY_PUSH_MAX_BAD_RESPONSES = 3;
 
 /**
  * The key a note is addressed by wherever the mirror and the queue meet: `<scope>/<slug>`.

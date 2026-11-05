@@ -172,6 +172,7 @@ function resetHost(fix: ResetFixture, events: string[]): MemoryHost {
       lastError: null,
       queued: counts.queued,
       rejected: counts.rejected,
+      rejectedEntries: [],
       notes: { project: 0, user: 0, repo: 0 },
       repoSkipped: 0,
     }),
@@ -256,7 +257,7 @@ describe("nax memory reset — what it refuses", () => {
 
     expect(await runReset(h)).toBe(1);
     expect(h.err).toEqual([
-      "[memory] 2 writes are not delivered; run nax memory sync (or nax memory forget) before reset",
+      "[memory] 2 writes are not delivered (1 queued, 1 rejected); run nax memory requeue --all then nax memory sync, or nax memory discard --all, before reset",
     ]);
     expect(h.removed).toEqual([]);
     expect(h.listed).toEqual([]);
@@ -423,6 +424,8 @@ describe("registerMemoryCommand — reset", () => {
       "approve",
       "link",
       "reset",
+      "requeue",
+      "discard",
     ]);
   });
 });

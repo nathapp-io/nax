@@ -13,7 +13,7 @@
  * Formatting is pure and total: nothing here reads a host, and no input makes it throw.
  */
 import type { MemoryNote, MemorySyncResult } from "@nathapp/nax-agent";
-import type { MemoryStatus } from "./host";
+import type { MemoryRejectedEntry, MemoryStatus } from "./host";
 
 /**
  * A note as a listing row is printed: the six fields the line names. A whole `MemoryNote`
@@ -31,6 +31,7 @@ export function formatMemoryStatus(status: MemoryStatus, index?: string): string
     `last sync: ${status.lastPullAt ?? "never"}`,
     ...(status.lastError === null ? [] : [`last error: ${status.lastError}`]),
     `outbox: ${status.queued} queued, ${status.rejected} rejected`,
+    ...status.rejectedEntries.map((entry) => `rejected: ${entryLabel(entry)} (${entry.reason})`),
     `notes: ${status.notes.project} project, ${status.notes.user} user, ${status.notes.repo} repo`,
     ...(status.repoSkipped > 0 ? [`repo notes skipped: ${status.repoSkipped}`] : []),
   ];
@@ -39,12 +40,23 @@ export function formatMemoryStatus(status: MemoryStatus, index?: string): string
 }
 
 /**
- * What one sync did, as one line.
+ * What one sync did: one line, then one more per entry the run parked.
  *
  * `failed` names the message the run ended with; the field is optional on the result, so a
  * failure that carried none says `unknown error` rather than printing an empty tail.
  */
 export function formatMemorySyncResult(result: MemorySyncResult): string {
+  const parked = (result.parked ?? []).map((entry) => `memory sync: parked ${entryLabel(entry)} (${entry.reason})`);
+  return [syncOutcomeLine(result), ...parked].join("\n");
+}
+
+/** An outbox entry as the status and the sync line name it: `<kind> <scope>/<slug>`. */
+function entryLabel(entry: Pick<MemoryRejectedEntry, "kind" | "scope" | "slug">): string {
+  return `${entry.kind} ${entry.scope}/${entry.slug}`;
+}
+
+/** The run's own line, before any parked entry is named. */
+function syncOutcomeLine(result: MemorySyncResult): string {
   switch (result.outcome) {
     case "synced":
       return `memory sync: synced (pushed ${result.pushed}, rejected ${result.rejected}, pulled ${result.pulled}, skipped ${result.skipped})`;

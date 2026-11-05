@@ -64,6 +64,10 @@ export type MemoryOutboxEntry = MemoryWriteRequest & {
   readonly reason?: string;
   /** A reason the request itself carried (a forget's justification), kept across a rejection. */
   readonly requestReason?: string;
+  /** How many bad responses a push of this entry has met; absent until the first. */
+  readonly badResponses?: number;
+  /** The message of the last bad response, kept so a parked entry can say why. */
+  readonly lastError?: string;
 };
 
 /** The durable queue of unacknowledged writes. */
@@ -79,6 +83,18 @@ export interface MemoryOutbox {
   listInvalid(): Promise<string[]>;
   remove(clientId: string): Promise<void>;
   markRejected(clientId: string, reason: string): Promise<void>;
+  /**
+   * Count one bad response against a queued entry and keep its message; answers the entry's new
+   * count, or 0 when the outbox holds no readable entry under that id. Delivery removes the
+   * entry, so a count never outlives a success.
+   */
+  recordBadResponse(clientId: string, error: string): Promise<number>;
+  /**
+   * Put a rejected entry back in the queue as it was taken: its own reason restored, the
+   * rejection and any bad-response count dropped. Answers whether an entry was requeued; a
+   * queued or absent one is left alone.
+   */
+  requeue(clientId: string): Promise<boolean>;
   heldKeys(kind?: "save" | "forget"): Promise<ReadonlySet<string>>;
 }
 
@@ -99,6 +115,8 @@ const EntrySchema = z.object({
   note: z.unknown().optional(),
   reason: z.string().optional(),
   requestReason: z.string().optional(),
+  badResponses: z.number().int().positive().optional(),
+  lastError: z.string().optional(),
   seq: z.number().int().positive(),
   enqueuedAt: z.string().min(1),
   state: z.enum(["queued", "rejected"]),
@@ -207,6 +225,12 @@ function toRejected(entry: MemoryOutboxEntry, rejectionReason: string): MemoryOu
     state: "rejected",
     reason: rejectionReason,
   };
+}
+
+/** A rejected entry as it was taken: the request's own reason back in `reason`, no count. */
+function toQueued(entry: MemoryOutboxEntry): MemoryOutboxEntry {
+  const { reason: _rejection, requestReason, badResponses: _count, lastError: _last, ...rest } = entry;
+  return { ...rest, ...(requestReason === undefined ? {} : { reason: requestReason }), state: "queued" };
 }
 
 export function createMemoryOutbox(input: { readonly dir: string; readonly now?: () => Date }): MemoryOutbox {
@@ -327,6 +351,30 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     }
   }
 
+  async function recordBadResponse(clientId: string, error: string): Promise<number> {
+    let count = 0;
+    for (const file of await filesFor(clientId)) {
+      const entry = await readEntry(file);
+      // An entry that cannot be read cannot be rewritten either; it stays for listInvalid.
+      if (entry === null) continue;
+      count = (entry.badResponses ?? 0) + 1;
+      const counted: MemoryOutboxEntry = { ...entry, badResponses: count, lastError: error };
+      await writeFileAtomic(join(dir, file.name), `${JSON.stringify(counted)}\n`);
+    }
+    return count;
+  }
+
+  async function requeue(clientId: string): Promise<boolean> {
+    let requeued = false;
+    for (const file of await filesFor(clientId)) {
+      const entry = await readEntry(file);
+      if (entry === null || entry.state !== "rejected") continue;
+      await writeFileAtomic(join(dir, file.name), `${JSON.stringify(toQueued(entry))}\n`);
+      requeued = true;
+    }
+    return requeued;
+  }
+
   async function heldKeys(kind?: "save" | "forget"): Promise<ReadonlySet<string>> {
     const keys = new Set<string>();
     for (const entry of (await scan()).entries) {
@@ -337,5 +385,5 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return keys;
   }
 
-  return { enqueue, list, listInvalid, remove, markRejected, heldKeys };
+  return { enqueue, list, listInvalid, remove, markRejected, recordBadResponse, requeue, heldKeys };
 }

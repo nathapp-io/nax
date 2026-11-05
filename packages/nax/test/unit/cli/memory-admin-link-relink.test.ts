@@ -358,7 +358,7 @@ describe("nax memory link — a recorded relink", () => {
 
     expect(await runLink(h, LINK_SLUG)).toBe(1);
     expect(h.err).toEqual([
-      "[memory] 2 writes are not delivered; run nax memory sync (or nax memory forget) before relinking",
+      "[memory] 2 writes are not delivered (0 queued, 2 rejected); run nax memory requeue --all then nax memory sync, or nax memory discard --all, before relinking",
     ]);
     expect(mirrorDiscards(store)).toEqual([]);
     expect(projectIn(store)).toBe(LINK_SLUG);

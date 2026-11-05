@@ -71,7 +71,7 @@ import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { createMcpPool, type McpPool } from "@/mcp";
 import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
-import { createHostWrites } from "./host-writes";
+import { createHostWrites, type MemoryRejectedTarget } from "./host-writes";
 import { createKodaApprovals } from "./koda-approvals";
 import { createKodaClient, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
 import { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
@@ -92,6 +92,8 @@ export interface MemoryStatus {
   readonly lastError: string | null;
   readonly queued: number;
   readonly rejected: number;
+  /** Each rejected entry, oldest first, with the reason it carries — a parked forget's note is still live. */
+  readonly rejectedEntries: readonly MemoryRejectedEntry[];
   readonly notes: { readonly project: number; readonly user: number; readonly repo: number };
   readonly repoSkipped: number;
 }
@@ -121,6 +123,12 @@ export interface MemoryHost {
     readonly reason: string;
   }): Promise<MemoryForgetResult>;
   approve(input: { readonly scope: MemoryScope; readonly slug: string }): Promise<MemoryNote>;
+  /**
+   * Requeue (`nax memory requeue`) or drop (`nax memory discard`) rejected outbox entries;
+   * each answers how many. Optional so a hand-built host (a test double) stays valid.
+   */
+  requeue?(target: MemoryRejectedTarget): Promise<number>;
+  discard?(target: MemoryRejectedTarget): Promise<number>;
   /**
    * Every note a forget still holds, keyed `"<scope>/<slug>"`: the mirror's own pending-forget
    * record (a proposal forget, answered and recorded) plus the ones this mirror has queued and
@@ -451,6 +459,21 @@ async function readIndex(reads: HostReads, input: HostInput): Promise<RenderedMe
   return renderMemoryIndex({ projectNotes, userNotes, decisions, heldForgets, maxBytes: input.config.indexBytes });
 }
 
+/** An outbox entry the provider refused, or a sync parked: what it was and why it stopped. */
+export interface MemoryRejectedEntry {
+  readonly kind: MemoryOutboxEntry["kind"];
+  readonly scope: MemoryOutboxEntry["scope"];
+  readonly slug: string;
+  readonly reason: string;
+}
+
+/** The rejected entries as the status reports them; an entry with no reason says so. */
+function rejectedEntries(entries: readonly MemoryOutboxEntry[]): MemoryRejectedEntry[] {
+  return entries
+    .filter((entry) => entry.state === "rejected")
+    .map(({ kind, scope, slug, reason }) => ({ kind, scope, slug, reason: reason ?? "no reason recorded" }));
+}
+
 /** How many outbox entries are in one state: still to deliver, or refused by the provider. */
 function countState(entries: readonly MemoryOutboxEntry[], state: "queued" | "rejected"): number {
   return entries.filter((entry) => entry.state === state).length;
@@ -504,6 +527,7 @@ async function readStatus(reads: HostReads, input: HostInput): Promise<MemorySta
     lastError: sync.lastError,
     queued: countState(entries, "queued"),
     rejected: countState(entries, "rejected"),
+    rejectedEntries: rejectedEntries(entries),
     notes: { project: project.mirror.length, user: user.length, repo: project.unshadowed.length },
     repoSkipped: project.skipped,
   };
@@ -559,6 +583,8 @@ export async function createMemoryHost(input: CreateMemoryHostInput): Promise<Me
     save: writes.save,
     forget: writes.forget,
     approve: writes.approve,
+    requeue: writes.requeue,
+    discard: writes.discard,
     forgetPendingKeys: () => readForgetPendingKeys(parts),
     close: closeOnce(parts.pool),
   };

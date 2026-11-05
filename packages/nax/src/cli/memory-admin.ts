@@ -155,19 +155,32 @@ function relinkFrom(raw: ConfigObject, slug: string, force: boolean): string | u
 }
 
 /** The writes the mirror holds that its provider has not delivered: the ones a rebuild would lose. */
-async function undeliveredWrites(host: MemoryHost): Promise<number> {
-  const status = await host.status();
-  return status.queued + status.rejected;
+interface UndeliveredWrites {
+  readonly total: number;
+  /** The refusal text: how many of each kind, and the commands that clear them. */
+  readonly advice: string;
+}
+
+/**
+ * Count the undelivered writes and say what clears them. Queued writes go out on the next
+ * sync; rejected ones (refused, or parked by a sync) never do until `nax memory requeue` puts
+ * them back, so the advice names it whenever one is held.
+ */
+async function undeliveredWrites(host: MemoryHost): Promise<UndeliveredWrites> {
+  const { queued, rejected } = await host.status();
+  const steps =
+    rejected > 0
+      ? "run nax memory requeue --all then nax memory sync, or nax memory discard --all,"
+      : "run nax memory sync";
+  const total = queued + rejected;
+  return { total, advice: `${total} writes are not delivered (${queued} queued, ${rejected} rejected); ${steps}` };
 }
 
 /** Refuse a forced relink whose mirror still holds writes the provider has not delivered. */
 async function assertNothingUndelivered(host: MemoryHost): Promise<void> {
   const undelivered = await undeliveredWrites(host);
-  if (undelivered === 0) return;
-  throw linkRefusal(
-    `${undelivered} writes are not delivered; run nax memory sync (or nax memory forget) before relinking`,
-    { undelivered },
-  );
+  if (undelivered.total === 0) return;
+  throw linkRefusal(`${undelivered.advice} before relinking`, { undelivered: undelivered.total });
 }
 
 /** The write mode `mode` names when it is one koda writes with, else `undefined`. */
@@ -352,11 +365,8 @@ function assertKodaMirror(providerId: string): void {
 /** Refuse a reset whose mirror still holds writes the provider has not delivered. */
 async function assertNothingUndeliveredBeforeReset(host: MemoryHost): Promise<void> {
   const undelivered = await undeliveredWrites(host);
-  if (undelivered === 0) return;
-  throw resetRefusal(
-    `${undelivered} writes are not delivered; run nax memory sync (or nax memory forget) before reset`,
-    { undelivered },
-  );
+  if (undelivered.total === 0) return;
+  throw resetRefusal(`${undelivered.advice} before reset`, { undelivered: undelivered.total });
 }
 
 /**

@@ -275,6 +275,67 @@ describe("host index, sync and status", () => {
     expect(status.rejected).toBe(1);
   });
 
+  test("names each rejected outbox entry and the reason it carries", async () => {
+    await openHost();
+    await queueForget("project", "old-fact");
+    const rejected = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    await outbox().markRejected(rejected.clientId, "parked after 3 bad responses: koda answered without an id");
+
+    const status = await host.status();
+
+    expect(status.rejectedEntries).toEqual([
+      {
+        kind: "forget",
+        scope: "project",
+        slug: "gone",
+        reason: "parked after 3 bad responses: koda answered without an id",
+      },
+    ]);
+  });
+
+  test("requeues the rejected entries of one note, or all of them", async () => {
+    await openHost();
+    const first = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    const second = await outbox().enqueue({ kind: "forget", scope: "user", slug: "tone", writeMode: "direct" });
+    await outbox().markRejected(first.clientId, "parked after 3 bad responses: x");
+    await outbox().markRejected(second.clientId, "parked after 3 bad responses: y");
+    const requeue = host.requeue;
+    assertDefined(requeue, "host.requeue");
+
+    expect(await requeue({ scope: "project", slug: "gone" })).toBe(1);
+    expect(await host.status()).toMatchObject({ queued: 1, rejected: 1 });
+    expect(await requeue("all")).toBe(1);
+    expect(await host.status()).toMatchObject({ queued: 2, rejected: 0, rejectedEntries: [] });
+    expect(await requeue("all")).toBe(0);
+  });
+
+  test("discards only rejected entries: a queued write is never dropped", async () => {
+    await openHost();
+    await queueForget("project", "old-fact");
+    const refused = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    await outbox().markRejected(refused.clientId, "no such note");
+    const discard = host.discard;
+    assertDefined(discard, "host.discard");
+
+    expect(await discard("all")).toBe(1);
+    expect(await host.status()).toMatchObject({ queued: 1, rejected: 0 });
+    expect(await discard({ scope: "project", slug: "old-fact" })).toBe(0);
+  });
+
+  test("discarding rewinds that scope's pull, so the provider's copy of the note comes back", async () => {
+    await openHost();
+    const state = await mirror().readSyncState();
+    await mirror().writeSyncState({ ...state, cursor: { project: "c-project", user: "c-user" } });
+    const refused = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    await outbox().markRejected(refused.clientId, "parked after 3 bad responses: x");
+    const discard = host.discard;
+    assertDefined(discard, "host.discard");
+
+    await discard("all");
+
+    expect((await mirror().readSyncState()).cursor).toEqual({ project: null, user: "c-user" });
+  });
+
   test("reports how many repo notes were skipped", async () => {
     await openHost();
     writeRepoNote("bad.md", "no frontmatter here\n");

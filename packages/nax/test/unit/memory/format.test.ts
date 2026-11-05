@@ -21,6 +21,7 @@ const STATUS: MemoryStatus = {
   lastError: null,
   queued: 0,
   rejected: 0,
+  rejectedEntries: [],
   notes: { project: 3, user: 1, repo: 2 },
   repoSkipped: 0,
 };
@@ -55,6 +56,16 @@ describe("formatMemoryStatus", () => {
   test("AC-14 a clean last sync prints no last error line", () => {
     const lines = formatMemoryStatus({ ...STATUS, lastError: null }).split("\n");
     expect(lines.filter((line) => line.startsWith("last error:"))).toEqual([]);
+  });
+
+  test("names each rejected entry after the outbox counts", () => {
+    const lines = formatMemoryStatus({
+      ...STATUS,
+      rejected: 1,
+      rejectedEntries: [{ kind: "forget", scope: "project", slug: "gone", reason: "parked after 3 bad responses: x" }],
+    }).split("\n");
+    const outbox = lines.indexOf("outbox: 0 queued, 1 rejected");
+    expect(lines[outbox + 1]).toBe("rejected: forget project/gone (parked after 3 bad responses: x)");
   });
 
   test("AC-15 reports the outbox counts", () => {
@@ -113,6 +124,35 @@ describe("formatMemorySyncResult", () => {
 
   test("a synced run reports all four counts", () => {
     expect(formatMemorySyncResult(SYNCED)).toBe("memory sync: synced (pushed 1, rejected 0, pulled 0, skipped 0)");
+  });
+
+  test("a run that parked entries names each one on its own line", () => {
+    const result: MemorySyncResult = {
+      ...SYNCED,
+      rejected: 1,
+      parked: [
+        { clientId: "c1", kind: "forget", scope: "project", slug: "gone", reason: "parked after 3 bad responses: x" },
+      ],
+    };
+    expect(formatMemorySyncResult(result).split("\n")).toEqual([
+      "memory sync: synced (pushed 1, rejected 1, pulled 0, skipped 0)",
+      "memory sync: parked forget project/gone (parked after 3 bad responses: x)",
+    ]);
+  });
+
+  test("a failed run still names what it parked", () => {
+    const result: MemorySyncResult = {
+      ...SYNCED,
+      outcome: "failed",
+      error: "pull failed",
+      parked: [
+        { clientId: "c1", kind: "save", scope: "user", slug: "tone", reason: "parked after 3 bad responses: y" },
+      ],
+    };
+    expect(formatMemorySyncResult(result).split("\n")).toEqual([
+      "memory sync: failed: pull failed",
+      "memory sync: parked save user/tone (parked after 3 bad responses: y)",
+    ]);
   });
 
   test("a locked mirror says so", () => {
