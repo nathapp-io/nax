@@ -18,7 +18,7 @@ import {
   makeNaxConfig,
   waitForCondition,
 } from "@test/helpers";
-import { Command } from "commander";
+import { Command, type CommanderError } from "commander";
 import {
   agentsRunCommand as barrelAgentsRunCommand,
   registerAgentsRunCommand as barrelRegisterAgentsRunCommand,
@@ -266,10 +266,19 @@ const DEFAULT_DIR = "/agents/default";
  * A program whose `agents` command — the parent that owns `-d, --dir` — is the one the run
  * subcommand is registered on, exactly as `bin/nax.ts` does it. The parent keeps its own action,
  * which counts as the listing a bare `nax agents` still performs.
+ *
+ * Two settings make a parser failure observable instead of fatal: Commander's own output is
+ * silenced (the command writes through `deps`, never through Commander), and a parser error the
+ * command does not map is thrown by this net rather than reaching Commander's `process.exit`,
+ * which would terminate the test runner.
  */
 function makeProgram(harness: Harness) {
   let listings = 0;
   const program = new Command();
+  program.configureOutput({ writeOut: (): void => {}, writeErr: (): void => {} });
+  program.exitOverride((error: CommanderError): never => {
+    throw error;
+  });
   const agents = program
     .command("agents")
     .description("List available coding agents with status and capabilities")
@@ -369,6 +378,41 @@ describe("registerAgentsRunCommand", () => {
     harness.releaseWrites();
     await parsed;
     expect(harness.deps.exit).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * F1: every way Commander can refuse the run before its action starts, with the message it
+   * reports. A parser failure is a usage error like any other, so it leaves with 2 — not with
+   * Commander's default 1.
+   */
+  const PARSER_ERRORS = [
+    ["a missing <agent>", ["agents", "run"], "missing required argument 'agent'"],
+    ["an unknown option", ["agents", "run", "spec-reviewer", "--bogus"], "unknown option '--bogus'"],
+    ["--task without its value", ["agents", "run", "spec-reviewer", "--task"], "argument missing"],
+  ] as const;
+
+  test.each(PARSER_ERRORS)("F1: %s leaves with 2 and runs nothing", async (_title, argv, message) => {
+    const harness = makeHarness();
+    const { program } = makeProgram(harness);
+
+    await expect(program.parseAsync([...argv], { from: "user" })).rejects.toThrow(message);
+
+    expect(harness.deps.setExitCode).toHaveBeenCalledWith(2);
+    expect(harness.deps.exit).toHaveBeenCalledTimes(1);
+    expect(harness.deps.runAgentTask).not.toHaveBeenCalled();
+    expect(harness.deps.writeOut).not.toHaveBeenCalled();
+    expect(harness.deps.writeErr).not.toHaveBeenCalled();
+  });
+
+  test("F1: --help still leaves with 0", async () => {
+    const harness = makeHarness();
+    const { program } = makeProgram(harness);
+
+    await expect(program.parseAsync(["agents", "run", "--help"], { from: "user" })).rejects.toThrow();
+
+    expect(harness.deps.setExitCode).toHaveBeenCalledWith(0);
+    expect(harness.deps.exit).toHaveBeenCalledTimes(1);
+    expect(harness.deps.runAgentTask).not.toHaveBeenCalled();
   });
 });
 

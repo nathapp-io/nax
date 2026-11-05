@@ -15,7 +15,7 @@
  */
 import { dirname, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import type { Command } from "commander";
+import type { Command, CommanderError } from "commander";
 import { findProjectDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type AgentResource, loadResourceCatalog, type ResourceCatalog } from "@/resources";
@@ -295,6 +295,23 @@ interface AgentsRunCliOptions {
   readonly timeout?: string;
 }
 
+/**
+ * Leave the way a parser failure should. Commander raises these before the action runs — a
+ * missing `<agent>`, an unknown option, an option whose value is absent — and by default exits 1,
+ * which would report the same run with two different codes depending on which side noticed. A
+ * parser failure is a usage error like any other, so it exits 2; a help request (the only
+ * `_exit` with a zero code here) keeps its 0.
+ *
+ * `deps.exit()` does not return in production (`process.exit`). The rethrow is what keeps
+ * Commander's own `process.exit(exitCode)` fall-through unreachable — and a stubbed `exit` in a
+ * test from terminating the runner.
+ */
+function exitForParserError(error: CommanderError, deps: AgentsRunCommandDeps): never {
+  deps.setExitCode(error.exitCode === 0 ? 0 : EXIT_USAGE_OR_CONFIG);
+  deps.exit();
+  throw error;
+}
+
 /** Each `--profile` occurrence appends; `loadConfig` splits the comma lists inside a value. */
 function collectProfile(value: string, previous: string[]): string[] {
   return previous.concat(value);
@@ -317,7 +334,8 @@ function parentDir(command: Command): string {
  *
  * The ordered checks stay in `agentsRunCommand`: registration declares options and forwards them,
  * so nothing here can pre-empt the order the design fixes (the `--timeout` text, then trust, then
- * the config, the catalog and the agent).
+ * the config, the catalog and the agent). What registration does own is the exit code of a parser
+ * failure, which {@link exitForParserError} maps to 2.
  */
 export function registerAgentsRunCommand(agents: Command, deps: AgentsRunCommandDeps = _agentsRunCommandDeps): Command {
   return agents
@@ -329,6 +347,7 @@ export function registerAgentsRunCommand(agents: Command, deps: AgentsRunCommand
     .option("--model <id>", "Provider/model id, in place of the agent file's model")
     .option("--json", "Emit one machine-readable JSON object", false)
     .option("--timeout <seconds>", "Abort the run after this many seconds")
+    .exitOverride((error: CommanderError): never => exitForParserError(error, deps))
     .action(async (agent: string, options: AgentsRunCliOptions, command: Command): Promise<void> => {
       await agentsRunCommand(agent, { ...options, dir: parentDir(command) }, deps);
       deps.exit();
