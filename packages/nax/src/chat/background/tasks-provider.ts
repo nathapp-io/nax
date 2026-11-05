@@ -31,7 +31,8 @@ async function inspectTask(
   ) {
     return { isError: true, content: `[chat] lines must be an integer from 1 to ${TASK_OUTPUT_MAX_LINES}` };
   }
-  return { content: JSON.stringify({ ...task, output: await tasks.output(id, lines) }) };
+  // The agent reading a finished task's output means it has seen the result: no notice.
+  return { content: JSON.stringify({ ...task, output: await tasks.output(id, lines, { markSeen: true }) }) };
 }
 
 function taskTool(name: "output" | "stop", tasks: ChatBackgroundTasks): ProviderTool {

@@ -18,6 +18,12 @@ export interface BackgroundTask {
 
 export const TASK_ID_PATTERN = /^bash-[0-9a-f]{8}$/;
 
+/** Options for {@link ChatBackgroundTasks.output}; only the agent's own tool reads mark seen. */
+export interface TaskOutputOptions {
+  /** Drop the completion notice when the read reports a task that had already finished. */
+  readonly markSeen?: boolean;
+}
+
 /** Host-owned command lifecycle, independent of the current session. */
 export interface ChatBackgroundTasks extends BackgroundCommandPort {
   stop(id: string): BackgroundTask;
@@ -31,5 +37,5 @@ export interface ChatBackgroundTasks extends BackgroundCommandPort {
   list(): readonly BackgroundTask[];
   get(id: string): BackgroundTask | undefined;
   running(): readonly BackgroundTask[];
-  output(id: string, lines?: number): Promise<string>;
+  output(id: string, lines?: number, options?: TaskOutputOptions): Promise<string>;
 }
