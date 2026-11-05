@@ -235,6 +235,7 @@ export function linkedHost(counts: HostCounts): MemoryHost {
       lastError: null,
       queued: counts.queued,
       rejected: counts.rejected,
+      rejectedEntries: [],
       notes: { project: 0, user: 0, repo: 0 },
       repoSkipped: 0,
     }),

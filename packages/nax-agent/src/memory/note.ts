@@ -150,3 +150,16 @@ export function serializeMemoryNote(note: MemoryNote): string {
 export function isMemoryPushRejected(error: unknown): boolean {
   return error instanceof NaxError && error.code === "MEMORY_PUSH_REJECTED";
 }
+
+/** The code suffix a provider marks an answer it got back but cannot use with. */
+const BAD_RESPONSE_CODE_SUFFIX = "_BAD_RESPONSE";
+
+/**
+ * Whether a push failed on an answer that arrived but cannot be used: a `NaxError` whose code
+ * ends in `_BAD_RESPONSE` (koda's `MEMORY_KODA_BAD_RESPONSE`, for one). Such an answer repeats
+ * the same way every run, so a sync counts it toward `MEMORY_PUSH_MAX_BAD_RESPONSES`; a timeout,
+ * an unreachable provider or an HTTP failure is an outage and is never counted.
+ */
+export function isMemoryBadResponse(error: unknown): boolean {
+  return error instanceof NaxError && error.code.endsWith(BAD_RESPONSE_CODE_SUFFIX);
+}

@@ -188,6 +188,7 @@ MEMORY_OP_TIMEOUT_MS
 MEMORY_PROBE_TIMEOUT_MS
 MEMORY_PULL_MAX_PAGES
 MEMORY_PULL_PAGE_SIZE
+MEMORY_PUSH_MAX_BAD_RESPONSES
 MEMORY_SLUG_RE
 MEMORY_SOURCE_MAX_CHARS
 MODEL_MAX_BYTES
@@ -207,6 +208,7 @@ type MemoryNoteWrite
 type MemoryOutbox
 type MemoryOutboxEntry
 type MemoryPage
+type MemoryParkedEntry
 type MemoryPendingForget
 type MemoryProvider
 type MemoryPushResult
@@ -445,6 +447,7 @@ importPiCredentials
 inputClassTokens
 isForgeCapable
 isKnownManager
+isMemoryBadResponse
 isMemoryPushRejected
 isProcessAlive
 isTempOnly

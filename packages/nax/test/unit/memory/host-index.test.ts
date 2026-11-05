@@ -275,6 +275,24 @@ describe("host index, sync and status", () => {
     expect(status.rejected).toBe(1);
   });
 
+  test("names each rejected outbox entry and the reason it carries", async () => {
+    await openHost();
+    await queueForget("project", "old-fact");
+    const rejected = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    await outbox().markRejected(rejected.clientId, "parked after 3 bad responses: koda answered without an id");
+
+    const status = await host.status();
+
+    expect(status.rejectedEntries).toEqual([
+      {
+        kind: "forget",
+        scope: "project",
+        slug: "gone",
+        reason: "parked after 3 bad responses: koda answered without an id",
+      },
+    ]);
+  });
+
   test("reports how many repo notes were skipped", async () => {
     await openHost();
     writeRepoNote("bad.md", "no frontmatter here\n");

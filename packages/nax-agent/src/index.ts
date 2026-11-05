@@ -73,10 +73,7 @@ export {
   priceCall,
   type TokenUsage,
 } from "#src/cost/core/index";
-export {
-  type ModelSpec,
-  parseModelSpec,
-} from "#src/cost/model-spec";
+export { type ModelSpec, parseModelSpec } from "#src/cost/model-spec";
 export type { ImageAttachment } from "#src/cost/standard-types";
 export type { AgentLogger, CredentialAuthConfig, CredentialsConfig } from "#src/infra/index";
 export { configureCredentials, getLogger, setAgentLogger } from "#src/infra/index";
@@ -98,6 +95,7 @@ export {
   MEMORY_PROBE_TIMEOUT_MS,
   MEMORY_PULL_MAX_PAGES,
   MEMORY_PULL_PAGE_SIZE,
+  MEMORY_PUSH_MAX_BAD_RESPONSES,
   MEMORY_SLUG_RE,
   MEMORY_SOURCE_MAX_CHARS,
   type MemoryApproveInput,
@@ -112,6 +110,7 @@ export {
   type MemoryOutbox,
   type MemoryOutboxEntry,
   type MemoryPage,
+  type MemoryParkedEntry,
   type MemoryPendingForget,
   type MemoryProvider,
   type MemoryPushResult,
@@ -134,6 +133,7 @@ export {
   createMemoryStore,
   findSecret,
   forgetMemoryNote,
+  isMemoryBadResponse,
   isMemoryPushRejected,
   parseMemoryNote,
   raceTimeout,

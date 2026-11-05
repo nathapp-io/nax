@@ -36,6 +36,7 @@ const STATUS: MemoryStatus = {
   lastError: null,
   queued: 0,
   rejected: 0,
+  rejectedEntries: [],
   notes: { project: 3, user: 1, repo: 2 },
   repoSkipped: 0,
 };

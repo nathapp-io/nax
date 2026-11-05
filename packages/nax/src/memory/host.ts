@@ -92,6 +92,8 @@ export interface MemoryStatus {
   readonly lastError: string | null;
   readonly queued: number;
   readonly rejected: number;
+  /** Each rejected entry, oldest first, with the reason it carries — a parked forget's note is still live. */
+  readonly rejectedEntries: readonly MemoryRejectedEntry[];
   readonly notes: { readonly project: number; readonly user: number; readonly repo: number };
   readonly repoSkipped: number;
 }
@@ -451,6 +453,21 @@ async function readIndex(reads: HostReads, input: HostInput): Promise<RenderedMe
   return renderMemoryIndex({ projectNotes, userNotes, decisions, heldForgets, maxBytes: input.config.indexBytes });
 }
 
+/** An outbox entry the provider refused, or a sync parked: what it was and why it stopped. */
+export interface MemoryRejectedEntry {
+  readonly kind: MemoryOutboxEntry["kind"];
+  readonly scope: MemoryOutboxEntry["scope"];
+  readonly slug: string;
+  readonly reason: string;
+}
+
+/** The rejected entries as the status reports them; an entry with no reason says so. */
+function rejectedEntries(entries: readonly MemoryOutboxEntry[]): MemoryRejectedEntry[] {
+  return entries
+    .filter((entry) => entry.state === "rejected")
+    .map(({ kind, scope, slug, reason }) => ({ kind, scope, slug, reason: reason ?? "no reason recorded" }));
+}
+
 /** How many outbox entries are in one state: still to deliver, or refused by the provider. */
 function countState(entries: readonly MemoryOutboxEntry[], state: "queued" | "rejected"): number {
   return entries.filter((entry) => entry.state === state).length;
@@ -504,6 +521,7 @@ async function readStatus(reads: HostReads, input: HostInput): Promise<MemorySta
     lastError: sync.lastError,
     queued: countState(entries, "queued"),
     rejected: countState(entries, "rejected"),
+    rejectedEntries: rejectedEntries(entries),
     notes: { project: project.mirror.length, user: user.length, repo: project.unshadowed.length },
     repoSkipped: project.skipped,
   };
