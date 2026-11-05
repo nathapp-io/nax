@@ -28,8 +28,10 @@ import type { CompactResult } from "#src/session/agent-session-types";
 import type { SessionHandle } from "#src/session/session-types";
 import type { TurnDeadline } from "#src/session/turn-deadline";
 import {
+  COMPACTION_SUMMARY_PREFIX,
   type CompactionPlan,
   estimateContextTokens,
+  estimateTokens,
   keepBudget,
   prepareCompaction,
   summaryMessage,
@@ -40,6 +42,33 @@ import { sessionTranscriptFor } from "./session.ts";
 import { createSessionSummarizer, resolveSessionModel } from "./session-summarizer.ts";
 import { historyFromTranscript, transcriptDocFor, transcriptIdentityFor } from "./transcript-identity.ts";
 import { summarizeAndApply } from "./turn-compaction-step.ts";
+
+/** How many trailing turns a manual compaction keeps. */
+export const MANUAL_KEEP_TURNS = 1;
+
+/**
+ * Estimated tokens from the start of the `keepTurns`-th last turn to the end.
+ * A turn starts at a user message that is not a compaction summary. With fewer
+ * turn starts than `keepTurns`, the whole array counts.
+ */
+export function manualKeepTokens(messages: readonly TranscriptMessage[], keepTurns: number): number {
+  let seen = 0;
+  let start = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message === undefined || message.role !== "user" || message.content.startsWith(COMPACTION_SUMMARY_PREFIX)) {
+      continue;
+    }
+    seen++;
+    if (seen === keepTurns) {
+      start = i;
+      break;
+    }
+  }
+  let total = 0;
+  for (const message of messages.slice(start)) total += estimateTokens(message);
+  return total;
+}
 
 /** No model call was made, so zero spend is the honest answer. */
 const ZERO_USAGE = { inputTokens: 0, outputTokens: 0 } as const;
@@ -96,9 +125,11 @@ export async function compactHistory(request: ManualCompactionRequest): Promise<
   // be, so the opening message has to be inside the span. Leaving it out would
   // drop the opening requirements, constraints and images without summarizing
   // them — they would reach neither the model nor the compacted transcript.
-  const plan = prepareCompaction(messages, keepBudget(resolution.contextWindow, resolution.compaction), {
-    pinFirstMessage: false,
-  });
+  const keep = Math.min(
+    keepBudget(resolution.contextWindow, resolution.compaction),
+    manualKeepTokens(messages, MANUAL_KEEP_TURNS),
+  );
+  const plan = prepareCompaction(messages, keep, { pinFirstMessage: false });
   if (plan === undefined) {
     return { compacted: false, tokensBefore, tokensAfter: tokensBefore, usage: ZERO_USAGE, costUsd: 0 };
   }
