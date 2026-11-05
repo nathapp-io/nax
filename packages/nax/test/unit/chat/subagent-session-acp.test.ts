@@ -11,14 +11,10 @@ import {
 } from "@nathapp/nax-agent";
 import type { AcpBackendOptions } from "@nathapp/nax-agent-acp/client";
 import { makeNaxConfig } from "@test/helpers";
-import {
-  type RunSubagentInput as BarrelRunSubagentInput,
-  type RunSubagentResult as BarrelRunSubagentResult,
-  runSubagent as runSubagentFromBarrel,
-} from "@/chat";
+import { type RunSubagentInput, type RunSubagentResult, runSubagent } from "@/chat";
 import { _acpSubagentDeps } from "@/chat/acp";
 import type { ChatAcpTools } from "@/chat/acp/acp-tools";
-import { type _subagentSessionDeps, type RunSubagentInput, runSubagent } from "@/chat/subagent-session";
+import type { _subagentSessionDeps } from "@/chat/subagent-session";
 import type { TuiPermissions } from "@/config";
 import { NaxError } from "@/errors";
 import type { AgentResource } from "@/resources";
@@ -255,8 +251,8 @@ describe("runSubagent from the chat barrel", () => {
   test("US-001 AC-10: an already-aborted signal is a cancelled result", async () => {
     const controller = new AbortController();
     controller.abort();
-    const barrelInput: BarrelRunSubagentInput = { ...input, signal: controller.signal };
-    const result: BarrelRunSubagentResult = await runSubagentFromBarrel(barrelInput, deps);
+    const barrelInput: RunSubagentInput = { ...input, signal: controller.signal };
+    const result: RunSubagentResult = await runSubagent(barrelInput, deps);
     expect(result).toEqual({ isError: true, content: `subagent ${QUALIFIED_NAME} cancelled: cancelled` });
     expect(acpBackendMock).not.toHaveBeenCalled();
     expect(deps.createAgentSession).not.toHaveBeenCalled();
