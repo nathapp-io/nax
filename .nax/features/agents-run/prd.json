@@ -3,7 +3,7 @@
   "feature": "agents-run",
   "branchName": "feat/agents-run",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-05T08:25:31.222Z",
+  "updatedAt": "2026-11-05T09:14:58.843Z",
   "userStories": [
     {
       "id": "US-001",
@@ -30,14 +30,17 @@
         "sessions"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Four existing modules need an optional flag, a profile branch, a provider-filter extension and barrel exports; existing ACP test seams keep implementation standard, while access-control changes require strict security TDD."
+        "reasoning": "Four existing modules need an optional flag, a profile branch, a provider-filter extension and barrel exports; existing ACP test seams keep implementation standard, while access-control changes require strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/acp/acp-subagent-profile.ts",
@@ -81,7 +84,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ce4d28ec26400a812c9b3db7634f17b9262e3053"
     },
     {
       "id": "US-002",
@@ -134,7 +141,10 @@
         "When a task file contains only whitespace, resolveAgentsRunTask rejects with AGENTS_RUN_USAGE and message the task is empty."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -189,7 +199,10 @@
         "When runSubagent returns a session-creation error without turn_end, runAgentTask returns failed with the same content and omits costUsd."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -254,7 +267,10 @@
         "When runSubagent finishes and the input signal later aborts, the signal previously delivered to runSubagent remains unchanged."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -297,7 +313,10 @@
         "packages/nax/test/unit/cli/agents-run-output.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -344,7 +363,10 @@
         "When modelOverride is inherit and balanced is unset, resolveAgentsRunModel throws AGENTS_RUN_USAGE with message configure models.native.balanced or pass --model."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -400,7 +422,10 @@
         "When an agent declares tools [], buildAgentsRunTaskInput returns allowedTools [] instead of defaulting to native read tools."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -468,7 +493,10 @@
         "When timeout text is valid and all checks succeed, recorded dependency calls occur in order ensureTrusted, findProjectDir, loadConfig, loadResourceCatalog, catalog.findAgent, resolveAgentsRunTask, buildAgentsRunTaskInput."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -542,7 +570,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Repository exploration: codebase-memory MCP is unavailable in this session, so findings were established with direct source reads and targeted searches. This is an additive enhancement to the existing Bun/TypeScript CLI, not a new agent runtime. All nine stories work in packages/nax; packages/nax-agent, packages/nax-agent-acp and packages/nax-ai are read-only dependencies for this feature. No dependency, manifest, release, persistence-format or public npm API migration is required. The binding story IDs, workdirs and dependency edges must remain unchanged.\n\nArchitecture and existing lifecycle: packages/nax/src/chat/subagent-session.ts:29 defines RunSubagentInput and :55 defines RunSubagentResult; :61 exposes the injectable _subagentSessionDeps seam. Native options are constructed before session creation (:70), with guarded posture resolved through resolveTuiPermissions (:250), a memory-only transcript (:102), rules-index instructions (:105), optional allowedTools (:92), loopHandlers and subagent role (:89). runSubagent (:240) already selects native versus ACP by the model, checks an already-aborted signal, and returns error results for model parsing, session creation and ACP option-building failures. Native option construction is deliberately outside the session-creation catch (:251), so it can reject and must become command exit 2, not a fabricated failed run result. driveTurn (:145) forwards every event in order and derives the returned content from turn_end; resultOfTurn (:136) already supplies '(the subagent returned no text)' for a completed empty output. runOnSession (:162) calls onSession before driveTurn, links cancellation, removes its abort listener and closes the session in finally. closeQuietly (:151) logs close failure without replacing the result. Reuse all of this; do not open or close a second session, stream provisional deltas as final output, or reinterpret isError as the sole terminal-status authority. No turn_end with a returned refusal/creation error means failed; a rejected runSubagent means there is no run result and command exit 2.\n\nExisting ACP behavior and dependents: packages/nax/src/chat/acp/acp-subagent-profile.ts:23 defines exactly six write-tool names; :50 currently applies override, then missing tools or write tools inherit chat posture, otherwise review. Add optional unattended?: true so only the missing-tools unattended branch changes; preserve existing tool bare-name handling, Bash classification, override precedence and read-only-enforcement capability lookup (:71). packages/nax/src/chat/subagent-session.ts:179 derives the ACP profile and :192 refuses review/read on clients without their own read-only enforcement, including cursor. Pass the new flag here rather than bypassing refusal. packages/nax/src/chat/acp/acp-subagent-session.ts:37 pins ACP_SUBAGENT_PROVIDER_IDS to nax-workflow and nax-memory; :56 filters provider IDs and allowedTools prefixes before chatAcpTools (:80), and :66 withholds memory writes for read-only profiles. Conditionally admit nax-skills for unattended only, retain the same allowedTools filtering, and leave the exported provider-ID constant and chat delivery unchanged. Existing consumers include packages/nax/src/chat/subagent-runs.ts:16 and the ACP session-options type import at packages/nax/src/chat/acp/acp-subagent-session.ts:25. The chat barrel already exports model/tool resolvers at packages/nax/src/chat/index.ts:134-140, but not runSubagent or its input/result types; expose named exports there without exporting private test seams.\n\nSecurity boundary: guarded native sessions still use profile full (packages/nax/src/chat/chat-mode.ts:17), with ask/deny policy supplied by resolved posture (:47). Denying asks alone is not a read-only guarantee. For native agents without tools, narrow to the exact read-tool constant from the spec; for declared tools, preserve mapSubagentTools output, including the possibility of writes. ACP profile derivation is independent of that native restriction. Do not add a new permission resolver, hardcoded permission modes or an interaction chain. packages/nax/src/chat/subagent-tools.ts:25-38 maps native tool names and Skill, strips scoped suffixes (:44), drops nesting tools and unknown names (:56), and returns undefined allowedTools when no tools were declared (:68); use it unchanged. Security-critical stories touching profiles, sessions, asks, allowed tools, trust or lifecycle signals use three-session-tdd.\n\nCatalog, task and model reuse: AgentResource, SkillResource and ResourceCatalog.findAgent/findSkill/findCommand are defined at packages/nax/src/resources/types.ts:4, :37 and :90. Catalog agents are agent definitions, unlike the coding-adapter listing at packages/nax/src/cli/agents.ts:37. Resource lookup must accept qualified and short names through the catalog, not the coding-agent registry. Chat's skill-first slash path is packages/nax/src/tui/chat/slash-commands.ts:277-281; the shared builder at packages/nax/src/prompts/builders/skills-builder/index.ts:31 embeds the skill and reference-loader instruction and appends args without shell evaluation. New task resolution uses a strict leading skill-invocation pattern, trims only to detect empty/invocation and to extract args, and otherwise preserves the original task text. Resolve relative task files against absolute cwd, use Bun.file().text() behind an injected reader, and wrap failures with AGENTS_RUN_USAGE and the specified original-path error message. NaxError is the existing re-export at packages/nax/src/errors.ts:7-9; reuse errorMessage from @nathapp/nax-agent/internal rather than duplicating it. packages/nax/src/chat/subagent-model.ts:53 resolves inherit, aliases, family tiers, explicit acp/provider model and fallback in order; :31 maps haiku/sonnet/opus. It is pure and cost-blind. The new model helper must preserve agent-file fallback but reject an explicit CLI override that resolved fallback before considering a missing balanced parent. Format string or object balanced entries as packages/nax/src/cli/chat.ts:116 does, but do not eagerly require balanced when a tier, alias or explicit model resolves without it.\n\nComposition and command seams: packages/nax/src/cli/chat.ts:52 supplies the _chatCommandDeps pattern, :239-284 composes a catalog and providers, :261-267 supplies skills/workflow ordering and workflow-mode maxIterations semantics, and :115-121 supplies parent-model formatting. Headless composition is intentionally smaller: no plugin loading, hooks, memory, MCP, jobs, agents provider, TUI, host or chat storage. Catalog loading must receive naxPluginPackages: [] rather than discovering plugins. Use projectOutputDir(getProjectKey(config, repoRoot), config.outputDir) and only the rule-delivery handlers from packages/nax/src/context/rules/rule-delivery/index.ts:102-127; that module already supports role subagent in both read and write handler roles (:79-97). packages/nax/src/cli/chat.ts:332-339 shows profile forwarding only for nonempty raw lists and repoRoot derivation from findProjectDir. findProjectDir is defined at packages/nax/src/config/paths/index.ts:167, loadConfig at packages/nax/src/config/loader.ts:264, and loadResourceCatalog at packages/nax/src/resources/catalog.ts:61; these are reused, not modified. Trust must precede configuration/catalog/task content reads: packages/nax/src/trust/gate.ts:45 checks normalized trust and only prompts under options.interactive (:56); refusal carries PROJECT_UNTRUSTED root/hint (:69). packages/nax/src/trust/match.ts:30 resolves the trust root and :49 normalizes symlinks/nearest existing ancestor; call the existing canonical helpers non-interactively. Unlike chat's mixed failure codes at packages/nax/src/cli/chat.ts:406-425, this command uses exit 2 for all errors thrown before a run result exists. Preserve the exact two-line PROJECT_UNTRUSTED special case, otherwise print one newline-terminated message with no JSON. Validate timeout text before trust, then trust, config, catalog/agent, task, model; do not prevalidate task options before trust/catalog. US-008 needs a minimal executable command orchestration so its direct-call tests can observe compose arguments; US-009 completes run-result formatting, signal lifetime, registration and exit flushing rather than replacing that orchestration.\n\nEvents, cost and cancellation: SessionEvent/TurnEndStatus/CostSource/AnswerReply/AnswerStatus are the public nax-agent contract at packages/nax-agent/src/session/agent-session-types.ts:87-178. approval_requested and question have answerable?: false (:133, :146); absence means answer immediately on the nested session, record all answerable asks in arrival order even for nonaccepted answers or throws, and ignore informational asks. packages/nax/src/chat/subagent-runs.ts:137 registers ask ownership before handling and :205-217 obtains the session before event forwarding; mirror event ordering without importing the human ask controller. Derive output from runSubagent.content, status from timeout-fired > input-signal-aborted > turn_end > no turn_end, and priced cost only from turn_end whose costSource is not unpriced (undefined is legacy computed). Do not sum usage rows or use zero as unknown. The existing DEFAULT_TURN_TIMEOUT_SECONDS is 3600 at packages/nax-agent/src/session/agent-session-options.ts:17; do not raise it or pass a session timeout override. Command timeout uses a cancellable injected setTimeout/clearTimeout, documented as the permitted exception, and is absent when omitted. Timer and signal listeners need finally cleanup even on rejection. Timeout still wins over a later signal/completed event; signal still wins over completed/no-event returns. Keep both SIGINT and SIGTERM handlers installed until the run settles, including after the first signal; repeated abort is harmless. runSubagent retains session-close ownership.\n\nOutput and CLI compatibility: packages/nax/bin/nax.ts:794-814 currently registers agents with its own -d/--dir default and a listing action. Capture that Command and pass it to registerAgentsRunCommand without changing options, listing implementation or behavior. The run subcommand must not redeclare dir; commander routes a known parent option to the parent even after run, so use command.optsWithGlobals().dir. packages/nax/src/cli/index.ts:13 exports the listing and :41-46 exports chat; add the two requested command exports. Chat's writers at packages/nax/src/cli/chat.ts:82-88 are synchronous and add newlines; do not copy that part: agents-run writers take exact text and return promises acknowledging accepted writes, and every caller awaits them before explicit exit. registerChatCommand at :434-452 demonstrates awaited action then deps.exit, but agents-run must additionally await both stream writes, including long outputs and usage-error lines. Pure agentsRunOutput owns newline creation, stream selection, denied-ask suffixes, JSON.stringify and 0/1 mapping. Unknown/pre-run errors must never leak JSON. Commander parser errors also remain usage errors (exit 2), not generic runtime failures.\n\nExisting coverage and verification approach: packages/nax/test/unit/chat/acp/acp-subagent-profile.test.ts:12-64 pins all profile branches including no-tools chat inheritance and the six-tool/Bash classification. packages/nax/test/unit/chat/acp/acp-subagent-session.test.ts:63-79 restores injectable ACP deps, :111 pins provider IDs, :172-190 pins provider filters, and :193 onward pins read-only memory filtering. Add unattended tests alongside those, retaining existing cases. packages/nax/test/unit/chat/subagent-session-acp.test.ts:89-130 provides a fake AgentSession and injectable creation/backend/rules seams; :175-191 pins cursor refusal without session creation. Sibling subagent-session.test.ts, subagent-runs.test.ts, subagent-model.test.ts, subagent-tools.test.ts and host-subagents.test.ts cover lifecycle and chat integrations; preserve their behavior. New CLI tests mirror src/cli names; exec asks/timing is split into agents-run-exec-asks.test.ts to keep concerns and file size bounded. packages/nax/test/helpers/fake-clock.ts:1-2 re-exports the shared makeFakeClock; use it instead of real waits or monkey-patched globals. packages/nax/test/helpers/trust.ts:29-37 supplies useUntrustedRegistry with restoration, necessary because preload trusts the root. packages/nax/test/unit/cli/chat.test.ts:505-580 demonstrates commander parseAsync and injected deps; :581-592 is the explicit help-only full-CLI smoke precedent. The only new full-CLI spawn is bun bin/nax.ts agents run --help; all actual agent runs remain mocked at seams, no paid model or real ACP process needed. Run targeted bun tests with paths/timeouts from packages/nax; never bare bun test or bun run nax. Pipeline runs lint/typecheck/tests; coverage is separate and must not run in NAX_SANDBOXED=1. No test execution was performed while drafting this PRD.\n\nImplementation constraints and rollout: docs/architecture/ARCHITECTURE.md:15-39 indexes DI, errors, async and testing conventions; :154-180 records file/function limits, named signal-handler cleanup and centralized permission decisions. .nax/rules/forbidden-patterns-source.md:44-49 permits cancellable setTimeout only with a documented call-site exception and requires barrel imports and Bun-native APIs. Use exported _deps seams, test helper fixtures, no mock.module, no global patches, no real sleeps, no new prompt builder. Keep dependency direction and imports intact; no package source edits outside nax are necessary. Start independent US-001/002/006, then US-003, US-004/005/007, US-008, US-009 according to the exact graph. Optional flags preserve existing chat behavior; bare agents listing remains unchanged, so no user migration is needed. Completion means a production-registered, noninteractive, single-turn command with preserved task/model/profile semantics, deterministic asks/status/cost, exact plain/JSON output, reliable exit 0/1/2 and drained writes; koda integration, verdict parsing and documentation rollout are explicitly deferred.\n\nRefine-pass audit: enumerated all 127 numbered spec criteria and checked them against the same story's acceptanceCriteria: US-001 AC-1..12; US-002 AC-1..14; US-003 AC-1..14; US-004 AC-1..20; US-005 AC-1..10; US-006 AC-1..10; US-007 AC-1..13; US-008 AC-1..18; US-009 AC-1..16. All are retained in their original order, including already-aborted signals, absent unattended fields, unchanged task text, fallback precedence with balanced unset, omitted cost fields, no-session refusal and awaited-write qualifications. No deprecated file-check tags were present. US-009 AC-3 now makes the ordinary no-denied-asks fixture explicit: completed runs with denied asks still require stderr under US-005, so this is a precondition clarification rather than suppression of ask output. The vague additional US-008 usage-message table was separated into four concrete helper/error responses; these supplement the numbered spec criteria and enumerate missing/conflicting sources, unreadable file, empty task and invalid override at the command boundary. US-004 adds one completed-result regression pin proving its ask/timer extension leaves ordinary results unchanged. Every story already has a negative path: refusal/cancelled start (001), input/read/skill errors (002), errored/no-terminal/rejected runs (003), reply throws/timeouts/cancellation (004), noncompleted statuses (005), invalid/missing models (006), model-helper rejection (007), trust/config/catalog/usage errors (008), and rejected execution/failed results (009). All 18 failure-table rows map to these criteria.\n\nContext and scope audit: every spec-recommended context file is included, no story lists its own new file as context, upstream-created paths are reachable through binding dependencies, and all expectedFiles match the spec's Creates list. All nine binding dependency arrays remain untouched and reference existing IDs. All 14 feature exclusions remain verbatim at top level, with nearby exclusions echoed verbatim into the relevant Scope sections; no story-local deferral was hoisted. Clarified that US-008 owns awaited usage-error writes but US-009 owns registration, command barrel exports, signal lifetime, run-result writes and explicit exit. Re-reading packages/nax/src/chat/acp/acp-subagent-profile.ts:50-59, acp-subagent-session.ts:50-60, subagent-session.ts:162-175 and :240-259, subagent-model.ts:53-65, subagent-tools.ts:68-78, cli/chat.ts:330-336 and :434-452, trust/gate.ts:45-65 and bin/nax.ts:794-814 confirms these use existing seams and standard control flow. Reduced US-001/004/008/009 complexity to medium rather than treating an optional flag or standard command/lifecycle wiring as architectural work; their three-session-tdd remains mandatory for permissions, trust or sessions. No runtime, package API or dependency redesign is introduced.",
