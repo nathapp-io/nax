@@ -188,6 +188,20 @@ describe("acpSubagentSessionOptions provider delivery", () => {
   });
 });
 
+describe("acpSubagentSessionOptions skills for an unattended run", () => {
+  const providers = [provider("nax-skills"), provider("nax-workflow"), provider("nax-jobs")];
+
+  test("US-001 AC-11: an unattended run also delivers nax-skills, and still not nax-jobs", async () => {
+    await options({ unattended: true, toolProviders: providers });
+    expect(deliveredProviderIds()).toEqual(["nax-skills", "nax-workflow"]);
+  });
+
+  test("US-001 AC-12: an attended run delivers only nax-workflow", async () => {
+    await options({ toolProviders: providers });
+    expect(deliveredProviderIds()).toEqual(["nax-workflow"]);
+  });
+});
+
 describe("acpSubagentSessionOptions read-only memory safety", () => {
   test("AC-8: review keeps the memory reads and drops save and forget", async () => {
     const created = await options({ profile: "review" });

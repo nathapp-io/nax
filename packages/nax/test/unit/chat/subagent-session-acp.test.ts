@@ -11,6 +11,11 @@ import {
 } from "@nathapp/nax-agent";
 import type { AcpBackendOptions } from "@nathapp/nax-agent-acp/client";
 import { makeNaxConfig } from "@test/helpers";
+import {
+  type RunSubagentInput as BarrelRunSubagentInput,
+  type RunSubagentResult as BarrelRunSubagentResult,
+  runSubagent as runSubagentFromBarrel,
+} from "@/chat";
 import { _acpSubagentDeps } from "@/chat/acp";
 import type { ChatAcpTools } from "@/chat/acp/acp-tools";
 import { type _subagentSessionDeps, type RunSubagentInput, runSubagent } from "@/chat/subagent-session";
@@ -227,6 +232,34 @@ describe("runSubagent ACP failure conversion", () => {
     await expect(run({ model: "anthropic/sonnet" })).rejects.toThrow("bad options");
     expect(deps.createAgentSession).not.toHaveBeenCalled();
     expect(acpBackendMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSubagent unattended", () => {
+  test("US-001 AC-8: an agent with no tools line opens through ACP with profile review", async () => {
+    const result = await run({ model: "acp:claude", agent: agentWith(undefined), unattended: true });
+    expect(result.isError).toBeUndefined();
+    expect(sessionOptions().profile).toBe("review");
+    expect(deps.createAgentSession).toHaveBeenCalledTimes(1);
+  });
+
+  test("US-001 AC-9: an agent with no tools line is refused on an agent with no read-only enforcement", async () => {
+    const result = await run({ model: "acp:cursor", agent: agentWith(undefined), unattended: true });
+    expect(result.isError).toBe(true);
+    expect(result.content).toStartWith(`[chat] subagent ${QUALIFIED_NAME} could not start read-only:`);
+    expect(deps.createAgentSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSubagent from the chat barrel", () => {
+  test("US-001 AC-10: an already-aborted signal is a cancelled result", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const barrelInput: BarrelRunSubagentInput = { ...input, signal: controller.signal };
+    const result: BarrelRunSubagentResult = await runSubagentFromBarrel(barrelInput, deps);
+    expect(result).toEqual({ isError: true, content: `subagent ${QUALIFIED_NAME} cancelled: cancelled` });
+    expect(acpBackendMock).not.toHaveBeenCalled();
+    expect(deps.createAgentSession).not.toHaveBeenCalled();
   });
 });
 

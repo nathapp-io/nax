@@ -46,6 +46,12 @@ export interface RunSubagentInput {
   readonly parentSessionId: string;
   /** The parent session's rendered memory index; the nested session's instructions carry it. */
   readonly memoryIndex?: string;
+  /**
+   * Set by an unattended caller (see `nax agents run`), where nobody can answer an
+   * ask. An ACP agent with no `tools:` line then opens read-only, and the skills
+   * provider travels with the session.
+   */
+  readonly unattended?: true;
   readonly signal?: AbortSignal;
   readonly onEvent: (event: SessionEvent) => void;
   /** Called with the nested session once it is created, before its turn starts. */
@@ -183,6 +189,7 @@ function subagentProfile(input: RunSubagentInput): AcpSubagentProfile {
     ...(input.config.agent?.acpSubagents?.profile !== undefined
       ? { override: input.config.agent.acpSubagents.profile }
       : {}),
+    ...(input.unattended !== undefined ? { unattended: input.unattended } : {}),
   });
 }
 

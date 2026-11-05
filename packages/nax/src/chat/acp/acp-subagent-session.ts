@@ -8,8 +8,11 @@
  *
  * What crosses the ACP boundary from nax is narrow. Only the workflow and memory
  * providers are delivered — `nax-jobs` stays with the chat brain, because a
- * subagent must not launch billed runs — and, when the agent file names tools, only
- * the providers some `allowedTools` entry names with its `__` prefix. A read-only
+ * subagent must not launch billed runs — plus, for an unattended run only, the
+ * skills provider: the skill message tells the model to load references with
+ * `nax-skills__load`, and an ACP agent's own Read may not reach `~/.claude` from
+ * its sandbox. When the agent file names tools, only the providers some
+ * `allowedTools` entry names with its `__` prefix are delivered. A read-only
  * subagent additionally loses the two memory writes: embedder tools carry
  * `approval: "never"` and the ACP client allows tool-host calls under every
  * profile, so without that removal a reviewer could save or forget notes unasked.
@@ -36,6 +39,15 @@ export const _acpSubagentDeps = { acpBackend, chatAcpTools };
  */
 export const ACP_SUBAGENT_PROVIDER_IDS: readonly string[] = ["nax-workflow", "nax-memory"];
 
+/** The provider whose `load` tool the skill message tells the model to call. */
+const SKILLS_PROVIDER_ID = "nax-skills";
+
+/** An unattended run also sees the skills provider; nobody is there to load a skill by hand. */
+export const ACP_UNATTENDED_SUBAGENT_PROVIDER_IDS: readonly string[] = [
+  ...ACP_SUBAGENT_PROVIDER_IDS,
+  SKILLS_PROVIDER_ID,
+];
+
 /** The memory writes a read-only subagent must not be handed. */
 const READ_ONLY_WITHHELD_TOOL_NAMES: ReadonlySet<string> = new Set([
   `${MEMORY_TOOL_PROVIDER_ID}__save`,
@@ -55,9 +67,9 @@ function namedByAllowedTools(allowedTools: readonly string[] | undefined, provid
 
 /** The chat's providers this subagent may see, in the order the chat listed them. */
 function deliveredProviders(input: AcpSubagentSessionInput): readonly ToolProvider[] {
+  const ids = input.unattended === true ? ACP_UNATTENDED_SUBAGENT_PROVIDER_IDS : ACP_SUBAGENT_PROVIDER_IDS;
   return input.toolProviders.filter(
-    (provider) =>
-      ACP_SUBAGENT_PROVIDER_IDS.includes(provider.id) && namedByAllowedTools(input.allowedTools, provider.id),
+    (provider) => ids.includes(provider.id) && namedByAllowedTools(input.allowedTools, provider.id),
   );
 }
 

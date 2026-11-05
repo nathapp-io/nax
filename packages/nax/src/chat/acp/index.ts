@@ -51,6 +51,7 @@ export {
 export {
   _acpSubagentDeps,
   ACP_SUBAGENT_PROVIDER_IDS,
+  ACP_UNATTENDED_SUBAGENT_PROVIDER_IDS,
   type AcpSubagentSessionInput,
   acpSubagentSessionOptions,
 } from "./acp-subagent-session";
