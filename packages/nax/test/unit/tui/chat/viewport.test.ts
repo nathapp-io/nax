@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   INITIAL_VIEWPORT,
+  MIN_SCROLL_MARKER_ROWS,
   reduceViewport,
   type ViewportAction,
   type ViewportState,
+  viewportMarker,
   visibleRange,
 } from "@/tui/chat/viewport";
 
@@ -202,6 +204,29 @@ describe("visibleRange", () => {
   test("starts at the first line when the transcript is shorter than the view", () => {
     // AC-16
     expect(visibleRange(5, 10, 0)).toEqual({ start: 0, end: 5 });
+  });
+});
+
+describe("viewportMarker", () => {
+  test.each([
+    { ac: "AC-1", offset: 0, unseen: 0, rows: 5, expected: undefined },
+    { ac: "AC-2", offset: 4, unseen: 0, rows: 5, expected: "scroll" },
+    { ac: "AC-3", offset: 4, unseen: 3, rows: 5, expected: "unseen" },
+    { ac: "AC-4", offset: 1, unseen: 0, rows: 1, expected: undefined },
+    { ac: "AC-5", offset: 1, unseen: 2, rows: 1, expected: "unseen" },
+    { ac: "AC-6", offset: 1, unseen: 0, rows: 2, expected: "scroll" },
+  ] as const)("$ac offset $offset unseen $unseen in $rows rows draws $expected", (view) => {
+    expect(viewportMarker({ offset: view.offset, unseen: view.unseen }, view.rows)).toBe(view.expected);
+  });
+
+  test("the scroll marker needs MIN_SCROLL_MARKER_ROWS rows", () => {
+    expect(MIN_SCROLL_MARKER_ROWS).toBe(2);
+    expect(viewportMarker({ offset: 1, unseen: 0 }, MIN_SCROLL_MARKER_ROWS)).toBe("scroll");
+    expect(viewportMarker({ offset: 1, unseen: 0 }, MIN_SCROLL_MARKER_ROWS - 1)).toBeUndefined();
+  });
+
+  test("a one-row window still marks lines that arrived while scrolled up", () => {
+    expect(viewportMarker({ offset: 1, unseen: 1 }, 1)).toBe("unseen");
   });
 });
 

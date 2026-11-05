@@ -11,7 +11,13 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
 import { buildBackgroundTaskNotice } from "@/prompts";
-import { type BackgroundTask, type BackgroundTaskState, type ChatBackgroundTasks, TASK_ID_PATTERN } from "./task-types";
+import {
+  type BackgroundTask,
+  type BackgroundTaskState,
+  type ChatBackgroundTasks,
+  TASK_ID_PATTERN,
+  type TaskOutputOptions,
+} from "./task-types";
 
 export const TASK_LOG_MAX_BYTES = 50 * 1024 * 1024;
 export const TASK_OUTPUT_MAX_LINES = 500;
@@ -54,6 +60,11 @@ function terminalState(end: BackgroundCommandEnd): BackgroundTaskState {
   if (end.aborted) return "stopped";
   if (end.launchError !== undefined) return "failed";
   return end.exitCode === 0 && !end.timedOut ? "succeeded" : "failed";
+}
+
+/** A log reaped before it was read is an empty output, not a read failure. */
+function isMissingLog(cause: unknown): boolean {
+  return typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT";
 }
 
 class BackgroundTasks implements ChatBackgroundTasks {
@@ -240,25 +251,39 @@ class BackgroundTasks implements ChatBackgroundTasks {
   running(): readonly BackgroundTask[] {
     return this.list().filter((task) => task.state === "running");
   }
-  async output(id: string, lines = TASK_OUTPUT_DEFAULT_LINES): Promise<string> {
+  async output(id: string, lines = TASK_OUTPUT_DEFAULT_LINES, options?: TaskOutputOptions): Promise<string> {
     const entry = this.entries.get(id);
     if (!entry || !Number.isFinite(lines) || lines < 1) return "";
+    // Sampled before the first await: a read reports the state the caller was served.
+    const endedBeforeRead = entry.record.state === "succeeded" || entry.record.state === "failed";
     await entry.pending;
     try {
       const text = await _backgroundTaskDeps.readLog(entry.record.logPath);
+      this.markSeen(id, endedBeforeRead, options);
       return text
         .replace(/\r?\n$/, "")
         .split(/\r?\n/)
         .slice(-Math.min(Math.floor(lines), TASK_OUTPUT_MAX_LINES))
         .join("\n");
     } catch (cause) {
-      if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT") return "";
+      if (isMissingLog(cause)) {
+        this.markSeen(id, endedBeforeRead, options);
+        return "";
+      }
       throw new NaxError(`[chat] could not read background task ${id} log`, "CHAT_TASK_READ_FAILED", {
         stage: "chat",
         id,
         cause,
       });
     }
+  }
+
+  /** A read of a task that had already ended satisfies the notice that was queued for it. */
+  private markSeen(id: string, endedBeforeRead: boolean, options?: TaskOutputOptions): void {
+    if (options?.markSeen !== true || !endedBeforeRead) return;
+    // A task in the current snapshot is the notice being delivered right now.
+    if (this.notice?.ids.includes(id)) return;
+    this.unnoticed.delete(id);
   }
 }
 

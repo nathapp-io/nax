@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { BackgroundCommandEnd, BackgroundCommandHandle } from "@nathapp/nax-agent";
 import { makeLogger } from "@test/helpers";
+import type { ChatBackgroundTasks, TaskOutputOptions } from "@/chat/background";
 import { _backgroundTaskDeps, createBackgroundTasks } from "@/chat/background";
 import { NaxError } from "@/errors";
 
@@ -34,7 +35,8 @@ function fixture() {
   }
   function adopt() {
     const call = command();
-    return { ...call, id: tasks.adopt(call.handle).id };
+    const sink = tasks.adopt(call.handle);
+    return { ...call, sink, id: sink.id };
   }
   return { tasks, command, adopt, logger };
 }
@@ -256,5 +258,135 @@ describe("background lifecycle subscriptions", () => {
     unregister();
     unregister();
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("background task output seen handling (US-001)", () => {
+  test("US-001 AC-1 a marked read of a succeeded task suppresses its notice", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    expect(await f.tasks.output(a.id, undefined, { markSeen: true })).toBe("");
+    expect(f.tasks.peekNotice()).toBeUndefined();
+  });
+  test("US-001 AC-2 a marked read of a failed task suppresses its notice", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish({ exitCode: 1 });
+    expect(await f.tasks.output(a.id, undefined, { markSeen: true })).toBe("");
+    expect(f.tasks.peekNotice()).toBeUndefined();
+  });
+  test("US-001 AC-3 an unmarked read of a finished task keeps its notice", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    await f.tasks.output(a.id);
+    expect(f.tasks.peekNotice()).toContain(a.id);
+  });
+  test("US-001 AC-4 a marked read of a running task never marks it seen", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    expect(f.tasks.get(a.id)?.state).toBe("running");
+    expect(await f.tasks.output(a.id, undefined, { markSeen: true })).toBe("");
+    await a.finish();
+    expect(f.tasks.peekNotice()).toContain(a.id);
+  });
+  test("US-001 AC-5 a task that ends during a held read still notifies", async () => {
+    const f = fixture();
+    const gate = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    _backgroundTaskDeps.readLog = async () => {
+      entered.resolve();
+      await gate.promise;
+      return "";
+    };
+    const a = f.adopt();
+    const reading = f.tasks.output(a.id, undefined, { markSeen: true });
+    await entered.promise;
+    await a.finish();
+    gate.resolve();
+    await reading;
+    expect(f.tasks.peekNotice()).toContain(a.id);
+  });
+  test("US-001 AC-6 only the read task leaves the notice", async () => {
+    const f = fixture();
+    const first = f.adopt();
+    const second = f.adopt();
+    await first.finish();
+    await second.finish();
+    await f.tasks.output(first.id, undefined, { markSeen: true });
+    const notice = f.tasks.peekNotice();
+    expect(notice).toContain(second.id);
+    expect(notice).not.toContain(first.id);
+  });
+  test("US-001 AC-7 a delivered snapshot survives a marked read", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    const snapshot = f.tasks.peekNotice();
+    expect(snapshot).toContain(a.id);
+    await f.tasks.output(a.id, undefined, { markSeen: true });
+    expect(f.tasks.peekNotice()).toBe(snapshot);
+    expect(f.tasks.takeNotice()).toBe(snapshot);
+  });
+  test("US-001 AC-10 a failed read rejects typed and keeps the notice", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    _backgroundTaskDeps.readLog = async () => {
+      throw Object.assign(new Error("denied"), { code: "EACCES" });
+    };
+    const failure = await f.tasks.output(a.id, undefined, { markSeen: true }).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+    expect(failure).toBeInstanceOf(NaxError);
+    expect(failure).toMatchObject({ code: "CHAT_TASK_READ_FAILED" });
+    expect(f.tasks.peekNotice()).toContain(a.id);
+  });
+  test("US-001 AC-11 a missing log resolves empty and still marks the task seen", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    _backgroundTaskDeps.readLog = async () => {
+      throw Object.assign(new Error("missing"), { code: "ENOENT" });
+    };
+    expect(await f.tasks.output(a.id, undefined, { markSeen: true })).toBe("");
+    expect(f.tasks.peekNotice()).toBeUndefined();
+  });
+  test("US-001 AC-12 an unadopted id marks nothing and leaves other notices alone", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    expect(await f.tasks.output("bash-00000000", undefined, { markSeen: true })).toBe("");
+    expect(f.tasks.peekNotice()).toContain(a.id);
+  });
+  test("US-001 AC-13 an unusable line count marks nothing", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    expect(await f.tasks.output(a.id, 0, { markSeen: true })).toBe("");
+    expect(f.tasks.peekNotice()).toContain(a.id);
+  });
+  test("US-001 AC-14 a held append keeps a task that ended mid-read in the notice", async () => {
+    const f = fixture();
+    const gate = Promise.withResolvers<void>();
+    let calls = 0;
+    _backgroundTaskDeps.appendLog = async () => {
+      if (++calls === 1) await gate.promise;
+    };
+    const a = f.adopt();
+    a.sink.append("stdout", new TextEncoder().encode("chunk"));
+    const reading = f.tasks.output(a.id, undefined, { markSeen: true });
+    await a.finish();
+    gate.resolve();
+    await reading;
+    expect(f.tasks.peekNotice()).toContain(a.id);
+  });
+  test("US-001 AC-15 TaskOutputOptions types the third argument of output", async () => {
+    const f = fixture();
+    const tasks: ChatBackgroundTasks = f.tasks;
+    const options: TaskOutputOptions = { markSeen: true };
+    expect(await tasks.output("bash-00000000", undefined, options)).toBe("");
   });
 });

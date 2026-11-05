@@ -96,6 +96,24 @@ describe("createTasksProvider", () => {
     }
   });
 });
+describe("registry notices after a tool read (US-001)", () => {
+  test("US-001 AC-8 the output tool suppresses the notice of a task that already failed", async () => {
+    const f = fixture();
+    await f.finish();
+    expect(JSON.parse((await run(f.provider, "output", { task: f.id })).content)).toMatchObject({
+      id: f.id,
+      state: "failed",
+      exitCode: 1,
+    });
+    expect(f.tasks.peekNotice()).toBeUndefined();
+  });
+  test("US-001 AC-9 the output tool leaves a task that ends after the read in the notice", async () => {
+    const f = fixture();
+    expect(JSON.parse((await run(f.provider, "output", { task: f.id })).content).state).toBe("running");
+    await f.finish();
+    expect(f.tasks.peekNotice()).toContain(f.id);
+  });
+});
 describe("createHostTasks", () => {
   test("AC-12 provider stops the returned registry's task", async () => {
     const f = fixture();

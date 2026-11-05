@@ -115,7 +115,7 @@ describe("TranscriptViewport", () => {
   test("AC-4 pageUp keeps the newest line of the previous page in the frame", () => {
     const view = mount(numbered(20));
     view.press(PAGE_UP);
-    expect(view.rows()).toEqual(["line 12", "line 13", "line 14", "line 15", "line 16"]);
+    expect(view.rows()).toEqual(["line 12", "line 13", "line 14", "line 15", "↓ Scroll to bottom (End)"]);
   });
 
   test("AC-5 the last row counts the lines that arrived while scrolled up", async () => {
@@ -138,13 +138,13 @@ describe("TranscriptViewport", () => {
   test("AC-7 shift+upArrow moves the view up one line", () => {
     const view = mount(numbered(20));
     view.press(SHIFT_UP);
-    expect(view.rows()).toEqual(["line 15", "line 16", "line 17", "line 18", "line 19"]);
+    expect(view.rows()).toEqual(["line 15", "line 16", "line 17", "line 18", "↓ Scroll to bottom (End)"]);
   });
 
   test("AC-8 home shows the first page", () => {
     const view = mount(numbered(20));
     view.press(HOME);
-    expect(view.rows()).toEqual(["line 1", "line 2", "line 3", "line 4", "line 5"]);
+    expect(view.rows()).toEqual(["line 1", "line 2", "line 3", "line 4", "↓ Scroll to bottom (End)"]);
   });
 
   test("AC-9 keys on an inactive viewport leave the frame unchanged", () => {
@@ -234,15 +234,64 @@ describe("TranscriptViewport", () => {
   });
 });
 
+describe("TranscriptViewport bottom marker", () => {
+  test("AC-12 pageUp draws the scroll-to-bottom marker on the last row", () => {
+    const view = mount(numbered(20));
+    view.press(PAGE_UP);
+    expect(view.rows()).toEqual(["line 12", "line 13", "line 14", "line 15", "↓ Scroll to bottom (End)"]);
+  });
+
+  test("AC-13 lines that arrive while scrolled up replace the scroll marker with the unseen one", async () => {
+    const view = mount(numbered(20));
+    view.press(PAGE_UP);
+    await view.update(numbered(23));
+    expect(view.rows().at(-1)).toBe("↓ 3 new lines (End)");
+  });
+
+  test("AC-14 no scroll marker is drawn while lines are unseen", async () => {
+    const view = mount(numbered(20));
+    view.press(PAGE_UP);
+    await view.update(numbered(23));
+    expect(view.rows().some((row) => row.includes("Scroll to bottom"))).toBe(false);
+  });
+
+  test("AC-15 end returns to the newest page and drops the scroll marker", () => {
+    const view = mount(numbered(20));
+    view.press(PAGE_UP);
+    view.press(END);
+    expect(view.rows()).toEqual(["line 16", "line 17", "line 18", "line 19", "line 20"]);
+    expect(view.rows().some((row) => row.startsWith("↓"))).toBe(false);
+  });
+
+  test("AC-16 shift+upArrow in a one-row window draws no scroll marker", () => {
+    const view = mount(numbered(20), { height: 1 });
+    view.press(SHIFT_UP);
+    expect(view.rows()).toEqual(["line 19"]);
+  });
+
+  test("AC-22 a narrow window truncates the scroll marker onto its last row", () => {
+    const view = mount(numbered(20), { width: 10 });
+    view.press(PAGE_UP);
+    expect(view.rows().at(-1)?.startsWith("↓ Scroll")).toBe(true);
+  });
+
+  test("AC-23 the scroll marker keeps a narrow window at exactly five rows", () => {
+    const view = mount(numbered(20), { width: 10 });
+    view.press(PAGE_UP);
+    expect(view.rows()).toHaveLength(HEIGHT);
+  });
+});
+
 describe("TranscriptViewport mouse", () => {
   const lines: StyledLine[] = Array.from({ length: 50 }, (_, index) => [{ text: `line-${index}` }]);
   const labels = (start: number, count = 10) => Array.from({ length: count }, (_, index) => `line-${start + index}`);
+  const MARKER = "↓ Scroll to bottom (End)";
   test("US003 AC-13 scrolls up three rows and down again wherever the pointer is", () => {
     const mouse = fakeMouse();
     const ui = render(<TranscriptViewport lines={lines} height={10} theme={THEME} mouse={mouse.events} />);
     expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
     act(() => mouse.emit("wheelUp"));
-    expect(rowsOf(ui.lastFrame())).toEqual(labels(37));
+    expect(rowsOf(ui.lastFrame())).toEqual([...labels(37, 9), "↓ Scroll to bottom (End)"]);
     act(() => mouse.emit("wheelDown"));
     expect(rowsOf(ui.lastFrame())).toEqual(labels(40));
     act(() => mouse.emit("move"));
@@ -271,7 +320,98 @@ describe("TranscriptViewport mouse", () => {
     act(() => {
       ui.stdin.write(PAGE_UP);
     });
-    expect(rowsOf(ui.lastFrame())).toEqual(labels(11, 5));
+    expect(rowsOf(ui.lastFrame())).toEqual([...labels(11, 4), "↓ Scroll to bottom (End)"]);
+  });
+
+  /** A viewport with a mouse, the two spies, and the keys and clicks the marker tests send. */
+  function mountClickable(content: StyledLine[], height = 10) {
+    const mouse = fakeMouse();
+    const copied: string[] = [];
+    const clicked: number[] = [];
+    const frame = (next: StyledLine[], active: boolean) => (
+      <TranscriptViewport
+        lines={next}
+        height={height}
+        top={0}
+        theme={THEME}
+        active={active}
+        mouse={mouse.events}
+        onCopy={(text) => copied.push(text)}
+        onClick={(line) => clicked.push(line)}
+      />
+    );
+    const ui = render(frame(content, true));
+    return {
+      copied,
+      clicked,
+      rows: () => rowsOf(ui.lastFrame()),
+      key: (sequence: string) =>
+        act(() => {
+          ui.stdin.write(sequence);
+        }),
+      wheelUp: () => act(() => mouse.emit("wheelUp")),
+      click: (x: number, y: number) => act(() => mouse.emit("press", { button: "left", x, y })),
+      release: (x: number, y: number) => act(() => mouse.emit("release", { button: "left", x, y })),
+      rerender: (next: StyledLine[], active = true) =>
+        Promise.resolve(
+          act(async () => {
+            ui.rerender(frame(next, active));
+          }),
+        ),
+    };
+  }
+
+  test("AC-17 a left press on the scroll marker returns to the newest page", () => {
+    const view = mountClickable(lines);
+    view.wheelUp();
+    expect(view.rows().at(-1)).toBe(MARKER);
+    view.click(1, 10);
+    expect(view.rows()).toEqual(labels(40));
+    expect(view.rows().some((row) => row.startsWith("↓"))).toBe(false);
+  });
+  test("AC-18 a press and release on the marker copies nothing", () => {
+    const view = mountClickable(lines);
+    view.wheelUp();
+    view.click(1, 10);
+    view.release(1, 10);
+    expect(view.copied).toEqual([]);
+  });
+  test("AC-19 a press and release on the marker clicks nothing", () => {
+    const view = mountClickable(lines);
+    view.wheelUp();
+    view.click(1, 10);
+    view.release(1, 10);
+    expect(view.clicked).toEqual([]);
+  });
+  test("a left click on a transcript line still reports the line", () => {
+    // The control for AC-18/AC-19: the same spies do see a click on a line, so their silence
+    // on the marker row is the marker's doing and not an unwired callback.
+    const view = mountClickable(lines);
+    view.click(1, 3);
+    view.release(1, 3);
+    expect(view.clicked).toEqual([42]);
+  });
+  test("AC-20 a left press on a transcript line leaves the scroll marker alone", () => {
+    const view = mountClickable(lines);
+    view.wheelUp();
+    view.click(1, 5);
+    expect(view.rows().at(-1)).toBe(MARKER);
+  });
+  test("AC-21 a left press on the marker while inactive does nothing", async () => {
+    const view = mountClickable(lines);
+    view.wheelUp();
+    await view.rerender(lines, false);
+    view.click(1, 10);
+    expect(view.rows().at(-1)).toBe(MARKER);
+  });
+  test("AC-24 a left press on the unseen marker returns to the newest page", async () => {
+    const view = mountClickable(numbered(20), HEIGHT);
+    view.key(PAGE_UP);
+    await view.rerender(numbered(23));
+    expect(view.rows().at(-1)).toBe("↓ 3 new lines (End)");
+    view.click(1, 5);
+    expect(view.rows()).toEqual(["line 19", "line 20", "line 21", "line 22", "line 23"]);
+    expect(view.rows().some((row) => row.startsWith("↓"))).toBe(false);
   });
 });
 
