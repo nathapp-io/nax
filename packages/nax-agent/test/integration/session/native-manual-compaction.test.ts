@@ -667,6 +667,9 @@ describe("native manual compaction: keeps the last turn", () => {
     expect(caught).toBe(failure);
     await collect(session.send("next"));
     const contents = requestMessages(provider, 0).map((message) => message.content);
-    expect(contents.slice(0, 2)).toEqual(["first question", text(200, "a")]);
+    expect(contents).toEqual([
+      ...shortTurnsDoc().messages.map((message) => message.content),
+      "next",
+    ]);
   });
 });
