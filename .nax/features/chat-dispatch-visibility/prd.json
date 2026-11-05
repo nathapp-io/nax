@@ -3,7 +3,7 @@
   "feature": "chat-dispatch-visibility",
   "branchName": "feat/chat-dispatch-visibility",
   "createdAt": "2026-10-26T00:00:00.000Z",
-  "updatedAt": "2026-11-05T15:32:23.286Z",
+  "updatedAt": "2026-11-05T15:45:52.603Z",
   "userStories": [
     {
       "id": "US-001",
@@ -95,14 +95,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Ordered provider validation and standard prompt/fixture edits are bounded, but the change introduces another nested-session dispatch path inheriting parent tools, so the session/access-control security override requires strict isolated TDD."
+        "reasoning": "Ordered provider validation and standard prompt/fixture edits are bounded, but the change introduces another nested-session dispatch path inheriting parent tools, so the session/access-control security override requires strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/agents-provider.ts",
@@ -137,7 +140,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "851225fcb054acceae3ac3d3537edb74104aea5c"
     },
     {
       "id": "US-003",
