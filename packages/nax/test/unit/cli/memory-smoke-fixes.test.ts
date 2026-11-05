@@ -343,6 +343,7 @@ describe("the memory command's registration", () => {
       "approve",
       "link",
       "reset",
+      "requeue",
     ]);
     expect(typeof _memoryCliDeps.createMemoryHost).toBe("function");
   });

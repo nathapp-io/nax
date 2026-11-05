@@ -293,6 +293,22 @@ describe("host index, sync and status", () => {
     ]);
   });
 
+  test("requeues the rejected entries of one note, or all of them", async () => {
+    await openHost();
+    const first = await outbox().enqueue({ kind: "forget", scope: "project", slug: "gone", writeMode: "direct" });
+    const second = await outbox().enqueue({ kind: "forget", scope: "user", slug: "tone", writeMode: "direct" });
+    await outbox().markRejected(first.clientId, "parked after 3 bad responses: x");
+    await outbox().markRejected(second.clientId, "parked after 3 bad responses: y");
+    const requeue = host.requeue;
+    assertDefined(requeue, "host.requeue");
+
+    expect(await requeue({ scope: "project", slug: "gone" })).toBe(1);
+    expect(await host.status()).toMatchObject({ queued: 1, rejected: 1 });
+    expect(await requeue("all")).toBe(1);
+    expect(await host.status()).toMatchObject({ queued: 2, rejected: 0, rejectedEntries: [] });
+    expect(await requeue("all")).toBe(0);
+  });
+
   test("reports how many repo notes were skipped", async () => {
     await openHost();
     writeRepoNote("bad.md", "no frontmatter here\n");

@@ -62,6 +62,7 @@ nax memory save --slug <slug> --type <type> --description <text> (--body <text> 
 nax memory forget <slug> --reason <text> [--scope S]
 nax memory approve <slug> [--scope S]
 nax memory sync
+nax memory requeue (<slug> [--scope S] | --all)
 ```
 
 With the koda provider, koda decides the write mode per agent, so `nax memory status` prints `write mode: decided by koda` and `--json` reports `"writeMode": "koda"`.
@@ -69,6 +70,19 @@ With the koda provider, koda decides the write mode per agent, so `nax memory st
 Every command takes `-d, --dir <path>` (the project directory) and `--json`. Types are
 `user`, `feedback`, `project` and `reference`; scopes are `project` (the default) and `user`.
 A slug is 1-64 lower-case letters, digits or `-`.
+
+### Rejected writes
+
+A write the provider refuses is kept in the outbox as `rejected`, with the reason. A sync
+also parks a write as `rejected` when the provider keeps answering it with a response it
+cannot use (3 times), but only after the next queued write for a different note goes through,
+which shows the fault is that write's and not the provider's. A provider that answers every
+write badly (a version mismatch, for example) parks nothing: the queue waits.
+
+`nax memory status` lists each rejected write and why, and `nax memory sync` names any it
+parked. A rejected write is never retried on its own, and `nax memory link --force` and
+`nax memory reset` refuse while one is held. `nax memory requeue` puts it back in the queue
+for the next sync. A parked forget leaves the note active on the provider until it is delivered.
 
 ### Proposal mode
 

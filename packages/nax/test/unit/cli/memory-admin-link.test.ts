@@ -256,7 +256,7 @@ describe("nax memory link — what it refuses", () => {
 
     expect(await runLink(h, LINK_SLUG, { force: true })).toBe(1);
     expect(h.err).toEqual([
-      "[memory] 1 writes are not delivered; run nax memory sync (or nax memory forget) before relinking",
+      "[memory] 1 writes are not delivered (1 queued, 0 rejected); run nax memory sync before relinking",
     ]);
     expect(h.fs.writes).toEqual([]);
     expect(h.fs.removed).toEqual([]);

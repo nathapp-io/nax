@@ -33,8 +33,9 @@
  * is visible as `(forget pending)`. One transient kind repeats: a bad response, an
  * answer that arrived but cannot be used (`isMemoryBadResponse`). It is counted on
  * the entry, and the entry that meets `MEMORY_PUSH_MAX_BAD_RESPONSES` of them is
- * parked as `rejected` and named on the result, so it cannot hold the queue forever.
- * Nothing overtakes an entry until it is parked, so `seq` order still holds.
+ * parked as `rejected` — but only once the next write for another key is answered,
+ * which proves the fault is the entry's and not the provider's. Writes of the same
+ * key never overtake it, so per-key `seq` order still holds.
  *
  * Step 4 asks the provider for what changed elsewhere, one page at a time. The cursor
  * each page hands back is checkpointed before the next page is asked for, so the disk
@@ -53,20 +54,19 @@
  */
 import type { AgentLogger } from "#src/infra/agent-logger";
 import { errorMessage } from "#src/infra/errors";
-import { applyPushed } from "./delivery.ts";
 import { refreshMemoryIndex } from "./index-render.ts";
 import { acquireMirrorLocks, type ReleaseLock, storeLockTargets } from "./mirror-lock.ts";
-import { isMemoryBadResponse, isMemoryPushRejected, parseMemoryNoteRecord } from "./note.ts";
-import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
-import type { MemoryPage, MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
+import { parseMemoryNoteRecord } from "./note.ts";
+import type { MemoryOutbox } from "./outbox.ts";
+import type { MemoryPage, MemoryProvider } from "./provider-types.ts";
 import type { MemoryStore, MemorySyncState } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout, warnQuietly } from "./support.ts";
+import { drainOutbox, type MemoryParkedEntry } from "./sync-drain.ts";
 import { claimSync, releaseSync } from "./sync-flight.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   MEMORY_PULL_MAX_PAGES,
   MEMORY_PULL_PAGE_SIZE,
-  MEMORY_PUSH_MAX_BAD_RESPONSES,
   MEMORY_SLUG_RE,
   type MemoryNote,
   type MemoryNoteStatus,
@@ -96,16 +96,6 @@ export interface MemorySyncInput {
   readonly isAlive?: (pid: number) => boolean;
   /** How many notes one pull asks for; default `MEMORY_PULL_PAGE_SIZE`. */
   readonly pageSize?: number;
-}
-
-/** An entry this run parked as `rejected` after it kept meeting bad responses. */
-export interface MemoryParkedEntry {
-  readonly clientId: string;
-  readonly kind: MemoryOutboxEntry["kind"];
-  readonly scope: MemoryScope;
-  readonly slug: string;
-  /** The rejection reason the entry now carries: the count and the last bad response. */
-  readonly reason: string;
 }
 
 /** What one run did, and how it ended. */
@@ -178,122 +168,6 @@ async function recordUnreachable(input: MemorySyncInput): Promise<MemorySyncResu
 async function recordLastError(input: MemorySyncInput, message: string): Promise<void> {
   const state = await input.store.readSyncState();
   await input.store.writeSyncState({ ...state, lastError: message });
-}
-
-/**
- * The write an entry stands for, as the provider takes it.
- *
- * The entry carries the queue's own bookkeeping — its sequence, when it was taken,
- * whether it is still queued — and none of that is the provider's to read, so the
- * request is projected from the fields the two shapes share rather than forwarded.
- */
-function requestOf(entry: MemoryOutboxEntry): MemoryWriteRequest {
-  return {
-    kind: entry.kind,
-    clientId: entry.clientId,
-    scope: entry.scope,
-    slug: entry.slug,
-    writeMode: entry.writeMode,
-    ...(entry.note === undefined ? {} : { note: entry.note }),
-    ...(entry.reason === undefined ? {} : { reason: entry.reason }),
-  };
-}
-
-/**
- * What one push came to: the provider's answer, a permanent refusal, or a transient failure —
- * `badResponse` saying whether that failure is the kind that repeats.
- */
-type PushOutcome =
-  | { readonly kind: "pushed"; readonly result: MemoryPushResult }
-  | { readonly kind: "rejected"; readonly reason: string }
-  | { readonly kind: "failed"; readonly reason: string; readonly badResponse: boolean };
-
-/**
- * One entry, pushed through the operation race.
- *
- * `MEMORY_PUSH_REJECTED` is the provider saying it will never accept this write, so
- * it is separated here from every other throw and from the `MEMORY_TIMEOUT` the race
- * raises: only the first is worth keeping on the entry, and only the others are worth
- * another attempt.
- */
-async function pushEntry(input: MemorySyncInput, entry: MemoryOutboxEntry, timers: MemoryTimers): Promise<PushOutcome> {
-  try {
-    const pushed = input.provider.push(requestOf(entry));
-    return { kind: "pushed", result: await raceTimeout(pushed, MEMORY_OP_TIMEOUT_MS, timers) };
-  } catch (error) {
-    const reason = errorMessage(error);
-    if (isMemoryPushRejected(error)) return { kind: "rejected", reason };
-    return { kind: "failed", reason, badResponse: isMemoryBadResponse(error) };
-  }
-}
-
-/** What a drain delivered, and the transient failure that stopped it early. */
-interface DrainResult {
-  readonly pushed: number;
-  readonly rejected: number;
-  readonly parked: readonly MemoryParkedEntry[];
-  /** The message of the failure that ended the drain; absent when every entry was delivered. */
-  readonly failure?: string;
-}
-
-/**
- * Step 3: deliver every queued write, oldest first.
- *
- * `list()` answers with the rejected entries too — they are the record of a refusal —
- * so only `queued` entries are pushed: nothing here retries a permanent one.
- */
-async function drainOutbox(input: MemorySyncInput): Promise<DrainResult> {
-  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  let pushed = 0;
-  let rejected = 0;
-  const parked: MemoryParkedEntry[] = [];
-  for (const entry of await input.outbox.list()) {
-    if (entry.state !== "queued") continue;
-    const outcome = await pushEntry(input, entry, timers);
-    if (outcome.kind === "failed") {
-      const parking = outcome.badResponse ? await countBadResponse(input, entry, outcome.reason) : null;
-      if (parking === null) return { pushed, rejected, parked, failure: outcome.reason };
-      parked.push(parking);
-      rejected += 1;
-      continue;
-    }
-    if (outcome.kind === "rejected") {
-      await input.outbox.markRejected(entry.clientId, outcome.reason);
-      rejected += 1;
-      continue;
-    }
-    await applyPushed(input, entry, outcome.result);
-    await input.outbox.remove(entry.clientId);
-    pushed += 1;
-  }
-  return { pushed, rejected, parked };
-}
-
-/**
- * Count one bad response against `entry`, and park it once it has met the limit.
- *
- * Answers the parked entry, or `null` while it is still under the limit — the drain then stops
- * at it exactly as for any other transient failure. Parking warns once, naming the entry: a
- * parked forget leaves its note active on the provider, which is what the caller has to see.
- */
-async function countBadResponse(
-  input: MemorySyncInput,
-  entry: MemoryOutboxEntry,
-  error: string,
-): Promise<MemoryParkedEntry | null> {
-  const count = await input.outbox.recordBadResponse(entry.clientId, error);
-  if (count < MEMORY_PUSH_MAX_BAD_RESPONSES) return null;
-  const reason = `parked after ${count} bad responses: ${error}`;
-  await input.outbox.markRejected(entry.clientId, reason);
-  const { clientId, kind, scope, slug } = entry;
-  warnQuietly(input.logger, "memory sync parked an outbox entry the provider keeps answering badly", {
-    clientId,
-    kind,
-    scope,
-    slug,
-    error,
-  });
-  return { clientId, kind, scope, slug, reason };
 }
 
 /** The cursor pair with one scope moved: the other scope's cursor is carried over untouched. */

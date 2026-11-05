@@ -39,7 +39,8 @@ export {
   type MemorySyncState,
 } from "./store.ts";
 export { raceTimeout } from "./support.ts";
-export { type MemoryParkedEntry, type MemorySyncInput, type MemorySyncResult, syncMemory } from "./sync.ts";
+export { type MemorySyncInput, type MemorySyncResult, syncMemory } from "./sync.ts";
+export type { MemoryParkedEntry } from "./sync-drain.ts";
 export {
   MEMORY_CLIENT_ID_RE,
   MEMORY_DECISION_STATUSES,

@@ -89,6 +89,12 @@ export interface MemoryOutbox {
    * entry, so a count never outlives a success.
    */
   recordBadResponse(clientId: string, error: string): Promise<number>;
+  /**
+   * Put a rejected entry back in the queue as it was taken: its own reason restored, the
+   * rejection and any bad-response count dropped. Answers whether an entry was requeued; a
+   * queued or absent one is left alone.
+   */
+  requeue(clientId: string): Promise<boolean>;
   heldKeys(kind?: "save" | "forget"): Promise<ReadonlySet<string>>;
 }
 
@@ -219,6 +225,12 @@ function toRejected(entry: MemoryOutboxEntry, rejectionReason: string): MemoryOu
     state: "rejected",
     reason: rejectionReason,
   };
+}
+
+/** A rejected entry as it was taken: the request's own reason back in `reason`, no count. */
+function toQueued(entry: MemoryOutboxEntry): MemoryOutboxEntry {
+  const { reason: _rejection, requestReason, badResponses: _count, lastError: _last, ...rest } = entry;
+  return { ...rest, ...(requestReason === undefined ? {} : { reason: requestReason }), state: "queued" };
 }
 
 export function createMemoryOutbox(input: { readonly dir: string; readonly now?: () => Date }): MemoryOutbox {
@@ -352,6 +364,17 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return count;
   }
 
+  async function requeue(clientId: string): Promise<boolean> {
+    let requeued = false;
+    for (const file of await filesFor(clientId)) {
+      const entry = await readEntry(file);
+      if (entry === null || entry.state !== "rejected") continue;
+      await writeFileAtomic(join(dir, file.name), `${JSON.stringify(toQueued(entry))}\n`);
+      requeued = true;
+    }
+    return requeued;
+  }
+
   async function heldKeys(kind?: "save" | "forget"): Promise<ReadonlySet<string>> {
     const keys = new Set<string>();
     for (const entry of (await scan()).entries) {
@@ -362,5 +385,5 @@ export function createMemoryOutbox(input: { readonly dir: string; readonly now?:
     return keys;
   }
 
-  return { enqueue, list, listInvalid, remove, markRejected, recordBadResponse, heldKeys };
+  return { enqueue, list, listInvalid, remove, markRejected, recordBadResponse, requeue, heldKeys };
 }
