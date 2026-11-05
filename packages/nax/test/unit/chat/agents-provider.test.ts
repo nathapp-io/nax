@@ -92,9 +92,9 @@ describe("createAgentsProvider tools and instructions", () => {
     expect(tools).toHaveLength(1);
     expect(tools[0]?.localName).toBe("run");
   });
-  test("AC-6 inputSchema.required is [agent, task]", async () => {
+  test("AC-6 inputSchema.required is [task]", async () => {
     const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
-    expect(tool?.inputSchema.required).toEqual(["agent", "task"]);
+    expect(tool?.inputSchema.required).toEqual(["task"]);
   });
   test("AC-7 inputSchema.additionalProperties is false", async () => {
     const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
@@ -140,7 +140,6 @@ describe("createAgentsProvider run", () => {
   });
   test.each([
     ["missing task", { agent: "reviewer" }],
-    ["missing agent", { task: "t" }],
     ["non-string agent", { agent: 1, task: "t" }],
     ["non-string task", { agent: "reviewer", task: 2 }],
     ["trim-empty agent", { agent: " \n", task: "t" }],
@@ -207,12 +206,12 @@ describe("createAgentsProvider over a parsed catalog", () => {
 
 describe("createAgentsProvider model override", () => {
   const BAD_MODEL = "[chat] run model must be a non-empty string";
-  test("AC-1 schema has model: string and required stays [agent, task]", async () => {
+  test("AC-1 schema has model: string and required is [task]", async () => {
     const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
     expect(Object.entries(tool?.inputSchema.properties ?? {}).find(([key]) => key === "model")?.[1]).toEqual({
       type: "string",
     });
-    expect(tool?.inputSchema.required).toEqual(["agent", "task"]);
+    expect(tool?.inputSchema.required).toEqual(["task"]);
   });
   test("AC-2 description names the native example and acp:<agent>", async () => {
     const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
@@ -246,5 +245,115 @@ describe("createAgentsProvider model override", () => {
       content: BAD_MODEL,
     });
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+const RUN_DESCRIPTION =
+  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task on a model with no catalog agent, omit agent and pass model: the task runs on the built-in general agent with your tools.";
+const NEEDS_AGENT_OR_MODEL = "[chat] run requires agent, or model to run the built-in general agent";
+
+describe("createAgentsProvider bare-model dispatch (chat-dispatch-visibility US-002)", () => {
+  test("AC-1 inputSchema.required is [task]", async () => {
+    const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
+    expect(tool?.inputSchema.required).toEqual(["task"]);
+  });
+
+  test("AC-2 the description is the frozen text naming the general-agent fallback", async () => {
+    const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
+    expect(tool?.description).toBe(RUN_DESCRIPTION);
+  });
+
+  test("AC-5 a model with no agent runs the built-in general agent on that model", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    const controller = new AbortController();
+    await runTool(provider, { task: "t", model: "openai-codex/gpt-6-luna" }, controller.signal);
+    expect(run).toHaveBeenCalledTimes(1);
+    const call = run.mock.calls[0];
+    assertDefined(call, "run call");
+    const [calledAgent, calledTask, calledSignal, calledModel] = call;
+    expect(calledAgent.name).toBe("general");
+    expect(calledAgent.origin).toEqual({ kind: "nax-builtin" });
+    expect(calledTask).toBe("t");
+    expect(calledSignal).toBe(controller.signal);
+    expect(calledModel).toBe("openai-codex/gpt-6-luna");
+  });
+
+  test("AC-6 a missing agent and a missing model names both requirements", async () => {
+    const { provider } = setup([agent("reviewer")]);
+    expect(await runTool(provider, { task: "t" })).toEqual({ isError: true, content: NEEDS_AGENT_OR_MODEL });
+  });
+
+  test("AC-7 a missing agent and a missing model does not call the injected run", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { task: "t" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-8 a blank model with no agent is an error result", async () => {
+    const { provider } = setup([agent("reviewer")]);
+    expect(await runTool(provider, { task: "t", model: "  " })).toEqual({
+      isError: true,
+      content: "[chat] run model must be a non-empty string",
+    });
+  });
+
+  test("AC-9 a blank model with no agent does not call the injected run", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { task: "t", model: "  " });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-10 a non-string agent is an error result even with a model", async () => {
+    const { provider } = setup([agent("reviewer")]);
+    expect(await runTool(provider, { agent: 1, task: "t", model: "p/x" })).toEqual({
+      isError: true,
+      content: INVALID_INPUT,
+    });
+  });
+
+  test("AC-11 a non-string agent does not call the injected run", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { agent: 1, task: "t", model: "p/x" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-12 a missing task with a model is an error result", async () => {
+    const { provider } = setup([agent("reviewer")]);
+    expect(await runTool(provider, { model: "p/x" })).toEqual({ isError: true, content: INVALID_INPUT });
+  });
+
+  test("AC-13 a missing task with a model does not call the injected run", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { model: "p/x" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-14 an unknown agent with a model lists the available names", async () => {
+    const { provider } = setup([agent("reviewer")]);
+    const result = await runTool(provider, { agent: "nobody", task: "t", model: "p/x" });
+    expect(result.isError).toBe(true);
+    expect(result.content.startsWith("unknown agent nobody; available:")).toBe(true);
+  });
+
+  test("AC-15 an unknown agent with a model does not call the injected run", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { agent: "nobody", task: "t", model: "p/x" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("AC-18 a catalog with no agents still advertises no tools", async () => {
+    expect(await setup([]).provider.tools("/w")).toEqual([]);
+  });
+
+  test("AC-19 a named agent with no model still calls run with exactly three arguments", async () => {
+    const reviewer = agent("reviewer");
+    const { run, provider } = setup([reviewer]);
+    const controller = new AbortController();
+    await runTool(provider, { agent: "reviewer", task: "t" }, controller.signal);
+    expect(run).toHaveBeenCalledTimes(1);
+    const call = run.mock.calls[0];
+    assertDefined(call, "run call");
+    expect(call).toHaveLength(3);
+    expect([...call]).toEqual([reviewer, "t", controller.signal]);
   });
 });

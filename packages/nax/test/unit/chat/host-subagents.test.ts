@@ -19,6 +19,7 @@ import {
   usageEvent,
   waitForCondition,
 } from "@test/helpers";
+import { buildGeneralAgentPrompt } from "@/prompts";
 import type { AgentResource } from "@/resources";
 
 const reviewer = makeAgentResource({ name: "reviewer" });
@@ -533,5 +534,28 @@ describe("chat host agent call model", () => {
     const seen: SessionEvent[] = [];
     await h.host.send("go", (event) => seen.push(event));
     expect(forwardedToolCall(seen, "run-1")?.metadata).toEqual({ subagentModel: CHAT_MODEL });
+  });
+});
+
+describe("chat host bare-model dispatch (chat-dispatch-visibility US-002)", () => {
+  const runInput = { task: "look", model: "openai/gpt-x" };
+
+  test("AC-16 a run with a model and no agent opens exactly one nested native session on that model", async () => {
+    const h = setup({ agents: [reviewer], runInput });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    await h.host.send("go", () => {});
+    expect(h.nestedSessions).toHaveLength(1);
+    expect(h.nestedBackends.map((options) => options.model)).toEqual(["openai/gpt-x"]);
+    expect(h.acpBackendCalls).toHaveLength(0);
+  });
+
+  test("AC-17 the nested session's instructions end with the general agent prompt", async () => {
+    const h = setup({ agents: [reviewer], runInput });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    await h.host.send("go", () => {});
+    const opened = h.nestedSessionOptions[0];
+    assertDefined(opened, "nested session options");
+    expect(opened.instructions).toEndWith(buildGeneralAgentPrompt());
+    expect(h.nestedSessionOptions).toHaveLength(1);
   });
 });

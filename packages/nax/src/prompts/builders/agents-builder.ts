@@ -19,6 +19,7 @@ export function buildAgentsInstructions(entries: readonly { qualifiedName: strin
   const lines = [
     "When a task suits one of these agents, call nax-agents__run with the agent name and a self-contained task.",
     "Pass model to run an agent on another model: provider/model for the nax native agent (openai-codex/gpt-6-luna is native), acp:<agent> for an installed ACP agent.",
+    "To run a task on a model when no agent fits, omit agent and pass model; the task runs on the built-in general agent.",
   ];
   for (const entry of entries.slice(0, MAX_AGENTS_INDEX_ENTRIES)) {
     lines.push(`- ${entry.qualifiedName}: ${cleanIndexDescription(entry.description)}`);
