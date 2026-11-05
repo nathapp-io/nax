@@ -201,7 +201,14 @@ describe("turnStatsEntry", () => {
 });
 
 function toolInputDelta(ms: number, options: EventOptions = {}): SessionEvent {
-  return { ...base(ms, options), type: "tool_input_delta", round: options.round ?? 1, callId: "c1", name: "Write", chars: 9 };
+  return {
+    ...base(ms, options),
+    type: "tool_input_delta",
+    round: options.round ?? 1,
+    callId: "c1",
+    name: "Write",
+    chars: 9,
+  };
 }
 
 describe("decodeRate with tool_input_delta", () => {
