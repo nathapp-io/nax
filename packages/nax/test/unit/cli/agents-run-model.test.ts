@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { resolveAgentsRunModel } from "@/cli/agents-run-model";
+import { NaxConfigSchema } from "@/config";
 import { NaxError } from "@/errors";
 import type { AgentResource } from "@/resources/types";
 
@@ -64,10 +65,10 @@ describe("resolveAgentsRunModel", () => {
   test("AC-5: uses string balanced model for an agent without a model", () => {
     expect(resolveAgentsRunModel({ agent: agent(), config: config("openai/gpt-bal") })).toBe("openai/gpt-bal");
   });
-  test("AC-6: formats object balanced model for an agent without a model", () => {
-    expect(resolveAgentsRunModel({ agent: agent(), config: config({ provider: "openai", model: "gpt-bal" }) })).toBe(
-      "openai/gpt-bal",
-    );
+  test("AC-6: preserves a qualified model in a schema-validated balanced entry", () => {
+    const validatedConfig = config({ provider: "openai", model: "openai/gpt-bal" });
+    expect(NaxConfigSchema.safeParse(validatedConfig).success).toBe(true);
+    expect(resolveAgentsRunModel({ agent: agent(), config: validatedConfig })).toBe("openai/gpt-bal");
   });
   test("AC-7: falls back from an unrecognized agent-file model to the parent model", () => {
     expect(resolveAgentsRunModel({ agent: agent("gpt"), config: config("openai/gpt-bal") })).toBe("openai/gpt-bal");

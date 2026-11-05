@@ -33,5 +33,6 @@ export function resolveAgentsRunModel(input: {
   if (balanced === undefined) {
     throw new NaxError(MISSING_PARENT_MODEL, "AGENTS_RUN_USAGE", { stage: "agents-run" });
   }
-  return typeof balanced === "string" ? balanced : `${balanced.provider}/${balanced.model}`;
+  if (typeof balanced === "string") return balanced;
+  return balanced.model.includes("/") ? balanced.model : `${balanced.provider}/${balanced.model}`;
 }
