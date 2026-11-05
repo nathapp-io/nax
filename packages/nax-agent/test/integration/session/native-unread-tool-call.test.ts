@@ -6,7 +6,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { type AgentSession, createAgentSession, type EmbedderTool } from "@nathapp/nax-agent";
 import type { ClientRequest, ProtocolEvent } from "@nathapp/nax-ai";
+import { createInvalidCallBudget } from "#src/native/session/handle-invalid-tool-call";
 import { createLoopEventRegistry } from "#src/native/session/loop-events/index";
+import type { BeforeTurnEndPayload } from "#src/native/session/loop-events/types";
+import { registerBuiltinLoopHandlers } from "#src/native/session/loop-handlers";
 import { createNativeSessionState } from "#src/native/session/session";
 import { runNativeTurn } from "#src/native/session/turn-loop";
 import { createTurnDeadline } from "#src/session/turn-deadline";
@@ -80,12 +83,15 @@ describe("native unread tool-call follow-up", () => {
     expect(provider.requests).toHaveLength(2);
     const message = lastMessage(provider, 1);
     expect(message.role).toBe("user");
-    expect(message.role === "user" ? message.content : "").toStartWith(PREFIX);
+    const content = message.role === "user" ? message.content : "";
+    expect(content).toStartWith(PREFIX);
     const declared = (provider.requests[0]?.tools ?? []).map((tool) => tool.name);
     expect(declared).toContain("probe");
-    expect(message.role === "user" ? message.content : "").toEndWith(
-      `using one of these exact names: ${declared.join(", ")}.`,
-    );
+    // US-006: the block names ScrashpadWrite. The session's built-in toolset
+    // declares ScratchpadWrite, two edits away, so the follow-up names the
+    // mistake and suggests it.
+    expect(content).toContain(`using one of these exact names: ${declared.join(", ")}.`);
+    expect(content).toEndWith("`ScrashpadWrite` is not a declared tool; did you mean `ScratchpadWrite`?");
   });
 
   test("AC-3: a block on every round sends exactly two requests and completes", async () => {
@@ -263,5 +269,43 @@ describe("native unread tool-call follow-up: direct turn loop", () => {
     } finally {
       cleanupTempDir(dir);
     }
+  });
+});
+
+describe("native unread tool-call follow-up: the suggested name", () => {
+  const SESSION = "sess-unread-suggestion";
+  const SCRASHPAD = '<tool_call>{"name":"ScrashpadWrite"}</tool_call>';
+  const DECLARED = ["Read", "ScratchpadWrite"] as const;
+
+  test("AC-18, AC-19: the built-in handlers suggest the nearest declared name, once per turn", async () => {
+    const registry = createLoopEventRegistry();
+    const unread = { sent: false };
+    registerBuiltinLoopHandlers(registry, {
+      sessionName: SESSION,
+      sessionState: seedNativeSession(createNativeSessionState(), SESSION, { transcriptDir: "unused" }),
+      budget: createInvalidCallBudget(),
+      onSpinStop: () => {},
+      toolNames: () => DECLARED,
+      unreadToolCall: unread,
+    });
+    const payload: BeforeTurnEndPayload = {
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: SCRASHPAD },
+      ],
+      roundTrips: 1,
+      ended: "completed",
+      stopped: false,
+      followUpsSoFar: 0,
+    };
+
+    const patch = await registry.dispatch("before_turn_end", payload);
+
+    expect(patch.followUp).toBe(
+      "Your reply contains a <tool_call> block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: Read, ScratchpadWrite. `ScrashpadWrite` is not a declared tool; did you mean `ScratchpadWrite`?",
+    );
+    expect(patch.followUp).toEndWith("did you mean `ScratchpadWrite`?");
+    expect(unread.sent).toBe(true);
+    expect(await registry.dispatch("before_turn_end", payload)).toEqual({});
   });
 });
