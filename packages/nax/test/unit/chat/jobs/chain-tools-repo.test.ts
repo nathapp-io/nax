@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
 import { type ChatChains, createChainController } from "@/chat/jobs/chain-controller";
@@ -120,12 +120,34 @@ describe("chain steps with repo", () => {
     );
   });
 
-  test("AC-6 a rejected later step is step-prefixed with no card and no launch", async () => {
-    const result = await chain([
-      { kind: "plan", input: { feature: "f1" } },
-      { kind: "plan", input: { feature: "missingfeat", repo: "missing" } },
-    ]);
-    expect(result).toEqual({ isError: true, content: "[chat] step 2: repo missing does not exist" });
+  test.each([
+    [5, "[chat] step 2: repo must be a non-empty string"],
+    ["", "[chat] step 2: repo must be a non-empty string"],
+    ["missing", "[chat] step 2: repo missing does not exist"],
+    ["..", "[chat] step 2: repo .. is outside"],
+    ["link", "[chat] step 2: repo link is outside"],
+    ["plain", "[chat] step 2: repo plain is not a nax project: no .nax directory"],
+  ])("AC-6 step 2 repo %p is rejected: prefixed, no card, no launch, no read", async (repo, message) => {
+    symlinkSync(realpathSync(makeTempDir("chain-outside-")), join(root, "link"));
+    const reads: string[] = [];
+    const exists = _jobsLaunchDeps.exists;
+    _jobsLaunchDeps.exists = async (p: string) => {
+      reads.push(p);
+      return exists(p);
+    };
+    try {
+      const result = await chain([
+        { kind: "plan", input: { feature: "f1" } },
+        { kind: "plan", input: { feature: "rejectedfeat", repo } },
+      ]);
+      expect(result.isError).toBe(true);
+      expect(String(result.content).startsWith(message)).toBe(true);
+    } finally {
+      _jobsLaunchDeps.exists = exists;
+    }
+    // A non-string repo is rejected while parsing, before any step resolves.
+    if (typeof repo === "string") expect(reads.some((p) => p.includes("f1"))).toBe(true);
+    expect(reads.some((p) => p.includes("rejectedfeat"))).toBe(false);
     expect(approve).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
