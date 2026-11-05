@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-dispatch",
   "branchName": "feat/chat-polish-and-dispatch",
   "createdAt": "2026-11-05T00:00:00.000Z",
-  "updatedAt": "2026-11-05T02:50:49.966Z",
+  "updatedAt": "2026-11-05T03:15:12.421Z",
   "userStories": [
     {
       "id": "US-001",
@@ -31,14 +31,17 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small manual-only algorithm change with stored session-history integrity requirements; strict isolation follows the session security override."
+        "reasoning": "Small manual-only algorithm change with stored session-history integrity requirements; strict isolation follows the session security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/manual-compaction.ts",
@@ -49,7 +52,11 @@
         "packages/nax-agent/test/unit/native/session/manual-compaction.test.ts"
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "919fe534d4309e499b21251343b27be0544dcd77"
     },
     {
       "id": "US-002",
@@ -104,7 +111,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -162,7 +172,10 @@
         }
       ],
       "workdir": "packages/nax-agent",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -195,7 +208,10 @@
         "packages/nax-agent-acp/test/unit/server/translate/events.test.ts"
       ],
       "workdir": "packages/nax-agent-acp",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -236,7 +252,10 @@
         "packages/nax/test/unit/tui/chat/turn-stats.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -308,7 +327,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -366,7 +388,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -411,7 +436,10 @@
         "packages/nax/src/chat/chat-host.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -472,7 +500,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-010",
@@ -536,7 +567,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-011",
@@ -610,7 +644,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-012",
@@ -661,7 +698,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Repository exploration: codebase-memory MCP is unavailable in this host, so discovery used direct source reads, Glob and Grep against the execution repository. This is an enhancement to existing TypeScript/Bun chat code, not a greenfield project. The binding twelve-story decomposition and dependency graph are preserved. No implementation, test execution, release, or migration has been performed while drafting this PRD.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:141 describes package dependencies and public-entry boundaries; its quick-reference rules at :153 require injectable external dependencies, real-path containment, named constants and small functions. nax is Bun-native; nax-agent and nax-agent-acp shipped source must remain Node-compatible, and nax-agent relative source imports include .ts extensions. ACP consumes only the public @nathapp/nax-agent entry. Do not import nax-ai into chat code: use parseModelSpec from nax-agent and the existing agents/catalog lookup boundary. Use existing permission resolution rather than adding permission literals. Tests use bun:test and injectable seams, not mock.module or global monkey-patching. Regression tests in nax-agent must fail against old code. Run targeted package tests through the pipeline, never bare bun test; nax-agent/ACP Node contracts remain relevant to compatibility. Do not run nax coverage in a sandboxed nax session. Preserve public API snapshots if intended exported declarations change; adding tool_input_delta widens existing exported event unions rather than requiring a new package entry. No dependency/version bumps are needed.\n\nUS-001: packages/nax-agent/src/native/session/manual-compaction.ts:88 loads stored history, estimates tokens and resolves the model before planning at :102 with keepBudget. It saves only after summarizeAndApply returns (:115) and clears lastUsage (:120); preserve that transactional ordering, identity checks, no pin, and no before_compaction dispatch. packages/nax-agent/src/native/session/compaction.ts:51 estimates user, assistant/thinking/tool-call and tool-result tokens, :124 defines automatic keepBudget, :136 defines the summary prefix, and :154 restricts cut points to user/assistant messages. Do not change that shared automatic core. Add the manual-only last-turn budget cap in manual-compaction.ts. The seeded transcript harness is packages/nax-agent/test/integration/session/native-manual-compaction.test.ts:21; its WINDOW=4095 and KEEP=1228 at :49 illustrate why small multi-turn histories currently do not compact. Extend that suite and add a focused manualKeepTokens unit suite. Preserve existing one-turn/no-summary behavior and history on summarizer rejection.\n\nUS-002: packages/nax-agent/src/native/session/loop-handlers.ts:137 uses a WeakMap so each reused registry installs once and later repoints state.current; registration at :148 currently puts before_tool built-ins ahead of plugins. Insert the unread-call before_turn_end handler ahead of plugin entries without disrupting before_tool short-circuiting or after_tool truncation. packages/nax-agent/src/native/session/turn-loop.ts:204 creates per-turn spin flags and registers built-ins; tools are constructed later at :268 and are sent through the round params. A lazy toolNames getter must observe this exact array when before_turn_end dispatches, never capture stale names or evaluate before initialization. The fresh sent flag belongs beside per-turn flags. packages/nax-agent/src/native/session/turn-loop-round-trip.ts:63 sets the existing follow-up limit to 3; dispatch at :420 and stopped/capped selection at :445 already govern follow-ups. Keep that mechanism intact, including consuming the unread flag even if its patch is overridden or the loop drops it at the cap. Existing packages/nax-agent/test/unit/native/session/loop-handlers-plugins.test.ts:101 has a literal-deps install helper requiring the two new fields and changed handler-order expectations. Add scripted native-session integration regressions, including caller-supplied registry reuse.\n\nUS-003/004/005: packages/nax-agent/src/native/stream-complete.ts:26 currently maps only text and thinking; tap at :32 folds all protocol events with nax-ai collectStream and deliberately isolates display-sink errors. Keep that fold and error behavior; track accumulated partial lengths per call id per stream, emit only growth and never arguments. packages/nax-agent/src/native/session/turn-event-emitter.ts:47 defines StreamDelta and :132 stamps round. Both packages/nax-agent/src/session/turn-event.ts:25 and agent-session-types.ts:108 expose the deltas; widen both unions consistently. packages/nax-agent/src/session/session-event-channel.ts:21/:42/:46 classify and merge text deltas; enqueue at :77 currently concatenates text. Extend discrimination and sum chars only for matching round+callId. Keep the amortized O(1) queue/tail design and exclude tool-input deltas from control-cap accounting so 10,000 queued partials cannot stall a turn. Existing packages/nax-agent/test/unit/native/stream-complete.test.ts:49 includes a previously ignored partial and :73 pins its tap order; update this regression anchor. Existing session-event-channel.test.ts covers the lagging consumer. The ACP translator packages/nax-agent-acp/src/server/translate/events.ts:153 is an exhaustive switch without a default and needs a silent [] case immediately after US-003. Its tests at packages/nax-agent-acp/test/unit/server/translate/events.test.ts:23 pin text/thinking updates. Scope US-003 gates to nax-agent; US-004 depends only on US-003 and restores the cross-package exhaustiveness. In nax, packages/nax/src/tui/chat/chat-status.ts:75 filters subagent events and :117 reduces phases; :395 already renders Writing for phase writing. packages/nax/src/tui/chat/turn-stats.ts:46 opens a per-round window and :79 folds deltas; retain first-delta-wins and reset handling. packages/nax/src/tui/chat/transcript-model.ts:1 promises unchanged-array identity for irrelevant events; tool-input deltas must remain irrelevant. Add unit regressions and a chat-screen event-driven integration assertion, without recording these deltas in transcripts, ledgers or ACP history. Existing turn-stats, transcript-model, chat-status and native streaming suites are reuse points.\n\nUS-006: packages/nax/src/chat/context-window-cache.ts:20 splits the full model today; :35 caches by the full string and :44 catches catalog failures. Strip effort only for the catalog provider/name lookup; do not alter cache identity, ACP exclusions, negative caching or fail-open behavior. packages/nax/src/tui/chat/chat-status.ts has 591 lines: formatTokens/constants at :52/:147 and contextPercent/percentColor/contextSpan at :257 must move to new context-span.ts, not grow the original module past 600. The existing warning thresholds at :191 and percentage rounding stay unchanged. The new leaf must have type-only dependencies on TurnStatus/ChatHostState from chat-status, never a value-import cycle; make the host-state type accessible if needed without adding a runtime edge. chat-status value-imports contextSpan and formatTokens and re-exports formatTokens/formatWindow to preserve existing callers such as turn-stats.ts:21. Existing footer regression cases packages/nax/test/unit/tui/chat/chat-status.test.ts:513/:530 must change from percentages to tokens/window and from missing-window omission to a muted token count. Also update chat-app-layout.test.tsx and chat-compact.test.tsx from their own fixture counts, not a hardcoded example from another test. Add formatWindow boundary cases and host state catalog integration; do not prime context tokens on resumed history.\n\nUS-007: packages/nax/src/tui/chat/terminal-title.ts:27 defines the title separator, :36 strips C0/DEL/C1 from project names, and :53 builds the existing idle/busy title. Leave chatTitle behavior intact and reuse its sanitization for animated frames. packages/nax/src/tui/chat/index.ts:15 exposes _renderChatDeps, :55 owns renderChat, :70 writes busy changes and :74 restores the screen/title. Add cancellable timeout dependencies and one self-rearming timer, with stale-callback guards for busy(false) and restore. Preserve push/pop and restore-on-throw ordering, mouse cleanup, immediate busy marker, theme fallback and non-TTY behavior. .nax/rules/forbidden-patterns-source.md:43 permits setTimeout only with a cancellable handle and a call-site explanation; setInterval is not allowed. Existing packages/nax/test/ui/chat/index.test.tsx:237/:265 has AC-13 title tests that must stub the new timers to avoid real callbacks. New terminal-title-frames.test.ts tests pure frames; expand UI tests for cancellation, duplicate busy and late callbacks.\n\nUS-008/009: packages/nax/src/chat/agents-provider.ts:8 has a three-argument run port; :25 advertises the short description and :28 the existing required agent/task schema. Add only the optional model, validate its supplied value and retain exactly three arguments when absent. packages/nax/src/chat/subagent-runs.ts:43 defines the run interface, :147 links cancellation and :163 resolves the nested model before runSubagent. Thread the override without changing asks, tool providers, memory, cancellation, accounting or settle behavior. packages/nax/src/chat/subagent-model.ts:48 already resolves inherit, aliases, haiku/sonnet/opus tier families and explicit provider/model/acp targets, with fallback at :64. Reuse it; refuse fallback only for an explicit override, preserving frontmatter fallback compatibility. modelFor must share the effective resolution with run so the displayed model cannot diverge. packages/nax/src/prompts/builders/agents-builder.ts:17 supplies agent instructions and must insert the specified second line before agent listings. packages/nax/src/chat/chat-host.ts:194 constructs runs, :211 binds this.runs.run, and :456/:482 passes events to runChatTurn. The host has 596 lines; US-009 adds at most three lines (import/listener swap), delegating event decoration to new agent-call-model.ts. Only top-level nax-agents__run calls with string agent input receive subagentModel, while existing metadata and other event fields survive. packages/nax/src/tui/chat/transcript-model.ts:39 defines tool entries and :157 builds them; conditionally spread model so absent metadata preserves exact entry shapes. packages/nax/src/tui/chat/tool-card.ts:108 agentArg currently formats agent: task, flowing through rawArg/toolArg at :115/:128; preserve existing flattening, elision and child-call behavior while showing the model on top-level Agent cards. Existing agents-provider.test.ts, subagent-runs.test.ts, host-subagents.test.ts, subagent-model.test.ts, transcript-model.test.ts and tool-card.test.ts cover these seams; add a focused wrapper test.\n\nUS-010/011/012: packages/nax/src/chat/workflow/workflow-provider.ts:55 reads/list features through supplied options, :83 exposes feature-only schema. packages/nax/src/chat/workflow/feature-state.ts:16 couples repoRoot/outputDir and last-run/workflow artifact reads. New target-repo.ts must return errors before any downstream read or approval and enforce containment on canonical paths, including symlink escape and sibling-prefix denial. Keep the caller's chatRoot spelling for undefined/self targets, and return canonical nested roots. Resolve target output with loadConfig(join(root, '.nax')) through _targetRepoDeps and the same getProjectKey/projectOutputDir formula used by packages/nax/src/cli/chat.ts:258 and chat-host.ts:152. Do not accidentally read nested verdicts from the chat output tree.\n\npackages/nax/src/chat/jobs/jobs-provider.ts:28 declares the four launch schemas and :39 list summaries deliberately omit cwd. jobs-launch.ts:35 checks busy jobs by cwd, :43 reads a root lock, :133 resolves plan spec, :185 checks targets, :207 builds approval reasons and :220 owns launch flow. Resolve repo before parsing/preparing/approving/launching, then pass a derived options object with the target root through the entire existing flow including post-approval busy/lock rechecks and chain admission. Start requests must explicitly carry target cwd even for omitted repo. packages/nax/src/chat/jobs/job-runner.ts:22 defines StartJobRequest, :132 spawns, :180 records cwd, :284 finalizes owned jobs, :352 verifies cancellation with progress, :421 loads attached records, :433 finalizes attached records and :493 refreshes progress. Every outcome/progress call must use job.cwd, not just owned finalization. Keep logs, asks, secrets, records and chain state in the chat's original outputDir; do not migrate storage into nested repos. Canonical attach filtering accepts self/descendants, skips missing cwd and unrelated roots, and finalizeAttached disk matching uses id plus exact job.cwd. Keep existing PID verification, cancellation serialization, record-write failure and process ownership behavior. job-outcome.ts:32/:38/:71 already accepts a repoRoot argument and checks PID-matched status; keep those signatures and pass the correct cwd. job-write-guard.ts:16 currently filters equality; extend to contained nested running plan/run jobs without treating /chat-evil as /chat. Existing attach regression packages/nax/test/unit/chat/jobs/job-runner-attach.test.ts:96 currently calls a nested directory 'other repositories'; move that fixture to a true sibling.\n\npackages/nax/src/chat/jobs/chain-argv.ts:11 pins accepted fields; parseChainStepInput at :21 delegates to parseJobInput. job-argv.ts:7 defines JobLaunchInput and :129 builds parsed objects without repo; retain each step's raw repo through resolution (whether by a compatible optional field or alongside parsed input), because simply adding CHAIN_STEP_FIELDS would otherwise discard it. US-012 owns this chain propagation and only needs upstream launch behavior from US-011. chain-tools.ts:31 parses steps, :46 resolves spec/argv, :114 composes the unchanged chat-root chain card. Resolve every step independently using target-repo and resolved-root options, retain step-numbered errors, and build precisely the argv later launchJob admits. Do not bypass approval or introduce generic launch parameters. packages/nax/src/prompts/builders/workflow-builder.ts:7/:53 owns both guidance strings; jobs repo guidance goes immediately before chain lines and optional answer_ask remains last. Exact schema/field/line-count tests in workflow-provider.test.ts, jobs-launch.test.ts, chain-argv.test.ts and workflow-builder-chain.test.ts need coordinated updates.\n\nRisk and migration: the event union change is additive at runtime but source-breaking for exhaustive consumers; stage US-003 locally, then US-004, and fold TUI handling in US-005 before a full-monorepo gate. US-005 and US-006 both touch chat-status; US-005 and US-009 both touch transcript-model; US-008/009 share subagent-runs; US-010/011 share workflow-builder; US-011/012 share chain launch seams. Respect binding dependencies and reconcile concurrent edits without adding graph edges. Main risks are stale per-turn registry closures, mismatched model display/resolution, leaked timers writing after restore, raw argument disclosure, import cycles, and authorization/argv mismatches across nested roots. Use strict isolated TDD for session lifecycle and path/approval boundary changes. No persisted schema change is necessary: ChatJob already has cwd, optional model metadata is live-only, omitted parameters retain old behavior, and no existing transcript/job store is relocated. No release actions or version edits belong to these stories.\n\nRefine-pass self-audit: manually enumerated all 145 numbered specification ACs and matched each to its original owning story, in order: US-001 [1,2,3,4,5,6,7,8,9,10,11,12]; US-002 [1,2,3,4,5,6,7,8,9,10,11,12]; US-003 [1,2,3,4,5,6,7,8,9,10]; US-004 [1,2]; US-005 [1,2,3,4,5,6,7,8]; US-006 [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,18]; US-007 [1,2,3,4,5,6,7,8,9,10,11,12,13,14]; US-008 [1,2,3,4,5,6,7,8,9,10,11,12,13]; US-009 [1,2,3,4,5,6,7,8,9,10,11,12,13]; US-010 [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]; US-011 [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20]; US-012 [1,2,3,4,5]. The numbering gaps in US-006/US-011 are in the spec, not missing criteria. The original assertions remain the first entries of each story's acceptanceCriteria; supplemental failure/regression assertions follow. Regression anchors including same-array identity, every other field unchanged, as today, still, required unchanged, the agent list still follows, real-root/sibling-prefix distinctions, and attach still loading other records are retained. All criteria assert return data, events, state, rendered text or observed external calls, not quality gates. Every story already has a negative path; US-004's silent [] suppression is its negative path, protected by the subsequent text-chunk regression. All twelve failure-table rows are represented, including summarizer rejection, spin/deadline stops, non-growing input and rejected repo targets.\n\nAudit corrections: contextFiles for US-011 now includes the explicitly recommended job-outcome.ts, replacing job-write-guard.ts in the five-file read budget (the guard remains fully in implementation scope). Other stories already include their critical spec-recommended context, and no story lists its own new output as context. Clarified that the first options.run argument is an AgentResource object, consistent with agents-provider.ts:43-47, not a name string. Expanded referential ACs with independent setups and concrete error/footer/title expectations. Corrected the supplemental chain rejection assertion to forbid artifact reads for the rejected step rather than incorrectly forbidding earlier valid steps' reads: chain-tools.ts:52-60 resolves specs sequentially. Added explicit regression assertions for existing stream tap ordering, omitted-repo workflow reads and omitted-repo plan-chain argv/spec resolution. Reduced US-002 and US-008 to medium complexity because they extend existing registry/resolver patterns rather than introduce new abstractions; strict session/security TDD remains required independently of complexity. Binding ids/workdirs/dependencies are unchanged. All 17 feature exclusions are present verbatim and their close-boundary story echoes remain. No description contradicts its story's ACs. The audit used source re-reads and file inspection; no executable JSON validator or test runner is exposed in this host.",
