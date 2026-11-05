@@ -17,6 +17,8 @@ export type {
   AfterToolPatch,
   AfterToolPayload,
   BeforeToolOutcome,
+  BeforeTurnEndPatch,
+  BeforeTurnEndPayload,
   CompleteCallOptions,
   ExternalHandlerOf,
   LoopHandlerContext,
