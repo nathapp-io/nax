@@ -108,7 +108,9 @@ function grepArg(input: unknown): string | undefined {
 function agentArg(input: unknown, model?: string): string | undefined {
   const agent = stringField(input, "agent");
   const task = stringField(input, "task");
-  return agent === undefined || task === undefined ? undefined : `${agent}${model === undefined ? "" : ` [${model}]`}: ${task}`;
+  return agent === undefined || task === undefined
+    ? undefined
+    : `${agent}${model === undefined ? "" : ` [${model}]`}: ${task}`;
 }
 
 /** The argument the call carries, derived per tool; undefined when it carries none. */

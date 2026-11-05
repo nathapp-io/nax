@@ -4,7 +4,16 @@ import { assertDefined } from "@test/helpers";
 import { withAgentCallModel } from "@/chat/agent-call-model";
 
 function call(name: string, input: unknown): Extract<SessionEvent, { type: "tool_call" }> {
-  return { sessionId: "s", turnId: "t", at: "2026-10-01T00:00:00.000Z", metadata: { keep: "me" }, type: "tool_call", callId: "c1", name, input };
+  return {
+    sessionId: "s",
+    turnId: "t",
+    at: "2026-10-01T00:00:00.000Z",
+    metadata: { keep: "me" },
+    type: "tool_call",
+    callId: "c1",
+    name,
+    input,
+  };
 }
 
 function run(event: SessionEvent, modelFor: (agent: string, override?: string) => string | undefined) {
