@@ -707,3 +707,34 @@ describe("workingLine", () => {
     expect(WORKING_TICK_MS).toBe(250);
   });
 });
+
+function toolInputDelta(chars: number, options: EventOptions = {}): SessionEvent {
+  return { ...base(options), type: "tool_input_delta", round: 1, callId: "c1", name: "Write", chars };
+}
+
+describe("reduceTurnStatus on tool_input_delta", () => {
+  const thinking = runningStatus({ streamedChars: 5 });
+
+  test("AC-1 enters writing and adds the chars", () => {
+    const next = reduceTurnStatus(thinking, toolInputDelta(40));
+    expect(next.phase).toBe("writing");
+    expect(next.streamedChars).toBe(45);
+  });
+
+  test("AC-2 the working line reads Writing…", () => {
+    const next = reduceTurnStatus(thinking, toolInputDelta(40));
+    expect(workingText(next, 0)).toContain("Writing…");
+  });
+
+  test("AC-3 a subagent's delta leaves the status unchanged", () => {
+    const event = toolInputDelta(40, { metadata: { subagentTask: "t" } });
+    expect(reduceTurnStatus(thinking, event)).toBe(thinking);
+  });
+
+  test("AC-4 a following tool_call enters the tool phase", () => {
+    const writing = reduceTurnStatus(thinking, toolInputDelta(40));
+    const next = reduceTurnStatus(writing, toolCall({ name: "Write" }));
+    expect(next.phase).toBe("tool");
+    expect(next.toolName).toBe("Write");
+  });
+});

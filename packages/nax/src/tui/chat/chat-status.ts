@@ -115,6 +115,8 @@ export function reduceTurnStatus(status: TurnStatus, event: SessionEvent): TurnS
       return { ...inPhase(status, THINKING), streamedChars: status.streamedChars + event.text.length };
     case "text_delta":
       return { ...inPhase(status, WRITING), streamedChars: status.streamedChars + event.text.length };
+    case "tool_input_delta":
+      return { ...inPhase(status, WRITING), streamedChars: status.streamedChars + event.chars };
     case "tool_call":
       return inPhase(status, TOOL, event.name);
     case "tool_result":

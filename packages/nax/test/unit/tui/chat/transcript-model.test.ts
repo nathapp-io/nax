@@ -282,3 +282,18 @@ describe("reduceTranscript immutability", () => {
     expect(after).toBe(before);
   });
 });
+
+describe("reduceTranscript on tool_input_delta", () => {
+  test("AC-5 returns the same entries array", () => {
+    const entries = reduce(textDelta("hi"));
+    const event: SessionEvent = {
+      ...base(),
+      type: "tool_input_delta",
+      round: 1,
+      callId: "c1",
+      name: "Write",
+      chars: 40,
+    };
+    expect(reduceTranscript(entries, event)).toBe(entries);
+  });
+});

@@ -453,3 +453,13 @@ describe("terminal title busy marker", () => {
     expect(fake.send).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ChatApp tool_input_delta", () => {
+  test("AC-8 shows Writing… on the working line", () => {
+    const ui = mount();
+    ui.start();
+    ui.emit({ type: "turn_start" });
+    ui.emit({ type: "tool_input_delta", round: 1, callId: "c1", name: "Write", chars: 40 });
+    expect(ui.lastFrame()).toContain("Writing…");
+  });
+});

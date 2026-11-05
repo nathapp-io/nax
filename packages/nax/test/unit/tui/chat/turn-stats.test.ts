@@ -199,3 +199,17 @@ describe("turnStatsEntry", () => {
     );
   });
 });
+
+function toolInputDelta(ms: number, options: EventOptions = {}): SessionEvent {
+  return { ...base(ms, options), type: "tool_input_delta", round: options.round ?? 1, callId: "c1", name: "Write", chars: 9 };
+}
+
+describe("decodeRate with tool_input_delta", () => {
+  test("AC-6 a tool_input_delta opens the round's window", () => {
+    expect(decodeRate([turnStart(0), toolInputDelta(1_000), usage(3_000, 100)])).toBe(50);
+  });
+
+  test("AC-7 the first delta wins over a later text_delta", () => {
+    expect(decodeRate([turnStart(0), toolInputDelta(1_500), textDelta(2_000), usage(3_500, 100)])).toBe(50);
+  });
+});

@@ -42,7 +42,7 @@ function timeOf(at: string): number | undefined {
 }
 
 /** Opens the round's window at this delta unless it is already open — the first one wins. */
-function openWindow(windows: Windows, event: EventOf<"text_delta" | "thinking_delta">): void {
+function openWindow(windows: Windows, event: EventOf<"text_delta" | "thinking_delta" | "tool_input_delta">): void {
   const at = timeOf(event.at);
   if (at === undefined || windows.has(event.round)) return;
   windows.set(event.round, at);
@@ -82,7 +82,7 @@ export function decodeRate(events: readonly SessionEvent[]): number | undefined 
   let measuredMs = 0;
   for (const event of events) {
     if (isSubagentEvent(event)) continue;
-    if (event.type === "text_delta" || event.type === "thinking_delta") {
+    if (event.type === "text_delta" || event.type === "thinking_delta" || event.type === "tool_input_delta") {
       openWindow(windows, event);
     } else if (event.type === "stream_reset") {
       windows.delete(event.round);
