@@ -3,7 +3,7 @@
   "feature": "agents-run",
   "branchName": "feat/agents-run",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-05T09:14:58.843Z",
+  "updatedAt": "2026-11-05T09:24:26.426Z",
   "userStories": [
     {
       "id": "US-001",
@@ -116,14 +116,17 @@
         "skills"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Bounded task parsing and injected file reading reuse existing catalog and prompt-builder contracts."
+        "reasoning": "Bounded task parsing and injected file reading reuse existing catalog and prompt-builder contracts.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/slash-commands.ts",
@@ -144,7 +147,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3ca1763586ff8ea54cf17e5d0040f4fd28c645db"
     },
     {
       "id": "US-003",
