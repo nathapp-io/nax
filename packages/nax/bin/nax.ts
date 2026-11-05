@@ -59,6 +59,7 @@ import {
   promptsCommand,
   promptsInitCommand,
   registerAdvisorCommand,
+  registerAgentsRunCommand,
   registerApprovalsCommand,
   registerBotCommand,
   registerChatCommand,
@@ -790,7 +791,7 @@ program
   });
 
 // ── agents ───────────────────────────────────────────
-program
+const agentsCmd = program
   .command("agents")
   .description("List available coding agents with status and capabilities")
   .option("-d, --dir <path>", "Project directory", process.cwd())
@@ -812,6 +813,11 @@ program
       process.exit(1);
     }
   });
+
+// US-009: `nax agents run <agent>` — one agent, one task, unattended. The parent above keeps its
+// `-d, --dir` and its listing action; `run` reads the directory through `optsWithGlobals`, so
+// `nax agents run x -d /d` works with the option after the subcommand name.
+registerAgentsRunCommand(agentsCmd);
 
 // ── config ───────────────────────────────────────────
 const configCmd = program

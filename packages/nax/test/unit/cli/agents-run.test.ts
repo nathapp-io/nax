@@ -339,12 +339,16 @@ describe("agentsRunCommand", () => {
   });
 
   describe("the run itself", () => {
+    // US-009 owns the signal and the result output; this file only pins that the composed input
+    // reaches the run, with the command's own signal in place of whatever composition put there.
     test("a valid call hands the composed input to runAgentTask", async () => {
       const { deps } = makeDeps();
       await agentsRunCommand("spec-reviewer", options(), deps);
+      const received = deps.runAgentTask.mock.calls[0]?.[0];
       expect(deps.runAgentTask).toHaveBeenCalledTimes(1);
-      expect(deps.runAgentTask).toHaveBeenCalledWith(TASK_INPUT);
-      expect(deps.setExitCode).not.toHaveBeenCalled();
+      expect(received?.signal).toBeInstanceOf(AbortSignal);
+      expect(received).toEqual({ ...TASK_INPUT, signal: received?.signal });
+      expect(deps.setExitCode).toHaveBeenCalledWith(0);
     });
   });
 });

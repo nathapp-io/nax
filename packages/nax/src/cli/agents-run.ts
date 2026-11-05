@@ -1,5 +1,6 @@
 /**
  * US-008: the checks and errors of `nax agents run`.
+ * US-009: the run itself, its output, its signals and the `run` subcommand's registration.
  *
  * One ordered gate. The command validates the `--timeout` text, proves the project is trusted,
  * loads the config, loads the catalog and finds the agent, then delegates the task and the model,
@@ -9,16 +10,19 @@
  * `--dir` is the *parent* `agents` command's option, read through `optsWithGlobals`; it is made
  * absolute here, before the trust root, the cwd and a relative `--task-file` are derived from it.
  * The task, the model and the run input are the other stories' modules — this file only orders
- * them. Registration, the result output and the signal lifecycle are US-009's.
+ * them. Once the run has a result, what to print and which code to exit with are
+ * `agentsRunOutput`'s decision, written here unchanged and awaited so no output is cut short.
  */
 import { dirname, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import type { Command } from "commander";
 import { findProjectDir, loadConfig, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { type AgentResource, loadResourceCatalog, type ResourceCatalog } from "@/resources";
 import { ensureProjectTrusted, normalizeTrustPath, resolveTrustRoot } from "@/trust";
 import { buildAgentsRunTaskInput } from "./agents-run-compose";
-import { runAgentTask } from "./agents-run-exec";
+import { type AgentsRunResult, runAgentTask } from "./agents-run-exec";
+import { agentsRunOutput } from "./agents-run-output";
 import { resolveAgentsRunTask } from "./agents-run-task";
 
 /** SIGINT and SIGTERM end the run as `cancelled`; US-009 registers them. */
@@ -98,6 +102,8 @@ export interface AgentsRunOptions {
 interface RunContext {
   readonly cwd: string;
   readonly timeoutSeconds?: number;
+  /** Aborted by SIGINT or SIGTERM; the run's own signal is replaced with it. */
+  readonly signal: AbortSignal;
 }
 
 /**
@@ -144,7 +150,7 @@ async function composeAndRun(
   options: AgentsRunOptions,
   context: RunContext,
   deps: AgentsRunCommandDeps,
-): Promise<void> {
+): Promise<AgentsRunResult> {
   const naxDir = deps.findProjectDir(context.cwd);
   const config = await runConfig(naxDir, options.profile, deps);
   const repoRoot = naxDir === null ? context.cwd : dirname(naxDir);
@@ -166,8 +172,9 @@ async function composeAndRun(
     modelOverride: options.model,
     timeoutSeconds: context.timeoutSeconds,
   });
-  // US-009 writes the result and awaits it before its explicit exit; the run itself is this call.
-  await deps.runAgentTask(input);
+  // The command owns the signal: it is the one SIGINT and SIGTERM abort, so it replaces whatever
+  // the composed input carried.
+  return await deps.runAgentTask({ ...input, signal: context.signal });
 }
 
 /**
@@ -196,10 +203,64 @@ async function reportFailure(error: unknown, cwd: string, deps: AgentsRunCommand
   }
 }
 
+/** What the command owns for the length of one run: the signal the run is given, and its handlers. */
+interface SignalGuard {
+  readonly signal: AbortSignal;
+  /** Remove every handler registered. The second call changes nothing. */
+  release(): void;
+}
+
+/** Both are the caller cancelling the run, and both abort the same controller. */
+const AGENTS_RUN_SIGNALS = ["SIGINT", "SIGTERM"] as const satisfies readonly AgentsRunSignal[];
+
+/**
+ * Register both signals for the length of one run. Either aborts the same controller, so the run's
+ * nested session sees one cancellation whichever arrived, and a second signal aborts an already
+ * aborted controller, which changes nothing. The handlers stay registered until the run settles:
+ * a signal that stops a turn before it begins still has to reach the session.
+ */
+function guardSignals(deps: AgentsRunCommandDeps): SignalGuard {
+  const controller = new AbortController();
+  const removers = AGENTS_RUN_SIGNALS.map((signal) =>
+    deps.onSignal(signal, (): Promise<void> => {
+      controller.abort();
+      return Promise.resolve();
+    }),
+  );
+  let released = false;
+  return {
+    signal: controller.signal,
+    release(): void {
+      if (released) return;
+      released = true;
+      for (const remove of removers) remove();
+    },
+  };
+}
+
+/**
+ * Write what `agentsRunOutput` decided, unchanged, and record the exit code it chose.
+ *
+ * Both writes are awaited before the exit code is recorded, so the caller leaves only once the
+ * streams have accepted the text. A write that fails is not caught here: the sink that would
+ * report it is the sink that failed, and a result already exists, so it is not the usage/config
+ * failure `reportFailure` describes — it propagates to the CLI entry point instead.
+ */
+async function reportResult(result: AgentsRunResult, json: boolean, deps: AgentsRunCommandDeps): Promise<void> {
+  const output = agentsRunOutput(result, json);
+  if (output.stdout !== undefined) await deps.writeOut(output.stdout);
+  if (output.stderr !== undefined) await deps.writeErr(output.stderr);
+  deps.setExitCode(output.exitCode);
+}
+
 /**
  * Run one agent on one task, checking in the order the design fixes and stopping at the first
  * failure: the `--timeout` text, trust, the config, the catalog and the agent, the task, then the
  * model. Trust is second, so an untrusted project never has its config or catalog read.
+ *
+ * A failure before a result exists is one stderr line and exit 2. Once there is a result, the
+ * output module decides what to write and which code to exit with, and every signal handler is
+ * removed on settlement — including a rejected run.
  */
 export async function agentsRunCommand(
   agent: string,
@@ -207,11 +268,69 @@ export async function agentsRunCommand(
   deps: AgentsRunCommandDeps = _agentsRunCommandDeps,
 ): Promise<void> {
   const cwd = resolve(options.dir);
+  const guard = guardSignals(deps);
+  let result: AgentsRunResult;
   try {
     const timeoutSeconds = timeoutSecondsOf(options.timeout);
     await deps.ensureTrusted(cwd);
-    await composeAndRun(agent, options, { cwd, timeoutSeconds }, deps);
+    result = await composeAndRun(agent, options, { cwd, timeoutSeconds, signal: guard.signal }, deps);
   } catch (error) {
     await reportFailure(error, cwd, deps);
+    return;
+  } finally {
+    guard.release();
   }
+  await reportResult(result, options.json === true, deps);
+}
+
+/** What Commander parses for `run`: its own flags only, since `--dir` belongs to the parent. */
+interface AgentsRunCliOptions {
+  readonly task?: string;
+  readonly taskFile?: string;
+  /** Raw repeated `--profile` values, in the order they were given. */
+  readonly profile?: string[];
+  readonly model?: string;
+  readonly json?: boolean;
+  /** The raw `--timeout` text; the command validates it. */
+  readonly timeout?: string;
+}
+
+/** Each `--profile` occurrence appends; `loadConfig` splits the comma lists inside a value. */
+function collectProfile(value: string, previous: string[]): string[] {
+  return previous.concat(value);
+}
+
+/**
+ * The directory the run works in: the parent `agents` command's `-d, --dir`, which Commander gives
+ * to the parent even when it follows the subcommand name, so `run` declares no `-d` of its own.
+ * The fallback is the same CLI bootstrap default the parent declares, for a registration that
+ * leaves the option out.
+ */
+function parentDir(command: Command): string {
+  const dir = (command.optsWithGlobals() as { dir?: unknown }).dir;
+  return typeof dir === "string" ? dir : process.cwd();
+}
+
+/**
+ * Add `run` to the `agents` command. The parent keeps its `-d, --dir` and its listing action, so a
+ * bare `nax agents` still lists and `nax agents run <agent>` runs one task.
+ *
+ * The ordered checks stay in `agentsRunCommand`: registration declares options and forwards them,
+ * so nothing here can pre-empt the order the design fixes (the `--timeout` text, then trust, then
+ * the config, the catalog and the agent).
+ */
+export function registerAgentsRunCommand(agents: Command, deps: AgentsRunCommandDeps = _agentsRunCommandDeps): Command {
+  return agents
+    .command("run <agent>")
+    .description("Run one agent on one task, unattended, and print its result")
+    .option("--task <text>", "The task to give the agent")
+    .option("--task-file <path>", "Read the task from a UTF-8 file (a relative path resolves against --dir)")
+    .option("--profile <name>", "Profile(s) to overlay (repeatable)", collectProfile, [])
+    .option("--model <id>", "Provider/model id, in place of the agent file's model")
+    .option("--json", "Emit one machine-readable JSON object", false)
+    .option("--timeout <seconds>", "Abort the run after this many seconds")
+    .action(async (agent: string, options: AgentsRunCliOptions, command: Command): Promise<void> => {
+      await agentsRunCommand(agent, { ...options, dir: parentDir(command) }, deps);
+      deps.exit();
+    });
 }

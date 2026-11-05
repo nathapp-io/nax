@@ -12,6 +12,12 @@ export {
 } from "./advisor";
 export { agentsListCommand } from "./agents";
 export {
+  type AgentsRunCommandDeps,
+  type AgentsRunOptions,
+  agentsRunCommand,
+  registerAgentsRunCommand,
+} from "./agents-run";
+export {
   _approvalsCliDeps,
   type ApprovalsListOptions,
   type ApprovalsRmOptions,
