@@ -63,6 +63,36 @@ describe("acpSubagentProfile", () => {
   });
 });
 
+describe("acpSubagentProfile when unattended", () => {
+  test("US-001 AC-1: an agent with no tools line opens read-only on review in a guarded run", () => {
+    expect(acpSubagentProfile({ tools: undefined, mode: "guarded", unattended: true })).toBe("review");
+  });
+
+  test("US-001 AC-2: an agent with no tools line opens read-only on review in a full run", () => {
+    expect(acpSubagentProfile({ tools: undefined, mode: "full", unattended: true })).toBe("review");
+  });
+
+  test("US-001 AC-3: a declared write tool still inherits the guarded profile", () => {
+    expect(acpSubagentProfile({ tools: ["Read", "Write"], mode: "guarded", unattended: true })).toBe("ask");
+  });
+
+  test("US-001 AC-4: a declared write tool still inherits the full profile", () => {
+    expect(acpSubagentProfile({ tools: ["Read", "Edit"], mode: "full", unattended: true })).toBe("full");
+  });
+
+  test("US-001 AC-5: a read-only tools list stays on review", () => {
+    expect(acpSubagentProfile({ tools: ["Read", "Grep"], mode: "guarded", unattended: true })).toBe("review");
+  });
+
+  test("US-001 AC-6: the operator override still wins over the unattended default", () => {
+    expect(acpSubagentProfile({ tools: undefined, mode: "guarded", override: "full", unattended: true })).toBe("full");
+  });
+
+  test("US-001 AC-7: an attended chat still inherits its own guarded profile", () => {
+    expect(acpSubagentProfile({ tools: undefined, mode: "guarded" })).toBe("ask");
+  });
+});
+
 describe("isReadOnlyAcpProfile", () => {
   const table: readonly (readonly [AcpSubagentProfile, boolean])[] = [
     ["review", true],

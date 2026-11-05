@@ -1,9 +1,10 @@
 /**
  * The ACP permission profile an ACP subagent opens with (chat-acp-subagents US-003).
  *
- * An ordered derivation: an operator override wins, then an agent that declares no
- * `tools:` line — or one that names a write tool — runs as the chat itself does
- * (`ask` guarded, `full` full), and everything else is read-only `review`.
+ * An ordered derivation: an operator override wins; an agent that declares a write
+ * tool runs as the chat itself does (`ask` guarded, `full` full); an agent with no
+ * `tools:` line runs as the chat does when somebody is there to answer an ask, and
+ * read-only `review` when `unattended` says nobody is; everything else is `review`.
  * `acpReadOnlyEnforced` answers the separate question of whether the agent enforces
  * that read-only profile itself, through its own permission mode rather than through
  * nax's rule translation.
@@ -53,9 +54,15 @@ export function acpSubagentProfile(input: {
   readonly mode: ChatMode;
   /** The operator's `agent.acpSubagents.profile`, applied in every chat mode. */
   readonly override?: AcpSubagentProfile;
+  /**
+   * Set by an unattended caller, where nobody can answer an ask. An agent with no
+   * `tools:` line then opens read-only instead of inheriting the chat's own profile.
+   */
+  readonly unattended?: true;
 }): AcpSubagentProfile {
   if (input.override !== undefined) return input.override;
-  if (input.tools === undefined || namesWriteTool(input.tools)) return chatOwnProfile(input.mode);
+  if (input.tools !== undefined && namesWriteTool(input.tools)) return chatOwnProfile(input.mode);
+  if (input.tools === undefined && input.unattended !== true) return chatOwnProfile(input.mode);
   return "review";
 }
 

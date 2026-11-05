@@ -76,6 +76,7 @@ export {
   classifyModelSelector,
   isBuiltinModelTier,
   isUnrecognizedLiteralModel,
+  modelEntryId,
   resolveConfiguredModel,
   resolveModel,
   resolveModelForAgent,

@@ -22,7 +22,15 @@ import {
   resolveChatSessionsDir,
   tierModels,
 } from "@/chat";
-import { findProjectDir, getProjectKey, globalConfigDir, isWorkflowMode, loadConfig, type NaxConfig } from "@/config";
+import {
+  findProjectDir,
+  getProjectKey,
+  globalConfigDir,
+  isWorkflowMode,
+  loadConfig,
+  modelEntryId,
+  type NaxConfig,
+} from "@/config";
 import { NaxError } from "@/errors";
 import { loadAgentHookHandlers } from "@/hooks";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
@@ -112,7 +120,7 @@ function launchModel(config: NaxConfig, model?: string): string {
       stage: "chat",
     });
   }
-  return typeof entry === "string" ? entry : `${entry.provider}/${entry.model}`;
+  return modelEntryId(entry);
 }
 
 async function startHost(host: ChatHost, options: ChatCommandOptions, config: NaxConfig): Promise<void> {

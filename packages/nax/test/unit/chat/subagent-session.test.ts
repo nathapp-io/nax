@@ -261,6 +261,19 @@ describe("runSubagent session options", () => {
     expect(sessionOptions().approvalTimeoutMs).toBe(120000);
   });
 
+  // B2 (whole-branch review): the run's `--timeout` and its caller's signal must bound
+  // session CREATION too. Without this, a slow open outlived both and ignored SIGINT/SIGTERM.
+  test("B2 forwards the run's signal as openSignal", async () => {
+    const controller = new AbortController();
+    await run({ signal: controller.signal });
+    expect(sessionOptions().openSignal).toBe(controller.signal);
+  });
+
+  test("B2 omits openSignal when the run carries no signal", async () => {
+    await run();
+    expect(sessionOptions()).not.toHaveProperty("openSignal");
+  });
+
   test("AC-18 instructions end with the agent prompt", async () => {
     await run();
     expect(sessionOptions().instructions?.endsWith(AGENT_PROMPT)).toBe(true);

@@ -19,7 +19,7 @@ import {
 import type { ChatAcpTools } from "@/chat/acp/acp-tools";
 import { NaxError } from "@/errors";
 import { buildAcpSubagentInstructions } from "@/prompts";
-import type { AgentResource } from "@/resources";
+import { type AgentResource, buildResourceCatalog, createSkillsProvider, type SkillResource } from "@/resources";
 
 type Input = Parameters<typeof acpSubagentSessionOptions>[0];
 
@@ -164,6 +164,17 @@ describe("acpSubagentSessionOptions session shape", () => {
     const created = await options({ config: makeNaxConfig({ execution: { approvalTimeout: 777_000 } }) });
     expect(created.approvalTimeoutMs).toBe(777_000);
   });
+
+  // B2 (whole-branch review): an ACP startup that stalls must not outlive the run's
+  // `--timeout` or ignore SIGINT/SIGTERM, so the run's signal bounds creation too.
+  test("B2: forwards the run's signal as openSignal", async () => {
+    const controller = new AbortController();
+    expect((await options({ signal: controller.signal })).openSignal).toBe(controller.signal);
+  });
+
+  test("B2: omits openSignal when the run carries no signal", async () => {
+    expect(await options()).not.toHaveProperty("openSignal");
+  });
 });
 
 describe("acpSubagentSessionOptions provider delivery", () => {
@@ -185,6 +196,84 @@ describe("acpSubagentSessionOptions provider delivery", () => {
   test("an empty allowedTools list delivers no provider", async () => {
     await options({ allowedTools: [] });
     expect(deliveredProviderIds()).toEqual([]);
+  });
+});
+
+describe("acpSubagentSessionOptions skills for an unattended run", () => {
+  const providers = [provider("nax-skills"), provider("nax-workflow"), provider("nax-jobs")];
+
+  test("US-001 AC-11: an unattended run also delivers nax-skills, and still not nax-jobs", async () => {
+    await options({ unattended: true, toolProviders: providers });
+    expect(deliveredProviderIds()).toEqual(["nax-skills", "nax-workflow"]);
+  });
+
+  test("US-001 AC-12: an attended run delivers only nax-workflow", async () => {
+    await options({ toolProviders: providers });
+    expect(deliveredProviderIds()).toEqual(["nax-workflow"]);
+  });
+});
+
+describe("acpSubagentSessionOptions skills through the real resolver", () => {
+  const SKILL: SkillResource = {
+    kind: "skill",
+    name: "spec-review",
+    qualifiedName: "spec-review",
+    description: "Reviews a spec against its brief",
+    body: "Skill body",
+    baseDir: "/repo/.claude/skills/spec-review",
+    path: "/repo/.claude/skills/spec-review/SKILL.md",
+    modelInvocable: true,
+    origin: { kind: "claude-project" },
+  };
+
+  /** The skills provider `nax agents run` composes: one model-invocable catalog skill. */
+  function skillsProvider(): ToolProvider {
+    const catalog = buildResourceCatalog([
+      {
+        id: "claude-project",
+        origin: { kind: "claude-project" },
+        root: "/repo",
+        skills: [SKILL],
+        commands: [],
+        agents: [],
+        mcpServers: [],
+        hooks: [],
+        diagnostics: [],
+      },
+    ]);
+    return createSkillsProvider(async () => catalog);
+  }
+
+  /** A stand-in for the workflow provider, so the test reads the resolver's own output. */
+  function workflowProvider(): ToolProvider {
+    return {
+      id: "nax-workflow",
+      kind: "static",
+      stages: ["chat"],
+      tools: async () => [
+        {
+          localName: "state",
+          description: "workflow state",
+          inputSchema: { type: "object", properties: {} },
+          run: async () => ({ content: "ok" }),
+        },
+      ],
+    };
+  }
+
+  function realResolverOptions(overrides: Partial<Input> = {}): Promise<CreateAgentSessionOptions> {
+    _acpSubagentDeps.chatAcpTools = original.chatAcpTools;
+    return options({ toolProviders: [skillsProvider(), workflowProvider()], ...overrides });
+  }
+
+  test("US-001 AC-11: nax-skills__load reaches an unattended session's tools", async () => {
+    const created = await realResolverOptions({ unattended: true });
+    expect(toolNames(created)).toEqual(["nax-skills__load", "nax-workflow__state"]);
+  });
+
+  test("US-001 AC-12: an attended session is handed no skills tool", async () => {
+    const created = await realResolverOptions();
+    expect(toolNames(created)).toEqual(["nax-workflow__state"]);
   });
 });
 

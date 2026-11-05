@@ -46,6 +46,12 @@ export interface RunSubagentInput {
   readonly parentSessionId: string;
   /** The parent session's rendered memory index; the nested session's instructions carry it. */
   readonly memoryIndex?: string;
+  /**
+   * Set by an unattended caller (see `nax agents run`), where nobody can answer an
+   * ask. An ACP agent with no `tools:` line then opens read-only, and the skills
+   * provider travels with the session.
+   */
+  readonly unattended?: true;
   readonly signal?: AbortSignal;
   readonly onEvent: (event: SessionEvent) => void;
   /** Called with the nested session once it is created, before its turn starts. */
@@ -100,6 +106,10 @@ async function subagentSessionOptions(
     profile: settings.profile,
     workdir: input.cwd,
     transcriptStore: deps.createMemoryTranscriptStore(),
+    // The caller's signal also bounds session CREATION: a slow or stuck open must not outlive
+    // `--timeout` or ignore SIGINT/SIGTERM. It is unlinked once the session exists, so the turn
+    // is still cancelled through `session.cancel()` (runOnSession) — never through opening.
+    ...(input.signal !== undefined ? { openSignal: input.signal } : {}),
     metadata: { parentSessionId: input.parentSessionId, subagent: input.agent.qualifiedName },
     approvalTimeoutMs: input.config.execution.approvalTimeout,
     instructions: buildSubagentInstructions({
@@ -183,6 +193,7 @@ function subagentProfile(input: RunSubagentInput): AcpSubagentProfile {
     ...(input.config.agent?.acpSubagents?.profile !== undefined
       ? { override: input.config.agent.acpSubagents.profile }
       : {}),
+    ...(input.unattended !== undefined ? { unattended: input.unattended } : {}),
   });
 }
 

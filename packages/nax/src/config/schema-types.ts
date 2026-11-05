@@ -361,6 +361,24 @@ export function resolveModelForAgent(
   );
 }
 
+/**
+ * A model entry's id, as the transports take it: "provider/model".
+ *
+ * The object form does NOT always need its `provider` in front. Config
+ * validation requires every `models.native` id to carry its provider in the
+ * model string (`validateNativeModelIds`, `schemas-protocol-gate.ts`) — the
+ * native path reads the provider out of the string and ignores
+ * `ModelDef.provider` — so a schema-valid object entry is usually as qualified
+ * as it gets. Prefixing it again produced "openai/openai/gpt-5.4-mini", which
+ * no provider knows. Only a bare model id needs the sibling field in front.
+ */
+export function modelEntryId(entry: ModelEntry): string {
+  if (typeof entry === "string") return entry;
+  // A trailing `[effort]` suffix is not part of the id, so it cannot be what
+  // makes the string look unqualified.
+  return parseModelSpec(entry.model).model.includes("/") ? entry.model : `${entry.provider}/${entry.model}`;
+}
+
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
 export function resolveModel(entry: ModelEntry): ModelDef {
   if (typeof entry === "string") {

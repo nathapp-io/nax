@@ -6,7 +6,7 @@
  * beats the `haiku`/`sonnet`/`opus` -> `models.native` tier step.
  */
 
-import type { NaxConfig } from "@/config";
+import { modelEntryId, type NaxConfig } from "@/config";
 import { isChatAcpModel } from "./acp";
 
 export type SubagentModelSource = "inherit" | "alias" | "tier" | "model" | "fallback";
@@ -45,7 +45,10 @@ function tierModel(requested: string, tiers: ResolveSubagentModelOptions["tiers"
   if (tier === undefined) return undefined;
   const entry = tiers?.[tier];
   if (entry === undefined) return undefined;
-  return typeof entry === "string" ? entry : `${entry.provider}/${entry.model}`;
+  // `modelEntryId`, not `${entry.provider}/${entry.model}`: config validation
+  // requires a native tier's model string to carry its provider already, so
+  // prefixing the sibling field again yields "openai/openai/gpt-5.4-mini".
+  return modelEntryId(entry);
 }
 
 export function resolveSubagentModel(options: ResolveSubagentModelOptions): ResolvedSubagentModel {

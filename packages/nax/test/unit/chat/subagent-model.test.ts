@@ -62,6 +62,33 @@ describe("resolveSubagentModel", () => {
     ).toEqual({ model: "b/t", source: "tier" });
   });
 
+  // B1 (whole-branch review): config validation requires a native tier's model string to
+  // carry its provider already, so an object entry is normally qualified. Prefixing the
+  // sibling field again produced "openai/openai/gpt-5.5", which no provider knows.
+  test("B1: does not repeat the provider of an already-qualified object tier", async () => {
+    const { resolveSubagentModel } = await import("@/chat/subagent-model");
+    expect(
+      resolveSubagentModel({
+        requested: "opus",
+        parentModel: "p/m",
+        aliases: {},
+        tiers: { powerful: { provider: "openai", model: "openai/gpt-5.5" } },
+      }),
+    ).toEqual({ model: "openai/gpt-5.5", source: "tier" });
+  });
+
+  test("B1: a bare object tier id still takes its sibling provider in front", async () => {
+    const { resolveSubagentModel } = await import("@/chat/subagent-model");
+    expect(
+      resolveSubagentModel({
+        requested: "haiku",
+        parentModel: "p/m",
+        aliases: {},
+        tiers: { fast: { provider: "openai", model: "gpt-5.4-mini" } },
+      }),
+    ).toEqual({ model: "openai/gpt-5.4-mini", source: "tier" });
+  });
+
   test("AC-7: falls back to the parent when the tier is not configured", async () => {
     const { resolveSubagentModel } = await import("@/chat/subagent-model");
     expect(resolveSubagentModel({ requested: "opus", parentModel: "p/m", aliases: {}, tiers: {} })).toEqual({
