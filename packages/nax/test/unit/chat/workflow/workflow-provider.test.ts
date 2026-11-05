@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { _targetRepoDeps, targetOutputDir } from "@/chat/target-repo";
@@ -252,6 +252,14 @@ describe("createWorkflowProvider", () => {
     afterEach(() => {
       _targetRepoDeps.loadConfig = origLoad;
     });
+    const verdictReads: { root: string; out: string }[] = [];
+    beforeEach(() => {
+      verdictReads.length = 0;
+      _featureStateDeps.loadRunVerdict = async (root, name, resolve) => {
+        verdictReads.push({ root, out: await resolve(root) });
+        return originalDeps.loadRunVerdict(root, name, resolve);
+      };
+    });
     function nested() {
       const nestedRoot = join(options.repoRoot, "repos", "nax");
       mkdirSync(join(nestedRoot, ".nax"), { recursive: true });
@@ -267,6 +275,7 @@ describe("createWorkflowProvider", () => {
       expect(result.isError).not.toBe(true);
       expect(JSON.parse(result.content)).toMatchObject({ name: "f1" });
       expect(result.content).toContain("2026-run");
+      expect(verdictReads).toEqual([{ root: realpathSync(nestedRoot), out: await targetOutputDir(nestedRoot) }]);
     });
     test("AC-18 lists nested features", async () => {
       const nestedRoot = nested();
@@ -285,10 +294,12 @@ describe("createWorkflowProvider", () => {
         isError: true,
         content: "[chat] repo nope does not exist",
       });
+      expect(verdictReads).toEqual([]);
     });
     test("AC-22 no repo reads original options", async () => {
       features("f1");
       expect(JSON.parse((await run({ feature: "f1" })).content).name).toBe("f1");
+      expect(verdictReads).toEqual([{ root: options.repoRoot, out: options.outputDir }]);
     });
     test("AC-20 instructions mention repo", () => {
       expect(buildWorkflowInstructions()).toContain("pass repo with that folder's path");
