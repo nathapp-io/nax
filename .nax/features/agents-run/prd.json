@@ -3,7 +3,7 @@
   "feature": "agents-run",
   "branchName": "feat/agents-run",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-05T09:40:49.005Z",
+  "updatedAt": "2026-11-05T10:04:56.845Z",
   "userStories": [
     {
       "id": "US-001",
@@ -248,14 +248,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One executor gains an immediate ask handler and standard AbortController/timer linkage using existing session and fake-clock contracts; permission decisions require strict security TDD despite the bounded implementation."
+        "reasoning": "One executor gains an immediate ask handler and standard AbortController/timer linkage using existing session and fake-clock contracts; permission decisions require strict security TDD despite the bounded implementation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/agents-run-exec.ts",
@@ -278,7 +281,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ee97cfbe74b2db703aca2a91ec027045470e0c47"
     },
     {
       "id": "US-005",
