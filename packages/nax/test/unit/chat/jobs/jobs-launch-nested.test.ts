@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makePRD, makeTempDir } from "@test/helpers";
 import type { ChatJobs, StartJobRequest } from "@/chat/jobs/job-runner";
@@ -168,7 +168,12 @@ describe("launch tools with repo", () => {
     [5, "[chat] repo must be a non-empty string"],
     ["missing", "[chat] repo missing does not exist"],
     ["..", "[chat] repo .. is outside"],
+    ["", "[chat] repo must be a non-empty string"],
+    ["link", "[chat] repo link is outside"],
+    ["plain", "[chat] repo plain is not a nax project: no .nax directory"],
   ])("AC-20 repo %p is rejected with no side effects", async (repo, message) => {
+    const outside = realpathSync(makeTempDir("jobs-launch-outside-"));
+    symlinkSync(outside, join(options.repoRoot, "link"));
     for (const kind of ["plan", "run", "bot_review", "bot_fix"]) {
       const result = await launch(kind, { feature: "f1", pr: 1, repo });
       expect(result.isError).toBe(true);
@@ -178,5 +183,6 @@ describe("launch tools with repo", () => {
     expect(start).not.toHaveBeenCalled();
     expect(existsPaths).toEqual([]);
     expect(lockRoots).toEqual([]);
+    cleanupTempDir(outside);
   });
 });
