@@ -3,7 +3,7 @@
   "feature": "agents-run",
   "branchName": "feat/agents-run",
   "createdAt": "2026-11-04T00:00:00.000Z",
-  "updatedAt": "2026-11-05T10:47:28.865Z",
+  "updatedAt": "2026-11-05T11:12:37.303Z",
   "userStories": [
     {
       "id": "US-001",
@@ -489,14 +489,17 @@
         "US-002",
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One command module follows composeChat and its injected dependencies without a new abstraction; strict security TDD is required because trust must precede repository-controlled config and catalog reads."
+        "reasoning": "One command module follows composeChat and its injected dependencies without a new abstraction; strict security TDD is required because trust must precede repository-controlled config and catalog reads.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/cli/chat.ts",
@@ -520,7 +523,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0039e7e3567c98e2fddf20d1bc149be55f9e431f"
     },
     {
       "id": "US-009",
