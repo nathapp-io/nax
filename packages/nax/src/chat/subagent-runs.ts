@@ -10,9 +10,15 @@ import type { AgentSession, LoopHandlerSet, SessionEvent, ToolProvider, ToolResu
 import type { NaxConfig } from "@/config";
 import type { AgentResource, ResourceCatalog } from "@/resources";
 import type { ChatAskController } from "./ask-controller";
+import { generalAgent } from "./builtin-agent";
 import type { ChatLedger } from "./chat-ledger";
 import type { ChatMode } from "./chat-mode";
-import { resolveSubagentModel } from "./subagent-model";
+import {
+  resolveSubagentModel,
+  type SubagentModelLabel,
+  type SubagentModelSource,
+  subagentModelLabel,
+} from "./subagent-model";
 import { runSubagent } from "./subagent-session";
 import { mapSubagentTools } from "./subagent-tools";
 
@@ -47,10 +53,11 @@ export interface SubagentRuns {
   /** Run one agent task for the chat session; wires asks, usage, cost and tool events. */
   run(agent: AgentResource, task: string, signal?: AbortSignal, model?: string): Promise<ToolResult>;
   /**
-   * The model `run` would use for this agent and override, or undefined for an unknown agent
-   * or a refused override. Opens no session.
+   * The model `run` would use for this agent and override, with the label naming where
+   * it came from, or undefined for an unknown agent or a refused override. Opens no
+   * session. An absent `agentName` is the built-in general agent, never a catalog lookup.
    */
-  modelFor(agentName: string, override?: string): string | undefined;
+  modelFor(agentName: string | undefined, override?: string): { model: string; label: SubagentModelLabel } | undefined;
   /** The nested session that issued this request id, if one is still running. */
   sessionFor(requestId: string): AgentSession | undefined;
   /** Spend of nested turns since the last call; resets to 0. */
@@ -88,6 +95,14 @@ interface NestedUsage {
 function taggedActivity(event: SessionEvent, agent: AgentResource, task: string): SessionEvent {
   if (event.type !== "tool_call" && event.type !== "tool_result") return event;
   return { ...event, metadata: { ...event.metadata, subagent: agent.qualifiedName, subagentTask: task } };
+}
+
+/**
+ * An override that resolved to the parent model is refused: it named a model no alias,
+ * tier or provider-qualified id answers for, and silently inheriting would hide the typo.
+ */
+function refused(override: string | undefined, source: SubagentModelSource): boolean {
+  return override !== undefined && source === "fallback";
 }
 
 export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
@@ -183,7 +198,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     const forward =
       listener === undefined ? undefined : (event: SessionEvent) => listener(taggedActivity(event, agent, task));
     const { model, source } = resolveFor(agent, current, override);
-    if (override !== undefined && source === "fallback") {
+    if (refused(override, source)) {
       return {
         isError: true,
         content: `[chat] unknown model ${override}; pass provider/model (a nax native model such as openai-codex/gpt-6-luna), acp:<agent>, or a configured alias`,
@@ -226,10 +241,13 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const runs: SubagentRuns = {
     run,
     modelFor(agentName, override) {
-      const agent = deps.catalog.findAgent(agentName);
+      // An absent name is the general agent: a run with a model and no agent has no
+      // agent file, so there is nothing to look up in the catalog.
+      const agent = agentName === undefined ? generalAgent() : deps.catalog.findAgent(agentName);
       if (agent === undefined) return undefined;
       const { model, source } = resolveFor(agent, deps.current(), override);
-      return override !== undefined && source === "fallback" ? undefined : model;
+      if (refused(override, source)) return undefined;
+      return { model, label: subagentModelLabel(source, override !== undefined) };
     },
     sessionFor: (requestId) => owners.get(requestId),
     takeCost() {

@@ -136,7 +136,9 @@ export {
   type ResolvedSubagentModel,
   type ResolveSubagentModelOptions,
   resolveSubagentModel,
+  type SubagentModelLabel,
   type SubagentModelSource,
+  subagentModelLabel,
 } from "./subagent-model";
 export { type RunSubagentInput, type RunSubagentResult, runSubagent } from "./subagent-session";
 export { type DroppedSubagentTool, type MappedSubagentTools, mapSubagentTools } from "./subagent-tools";

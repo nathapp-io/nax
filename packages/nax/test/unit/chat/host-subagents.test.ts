@@ -523,7 +523,7 @@ describe("usageEvent costSource", () => {
 });
 
 describe("chat host agent call model", () => {
-  test("AC-9 send delivers the run tool_call with metadata.subagentModel", async () => {
+  test("AC-23 send delivers the run tool_call with the model and the label naming its source", async () => {
     const call: SessionEvent = {
       ...toolCallEvent("run-1"),
       name: "nax-agents__run",
@@ -533,7 +533,11 @@ describe("chat host agent call model", () => {
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
     const seen: SessionEvent[] = [];
     await h.host.send("go", (event) => seen.push(event));
-    expect(forwardedToolCall(seen, "run-1")?.metadata).toEqual({ subagentModel: CHAT_MODEL });
+    // `reviewer` has no `model:`, so the run inherits the chat session's model.
+    expect(forwardedToolCall(seen, "run-1")?.metadata).toEqual({
+      subagentModel: CHAT_MODEL,
+      subagentModelSource: "inherited",
+    });
   });
 });
 
