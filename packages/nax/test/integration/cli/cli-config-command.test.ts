@@ -131,7 +131,7 @@ describe("Config Command", () => {
         join(naxDir, "config.json"),
         JSON.stringify({
           execution: {
-            maxIterations: 20,
+            costLimit: 20,
           },
         }),
       );
@@ -189,7 +189,7 @@ describe("Config Command", () => {
       const output = consoleOutput.join("\n");
 
       expect(output).toContain("Enable automatic agent selection and escalation");
-      expect(output).toContain("# Max iterations per feature run");
+      expect(output).toContain("# Max cost in USD before pausing execution");
       expect(output).toContain("# Max acceptance criteria count before flagging");
       expect(output).toContain("# TDD strategy: auto | strict | lite | off");
     });
@@ -225,7 +225,7 @@ describe("Config Command", () => {
         join(naxDir, "config.json"),
         JSON.stringify({
           execution: {
-            maxIterations: 20,
+            costLimit: 20,
           },
         }),
       );
