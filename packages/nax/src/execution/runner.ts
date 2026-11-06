@@ -133,6 +133,8 @@ export interface RunOptions {
    * collide on `run-<iso>`. US-005.
    */
   runId?: string;
+  /** #2819 (`nax run --publish-only`): every story has passed; rerun only the workflow's publish step. */
+  publishOnly?: boolean;
 }
 
 /** Run result */
@@ -379,6 +381,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       runtime,
       abortSignal: shutdownController.signal,
       interactionChain,
+      ...(options.publishOnly === true ? { publishOnly: true } : {}),
     });
 
     const { durationMs, pluginGateFailed, reportedTotal, workflowPassed } = completionResult;

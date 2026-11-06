@@ -179,6 +179,7 @@ export async function executeSingleAgentRun(params: {
       skipPrecheck: options.skipPrecheck ?? false,
       agentStreamEvents,
       resumeMode: options.fresh === true || options.resume === false ? "fresh" : "auto",
+      ...(options.publishOnly === true ? { publishOnly: true } : {}),
     });
   } finally {
     // Unmount the TUI even when run() throws — see the doc comment above.

@@ -74,6 +74,8 @@ export interface RunActionOptions {
   rulesDir?: string;
   /** US-002: run-level project-context file (same path rules as `rulesDir`). */
   contextFile?: string;
+  /** #2819: rerun only the workflow's publish step for a feature whose stories all passed. */
+  publishOnly?: boolean;
 }
 
 export type LoadedPrd = Awaited<ReturnType<typeof loadPRD>>;
