@@ -67,6 +67,7 @@ describe("createChainTools input", () => {
     expect((await createJobsProvider(options).tools(root)).map((t) => t.localName)).toEqual([
       "plan",
       "run",
+      "finish",
       "bot_review",
       "bot_fix",
       "list",
@@ -84,6 +85,7 @@ describe("createChainTools input", () => {
     expect((await createJobsProvider({ ...options, chains: undefined }).tools(root)).map((t) => t.localName)).toEqual([
       "plan",
       "run",
+      "finish",
       "bot_review",
       "bot_fix",
       "list",

@@ -82,6 +82,7 @@ async function runWorkflowEnd(
       statusWriter: options.statusWriter,
       storiesDurationMs: (deps.now ?? Date.now)() - options.startTime,
       ...iterationCapOf(options),
+      ...(options.publishOnly === true ? { publishOnly: true } : {}),
     });
     return {
       passed: result?.passed ?? true,

@@ -182,6 +182,7 @@ export {
   promptsCommand,
   promptsInitCommand,
 } from "./prompts";
+export { type PublishOnlyRunFlags, publishOnlyRefusal } from "./publish-only-refusal";
 export { resolveRunProfileOverride } from "./resolve-run-profile";
 export {
   _routingCalibrateDeps,

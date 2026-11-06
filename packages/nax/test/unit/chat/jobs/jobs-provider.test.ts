@@ -75,9 +75,9 @@ describe("createJobsProvider", () => {
     expect(provider.kind).toBe("static");
     expect(provider.stages).toEqual(["*"]);
     const tools = await provider.tools(repoRoot);
-    expect(tools.map((t) => t.localName)).toEqual(["plan", "run", "bot_review", "bot_fix", "list", "cancel"]);
+    expect(tools.map((t) => t.localName)).toEqual(["plan", "run", "finish", "bot_review", "bot_fix", "list", "cancel"]);
     expect(tools.find((t) => t.localName === "run")?.inputSchema.required).toEqual(["feature"]);
-    for (const tool of tools.slice(0, 4)) {
+    for (const tool of tools.slice(0, 5)) {
       expect(tool.description).toContain("Billed");
       expect(tool.description).toContain("asks the user");
     }

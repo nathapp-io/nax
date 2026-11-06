@@ -46,12 +46,27 @@ describe("parseChainStepInput", () => {
     expect(CHAIN_STEP_FIELDS).toEqual({
       plan: ["feature", "spec", "profiles", "repo"],
       run: ["feature", "profiles", "maxCost", "repo"],
+      finish: ["feature", "profiles", "repo"],
       bot_review: ["pr", "profiles", "model", "decisions", "repo"],
       bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
     });
   });
 });
 describe("buildChainStepArgv", () => {
+  test("#2819 a finish step runs nax run --publish-only for its feature", () => {
+    expect(buildChainStepArgv({ kind: "finish", feature: "f1", profiles: ["p"] }, ctx)).toEqual([
+      ...ctx.naxEntry,
+      "run",
+      "-f",
+      "f1",
+      "-d",
+      ctx.repoRoot,
+      "--headless",
+      "--publish-only",
+      "--profile",
+      "p",
+    ]);
+  });
   test("AC-17 places PR placeholder at the exact bot argument index", () => {
     expect(buildChainStepArgv({ kind: "bot_review", profiles: [] }, ctx)).toEqual(argv);
   });

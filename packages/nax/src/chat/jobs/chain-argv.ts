@@ -11,6 +11,7 @@ export type ChainStepInput =
 export const CHAIN_STEP_FIELDS: Readonly<Record<ChatJobKind, readonly string[]>> = {
   plan: ["feature", "spec", "profiles", "repo"],
   run: ["feature", "profiles", "maxCost", "repo"],
+  finish: ["feature", "profiles", "repo"],
   bot_review: ["pr", "profiles", "model", "decisions", "repo"],
   bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
 };
@@ -37,7 +38,7 @@ export function buildChainStepArgv(
   input: ChainStepInput & { readonly spec?: string },
   ctx: { readonly naxEntry: readonly string[]; readonly repoRoot: string },
 ): readonly string[] {
-  if (input.kind === "plan" || input.kind === "run") return buildJobArgv(input, ctx);
+  if (input.kind === "plan" || input.kind === "run" || input.kind === "finish") return buildJobArgv(input, ctx);
   const argv = buildJobArgv({ ...input, pr: input.pr ?? TEMPORARY_PR }, ctx);
   if (input.pr !== undefined) return argv;
   return argv.map((token, index) => (index === ctx.naxEntry.length + BOT_PR_OFFSET ? CHAIN_PR_PLACEHOLDER : token));

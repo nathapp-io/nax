@@ -1,4 +1,4 @@
-export type ChatJobKind = "plan" | "run" | "bot_review" | "bot_fix";
+export type ChatJobKind = "plan" | "run" | "finish" | "bot_review" | "bot_fix";
 export type ChatJobState = "running" | "succeeded" | "failed" | "cancelled" | "lost";
 
 /** Machine-local job record, stored under the project's output directory. */
@@ -7,7 +7,7 @@ export interface ChatJob {
   /** `<kind>-<8 lowercase hex>`, e.g. `run-1a2b3c4d`. */
   readonly id: string;
   readonly kind: ChatJobKind;
-  /** Feature name for plan/run; the PR number as a decimal string for bot jobs. */
+  /** Feature name for plan/run/finish; the PR number as a decimal string for bot jobs. */
   readonly target: string;
   readonly argv: readonly string[];
   /** The repo root the job runs in. */
@@ -31,4 +31,14 @@ export interface ChatJob {
   readonly note?: string;
 }
 
-export const JOB_ID_PATTERN = /^(plan|run|bot_review|bot_fix)-[0-9a-f]{8}$/;
+export const JOB_ID_PATTERN = /^(plan|run|finish|bot_review|bot_fix)-[0-9a-f]{8}$/;
+
+/** Kinds that target a feature and hold the checkout: plan, run, and finish (a publish-only run, #2819). */
+export function isFeatureJobKind(kind: ChatJobKind): kind is "plan" | "run" | "finish" {
+  return kind === "plan" || kind === "run" || kind === "finish";
+}
+
+/** Kinds that are a `nax run` process and so write the feature's run status file. */
+export function isRunJobKind(kind: ChatJobKind): kind is "run" | "finish" {
+  return kind === "run" || kind === "finish";
+}

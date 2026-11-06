@@ -30,7 +30,11 @@ function job(overrides: Partial<ChatJob> = {}): ChatJob {
     ...overrides,
   };
 }
-async function status(runStatus = "completed", pid = 4242): Promise<void> {
+async function status(
+  runStatus = "completed",
+  pid = 4242,
+  workflow?: { outcome: string; url?: string },
+): Promise<void> {
   await Bun.write(
     join(featureDir(repoRoot, "feature"), "status.json"),
     JSON.stringify({
@@ -38,6 +42,7 @@ async function status(runStatus = "completed", pid = 4242): Promise<void> {
       run: { id: "run-1", pid, status: runStatus },
       cost: { spent: 1.2, limit: null },
       progress: { passed: 3, total: 7, failed: 1, pending: 3 },
+      ...(workflow ? { workflow: { step: "done", stories: {}, ...workflow } } : {}),
     }),
   );
 }
@@ -47,6 +52,20 @@ async function resolve(overrides: Partial<ChatJob> = {}, exitCode?: number) {
 }
 
 describe("resolveJobOutcome", () => {
+  test("#2819 a finish job reads its run record and names the published PR", async () => {
+    await status("completed", 4242, { outcome: "draft", url: "https://x/pull/7" });
+    expect(await resolve({ kind: "finish", id: "finish-1a2b3c4d" })).toMatchObject({
+      state: "succeeded",
+      note: "publish draft https://x/pull/7",
+    });
+  });
+  test("#2819 a refused finish fails and keeps the run record's reason", async () => {
+    await status("failed", 4242, { outcome: "local-only" });
+    expect(await resolve({ kind: "finish", id: "finish-1a2b3c4d" })).toMatchObject({
+      state: "failed",
+      note: "publish local-only; run status failed",
+    });
+  });
   test("AC-1 matching completed run succeeds", async () => {
     await status();
     expect((await resolve({}, 0)).state).toBe("succeeded");
@@ -134,6 +153,15 @@ describe("readRunProgress", () => {
     await status("completed", 1);
     const { readRunProgress } = await import("@/chat/jobs/job-outcome");
     expect(await readRunProgress(job(), repoRoot)).toBeNull();
+  });
+  test("#2819 a finish job projects its run record too; a bot job never does", async () => {
+    await status();
+    const { readRunProgress } = await import("@/chat/jobs/job-outcome");
+    expect(await readRunProgress(job({ kind: "finish" }), repoRoot)).toEqual({
+      cost: 1.2,
+      progress: { passed: 3, total: 7 },
+    });
+    expect(await readRunProgress(job({ kind: "bot_fix" }), repoRoot)).toBeNull();
   });
   test("missing status has no progress", async () => {
     const { readRunProgress } = await import("@/chat/jobs/job-outcome");

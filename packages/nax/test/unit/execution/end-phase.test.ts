@@ -106,6 +106,15 @@ describe("runEndPhase (P4-R16)", () => {
     expect(workflow[0]).toMatchObject({ feature: "f", workdir: "/repo", branch: "feat/x", runId: "run-1" });
   });
 
+  test("#2819 publishOnly reaches the feature workflow only when the run asked for it", async () => {
+    _endPhaseDeps.resolveBranch = async () => "feat/x";
+    const { d, workflow } = deps();
+    await runEndPhase(opts(WORKFLOW, { publishOnly: true }), d);
+    await runEndPhase(opts(WORKFLOW), d);
+    expect(workflow[0]?.publishOnly).toBe(true);
+    expect(Object.hasOwn(workflow[1] ?? {}, "publishOnly")).toBe(false);
+  });
+
   test("workflow mode: skipped (null) -> true; a throw -> false (P4-R13)", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     expect((await runEndPhase(opts(WORKFLOW), deps(null).d))?.passed).toBe(true);

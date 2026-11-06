@@ -75,6 +75,8 @@ export interface RunnerCompletionOptions extends DispatchContext {
   deferredReviewStartedAt?: number;
   /** Why the execution phase stopped — used to distinguish a cost-limit stop from a normal completion. */
   exitReason?: ExitReason;
+  /** #2819 (`nax run --publish-only`): the feature workflow reruns only its publish step. */
+  publishOnly?: boolean;
   /**
    * The run's interaction chain (alive until cleanupRun destroys it, after this
    * phase). Threaded to every post-run Bash-dispatching site — deferred

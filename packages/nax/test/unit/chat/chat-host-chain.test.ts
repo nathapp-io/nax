@@ -238,6 +238,7 @@ describe("createHostJobs chains", () => {
     expect((await f.provider.tools(f.repoRoot)).map((t) => t.localName)).toEqual([
       "plan",
       "run",
+      "finish",
       "bot_review",
       "bot_fix",
       "list",
@@ -414,6 +415,7 @@ describe("createChatHost chain composition", () => {
     expect(f.tools.map((t) => t.localName)).toEqual([
       "plan",
       "run",
+      "finish",
       "bot_review",
       "bot_fix",
       "list",

@@ -5,7 +5,7 @@ import type { HostApprovalCard } from "../ask-controller";
 import type { ChatChains } from "./chain-controller";
 import { createChainTools } from "./chain-tools";
 import { type ChatJobs, JOB_LOG_TAIL_LINES } from "./job-runner";
-import { type ChatJob, type ChatJobKind, JOB_ID_PATTERN } from "./job-types";
+import { type ChatJob, type ChatJobKind, isFeatureJobKind, JOB_ID_PATTERN } from "./job-types";
 import { launchToolRun } from "./jobs-launch";
 import type { ChatRunAsks } from "./run-asks";
 
@@ -45,6 +45,7 @@ const schemas = {
     maxCost: { type: "number" },
     repo,
   },
+  finish: { feature: { type: "string" }, profiles, repo },
   bot_review: { pr: { type: "integer" }, profiles, model: { type: "string" }, decisions: { type: "string" }, repo },
   bot_fix: {
     repo,
@@ -55,7 +56,7 @@ const schemas = {
     noRereview: { type: "boolean" },
   },
 } satisfies Record<ChatJobKind, Record<string, unknown>>;
-const LAUNCH_KINDS: readonly ChatJobKind[] = ["plan", "run", "bot_review", "bot_fix"];
+const LAUNCH_KINDS: readonly ChatJobKind[] = ["plan", "run", "finish", "bot_review", "bot_fix"];
 
 function summary(job: ChatJob): Record<string, unknown> {
   const { id, kind, target, state, startedAt, endedAt, progress, cost, note } = job;
@@ -150,7 +151,7 @@ export function createJobsProvider(options: JobsProviderOptions): ToolProvider {
           type: "object",
           properties: schemas[kind],
           additionalProperties: false,
-          required: [kind === "plan" || kind === "run" ? "feature" : "pr"],
+          required: [isFeatureJobKind(kind) ? "feature" : "pr"],
         },
         run: launchToolRun(kind, options),
       })),

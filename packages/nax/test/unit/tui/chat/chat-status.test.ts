@@ -417,6 +417,7 @@ describe("formatJobStrip", () => {
       jobs: [{ kind: "run", target: "f1", cost: 0, progress: { passed: 0, total: 0 } }],
       expected: "run f1 0/0 $0.00",
     },
+    { ac: "#2819 finish", jobs: [{ kind: "finish", target: "f1", cost: 0.5 }], expected: "finish f1 $0.50" },
     { ac: "empty", jobs: [], expected: "" },
   ])("US-014 $ac formats jobs", ({ jobs, expected }) => {
     expect(formatJobStrip(jobs)).toBe(expected);

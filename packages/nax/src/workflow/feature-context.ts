@@ -29,6 +29,8 @@ export interface WorkflowFeatureInput {
   readonly storiesDurationMs?: number;
   /** nax#2706: set when the story loop hit its iteration limit with stories pending. */
   readonly iterationCap?: IterationCapStop;
+  /** #2819 (`nax run --publish-only`): rerun only the publish step from the newest finished record. */
+  readonly publishOnly?: boolean;
 }
 
 export interface FeatureContext {

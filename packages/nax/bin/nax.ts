@@ -57,6 +57,7 @@ import {
   pluginsListCommand,
   promptsCommand,
   promptsInitCommand,
+  publishOnlyRefusal,
   registerAdvisorCommand,
   registerAgentsRunCommand,
   registerApprovalsCommand,
@@ -262,6 +263,11 @@ program
   )
   .option("--schedule <when>", "Defer run start until <when> (e.g. 30m, 1h30m, 17:00, 2026-07-02T02:00)")
   .option("--compare <agents>", "Bake-off mode: comma-separated list of contestant agents (e.g. claude,codex)")
+  .option(
+    "--publish-only",
+    "Rerun only the workflow's publish step for a finished feature that has no PR (needs every story passed)",
+    false,
+  )
   .option("--fresh", "Ignore any existing checkpoint.jsonl and re-run every incomplete story from scratch", false)
   // Sentinel default — when the user does NOT pass `--no-resume`, commander
   // leaves `options.resume` as the string `"__UNSET__"`. When the user DOES
@@ -321,6 +327,19 @@ program
     if (!existsSync(prdPath)) {
       console.error(chalk.red(`Feature "${options.feature}" not found or missing prd.json`));
       process.exit(1);
+    }
+    if (options.publishOnly) {
+      // #2819: refuse before any TUI or logger exists, so the message is the last thing printed.
+      let refusal: string | undefined;
+      try {
+        refusal = publishOnlyRefusal(options, await loadPRD(prdPath));
+      } catch (err) {
+        refusal = `Error loading PRD: ${(err as Error).message}`;
+      }
+      if (refusal) {
+        console.error(chalk.red(refusal));
+        process.exit(1);
+      }
     }
 
     // Reset plan logger (if plan phase ran) so the run logger can be initialized fresh.

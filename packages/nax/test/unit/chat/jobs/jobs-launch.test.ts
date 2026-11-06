@@ -96,6 +96,7 @@ describe("createJobsProvider", () => {
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
     ["run", { feature: { type: "string" }, maxCost: { type: "number" } }, "feature"],
+    ["finish", { feature: { type: "string" } }, "feature"],
     ["bot_review", { pr: { type: "integer" }, model: { type: "string" }, decisions: { type: "string" } }, "pr"],
     [
       "bot_fix",
@@ -169,11 +170,12 @@ describe("createJobsProvider", () => {
     expect(approve).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
-  test("AC-1 exactly four launch tools and static metadata", async () => {
+  test("AC-1 exactly five launch tools and static metadata", async () => {
     const provider = createJobsProvider(options);
-    expect((await provider.tools(options.repoRoot)).slice(0, 4).map((t) => t.localName)).toEqual([
+    expect((await provider.tools(options.repoRoot)).slice(0, 5).map((t) => t.localName)).toEqual([
       "plan",
       "run",
+      "finish",
       "bot_review",
       "bot_fix",
     ]);
@@ -304,6 +306,28 @@ describe("createJobsProvider", () => {
     await writePlannedProfile("a+b");
     await launch("run", { feature: "f1", profiles: ["a", "b"] });
     expect(card().reason).not.toContain("warning: the PRD was planned");
+  });
+  test("#2819 finish is refused while stories are pending", async () => {
+    const result = await launch("finish", { feature: "f1" });
+    expect(result).toEqual({
+      isError: true,
+      content: "[chat] f1 has 3 pending stories; finish them with nax-jobs__run first",
+    });
+    expect(approve).not.toHaveBeenCalled();
+  });
+  test("#2819 finish on a passed feature shows a publish-only card and runs --publish-only", async () => {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
+    );
+    await launch("finish", { feature: "f1" });
+    expect(card().summary).toBe("nax run f1 --publish-only");
+    expect(card().reason).toContain("publish only: reruns the workflow's publish step");
+    expect(start.mock.calls[0]?.[0]).toMatchObject({
+      kind: "finish",
+      target: "f1",
+      argv: [...runArgv(), "--publish-only"],
+    });
   });
   test("AC-17 plan resolves legacy spec to repo-relative argv", async () => {
     await Bun.write(join(options.repoRoot, ".nax", "specs", "f1.md"), "spec");
