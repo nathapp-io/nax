@@ -34,9 +34,8 @@ export const _queueCheckDeps = { savePrdProgress };
 /**
  * Resolve the PRD path for this pipeline context. Prefers the feature directory
  * when known; falls back to the canonical `.nax/features/unknown/prd.json` path
- * (matching the layout documented in `.gitignore` / `.naxignore` /
- * `src/cli/accept.ts` / `src/cli/features-resolve.ts`) so a missing featureDir
- * never writes an untracked, un-ignored file into the repo root.
+ * (matching the layout documented in `.gitignore` / `.naxignore`) so a missing
+ * featureDir never writes an untracked, un-ignored file into the repo root.
  */
 function resolvePrdPath(ctx: PipelineContext): string {
   return path.join(ctx.featureDir ?? featureDir(ctx.workdir, "unknown"), "prd.json");

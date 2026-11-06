@@ -25,11 +25,6 @@ export const reviewConfigSelector = pickSelector(
 export const planConfigSelector = pickSelector("plan", "plan", "agent", "models", "project", "routing");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
-export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance");
-// acceptance fix take more time to fix the code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
-export const acceptanceFixConfigSelector = pickSelector("acceptance-fix", "acceptance", "execution");
-// acceptance generator take more time to generate the test code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
-export const acceptanceGenConfigSelector = pickSelector("acceptance-gen", "acceptance", "execution");
 export const tddConfigSelector = pickSelector(
   "tdd",
   "tdd",
@@ -163,9 +158,6 @@ export type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 export type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 export type DecomposeConfig = ReturnType<typeof decomposeConfigSelector.select>;
 export type RectifyConfig = ReturnType<typeof rectifyConfigSelector.select>;
-export type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select>;
-export type AcceptanceFixConfig = ReturnType<typeof acceptanceFixConfigSelector.select>;
-export type AcceptanceGenConfig = ReturnType<typeof acceptanceGenConfigSelector.select>;
 export type TddConfig = ReturnType<typeof tddConfigSelector.select>;
 export type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
 export type VerifyConfig = ReturnType<typeof verifyConfigSelector.select>;

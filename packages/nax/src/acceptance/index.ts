@@ -4,15 +4,6 @@
  * Barrel exports for acceptance test generation functionality.
  */
 
-export type { AcceptanceEntry } from "./content-loader";
-export { loadAcceptanceTestContent } from "./content-loader";
-export type { AcceptanceCoverageEntry } from "./coverage";
-export {
-  checkAcceptanceCoverage,
-  findMissingAcceptanceTestPaths,
-  makeAcceptanceCoverageCollector,
-  warnMissingAcceptanceTests,
-} from "./coverage";
 export type { AcceptanceExecution } from "./execution-description";
 export { _acceptanceExecutionDeps, resolveAcceptanceExecution } from "./execution-description";
 export type { FailedCriterion, RefinedCriterionRecord } from "./failed-criteria";
@@ -22,7 +13,6 @@ export {
   loadRefinedCriteria,
   resolveFailedCriteria,
 } from "./failed-criteria";
-export { loadSourceFilesForDiagnosis } from "./fix-diagnosis";
 export {
   acceptanceTestFilename,
   buildAcceptanceRunCommand,
@@ -33,9 +23,6 @@ export {
   substituteAcceptanceTestPath,
 } from "./generator";
 export { isStubTestContent } from "./heuristics";
-export type { OverrideLookup, OverrideLookupOptions } from "./override-keys";
-export { createOverrideLookup, OVERRIDE_SCOPE_SEPARATOR, scopedOverrideKey } from "./override-keys";
-export { parseRefinementResponse, refinementWouldFallback } from "./refinement";
 export {
   _groupDeps,
   findExistingAcceptanceTestPath,

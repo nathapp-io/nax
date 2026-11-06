@@ -119,9 +119,9 @@ export interface AcceptanceTestGroup {
  * Group non-fix, non-decomposed PRD stories by story.workdir and compute the
  * acceptance test path for each group.
  *
- * This is the SSOT for per-package test path computation. Call it from:
- *   - `nax features resolve` (src/cli/features-acceptance.ts), to report where
- *     each package's acceptance test belongs
+ * This is the SSOT for per-package test path computation. It outlived the
+ * `nax accept` command because the pipeline story loop still needs each
+ * package's acceptance test path.
  *
  * @param prd         - The loaded PRD
  * @param workdir     - Absolute repo root (ctx.workdir / options.workdir)

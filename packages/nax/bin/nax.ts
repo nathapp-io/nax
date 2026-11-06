@@ -42,7 +42,6 @@ import { DEFAULT_PI_AUTH_PATH } from "@nathapp/nax-agent";
 import chalk from "chalk";
 import { Command, Option } from "commander";
 import {
-  acceptCommand,
   agentsListCommand,
   authImportCommand,
   authListCommand,
@@ -1335,23 +1334,19 @@ curator
   });
 
 // ── accept ───────────────────────────────────────────
+// Workflow mode runs no acceptance tests, so there are no failed ACs to
+// override. The command stays declared so a user gets this message instead of
+// commander's unknown-command error; it reads no config and no PRD, which is
+// why its options are plain `option` calls rather than `requiredOption`.
 program
   .command("accept")
-  .description("Override failed acceptance criteria")
-  .requiredOption("-f, --feature <name>", "Feature name")
-  .requiredOption("--override <ac-id>", "AC ID to override (e.g., AC-2)")
-  .requiredOption("-r, --reason <reason>", "Reason for accepting despite test failure")
-  .action(async (options) => {
-    try {
-      await acceptCommand({
-        feature: options.feature,
-        override: options.override,
-        reason: options.reason,
-      });
-    } catch (err) {
-      console.error(chalk.red(`Error: ${(err as Error).message}`));
-      process.exit(1);
-    }
+  .description("Removed: workflow mode does not run acceptance tests")
+  .option("-f, --feature <name>", "Feature name")
+  .option("--override <ac-id>", "AC ID to override (e.g., AC-2)")
+  .option("-r, --reason <reason>", "Reason for accepting despite test failure")
+  .action(() => {
+    console.error(chalk.red("nax accept was removed: workflow mode does not run acceptance tests"));
+    process.exit(1);
   });
 
 // ── prompts ──────────────────────────────────────────

@@ -136,7 +136,6 @@ describe("runner.run() — US-005 AC-7 caller-supplied runId", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 1,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: 0,
     })) as typeof _runnerDeps.runCompletionPhase;
@@ -165,7 +164,6 @@ describe("runner.run() — US-005 AC-7 caller-supplied runId", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 1,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: 0,
     })) as typeof _runnerDeps.runCompletionPhase;
@@ -201,7 +199,6 @@ describe("runner.run() — US-005 AC-8 auto-generated runId", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 1,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: 0,
     })) as typeof _runnerDeps.runCompletionPhase;
@@ -244,7 +241,6 @@ describe("runner.run() — US-005 AC-8 auto-generated runId", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 1,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: 0,
     })) as typeof _runnerDeps.runCompletionPhase;

@@ -182,9 +182,6 @@ export type {
   TestPatternConfig,
 } from "./selectors";
 export {
-  acceptanceConfigSelector,
-  acceptanceFixConfigSelector,
-  acceptanceGenConfigSelector,
   advisorConfigSelector,
   agentManagerConfigSelector,
   autofixConfigSelector,

@@ -89,15 +89,6 @@ describe("findPackageFrameDerivationViolations", () => {
     expect(findPackageFrameDerivationViolations(tempDir)).toEqual([]);
   });
 
-  test("exempts src/cli/features-acceptance.ts — a CLI path outside story isolation", () => {
-    writeFileSync(
-      join(tempDir, "src", "cli", "features-acceptance.ts"),
-      "const packageDir = relative(repoRoot, g.packageDir);\n",
-    );
-
-    expect(findPackageFrameDerivationViolations(tempDir)).toEqual([]);
-  });
-
   test("flags relative(repoRoot, packageDir ?? repoRoot) — a nullish-coalescing fallback on the second arg", () => {
     writeFileSync(
       join(tempDir, "src", "utils", "unexempted.ts"),

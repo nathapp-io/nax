@@ -90,10 +90,6 @@ export interface RunnerCompletionOptions extends DispatchContext {
 export interface RunnerCompletionResult {
   durationMs: number;
   runCompletedAt: string;
-  /** False when the acceptance loop exhausted retries for any package. True when acceptance
-   *  passed, was skipped, or was already passed on a prior run. Used by runner.ts to set
-   *  RunResult.success — regression-gate outcome cannot override an acceptance failure. */
-  acceptancePassed: boolean;
   /** True when a gating-mode deferred plugin reviewer failed. Factored into RunResult.success. */
   pluginGateFailed: boolean;
   /** Cost-aggregator-reconciled total for the whole run (successful plus failed-dispatch spend).
@@ -237,9 +233,6 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   return {
     durationMs,
     runCompletedAt,
-    // Until US-007 deletes the field, the completion phase no longer runs an
-    // acceptance loop, so it never fails on one.
-    acceptancePassed: true,
     pluginGateFailed,
     reportedTotal: finalTotal,
     ...(workflowPassed !== undefined ? { workflowPassed } : {}),

@@ -68,10 +68,6 @@ const ALLOWED_FILES = new Map<string, string>([
     "src/runtime/packages.ts",
     "derives a registry LOOKUP KEY (relativeFromRoot / toRelativeKey), not a path frame — the .nax-wt/<storyId> prefix is load-bearing there (nax#2069)",
   ],
-  [
-    "src/cli/features-acceptance.ts",
-    "a CLI entry path that runs outside story isolation — repoRoot and packageDir are both real, non-worktree directories here",
-  ],
   ["test/unit/scripts/check-package-frame-derivation.test.ts", "the gate's own test fixtures"],
 ]);
 

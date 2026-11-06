@@ -186,4 +186,12 @@ describe("runCompletionPhase — no completion acceptance phase (US-006)", () =>
     // The unusable reader did not stop completion: the phase still ran to its end.
     expect(observed.statusUpdates).toBeGreaterThan(0);
   });
+
+  test("AC-15: the completion result has no own acceptancePassed key when the PRD is complete", async () => {
+    const observed = await observeCompletion();
+
+    // US-007 removed the field rather than leaving it undefined: a key set to
+    // `undefined` still reads as present to a consumer gate.
+    expect(Object.hasOwn(observed.result, "acceptancePassed")).toBe(false);
+  });
 });

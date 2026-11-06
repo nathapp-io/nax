@@ -187,7 +187,6 @@ describe("runCompletionPhase — US-001 reportedTotal seam", () => {
     const result = await runCompletionPhase(opts);
 
     expect(result.durationMs).toBe(100);
-    expect(result.acceptancePassed).toBe(true);
     expect(result.pluginGateFailed).toBe(false);
     expect(typeof result.runCompletedAt).toBe("string");
   });

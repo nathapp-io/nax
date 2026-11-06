@@ -275,7 +275,8 @@ describe("runCompletionPhase — dry run (nax#1809)", () => {
       const result = await runCompletionPhase(completionOpts);
 
       expect(completionSpy).toHaveBeenCalled();
-      expect(result.acceptancePassed).toBe(true);
+      // US-007 deleted the field outright: absence, not a key set to undefined.
+      expect(Object.hasOwn(result, "acceptancePassed")).toBe(false);
     } finally {
       completionSpy.mockRestore();
     }

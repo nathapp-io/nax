@@ -8,21 +8,13 @@ import { resolveFeatureSpec } from "@/cli/features-resolve";
 // Fixture helpers
 // ---------------------------------------------------------------------------
 
-import { _featuresAcceptanceDeps } from "@/cli/features-acceptance";
-
-const realLoadConfig = _featuresAcceptanceDeps.loadConfig;
 let tempDir: string;
 
 beforeEach(() => {
-  _featuresAcceptanceDeps.loadConfig = async (...args) => {
-    const config = await realLoadConfig(...args);
-    return { ...config, acceptance: { ...config.acceptance, enabled: true } };
-  };
   tempDir = makeTempDir("nax-resolve-");
 });
 
 afterEach(() => {
-  _featuresAcceptanceDeps.loadConfig = realLoadConfig;
   cleanupTempDir(tempDir);
 });
 
@@ -76,27 +68,82 @@ describe("not-a-nax-repo", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Acceptance block attachment
+// No acceptance block (US-007)
 // ---------------------------------------------------------------------------
 
-describe("acceptance block", () => {
-  test("ok result with a named feature attaches the acceptance block", async () => {
+describe("no acceptance block — a named feature with a spec.md (AC-6 to AC-11)", () => {
+  /**
+   * A recognised repo whose only feature is `demo`, holding a non-empty
+   * `.nax/features/demo/spec.md` — the AC fixture verbatim.
+   */
+  async function resolveDemo() {
     const naxDir = initNaxRepo();
-    createFeature(naxDir, "auth", { prdJson: true });
-    const result = await resolveFeatureSpec("auth", tempDir);
-    expect(result.status).toBe("ok");
-    expect(result.featureName).toBe("auth");
-    expect(result.acceptance?.status).toBe("ok");
-    expect(result.acceptance?.groups[0].testPath).toBe(".nax/features/auth/.nax-acceptance.test.ts");
+    createFeature(naxDir, "demo", { specMd: "# demo\n\nsome content\n" });
+    return resolveFeatureSpec("demo", tempDir, {});
+  }
+
+  test("AC-6: returns status ok", async () => {
+    expect((await resolveDemo()).status).toBe("ok");
   });
 
-  test("path-only ok result (featureName null) has no acceptance block", async () => {
+  test("AC-7: returns featureName demo", async () => {
+    expect((await resolveDemo()).featureName).toBe("demo");
+  });
+
+  test("AC-8: returns specSource for the markdown spec", async () => {
+    expect((await resolveDemo()).specSource).toEqual({
+      kind: "markdown",
+      path: ".nax/features/demo/spec.md",
+    });
+  });
+
+  test("AC-9: returns a testPatterns object", async () => {
+    const testPatterns = (await resolveDemo()).testPatterns;
+    assertDefined(testPatterns, "testPatterns");
+    expect(typeof testPatterns.resolution).toBe("string");
+    expect(Array.isArray(testPatterns.regex)).toBe(true);
+  });
+
+  test("AC-10: returns a message starting with 'resolved spec: '", async () => {
+    expect((await resolveDemo()).message.startsWith("resolved spec: ")).toBe(true);
+  });
+
+  test("AC-11: returns no own acceptance key", async () => {
+    // Own-key absence, not `undefined`: a present-but-undefined key still reads
+    // as a shape a consumer can rely on.
+    expect(Object.hasOwn(await resolveDemo(), "acceptance")).toBe(false);
+  });
+});
+
+describe("no acceptance block — auto-discovered single feature (AC-12 to AC-14)", () => {
+  /** One recognised repo with exactly one feature, `demo`, carrying a spec. */
+  async function resolveSole() {
+    const naxDir = initNaxRepo();
+    createFeature(naxDir, "demo", { specMd: "# demo\n\nsome content\n" });
+    return resolveFeatureSpec(undefined, tempDir, {});
+  }
+
+  test("AC-12: returns status ok", async () => {
+    expect((await resolveSole()).status).toBe("ok");
+  });
+
+  test("AC-13: returns featureName demo", async () => {
+    expect((await resolveSole()).featureName).toBe("demo");
+  });
+
+  test("AC-14: returns no own acceptance key", async () => {
+    expect(Object.hasOwn(await resolveSole(), "acceptance")).toBe(false);
+  });
+});
+
+describe("no acceptance block — path-only resolution", () => {
+  test("an explicit-path ok result has no own acceptance key", async () => {
     initNaxRepo();
     writeFileSync(join(tempDir, "my-spec.md"), "# content");
     const result = await resolveFeatureSpec("./my-spec.md", tempDir);
     expect(result.status).toBe("ok");
     expect(result.featureName).toBeNull();
-    expect(result.acceptance).toBeUndefined();
+    expect(Object.hasOwn(result, "acceptance")).toBe(false);
   });
 });
 
