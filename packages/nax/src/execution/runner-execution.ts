@@ -159,10 +159,10 @@ export async function runExecutionPhase(
   // and already starts empty — no explicit clear needed here.
 
   // Create package directories for stories targeting not-yet-existing packages
-  // (new feature on a new package). Must run before any session opens — both the
-  // pre-run acceptance pipeline (inside executeUnified) and the execution loop
-  // resolve the agent cwd to join(repoRoot, story.workdir); an agent cannot spawn in
-  // a nonexistent cwd. Skipped under dryRun so planning never mutates the tree.
+  // (new feature on a new package). Must run before any session opens — the
+  // execution loop resolves the agent cwd to join(repoRoot, story.workdir), and an
+  // agent cannot spawn in a nonexistent cwd. Skipped under dryRun so planning never
+  // mutates the tree.
   if (!options.dryRun) {
     try {
       const createdDirs = await ensureStoryPackageDirs(prd, options.workdir);

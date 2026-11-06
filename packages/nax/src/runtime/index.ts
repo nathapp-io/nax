@@ -177,9 +177,8 @@ export interface NaxRuntime {
   readonly signal: AbortSignal;
   /**
    * True when this run is a `--dry-run`. Run-scoped because the auto-commit
-   * refusal it feeds (nax#1808) is needed at two call sites that share no
-   * arguments -- the completion phase and pre-run acceptance setup -- and both
-   * reach the runtime through DispatchContext.
+   * refusal it feeds (nax#1808) is needed by call sites that share no arguments
+   * and all reach the runtime through DispatchContext.
    */
   readonly dryRun: boolean;
   /** Run-scoped flaky-test quarantine memo — shared between the per-story full-suite gate and the deferred regression gate. */

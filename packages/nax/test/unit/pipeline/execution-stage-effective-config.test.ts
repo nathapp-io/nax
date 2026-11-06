@@ -18,10 +18,6 @@ import { describe, expect, test } from "bun:test";
 const SITES: readonly { file: string; marker: string; window?: number }[] = [
   { file: "src/pipeline/stages/execution.ts", marker: "const callCtx: CallContext = {" },
   {
-    file: "src/pipeline/stages/acceptance-setup.ts",
-    marker: "const packageView = pipelineCtx.runtime.packages.resolve(packageDir);",
-  },
-  {
     file: "src/execution/lifecycle/acceptance-fix.ts",
     marker: "const packageView = ctx.runtime.packages.resolve(packageDir);",
   },

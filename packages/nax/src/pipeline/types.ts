@@ -222,7 +222,7 @@ export interface PipelineContext extends DispatchContext {
    * Set by `runAcceptanceLoop`, which owns the counter; the stage only reports it.
    */
   acceptanceRetries?: number;
-  /** Acceptance test failures (set by acceptanceStage) */
+  /** Acceptance test failures. Nothing produces these any more: the acceptance stage that set them was deleted (pipeline-post-run-delete US-005); the loop that still reads them is deleted by US-006. */
   acceptanceFailures?: {
     failedACs: string[];
     /** Structured findings (ADR-021 phase 5). Parallel to failedACs; same order. */
@@ -263,13 +263,12 @@ export interface PipelineContext extends DispatchContext {
   storyMetrics?: StoryMetrics[];
   /** Whether to retry the story in lite mode after a failure */
   retryAsLite?: boolean;
-  /** Results from acceptance-setup stage (set by acceptanceSetupStage) */
-  acceptanceSetup?: {
-    totalCriteria: number;
-    testableCount: number;
-    redFailCount: number;
-  };
-  /** Per-package acceptance test paths (set by acceptanceSetupStage for US-001/002) */
+  /**
+   * Per-package acceptance test paths. Nothing produces this any more: the
+   * acceptance-setup stage that set it was deleted with the pipeline post-run
+   * acceptance phase (pipeline-post-run-delete US-005). The acceptance loop that
+   * still reads it is deleted by US-006, which removes this field.
+   */
   acceptanceTestPaths?: Array<{
     testPath: string;
     packageDir: string;

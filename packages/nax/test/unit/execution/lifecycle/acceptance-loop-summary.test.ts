@@ -24,12 +24,11 @@ import type { Iteration } from "@/findings/cycle-types";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { acceptanceFixSourceOp } from "@/operations";
 import type { Operation } from "@/operations/types";
-import * as pipelineStages from "@/pipeline/stages";
 import type { PipelineContext, StageResult } from "@/pipeline/types";
 
+/** A stubbed acceptance stage — the real one was deleted (pipeline-post-run-delete US-005). */
 function stubStages(execute: (ctx: PipelineContext) => Promise<StageResult>) {
-  return async () =>
-    Object.assign({}, pipelineStages, { acceptanceStage: { ...pipelineStages.acceptanceStage, execute } });
+  return async () => ({ acceptanceStage: { name: "acceptance", enabled: () => true, execute } });
 }
 
 function context(maxRetries = 1): AcceptanceLoopContext {

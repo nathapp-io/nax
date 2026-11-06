@@ -10,6 +10,7 @@ import path from "node:path";
 import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { isStubTestContent, substituteAcceptanceTestPath } from "@/acceptance";
 import type { NaxConfig } from "@/config";
+import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
@@ -228,9 +229,19 @@ export const _regenerateDeps = {
     return stdout.trim();
   },
   readFile: async (filePath: string): Promise<string> => Bun.file(filePath).text(),
-  acceptanceSetupExecute: async (ctx: PipelineContext): Promise<void> => {
-    const { acceptanceSetupStage } = await import("@/pipeline/stages");
-    await acceptanceSetupStage.execute(ctx);
+  /**
+   * The acceptance-setup stage this step re-ran was deleted with the pipeline
+   * post-run acceptance phase (pipeline-post-run-delete US-005), so there is no
+   * longer a stage to execute. Every caller in the acceptance loop is deleted by
+   * US-006; until then this seam reports the removal loudly rather than silently
+   * "regenerating" nothing.
+   */
+  acceptanceSetupExecute: async (_ctx: PipelineContext): Promise<void> => {
+    throw new NaxError(
+      "The acceptance-setup stage was removed: workflow mode does not run acceptance tests",
+      "ACCEPTANCE_SETUP_STAGE_REMOVED",
+      { stage: "acceptance-setup" },
+    );
   },
   getLogger: () => getSafeLogger(),
 };
@@ -243,7 +254,9 @@ export const _regenerateDeps = {
  * 2. Delete the original test file
  * 3. Delete acceptance-meta.json (force regeneration)
  * 4. Collect implementation context from git diff
- * 5. Run acceptance-setup stage to regenerate
+ * 5. Re-run the acceptance-setup stage to regenerate — the stage is gone
+ *    (pipeline-post-run-delete US-005), so this step now throws; the acceptance
+ *    loop that calls it is deleted by US-006
  * 6. Check for stub content and report failure if regenerated content is a stub
  */
 export async function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean> {

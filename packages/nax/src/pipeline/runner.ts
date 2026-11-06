@@ -46,51 +46,6 @@ export const MAX_STAGE_RETRIES = 5;
  */
 export const MAX_STAGE_RESETS = 1;
 
-/**
- * Run a pipeline of stages against a context.
- *
- * Supports a `retry` action that jumps back to a named stage (used by
- * rectify/autofix stages). Retry count per target stage is tracked;
- * exceeding MAX_STAGE_RETRIES converts to a `fail`.
- *
- * **Context Mutation:** This function mutates the input context in-place.
- */
-/**
- * Did the pipeline stop because something went wrong?
- *
- * `PipelineRunResult.success` is false for **skip, pause, escalate and fail**
- * alike — it means "did not reach the end", not "failed". Several of those are
- * healthy: `acceptanceSetupStage` skips deliberately when the acceptance tests
- * already pass. Callers deciding a log level must ask this, not `!success`,
- * or they raise an alarm on a routine outcome.
- */
-export function isPipelineFailure(result: PipelineRunResult): boolean {
-  return result.finalAction === "fail" || result.finalAction === "escalate";
-}
-
-/**
- * Report how a pipeline ended, at a level that matches what actually happened.
- *
- * Exists because callers that discard a `PipelineRunResult` lose the only
- * record of a failed stage — the pre-run acceptance pipeline did exactly that,
- * so a failed acceptance setup left no trace and the run continued as though
- * the gate had been installed.
- */
-export function logPipelineOutcome(result: PipelineRunResult, label: string, storyId?: string): void {
-  if (result.success) return;
-  const data = {
-    storyId,
-    stoppedAtStage: result.stoppedAtStage,
-    finalAction: result.finalAction,
-    reason: result.reason,
-  };
-  if (isPipelineFailure(result)) {
-    getLogger().error("execution", `${label} failed — continuing without it`, data);
-    return;
-  }
-  getLogger().info("execution", `${label} did not complete`, data);
-}
-
 /** Live-phase reporting is observational: a failing callback is logged and must not end the run. */
 function reportStagePhase(context: PipelineContext, stageName: string): void {
   try {
@@ -103,6 +58,15 @@ function reportStagePhase(context: PipelineContext, stageName: string): void {
   }
 }
 
+/**
+ * Run a pipeline of stages against a context.
+ *
+ * Supports a `retry` action that jumps back to a named stage (used by
+ * rectify/autofix stages). Retry count per target stage is tracked;
+ * exceeding MAX_STAGE_RETRIES converts to a `fail`.
+ *
+ * **Context Mutation:** This function mutates the input context in-place.
+ */
 export async function runPipeline(
   stages: PipelineStage[],
   context: PipelineContext,

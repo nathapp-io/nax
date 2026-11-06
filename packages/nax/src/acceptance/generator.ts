@@ -31,8 +31,10 @@ export const resolveAcceptanceTestFile = defaultResolveAcceptanceTestFile;
  * 2. testFramework-aware single-file command (from QUALITY-002 profile)
  * 3. Fallback: `bun test <file> --timeout=60000`
  *
- * This is shared by both acceptance-setup (RED gate) and acceptance (post-run)
- * to ensure consistent behavior across both stages.
+ * The acceptance-setup and post-run acceptance stages that used to share this
+ * were deleted with the pipeline post-run acceptance phase
+ * (pipeline-post-run-delete US-005); the builder stays because the pipeline
+ * story loop still reaches this module.
  */
 /** Resolve the pytest executable, preferring a local venv over the global PATH entry. */
 function resolvePytestBin(packageDir?: string): string {

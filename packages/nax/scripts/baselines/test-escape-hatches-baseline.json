@@ -154,9 +154,6 @@
     "test/integration/pipeline/pipeline.test.ts": {
       "looseCast": 1
     },
-    "test/integration/pipeline/pipeline-acceptance.test.ts": {
-      "looseCast": 1
-    },
     "test/integration/pipeline/hooks.test.ts": {
       "looseCast": 2
     },
@@ -986,14 +983,8 @@
     "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts": {
       "looseCast": 2
     },
-    "test/unit/pipeline/stages/acceptance.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/pipeline/stages/queue-check.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/pipeline/stages/acceptance-setup-dispatch-failure.test.ts": {
-      "looseCast": 19
     },
     "test/unit/metrics/tracker-context-metrics.test.ts": {
       "looseCast": 1

@@ -118,10 +118,10 @@ describe("handleDryRun", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Gate 1 — pre-run acceptance pipeline never dispatches under a dry run
+// Gate 1 — a dry run writes no acceptance artifacts and touches no PRD
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("executeUnified — pre-run acceptance pipeline under dry run (nax#1809)", () => {
+describe("executeUnified — no acceptance artifacts under a dry run (nax#1809)", () => {
   let tempDir: string;
   let prdPath: string;
   let story: UserStory;
@@ -174,20 +174,6 @@ describe("executeUnified — pre-run acceptance pipeline under dry run (nax#1809
       { name: "acceptance-meta.json", path: join(tempDir, "acceptance-meta.json") },
     ];
   }
-
-  test("completes without dispatching acceptance generation (refine/generate ops)", async () => {
-    const { _acceptanceSetupDeps } = await import("@/pipeline/stages/acceptance-setup");
-    const originalCallOp = _acceptanceSetupDeps.callOp;
-    const callOpSpy = spyOn(_acceptanceSetupDeps, "callOp").mockImplementation(originalCallOp);
-    try {
-      const result = await executeUnified(makeDryRunCtx(), prd);
-
-      expect(result.exitReason).toBe("completed");
-      expect(callOpSpy).not.toHaveBeenCalled();
-    } finally {
-      callOpSpy.mockRestore();
-    }
-  });
 
   test("writes no acceptance artifacts (skeleton, refined, meta)", async () => {
     const result = await executeUnified(makeDryRunCtx(), prd);

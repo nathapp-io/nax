@@ -1,10 +1,11 @@
 /** Acceptance fix cycle — moved from acceptance-loop.ts for file-size compliance. */
 import type { DiagnosisResult } from "@/acceptance";
 import type { FailedCriterion } from "@/acceptance/failed-criteria";
+import { NaxError } from "@/errors";
 import type { Finding, FixCycle, FixCycleResult } from "@/findings";
 import { acFailureToFinding, acSentinelToFinding, runFixCycle } from "@/findings";
 import { acceptanceFixSourceOp, acceptanceFixTestOp } from "@/operations";
-import type { PipelineContext } from "@/pipeline/types";
+import type { PipelineContext, PipelineStage } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import { buildPriorIterationsBlock } from "@/prompts";
 import { openAcceptanceFixScope } from "./acceptance-fix-scope";
@@ -94,7 +95,19 @@ export function buildAcceptanceContext(ctx: AcceptanceLoopContext, prd: PRD): Pi
 
 /** Injectable deps for runAcceptanceTestsOnce — swap in tests to avoid mock.module(). */
 export const _runAcceptanceTestsOnceDeps = {
-  importAcceptanceStage: () => import("@/pipeline/stages"),
+  /**
+   * The acceptance stage was deleted with the pipeline post-run acceptance phase
+   * (pipeline-post-run-delete US-005), so this loop has no stage left to run.
+   * Its callers are deleted by US-006; until then the removed seam throws rather
+   * than pretending the acceptance run passed.
+   */
+  importAcceptanceStage: async (): Promise<{ acceptanceStage: PipelineStage }> => {
+    throw new NaxError(
+      "The acceptance stage was removed: workflow mode does not run acceptance tests",
+      "ACCEPTANCE_STAGE_REMOVED",
+      { stage: "acceptance" },
+    );
+  },
 };
 
 export async function runAcceptanceTestsOnce(

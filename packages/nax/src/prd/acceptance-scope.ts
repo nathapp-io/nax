@@ -5,7 +5,9 @@
  * (fingerprint criteria), `acceptance.ts` (per-package story counts),
  * `test-path.ts` (package grouping) and `acceptance-loop.ts` (total AC count).
  * They had drifted: three excluded decomposed parents and one did not, and all
- * four carried comments describing `US-FIX-*` in the present tense.
+ * four carried comments describing `US-FIX-*` in the present tense. The first
+ * two sites were deleted with the acceptance stages
+ * (pipeline-post-run-delete US-005); the remaining two still rely on this.
  *
  * The two exclusions have very different lifetimes, which is why they are
  * separate predicates here rather than one clause:

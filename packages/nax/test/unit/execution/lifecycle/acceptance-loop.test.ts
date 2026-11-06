@@ -590,7 +590,8 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     origSpawnGitDiff = _regenerateDeps.spawnGitDiff;
     origReadFile = _regenerateDeps.readFile;
     origAcceptanceSetupExecute = _regenerateDeps.acceptanceSetupExecute;
-    // Prevent real acceptanceSetupStage execution
+    // Stub the setup execute seam — the acceptance-setup stage it used to run was
+    // deleted with the pipeline post-run acceptance phase (US-005).
     (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async () => {});
   });
 
@@ -707,7 +708,7 @@ describe("regenerateAcceptanceTest — collects implementation context via git d
     expect(totalBytes).toBeLessThanOrEqual(50 * 1024);
   });
 
-  test("passes implementationContext to acceptanceSetupStage when git diff returns files", async () => {
+  test("passes implementationContext to the acceptance-setup execute seam when git diff returns files", async () => {
     const testPath = join(tmpDir, ".nax-acceptance.test.ts");
     await Bun.write(testPath, "test content");
 

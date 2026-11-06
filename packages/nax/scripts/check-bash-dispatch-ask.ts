@@ -103,12 +103,6 @@ export const ALLOWED_BARE_SITES: readonly AllowedBareSite[] = [
     fn: "processPackageGroup",
     reason: "acceptanceRefineOp (complete-kind) / acceptanceGenerateOp (Read/Glob/Grep/Write)",
   },
-  {
-    file: "src/pipeline/stages/acceptance-setup.ts",
-    fn: "callOp",
-    reason:
-      "_acceptanceSetupDeps.callOp, used only for acceptanceRefineOp (complete-kind) / acceptanceGenerateOp (Read/Glob/Grep/Write)",
-  },
   { file: "src/execution/lifecycle/acceptance-fix.ts", fn: "fixCallCtx", reason: "acceptanceDiagnoseOp (read-only)" },
 ];
 

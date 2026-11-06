@@ -35,7 +35,6 @@ import {
 } from "@/execution/lifecycle/acceptance-loop";
 import type { Finding } from "@/findings";
 import { addSink, initLogger, resetLogger } from "@/logger";
-import * as pipelineStages from "@/pipeline/stages";
 import type { AgentGetFn, PipelineContext, StageResult } from "@/pipeline/types";
 import type { PRD } from "@/prd";
 
@@ -449,12 +448,12 @@ describe("Edge cases for routing logic", () => {
 // ─── Retry-budget boundary (absorbed acceptance-loop-retry-budget) ───────────
 
 /**
- * Rebuild the stages module namespace with a stubbed acceptanceStage, so
- * importAcceptanceStage can be swapped without mock.module().
+ * A stubbed acceptance stage — the real one was deleted
+ * (pipeline-post-run-delete US-005) — so importAcceptanceStage can be swapped
+ * without mock.module().
  */
 function stubStagesModule(execute: (ctx: PipelineContext) => Promise<StageResult>) {
-  return async () =>
-    Object.assign({}, pipelineStages, { acceptanceStage: { ...pipelineStages.acceptanceStage, execute } });
+  return async () => ({ acceptanceStage: { name: "acceptance", enabled: () => true, execute } });
 }
 
 function makeRetryPrd(): PRD {

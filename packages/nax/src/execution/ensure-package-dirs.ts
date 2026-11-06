@@ -10,8 +10,8 @@
  * silently to a skeleton test. No run could ever bootstrap a new package.
  *
  * This module creates any missing story package directories once, up front,
- * before either the pre-run acceptance pipeline or the execution loop opens a
- * session — fixing both symptoms at a single chokepoint.
+ * before the execution loop opens a session — fixing both symptoms at a single
+ * chokepoint.
  */
 
 import path from "node:path";

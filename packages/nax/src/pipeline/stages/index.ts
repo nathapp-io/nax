@@ -6,8 +6,6 @@
  */
 
 import type { PipelineStage } from "../types";
-import { acceptanceStage } from "./acceptance";
-import { acceptanceSetupStage } from "./acceptance-setup";
 import { completionStage } from "./completion";
 import { constitutionStage } from "./constitution";
 import { contextStage } from "./context";
@@ -113,20 +111,6 @@ export const defaultPipeline: PipelineStage[] = new Proxy([] as PipelineStage[],
   },
 });
 
-/**
- * Post-run pipeline stages — run once after all per-story iterations complete.
- * Handles deferred regression and acceptance tests.
- */
-export const postRunPipeline: PipelineStage[] = [acceptanceStage];
-
-/**
- * Pre-run pipeline stages — run once before the per-story loop, after PRD is loaded.
- * Used for acceptance test setup (generation + RED gate).
- */
-export const preRunPipeline: PipelineStage[] = [acceptanceSetupStage];
-
-export { acceptanceStage } from "./acceptance";
-export { _acceptanceSetupDeps, acceptanceSetupStage } from "./acceptance-setup";
 export { _completionDeps, completionStage } from "./completion";
 export { constitutionStage } from "./constitution";
 export { _contextStageDeps, contextStage } from "./context";
