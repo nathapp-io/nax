@@ -70,6 +70,8 @@ export interface ChatHost {
   readonly jobs?: ChatJobs;
   readonly runAsks?: ChatRunAsks;
   readonly tasks?: ChatBackgroundTasks;
+  /** Task-notice turns in a row that may wake the agent before a user turn (`interaction.defaults.chatTaskNoticeTurns`). */
+  readonly taskNoticeTurns?: number;
   readonly confirmBeforeClose?: () => Promise<boolean>;
   current(): ChatHostState;
   history?(): ChatHistory;

@@ -6,6 +6,7 @@ import type { ChatHost } from "@/chat";
 import { _backgroundTaskDeps, createBackgroundTasks } from "@/chat/background";
 import type { ChatJobs } from "@/chat/jobs/job-runner";
 import { _slashCommandDeps } from "@/tui/chat/slash-commands";
+import { taskNoticeHeldLine } from "@/tui/chat/use-jobs";
 
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -13,7 +14,7 @@ afterEach(async () => {
   for (const dispose of disposers.splice(0)) await dispose();
   mock.restore();
 });
-function mount(withJobs = false) {
+function mount(withJobs = false, taskNoticeTurns?: number) {
   const dir = makeTempDir("task-notices-");
   const tasks = createBackgroundTasks({ outputDir: dir, now: () => new Date(), logger: makeLogger() });
   disposers.push(async () => {
@@ -59,7 +60,12 @@ function mount(withJobs = false) {
       };
     },
   };
-  const ui = mountChatPicker({ tasks, send, ...(withJobs ? { jobs } : {}) });
+  const ui = mountChatPicker({
+    tasks,
+    send,
+    ...(withJobs ? { jobs } : {}),
+    ...(taskNoticeTurns === undefined ? {} : { taskNoticeTurns }),
+  });
   async function endTask() {
     const end = Promise.withResolvers<BackgroundCommandEnd>();
     let id = "";
@@ -161,6 +167,33 @@ describe("background task notices", () => {
     await ui.endTask();
     expect(ui.send).toHaveBeenCalledTimes(5);
     expect(ui.tasks.peekNotice()).toBeDefined();
+  });
+  test("a task notice held by the guard is announced once in the transcript (#2816)", async () => {
+    const ui = mount();
+    for (let i = 0; i < 3; i++) {
+      await ui.endTask();
+      await ui.finishTurn(i);
+    }
+    await ui.endTask();
+    await ui.endTask();
+    expect(ui.send).toHaveBeenCalledTimes(3);
+    const held = taskNoticeHeldLine(3);
+    expect(ui.rows().filter((row) => row.includes(held))).toHaveLength(1);
+  });
+  test("the host's taskNoticeTurns sets the guard (#2816)", async () => {
+    const ui = mount(false, 5);
+    for (let i = 0; i < 4; i++) {
+      await ui.endTask();
+      await ui.finishTurn(i);
+    }
+    expect(ui.send).toHaveBeenCalledTimes(4);
+    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(5)))).toBe(false);
+  });
+  test("a taskNoticeTurns of 0 never wakes the agent but still announces the held notice", async () => {
+    const ui = mount(false, 0);
+    await ui.endTask();
+    expect(ui.send).not.toHaveBeenCalled();
+    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(0)))).toBe(true);
   });
   test("a rejected task notice stays queued without using a guard turn", async () => {
     const ui = mount();

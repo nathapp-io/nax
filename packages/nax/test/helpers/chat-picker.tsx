@@ -39,6 +39,8 @@ interface MountOptions {
   readonly tasks?: ChatHost["tasks"];
   readonly jobs?: ChatHost["jobs"];
   readonly runAsks?: ChatHost["runAsks"];
+  /** The host's consecutive task-notice turn limit; absent leaves the screen's default. */
+  readonly taskNoticeTurns?: number;
   readonly send?: ChatHost["send"];
   readonly models?: readonly string[];
   readonly effortLevels?: ChatHost["effortLevels"];
@@ -89,6 +91,7 @@ export function mount(options: MountOptions = {}) {
     tasks: options.tasks,
     jobs: options.jobs,
     runAsks: options.runAsks,
+    ...(options.taskNoticeTurns === undefined ? {} : { taskNoticeTurns: options.taskNoticeTurns }),
     cancel: mock(() => {}),
     close: mock(async () => {}),
     start: async () => {},

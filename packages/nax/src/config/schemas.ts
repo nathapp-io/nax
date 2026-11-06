@@ -370,6 +370,7 @@ export const NaxConfigSchema = z
       defaults: {
         timeout: 600000,
         chatAskFallbackMs: 60000,
+        chatTaskNoticeTurns: 3,
       },
       triggers: {
         "security-review": true,

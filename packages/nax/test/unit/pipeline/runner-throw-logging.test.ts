@@ -1,5 +1,5 @@
 // RE-ARCH: keep
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -38,6 +38,11 @@ describe("runPipeline logs a stage throw", () => {
     logCalls = [];
     initLogger({ level: "silent" });
     addSink((entry) => logCalls.push(entry));
+  });
+
+  // Leave the singleton reset so the next file in the same worker can initialize its own.
+  afterEach(() => {
+    resetLogger();
   });
 
   test("logs an error naming the stage and the cause when a stage throws", async () => {

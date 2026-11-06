@@ -348,6 +348,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "interaction.defaults.timeout": "Default timeout in milliseconds",
   "interaction.defaults.chatAskFallbackMs":
     "Delay in milliseconds before offering a terminal approval to the interaction chain",
+  "interaction.defaults.chatTaskNoticeTurns":
+    "Ended background-task notices that may wake the chat agent in a row before the user sends a message (0 = never)",
   "interaction.defaults.fallback": "Default fallback behavior: continue | skip | escalate | abort",
   "interaction.triggers": "Enable/disable built-in triggers",
 

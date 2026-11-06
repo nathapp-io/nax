@@ -18,6 +18,26 @@ import { getSafeLogger } from "../logger";
  * Returns the profile chain to pass as a CLI override into loadConfig, or
  * undefined to let loadConfig's own resolution run.
  */
+/** The loader's display join for a multi-profile chain, which plan stamps into the PRD. */
+const PLANNED_CHAIN_SEPARATOR = "+";
+
+/**
+ * Plan stamps `routingProfile` from the loader's composite name, which joins a
+ * multi-profile chain with `+` (`"a+b"`), while `parseProfileList` splits on `,`
+ * only (#2814). A name that is itself an existing profile stays whole; any other
+ * name holding a `+` is split back into the chain it was joined from.
+ */
+function splitPlannedChain(names: readonly string[], available: readonly string[]): string[] {
+  return names.flatMap((name) =>
+    available.includes(name) || !name.includes(PLANNED_CHAIN_SEPARATOR)
+      ? [name]
+      : name
+          .split(PLANNED_CHAIN_SEPARATOR)
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0),
+  );
+}
+
 export async function resolveRunProfileOverride(opts: {
   prdPath: string;
   projectRoot: string;
@@ -43,13 +63,14 @@ export async function resolveRunProfileOverride(opts: {
   try {
     const prd = (await readJson(opts.prdPath)) as { routingProfile?: unknown } | undefined;
     const rp = prd?.routingProfile;
-    const prdChain = parseProfileList(
+    const parsed = parseProfileList(
       typeof rp === "string" || Array.isArray(rp) ? (rp as string | string[]) : undefined,
     );
-    if (prdChain.length > 0) {
+    if (parsed.length > 0) {
       const listNames =
         opts._listProfileNames ?? (async () => (await listProfiles(opts.projectRoot)).map((p) => p.name));
       const available = await listNames();
+      const prdChain = splitPlannedChain(parsed, available);
       // "default" never needs a profile file; everything else must resolve.
       const missing = prdChain.filter((name) => name !== "default" && !available.includes(name));
       if (missing.length === 0) return prdChain;

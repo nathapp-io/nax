@@ -154,6 +154,20 @@ describe("InteractionConfigSchema — per-trigger fallback/timeout (SEC-3, BUG-4
     expect(FIELD_DESCRIPTIONS["interaction.defaults.chatAskFallbackMs"]?.trim().length).toBeGreaterThan(0);
   });
 
+  test("chat task-notice turns default to 3, accept 0 and carry a description (#2816)", () => {
+    expect(NaxConfigSchema.parse({}).interaction.defaults.chatTaskNoticeTurns).toBe(3);
+    expect(InteractionConfigSchema.parse({ defaults: {} }).defaults.chatTaskNoticeTurns).toBe(3);
+    expect(
+      NaxConfigSchema.parse({ interaction: { defaults: { chatTaskNoticeTurns: 0 } } }).interaction.defaults
+        .chatTaskNoticeTurns,
+    ).toBe(0);
+    expect(FIELD_DESCRIPTIONS["interaction.defaults.chatTaskNoticeTurns"]?.trim().length).toBeGreaterThan(0);
+  });
+
+  test.each([-1, 101, 1.5])("rejects invalid chat task-notice turns %s", (chatTaskNoticeTurns) => {
+    expect(NaxConfigSchema.safeParse({ interaction: { defaults: { chatTaskNoticeTurns } } }).success).toBe(false);
+  });
+
   test("AC-20: a fully empty NaxConfig parse does not bake interaction.defaults.fallback either", () => {
     const parsed = NaxConfigSchema.parse({});
     expect(parsed.interaction.defaults.fallback).toBeUndefined();

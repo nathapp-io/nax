@@ -11,7 +11,18 @@ interface JobsOptions {
   readonly deliver: (notice: string) => Promise<boolean>;
 }
 
+/** The default for `interaction.defaults.chatTaskNoticeTurns`; the host passes the configured value. */
 export const MAX_CONSECUTIVE_TASK_NOTICE_TURNS = 3;
+
+/**
+ * The transcript row drawn once when an ended task's notice is held by the guard (#2816), so a
+ * chat that stops waking the agent says why instead of going quiet until the user types.
+ */
+export function taskNoticeHeldLine(limit: number): string {
+  return limit === 0
+    ? "background task ended · auto-wake is off · send a message to continue"
+    : `background task ended · auto-wake paused after ${limit} task turns in a row · send a message to continue`;
+}
 
 /** Deliver run asks before job notices, then bounded autonomous task turns, only while idle. */
 export function useJobs(
@@ -29,6 +40,9 @@ export function useJobs(
   const tasks = host.tasks;
   const runAsks = host.runAsks;
   const taskTurns = useRef(0);
+  const taskTurnLimit = host.taskNoticeTurns ?? MAX_CONSECUTIVE_TASK_NOTICE_TURNS;
+  /** True once the held task notice has been announced; cleared when a task notice is delivered. */
+  const heldAnnounced = useRef(false);
   const [, refresh] = useState(0);
   const latestDeliver = useRef(deliver);
   latestDeliver.current = deliver;
@@ -63,11 +77,17 @@ export function useJobs(
         ? runAsks
         : jobNotice !== undefined
           ? jobs
-          : taskTurns.current < MAX_CONSECUTIVE_TASK_NOTICE_TURNS
+          : taskTurns.current < taskTurnLimit
             ? tasks
             : undefined;
     const notice = askNotice ?? jobNotice ?? source?.peekNotice();
-    if (notice === undefined) return;
+    if (notice === undefined) {
+      if (source === undefined && !heldAnnounced.current && tasks?.peekNotice() !== undefined) {
+        heldAnnounced.current = true;
+        note(taskNoticeHeldLine(taskTurnLimit));
+      }
+      return;
+    }
     inFlight.current = true;
     void (async () => {
       let delivered = false;
@@ -76,7 +96,10 @@ export function useJobs(
         if (delivered) {
           if (source === runAsks) runAsks?.takeNotice(notice);
           else source?.takeNotice();
-          if (source === tasks) taskTurns.current++;
+          if (source === tasks) {
+            taskTurns.current++;
+            heldAnnounced.current = false;
+          }
         }
       } catch (error) {
         getLogger()?.warn("chat", "Background notice delivery failed; notice retained", { error: errorMessage(error) });

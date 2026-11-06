@@ -23,6 +23,7 @@ import {
   runResume,
 } from "@/commands";
 import { NaxError } from "@/errors";
+import { resetLogger } from "@/logger";
 
 function writeCheckpoint(featureDir: string, records: Array<{ storyId: string; phase: string }>): void {
   const cpPath = join(featureDir, "checkpoint.jsonl");
@@ -72,6 +73,9 @@ describe("registerResumeCommand — AC1: commander wiring", () => {
 
   afterEach(() => {
     process.chdir(origCwd);
+    // The end-to-end case runs the real resume action, which initializes a file-backed
+    // logger; a later file in the same worker would throw on its own initLogger().
+    resetLogger();
   });
 
   test("AC1: registerResumeCommand is an exported function from @/commands/resume", () => {
