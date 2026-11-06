@@ -21,6 +21,10 @@ describe("resolveGitLayout", () => {
     expect(await resolveGitLayout(base)).toEqual({ kind: "none" });
   });
 
+  test("absent root -> none", async () => {
+    expect(await resolveGitLayout(join(base, "absent-root"))).toEqual({ kind: "none" });
+  });
+
   test("main checkout -> main with an absolute git dir", async () => {
     git(["init", "-q", "-b", "main"], base);
     expect(await resolveGitLayout(base)).toEqual({ kind: "main", gitDir: join(base, ".git") });

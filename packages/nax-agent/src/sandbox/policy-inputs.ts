@@ -24,11 +24,27 @@ export const _policyInputDeps = {
   platform: (): NodeJS.Platform => process.platform,
 };
 
+/**
+ * `git rev-parse <flag>` inside `root`, or `undefined` when it does not resolve.
+ *
+ * The spawn can fail rather than return an exit code: a `root` that no longer
+ * exists (a worktree cleaned up mid-run, a caller-supplied workdir that was
+ * never created) makes exec report ENOENT. This helper used to let that escape,
+ * so `resolveGitLayout` -> `resolveSessionSandbox` -> `resolveCodingToolSupport`
+ * threw and the dispatch failed before any turn whenever the OS sandbox was
+ * available. The sibling disk probes below (`listNaxEntries`,
+ * `listCredentialFiles`) already treat "cannot read" as "absent", and this
+ * helper asks the same question: what exists on disk right now.
+ */
 async function gitPath(flag: string, root: string): Promise<string | undefined> {
-  const r = await _policyInputDeps.git(["rev-parse", flag], root);
-  if (r.exitCode !== 0) return undefined;
-  const out = r.stdout.trim();
-  return realOrRaw(isAbsolute(out) ? out : resolve(root, out));
+  try {
+    const r = await _policyInputDeps.git(["rev-parse", flag], root);
+    if (r.exitCode !== 0) return undefined;
+    const out = r.stdout.trim();
+    return realOrRaw(isAbsolute(out) ? out : resolve(root, out));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Resolved once per session. A worktree's git dir differs from its common dir. */
