@@ -8,13 +8,21 @@ import { resolveFeatureSpec } from "@/cli/features-resolve";
 // Fixture helpers
 // ---------------------------------------------------------------------------
 
+import { _featuresAcceptanceDeps } from "@/cli/features-acceptance";
+
+const realLoadConfig = _featuresAcceptanceDeps.loadConfig;
 let tempDir: string;
 
 beforeEach(() => {
+  _featuresAcceptanceDeps.loadConfig = async (...args) => {
+    const config = await realLoadConfig(...args);
+    return { ...config, acceptance: { ...config.acceptance, enabled: true } };
+  };
   tempDir = makeTempDir("nax-resolve-");
 });
 
 afterEach(() => {
+  _featuresAcceptanceDeps.loadConfig = realLoadConfig;
   cleanupTempDir(tempDir);
 });
 
@@ -22,7 +30,7 @@ afterEach(() => {
 function initNaxRepo(base = tempDir): string {
   const naxDir = join(base, ".nax");
   mkdirSync(join(naxDir, "features"), { recursive: true });
-  writeFileSync(join(naxDir, "config.json"), JSON.stringify({ name: "test-project", execution: { mode: "pipeline" } }));
+  writeFileSync(join(naxDir, "config.json"), JSON.stringify({ name: "test-project" }));
   return naxDir;
 }
 

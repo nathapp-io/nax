@@ -681,14 +681,14 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
   test("applyRemovedStrategyCompat: the removed value in a per-package PROFILE maps to keyword too", async () => {
     await writeRootConfig({});
     await writePackageOverride({ profile: "legacy", routing: { strategy: "keyword" } });
-    // `maxIterations` is a non-legacy companion value: it pins that the profile layer
+    // `costLimit` is a non-legacy companion value: it pins that the profile layer
     // really merged, so a future regression that drops package profiles entirely
     // cannot make the strategy assertion below pass vacuously.
-    await writePackageProfile("legacy", { routing: { strategy: "adaptive" }, execution: { maxIterations: 7 } });
+    await writePackageProfile("legacy", { routing: { strategy: "adaptive" }, execution: { costLimit: 7 } });
 
     const config = await loadForPackage();
 
-    expect(config.execution.maxIterations).toBe(7);
+    expect(config.execution.costLimit).toBe(7);
     expect(config.routing.strategy).toBe("keyword");
   });
 
@@ -765,7 +765,7 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
     await writePackageOverride({ profile: "legacy", routing: { adaptive: { costThreshold: 0.5 } } });
     await writePackageProfile("legacy", {
       routing: { adaptive: { costThreshold: 0.9 } },
-      execution: { maxIterations: 7 },
+      execution: { costLimit: 7 },
     });
 
     const captured = await captureWorkdirWarnings(loadForPackage);
@@ -773,7 +773,7 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
     expect(captured.filter((m) => m.includes("routing.adaptive"))).toHaveLength(1);
     // Guards against a vacuous pass: one warning must mean "deduped across two
     // layers", not "the profile layer was never merged".
-    expect((await loadForPackage()).execution.maxIterations).toBe(7);
+    expect((await loadForPackage()).execution.costLimit).toBe(7);
   });
 
   // The two `stripRemovedNoOpKeys` calls on this path are two layers of ONE
@@ -785,12 +785,12 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
     await writePackageOverride({ profile: "legacy", acceptance: { generateTests: false } });
     await writePackageProfile("legacy", {
       acceptance: { generateTests: false },
-      execution: { maxIterations: 7 },
+      execution: { costLimit: 7 },
     });
 
     const captured = await captureWorkdirWarnings(loadForPackage);
 
     expect(captured.filter((m) => m.includes("generateTests"))).toHaveLength(1);
-    expect((await loadForPackage()).execution.maxIterations).toBe(7);
+    expect((await loadForPackage()).execution.costLimit).toBe(7);
   });
 });

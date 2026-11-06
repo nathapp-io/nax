@@ -1,31 +1,44 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { resolveFeatureAcceptance } from "@/cli";
+import * as acceptanceModule from "@/cli/features-acceptance";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
 
 let tempDir: string;
+let fixtureAcceptanceEnabled = true;
+const realLoadConfig = acceptanceModule._featuresAcceptanceDeps.loadConfig;
 
 beforeEach(() => {
   tempDir = makeTempDir("nax-accept-");
+  fixtureAcceptanceEnabled = true;
+  acceptanceModule._featuresAcceptanceDeps.loadConfig = async (...args) => {
+    const config = await realLoadConfig(...args);
+    return { ...config, acceptance: { ...config.acceptance, enabled: fixtureAcceptanceEnabled } };
+  };
 });
 
 afterEach(() => {
+  acceptanceModule._featuresAcceptanceDeps.loadConfig = realLoadConfig;
   cleanupTempDir(tempDir);
 });
 
 /** Creates .nax/config.json (partial config is layered over defaults by loadConfig). */
 function initRepo(config: Record<string, unknown> = {}): string {
+  const acceptance = config.acceptance;
+  fixtureAcceptanceEnabled = !(
+    acceptance &&
+    typeof acceptance === "object" &&
+    "enabled" in acceptance &&
+    acceptance.enabled === false
+  );
   const naxDir = join(tempDir, ".nax");
   mkdirSync(join(naxDir, "features"), { recursive: true });
-  writeFileSync(
-    join(naxDir, "config.json"),
-    JSON.stringify({ name: "test-project", execution: { mode: "pipeline" }, ...config }),
-  );
+  writeFileSync(join(naxDir, "config.json"), JSON.stringify({ name: "test-project", ...config }));
   return naxDir;
 }
 
@@ -79,10 +92,8 @@ function writeProfile(naxDir: string, name: string, config: Record<string, unkno
 
 /**
  * A project config that fails schema validation on its own (storyIsolation enum).
- * `mode: "pipeline"` is kept so a repairing profile is not overridden by workflow
- * mode, which forces `acceptance.enabled` off.
  */
-const INVALID_EXECUTION = { execution: { mode: "pipeline", storyIsolation: "bogus" } };
+const INVALID_EXECUTION = { execution: { storyIsolation: "bogus" } };
 
 // ---------------------------------------------------------------------------
 // disabled
@@ -343,5 +354,25 @@ describe("not a nax repo", () => {
     expect(result.status).toBe("no-prd");
     expect(result.groups).toEqual([]);
     expect(result.error).toBeUndefined();
+  });
+});
+
+describe("acceptance config loader seam", () => {
+  test.each([undefined, { profile: "custom" }])("AC-13 forwards overrides unchanged: %j", async (overrides) => {
+    initRepo();
+    const original = acceptanceModule._featuresAcceptanceDeps.loadConfig;
+    const stub = mock(async () => makeNaxConfig({ acceptance: { enabled: false } }));
+    acceptanceModule._featuresAcceptanceDeps.loadConfig = stub;
+    try {
+      const result =
+        overrides === undefined
+          ? await resolveFeatureAcceptance("feat", tempDir)
+          : await resolveFeatureAcceptance("feat", tempDir, overrides);
+      expect(stub).toHaveBeenCalledTimes(1);
+      expect(stub).toHaveBeenCalledWith(tempDir, overrides);
+      expect(result.status).toBe("disabled");
+    } finally {
+      acceptanceModule._featuresAcceptanceDeps.loadConfig = original;
+    }
   });
 });

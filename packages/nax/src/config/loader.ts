@@ -18,6 +18,7 @@ import {
   rejectDeadQualityFlags,
   rejectLegacyAgentKeys,
   rejectLegacyRectificationKeys,
+  rejectPipelineModeKeys,
   rejectRemovedPlanModes,
   stripRemovedNoOpKeys,
   validatePermissionsBlock,
@@ -39,7 +40,7 @@ import {
 } from "./profile";
 import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
-import { applyWorkflowMode, warnDeprecatedPipelineMode } from "./workflow-mode";
+import { applyWorkflowMode } from "./workflow-mode";
 
 /**
  * CFG-2/CFG-3: resolve `$VAR`/`${VAR}` references in a config layer that has
@@ -119,6 +120,7 @@ async function applyGlobalLayer(
   if (!globalConfRaw) return { rawConfig, globalConfRaw: null, globalLayerConf: null };
   const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
   const globalConf = applyConfigCompatShims(globalConfStripped, ctx.logger, ctx.warnDedupe);
+  rejectPipelineModeKeys(globalConf, "global config");
   return {
     rawConfig: deepMergeConfig(rawConfig, globalConf),
     globalConfRaw,
@@ -138,6 +140,7 @@ async function applyProjectLayer(
   if (!projConf) return rawConfig;
   const { profile: _pProfile, ...projConfStripped } = rejectGlobalOnlyKeys(projConf, "project");
   const resolvedProjConf = applyConfigCompatShims(projConfStripped, ctx.logger, ctx.warnDedupe);
+  rejectPipelineModeKeys(resolvedProjConf, "project config");
   const preProjectMergeConfig = rawConfig;
   const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, resolvedProjConf);
   // SEC-2 / D-2 — warn (do not block, do not change precedence) when the
@@ -174,6 +177,7 @@ async function applyProfileChainLayer(
     // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
     // rather than hard-failing Zod validation.
     const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, ctx.logger, ctx.warnDedupe);
+    rejectPipelineModeKeys(shimmedProfileData, `profile "${name}"`);
     const preProfileMergeConfig = merged;
     merged = deepMergeConfig<Record<string, unknown>>(merged, shimmedProfileData);
     // SEC-2 — profiles merge AFTER global + project and can just as easily undo a
@@ -196,6 +200,7 @@ function applyCliOverridesLayer(
   if (!cliOverrides) return rawConfig;
   const globalOnly = rejectGlobalOnlyKeys(cliOverrides, "CLI");
   const shimmedCliOverrides = applyConfigCompatShims(globalOnly, ctx.logger, ctx.warnDedupe);
+  rejectPipelineModeKeys(shimmedCliOverrides, "CLI overrides");
   const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, shimmedCliOverrides);
   // SEC-2 — CLI overrides win over every other layer; warn when one changes a
   // security-sensitive key so the change isn't silently invisible.
@@ -247,7 +252,6 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
     });
   }
 
-  warnDeprecatedPipelineMode(result.data as NaxConfig, defaultConfigWarn);
   return applyWorkflowMode(result.data as NaxConfig, defaultConfigWarn);
 }
 
@@ -318,7 +322,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // DEFAULT_CONFIG already carries profile="default" and profileChain=[] (schema
   // defaults), so this fast path stays consistent with the full path's chain fields.
   if (!hasMergedConfigs) {
-    return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>) as unknown as NaxConfig;
+    return applyWorkflowMode(structuredClone(DEFAULT_CONFIG), defaultConfigWarn);
   }
 
   return finalizeAndValidateRootConfig(rawConfig);
@@ -481,6 +485,7 @@ export async function loadConfigForWorkdir(
     logger,
     warnDedupe,
   ) as Partial<NaxConfig>;
+  rejectPipelineModeKeys(shimmedPackageFields as Record<string, unknown>, `per-package config "${packageDir}"`);
   // nax#1990 — scoped to THIS layer's own `quality.commands`, not the merged
   // result below. `loadConfig` (root chain) already warns once per resolved
   // root config and is cached per `cacheKey`, so a root-only chained command

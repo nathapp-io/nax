@@ -110,7 +110,7 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
-          maxIterations: 25, // Different from any global value
+          costLimit: 25, // Different from any global value
         },
       };
       writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
@@ -134,7 +134,7 @@ describe("Config Command --diff", () => {
       expect(output).toContain("Global Value");
 
       // Should show the specific field
-      expect(output).toContain("execution.maxIterations");
+      expect(output).toContain("execution.costLimit");
 
       // Should show project value (25)
       expect(output).toContain("25");
@@ -142,8 +142,8 @@ describe("Config Command --diff", () => {
       // Global value will vary based on ~/.nax/config.json, just verify it's present
       // The key assertion is that we show both values in a diff
       const lines = output.split("\n");
-      const maxIterLine = lines.find((line) => line.includes("execution.maxIterations"));
-      expect(maxIterLine).toBeDefined();
+      const costLimitLine = lines.find((line) => line.includes("execution.costLimit"));
+      expect(costLimitLine).toBeDefined();
     });
 
     test("shows multiple differences when multiple fields override", async () => {
@@ -151,8 +151,8 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
-          maxIterations: 25,
-          costLimit: 10.0,
+          costLimit: 25,
+          sessionTimeoutSeconds: 10,
         },
         tdd: {
           maxRetries: 5,
@@ -168,19 +168,19 @@ describe("Config Command --diff", () => {
       const output = consoleOutput.join("\n");
 
       // Should show all three differences
-      expect(output).toContain("execution.maxIterations");
       expect(output).toContain("execution.costLimit");
+      expect(output).toContain("execution.sessionTimeoutSeconds");
       expect(output).toContain("tdd.maxRetries");
 
       // Check project values are present
-      expect(output).toContain("25"); // maxIterations project
-      expect(output).toContain("10"); // costLimit project
+      expect(output).toContain("25"); // costLimit project
+      expect(output).toContain("10"); // sessionTimeoutSeconds project
       expect(output).toContain("5"); // tdd.maxRetries project
 
       // Verify table structure exists
       const lines = output.split("\n");
-      expect(lines.some((line) => line.includes("execution.maxIterations"))).toBe(true);
       expect(lines.some((line) => line.includes("execution.costLimit"))).toBe(true);
+      expect(lines.some((line) => line.includes("execution.sessionTimeoutSeconds"))).toBe(true);
       expect(lines.some((line) => line.includes("tdd.maxRetries"))).toBe(true);
     });
 
@@ -214,7 +214,7 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
-          maxIterations: 25,
+          costLimit: 25,
         },
       };
       writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
@@ -226,9 +226,9 @@ describe("Config Command --diff", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Should show description for execution.maxIterations
-      // Description: "Max iterations per feature run — each story attempt, parallel batch and the final completion pass counts one"
-      expect(output).toContain("Max iterations per feature run");
+      // Should show description for execution.costLimit
+      // Description names the cost budget and its per-run override.
+      expect(output).toContain("Max cost in USD before pausing execution");
     });
 
     test("handles array differences correctly", async () => {
@@ -439,7 +439,7 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
-          maxIterations: 25, // Only override this one field
+          costLimit: 25, // Only override this one field
         },
       };
       writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
@@ -451,11 +451,11 @@ describe("Config Command --diff", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Should only show execution.maxIterations
-      expect(output).toContain("execution.maxIterations");
+      // Should only show execution.costLimit
+      expect(output).toContain("execution.costLimit");
 
       // Should NOT show other execution fields that weren't overridden
-      expect(output).not.toContain("execution.costLimit");
+      expect(output).not.toContain("execution.maxIterations");
       expect(output).not.toContain("execution.sessionTimeoutSeconds");
     });
 

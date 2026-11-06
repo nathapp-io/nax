@@ -19,11 +19,17 @@ function configFor(opts: { mode?: Mode; acceptance: boolean; advisor?: boolean }
 }
 
 describe("applyWorkflowMode", () => {
-  test("pipeline mode returns the same object untouched and never warns", () => {
-    const cfg = configFor({ acceptance: true });
-    const warnings: string[] = [];
-    expect(applyWorkflowMode(cfg, (m) => warnings.push(m))).toBe(cfg);
-    expect(warnings).toEqual([]);
+  test("AC-12 normalizes hand-built pipeline configs too", () => {
+    const cfg = makeNaxConfig({
+      execution: { mode: "pipeline", storyIsolation: "worktree" },
+      acceptance: { enabled: true },
+      advisor: { enabled: false },
+    });
+    const out = applyWorkflowMode(cfg, () => {});
+    expect(out.acceptance.enabled).toBe(false);
+    expect(out.execution.storyIsolation).toBe("shared");
+    expect(out.advisor?.enabled).toBe(true);
+    expect(cfg.acceptance.enabled).toBe(true);
   });
 
   test("workflow mode forces acceptance off and the advisor on, silently when they are the shipped defaults", () => {

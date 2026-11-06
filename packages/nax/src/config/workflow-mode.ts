@@ -3,7 +3,6 @@
  * chain and each per-package overlay — so no layer can re-enable what workflow mode turns off.
  * Parallel is NOT a config key (it comes from the --parallel CLI flag); the runner forces it off.
  */
-import { isWorkflowMode } from "./schemas-workflow";
 import type { NaxConfig } from "./types";
 
 /** Root-chain only, so a run warns once rather than once per package overlay. */
@@ -15,7 +14,6 @@ export function warnDeprecatedPipelineMode(config: NaxConfig, warn: (msg: string
 }
 
 export function applyWorkflowMode(config: NaxConfig, warn: (msg: string) => void): NaxConfig {
-  if (!isWorkflowMode(config)) return config;
   const forceAcceptanceOff = config.acceptance.enabled;
   const forceAdvisorOn = config.advisor !== undefined && !config.advisor.enabled;
   // The workflow tree and its git reads sit in the main checkout (nax#2479), so stories share it.

@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import * as configExports from "@/config";
 import { loadConfig } from "@/config";
@@ -51,20 +51,13 @@ afterEach(() => {
   if (projectDir) cleanupTempDir(projectDir);
 });
 
-test("AC-8: loadConfig defers the pipeline deprecation until logging starts", async () => {
+test("loadConfig rejects removed pipeline mode before logging starts", async () => {
   logging.resetLogger();
   logging._resetDeferredWarnings?.();
   projectDir = makeTempDir("nax-config-deferred-");
   await Bun.write(join(projectDir, ".nax/config.json"), JSON.stringify({ execution: { mode: "pipeline" } }));
-  const warn = spyOn(logging.Logger.prototype, "warn");
-  try {
-    const config = await loadConfig(projectDir);
-    expect(config.execution.mode).toBe("pipeline");
-    warn.mockClear();
-    const logger = logging.initLogger({ level: "warn", suppressConsole: true });
-    expect(warn).toHaveBeenCalledWith("config", expect.stringContaining('execution.mode "pipeline" is deprecated'));
-    expect(warn.mock.contexts.every((context) => context === logger)).toBe(true);
-  } finally {
-    warn.mockRestore();
-  }
+  await expect(loadConfig(projectDir)).rejects.toMatchObject({
+    code: "CONFIG_PIPELINE_MODE_REMOVED",
+    context: { source: "project config" },
+  });
 });

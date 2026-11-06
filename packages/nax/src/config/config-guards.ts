@@ -191,6 +191,29 @@ const REMOVED_PLAN_MODES: Readonly<Record<string, string>> = {
   debate: "the multi-agent debate subsystem was removed",
 };
 
+/** Pipeline mode was removed (C1 B1). Runs on each raw config layer, before it is merged. */
+export function rejectPipelineModeKeys(layer: Record<string, unknown>, source: string): void {
+  const execution = layer.execution;
+  if (!execution || typeof execution !== "object") return;
+  const keys: string[] = [];
+  const hints: string[] = [];
+  if ("mode" in execution && execution.mode === "pipeline") {
+    keys.push("execution.mode");
+    hints.push('- execution.mode: remove it, or set it to "workflow".');
+  }
+  if (Object.hasOwn(execution, "maxIterations")) {
+    keys.push("execution.maxIterations");
+    hints.push("- execution.maxIterations: remove it.");
+  }
+  if (keys.length === 0) return;
+  const message = [
+    `Invalid configuration in ${source} — pipeline mode was removed: ${keys.join(", ")}.`,
+    "Workflow mode is the only execution mode, and it bounds a run by its stories.",
+    ...hints,
+  ].join("\n");
+  throw new NaxError(message, "CONFIG_PIPELINE_MODE_REMOVED", { stage: "config", source, keys });
+}
+
 export function rejectRemovedPlanModes(conf: Record<string, unknown>): void {
   const plan = conf.plan as Record<string, unknown> | undefined;
   if (!plan || typeof plan !== "object") return;

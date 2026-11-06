@@ -10,7 +10,9 @@
  */
 
 import { describe, expect, it, test } from "bun:test";
+import * as guards from "@/config/config-guards";
 import { rejectRemovedPlanModes, warnQualityCommandChains } from "@/config/config-guards";
+import { NaxError } from "@/errors";
 
 describe("warnQualityCommandChains", () => {
   test("warns via the sink for a chained string command", () => {
@@ -82,5 +84,60 @@ describe("rejectRemovedPlanModes", () => {
   it("is a no-op when plan or plan.mode is absent", () => {
     expect(() => rejectRemovedPlanModes({})).not.toThrow();
     expect(() => rejectRemovedPlanModes({ plan: {} })).not.toThrow();
+  });
+});
+
+describe("rejectPipelineModeKeys", () => {
+  function rejected(execution: Record<string, unknown>, source = "project config"): NaxError {
+    try {
+      guards.rejectPipelineModeKeys({ execution }, source);
+    } catch (err) {
+      if (err instanceof NaxError) return err;
+      throw err;
+    }
+    throw new Error("Expected removed pipeline keys to be rejected");
+  }
+
+  test("AC-1 rejects pipeline mode with structured context", () => {
+    const err = rejected({ mode: "pipeline" });
+    expect(err.code).toBe("CONFIG_PIPELINE_MODE_REMOVED");
+    expect(err.context).toEqual({ stage: "config", source: "project config", keys: ["execution.mode"] });
+  });
+
+  test("AC-2 lists both keys in canonical order with exact migration hints", () => {
+    expect(rejected({ mode: "pipeline", maxIterations: 5 }).message).toBe(
+      [
+        "Invalid configuration in project config — pipeline mode was removed: execution.mode, execution.maxIterations.",
+        "Workflow mode is the only execution mode, and it bounds a run by its stories.",
+        '- execution.mode: remove it, or set it to "workflow".',
+        "- execution.maxIterations: remove it.",
+      ].join("\n"),
+    );
+  });
+
+  test("AC-3 names only maxIterations and the source", () => {
+    const err = rejected({ maxIterations: 5 }, "global config");
+    expect(err.message).toContain(
+      "Invalid configuration in global config — pipeline mode was removed: execution.maxIterations.",
+    );
+    expect(err.context?.keys).toEqual(["execution.maxIterations"]);
+    expect(err.message).not.toContain("- execution.mode:");
+  });
+
+  test.each([{ execution: { mode: "workflow" } }, { execution: {} }, {}, { execution: "x" }, { execution: null }])(
+    "AC-4 accepts unaffected raw layer %j",
+    (layer) => {
+      expect(() => guards.rejectPipelineModeKeys(layer, "project config")).not.toThrow();
+    },
+  );
+
+  test.each([undefined, null, false, "x", 0])("rejects own maxIterations with value %j", (value) => {
+    expect(rejected({ maxIterations: value }).code).toBe("CONFIG_PIPELINE_MODE_REMOVED");
+  });
+
+  test("ignores inherited maxIterations", () => {
+    expect(() =>
+      guards.rejectPipelineModeKeys({ execution: Object.create({ maxIterations: 5 }) }, "project config"),
+    ).not.toThrow();
   });
 });
