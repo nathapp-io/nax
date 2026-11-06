@@ -1,10 +1,10 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 20,
-    "looseCast": 1377
+    "ratchetAllow": 16,
+    "looseCast": 1234
   },
-  "updatedAt": "2026-11-06T14:20:42.778Z",
+  "updatedAt": "2026-11-06T16:30:00.000Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -68,9 +68,6 @@
     },
     "test/integration/execution/rectification-routing.test.ts": {
       "looseCast": 4
-    },
-    "test/integration/execution/verifier-findings-flow.test.ts": {
-      "looseCast": 1
     },
     "test/integration/execution/parallel-batch-rectification.test.ts": {
       "looseCast": 9
@@ -271,14 +268,8 @@
     "test/unit/execution/parallel-batch-structure.test.ts": {
       "looseCast": 6
     },
-    "test/unit/execution/story-orchestrator.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/execution/pipeline-result-handler-bug12.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/nbf-readonly-flake-triage.test.ts": {
-      "looseCast": 5
     },
     "test/unit/execution/unified-executor-logging.test.ts": {
       "looseCast": 18
@@ -289,32 +280,17 @@
     "test/unit/execution/story-orchestrator-carveout-staleness.test.ts": {
       "looseCast": 2
     },
-    "test/unit/execution/non-blocking-fix-scoped-review.test.ts": {
-      "ratchetAllow": 3
-    },
-    "test/unit/execution/story-orchestrator-revalidation-carveout.test.ts": {
-      "looseCast": 4
-    },
     "test/unit/execution/repo-scoped-fix-record.test.ts": {
       "ratchetAllow": 1
     },
     "test/unit/execution/unified-executor-cost.test.ts": {
       "looseCast": 14
     },
-    "test/unit/execution/review-input-repo-root.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/execution/crash-signals.test.ts": {
       "looseCast": 2
     },
-    "test/unit/execution/non-blocking-fix.test.ts": {
-      "looseCast": 6
-    },
     "test/unit/execution/unified-executor-dispatch.test.ts": {
       "looseCast": 6
-    },
-    "test/unit/execution/story-orchestrator-rectification-exhaustion.test.ts": {
-      "looseCast": 25
     },
     "test/unit/execution/pipeline-result-handler.test.ts": {
       "looseCast": 1
@@ -324,9 +300,6 @@
     },
     "test/unit/execution/parallel-batch.test.ts": {
       "looseCast": 10
-    },
-    "test/unit/execution/story-orchestrator-revalidation.test.ts": {
-      "looseCast": 26
     },
     "test/unit/execution/_post-run-fixtures.ts": {
       "looseCast": 1
@@ -352,14 +325,8 @@
     "test/unit/execution/helpers.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/story-scoped-fix-budget.test.ts": {
-      "looseCast": 3
-    },
     "test/unit/execution/deferred-review.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/story-orchestrator-flake-integration.test.ts": {
-      "looseCast": 19
     },
     "test/unit/execution/session-manager-runtime.test.ts": {
       "looseCast": 2
@@ -375,12 +342,6 @@
     },
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": {
       "looseCast": 19
-    },
-    "test/unit/execution/rectification-budget-invariants.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/execution/story-orchestrator-no-progress-bail.test.ts": {
-      "looseCast": 4
     },
     "test/unit/execution/post-run-review-summary.test.ts": {
       "looseCast": 4
@@ -405,21 +366,6 @@
     },
     "test/unit/execution/story-orchestrator/regressed-gate-findings.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/story-orchestrator/semantic-iteration-wiring.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/execution/story-orchestrator/rectification-context-stage.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/execution/story-orchestrator/run-phase-context-bundle.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/execution/story-orchestrator/flake-triage-seam.test.ts": {
-      "ratchetAllow": 1
-    },
-    "test/unit/execution/story-orchestrator/phase-details.test.ts": {
-      "looseCast": 39
     },
     "test/unit/execution/lifecycle/run-completion-events.test.ts": {
       "looseCast": 9

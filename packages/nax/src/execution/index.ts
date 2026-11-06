@@ -1,21 +1,6 @@
 export type { FailureCategory } from "../tdd/types";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
-export {
-  _workflowResumeDeps,
-  buildCheckpointLogData,
-  buildResumePlan,
-  type CaptureTreeStateDeps,
-  type CaptureTreeStateOptions,
-  type CheckpointReaderDeps,
-  type CheckpointRecord,
-  type CheckpointWriterDeps,
-  captureTreeState,
-  hydrateFromResumePlan,
-  type ResumeMode,
-  type ResumePlan,
-  type StoryCheckpoint,
-  type TreeState,
-} from "./checkpoint";
+export { _workflowResumeDeps, type ResumeMode } from "./checkpoint";
 export {
   type CrashRecoveryContext,
   installCrashHandlers,
@@ -74,7 +59,6 @@ export {
 export type { NbfWorthCheckRequest } from "./nbf-worth-check";
 export { _nbfWorthCheckDeps, runNbfWorthCheck } from "./nbf-worth-check";
 export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
-export { runNonBlockingFix } from "./non-blocking-fix";
 export { countOscillationOutcomes, getOscillations, recordOscillations } from "./oscillation-store";
 export { _pidRegistryDeps, PidRegistry } from "./pid-registry";
 export {
@@ -104,49 +88,6 @@ export {
 } from "./runner-completion";
 export type { WorkflowStatusBlock } from "./status-file";
 export { StatusWriter, type StatusWriterContext } from "./status-writer";
-export {
-  _storyOrchestratorDeps,
-  CANONICAL_ORDER,
-  createNbfFlakeTriageTransaction,
-  deriveRepoScopedFixes,
-  describeGateRegression,
-  EXHAUSTED_EXIT_REASONS,
-  ExecutionPlan,
-  extractPhaseFindings,
-  type GateRegressionDetail,
-  type GateRegressionInput,
-  gateFailureKeys,
-  type InternalBuildState,
-  type NbfFlakeTriageTransaction,
-  type OrchestratorSlot,
-  orderGateLast,
-  PHASE_KIND_TO_STATE_KEY,
-  type PhaseKind,
-  phasePassed,
-  phasesToRevalidate,
-  REPO_SCOPED_STRATEGY_NAME,
-  type RectificationOverrides,
-  type RectificationPhaseOptions,
-  type RepoScopedFixRecord,
-  recordRepoScopedFixes,
-  refreshReviewInputForDispatch,
-  runPhase,
-  runRectification,
-  STRICT_VERDICT_PHASE_NAMES,
-  StoryOrchestratorBuilder,
-  type StoryOrchestratorResult,
-  selectRegressedGateFindings,
-  toReviewDecisionPayload,
-  withIncreasingFailuresBail,
-  withNoProgressBail,
-} from "./story-orchestrator";
-export {
-  type DeriveNbfSeedInput,
-  deriveNbfSeed,
-  type NbfSeed,
-  type NbfSource,
-  type PhaseOutputsLike,
-} from "./story-orchestrator/nbf-seed";
 export {
   buildPhaseOutcomeLogData,
   formatPhaseResultMessage,

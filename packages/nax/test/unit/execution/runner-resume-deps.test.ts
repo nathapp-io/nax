@@ -3,13 +3,12 @@
  *
  * `run()` carries its resume mode into workflow resume (`_workflowResumeDeps.mode`)
  * and nothing else. The orchestrator's checkpoint deps
- * (`_storyOrchestratorDeps.loadCheckpoints` / `recordGreen`) are no longer
- * saved, wired or restored — the checkpoint store's reader and writer are gone,
- * so there is nothing to wire them to. These tests pin both halves:
+ * (`_storyOrchestratorDeps.loadCheckpoints` / `recordGreen`) are gone with the
+ * orchestrator core, so what remains to pin is the workflow seam alone:
  *
- *   - the workflow seam is set before the setup phase and restored on BOTH
- *     exits (the setup-error catch and the outer `finally`);
- *   - the orchestrator seam is left exactly as it was found.
+ *   - it is set before the setup phase and restored on BOTH exits (the
+ *     setup-error catch and the outer `finally`);
+ *   - it still rejects a reentrant `run()` rather than racing on it.
  *
  * We stub `_runnerDeps.runSetupPhase` to throw without going through the full
  * setup pipeline (lock acquisition, crash handlers, etc.); the `finally` case
@@ -31,7 +30,6 @@ import { NaxError } from "@/errors";
 import {
   _runnerDeps,
   _runnerReentrancyGuard,
-  _storyOrchestratorDeps,
   _workflowResumeDeps,
   type ResumeMode,
   type RunOptions,
@@ -184,35 +182,6 @@ describe("runner.run() — workflow resume mode (AC-5, AC-6)", () => {
     await expect(run(makeMinimalOptions({ resumeMode: "fresh" }))).rejects.toThrow("simulated execution failure");
 
     expect(_workflowResumeDeps.mode).toBe("no-resume");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// The orchestrator checkpoint deps are no longer this module's business
-// ---------------------------------------------------------------------------
-
-describe("runner.run() — orchestrator checkpoint deps are untouched", () => {
-  test("run() neither wires nor mutates _storyOrchestratorDeps during a run", async () => {
-    const beforeLoad = _storyOrchestratorDeps.loadCheckpoints;
-    const beforeRecord = _storyOrchestratorDeps.recordGreen;
-    let loadDuringSetup: typeof _storyOrchestratorDeps.loadCheckpoints | undefined;
-    let recordDuringSetup: typeof _storyOrchestratorDeps.recordGreen | undefined;
-
-    _runnerDeps.runSetupPhase = (async () => {
-      loadDuringSetup = _storyOrchestratorDeps.loadCheckpoints;
-      recordDuringSetup = _storyOrchestratorDeps.recordGreen;
-      throw new Error("observed the setup phase");
-    }) as typeof _runnerDeps.runSetupPhase;
-
-    await expect(run(makeMinimalOptions({ resumeMode: "auto" }))).rejects.toThrow("observed the setup phase");
-
-    // Same function references throughout: nothing was swapped in for the run
-    // (auto mode used to install a reader bound to the feature dir, fresh mode
-    // an empty-Map stub) and nothing needed restoring afterwards.
-    expect(loadDuringSetup).toBe(beforeLoad);
-    expect(recordDuringSetup).toBe(beforeRecord);
-    expect(_storyOrchestratorDeps.loadCheckpoints).toBe(beforeLoad);
-    expect(_storyOrchestratorDeps.recordGreen).toBe(beforeRecord);
   });
 });
 
