@@ -29,8 +29,13 @@ interface SpawnResult {
   stderr: string;
 }
 
-async function spawnAccept(cwd: string, args: string[]): Promise<SpawnResult> {
-  const proc = Bun.spawn(["bun", NAX_BIN, "accept", ...args], {
+/**
+ * Both pipes are drained concurrently with the wait for exit. Reading one of
+ * them after `proc.exited` would let a full pipe buffer block the child, and
+ * leaving the read unawaited would let the assertion run before it settles.
+ */
+async function spawnNax(cwd: string, args: string[]): Promise<SpawnResult> {
+  const proc = Bun.spawn(["bun", NAX_BIN, ...args], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
@@ -41,6 +46,10 @@ async function spawnAccept(cwd: string, args: string[]): Promise<SpawnResult> {
     new Response(proc.stderr).text(),
   ]);
   return { exitCode, stdout, stderr };
+}
+
+function spawnAccept(cwd: string, args: string[]): Promise<SpawnResult> {
+  return spawnNax(cwd, ["accept", ...args]);
 }
 
 describe("nax accept (removed) — full option set", () => {
@@ -111,9 +120,7 @@ describe("nax accept (removed) — help", () => {
   });
 
   test("keeps the command declared with its removal description", async () => {
-    const proc = Bun.spawn(["bun", NAX_BIN, "--help"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" });
-    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-    new Response(proc.stderr).text();
+    const { exitCode, stdout } = await spawnNax(tempDir, ["--help"]);
     expect(exitCode).toBe(0);
     // Commander wraps the description column, so compare on folded whitespace.
     expect(stdout.replace(/\s+/g, " ")).toContain(
