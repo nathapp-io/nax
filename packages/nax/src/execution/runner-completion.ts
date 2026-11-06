@@ -373,7 +373,6 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     statusWriter: options.statusWriter,
     config: options.config,
     agentManager: options.agentManager,
-    skipRegression: true,
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
     deferredReview: options.deferredReview,

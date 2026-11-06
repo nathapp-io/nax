@@ -38,7 +38,6 @@ import {
   type AcceptanceLoopContext,
   runAcceptanceLoop,
 } from "@/execution/lifecycle";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { PostRunStatus } from "@/execution/status-file";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
@@ -212,23 +211,11 @@ const defaultAcceptanceResult: AcceptanceLoopResult = {
   prdDirty: false,
 };
 
-const defaultRegressionResult: DeferredRegressionResult = {
-  success: true,
-  failedTests: 0,
-  failedTestFiles: [],
-  passedTests: 5,
-  rectificationAttempts: 0,
-  affectedStories: [],
-};
-
 const origRunnerDeps = { ..._runnerCompletionDeps };
 const origRunDeps = { ..._runCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => defaultAcceptanceResult);
-  _runCompletionDeps.runDeferredRegression = mock(
-    async (): Promise<DeferredRegressionResult> => defaultRegressionResult,
-  );
 });
 
 afterEach(() => {

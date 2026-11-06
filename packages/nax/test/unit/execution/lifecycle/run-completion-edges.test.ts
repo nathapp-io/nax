@@ -2,31 +2,22 @@
  * Characterisation tests for handleRunCompletion's unpinned branches
  * (complexity-drain batch A9, before refactoring run-completion.ts).
  *
- * The seven run-completion* mirror suites pin most of the function: regression
- * gate events (US-004 AC7/AC8/AC9), back-fill and merge (#679, #1709, #1721),
- * Bug 909 aggregator totals, plugin-review gating (#1146 G2), session teardown,
- * manifest retention (US-002), regression-failed story marking and run status
- * (RL-004), and the cost-limit exit reason. NOTHING pinned the branches below,
- * so they are pinned here, green against the unrefactored function, before any
- * structural change:
+ * The run-completion* mirror suites pin most of the function: back-fill
+ * (#1709, #1721), Bug 909 aggregator totals, plugin-review gating (#1146 G2),
+ * session teardown, manifest retention (US-002) and the cost-limit exit reason.
+ * NOTHING pinned the branches below, so they are pinned here, green against the
+ * unrefactored function, before any structural change:
  *
- *  1. a thrown regression gate emits the failed postrun:phase:completed event,
- *     then rethrows the SAME error (post-impl-review quality finding);
- *  2. the on-final-regression-fail hook fires with the regression result — and
- *     does not fire when hooksConfig is absent;
- *  3. skipRegression: true skips the deferred gate entirely;
- *  4. isSequential === false withholds per-story snapshots from the gate
- *     (#1527/#1528) while sequential runs project them;
- *  5. the AC-20 session-scratch purge half (manifest half is pinned):
+ *  1. the AC-20 session-scratch purge half (manifest half is pinned):
  *     resolved projectDir, archive-on-feature-archive flag, info/warn logs,
  *     and that the schema-default session block (retentionDays 7) purges with
  *     no explicit override. The no-retention no-op is NOT pinned: the
  *     `if (sessionCfg?.retentionDays)` false arm is unreachable through a
  *     validated config (schema min(1));
- *  6. pluginProviderCache.disposeAll() is awaited during completion;
- *  7. the saveRunMetrics payload shape (runId, counts, stories reference);
- *  8. the final-status ternary's "stalled" and "aborted" arms (EXEC-1);
- *  9. AC-25: contextCostUsd summed into the completion log (field omitted at
+ *  2. pluginProviderCache.disposeAll() is awaited during completion;
+ *  3. the saveRunMetrics payload shape (runId, counts, stories reference);
+ *  4. the final-status ternary's "stalled" and "aborted" arms (EXEC-1);
+ *  5. AC-25: contextCostUsd summed into the completion log (field omitted at
  *     zero).
  */
 
@@ -35,18 +26,11 @@ import { randomUUID } from "node:crypto";
 import { type DeepPartial, makeDispatchContext, makeNaxConfig, makeStatusWriter, makeStory } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { PluginProviderCache } from "@/context/engine";
-import {
-  _runCompletionDeps,
-  handleRunCompletion,
-  type RunCompletionOptions,
-} from "@/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
-import type { HooksConfig } from "@/hooks/types";
+import { handleRunCompletion, type RunCompletionOptions } from "@/execution/lifecycle/run-completion";
 import * as loggerModule from "@/logger";
 import { Logger } from "@/logger";
 import type { StoryMetrics } from "@/metrics";
 import * as metricsModule from "@/metrics";
-import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
 import * as sessionModule from "@/session";
@@ -152,227 +136,17 @@ function makeOpts(
   };
 }
 
-function makeSuccessfulRegression(): DeferredRegressionResult {
-  return {
-    success: true,
-    failedTests: 0,
-    failedTestFiles: [],
-    passedTests: 5,
-    rectificationAttempts: 0,
-    affectedStories: [],
-  };
-}
-
-function makeFailedRegression(): DeferredRegressionResult {
-  return {
-    success: false,
-    failedTests: 2,
-    failedTestFiles: ["a.test.ts", "b.test.ts"],
-    passedTests: 3,
-    rectificationAttempts: 1,
-    affectedStories: ["US-001"],
-  };
-}
-
-const origDeps = { ..._runCompletionDeps };
 let loggerSpy: Mock<typeof loggerModule.getSafeLogger> | undefined;
 
 beforeEach(() => {
-  _runCompletionDeps.runDeferredRegression = mock(
-    async (): Promise<DeferredRegressionResult> => makeSuccessfulRegression(),
-  );
   pipelineEventBus.clear();
 });
 
 afterEach(() => {
-  Object.assign(_runCompletionDeps, origDeps);
   loggerSpy?.mockRestore();
   loggerSpy = undefined;
   pipelineEventBus.clear();
   mock.restore();
-});
-
-// ---------------------------------------------------------------------------
-// 1. Regression-gate throw: failed event emitted, then the SAME error rethrown
-// ---------------------------------------------------------------------------
-
-describe("handleRunCompletion — regression-gate throw path", () => {
-  test("a throwing gate emits the failed postrun:phase:completed event, then rethrows the same error", async () => {
-    const started: PostRunPhaseStartedEvent[] = [];
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:started", (e) => {
-      started.push(e);
-    });
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const sentinel = new Error("regression boom");
-    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => {
-      throw sentinel;
-    });
-
-    const statusWriter = makeStatusWriter();
-    let caught: unknown;
-    try {
-      await handleRunCompletion(
-        makeOpts(edgeConfig("deferred", "bun test"), makePrd([makeStory({ id: "US-001" })]), { statusWriter }),
-      );
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toBe(sentinel);
-    // The throw must not leave "regression" permanently "running" — the catch
-    // emits the completed event with passed:false before rethrowing.
-    expect(started.some((e) => e.phase === "regression")).toBe(true);
-    const failureEvent = completed.find((e) => e.phase === "regression");
-    expect(failureEvent).toBeDefined();
-    expect(failureEvent?.passed).toBe(false);
-    expect(typeof failureEvent?.durationMs).toBe("number");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 2. on-final-regression-fail hook
-// ---------------------------------------------------------------------------
-
-describe("handleRunCompletion — on-final-regression-fail hook", () => {
-  test("fires with the regression failure payload when hooksConfig is present", async () => {
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => makeFailedRegression(),
-    );
-    const fireHook = mock(async (..._args: Parameters<typeof _runCompletionDeps.fireHook>) => {});
-    _runCompletionDeps.fireHook = fireHook;
-    const hooksConfig: HooksConfig = { hooks: {} };
-
-    await handleRunCompletion(
-      makeOpts(
-        edgeConfig("deferred", "bun test"),
-        makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]),
-        {
-          hooksConfig,
-        },
-      ),
-    );
-
-    expect(fireHook).toHaveBeenCalledTimes(1);
-    const [cfg, event, payload, dir] = fireHook.mock.calls[0];
-    expect(cfg).toBe(hooksConfig);
-    expect(event).toBe("on-final-regression-fail");
-    expect(payload).toMatchObject({
-      event: "on-final-regression-fail",
-      feature: "test-feature",
-      status: "failed",
-      failedTests: 2,
-      affectedStories: ["US-001"],
-    });
-    expect(dir).toBe(WORKDIR);
-  });
-
-  test("does not fire when hooksConfig is absent, even on regression failure", async () => {
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => makeFailedRegression(),
-    );
-    const fireHook = mock(async () => {});
-    _runCompletionDeps.fireHook = fireHook;
-
-    await handleRunCompletion(
-      makeOpts(
-        edgeConfig("deferred", "bun test"),
-        makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]),
-      ),
-    );
-
-    expect(fireHook).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 3. skipRegression: true
-// ---------------------------------------------------------------------------
-
-describe("handleRunCompletion — skipRegression", () => {
-  test("skips the deferred gate entirely and completes normally", async () => {
-    const statusWriter = makeStatusWriter();
-    const started: PostRunPhaseStartedEvent[] = [];
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:started", (e) => {
-      started.push(e);
-    });
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const result = await handleRunCompletion(
-      makeOpts(
-        edgeConfig("deferred", "bun test"),
-        makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]),
-        {
-          statusWriter,
-          skipRegression: true,
-        },
-      ),
-    );
-
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
-    expect(started.some((e) => e.phase === "regression")).toBe(false);
-    expect(completed.some((e) => e.phase === "regression")).toBe(false);
-    expect(statusWriter.setPostRunPhase).not.toHaveBeenCalledWith("regression", expect.anything());
-    expect(result.pluginGateFailed).toBe(false);
-    expect(result.finalCounts.total).toBe(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 4. isSequential === false withholds per-story snapshots (#1527/#1528)
-// ---------------------------------------------------------------------------
-
-describe("handleRunCompletion — per-story snapshot forwarding to the gate", () => {
-  test("passes storyMetrics: undefined when isSequential is false", async () => {
-    const metrics = [makeStoryMetrics({ failingTestFiles: ["a.test.ts"] })];
-    await handleRunCompletion(
-      makeOpts(
-        edgeConfig("deferred", "bun test"),
-        makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]),
-        {
-          allStoryMetrics: metrics,
-          isSequential: false,
-        },
-      ),
-    );
-
-    expect(_runCompletionDeps.runDeferredRegression).toHaveBeenCalledTimes(1);
-    expect(_runCompletionDeps.runDeferredRegression).toHaveBeenCalledWith(
-      expect.objectContaining({ storyMetrics: undefined }),
-    );
-  });
-
-  test("projects storyId, completedAt and failingTestFiles when sequential", async () => {
-    const metrics = [makeStoryMetrics({ failingTestFiles: ["a.test.ts"] })];
-    await handleRunCompletion(
-      makeOpts(
-        edgeConfig("deferred", "bun test"),
-        makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]),
-        {
-          allStoryMetrics: metrics,
-          isSequential: true,
-        },
-      ),
-    );
-
-    expect(_runCompletionDeps.runDeferredRegression).toHaveBeenCalledWith(
-      expect.objectContaining({
-        storyMetrics: [
-          {
-            storyId: "US-001",
-            completedAt: "2026-01-01T00:01:00.000Z",
-            failingTestFiles: ["a.test.ts"],
-          },
-        ],
-      }),
-    );
-  });
 });
 
 // ---------------------------------------------------------------------------

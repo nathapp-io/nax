@@ -50,7 +50,7 @@ export interface CaptureParsedSummary {
  *
  * Fields are non-readonly so tests can override individual members (the
  * established _deps pattern in this codebase — e.g. _fullSuiteGateDeps,
- * _regressionDeps — uses the same shape).
+ * _postRunDeps — uses the same shape).
  */
 export interface TestBaselineCaptureDeps {
   /**

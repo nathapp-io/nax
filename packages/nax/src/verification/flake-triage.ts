@@ -95,12 +95,6 @@ export function flakeMemoKey(failure: { file?: string; rule?: string }): string 
   return `${failure.file ?? ""}::${failure.rule ?? ""}`;
 }
 
-/** A no-op memo for callers that don't carry run-scoped state. */
-export const NULL_QUARANTINE_MEMO: QuarantineMemo = {
-  has: () => false,
-  add: () => {},
-};
-
 /** Create a fresh, in-memory run-scoped quarantine memo. One per `NaxRuntime`. */
 export function createQuarantineMemo(): QuarantineMemo {
   const keys = new Set<string>();

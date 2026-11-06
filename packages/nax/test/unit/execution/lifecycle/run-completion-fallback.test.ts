@@ -16,7 +16,6 @@ import {
   handleRunCompletion,
   type RunCompletionOptions,
 } from "@/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { AgentFallbackHop, StoryMetrics } from "@/metrics";
 import type { RunCompletedEvent } from "@/pipeline/event-bus";
 import { pipelineEventBus } from "@/pipeline/event-bus";
@@ -103,16 +102,6 @@ let capturedEvent: RunCompletedEvent | undefined;
 let unsub: (() => void) | undefined;
 
 beforeEach(() => {
-  _runCompletionDeps.runDeferredRegression = mock(
-    async (): Promise<DeferredRegressionResult> => ({
-      success: true,
-      failedTests: 0,
-      failedTestFiles: [],
-      passedTests: 0,
-      rectificationAttempts: 0,
-      affectedStories: [],
-    }),
-  );
   capturedEvent = undefined;
   unsub = pipelineEventBus.on("run:completed", (ev) => {
     capturedEvent = ev;

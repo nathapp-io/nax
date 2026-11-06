@@ -44,7 +44,7 @@ export interface DispatchSpend {
  *   different from the phase number beside it. #1960 folded `phaseCosts`, and
  *   this moved with it deliberately, reversing #1948's original
  *   split-at-the-fix-cycle reading. Every run total that consumes it
- *   (`acceptance-loop`, `run-regression`) is re-based by exactly the failed
+ *   (`acceptance-loop`) is re-based by exactly the failed
  *   spend, which was zero on every run recorded before this change.
  * - `totalErrorCostUsd` is real money too. `callOp`'s complete-branch retry
  *   loop reuses one `callId` across attempts, so a failed attempt's error row

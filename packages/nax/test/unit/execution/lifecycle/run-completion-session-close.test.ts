@@ -15,23 +15,13 @@ const makePrd = (): PRD => ({
 
 describe("handleRunCompletion session teardown", () => {
   const originalCloseAllRunSessions = _runCompletionDeps.closeAllRunSessions;
-  const originalRunDeferredRegression = _runCompletionDeps.runDeferredRegression;
 
   beforeEach(() => {
     _runCompletionDeps.closeAllRunSessions = mock(async () => 0);
-    _runCompletionDeps.runDeferredRegression = mock(async () => ({
-      success: true,
-      failedTests: 0,
-      failedTestFiles: [],
-      passedTests: 0,
-      rectificationAttempts: 0,
-      affectedStories: [],
-    }));
   });
 
   afterEach(() => {
     _runCompletionDeps.closeAllRunSessions = originalCloseAllRunSessions;
-    _runCompletionDeps.runDeferredRegression = originalRunDeferredRegression;
     mock.restore();
   });
 

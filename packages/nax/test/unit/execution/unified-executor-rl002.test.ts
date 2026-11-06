@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { makeDispatchContext, makePluginRegistry, makePRD, makeStatusWriter, makeTestRuntime } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { stopHeartbeat } from "@/execution/crash-recovery";
-import { _runCompletionDeps, handleRunCompletion } from "@/execution/lifecycle/run-completion";
+import { handleRunCompletion } from "@/execution/lifecycle/run-completion";
 import { executeUnified, type SequentialExecutionContext } from "@/execution/unified-executor";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineEvent, RunCompletedEvent } from "@/pipeline/event-bus";
@@ -176,16 +176,6 @@ describe("RL-002: run:completed event payload requirements", () => {
       capturedRunCompleted.push(ev);
     });
 
-    const originalRunRegression = _runCompletionDeps.runDeferredRegression;
-    _runCompletionDeps.runDeferredRegression = mock(async () => ({
-      success: true,
-      failedTests: 0,
-      passedTests: 2,
-      rectificationAttempts: 0,
-      affectedStories: [],
-      failedTestFiles: [],
-    }));
-
     try {
       const prd = makeCompletePRD([makeStory("US-001", "passed"), makeStory("US-002", "passed")]);
       const ctx = makeMinimalContext();
@@ -211,64 +201,6 @@ describe("RL-002: run:completed event payload requirements", () => {
       expect(capturedRunCompleted[0]?.passedStories).toBeGreaterThan(0);
     } finally {
       unsub();
-      _runCompletionDeps.runDeferredRegression = originalRunRegression;
-    }
-  });
-
-  test("run:completed event emitted by runner reflects regression result in status", async () => {
-    // AC #3: Hook payload reflects final success status (including regression result).
-    //
-    // handleRunCompletion runs the regression gate then emits run:completed
-    // with finalCounts derived from countStories(prd). Verify real counts are used.
-
-    const capturedRunCompleted: RunCompletedEvent[] = [];
-    const unsub = pipelineEventBus.on("run:completed", (ev) => {
-      capturedRunCompleted.push(ev);
-    });
-
-    const originalRunRegression = _runCompletionDeps.runDeferredRegression;
-    _runCompletionDeps.runDeferredRegression = mock(async () => ({
-      success: false,
-      failedTests: 1,
-      passedTests: 2,
-      rectificationAttempts: 0,
-      affectedStories: ["US-003"],
-      failedTestFiles: [],
-    }));
-
-    try {
-      // 3-story PRD: 2 passed, 1 failed — totalStories must be 3 after fix
-      const prd = makeCompletePRD([
-        makeStory("US-001", "passed"),
-        makeStory("US-002", "passed"),
-        makeStory("US-003", "failed"),
-      ]);
-      const ctx = makeMinimalContext();
-
-      await handleRunCompletion({
-        runId: ctx.runId,
-        feature: ctx.feature,
-        startedAt: new Date().toISOString(),
-        prd,
-        allStoryMetrics: [],
-        totalCost: 1.0,
-        storiesCompleted: 2,
-        iterations: 3,
-        startTime: Date.now() - 1000,
-        workdir: ctx.workdir,
-        statusWriter: ctx.statusWriter,
-        config: ctx.config,
-        ...makeDispatchContext({ runtime: ctx.runtime }),
-      });
-
-      const ev = capturedRunCompleted[0];
-      expect(ev).toBeDefined();
-
-      // finalCounts from countStories(prd): total=3, not placeholder 0
-      expect(ev?.totalStories).toBeGreaterThan(0);
-    } finally {
-      unsub();
-      _runCompletionDeps.runDeferredRegression = originalRunRegression;
     }
   });
 });

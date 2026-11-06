@@ -1,13 +1,13 @@
 /**
  * Tests for rerun skip logic in runCompletionPhase (US-003)
  *
- * Verifies that runCompletionPhase checks getPostRunStatus() before running
- * acceptance and regression phases, and skips them when already passed.
+ * Verifies that runCompletionPhase checks getPostRunStatus() before running the
+ * acceptance phase, and skips it when it already passed.
  *
- * AC1: skips both acceptance and regression when getPostRunStatus() returns both "passed"
- * AC2: skips acceptance but runs regression when acceptance "passed" and regression not "passed"
- * AC3: runs both when acceptance.status === "not-run"
- * AC4: runs both when acceptance.status === "failed"
+ * AC1: skips acceptance when getPostRunStatus() returns both "passed"
+ * AC2: skips acceptance when acceptance "passed" and regression not "passed"
+ * AC3: runs acceptance when acceptance.status === "not-run"
+ * AC4: runs acceptance when acceptance.status === "failed"
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -23,7 +23,6 @@ import {
 import type { NaxConfig } from "@/config";
 import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import { _runCompletionDeps } from "@/execution/lifecycle/run-completion";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import type { PostRunStatus } from "@/execution/status-file";
 import { pipelineEventBus } from "@/pipeline/event-bus";
@@ -173,24 +172,12 @@ const defaultAcceptanceResult: AcceptanceLoopResult = {
   prdDirty: false,
 };
 
-const defaultRegressionResult: DeferredRegressionResult = {
-  success: true,
-  failedTests: 0,
-  failedTestFiles: [],
-  passedTests: 5,
-  rectificationAttempts: 0,
-  affectedStories: [],
-};
-
 const origRunnerDeps = { ..._runnerCompletionDeps };
 const origRunDeps = { ..._runCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.runWorkflowFeature = mock(async () => null);
   _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => defaultAcceptanceResult);
-  _runCompletionDeps.runDeferredRegression = mock(
-    async (): Promise<DeferredRegressionResult> => defaultRegressionResult,
-  );
 });
 
 afterEach(() => {
@@ -213,16 +200,6 @@ describe("runCompletionPhase - AC1: skips both when both postRun phases are alre
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
     expect(_runnerCompletionDeps.runAcceptanceLoop).not.toHaveBeenCalled();
-  });
-
-  test("does not call runDeferredRegression when both phases are passed", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
   });
 
   test("calls getPostRunStatus to check existing phase status", async () => {
@@ -250,26 +227,6 @@ describe("runCompletionPhase - AC2: skips acceptance but runs regression when ac
 
     expect(_runnerCompletionDeps.runAcceptanceLoop).not.toHaveBeenCalled();
   });
-
-  test("never calls runDeferredRegression when acceptance is passed but regression is not-run", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("passed", "not-run"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
-  });
-
-  test("never calls runDeferredRegression when acceptance is passed but regression is failed", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("passed", "failed"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -286,16 +243,6 @@ describe("runCompletionPhase - AC3: runs both when acceptance.status is not-run"
 
     expect(_runnerCompletionDeps.runAcceptanceLoop).toHaveBeenCalledTimes(1);
   });
-
-  test("never calls runDeferredRegression when acceptance is not-run and deferred mode is set", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -311,26 +258,6 @@ describe("runCompletionPhase - AC4: runs both when acceptance.status is failed",
     await runCompletionPhase(makeOpts(config, prd, statusWriter));
 
     expect(_runnerCompletionDeps.runAcceptanceLoop).toHaveBeenCalledTimes(1);
-  });
-
-  test("never calls runDeferredRegression when acceptance previously failed", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("failed", "not-run"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
-  });
-
-  test("never calls runDeferredRegression when both acceptance and regression previously failed", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("failed", "failed"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runCompletionDeps.runDeferredRegression).not.toHaveBeenCalled();
   });
 });
 

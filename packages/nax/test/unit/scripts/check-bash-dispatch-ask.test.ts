@@ -193,7 +193,6 @@ describe("the real tree", () => {
       "src/pipeline/stages/execution.ts",
       "src/finish/phase.ts",
       "src/execution/lifecycle/acceptance-fix-scope.ts",
-      "src/execution/lifecycle/run-regression.ts",
     ]) {
       expect(wired.has(file)).toBe(true);
     }
