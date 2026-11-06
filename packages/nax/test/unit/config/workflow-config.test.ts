@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
-import { isWorkflowMode, NaxConfigSchema, resolveWorkflowConfig, WORKFLOW_DEFAULTS } from "@/config";
+import { NaxConfigSchema, resolveWorkflowConfig, WORKFLOW_DEFAULTS } from "@/config";
 import { pinRootOnlyKeysRaw } from "@/config/root-only-keys";
 
 describe("workflow config", () => {
@@ -98,12 +98,8 @@ describe("workflow config", () => {
     expect(description.trim().length).toBeGreaterThan(0);
   });
 
-  test("resolveWorkflowConfig / isWorkflowMode tolerate absent blocks", () => {
+  test("resolveWorkflowConfig tolerates absent blocks", () => {
     expect(resolveWorkflowConfig(undefined)).toEqual(WORKFLOW_DEFAULTS);
-    expect(isWorkflowMode(undefined)).toBe(false);
-    expect(isWorkflowMode({ execution: { mode: "workflow" } })).toBe(true);
-    expect(isWorkflowMode({ execution: {} })).toBe(true);
-    expect(isWorkflowMode({ execution: { mode: "pipeline" } })).toBe(false);
   });
 
   test("workflow and execution.mode are root-only: a package value is ignored with a warning", () => {

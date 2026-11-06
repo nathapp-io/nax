@@ -164,7 +164,6 @@ export { AdversarialReviewConfigSchema, ReviewConfigSchema, SemanticReviewConfig
 export { StoryRouterConfigSchema } from "./schemas-router";
 export {
   ExecutionModeSchema,
-  isWorkflowMode,
   resolveWorkflowConfig,
   WORKFLOW_DEFAULTS,
   WorkflowConfigObjectSchema,

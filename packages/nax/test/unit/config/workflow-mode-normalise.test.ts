@@ -6,7 +6,7 @@ import { makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _clearRootConfigCache, loadConfigForWorkdir } from "@/config/loader";
-import { applyWorkflowMode, warnDeprecatedPipelineMode } from "@/config/workflow-mode";
+import { applyWorkflowMode } from "@/config/workflow-mode";
 
 type Mode = "pipeline" | "workflow";
 
@@ -74,24 +74,6 @@ describe("applyWorkflowMode", () => {
 describe("workflow is the default execution mode", () => {
   test("the shipped default config runs in workflow mode", () => {
     expect(DEFAULT_CONFIG.execution.mode).toBe("workflow");
-  });
-});
-
-describe("warnDeprecatedPipelineMode", () => {
-  test("pipeline mode warns once that it is deprecated and names workflow as the replacement", () => {
-    const warnings: string[] = [];
-    warnDeprecatedPipelineMode(configFor({ mode: "pipeline", acceptance: true }), (m) => warnings.push(m));
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('execution.mode "pipeline" is deprecated');
-    expect(warnings[0]).toContain('"workflow"');
-  });
-
-  test("workflow mode does not warn", () => {
-    const warnings: string[] = [];
-    warnDeprecatedPipelineMode(configFor({ mode: "workflow", acceptance: false, advisor: true }), (m) =>
-      warnings.push(m),
-    );
-    expect(warnings).toEqual([]);
   });
 });
 

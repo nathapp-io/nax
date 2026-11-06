@@ -3,7 +3,7 @@
  * field defaults apply — `.default({})` would short-circuit to a bare `{}`.
  */
 import { z } from "zod";
-import type { ExecutionMode, WorkflowConfig } from "./runtime-types-workflow";
+import type { WorkflowConfig } from "./runtime-types-workflow";
 import { ConfiguredModelSchema } from "./schemas-model";
 
 export const ExecutionModeSchema = z.enum(["pipeline", "workflow"]);
@@ -47,9 +47,4 @@ export const WORKFLOW_DEFAULTS: WorkflowConfig = WorkflowConfigObjectSchema.pars
 /** The effective workflow config; an absent block (hand-built test configs) reads as the defaults. */
 export function resolveWorkflowConfig(config: { workflow?: WorkflowConfig } | undefined): WorkflowConfig {
   return config?.workflow ?? WORKFLOW_DEFAULTS;
-}
-
-export function isWorkflowMode(config: { execution?: { mode?: ExecutionMode } } | undefined): boolean {
-  // Direct runner callers can supply an unparsed config; omission still means the schema's default.
-  return config !== undefined && (config.execution?.mode ?? "workflow") === "workflow";
 }
