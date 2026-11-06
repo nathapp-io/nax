@@ -90,8 +90,8 @@ export const _endPhaseDeps = { resolveBranch };
 /** The one reason every "the workflow never ran, or was cut short" arm reports (US-001). */
 const ABORTED_REASON = "run aborted";
 
-// biome-ignore lint/correctness/noUnusedVariables: retained unchanged until wave B2 removes the pipeline-only helper.
-async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, branch: string): Promise<void> {
+/** Retained for wave B2; deliberately not called by the workflow harness. */
+export async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, branch: string): Promise<void> {
   try {
     await deps.runFinishPhase({
       runtime: options.runtime,

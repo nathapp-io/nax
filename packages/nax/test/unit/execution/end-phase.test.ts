@@ -1,16 +1,30 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeDispatchContext, makeNaxConfig, makePRD, makeStatusWriter, withInfoSpy, withWarnSpy } from "@test/helpers";
+import {
+  makeDispatchContext,
+  makeNaxConfig,
+  makePRD,
+  makeSpawn,
+  makeStatusWriter,
+  makeStory,
+  withInfoSpy,
+  withWarnSpy,
+} from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { _endPhaseDeps, type EndPhaseDeps, runEndPhase } from "@/execution/end-phase";
+import { _endPhaseDeps, type EndPhaseDeps, finishStorySummary, runEndPhase, runFinish } from "@/execution/end-phase";
 import type { RunnerCompletionOptions } from "@/execution/runner-completion";
 import type { FinishPhaseContext } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { PluginRegistry } from "@/plugins";
+import { _gitDeps } from "@/utils/git";
 import type { WorkflowFeatureInput, WorkflowFeatureResult } from "@/workflow";
 
 const original = { ..._endPhaseDeps };
-afterEach(() => Object.assign(_endPhaseDeps, original));
+const originalGitSpawn = _gitDeps.spawn;
+afterEach(() => {
+  Object.assign(_endPhaseDeps, original);
+  _gitDeps.spawn = originalGitSpawn;
+});
 
 function opts(config: NaxConfig, over: Partial<RunnerCompletionOptions> = {}): RunnerCompletionOptions {
   return {
@@ -56,6 +70,106 @@ function deps(result: WorkflowFeatureResult | null | Error = null) {
 
 const PIPELINE = makeNaxConfig({ execution: { mode: "pipeline" } });
 const WORKFLOW = makeNaxConfig({ execution: { mode: "workflow" } });
+
+describe("retained runFinish helper", () => {
+  test("forwards the finish context when invoked directly, without running workflow", async () => {
+    const options = opts(WORKFLOW);
+    const { d, finish, workflow } = deps();
+    await runFinish(options, d, "feat/x");
+    expect(finish).toEqual([
+      {
+        runtime: options.runtime,
+        config: options.config,
+        feature: options.feature,
+        workdir: options.workdir,
+        branch: "feat/x",
+        runId: options.runId,
+        agentName: options.agentManager.getDefault(),
+        abortSignal: options.abortSignal,
+        storySummary: { completed: 1, failed: 0, paused: 0 },
+        statusWriter: options.statusWriter,
+        interactionChain: options.interactionChain,
+        packageDirs: [undefined],
+      },
+    ]);
+    expect(workflow).toHaveLength(0);
+  });
+
+  test("a finish rejection warns and resolves without failing the caller", async () => {
+    const { d } = deps();
+    d.runFinishPhase = async () => {
+      throw new Error("finish unavailable");
+    };
+    await withWarnSpy(async (warn) => {
+      await expect(runFinish(opts(WORKFLOW), d, "feat/x")).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith("finish", "Finish phase failed; the run is unaffected", {
+        storyId: "_run",
+        error: "finish unavailable",
+      });
+    });
+  });
+});
+
+describe("finishStorySummary", () => {
+  test.each([0, 1])(
+    "complete PRD with %i stories executed uses the appropriate completion count",
+    (storiesCompleted) => {
+      const prd = makePRD({
+        userStories: [
+          makeStory({ id: "US-001", status: "passed", passes: true }),
+          makeStory({ id: "US-002", status: "passed", passes: true }),
+        ],
+      });
+      expect(finishStorySummary(opts(WORKFLOW, { prd, storiesCompleted }))).toEqual({
+        completed: storiesCompleted === 0 ? 2 : 1,
+        failed: 0,
+        paused: 0,
+      });
+    },
+  );
+
+  test("an incomplete resumed run keeps zero completed and counts failures and pauses", () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({ id: "US-001", status: "passed", passes: true }),
+        makeStory({ id: "US-002", status: "pending" }),
+        makeStory({ id: "US-003", status: "failed" }),
+        makeStory({ id: "US-004", status: "regression-failed" }),
+        makeStory({ id: "US-005", status: "paused" }),
+      ],
+    });
+    expect(finishStorySummary(opts(WORKFLOW, { prd, storiesCompleted: 0 }))).toEqual({
+      completed: 0,
+      failed: 2,
+      paused: 1,
+    });
+  });
+});
+
+describe("runEndPhase branch resolution", () => {
+  test.each([
+    [0, "  feat/x\n", "feat/x"],
+    [1, "untrusted output", ""],
+    [0, "\n", ""],
+  ])("git exit %i with output %j hands branch %j to workflow", async (exitCode, stdout, branch) => {
+    const { spawn, calls } = makeSpawn(() => ({ stdout, exitCode }));
+    _gitDeps.spawn = spawn;
+    const { d, workflow } = deps();
+    await runEndPhase(opts(WORKFLOW), d);
+    expect(workflow[0]?.branch).toBe(branch);
+    expect(calls[0]?.cmd).toEqual(["git", "branch", "--show-current"]);
+    expect(calls[0]?.opts?.cwd).toBe("/repo");
+  });
+
+  test("a git spawn failure hands an empty branch to workflow", async () => {
+    _gitDeps.spawn = makeSpawn(() => {
+      throw new Error("git unavailable");
+    }).spawn;
+    const { d, workflow } = deps();
+    await runEndPhase(opts(WORKFLOW), d);
+    expect(workflow[0]?.branch).toBe("");
+  });
+});
 
 describe("runEndPhase (P4-R16)", () => {
   test("pipeline literal: runs workflow once, never finish, and returns skipped outcome without url", async () => {
