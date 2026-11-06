@@ -3,7 +3,7 @@
   "feature": "pipeline-fork-cut",
   "branchName": "feat/pipeline-fork-cut",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T03:16:33.489Z",
+  "updatedAt": "2026-11-06T03:39:30.339Z",
   "userStories": [
     {
       "id": "US-001",
@@ -280,14 +280,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Although spread across six existing files, these are small, prescribed branch/import removals and constant dispatch settings with existing dependency seams; no new algorithm, integration or resource lifecycle is introduced, so focused same-session TDD is sufficient."
+        "reasoning": "Although spread across six existing files, these are small, prescribed branch/import removals and constant dispatch settings with existing dependency seams; no new algorithm, integration or resource lifecycle is introduced, so focused same-session TDD is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/lifecycle/run-setup.ts",
@@ -322,7 +325,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f9613f89a353f2e0f28bae32d014b5b4c4c5eb59"
     },
     {
       "id": "US-004",
