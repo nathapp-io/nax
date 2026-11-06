@@ -3,7 +3,7 @@
   "feature": "pipeline-post-run-delete",
   "branchName": "feat/pipeline-post-run-delete",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T09:49:02.938Z",
+  "updatedAt": "2026-11-06T10:26:18.187Z",
   "userStories": [
     {
       "id": "US-001",
@@ -755,14 +755,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Removes completion status/event orchestration and many operation consumers while preserving live workflow, cost and cleanup responsibilities and an intentionally unused dependency."
+        "reasoning": "Removes completion status/event orchestration and many operation consumers while preserving live workflow, cost and cleanup responsibilities and an intentionally unused dependency.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/runner-completion.ts",
@@ -924,7 +927,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1e5ebcf457ae4a1f8abd84857c335ed9bed1dbc0"
     },
     {
       "id": "US-007",
