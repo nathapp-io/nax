@@ -26,6 +26,9 @@ describe("detectCommand", () => {
   });
 
   afterEach(() => {
+    // detectCommand leaves its logger initialized; a later file in the same worker would
+    // then throw on its own initLogger() (seen under the --parallel confined suite).
+    resetLogger();
     logSpy?.mockRestore();
     logSpy = undefined;
     process.exitCode = prevExitCode;
