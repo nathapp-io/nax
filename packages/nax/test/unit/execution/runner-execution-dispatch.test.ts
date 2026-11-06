@@ -23,7 +23,7 @@ import { RunStateKeeper } from "@/runstate";
 import { SessionManager } from "@/session";
 
 describe("workflow harness dispatch", () => {
-  withDepsRestore(_captureDeps);
+  const originalCaptureDeps = { ..._captureDeps };
   withDepsRestore(_unifiedExecutorDeps);
   withDepsRestore(_runnerDeps);
   let workdir: string;
@@ -60,6 +60,7 @@ describe("workflow harness dispatch", () => {
   });
 
   afterEach(() => {
+    Object.assign(_captureDeps, originalCaptureDeps);
     restoreWarn();
     stopHeartbeat();
     cleanupTempDir(workdir);
