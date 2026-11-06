@@ -1,7 +1,8 @@
 /**
  * Cross-attempt review-finding recurrence store (#1666 Part C).
  *
- * `oscillation-store.ts` counts a resolved-then-reappearing finding SOURCE within
+ * The story loop's within-cycle oscillation counter (deleted with the story
+ * orchestrator) counted a resolved-then-reappearing finding SOURCE within
  * one rectification cycle's iterations — it is structurally blind to a finding that
  * simply recurs, unchanged, across SEPARATE escalation attempts of the same story
  * (different `ExecutionPlan.run()` calls, possibly at a different tier). That is
@@ -9,12 +10,12 @@
  * run every attempt (Part B): semantic-review keeps raising the same objection while
  * adversarial-review keeps passing, and the story re-escalates tier after tier with
  * no progress. This module is a parallel, independent counter for that case — it
- * does not repurpose `oscillation-store.ts`.
+ * never shared state with that counter.
  *
  * Keyed by `findingRecurrenceKey` (not `findingKey`) so an LLM reviewer rewording
  * the same finding at the same location still counts as the same finding (#1581).
  *
- * TRAP (mirrors the note in oscillation-store.ts): rectification's revalidation
+ * TRAP (the same one the oscillation counter documented): rectification's revalidation
  * short-circuits on the first failing phase, so downstream reviewers are revealed
  * one attempt at a time as the phases ahead of them go green. A reviewer's FIRST
  * appearance for a story must never count as a recurrence (issue #1355's

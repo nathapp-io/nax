@@ -6,8 +6,8 @@
  * point (`runSemanticReview` / the deleted `src/review/semantic.ts`), never
  * through the live op path. This test drives the REAL op path —
  * `adversarialReviewOp.verify()` and `semanticReviewOp.verify()`, exactly what
- * `src/execution/story-orchestrator/review-decision.ts` reads to build the
- * persisted `ReviewAuditEntry` — and asserts the shape those ops actually
+ * the story orchestrator's (now-deleted) review-decision module read to build
+ * the persisted `ReviewAuditEntry` — and asserts the shape those ops actually
  * emit for `result.findings` and `advisoryFindings`.
  *
  * It does NOT hand-author a fixture finding and assert expectations against

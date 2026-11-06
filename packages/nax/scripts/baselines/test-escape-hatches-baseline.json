@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 16,
-    "looseCast": 1234
+    "looseCast": 1233
   },
   "updatedAt": "2026-11-06T16:30:00.000Z",
   "byFile": {
@@ -312,9 +312,6 @@
     },
     "test/unit/execution/iteration-runner.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/execution/oscillation-store.test.ts": {
-      "looseCast": 1
     },
     "test/unit/execution/runner-resume-deps.test.ts": {
       "looseCast": 2

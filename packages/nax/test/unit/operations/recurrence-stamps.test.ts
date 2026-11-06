@@ -15,7 +15,8 @@
  *
  * The implementations being tested are in `src/operations/{adversarial,semantic}-review.ts`,
  * `src/review/{adversarial,semantic}-helpers.ts`, and the audit layer in
- * `src/execution/story-orchestrator/review-decision.ts` + `src/review/review-audit.ts`.
+ * `src/review/review-audit.ts` (the story-orchestrator emitter that used to feed
+ * it is gone).
  * Tests use real mapper/op code paths; the only stubbed boundary is the logger
  * (via `withInfoSpy`) so log events can be asserted directly.
  */

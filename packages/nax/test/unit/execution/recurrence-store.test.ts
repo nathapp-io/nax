@@ -1,10 +1,10 @@
 /**
  * Cross-attempt review-finding recurrence store — #1666 Part C.
  *
- * Parallel to `oscillation-store.test.ts`: this counter is independent of the
- * within-cycle oscillation counter and must never fire on a reviewer's first
- * appearance for a story (the #1355 false-positive class oscillation-store.ts
- * already documents for its own counter).
+ * Parallel to the within-cycle oscillation counter that was deleted with the
+ * story orchestrator: this counter is independent of it and must never fire on a
+ * reviewer's first appearance for a story (the #1355 false-positive class that
+ * counter already documented for its own counter).
  */
 import { describe, expect, test } from "bun:test";
 import { getReviewRecurrenceCount, type ReviewRecurrenceStore, recordReviewFindings } from "@/execution";

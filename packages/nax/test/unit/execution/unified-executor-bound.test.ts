@@ -51,6 +51,51 @@ function ctx(maxIterations: number): SequentialExecutionContext {
     interactionChain: null,
   };
 }
+describe("executeUnified — an already-passed PRD completes without an iteration", () => {
+  function allPassedPrd(): PRD {
+    return makePRD({
+      userStories: [
+        makeStory({ id: "US-1", status: "passed", passes: true }),
+        makeStory({ id: "US-2", status: "passed", passes: true }),
+      ],
+    });
+  }
+
+  test("US-007 AC-1: returns exit reason completed", async () => {
+    const result = await executeUnified(ctx(3), allPassedPrd());
+    expect(result.exitReason).toBe("completed");
+    expect(result.prd.userStories.every((s) => s.passes)).toBe(true);
+  });
+
+  test("US-007 AC-2: never calls the stubbed runIteration", async () => {
+    const runIteration = mock(async () => {
+      throw new Error("runIteration must not run for an already-passed PRD");
+    });
+    _unifiedExecutorDeps.runIteration = runIteration;
+    const result = await executeUnified(ctx(3), allPassedPrd());
+    expect(result.exitReason).toBe("completed");
+    expect(runIteration).not.toHaveBeenCalled();
+  });
+
+  test("US-007 AC-2: a workflow-mode run reaches the same completion without an iteration", async () => {
+    const runIteration = mock(async () => {
+      throw new Error("runIteration must not run for an already-passed PRD");
+    });
+    _unifiedExecutorDeps.runIteration = runIteration;
+    const workflowCtx = {
+      ...ctx(3),
+      config: makeNaxConfig({
+        execution: { mode: "workflow", maxIterations: 3, iterationDelayMs: 0 },
+        acceptance: { enabled: false },
+        autoMode: { escalation: { enabled: false } },
+      }),
+    };
+    const result = await executeUnified(workflowCtx, allPassedPrd());
+    expect(result.exitReason).toBe("completed");
+    expect(runIteration).not.toHaveBeenCalled();
+  });
+});
+
 describe("executeUnified derived bound", () => {
   test("pipeline literal ignores maxIterations 1 and completes three pending stories", async () => {
     const prd = makePRD({

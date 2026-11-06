@@ -53,12 +53,12 @@ export interface FixReviewDeps {
    */
   checkFixScope: typeof checkFixScope;
   /**
-   * The dispatch-events audit seam. The real implementation lives in
-   * `src/execution/story-orchestrator/review-decision.ts`, which `src/review`
-   * cannot reach: `noRestrictedImports` bans the `../../` form and
-   * `check:alias-internals` bans the `@/execution/story-orchestrator/...` leaf.
-   * The wiring layer that dispatches this runner (US-004/US-005) injects it —
-   * it already imports the emitter. The default below is a no-op ONLY so the
+   * The dispatch-events audit seam. The real implementation lived in the story
+   * orchestrator's (now-deleted) `review-decision` module, which `src/review`
+   * could not reach: `noRestrictedImports` bans the `../../` form and
+   * `check:alias-internals` bans the `@/execution/...` leaf into another
+   * subsystem. The wiring layer that dispatched this runner injected it — it
+   * already imported the emitter. The default below is a no-op ONLY so the
    * module stays importable; a production caller must pass the real one.
    */
   emitReviewDecision: (ctx: CallContext, opName: string, output: unknown) => void;

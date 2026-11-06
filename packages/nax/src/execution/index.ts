@@ -56,10 +56,7 @@ export {
   type RunCompletionResult,
   synthesizeBackfillMetric,
 } from "./lifecycle";
-export type { NbfWorthCheckRequest } from "./nbf-worth-check";
-export { _nbfWorthCheckDeps, runNbfWorthCheck } from "./nbf-worth-check";
 export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
-export { countOscillationOutcomes, getOscillations, recordOscillations } from "./oscillation-store";
 export { _pidRegistryDeps, PidRegistry } from "./pid-registry";
 export {
   _resultHandlerDeps,
@@ -88,11 +85,6 @@ export {
 } from "./runner-completion";
 export type { WorkflowStatusBlock } from "./status-file";
 export { StatusWriter, type StatusWriterContext } from "./status-writer";
-export {
-  buildPhaseOutcomeLogData,
-  formatPhaseResultMessage,
-  logDeterministicPhaseOutcome,
-} from "./story-orchestrator-logging";
 export type { StoryRunResult } from "./types";
 export { headsUpChannel } from "./uncategorised-advice";
 // BUG-2 testability seam: re-export `executeUnified` + its `_deps`
