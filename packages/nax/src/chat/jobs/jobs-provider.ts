@@ -1,4 +1,5 @@
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
+import { listProfiles } from "@/config";
 import { buildJobsInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
 import type { ChatChains } from "./chain-controller";
@@ -9,6 +10,12 @@ import { launchToolRun } from "./jobs-launch";
 import type { ChatRunAsks } from "./run-asks";
 
 export const JOBS_LIST_LIMIT = 20;
+
+export const _jobsProviderDeps = {
+  /** Global and project profile names, deduplicated and sorted; what a launch's `profiles` may name. */
+  listProfileNames: async (repoRoot: string): Promise<readonly string[]> =>
+    [...new Set((await listProfiles(repoRoot)).map((entry) => entry.name))].sort(),
+};
 
 export interface JobsProviderOptions {
   readonly repoRoot: string;
@@ -21,7 +28,14 @@ export interface JobsProviderOptions {
   readonly sessionId: () => string;
   readonly now: () => Date;
 }
-const profiles = { type: "array", items: { type: "string" } };
+/** The `profiles` launch field; the description is the agent's only guide to which profile to pass (#2815). */
+export const PROFILES_SCHEMA = {
+  type: "array",
+  items: { type: "string" },
+  description:
+    "Config profiles for this job, applied in order. Omit it to use the profile the PRD was planned with (run) or the default config; pass it only to override. nax-jobs__list returns the available names.",
+} as const;
+const profiles = PROFILES_SCHEMA;
 const repo = { type: "string" };
 const schemas = {
   plan: { feature: { type: "string" }, spec: { type: "string" }, profiles, repo },
@@ -81,6 +95,7 @@ function inspectionTool(name: "list" | "cancel", options: JobsProviderOptions): 
           content: JSON.stringify({
             jobs: jobs.slice(0, JOBS_LIST_LIMIT).map(summary),
             omitted: Math.max(0, jobs.length - JOBS_LIST_LIMIT),
+            profiles: await _jobsProviderDeps.listProfileNames(options.repoRoot),
             ...(options.chains ? { chain: options.chains.summary() } : {}),
           }),
         };

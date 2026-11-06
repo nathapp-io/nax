@@ -4,7 +4,7 @@ import { assertDefined, cleanupTempDir, makePRD, makeStory, makeTempDir } from "
 import type { HostApprovalCard } from "@/chat/ask-controller";
 import type { ChatJobs, StartJobRequest } from "@/chat/jobs/job-runner";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
-import { createJobsProvider, type JobsProviderOptions } from "@/chat/jobs/jobs-provider";
+import { createJobsProvider, type JobsProviderOptions, PROFILES_SCHEMA } from "@/chat/jobs/jobs-provider";
 import { featureDir } from "@/config";
 
 const originalDeps = { ..._jobsLaunchDeps };
@@ -88,6 +88,11 @@ function runArgv() {
 }
 
 describe("createJobsProvider", () => {
+  test("#2815 the profiles field tells the agent to omit it to use the planned profile", () => {
+    expect(PROFILES_SCHEMA.type).toBe("array");
+    expect(PROFILES_SCHEMA.description).toContain("Omit");
+    expect(PROFILES_SCHEMA.description).toContain("nax-jobs__list");
+  });
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
     ["run", { feature: { type: "string" }, maxCost: { type: "number" } }, "feature"],
@@ -109,7 +114,7 @@ describe("createJobsProvider", () => {
       type: "object",
       additionalProperties: false,
       required: [required],
-      properties: { ...properties, profiles: { type: "array", items: { type: "string" } }, repo: { type: "string" } },
+      properties: { ...properties, profiles: PROFILES_SCHEMA, repo: { type: "string" } },
     });
   });
   test("plan prefers feature spec over legacy and explicit spec over both", async () => {
@@ -273,6 +278,32 @@ describe("createJobsProvider", () => {
   test("AC-16 entry and empty profiles are adjacent reason lines", async () => {
     await launch();
     expect(card().reason.split("\n").slice(1, 3)).toEqual(["nax bun /n.ts", "profiles (none)"]);
+  });
+  async function writePlannedProfile(routingProfile: string): Promise<void> {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ routingProfile, userStories: [makeStory({ id: "US-001", status: "pending" })] })),
+    );
+  }
+  test("#2815 a run with no profiles names the PRD's planned profile on the card", async () => {
+    await writePlannedProfile("a+b");
+    await launch();
+    expect(card().reason.split("\n")[2]).toBe("profiles (none); the run uses the PRD's planned profile a+b");
+  });
+  test("#2815 a PRD planned with the default profile keeps the plain empty line", async () => {
+    await writePlannedProfile("default");
+    await launch();
+    expect(card().reason.split("\n")[2]).toBe("profiles (none)");
+  });
+  test("#2815 profiles that differ from the PRD's planned profile warn on the card", async () => {
+    await writePlannedProfile("a");
+    await launch("run", { feature: "f1", profiles: ["c"] });
+    expect(card().reason).toContain("warning: the PRD was planned with profile a, not c");
+  });
+  test("#2815 profiles that match the PRD's planned chain do not warn", async () => {
+    await writePlannedProfile("a+b");
+    await launch("run", { feature: "f1", profiles: ["a", "b"] });
+    expect(card().reason).not.toContain("warning: the PRD was planned");
   });
   test("AC-17 plan resolves legacy spec to repo-relative argv", async () => {
     await Bun.write(join(options.repoRoot, ".nax", "specs", "f1.md"), "spec");

@@ -4,7 +4,7 @@ import type { ChatJobs } from "@/chat/jobs/job-runner";
 import { JOB_LOG_TAIL_LINES } from "@/chat/jobs/job-runner";
 import type { ChatJob } from "@/chat/jobs/job-types";
 import * as providerModule from "@/chat/jobs/jobs-provider";
-import { createJobsProvider, type JobsProviderOptions } from "@/chat/jobs/jobs-provider";
+import { _jobsProviderDeps, createJobsProvider, type JobsProviderOptions } from "@/chat/jobs/jobs-provider";
 import { buildJobsInstructions } from "@/prompts";
 
 const repoRoot = "/fixture/repo";
@@ -91,6 +91,17 @@ describe("createJobsProvider", () => {
       additionalProperties: false,
       required: name === "cancel" ? ["job"] : [],
     });
+  });
+  test("#2815 the listing names the profiles a launch may pass", async () => {
+    const original = _jobsProviderDeps.listProfileNames;
+    _jobsProviderDeps.listProfileNames = mock(async () => ["cheap", "fast"]);
+    try {
+      const result = JSON.parse((await invoke("list", {})).content);
+      expect(result.profiles).toEqual(["cheap", "fast"]);
+      expect(_jobsProviderDeps.listProfileNames).toHaveBeenCalledWith(repoRoot);
+    } finally {
+      _jobsProviderDeps.listProfileNames = original;
+    }
   });
   test("AC-6–9 bounds and projects newest-first listing", async () => {
     records = Array.from({ length: 25 }, (_, n) =>

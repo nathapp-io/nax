@@ -129,7 +129,12 @@ describe("createChainTools check, stop and listing", () => {
     expect(approve).not.toHaveBeenCalled();
   });
   test("AC-9 lists null before activation", async () => {
-    expect(JSON.parse(String((await invoke("list")).content))).toEqual({ jobs: [], omitted: 0, chain: null });
+    expect(JSON.parse(String((await invoke("list")).content))).toEqual({
+      jobs: [],
+      omitted: 0,
+      profiles: [],
+      chain: null,
+    });
   });
   test("AC-10 lists the live summary", async () => {
     await nextStep();
@@ -180,7 +185,7 @@ describe("createChainTools check, stop and listing", () => {
   });
   test("AC-20 preserves exact legacy list and tools", async () => {
     const legacy = { ...options, chains: undefined };
-    expect((await invoke("list", {}, legacy)).content).toBe('{"jobs":[],"omitted":0}');
+    expect((await invoke("list", {}, legacy)).content).toBe('{"jobs":[],"omitted":0,"profiles":[]}');
     expect((await createJobsProvider(legacy).tools(root)).map((t) => t.localName)).toEqual([
       "plan",
       "run",

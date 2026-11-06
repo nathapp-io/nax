@@ -115,6 +115,8 @@ async function startApproved(
 type Prepared = {
   readonly input: JobLaunchInput;
   readonly details: readonly string[];
+  /** Replaces the card's `profiles` line when the run adopts the PRD's planned profile. */
+  readonly profileLine?: string;
 };
 type TargetError = { readonly error: string };
 
@@ -154,6 +156,18 @@ export async function resolvePlanSpec(
   return { spec, prdExists: await _jobsLaunchDeps.exists(join(dir, "prd.json")) };
 }
 
+/**
+ * The chain a PRD was planned with: plan stamps the loader's composite name, which joins a chain
+ * with `+` (#2814), and `default` means no overlay. Used only to describe the launch on its card.
+ */
+function plannedProfileChain(routingProfile: string | undefined): readonly string[] {
+  if (routingProfile === undefined || routingProfile === "default") return [];
+  return routingProfile
+    .split(/[+,]/)
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
 async function prepareRun(
   input: Extract<JobLaunchInput, { kind: "run" }>,
   options: JobsProviderOptions,
@@ -170,9 +184,18 @@ async function prepareRun(
   }
   const { pending, total } = countStories(prd);
   const details = [`stories ${pending} pending of ${total}`];
+  const planned = plannedProfileChain(prd.routingProfile);
+  const plannedName = prd.routingProfile ?? "";
+  if (input.profiles.length > 0 && planned.length > 0 && input.profiles.join(",") !== planned.join(",")) {
+    details.push(`warning: the PRD was planned with profile ${plannedName}, not ${input.profiles.join(", ")}`);
+  }
+  const profileLine =
+    input.profiles.length === 0 && planned.length > 0
+      ? `profiles (none); the run uses the PRD's planned profile ${plannedName}`
+      : undefined;
   if (options.interactionPlugin === "cli")
     details.push("asks you do not answer in chat fall to the run's timeout defaults");
-  return { input, details };
+  return { input, details, ...(profileLine === undefined ? {} : { profileLine }) };
 }
 
 async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions): Promise<Prepared | TargetError> {
@@ -200,7 +223,7 @@ async function launchReason(prepared: Prepared, options: JobsProviderOptions): P
   return [
     `workdir ${options.repoRoot}${branch.exitCode === 0 ? ` on branch ${branch.stdout.trim()}` : ""}`,
     `nax ${options.naxEntry.join(" ")}`,
-    `profiles ${prepared.input.profiles.join(", ") || "(none)"}`,
+    prepared.profileLine ?? `profiles ${prepared.input.profiles.join(", ") || "(none)"}`,
     ...prepared.details,
   ].join("\n");
 }
