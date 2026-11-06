@@ -3,7 +3,7 @@
   "feature": "pipeline-post-run-delete",
   "branchName": "feat/pipeline-post-run-delete",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T08:43:45.758Z",
+  "updatedAt": "2026-11-06T09:08:36.499Z",
   "userStories": [
     {
       "id": "US-001",
@@ -482,14 +482,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Many shared modules and types are selectively trimmed; removing filesystem containment helpers next to retained realpath-based protections invokes strict security isolation."
+        "reasoning": "Many shared modules and types are selectively trimmed; removing filesystem containment helpers next to retained realpath-based protections invokes strict security isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/index.ts",
@@ -584,7 +587,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "82aa7a100f30a2d0b3b64ee092addcdc99cbe186"
     },
     {
       "id": "US-005",
