@@ -1,0 +1,1036 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-story-loop-cut",
+  "branchName": "feat/pipeline-story-loop-cut",
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T13:29:38.370Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Remove parallel dispatch, merge-conflict rectification and --no-batch",
+      "description": "**Goal** \u2014 Remove the dead parallel/merge-rectification entry paths and reject --no-batch before configuration loads.\n\n**Motivation** \u2014 `nax run --no-batch` sets an option the runner ignores (`execution/runner.ts:178` hard-codes `useBatch = false`).\n\n**Approach** \u2014\n| Site | After |\n|:---|:---|\n| `executeUnified` parallel branch (`execution/unified-executor.ts:244-260`) | removed; every iteration runs `runSequentialDispatch`, whatever `ctx.parallelCount` holds |\n| imports `unified-executor.ts:26`, `:27`, `:30` | removed (`RunParallelBatchOptions`/`Result`, `selectIndependentBatch`, `runParallelDispatch`) |\n| `export { reconcileBatchOutcome }` (`unified-executor.ts:298`) | removed |\n| `_unifiedExecutorDeps` (`unified-executor.ts:304`) | the `runParallelBatch` and `selectIndependentBatch` members go |\n| `handlePipelineSuccess` conflict branch (`execution/pipeline-result-handler.ts:344-395`) | no rectification: the story fails through `failStoryAfterMerge` with reason `Merge conflict (<files>) \u2014 the branch did not land` (`Merge conflict \u2014 the branch did not land` when `conflictFiles` is empty) and returns `{ storiesCompletedDelta: 0, costDelta, prd, prdDirty: true }`; the worktree is kept for inspection, as the unrectified path keeps it today; the `Merged story to main` log at `:396` stays |\n| `parseRunPreconditionFlags` (`bin/run-action.ts:127-144`) | after the `--parallel` check, `options.batch === false` prints `nax run --no-batch was removed: workflow mode runs stories one at a time` in red to stderr and exits 1 |\n| `--no-batch` option (`bin/nax.ts:242`) | stays declared, description `Removed: workflow mode runs stories one at a time` |\n| barrels `execution/escalation/index.ts:5`, `execution/index.ts:86` | drop the re-exports of deleted symbols |\n\nDeleted: `execution/parallel.ts`, `parallel-batch.ts`, `parallel-batch-phases.ts`, `parallel-worker.ts`,\n`parallel-story-metrics.ts`, `unified-executor-parallel-dispatch.ts`, `reconcile-batch-outcome.ts`,\n`merge-conflict-rectify.ts`, `merge-conflict-outcomes.ts`, `execution/escalation/batch-pre-check.ts`.\n\nKept tests that pass `parallelCount: 2` and stub `_unifiedExecutorDeps.selectIndependentBatch` lose the stub\nand run the sequential path. Where the stubbed story is not the story `getNextStory` picks (for example a\n`status: \"failed\"` story with no `lastStoryId`), the fixture makes it the first pending story so the test\nkeeps its assertion; the Modifies entries name the tests where that does not hold.\n\n**Scope** \u2014 In: the Design Part 1 source cuts, retained-fixture repairs, deleted-path consumers, inline-mock entries and complexity baseline. Out: default pipeline/stages (US-002), post-run inspection (US-003), checkpoint wiring/builders (US-005), orchestrator core/leaves (US-006/007). Keep shared batching fields/plumbing, storyIsolation and other worktree handling for B3; keep orphan declarations such as selectIndependentBatch for B2b-2.\n\n**Interface** \u2014 `executeUnified(ctx: SequentialExecutionContext, initialPrd: PRD): Promise<SequentialExecutionResult>`; `handlePipelineSuccess(ctx: PipelineHandlerContext, pipelineResult: PipelineRunResult): Promise<PipelineSuccessResult>`; `parseRunPreconditionFlags(options: RunActionOptions): { chatAsksDir: string | undefined }`. `_unifiedExecutorDeps` target: `{ runWorkflowPreflight; runIteration; preIterationTierCheck; savePrdProgress }`. No new externally-visible symbol. Keep -m, --parallel, --no-batch check precedence. Preserve failureKind:error's non-conflict failure behavior and cleanup; only conflict failures keep the worktree.\n\n**Test/file migration** \u2014 All following paths are below packages/nax/test. Delete integration/execution/{parallel-batch-rectification,parallel-batch-results,parallel-story-router,runner-parallel-metrics-rectification-events,runner-parallel-metrics}.test.ts and _parallel-metrics-helpers.ts. Delete unit/execution/escalation/batch-pre-check.test.ts and unit/execution/{merge-conflict-rectify,parallel-batch-active-stories,parallel-batch-edges,parallel-batch-structure,parallel-batch,parallel-dispatch-active-stories,parallel-story-metrics,parallel-worker,parallel-cleanup,unified-executor-reconcile,unified-executor-fallback-seam,unified-executor-cost}.test.ts. In integration/confined/integration-hygiene.test.ts remove only AC-2; in integration/confined/unit-hygiene.test.ts remove the two deleted unified-executor paths from AC-10. In unit/execution/unified-executor-results.test.ts retain only the first AC-18 required-keys test. In unified-executor-failure.test.ts drop its batchResult.failed behavioral describe and source assertion reading the deleted dispatcher, keeping its other two source assertions. In unified-executor-dispatch.test.ts drop parallel AC-2 and AC-5 describes, BUG-3 and BUG-39's failed-story --parallel test, retaining other useBatch scheduling refresh assertions. In unified-executor-logging.test.ts drop parallel dispatch/suppression/agent-tier assertions; remove all selector/batch dep scaffolding, preserve sequential, profile, exhausted-tier and ordinal assertions, and make intended stories first pending as needed. In unified-executor-signature.test.ts retain only runIteration in the injectable-dispatch test.each, remove AC-2/AC-3, AC-4 to AC-7 and BUG-7 describes reading the deleted dispatcher, keeping AC-1 and AC-8 to AC-11. In unified-executor-tier-budget.test.ts delete the two batch executor describes but preserve AC-9/AC-10 without selector scaffolding. In unified-executor-bound.test.ts delete only the pipeline literal final-derived-bound test dependent on parallel selection. In unified-executor-state-handoff.test.ts delete only the single story in parallel mode duplicate and its selector stub. In runner-execution-capture.test.ts and runner-execution-pre-run.test.ts remove deleted deps' save/stub/restore, retaining assertions. Replace the obsolete rectification-fails case in pipeline-result-handler.test.ts; add removed-flag cases in unit/cli/run-action.test.ts. Add the single-story-with-parallelCount regression to the retained unified-executor-dispatch.test.ts. Remove deleted-test entries from packages/nax/scripts/check-inline-test-mocks.ts and update complexity-baseline through its command.\n\n**Verification** \u2014 Run the four shared validation steps in analysis from packages/nax: typecheck, per-deleted-source/test fixed-string path sweep (including source readers, path lists, comments and repo-tooling scripts/tests), complexity/file-size baseline maintenance as specified, check:all and test. Write failing behavior assertions before implementing the cuts; use injected _deps and throwing exit spies, not the binary.",
+      "acceptanceCriteria": [
+        "[unit] parseRunPreconditionFlags({ feature: \"demo\", dir: \"/tmp\", dryRun: false, batch: false }), with console.error and process.exit spied, calls console.error exactly once with chalk.red(\"nax run --no-batch was removed: workflow mode runs stories one at a time\").",
+        "[unit] parseRunPreconditionFlags({ feature: \"demo\", dir: \"/tmp\", dryRun: false, batch: false }), with process.exit spied, calls process.exit(1).",
+        "[unit] parseRunPreconditionFlags({ feature: \"demo\", dir: \"/tmp\", dryRun: false, batch: false, parallel: \"2\" }), with console.error spied, calls console.error exactly once with chalk.red(\"nax run --parallel was removed: workflow mode runs stories one at a time\").",
+        "[unit] parseRunPreconditionFlags({ feature: \"demo\", dir: \"/tmp\", dryRun: false, batch: false, parallel: \"2\" }), with process.exit spied, calls process.exit(1), after the --parallel check.",
+        "[unit] handlePipelineSuccess with execution.storyIsolation=\"worktree\" and _resultHandlerDeps.mergeEngine.merge resolving { success: false, conflictFiles: [\"foo.ts\"] } returns storiesCompletedDelta: 0.",
+        "[unit] handlePipelineSuccess with execution.storyIsolation=\"worktree\" and _resultHandlerDeps.mergeEngine.merge resolving { success: false, conflictFiles: [\"foo.ts\"] } emits exactly one story:failed event whose reason is \"Merge conflict (foo.ts) \u2014 the branch did not land\".",
+        "[unit] handlePipelineSuccess with the same worktree config and _resultHandlerDeps.mergeEngine.merge resolving { success: false, conflictFiles: [] } emits exactly one story:failed event whose reason is \"Merge conflict \u2014 the branch did not land\".",
+        "[unit] handlePipelineSuccess with the same worktree config and _resultHandlerDeps.mergeEngine.merge resolving { success: false, conflictFiles: [] } persists the story's status as \"failed\" in prd.json.",
+        "[unit] executeUnified, not a dry run, with _unifiedExecutorDeps.runWorkflowPreflight stubbed to resolve, a context whose parallelCount is 2, and a PRD with two pending stories without dependencies, calls the stubbed _unifiedExecutorDeps.runIteration with a selection whose storiesToExecute holds exactly one story.",
+        "[unit] When a hand-built worktree-isolation config produces a story merge conflict, handlePipelineSuccess does not call _resultHandlerDeps.spawn with [\"git\",\"worktree\",\"remove\",...].",
+        "[unit] parseRunPreconditionFlags({ feature: \"demo\", dir: \"/tmp\", dryRun: false, maxIterations: \"5\", parallel: \"2\", batch: false }), with console.error spied and process.exit spied to throw a sentinel, calls console.error exactly once with chalk.red(\"nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories\"), preserving -m precedence over --parallel and --no-batch."
+      ],
+      "tags": [
+        "pipeline-story-loop-cut",
+        "deletion",
+        "execution",
+        "cli"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module dispatch deletion, corrective persistence/events and ordered CLI exits require behavioral regression tests plus substantial fixture/importer cleanup."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/unified-executor.ts",
+        "packages/nax/src/execution/pipeline-result-handler.ts",
+        "packages/nax/bin/run-action.ts",
+        "packages/nax/test/unit/cli/run-action.test.ts",
+        "packages/nax/test/unit/execution/pipeline-result-handler.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/execution/parallel-batch-rectification.test.ts",
+          "reason": "tests the merge-conflict rectification inside src/execution/parallel-batch.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/parallel-batch-results.test.ts",
+          "reason": "tests only src/execution/parallel-batch.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/parallel-story-router.test.ts",
+          "reason": "tests the story routing of src/execution/parallel-worker.ts and src/execution/unified-executor-parallel-dispatch.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-parallel-metrics-rectification-events.test.ts",
+          "reason": "drives runParallelBatch to assert parallel metrics and rectification events; the parallel path is deleted, so the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-parallel-metrics.test.ts",
+          "reason": "drives runParallelBatch to assert parallel story metrics; the parallel path is deleted, so the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/_parallel-metrics-helpers.ts",
+          "reason": "a fixture used only by the two runner-parallel-metrics files and parallel-story-router.test.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/confined/integration-hygiene.test.ts",
+          "reason": "the AC-2 group lists only the two runner-parallel-metrics suites, which this story deletes, and runConfinedFiles has no handling for a missing path; the AC-2 group goes, the other groups stay."
+        },
+        {
+          "path": "packages/nax/test/integration/confined/unit-hygiene.test.ts",
+          "reason": "the AC-10 group lists unified-executor-cost.test.ts and unified-executor-fallback-seam.test.ts, which this story deletes; those two paths go and the group keeps its other three files."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/escalation/batch-pre-check.test.ts",
+          "reason": "tests only src/execution/escalation/batch-pre-check.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/merge-conflict-rectify.test.ts",
+          "reason": "tests only src/execution/merge-conflict-rectify.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-batch-active-stories.test.ts",
+          "reason": "tests only src/execution/parallel-batch.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-batch-edges.test.ts",
+          "reason": "tests only src/execution/parallel-batch.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-batch-structure.test.ts",
+          "reason": "tests only src/execution/parallel-batch.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-batch.test.ts",
+          "reason": "tests only src/execution/parallel-batch.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-dispatch-active-stories.test.ts",
+          "reason": "tests only src/execution/unified-executor-parallel-dispatch.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-story-metrics.test.ts",
+          "reason": "tests only src/execution/parallel-story-metrics.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-worker.test.ts",
+          "reason": "tests only src/execution/parallel-worker.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/parallel-cleanup.test.ts",
+          "reason": "reads src/execution/parallel-worker.ts and src/execution/parallel-batch.ts by path, both deleted by this story; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-reconcile.test.ts",
+          "reason": "tests only reconcileBatchOutcome from src/execution/reconcile-batch-outcome.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-fallback-seam.test.ts",
+          "reason": "every test drives the parallel batch through _unifiedExecutorDeps.runParallelBatch, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-cost.test.ts",
+          "reason": "every describe (AC-7, BUG-61, BUG-6, BUG-13, BUG-7, #2006) drives the parallel batch through _unifiedExecutorDeps.runParallelBatch, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-results.test.ts",
+          "reason": "only the first test, \"AC-18: SequentialExecutionResult has all required keys\" (line 97), stays; every other test, including \"AC-18: executeUnified returns all SequentialExecutionResult keys at runtime\", drives the parallel batch through _unifiedExecutorDeps.runParallelBatch, which this story removes, and is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-failure.test.ts",
+          "reason": "the describe \"exec AC-23 (behavioral): executeUnified calls handlePipelineFailure for each batchResult.failed entry\" drives runParallelBatch and the test \"AC-23: handlePipelineFailure is imported from pipeline-result-handler in unified-executor-parallel-dispatch.ts\" reads a deleted file; both are deleted, and the other two tests in \"exec AC-23 (source)\" keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-dispatch.test.ts",
+          "reason": "the describes \"AC-2 \u2014 runParallelBatch dispatch via _deps injection\", \"AC-5 \u2014 story:started per-batch story via _deps injection\" and \"BUG-3 \u2014 non-rectified merge conflict corrects the bus and metrics\", and the test \"BUG-39: a failed story is retried before other ready work under --parallel (batch.length===1)\", assert the parallel path and are deleted; the other \"useBatch scheduling refresh\" tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-logging.test.ts",
+          "reason": "the describes \"story.start logging \u2014 parallel batch dispatch\" and \"story.start suppression in a parallel batch (#1653)\" and the test \"parallel batch announces each story's own agent and tier\" assert the parallel path and are deleted; every selectIndependentBatch and runParallelBatch save, stub and restore goes; the tests in \"story.start logging \u2014 sequential (single-story) dispatch\", \"story.start announcement \u2014 profile-assigned stories (#1575)\", \"story.start suppression when the tier ladder is exhausted (#1653)\" and \"story.start storyNumber is the story's PRD ordinal (#1653)\" run the sequential path, with the stubbed story made the first pending story where it is not, and keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-signature.test.ts",
+          "reason": "the test.each in \"_unifiedExecutorDeps \u2014 injectable dispatch dependencies\" lists runIteration only; the describes \"AC-2/AC-3\", \"AC-4\", \"AC-5\", \"AC-6\", \"AC-7\" and \"BUG-7\" read src/execution/unified-executor-parallel-dispatch.ts, which this story deletes, and are deleted; AC-1 and AC-8 to AC-11 keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-tier-budget.test.ts",
+          "reason": "the describes \"US-003 AC-11: batch executor invokes preIterationTierCheck once per batch story\" and \"US-003: batch executor excludes shouldSkipIteration stories from dispatch\" assert the parallel path and are deleted; the selectIndependentBatch save, stub and restore in the AC-9 and AC-10 describes (lines 154, 161, 189, 222, 229 and 253) go, because the dep is removed, and AC-9 and AC-10 keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-bound.test.ts",
+          "reason": "the test \"pipeline literal completes when the final derived-bound iteration settles the last story\" (line 97) reaches runIteration only through the stubbed selectIndependentBatch, because sequential dispatch never selects its failed story; the dep is removed and the test is deleted, and the other tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-state-handoff.test.ts",
+          "reason": "the test \"single story in parallel mode: result.prd is the PRD the pre-check returned\" (line 126) expects max-iterations from the stubbed parallel branch; with the branch gone it duplicates the sequential test above it and is deleted, with its selectIndependentBatch stub."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-execution-capture.test.ts",
+          "reason": "the _unifiedExecutorDeps.runParallelBatch save (line 28), restore (line 64) and stubs (lines 74 to 82 and 108 to 116) and the selectIndependentBatch save, restore and stubs (lines 29, 65, 90 and 124) go, because both deps are removed; the assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-execution-pre-run.test.ts",
+          "reason": "the _unifiedExecutorDeps.runParallelBatch save (line 39) and its restore and the selectIndependentBatch save, restore and stub (lines 40, 105 and 106 to 114) go, because both deps are removed; the assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pipeline-result-handler.test.ts",
+          "reason": "the test \"returns storiesCompletedDelta=0 when merge fails and rectification also fails\" (line 301) is replaced by the AC-3 and AC-4 tests, because a merge conflict no longer attempts rectification."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/run-action.test.ts",
+          "reason": "gains the AC-1 and AC-2 cases for --no-batch next to the -m and --parallel cases."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "entries naming a test file this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Cut the default pipeline and delete execution and optimizer stages",
+      "description": "**Goal** \u2014 Delete the now-unreferenced default pipeline and its execution/optimizer stages while preserving the workflow pipeline.\n\n**Motivation** \u2014 The default pipeline (`pipeline/stages/index.ts:39-112`) and its execution and optimizer stages are reached only from `rectifyConflictedStory` (`execution/merge-conflict-rectify.ts:158`).\n\n**Approach** \u2014\n| Site | After |\n|:---|:---|\n| `pipeline/stages/index.ts:11-14` | the `contextStage`, `executionStage`, `optimizerStage` and `promptStage` imports go (only `buildDefaultPipeline` used them) |\n| `buildDefaultPipeline` and its doc comment (`stages/index.ts:19-50`) | removed |\n| `_defaultPipeline`, `getDefaultPipeline`, `defaultPipeline` (`stages/index.ts:85-112`) | removed |\n| re-exports `stages/index.ts:118-119` (`_executionDeps`, `executionStage`, `optimizerStage`) | removed; the other re-exports stay, `promptStage` and `contextStage` included (`nax prompts` imports them) |\n| `pipeline/index.ts:29` (`_executionDeps`, `executionStage`) | removed |\n\nDeleted: `pipeline/stages/execution.ts`, `pipeline/stages/optimizer.ts`. `getWorkflowPipeline()` is\nunchanged: `queue-check`, `routing`, `constitution`, `context`, `workflow`, `completion`.\n\n**Scope** \u2014 In: default pipeline cache/proxy/builder removal, execution/optimizer stage deletion and their consumers/tests. Out: execution-helpers and post-run inspection (US-003), e2e harness (US-004), plan builders/checkpoint wiring (US-005), orchestrator (US-006/007). Do not delete contextStage, promptStage or nax prompts assembly (B2c), src/optimizer/, IPromptOptimizer, verification/mutation/, or shared registries/types (B3).\n\n**Interface** \u2014 `getWorkflowPipeline(): PipelineStage[]`. No replacement default-pipeline API and no new externally-visible symbol; retain workflow memoisation and lazy loading.\n\n**Test/file migration** \u2014 Paths below packages/nax/test. Delete unit/execution/execution-stage.test.ts; unit/pipeline/stages/{execution-agent-routing,execution-ask-reachability,execution-assemble-stage-bundle,execution-context-bundle,execution-phase-telemetry,execution-remembered-approval-commit,execution-repo-scoped-fixes,execution-workdir,optimizer}.test.ts; unit/pipeline/storyid-events.test.ts; unit/pipeline/execution-stage-effective-config.test.ts; unit/execution/builder-extensibility.test.ts; integration/prompts/baseline-prompt-coordinates.test.ts; unit/execution/story-orchestrator/run-phase-telemetry.test.ts; helpers/execution-deps-stub.ts. Remove withExecutionDeps/ExecutionDepsOverrides re-exports from helpers/index.ts. In unit/pipeline/workflow-pipeline.test.ts replace the test comparing default/workflow stages with the exact workflow name sequence; retain is memoised. In unit/agents/phase5-invariants.test.ts remove only the execution.ts source-reader test and preserve other assertions. In unit/scripts/check-bash-dispatch-ask.test.ts remove only the deleted execution-stage wired-site expectation and retain clean findings. In integration/pipeline/pipeline.test.ts delete routeTddFailure describe and its imports; preserve Pipeline Runner tests. Remove deleted-test inline-mock entries and update complexity baseline via its command.\n\n**Verification** \u2014 Apply the four shared steps from analysis from packages/nax, sweeping each deleted source stem and test path through src, bin, test, scripts and repo-tooling scripts/tests. The workflow-stage-order regression is direct and does not depend on a removed default pipeline. Do not move execution-helpers deletion forward from US-003.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: getWorkflowPipeline() returns stages whose names, in order, are queue-check, routing, constitution, context, workflow, completion."
+      ],
+      "tags": [
+        "pipeline-story-loop-cut",
+        "deletion",
+        "pipeline"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Kept-code edits are limited to two barrels and a direct workflow-stage regression; deleting the unused stage implementations and their tests is mechanical after US-001 removes their callers."
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/stages/index.ts",
+        "packages/nax/src/pipeline/index.ts",
+        "packages/nax/test/unit/pipeline/workflow-pipeline.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/execution-stage.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-agent-routing.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-ask-reachability.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-assemble-stage-bundle.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-context-bundle.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-phase-telemetry.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-remembered-approval-commit.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/execution-workdir.test.ts",
+          "reason": "tests only src/pipeline/stages/execution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/optimizer.test.ts",
+          "reason": "tests only src/pipeline/stages/optimizer.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/storyid-events.test.ts",
+          "reason": "its only test, \"agent tier mismatch debug log includes storyId\", runs executionStage, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/execution-stage-effective-config.test.ts",
+          "reason": "its only SITES entry (line 19) reads src/pipeline/stages/execution.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/workflow-pipeline.test.ts",
+          "reason": "the test \"swaps prompt, optimizer and execution for one workflow stage\" compares against getDefaultPipeline, which this story deletes; it asserts the getWorkflowPipeline stage names directly instead (AC-1), and \"is memoised\" stays."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/phase5-invariants.test.ts",
+          "reason": "the test \"execution.ts does not import from agent-swap.ts (+4 more assertions)\" (line 11) reads src/pipeline/stages/execution.ts, which this story deletes, and is deleted; the other tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/builder-extensibility.test.ts",
+          "reason": "reads src/pipeline/stages/execution.ts by path (line 27), which this story deletes, and checks the orchestrator builder US-006 deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/scripts/check-bash-dispatch-ask.test.ts",
+          "reason": "the test \"every #2201 Bash-dispatching site is wired and the gate reads clean\" expects src/pipeline/stages/execution.ts among the wired sites (line 183); that expectation goes, because this story deletes the file, and the clean-findings assertion stays."
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/pipeline.test.ts",
+          "reason": "the describe \"routeTddFailure\" imports routeTddFailure from src/pipeline/stages/execution.ts (line 452), which this story deletes, and tests decideStageAction, which US-003 deletes; it is deleted with its imports, and the \"Pipeline Runner\" tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/integration/prompts/baseline-prompt-coordinates.test.ts",
+          "reason": "its only test runs assemblePlanInputsFromCtx and the execution stage, which this story and US-005 delete; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/run-phase-telemetry.test.ts",
+          "reason": "tests phase telemetry through the execution stage and the orchestrator, deleted by this story and US-006; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/execution-deps-stub.ts",
+          "reason": "withExecutionDeps mutates _executionDeps of the deleted execution stage, and every caller is deleted by this story; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the withExecutionDeps re-export (line 84) goes with the helper."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "entries naming a test file this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Delete post-run inspection while retaining workflow heads-ups",
+      "description": "**Goal** \u2014 Remove the dead post-run inspection layer, retaining only the heads-up channel still consumed by workflow mode.\n\n**Motivation** \u2014 After B1 and B2a the story loop still sits in the tree and compiles, but no production path runs it.\n\n**Approach** \u2014\n| Site | After |\n|:---|:---|\n| `pipeline/index.ts:30-31` (`resolveExecutionAgent`) | removed |\n| `execution/index.ts:84`, `:97-105`, `:109-110` | the oscillation-breaker, post-run, recurrence-breaker and recurrence-pause re-exports go |\n| `execution/uncategorised-advice.ts` | keeps `headsUpVia` and `headsUpChannel` (read by `workflow/stage-env.ts:154`); `OUTPUT_TAIL_CHARS`, `_uncategorisedAdviceDeps`, `callContextFor`, `toStageResult`, `adviseUncategorised`, `flushAdvisorHeadsUps` and the imports only they used go |\n| `scripts/check-bash-dispatch-ask.ts:99` | the allowlist entry for `uncategorised-advice.ts` / `callContextFor` goes, so the gate reports no stale entry |\n\nDeleted: `pipeline/stages/execution-helpers.ts`; `execution/post-run.ts`, `post-run-decide-action.ts`,\n`lifecycle/post-run-scratch-entries.ts`, `lifecycle/post-run-session-cleanup.ts`, `oscillation-breaker.ts`,\n`recurrence-breaker.ts`, `recurrence-pause.ts`, `tdd-failure-category.ts`.\n\n**Scope** \u2014 In: Design Part 3 deletions, post-run/execution-helper barrel cuts, obsolete bare-site allowlist entry, post-run test removal and the retained heads-up channel's missing-interaction regressions. Out: pipeline e2e harness removal (US-004), checkpoint/build-plan wiring (US-005), orchestrator core and leaves (US-006/007). Keep headsUpVia, headsUpChannel and post-run-notifications because workflow still consumes them. Keep newly orphaned operations/findings/TDD/review/prompt code and helper declarations for B2b-2; do not slim permission/name registries (B3) or alter live workflow session cleanup.\n\n**Interface** \u2014 `headsUpChannel(ctx)` is the retained integration seam. Its existing signature is `headsUpChannel(ctx: PipelineContext): Pick<AdvisorCallContext, \"headsUp\">`. The existing heads-up function remains available from `@/execution`; no new externally-visible symbol. With ctx.interaction absent, invoking the returned headsUp function resolves `{ sent: false, reason: \"no-interaction-channel\" }` through the existing no-op notification path; retain that behavior without adding a new helper or throwing.\n\n**Test/file migration** \u2014 Paths below packages/nax/test. Delete integration/execution/{verdict-cleanup,scratch-per-role}.test.ts; unit/execution/{post-run-isolation,post-run-inspection,post-run-inspection-exhaustion,post-run-decide-action,post-run-decide-action-edges,post-run-rollforward,post-run-scratch-entries,oscillation-breaker,recurrence-breaker,recurrence-pause,rectification-oscillation-circuit-breaker,story-orchestrator-carveout-staleness,uncategorised-advice}.test.ts; unit/execution/_post-run-fixtures.ts; unit/execution/lifecycle/post-run-session-cleanup.test.ts; e2e/review-recurrence-breaker.e2e.test.ts. The old uncategorised-advice suite tests only removed advice/flush functions and is deleted, not kept for its name. Add a focused unit/execution/heads-up-channel.test.ts that imports headsUpChannel through @/execution and guards a context without an interaction chain. Remove the exact callContextFor allowlist entry from packages/nax/scripts/check-bash-dispatch-ask.ts and update complexity baseline via its command. Preserve checker logic and other allowlisted sites.\n\n**Verification** \u2014 Apply the four shared validation steps in analysis. In addition to ordinary import checks, sweep removed source/test stems and stale comments, and confirm the bash-dispatch gate has no stale allowance. Use shared context helpers and restore spies/deps. Strict isolated regression tests protect the retained workflow notification seam while unreachable session-cleanup and capability-audit sites are deleted.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: headsUpChannel(ctx), imported from @/execution, called with a pipeline context that has no interaction chain, returns an object whose headsUp is a function.",
+        "[unit] When ctx.interaction is absent, calling headsUpChannel(ctx).headsUp(\"inspection required\") resolves to { sent: false, reason: \"no-interaction-channel\" } rather than throwing."
+      ],
+      "tags": [
+        "pipeline-story-loop-cut",
+        "deletion",
+        "execution",
+        "notifications"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The kept-code changes are four straightforward trims plus notification regressions, but deletion includes the session-cleanup harness and a capability-audit allowance, so the session/security override retains strict test isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/index.ts",
+        "packages/nax/src/execution/index.ts",
+        "packages/nax/src/execution/uncategorised-advice.ts",
+        "packages/nax/scripts/check-bash-dispatch-ask.ts",
+        "packages/nax/src/workflow/stage-env.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/heads-up-channel.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/execution/verdict-cleanup.test.ts",
+          "reason": "tests only applyPostRunInspection from src/execution/post-run.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/scratch-per-role.test.ts",
+          "reason": "tests only applyPostRunInspection from src/execution/post-run.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-isolation.test.ts",
+          "reason": "tests only applyPostRunInspection, imported through the execution barrel, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-inspection.test.ts",
+          "reason": "tests only src/execution/post-run.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-inspection-exhaustion.test.ts",
+          "reason": "tests only src/execution/post-run.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-decide-action.test.ts",
+          "reason": "tests only src/execution/post-run-decide-action.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-decide-action-edges.test.ts",
+          "reason": "tests only src/execution/post-run-decide-action.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-rollforward.test.ts",
+          "reason": "tests the roll-forward inside src/execution/post-run.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-scratch-entries.test.ts",
+          "reason": "tests only src/execution/lifecycle/post-run-scratch-entries.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/_post-run-fixtures.ts",
+          "reason": "a fixture used only by post-run tests this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/post-run-session-cleanup.test.ts",
+          "reason": "tests only src/execution/lifecycle/post-run-session-cleanup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/oscillation-breaker.test.ts",
+          "reason": "tests only src/execution/oscillation-breaker.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/recurrence-breaker.test.ts",
+          "reason": "tests only src/execution/recurrence-breaker.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/recurrence-pause.test.ts",
+          "reason": "tests only src/execution/recurrence-pause.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/rectification-oscillation-circuit-breaker.test.ts",
+          "reason": "tests the oscillation breaker through post-run inspection and the orchestrator, deleted by this story and US-006; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-carveout-staleness.test.ts",
+          "reason": "tests the orchestrator through deriveTddFailureCategory from src/execution/tdd-failure-category.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/uncategorised-advice.test.ts",
+          "reason": "tests only adviseUncategorised and flushAdvisorHeadsUps, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/review-recurrence-breaker.e2e.test.ts",
+          "reason": "imports inspectRecurrenceBreaker through the execution barrel, whose re-export this story removes, and drives runOrchestratorE2E; the file is deleted."
+        },
+        {
+          "path": "packages/nax/scripts/check-bash-dispatch-ask.ts",
+          "reason": "the allowlist entry for src/execution/uncategorised-advice.ts and callContextFor (line 99) goes, because this story removes callContextFor and the gate fails on a stale entry."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Delete the pipeline e2e harness and orchestrator integration suites",
+      "description": "**Goal** \u2014 Delete obsolete orchestrator-only test infrastructure and suites before their production plan-builder/core dependencies are removed.\n\n**Motivation** \u2014 After B1 and B2a the story loop still sits in the tree and compiles, but no production path runs it.\n\n**Approach** \u2014 `test/helpers/e2e/orchestrator-harness.ts` (`runOrchestratorE2E`) drives the story orchestrator through\n`buildPlanForStrategy`, which US-005 deletes. Every e2e test that uses it goes, with the harness, its\nscripted agent and the `./e2e` re-exports in `test/helpers/index.ts:80-81`. `test/e2e/workflow-mode.e2e.test.ts`\nuses neither and stays. Nine integration and unit suites that test only orchestrator code, or import it through an\n`@/execution` re-export US-006 drops, and have no complexity-baseline entry go here too, so that US-006 stays under the 40-entry Modifies cap. The\norchestrator still exists until US-006; only its tests go first. No source file and no baseline changes in\nthis story.\n\n**Scope** \u2014 In: only the listed test files, helpers and their helper-barrel re-exports. Out: any source change, script change or baseline change, plan builders/checkpoint CLI (US-005), core source (US-006), leaf source (US-007). The workflow e2e is retained. This is the binding no-test story, not a request to replace deleted harness tests with another harness.\n\n**Interface** \u2014 No production interface changes and no new externally-visible symbol; remove `runOrchestratorE2E` and `makeScriptedAgent` test helper exports without replacement.\n\n**Deletion inventory** \u2014 All paths below packages/nax/test. Delete e2e/{adversarial-recurrence-demotion,agent-fix,exhaustion-edge,full-suite-rectify,happy-path,harness,mechanical-fix,non-blocking-fix,resume,scripted-agent}.e2e.test.ts. e2e/review-recurrence-breaker.e2e.test.ts was removed by US-003; e2e/workflow-mode.e2e.test.ts stays. Delete helpers/e2e/{orchestrator-harness,scripted-agent,index}.ts and their ./e2e re-exports from helpers/index.ts. Delete the nine additional suites: integration/execution/canonical-loop-parallel-reviews.test.ts, integration/execution/execution-plan-parallel-reviews.test.ts, integration/execution/revalidation-review-pair.test.ts, integration/execution/rectification-routing.test.ts, unit/execution/story-orchestrator-resume-integration.test.ts, unit/execution/repo-scoped-fix-record.test.ts, unit/execution/story-orchestrator/regressed-gate-findings.test.ts, unit/execution/story-orchestrator/repo-scoped-fix-record.test.ts, unit/execution/story-orchestrator/review-decision.test.ts. The latter barrel consumers must go before US-006 removes their exports even though some leaf implementations remain until US-007.\n\n**Verification** \u2014 Review the diff for test/-only changes and the exact surviving e2e suite. Run shared Design Approach steps 2-4, with the path sweep for helpers/e2e/ over test/ and each deleted test path; check for all surviving helper imports/re-exports/source readers. Run complexity maintenance only as a no-op: these nine suites have no baseline entries and this story may not modify a baseline. Then run check:all and test from packages/nax. No new behavior tests or source stubs are required.",
+      "acceptanceCriteria": [
+        "[review] packages/nax/test/e2e/ holds workflow-mode.e2e.test.ts as its only test file.",
+        "[review] Every file the US-004 diff changes or deletes lies under packages/nax/test/."
+      ],
+      "tags": [
+        "pipeline-story-loop-cut",
+        "deletion",
+        "test-harness"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "no-test",
+        "reasoning": "The prescribed test-only deletion list and one helper barrel require reference review but no implementation algorithm, production integration or new tests.",
+        "noTestJustification": "The binding spec explicitly declares US-004 no-test: it deletes test-only harness files, obsolete suites and test helper exports, with no production source, baseline or runtime behavior changes. Its acceptance criteria are diff/tree and dangling-reference review assertions."
+      },
+      "contextFiles": [
+        "packages/nax/test/helpers/index.ts",
+        "packages/nax/test/helpers/e2e/index.ts",
+        "packages/nax/test/e2e/workflow-mode.e2e.test.ts",
+        "packages/nax/test/helpers/e2e/orchestrator-harness.ts",
+        "packages/nax/test/helpers/e2e/scripted-agent.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/e2e/adversarial-recurrence-demotion.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E, the pipeline harness this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/agent-fix.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E, the pipeline harness this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/exhaustion-edge.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E, the pipeline harness this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/full-suite-rectify.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E, the pipeline harness this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/happy-path.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E, the pipeline harness this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/harness.e2e.test.ts",
+          "reason": "tests runOrchestratorE2E itself, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/mechanical-fix.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E, the pipeline harness this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/non-blocking-fix.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E, the pipeline harness this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/resume.e2e.test.ts",
+          "reason": "drives runOrchestratorE2E through checkpoint resume, both deleted by this feature; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/e2e/scripted-agent.e2e.test.ts",
+          "reason": "tests makeScriptedAgent, the harness's scripted agent this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/e2e/orchestrator-harness.ts",
+          "reason": "runOrchestratorE2E builds its plan with buildPlanForStrategy, which US-005 deletes, and every caller is deleted by this story or US-003; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/e2e/scripted-agent.ts",
+          "reason": "used only by the harness and the e2e tests this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/e2e/index.ts",
+          "reason": "re-exports only the two deleted helpers; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the ./e2e re-exports (lines 80 and 81) go with the helpers."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/canonical-loop-parallel-reviews.test.ts",
+          "reason": "tests only the orchestrator's review loop, which US-006 deletes; the file is deleted here so US-006 stays under the Modifies cap."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/execution-plan-parallel-reviews.test.ts",
+          "reason": "tests only ExecutionPlan from the orchestrator, which US-006 deletes; the file is deleted here so US-006 stays under the Modifies cap."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/revalidation-review-pair.test.ts",
+          "reason": "tests only the orchestrator's revalidation reviews, which US-006 deletes; the file is deleted here so US-006 stays under the Modifies cap."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/rectification-routing.test.ts",
+          "reason": "tests only the orchestrator's rectification routing, which US-006 deletes; the file is deleted here so US-006 stays under the Modifies cap."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-resume-integration.test.ts",
+          "reason": "tests only the orchestrator's checkpoint resume, which US-005 and US-006 delete; the file is deleted here so US-006 stays under the Modifies cap."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/repo-scoped-fix-record.test.ts",
+          "reason": "imports deriveRepoScopedFixes through the execution barrel, whose re-export US-006 drops; it tests only src/execution/story-orchestrator/repo-scoped-fix-record.ts, which US-007 deletes, so the file is deleted here."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/regressed-gate-findings.test.ts",
+          "reason": "imports describeGateRegression and selectRegressedGateFindings through the execution barrel, whose re-export US-006 drops; they live in src/execution/story-orchestrator/phase-eval.ts, which US-007 deletes, so the file is deleted here."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/repo-scoped-fix-record.test.ts",
+          "reason": "imports recordRepoScopedFixes and RepoScopedFixRecord through the execution barrel, whose re-export US-006 drops; it tests only src/execution/story-orchestrator/repo-scoped-fix-record.ts, which US-007 deletes, so the file is deleted here."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/review-decision.test.ts",
+          "reason": "imports toReviewDecisionPayload through the execution barrel, whose re-export US-006 drops; it tests only src/execution/story-orchestrator/review-decision.ts, which US-007 deletes, so the file is deleted here."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Cut orchestrator checkpoint wiring, resume summaries and plan builders",
+      "description": "**Goal** \u2014 Remove legacy checkpoint I/O wiring and resume summaries without changing workflow resume state, then delete the now-unreferenced plan builders.\n\n**Motivation** \u2014 `nax resume` still reads it to print a summary line (`commands/resume.ts:115-122`).\n\n**Approach** \u2014\n| Site | After |\n|:---|:---|\n| `run()` (`execution/runner.ts:210-211`, `:222-223`, `:285-286`, `:411-412`) | no `_storyOrchestratorDeps` save, wire or restore and no `applyResumeModeDeps` / `applyRecordGreenDeps`; the `_workflowResumeDeps.mode` save, set and restore stay |\n| imports `runner.ts:30`, `:39` | `_workflowResumeDeps` only from `./checkpoint`; the `./story-orchestrator` import goes |\n| `ResumeCommandDeps` (`commands/resume.ts:37-43`) | `{ runInvocation: ResumeRunInvocation }` |\n| `runResume` (`resume.ts:108-127`) | prints nothing and returns `deps.runInvocation(feature, \u2026)`, passing `featureDir` exactly as today |\n| `defaultCheckpointExists`, `defaultLoadCheckpoints`, `aggregateSkipPhases`, `renderResumeSummary` (`resume.ts:45-99`) and the import at `:19` | removed; `_resumeCmdDeps` keeps only `runInvocation` |\n| `commands/index.ts:35` | the `renderResumeSummary` re-export goes |\n| the `applyResumeModeDeps` import and call in the action (`resume.ts:151`, `:207`) | removed; the action still passes `resumeMode: \"auto\"` to `run()` |\n| `execution/checkpoint/resume-cli.ts` | keeps `ResumeMode` and `_workflowResumeDeps` with their doc comments; `applyResumeModeDeps`, `applyRecordGreenDeps` and their imports go |\n| `execution/checkpoint/index.ts:13-14`, `:30-31` | the reader and writer re-exports go; `resume-cli` re-exports only `_workflowResumeDeps` and `ResumeMode` |\n| `execution/index.ts:3`, `:4-24`, `:96` | the build-plan and plan-inputs re-exports go; the checkpoint block drops `applyResumeModeDeps`, `CheckpointWriter`, `CheckpointWriterOptions`, `createCheckpointWriter`, `loadCheckpoints` |\n| `test/helpers/plan-inputs.ts` | `makeMockPlanInputs` and its `PlanInputs` import go; `makeResolvedTestPatterns` stays (14 test files use it) |\n\nDeleted: `execution/build-plan-for-strategy.ts`, `plan-inputs.ts`, `story-orchestrator/fix-review-strategy.ts`,\n`checkpoint/reader.ts`, `checkpoint/writer.ts`. A `checkpoint.jsonl` left by an older run stays on disk and\nnothing reads it.\n\n**Scope** \u2014 In: the checkpoint wiring, CLI/deps narrowing, five source deletions, helper trimming and affected tests. Out: checkpoint resume-hydrate/resume-plan/types and orchestrator core (US-006), leaves (US-007). Do not remove _workflowResumeDeps, workflow records, reentrancy guarding or change --fresh/--no-resume behavior. Do not delete the prompt stage/TddPromptBuilder (B2c), newly orphaned operation/findings/TDD/review code (B2b-2), shared batching/type fields (B3) or unrelated artifacts.\n\n**Interface** \u2014 `run(options: RunOptions): Promise<RunResult>`; `_workflowResumeDeps: { mode: ResumeMode }`; `ResumeCommandDeps` target: `{ runInvocation: ResumeRunInvocation }`; `runResume(feature: string, options?: ResumeCommandOptions, deps?: ResumeCommandDeps): Promise<number>`. No new externally-visible symbol. Keep the original runInvocation contract and omitted-versus-provided featureDir forwarding. Preserve the default throwing runInvocation stub, CLI trust/feature/path validation, workdir normalization, logging/status/run-id wiring, exit handling and resumeMode:auto in the action. The workflow record read by stage-env.ts remains independent from checkpoint.jsonl.\n\n**Test/file migration** \u2014 Paths below packages/nax/test. Delete unit/execution/{build-plan-for-strategy,build-plan-for-strategy-fix-assembly,build-plan-for-strategy-triage-assembly,build-plan-story-path-anchors,plan-inputs,plan-inputs-review-wiring,nbf-seed-strategies,nbf-seed-wiring,non-blocking-fix-wiring,mutation-check-wiring}.test.ts; unit/execution/story-orchestrator/{fix-review-strategy,fix-review-strategy-finding}.test.ts; unit/execution/checkpoint/{reader,writer,resume-cli}.test.ts; integration/execution/checkpoint/reader.test.ts; integration/tdd/story-orchestrator-{core,failureCategory,fallback,lite,verdict}.test.ts; unit/tdd/orchestrator-totals.test.ts; integration/execution/{fullsuite-rectify-declaration,nbf-rectify-declaration}.test.ts; integration/pipeline/gating-preservation.test.ts; integration/review/fix-review/{blocking-fix-review-feedback,nbf-keep-gate}.test.ts. In integration/confined/integration-hygiene.test.ts remove AC-4 and AC-9 groups referencing deleted suites and preserve other groups. In helpers/plan-inputs.ts remove makeMockPlanInputs and imports used only by it; keep makeResolvedTestPatterns. In helpers/index.ts remove only makeMockPlanInputs from the plan-inputs re-export. In unit/commands/resume.test.ts replace the old no-checkpoint, checkpoint-summary and default-checkpointExists groups with invocation/silence tests; shrink makeBaseDeps to runInvocation, retain writeCheckpoint, default runInvocation throws, and registerResumeCommand assertions. In unit/execution/runner-resume-deps.test.ts remove only the old orchestrator resume-dep lifecycle describe/import, retaining workflow resume mode and reentrancy assertions. In unit/execution/runner-run-id.test.ts and runner-total.test.ts remove only orchestrator imports/dependency save/restore, preserving assertions. Remove deleted-test entries from packages/nax/scripts/check-inline-test-mocks.ts and update complexity baseline by command.\n\n**Verification** \u2014 Apply all four shared validation steps from analysis, including source-reader/path-list sweeps. Keep setup-error and finally restoration regression tests for _workflowResumeDeps.mode. Exercise runResume directly with an injected invocation and stdout spy; do not spawn nax. Confirm command auto-resume wiring without touching security guards or artifact migration.",
+      "acceptanceCriteria": [
+        "[unit] runResume(\"demo\", { featureDir: \"/tmp/feat\" }, { runInvocation }), with runInvocation a spy resolving 0, resolves 0.",
+        "[unit] runResume(\"demo\", { featureDir: \"/tmp/feat\" }, { runInvocation }), with runInvocation a spy resolving 0, calls runInvocation exactly once with \"demo\" and { featureDir: \"/tmp/feat\" }.",
+        "[unit] runResume(\"demo\", { featureDir: dir }, { runInvocation }), where dir is a temporary directory holding checkpoint.jsonl and runInvocation resolves 0, never calls the spied process.stdout.write.",
+        "[unit] runResume(\"demo\", { featureDir: dir }, { runInvocation }), where dir is a temporary directory holding checkpoint.jsonl and runInvocation resolves 0, calls runInvocation exactly once.",
+        "[unit] Regression guard: run() with a feature directory and resumeMode: \"fresh\", whose stubbed setup phase throws, rejects.",
+        "[unit] Regression guard: after run() with a feature directory and resumeMode: \"fresh\" rejects because its stubbed setup phase throws, _workflowResumeDeps.mode equals the value it held before the call.",
+        "[unit] runResume(\"demo\", { featureDir: dir }, { runInvocation }), where dir is a temporary directory without checkpoint.jsonl and runInvocation resolves 0, never calls the spied process.stdout.write, preserving the removal of both legacy checkpoint-summary paths."
+      ],
+      "tags": [
+        "pipeline-story-loop-cut",
+        "deletion",
+        "checkpoint",
+        "resume"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Runner save/set/restore paths, narrowed CLI deps and plan-builder consumers must be cut together while preserving the workflow singleton; trust/path guards are unchanged, so proximity to them alone does not justify full security-critical routing."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/runner.ts",
+        "packages/nax/src/commands/resume.ts",
+        "packages/nax/src/execution/checkpoint/resume-cli.ts",
+        "packages/nax/src/execution/checkpoint/index.ts",
+        "packages/nax/src/workflow/stage-env.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/build-plan-for-strategy.test.ts",
+          "reason": "tests only src/execution/build-plan-for-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/build-plan-for-strategy-fix-assembly.test.ts",
+          "reason": "tests only src/execution/build-plan-for-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/build-plan-for-strategy-triage-assembly.test.ts",
+          "reason": "tests only src/execution/build-plan-for-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/build-plan-story-path-anchors.test.ts",
+          "reason": "tests only resolveStoryPathAnchors from src/execution/build-plan-for-strategy.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/plan-inputs.test.ts",
+          "reason": "tests only src/execution/plan-inputs.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/plan-inputs-review-wiring.test.ts",
+          "reason": "tests only src/execution/plan-inputs.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/fix-review-strategy.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/fix-review-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/fix-review-strategy-finding.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/fix-review-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/checkpoint/reader.test.ts",
+          "reason": "tests only src/execution/checkpoint/reader.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/checkpoint/reader.test.ts",
+          "reason": "tests only src/execution/checkpoint/reader.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/checkpoint/writer.test.ts",
+          "reason": "tests only src/execution/checkpoint/writer.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/checkpoint/resume-cli.test.ts",
+          "reason": "tests only applyResumeModeDeps and applyRecordGreenDeps, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/story-orchestrator-core.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/story-orchestrator-failureCategory.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/story-orchestrator-fallback.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/story-orchestrator-lite.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/story-orchestrator-verdict.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/confined/integration-hygiene.test.ts",
+          "reason": "the AC-4 group lists only test/integration/execution/checkpoint/reader.test.ts and the AC-9 group only the three test/integration/tdd/story-orchestrator suites, all deleted by this story, and runConfinedFiles has no handling for a missing path; both groups go, the other groups stay."
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/orchestrator-totals.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/fullsuite-rectify-declaration.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/nbf-rectify-declaration.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/gating-preservation.test.ts",
+          "reason": "builds the orchestrator plan with assemblePlanInputsFromCtx and buildPlanForStrategy, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/review/fix-review/blocking-fix-review-feedback.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/review/fix-review/nbf-keep-gate.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/nbf-seed-strategies.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/nbf-seed-wiring.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/non-blocking-fix-wiring.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/mutation-check-wiring.test.ts",
+          "reason": "builds the orchestrator plan with buildPlanForStrategy and makeMockPlanInputs, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/plan-inputs.ts",
+          "reason": "makeMockPlanInputs and its PlanInputs import go, because src/execution/plan-inputs.ts is deleted; makeResolvedTestPatterns stays."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the makeMockPlanInputs re-export (line 194) goes; makeResolvedTestPatterns stays."
+        },
+        {
+          "path": "packages/nax/test/unit/commands/resume.test.ts",
+          "reason": "the describes \"runResume \u2014 AC2: no-checkpoint path\", \"runResume \u2014 AC3: resume summary with checkpoint\" and \"_resumeCmdDeps \u2014 default checkpointExists wiring\" (except its test \"default runInvocation stub throws \u2014 the CLI layer must supply its own\") assert the checkpoint probe and summary, which this story removes, and are replaced by the AC-1 and AC-2 tests; makeBaseDeps (lines 42 to 60) shrinks to { runInvocation } with the imports only it used, writeCheckpoint stays for the AC-2 test, and the registerResumeCommand tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-resume-deps.test.ts",
+          "reason": "the describe \"runner.run() \u2014 resume-dep lifecycle (US-004 regression)\" asserts the restore of _storyOrchestratorDeps.loadCheckpoints, which run() no longer touches, and is deleted, and _storyOrchestratorDeps leaves the import block (lines 23 to 31); \"runner.run() \u2014 workflow resume mode (US-003)\" and \"runner.run() \u2014 reentrancy guard\" keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-run-id.test.ts",
+          "reason": "the _storyOrchestratorDeps import and its loadCheckpoints and recordGreen save and restore (lines 89 to 107) go, because run() no longer wires them; the assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-total.test.ts",
+          "reason": "the _storyOrchestratorDeps import and its loadCheckpoints and recordGreen save and restore (lines 116 to 136) go, because run() no longer wires them; the assertions stay."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "entries naming a test file this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Delete the story orchestrator core",
+      "description": "**Goal** \u2014 Delete the mutually dependent orchestrator core, non-blocking-fix harness and checkpoint record machinery together, preserving the workflow resume seam.\n\n**Motivation** \u2014 `run()` wires `_storyOrchestratorDeps.loadCheckpoints` and `recordGreen` (`execution/runner.ts:210-223`), but the orchestrator they feed runs only inside the execution stage, so no workflow run writes or reads `checkpoint.jsonl`.\n\n**Approach** \u2014 These 17 files import each other in a cycle, so they go together: `execution/checkpoint/resume-hydrate.ts`,\n`resume-plan.ts`, `types.ts`; `execution/non-blocking-fix.ts`, `non-blocking-fix-phases.ts`; and under\n`execution/story-orchestrator/`: `index.ts`, `builder.ts`, `execution-plan.ts`, `execution-plan-phases.ts`,\n`execution-plan-verdict.ts`, `nbf-deps.ts`, `nbf-seed.ts`, `rectification.ts`, `rectification-callop.ts`,\n`revalidation-reviews.ts`, `review-pair.ts`, `run-phase.ts`.\n\n| Site | After |\n|:---|:---|\n| `execution/checkpoint/index.ts:15-29` | the resume-hydrate, resume-plan and types re-exports go; the barrel re-exports only `_workflowResumeDeps` and `ResumeMode` |\n| `execution/index.ts` | the checkpoint block keeps `_workflowResumeDeps` and `ResumeMode`; the `runNonBlockingFix`, `./story-orchestrator` and `./story-orchestrator/nbf-seed` re-exports (`:83`, `:127-169`) go |\n\n**Scope** \u2014 In: all 17 cyclic core files, checkpoint/execution barrel reductions, core-only suite deletions and the focused workflow-resume seam regression suite. Out: surviving orchestrator leaf source and its remaining direct-import suites (US-007); the barrel-dependent leaf suites explicitly listed for deletion here remain in scope. Preserve remaining workflow checkpoint module and shared object identity, workflow execution/records, global registries and shared fields (B3); do not cascade into operation strategies, findings fix cycles, TDD, review/prompt/verification leaves or orphan declarations (B2b-2). The nine early suite removals belong to US-004 and must not be reintroduced here.\n\n**Interface** \u2014 `_workflowResumeDeps: { mode: ResumeMode }` remains public through `@/execution` and `@/execution/checkpoint`; `execution/checkpoint/index.ts` exports only `_workflowResumeDeps` and `ResumeMode`. No new externally-visible symbol or compatibility shim for the removed orchestrator API.\n\n**Test/file migration** \u2014 Paths below packages/nax/test. Delete unit/execution/{story-orchestrator,story-orchestrator-flake-integration,story-orchestrator-logs,story-orchestrator-no-progress-bail,story-orchestrator-rectification-exhaustion,story-orchestrator-resume-guard,story-orchestrator-resume-second-pass,story-orchestrator-resume-settle,story-orchestrator-revalidation-carveout,story-orchestrator-revalidation,story-orchestrator-run-phase-events,story-scoped-fix-budget,rectification,rectification-budget-invariants,review-input-repo-root,nbf-readonly-flake-triage,nbf-seed,non-blocking-fix,non-blocking-fix-control-paths,non-blocking-fix-log-data,non-blocking-fix-restore-losses,non-blocking-fix-scoped-review}.test.ts and unit/execution/_revalidation-fixtures.ts; unit/execution/checkpoint/{resume-hydrate,resume-plan}.test.ts; integration/execution/verifier-findings-flow.test.ts; unit/execution/story-orchestrator/{flake-triage-seam,nbf-deps,phase-details,rectification-context-stage,revalidation-reviews,review-pair,review-phase-report,run-phase-bundle-render,run-phase-callid-passthrough,run-phase-context-bundle,run-phase-red-commit,semantic-iteration-wiring,verdict-predispatch-cleanup}.test.ts. The rectification suite is deleted even though one describe exercises shouldRetryRectification; the orphan declaration itself remains for B2b-2. review-phase-report.test.ts imports via the disappearing orchestrator barrel, so delete now even though its leaf survives to US-007. Update complexity baseline by command, including verifier-findings-flow's entry. Create unit/execution/checkpoint/workflow-resume-seam.test.ts for the required public-barrel identity/default-auto regression, avoiding another existing-file Modifies entry. The new focused suite is necessary because all legacy checkpoint I/O/core suites are deleted; leave runner-resume-deps.test.ts unchanged in this story. Restore _workflowResumeDeps.mode after each test. Do not add production helpers or change run().\n\n**Verification** \u2014 Apply all four shared steps in analysis. Sweep every deleted source and test path, including scripts and source-reading tests. Preserve the grouping of the 17 core files rather than attempting partial deletion across additional stories. Do not clone the workflow seam to make each barrel self-contained; both must expose the same object.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: importing _workflowResumeDeps from @/execution yields the same object as importing it from @/execution/checkpoint.",
+        "[unit] Regression guard: _workflowResumeDeps imported from @/execution has mode \"auto\" when no run is in flight."
+      ],
+      "tags": [
+        "pipeline-story-loop-cut",
+        "deletion",
+        "orchestrator",
+        "checkpoint"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Atomic deletion of a 17-file dependency cycle and many consumers requires coordinated barrel cleanup while preserving a singleton workflow resume seam."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/checkpoint/index.ts",
+        "packages/nax/src/execution/index.ts",
+        "packages/nax/src/execution/story-orchestrator/index.ts",
+        "packages/nax/src/execution/checkpoint/resume-cli.ts",
+        "packages/nax/test/unit/execution/runner-resume-deps.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/checkpoint/workflow-resume-seam.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator.test.ts",
+          "reason": "tests only StoryOrchestratorBuilder and the orchestrator run loop, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-flake-integration.test.ts",
+          "reason": "tests only the orchestrator's flake handling, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-logs.test.ts",
+          "reason": "tests only the orchestrator's log output, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-no-progress-bail.test.ts",
+          "reason": "tests only the orchestrator's no-progress bail, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-rectification-exhaustion.test.ts",
+          "reason": "tests only runRectification, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-resume-guard.test.ts",
+          "reason": "tests only the orchestrator's resume guard, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-resume-second-pass.test.ts",
+          "reason": "tests only the orchestrator's resume pass, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-resume-settle.test.ts",
+          "reason": "tests only the orchestrator's provisional-rectification settle, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-revalidation-carveout.test.ts",
+          "reason": "tests only runRectification's revalidation carve-out, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-revalidation.test.ts",
+          "reason": "tests only the orchestrator's revalidation, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-run-phase-events.test.ts",
+          "reason": "tests only runPhase events, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-scoped-fix-budget.test.ts",
+          "reason": "tests only runRectification's story-scoped budget, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/_revalidation-fixtures.ts",
+          "reason": "a fixture used only by four orchestrator tests this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/rectification.test.ts",
+          "reason": "tests src/execution/story-orchestrator/rectification.ts, which this story deletes, plus a describe of shouldRetryRectification, which has no source caller (an orphan for B2b-2); the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/rectification-budget-invariants.test.ts",
+          "reason": "tests only runRectification, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/review-input-repo-root.test.ts",
+          "reason": "tests only refreshReviewInputForDispatch from src/execution/story-orchestrator/run-phase.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/nbf-readonly-flake-triage.test.ts",
+          "reason": "tests only runNonBlockingFix and the orchestrator flake triage, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/nbf-seed.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/nbf-seed.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/non-blocking-fix.test.ts",
+          "reason": "tests only src/execution/non-blocking-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/non-blocking-fix-control-paths.test.ts",
+          "reason": "tests only src/execution/non-blocking-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/non-blocking-fix-log-data.test.ts",
+          "reason": "tests only src/execution/non-blocking-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/non-blocking-fix-restore-losses.test.ts",
+          "reason": "tests only src/execution/non-blocking-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/non-blocking-fix-scoped-review.test.ts",
+          "reason": "tests only src/execution/non-blocking-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/checkpoint/resume-hydrate.test.ts",
+          "reason": "tests only src/execution/checkpoint/resume-hydrate.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/checkpoint/resume-plan.test.ts",
+          "reason": "tests only src/execution/checkpoint/resume-plan.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/verifier-findings-flow.test.ts",
+          "reason": "tests only the StoryOrchestratorBuilder findings flow, which this story deletes; the file is deleted, and its complexity-baseline entry goes with the update below."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/flake-triage-seam.test.ts",
+          "reason": "tests the flake-triage seam through runPhase and runRectification, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/nbf-deps.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/nbf-deps.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/phase-details.test.ts",
+          "reason": "tests only runPhase, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/rectification-context-stage.test.ts",
+          "reason": "tests only the orchestrator's rectification context stage, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/revalidation-reviews.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/revalidation-reviews.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/review-pair.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/review-pair.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/review-phase-report.test.ts",
+          "reason": "imports classifyMissingReviewPhases through the src/execution/story-orchestrator barrel, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/run-phase-bundle-render.test.ts",
+          "reason": "tests only runPhase, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/run-phase-callid-passthrough.test.ts",
+          "reason": "tests only runPhase, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/run-phase-context-bundle.test.ts",
+          "reason": "tests only runPhase, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/run-phase-red-commit.test.ts",
+          "reason": "tests only runPhase, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/semantic-iteration-wiring.test.ts",
+          "reason": "tests only runPhase, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/verdict-predispatch-cleanup.test.ts",
+          "reason": "tests only runPhase's verdict cleanup, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Delete the orchestrator leaves",
+      "description": "**Goal** \u2014 Delete the leaf modules orphaned by the core removal and finish removing src/execution/story-orchestrator/.\n\n**Motivation** \u2014 After B1 and B2a the story loop still sits in the tree and compiles, but no production path runs it.\n\n**Approach** \u2014 Deleted: `execution/nbf-source-diff.ts`, `nbf-worth-check.ts`, `oscillation-store.ts`,\n`story-orchestrator-logging.ts`, and under `execution/story-orchestrator/`: `types.ts`, `phase-eval.ts`,\n`phase-state.ts`, `nbf-flake-triage.ts`, `flake-triage-seam.ts`, `give-up-advice.ts`, `no-progress-bail.ts`,\n`recurrence-recording.ts`, `render-phase-bundle.ts`, `repo-scoped-fix-record.ts`, `review-decision.ts`,\n`review-phase-report.ts`. `execution/index.ts` drops the nbf-worth-check, oscillation-store and\nstory-orchestrator-logging re-exports (`:80-81`, `:85`, `:170-174`). After this story `src/execution/story-orchestrator/`\nno longer exists.\n\n**Scope** \u2014 In: the 16 listed leaf files, their remaining barrel exports/tests and complexity maintenance. Out: any reimplementation of already deleted US-001 through US-006 harnesses or interfaces. Keep pipeline operations and strategies, nbfWorthCheckOp, parseNbfWorthReply, findings fix-cycle, TDD and review/prompt/verification leaves and orphan declarations for B2b-2; keep src/optimizer/, IPromptOptimizer, mutation and prompt assembly for B2c, and registries/shared batching types for B3. Leave unrelated pre-B1 unreachable code alone.\n\n**Interface** \u2014 `executeUnified(ctx: SequentialExecutionContext, initialPrd: PRD): Promise<SequentialExecutionResult>` remains unchanged, as does the retained `_unifiedExecutorDeps` target `{ runWorkflowPreflight; runIteration; preIterationTierCheck; savePrdProgress }`. No new externally-visible symbol; an all-passed PRD must still complete without runIteration.\n\n**Test/file migration** \u2014 Paths below packages/nax/test. Delete unit/execution/oscillation-store.test.ts, unit/execution/story-orchestrator-logging.test.ts, unit/execution/story-orchestrator/give-up-advice.test.ts and unit/execution/story-orchestrator/review-decision-fix-review.test.ts. In unit/operations/nbf-worth-check.test.ts remove only the runNbfWorthCheck (US-003) describe and its import/helpers/dependency scaffolding used only by it; retain parseNbfWorthReply (US-002) and nbfWorthCheckOp (US-002) assertions. No operation implementation is deleted here. Update complexity baseline via its command. Put the all-stories-passed executeUnified regression in retained unit/execution/unified-executor-bound.test.ts, stubbing workflow preflight and runIteration without resurrecting parallel deps; retain existing completed/deferred-review behavior.\n\n**Verification** \u2014 Apply all four shared validation steps from analysis for every deleted source/test path, including longer sibling stems and references by file read. Confirm the orchestrator source directory is gone and no surviving barrel/consumer imports its deleted modules, without running a broader B2b-2 orphan pass. Preserve workflow-mode results and completion without an iteration for an already-passed PRD.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: executeUnified, not a dry run, with _unifiedExecutorDeps.runWorkflowPreflight stubbed to resolve, on a PRD whose stories are all passed, returns exit reason completed.",
+        "[unit] Regression guard: executeUnified, not a dry run, with _unifiedExecutorDeps.runWorkflowPreflight stubbed to resolve, on a PRD whose stories are all passed, never calls the stubbed _unifiedExecutorDeps.runIteration."
+      ],
+      "tags": [
+        "pipeline-story-loop-cut",
+        "deletion",
+        "orchestrator"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "After US-006 removes the leaf callers, implementation is mechanical deletions, one barrel trim and one mixed-suite trim; a direct executor regression protects completion without introducing new control flow."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/index.ts",
+        "packages/nax/src/execution/story-orchestrator/types.ts",
+        "packages/nax/src/execution/unified-executor.ts",
+        "packages/nax/test/unit/operations/nbf-worth-check.test.ts",
+        "packages/nax/test/unit/execution/unified-executor-bound.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/oscillation-store.test.ts",
+          "reason": "tests only src/execution/oscillation-store.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator-logging.test.ts",
+          "reason": "tests only src/execution/story-orchestrator-logging.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/give-up-advice.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/give-up-advice.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-orchestrator/review-decision-fix-review.test.ts",
+          "reason": "tests only src/execution/story-orchestrator/review-decision.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/nbf-worth-check.test.ts",
+          "reason": "the describe \"runNbfWorthCheck (US-003)\" (line 340) tests src/execution/nbf-worth-check.ts, which this story deletes, and is deleted with its import; \"parseNbfWorthReply (US-002)\" and \"nbfWorthCheckOp (US-002)\" keep their assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "This is an importer-first deletion refactor of @nathapp/nax, not a greenfield feature. It is C1 wave B2b-1, following pipeline-fork-cut (#2812) and pipeline-post-run-delete (#2813), based on the design merged in #2810. The supplied spec derived its deletion set at main 0d2dedf32 using declaration reachability and a file-level import/read graph; the approximate 59 source files, 11,400 source lines, 145 tests/helpers and 30 trimmed tests are scope indicators, not targets to chase. Exactly seven dependent stories execute in packages/nax. No changes to nax-ai, nax-agent or nax-agent-acp are intended; no release/version changes. MCP graph tools are unavailable in this session, so findings were verified by direct reads, Glob and text searches. No commands or tests were executed while drafting this PRD.\n\nVerified production boundary: packages/nax/src/execution/iteration-runner.ts:40-43 dynamically imports stages and always returns getWorkflowPipeline(). packages/nax/src/config/workflow-mode.ts:12-21 normalises storyIsolation to shared. packages/nax/src/execution/runner.ts:177-178 hard-codes useBatch=false. Nevertheless packages/nax/src/execution/unified-executor.ts:244-260 still branches on parallelCount and packages/nax/src/execution/pipeline-result-handler.ts:344-395 dynamically imports merge-conflict rectification. Text search finds the remaining production defaultPipeline consumers in packages/nax/src/execution/parallel-worker.ts:11,92 and packages/nax/src/execution/merge-conflict-rectify.ts:158,220. Deleting those consumers in US-001 must precede deleting the default pipeline in US-002. Do not remove executeUnified itself or the workflow story loop. Keep current sequential scheduling, tier checks, cost aggregation, event subscribers, deferred review, heartbeat and terminal/session-close behavior. packages/nax/src/execution/unified-executor.ts:202-207 already short-circuits an all-passed PRD to completed, still running deferred review; US-007 guards this behavior rather than introducing a new path. packages/nax/src/execution/unified-executor-dispatch-phases.ts:115-128 selects stories using the retained batching/type plumbing; parallelCount must no longer choose parallel dispatch, but this feature must not remove constant-off batching or narrow shared types.\n\nUS-001 source changes: packages/nax/src/execution/unified-executor.ts:26-30,244-260,298-318 lose parallel imports, dispatch, reconcile export and two injected deps. The final _unifiedExecutorDeps surface is runWorkflowPreflight, runIteration, preIterationTierCheck, savePrdProgress. packages/nax/src/execution/pipeline-result-handler.ts:189-212 contains the existing failStoryAfterMerge seam: it marks failed, persists via savePrdProgress, appends progress and emits the corrective story:failed event. This is essential because completionStage already wrote passed and emitted completed; returning only an in-memory mutation would be undone when prdDirty causes a reload (documented at :175-185). Replace only the conflict branch; preserve the separate non-conflict failureKind=error branch at :322-342, its directory removal/orphan ownership, cost accounting and the successful Merged story to main log. Conflict failures retain their worktree and never dispatch rectification. packages/nax/bin/run-action.ts:127-144 already rejects -m before --parallel with chalk.red(console.error) and process.exit(1); append batch===false before chat-asks parsing, leaving the ordering intact and retaining the option in packages/nax/bin/nax.ts:242 with the new removal description. packages/nax/src/execution/escalation/index.ts:5 and packages/nax/src/execution/index.ts:86 re-export deleted modules.\n\nUS-001 test migration: packages/nax/test/unit/cli/run-action.test.ts:14-47 has a reusable table of removed-flag tests with chalk.level=1, an exit spy that throws a sentinel (preventing fallthrough after process.exit), and exact red ANSI assertions. Extend it, never spawn nax. packages/nax/test/unit/execution/pipeline-result-handler.test.ts:71-110 provides makeCtx and WORKTREE_CONFIG, with makeMergeEngine, temporary PRDs and injected merge deps available. Replace the obsolete failed-rectification test near :301 with exact named/empty-conflict assertions and persisted failed state. Existing unified-executor tests frequently fake parallel dispatch even when testing sequential behavior; packages/nax/test/unit/execution/unified-executor-logging.test.ts:303-346,421-451,496-503,591-626,673-706 illustrates these selectIndependentBatch stubs. Remove save/stub/restore code and make intended stories first-pending where getNextStory otherwise would not select them, preserving all remaining behavioral assertions. Explicit exceptions: unified-executor-results retains only AC-18: SequentialExecutionResult has all required keys; unified-executor-failure drops the batch-failed behavior describe and the source check reading the deleted dispatcher, retaining its other two source assertions; unified-executor-dispatch drops AC-2/AC-5 parallel describes, BUG-3 and BUG-39's parallel retry test, retaining the other useBatch scheduling refresh assertions; unified-executor-logging drops parallel dispatch, parallel suppression and parallel agent/tier announcements, retaining sequential logging, profile assignments, tier-exhaustion suppression and PRD ordinal assertions; unified-executor-signature's injectable-dispatch table retains runIteration only and drops AC-2/AC-3 through AC-7 and BUG-7 source-reader describes while keeping AC-1 and AC-8 to AC-11; unified-executor-tier-budget drops batch AC-11 and skipped-batch describes but preserves AC-9/AC-10 without selector stubs; unified-executor-bound drops only the pipeline literal final-derived-bound test whose failed story depended on parallel selection; unified-executor-state-handoff drops only its duplicate single story in parallel mode test. runner-execution-capture and runner-execution-pre-run retain assertions, removing both deleted deps' scaffolding. Confined integration-hygiene loses AC-2; confined unit-hygiene AC-10 drops only unified-executor-cost and unified-executor-fallback-seam paths. Deleted-file and kept-file inventories are carried in each story description below.\n\nUS-002 boundary: packages/nax/src/pipeline/stages/index.ts:19-50 constructs the default pipeline; :85-112 implements its lazy cache/proxy. Remove those and execution/optimizer stage imports/exports, not the pipeline runner. The workflow pipeline at :72-83 is memoised and uses workflowContextStage (whose name is context), then a lazy workflow stage. Preserve queue-check, routing, constitution, context, workflow, completion in that order. contextStage and promptStage remain re-exported (:116,120) because nax prompts still reaches them. packages/nax/src/pipeline/index.ts:29 re-exports the deleted execution stage. Its execution-helpers exports at :30-31 must remain until US-003 deletes that helper. packages/nax/test/unit/pipeline/workflow-pipeline.test.ts:2-15 currently compares getWorkflowPipeline with getDefaultPipeline; replace the comparison with exact workflow names and keep memoisation. Other mixed tests retain their non-execution assertions, including Pipeline Runner integration tests, phase5 invariants and bash-dispatch gate clean-findings.\n\nUS-003 boundary: packages/nax/src/execution/uncategorised-advice.ts:34-49 implements headsUpVia and headsUpChannel using sendPostRunNotification. This is still called by packages/nax/src/workflow/stage-env.ts:145-155 and re-exported at packages/nax/src/execution/index.ts:176. Keep the channel and required imports; delete advisor decision/flush functionality and its deps, not post-run-notifications. packages/nax/scripts/check-bash-dispatch-ask.ts:92-100 includes an ALLOWED_BARE_SITES entry for uncategorised-advice/callContextFor; remove just that now-stale site, never weaken the checker. packages/nax/src/pipeline/index.ts:30-31 and packages/nax/src/execution/index.ts:84,97-105,109-110 are the affected barrels. Deleting session cleanup here removes an unreachable caller layer, not the live workflow/session ownership implementation. The public-barrel headsUpChannel regression needs to live in a retained/new focused test rather than the uncategorised-advice suite that tests only deleted functions.\n\nUS-004 is the binding exception to the normal prohibition on test-only stories: source and baselines must not change. packages/nax/test/helpers/e2e/orchestrator-harness.ts:11 imports _storyOrchestratorDeps/buildPlanForStrategy and :16-28 uses makeMockPlanInputs, so delete its consumers before US-005 removes plan inputs. packages/nax/test/helpers/e2e/index.ts:1-4 re-exports only the harness and scripted agent; packages/nax/test/helpers/index.ts:80-81 re-exports that helper barrel. All current e2e suites except workflow-mode use that obsolete layer (review-recurrence-breaker is already removed in US-003). packages/nax/test/e2e/workflow-mode.e2e.test.ts:1-27 instead imports runner and workflow/feature deps directly, and :52 onward drives a real workflow runner; preserve it unchanged. The nine additional integration/unit deletions are deliberate early removal of core-only/barrel-only consumers, all without complexity-baseline entries, keeping US-006 within its specified 40-entry Modifies cap. Do not opportunistically update a baseline in US-004; preceding-story sweeps must already have removed any inline-mock entries.\n\nUS-005 boundary and compatibility: packages/nax/src/execution/runner.ts:210-223 saves/wires orchestrator deps and workflow mode; :284-288 and :406-414 restore them after setup errors and later completion. Delete only orchestrator save/wire/restore, retaining _workflowResumeDeps.mode lifecycle and the reentrancy guard. packages/nax/src/workflow/stage-env.ts:219-228 reads _workflowResumeDeps.mode when deciding whether to resume a workflow story record; this has nothing to do with checkpoint.jsonl. packages/nax/src/execution/checkpoint/resume-cli.ts:40 defines ResumeMode and :58 the shared object, both retained; functions at :71-98 that wire reader/writer go. Retain those declarations and their doc comments while rewording only stale deleted-path comments identified by sweeps. packages/nax/src/commands/resume.ts:37-43 defines the current oversized deps; :108-127 probes and prints; :151 and :207 wire old checkpoint resume; :239-251 still correctly supplies resumeMode:auto and the pinned runId to run(). Reduce deps to runInvocation alone, remove all checkpoint probing/summary helpers and their imports/export in commands/index.ts, and preserve omitted versus supplied featureDir semantics exactly. Existing checkpoint.jsonl files remain untouched on disk and are ignored. Preserve CLI trust gate (:145), feature/path validation (:166-188), workdir normalization, hooks/config loading, status/log paths, run IDs, exit propagation and the default runInvocation throwing NaxError when not supplied. These are not targets of this feature.\n\nUS-005 tests: packages/nax/test/unit/commands/resume.test.ts:27-40 already provides writeCheckpoint; keep it for silent resume-with-file coverage. Its makeBaseDeps at :42-60 shrinks to runInvocation. Replace obsolete no-checkpoint/summary/default-probe describes but retain the default runInvocation throws assertion and all registerResumeCommand assertions. packages/nax/test/unit/execution/runner-resume-deps.test.ts:152-195 already guards workflow resume restoration and fresh mode visible during setup, and :206 onward guards reentrancy; keep these, drop only the old orchestrator-dep lifecycle describe and import. runner-run-id and runner-total only lose orchestrator dep save/restore. packages/nax/test/helpers/plan-inputs.ts:16-25 implements makeResolvedTestPatterns, used independently of PlanInputs; retain it and its packages/nax/test/helpers/index.ts:194 re-export while removing makeMockPlanInputs and its imports.\n\nUS-006/US-007 dependency ordering: packages/nax/src/execution/story-orchestrator/index.ts:4-59 shows the builder/execution-plan/run-phase/rectification barrel and leaf exports. The 17 core files form the prescribed mutually importing set; delete together in US-006, after plan builders and checkpoint I/O callers are gone. packages/nax/src/execution/checkpoint/index.ts:13-31 and packages/nax/src/execution/index.ts:4-24,83,127-169 require coordinated export trimming. The surviving checkpoint barrel must export exactly the workflow seam and ResumeMode. Do not delete leaf modules until US-007; packages/nax/src/execution/story-orchestrator/types.ts:1-6,18-49 references findings, operations, review and NBF leaf types whose removal must not cascade into B2b-2. US-007 deletes the remaining 16 leaf files, the now-empty story-orchestrator directory, and execution barrel NBF-worth/oscillation/logging exports at :80-85,170-174. packages/nax/test/unit/operations/nbf-worth-check.test.ts:340 onward tests runNbfWorthCheck; remove only that describe and the supporting imports/helpers/scaffolding, preserving parseNbfWorthReply and nbfWorthCheckOp assertions. Those operations deliberately remain for B2b-2.\n\nValidation/migration protocol, for every story except US-004's explicit exception: run from packages/nax: (1) bun run typecheck; (2) for every deleted source path below src without its extension, rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, and repeat for deleted test paths below test. Expect zero surviving references: static/dynamic imports, barrels, source readers, confined path lists and scripts are all consumers. Reword stale comments in any file; longer sibling-prefix matches get their own sweeps. Drop check-inline-test-mocks entries naming deleted tests where allocated in the story. (3) bun run check:complexity:update, and bun run check:file-sizes -- --update-baseline when a lowerable entry is reported. A stale complexity entry fails the gate; retained file-size/escape-hatch stale deletion entries are intentionally deferred unless an authorized baseline update requires it. (4) bun run check:all and bun run test. For US-004 run steps 2-4 with helpers/e2e/ sweep over test/, but no source or baseline changes; complexity update should be a no-op because its deleted suites have no entries. packages/nax/package.json:12-13 typechecks source and tests; :34-36 defines the file-size/complexity commands; :52-57 and :90-92 show package-scoped test/check gates. Use targeted bun:test paths during implementation; never bare bun test, never bun run nax, never spawn the nax binary. Coverage is separate CI validation and must not run inside NAX_SANDBOXED=1. Follow root docs/architecture/ARCHITECTURE.md:13-46 for _deps, Bun-native I/O, error handling, testing and permission conventions. All new regression files specified in expectedFiles are test-only outputs in packages/nax; no new production abstractions are needed.\n\nPrimary risks: deleting consumers in the wrong wave breaks dynamic imports, barrel APIs, tests that read source by filename, scripted-agent helper imports, confined subprocess file lists and stale baseline/gate allowlists. Parallel stubs can conceal fixture-selection dependencies: removing an obsolete stub without updating a failed-story fixture silently invalidates a surviving assertion. Merge conflicts must persist failed state and emit one corrective failed event after completion, while preserving spend and not deleting the diagnostic worktree. Runner setup throws must restore the workflow seam and reset reentrancy even after orchestrator wiring disappears. A broad checkpoint cleanup could accidentally delete workflow resume behavior; a broad pipeline cleanup could delete context/prompt stages still used by nax prompts. Do not change current registries, batching declarations, worktree configuration, pipeline operations, findings fix cycle, TDD, optimizer subsystem, review/prompt/verification leaves or unrelated pre-existing orphans. Those are deferred to B2b-2, B2c, B3 and B4 exactly as listed in outOfScope. Migration is removal messaging for --no-batch and silence for legacy checkpoint summaries, with no artifact migration, no new flags and no workflow-mode result change.\n\nTest deletion inventories below are expressed relative to packages/nax/test unless explicitly stated otherwise. Source paths in verbatim design sections are relative to packages/nax/src; bin/, scripts/ and test/ paths are relative to packages/nax. These conventions do not change repo-rooted contextFiles/expectedFiles. The spec's per-story Modifies inventories were checked as planning inputs (.nax/features/pipeline-story-loop-cut/spec.md:328-525), and the exact binding order, no-test exception and acceptance ownership are preserved.\n\nRefine-pass adversarial audit: all 14 explicitly numbered spec ACs were enumerated against the PRD, retaining their original story ownership. US-001 spec AC1 (red no-batch error and exit) maps to PRD criteria 1-2; AC2 (parallel precedence, red error and exit) to 3-4; AC3 (zero completed and exactly one named-conflict failure event) to 5-6; AC4 (empty-conflict reason and persisted failed PRD) to 7-8; AC5 (non-dry-run parallelCount=2 still passes a single-story selection to runIteration) to 9. US-002 AC1 maps to its criterion 1, preserving the ordered workflow stage list. US-003 AC1 maps to its criterion 1, preserving the public-barrel import and no-interaction-chain condition. US-004 AC1 and AC2 map to its criteria 1 and 2, preserving the only workflow e2e and test-only diff restrictions even though these are deliberate review criteria. US-005 AC1 maps to its criteria 1-2 (exit-code return and exact feature/options forwarding); AC2 to 3-4 (stdout silence with a real legacy file and one invocation); AC3 to 5-6 (setup rejection and restoration to the previous workflow mode). US-006 AC1 maps to its criteria 1-2 (same object through both barrels and default auto with no run in flight). US-007 AC1 maps to its criteria 1-2 (completed and no iteration with all-passed stories). Conjunctive ACs were split only to make each assertion independently testable; no original assertion or qualifying condition was dropped. Regression guard labels, not-a-dry-run conditions, stubbed-preflight setup, public import paths, before-call restoration anchor, and no-run-in-flight qualifier remain. No deprecated file/grep/verbatim-tagged ACs occur in the spec.\n\nThe five Failure Handling rows remain covered: removed no-batch exits before config, parallel wins over no-batch with -m precedence now explicitly exercised using all three removed flags, hand-built parallelCount still selects one story, worktree conflict fails without rectification and keeps the worktree, and resume with/without legacy file is silent and starts auto mode. Negative-path assertions exist in every story: US-001 flag/conflict failures; US-002 exclusion of removed stages from workflow selection; US-003 absent interaction returns the existing no-channel result; US-004 no dangling imports/source reads into the deleted harness (a review-only negative invariant appropriate to its binding no-test scope); US-005 setup failure restores mode and missing-checkpoint invocation stays silent; US-006 an in-flight deliberate no-resume run must not observe stale auto through the retained checkpoint barrel; US-007 no runIteration dispatch when no pending work remains. The added regression assertions are audit-requested negative cases, not new production capabilities. US-006's default-auto check runs before overrides; the no-resume check observes an explicitly in-flight run, so the two expectations do not conflict.\n\nCodebase-fit correction: packages/nax/test/unit/execution/non-blocking-fix-scoped-review.test.ts exists and imports runNonBlockingFix/types directly at lines 18-19. The first draft omitted it from US-006, which would leave an import into a deleted module. It is now explicitly deleted with that core, matching the on-disk spec's Modifies list. Keep the existing-file Modifies list bounded: US-006's barrel regressions now go in the clearly declared NEW test/unit/execution/checkpoint/workflow-resume-seam.test.ts rather than adding a further edit to runner-resume-deps.test.ts. That existing suite remains context to mirror _runnerDeps setup-failure injection and save/restore. No invented production helper or dependency is required. The US-003 new heads-up-channel regression suite is also an explicit expectedFiles output because the old uncategorised-advice suite is deleted. Both output paths were checked absent, neither appears in contextFiles.\n\nAll 24 spec-recommended context paths are retained in their matching stories within the five-file limit, and remain readable at execution time: US-006's orchestrator barrel and US-007's types leaf survive their upstream dependencies until their own deletion stories. Extra context is only existing code/tests that clarify the retained seams. All seven IDs and the exact binding chain US-001 through US-007 are unchanged; dependency minimization cannot override that binding. Routing was lightened to medium for mechanical stage/leaf/test-harness cuts, while US-001's dispatch/failure correction, US-005's global-mode lifecycle and US-006's atomic cyclic deletion remain complex for concrete reasons. US-003 retains strict session/security isolation for its cleanup/capability-site deletion, despite medium implementation complexity. US-005 no longer claims unchanged trust/path guards alone justify strict security routing.\n\nOut-of-scope inventory audit: all 12 feature exclusions are still copied verbatim in the top-level array: (1) B2b-2 pipeline operations/findings/TDD/reachable-only review/prompt/verification utilities and tests; (2) kept-file orphan declarations and tests; (3) nax prompts/prompt stage/TddPromptBuilder/execution-description; (4) optimizer subsystem/interface and mutation; (5) batching fields/plumbing; (6) deleted-name registries; (7) storyIsolation and remaining worktree code; (8) stale non-growing test/file-size baseline entries; (9) spawning nax for no-batch tests; (10) docs/config descriptions/README/package contexts; (11) unrelated pre-B1 unreachable code; (12) workflow-mode behavior changes. No story-local exclusion was hoisted. Each nearby story's Scope echoes the applicable retained/deferred boundary. Description scopes were checked against all ACs: only US-001 changes removed-flag/conflict behavior, US-005 removes summaries but preserves workflow resume/CLI safety, US-004 remains test-only, and US-006's new seam tests do not change runner behavior. Existing public-seam tests cover backwards compatibility rather than introducing replacement APIs. No execution/parser tool is exposed in this session, so this audit used file reads and exact text edits rather than claiming automated JSON parsing or test execution.",
+  "outOfScope": [
+    "The modules this spec leaves unreachable: the pipeline operations (`implement`, `verify`, `write-test`, the autofix, full-suite-rectify, semantic and adversarial review, fix-review and mutation-check ops and their strategies), the findings fix cycle (`findings/cycle*`, `bail-marker`, `classify-outcome`, `retirement-stamp`), `src/tdd/` (isolation, red-commit, rollback, verdict, verdict-reader), the review, prompt-builder, verification flake and utility modules only those reach, and their tests; feature B2b-2 deletes them.",
+    "Declarations in kept files whose last caller this spec deletes (for example `selectIndependentBatch`, `drainQueueAtBatchBoundary`, `checkMergeConflict`, `detectMergeConflict`, `contextStageForOp`, `isAdvisorCallerEnabled`, `failAndClose`, `discardAcpSessionLeftover`, `shouldRetryRectification`) and their tests; B2b-2's orphan pass removes them.",
+    "The prompt stage, `TddPromptBuilder` and `acceptance/execution-description.ts`: `nax prompts` still reaches them; wave B2c deletes them with the `nax prompts` assemble path.",
+    "`src/optimizer/`, `IPromptOptimizer` and `verification/mutation/`: unreachable after B2b but wave B2c deletes them, with the final reachability and orphan pass.",
+    "The `useBatch`, `batchPlan` and `parallelCount` fields of `SequentialExecutionContext`, `RunOptions` and `RunnerExecutionOptions`, `isBatchExecution`, `execution/batching.ts`, the batch branch of `selectNextStories` and `tryLlmBatchRoute`; wave B3 removes them with the other shared-type fields.",
+    "Removing deleted role, stage and phase strings from the name registries (`CanonicalSessionRole`, `PostRunPhase`, the permission `PipelineStage` list, `inert-bash-stages`, `context/engine/phase-stage-map.ts`); wave B3.",
+    "The `execution.storyIsolation` key and the worktree code in `iteration-runner.ts` and `pipeline-result-handler.ts`; `applyWorkflowMode` forces `\"shared\"`, and wave B3 decides the key.",
+    "Stale entries for deleted test files in `scripts/baselines/test-escape-hatches-baseline.json` and `scripts/baselines/file-sizes-baseline.json`; those checks fail only when a counter grows, so they stay until a baseline update.",
+    "A spawn-the-binary test for `--no-batch`: the test rules forbid spawning nax, and the unit ACs on `parseRunPreconditionFlags` cover the behaviour.",
+    "Docs, config descriptions, the README and the package context files that still describe parallel runs, batching, checkpoints or the story orchestrator; wave B4.",
+    "Deleting code that was already unreachable before B1 and has no pipeline cause; not part of C1.",
+    "Changing workflow-mode behaviour: every cut site keeps its current workflow-mode result."
+  ],
+  "routingProfile": "native-codex-ds"
+}
