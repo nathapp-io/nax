@@ -58,14 +58,6 @@ const REPAIRED_GROUPS: readonly ConfinedGroup[] = [
     paths: ["./test/integration/execution/execution.test.ts"],
   },
   {
-    ac: "AC-2",
-    what: "the parallel-metrics suites (class B: their PRD fixture write)",
-    paths: [
-      "./test/integration/execution/runner-parallel-metrics.test.ts",
-      "./test/integration/execution/runner-parallel-metrics-rectification-events.test.ts",
-    ],
-  },
-  {
     ac: "AC-3",
     what: "the runner-fixes suite (class A: its PRD temp dir)",
     paths: ["./test/integration/execution/runner-fixes.test.ts"],

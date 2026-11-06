@@ -25,7 +25,6 @@ import { _captureDeps } from "@/execution/lifecycle/test-baseline-capture";
 import type { RunnerExecutionOptions } from "@/execution/runner-execution";
 import { runExecutionPhase } from "@/execution/runner-execution";
 import { _unifiedExecutorDeps } from "@/execution/unified-executor";
-import type { UserStory } from "@/prd";
 import type { TestExecutionResult } from "@/verification";
 
 const WORKDIR = "/tmp/nax-runner-exec-pre-run";
@@ -36,8 +35,6 @@ const origWriteRunBaseline = _captureDeps.writeRunBaseline;
 const origClearStoryBaselines = _captureDeps.clearStoryBaselines;
 const origGateEnabled = _captureDeps.regressionGateEnabled;
 const origRunIteration = _unifiedExecutorDeps.runIteration;
-const origRunParallelBatch = _unifiedExecutorDeps.runParallelBatch;
-const origSelectIndependentBatch = _unifiedExecutorDeps.selectIndependentBatch;
 const origRunWorkflowPreflight = _unifiedExecutorDeps.runWorkflowPreflight;
 
 /** Recorded call order across the pre-run seam, the baseline and the story loop. */
@@ -102,16 +99,6 @@ beforeEach(() => {
   };
 
   _unifiedExecutorDeps.runWorkflowPreflight = async () => {};
-  _unifiedExecutorDeps.selectIndependentBatch = () => [];
-  _unifiedExecutorDeps.runParallelBatch = (async () => ({
-    batchResults: [],
-    totalCost: 0,
-    completed: [] satisfies UserStory[],
-    exitReason: "all-stories-passed" as const,
-    failed: [],
-    mergeConflicts: [],
-    storyCosts: new Map(),
-  })) as typeof _unifiedExecutorDeps.runParallelBatch;
   _unifiedExecutorDeps.runIteration = (async () => {
     callOrder.push("runIteration");
     return {
@@ -130,8 +117,6 @@ afterEach(() => {
   _captureDeps.clearStoryBaselines = origClearStoryBaselines;
   _captureDeps.regressionGateEnabled = origGateEnabled;
   _unifiedExecutorDeps.runIteration = origRunIteration;
-  _unifiedExecutorDeps.runParallelBatch = origRunParallelBatch;
-  _unifiedExecutorDeps.selectIndependentBatch = origSelectIndependentBatch;
   _unifiedExecutorDeps.runWorkflowPreflight = origRunWorkflowPreflight;
 });
 

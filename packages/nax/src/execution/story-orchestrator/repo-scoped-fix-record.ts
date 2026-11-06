@@ -98,12 +98,11 @@ export function deriveRepoScopedFixes(iterations: readonly Iteration<Finding>[])
  * Record this story's repo-scoped dispatches onto the live story so the next
  * `savePRD` carries them to disk (US-002).
  *
- * Mutates `story.repoScopedFixes` in place — sequential and parallel worktree
- * pipelines rely on `buildWorktreePipelineContext` deep-cloning `prd` via
- * `structuredClone` while passing `story` by reference, so a write here
- * reaches the durable save on the writing worker without racing against
- * others. `declinedReason` is intentionally dropped — it lives in the JSONL
- * run log only (see `deriveRepoScopedFixes`).
+ * Mutates `story.repoScopedFixes` in place — the worktree pipeline context
+ * deep-clones `prd` via `structuredClone` while passing `story` by reference, so
+ * a write here reaches the durable save on the writing worker without racing
+ * against others. `declinedReason` is intentionally dropped — it lives in the
+ * JSONL run log only (see `deriveRepoScopedFixes`).
  *
  * A no-op when `records` is absent or empty: an empty array is never written
  * onto a story that didn't have one, and an existing array is left as-is.

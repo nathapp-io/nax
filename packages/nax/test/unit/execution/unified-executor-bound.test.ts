@@ -94,21 +94,4 @@ describe("executeUnified derived bound", () => {
       expect(_unifiedExecutorDeps.runIteration).toHaveBeenCalledTimes(1);
     });
   });
-  test("pipeline literal completes when the final derived-bound iteration settles the last story", async () => {
-    // A failed story has no pending-work allowance and no lastStoryId retry yet: bound = 1.
-    // Direct parallel dispatch supplies that story; completion must be detected after loop exit.
-    const story = makeStory({ status: "failed", passes: false, attempts: 0 });
-    const prd = makePRD({ userStories: [story] });
-    _unifiedExecutorDeps.selectIndependentBatch = () => [story];
-    _unifiedExecutorDeps.runIteration = mock(async () => ({
-      prd: { ...prd, userStories: [{ ...story, status: "passed" as const, passes: true }] },
-      storiesCompletedDelta: 1,
-      costDelta: 0,
-      prdDirty: false,
-    }));
-    const result = await executeUnified({ ...ctx(1), parallelCount: 2 }, prd);
-    expect(result.iterations).toBe(1);
-    expect(result.exitReason).toBe("completed");
-    expect(result.storiesCompleted).toBe(1);
-  });
 });

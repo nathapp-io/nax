@@ -3,14 +3,13 @@
  *
  * File: unified-executor-logging.test.ts
  * Covers:
- *   story.start logging — parallel batch dispatch
  *   story.start logging — sequential (single-story) dispatch
+ *   story.start announcement — profile-assigned stories (#1575)
+ *   story.start suppression when the tier ladder is exhausted (#1653)
+ *   story.start storyNumber is the story's PRD ordinal (#1653)
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { makeDispatchContext, makeMockRuntime, makePluginRegistry, makeStatusWriter } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { stopHeartbeat } from "@/execution/crash-recovery";
@@ -111,7 +110,7 @@ function makePrd(stories: UserStory[]): PRD {
   };
 }
 
-function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutionContext {
+function makeCtx(): SequentialExecutionContext {
   return {
     prdPath: "/tmp/test-prd.json",
     workdir: "/tmp/test-workdir",
@@ -136,123 +135,8 @@ function makeCtx(overrides: { parallelCount?: number } = {}): SequentialExecutio
     batchPlan: [],
     interactionChain: null,
     ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: "/tmp/nax-test-logging-output" }) }),
-    ...overrides,
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// story.start logging — parallel batch dispatch
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("story.start logging — parallel batch dispatch", () => {
-  let deps: Record<string, unknown>;
-  let origRunParallelBatch: unknown;
-  let origSelectIndependentBatch: unknown;
-  let loggerSpy: ReturnType<typeof spyOn>;
-
-  interface LogCall {
-    stage: string;
-    message: string;
-    data?: Record<string, unknown>;
-  }
-
-  beforeEach(async () => {
-    const mod = await import("@/execution/unified-executor");
-    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
-    origRunParallelBatch = deps.runParallelBatch;
-    origSelectIndependentBatch = deps.selectIndependentBatch;
-  });
-
-  afterEach(() => {
-    if (deps) {
-      deps.runParallelBatch = origRunParallelBatch;
-      deps.selectIndependentBatch = origSelectIndependentBatch;
-    }
-    loggerSpy?.mockRestore();
-    mock.restore();
-  });
-
-  test("logger.info is called with stage 'story.start' for each story in a parallel batch", async () => {
-    const story1 = makePendingStory("US-001");
-    const story2 = makePendingStory("US-002");
-
-    const infoCalls: LogCall[] = [];
-    const logger: Partial<Logger> = {
-      info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-        infoCalls.push({ stage, message, data });
-      }),
-      warn: mock(() => {}),
-      error: mock(() => {}),
-      debug: mock(() => {}),
-    };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
-
-    deps.selectIndependentBatch = mock(() => [story1, story2]);
-    deps.runParallelBatch = mock(async () => ({
-      completed: [story1, story2],
-      failed: [],
-      mergeConflicts: [],
-      storyCosts: new Map([
-        [story1.id, 0],
-        [story2.id, 0],
-      ]),
-      totalCost: 0,
-    }));
-
-    const { executeUnified } = await import("@/execution/unified-executor");
-    const prd = makePrd([story1, story2]);
-    const ctx = makeCtx({ parallelCount: 2 });
-
-    await executeUnified(ctx, prd).catch(() => {});
-
-    const storyStartCalls = infoCalls.filter((c) => c.stage === "story.start");
-    expect(storyStartCalls.length).toBeGreaterThanOrEqual(2);
-
-    const ids = storyStartCalls.map((c) => c.data?.storyId);
-    expect(ids).toContain("US-001");
-    expect(ids).toContain("US-002");
-  });
-
-  test("story.start log data includes storyId, storyTitle, complexity, modelTier, attempt for batch stories", async () => {
-    const story1 = makePendingStory("US-001");
-
-    const infoCalls: LogCall[] = [];
-    const logger: Partial<Logger> = {
-      info: mock((stage: string, message: string, data?: Record<string, unknown>) => {
-        infoCalls.push({ stage, message, data });
-      }),
-      warn: mock(() => {}),
-      error: mock(() => {}),
-      debug: mock(() => {}),
-    };
-    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
-
-    deps.selectIndependentBatch = mock(() => [story1, makePendingStory("US-002")]);
-    deps.runParallelBatch = mock(async () => ({
-      completed: [story1],
-      failed: [],
-      mergeConflicts: [],
-      storyCosts: new Map([[story1.id, 0]]),
-      totalCost: 0,
-    }));
-
-    const { executeUnified } = await import("@/execution/unified-executor");
-    const prd = makePrd([story1, makePendingStory("US-002")]);
-    const ctx = makeCtx({ parallelCount: 2 });
-
-    await executeUnified(ctx, prd).catch(() => {});
-
-    const call = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
-    expect(call).toBeDefined();
-    expect(call?.data).toMatchObject({
-      storyId: "US-001",
-      storyTitle: "Story US-001",
-      attempt: 1,
-    });
-    expect(call?.data).toHaveProperty("complexity");
-    expect(call?.data).toHaveProperty("modelTier");
-  });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // story.start logging — sequential (single-story) dispatch
@@ -261,7 +145,6 @@ describe("story.start logging — parallel batch dispatch", () => {
 describe("story.start logging — sequential (single-story) dispatch", () => {
   let deps: Record<string, unknown>;
   let origRunIteration: unknown;
-  let origSelectIndependentBatch: unknown;
   let loggerSpy: ReturnType<typeof spyOn>;
 
   interface LogCall {
@@ -274,14 +157,10 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
     const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunIteration = deps.runIteration;
-    origSelectIndependentBatch = deps.selectIndependentBatch;
   });
 
   afterEach(() => {
-    if (deps) {
-      deps.runIteration = origRunIteration;
-      deps.selectIndependentBatch = origSelectIndependentBatch;
-    }
+    if (deps) deps.runIteration = origRunIteration;
     loggerSpy?.mockRestore();
     mock.restore();
   });
@@ -300,7 +179,6 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
     };
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
 
-    deps.selectIndependentBatch = mock(() => [story1]);
     deps.runIteration = mock(async () => ({
       prd: makePrd([]),
       storiesCompletedDelta: 1,
@@ -310,9 +188,8 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1]);
-    const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx, prd).catch(() => {});
+    await executeUnified(makeCtx(), prd).catch(() => {});
 
     const storyStartCalls = infoCalls.filter((c) => c.stage === "story.start");
     expect(storyStartCalls.length).toBeGreaterThanOrEqual(1);
@@ -333,7 +210,6 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
     };
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger as Logger);
 
-    deps.selectIndependentBatch = mock(() => [story1]);
     deps.runIteration = mock(async () => ({
       prd: makePrd([]),
       storiesCompletedDelta: 1,
@@ -343,9 +219,8 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const prd = makePrd([story1]);
-    const ctx = makeCtx({ parallelCount: 2 });
 
-    await executeUnified(ctx, prd).catch(() => {});
+    await executeUnified(makeCtx(), prd).catch(() => {});
 
     const call = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(call).toBeDefined();
@@ -366,8 +241,6 @@ describe("story.start logging — sequential (single-story) dispatch", () => {
 describe("story.start announcement — profile-assigned stories (#1575)", () => {
   let deps: Record<string, unknown>;
   let origRunIteration: unknown;
-  let origRunParallelBatch: unknown;
-  let origSelectIndependentBatch: unknown;
   let loggerSpy: ReturnType<typeof spyOn>;
   let executeUnified: typeof import("@/execution/unified-executor").executeUnified;
 
@@ -400,17 +273,11 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     executeUnified = mod.executeUnified;
     origRunIteration = deps.runIteration;
-    origRunParallelBatch = deps.runParallelBatch;
-    origSelectIndependentBatch = deps.selectIndependentBatch;
     installLoggerSpy();
   });
 
   afterEach(() => {
-    if (deps) {
-      deps.runIteration = origRunIteration;
-      deps.runParallelBatch = origRunParallelBatch;
-      deps.selectIndependentBatch = origSelectIndependentBatch;
-    }
+    if (deps) deps.runIteration = origRunIteration;
     loggerSpy?.mockRestore();
     mock.restore();
   });
@@ -418,7 +285,6 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
   test("single-story dispatch announces the story's own agent and its profile tier", async () => {
     const story = makeProfileStory("US-001");
 
-    deps.selectIndependentBatch = mock(() => [story]);
     deps.runIteration = mock(async () => ({
       prd: makePrd([]),
       storiesCompletedDelta: 1,
@@ -426,36 +292,10 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
       prdDirty: false,
     }));
 
-    await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([story])).catch(() => {});
+    await executeUnified(makeCtx(), makePrd([story])).catch(() => {});
 
     const call = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(call?.data).toMatchObject({ agent: "pi", modelTier: "balanced" });
-  });
-
-  test("parallel batch announces each story's own agent and tier", async () => {
-    const profiled = makeProfileStory("US-001");
-    const plain = makePendingStory("US-002");
-
-    deps.selectIndependentBatch = mock(() => [profiled, plain]);
-    deps.runParallelBatch = mock(async () => ({
-      completed: [profiled, plain],
-      failed: [],
-      mergeConflicts: [],
-      storyCosts: new Map([
-        [profiled.id, 0],
-        [plain.id, 0],
-      ]),
-      totalCost: 0,
-    }));
-
-    await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([profiled, plain])).catch(() => {});
-
-    const profiledCall = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
-    expect(profiledCall?.data).toMatchObject({ agent: "pi", modelTier: "balanced" });
-
-    // A story with no profile still falls back to the run's default agent.
-    const plainCall = infoCalls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-002");
-    expect(plainCall?.data?.agent).not.toBe("pi");
   });
 });
 
@@ -466,7 +306,6 @@ describe("story.start announcement — profile-assigned stories (#1575)", () => 
 describe("story.start suppression when the tier ladder is exhausted (#1653)", () => {
   let deps: Record<string, unknown>;
   let origRunIteration: unknown;
-  let origSelectIndependentBatch: unknown;
   let origPreIterationTierCheck: unknown;
   let spy: ReturnType<typeof installStoryLogSpy>;
 
@@ -474,7 +313,6 @@ describe("story.start suppression when the tier ladder is exhausted (#1653)", ()
     const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunIteration = deps.runIteration;
-    origSelectIndependentBatch = deps.selectIndependentBatch;
     origPreIterationTierCheck = deps.preIterationTierCheck;
     spy = installStoryLogSpy();
   });
@@ -482,34 +320,16 @@ describe("story.start suppression when the tier ladder is exhausted (#1653)", ()
   afterEach(() => {
     if (deps) {
       deps.runIteration = origRunIteration;
-      deps.selectIndependentBatch = origSelectIndependentBatch;
       deps.preIterationTierCheck = origPreIterationTierCheck;
     }
     spy?.restore();
     mock.restore();
   });
 
-  test("single-story dispatch logs no story.start when the pre-iteration check skips the story", async () => {
+  test("logs no story.start when the pre-iteration check skips the story", async () => {
     const story = makePendingStory("US-001");
     const prd = makePrd([story]);
 
-    deps.selectIndependentBatch = mock(() => [story]);
-    deps.preIterationTierCheck = mock(async () => ({ shouldSkipIteration: true, prdDirty: false, prd }));
-    deps.runIteration = mock(async () => {
-      throw new Error("runIteration must not be reached for a skipped story");
-    });
-
-    const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx({ parallelCount: 2 }), prd).catch(() => {});
-
-    expect(spy.calls.filter((c) => c.stage === "story.start")).toHaveLength(0);
-  });
-
-  test("sequential dispatch logs no story.start when the pre-iteration check skips the story", async () => {
-    const story = makePendingStory("US-001");
-    const prd = makePrd([story]);
-
-    // No parallelCount — dispatch falls through to the sequential path.
     deps.preIterationTierCheck = mock(async () => ({ shouldSkipIteration: true, prdDirty: false, prd }));
     deps.runIteration = mock(async () => {
       throw new Error("runIteration must not be reached for a skipped story");
@@ -543,102 +363,12 @@ describe("story.start suppression when the tier ladder is exhausted (#1653)", ()
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// #1653: the parallel batch announces only the stories that survive the pre-check
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("story.start suppression in a parallel batch (#1653)", () => {
-  let deps: Record<string, unknown>;
-  let origRunParallelBatch: unknown;
-  let origSavePrdProgress: unknown;
-  let origSelectIndependentBatch: unknown;
-  let origPreIterationTierCheck: unknown;
-  let spy: ReturnType<typeof installStoryLogSpy>;
-  let prdPath: string;
-
-  beforeEach(async () => {
-    const mod = await import("@/execution/unified-executor");
-    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
-    origRunParallelBatch = deps.runParallelBatch;
-    origSavePrdProgress = deps.savePrdProgress;
-    origSelectIndependentBatch = deps.selectIndependentBatch;
-    origPreIterationTierCheck = deps.preIterationTierCheck;
-    spy = installStoryLogSpy();
-  });
-
-  afterEach(async () => {
-    if (deps) {
-      deps.runParallelBatch = origRunParallelBatch;
-      deps.savePrdProgress = origSavePrdProgress;
-      deps.selectIndependentBatch = origSelectIndependentBatch;
-      deps.preIterationTierCheck = origPreIterationTierCheck;
-    }
-    spy?.restore();
-    mock.restore();
-    if (prdPath) await rm(prdPath, { force: true });
-  });
-
-  test("a batch story refused by the pre-iteration check is never announced", async () => {
-    const kept = makePendingStory("US-001");
-    const refused = makePendingStory("US-002");
-    const prd = makePrd([kept, refused]);
-
-    // runBatchPreChecks reloads the PRD from disk whenever a story is skipped,
-    // so the fixture needs a real file behind ctx.prdPath.
-    prdPath = join(tmpdir(), `nax-1653-batch-${process.pid}.json`);
-    await Bun.write(prdPath, JSON.stringify(prd));
-
-    let selected = false;
-    deps.selectIndependentBatch = mock(() => {
-      if (selected) return [];
-      selected = true;
-      return [kept, refused];
-    });
-    deps.preIterationTierCheck = mock(async (story: { id: string }) => ({
-      shouldSkipIteration: story.id === "US-002",
-      prdDirty: false,
-      prd,
-    }));
-    deps.savePrdProgress = mock(async () => {
-      await Bun.write(
-        prdPath,
-        JSON.stringify(
-          makePrd([
-            { ...kept, status: "passed", passes: true },
-            { ...refused, status: "skipped" },
-          ]),
-        ),
-      );
-    });
-    deps.runParallelBatch = mock(async () => {
-      await Bun.write(
-        prdPath,
-        JSON.stringify(
-          makePrd([
-            { ...kept, status: "passed", passes: true },
-            { ...refused, status: "skipped" },
-          ]),
-        ),
-      );
-      return { completed: [kept], failed: [], mergeConflicts: [], storyCosts: new Map([[kept.id, 0]]), totalCost: 0 };
-    });
-
-    const { executeUnified } = await import("@/execution/unified-executor");
-    const ctx = { ...makeCtx({ parallelCount: 2 }), prdPath };
-    await executeUnified(ctx, prd).catch(() => {});
-
-    const announced = spy.calls.filter((c) => c.stage === "story.start").map((c) => c.data?.storyId);
-    expect(announced).toEqual(["US-001"]);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // #1653: storyNumber is the story's PRD ordinal, not a progress counter
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
   let deps: Record<string, unknown>;
   let origRunIteration: unknown;
-  let origSelectIndependentBatch: unknown;
   let origPreIterationTierCheck: unknown;
   let spy: ReturnType<typeof installStoryLogSpy>;
 
@@ -646,7 +376,6 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
     const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunIteration = deps.runIteration;
-    origSelectIndependentBatch = deps.selectIndependentBatch;
     origPreIterationTierCheck = deps.preIterationTierCheck;
     spy = installStoryLogSpy();
   });
@@ -654,7 +383,6 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
   afterEach(() => {
     if (deps) {
       deps.runIteration = origRunIteration;
-      deps.selectIndependentBatch = origSelectIndependentBatch;
       deps.preIterationTierCheck = origPreIterationTierCheck;
     }
     spy?.restore();
@@ -662,15 +390,15 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
   });
 
   test("a story keeps its own ordinal regardless of how many siblings have finished", async () => {
-    // US-002 finished; US-003 is the third story in the PRD and must be announced
-    // as 3/3. The old pending-count derivation (total - pending + 1) reported 2
-    // here, because it counted completed siblings rather than the story's place.
-    const first = makePendingStory("US-001");
+    // US-001 and US-002 finished; US-003 is the third story in the PRD and must be
+    // announced as 3/3. The old pending-count derivation (total - pending + 1)
+    // reported 2 here, because it counted completed siblings rather than the
+    // story's place.
+    const first = makePassedStory("US-001");
     const done = makePassedStory("US-002");
     const story = makePendingStory("US-003");
     const prd = makePrd([first, done, story]);
 
-    deps.selectIndependentBatch = mock(() => [story]);
     deps.preIterationTierCheck = mock(async () => ({ shouldSkipIteration: false, prdDirty: false, prd }));
     deps.runIteration = mock(async () => ({
       prd: makePrd([first, done]),
@@ -680,7 +408,7 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx({ parallelCount: 2 }), prd).catch(() => {});
+    await executeUnified(makeCtx(), prd).catch(() => {});
 
     const call = spy.calls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-003");
     expect(call?.data).toMatchObject({ storyNumber: 3, storyTotal: 3 });
@@ -693,7 +421,6 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
     const done = makePassedStory("US-002");
     const prd = makePrd([story, done]);
 
-    deps.selectIndependentBatch = mock(() => [story]);
     deps.preIterationTierCheck = mock(async () => ({ shouldSkipIteration: false, prdDirty: false, prd }));
     deps.runIteration = mock(async () => ({
       prd: makePrd([done]),
@@ -703,7 +430,7 @@ describe("story.start storyNumber is the story's PRD ordinal (#1653)", () => {
     }));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    await executeUnified(makeCtx({ parallelCount: 2 }), prd).catch(() => {});
+    await executeUnified(makeCtx(), prd).catch(() => {});
 
     const call = spy.calls.find((c) => c.stage === "story.start" && c.data?.storyId === "US-001");
     expect(call?.data).toMatchObject({ storyNumber: 1, storyTotal: 2 });

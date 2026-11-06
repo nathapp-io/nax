@@ -10,6 +10,7 @@ function options(overrides: Partial<RunActionOptions> = {}): RunActionOptions {
 
 const maxMessage = "nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories";
 const parallelMessage = "nax run --parallel was removed: workflow mode runs stories one at a time";
+const noBatchMessage = "nax run --no-batch was removed: workflow mode runs stories one at a time";
 
 describe("parseRunPreconditionFlags", () => {
   const exitError = new Error("exit");
@@ -40,6 +41,35 @@ describe("parseRunPreconditionFlags", () => {
     expect(() => parseRunPreconditionFlags(options(flags))).toThrow(exitError);
     expect(stderr.mock.calls).toEqual([[`\u001b[31m${message}\u001b[39m`]]);
     expect(exit.mock.calls).toEqual([[1]]);
+  });
+
+  // US-001 AC-1 / AC-2: --no-batch is a removal message, not a silent no-op.
+  test("US-001 AC-1 + AC-2: --no-batch prints the removal message in red once and exits 1", () => {
+    expect(() => parseRunPreconditionFlags(options({ batch: false }))).toThrow(exitError);
+    expect(stderr.mock.calls).toEqual([[`\u001b[31m${noBatchMessage}\u001b[39m`]]);
+    expect(exit.mock.calls).toEqual([[1]]);
+  });
+
+  // US-001 AC-3 / AC-4: the --parallel check keeps precedence over --no-batch.
+  test("US-001 AC-3 + AC-4: --parallel wins over --no-batch, exiting 1 on the --parallel message", () => {
+    expect(() => parseRunPreconditionFlags(options({ batch: false, parallel: "2" }))).toThrow(exitError);
+    expect(stderr.mock.calls).toEqual([[`\u001b[31m${parallelMessage}\u001b[39m`]]);
+    expect(exit.mock.calls).toEqual([[1]]);
+  });
+
+  // US-001 AC-11: -m keeps precedence over both --parallel and --no-batch.
+  test("US-001 AC-11: -m wins over --parallel and --no-batch", () => {
+    expect(() => parseRunPreconditionFlags(options({ maxIterations: "5", parallel: "2", batch: false }))).toThrow(
+      exitError,
+    );
+    expect(stderr.mock.calls).toEqual([[`\u001b[31m${maxMessage}\u001b[39m`]]);
+    expect(exit.mock.calls).toEqual([[1]]);
+  });
+
+  test("does not reject batch: true (commander's --no-batch default)", () => {
+    expect(parseRunPreconditionFlags(options({ batch: true }))).toEqual({ chatAsksDir: undefined });
+    expect(exit).not.toHaveBeenCalled();
+    expect(stderr).not.toHaveBeenCalled();
   });
 
   test("AC-4: returns only chatAsksDir without exiting", () => {

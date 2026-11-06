@@ -298,23 +298,9 @@ describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
     expect(mergeMock).not.toHaveBeenCalled();
   });
 
-  test("returns storiesCompletedDelta=0 when merge fails and rectification also fails", async () => {
-    const story = makeStory("US-001");
-    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
-
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({
-      merge: mock(async () => ({ success: false as const, conflictFiles: ["foo.ts"] })),
-    });
-    _gitDeps.spawn = mockSpawnReturning("");
-
-    // rectifyConflictedStory is dynamically imported inside handlePipelineSuccess.
-    // We can't easily mock it here, so we just verify the handler doesn't throw
-    // and returns the expected non-dirty result when rectification fails.
-    // (Full rectification behaviour tested in merge.test.ts)
-    const result = await handlePipelineSuccess(ctx, makeMinimalResult()).catch(() => null);
-    // Even if it fails internally, no unhandled throw should escape
-    expect(result).not.toBeNull();
-  });
+  // A worktree merge conflict no longer attempts rectification — it fails the
+  // story outright. See pipeline-result-handler-merge-conflict.test.ts (split
+  // out for the 800-line cap).
 });
 
 // ---------------------------------------------------------------------------

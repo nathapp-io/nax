@@ -318,21 +318,21 @@ export async function handlePipelineSuccess(
     // pre-construction mergeEngine at module init; it accepts the brand.
     const worktreeId = deriveStoryWorktreeId(ctx.feature, story.id);
     const mergeResult = await _resultHandlerDeps.mergeEngine.merge(ctx.workdir, worktreeId);
-    // Only an explicit "error" diverts away from rectification. A failure with no
-    // failureKind keeps the historical behaviour (assume conflict) so a result from
-    // outside this module cannot silently lose its rectification pass.
+    // Only an explicit "error" takes the non-conflict arm. A failure with no
+    // failureKind keeps the historical reading (assume conflict) so a result
+    // from outside this module cannot silently lose its failure.
     if (!mergeResult.success && mergeResult.failureKind === "error") {
       // A non-conflict git failure (dirty tree, missing branch, repository stuck
-      // mid-merge). There is nothing for conflict rectification to resolve, so fail
-      // the story with the real cause instead of spending a session on it.
+      // mid-merge). There is nothing a conflict pass could resolve, so fail
+      // the story with the real cause.
       const reason = `Merge failed for a non-conflict reason: ${mergeResult.error ?? "unknown error"}`;
       logger?.error("worktree", "Merge failed for a non-conflict reason — marking story as failed", {
         storyId: story.id,
         error: mergeResult.error,
       });
       await failStoryAfterMerge(ctx, prd, reason);
-      // Nothing will revisit this worktree — no rectification pass is coming —
-      // so reclaim the directory. The branch stays for diagnostics, exactly as
+      // Nothing will revisit this worktree — no later pass is coming — so
+      // reclaim the directory. The branch stays for diagnostics, exactly as
       // the `case "fail"` arm does. US-002: on successful removal, also record
       // nax ownership so the retry can clean up the branch.
       const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, worktreeId);
@@ -342,56 +342,19 @@ export async function handlePipelineSuccess(
       return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
     }
     if (!mergeResult.success) {
-      // Merge conflict after the story passed all checks — attempt rectification.
-      const { rectifyConflictedStory } = await import("./merge-conflict-rectify");
-      const rectifyResult = await rectifyConflictedStory({
+      // Merge conflict after the story passed all checks. The branch could not
+      // land on main and nothing re-runs the story to resolve it, so the story
+      // fails. The worktree is deliberately NOT reclaimed: the unresolved
+      // conflict stays on disk for inspection by hand, as the pre-existing
+      // unrectified path kept it.
+      const files = (mergeResult.conflictFiles ?? []).join(", ");
+      const reason = `Merge conflict${files ? ` (${files})` : ""} — the branch did not land`;
+      logger?.error("worktree", "Merge conflict — marking story as failed", {
         storyId: story.id,
-        conflictFiles: mergeResult.conflictFiles ?? [],
-        originalCost: costDelta,
-        workdir: ctx.workdir,
-        config: ctx.config,
-        hooks: ctx.hooks,
-        pluginRegistry: ctx.pluginRegistry,
-        prd,
-        pipelineContextBase: {
-          config: ctx.config,
-          rootConfig: ctx.config,
-          prd,
-          projectDir: ctx.workdir,
-          hooks: ctx.hooks,
-          plugins: ctx.pluginRegistry,
-          prdPath: ctx.prdPath,
-          featureDir: ctx.featureDir,
-          // BUG-36 (review follow-up): buildWorktreePipelineContext structuredClones prd
-          // for the rectification re-run, so a completion-stage write there would persist
-          // a stale clone over the real prd.json and diverge from `story` (kept live, found
-          // from the live `prd` above). This function is already the single writer for this
-          // path — it always returns { prd /* live */, prdDirty: true } below, so the caller
-          // persists the live object with this re-run's mutations, same as the executor does
-          // for the parallel batch (reconcileBatchOutcome + savePRD).
-          skipPrdPersistence: true,
-          agentManager: ctx.agentManager,
-          sessionManager: ctx.sessionManager,
-          runtime: ctx.runtime,
-          abortSignal: ctx.abortSignal,
-        },
+        conflictFiles: mergeResult.conflictFiles,
       });
-      if (!rectifyResult.success) {
-        logger?.error("worktree", "Merge conflict could not be rectified — marking story as failed", {
-          storyId: story.id,
-          conflictFiles: mergeResult.conflictFiles,
-        });
-        // Return as failure: story passed review but can't land on main.
-        // The worktree is deliberately NOT reclaimed here — rectification
-        // preserves it so the unresolved conflict can be inspected by hand.
-        const files = (mergeResult.conflictFiles ?? []).join(", ");
-        await failStoryAfterMerge(
-          ctx,
-          prd,
-          `Merge conflict could not be rectified${files ? ` (${files})` : ""} — the branch did not land`,
-        );
-        return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
-      }
+      await failStoryAfterMerge(ctx, prd, reason);
+      return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
     }
     logger?.info("worktree", "Merged story to main", { storyId: story.id });
   }

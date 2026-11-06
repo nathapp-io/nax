@@ -83,7 +83,6 @@ export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } fro
 export { runNonBlockingFix } from "./non-blocking-fix";
 export { type BreakerDecision, inspectOscillationBreaker } from "./oscillation-breaker";
 export { countOscillationOutcomes, getOscillations, recordOscillations } from "./oscillation-store";
-export { type ParallelStoryMetricArgs, synthesizeParallelStoryMetric } from "./parallel-story-metrics";
 export { _pidRegistryDeps, PidRegistry } from "./pid-registry";
 export {
   _resultHandlerDeps,

@@ -122,17 +122,6 @@ describe("1.1 — pre-check skip settles the last story", () => {
     expect(result.exitReason).toBe("no-stories");
     expect(result.prd).toBe(failedPrd);
   });
-
-  test("single story in parallel mode: result.prd is the PRD the pre-check returned", async () => {
-    const story = makePendingStory("US-001");
-    const failedPrd = skipWithFailedStory(story);
-    _unifiedExecutorDeps.selectIndependentBatch = mock(() => [story]);
-
-    const result = await executeUnified(makeCtx({ parallelCount: 2 }), makePrd([story]));
-
-    expect(result.exitReason).toBe("max-iterations");
-    expect(result.prd).toBe(failedPrd);
-  });
 });
 
 /**
