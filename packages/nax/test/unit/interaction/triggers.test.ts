@@ -119,21 +119,6 @@ describe("checkCostExceeded — abort response exits with cost-limit", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// US-004: agentGetFn passed to preRunCtx (structural verification)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("US-004: unified-executor passes agentGetFn to preRunCtx", () => {
-  test("unified-executor.ts source includes agentGetFn: ctx.agentGetFn in preRunCtx", async () => {
-    // Structural test: verify the source file wires agentGetFn into preRunCtx.
-    // This prevents regressions where agentGetFn is removed from the context build.
-    const source = await Bun.file(
-      new URL("../../../src/execution/unified-executor.ts", import.meta.url).pathname,
-    ).text();
-    expect(source).toContain("agentGetFn: ctx.agentGetFn");
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // checkCostWarning — 80% threshold
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -7,9 +7,7 @@
  * and runs nothing. Reading the PR before the write and running the commands belong to the command
  * (US-004/US-005), so these stay unit-testable without a forge.
  *
- * `pr-body-safe` is imported as a sibling leaf: the `@/finish` barrel it used to reach
- * `escapeInline` through loads `src/finish/context.ts`, and that imports `@/cli`, which would close
- * a runtime import cycle back to `src/workflow/`.
+ * `pr-body-safe` is imported as a sibling leaf to share the workflow's safe rendering.
  */
 import type { ForgeKind } from "@/forge";
 import type { DecisionEntry } from "./decisions-sidecar";

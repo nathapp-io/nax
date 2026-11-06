@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   adversarialReviewOp,
-  finishBranchReviewOp,
-  finishSpecReviewOp,
   fixReviewOp,
   semanticReviewOp,
   workflowBranchReviewOp,
@@ -13,8 +11,6 @@ import {
 const REVIEWERS = [
   ["semantic", semanticReviewOp],
   ["adversarial", adversarialReviewOp],
-  ["finish-spec", finishSpecReviewOp],
-  ["finish-branch", finishBranchReviewOp],
   ["wf-story", workflowStoryReviewOp],
   ["wf-re", workflowReReviewOp],
   ["wf-branch", workflowBranchReviewOp],
@@ -24,8 +20,6 @@ const story = { id: "US-1", title: "t", description: "d", acceptanceCriteria: ["
 const BUILD_INPUTS: Record<string, unknown> = {
   semantic: { workdir: "/w", story, semanticConfig: { rules: [] }, mode: "embedded", diff: "d" },
   adversarial: { workdir: "/w", story, adversarialConfig: { rules: [] }, mode: "embedded", diff: "d" },
-  "finish-spec": { base: "main", specPath: "s.md", prdPath: "p.json", changedFiles: ["a.ts"] },
-  "finish-branch": { base: "main", stories: [], changedFiles: ["a.ts"], hints: [] },
   "wf-story": { prompt: "p", timeoutMs: 1 },
   "wf-re": { prompt: "p", timeoutMs: 1, openIds: [] },
   "wf-branch": { prompt: "p", timeoutMs: 1, minorIds: [] },

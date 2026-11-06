@@ -1,665 +1,177 @@
 /**
- * US-002 — deterministic finish PR title and body.
+ * `buildAdvisorSection` — the one part of the finish PR body that survived the
+ * finish-machine deletion.
  *
- * The body is assembled by deterministic string joins over on-disk artifacts —
- * no model call. The renderer mirrors `escapeTableCell` so a `|` in a story
- * title cannot break its row, and mirrors `buildTitle` so finish-opened and
- * auto-PR-opened PRs read the same.
+ * Everything else `src/finish/pr/body.ts` used to render went with the machine.
+ * This renderer stayed because the workflow PR body still calls it
+ * (`src/workflow/pr-body.ts`), so the three behaviours a reader of an
+ * `## Advisor decisions` section depends on are pinned here: the decisions a
+ * human must confirm come first, free text from the advisor cannot inject
+ * structure into the body, and every supersede is repeated as an amendment the
+ * reader has to apply.
  */
 import { describe, expect, test } from "bun:test";
-import { assertDefined, makeAdviceDecision } from "@test/helpers";
-import type { AdviceDecision } from "@/advisor";
-import type { Finding, FinishPrContext, FinishPrStory, FinishRound } from "@/finish";
-import { buildFinishBody, buildFinishTitle, resolveTitle } from "@/finish";
+import { makeAdviceDecision } from "@test/helpers";
+import type { AdviceAction, AdviceDecision } from "@/advisor";
+import { buildAdvisorSection } from "@/finish";
 
-const story = (over: Partial<FinishPrStory> = {}): FinishPrStory => ({
-  id: "US-001",
-  title: "Wire header",
-  acCount: 3,
-  ...over,
-});
+/** One line of the rendered section, so an assertion cannot match the wrong decision. */
+function lineOf(section: string, id: string): string {
+  const line = section.split("\n").find((l) => l.startsWith(`- **${id}**`));
+  if (line === undefined) throw new Error(`no line for ${id} in:\n${section}`);
+  return line;
+}
 
-const finding = (over: Partial<Finding> = {}): Finding => ({
-  severity: "HIGH",
-  title: "Spec mismatch",
-  problem: "p",
-  fix: "f",
-  ...over,
-});
+function decide(id: string, action: AdviceAction, over: Partial<AdviceDecision> = {}): AdviceDecision {
+  return makeAdviceDecision({ id, storyId: "US-2", action, ...over });
+}
 
-const committedRound = (over: Partial<FinishRound> & { sha?: string } = {}): FinishRound => ({
-  ts: "2026-01-01T00:00:00.000Z",
-  phase: "spec",
-  attempt: 1,
-  committed: true,
-  findings: [],
-  ...over,
-});
-
-const baseCtx = (over: Partial<FinishPrContext> = {}): FinishPrContext => ({
-  feature: "auto-pr-plugin",
-  stories: [],
-  outOfScope: [],
-  gatesRan: [],
-  rounds: [],
-  run: {},
-  title: "feat: auto-pr-plugin",
-  ...over,
-});
-
-describe("buildFinishTitle (US-002 AC1)", () => {
-  test("renders the resolved conventional-commit title", () => {
-    const ctx = baseCtx({ feature: "schema-drift-gate", title: "fix: make the Alembic drift gate able to fail" });
-    expect(buildFinishTitle(ctx)).toBe("fix: make the Alembic drift gate able to fail");
-  });
-
-  test("renders the 'feat: <feature>' fallback that resolveTitle supplies", () => {
-    // The floor is still the auto-PR plugin's shape, so a finish run whose
-    // branch review supplied no title reads the same as an auto-PR-opened one.
-    expect(buildFinishTitle(baseCtx({ title: resolveTitle(undefined, "pipeline-run-outcome") }))).toBe(
-      "feat: pipeline-run-outcome",
-    );
+describe("buildAdvisorSection — absent when the advisor made no decisions", () => {
+  test("returns null for no decisions and for an empty list", () => {
+    expect(buildAdvisorSection(undefined)).toBeNull();
+    expect(buildAdvisorSection([])).toBeNull();
   });
 });
 
-describe("buildFinishBody — Stories table (US-002 AC2, AC3)", () => {
-  test("renders one table row per story", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        stories: [
-          story({ id: "US-001", title: "Header", acCount: 2 }),
-          story({ id: "US-002", title: "Footer", acCount: 4 }),
-        ],
-      }),
-    );
-    expect(body).toContain("| US-001 | Header | 2 |");
-    expect(body).toContain("| US-002 | Footer | 4 |");
-  });
-
-  test("escapes '|' in story titles so the row remains three columns", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        stories: [story({ id: "US-001", title: "Audit | stub rows", acCount: 1 })],
-      }),
-    );
-    expect(body).toContain("| US-001 | Audit \\| stub rows | 1 |");
-    // The literal unescaped form must NOT appear in the row.
-    expect(body).not.toMatch(/\|\s*Audit\s*\|\s*stub rows\s*\|\s*1\s*\|/);
-  });
-});
-
-describe("buildFinishBody — Verification block (US-002 AC4-AC7)", () => {
-  test("renders the acceptance Verification line when acceptance is present", () => {
-    const body = buildFinishBody(baseCtx({ acceptance: "all 12 acceptance tests passed" }));
-    expect(body).toContain("Verification");
-    expect(body).toContain("Acceptance: all 12 acceptance tests passed");
-  });
-
-  test("renders the regression Verification line when regression is present", () => {
-    const body = buildFinishBody(baseCtx({ regression: "regression suite green" }));
-    expect(body).toContain("Regression: regression suite green");
-  });
-
-  test("renders every gate name in a single Verification line", () => {
-    const body = buildFinishBody(baseCtx({ gatesRan: ["lint", "typecheck", "test"] }));
-    expect(body).toContain("Gates: lint, typecheck, test");
-  });
-
-  test("includes the diffstat text verbatim in Verification when present", () => {
-    const stat = " src/foo.ts | 12 ++++--\n 1 file changed, 9 insertions(+), 3 deletions(-)";
-    const body = buildFinishBody(baseCtx({ diffstat: stat }));
-    expect(body).toContain(stat);
-  });
-
-  test("accounts for the held-out nax artifacts so the body reconciles with the real diff", () => {
-    const body = buildFinishBody(baseCtx({ artifactSummary: "5 files changed, 1248 insertions(+)" }));
-    expect(body).toContain("Excluded from diffstat — nax run artifacts: 5 files changed, 1248 insertions(+)");
-  });
-
-  test("renders no exclusion line when the branch touched no artifacts", () => {
-    const body = buildFinishBody(baseCtx({ diffstat: " src/foo.ts | 1 +" }));
-    expect(body).not.toContain("Excluded from diffstat");
-  });
-});
-
-describe("buildFinishBody — Review (US-002 AC8-AC12)", () => {
-  test("renders one heading per round naming phase and attempt", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        rounds: [committedRound({ phase: "spec", attempt: 1 }), committedRound({ phase: "quality", attempt: 2 })],
-      }),
-    );
-    expect(body).toContain("## Review");
-    expect(body).toContain("### spec attempt 1");
-    expect(body).toContain("### quality attempt 2");
-  });
-
-  test("renders each finding as a bullet carrying severity and title", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        rounds: [
-          committedRound({
-            findings: [
-              finding({ severity: "CRITICAL", title: "Spec drift in test" }),
-              finding({ severity: "LOW", title: "Naming inconsistency" }),
-            ],
-          }),
-        ],
-      }),
-    );
-    expect(body).toContain("- [CRITICAL] Spec drift in test");
-    expect(body).toContain("- [LOW] Naming inconsistency");
-  });
-
-  test("a rejected finding is rendered as waived, with its evidence", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        rounds: [
-          committedRound({
-            phase: "quality",
-            outcome: "fixed",
-            findings: [finding({ severity: "LOW", title: "Dead param" })],
-            dispositions: [{ index: 1, disposition: "rejected", evidence: "test/unit/a.test.ts:9" }],
-          }),
-        ],
-      }),
-    );
-    expect(body).toContain("_rejected_");
-    expect(body).toContain("test/unit/a.test.ts:9");
-  });
-
-  test("renders the abbreviated seven-character SHA in the round heading when committed", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        rounds: [committedRound({ sha: "abcdef1234567" })],
-      }),
-    );
-    expect(body).toContain("### spec attempt 1 (abcdef1)");
-  });
-
-  test("renders no SHA in the round heading when the round is uncommitted", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        rounds: [
-          {
-            ts: "2026-01-01T00:00:00.000Z",
-            phase: "spec",
-            attempt: 1,
-            committed: false,
-            findings: [],
-          },
-        ],
-      }),
-    );
-    expect(body).toContain("### spec attempt 1");
-    expect(body).not.toMatch(/### spec attempt 1 \([0-9a-f]{7}\)/);
-  });
-
-  test("renders no Review heading when rounds is empty", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [] }));
-    expect(body).not.toContain("## Review");
-  });
-});
-
-// #1507: an empty finding list means four different things, and the body used
-// to render all of them as "_no findings_" — which a human reads as "a reviewer
-// looked and approved this". Only `passed` means that.
-describe("buildFinishBody — what an empty round actually means", () => {
-  const emptyRound = (over: Partial<FinishRound> = {}): FinishRound => ({
-    ts: "2026-01-01T00:00:00.000Z",
-    phase: "quality",
-    attempt: 1,
-    committed: false,
-    findings: [],
-    ...over,
-  });
-
-  test("a passed review still reads as no findings", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "passed" })] }));
-    expect(body).toContain("- _no findings_");
-  });
-
-  test("a gate round says no reviewer ran, NOT that a reviewer found nothing", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ phase: "gate", outcome: "no-reviewer" })] }));
-    expect(body).toContain("### gate attempt 1");
-    expect(body).toContain("no reviewer");
-    expect(body).not.toContain("- _no findings_");
-  });
-
-  // The reader has to be able to see the skip. A PR whose gate fix bypassed the
-  // re-review by policy looks, in every other respect, exactly like one that was
-  // re-reviewed and came back clean.
-  test("a skipped re-review is visible in the body, not disguised as a clean one", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ phase: "gate", outcome: "review-skipped" })] }));
-    expect(body).toContain("re-review skipped");
-    expect(body).not.toContain("- _no findings_");
-  });
-
-  test("an unparseable review is not rendered as a pass", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "unparseable" })] }));
-    expect(body).toContain("could not be parsed");
-    expect(body).not.toContain("- _no findings_");
-  });
-
-  test("an advised round says the advisor ruled — not a pass (A1)", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        rounds: [emptyRound({ outcome: "advised", advice: [{ decisionId: "D-3", optionId: "B", reused: false }] })],
-      }),
-    );
-    expect(body).toContain("advisor ruled");
-    expect(body).toContain("D-3");
-    expect(body).not.toContain("- _no findings_");
-  });
-
-  test("an escalated review is not rendered as a pass", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({ outcome: "escalated" })] }));
-    expect(body).toContain("escalated");
-    expect(body).not.toContain("- _no findings_");
-  });
-
-  // Rounds written before `outcome` existed carry no such field. The body must
-  // keep rendering them exactly as it did, rather than claiming they had no
-  // reviewer — it does not know that.
-  test("a legacy round with no outcome renders as before", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [emptyRound({})] }));
-    expect(body).toContain("- _no findings_");
-  });
-});
-
-describe("buildFinishBody — Out of scope (US-002 AC13, AC14)", () => {
-  test("renders one bullet per out-of-scope entry, text unchanged", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        outOfScope: ["A model-written summary section", "Auto-PR template behaviour"],
-      }),
-    );
-    expect(body).toContain("## Out of scope");
-    expect(body).toContain("- A model-written summary section");
-    expect(body).toContain("- Auto-PR template behaviour");
-  });
-
-  test("renders no Out of scope heading when the list is empty", () => {
-    const body = buildFinishBody(baseCtx({ outOfScope: [] }));
-    expect(body).not.toContain("## Out of scope");
-  });
-});
-
-describe("buildFinishBody — Run summary footer (US-002 AC15)", () => {
-  test("renders story counts and duration in 'Nm SSs' format", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        run: { storiesPassed: 4, storiesTotal: 5, durationMs: 92_000 },
-      }),
-    );
-    // AC15: "<storiesPassed>/<storiesTotal> stories · <durationMs formatted as Nm SSs>"
-    // — one line, joined by ' · '. A regression that swaps the separator or
-    // breaks the line would survive `toContain` on each half independently.
-    expect(body).toContain("4/5 stories · 1m 32s");
-  });
-
-  test("omits the footer when duration is absent and reports only counts when duration is provided", () => {
-    expect(buildFinishBody(baseCtx({ run: { storiesPassed: 1, storiesTotal: 1 } }))).toContain("1/1 stories");
-    const body = buildFinishBody(baseCtx({ run: { durationMs: 65_000 } }));
-    expect(body).toContain("1m 05s");
-  });
-
-  test("non-finite duration formats as '0m 00s' instead of propagating NaN/Infinity into the body", () => {
-    // NaN/Infinity are valid TypeScript `number` values and `Math.max(0, NaN)`
-    // propagates NaN, so a guard is required to avoid `"NaNm NaNs"` in the PR.
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-      const body = buildFinishBody(baseCtx({ run: { storiesPassed: 1, storiesTotal: 1, durationMs: bad } }));
-      expect(body).toContain("1/1 stories · 0m 00s");
-    }
-  });
-});
-
-describe("buildFinishBody — repository template (#1478, merged per #1504)", () => {
-  // Superseded the original #1478 contract ("append the template verbatim
-  // last"), which shipped an unfilled form below a filled one — see
-  // `pr-template-merge.ts`. The template is now shape, not trailing content.
-  test("drops a template section nax cannot fill rather than shipping its blank checklist", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        stories: [story({ id: "US-001", title: "Header", acCount: 2 })],
-        template: "## Checklist\n- [ ] docs updated",
-      }),
-    );
-    expect(body).not.toContain("## Checklist");
-    expect(body).not.toContain("- [ ] docs updated");
-    expect(body).toContain("| US-001 | Header | 2 |");
-  });
-
-  test("adopts a template heading it can fill, and puts nax's content under it", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        stories: [story({ id: "US-001", title: "Header", acCount: 2 })],
-        narrative: "Replaced the widget cache.",
-        template: "## Summary\n\n<!-- describe -->\n\n## How\n\n<!-- details -->",
-      }),
-    );
-    expect(body).toContain("## Summary\n\nReplaced the widget cache.");
-    expect(body).toContain("## How\n\n| Story | Title | ACs |");
-    expect(body).not.toContain("## What changed");
-    expect(body).not.toContain("<!--");
-  });
-
-  test("keeps every unfillable heading, empty, under the strict mode a heading-checking CI needs", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        stories: [story()],
-        template: "## Checklist\n- [ ] docs updated",
-        templateMode: "strict",
-      }),
-    );
-    expect(body).toContain("## Checklist");
-    expect(body).not.toContain("- [ ] docs updated");
-  });
-
-  test("honours a sectionMap override for a heading the default table does not know", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        stories: [story({ id: "US-001", title: "Header", acCount: 2 })],
-        template: "## Werk\n\n<!-- x -->",
-        templateSectionMap: { werk: "stories" },
-      }),
-    );
-    expect(body).toContain("## Werk\n\n| Story | Title | ACs |");
-    expect(body).not.toContain("## Stories");
-  });
-
-  test("omits the template entirely when none resolved", () => {
-    const body = buildFinishBody(baseCtx({ stories: [story()] }));
-    expect(body).not.toContain("## Checklist");
-    expect(body.endsWith("\n\n")).toBe(false);
-  });
-
-  test("treats a whitespace-only template as absent", () => {
-    const body = buildFinishBody(baseCtx({ stories: [story()], template: "   \n  " }));
-    expect(body.trimEnd()).toBe(body);
-  });
-});
-
-describe("buildFinishBody — What changed section (#1477)", () => {
-  test("renders the narrative first, above the Stories table", () => {
-    const body = buildFinishBody(baseCtx({ stories: [story()], narrative: "Replaced the widget cache." }));
-    expect(body.indexOf("## What changed")).toBe(0);
-    expect(body).toContain("Replaced the widget cache.");
-    expect(body.indexOf("## What changed")).toBeLessThan(body.indexOf("## Stories"));
-  });
-
-  test("omits the heading entirely when there is no narrative", () => {
-    // #1477 forbids an empty heading. Heading and text are produced by one
-    // function so this is structural, not a rule someone has to remember.
-    const body = buildFinishBody(baseCtx({ stories: [story()] }));
-    expect(body).not.toContain("## What changed");
-  });
-
-  test("treats a whitespace-only narrative as absent", () => {
-    const body = buildFinishBody(baseCtx({ stories: [story()], narrative: "  \n " }));
-    expect(body).not.toContain("## What changed");
-  });
-});
-
-describe("buildFinishBody — Advisor decisions section (A1)", () => {
-  const dec = (id: string, needsHumanConfirm: boolean, action: AdviceDecision["action"]): AdviceDecision => ({
-    id,
-    questionId: "Q",
-    kind: "finish-judgment",
-    storyId: "US-2",
-    chosenOptionId: "A",
-    action,
-    rationale: `because ${id}`,
-    confidence: "high",
-    reversible: true,
-    needsHumanConfirm,
-    decidedAt: "t",
-    model: "m",
-    memoryMode: "stateless",
-    auditRef: "a",
-  });
-  const decisions = [
-    dec("D-1", false, { type: "fix", instruction: "x" }),
-    dec("D-2", true, {
-      type: "supersede",
-      target: { kind: "ac", storyId: "US-2", acId: "AC-3" },
-      newText: "returns 0",
-    }),
+describe("buildAdvisorSection — flagged decisions come first (A1)", () => {
+  const decisions: AdviceDecision[] = [
+    decide("D-1", { type: "fix", instruction: "x" }),
+    decide(
+      "D-2",
+      { type: "supersede", target: { kind: "ac", storyId: "US-2", acId: "AC-3" }, newText: "returns 0" },
+      {
+        needsHumanConfirm: true,
+      },
+    ),
+    decide("D-3", { type: "answer", text: "Use Postgres" }),
   ];
 
-  test("flagged decisions first, then the rest, then the spec amendments", () => {
-    const body = buildFinishBody(baseCtx({ advisorDecisions: decisions }));
-    expect(body).toContain("Advisor decisions");
-    expect(body.indexOf("**D-2**")).toBeLessThan(body.indexOf("**D-1**"));
-    expect(body).toContain("(needs confirmation)");
-    expect(body).toContain("Spec amendments to apply");
-    expect(body).toContain("US-2 AC-3: returns 0");
+  test("a decision that needs confirmation is rendered above one that does not", () => {
+    const section = buildAdvisorSection(decisions) ?? "";
+    expect(section).not.toBe("");
+    expect(section.indexOf("**D-2**")).toBeLessThan(section.indexOf("**D-1**"));
   });
 
-  test("free text is flattened: no newlines, no HTML, capped", () => {
-    const evil = makeAdviceDecision({
-      ...decisions[0],
-      rationale: `line1\n## Injected heading\n<img src=x onerror=1>${"z".repeat(600)}`,
-    });
-    const body = buildFinishBody(baseCtx({ advisorDecisions: [evil] }));
-    expect(body).not.toContain("\n## Injected heading");
-    expect(body).not.toContain("<img");
-    expect(body).toContain("…");
+  test("each group keeps the order the advisor wrote", () => {
+    const section = buildAdvisorSection(decisions) ?? "";
+    // Both unflagged decisions stay in input order below the flagged one.
+    expect(section.indexOf("**D-1**")).toBeLessThan(section.indexOf("**D-3**"));
   });
 
-  test("renders answer and carry with what the ruling says", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        advisorDecisions: [
-          makeAdviceDecision({
-            id: "D-1",
-            storyId: "US-3",
-            action: { type: "carry", instruction: "Keep lock order", toStories: ["US-4", "US-5"] },
-          }),
-          makeAdviceDecision({ id: "D-2", storyId: "US-3", action: { type: "answer", text: "Use Postgres" } }),
-        ],
-      }),
-    );
-    expect(body).toContain("carry → US-4, US-5 — Keep lock order");
-    expect(body).toContain("answer — Use Postgres");
+  test("only the flagged line is marked as needing confirmation", () => {
+    const section = buildAdvisorSection(decisions) ?? "";
+    expect(lineOf(section, "D-2")).toContain("(needs confirmation)");
+    expect(lineOf(section, "D-1")).not.toContain("(needs confirmation)");
+    expect(lineOf(section, "D-3")).not.toContain("(needs confirmation)");
   });
-
-  test("absent when the advisor made no decisions", () => {
-    expect(buildFinishBody(baseCtx({}))).not.toContain("Advisor decisions");
-  });
-
-  for (const mode of ["merge", "strict", "ignore"] as const) {
-    test(`survives template mode ${mode}`, () => {
-      const body = buildFinishBody(
-        baseCtx({ advisorDecisions: decisions, template: "## Summary\n\n## Testing\n", templateMode: mode }),
-      );
-      expect(body).toContain("D-2");
-    });
-  }
 });
 
-describe("buildFinishBody — Unresolved and coverage (A4)", () => {
-  const unresolved = (over: Partial<NonNullable<FinishPrContext["unresolved"]>> = {}) => ({
-    reason: "",
-    findings: [],
-    acceptance: "green" as const,
-    gates: [],
-    missing: [],
-    unreviewed: [],
-    accepted: [],
-    ledger: [],
-    stops: [],
-    handoffs: [],
-    ...over,
+describe("buildAdvisorSection — free text cannot break the body", () => {
+  test("newlines collapse, so a rationale cannot inject a heading", () => {
+    const section =
+      buildAdvisorSection([
+        decide("D-1", { type: "hold", reason: "r" }, { rationale: "line1\n## Injected heading" }),
+      ]) ?? "";
+    expect(section).not.toContain("\n## Injected heading");
+    expect(lineOf(section, "D-1")).toContain("line1 ## Injected heading");
   });
 
-  test("draft body puts Unresolved first with reason, findings, red gates, missing reviews, unreviewed commits", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        narrative: "Prose.",
-        stories: [story()],
-        unresolved: unresolved({
-          reason: "2 open finding(s), spec review missing",
-          findings: [
-            finding({ severity: "LOW", title: "Nit", file: "b.ts" }),
-            finding({ severity: "HIGH", title: "Real bug", file: "a.ts", line: 4, source: "quality" }),
-          ],
-          acceptance: "red",
-          gates: [{ name: "lint", status: "red", excerpt: "a.ts:1 unused" }],
-          missing: ["spec"],
-          unreviewed: ["abcdef1234567"],
+  test("HTML is stripped from the rationale", () => {
+    const section =
+      buildAdvisorSection([
+        decide("D-1", { type: "hold", reason: "r" }, { rationale: "keep <img src=x onerror=1>" }),
+      ]) ?? "";
+    expect(section).not.toContain("<img");
+    expect(lineOf(section, "D-1")).toContain("keep");
+  });
+
+  test("an over-long rationale is capped, so one decision cannot fill the body", () => {
+    const section = buildAdvisorSection([decide("D-1", { type: "hold", reason: "r" }, { rationale: "z".repeat(600) })])
+      ?.split("\n")
+      .find((l) => l.startsWith("- **D-1**"));
+    expect(section).toBeDefined();
+    // The cap is 300 characters plus the ellipsis that marks the truncation.
+    expect(section?.endsWith("…")).toBe(true);
+    expect(section?.length).toBeLessThan(330);
+    expect(section).not.toContain("z".repeat(301));
+  });
+});
+
+describe("buildAdvisorSection — what each ruling says", () => {
+  test("a carry names its target stories and its instruction", () => {
+    const section =
+      buildAdvisorSection([
+        decide("D-1", { type: "carry", instruction: "Keep lock order", toStories: ["US-4", "US-5"] }),
+      ]) ?? "";
+    expect(lineOf(section, "D-1")).toContain("carry → US-4, US-5 — Keep lock order");
+  });
+
+  test("an answer renders the text it ruled", () => {
+    const section = buildAdvisorSection([decide("D-1", { type: "answer", text: "Use Postgres" })]) ?? "";
+    expect(lineOf(section, "D-1")).toContain("answer — Use Postgres");
+  });
+
+  test("every other action renders its type and its rationale", () => {
+    const section = buildAdvisorSection([decide("D-1", { type: "approve" }, { rationale: "gates green" })]) ?? "";
+    expect(lineOf(section, "D-1")).toContain("approve — gates green");
+  });
+
+  test("a ruling that lets acceptance tests change says which ones", () => {
+    const section =
+      buildAdvisorSection([
+        decide(
+          "D-3",
+          { type: "fix", instruction: "i", updateAcs: ["AC-40"] },
+          { acceptanceChanges: ["AC-40", "AC-51"] },
+        ),
+      ]) ?? "";
+    expect(lineOf(section, "D-3")).toContain("— acceptance tests changed: AC-40, AC-51");
+  });
+
+  test("a decision with no story is attributed to the feature", () => {
+    const section = buildAdvisorSection([decide("D-1", { type: "approve" }, { storyId: undefined })]) ?? "";
+    expect(lineOf(section, "D-1")).toContain("feature");
+  });
+});
+
+describe("buildAdvisorSection — supersedes are repeated as amendments to apply (A1)", () => {
+  test("an AC supersede names the target, the new text and the decision", () => {
+    const section =
+      buildAdvisorSection([
+        decide("D-2", {
+          type: "supersede",
+          target: { kind: "ac", storyId: "US-2", acId: "AC-3" },
+          newText: "returns 0",
         }),
-      }),
-    );
-    expect(body.startsWith("## Unresolved")).toBe(true);
-    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## What changed"));
-    expect(body).toContain("2 open finding(s), spec review missing");
-    expect(body.indexOf("Real bug")).toBeLessThan(body.indexOf("Nit"));
-    expect(body).toContain("a.ts:4");
-    expect(body).toContain("Acceptance: red");
-    expect(body).toContain("lint");
-    expect(body).toContain("a.ts:1 unused");
-    expect(body).toContain("spec review");
-    expect(body).toContain("abcdef1");
-    expect(body).not.toContain("abcdef1234567");
+      ]) ?? "";
+    expect(section).toContain("### Spec amendments to apply");
+    expect(section).toContain("- US-2 AC-3: returns 0 (D-2)");
   });
 
-  test("ready body with accepted residue renders 'Accepted by the advisor'", () => {
-    const body = buildFinishBody(
-      baseCtx({ unresolved: unresolved({ accepted: [finding({ title: "Waived thing", severity: "MEDIUM" })] }) }),
-    );
-    expect(body).toContain("## Unresolved");
-    expect(body).toContain("Accepted by the advisor");
-    expect(body).toContain("Waived thing");
+  test("a spec supersede names the section", () => {
+    const section =
+      buildAdvisorSection([
+        decide("D-4", { type: "supersede", target: { kind: "spec", section: "2.1 Scope" }, newText: "in scope" }),
+      ]) ?? "";
+    expect(section).toContain("- spec § 2.1 Scope: in scope (D-4)");
   });
 
-  test("ready body without residue has no Unresolved section", () => {
-    expect(buildFinishBody(baseCtx({ narrative: "Prose." }))).not.toContain("Unresolved");
-  });
-
-  test("Review section shows rounds and coverage percentages", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        rounds: [committedRound({ phase: "review", sha: "abc1234def" })],
-        coverage: { spec: 0.8, quality: null },
-      }),
-    );
-    expect(body).toContain("## Review");
-    expect(body).toContain("- Coverage: spec 80%, quality n/a");
-    expect(body).toContain("### review attempt 1");
-  });
-
-  test("coverage alone renders the Review section", () => {
-    const body = buildFinishBody(baseCtx({ coverage: { spec: 1, quality: 0.5 } }));
-    expect(body).toContain("- Coverage: spec 100%, quality 50%");
-  });
-
-  test("a missing-verdict round says so", () => {
-    const body = buildFinishBody(baseCtx({ rounds: [committedRound({ committed: false, outcome: "missing" })] }));
-    expect(body).toContain("- _no verdict from this review_");
-  });
-});
-
-describe("buildFinishBody — Unresolved with a repo template (A4)", () => {
-  const template = "## Summary\n\n<!-- what -->\n\n## Testing\n\n- [ ] tests\n";
-  const draftUnresolved = {
-    reason: "1 open finding(s)",
-    findings: [finding({ title: "Real bug" })],
-    acceptance: "green" as const,
-    gates: [],
-    missing: [],
-    unreviewed: [],
-    accepted: [],
-    ledger: [],
-    stops: [],
-    handoffs: [],
-  };
-
-  test.each(["merge", "strict"] as const)("%s mode renders Unresolved before the template sections", (mode) => {
-    const body = buildFinishBody(
-      baseCtx({ narrative: "Prose.", unresolved: draftUnresolved, template, templateMode: mode }),
-    );
-    expect(body.startsWith("## Unresolved")).toBe(true);
-    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
-    expect(body.match(/## Unresolved/g)).toHaveLength(1);
-  });
-
-  test("Unresolved stays after template frontmatter", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        narrative: "Prose.",
-        unresolved: draftUnresolved,
-        template: `---\nname: x\n---\n${template}`,
-        templateMode: "merge",
-      }),
-    );
-    expect(body.startsWith("---")).toBe(true);
-    expect(body.indexOf("## Unresolved")).toBeLessThan(body.indexOf("## Summary"));
-  });
-});
-
-const emptyUnresolved = (over: Partial<NonNullable<FinishPrContext["unresolved"]>> = {}) => ({
-  reason: "",
-  findings: [],
-  acceptance: "green" as const,
-  gates: [],
-  missing: [],
-  unreviewed: [],
-  accepted: [],
-  ledger: [],
-  stops: [],
-  handoffs: [],
-  ...over,
-});
-
-describe("finish B: acceptance changes and the guard", () => {
-  test("a decision with acceptanceChanges says which acceptance tests changed", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        advisorDecisions: [
-          makeAdviceDecision({
-            id: "D-3",
-            action: { type: "fix", instruction: "i", updateAcs: ["AC-40"] },
-            acceptanceChanges: ["AC-40", "AC-51"],
-          }),
-        ],
-      }),
-    );
-    expect(body).toContain("— acceptance tests changed: AC-40, AC-51");
-  });
-
-  test("the guard block lists reverts, not-restorable files, beyond-ruling changes and a failed check", () => {
-    const body = buildFinishBody(
-      baseCtx({
-        unresolved: emptyUnresolved({
-          acceptance: "red",
-          acceptanceGuard: {
-            reverted: ["t.ts"],
-            notRestorable: ["n.ts"],
-            changed: ["AC-51"],
-            beyondRuling: ["AC-51"],
-            failed: true,
-          },
+  test("the amendment appears below the decision list, which also keeps the decision", () => {
+    const section =
+      buildAdvisorSection([
+        decide("D-1", { type: "approve" }),
+        decide("D-2", {
+          type: "supersede",
+          target: { kind: "ac", storyId: "US-2", acId: "AC-3" },
+          newText: "returns 0",
         }),
-      }),
-    );
-    expect(body).toContain("### Acceptance-file guard");
-    expect(body).toContain("- Acceptance-file edits reverted: t.ts");
-    expect(body).toContain("- Acceptance files a fix created that could not be restored: n.ts");
-    expect(body).toContain("- Acceptance tests changed beyond the ruling: AC-51");
-    expect(body).toContain("- acceptance-file check could not run");
-    const sections = body.split(/^### /m);
-    const verification = sections.find((x) => x.startsWith("Verification failures"));
-    const guard = sections.find((x) => x.startsWith("Acceptance-file guard"));
-    assertDefined(verification, "Verification failures section");
-    assertDefined(guard, "Acceptance-file guard section");
-    expect(verification).toContain("- Acceptance: red");
-    expect(verification).not.toContain("Acceptance-file edits reverted");
-    expect(guard).toContain("Acceptance-file edits reverted");
-    expect(guard).not.toContain("- Acceptance: red");
+      ]) ?? "";
+    expect(section.indexOf("**D-2**")).toBeLessThan(section.indexOf("### Spec amendments to apply"));
+    expect(lineOf(section, "D-2")).toContain("supersede");
   });
 
-  test("no guard record: no guard block", () => {
-    expect(buildFinishBody(baseCtx({ unresolved: emptyUnresolved() }))).not.toContain("Acceptance-file guard");
+  test("no amendment block when no decision supersedes anything", () => {
+    const section = buildAdvisorSection([decide("D-1", { type: "approve" })]) ?? "";
+    expect(section).not.toContain("Spec amendments to apply");
   });
 });

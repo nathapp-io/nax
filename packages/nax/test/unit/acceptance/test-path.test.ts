@@ -1,13 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
-import { assertDefined } from "@test/helpers";
+import { assertDefined, assertNaxError, withTempDir } from "@test/helpers";
 import {
   _groupDeps,
+  acceptanceTestFilename,
+  findExistingAcceptanceTestPath,
   groupStoriesByPackage,
+  resolveAcceptanceFeatureTestPath,
   resolveSuggestedPackageFeatureTestPath,
   resolveSuggestedTestFile,
   suggestedTestFilename,
 } from "@/acceptance";
+import {
+  resolveAcceptancePackageFeatureTestPath,
+  resolveAcceptanceTestCandidates,
+  resolveAcceptanceTestFile,
+} from "@/acceptance/test-path";
 import type { PRD, UserStory } from "@/prd";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -306,5 +316,243 @@ describe("resolveSuggestedPackageFeatureTestPath()", () => {
     ],
   ])("respects %s", (_label, pkg, feature, override, lang, expected) => {
     expect(resolveSuggestedPackageFeatureTestPath(pkg, feature, override, lang)).toBe(expected);
+  });
+});
+
+// ─── acceptance test filenames and paths ─────────────────────────────────────
+
+describe("acceptanceTestFilename()", () => {
+  test.each([
+    ["go", ".nax-acceptance_test.go"],
+    ["python", "_nax_acceptance_test.py"],
+    ["rust", ".nax-acceptance.rs"],
+    ["typescript", ".nax-acceptance.test.ts"],
+    ["GO", ".nax-acceptance_test.go"],
+  ] as const)("returns the %s filename", (language, expected) => {
+    expect(acceptanceTestFilename(language)).toBe(expected);
+  });
+
+  test("falls back to the TypeScript filename when no language is known", () => {
+    expect(acceptanceTestFilename()).toBe(".nax-acceptance.test.ts");
+  });
+});
+
+describe("resolveAcceptanceTestFile()", () => {
+  test("uses the configured filename over the language default", () => {
+    expect(resolveAcceptanceTestFile("go", "custom.test.ts")).toBe("custom.test.ts");
+  });
+
+  test("trims surrounding whitespace from the configured filename", () => {
+    expect(resolveAcceptanceTestFile(undefined, "  custom.test.ts  ")).toBe("custom.test.ts");
+  });
+
+  test("falls back to the language default when nothing is configured", () => {
+    expect(resolveAcceptanceTestFile("rust")).toBe(".nax-acceptance.rs");
+  });
+
+  test("rejects a blank configured filename", () => {
+    let caught: unknown;
+    try {
+      resolveAcceptanceTestFile(undefined, "   ");
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught, "blank acceptance.testPath");
+    expect(caught.code).toBe("TEST_FILENAME_EMPTY");
+    expect(caught.message).toContain("acceptance.testPath");
+  });
+
+  test.each([
+    ["a nested path", "nested/.nax-acceptance.test.ts"],
+    ["a windows-style path", "nested\\.nax-acceptance.test.ts"],
+  ])("rejects %s so the file always lands in the feature dir", (_label, configured) => {
+    let caught: unknown;
+    try {
+      resolveAcceptanceTestFile(undefined, configured);
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught, "path-shaped acceptance.testPath");
+    expect(caught.code).toBe("TEST_FILENAME_NOT_A_PATH");
+  });
+
+  test("rejects a traversal sequence in the configured filename", () => {
+    let caught: unknown;
+    try {
+      resolveAcceptanceTestFile(undefined, "..escape.test.ts");
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught, "traversing acceptance.testPath");
+    expect(caught.code).toBe("TEST_FILENAME_PATH_TRAVERSAL");
+  });
+
+  test("resolveSuggestedTestFile() reports its own field name on rejection", () => {
+    let caught: unknown;
+    try {
+      resolveSuggestedTestFile(undefined, "");
+    } catch (err) {
+      caught = err;
+    }
+    assertNaxError(caught, "blank acceptance.suggestedTestPath");
+    expect(caught.message).toContain("acceptance.suggestedTestPath");
+  });
+});
+
+describe("resolveAcceptanceFeatureTestPath()", () => {
+  test("joins the feature dir with the language default", () => {
+    expect(resolveAcceptanceFeatureTestPath("/repo/.nax/features/feat", undefined, "go")).toBe(
+      "/repo/.nax/features/feat/.nax-acceptance_test.go",
+    );
+  });
+
+  test("joins the feature dir with the configured filename", () => {
+    expect(resolveAcceptanceFeatureTestPath("/repo/.nax/features/feat", "custom.test.ts")).toBe(
+      "/repo/.nax/features/feat/custom.test.ts",
+    );
+  });
+});
+
+describe("resolveAcceptancePackageFeatureTestPath()", () => {
+  test("anchors the file inside the package's own .nax/features dir", () => {
+    expect(resolveAcceptancePackageFeatureTestPath("/repo/packages/api", "feat")).toBe(
+      "/repo/packages/api/.nax/features/feat/.nax-acceptance.test.ts",
+    );
+  });
+
+  test("respects the language and filename overrides", () => {
+    expect(resolveAcceptancePackageFeatureTestPath("/repo/packages/api", "feat", undefined, "python")).toBe(
+      "/repo/packages/api/.nax/features/feat/_nax_acceptance_test.py",
+    );
+    expect(resolveAcceptancePackageFeatureTestPath("/repo/packages/api", "feat", "custom.test.ts")).toBe(
+      "/repo/packages/api/.nax/features/feat/custom.test.ts",
+    );
+  });
+});
+
+describe("resolveAcceptanceTestCandidates()", () => {
+  test("prefers precomputed per-package paths", () => {
+    expect(
+      resolveAcceptanceTestCandidates({
+        acceptanceTestPaths: [
+          { testPath: "/repo/a/.nax/features/f/.nax-acceptance.test.ts", packageDir: "/repo/a" },
+          { testPath: "/repo/b/.nax/features/f/.nax-acceptance.test.ts", packageDir: "/repo/b" },
+        ],
+        featureDir: "/repo/.nax/features/f",
+      }),
+    ).toEqual(["/repo/a/.nax/features/f/.nax-acceptance.test.ts", "/repo/b/.nax/features/f/.nax-acceptance.test.ts"]);
+  });
+
+  test("falls back to the feature dir plus the resolved filename", () => {
+    expect(
+      resolveAcceptanceTestCandidates({
+        featureDir: "/repo/.nax/features/f",
+        testPathConfig: "custom.test.ts",
+      }),
+    ).toEqual(["/repo/.nax/features/f/custom.test.ts"]);
+  });
+
+  test("returns nothing when neither source is supplied", () => {
+    expect(resolveAcceptanceTestCandidates({})).toEqual([]);
+    expect(resolveAcceptanceTestCandidates({ acceptanceTestPaths: [] })).toEqual([]);
+  });
+});
+
+describe("findExistingAcceptanceTestPath()", () => {
+  test("returns the first candidate that exists on disk", async () => {
+    await withTempDir(async (dir) => {
+      const present = join(dir, "second.test.ts");
+      await writeFile(present, "// present\n");
+      expect(
+        await findExistingAcceptanceTestPath({
+          acceptanceTestPaths: [
+            { testPath: join(dir, "absent.test.ts"), packageDir: dir },
+            { testPath: present, packageDir: dir },
+          ],
+        }),
+      ).toBe(present);
+    });
+  });
+
+  test("returns undefined when no candidate exists", async () => {
+    await withTempDir(async (dir) => {
+      expect(
+        await findExistingAcceptanceTestPath({
+          acceptanceTestPaths: [{ testPath: join(dir, "absent.test.ts"), packageDir: dir }],
+        }),
+      ).toBeUndefined();
+    });
+  });
+
+  test("returns undefined when there are no candidates at all", async () => {
+    expect(await findExistingAcceptanceTestPath({})).toBeUndefined();
+  });
+
+  test("finds the language-default file inside a feature dir", async () => {
+    await withTempDir(async (dir) => {
+      const featureDir = join(dir, "feature");
+      await mkdir(featureDir, { recursive: true });
+      await writeFile(join(featureDir, ".nax-acceptance.test.ts"), "// generated\n");
+      expect(await findExistingAcceptanceTestPath({ featureDir })).toBe(join(featureDir, ".nax-acceptance.test.ts"));
+    });
+  });
+});
+
+// ─── per-package config probe (real implementation) ─────────────────────────
+
+describe("_groupDeps.readPackageTestPath", () => {
+  // Captured at load time: the describes above swap the dep out and restore it,
+  // so the real implementation is only reachable through this reference.
+  const readPackageTestPath = _groupDeps.readPackageTestPath;
+
+  async function writePackageConfig(workdir: string, pkg: string, body: string): Promise<void> {
+    const dir = join(workdir, ".nax", "mono", pkg);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "config.json"), body);
+  }
+
+  test("returns undefined for a root-level story (no package overlay to read)", async () => {
+    await withTempDir(async (workdir) => {
+      expect(await readPackageTestPath(workdir, undefined)).toBeUndefined();
+    });
+  });
+
+  test("refuses an absolute package dir instead of reading outside the workdir", async () => {
+    await withTempDir(async (workdir) => {
+      expect(await readPackageTestPath(workdir, "/etc")).toBeUndefined();
+    });
+  });
+
+  test("refuses a package dir containing a traversal segment", async () => {
+    await withTempDir(async (workdir) => {
+      expect(await readPackageTestPath(workdir, "packages/../../etc")).toBeUndefined();
+    });
+  });
+
+  test("returns undefined when the package has no .nax/mono config", async () => {
+    await withTempDir(async (workdir) => {
+      expect(await readPackageTestPath(workdir, "packages/api")).toBeUndefined();
+    });
+  });
+
+  test("returns the package's acceptance.testPath when configured", async () => {
+    await withTempDir(async (workdir) => {
+      await writePackageConfig(workdir, "packages/web", JSON.stringify({ acceptance: { testPath: "pkg.test.ts" } }));
+      expect(await readPackageTestPath(workdir, "packages/web")).toBe("pkg.test.ts");
+    });
+  });
+
+  test("returns undefined when the package config has no acceptance block", async () => {
+    await withTempDir(async (workdir) => {
+      await writePackageConfig(workdir, "packages/web", JSON.stringify({ project: { name: "web" } }));
+      expect(await readPackageTestPath(workdir, "packages/web")).toBeUndefined();
+    });
+  });
+
+  test("returns undefined for a malformed package config instead of throwing", async () => {
+    await withTempDir(async (workdir) => {
+      await writePackageConfig(workdir, "packages/web", "{ not json");
+      expect(await readPackageTestPath(workdir, "packages/web")).toBeUndefined();
+    });
   });
 });

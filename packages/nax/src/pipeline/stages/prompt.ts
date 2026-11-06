@@ -66,8 +66,8 @@ export const promptStage: PipelineStage = {
     // US-004 — gate the `run-test` region on the SSOT for naming the
     // `testScoped` key (`RunCommand` resolves by exact placeholder match;
     // a template that takes `{{file}}` / `{{package}}` / no placeholder
-    // would render a tool call the runtime rejects). The SSOT lives at
-    // src/execution/lifecycle/acceptance-helpers.ts:89.
+    // would render a tool call the runtime rejects). The rule is `RunCommand`'s:
+    // packages/nax-agent/src/tools/run-command.ts.
     const scopedTestCommand = commandSpecIncludes(ctx.config.quality?.commands?.testScoped, "{{files}}")
       ? "testScoped"
       : undefined;

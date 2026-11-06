@@ -1,8 +1,9 @@
 /**
  * Shared heuristics for detecting test file content.
  *
- * Single source of truth consolidated from acceptance-setup stage and
- * acceptance/generator.ts. See ADR-020 Wave 3 Step 3.
+ * Single source of truth consolidated from the acceptance-setup stage (deleted
+ * with the pipeline post-run acceptance phase, pipeline-post-run-delete US-005)
+ * and acceptance/generator.ts. See ADR-020 Wave 3 Step 3.
  */
 
 /**

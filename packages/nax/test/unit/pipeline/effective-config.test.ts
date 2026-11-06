@@ -8,20 +8,9 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
-import type { PipelineContext } from "@/pipeline/types";
-import type { PRD, UserStory } from "@/prd/types";
-
-function makePrd(story?: UserStory): PRD {
-  const s = story ?? makeStory();
-  return {
-    feature: "test-feature",
-    userStories: [s],
-  } as PRD;
-}
 
 function makeBaseConfig(overrides?: Partial<NaxConfig>): NaxConfig {
   return {
@@ -32,22 +21,6 @@ function makeBaseConfig(overrides?: Partial<NaxConfig>): NaxConfig {
     },
     ...overrides,
   } as NaxConfig;
-}
-
-function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
-  const story = makeStory();
-  const config = makeBaseConfig();
-  return {
-    config,
-    rootConfig: config,
-    prd: makePrd(story),
-    story,
-    stories: [story],
-    routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
-    workdir: "/tmp/test-project",
-    hooks: { hooks: {} },
-    ...overrides,
-  } as PipelineContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,33 +111,11 @@ describe("mergePackageConfig integration", () => {
 
 // ---------------------------------------------------------------------------
 // Stage behavior — ctx.config carries the effective (merged) config
+//
+// The last test here ("acceptance stage uses ctx.config.acceptance.enabled") was
+// deleted with pipeline-post-run-delete US-005: the acceptance stage no longer
+// exists.
 // ---------------------------------------------------------------------------
-
-describe("stage config usage", () => {
-  // Note: regressionStage tests removed (issue #1116) — stage deleted; regression gate behavior
-  // is now tested in test/unit/operations/full-suite-gate.test.ts and
-  // test/unit/operations/verify-scoped.test.ts.
-
-  test("acceptance stage uses ctx.config.acceptance.enabled", () => {
-    const { acceptanceStage } = require("../../../src/pipeline/stages/acceptance");
-
-    const packageConfig: NaxConfig = {
-      ...makeBaseConfig(),
-      acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
-    };
-
-    // Mark all stories complete so the only gate is acceptance.enabled
-    const story = makeStory({ status: "passed", passes: true, attempts: 1 });
-    const prd = makePrd(story);
-    const ctx = makeCtx({
-      config: packageConfig,
-      story,
-      prd,
-    });
-
-    expect(acceptanceStage.enabled(ctx)).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // ctx.config is the correct merged config for a monorepo story

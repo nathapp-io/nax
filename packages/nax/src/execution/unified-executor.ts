@@ -7,13 +7,11 @@ import type { NaxConfig } from "../config";
 import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import { logPipelineOutcome, runPipeline } from "../pipeline/runner";
 import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
 import { wireHooks } from "../pipeline/subscribers/hooks";
 import { wireInteraction } from "../pipeline/subscribers/interaction";
 import { wireRegistry } from "../pipeline/subscribers/registry";
 import { wireReporters } from "../pipeline/subscribers/reporters";
-import type { PipelineContext } from "../pipeline/types";
 import { countStories, isComplete, loadPRD, pendingStoryIds, savePrdProgress } from "../prd";
 import type { PRD } from "../prd/types";
 import { totalSpendUsd } from "../runtime";
@@ -26,7 +24,6 @@ import type { SequentialExecutionContext, SequentialExecutionResult } from "./ex
 import { loopIterationLimit, progressSignature } from "./iteration-bound";
 import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
-import { runPreRunPipeline } from "./pre-run";
 import { selectIndependentBatch } from "./story-selector";
 import type { LoopState } from "./unified-executor-dispatch-phases";
 import { runSequentialDispatch } from "./unified-executor-dispatch-phases";
@@ -111,7 +108,7 @@ export async function executeUnified(
   // The heartbeat reads this, not state.totalCost: `state` is only replaced when a
   // dispatch phase returns, which is after its statusWriter.update and iteration delay.
   // It also takes the aggregator's running total, so a tick mid-story, during the
-  // post-run pipeline, or after executeUnified returns never reports less than was spent.
+  // completion phase, or after executeUnified returns never reports less than was spent.
   let liveCost = state.totalCost;
   const heartbeatCost = () => Math.max(liveCost, totalSpendUsd(ctx.runtime.costAggregator.snapshot()));
 
@@ -205,35 +202,12 @@ export async function executeUnified(
   let _executeThrew = false;
   try {
     if (isComplete(state.prd)) {
-      logger?.info("execution", "All stories already complete — skipping pre-run pipeline");
+      logger?.info("execution", "All stories already complete — skipping the story loop");
       await runCompletionDeferredReview(await getRunNaxIgnoreIndex(state.prd));
       return buildResult("completed");
     }
 
-    // Pre-run pipeline (acceptance test setup with RED gate). Skipped under dryRun (nax#1809).
-    let preRunCtx: PipelineContext | undefined;
-    if (!ctx.dryRun && ctx.config.acceptance?.enabled) {
-      logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
-      const { preRunPipeline } = await import("../pipeline/stages");
-      preRunCtx = await runPreRunPipeline(
-        {
-          config: ctx.config,
-          workdir: ctx.workdir,
-          featureDir: ctx.featureDir,
-          hooks: ctx.hooks,
-          agentGetFn: ctx.agentGetFn,
-          agentManager: ctx.agentManager,
-          sessionManager: ctx.sessionManager,
-          runtime: ctx.runtime,
-          abortSignal: ctx.abortSignal,
-          eventEmitter: ctx.eventEmitter,
-        },
-        state.prd,
-        await getRunNaxIgnoreIndex(state.prd),
-        preRunPipeline,
-      );
-    }
-
+    // Workflow preflight runs once before the first story (skipped under dryRun).
     await runWorkflowPreflightOnce(ctx, state.prd);
 
     // Derive the limit from the work left, recomputing it each iteration.
@@ -297,35 +271,6 @@ export async function executeUnified(
     // story; that is a completed run, not an exhausted one.
     if (await refreshedIsComplete()) {
       return completeRun(await getRunNaxIgnoreIndex(state.prd));
-    }
-
-    // Post-run pipeline (acceptance tests) — only when acceptance is configured
-    if (ctx.config.acceptance?.enabled) {
-      logger?.info("execution", "Running post-run pipeline (acceptance tests)");
-      const { postRunPipeline } = await import("../pipeline/stages");
-      const postRunResult = await runPipeline(
-        postRunPipeline,
-        {
-          config: ctx.config,
-          rootConfig: ctx.config,
-          prd: state.prd,
-          workdir: ctx.workdir,
-          projectDir: ctx.workdir,
-          featureDir: ctx.featureDir,
-          story: state.prd.userStories[0],
-          stories: state.prd.userStories,
-          routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-          hooks: ctx.hooks,
-          agentGetFn: ctx.agentGetFn,
-          agentManager: ctx.agentManager,
-          sessionManager: ctx.sessionManager,
-          runtime: ctx.runtime,
-          abortSignal: ctx.abortSignal,
-          acceptanceTestPaths: preRunCtx?.acceptanceTestPaths,
-        } satisfies PipelineContext,
-        ctx.eventEmitter,
-      );
-      logPipelineOutcome(postRunResult, "Post-run pipeline (acceptance tests)");
     }
 
     logIterationCapReached(state.prd, limit, iterations);

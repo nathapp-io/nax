@@ -2,7 +2,6 @@
  * CLI Utilities
  */
 
-export { type AcceptOptions, acceptCommand } from "./accept";
 export {
   _advisorCliDeps,
   type AdvisorCliDeps,
@@ -103,13 +102,6 @@ export {
   queryCostLedger,
   resolveCostWindow,
 } from "./cost-ledger-query";
-export type {
-  AcceptanceGroupResult,
-  AcceptanceResolution,
-  AcceptanceResolutionError,
-  AcceptanceResolutionStatus,
-} from "./features-acceptance";
-export { resolveFeatureAcceptance } from "./features-acceptance";
 export type {
   FeatureSpecResolveOptions,
   ResolveResult,

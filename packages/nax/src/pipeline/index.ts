@@ -27,7 +27,6 @@ export type { PipelineRunResult } from "./runner";
 export { MAX_STAGE_RESETS, MAX_STAGE_RETRIES, runPipeline } from "./runner";
 export { _scopeFilesDeps, resolveScopeFiles } from "./scope-files";
 export { _executionDeps, executionStage } from "./stages";
-export { _acceptanceSetupDeps, acceptanceSetupStage } from "./stages/acceptance-setup";
 export type { ResolvedExecutionAgent } from "./stages/execution-helpers";
 export { resolveExecutionAgent } from "./stages/execution-helpers";
 export { queueCheckStage } from "./stages/queue-check";

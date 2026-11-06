@@ -96,10 +96,10 @@ describe("scanEscapeHatches", () => {
   });
 
   test("tsSuppress does not count prose that merely names a directive", async () => {
-    // The real residue this closed: run-regression.test.ts explains why it
-    // asserts at the type level INSTEAD of suppressing, and the unanchored
-    // pattern read those two sentences as two suppressions. §4 forbids
-    // deleting such a comment to lower a count, so the regex was the defect.
+    // The real residue this closed: a test file explained why it asserts at
+    // the type level INSTEAD of suppressing, and the unanchored pattern read
+    // those two sentences as two suppressions. §4 forbids deleting such a
+    // comment to lower a count, so the regex was the defect.
     write(
       root,
       "test/unit/a.test.ts",

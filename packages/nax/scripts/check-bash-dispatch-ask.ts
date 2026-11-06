@@ -39,8 +39,8 @@
  * export whose source names one, e.g. a strategy factory), computed from the
  * operations barrel the way check-op-tool-capability reads it. That reference
  * check sees the file only: a context handed to another module that dispatches
- * a Bash op on its behalf (the finish phase's `createFinishOps(callCtx)`) is not
- * traced, which is exactly why such sites are wired rather than allowlisted.
+ * a Bash op on its behalf is not traced, which is exactly why such sites are
+ * wired rather than allowlisted.
  * An allowlist entry that no longer matches a bare site fails as stale.
  *
  * Source-text, like the other `scripts/check-*` gates (the repo's TypeScript is
@@ -98,18 +98,6 @@ export const ALLOWED_BARE_SITES: readonly AllowedBareSite[] = [
   { file: "src/cli/advisor-replay.ts", fn: "buildCallContext", reason: "adviseOp (Read/Glob/Grep)" },
   { file: "src/execution/uncategorised-advice.ts", fn: "callContextFor", reason: "adviseOp (Read/Glob/Grep)" },
   { file: "src/cli/plan-decompose.ts", fn: "planDecomposeCommand", reason: "decomposeOp (complete-kind)" },
-  {
-    file: "src/acceptance/hardening.ts",
-    fn: "processPackageGroup",
-    reason: "acceptanceRefineOp (complete-kind) / acceptanceGenerateOp (Read/Glob/Grep/Write)",
-  },
-  {
-    file: "src/pipeline/stages/acceptance-setup.ts",
-    fn: "callOp",
-    reason:
-      "_acceptanceSetupDeps.callOp, used only for acceptanceRefineOp (complete-kind) / acceptanceGenerateOp (Read/Glob/Grep/Write)",
-  },
-  { file: "src/execution/lifecycle/acceptance-fix.ts", fn: "fixCallCtx", reason: "acceptanceDiagnoseOp (read-only)" },
 ];
 
 // ─── Source scan ─────────────────────────────────────────────────────────────

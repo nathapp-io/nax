@@ -159,8 +159,8 @@ export async function applyPostRunInspection(
   if (fullSuiteGateOutput?.passed) {
     ctx.fullSuiteGatePassed = true;
   }
-  // Snapshot failing test files from the (post-rectification) gate findings so deferred-regression blame can
-  // attribute a regression to the introducing story (three-session + deferred). See findResponsibleStoryByTransition.
+  // Snapshot failing test files from the (post-rectification) gate findings so regression blame can
+  // attribute a regression to the introducing story (three-session).
   const gateFailingFiles = [
     ...new Set((fullSuiteGateOutput?.findings ?? []).map((f) => f.file).filter((f): f is string => !!f)),
   ];

@@ -13,25 +13,18 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { _featuresAcceptanceDeps } from "@/cli/features-acceptance";
 import { resolveFeatureSpec } from "@/cli/features-resolve";
 
-const realLoadConfig = _featuresAcceptanceDeps.loadConfig;
 let tempDir: string;
 let savedEnvProfile: string | undefined;
 
 beforeEach(() => {
-  _featuresAcceptanceDeps.loadConfig = async (...args) => {
-    const config = await realLoadConfig(...args);
-    return { ...config, acceptance: { ...config.acceptance, enabled: true } };
-  };
   tempDir = makeTempDir("nax-resolve-profile-");
   savedEnvProfile = process.env.NAX_PROFILE;
   delete process.env.NAX_PROFILE;
 });
 
 afterEach(() => {
-  _featuresAcceptanceDeps.loadConfig = realLoadConfig;
   if (savedEnvProfile === undefined) delete process.env.NAX_PROFILE;
   else process.env.NAX_PROFILE = savedEnvProfile;
   cleanupTempDir(tempDir);
@@ -99,7 +92,7 @@ describe("resolveFeatureSpec profile chain", () => {
     const result = await resolveFeatureSpec("feat", tempDir);
 
     expect(result.status).toBe("ok");
-    expect(result.acceptance?.status).toBe("ok");
+    expect(result.testPatterns).toBeDefined();
   });
 
   // AC-9: an explicit CLI profile wins over the PRD's absent routingProfile.
@@ -111,11 +104,12 @@ describe("resolveFeatureSpec profile chain", () => {
     const result = await resolveFeatureSpec("feat", tempDir, { profile: ["fix"] });
 
     expect(result.status).toBe("ok");
-    expect(result.acceptance?.status).toBe("ok");
+    expect(result.testPatterns).toBeDefined();
   });
 
   // AC-10: NAX_PROFILE outranks the PRD, so a PRD routingProfile that would
-  // have repaired the config is deliberately NOT adopted.
+  // have repaired the config is deliberately NOT adopted — the config stays
+  // invalid, which is observable as an unresolved testPatterns.
   test("does not adopt the PRD routingProfile when NAX_PROFILE is set (AC-10)", async () => {
     const naxDir = initInvalidRepo();
     writePRD(naxDir, "feat", "fix");
@@ -126,11 +120,10 @@ describe("resolveFeatureSpec profile chain", () => {
     const result = await resolveFeatureSpec("feat", tempDir);
 
     expect(result.status).toBe("ok");
-    expect(result.acceptance?.status).toBe("error");
-    expect(result.acceptance?.error?.code).toBe("CONFIG_SCHEMA_INVALID");
+    expect(result.testPatterns).toBeUndefined();
   });
 
-  // AC-11: the profile reaches the testPatterns resolver too, not just acceptance.
+  // AC-11: the profile chain reaches the testPatterns resolver.
   test("resolves testPatterns under the profile chain (AC-11)", async () => {
     const naxDir = initInvalidRepo();
     writePRD(naxDir, "feat", "fix");
@@ -151,7 +144,7 @@ describe("resolveFeatureSpec profile chain", () => {
     const result = await resolveFeatureSpec(undefined, tempDir);
 
     expect(result.status).toBe("ok");
-    expect(result.acceptance?.status).toBe("ok");
+    expect(result.testPatterns).toBeDefined();
   });
 
   // Auto-discovery lists any directory holding a prd.json, including one whose

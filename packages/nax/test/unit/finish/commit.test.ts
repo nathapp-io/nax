@@ -1,15 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { withDepsRestore } from "@test/helpers";
 import { NaxError } from "@/errors";
-import {
-  _finishGitDeps,
-  buildCommitRound,
-  commitAndPush,
-  commitFixes,
-  commitRoundOutcome,
-  filesInCommit,
-  PUSH_TIMEOUT_MS,
-} from "@/finish";
+import { _finishGitDeps, commitAndPush, commitFixes, PUSH_TIMEOUT_MS } from "@/finish";
 
 type GitCall = { args: string[]; workdir: string; timeoutMs?: number };
 type GitResult = { stdout: string; stderr: string; exitCode: number };
@@ -110,7 +102,9 @@ describe("commitFixes", () => {
     });
     _finishGitDeps.git = git;
 
-    await expect(commitFixes("/repo", "fix: bad commit")).rejects.toThrow(NaxError);
+    const result = commitFixes("/repo", "fix: bad commit");
+    await expect(result).rejects.toThrow(NaxError);
+    await expect(result).rejects.toMatchObject({ code: "FINISH_GIT_COMMIT_FAILED" });
   });
 
   test("a failing git add throws NaxError before attempting commit", async () => {
@@ -163,30 +157,6 @@ describe("commitFixes", () => {
     _finishGitDeps.git = git;
 
     await expect(commitFixes("/repo", "fix: bad status")).rejects.toThrow(NaxError);
-  });
-});
-
-describe("filesInCommit", () => {
-  test("returns the repo-relative paths touched by a commit", async () => {
-    const { git, calls } = makeGitStub((call) => {
-      if (call.args[0] === "show") return ok("src/a.ts\nsrc/b.ts\n");
-      return ok();
-    });
-    _finishGitDeps.git = git;
-
-    const files = await filesInCommit("/repo", "abc123");
-
-    expect(files).toEqual(["src/a.ts", "src/b.ts"]);
-    const showCall = calls.find((c) => c.args[0] === "show");
-    expect(showCall?.args).toEqual(["show", "--name-only", "--format=", "abc123"]);
-    expect(showCall?.args[0]).not.toBe("git");
-  });
-
-  test("returns an empty array when the show command fails", async () => {
-    const { git } = makeGitStub(() => fail("bad sha"));
-    _finishGitDeps.git = git;
-
-    expect(await filesInCommit("/repo", "bad-sha")).toEqual([]);
   });
 });
 
@@ -260,60 +230,5 @@ describe("commitAndPush", () => {
     _finishGitDeps.git = git;
 
     await expect(commitAndPush("/repo", "feat/x", "fix: push fails")).rejects.toThrow(NaxError);
-  });
-});
-
-describe("buildCommitRound / commitRoundOutcome", () => {
-  test("commitRoundOutcome: spec and quality phases produce 'fixed'", () => {
-    expect(commitRoundOutcome("spec", "changed")).toBe("fixed");
-    expect(commitRoundOutcome("quality", "changed")).toBe("fixed");
-    expect(commitRoundOutcome("review", "fix")).toBe("fixed");
-  });
-
-  test("commitRoundOutcome: gate and acceptance phases produce 'no-reviewer'", () => {
-    expect(commitRoundOutcome("gate", "changed")).toBe("no-reviewer");
-    expect(commitRoundOutcome("acceptance", "changed")).toBe("no-reviewer");
-  });
-
-  test("buildCommitRound omits sha and failing when absent, not nulled", () => {
-    const round = buildCommitRound({
-      phase: "spec",
-      committed: false,
-      route: "unchanged",
-      findings: [],
-      now: "2026-08-18T00:00:00.000Z",
-    });
-
-    expect("sha" in round).toBe(false);
-    expect("failing" in round).toBe(false);
-    expect(round).not.toHaveProperty("attempt");
-  });
-
-  test("buildCommitRound sets sha only when committed and shaAfter is present", () => {
-    const round = buildCommitRound({
-      phase: "spec",
-      committed: true,
-      route: "changed",
-      findings: [],
-      shaAfter: "abc123",
-      now: "2026-08-18T00:00:00.000Z",
-    });
-
-    expect(round.sha).toBe("abc123");
-  });
-
-  test("buildCommitRound carries failing gate commands when provided", () => {
-    const round = buildCommitRound({
-      phase: "gate",
-      committed: true,
-      route: "changed",
-      findings: [],
-      failing: ["lint", "test"],
-      shaAfter: "sha2",
-      now: "2026-08-18T00:00:00.000Z",
-    });
-
-    expect(round.failing).toEqual(["lint", "test"]);
-    expect(round.outcome).toBe("no-reviewer");
   });
 });

@@ -5,15 +5,13 @@ import {
   makePRD,
   makeSpawn,
   makeStatusWriter,
-  makeStory,
   withInfoSpy,
   withWarnSpy,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { _endPhaseDeps, type EndPhaseDeps, finishStorySummary, runEndPhase, runFinish } from "@/execution/end-phase";
+import { _endPhaseDeps, type EndPhaseDeps, runEndPhase } from "@/execution/end-phase";
 import type { RunnerCompletionOptions } from "@/execution/runner-completion";
-import type { FinishPhaseContext } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { PluginRegistry } from "@/plugins";
 import { _gitDeps } from "@/utils/git";
@@ -52,99 +50,19 @@ function opts(config: NaxConfig, over: Partial<RunnerCompletionOptions> = {}): R
 }
 
 function deps(result: WorkflowFeatureResult | null | Error = null) {
-  const finish: FinishPhaseContext[] = [];
   const workflow: WorkflowFeatureInput[] = [];
   const d: EndPhaseDeps = {
-    runFinishPhase: async (ctx) => {
-      finish.push(ctx);
-      return null;
-    },
     runWorkflowFeature: async (input) => {
       workflow.push(input);
       if (result instanceof Error) throw result;
       return result;
     },
   };
-  return { d, finish, workflow };
+  return { d, workflow };
 }
 
 const PIPELINE = makeNaxConfig({ execution: { mode: "pipeline" } });
 const WORKFLOW = makeNaxConfig({ execution: { mode: "workflow" } });
-
-describe("retained runFinish helper", () => {
-  test("forwards the finish context when invoked directly, without running workflow", async () => {
-    const options = opts(WORKFLOW);
-    const { d, finish, workflow } = deps();
-    await runFinish(options, d, "feat/x");
-    expect(finish).toEqual([
-      {
-        runtime: options.runtime,
-        config: options.config,
-        feature: options.feature,
-        workdir: options.workdir,
-        branch: "feat/x",
-        runId: options.runId,
-        agentName: options.agentManager.getDefault(),
-        abortSignal: options.abortSignal,
-        storySummary: { completed: 1, failed: 0, paused: 0 },
-        statusWriter: options.statusWriter,
-        interactionChain: options.interactionChain,
-        packageDirs: [undefined],
-      },
-    ]);
-    expect(workflow).toHaveLength(0);
-  });
-
-  test("a finish rejection warns and resolves without failing the caller", async () => {
-    const { d } = deps();
-    d.runFinishPhase = async () => {
-      throw new Error("finish unavailable");
-    };
-    await withWarnSpy(async (warn) => {
-      await expect(runFinish(opts(WORKFLOW), d, "feat/x")).resolves.toBeUndefined();
-      expect(warn).toHaveBeenCalledWith("finish", "Finish phase failed; the run is unaffected", {
-        storyId: "_run",
-        error: "finish unavailable",
-      });
-    });
-  });
-});
-
-describe("finishStorySummary", () => {
-  test.each([0, 1])(
-    "complete PRD with %i stories executed uses the appropriate completion count",
-    (storiesCompleted) => {
-      const prd = makePRD({
-        userStories: [
-          makeStory({ id: "US-001", status: "passed", passes: true }),
-          makeStory({ id: "US-002", status: "passed", passes: true }),
-        ],
-      });
-      expect(finishStorySummary(opts(WORKFLOW, { prd, storiesCompleted }))).toEqual({
-        completed: storiesCompleted === 0 ? 2 : 1,
-        failed: 0,
-        paused: 0,
-      });
-    },
-  );
-
-  test("an incomplete resumed run keeps zero completed and counts failures and pauses", () => {
-    const prd = makePRD({
-      userStories: [
-        makeStory({ id: "US-001", status: "passed", passes: true }),
-        makeStory({ id: "US-002", status: "pending" }),
-        makeStory({ id: "US-003", status: "failed" }),
-        makeStory({ id: "US-004", status: "regression-failed" }),
-        makeStory({ id: "US-005", status: "paused" }),
-      ],
-    });
-    expect(finishStorySummary(opts(WORKFLOW, { prd, storiesCompleted: 0 }))).toEqual({
-      completed: 0,
-      failed: 2,
-      paused: 1,
-    });
-  });
-});
 
 describe("runEndPhase branch resolution", () => {
   test.each([
@@ -172,21 +90,19 @@ describe("runEndPhase branch resolution", () => {
 });
 
 describe("runEndPhase (P4-R16)", () => {
-  test("pipeline literal: runs workflow once, never finish, and returns skipped outcome without url", async () => {
+  test("pipeline literal: runs workflow once and returns skipped outcome without url", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
-    const { d, finish, workflow } = deps();
+    const { d, workflow } = deps();
     const outcome = await runEndPhase(opts(PIPELINE), d);
     expect(workflow).toHaveLength(1);
-    expect(finish).toHaveLength(0);
     expect(outcome).toEqual({ passed: true, reasons: [] });
     expect(Object.hasOwn(outcome ?? {}, "url")).toBe(false);
   });
 
   test("workflow mode: runWorkflowFeature instead of finish; passed flows out", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
-    const { d, finish, workflow } = deps({ passed: false, outcome: "draft", reasons: ["CI failed"] });
+    const { d, workflow } = deps({ passed: false, outcome: "draft", reasons: ["CI failed"] });
     expect((await runEndPhase(opts(WORKFLOW), d))?.passed).toBe(false);
-    expect(finish).toHaveLength(0);
     expect(workflow[0]).toMatchObject({ feature: "f", workdir: "/repo", branch: "feat/x", runId: "run-1" });
   });
 

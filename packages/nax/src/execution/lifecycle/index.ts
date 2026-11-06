@@ -3,12 +3,6 @@
  */
 
 export {
-  _runAcceptanceTestsOnceDeps,
-  type AcceptanceLoopContext,
-  type AcceptanceLoopResult,
-  runAcceptanceLoop,
-} from "./acceptance-loop";
-export {
   applyBackfill,
   type BackfillMetricArgs,
   backfillDomain,
@@ -31,14 +25,6 @@ export {
   type RunCompletionOptions,
   type RunCompletionResult,
 } from "./run-completion";
-export {
-  _regressionDeps,
-  type DeferredRegressionOptions,
-  type DeferredRegressionResult,
-  findResponsibleStoryByTransition,
-  runDeferredRegression,
-  type StorySnapshot,
-} from "./run-regression";
 export { _runRulesSetupDeps, configureRunRules } from "./run-rules-setup";
 // Warnings re-exported here so consumers can reach them through the lifecycle
 // barrel without reaching into run-setup.ts (or the leaf warnings module).

@@ -349,9 +349,9 @@ export interface AcceptanceConfig {
   timeoutMs: number;
   /** Fix configuration for acceptance test failures (US-001) */
   fix: AcceptanceFixConfig;
-  /** Override filename for suggested acceptance tests (hardening pass) */
+  /** Override filename for suggested acceptance tests */
   suggestedTestPath?: string;
-  /** Hardening pass configuration — test plan-suggested criteria after acceptance passes */
+  /** Hardening pass configuration — its pass was deleted by pipeline-post-run-delete US-006; the key stays until wave B3 */
   hardening?: { enabled: boolean };
 }
 

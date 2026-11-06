@@ -118,10 +118,10 @@ describe("handleDryRun", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Gate 1 — pre-run acceptance pipeline never dispatches under a dry run
+// Gate 1 — a dry run writes no acceptance artifacts and touches no PRD
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("executeUnified — pre-run acceptance pipeline under dry run (nax#1809)", () => {
+describe("executeUnified — no acceptance artifacts under a dry run (nax#1809)", () => {
   let tempDir: string;
   let prdPath: string;
   let story: UserStory;
@@ -175,20 +175,6 @@ describe("executeUnified — pre-run acceptance pipeline under dry run (nax#1809
     ];
   }
 
-  test("completes without dispatching acceptance generation (refine/generate ops)", async () => {
-    const { _acceptanceSetupDeps } = await import("@/pipeline/stages/acceptance-setup");
-    const originalCallOp = _acceptanceSetupDeps.callOp;
-    const callOpSpy = spyOn(_acceptanceSetupDeps, "callOp").mockImplementation(originalCallOp);
-    try {
-      const result = await executeUnified(makeDryRunCtx(), prd);
-
-      expect(result.exitReason).toBe("completed");
-      expect(callOpSpy).not.toHaveBeenCalled();
-    } finally {
-      callOpSpy.mockRestore();
-    }
-  });
-
   test("writes no acceptance artifacts (skeleton, refined, meta)", async () => {
     const result = await executeUnified(makeDryRunCtx(), prd);
 
@@ -208,10 +194,10 @@ describe("executeUnified — pre-run acceptance pipeline under dry run (nax#1809
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Gate 4 — completion phase skips acceptance and finish under a dry run
+// Gate 4 — completion phase under a dry run
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)", () => {
+describe("runCompletionPhase — dry run (nax#1809)", () => {
   let tempDir: string;
   let prdPath: string;
 
@@ -227,28 +213,14 @@ describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)"
     cleanupTempDir(tempDir);
   });
 
-  // The acceptance loop is the test subject here. The finish phase is *called*
-  // by the completion phase but self-gates on runtime.dryRun from inside
-  // finishSkipReason — its machine/push/status-write side effects are asserted
-  // in test/unit/finish/phase.test.ts.
-  test("does not dispatch the acceptance loop, the finish machine, or the regression gate", async () => {
+  // The completion phase ran the real acceptance suite plus the acceptance fix
+  // agents until pipeline-post-run-delete US-006 deleted its acceptance loop.
+  // What a dry run must still guarantee is that completion itself runs and the
+  // run reports no acceptance failure.
+  test("completes the run without an acceptance phase", async () => {
     const { runCompletionPhase } = await import("@/execution/runner-completion");
-    const { _runCompletionDeps, handleRunCompletion } = await import("@/execution/lifecycle/run-completion");
-    const { _finishPhaseDeps } = await import("@/finish");
+    const { handleRunCompletion } = await import("@/execution/lifecycle/run-completion");
 
-    const acceptanceSpy = spyOn(_runnerCompletionDeps, "runAcceptanceLoop").mockImplementation(async () => {
-      throw new Error("acceptance loop dispatched under a dry run");
-    });
-    const finishMachineSpy = spyOn(_finishPhaseDeps, "runFinishMachine").mockImplementation(async () => {
-      throw new Error("finish machine ran under a dry run");
-    });
-    // nax#1809: the deferred/per-story regression gate would spawn the real
-    // project suite under a dry run — it must stay uninvoked (and uncovered by
-    // the Gate-1-4 spies above because it dispatches inside the REAL
-    // handleRunCompletion this test wraps).
-    const regressionSpy = spyOn(_runCompletionDeps, "runDeferredRegression").mockImplementation(async () => {
-      throw new Error("regression gate dispatched under a dry run");
-    });
     const completionSpy = spyOn(_runnerCompletionDeps, "handleRunCompletion").mockImplementation(async (opts) => {
       await handleRunCompletion(opts);
       return {
@@ -302,14 +274,10 @@ describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)"
       };
       const result = await runCompletionPhase(completionOpts);
 
-      expect(acceptanceSpy).not.toHaveBeenCalled();
-      expect(finishMachineSpy).not.toHaveBeenCalled();
-      expect(regressionSpy).not.toHaveBeenCalled();
-      expect(result.acceptancePassed).toBe(true);
+      expect(completionSpy).toHaveBeenCalled();
+      // US-007 deleted the field outright: absence, not a key set to undefined.
+      expect(Object.hasOwn(result, "acceptancePassed")).toBe(false);
     } finally {
-      acceptanceSpy.mockRestore();
-      finishMachineSpy.mockRestore();
-      regressionSpy.mockRestore();
       completionSpy.mockRestore();
     }
   });

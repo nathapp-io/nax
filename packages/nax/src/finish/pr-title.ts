@@ -1,7 +1,7 @@
 /**
  * The PR title — sanitiser and the fallback chain.
  *
- * `buildFinishTitle` used to return `feat: <feature>` unconditionally, so every
+ * The finish PR title used to be `feat: <feature>` unconditionally, so every
  * finish-opened PR was titled with its feature slug: `feat: schema-drift-gate`
  * describes the run, not the change. The branch-review lens has already read the
  * whole diff by the time the body is amended, so a real conventional-commit
@@ -104,14 +104,4 @@ export function sanitizeTitle(raw: string | undefined): string | undefined {
   if (!subject) return undefined;
 
   return clamp(`${type}: ${subject}`);
-}
-
-/**
- * The title to render, best source first.
- *
- * `feat: <feature>` remains the floor: it is what shipped before, it is what
- * the auto-PR plugin opens with, and it is always available.
- */
-export function resolveTitle(agentTitle: string | undefined, feature: string): string {
-  return sanitizeTitle(agentTitle) ?? `${DEFAULT_TYPE}: ${feature}`;
 }

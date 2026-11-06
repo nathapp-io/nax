@@ -2,7 +2,7 @@
  * Verification Runners (ADR-005, Phase 4)
  *
  * Low-level test execution functions. Replaces src/verification/gate.ts.
- * Used by: strategies, orchestrator, run-regression lifecycle, tdd orchestrator.
+ * Used by: strategies, orchestrator, tdd orchestrator.
  */
 
 import { existsSync } from "node:fs";
@@ -159,11 +159,6 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
     results.push(await runSingleVerificationCore({ ...options, command }));
   }
   return aggregateVerificationResults(results);
-}
-
-/** Run entire test suite (regression gate). */
-export async function fullSuite(options: VerificationGateOptions): Promise<VerificationResult> {
-  return runVerificationCore(options);
 }
 
 /** Run tests scoped to modified files. */

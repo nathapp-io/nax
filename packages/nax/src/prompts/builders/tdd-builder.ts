@@ -396,7 +396,7 @@ export class TddPromptBuilder {
         // declared a template taking `{{file}}`, `{{package}}`, or no
         // placeholder at all hands the agent a tool call the runtime
         // rejects (`value "files" is not a placeholder in this command`).
-        // The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
+        // The rule is `RunCommand`'s: packages/nax-agent/src/tools/run-command.ts.
         commandSpecIncludes(config.quality?.commands?.testScoped, "{{files}}") ? "testScoped" : undefined,
       )
       .hermeticConfig(config.quality?.testing);

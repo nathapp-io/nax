@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
-import type { FinishPhaseState, GateRunRecord, GateRunStatus } from "@/finish";
+import type { GateRunRecord, GateRunStatus } from "@/finish";
 import {
   _qualityGateDeps,
   classifyGateExit,
   GATE_ORDER,
   gateOutputTail,
   resolveGateCommands,
-  routeQualityGates,
   runQualityGates,
 } from "@/finish";
 import type { QualityCommandResult } from "@/quality";
@@ -18,12 +17,6 @@ afterEach(() => {
   _qualityGateDeps.run = original.run;
   _qualityGateDeps.loadConfig = original.loadConfig;
   _qualityGateDeps.loadPackageOverride = original.loadPackageOverride;
-});
-
-const zeroedState = (): FinishPhaseState => ({
-  fixAttempts: 0,
-  reviewAttempts: 0,
-  rounds: 0,
 });
 
 /** A full NaxConfig with `quality.commands` overridden -- avoids partial casts. */
@@ -259,12 +252,6 @@ describe("runQualityGates", () => {
       failing: [],
       output: expect.stringContaining("no quality.commands configured"),
     });
-  });
-
-  test("routeQualityGates stops when nothing ran (I1)", async () => {
-    const result = await runQualityGates("/repo", []);
-    const routed = routeQualityGates(result, zeroedState());
-    expect(routed.route).toBe("stop");
   });
 
   test("all four gates run even after the first one fails, and `failing` lists both red gates", async () => {

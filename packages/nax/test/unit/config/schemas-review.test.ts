@@ -18,11 +18,9 @@ import type { FixReviewConfig } from "@/config/selectors";
 // alias is corrected. The runtime tests below (AC1-AC4) already pin the
 // behaviour; this pins the *type*.
 //
-// AssertTrue is the project-standard compile-time guard
-// (see test/unit/execution/lifecycle/run-regression.test.ts, "Asserted at
-// the type level, not with @ts-expect-error on a value literal"). It fails
-// to typecheck (TS2344) if the type argument is the wrong literal — there is
-// no runtime path that can quietly turn a wrong type green.
+// AssertTrue is the project-standard compile-time guard: it fails to typecheck
+// (TS2344) if the type argument is the wrong literal — there is no runtime path
+// that can quietly turn a wrong type green.
 //
 // Each assertion is built on a TS-level conditional, not a runtime expression:
 //   * `enabled` and `timeoutMs` must extend `boolean`/`number` directly.

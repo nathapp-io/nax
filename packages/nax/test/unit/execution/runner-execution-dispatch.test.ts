@@ -126,7 +126,6 @@ describe("workflow harness dispatch", () => {
       _runnerDeps.runCompletionPhase = async () => ({
         durationMs: 1,
         runCompletedAt: "now",
-        acceptancePassed: true,
         pluginGateFailed: false,
         reportedTotal: 0,
       });

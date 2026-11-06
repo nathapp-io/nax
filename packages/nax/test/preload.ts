@@ -23,7 +23,6 @@ import { _clientDeps } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { _acpDeps } from "../src/agents/acp/session";
 import { configureNaxCredentials } from "../src/config";
-import { _notifyDeps } from "../src/finish/notify";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
 import { markTrusted } from "../src/trust";
 
@@ -64,10 +63,10 @@ configureNaxCredentials();
 delete process.env.NAX_RUNS_DIR;
 
 // ─── Outbound-notification isolation ──────────────────────────────────────────
-// telegramCreds() falls back to these ambient env vars when config carries no
-// interaction block. Redirecting ~/.nax does NOT isolate env, so a developer
-// with real Telegram credentials exported would have the suite send them live
-// messages. Scrub them before any test file loads.
+// The Telegram notifier falls back to these ambient env vars when config
+// carries no interaction block. Redirecting ~/.nax does NOT isolate env, so a
+// developer with real Telegram credentials exported would have the suite send
+// them live messages. Scrub them before any test file loads.
 delete process.env.NAX_TELEGRAM_TOKEN;
 delete process.env.NAX_TELEGRAM_CHAT_ID;
 delete process.env.TELEGRAM_BOT_TOKEN;
@@ -135,18 +134,5 @@ _clientDeps.build = () => {
       "Add to your describe block:\n" +
       "  beforeEach(() => { _clientDeps.build = mock(async () => fakeClient); })\n" +
       "  afterEach(() => { _clientDeps.build = <saved original>; _resetNativeClient(); })",
-  );
-};
-
-// ─── Telegram send sentinel ───────────────────────────────────────────────────
-// Second line of defence behind the env scrub above: any test that supplies
-// explicit credentials via config and reaches the notifier would otherwise POST
-// to the real Bot API. Fail fast instead of messaging a human.
-_notifyDeps.fetch = () => {
-  throw new Error(
-    "[test-preload] _notifyDeps.fetch called without a mock — " +
-      "this would send a REAL Telegram message. Override the notifier in your describe block:\n" +
-      "  beforeEach(() => { _notifyDeps.fetch = mock(async () => new Response(null, { status: 200 })); })\n" +
-      "  afterEach(() => { _notifyDeps.fetch = <saved original>; })",
   );
 };

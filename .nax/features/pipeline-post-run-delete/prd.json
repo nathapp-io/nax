@@ -1,0 +1,1113 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-post-run-delete",
+  "branchName": "feat/pipeline-post-run-delete",
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T10:56:33.005Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Delete the deferred regression gate",
+      "description": "**Goal** — Remove the deferred regression gate, its completion options/status inputs, and its exclusively owned implementation and tests.\n\n**Motivation** — After B1 the post-run phases still sit in the tree and still compile, but no production path runs them.\n\n**Approach** — Removal only. Each phase is deleted importer-first: the first story of a phase cuts the live references and deletes the modules nothing else imports; the next stories delete the modules the earlier ones imported. Every story leaves a tree that compiles and passes the suite. No story adds a feature or changes a workflow-mode result.\n\n### Part 1: the deferred regression gate (US-001)\n\n| Site | After |\n|:---|:---|\n| `handleRunCompletion` phase 1 (`execution/lifecycle/run-completion.ts:198-213`) | removed; `regressionGateFailed` is gone, and `hooksConfig` leaves the destructure at `:195` |\n| `_runCompletionDeps.runDeferredRegression` (`run-completion.ts:55`) and the imports at `:47-48` | removed |\n| `RunCompletionOptions.skipRegression` (`run-completion.ts:78-79`) | removed |\n| the `writeFinalStatus` call (`run-completion.ts:293-301`) | no `regressionGateFailed` argument |\n| `writeFinalStatus` (`execution/lifecycle/run-completion-phases.ts:481-497`) | the `regressionGateFailed` input goes; the status ladder starts at `exitReason === \"cost-limit\"` |\n| the `handleRunCompletion` call in `runCompletionPhase` (`runner-completion.ts:376`) | no `skipRegression` |\n| barrels `execution/lifecycle/index.ts`, `execution/index.ts` | drop the re-exports of deleted symbols |\n\nDelete:\n\n- `packages/nax/src/execution/lifecycle/run-completion-regression.ts`\n- `packages/nax/src/execution/lifecycle/run-regression-phases.ts`\n- `packages/nax/src/execution/lifecycle/run-regression-triage.ts`\n- `packages/nax/src/execution/lifecycle/run-regression.ts`\n\nTrim (delete these declarations, keep the rest of the file): `fullSuite` in `src/verification/runners.ts`; `NULL_QUARANTINE_MEMO` in `src/verification/flake-triage.ts`.\n\n**Scope** — In: the Part 1 cuts, declarations, barrels, corresponding tests and stale checker references. Out: finish-machine removal (US-002–US-004), acceptance blocks/loop/core (US-005–US-007), per-story regression/full-suite verification, phase-name registries and regression configuration keys.\n\n**Interface** — `RunCompletionOptions` (`run-completion.ts`). Target: the baseline fields minus `skipRegression`. `writeFinalStatus` target: `(input: { options: RunCompletionOptions; prd: PRD; statusWriter: StatusWriter; config: NaxConfig; reportedTotal: number; iterations: number }): Promise<void>`. Keep `handleRunCompletion(options: RunCompletionOptions): Promise<RunCompletionResult>` as the existing entry point.\n\nTest migration: delete packages/nax/test/unit/execution/lifecycle-execution.test.ts and lifecycle/run-completion-postrun.test.ts, run-regression-attribution.test.ts, run-regression-dispatch-ask.test.ts, run-regression-flake-triage.test.ts and run-regression.test.ts. In lifecycle-completion.test.ts delete the describes 'handleRunCompletion - deferred regression is not smart-skipped', 'handleRunCompletion - deferred regression gate', 'handleRunCompletion - regression-failed story marking (RL-004)', 'handleRunCompletion - run status on regression failure (RL-004)' and the tests 'on-complete hook does not fire before regression gate completes', 'run:completed event payload includes regression success when regression passes', and 'a genuine regression-gate failure is not masked by a cost-limit exitReason'. Retain hook-order, payload, cost-limit and manifest-retention assertions. In lifecycle/run-completion-backfill.test.ts remove the regression-cost-merge describe and the overall-regression-success fallback case; retain metric backfill. In lifecycle/run-completion-edges.test.ts remove regression-gate throw, on-final-regression-fail and skipRegression describes and the two regression storyMetrics projection cases; retain other edges. In lifecycle/run-completion-events.test.ts remove regression completed-event mode/failedTests describes; retain review events and durations. Remove runDeferredRegression stubs and DeferredRegressionResult imports from all of those files and lifecycle/run-completion-fallback.test.ts, run-completion-mcp-adoption.test.ts, run-completion-plugin-review.test.ts, run-completion-session-close.test.ts and acceptance-loop-skipped-packages.test.ts, preserving their other assertions until the acceptance-loop file is deleted in US-006. In runner-completion-skip.test.ts remove the six cases spying on the removed regression dep and its shared stub/type import; acceptance tests remain until US-006. In unified-executor-rl002.test.ts remove the regression-result event test and regression dep assignments/restores, keeping other RL-002 tests. In dry-run.test.ts remove only the 'runCompletionPhase — dry run skips acceptance and finish (nax#1809)' describe; retain executeUnified dry-run cases. In verification/runners.test.ts remove only the fullSuite describe, retaining verifyAssets/scoped/regression. Remove the deleted run-regression.ts expectation from scripts/check-bash-dispatch-ask.test.ts and entries naming deleted tests from scripts/check-inline-test-mocks.ts.\n\nVerification: the acceptance criterion is a regression guard that the existing test already meets; preserve the cost-limit test in test/unit/execution/lifecycle-completion.test.ts:573-586 with its existing assertion that the status writer receives cost-limit despite a pending story; remove only its obsolete regression dependency setup. No new runtime behavior or test file is required. From packages/nax run bun run typecheck; sweep every deleted extensionless src-relative path with rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test (zero remaining references; reword stale comments); run bun run check:complexity:update and bun run check:file-sizes -- --update-baseline when a lowerable entry is reported; then bun run check:all and bun run test. Keep unrelated test assertions and leave stale test-escape-hatch baseline entries alone.",
+      "acceptanceCriteria": [
+        "[unit] handleRunCompletion calls statusWriter.setRunStatus with \"cost-limit\" when options.exitReason is \"cost-limit\" and the PRD still contains a pending story, preserving the existing cost-limit classification after the deferred regression gate is removed."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "regression",
+        "execution"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Four source deletions also change lifecycle sequencing, status classification, two barrels and shared verification fixtures; lite isolated testing fits the fan-out while the refine-pass cost-limit AC pins existing failure behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/run-completion.ts",
+        "packages/nax/src/execution/lifecycle/run-completion-phases.ts",
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/src/execution/lifecycle/index.ts",
+        "packages/nax/test/unit/execution/lifecycle-completion.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle-execution.test.ts",
+          "reason": "tests only src/execution/lifecycle/run-regression.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-postrun.test.ts",
+          "reason": "every describe (AC4 to AC7) asserts the deferred regression gate in handleRunCompletion, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-regression-attribution.test.ts",
+          "reason": "tests only src/execution/lifecycle/run-regression.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-regression-dispatch-ask.test.ts",
+          "reason": "tests only src/execution/lifecycle/run-regression.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-regression-flake-triage.test.ts",
+          "reason": "tests only src/execution/lifecycle/run-regression.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-regression.test.ts",
+          "reason": "tests only src/execution/lifecycle/run-regression.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle-completion.test.ts",
+          "reason": "the describes \"handleRunCompletion - deferred regression is not smart-skipped\", \"handleRunCompletion - deferred regression gate\", \"handleRunCompletion - regression-failed story marking (RL-004)\" and \"handleRunCompletion - run status on regression failure (RL-004)\", and the tests \"on-complete hook does not fire before regression gate completes\", \"run:completed event payload includes regression success when regression passes\" and \"a genuine regression-gate failure is not masked by a cost-limit exitReason\", assert the regression gate and are deleted; the runDeferredRegression stubs and the DeferredRegressionResult import go. The hook-order, payload, cost-limit and manifest-retention tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-backfill.test.ts",
+          "reason": "the describe \"handleRunCompletion — merge regression cost into existing storyMetrics\" and the test \"falls back to overall regression success when per-story outcome is absent\" assert regression results and are deleted; the runDeferredRegression stub and the DeferredRegressionResult import go; the back-fill tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-edges.test.ts",
+          "reason": "the describes \"handleRunCompletion — regression-gate throw path\", \"handleRunCompletion — on-final-regression-fail hook\" and \"handleRunCompletion — skipRegression\", and the tests \"passes storyMetrics: undefined when isSequential is false\" and \"projects storyId, completedAt and failingTestFiles when sequential\", assert the regression gate and are deleted; the stub and the type import go; the other edge tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-events.test.ts",
+          "reason": "the describes \"handleRunCompletion — AC7: regression completed event details.mode\" and \"handleRunCompletion — AC9: regression completed event details.failedTests\" are deleted, because no regression event is emitted; the review-event and duration tests keep their assertions, and the runDeferredRegression stub goes."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-fallback.test.ts",
+          "reason": "the _runCompletionDeps.runDeferredRegression stub (line 106) and the DeferredRegressionResult import (line 19) go, because the dep is removed; its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-mcp-adoption.test.ts",
+          "reason": "the runDeferredRegression stub and the DeferredRegressionResult import go, because the dep is removed; its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-plugin-review.test.ts",
+          "reason": "the runDeferredRegression stub and the DeferredRegressionResult import go, because the dep is removed; its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-session-close.test.ts",
+          "reason": "the runDeferredRegression stub goes, because the dep is removed; its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-skip.test.ts",
+          "reason": "the tests \"does not call runDeferredRegression when both phases are passed\", \"never calls runDeferredRegression when acceptance is passed but regression is not-run\", \"never calls runDeferredRegression when acceptance is passed but regression is failed\", \"never calls runDeferredRegression when acceptance is not-run and deferred mode is set\", \"never calls runDeferredRegression when acceptance previously failed\" and \"never calls runDeferredRegression when both acceptance and regression previously failed\" spy on a dep that no longer exists and are deleted; the shared beforeEach stub of _runCompletionDeps.runDeferredRegression (line 191) and the DeferredRegressionResult import go."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-rl002.test.ts",
+          "reason": "the test \"run:completed event emitted by runner reflects regression result in status\" is deleted, and the runDeferredRegression stub assignments (from line 179) and their restores (line 214) go, because the gate is removed; the other RL-002 tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/dry-run.test.ts",
+          "reason": "the describe \"runCompletionPhase — dry run skips acceptance and finish (nax#1809)\" (from line 214) spies on the regression gate, the acceptance loop and the finish machine, all of which this feature deletes, and is deleted; the executeUnified dry-run tests above it stay."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/runners.test.ts",
+          "reason": "the describe \"fullSuite\" is deleted with the function; \"verifyAssets\", \"scoped\" and \"regression\" keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts",
+          "reason": "defaultRegressionResult, its DeferredRegressionResult import (line 41) and the _runCompletionDeps.runDeferredRegression stub (line 229) go, because the regression module and the dep are removed; its acceptance assertions stay until US-006 deletes the file."
+        },
+        {
+          "path": "packages/nax/test/unit/scripts/check-bash-dispatch-ask.test.ts",
+          "reason": "the run-regression.ts expectation (line 196) goes, because the file is deleted."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "entries naming a test file this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7c1ac102be1e450b762b6ca448147616956db721"
+    },
+    {
+      "id": "US-002",
+      "title": "Cut the finish phase and delete the top of the finish machine",
+      "description": "**Goal** — Cut the dead finish entry points and delete the top layer of the pipeline finish machine while preserving the workflow's shared finish helpers.\n\n**Motivation** — `runEndPhase` always runs the feature workflow.\n\n**Approach** — The machine is deleted in three layers by import depth, so each story deletes only modules that nothing left in the tree imports. US-002 cuts the live references and deletes the top layer:\n\n| Site | After |\n|:---|:---|\n| `runFinish` (`execution/end-phase.ts:93-116`) with its doc comment, and `finishStorySummary` (`:59-68`) with its doc comment above it, whose only caller is `runFinish` | removed. `ABORTED_REASON` (`:91`) stays |\n| `EndPhaseDeps.runFinishPhase` (`end-phase.ts:13`), the `@/finish` type import (`:4`) and the `storyPackageDir` import (`:8`) | removed |\n| `_runnerCompletionDeps.runFinishPhase` (`runner-completion.ts:127`, `:141-147` with its comment; `loadConfigForPackage` at `:140` stays) and its type imports | removed |\n| `src/finish/pr/body.ts` | trimmed to `ADVISOR_TEXT_CAP`, `flat` and `buildAdvisorSection`; every other declaration and the imports of `./context`, `./findings-sections` and `../state` go |\n| `src/finish/pr/index.ts` | drops the `./context` re-export and the re-exports of the deleted `body.ts` declarations |\n| barrels `finish/index.ts`, `operations/index.ts`, `prompts/index.ts` | drop the re-exports of the deleted symbols |\n| `test/preload.ts` (`:26`, `:141-152`) | the `_notifyDeps` import and the Telegram send sentinel block go |\n| `scripts/check-no-silent-naxconfig-cast.sh` (`:25-31`, `:58`) | the `src/finish/config.ts` comment block and exclusion go |\n\nDelete:\n\n- `packages/nax/src/finish/config.ts`\n- `packages/nax/src/finish/machine.ts`\n- `packages/nax/src/finish/notify.ts`\n- `packages/nax/src/finish/ops-impl.ts`\n- `packages/nax/src/finish/phase.ts`\n- `packages/nax/src/finish/pr/context.ts`\n- `packages/nax/src/finish/pr/findings-sections.ts`\n- `packages/nax/src/operations/finish-branch-review.ts`\n- `packages/nax/src/operations/finish-fix.ts`\n- `packages/nax/src/operations/finish-spec-review.ts`\n- `packages/nax/src/prompts/builders/finish-review-builder.ts`\n\n**Scope** — In: the top-layer entry points, declarations, exports, preload sentinel, cast-check exception and their test consumers. Out: the middle layer (US-003), bottom/shared declaration trims (US-004), acceptance stage/loop/core cuts (US-005–US-007), and deleting shared workflow/bot PR, git or gate helpers. Keep ABORTED_REASON, workflow branch resolution and error/abort/iteration-cap results unchanged.\n\n**Interface** — `EndPhaseDeps` (`end-phase.ts:12`). Target: `{ runWorkflowFeature(input: WorkflowFeatureInput): Promise<WorkflowFeatureResult | null>; now?(): number }`. Keep `runEndPhase(options: RunnerCompletionOptions, deps: EndPhaseDeps): Promise<EndPhaseOutcome>`. `_runnerCompletionDeps` loses only its runFinishPhase member in this story; its acceptance member remains until US-006 and loadConfigForPackage stays. No new externally-visible symbol.\n\nTest migration: delete packages/nax/test/integration/finish/finalize-failed-restore.test.ts, finish-a4.test.ts and pr-diffstat.test.ts. Delete packages/nax/test/unit/finish/checkpoint-wiring.test.ts, config.test.ts, machine-advise.test.ts, machine-end-to-end.test.ts, machine-invariants.test.ts, machine-loops.test.ts, machine-recovery.test.ts, notify.test.ts, ops-impl-a4.test.ts, ops-impl-finalize-stop.test.ts, ops-impl.test.ts, phase-a4.test.ts, phase-advisor.test.ts, phase-dispatch-ask.test.ts, phase.test.ts, pr-body-ledger.test.ts, pr-body.test.ts and pr-context.test.ts. Delete packages/nax/test/unit/operations/finish-branch-review.test.ts, finish-fix-interrupt-session.test.ts, finish-fix.test.ts and finish-spec-review.test.ts, and test/unit/prompts/builders/finish-review-builder.test.ts. These subjects are removed; do not retain their now-dead imports through a barrel.\n\nTrim packages/nax/test/unit/execution/end-phase.test.ts by deleting 'retained runFinish helper' and 'finishStorySummary' describes and their imports, removing runFinishPhase fixture fields while keeping workflow assertions. Remove finish deps/spies from execution/run-completed-after-end-phase.test.ts and runner-completion-finish.test.ts, retaining workflow-placement assertions. In pipeline/execution-stage-effective-config.test.ts remove only the finish/phase.ts row. In scripts/check-bash-dispatch-ask.test.ts remove the finish/phase.ts wired expectation and finishFixOp barrel-list name. Remove finishFixOp rows/imports from config/inert-bash-stages.test.ts, operations/bash-declarations.test.ts and operations/tool-declarations.test.ts; remove finishBranchReviewOp/finishSpecReviewOp rows/imports from operations/reviewer-tools.test.ts, keeping other operation assertions. Delete only the _notifyDeps Telegram send sentinel block/import from test/preload.ts, leaving unrelated isolation sentinels. Remove entries naming deleted tests from scripts/check-inline-test-mocks.ts if present.\n\nVerification: the four Design Approach steps apply to this importer layer independently: bun run typecheck; the zero-reference fixed-string sweep of every deleted extensionless source stem across src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, including stale comments; bun run check:complexity:update plus bun run check:file-sizes -- --update-baseline when lowerable; bun run check:all and bun run test. The acceptance criterion is a regression guard on the existing runEndPhase workflow throw outcome in test/unit/execution/end-phase.test.ts:257-264; preserve that test while removing only its finish fixture fields. Preserve existing workflow/bot behavior and do not delete the entire finish directory.",
+      "acceptanceCriteria": [
+        "[unit] runEndPhase returns { passed:false, reasons:[\"feature workflow failed: boom\"] } when deps.runWorkflowFeature rejects with Error(\"boom\"), preserving the existing workflow failure outcome after the finish-only dependency is removed."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "finish",
+        "workflow"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cuts dynamic entry points and a high-fan-out barrel layer, preserving live PR rendering and workflow tests while removing the machine and operation consumers.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/end-phase.ts",
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/src/finish/pr/body.ts",
+        "packages/nax/src/finish/index.ts",
+        "packages/nax/test/preload.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/finish/finalize-failed-restore.test.ts",
+          "reason": "tests only src/finish/ops-impl.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/finish-a4.test.ts",
+          "reason": "tests only src/finish/machine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/pr-diffstat.test.ts",
+          "reason": "tests only src/finish/pr/context.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/checkpoint-wiring.test.ts",
+          "reason": "imports runFinishMachine and the finish gate and fix-step modules through the finish barrel, all deleted by this story or the next; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/config.test.ts",
+          "reason": "tests only src/finish/config.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/machine-advise.test.ts",
+          "reason": "tests only src/finish/machine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/machine-end-to-end.test.ts",
+          "reason": "tests only src/finish/machine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/machine-invariants.test.ts",
+          "reason": "tests only src/finish/machine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/machine-loops.test.ts",
+          "reason": "tests only src/finish/machine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/machine-recovery.test.ts",
+          "reason": "tests only src/finish/machine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/notify.test.ts",
+          "reason": "tests only src/finish/notify.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/ops-impl-a4.test.ts",
+          "reason": "tests only src/finish/ops-impl.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/ops-impl-finalize-stop.test.ts",
+          "reason": "tests only src/finish/ops-impl.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/ops-impl.test.ts",
+          "reason": "tests only src/finish/ops-impl.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/phase-a4.test.ts",
+          "reason": "tests only src/finish/phase.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/phase-advisor.test.ts",
+          "reason": "tests only src/finish/phase.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/phase-dispatch-ask.test.ts",
+          "reason": "tests only src/finish/phase.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/phase.test.ts",
+          "reason": "tests only src/finish/phase.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/pr-body-ledger.test.ts",
+          "reason": "tests only the finish PR body builder in src/finish/pr/body.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/pr-body.test.ts",
+          "reason": "tests only the finish PR body builder in src/finish/pr/body.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/pr-context.test.ts",
+          "reason": "tests only src/finish/pr/context.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/finish-branch-review.test.ts",
+          "reason": "tests only src/operations/finish-branch-review.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/finish-fix-interrupt-session.test.ts",
+          "reason": "tests only src/operations/finish-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/finish-fix.test.ts",
+          "reason": "tests only src/operations/finish-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/finish-spec-review.test.ts",
+          "reason": "tests only src/operations/finish-spec-review.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/execution-stage-effective-config.test.ts",
+          "reason": "the finish/phase.ts row (line 36) goes, because the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/finish-review-builder.test.ts",
+          "reason": "tests only src/prompts/builders/finish-review-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/scripts/check-bash-dispatch-ask.test.ts",
+          "reason": "the finish/phase.ts wired expectation (line 194) goes, and finishFixOp leaves the real-barrel name list (line 148), because the file and the op are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/config/inert-bash-stages.test.ts",
+          "reason": "the finishFixOp row and import go, because the op is deleted; the other rows keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/run-completed-after-end-phase.test.ts",
+          "reason": "any runFinishPhase member in its deps fixtures goes, because EndPhaseDeps no longer has it; its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-finish.test.ts",
+          "reason": "any runFinishPhase stub or spy goes, because the dep is removed; the workflow-placement assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/bash-declarations.test.ts",
+          "reason": "the finishFixOp row and import go, because the op is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/reviewer-tools.test.ts",
+          "reason": "the finishBranchReviewOp and finishSpecReviewOp rows and imports go, because the ops are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/tool-declarations.test.ts",
+          "reason": "the finishFixOp row and import go, because the op is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/end-phase.test.ts",
+          "reason": "the describes \"retained runFinish helper\" and \"finishStorySummary\" and the FinishPhaseContext and finishStorySummary imports are deleted with runFinish and finishStorySummary; any runFinishPhase member in a deps fixture goes."
+        },
+        {
+          "path": "packages/nax/test/preload.ts",
+          "reason": "the _notifyDeps import (line 26) and the Telegram send sentinel block with its comment (lines 141-152) go, because finish/notify.ts is deleted."
+        },
+        {
+          "path": "packages/nax/scripts/check-no-silent-naxconfig-cast.sh",
+          "reason": "the src/finish/config.ts comment block (lines 25-31) and the exclusion (line 58) go, because the file is deleted."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2f52d2b73ee2604323565b485053323d208fc985"
+    },
+    {
+      "id": "US-003",
+      "title": "Delete the middle layer of the finish machine",
+      "description": "**Goal** — Delete the now-unimported middle finish layer, its machine test helper and set-aside fixtures after US-002 removes their importers.\n\n**Motivation** — After B1 the post-run phases still sit in the tree and still compile, but no production path runs them.\n\n**Approach** — US-003 deletes the middle layer, which only US-002's modules imported, the finish machine test helper and the set-aside test fixture:\n\nDelete:\n\n- `packages/nax/src/finish/acceptance-guard.ts`\n- `packages/nax/src/finish/acceptance-loop.ts`\n- `packages/nax/src/finish/changed-files.ts`\n- `packages/nax/src/finish/commit-message.ts`\n- `packages/nax/src/finish/fix-step.ts`\n- `packages/nax/src/finish/gates-loop.ts`\n- `packages/nax/src/finish/gates/acceptance.ts`\n- `packages/nax/src/finish/machine-deps.ts`\n- `packages/nax/src/finish/pr/narrative.ts`\n- `packages/nax/src/finish/review-inputs.ts`\n- `packages/nax/src/finish/review-loop.ts`\n- `packages/nax/src/finish/review-round.ts`\n- `packages/nax/src/finish/review-rulings.ts`\n- `packages/nax/src/finish/route.ts`\n\nIt also drops the `./narrative` re-export from `src/finish/pr/index.ts`, the `\"src/finish/route.ts\"` entry from `scripts/check-worktree-id-ssot.ts:115`, and the re-exports from `./finish-machine` in `test/helpers/index.ts` (`:93-103`).\n\n**Scope** — In: this middle-layer deletion, associated exports, helper and fixture consumers and checker file list. Out: US-004's bottom layer including set-aside.ts, state.ts, checkpoint.ts and finish/fix/, and US-005–US-007's execution acceptance machinery. Do not confuse src/finish/acceptance-loop.ts with src/execution/lifecycle/acceptance-loop.ts, which survives until US-006. Keep the shared quality gates and their unrelated tests.\n\n**Interface** — No new externally-visible symbol. Prune `src/finish/index.ts` exports of this layer and preserve the remaining workflow/bot entry points. No runtime contract is added or replaced.\n\nTest migration: delete packages/nax/test/helpers/finish-machine.ts and test/integration/finish/set-aside-fixture.ts. Delete test/integration/finish/acceptance-guard.test.ts, fix-step-restore-guard.test.ts, set-aside-audit-dir.test.ts, set-aside-hardening.test.ts, set-aside-head-moved.test.ts and set-aside.test.ts: the set-aside integration cases depend on the helper/fixture removed here even though set-aside source survives until US-004. Delete test/unit/finish/acceptance-guard.test.ts, changed-files.test.ts, checkpoint.test.ts, commit-message.test.ts, fix-step.test.ts, review-inputs.test.ts, review-loop.test.ts, review-round.test.ts, review-rulings.test.ts and route.test.ts. The checkpoint test also depends on the helper removed here; the source remains for the next story. Remove test/helpers/index.ts exports from ./finish-machine. In test/unit/finish/gates-quality.test.ts delete only 'routeQualityGates stops when nothing ran (I1)', its routeQualityGates/FinishPhaseState imports, and the zeroedState helper at lines 23-27 whose only caller is that removed test; retain other gate assertions, including runQualityGates returning passed:false for an empty command list. Remove entries naming deleted tests from scripts/check-inline-test-mocks.ts if present.\n\nVerification: the acceptance criterion is a regression guard on the shared quality gate that the existing test already meets; preserve the runQualityGates empty-command test in test/unit/finish/gates-quality.test.ts and its passed:false assertion; only the routeQualityGates-specific test is deleted. Do not change the retained quality-gate implementation or add a new test file. From packages/nax run bun run typecheck; perform the zero-reference rg -n --fixed-strings '<stem>' sweep for every deleted source across src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, repairing comments and test imports; run bun run check:complexity:update and the lowerable file-size baseline update where required; run bun run check:all and bun run test. Every intermediate tree must remain independently compilable, with no references to a source/helper deleted by this or earlier stories.",
+      "acceptanceCriteria": [
+        "[unit] runQualityGates(\"/repo\", []) returns passed:false when no quality commands are configured, preserving the existing shared gate's refusal to report unverified work as passed after the finish route and its route-only test are deleted."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "finish"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Broad importer-depth deletion includes acceptance edit guards and shared fixtures; strict isolated testing protects the guard boundary and retained quality-gate behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/finish/index.ts",
+        "packages/nax/src/finish/pr/index.ts",
+        "packages/nax/test/helpers/index.ts",
+        "packages/nax/scripts/check-worktree-id-ssot.ts",
+        "packages/nax/test/unit/finish/gates-quality.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/helpers/finish-machine.ts",
+          "reason": "tests only src/finish/machine-deps.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/acceptance-guard.test.ts",
+          "reason": "tests only src/finish/acceptance-guard.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/fix-step-restore-guard.test.ts",
+          "reason": "tests only src/finish/fix-step.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/set-aside-audit-dir.test.ts",
+          "reason": "uses the finish-machine test helper or the set-aside fixture, which this story deletes, and tests the pipeline finish machine (its subject is deleted in US-004); the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/set-aside-fixture.ts",
+          "reason": "is the fixture of the set-aside integration tests this story deletes, and no other file imports it; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/set-aside-hardening.test.ts",
+          "reason": "uses the finish-machine test helper or the set-aside fixture, which this story deletes, and tests the pipeline finish machine (its subject is deleted in US-004); the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/set-aside-head-moved.test.ts",
+          "reason": "uses the finish-machine test helper or the set-aside fixture, which this story deletes, and tests the pipeline finish machine (its subject is deleted in US-004); the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/finish/set-aside.test.ts",
+          "reason": "uses the finish-machine test helper or the set-aside fixture, which this story deletes, and tests the pipeline finish machine (its subject is deleted in US-004); the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/acceptance-guard.test.ts",
+          "reason": "tests only src/finish/acceptance-guard.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/changed-files.test.ts",
+          "reason": "tests only src/finish/changed-files.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/checkpoint.test.ts",
+          "reason": "uses the finish-machine test helper or the set-aside fixture, which this story deletes, and tests the pipeline finish machine (its subject is deleted in US-004); the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/commit-message.test.ts",
+          "reason": "tests only src/finish/commit-message.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/fix-step.test.ts",
+          "reason": "tests only src/finish/fix-step.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/gates-acceptance.test.ts",
+          "reason": "tests only src/finish/gates/acceptance.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/review-inputs.test.ts",
+          "reason": "tests only src/finish/review-inputs.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/review-loop-rulings.test.ts",
+          "reason": "tests only src/finish/review-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/review-loop.test.ts",
+          "reason": "tests only src/finish/review-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/review-round.test.ts",
+          "reason": "tests only src/finish/review-round.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/review-rulings.test.ts",
+          "reason": "tests only src/finish/review-rulings.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/route.test.ts",
+          "reason": "tests only src/finish/route.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the re-exports from ./finish-machine (lines 93-103) go, because the helper is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/gates-quality.test.ts",
+          "reason": "the test \"routeQualityGates stops when nothing ran (I1)\" and the routeQualityGates and FinishPhaseState imports are deleted with finish/route.ts and finish/state.ts; the other gate tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0d9ac93fd44742f7615d2a345b50cf3bd52f9f85"
+    },
+    {
+      "id": "US-004",
+      "title": "Delete the bottom finish layer and trim shared finish files",
+      "description": "**Goal** — Remove the remaining pipeline-only finish implementation and dead declarations from shared finish, advisor and configuration-selector files.\n\n**Motivation** — Most of `src/finish/` is the pipeline finish machine and goes.\n\n**Approach** — US-004 deletes the bottom layer, which only US-002's and US-003's modules imported (including `finish/fix/`, whose last importer is `finish/set-aside.ts`), and trims the partly shared finish and advisor files:\n\nDelete:\n\n- `packages/nax/src/finish/a3-hints.ts`\n- `packages/nax/src/finish/acceptance-evidence.ts`\n- `packages/nax/src/finish/advise-core.ts`\n- `packages/nax/src/finish/advise-rulings.ts`\n- `packages/nax/src/finish/advise.ts`\n- `packages/nax/src/finish/audit.ts`\n- `packages/nax/src/finish/checkpoint.ts`\n- `packages/nax/src/finish/context.ts`\n- `packages/nax/src/finish/finalize-dirt.ts`\n- `packages/nax/src/finish/fix/dispositions.ts`\n- `packages/nax/src/finish/fix/handoff-note.ts`\n- `packages/nax/src/finish/fix/index.ts`\n- `packages/nax/src/finish/handoff-state.ts`\n- `packages/nax/src/finish/limit-label.ts`\n- `packages/nax/src/finish/merge-findings.ts`\n- `packages/nax/src/finish/ops.ts`\n- `packages/nax/src/finish/resolve.ts`\n- `packages/nax/src/finish/review-json/index.ts`\n- `packages/nax/src/finish/ruling-check.ts`\n- `packages/nax/src/finish/set-aside-git.ts`\n- `packages/nax/src/finish/set-aside.ts`\n- `packages/nax/src/finish/state.ts`\n- `packages/nax/src/finish/untracked-snapshot.ts`\n\n| File | Delete | Keep |\n|:---|:---|:---|\n| `src/advisor/format.ts` (and its `advisor/index.ts:21-22` re-exports) | `formatDecisionsForPrompt`, `formatRulingsForFix`, `waivedSubject` | the rest |\n| `src/advisor/ledger.ts` (and its `advisor/index.ts:32` re-export) | `findReusable` | the rest |\n| `src/config/selectors.ts` (and its `config/index.ts` re-export) | `finishConfigSelector`, `FinishConfig` | the rest |\n| `src/finish/commit.ts` | `CommitRoundInput`, `REVIEWED_PHASES`, `buildCommitRound`, `commitRoundOutcome`, `filesInCommit` | `_finishGitDeps`, `PUSH_TIMEOUT_MS`, `SyncOutcome`, `isDirty`, `headSha`, `unstageDir`, `commitFixes`, `commitAndPush` |\n| `src/finish/ledger.ts` | everything except the kept types | `LedgerState`, `LedgerEntry` |\n| `src/finish/pr-title.ts` | `resolveTitle` | the rest |\n| `src/finish/pr/escape.ts` | `BodyLimits`, `DEFAULT_LIMITS` | the rest |\n| `src/finish/safe-path.ts` | `insideRoot`, `outsideDir` | `realpathLoose`, `relativeInsideRoot` |\n| `src/finish/types.ts` | `AcceptanceGateResult`, `FinishPrBodySettings`, `FinishResolution`, `FinishReviewOutput`, `FinishTimeouts`, `FixBase`, `FixContinuation`, `HandoffNote`, `HandoffRecord`, `UntrackedEntry`, `UntrackedSnapshot` | the rest |\n\nEverything else under `src/finish/` stays: the workflow and `nax bot` reach it.\n\n**Scope** — In: exactly the bottom-layer files and declaration trims above, their dead barrel exports and associated tests. Out: acceptance setup/loop/core removal (US-005–US-007), acceptance selectors (US-007), shared PR/gate/git functionality, config schemas/defaults and legacy phase-name registries. Preserve every retained safe-path containment check and workflow/bot result.\n\n**Interface** — No new externally-visible symbol. Retain the listed shared commit helpers and `LedgerState`/`LedgerEntry` contracts; delete only the listed dead exported types/declarations and their re-exports. `realpathLoose` and `relativeInsideRoot` retain their current realpath-based behavior.\n\nTest migration: delete packages/nax/test/unit/finish/a3-hints.test.ts, acceptance-evidence.test.ts, advise-rulings.test.ts, advise.test.ts, audit.test.ts, context.test.ts, ledger.test.ts, limit-label.test.ts, merge-findings.test.ts, resolve.test.ts, review-json.test.ts, ruling-check.test.ts and state.test.ts, plus test/unit/finish/fix/dispositions.test.ts and fix/handoff-note.test.ts. In test/unit/advisor/format.test.ts delete only the formatDecisionsForPrompt and formatRulingsForFix describes, retaining all other rendering assertions. In test/unit/advisor/ledger.test.ts delete only 'findReusable returns the latest waive/supersede for the key, never a fix'. In test/unit/finish/commit.test.ts delete the filesInCommit and buildCommitRound / commitRoundOutcome describes; keep '_finishGitDeps.git argv', commitFixes and commitAndPush assertions. In test/unit/finish/pr-title.test.ts delete resolveTitle tests but keep sanitizeTitle assertions. Prune finish/index.ts and advisor/config barrels, remove unused imports caused by declaration removal, and do not accidentally delete the retained quality gate or advisor section. Remove entries naming deleted tests from scripts/check-inline-test-mocks.ts if present.\n\nVerification: the acceptance criterion is a regression guard on the retained commitFixes; preserve test/unit/finish/commit.test.ts:102-114, which already rejects on a failed git commit, and assert the existing FINISH_GIT_COMMIT_FAILED error code through the same git stub. Do not modify commitFixes behavior or add a new test file. Run the four Design Approach steps from packages/nax: bun run typecheck; sweep each deleted extensionless source stem with rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, stopping for live references and rewording stale comments; run bun run check:complexity:update and bun run check:file-sizes -- --update-baseline when lowerable; run bun run check:all and bun run test. Retained commit, title, escape, path-safety, advisor, workflow and bot assertions provide regression anchors. Do not clean up unrelated pre-B1 unreachable code.",
+      "acceptanceCriteria": [
+        "[unit] commitFixes(\"/repo\", \"fix: bad commit\") rejects with NaxError code \"FINISH_GIT_COMMIT_FAILED\" when git status reports a dirty tree, staging succeeds with staged changes, and git commit exits nonzero, preserving the existing shared commit failure behavior after the commit-round helpers are removed."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "finish",
+        "advisor"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Many shared modules and types are selectively trimmed; removing filesystem containment helpers next to retained realpath-based protections invokes strict security isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/finish/index.ts",
+        "packages/nax/src/finish/types.ts",
+        "packages/nax/src/finish/ledger.ts",
+        "packages/nax/src/finish/commit.ts",
+        "packages/nax/src/finish/safe-path.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/finish/a3-hints.test.ts",
+          "reason": "tests only src/finish/a3-hints.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/acceptance-evidence.test.ts",
+          "reason": "tests only src/finish/acceptance-evidence.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/advise-rulings.test.ts",
+          "reason": "tests only src/finish/advise-rulings.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/advise.test.ts",
+          "reason": "tests only src/finish/advise.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/audit.test.ts",
+          "reason": "tests only src/finish/audit.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/context.test.ts",
+          "reason": "tests only src/finish/context.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/fix/dispositions.test.ts",
+          "reason": "tests only src/finish/fix/dispositions.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/fix/handoff-note.test.ts",
+          "reason": "tests only src/finish/fix/handoff-note.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/ledger.test.ts",
+          "reason": "tests only the finish ledger functions in src/finish/ledger.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/limit-label.test.ts",
+          "reason": "tests only src/finish/limit-label.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/merge-findings.test.ts",
+          "reason": "tests only src/finish/merge-findings.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/resolve.test.ts",
+          "reason": "tests only src/finish/resolve.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/review-json.test.ts",
+          "reason": "tests only src/finish/review-json/index.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/ruling-check.test.ts",
+          "reason": "tests only src/finish/ruling-check.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/state.test.ts",
+          "reason": "tests only src/finish/state.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/advisor/format.test.ts",
+          "reason": "the describes \"formatDecisionsForPrompt\" and \"formatRulingsForFix\" are deleted with the functions; the rest keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/advisor/ledger.test.ts",
+          "reason": "the test \"findReusable returns the latest waive/supersede for the key, never a fix\" is deleted with the function."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/commit.test.ts",
+          "reason": "the describes \"filesInCommit\" and \"buildCommitRound / commitRoundOutcome\" are deleted with the functions; \"_finishGitDeps.git argv\", \"commitFixes\" and \"commitAndPush\" keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/pr-title.test.ts",
+          "reason": "the describe \"resolveTitle\" is deleted with the function; \"sanitizeTitle\" keeps its assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "82aa7a100f30a2d0b3b64ee092addcdc99cbe186"
+    },
+    {
+      "id": "US-005",
+      "title": "Cut run-loop acceptance blocks and delete acceptance stages",
+      "description": "**Goal** — Remove acceptance setup and post-run stage execution from executeUnified and delete their pipeline-only stages and helper functions.\n\n**Motivation** — `applyWorkflowMode` (`config/workflow-mode.ts:8`) sets `acceptance.enabled` to `false` on every loaded config.\n\n**Approach** — US-005 cuts the run loop's acceptance blocks and deletes the acceptance stages:\n\n| Site | After |\n|:---|:---|\n| the pre-run acceptance block (`execution/unified-executor.ts:213-235`) | removed, with `preRunCtx` |\n| the post-run acceptance block (`unified-executor.ts:302-329`) | removed |\n| `unified-executor.ts` imports | `runPreRunPipeline` (`:29`), `logPipelineOutcome` and `runPipeline` (`:10`), `PipelineContext` (`:16`) go |\n| `pipeline/stages/index.ts` | the imports of `acceptanceStage` and `acceptanceSetupStage` (`:9-10`), `postRunPipeline` and `preRunPipeline` (`:116-126`) and the re-exports of the acceptance stages (`:128-129`) go |\n| `src/pipeline/index.ts:30` | the `_acceptanceSetupDeps` / `acceptanceSetupStage` re-export goes |\n| `isPipelineFailure`, `logPipelineOutcome` (`pipeline/runner.ts`) | deleted; only the removed blocks and `execution/pre-run.ts` called them |\n| `scripts/check-bash-dispatch-ask.ts:106-111` | the allowlist entry for the acceptance-setup stage goes; the check fails on a stale entry |\n\nDelete:\n\n- `packages/nax/src/execution/pre-run.ts`\n- `packages/nax/src/pipeline/stages/acceptance-coverage.ts`\n- `packages/nax/src/pipeline/stages/acceptance-red-gate.ts`\n- `packages/nax/src/pipeline/stages/acceptance-refine-criteria.ts`\n- `packages/nax/src/pipeline/stages/acceptance-setup.ts`\n- `packages/nax/src/pipeline/stages/acceptance.ts`\n\n**Scope** — In: the run-loop pre/post acceptance cut sites, obsolete stages/runner helpers and their imports, exports, checker references and tests. Out: completion acceptance loop/operations (US-006), acceptance core/CLI/result removal (US-007), the story-loop implementation/default and workflow pipelines, generic runPipeline, generators/prompts retained for B2b, and the acceptance/config/name registries deferred to B3. Do not use applyWorkflowMode or a dry run to make the enabled-config tests pass; the acceptance blocks must be gone even for hand-built acceptance.enabled:true. Keep workflow preflight, existing exit-reason selection, deferred review, subscriber lifetimes and heartbeat cleanup behavior.\n\n**Interface** — Keep the existing `executeUnified` entry point and its result contract; no new externally-visible symbol. The spec locates `executeUnified(ctx, prd)` at execution/unified-executor.ts:94; do not rename/restructure the story loop. Delete only `isPipelineFailure`, `logPipelineOutcome` from pipeline/runner.ts, retaining `runPipeline`.\n\nTest migration: delete packages/nax/test/integration/acceptance/red-green-cycle.test.ts, integration/pipeline/pipeline-acceptance.test.ts, unit/execution/pre-run-outcome-logging.test.ts and these unit/pipeline/stages tests: acceptance-coverage.test.ts, acceptance-missing-target.test.ts, acceptance-red-gate.test.ts, acceptance-refine-criteria-diagnostics.test.ts, acceptance-refine-criteria.test.ts, acceptance-setup-coverage.test.ts, acceptance-setup-criteria.test.ts, acceptance-setup-dispatch-failure.test.ts, acceptance-setup-fingerprint.test.ts, acceptance-setup-gate.test.ts and acceptance-setup-refinement-fallback.test.ts. In unit/pipeline/execution-stage-effective-config.test.ts remove the acceptance-setup.ts path row. In integration/acceptance/acceptance-command.test.ts delete only 'US-001: the post-run acceptance stage spawns one shell string' and 'US-002: the post-run stage names a command that could not run (exit 126/127)' describes and the removed stage/dep imports; preserve the 'acceptance' and 'US-001: the acceptance command reaches the real shell' describes. In unit/execution/dry-run.test.ts delete only 'completes without dispatching acceptance generation (refine/generate ops)', which dynamically imports the removed stage; keep no-artifacts and untouched-PRD assertions. Remove the acceptance-stage require test from unit/pipeline/effective-config.test.ts, the AC-12 deleted acceptance-setup-gate test entry from integration/confined/unit-hygiene.test.ts, deleted test entries from scripts/check-inline-test-mocks.ts and the acceptance-setup allowlist from scripts/check-bash-dispatch-ask.ts.\n\nAdd packages/nax/test/unit/execution/unified-executor-no-acceptance.test.ts for the required enabled-config runtime seams. Use existing @test/helpers factories, stub _unifiedExecutorDeps.runWorkflowPreflight to resolve, and stub runIteration to mark a single pending story passed for the completed branch or return unchanged PRD/prdDirty:false for the max-iterations branch. Keep dryRun false, capture the logger, restore _deps and stop heartbeat/subscribers in cleanup. Provide a recording ctx.eventEmitter and assert that no stage:enter call names acceptance-setup or acceptance, in addition to the exit reason and logger assertions. This uses pipeline/runner.ts:132's existing event seam and does not import, mock or recreate a removed stage. Assert behavior at executeUnified, not source-string absence or removed stage exports.\n\nVerification: the four Design Approach steps plus this story's ACs: bun run typecheck; fixed-string path sweep for each deleted extensionless src-relative stem across src bin test scripts ../repo-tooling/scripts ../repo-tooling/test (zero remaining references, including comments and require); bun run check:complexity:update and lowerable file-size baseline update; bun run check:all and bun run test, all from packages/nax.",
+      "acceptanceCriteria": [
+        "[unit] executeUnified returns exit reason \"completed\" when dryRun is false, _unifiedExecutorDeps.runWorkflowPreflight resolves, a hand-built config has acceptance.enabled:true, and a PRD has one pending story that the stubbed _unifiedExecutorDeps.runIteration marks passed.",
+        "[unit] executeUnified never logs \"Running pre-run pipeline (acceptance test setup)\" when dryRun is false, _unifiedExecutorDeps.runWorkflowPreflight resolves, a hand-built config has acceptance.enabled:true, and the stubbed _unifiedExecutorDeps.runIteration marks the PRD's single pending story passed.",
+        "[unit] executeUnified returns exit reason \"max-iterations\" when dryRun is false, _unifiedExecutorDeps.runWorkflowPreflight resolves, a hand-built config has acceptance.enabled:true, and the stubbed _unifiedExecutorDeps.runIteration leaves the PRD's single pending story pending on every iteration by returning the unchanged PRD with prdDirty:false.",
+        "[unit] executeUnified never logs \"Running post-run pipeline (acceptance tests)\" when dryRun is false, _unifiedExecutorDeps.runWorkflowPreflight resolves, a hand-built config has acceptance.enabled:true, and the stubbed _unifiedExecutorDeps.runIteration leaves the PRD's single pending story pending on every iteration by returning the unchanged PRD with prdDirty:false.",
+        "[unit] executeUnified emits no stage:enter event naming \"acceptance-setup\" or \"acceptance\" through ctx.eventEmitter when dryRun is false, _unifiedExecutorDeps.runWorkflowPreflight resolves, a hand-built config has acceptance.enabled:true, and the stubbed runIteration either marks the single pending story passed or returns the unchanged PRD with prdDirty:false until the loop ends with max-iterations."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "acceptance",
+        "execution"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module stage removal affects loop branches, lazy barrels and shared fixtures; non-dry-run enabled-config tests must prove both completed and exhausted-loop behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/unified-executor.ts",
+        "packages/nax/src/pipeline/stages/index.ts",
+        "packages/nax/src/pipeline/index.ts",
+        "packages/nax/src/pipeline/runner.ts",
+        "packages/nax/test/unit/execution/dry-run.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/unified-executor-no-acceptance.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/acceptance/red-green-cycle.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/pipeline-acceptance.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pre-run-outcome-logging.test.ts",
+          "reason": "tests only src/execution/pre-run.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/execution-stage-effective-config.test.ts",
+          "reason": "the acceptance-setup.ts row (lines 20-23) goes, because the file is deleted and the test reads it by path."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-coverage.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-coverage.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-missing-target.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-red-gate.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-red-gate.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-refine-criteria-diagnostics.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-refine-criteria.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-refine-criteria.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-refine-criteria.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-setup-coverage.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-setup-criteria.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-setup-dispatch-failure.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-setup-fingerprint.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-setup-gate.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-setup-refinement-fallback.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance-setup-regeneration.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance-setup.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/acceptance.test.ts",
+          "reason": "tests only src/pipeline/stages/acceptance.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/acceptance/acceptance-command.test.ts",
+          "reason": "the describes \"US-001: the post-run acceptance stage spawns one shell string\" and \"US-002: the post-run stage names a command that could not run (exit 126/127)\" drive the deleted acceptanceStage and are deleted, with the _acceptanceSetupDeps and acceptanceStage imports; the \"acceptance\" and \"US-001: the acceptance command reaches the real shell\" describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/dry-run.test.ts",
+          "reason": "the test \"completes without dispatching acceptance generation (refine/generate ops)\" spies on the deleted acceptance-setup stage through a dynamic import (line 179) and is deleted; \"writes no acceptance artifacts (skeleton, refined, meta)\" and \"leaves the PRD on disk untouched\" keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/effective-config.test.ts",
+          "reason": "the test in \"stage config usage\" that requires the acceptance stage module (line 149) is deleted with the stage."
+        },
+        {
+          "path": "packages/nax/test/integration/confined/unit-hygiene.test.ts",
+          "reason": "the AC-12 entry naming the acceptance-setup-gate test (lines 90-94) goes, because that test file is deleted."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "entries naming a test file this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/check-bash-dispatch-ask.ts",
+          "reason": "the allowlist entry for the acceptance-setup stage (lines 106-111) goes; the check fails on a stale entry."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8cfbe5d4ced3303b7c27d2e04c616645358200ba"
+    },
+    {
+      "id": "US-006",
+      "title": "Cut the completion acceptance loop and delete its operations",
+      "description": "**Goal** — Remove completion-time acceptance execution, phase status handling and its loop/fix/operation implementation while retaining all ordinary completion and workflow responsibilities.\n\n**Motivation** — `applyWorkflowMode` (`config/workflow-mode.ts:8`) sets `acceptance.enabled` to `false` on every loaded config.\n\n**Approach** — US-006 cuts the completion phase's acceptance loop and deletes the loop, the acceptance operations, the acceptance hardening pass and the acceptance finding adapter:\n\n| Site | After |\n|:---|:---|\n| the post-run status block in `runCompletionPhase` (`runner-completion.ts:169-349`) | removed: no `getPostRunStatus` read, no acceptance loop. Until US-007, `runCompletionPhase` returns `acceptancePassed: true` |\n| `acceptanceEnabled` in the \"Completion phase started\" debug log (`runner-completion.ts:165`) | removed |\n| `_runnerCompletionDeps.runAcceptanceLoop` (`runner-completion.ts:122`, `:132-135`), the `groupStoriesByPackage` import (`:10`), the `AcceptanceLoopContext` / `AcceptanceLoopResult` import (`:34`), the `errorMessage` import (`:9`), the `path` import and the `AcceptancePhaseStatus` import (`:38`), used only inside the removed block | removed |\n| barrels `operations/index.ts`, `execution/lifecycle/index.ts`, `findings/adapters/index.ts`, `findings/index.ts` (`:16-17`), `acceptance/index.ts` (the `hardening` re-exports) | drop the re-exports of the deleted symbols |\n| `scripts/check-bash-dispatch-ask.ts:101-105`, `:112` | the allowlist entries for `acceptance/hardening.ts` and the acceptance-fix lifecycle module go |\n\n`_runnerCompletionDeps.loadConfigForPackage` loses its only caller with the removed block and stays as an unused member; removing it would touch five more test files (Out of Scope).\n\nDelete:\n\n- `packages/nax/src/acceptance/hardening.ts`\n- `packages/nax/src/execution/lifecycle/acceptance-fix-cycle.ts`\n- `packages/nax/src/execution/lifecycle/acceptance-fix-scope.ts`\n- `packages/nax/src/execution/lifecycle/acceptance-fix.ts`\n- `packages/nax/src/execution/lifecycle/acceptance-helpers.ts`\n- `packages/nax/src/execution/lifecycle/acceptance-loop.ts`\n- `packages/nax/src/execution/lifecycle/acceptance-summary.ts`\n- `packages/nax/src/findings/adapters/acceptance-diagnose.ts`\n- `packages/nax/src/operations/acceptance-diagnose.ts`\n- `packages/nax/src/operations/acceptance-fix.ts`\n- `packages/nax/src/operations/acceptance-generate.ts`\n- `packages/nax/src/operations/acceptance-refine.ts`\n- `packages/nax/src/operations/acceptance-repair.ts`\n\n**Scope** — In: the entire post-run status/acceptance block, its debug-log field/imports/dependency, the listed loop/operations and their test/checker consumers. Out: acceptance core, accept CLI, features resolve acceptance block and acceptancePassed removal (US-007), acceptance generator dependencies needed by B2b, config/name registry cleanup and removal of _runnerCompletionDeps.loadConfigForPackage (B3). Do not replace the acceptance loop with a no-op compatibility dependency: no acceptance member remains to assign in tests. Keep hooks, metrics, deferred-review consumption, workflow execution, reporting, reconciled spend and runtime close unchanged.\n\n**Interface** — `_runnerCompletionDeps` (`runner-completion.ts:121`). Target after US-006: `{ handleRunCompletion; loadConfigForPackage; runWorkflowFeature; now }`. `runCompletionPhase(options)` keeps its current entry point and returns `acceptancePassed: true` until US-007 deletes that field; do not prematurely change runner success or completion fixtures.\n\nTest migration: delete packages/nax/test/integration/acceptance/agent-file-recovery.test.ts; unit/acceptance/hardening-drain.test.ts, hardening-trust.test.ts and hardening.test.ts; unit/execution/lifecycle/acceptance-fix-scope.test.ts, acceptance-fix.test.ts, acceptance-loop-cycle.test.ts, acceptance-loop-failed-criteria.test.ts, acceptance-loop-regen-stub.test.ts, acceptance-loop-routing.test.ts, acceptance-loop-skipped-packages.test.ts and acceptance-loop-stale-verdicts.test.ts; unit/execution/runner-completion-events.test.ts; unit/findings/adapters/acceptance-diagnose.test.ts; and unit/operations/acceptance-diagnose.test.ts, acceptance-fix.test.ts, acceptance-generate.test.ts, acceptance-refine-wrong-shape.test.ts, acceptance-refine.test.ts and acceptance-repair.test.ts.\n\nIn unit/execution/runner-completion-postrun.test.ts delete all acceptance-loop describes from 'runCompletionPhase - AC1: sets acceptance running before runAcceptanceLoop()' through 'runCompletionPhase - monorepo: acceptanceTestPaths passed to runAcceptanceLoop'; retain 'runCompletionPhase - forwards parallel mode as isSequential'. In runner-completion-skip.test.ts remove AC1–AC4 and 'skip only applies when acceptance/regression config is active' describes, plus acceptance type imports/stubs; retain cost-limit, dry run and '.nax index flag sweep (#2490)' assertions. In runner-completion-finish.test.ts rename 'the interaction chain reaches acceptance, completion and workflow' to 'the interaction chain reaches completion and workflow', remove only acceptance expectation/type/stub and preserve the remaining chain assertions.\n\nRemove the acceptance-fix-scope.ts expectation and acceptanceFixSourceOp/acceptanceFixTestOp barrel-list names from unit/scripts/check-bash-dispatch-ask.test.ts. Remove acceptance-fix.ts and acceptance-fix-scope.ts rows and the hardening config-use test from unit/pipeline/execution-stage-effective-config.test.ts. Remove AcceptanceDiagnoseOutput fixture/import from test/helpers/review-outputs.ts. Remove acceptanceFixSourceOp/acceptanceFixTestOp rows/imports from unit/config/inert-bash-stages.test.ts, unit/operations/bash-declarations.test.ts and tool-declarations.test.ts. Remove 'AcceptanceLoopContext extends DispatchContext' and its import from unit/runtime/dispatch-context.test.ts. Remove deleted test entries from scripts/check-inline-test-mocks.ts, the two stale allowlist entries from scripts/check-bash-dispatch-ask.ts, and refresh the file-size baseline so the deleted acceptance-loop-cycle test no longer has a size entry. Keep loadConfigForPackage test assignments.\n\nAdd packages/nax/test/unit/execution/runner-completion-no-acceptance.test.ts with existing helper factories and hermetic completion/workflow/git deps. Set dry run false, use a hand-built config with acceptance.enabled:true and a complete PRD, record statusWriter.setPostRunPhase calls, and never assign an acceptance _runnerCompletionDeps member. Observe pipelineEventBus and assert that no postrun:phase:started event names acceptance, in addition to the required setPostRunPhase assertion. For the negative path, provide a recording getPostRunStatus stub that throws if invoked and assert its call count remains zero; this pins removal of the legacy status read without assigning any removed acceptance dependency. Assert through runCompletionPhase, keep all other completion/workflow dependencies hermetic, and restore event listeners and live dependencies.\n\nVerification: the four Design Approach steps plus this story's ACs: bun run typecheck; zero-reference rg -n --fixed-strings '<stem>' sweep per source deletion across src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, repairing require/import/comment leftovers; bun run check:complexity:update and bun run check:file-sizes -- --update-baseline when lowerable (including the acceptance-loop-cycle test); bun run check:all and bun run test, from packages/nax.",
+      "acceptanceCriteria": [
+        "[unit] runCompletionPhase never calls statusWriter.setPostRunPhase with \"acceptance\" when dry run is false, a hand-built config has acceptance.enabled:true, the PRD is complete, statusWriter records setPostRunPhase calls, and no _runnerCompletionDeps acceptance member is assigned.",
+        "[unit] runCompletionPhase emits no postrun:phase:started event whose phase is \"acceptance\" when dry run is false, a hand-built config has acceptance.enabled:true and the PRD is complete, proving the obsolete completion acceptance phase does not start.",
+        "[unit] runCompletionPhase makes zero calls to statusWriter.getPostRunStatus when dry run is false, a hand-built config has acceptance.enabled:true, the PRD is complete, and getPostRunStatus is a recording stub that would throw Error(\"obsolete post-run status read\") if invoked, preserving completion despite an unusable legacy acceptance-status reader."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "acceptance",
+        "execution"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Removes completion status/event orchestration and many operation consumers while preserving live workflow, cost and cleanup responsibilities and an intentionally unused dependency.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/src/execution/lifecycle/index.ts",
+        "packages/nax/src/acceptance/index.ts",
+        "packages/nax/scripts/check-bash-dispatch-ask.ts",
+        "packages/nax/test/unit/execution/runner-completion-total.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/runner-completion-no-acceptance.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/acceptance/agent-file-recovery.test.ts",
+          "reason": "tests only src/operations/acceptance-generate.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/hardening-drain.test.ts",
+          "reason": "tests only src/acceptance/hardening.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/hardening-trust.test.ts",
+          "reason": "tests only src/acceptance/hardening.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/hardening.test.ts",
+          "reason": "tests only src/acceptance/hardening.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-fix-scope.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-fix-scope.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-fix.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-failed-criteria.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-regen-stub.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-routing.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-stale-verdicts.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop-summary.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/acceptance-loop.test.ts",
+          "reason": "tests only src/execution/lifecycle/acceptance-loop.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-events.test.ts",
+          "reason": "tests only the post-run acceptance loop in runCompletionPhase, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/adapters/acceptance-diagnose.test.ts",
+          "reason": "tests only src/findings/adapters/acceptance-diagnose.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/acceptance-diagnose.test.ts",
+          "reason": "tests only src/operations/acceptance-diagnose.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/acceptance-fix.test.ts",
+          "reason": "tests only src/operations/acceptance-fix.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/acceptance-generate.test.ts",
+          "reason": "tests only src/operations/acceptance-generate.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/acceptance-refine-wrong-shape.test.ts",
+          "reason": "tests only src/operations/acceptance-refine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/acceptance-refine.test.ts",
+          "reason": "tests only src/operations/acceptance-refine.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/acceptance-repair.test.ts",
+          "reason": "tests only src/operations/acceptance-repair.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/scripts/check-bash-dispatch-ask.test.ts",
+          "reason": "the acceptance-fix-scope.ts wired expectation (line 195) goes, and acceptanceFixSourceOp and acceptanceFixTestOp leave the real-barrel name list (lines 149-150), because the file and the ops are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/execution-stage-effective-config.test.ts",
+          "reason": "the acceptance-fix.ts and acceptance-fix-scope.ts rows (lines 24-35) and the test \"hardening.ts reuses the package config for both CallContext literals\" (lines 51-54) go, because those files are deleted and the test reads them by path."
+        },
+        {
+          "path": "packages/nax/test/helpers/review-outputs.ts",
+          "reason": "the AcceptanceDiagnoseOutput fixture and import go, because the op is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/config/inert-bash-stages.test.ts",
+          "reason": "the acceptanceFixSourceOp and acceptanceFixTestOp rows and imports go, because the ops are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-postrun.test.ts",
+          "reason": "every describe from \"runCompletionPhase - AC1: sets acceptance running before runAcceptanceLoop()\" to \"runCompletionPhase - monorepo: acceptanceTestPaths passed to runAcceptanceLoop\" drives the deleted acceptance loop and is deleted; \"runCompletionPhase - forwards parallel mode as isSequential\" keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-skip.test.ts",
+          "reason": "the describes \"AC1\" to \"AC4\" and \"skip only applies when acceptance/regression config is active\" drive the deleted post-run status block and are deleted; \"cost-limit exitReason surfaces distinctly\", \"dry run\" and \".nax index flag sweep (#2490)\" keep their assertions, and the AcceptanceLoopResult import and runAcceptanceLoop stubs go."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-finish.test.ts",
+          "reason": "the test \"the interaction chain reaches acceptance, completion and workflow\" drops its acceptance-loop expectation and is renamed \"the interaction chain reaches completion and workflow\"; the AcceptanceLoopContext import and runAcceptanceLoop stub go."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/bash-declarations.test.ts",
+          "reason": "the acceptanceFixSourceOp and acceptanceFixTestOp rows and imports go, because the ops are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/tool-declarations.test.ts",
+          "reason": "the acceptanceFixSourceOp and acceptanceFixTestOp rows and imports go, because the ops are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/dispatch-context.test.ts",
+          "reason": "the test \"AcceptanceLoopContext extends DispatchContext\" and its import are deleted with the type."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "entries naming a test file this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/check-bash-dispatch-ask.ts",
+          "reason": "the allowlist entries for acceptance/hardening.ts (lines 101-105) and the acceptance-fix lifecycle module (line 112) go; the check fails on a stale entry."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "the acceptance-loop-cycle test entry goes, through bun run check:file-sizes -- --update-baseline."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1e5ebcf457ae4a1f8abd84857c335ed9bed1dbc0"
+    },
+    {
+      "id": "US-007",
+      "title": "Delete acceptance core, accept implementation and obsolete result fields",
+      "description": "**Goal** — Finish the acceptance deletion by removing unused core modules and result fields, dropping the features resolve acceptance block, and retaining nax accept only as a fail-fast removal message.\n\n**Motivation** — `nax accept` overrides failed acceptance criteria that a workflow run never produces.\n\n**Approach** — US-007 deletes the acceptance modules nothing still imports, `nax accept` and the resolve block, and removes `acceptancePassed`:\n\n| Site | After |\n|:---|:---|\n| `ResolveResult.acceptance` (`cli/features-resolve.ts:43-44`), the `acceptance:` properties (`:267`, `:323`), the import (`:6`) | removed |\n| `RunnerCompletionResult.acceptancePassed` (`runner-completion.ts:103-106`) and its return | removed |\n| the run result in `run` (`execution/runner.ts:384`, `:395`) | `success: isComplete(prd) && !pluginGateFailed && workflowPassed !== false` |\n| `src/cli/index.ts` | the `accept` re-export (`:5`) and the `features-acceptance` re-exports (`:106-112`) go |\n| `src/test-runners/index.ts:13-15`, `:17-18` | the `ac-coverage`, `ac-parser` and `compile-crash` re-exports go; `createTestFileClassifier` (`:16`) stays |\n| `src/acceptance/index.ts`, `prompts/index.ts`, `config/index.ts` | drop the re-exports of the deleted symbols |\n| `scripts/check-inline-test-mocks.ts` | entries naming a deleted test file go |\n| `../repo-tooling/scripts/check-package-frame-derivation.ts:71-74` | the `src/cli/features-acceptance.ts` allowance goes |\n\n`nax accept` stays declared in `bin/nax.ts` (`:1337-1355`) so a user gets the removal message instead of commander's unknown-command error. Its three options become plain `.option(...)` calls (not `requiredOption`), its description becomes `Removed: workflow mode does not run acceptance tests`, and its action prints, in red on stderr, `nax accept was removed: workflow mode does not run acceptance tests`, then exits 1. It reads no config and no PRD. The `acceptCommand` import (`bin/nax.ts:45`) goes.\n\nDelete:\n\n- `packages/nax/src/acceptance/content-loader.ts`\n- `packages/nax/src/acceptance/coverage.ts`\n- `packages/nax/src/acceptance/fix-diagnosis.ts`\n- `packages/nax/src/acceptance/import-resolution.ts`\n- `packages/nax/src/acceptance/override-keys.ts`\n- `packages/nax/src/acceptance/refinement.ts`\n- `packages/nax/src/cli/accept.ts`\n- `packages/nax/src/cli/features-acceptance.ts`\n- `packages/nax/src/test-runners/ac-coverage.ts`\n- `packages/nax/src/test-runners/ac-parser.ts`\n- `packages/nax/src/test-runners/compile-crash.ts`\n- `packages/nax/src/utils/drain-within.ts`\n- `packages/nax/src/utils/log-test-output.ts`\n\nTrim in US-007 (delete these declarations, keep the rest of the file): `acceptanceConfigSelector`, `acceptanceFixConfigSelector`, `acceptanceGenConfigSelector`, `AcceptanceConfig`, `AcceptanceFixConfig`, `AcceptanceGenConfig` in `src/config/selectors.ts`; `acFailureToFinding`, `acSentinelToFinding`, `extractExcerpt` in `src/findings/adapters/test-runner.ts` (keeps `executionFailureToFinding`, `tailLines`), with their re-exports in `findings/adapters/index.ts:8` and `findings/index.ts:18-19`.\n\nThese acceptance files stay for wave B2b, because the pipeline story loop still reaches `acceptance/generator.ts` and `acceptance/execution-description.ts`, and they import the rest: `acceptance/generator.ts`, `execution-description.ts`, `generator-helpers.ts`, `heuristics.ts`, `failed-criteria.ts`, `test-path.ts`, `types.ts`, `acceptance/index.ts`, `prd/acceptance-scope.ts`, `prompts/builders/acceptance-builder.ts`, `prompts/builders/acceptance-builder-helpers.ts` and `prompts/sections/acceptance.ts`.\n\n**Scope** — In: the listed dead acceptance core/utilities, dead exports/selectors, result-shape changes, CLI removal action, resolver consumer tests and the repo-tooling allowance/test. Out: the story-loop acceptance files listed above (B2b), prompt/optimizer/mutation cleanup (B2c), config keys/defaults/name registries and the unused loadConfigForPackage member (B3), documentation (B4) and unrelated unreachable code. Workdir remains packages/nax as the binding structure requires, with the two explicitly enumerated packages/repo-tooling edits included in scope. Preserve testPatterns/profile/spec discovery semantics, createTestFileClassifier and generic executionFailureToFinding behavior.\n\n**Interface** — `RunnerCompletionResult` (`runner-completion.ts:100`). Target after US-007: the baseline fields minus `acceptancePassed`. `ResolveResult` (`cli/features-resolve.ts:39`). Target: the baseline fields minus `acceptance`. Keep `resolveFeatureSpec(name, workdir, opts)` and `runCompletionPhase(options)` as entry points. No new externally-visible symbol. The binary action and ResolveResult shape are driven through the nax binary and resolveFeatureSpec, the outermost entry points.\n\nFailure handling contract: `nax accept`, with or without options, writes the exact red stderr removal message, exits 1, and reads nothing from config or PRD. `nax features resolve <name>` on a feature with a spec retains status, featureName, specSource, testPatterns and message without an acceptance key. A hand-built acceptance.enabled:true cannot restore the removed acceptance phases (US-005/US-006). Own-key absence is required for acceptance and acceptancePassed; setting either property to undefined is not equivalent.\n\nTest migration: delete packages/nax/test/unit/acceptance/acceptance.test.ts, content-loader.test.ts, coverage.test.ts, fix-diagnosis.test.ts, import-resolution.test.ts, override-keys.test.ts, refinement.test.ts and stub-detection-languages.test.ts; unit/cli/accept.test.ts and features-acceptance.test.ts; unit/findings/adapters/test-runner.test.ts (it covers only removed AC converters); unit/test-runners/ac-coverage.test.ts, ac-parser-edges.test.ts and compile-crash.test.ts; unit/utils/drain-within.test.ts. Remove their entries from scripts/check-inline-test-mocks.ts. Retain generic failure conversion code even though that acceptance-only adapter test file is deleted.\n\nIn unit/cli/features-resolve.test.ts and features-resolve-profile.test.ts remove the _featuresAcceptanceDeps wrappers and acceptance-block assertions; assert no own acceptance key on every ok result while retaining spec, profile and ambiguity/missing-case assertions. In integration/cli/cli-features-resolve-profile.test.ts remove only disabled-acceptance expectations; keep profile checks. In unit/execution/runner-run-id.test.ts, runner-execution-dispatch.test.ts and runner-total.test.ts remove acceptancePassed from stubbed completion results, retaining their assertions. In runner-completion-total.test.ts remove only the result.acceptancePassed assertion and add the complete-PRD own-key absence AC there or in US-006's existing no-acceptance test file. Do not list an upstream-created test as a new file here. Remove the features-acceptance exemption case from packages/repo-tooling/test/unit/scripts/check-package-frame-derivation.test.ts with its allowance in packages/repo-tooling/scripts/check-package-frame-derivation.ts.\n\nCreate packages/nax/test/integration/cli/cli-accept-removed.test.ts, mirroring the concurrent Bun.spawn drain pattern of cli-run-max-iterations.test.ts. Resolve bin/nax.ts absolutely before setting an empty temporary cwd. Test both accept -f demo --override AC-1 -r why and bare accept. The bare form must reach the removal action, not commander required-option validation or config initialization. Use existing temporary-directory helpers and clean up children/directories. Do not add a production helper, dependency or new CLI hook for this test, and. Update existing resolver tests to use a normal spec fixture and recognized repo config without acceptance module imports. Keep the mandated enabled-config completion fixture from US-006 and assert the removed own key on a complete PRD.\n\nVerification: run from packages/nax the four Design Approach steps plus all listed CLI/unit ACs: bun run typecheck; per-source extensionless fixed-string path sweep across src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, including dynamic imports, require and stale comments; bun run check:complexity:update and the lowerable file-size baseline update when needed; bun run check:all and bun run test. Also run the targeted repo-tooling script test from its package because US-007 changes that package's gate exemption. Do not refresh test-escape-hatch baselines or remove configuration keys as incidental cleanup.",
+      "acceptanceCriteria": [
+        "[cli] Spawning bun <absolute path>/bin/nax.ts accept -f demo --override AC-1 -r why with an empty temporary directory as cwd exits with code 1.",
+        "[cli] Spawning bun <absolute path>/bin/nax.ts accept -f demo --override AC-1 -r why with an empty temporary directory as cwd writes \"nax accept was removed: workflow mode does not run acceptance tests\" to stderr.",
+        "[cli] Spawning bun <absolute path>/bin/nax.ts accept with no options and an empty temporary directory as cwd exits with code 1.",
+        "[cli] Spawning bun <absolute path>/bin/nax.ts accept with no options and an empty temporary directory as cwd writes \"nax accept was removed: workflow mode does not run acceptance tests\" to stderr.",
+        "[cli] Spawning bun <absolute path>/bin/nax.ts accept with no options and an empty temporary directory as cwd writes no \"required option\" error.",
+        "[unit] resolveFeatureSpec(\"demo\", workdir, {}) returns status:\"ok\" on a recognized repo whose .nax/features/demo/spec.md exists with non-empty content.",
+        "[unit] resolveFeatureSpec(\"demo\", workdir, {}) returns featureName:\"demo\" on a recognized repo whose .nax/features/demo/spec.md exists with non-empty content.",
+        "[unit] resolveFeatureSpec(\"demo\", workdir, {}) on a repo whose .nax/features/demo/spec.md exists returns specSource equal to { kind: \"markdown\", path: \".nax/features/demo/spec.md\" }.",
+        "[unit] resolveFeatureSpec(\"demo\", workdir, {}) returns a testPatterns object on a recognized repo whose .nax/features/demo/spec.md exists with non-empty content.",
+        "[unit] resolveFeatureSpec(\"demo\", workdir, {}) returns a message starting with \"resolved spec: \" on a recognized repo whose .nax/features/demo/spec.md exists with non-empty content.",
+        "[unit] resolveFeatureSpec(\"demo\", workdir, {}) returns no own \"acceptance\" key on a recognized repo whose .nax/features/demo/spec.md exists with non-empty content.",
+        "[unit] resolveFeatureSpec(undefined, workdir, {}) returns status:\"ok\" on a recognized repo with exactly one feature, demo, whose non-empty spec exists.",
+        "[unit] resolveFeatureSpec(undefined, workdir, {}) returns featureName:\"demo\" on a recognized repo with exactly one feature, demo, whose non-empty spec exists.",
+        "[unit] resolveFeatureSpec(undefined, workdir, {}) returns no own \"acceptance\" key on a recognized repo with exactly one feature, demo, whose non-empty spec exists.",
+        "[unit] runCompletionPhase returns a result with no own \"acceptancePassed\" key when the PRD is complete."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "acceptance",
+        "cli",
+        "repo-tooling"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinates visible CLI/result contract removal with core deletion, profile-preserving resolver changes, runtime fixture migration and a shared tooling exemption across packages.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/features-resolve.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/src/execution/runner.ts",
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/test/integration/cli/cli-run-max-iterations.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/cli/cli-accept-removed.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/acceptance/acceptance.test.ts",
+          "reason": "tests only (imports only dead), which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/content-loader.test.ts",
+          "reason": "tests only src/acceptance/content-loader.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/coverage.test.ts",
+          "reason": "tests only src/acceptance/coverage.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/fix-diagnosis.test.ts",
+          "reason": "tests only src/acceptance/fix-diagnosis.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/import-resolution.test.ts",
+          "reason": "tests only src/acceptance/import-resolution.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/override-keys.test.ts",
+          "reason": "tests only src/acceptance/override-keys.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/refinement.test.ts",
+          "reason": "tests only src/acceptance/refinement.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/stub-detection-languages.test.ts",
+          "reason": "tests only (imports only dead), which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/accept.test.ts",
+          "reason": "tests only src/cli/accept.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/features-acceptance.test.ts",
+          "reason": "tests only src/cli/features-acceptance.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/adapters/test-runner.test.ts",
+          "reason": "tests only acFailureToFinding and acSentinelToFinding in src/findings/adapters/test-runner.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/test-runners/ac-coverage.test.ts",
+          "reason": "tests only src/test-runners/ac-coverage.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/test-runners/ac-parser-edges.test.ts",
+          "reason": "tests only src/test-runners/ac-parser.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/test-runners/compile-crash.test.ts",
+          "reason": "tests only src/test-runners/compile-crash.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/drain-within.test.ts",
+          "reason": "tests only src/utils/drain-within.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/features-resolve.test.ts",
+          "reason": "assertions on the acceptance block and the _featuresAcceptanceDeps wrapper go, because the block is removed; each ok result asserts no acceptance key instead."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/features-resolve-profile.test.ts",
+          "reason": "assertions on the acceptance block and the _featuresAcceptanceDeps wrapper go; the profile-resolution assertions stay."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-features-resolve-profile.test.ts",
+          "reason": "assertions on the acceptance block (the disabled status) go; the profile-resolution assertions stay."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "entries naming a test file this story deletes go."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-run-id.test.ts",
+          "reason": "the acceptancePassed fields in its stubbed completion results go, because RunnerCompletionResult no longer has the field; its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-execution-dispatch.test.ts",
+          "reason": "the acceptancePassed field in its stubbed completion result (line 129) goes, because RunnerCompletionResult no longer has the field."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-total.test.ts",
+          "reason": "the acceptancePassed fields in its stubbed completion results go, because RunnerCompletionResult no longer has the field; its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-total.test.ts",
+          "reason": "the assertion on result.acceptancePassed (line 190) goes, because the field is removed; the total assertions stay."
+        },
+        {
+          "path": "packages/repo-tooling/test/unit/scripts/check-package-frame-derivation.test.ts",
+          "reason": "the test that asserts the cli/features-acceptance.ts exemption (line 92) is deleted, because the exemption is removed."
+        },
+        {
+          "path": "packages/repo-tooling/scripts/check-package-frame-derivation.ts",
+          "reason": "the cli/features-acceptance.ts allowance (lines 71-74) goes, because the file is deleted."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "20f644133f9b8146bb7fb0fca465faf2a79659ec"
+    }
+  ],
+  "analysis": "Refine-pass audit: re-read the on-disk spec's Integration, Failure Handling, Out of Scope, Context Files and all eight stated ACs, and cross-checked the retained runtime/tests. Spec AC inventory and mapping (numbers refer to each story's acceptanceCriteria): US-005.1 maps to US-005 AC1 (completed exit) and AC2 (no pre-run log), preserving non-dry-run, resolved workflow preflight, hand-built acceptance.enabled:true and the pending-story runIteration stub. US-005.2 maps to AC3 (max-iterations exit) and AC4 (no post-run log), retaining the critical unchanged PRD and prdDirty:false on every iteration. US-006.1 maps to US-006 AC1, retaining the complete PRD, non-dry-run, recording status writer, enabled config and explicit prohibition on assigning an acceptance dependency. US-007.1 maps to US-007 AC1-2 (exact option-bearing spawn, empty cwd, exit 1, stderr). US-007.2 maps to AC3-5 (bare spawn, empty cwd, exit 1, stderr, no required-option error). US-007.3 maps to AC7 and AC10-12 (named resolution status, patterns, message prefix and own-key absence); AC8-9 additionally preserve the Failure Handling table's featureName and specSource fields. US-007.4 maps to AC13-15 (exactly-one-feature auto-discovery status, featureName and own-key absence). US-007.5 maps to AC16 (complete-PRD completion result has no own acceptancePassed key). No original criterion or qualifying clause was dropped; no deprecated file-content tags occur. The remaining Failure Handling rows are covered by the no-read binary probe, absent acceptance stage:enter events in US-005 and absent acceptance phase events/status in US-006.\n\nThe requested refine audit requires a negative-path AC in every story, overriding the original spec's criteria-free treatment of US-001 through US-004 only to pin existing behavior: cost-limit status with pending work (US-001), thrown feature-workflow failure outcome (US-002), empty quality commands returning passed:false (US-003), and git commit failure rejection (US-004). These are regression checks in retained tests, not new functionality or new source/test files. Evidence: packages/nax/test/unit/execution/lifecycle-completion.test.ts:573-586; execution/end-phase.test.ts:257-264; packages/nax/src/finish/gates/quality.ts:313-320; packages/nax/test/unit/finish/commit.test.ts:102-114 and src/finish/commit.ts:150-156. US-005 retains the max-iterations negative case. US-006 adds an unusable legacy status-reader case observed via zero getPostRunStatus calls. US-007 has both removed-command failures, including the missing-options form. Vague no-stage/no-loop statements were made observable through existing event emitters; the no-read CLI statement now uses a test-only filesystem-read recorder rather than assuming empty cwd proves no access. No production instrumentation is authorized.\n\nAll nine feature-level exclusions match the spec verbatim in outOfScope, with no story-local deferral hoisted into them. All seven exact binding IDs, workdirs and dependencies are unchanged; the serial chain is required by importer-depth deletion, not an optional planning preference. Every spec-recommended context file is retained within the five-file cap; US-001 and US-003 use their spare fifth slot for existing regression fixtures. Proposed new files are only the three clearly declared behavior-test outputs in US-005 through US-007, and none appears in its own contextFiles. Complexity remains complex because each story deletes multiple modules and edits shared importers/fixtures, rather than because of AC count. Lite isolated testing is the lightest realistic default for that fan-out; US-003 and US-004 retain strict isolation because they remove acceptance-edit guards/filesystem-containment helpers adjacent to retained safety behavior. The first four story descriptions no longer incorrectly claim there are no ACs. The US-003 test migration also removes the orphan zeroedState helper in packages/nax/test/unit/finish/gates-quality.test.ts:23-27; its sole caller is the deleted routeQualityGates case at :266, so retaining it after deleting FinishPhaseState's import would leave a broken test type reference. This audit changes requirements only and does not claim implementation tests or gates have run.\n\nThis is C1 wave B2a, a removal-only change following pipeline-fork-cut (#2812); the design reference is docs/superpowers/specs/2026-11-05-nax-c1-pipeline-deletion-design.md (#2810). Preserve exactly seven serial stories, all with workdir packages/nax, including US-007's explicitly required edits in packages/repo-tooling. No nax-agent, nax-agent-acp or nax-ai changes, version changes, new dependencies, replacement abstractions or execution paths are needed. The spec's approximately 85 source deletions, 115 test deletions and 50 test trims describe the feature overall, not quotas. Only the enumerated pipeline-caused modules are deletion targets.\n\nExploration and evidence: codebase-memory MCP is unavailable in this host, so discovery used direct Read, Glob and targeted Grep. The current tree agrees with the B1 baseline at the major seams. packages/nax/src/config/workflow-mode.ts:8-22 forces acceptance.enabled=false after configuration merging. packages/nax/src/execution/runner-completion.ts:376 always supplies skipRegression:true. packages/nax/src/execution/end-phase.ts:177-180 resolves the branch and always delegates to runWorkflowEnd; runFinish at :94 is retained dead code. These are not new workflow decisions to implement: B1 already made them. The intentional observable changes are removal of obsolete CLI/result fields and refusing acceptance even for hand-built configs that bypass normalization.\n\nUS-001: packages/nax/src/execution/lifecycle/run-completion.ts:47-55 imports the gate and exposes runDeferredRegression in _runCompletionDeps; :78-79 declares skipRegression; :193-213 destructures hooksConfig and invokes the regression gate; :293-301 forwards regressionGateFailed to writeFinalStatus. packages/nax/src/execution/lifecycle/run-completion-phases.ts:481-512 currently prioritizes regression failure ahead of cost-limit. Its target ladder starts with exitReason === cost-limit and retains completed/stalled/aborted classification, PRD/current-story writes and status update. Remove only the deferred gate, not per-story regression verification or the workflow's full-suite gate. packages/nax/src/verification/runners.ts:165 defines the obsolete fullSuite helper; packages/nax/src/verification/flake-triage.ts:99 defines NULL_QUARANTINE_MEMO. packages/nax/src/verification/index.ts:9-16 uses export-star barrels, so those exports disappear with their declarations rather than requiring explicit named-export edits. packages/nax/src/execution/lifecycle/index.ts:41 re-exports the regression module. Regression-specific tests must go; session-close, cost reconciliation, fallback, MCP adoption, manifest retention, plugin review, review events, hook ordering and non-regression lifecycle assertions must remain.\n\nUS-002 through US-004 are an importer-first finish deletion, not a directory deletion. packages/nax/src/execution/end-phase.ts:12-16 exposes the dead finish dependency, :59-68 defines finishStorySummary, and :94-116 defines runFinish. Remove those while retaining branch resolution, ABORTED_REASON, workflow abort/error handling, iteration-cap reporting and workflow verdicts. packages/nax/src/execution/runner-completion.ts:121-153 defines the dynamic finish import alongside acceptance and workflow deps; its loadConfigForPackage member deliberately survives. packages/nax/src/finish/index.ts:14-199 is a broad barrel and must be pruned at each layer, not removed. packages/nax/src/finish/pr/index.ts:7-12 exports both dead context/body/narrative builders and live PR operations. packages/nax/src/finish/pr/body.ts:152-169 contains ADVISOR_TEXT_CAP, flat and buildAdvisorSection, which must survive with their necessary advisor imports. packages/nax/src/finish/commit.ts:34-76 and :95-180 contain the shared git seam, headSha, dirty checking, unstageDir, commitFixes and commitAndPush; only the enumerated commit-round helpers are dead. packages/nax/src/finish/ledger.ts:8-25 defines the two retained ledger types; the functions and LedgerEvent below them are removed. packages/nax/src/finish/safe-path.ts:15-27 contains the obsolete insideRoot guard, :30-36 contains realpathLoose, :42-46 contains relativeInsideRoot, and :49-51 contains outsideDir; preserve the realpath-based retained containment implementation unchanged. This proximity to filesystem safety warrants strict isolated TDD for US-004; do not replace retained realpath checks with lexical checks.\n\nConfirmed surviving consumers: packages/nax/src/workflow/feature-deps.ts:2 imports commitAndPush, openDraftFinishPr, openOrPromotePr, resolveGateCommands and runQualityGates through @/finish; packages/nax/src/workflow/finalize.ts:14 imports sanitizeTitle; packages/nax/src/workflow/pr-body.ts:3 imports buildAdvisorSection; packages/nax/src/workflow/pr-body-safe.ts:16 imports the escaping leaf. packages/nax/src/bot/render.ts:2 uses capEscaped, bot/checks.ts:6 uses quality gate helpers, and bot/fix-steps.ts:11 plus bot/gate-baseline.ts:9 use the quality gate leaf. These justify keeping the shared finish modules, gate commands, types, PR open/promote/edit functions, escaping and advisor rendering. Workflow comments at workflow/promote.ts:10 and workflow/pr-body-safe.ts:14 mention soon-deleted finish context code; the mandatory path sweep must reword stale comments even outside a story's explicit Modifies list. Test helper packages/nax/test/helpers/index.ts:93-103 re-exports finish-machine fixtures and is pruned in US-003, after US-002 removes its machine consumers.\n\nUS-005: packages/nax/src/execution/unified-executor.ts:10,16,29 imports acceptance-only pipeline helpers/types; :213-235 builds preRunCtx and runs pre-run acceptance; :302-329 executes post-run acceptance on the exhausted-loop branch. Remove these blocks without moving workflow preflight, changing loop guards, completion detection, deferred review, heartbeat lifetime or subscriber teardown. The existing loop can report max-iterations after detecting no progress; the required unchanged-PRD fixture must not simulate passing a story or use dryRun to bypass the obsolete blocks. packages/nax/src/pipeline/stages/index.ts:9-10 imports the acceptance stages and :116-129 declares/re-exports the pre/post pipelines; its lazy workflow/default pipelines and their Proxy behavior stay. packages/nax/src/pipeline/runner.ts:64-96 defines isPipelineFailure and logPipelineOutcome; remove only these helpers, retaining runPipeline at :111 and its ordinary stage execution contract for B2b.\n\nUS-006: packages/nax/src/execution/runner-completion.ts:169-349 reads getPostRunStatus, conditionally loads per-package config, runs the acceptance loop, emits acceptance phase events/status and folds acceptance results into completion options. Delete that entire acceptance control block, its logging field, imports and dependency, but preserve hooks, metrics, cleanup, the feature workflow, cost snapshots, runtime close, status repair, reporting and whole-run timing. Keep acceptancePassed:true temporarily until US-007 so each intermediate tree compiles. Keep _runnerCompletionDeps.loadConfigForPackage and its tests despite the last production caller disappearing. Use the existing _deps seams, not mock.module or removed dependency assignments.\n\nUS-007: packages/nax/src/cli/features-resolve.ts:39-49 defines ResolveResult.acceptance; :263-270 and :319-326 attach it for named/autodiscovered features. Remove that property and the resolver import, while retaining resolveConfigOverrides (:71-95), profile precedence, test-pattern resolution (:107-119), candidate discovery and spec-search behavior. The explicit-path result intentionally has featureName:null and no testPatterns today; do not expand that result shape as part of this feature. packages/nax/test/unit/cli/features-resolve.test.ts:11-27 wraps _featuresAcceptanceDeps solely to reactivate acceptance; remove the wrapper and change every successful-result acceptance assertion to an own-property absence check, preserving resolution/profile tests. packages/nax/bin/nax.ts:1337-1355 currently registers accept with three requiredOption calls and invokes acceptCommand. Keep the commander command but use plain option calls, the exact removal description and red stderr message, then exit 1 before any config/PRD reads. packages/nax/src/execution/runner.ts:384,395 currently destructures acceptancePassed and includes it in success; target success is isComplete(prd) && !pluginGateFailed && workflowPassed !== false. Remove acceptancePassed entirely from the completion interface and returned object, not merely set undefined. packages/nax/src/findings/adapters/test-runner.ts:3-19,65-80 supplies acceptance-only converters; :33-63 supplies the retained executionFailureToFinding and tailLines. Preserve those generic failure conversions. packages/repo-tooling/scripts/check-package-frame-derivation.ts:71-74 has the features-acceptance file allowance that US-007 removes with its corresponding tooling test.\n\nTest architecture and migration: existing tests use bun:test, @test/helpers factories, _deps reassignment with restoration, hermetic spawn stubs and temporary directories. packages/nax/test/unit/execution/end-phase.test.ts:14-19,56-71 demonstrates obsolete finish fixture fields adjacent to workflow assertions that stay. packages/nax/test/unit/execution/runner-completion-total.test.ts:22-38,62-129 supplies makeMockRuntime/makeNaxConfig/makePRD/makeStatusWriter, a handleRunCompletion stub and hermetic git spawn restoration; retain its total-cost/duration assertions, only removing acceptancePassed at :190 in US-007. packages/nax/test/unit/execution/dry-run.test.ts:33-52 provides helpers and heartbeat cleanup; preserve its untouched-PRD/no-artifacts behaviors while deleting only cases tied to removed phases. New US-005 and US-006 unit fixtures should use existing factories and restore dependencies, logger/event subscriptions and heartbeat state. New US-007 CLI tests mirror packages/nax/test/integration/cli/cli-run-max-iterations.test.ts:10-21: use Bun.spawn, concurrently drain stdout/stderr and wait for exited; unlike that harness, resolve bin/nax.ts absolutely before using an empty temp directory as the child cwd. This proves failure before initialization. Use a normal non-empty spec and recognized .nax/config.json for resolveFeatureSpec fixtures, without importing the removed acceptance module.\n\nShared verification contract for EVERY story, run from packages/nax in order: (1) bun run typecheck, which resolves static and string-literal dynamic imports and barrels; (2) for EVERY source deletion sweep its extensionless src-relative stem using rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test. Expect zero actual references; stop and repair missed imports, require calls or stale comments. A longer sibling stem sharing the prefix is swept separately; do not confuse it with a missed reference. (3) bun run check:complexity:update and bun run check:file-sizes -- --update-baseline when the size check reports a lowerable entry; remove stale complexity entries, do not increase baselines to hide regressions. (4) bun run check:all and bun run test. packages/nax/package.json:11-15,31-33,52,93 exposes these gates and the wrapped test runner. Never run bare bun test or bun run nax. Targeted iteration uses explicit test paths. Do not run coverage inside NAX_SANDBOXED=1. The PRD drafting task has not run implementation gates; these are requirements for implementation, not claimed results.\n\nRisks and controls: transitive barrel imports, dynamic imports and test require calls can retain dead edges even when production reachability is cut; prune importer-first and verify each intermediate story. Test fixtures often assign dead deps, so remove only the targeted assertions/stubs rather than replacing or weakening unrelated workflow tests. Stale allowlists fail several repo checks and must be edited in the designated story; test-escape-hatch baseline entries are explicitly exempt from cleanup. Do not touch stale role/stage/phase strings, schema/default keys or B2b story-loop acceptance generators. The compiler cannot diagnose unused string-union members. The external migration is deliberate: accept remains discoverable but exits 1 with an actionable removal message, features resolve loses its useless acceptance key, and completion no longer returns acceptancePassed; there are no new external symbols, no compatibility acceptance execution, and no artifact/schema migration. Readers must continue accepting historical recorded phase strings. The seven-story serial order supplies the migration path and must not be flattened into a single delete-everything commit.",
+  "outOfScope": [
+    "The pipeline story loop: the story orchestrator, parallel and batch dispatch, the execution, prompt and optimizer stages, the pipeline operations, `src/tdd/`, the findings cycle, the checkpoint phase records, `--no-batch`, and the acceptance files the story loop still reaches (`acceptance/generator.ts`, `execution-description.ts`, `generator-helpers.ts`, `heuristics.ts`, `failed-criteria.ts`, `test-path.ts`, `types.ts`, `acceptance/index.ts`, `prd/acceptance-scope.ts`, the acceptance prompt builders, `prompts/sections/acceptance.ts`); wave B2b deletes them.",
+    "`IPromptOptimizer`, `src/optimizer/`, `verification/mutation/`, the `nax prompts` assemble path and the dead `nax prompts --export` roles; wave B2c deletes them, with the final reachability and orphan pass.",
+    "Removing deleted role, stage and phase strings from the name registries (`CanonicalSessionRole` / `KNOWN_SESSION_ROLES`, `PostRunPhase`, the permission `PipelineStage` list, `inert-bash-stages`, `PROMPT_OVERRIDE_ROLES`, the status-file `postRun.acceptance` / `postRun.regression` types); wave B3 empties the registries, and readers of recorded artifacts keep accepting the old strings.",
+    "Removing the now-unused `_runnerCompletionDeps.loadConfigForPackage` member and its test assignments; wave B3, with the other dead fields.",
+    "Removing the `acceptance.*`, `finish.*` and `execution.regressionGate.*` config keys, their schema entries and defaults; wave B3 decides each.",
+    "Stale entries for deleted test files in `scripts/baselines/test-escape-hatches-baseline.json`; the check fails only when a counter grows, so they stay until a baseline update.",
+    "Docs, config descriptions, the README and the package context files that still describe these phases; wave B4.",
+    "Deleting code that was already unreachable before B1 and has no pipeline cause (for example `src/constitution/generators/*`, `src/config/validate.ts`); not part of C1.",
+    "Changing workflow-mode behaviour: every cut site keeps its current workflow-mode result."
+  ],
+  "routingProfile": "native-codex-ds"
+}

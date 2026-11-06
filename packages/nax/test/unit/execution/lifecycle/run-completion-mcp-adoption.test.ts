@@ -7,7 +7,6 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { makeDispatchContext, makeNaxConfig, makeStatusWriter } from "@test/helpers";
 import { _runCompletionDeps, handleRunCompletion, type RunCompletionOptions } from "@/execution/lifecycle";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { PRD } from "@/prd";
 
 const prd: PRD = {
@@ -29,16 +28,6 @@ describe("handleRunCompletion — MCP adoption run scoping", () => {
 
   test("passes runtime.runId, the tool-audit file prefix, not the nax run id", async () => {
     const seen: Array<string | undefined> = [];
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => ({
-        success: true,
-        failedTests: 0,
-        failedTestFiles: [],
-        passedTests: 0,
-        rectificationAttempts: 0,
-        affectedStories: [],
-      }),
-    );
     _runCompletionDeps.summarizeMcpAdoptionPhase = mock(async (input: { toolAuditRunId: string | undefined }) => {
       seen.push(input.toolAuditRunId);
       return undefined;

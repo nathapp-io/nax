@@ -64,14 +64,10 @@ export {
 } from "./helpers";
 export { releaseHeavyPipelineContext } from "./iteration-runner";
 export {
-  _regressionDeps,
   _runCleanupDeps,
   _runCompletionDeps,
   type BackfillMetricArgs,
   cleanupRun,
-  type DeferredRegressionOptions,
-  type DeferredRegressionResult,
-  findResponsibleStoryByTransition,
   handleRunCompletion,
   isExecutionFailure,
   outputAdvisoryFindingsSummary,
@@ -79,8 +75,6 @@ export {
   type RunCleanupOptions,
   type RunCompletionOptions,
   type RunCompletionResult,
-  runDeferredRegression,
-  type StorySnapshot,
   synthesizeBackfillMetric,
 } from "./lifecycle";
 export type { NbfWorthCheckRequest } from "./nbf-worth-check";

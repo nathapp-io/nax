@@ -94,26 +94,27 @@ async function runResolve(args: string[]): Promise<CliResult> {
 }
 
 describe("nax features resolve — profile awareness (US-001)", () => {
-  // AC-12: an acceptance "error" is reported in the document, not converted
-  // into a non-zero exit — the spec still resolved.
-  test("AC-12: exits 0 and reports acceptance.status=error when no profile repairs the config", async () => {
+  // An unrepaired config is reported by omission, not converted into a
+  // non-zero exit — the spec still resolved.
+  test("AC-12: exits 0 and resolves no testPatterns when no profile repairs the config", async () => {
     const { exitCode, stdout } = await runResolve(["--json", "-d", tempDir]);
 
     expect(exitCode).toBe(0);
     const doc = JSON.parse(stdout);
     expect(doc.status).toBe("ok");
-    expect(doc.acceptance.status).toBe("error");
-    expect(doc.acceptance.error.code).toBe("CONFIG_SCHEMA_INVALID");
+    expect(doc.testPatterns).toBeUndefined();
+    // US-007 removed the acceptance block from the document entirely.
+    expect(Object.hasOwn(doc, "acceptance")).toBe(false);
   }, 30000);
 
   // AC-13: --profile reaches loadConfig through resolveFeatureSpec.
-  test("AC-13: --profile fix makes the config valid so acceptance.status is disabled", async () => {
+  test("AC-13: --profile fix makes the config valid so testPatterns resolve", async () => {
     const { exitCode, stdout } = await runResolve(["--json", "--profile", "fix", "-d", tempDir]);
 
     expect(exitCode).toBe(0);
     const doc = JSON.parse(stdout);
     expect(doc.status).toBe("ok");
-    expect(doc.acceptance.status).toBe("disabled");
-    expect(doc.acceptance.error).toBeUndefined();
+    expect(doc.testPatterns.regex.length).toBeGreaterThan(0);
+    expect(Object.hasOwn(doc, "acceptance")).toBe(false);
   }, 30000);
 });

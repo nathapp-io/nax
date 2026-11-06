@@ -189,9 +189,9 @@ function normalizeAbsolutePath(path: string): string {
  * session history. Callers that lack a story (and so cannot supply
  * `packageWorkdir`) keep the previous relative()-derived behaviour, which is
  * correct whenever `packageDir` is genuinely a subdirectory of `repoRoot`
- * (i.e. not worktree-isolated) — see the call sites in smart-runner.ts and
- * acceptance-helpers.ts, which always build `packageDir` by joining it onto
- * `repoRoot`/`effectiveRepoRoot`, so relative() there is never wrong.
+ * (i.e. not worktree-isolated) — see the call site in smart-runner.ts, which
+ * always builds `packageDir` by joining it onto `repoRoot`/`effectiveRepoRoot`,
+ * so relative() there is never wrong.
  */
 export async function resolveNaxIgnorePatterns(
   repoRoot: string,
@@ -203,11 +203,10 @@ export async function resolveNaxIgnorePatterns(
   const packagePrefix =
     normalizedPackageDir !== normalizedRepoRoot
       ? // Fallback for callers with no story (smart-runner.ts, deferred-review.ts,
-        // acceptance-helpers.ts, diff-utils.ts), which always build packageDir by
-        // joining it onto repoRoot — never worktree-isolated — so relative() is
-        // correct there. session-scratch.ts, the one caller that CAN be
-        // worktree-isolated, passes packageWorkdir explicitly and never reaches
-        // this line.
+        // diff-utils.ts), which always build packageDir by joining it onto
+        // repoRoot — never worktree-isolated — so relative() is correct there.
+        // session-scratch.ts, the one caller that CAN be worktree-isolated,
+        // passes packageWorkdir explicitly and never reaches this line.
         normalizePath(packageWorkdir ?? relative(repoRoot, packageDir ?? repoRoot)) // nax-package-frame-allow: see comment above
       : null;
 

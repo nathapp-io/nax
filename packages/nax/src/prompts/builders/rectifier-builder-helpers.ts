@@ -569,7 +569,7 @@ export function failingTestRectification(
   // `# TEST COMMAND` block. Wraps each line in a `run-test` region when
   // both a scoped template and a scoped key are supplied (the gate that
   // `RunCommand`'s exact-placeholder match enforces — see
-  // acceptance-helpers.ts:89). Without the template, the line is plain
+  // packages/nax-agent/src/tools/run-command.ts). Without the template, the line is plain
   // shell strings of the form `<testCommand> <file>`.
   if (opts?.testCommand && findings.length > 0) {
     const failingFiles = Array.from(new Set(findings.map((f) => f.file).filter((f): f is string => !!f)));

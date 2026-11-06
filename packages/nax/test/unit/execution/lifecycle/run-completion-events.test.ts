@@ -1,7 +1,6 @@
 /**
  * Tests for postrun phase event details in handleRunCompletion (US-004)
  *
- * AC7: regression completed event details.mode equals configured regression gate mode
  * AC8: deferred review completed event details.findingCount equals produced finding count
  * AC9: any postrun phase completed event durationMs equals elapsed from matching started event
  */
@@ -18,9 +17,8 @@ import {
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import type { RunCompletionOptions } from "@/execution";
-import { _runCompletionDeps, handleRunCompletion } from "@/execution";
+import { handleRunCompletion } from "@/execution";
 import type { DeferredReviewResult } from "@/execution/deferred-review";
-import type { DeferredRegressionResult } from "@/execution/lifecycle/run-regression";
 import type { PostRunPhaseCompletedEvent, PostRunPhaseStartedEvent } from "@/pipeline";
 import { pipelineEventBus } from "@/pipeline";
 import type { PRD, UserStory } from "@/prd";
@@ -40,21 +38,6 @@ function makePRD(storyIds: string[]): PRD {
       makeStory({ id, title: `Story ${id}`, description: "Test story", status: "passed", passes: true, attempts: 1 }),
     ) as UserStory[],
   };
-}
-
-function regressionConfig(regressionMode: "deferred" | "per-story" | "disabled" = "deferred"): NaxConfig {
-  return makeNaxConfig({
-    execution: {
-      regressionGate: {
-        enabled: true,
-        timeoutSeconds: 30,
-        acceptOnTimeout: true,
-        mode: regressionMode,
-      },
-    },
-    quality: { commands: { test: "bun test" } },
-    review: { pluginMode: "observational" },
-  });
 }
 
 const WORKDIR = `/tmp/nax-test-run-completion-events-${randomUUID()}`;
@@ -81,129 +64,13 @@ function makeOpts(config: NaxConfig, prd: PRD, overrides?: Partial<RunCompletion
   };
 }
 
-function makeSuccessfulRegressionResult(): DeferredRegressionResult {
-  return {
-    success: true,
-    failedTests: 0,
-    failedTestFiles: [],
-    passedTests: 5,
-    rectificationAttempts: 0,
-    affectedStories: [],
-  };
-}
-
-const origDeps = { ..._runCompletionDeps };
-
 beforeEach(() => {
-  _runCompletionDeps.runDeferredRegression = mock(async () => makeSuccessfulRegressionResult());
   pipelineEventBus.clear();
 });
 
 afterEach(() => {
-  Object.assign(_runCompletionDeps, origDeps);
   pipelineEventBus.clear();
   mock.restore();
-});
-
-// ---------------------------------------------------------------------------
-// AC7: regression completed event details.mode equals configured regression gate mode
-// ---------------------------------------------------------------------------
-
-describe("handleRunCompletion — AC7: regression completed event details.mode", () => {
-  test("AC7: details.mode is 'deferred' when regressionGate.mode is 'deferred'", async () => {
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
-
-    const event = completed.find((e) => e.phase === "regression");
-    expect(event).toBeDefined();
-    const details = event?.details as Record<string, unknown> | undefined;
-    expect(details?.mode).toBe("deferred");
-  });
-
-  test("AC7: details.mode is 'per-story' when regressionGate.mode is 'per-story'", async () => {
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(regressionConfig("per-story"), prd));
-
-    const event = completed.find((e) => e.phase === "regression");
-    expect(event).toBeDefined();
-    const details = event?.details as Record<string, unknown> | undefined;
-    expect(details?.mode).toBe("per-story");
-  });
-
-  test("AC7 boundary: no regression completed event when mode is 'disabled'", async () => {
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const prd = makePRD(["US-001"]);
-    const config = makeNaxConfig({
-      execution: { regressionGate: { mode: "disabled" } },
-      quality: { commands: { test: "bun test" } },
-    });
-    await handleRunCompletion(makeOpts(config, prd));
-
-    const regressionCompleted = completed.filter((e) => e.phase === "regression");
-    expect(regressionCompleted.length).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC9: regression completed event details.failedTests equals the number of
-// failing tests the regression gate reported
-// ---------------------------------------------------------------------------
-
-describe("handleRunCompletion — AC9: regression completed event details.failedTests", () => {
-  test("AC9: details.failedTests is 0 when the regression gate succeeds", async () => {
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
-
-    const event = completed.find((e) => e.phase === "regression");
-    expect(event).toBeDefined();
-    const details = event?.details as Record<string, unknown> | undefined;
-    expect(details?.failedTests).toBe(0);
-  });
-
-  test("AC9: details.failedTests equals the failing-test count reported by the regression gate", async () => {
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    _runCompletionDeps.runDeferredRegression = mock(
-      async (): Promise<DeferredRegressionResult> => ({
-        success: false,
-        failedTests: 4,
-        failedTestFiles: ["a.test.ts", "b.test.ts"],
-        passedTests: 10,
-        rectificationAttempts: 1,
-        affectedStories: ["US-001"],
-      }),
-    );
-
-    const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
-
-    const event = completed.find((e) => e.phase === "regression");
-    expect(event).toBeDefined();
-    const details = event?.details as Record<string, unknown> | undefined;
-    expect(details?.failedTests).toBe(4);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -304,28 +171,6 @@ describe("handleRunCompletion — AC8: review completed event details.findingCou
 // ---------------------------------------------------------------------------
 
 describe("handleRunCompletion — AC9: durationMs in completed events", () => {
-  test("AC9: regression completed event has durationMs >= 0", async () => {
-    const started: PostRunPhaseStartedEvent[] = [];
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:started", (e) => {
-      started.push(e);
-    });
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
-
-    const regressionStarted = started.find((e) => e.phase === "regression");
-    const regressionCompleted = completed.find((e) => e.phase === "regression");
-
-    expect(regressionStarted).toBeDefined();
-    expect(regressionCompleted).toBeDefined();
-    expect(typeof regressionCompleted?.durationMs).toBe("number");
-    expect(regressionCompleted?.durationMs).toBeGreaterThanOrEqual(0);
-  });
-
   test("AC9: review durationMs reflects elapsed from postrun:phase:started, not from inside the completion call", async () => {
     // postrun:phase:started for review fires in unified-executor.ts BEFORE the review runs.
     // handleRunCompletion only receives the already-completed deferredReview result.
@@ -376,20 +221,5 @@ describe("handleRunCompletion — AC9: durationMs in completed events", () => {
     // Wrong impl: durationMs ≈ 0 (Date.now()-Date.now() inside handleRunCompletion)
     // Correct impl: durationMs ≈ 200 (Date.now() - deferredReviewStartedAt)
     expect(reviewCompleted?.durationMs).toBeGreaterThanOrEqual(150);
-  });
-
-  test("AC9 boundary: durationMs is a finite non-negative integer", async () => {
-    const completed: PostRunPhaseCompletedEvent[] = [];
-    pipelineEventBus.on("postrun:phase:completed", (e) => {
-      completed.push(e);
-    });
-
-    const prd = makePRD(["US-001"]);
-    await handleRunCompletion(makeOpts(regressionConfig("deferred"), prd));
-
-    const regressionCompleted = completed.find((e) => e.phase === "regression");
-    const dur = regressionCompleted?.durationMs;
-    expect(Number.isFinite(dur)).toBe(true);
-    expect(dur).toBeGreaterThanOrEqual(0);
   });
 });

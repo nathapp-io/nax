@@ -7,7 +7,7 @@
  * live where a test can reach them.
  */
 import { describe, expect, test } from "bun:test";
-import { resolveTitle, sanitizeTitle, TITLE_MAX_CHARS } from "@/finish";
+import { sanitizeTitle, TITLE_MAX_CHARS } from "@/finish";
 
 describe("sanitizeTitle", () => {
   test("keeps a well-formed conventional-commit subject unchanged", () => {
@@ -89,20 +89,5 @@ describe("sanitizeTitle", () => {
   test("returns undefined for a non-string, and never throws", () => {
     expect(sanitizeTitle(undefined)).toBeUndefined();
     expect(sanitizeTitle(42 as unknown as string)).toBeUndefined(); // test-ratchet-allow: as-unknown-as
-  });
-});
-
-describe("resolveTitle", () => {
-  test("prefers the model's subject", () => {
-    expect(resolveTitle("fix: repair the gate", "schema-drift-gate")).toBe("fix: repair the gate");
-  });
-
-  test.each([
-    [undefined, "nothing"],
-    ["   ", "whitespace"],
-    ["feat:", "an unusable subject"],
-  ])("falls back to 'feat: <feature>' given %s (%s)", (raw) => {
-    // The floor is what shipped before, and what the auto-PR plugin opens with.
-    expect(resolveTitle(raw, "schema-drift-gate")).toBe("feat: schema-drift-gate");
   });
 });

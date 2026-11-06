@@ -3,7 +3,6 @@ import { join, relative } from "node:path";
 import { featureDir as configFeatureDir, findProjectDir, loadConfig } from "../config";
 import { resolveTestFilePatterns } from "../test-runners";
 import { validateFeatureName } from "../utils/feature-name";
-import { type AcceptanceResolution, resolveFeatureAcceptance } from "./features-acceptance";
 import { resolveRunProfileOverride } from "./resolve-run-profile";
 
 export type ResolveStatus = "ok" | "ambiguous" | "missing" | "feature-not-found" | "not-a-nax-repo";
@@ -40,8 +39,6 @@ export interface ResolveResult {
   status: ResolveStatus;
   featureName?: string | null;
   specSource?: SpecSource | null;
-  /** Acceptance test target(s) for the feature. Present only on an `ok` result with a known featureName. */
-  acceptance?: AcceptanceResolution;
   /** Repo-root test-file patterns. Present only on an `ok` result. */
   testPatterns?: TestPatternResolution;
   candidates?: string[];
@@ -98,7 +95,7 @@ async function resolveConfigOverrides(
  *
  * Never throws — this feeds a CLI whose primary job is spec resolution, so a
  * broken/legacy config degrades to omitting the field rather than failing the
- * whole command (the same rule `resolveFeatureAcceptance` follows).
+ * whole command.
  *
  * @param configOverrides - Extra loadConfig CLI-layer overrides (e.g. `{ profile: [...] }`).
  */
@@ -264,7 +261,6 @@ export async function resolveFeatureSpec(
         status: "ok",
         featureName: name,
         specSource: source,
-        acceptance: await resolveFeatureAcceptance(name, workdir, configOverrides),
         testPatterns: await resolveTestPatterns(workdir, configOverrides),
         message: `resolved spec: ${source.path}`,
       };
@@ -320,7 +316,6 @@ export async function resolveFeatureSpec(
       status: "ok",
       featureName: onlyName,
       specSource: source,
-      acceptance: await resolveFeatureAcceptance(onlyName, workdir, configOverrides),
       testPatterns: await resolveTestPatterns(workdir, configOverrides),
       message: `resolved spec: ${source.path}`,
     };

@@ -88,11 +88,6 @@ const REPAIRED_GROUPS: readonly ConfinedGroup[] = [
     ],
   },
   {
-    ac: "AC-12",
-    what: "the acceptance setup gate suite (class B: its workdir fixture)",
-    paths: ["./test/unit/pipeline/stages/acceptance-setup-gate.test.ts"],
-  },
-  {
     ac: "AC-13",
     what: "the coding-tool session TMPDIR suite (class C)",
     paths: ["./test/unit/agents/coding-tool-support-session-tmp.test.ts"],

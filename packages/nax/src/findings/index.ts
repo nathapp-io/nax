@@ -13,10 +13,6 @@
 
 export type { ReviewCheckResult } from "../review/types";
 export {
-  acceptanceDiagnoseRawArrayToFindings,
-  acceptanceDiagnoseRawToFinding,
-  acFailureToFinding,
-  acSentinelToFinding,
   executionFailureToFinding,
   genericTypecheckDiagnosticToFinding,
   lintDiagnosticToFinding,

@@ -1,14 +1,17 @@
 /**
  * Unit tests for src/verification/runners.ts — the low-level test-execution
- * entry points (fullSuite, scoped, regression) and the asset pre-check they
- * share.
+ * entry points (scoped, regression) and the asset pre-check they share.
+ *
+ * The "verification core" describe reaches runVerificationCore through `scoped`
+ * with no scopedTestPaths, which passes the command through unchanged — the
+ * same code path `fullSuite` used to alias before it was deleted.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { makeSpawn, withTempDir } from "@test/helpers";
 import type { VerificationGateOptions } from "@/verification";
-import { _executorDeps, _regressionRunnerDeps, fullSuite, regression, scoped, verifyAssets } from "@/verification";
+import { _executorDeps, _regressionRunnerDeps, regression, scoped, verifyAssets } from "@/verification";
 
 describe("verifyAssets", () => {
   test("succeeds with no expectedFiles argument", async () => {
@@ -43,7 +46,7 @@ describe("verifyAssets", () => {
   });
 });
 
-describe("fullSuite", () => {
+describe("verification core (shared by scoped and regression)", () => {
   let originalSpawn: typeof _executorDeps.spawn;
 
   beforeEach(() => {
@@ -69,7 +72,7 @@ describe("fullSuite", () => {
       const spawnStub = makeSpawn(() => "should not be called");
       _executorDeps.spawn = spawnStub.spawn;
 
-      const result = await fullSuite(baseOptions({ workdir: dir, expectedFiles: ["missing.txt"] }));
+      const result = await scoped(baseOptions({ workdir: dir, expectedFiles: ["missing.txt"] }));
 
       expect(result.status).toBe("ASSET_CHECK_FAILED");
       expect(result.success).toBe(false);
@@ -82,7 +85,7 @@ describe("fullSuite", () => {
   test("returns SUCCESS on a clean exit", async () => {
     _executorDeps.spawn = makeSpawn(() => ({ stdout: "all good", exitCode: 0 })).spawn;
 
-    const result = await fullSuite(baseOptions());
+    const result = await scoped(baseOptions());
 
     expect(result.status).toBe("SUCCESS");
     expect(result.success).toBe(true);
@@ -98,7 +101,7 @@ describe("fullSuite", () => {
     }));
     _executorDeps.spawn = spawnStub.spawn;
 
-    const result = await fullSuite(baseOptions({ command: ["step-a", "step-b"] }));
+    const result = await scoped(baseOptions({ command: ["step-a", "step-b"] }));
 
     expect(spawnStub.calls.map((call) => call.cmd[2])).toEqual(["step-a", "step-b"]);
     expect(result.success).toBe(false);
@@ -109,7 +112,7 @@ describe("fullSuite", () => {
   test("returns TEST_FAILURE with parsed pass/fail counts on a real test failure", async () => {
     _executorDeps.spawn = makeSpawn(() => ({ stdout: "Tests: 2 failed, 3 passed", exitCode: 1 })).spawn;
 
-    const result = await fullSuite(baseOptions());
+    const result = await scoped(baseOptions());
 
     expect(result.status).toBe("TEST_FAILURE");
     expect(result.success).toBe(false);
@@ -122,7 +125,7 @@ describe("fullSuite", () => {
   test("returns ENVIRONMENTAL_FAILURE when all tests passed but exit code is nonzero", async () => {
     _executorDeps.spawn = makeSpawn(() => ({ stdout: "Tests: 5 passed", exitCode: 1 })).spawn;
 
-    const result = await fullSuite(baseOptions());
+    const result = await scoped(baseOptions());
 
     expect(result.status).toBe("ENVIRONMENTAL_FAILURE");
     expect(result.success).toBe(false);
@@ -134,7 +137,7 @@ describe("fullSuite", () => {
   test("returns TEST_FAILURE (not ENVIRONMENTAL_FAILURE) on nonzero exit with empty output", async () => {
     _executorDeps.spawn = makeSpawn(() => ({ stdout: "", exitCode: 1 })).spawn;
 
-    const result = await fullSuite(baseOptions());
+    const result = await scoped(baseOptions());
 
     // No output at all — analyzeTestExitCode is never reached, exitCode falls
     // through to the plain TEST_FAILURE branch.
@@ -145,7 +148,7 @@ describe("fullSuite", () => {
   test("returns a TIMEOUT status that is not success by default", async () => {
     _executorDeps.spawn = makeSpawn(() => ({ hang: true })).spawn;
 
-    const result = await fullSuite(baseOptions({ timeoutSeconds: 0.1, gracePeriodMs: 100, drainTimeoutMs: 100 }));
+    const result = await scoped(baseOptions({ timeoutSeconds: 0.1, gracePeriodMs: 100, drainTimeoutMs: 100 }));
 
     expect(result.status).toBe("TIMEOUT");
     expect(result.success).toBe(false);
@@ -155,7 +158,7 @@ describe("fullSuite", () => {
   test("honours acceptOnTimeout: true, marking the TIMEOUT result as success", async () => {
     _executorDeps.spawn = makeSpawn(() => ({ hang: true })).spawn;
 
-    const result = await fullSuite(
+    const result = await scoped(
       baseOptions({ timeoutSeconds: 0.1, gracePeriodMs: 100, drainTimeoutMs: 100, acceptOnTimeout: true }),
     );
 
@@ -167,7 +170,7 @@ describe("fullSuite", () => {
     const spawnStub = makeSpawn(() => ({ stdout: "ok", exitCode: 0 }));
     _executorDeps.spawn = spawnStub.spawn;
 
-    await fullSuite(
+    await scoped(
       baseOptions({
         env: { CUSTOM_VAR: "1", AGENT: "should-be-stripped" },
         stripEnvVars: ["AGENT"],
@@ -183,7 +186,7 @@ describe("fullSuite", () => {
     const spawnStub = makeSpawn(() => ({ stdout: "ok", exitCode: 0 }));
     _executorDeps.spawn = spawnStub.spawn;
 
-    const result = await fullSuite(
+    const result = await scoped(
       baseOptions({ forceExit: true, detectOpenHandles: true, timeoutRetryCount: 1, detectOpenHandlesRetries: 2 }),
     );
 

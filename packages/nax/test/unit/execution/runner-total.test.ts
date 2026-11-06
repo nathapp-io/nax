@@ -164,7 +164,6 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 42,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: RECONCILED_TOTAL,
     })) as typeof _runnerDeps.runCompletionPhase;
@@ -196,7 +195,6 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
       return {
         durationMs: 42,
         runCompletedAt: new Date().toISOString(),
-        acceptancePassed: true,
         pluginGateFailed: false,
         reportedTotal: RECONCILED_TOTAL,
       };
@@ -224,7 +222,6 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 42,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: shared,
     })) as typeof _runnerDeps.runCompletionPhase;
@@ -249,7 +246,6 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 42,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: 0,
     })) as typeof _runnerDeps.runCompletionPhase;
@@ -274,7 +270,6 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 42,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: RECONCILED_TOTAL,
     })) as typeof _runnerDeps.runCompletionPhase;
@@ -307,7 +302,6 @@ describe("runner.run() — A5 workflowPassed", () => {
     _runnerDeps.runCompletionPhase = async () => ({
       durationMs: 1,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: 0,
       workflowPassed: false,
@@ -344,7 +338,6 @@ describe("runner.run() — US-005 interaction-chain threading", () => {
       return {
         durationMs: 42,
         runCompletedAt: new Date().toISOString(),
-        acceptancePassed: true,
         pluginGateFailed: false,
         reportedTotal: RECONCILED_TOTAL,
       };
@@ -382,7 +375,6 @@ describe("runner.run() — US-002 approvals-seal handoff", () => {
     _runnerDeps.runCompletionPhase = mock(async () => ({
       durationMs: 42,
       runCompletedAt: new Date().toISOString(),
-      acceptancePassed: true,
       pluginGateFailed: false,
       reportedTotal: RECONCILED_TOTAL,
     })) as typeof _runnerDeps.runCompletionPhase;

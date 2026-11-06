@@ -17,23 +17,6 @@ import { describe, expect, test } from "bun:test";
 // `config:` entries further down the file.
 const SITES: readonly { file: string; marker: string; window?: number }[] = [
   { file: "src/pipeline/stages/execution.ts", marker: "const callCtx: CallContext = {" },
-  {
-    file: "src/pipeline/stages/acceptance-setup.ts",
-    marker: "const packageView = pipelineCtx.runtime.packages.resolve(packageDir);",
-  },
-  {
-    file: "src/execution/lifecycle/acceptance-fix.ts",
-    marker: "const packageView = ctx.runtime.packages.resolve(packageDir);",
-  },
-  {
-    // The acceptance fix cycle's context (split out of acceptance-loop.ts, #2201).
-    file: "src/execution/lifecycle/acceptance-fix-scope.ts",
-    marker: "const cycleCtx: FixCycleContext = {",
-    // The wiring call above the literal has its own `config:`; scanning only
-    // past the marker keeps it from satisfying this entry.
-    window: 200,
-  },
-  { file: "src/finish/phase.ts", marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir)," },
 ];
 
 describe("pipeline CallContext sites forward the effective config (#2066)", () => {
@@ -47,9 +30,4 @@ describe("pipeline CallContext sites forward the effective config (#2066)", () =
       expect(source.slice(at, at + (site.window ?? 600))).toContain("config:");
     });
   }
-
-  test("hardening.ts reuses the package config for both CallContext literals", async () => {
-    const source = await Bun.file("src/acceptance/hardening.ts").text();
-    expect(source.match(/config: packageView\.config,/g)?.length).toBe(2);
-  });
 });

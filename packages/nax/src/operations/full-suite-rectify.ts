@@ -16,7 +16,7 @@ import { implementerOp } from "./implement";
  * never reads from `ctx.story` (which is optional on CallContext and would crash
  * at runtime for ad-hoc / non-pipeline invocations).
  *
- * Call site: buildPlanForStrategy + run-regression.ts — the story is always available.
+ * Call site: buildPlanForStrategy — the story is always available.
  *
  * When `sink` is provided the strategy switches to `fullSuiteRectifyOp` and
  * `extractApplied` pushes parsed declarations into the shared sink for downstream

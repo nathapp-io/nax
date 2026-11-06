@@ -25,11 +25,6 @@ export const reviewConfigSelector = pickSelector(
 export const planConfigSelector = pickSelector("plan", "plan", "agent", "models", "project", "routing");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
-export const acceptanceConfigSelector = pickSelector("acceptance", "acceptance");
-// acceptance fix take more time to fix the code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
-export const acceptanceFixConfigSelector = pickSelector("acceptance-fix", "acceptance", "execution");
-// acceptance generator take more time to generate the test code, so we use a separate config selector to use execution.sessionTimeoutSeconds instead of acceptance.timeoutMs
-export const acceptanceGenConfigSelector = pickSelector("acceptance-gen", "acceptance", "execution");
 export const tddConfigSelector = pickSelector(
   "tdd",
   "tdd",
@@ -142,15 +137,6 @@ export const llmRoutingConfigSelector = pickSelector(
   "precheck",
 );
 
-// nax-finish autonomous flow — needs its own `finish` block plus `interaction`
-// (Telegram escalation credentials) and `quality` (the gate commands the flow
-// re-runs at the repo root).
-// `agent` is in the slice so nax-finish can default the flow's agent to the one
-// the run itself used, instead of letting the ACP agent fall back to its own default.
-// `execution` supplies the fallback LLM timeout: the finish phase supplies
-// `finish.timeouts.reviewMs / fixMs`; `execution.sessionTimeoutSeconds` is the fallback
-// for direct callers, matching how the acceptance ops resolve it.
-export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality", "agent", "execution");
 // `finish` supplies the branch-review / branch-fix model fallbacks (spec §4, P4-R21).
 export const workflowConfigSelector = pickSelector(
   "workflow",
@@ -172,9 +158,6 @@ export type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 export type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 export type DecomposeConfig = ReturnType<typeof decomposeConfigSelector.select>;
 export type RectifyConfig = ReturnType<typeof rectifyConfigSelector.select>;
-export type AcceptanceConfig = ReturnType<typeof acceptanceConfigSelector.select>;
-export type AcceptanceFixConfig = ReturnType<typeof acceptanceFixConfigSelector.select>;
-export type AcceptanceGenConfig = ReturnType<typeof acceptanceGenConfigSelector.select>;
 export type TddConfig = ReturnType<typeof tddConfigSelector.select>;
 export type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
 export type VerifyConfig = ReturnType<typeof verifyConfigSelector.select>;
@@ -205,6 +188,6 @@ export type NbfWorthCheckConfig = z.infer<typeof NbfWorthCheckConfigSchema>;
  * parse, so the required-field type is sound.
  */
 export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
-export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;
+
 export type WorkflowOpConfig = ReturnType<typeof workflowConfigSelector.select>;
 export type AdvisorConfigSlice = ReturnType<typeof advisorConfigSelector.select>;

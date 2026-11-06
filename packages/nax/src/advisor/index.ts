@@ -18,8 +18,6 @@ export { dedupeKeyFor } from "./dedupe";
 export {
   type AdvisorSummary,
   describeTarget,
-  formatDecisionsForPrompt,
-  formatRulingsForFix,
   isPromptSafe,
   summariseAdvisor,
 } from "./format";
@@ -29,7 +27,6 @@ export {
   appendDecision,
   countStoryRulings,
   type DecisionDraft,
-  findReusable,
   ledgerPath,
   readDecisions,
   readTrustedDecisions,

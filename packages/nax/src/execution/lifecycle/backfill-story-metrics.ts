@@ -14,8 +14,8 @@
  * This module is the single source of truth for that synthesis. It emits:
  *  - `execution-failed` — the story ran and failed in the execution stage; synthesize
  *    from the story's own routing / attempts / escalations so the values are real.
- *  - `completion-phase` — cost incurred only after execution (acceptance / hardening /
- *    diagnosis); the placeholder shape, unchanged.
+ *  - `completion-phase` — cost incurred only after execution; the placeholder shape,
+ *    unchanged.
  */
 
 import type { AgentFallbackRecord } from "@/agents/manager-types";

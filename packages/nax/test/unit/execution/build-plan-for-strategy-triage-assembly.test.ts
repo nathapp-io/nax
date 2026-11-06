@@ -436,9 +436,8 @@ describe("buildPlanForStrategy — AC2/AC3/AC4: triage strategy predicate behavi
       return { success: true };
     }) as typeof _storyOrchestratorDeps.callOp;
     // The dep slot is generic (<F extends Finding>); bun's mock() erases
-    // genericity, so the stub is concretized to FixCycle<Finding> — the same
-    // instantiation src builds at run-regression.ts:452 — and asserted back to
-    // the dep's declared type.
+    // genericity, so the stub is concretized to FixCycle<Finding> and asserted
+    // back to the dep's declared type.
     _storyOrchestratorDeps.runFixCycle = mock(async (cycle: RunFixCycleCycle) => {
       capturedStrategiesByCall.push(cycle.strategies);
       return { iterations: [], finalFindings: [], exitReason: "no-strategy" as const, costUsd: 0 };

@@ -102,8 +102,8 @@ const PATTERNS = {
    * Anchored to the comment OPENER, which is where TypeScript requires a real
    * directive to sit: the first text in the comment. Unanchored, this read the
    * words wherever they appeared, and its entire remaining population was
-   * PROSE — a comment in `run-regression.test.ts` explaining why that test
-   * asserts at the type level *instead of* suppressing. §4 forbids deleting
+   * PROSE — a comment in a test explaining why that test asserts at the type
+   * level *instead of* suppressing. §4 forbids deleting
    * such a comment to lower a count, which makes the regex the defect and not
    * the code: the counter is now a closed invariant at 0.
    *

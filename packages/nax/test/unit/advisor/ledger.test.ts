@@ -6,7 +6,6 @@ import {
   _ledgerDeps,
   appendDecision,
   countStoryRulings,
-  findReusable,
   ledgerPath,
   readDecisions,
   readTrustedDecisions,
@@ -88,16 +87,6 @@ describe("ledger", () => {
       { ...draft({ kind: "fix-cycle-give-up", storyId: "US-2" }), id: "D-4" },
     ];
     expect(countStoryRulings(ds, "US-1")).toBe(2);
-  });
-
-  test("findReusable returns the latest waive/supersede for the key, never a fix", () => {
-    const ds = [
-      { ...draft({ dedupeKey: "k", action: { type: "waive", reason: "a" } }), id: "D-1" },
-      { ...draft({ dedupeKey: "k", action: { type: "fix", instruction: "b" } }), id: "D-2" },
-      { ...draft({ dedupeKey: "k", action: { type: "waive", reason: "c" } }), id: "D-3" },
-    ];
-    expect(findReusable(ds, "k")?.id).toBe("D-3");
-    expect(findReusable(ds, "other")).toBeUndefined();
   });
 
   test("agents can never write the ledger (nax-owned path)", () => {

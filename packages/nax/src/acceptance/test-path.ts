@@ -119,9 +119,9 @@ export interface AcceptanceTestGroup {
  * Group non-fix, non-decomposed PRD stories by story.workdir and compute the
  * acceptance test path for each group.
  *
- * This is the SSOT for per-package test path computation. Call it from:
- *   - acceptance-setup stage (to generate test files + set ctx.acceptanceTestPaths)
- *   - runner-completion (to pass acceptanceTestPaths into runAcceptanceLoop)
+ * This is the SSOT for per-package test path computation. It outlived the
+ * `nax accept` command because the pipeline story loop still needs each
+ * package's acceptance test path.
  *
  * @param prd         - The loaded PRD
  * @param workdir     - Absolute repo root (ctx.workdir / options.workdir)
@@ -180,7 +180,7 @@ export async function groupStoriesByPackage(
   );
 }
 
-// ─── Suggested test path helpers (hardening pass) ───────────────────────────
+// ─── Suggested test path helpers ────────────────────────────────────────────
 
 /**
  * Return the suggested test filename for a given language.
