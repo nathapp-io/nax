@@ -60,9 +60,12 @@ describe("parseRunPreconditionFlags", () => {
 
 describe("applyRunCliOverrides", () => {
   test("preserves agent and max-cost overrides", () => {
-    const config = makeNaxConfig();
+    const defaultsBefore = structuredClone(makeNaxConfig());
+    // CLI overrides mutate nested objects; the factory shares untouched default branches.
+    const config = structuredClone(makeNaxConfig());
     const result = applyRunCliOverrides(config, options({ agent: "codex", maxCost: "12.5" }));
     expect(result.agent?.default).toBe("codex");
     expect(result.execution.costLimit).toBe(12.5);
+    expect(makeNaxConfig()).toEqual(defaultsBefore);
   });
 });
