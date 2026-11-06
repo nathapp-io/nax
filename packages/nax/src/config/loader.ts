@@ -42,6 +42,20 @@ import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 import { applyWorkflowMode } from "./workflow-mode";
 
+/** Validate mode alone so unrelated undefined variables cannot hide a removed mode. */
+function rejectResolvedPipelineMode(config: Record<string, unknown>, source: string): void {
+  const execution = config.execution;
+  if (!execution || typeof execution !== "object" || Array.isArray(execution)) return;
+  let mode: unknown;
+  try {
+    mode = resolveEnvVars((execution as Record<string, unknown>).mode, sensitiveFilteredProcessEnv());
+  } catch (err) {
+    if (err instanceof UnresolvedEnvVarError) return;
+    throw err;
+  }
+  rejectPipelineModeKeys({ execution: { ...execution, mode } }, source);
+}
+
 /**
  * CFG-2/CFG-3: resolve `$VAR`/`${VAR}` references in a config layer that has
  * no companion `.env` file of its own (global/project config, per-package
@@ -57,6 +71,7 @@ function resolveEnvVarsWarnOnFailure(
   logger: ReturnType<typeof getLogger> | null,
   layerName: string,
 ): Record<string, unknown> {
+  rejectResolvedPipelineMode(config, layerName);
   try {
     return resolveEnvVars(config, sensitiveFilteredProcessEnv()) as Record<string, unknown>;
   } catch (err) {

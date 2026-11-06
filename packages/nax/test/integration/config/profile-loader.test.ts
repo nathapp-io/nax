@@ -111,6 +111,47 @@ describe("loadConfig — profile activation (US-002)", () => {
     },
   );
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: exercise literal config environment references
+  test.each(["$FORK_REVIEW_MODE", "${FORK_REVIEW_MODE}"])(
+    "rejects pipeline mode (%s) despite an unrelated unresolved variable and later overrides",
+    async (mode) => {
+      const originalMode = process.env.FORK_REVIEW_MODE;
+      const originalUnset = process.env.FORK_REVIEW_UNSET;
+      process.env.FORK_REVIEW_MODE = "pipeline";
+      delete process.env.FORK_REVIEW_UNSET;
+      const rootConfigPath = join(projectDir, ".nax", "config.json");
+      const invalid = { quality: { commands: { test: "$FORK_REVIEW_UNSET" } }, execution: { mode } };
+      const override = { quality: { commands: { test: "bun test" } }, execution: { mode: "workflow" } };
+      try {
+        writeJson(join(globalDir, "config.json"), invalid);
+        writeJson(rootConfigPath, override);
+        await expect(loadConfig(projectDir)).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source: "global config", keys: ["execution.mode"] },
+        });
+        writeJson(join(globalDir, "config.json"), {});
+        writeJson(rootConfigPath, invalid);
+        await expect(loadConfig(projectDir, override)).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source: "project config", keys: ["execution.mode"] },
+        });
+        writeJson(rootConfigPath, {});
+        writeJson(join(projectDir, ".nax", "mono", "apps/api", "config.json"), invalid);
+        _clearRootConfigCache();
+        await expect(loadConfigForWorkdir(rootConfigPath, "apps/api")).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source: 'per-package config "apps/api"', keys: ["execution.mode"] },
+        });
+      } finally {
+        if (originalMode === undefined) delete process.env.FORK_REVIEW_MODE;
+        else process.env.FORK_REVIEW_MODE = originalMode;
+        if (originalUnset === undefined) delete process.env.FORK_REVIEW_UNSET;
+        else process.env.FORK_REVIEW_UNSET = originalUnset;
+        _clearRootConfigCache();
+      }
+    },
+  );
+
   test("AC-7 preserves the default maxIterations without rejecting defaults", async () => {
     writeJson(join(projectDir, ".nax", "config.json"), {});
     expect((await loadConfig(projectDir)).execution.maxIterations).toBe(20);
