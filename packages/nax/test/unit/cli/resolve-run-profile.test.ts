@@ -162,6 +162,42 @@ describe("resolveRunProfileOverride", () => {
     expect(result).toBeUndefined();
   });
 
+  test("adopts a multi-profile PRD routingProfile stamped with the loader's + join (#2814)", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: undefined,
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: "aggressive+cheap" }),
+      _listProfileNames: profilesAvailable("aggressive", "cheap"),
+    });
+    expect(result).toEqual(["aggressive", "cheap"]);
+  });
+
+  test("keeps a PRD routingProfile whole when a profile with a + in its name exists", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: undefined,
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: "a+b" }),
+      _listProfileNames: profilesAvailable("a+b", "a", "b"),
+    });
+    expect(result).toEqual(["a+b"]);
+  });
+
+  test("skips a + joined PRD routingProfile when one name in it is missing", async () => {
+    const result = await resolveRunProfileOverride({
+      prdPath: "/x/prd.json",
+      projectRoot: "/x",
+      cliProfile: undefined,
+      envProfile: undefined,
+      _readJson: readReturning({ routingProfile: "aggressive+nope" }),
+      _listProfileNames: profilesAvailable("aggressive"),
+    });
+    expect(result).toBeUndefined();
+  });
+
   test('"default" entries in a PRD chain do not require a profile file', async () => {
     const result = await resolveRunProfileOverride({
       prdPath: "/x/prd.json",
