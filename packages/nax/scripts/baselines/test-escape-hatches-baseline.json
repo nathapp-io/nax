@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 21,
-    "looseCast": 1412
+    "looseCast": 1401
   },
-  "updatedAt": "2026-11-06T08:49:23.533Z",
+  "updatedAt": "2026-11-06T14:20:42.778Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -14,9 +14,6 @@
     },
     "test/helpers/agent-registry.ts": {
       "looseCast": 1
-    },
-    "test/helpers/execution-deps-stub.ts": {
-      "looseCast": 4
     },
     "test/helpers/worktree-manager.ts": {
       "ratchetAllow": 1
@@ -388,9 +385,6 @@
     "test/unit/execution/parallel-worker.test.ts": {
       "looseCast": 8
     },
-    "test/unit/execution/execution-stage.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": {
       "looseCast": 19
     },
@@ -429,9 +423,6 @@
     },
     "test/unit/execution/story-orchestrator/semantic-iteration-wiring.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/story-orchestrator/run-phase-telemetry.test.ts": {
-      "looseCast": 2
     },
     "test/unit/execution/story-orchestrator/rectification-context-stage.test.ts": {
       "looseCast": 3
@@ -893,9 +884,6 @@
     "test/unit/pipeline/effective-config.test.ts": {
       "looseCast": 17
     },
-    "test/unit/pipeline/storyid-events.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/pipeline/routing-partial-override.test.ts": {
       "looseCast": 5
     },
@@ -913,9 +901,6 @@
     },
     "test/unit/pipeline/stages/routing-profile-tier.test.ts": {
       "looseCast": 17
-    },
-    "test/unit/pipeline/stages/optimizer.test.ts": {
-      "looseCast": 1
     },
     "test/unit/pipeline/stages/context-us004.test.ts": {
       "looseCast": 8
@@ -958,9 +943,6 @@
     },
     "test/unit/pipeline/stages/prompt-acceptance.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/pipeline/stages/execution-repo-scoped-fixes.test.ts": {
-      "looseCast": 2
     },
     "test/unit/pipeline/stages/queue-check.test.ts": {
       "looseCast": 1

@@ -8,15 +8,6 @@ async function src(rel: string) {
 }
 
 describe("Phase 5 invariants — execution stage", () => {
-  test("execution.ts does not import from agent-swap.ts (+4 more assertions)", async () => {
-    const code = await src("src/pipeline/stages/execution.ts");
-    expect(code).not.toContain("escalation/agent-swap");
-    expect(code).not.toContain("shouldAttemptSwap");
-    expect(code).not.toContain("resolveSwapTarget");
-    expect(code).not.toContain("Phase 5.5");
-    expect(code).not.toContain("context?.v2?.fallback");
-  });
-
   test("agent-swap.ts does not exist", async () => {
     await expect(src("src/execution/escalation/agent-swap.ts")).rejects.toThrow();
   });

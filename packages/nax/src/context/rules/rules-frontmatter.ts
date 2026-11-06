@@ -32,7 +32,7 @@ const EXTRA_KNOWN_STAGES = [
   "regression",
   // Operation names (src/operations/*) recognised as stage identifiers
   "decompose",
-  // nax#1743: the pipeline stage src/pipeline/stages/execution.ts, which
+  // nax#1743: the pipeline stage named "execution", which
   // belongs in this list for the same reason "prompt" and "routing" do. It was
   // only ever accepted implicitly, via a STAGE_CONTEXT_MAP key of the same name
   // that no assembly site ever selected; retiring that dead key made the 12

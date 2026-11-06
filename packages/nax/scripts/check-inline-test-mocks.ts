@@ -28,8 +28,6 @@ const strict = process.argv.includes("--strict");
  */
 const SKIP_FILES = new Set([
   // Pattern D (AgentManager) - PERMANENT: no inline getDefault pattern
-  "test/unit/pipeline/stages/execution-workdir.test.ts",
-  "test/unit/pipeline/stages/execution-agent-routing.test.ts",
   "test/unit/pipeline/stages/execution-tdd-simple.test.ts",
   "test/unit/pipeline/stages/execution-session-role.test.ts",
   "test/unit/pipeline/stages/execution-ambiguity.test.ts",

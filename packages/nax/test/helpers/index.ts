@@ -81,7 +81,6 @@ export type { E2EGates, E2EOptions, E2EResult, ScriptedAgentSpec, ScriptedTurn }
 export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
 export { fullDescribe, fullTest } from "./env";
 export { makeEscalationContext } from "./escalation-context";
-export { type ExecutionDepsOverrides, withExecutionDeps } from "./execution-deps-stub";
 export type { FakeAgentManagerOptions } from "./fake-agent-manager";
 export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeClock } from "./fake-clock";

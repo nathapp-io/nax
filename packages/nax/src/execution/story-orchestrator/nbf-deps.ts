@@ -10,8 +10,8 @@
  * review's `reviewFix` only when `ctx.story` is defined, because `runFixReview`
  * requires a `UserStory` and a `ReviewConfig`. The `reviewFix`-absent branch
  * exists purely for callers that construct a `CallContext` without a story
- * (ad-hoc/CLI dispatch); the production execution stage always populates
- * `ctx.story` (src/pipeline/stages/execution.ts).
+ * (ad-hoc/CLI dispatch); the production per-story dispatch always populates
+ * `ctx.story`.
  */
 import type { Finding } from "@/findings";
 import type { CallContext } from "@/operations";

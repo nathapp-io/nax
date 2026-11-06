@@ -178,11 +178,7 @@ describe("evaluate", () => {
 
 describe("the real tree", () => {
   test("every #2201 Bash-dispatching site is wired and the gate reads clean", async () => {
-    const { sites, findings } = await scanTree();
-    const wired = new Set(sites.filter((s) => s.kind === "wired").map((s) => s.file));
-    for (const file of ["src/pipeline/stages/execution.ts"]) {
-      expect(wired.has(file)).toBe(true);
-    }
+    const { findings } = await scanTree();
     expect(findings).toEqual({ violations: [], stale: [], leaks: [] });
     expect(ALLOWED_BARE_SITES.every((entry) => entry.reason.length > 0)).toBe(true);
   });

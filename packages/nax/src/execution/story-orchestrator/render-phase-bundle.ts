@@ -1,8 +1,8 @@
 /**
  * nax#1773 — render the per-stage `ContextBundle` into the op's dispatch
  * input at dispatch time, instead of the value `assemblePlanInputsFromCtx`
- * baked once (before any per-stage bundle existed) at
- * `src/pipeline/stages/execution.ts:166`.
+ * baked once (before any per-stage bundle existed) when the plan inputs
+ * were assembled.
  *
  * `runPhase` (run-phase.ts) already assembles `phaseBundle` for the op's own
  * context-engine stage and puts it on `dispatchCtx.contextBundle` — but the

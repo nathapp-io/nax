@@ -9,7 +9,7 @@
  *         — review-slot gating reads config.review.checks: ReviewCheckName[]
  *           membership (not nested .enabled flags); table-driven per
  *           (testStrategy, review.enabled, review.checks, rectification.enabled, isRetry)
- *   AC#5: pipeline/stages/execution.ts has no if (isThreeSessionStrategy) sequencing branch —
+ *   AC#5: consumers need no if (isThreeSessionStrategy) sequencing branch —
  *         this file is the SSOT for strategy-dependent slot decisions
  *
  * Inputs envelope shape: PlanInputs (./plan-inputs.ts) — each field matches the
@@ -47,7 +47,7 @@ import { createFixReviewWrapper } from "./story-orchestrator/fix-review-strategy
 /**
  * Whether the wrapper must capture an initial git ref before the plan runs.
  * Only TDD strategies require this — non-TDD strategies have no rollback path.
- * Extracted so pipeline/stages/execution.ts can stay strategy-blind beyond this call.
+ * Extracted so the caller stays strategy-blind beyond this call.
  *
  * Strategy classification (`isThreeSessionStrategy`) is the SSOT in
  * `src/config/test-strategy.ts` — do not re-declare the set here.
