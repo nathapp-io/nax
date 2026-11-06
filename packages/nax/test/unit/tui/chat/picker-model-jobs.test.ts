@@ -5,7 +5,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { BackgroundTask } from "@/chat/background/task-types";
 import type { ChatJob, ChatJobKind, ChatJobState } from "@/chat/jobs/job-types";
-import { _pickerDeps, MAX_JOB_PICKER_ROWS, type PickerModelInput, pickerModel } from "@/tui/chat/picker-model";
+import {
+  _pickerDeps,
+  MAX_ENDED_JOB_PICKER_ROWS,
+  MAX_JOB_PICKER_ROWS,
+  type PickerModelInput,
+  pickerModel,
+} from "@/tui/chat/picker-model";
 import { relativeTime } from "@/tui/chat/relative-time";
 
 const NOW_MS = Date.parse("2026-05-01T12:00:00.000Z");
@@ -222,6 +228,36 @@ describe("pickerModel jobs kind", () => {
     const entries = jobsModel({ jobs, tasks }).entries;
     expect(entries).toHaveLength(2);
     for (const entry of entries) expect(entry.current).not.toBe(true);
+  });
+
+  test("#2817 keeps every running row but only the newest ended rows, counting the rest", () => {
+    const running = [task({ id: "bash-0000000a", startedAt: at(50) })];
+    const ended = Array.from({ length: 8 }, (_, i) =>
+      job({ id: `run-${i.toString(16).padStart(8, "0")}`, state: "succeeded", startedAt: at(i + 1) }),
+    );
+    const model = jobsModel({ jobs: ended, tasks: running });
+    expect(MAX_ENDED_JOB_PICKER_ROWS).toBe(5);
+    expect(model.entries.map((e) => e.value)).toEqual([
+      "bash-0000000a",
+      "run-00000000",
+      "run-00000001",
+      "run-00000002",
+      "run-00000003",
+      "run-00000004",
+    ]);
+    expect(model.note).toEqual({ text: "1 running · 8 ended · 3 older not shown", tone: "muted" });
+  });
+
+  test("#2817 counts running and ended rows once something has ended", () => {
+    const jobs = [job({ id: "run-0000aaaa" }), job({ id: "run-0000bbbb", state: "failed" })];
+    const tasks = [task({ id: "bash-0000aaaa", state: "succeeded" })];
+    expect(jobsModel({ jobs, tasks }).note).toEqual({ text: "1 running · 2 ended", tone: "muted" });
+    expect(jobsModel({ jobs: [job({ id: "run-0000aaaa" })] }).note).toBeUndefined();
+  });
+
+  test("#2817 a warning still outranks the count note", () => {
+    const jobs = [job({ id: "run-0000bbbb", state: "failed" })];
+    expect(jobsModel({ jobs, warning: "nope" }).note).toEqual({ text: "nope", tone: "warning" });
   });
 
   test("typing does not filter the rows", () => {

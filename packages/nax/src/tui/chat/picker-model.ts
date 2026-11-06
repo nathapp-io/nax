@@ -22,6 +22,9 @@ const NO_SESSIONS = "no saved sessions";
 const NO_JOBS = "no jobs or tasks";
 /** The most jobs-picker rows built from the registries; the Picker's viewport cap is separate. */
 export const MAX_JOB_PICKER_ROWS = 20;
+/** Ended jobs and tasks the picker keeps after the running ones; older ended rows are counted, not drawn (#2817). */
+export const MAX_ENDED_JOB_PICKER_ROWS = 5;
+
 /** The title each kind of picker draws, in the words the design fixes. */
 const TITLES = {
   model: "Switch model",
@@ -247,8 +250,20 @@ function compareJobRows(a: JobRow, b: JobRow): number {
   return a.entry.value < b.entry.value ? -1 : 1;
 }
 
-/** Jobs and tasks merged into one deterministic, capped list; an unreadable start sorts oldest. */
-function jobEntries(input: PickerModelInput, nowMs: number): readonly PickerEntry[] {
+/** The picker's rows, with what was counted but not drawn. */
+interface JobRows {
+  readonly entries: readonly PickerEntry[];
+  readonly running: number;
+  readonly ended: number;
+  /** Ended rows left out by MAX_ENDED_JOB_PICKER_ROWS. */
+  readonly hiddenEnded: number;
+}
+
+/**
+ * Jobs and tasks merged into one deterministic list: every running row (capped at
+ * MAX_JOB_PICKER_ROWS), then only the newest ended rows. An unreadable start sorts oldest.
+ */
+function jobRows(input: PickerModelInput, nowMs: number): JobRows {
   const startedMs = (iso: string): number => {
     const ms = Date.parse(iso);
     return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
@@ -264,23 +279,38 @@ function jobEntries(input: PickerModelInput, nowMs: number): readonly PickerEntr
       startedMs: startedMs(task.startedAt),
       entry: taskEntry(task, nowMs),
     })),
-  ];
-  return rows
-    .sort(compareJobRows)
-    .slice(0, MAX_JOB_PICKER_ROWS)
-    .map((row) => row.entry);
+  ].sort(compareJobRows);
+  const running = rows.filter((row) => row.running);
+  const ended = rows.filter((row) => !row.running);
+  const shownEnded = ended.slice(0, MAX_ENDED_JOB_PICKER_ROWS);
+  return {
+    entries: [...running, ...shownEnded].slice(0, MAX_JOB_PICKER_ROWS).map((row) => row.entry),
+    running: running.length,
+    ended: ended.length,
+    hiddenEnded: ended.length - shownEnded.length,
+  };
 }
 
-/** The jobs picker: no filtering, no current row; a warning outranks the empty note. */
+/**
+ * Once anything has ended, the note under the rows counts what is running and what ended, and how
+ * many older ended rows were left out, so the active work is not lost among finished rows (#2817).
+ */
+function jobsCountNote({ running, ended, hiddenEnded }: JobRows): PickerNote | undefined {
+  if (ended === 0) return undefined;
+  const hidden = hiddenEnded > 0 ? ` · ${hiddenEnded} older not shown` : "";
+  return { text: `${running} running · ${ended} ended${hidden}`, tone: "muted" };
+}
+
+/** The jobs picker: no filtering, no current row; a warning outranks the empty and count notes. */
 function jobsPickerModel(input: PickerModelInput): PickerModel {
-  const entries = jobEntries(input, input.nowMs ?? _pickerDeps.now());
+  const rows = jobRows(input, input.nowMs ?? _pickerDeps.now());
   const note: PickerNote | undefined =
     input.warning !== undefined
       ? { text: input.warning, tone: "warning" }
-      : entries.length === 0
+      : rows.entries.length === 0
         ? { text: NO_JOBS, tone: "muted" }
-        : undefined;
-  return { kind: "jobs", title: TITLES.jobs, entries, ...(note === undefined ? {} : { note }) };
+        : jobsCountNote(rows);
+  return { kind: "jobs", title: TITLES.jobs, entries: rows.entries, ...(note === undefined ? {} : { note }) };
 }
 
 /** The rows one kind of picker offers. */
