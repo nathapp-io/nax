@@ -3,7 +3,7 @@
   "feature": "pipeline-fork-cut",
   "branchName": "feat/pipeline-fork-cut",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T02:54:42.727Z",
+  "updatedAt": "2026-11-06T03:16:33.489Z",
   "userStories": [
     {
       "id": "US-001",
@@ -145,14 +145,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module control-flow refactor spans derived iteration bounds, progress detection, end-phase verdicts and exactly-once asynchronous completion events; existing workflow algorithms and seams are retained."
+        "reasoning": "Cross-module control-flow refactor spans derived iteration bounds, progress detection, end-phase verdicts and exactly-once asynchronous completion events; existing workflow algorithms and seams are retained.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/iteration-runner.ts",
@@ -251,7 +254,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6eae3b9b0751d85569e986d753ae210c02c1a503"
     },
     {
       "id": "US-003",
