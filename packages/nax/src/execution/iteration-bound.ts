@@ -1,8 +1,8 @@
 /**
  * The loop limit for a run (nax#2706).
  *
- * Pipeline mode keeps `execution.maxIterations`. Workflow mode derives it from the work left and
- * ignores that setting. A workflow iteration runs one story: fix rounds and tier escalation happen
+ * The bound is derived from the work left, ignoring `execution.maxIterations`. A workflow iteration runs
+ * one story: fix rounds and tier escalation happen
  * inside the story loop and the workflow stage never returns `escalate`. An iteration does not always
  * settle its story, though. A non-workflow stage that throws or returns `fail` (routing, constitution,
  * queue-check, a PRD save) marks the story failed, and the selector then retries it; and a pending
@@ -15,7 +15,7 @@
  * PRD is caught by `progressSignature`.
  */
 
-import { isWorkflowMode, type NaxConfig } from "@/config";
+import type { NaxConfig } from "@/config";
 import { pendingStories } from "@/prd";
 import type { PRD } from "@/prd/types";
 import { resolveRetryCandidate } from "./story-selector";
@@ -28,16 +28,14 @@ export function workflowIterationsRemaining(prd: PRD, config: NaxConfig, lastSto
   return pending.length + retry + escalationHops + 1;
 }
 
-/** The loop runs while `iterations < limit`: derived in workflow mode, `execution.maxIterations` otherwise. */
+/** The loop runs while `iterations < limit`, derived from the remaining work. */
 export function loopIterationLimit(
   prd: PRD,
   config: NaxConfig,
   iterationsDone: number,
   lastStoryId: string | null,
 ): number {
-  return isWorkflowMode(config)
-    ? iterationsDone + workflowIterationsRemaining(prd, config, lastStoryId)
-    : config.execution.maxIterations;
+  return iterationsDone + workflowIterationsRemaining(prd, config, lastStoryId);
 }
 
 /** A fingerprint of the parts of the PRD an iteration moves; equal before and after means no progress. */

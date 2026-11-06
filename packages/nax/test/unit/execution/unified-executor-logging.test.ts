@@ -549,6 +549,7 @@ describe("story.start suppression when the tier ladder is exhausted (#1653)", ()
 describe("story.start suppression in a parallel batch (#1653)", () => {
   let deps: Record<string, unknown>;
   let origRunParallelBatch: unknown;
+  let origSavePrdProgress: unknown;
   let origSelectIndependentBatch: unknown;
   let origPreIterationTierCheck: unknown;
   let spy: ReturnType<typeof installStoryLogSpy>;
@@ -558,6 +559,7 @@ describe("story.start suppression in a parallel batch (#1653)", () => {
     const mod = await import("@/execution/unified-executor");
     deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
     origRunParallelBatch = deps.runParallelBatch;
+    origSavePrdProgress = deps.savePrdProgress;
     origSelectIndependentBatch = deps.selectIndependentBatch;
     origPreIterationTierCheck = deps.preIterationTierCheck;
     spy = installStoryLogSpy();
@@ -566,6 +568,7 @@ describe("story.start suppression in a parallel batch (#1653)", () => {
   afterEach(async () => {
     if (deps) {
       deps.runParallelBatch = origRunParallelBatch;
+      deps.savePrdProgress = origSavePrdProgress;
       deps.selectIndependentBatch = origSelectIndependentBatch;
       deps.preIterationTierCheck = origPreIterationTierCheck;
     }
@@ -584,19 +587,40 @@ describe("story.start suppression in a parallel batch (#1653)", () => {
     prdPath = join(tmpdir(), `nax-1653-batch-${process.pid}.json`);
     await Bun.write(prdPath, JSON.stringify(prd));
 
-    deps.selectIndependentBatch = mock(() => [kept, refused]);
+    let selected = false;
+    deps.selectIndependentBatch = mock(() => {
+      if (selected) return [];
+      selected = true;
+      return [kept, refused];
+    });
     deps.preIterationTierCheck = mock(async (story: { id: string }) => ({
       shouldSkipIteration: story.id === "US-002",
       prdDirty: false,
       prd,
     }));
-    deps.runParallelBatch = mock(async () => ({
-      completed: [kept],
-      failed: [],
-      mergeConflicts: [],
-      storyCosts: new Map([[kept.id, 0]]),
-      totalCost: 0,
-    }));
+    deps.savePrdProgress = mock(async () => {
+      await Bun.write(
+        prdPath,
+        JSON.stringify(
+          makePrd([
+            { ...kept, status: "passed", passes: true },
+            { ...refused, status: "skipped" },
+          ]),
+        ),
+      );
+    });
+    deps.runParallelBatch = mock(async () => {
+      await Bun.write(
+        prdPath,
+        JSON.stringify(
+          makePrd([
+            { ...kept, status: "passed", passes: true },
+            { ...refused, status: "skipped" },
+          ]),
+        ),
+      );
+      return { completed: [kept], failed: [], mergeConflicts: [], storyCosts: new Map([[kept.id, 0]]), totalCost: 0 };
+    });
 
     const { executeUnified } = await import("@/execution/unified-executor");
     const ctx = { ...makeCtx({ parallelCount: 2 }), prdPath };

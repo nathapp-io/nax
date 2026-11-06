@@ -394,7 +394,12 @@ describe("US-003: batch executor excludes shouldSkipIteration stories from dispa
     const deps = depsView()._unifiedExecutorDeps;
     deps.preIterationTierCheck = preIterationTierCheckMock;
     deps.runParallelBatch = runParallelBatchMock;
-    deps.selectIndependentBatch = mock(() => [story1, story2, story3]);
+    let selected = false;
+    deps.selectIndependentBatch = mock(() => {
+      if (selected) return [];
+      selected = true;
+      return [story1, story2, story3];
+    });
 
     const prd = makePrd([story1, story2, story3]);
     const ctx = makeCtx({ parallelCount: 3 });

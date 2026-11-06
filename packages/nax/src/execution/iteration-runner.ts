@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { isWorkflowMode, type NaxConfig, pinRootOnlyKeys, profileOverrideFromConfig } from "../config";
+import { pinRootOnlyKeys, profileOverrideFromConfig } from "../config";
 import { loadConfigForWorkdir } from "../config/loader";
 import { getLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -37,10 +37,10 @@ export interface IterationResult {
   subStoryCount?: number;
 }
 
-/** A5: execution.mode is root-only, so the root config decides (spec §5.1). */
-async function selectPipeline(config: NaxConfig): Promise<PipelineStage[]> {
+/** Every story uses the workflow stages. */
+async function selectPipeline(): Promise<PipelineStage[]> {
   const stages = await import("../pipeline/stages");
-  return isWorkflowMode(config) ? stages.getWorkflowPipeline() : stages.defaultPipeline;
+  return stages.getWorkflowPipeline();
 }
 
 /** Drop per-story payloads after result handlers persist the data needed by later iterations. */
@@ -246,7 +246,7 @@ export async function runIteration(
   });
   await ctx.statusWriter.update(totalCost, iterations);
 
-  const pipeline = await selectPipeline(ctx.config);
+  const pipeline = await selectPipeline();
   const pipelineResult = await _iterationRunnerDeps.runPipeline(pipeline, pipelineContext, ctx.eventEmitter);
 
   // Tear down warm story sessions (implementer + per-role) on escalation so the

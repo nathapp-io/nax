@@ -478,7 +478,7 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     expect(result.totalCost).toBe(1.0);
   });
 
-  test("result.exitReason is 'max-iterations' after consuming all iterations in a parallel batch", async () => {
+  test("result.exitReason is completed after a settled parallel batch, ignoring a fixed cap", async () => {
     const s1 = makePendingStory("US-EXIT1");
     const s2 = makePendingStory("US-EXIT2");
     const costMap = new Map([
@@ -490,10 +490,10 @@ describe("result fields — storiesCompleted, totalCost, allStoryMetrics integri
     deps.runParallelBatch = mock(async () => makeBatch([s1, s2], costMap));
 
     const { executeUnified } = await import("@/execution/unified-executor");
-    // maxIterations: 1 → the loop processes the batch then exits naturally
+    // The derived bound allows the completion path after the batch settles.
     const result = await executeUnified(makeCtx({ parallelCount: 2, maxIterations: 1 }), makePrd([s1, s2]));
 
-    expect(result.exitReason).toBe("max-iterations");
+    expect(result.exitReason).toBe("completed");
   });
 
   test("allStoryMetrics has no duplicate entries for the same storyId", async () => {

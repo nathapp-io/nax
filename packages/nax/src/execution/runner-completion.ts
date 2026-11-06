@@ -8,7 +8,7 @@
 import path from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { groupStoriesByPackage } from "@/acceptance";
-import { isWorkflowMode, loadConfigForPackage, type NaxConfig } from "@/config";
+import { loadConfigForPackage, type NaxConfig } from "@/config";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
@@ -38,7 +38,6 @@ import { workflowFinalRunStatus } from "./lifecycle/workflow-run-status";
 import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
 import { createRunCompleteGate, runEndPhaseReported } from "./workflow-end-report";
-import { effectiveParallelCount } from "./workflow-parallel";
 
 /**
  * Options for the completion phase.
@@ -374,7 +373,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     statusWriter: options.statusWriter,
     config: options.config,
     agentManager: options.agentManager,
-    skipRegression: shouldSkipRegression(options, regressionAlreadyPassed),
+    skipRegression: true,
     sessionManager: options.sessionManager,
     pluginProviderCache: options.pluginProviderCache,
     deferredReview: options.deferredReview,
@@ -382,18 +381,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     exitReason: options.exitReason,
     runtime: options.runtime,
     abortSignal: options.abortSignal,
-    // RunnerOptions.parallel: undefined, 0 and 1 all execute one story at a
-    // time, so all three are sequential. Anything above 1 fans stories out
-    // across worktrees, where `completedAt` order is not causal and per-story
-    // gate state does not reflect the merged repo — so the regression gate must
-    // withhold its snapshots rather than attribute blame from them. `0` can
-    // still arrive from a programmatic RunnerOptions caller even though the CLI
-    // now rejects it. The `!(> 1)` form also classifies NaN as sequential,
-    // matching the executor's `(parallelCount ?? 0) > 0` dispatch check — a
-    // comparison-based test (e.g. `<= 1`) would call NaN parallel and withhold
-    // snapshots from a run that actually executed sequentially.
-    // Workflow mode clamps --parallel to sequential (the executor already warned), so classify the clamped value.
-    isSequential: !((effectiveParallelCount(options.config, options.parallel, () => {}) ?? 0) > 1),
+    isSequential: true,
     interactionChain: options.interactionChain,
     // run.complete and run:completed follow the end phase (finish / feature workflow), when the whole duration is known (nax#2491, nax#2494).
     deferRunCompleteLog: true,
@@ -461,11 +449,6 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     reportedTotal: finalTotal,
     ...(workflowPassed !== undefined ? { workflowPassed } : {}),
   };
-}
-
-/** A5: the feature workflow's gates subsume the deferred regression gate (spec §5.3). */
-function shouldSkipRegression(options: RunnerCompletionOptions, alreadyPassed: boolean): boolean {
-  return alreadyPassed || isWorkflowMode(options.config);
 }
 
 /** Persist finish's in-memory outcome and reconcile the run's final spend. */
@@ -576,13 +559,12 @@ async function finishRun(
   } finally {
     gate.ensureSafely(() => {
       const durationMs = _runnerCompletionDeps.now() - options.startTime;
-      const workflow = isWorkflowMode(options.config);
       return {
         durationMs,
         storiesDurationMs: durationMs,
-        ...(workflow ? { featureWorkflowDurationMs: 0 } : { endPhaseDurationMs: 0 }),
+        featureWorkflowDurationMs: 0,
         totalCost: completionResult.reportedTotal,
-        workflowPassed: !workflow,
+        workflowPassed: false,
       };
     });
     // Awaits hook delivery on the rejection path too (bounded by the bus's settle deadline).

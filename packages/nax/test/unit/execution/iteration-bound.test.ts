@@ -76,10 +76,11 @@ describe("loopIterationLimit", () => {
     expect(loopIterationLimit(makePRD({ userStories: stories }), config, 5, null)).toBe(5 + 29);
   });
 
-  test("pipeline mode: execution.maxIterations, whatever the PRD holds", () => {
+  test("pipeline literal: derives the bound instead of execution.maxIterations", () => {
     const config = makeNaxConfig({ execution: { mode: "pipeline", maxIterations: 7 } });
 
-    expect(loopIterationLimit(makePRD({ userStories: stories }), config, 5, null)).toBe(7);
+    const prd = makePRD({ userStories: stories });
+    expect(loopIterationLimit(prd, config, 2, null)).toBe(2 + workflowIterationsRemaining(prd, config, null));
   });
 });
 

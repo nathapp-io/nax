@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { makeDispatchContext, makeNaxConfig, makePRD, makeStatusWriter, withInfoSpy, withWarnSpy } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
-import { _endPhaseDeps, type EndPhaseDeps, finishStorySummary, runEndPhase } from "@/execution/end-phase";
+import { _endPhaseDeps, type EndPhaseDeps, runEndPhase } from "@/execution/end-phase";
 import type { RunnerCompletionOptions } from "@/execution/runner-completion";
 import type { FinishPhaseContext } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -58,24 +58,14 @@ const PIPELINE = makeNaxConfig({ execution: { mode: "pipeline" } });
 const WORKFLOW = makeNaxConfig({ execution: { mode: "workflow" } });
 
 describe("runEndPhase (P4-R16)", () => {
-  test("pipeline mode: finish runs with the same context as before; workflowPassed undefined", async () => {
+  test("pipeline literal: runs workflow once, never finish, and returns skipped outcome without url", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";
     const { d, finish, workflow } = deps();
-    expect(await runEndPhase(opts(PIPELINE), d)).toBeUndefined();
-    expect(workflow).toHaveLength(0);
-    expect(finish[0]).toMatchObject({ feature: "f", workdir: "/repo", branch: "feat/x", runId: "run-1" });
-    expect(finish[0]?.storySummary).toEqual(finishStorySummary(opts(PIPELINE)));
-  });
-
-  test("pipeline mode: a finish throw is swallowed (fail-open)", async () => {
-    _endPhaseDeps.resolveBranch = async () => "feat/x";
-    const d: EndPhaseDeps = {
-      runFinishPhase: async () => {
-        throw new Error("finish broke");
-      },
-      runWorkflowFeature: async () => null,
-    };
-    expect(await runEndPhase(opts(PIPELINE), d)).toBeUndefined();
+    const outcome = await runEndPhase(opts(PIPELINE), d);
+    expect(workflow).toHaveLength(1);
+    expect(finish).toHaveLength(0);
+    expect(outcome).toEqual({ passed: true, reasons: [] });
+    expect(Object.hasOwn(outcome ?? {}, "url")).toBe(false);
   });
 
   test("workflow mode: runWorkflowFeature instead of finish; passed flows out", async () => {

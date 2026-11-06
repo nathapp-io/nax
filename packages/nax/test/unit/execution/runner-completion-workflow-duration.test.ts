@@ -12,6 +12,7 @@ import {
   makeStatusWriter,
   makeStory,
 } from "@test/helpers";
+import { _endPhaseDeps } from "@/execution/end-phase";
 import type { RunCompleteFinal, RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import { _workflowEndReportDeps } from "@/execution/workflow-end-report";
@@ -76,6 +77,7 @@ const base: RunCompletionResult = {
   finalCounts: { total: 1, passed: 1, failed: 0, skipped: 0, pending: 0 },
   pluginGateFailed: false,
 };
+const origEnd = { ..._endPhaseDeps };
 const origDeps = { ..._runnerCompletionDeps };
 const origReport = { ..._workflowEndReportDeps };
 const origGit = _gitDeps.spawn;
@@ -108,6 +110,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   resetLogger();
+  Object.assign(_endPhaseDeps, origEnd);
   Object.assign(_runnerCompletionDeps, origDeps);
   Object.assign(_workflowEndReportDeps, origReport);
   _gitDeps.spawn = origGit;
@@ -116,6 +119,37 @@ afterEach(() => {
 });
 
 describe("runCompletionPhase — Duration in workflow mode (nax#2491)", () => {
+  test.each(["workflow", "pipeline"] as const)(
+    "%s: rejecting end phase records workflow fallback without end-phase key",
+    async (mode) => {
+      _endPhaseDeps.resolveBranch = async () => {
+        throw new Error("branch failed");
+      };
+      const events: RunCompleteFinal[] = [];
+      _runnerCompletionDeps.handleRunCompletion = mock(async () => ({
+        ...base,
+        logRunComplete: (final: RunCompleteFinal) => {
+          runComplete.push(final);
+        },
+        emitRunCompleted: (final: RunCompleteFinal) => {
+          events.push(final);
+        },
+      }));
+      await expect(runCompletionPhase(opts(mode))).rejects.toThrow("branch failed");
+      expect(runComplete).toHaveLength(1);
+      expect(events).toEqual(runComplete);
+      expect(runComplete[0]).toMatchObject({ featureWorkflowDurationMs: 0, workflowPassed: false });
+      expect(runComplete[0]).not.toHaveProperty("endPhaseDurationMs");
+    },
+  );
+
+  test("parallel 4 is reported as sequential", async () => {
+    await runCompletionPhase(opts("workflow", { parallel: 4 }));
+    expect(_runnerCompletionDeps.handleRunCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({ isSequential: true }),
+    );
+  });
+
   test("durationMs spans the feature workflow and the run.complete line gets the split", async () => {
     const result = await runCompletionPhase(opts("workflow"));
     expect(result.durationMs).toBe(STORIES_MS + FEATURE_MS);

@@ -220,14 +220,14 @@ describe("runCompletionPhase — final run status honours the feature workflow (
 // ---------------------------------------------------------------------------
 
 describe("runCompletionPhase — no redundant setRunStatus after the end phase (US-004)", () => {
-  test("pipeline mode makes no setRunStatus call after the end phase", async () => {
+  test("skipped workflow makes no redundant setRunStatus call", async () => {
     const dir = makeDir("wf-status-pipeline-");
     const config = configFor("pipeline");
     const prd = okPrd();
     const featureDir = join(dir, "feature");
     mkdirSync(featureDir, { recursive: true });
     const statusWriter = makeStatusWriter();
-    _runnerCompletionDeps.runFinishPhase = mock(async () => null);
+    _runnerCompletionDeps.runWorkflowFeature = mock(async () => null);
 
     await runCompletionPhase(makeOpts(config, prd, statusWriter, dir, { featureDir }));
 

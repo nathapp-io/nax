@@ -3,7 +3,7 @@
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { WorkflowRunStartInput } from "@/workflow";
 import { resolveDefaultAgent } from "../agents";
-import { isWorkflowMode, type NaxConfig } from "../config";
+import type { NaxConfig } from "../config";
 import { checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -41,14 +41,12 @@ let _prevRunUnsubscribers: Array<() => void> = [];
  * nax#2706: the loop ran out of iterations with stories still waiting. This used to be a debug line,
  * so a 28-story feature stopped at 20 with nothing above debug level to say why.
  */
-function logIterationCapReached(prd: PRD, config: NaxConfig, limit: number, iterations: number): void {
+function logIterationCapReached(prd: PRD, limit: number, iterations: number): void {
   const pendingIds = pendingStoryIds(prd);
   if (pendingIds.length === 0) return;
   const n = pendingIds.length;
   const what = `${n} ${n === 1 ? "story" : "stories"} still pending (${pendingIds.join(", ")})`;
-  const message = isWorkflowMode(config)
-    ? `Exit reason max-iterations: the derived loop bound (${limit}) was exhausted with ${what}; a story did not settle, check the log for retries`
-    : `Exit reason max-iterations: hit execution.maxIterations (${limit}) with ${what}; raise execution.maxIterations or pass -m`;
+  const message = `Exit reason max-iterations: the derived loop bound (${limit}) was exhausted with ${what}; a story did not settle, check the log for retries`;
   getSafeLogger()?.warn("execution", message, {
     storyId: "_run",
     exitReason: "max-iterations",
@@ -58,20 +56,18 @@ function logIterationCapReached(prd: PRD, config: NaxConfig, limit: number, iter
   });
 }
 
-/** A5 (spec §5.3): the advisor pre-flight runs once before the first story, in workflow mode only. Fail-open inside. */
+/** A5 (spec §5.3): the advisor pre-flight runs once before the first story, unless this is a dry run. Fail-open inside. */
 /**
  * Per-iteration loop guard (nax#2706). Workflow mode recomputes the limit from the PRD as it stands,
  * and flags an iteration that changed nothing since the previous one: it would change nothing on the
- * next either. Pipeline mode keeps its fixed limit and never stalls here.
+ * next either.
  */
 function nextLoopGuard(
   config: NaxConfig,
   state: LoopState,
   iterations: number,
   lastSignature: string | undefined,
-  limit: number,
 ): { stalled: boolean; limit: number; signature: string | undefined } {
-  if (!isWorkflowMode(config)) return { stalled: false, limit, signature: lastSignature };
   const signature = progressSignature(state.prd);
   return {
     stalled: signature === lastSignature,
@@ -81,7 +77,7 @@ function nextLoopGuard(
 }
 
 async function runWorkflowPreflightOnce(ctx: SequentialExecutionContext, prd: PRD): Promise<void> {
-  if (!isWorkflowMode(ctx.config) || ctx.dryRun) return;
+  if (ctx.dryRun) return;
   await _unifiedExecutorDeps.runWorkflowPreflight({
     runtime: ctx.runtime,
     config: ctx.config,
@@ -240,8 +236,7 @@ export async function executeUnified(
 
     await runWorkflowPreflightOnce(ctx, state.prd);
 
-    // nax#2706: workflow mode derives the limit from the work left (recomputed each iteration);
-    // execution.maxIterations is pipeline mode's cap.
+    // Derive the limit from the work left, recomputing it each iteration.
     let limit = loopIterationLimit(state.prd, ctx.config, 0, null);
     let lastSignature: string | undefined;
     while (iterations < limit) {
@@ -262,7 +257,7 @@ export async function executeUnified(
         total: storyCounts.total,
       });
       if (isComplete(state.prd)) return completeRun(naxIgnoreIndex);
-      const guard = nextLoopGuard(ctx.config, state, iterations, lastSignature, limit);
+      const guard = nextLoopGuard(ctx.config, state, iterations, lastSignature);
       if (guard.stalled) break;
       ({ limit, signature: lastSignature } = guard);
 
@@ -298,9 +293,9 @@ export async function executeUnified(
       if (seqStep.action === "return") return buildResult(seqStep.exitReason);
     }
 
-    // Defence in depth (workflow mode): the loop can end on the very iteration that finished the last
+    // Defence in depth: the loop can end on the very iteration that finished the last
     // story; that is a completed run, not an exhausted one.
-    if (isWorkflowMode(ctx.config) && (await refreshedIsComplete())) {
+    if (await refreshedIsComplete()) {
       return completeRun(await getRunNaxIgnoreIndex(state.prd));
     }
 
@@ -333,7 +328,7 @@ export async function executeUnified(
       logPipelineOutcome(postRunResult, "Post-run pipeline (acceptance tests)");
     }
 
-    logIterationCapReached(state.prd, ctx.config, limit, iterations);
+    logIterationCapReached(state.prd, limit, iterations);
     return buildResult("max-iterations");
   } catch (err) {
     _executeThrew = true;

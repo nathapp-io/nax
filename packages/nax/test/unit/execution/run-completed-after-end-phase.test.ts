@@ -193,16 +193,6 @@ describe("runCompletionPhase — deferred run:completed in workflow mode", () =>
   });
 });
 
-describe("runCompletionPhase — deferred run:completed in pipeline mode", () => {
-  test("emits once after finish, as passed, with no url and an empty reasons list", async () => {
-    await runCompletionPhase(opts("pipeline"));
-    expect(emitRunCompleted).toHaveBeenCalledTimes(1);
-    expect(emitted[0]).toMatchObject({ workflowPassed: true, reasons: [], endPhaseDurationMs: FEATURE_MS });
-    expect(Object.keys(emitted[0] ?? {})).not.toContain("url");
-    expect(order).toEqual(["end-phase", "emit"]);
-  });
-});
-
 describe("runCompletionPhase — rejection paths", () => {
   function rejectingFeatureStatus(): Partial<RunnerCompletionOptions> {
     const statusWriter = makeStatusWriter();
