@@ -28,7 +28,7 @@ const FINISH_PHASES: readonly FinishPhase[] = ["acceptance", "spec", "quality", 
  * are only cheap to add while that stays true.
  */
 export interface FinishPhaseState {
-  /** Times this phase's fix step has run. Capped by MAX_FIX_ATTEMPTS. */
+  /** Times this phase's fix step has run. */
   fixAttempts: number;
   /** Times this phase's reviewer has run. Zero for `acceptance` and `gate`. */
   reviewAttempts: number;
@@ -51,7 +51,7 @@ export type FinishStatus = "running" | FinishResultStatus;
 
 /** A4: the shared review/fix loop's record for one finish. */
 export interface ReviewLoopState {
-  /** Review rounds run this finish (both lenses = one round). Capped by MAX_REVIEW_ROUNDS. */
+  /** Review rounds run this finish (both lenses = one round). */
   rounds: number;
   /** Merged findings from the last round, before judgment. */
   lastFindings: Finding[];

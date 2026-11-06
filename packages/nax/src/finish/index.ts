@@ -2,7 +2,7 @@
  * Public barrel for `src/finish/` — the first this module gets.
  *
  * Exports what a consumer outside the module needs — context/state
- * construction, the `FinishOps` contract, the routing/gate functions, and the
+ * construction, the `FinishOps` contract, the quality gate runner, and the
  * types a caller reads results through. It also exports each module's
  * injectable `_*Deps` seam, matching the convention already used by
  * `src/pipeline` (`_scopeFilesDeps`, `_executionDeps`,
@@ -22,16 +22,6 @@ export {
   MAX_PINNED_BLOCKS,
   splitAcBlocks,
 } from "./acceptance-evidence";
-export {
-  _guardDeps,
-  acceptancePathsOf,
-  allowedFrom,
-  dirtyAcceptancePaths,
-  gateGuardPaths,
-  guardAcceptanceEdits,
-  guardWorthRecording,
-  mergeGuard,
-} from "./acceptance-guard";
 export {
   type AdviceRef,
   buildFinishAdvisorForPhase,
@@ -55,7 +45,6 @@ export {
   roundsPath,
   writeResult,
 } from "./audit";
-export { changedFiles } from "./changed-files";
 export { _checkpointDeps, checkpointPath, writeCheckpoint } from "./checkpoint";
 export {
   _finishGitDeps,
@@ -68,11 +57,8 @@ export {
   isDirty,
   PUSH_TIMEOUT_MS,
 } from "./commit";
-export type { CommitMessageCtx } from "./commit-message";
-export { buildFixCommitMessage } from "./commit-message";
 export type { FinishContext, LoadFinishContextOptions } from "./context";
 export { _finishContextDeps, loadFinishContext } from "./context";
-export { _acceptanceGateDeps, runAcceptanceGate } from "./gates/acceptance";
 export type { GateRunRecord, GateRunStatus } from "./gates/quality";
 export {
   _qualityGateDeps,
@@ -104,22 +90,7 @@ export {
 } from "./pr-title";
 export type { ApprovalAction, Resolution } from "./resolve";
 export { approvalFacts, computeFacts, draftReason, isClean, resolve } from "./resolve";
-export { _reviewInputsDeps, loadReviewInputs, storiesFromText } from "./review-inputs";
 export { isFinishReviewShape, MISSING_REVIEW, parseFinishReviewReply } from "./review-json";
-export type { ReviewLoopDeps } from "./review-loop";
-export { MAX_ADVISE_ROUNDS, runReviewLoop } from "./review-loop";
-export type { ReviewRoundResult } from "./review-round";
-export { runReviewRound } from "./review-round";
-export {
-  acceptanceFact,
-  gateCommitRoute,
-  gateFacts,
-  MAX_FIX_ATTEMPTS,
-  MAX_REVIEW_ROUNDS,
-  partitionTestFiles,
-  routeAcceptance,
-  routeQualityGates,
-} from "./route";
 export {
   checkRulings,
   matchLevel,

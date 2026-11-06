@@ -6,5 +6,4 @@
 
 export { buildAdvisorSection } from "./body";
 export { escapeInline, escapeTableCell } from "./escape";
-export { NARRATIVE_MAX_CHARS, readSpecSummary, resolveNarrative } from "./narrative";
 export { openDraftFinishPr, openOrPromotePr, parseView, updatePrBody } from "./open";

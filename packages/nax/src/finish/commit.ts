@@ -79,8 +79,8 @@ export async function headSha(repoRoot: string): Promise<string | null> {
  * Repo-root-relative paths touched by a commit.
  *
  * `--format=` suppresses the header so the output is just the file list.
- * Failure yields `[]`, which the gate loop reads as "cannot tell what
- * changed" and therefore reviews — see `gateCommitRoute` in `./route`.
+ * Failure yields `[]`, which a caller must read as "cannot tell what
+ * changed" — never as "nothing changed".
  */
 export async function filesInCommit(repoRoot: string, sha: string): Promise<string[]> {
   const res = await _finishGitDeps.git(["show", "--name-only", "--format=", sha], repoRoot);

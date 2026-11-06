@@ -90,15 +90,6 @@ export type { FakeRunMemory, FakeRunMemoryOptions } from "./fake-run-memory";
 export { FAKE_MEMORY_PROVIDER, makeFakeMemoryHost, makeFakeRunMemory } from "./fake-run-memory";
 export { makeFinalizeAdvisor, wireFinalize } from "./finalize";
 export { makeFinding } from "./finding";
-export type { FinishGitModel } from "./finish-machine";
-export {
-  CLEAN_REVIEW,
-  installFinishGit,
-  makeFinishContext,
-  makeFinishOps,
-  makeFinishState,
-  makeHandoffRecord,
-} from "./finish-machine";
 export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
 export { waitForFile } from "./fs";
 export { type GeminiAcpEnvDeps, stubGeminiAcpEnvDeps } from "./gemini-acp-deps";

@@ -268,8 +268,7 @@ async function runGateSetup(gate: GateCommand, timeoutMs: number): Promise<Quali
  *
  * Nothing configured is not a pass (I1): an empty `commands` list returns
  * `passed: false, ran: []`. An LLM fix step cannot invent the repo's build
- * commands, so "nothing ran" must never read as "everything passed" —
- * `routeQualityGates` (../route) turns this into an escalation.
+ * commands, so "nothing ran" must never read as "everything passed".
  *
  * `opts.onGate`, when given, receives one `GateRunRecord` per gate,
  * synchronously, after that gate has finished and before the next one starts.
