@@ -33,7 +33,6 @@ const SITES: readonly { file: string; marker: string; window?: number }[] = [
     // past the marker keeps it from satisfying this entry.
     window: 200,
   },
-  { file: "src/finish/phase.ts", marker: "packageView: ctx.runtime.packages.resolve(ctx.workdir)," },
 ];
 
 describe("pipeline CallContext sites forward the effective config (#2066)", () => {

@@ -3,7 +3,6 @@ import {
   acceptanceFixSourceOp,
   acceptanceFixTestOp,
   adversarialReviewOp,
-  finishFixOp,
   fullSuiteRectifyOp,
   implementerOp,
   implementerRectifyOp,
@@ -22,7 +21,6 @@ const FILE_MUTATING_OPS = [
   ["acceptance-fix-source", acceptanceFixSourceOp],
   ["acceptance-fix-test", acceptanceFixTestOp],
   ["rectify", rectifyOp],
-  ["finish-fix", finishFixOp],
   ["full-suite-rectify", fullSuiteRectifyOp],
 ] as const;
 

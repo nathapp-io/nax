@@ -34,7 +34,7 @@ describe("findContextSites — classification", () => {
       "    packageDir: ctx.workdir,",
       '    agentName: "claude",',
       "  };",
-      "  return callOp(callCtx, finishFixOp, input);",
+      "  return callOp(callCtx, implementerOp, input);",
       "}",
     ]);
     expect(sites).toEqual([
@@ -145,7 +145,6 @@ describe("bashCarryingNames", () => {
   test("the real barrel: the #2201 ops and the regression strategy factory are all Bash-carrying", () => {
     const names = bashCarryingNames(operations);
     for (const name of [
-      "finishFixOp",
       "acceptanceFixSourceOp",
       "acceptanceFixTestOp",
       "fullSuiteRectifyOp",
@@ -177,11 +176,11 @@ describe("evaluate", () => {
   });
 
   test("an allowlisted file referencing a Bash-carrying name leaks, comments aside", () => {
-    const sources = new Map([[FILE, "// finishFixOp is not used here\nawait callOp(ctx, finishFixOp, input);"]]);
-    const findings = evaluate([bare("c")], [allow("c")], sources, new Set(["finishFixOp", "otherOp"]));
-    expect(findings.leaks).toEqual([{ file: FILE, names: ["finishFixOp"] }]);
-    const commentOnly = new Map([[FILE, "// finishFixOp is not used here"]]);
-    expect(evaluate([bare("c")], [allow("c")], commentOnly, new Set(["finishFixOp"])).leaks).toEqual([]);
+    const sources = new Map([[FILE, "// implementerOp is not used here\nawait callOp(ctx, implementerOp, input);"]]);
+    const findings = evaluate([bare("c")], [allow("c")], sources, new Set(["implementerOp", "otherOp"]));
+    expect(findings.leaks).toEqual([{ file: FILE, names: ["implementerOp"] }]);
+    const commentOnly = new Map([[FILE, "// implementerOp is not used here"]]);
+    expect(evaluate([bare("c")], [allow("c")], commentOnly, new Set(["implementerOp"])).leaks).toEqual([]);
   });
 });
 
@@ -189,11 +188,7 @@ describe("the real tree", () => {
   test("every #2201 Bash-dispatching site is wired and the gate reads clean", async () => {
     const { sites, findings } = await scanTree();
     const wired = new Set(sites.filter((s) => s.kind === "wired").map((s) => s.file));
-    for (const file of [
-      "src/pipeline/stages/execution.ts",
-      "src/finish/phase.ts",
-      "src/execution/lifecycle/acceptance-fix-scope.ts",
-    ]) {
+    for (const file of ["src/pipeline/stages/execution.ts", "src/execution/lifecycle/acceptance-fix-scope.ts"]) {
       expect(wired.has(file)).toBe(true);
     }
     expect(findings).toEqual({ violations: [], stale: [], leaks: [] });

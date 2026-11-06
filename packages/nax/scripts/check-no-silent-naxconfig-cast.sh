@@ -22,13 +22,6 @@
 #            test fixtures). `pickSelector.select` is a total property copy and
 #            every field read downstream is optional and default-merged, so a
 #            partial yields defaults rather than an undefined-access.
-#   src/finish/config.ts
-#       readFinishConfig's native successor to the plugin config reader above,
-#       same guarantee: `config` is deliberately unvalidated (older configs,
-#       partial test fixtures), `finishConfigSelector.select` is a total
-#       property copy, and every field read off `finish` below is optional
-#       with a DEFAULTS fallback — a partial input yields defaults, not an
-#       undefined-access.
 #   src/agents/coding-tool-support-resolve.ts
 #       RULING F2: `AgentRunOptions['config']` is typed as the agent-manager
 #       pick (agent/execution/profile), but both dispatch hops source it from
@@ -55,7 +48,6 @@ matches=$(grep -RnE 'as (unknown as )?NaxConfig\b' src/ \
   | grep -vE '^src/operations/setup-generate\.ts:' \
   | grep -vE '^src/cli/routing-calibrate\.ts:' \
   | grep -vE '^src/plugins/builtin/nax-finish/config\.ts:' \
-  | grep -vE '^src/finish/config\.ts:' \
   | grep -vE '^src/agents/coding-tool-support-resolve\.ts:' \
   || true)
 

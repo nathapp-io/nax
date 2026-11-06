@@ -18,7 +18,7 @@
  * - nax content with no home         → append under nax's own heading
  *
  * The governing invariant is **never emit a field that was not filled**. That
- * is the same rule `buildFinishBody` already followed for its own sections
+ * is the same rule the finish PR body already followed for its own sections
  * (nax#1477 forbids a bare heading with nothing under it); this module extends
  * it to template-derived text. `strict` mode is the one deliberate exception,
  * for repos whose CI asserts a set of headings exists.

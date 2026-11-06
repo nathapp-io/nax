@@ -72,7 +72,7 @@ export interface FindingDisposition {
   /** Set by `commit_<phase>` when the cited evidence path does not exist. */
   evidenceMissing?: boolean;
 }
-/** Wall-clock budgets, forwarded from `finish.timeouts` by `runFinishPhase`. */
+/** Wall-clock budgets, forwarded from `finish.timeouts`. */
 export interface FinishTimeouts {
   acceptanceMs?: number;
   gateMs?: number;
@@ -287,10 +287,10 @@ export interface FinishResult {
   /**
    * Set only when `FinishContext.route` was `"already-finished"` (#1674 part
    * 1): this result is a ledger skip, not a fresh preflight outcome, even
-   * though its `status` reuses `"nothing-to-finish"`. `runFinishPhase` reads
-   * this to report `postRun.finish.status: "skipped"` rather than `"passed"`
-   * on `status.json` — the two are different claims ("there was truly
-   * nothing to do" vs "this exact commit was already finished").
+   * though its `status` reuses `"nothing-to-finish"`. A consumer reports it
+   * as `postRun.finish.status: "skipped"` rather than `"passed"` on
+   * `status.json` — the two are different claims ("there was truly nothing to
+   * do" vs "this exact commit was already finished").
    *
    * `"pr-merged"` (#1674 part 2) is the same kind of claim from the other
    * short-circuit: the branch's PR was already merged, so the machine stood

@@ -34,7 +34,7 @@ function deps(
   };
 }
 
-/** A fixer that edits, waits for its interrupt, then returns the op's interrupted outcome (as finishFixOp does). */
+/** A fixer that edits, waits for its interrupt, then returns the op's interrupted outcome. */
 function interruptedFix(model: { dirty: boolean }): FinishOps["fix"] {
   return async (_phase, req) => {
     model.dirty = true;

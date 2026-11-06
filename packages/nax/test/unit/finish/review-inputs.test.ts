@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeFinishState, restoreFinishMachineStubs } from "@test/helpers";
+import { makeFinishState } from "@test/helpers";
 import { _finishGitDeps, _reviewInputsDeps, loadReviewInputs, storiesFromText } from "@/finish";
 
 const originalGit = _finishGitDeps.git;
@@ -7,7 +7,6 @@ const originalRead = _reviewInputsDeps.readText;
 afterEach(() => {
   _finishGitDeps.git = originalGit;
   _reviewInputsDeps.readText = originalRead;
-  restoreFinishMachineStubs();
 });
 
 describe("storiesFromText", () => {

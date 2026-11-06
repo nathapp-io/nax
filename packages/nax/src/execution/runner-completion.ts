@@ -9,7 +9,6 @@ import path from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { groupStoriesByPackage } from "@/acceptance";
 import { loadConfigForPackage, type NaxConfig } from "@/config";
-import type { FinishPhaseContext, FinishResult } from "@/finish";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
 import type { InteractionChain } from "@/interaction";
@@ -119,7 +118,6 @@ export const _runnerCompletionDeps: {
   // `from` is required, so this call site cannot drop the run's --profile chain
   // the way acceptance-setup's did (nax#2126).
   loadConfigForPackage(projectDir: string, packageDir: string | undefined, from: NaxConfig): Promise<NaxConfig>;
-  runFinishPhase(ctx: FinishPhaseContext): Promise<FinishResult | null>;
   runWorkflowFeature(input: WorkflowFeatureInput): Promise<WorkflowFeatureResult | null>;
   /** The run clock (wall ms); a seam so the workflow-duration split is testable. */
   now(): number;
@@ -133,13 +131,6 @@ export const _runnerCompletionDeps: {
     return handleRunCompletion(opts);
   },
   loadConfigForPackage,
-  // Dynamic import (matching handleRunCompletion's own pattern above), not a
-  // static one: the finish module imports the CLI barrel, and a static import
-  // here would create a load-time cycle back through this module's own tree.
-  async runFinishPhase(ctx) {
-    const { runFinishPhase } = await import("@/finish");
-    return runFinishPhase(ctx);
-  },
   async runWorkflowFeature(input) {
     const { runWorkflowFeature } = await import("@/workflow");
     return runWorkflowFeature(input);

@@ -64,15 +64,6 @@ export {
   shouldRunRectification,
   shouldRunReview,
 } from "./execution-gates";
-export type { FinishBranchReviewInput } from "./finish-branch-review";
-export { finishBranchReviewOp } from "./finish-branch-review";
-export type { FinishFixInput } from "./finish-fix";
-export { finishFixOp, HANDOFF_TURN_MS } from "./finish-fix";
-// The native nax-finish operations. The finish state machine dispatches these
-// through `callOp`; their prompt assembly and parsing live with the rest of
-// finish in `src/finish/` and `src/prompts/builders/`.
-export type { FinishSpecReviewInput } from "./finish-spec-review";
-export { finishSpecReviewOp } from "./finish-spec-review";
 export type { FixReviewOpInput } from "./fix-review";
 export { fixReviewOp } from "./fix-review";
 export type {

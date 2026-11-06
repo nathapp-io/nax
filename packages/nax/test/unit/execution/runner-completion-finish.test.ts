@@ -127,13 +127,12 @@ function makeOptsWithRuntime(
 }
 
 describe("feature workflow placement", () => {
-  test("runs before the runtime is closed, never calling finish", async () => {
+  test("runs before the runtime is closed", async () => {
     const order: string[] = [];
     _runnerCompletionDeps.runWorkflowFeature = mock(async () => {
       order.push("workflow");
       return null;
     });
-    _runnerCompletionDeps.runFinishPhase = mock(async () => null);
     const opts = makeOptsWithRuntime(
       makeConfig(false),
       makePRD([{ id: "US-001", status: "passed" }]),
@@ -146,7 +145,6 @@ describe("feature workflow placement", () => {
     };
     await runCompletionPhase(opts);
     expect(order).toEqual(["workflow", "close"]);
-    expect(_runnerCompletionDeps.runFinishPhase).not.toHaveBeenCalled();
   });
 
   test("persists successful and failed-dispatch spend after the workflow", async () => {

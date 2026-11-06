@@ -90,7 +90,7 @@ export type { FakeRunMemory, FakeRunMemoryOptions } from "./fake-run-memory";
 export { FAKE_MEMORY_PROVIDER, makeFakeMemoryHost, makeFakeRunMemory } from "./fake-run-memory";
 export { makeFinalizeAdvisor, wireFinalize } from "./finalize";
 export { makeFinding } from "./finding";
-export type { FinishGitModel, MachineHarness, MachineHarnessOpts } from "./finish-machine";
+export type { FinishGitModel } from "./finish-machine";
 export {
   CLEAN_REVIEW,
   installFinishGit,
@@ -98,8 +98,6 @@ export {
   makeFinishOps,
   makeFinishState,
   makeHandoffRecord,
-  makeMachineHarness,
-  restoreFinishMachineStubs,
 } from "./finish-machine";
 export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
 export { waitForFile } from "./fs";

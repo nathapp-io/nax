@@ -36,11 +36,11 @@ import type { NaxConfig } from "./runtime-types";
 /**
  * Stages that dispatch at least one operation declaring the Bash tool.
  *
- * Mirrors the `stage` field of the nine operations that declare `Bash`:
+ * Mirrors the `stage` field of the eight operations that declare `Bash`:
  * `implementerOp` / `testWriterOp` (run); `rectifyOp` (review);
- * `fullSuiteRectifyOp` / `finishFixOp` / `implementerRectifyOp` /
- * `testWriterRectifyOp` (rectification); `acceptanceFixSourceOp` /
- * `acceptanceFixTestOp` (acceptance).
+ * `fullSuiteRectifyOp` / `implementerRectifyOp` / `testWriterRectifyOp`
+ * (rectification); `acceptanceFixSourceOp` / `acceptanceFixTestOp`
+ * (acceptance).
  */
 export const BASH_DECLARING_STAGES: readonly PipelineStage[] = ["run", "review", "rectification", "acceptance"];
 

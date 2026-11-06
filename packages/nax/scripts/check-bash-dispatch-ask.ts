@@ -39,8 +39,8 @@
  * export whose source names one, e.g. a strategy factory), computed from the
  * operations barrel the way check-op-tool-capability reads it. That reference
  * check sees the file only: a context handed to another module that dispatches
- * a Bash op on its behalf (the finish phase's `createFinishOps(callCtx)`) is not
- * traced, which is exactly why such sites are wired rather than allowlisted.
+ * a Bash op on its behalf is not traced, which is exactly why such sites are
+ * wired rather than allowlisted.
  * An allowlist entry that no longer matches a bare site fails as stale.
  *
  * Source-text, like the other `scripts/check-*` gates (the repo's TypeScript is

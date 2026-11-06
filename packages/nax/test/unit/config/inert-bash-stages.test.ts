@@ -25,7 +25,6 @@ import { PermissionsBlockSchema } from "@/config/schemas-execution";
 import {
   acceptanceFixSourceOp,
   acceptanceFixTestOp,
-  finishFixOp,
   fullSuiteRectifyOp,
   implementerOp,
   implementerRectifyOp,
@@ -85,7 +84,6 @@ const BASH_DECLARING_OPS: Array<[string, { stage: PipelineStage; tools?: readonl
   ["testWriterOp", testWriterOp],
   ["rectifyOp", rectifyOp],
   ["fullSuiteRectifyOp", fullSuiteRectifyOp],
-  ["finishFixOp", finishFixOp],
   ["implementerRectifyOp", implementerRectifyOp],
   ["testWriterRectifyOp", testWriterRectifyOp],
   ["acceptanceFixSourceOp", acceptanceFixSourceOp],

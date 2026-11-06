@@ -227,20 +227,14 @@ describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)"
     cleanupTempDir(tempDir);
   });
 
-  // The acceptance loop is the test subject here. The finish phase is *called*
-  // by the completion phase but self-gates on runtime.dryRun from inside
-  // finishSkipReason — its machine/push/status-write side effects are asserted
-  // in test/unit/finish/phase.test.ts.
-  test("does not dispatch the acceptance loop or the finish machine", async () => {
+  // The acceptance loop is the test subject here: a dry run must never spawn the
+  // suite or dispatch an acceptance fix agent.
+  test("does not dispatch the acceptance loop", async () => {
     const { runCompletionPhase } = await import("@/execution/runner-completion");
     const { handleRunCompletion } = await import("@/execution/lifecycle/run-completion");
-    const { _finishPhaseDeps } = await import("@/finish");
 
     const acceptanceSpy = spyOn(_runnerCompletionDeps, "runAcceptanceLoop").mockImplementation(async () => {
       throw new Error("acceptance loop dispatched under a dry run");
-    });
-    const finishMachineSpy = spyOn(_finishPhaseDeps, "runFinishMachine").mockImplementation(async () => {
-      throw new Error("finish machine ran under a dry run");
     });
     const completionSpy = spyOn(_runnerCompletionDeps, "handleRunCompletion").mockImplementation(async (opts) => {
       await handleRunCompletion(opts);
@@ -296,11 +290,9 @@ describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)"
       const result = await runCompletionPhase(completionOpts);
 
       expect(acceptanceSpy).not.toHaveBeenCalled();
-      expect(finishMachineSpy).not.toHaveBeenCalled();
       expect(result.acceptancePassed).toBe(true);
     } finally {
       acceptanceSpy.mockRestore();
-      finishMachineSpy.mockRestore();
       completionSpy.mockRestore();
     }
   });

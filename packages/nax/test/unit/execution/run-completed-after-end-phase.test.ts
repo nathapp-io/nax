@@ -117,11 +117,6 @@ beforeEach(() => {
     return { ...base, emitRunCompleted };
   });
   stubWorkflow({ passed: true, outcome: "ready", reasons: [] });
-  _runnerCompletionDeps.runFinishPhase = mock(async () => {
-    order.push("end-phase");
-    clock += FEATURE_MS;
-    return null;
-  });
   _workflowEndReportDeps.readSummary = async () => null;
   _workflowEndReportDeps.saveDuration = async () => true;
   _gitDeps.spawn = makeSpawn().spawn;
