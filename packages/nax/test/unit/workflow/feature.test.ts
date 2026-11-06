@@ -404,6 +404,33 @@ describe("runWorkflowFeature", () => {
     expect(result?.outcome).toBe("draft");
   });
 
+  test.each(["local-only", "pushed"] as const)(
+    "#2819 publishOnly resumes a %s prior at publish without rerunning the review",
+    async (outcome) => {
+      const { input, envs, featureDir } = setup();
+      await seedFinished(featureDir, input.feature, { outcome });
+      const result = await runWorkflowFeature({ ...input, publishOnly: true });
+      expect(envs).toHaveLength(1);
+      expect(envs[0]?.record.step).toBe("publish");
+      expect(result?.outcome).toBe("draft");
+    },
+  );
+
+  test("#2819 publishOnly with a published prior has nothing to do", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "draft", url: "https://x/pull/1" });
+    expect((await runWorkflowFeature({ ...input, publishOnly: true }))?.outcome).toBe("already-finished");
+    expect(envs).toHaveLength(0);
+  });
+
+  test("#2819 publishOnly without a finished run is refused before the machine starts", async () => {
+    const { input, envs } = setup();
+    await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
+      code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+    });
+    expect(envs).toHaveLength(0);
+  });
+
   test("the token meter is unsubscribed even when the context build throws", async () => {
     const { input, runtime } = setup();
     const bus = runtime.dispatchEvents;

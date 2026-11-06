@@ -4,6 +4,7 @@
  * Resumes an unfinished prior record; skips when already finished at this HEAD (P4-R1).
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { NaxError } from "@/errors";
 import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus, type WorkflowPublishedEvent } from "@/pipeline/event-bus";
@@ -24,6 +25,7 @@ import {
 import { onlyLedgerChangedSince, readHead } from "./git";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
+import { publishOnlyStart } from "./publish-only";
 import { logWorkflow } from "./run-log";
 import { resolveSeed } from "./seed";
 import { workflowStatusBlock } from "./status-block";
@@ -227,7 +229,14 @@ async function runInContext(
   const stories = summariseStories(fc.prd, await collectStoryRecords(fc.featureDir));
   const prior = await loadPriorFeature(fc.featureDir, fc.runId);
   const head = await currentHead(fc);
-  if (isFinishedAtHead(prior, head) && !isTransientDraft(prior)) {
+  const publishOnly = input.publishOnly === true ? publishOnlyStart(prior, head) : undefined;
+  if (publishOnly?.kind === "refused") {
+    throw new NaxError(`[workflow] --publish-only: ${publishOnly.reason}`, "WORKFLOW_PUBLISH_ONLY_REFUSED", {
+      stage: "workflow",
+      feature: fc.feature,
+    });
+  }
+  if (isFinishedAtHead(prior, head) && !isTransientDraft(prior) && publishOnly?.kind !== "resume") {
     // nax#2550: the prior `passed` described the stories of that run; the verdict is the current ones'.
     const current = {
       ...prior,
@@ -240,7 +249,7 @@ async function runInContext(
     });
     return { ...resultOf(current), outcome: "already-finished" };
   }
-  const record = await startRecord(fc, prior, head);
+  const record = publishOnly?.kind === "resume" ? publishOnly.record : await startRecord(fc, prior, head);
   logHandOff(stories, input.storiesDurationMs);
   const env = buildFeatureEnv(fc, input, {
     stories,
