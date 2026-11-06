@@ -3,7 +3,7 @@
   "feature": "pipeline-story-loop-cut",
   "branchName": "feat/pipeline-story-loop-cut",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T15:00:16.313Z",
+  "updatedAt": "2026-11-06T15:25:23.546Z",
   "userStories": [
     {
       "id": "US-001",
@@ -347,14 +347,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The kept-code changes are four straightforward trims plus notification regressions, but deletion includes the session-cleanup harness and a capability-audit allowance, so the session/security override retains strict test isolation."
+        "reasoning": "The kept-code changes are four straightforward trims plus notification regressions, but deletion includes the session-cleanup harness and a capability-audit allowance, so the session/security override retains strict test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/pipeline/index.ts",
@@ -452,7 +455,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a5da43d4c5359ac1938c19ef851d9a56023a8ea3"
     },
     {
       "id": "US-004",
