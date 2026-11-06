@@ -3,7 +3,7 @@
   "feature": "pipeline-post-run-delete",
   "branchName": "feat/pipeline-post-run-delete",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T09:08:36.499Z",
+  "updatedAt": "2026-11-06T09:49:02.938Z",
   "userStories": [
     {
       "id": "US-001",
@@ -610,14 +610,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module stage removal affects loop branches, lazy barrels and shared fixtures; non-dry-run enabled-config tests must prove both completed and exhausted-loop behavior."
+        "reasoning": "Cross-module stage removal affects loop branches, lazy barrels and shared fixtures; non-dry-run enabled-config tests must prove both completed and exhausted-loop behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/unified-executor.ts",
@@ -731,7 +734,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8cfbe5d4ced3303b7c27d2e04c616645358200ba"
     },
     {
       "id": "US-006",
