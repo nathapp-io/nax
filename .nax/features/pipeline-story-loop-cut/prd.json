@@ -3,7 +3,7 @@
   "feature": "pipeline-story-loop-cut",
   "branchName": "feat/pipeline-story-loop-cut",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T15:45:23.333Z",
+  "updatedAt": "2026-11-06T16:16:54.221Z",
   "userStories": [
     {
       "id": "US-001",
@@ -617,14 +617,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Runner save/set/restore paths, narrowed CLI deps and plan-builder consumers must be cut together while preserving the workflow singleton; trust/path guards are unchanged, so proximity to them alone does not justify full security-critical routing."
+        "reasoning": "Runner save/set/restore paths, narrowed CLI deps and plan-builder consumers must be cut together while preserving the workflow singleton; trust/path guards are unchanged, so proximity to them alone does not justify full security-critical routing.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/runner.ts",
@@ -783,7 +786,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "48da612a8508ececc881f7d915eb4f25d032cf3f"
     },
     {
       "id": "US-006",
