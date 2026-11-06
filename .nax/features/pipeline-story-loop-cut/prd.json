@@ -3,7 +3,7 @@
   "feature": "pipeline-story-loop-cut",
   "branchName": "feat/pipeline-story-loop-cut",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T15:25:23.546Z",
+  "updatedAt": "2026-11-06T15:45:23.333Z",
   "userStories": [
     {
       "id": "US-001",
@@ -474,15 +474,18 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "no-test",
         "reasoning": "The prescribed test-only deletion list and one helper barrel require reference review but no implementation algorithm, production integration or new tests.",
-        "noTestJustification": "The binding spec explicitly declares US-004 no-test: it deletes test-only harness files, obsolete suites and test helper exports, with no production source, baseline or runtime behavior changes. Its acceptance criteria are diff/tree and dangling-reference review assertions."
+        "noTestJustification": "The binding spec explicitly declares US-004 no-test: it deletes test-only harness files, obsolete suites and test helper exports, with no production source, baseline or runtime behavior changes. Its acceptance criteria are diff/tree and dangling-reference review assertions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/test/helpers/index.ts",
@@ -589,7 +592,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "cae402dfb5595c9307a3705ee0c22af4dac36252"
     },
     {
       "id": "US-005",
