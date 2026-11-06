@@ -105,13 +105,3 @@ export function sanitizeTitle(raw: string | undefined): string | undefined {
 
   return clamp(`${type}: ${subject}`);
 }
-
-/**
- * The title to render, best source first.
- *
- * `feat: <feature>` remains the floor: it is what shipped before, it is what
- * the auto-PR plugin opens with, and it is always available.
- */
-export function resolveTitle(agentTitle: string | undefined, feature: string): string {
-  return sanitizeTitle(agentTitle) ?? `${DEFAULT_TYPE}: ${feature}`;
-}

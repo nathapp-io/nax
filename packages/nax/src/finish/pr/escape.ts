@@ -8,14 +8,6 @@
 /** Longest single escaped cell or inline name rendered; the full text stays in result.json. */
 export const CELL_MAX = 200;
 
-/** Size limits for the rendered body: rows per table or list, and escaped characters per cell. */
-export interface BodyLimits {
-  rows: number;
-  cell: number;
-}
-
-export const DEFAULT_LIMITS: BodyLimits = { rows: 50, cell: CELL_MAX };
-
 /** Whole tokens only: an escape (`\\x`), an entity (`&lt;`) or one code point (never half a surrogate pair). */
 const TOKEN = /\\[\s\S]|&[a-z]+;|[\s\S]/gu;
 

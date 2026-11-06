@@ -95,12 +95,6 @@ export function countStoryRulings(decisions: readonly AdviceDecision[], storyId:
   return decisions.filter((d) => d.storyId === storyId && STORY_RULING_KINDS.has(d.kind)).length;
 }
 
-export function findReusable(decisions: readonly AdviceDecision[], dedupeKey: string): AdviceDecision | undefined {
-  return [...decisions]
-    .reverse()
-    .find((d) => d.dedupeKey === dedupeKey && (d.action.type === "waive" || d.action.type === "supersede"));
-}
-
 /**
  * The ledger lives in the repo tree, so a line is only trusted when the advisor
  * actually wrote it: its `auditRef` is relative, has no `..`, and the audit

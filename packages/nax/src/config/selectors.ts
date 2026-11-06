@@ -142,15 +142,6 @@ export const llmRoutingConfigSelector = pickSelector(
   "precheck",
 );
 
-// nax-finish autonomous flow — needs its own `finish` block plus `interaction`
-// (Telegram escalation credentials) and `quality` (the gate commands the flow
-// re-runs at the repo root).
-// `agent` is in the slice so nax-finish can default the flow's agent to the one
-// the run itself used, instead of letting the ACP agent fall back to its own default.
-// `execution` supplies the fallback LLM timeout: the finish phase supplies
-// `finish.timeouts.reviewMs / fixMs`; `execution.sessionTimeoutSeconds` is the fallback
-// for direct callers, matching how the acceptance ops resolve it.
-export const finishConfigSelector = pickSelector("finish", "finish", "interaction", "quality", "agent", "execution");
 // `finish` supplies the branch-review / branch-fix model fallbacks (spec §4, P4-R21).
 export const workflowConfigSelector = pickSelector(
   "workflow",
@@ -205,6 +196,6 @@ export type NbfWorthCheckConfig = z.infer<typeof NbfWorthCheckConfigSchema>;
  * parse, so the required-field type is sound.
  */
 export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
-export type FinishConfig = ReturnType<typeof finishConfigSelector.select>;
+
 export type WorkflowOpConfig = ReturnType<typeof workflowConfigSelector.select>;
 export type AdvisorConfigSlice = ReturnType<typeof advisorConfigSelector.select>;

@@ -9,7 +9,7 @@ import { _workflowDeps } from "./step-context";
 
 const DIFF_CONTEXT_LINES = 10;
 
-/** The message every ledger commit carries, in both workflow and pipeline mode (`finish/advise.ts`). */
+/** The message every workflow advisor-ledger commit carries. */
 export function ledgerCommitMessage(feature: string): string {
   return `chore(${feature}): advisor decisions`;
 }

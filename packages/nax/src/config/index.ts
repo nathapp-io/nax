@@ -191,7 +191,6 @@ export {
   contextToolRuntimeConfigSelector,
   decomposeConfigSelector,
   executionGatesConfigSelector,
-  finishConfigSelector,
   interactionConfigSelector,
   llmRoutingConfigSelector,
   mutationCheckConfigSelector,

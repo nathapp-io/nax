@@ -11,8 +11,7 @@
  * `nax finish`'s findings sections, whose bodies are a different surface and are left as they are.
  */
 import { redactSecrets } from "@/logger";
-// The leaf, not the `@/finish` barrel: the barrel loads `src/finish/context.ts`, which imports
-// `@/cli`, and that would close a runtime import cycle onto this module (US-003).
+// Keep the shared escaping leaf independent of the broader finish helpers.
 import { escapeInline, escapeTableCell } from "../finish/pr/escape";
 
 const ZERO_WIDTH_SPACE = "​";

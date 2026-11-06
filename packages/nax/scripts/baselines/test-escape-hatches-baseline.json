@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 21,
-    "looseCast": 1449
+    "looseCast": 1445
   },
-  "updatedAt": "2026-10-11T04:35:37.549Z",
+  "updatedAt": "2026-11-06T08:49:23.533Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -274,16 +274,7 @@
     "test/unit/review/semantic-categories.test.ts": {
       "looseCast": 1
     },
-    "test/unit/finish/ops-impl.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/finish/pr-body.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/finish/audit.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/finish/state.test.ts": {
       "looseCast": 1
     },
     "test/unit/finish/pr-title.test.ts": {
