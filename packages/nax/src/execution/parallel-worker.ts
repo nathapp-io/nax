@@ -15,7 +15,6 @@ import { routeTask } from "../routing";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { storyAbsWorkdir } from "../utils/path-frame";
 import type { WorktreeDependencyContext } from "../worktree/types";
-import { assertPipelineMode } from "./workflow-parallel";
 
 /**
  * Build the per-story pipeline context for a worktree run.
@@ -90,7 +89,6 @@ export async function executeStoryInWorktree(
       worktreePath,
     });
 
-    assertPipelineMode(context.rootConfig, "parallel-worker");
     const result = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
 
     return {

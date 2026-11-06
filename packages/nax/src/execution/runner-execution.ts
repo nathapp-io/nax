@@ -25,7 +25,6 @@ import { getAllReadyStories } from "./helpers";
 import { runPreRunSteps } from "./lifecycle/pre-run-steps";
 import { captureRunBaseline } from "./lifecycle/test-baseline-capture";
 import { markNewPackageDirs } from "./new-package-setup";
-import { effectiveParallelCount, effectiveUseBatch } from "./workflow-parallel";
 
 /**
  * Options for the execution phase.
@@ -38,6 +37,7 @@ export interface RunnerExecutionOptions extends DispatchContext {
   feature: string;
   featureDir?: string;
   dryRun: boolean;
+  /** Retained for compatibility; ignored. Every run is unbatched. */
   useBatch: boolean;
   eventEmitter?: PipelineEventEmitter;
   // biome-ignore lint/suspicious/noExplicitAny: StatusWriter interface varies by platform
@@ -49,6 +49,7 @@ export interface RunnerExecutionOptions extends DispatchContext {
   startTime: number;
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   headless: boolean;
+  /** Retained for compatibility; ignored. Every run is sequential. */
   parallel?: number;
   /** Protocol-aware agent resolver — bound from agentManager.getAgent in runner.ts */
   agentGetFn?: AgentGetFn;
@@ -119,9 +120,7 @@ export async function runExecutionPhase(
   pluginRegistry: PluginRegistry,
 ): Promise<RunnerExecutionResult> {
   const logger = getSafeLogger();
-  const useBatch = effectiveUseBatch(options.config, options.useBatch, (m) =>
-    logger?.warn("execution", m, { storyId: "_run" }),
-  );
+  const useBatch = false;
 
   let iterations = 0;
   let storiesCompleted = 0;
@@ -271,9 +270,6 @@ export async function runExecutionPhase(
       sessionManager: options.sessionManager ?? new SessionManager(),
       runId: options.runId,
       startTime: options.startTime,
-      parallelCount: effectiveParallelCount(options.config, options.parallel, (m) =>
-        logger?.warn("execution", m, { storyId: "_run" }),
-      ),
       agentGetFn: options.agentGetFn,
       abortSignal: options.abortSignal,
       interactionChain: options.interactionChain,

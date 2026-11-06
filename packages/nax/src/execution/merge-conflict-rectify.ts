@@ -17,7 +17,6 @@ import { deriveNativeTranscriptDir } from "../session/manager-deps";
 import type { MergeResult } from "../worktree";
 import { deriveStoryWorktreeId, storyWorktreePath } from "../worktree";
 import { buildWorktreePipelineContext } from "./parallel-worker";
-import { assertPipelineMode } from "./workflow-parallel";
 
 /**
  * Injectable deps for the stale-session discard (BUG-122). The ACP module is
@@ -218,7 +217,6 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
       agentGetFn,
     });
 
-    assertPipelineMode(config, "merge-conflict-rectify");
     const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
     const cost = pipelineResult.context.agentResult?.estimatedCostUsd ?? 0;
 

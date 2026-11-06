@@ -25,7 +25,7 @@
 
 import path from "node:path";
 import { errorMessage, gitSpawnEnv } from "@nathapp/nax-agent/internal";
-import { isWorkflowMode, type NaxConfig } from "@/config";
+import type { NaxConfig } from "@/config";
 import { LockAcquisitionError, NaxError } from "@/errors";
 import { createRtkInterceptor } from "@/execution/interceptors/rtk";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -114,14 +114,13 @@ async function runtimeConfigFor(config: NaxConfig, workdir: string): Promise<Nax
 /**
  * The run's memory, or `undefined` when this run gets none.
  *
- * Only a workflow run that is not a dry run has one: pipeline mode has no steps to
- * hand an index to, and a dry run does no work worth remembering. Composition is
+ * Every non-dry run has one; a dry run does no work worth remembering. Composition is
  * the memory module's — it never throws, so this adds no failure path to setup —
  * and the logger is the run's (`bin/nax.ts` initialises it before `setupRun`), so
  * the memory's own lines land in the run's JSONL.
  */
 async function runMemoryFor(config: NaxConfig, workdir: string, dryRun: boolean): Promise<RunMemory | undefined> {
-  if (dryRun || !isWorkflowMode(config)) return undefined;
+  if (dryRun) return undefined;
   return _runSetupDeps.createRunMemory({ config, repoRoot: workdir, logger: getLogger() });
 }
 

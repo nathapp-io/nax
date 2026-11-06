@@ -80,14 +80,12 @@ function stubDirExists(answer: boolean): void {
 }
 
 interface ConfigShape {
-  workflow?: boolean;
   delivery?: "index" | "push";
   overrideDir?: string;
 }
 
-function testConfig({ workflow = true, delivery = "index", overrideDir }: ConfigShape = {}) {
+function testConfig({ delivery = "index", overrideDir }: ConfigShape = {}) {
   return makeNaxConfig({
-    execution: { mode: workflow ? "workflow" : "pipeline" },
     context: { rules: { delivery, overrideDir } },
   });
 }
@@ -134,12 +132,12 @@ describe("US-007 — configureRunRules with agentHooks: 'run'", () => {
   // AC-3, AC-4 — rule delivery skipped: hooks still load, identity when empty
   // ───────────────────────────────────────────────────────────────────────────
 
-  test("AC-3: with pipeline mode (rule delivery skipped) returns the plugin handlers then the sentinel", async () => {
+  test("AC-3: with push delivery (rule delivery skipped) returns the plugin handlers then the sentinel", async () => {
     stubDirExists(true);
     const loader = stubLoader([SENTINEL]);
 
     const out = await configureRunRules({
-      config: testConfig({ workflow: false }),
+      config: testConfig({ delivery: "push" }),
       workdir: WORKDIR,
       pluginHandlers: PLUGIN_HANDLERS,
       agentHooks: "run",
@@ -157,7 +155,7 @@ describe("US-007 — configureRunRules with agentHooks: 'run'", () => {
     stubLoader([]);
 
     const out = await configureRunRules({
-      config: testConfig({ workflow: false }),
+      config: testConfig({ delivery: "push" }),
       workdir: WORKDIR,
       pluginHandlers: PLUGIN_HANDLERS,
       agentHooks: "run",
@@ -205,7 +203,7 @@ describe("US-007 — configureRunRules without agentHooks", () => {
     stubLoader([SENTINEL]);
 
     const out = await configureRunRules({
-      config: testConfig({ workflow: false }),
+      config: testConfig({ delivery: "push" }),
       workdir: WORKDIR,
       pluginHandlers: PLUGIN_HANDLERS,
     });

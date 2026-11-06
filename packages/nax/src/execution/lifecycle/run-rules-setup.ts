@@ -30,7 +30,7 @@
 import { stat } from "node:fs/promises";
 import type { LoopHandlerSet } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
-import { isWorkflowMode, NATIVE_AGENT_NAME, type NaxConfig } from "@/config";
+import { NATIVE_AGENT_NAME, type NaxConfig } from "@/config";
 import { loadProjectContextOverride } from "@/context/project-context-override";
 import { createRuleDeliveryHandlers } from "@/context/rules/rule-delivery";
 import { NaxError } from "@/errors";
@@ -127,8 +127,8 @@ export async function configureRunRules(input: {
  * US-007 — merge the run surface's agent hooks into the plugin set.
  *
  * After the validation above, so a run that is about to fail for a bad
- * `overrideDir` never spawns a hook. NOT gated on workflow mode or on
- * `context.rules.delivery`: those two decide whether rule DELIVERY applies,
+ * `overrideDir` never spawns a hook. NOT gated on
+ * `context.rules.delivery`: that decides whether rule DELIVERY applies,
  * and an agent hook is a separate mechanism the operator opted into.
  *
  * An empty hook set returns the plugin set by identity — the invariant US-002
@@ -147,10 +147,9 @@ async function withAgentHookHandlers(input: {
 /**
  * US-005 — append the native rule-delivery handlers to the plugin set.
  *
- * Two conditions gate the append. Under `context.rules.delivery: "push"` the
+ * Delivery gates the append. Under `context.rules.delivery: "push"` the
  * brief carries every rule body again, so a handler would deliver the same text
- * a second time; in pipeline mode nothing runs the native loop these handlers
- * belong to. In both cases the plugin registry's own set is returned by
+ * a second time. The plugin registry's own set is then returned by
  * identity, which is what US-002 pinned.
  *
  * The append is deliberately AFTER the plugin entries: `dispatchBeforeTool`
@@ -164,7 +163,6 @@ function withRuleDeliveryHandlers(
   pluginHandlers: LoopHandlerSet,
   overrideDir: string | undefined,
 ): LoopHandlerSet {
-  if (!isWorkflowMode(config)) return pluginHandlers;
   if ((config.context?.rules?.delivery ?? "index") !== "index") return pluginHandlers;
   const handlers = _runRulesSetupDeps.createRuleDeliveryHandlers({
     repoRoot: workdir,

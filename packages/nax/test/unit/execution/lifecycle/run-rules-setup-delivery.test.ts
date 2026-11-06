@@ -2,8 +2,8 @@
  * US-005 — `configureRunRules` appending the native rule-delivery handlers, as
  * reached from `initializeAfterLock`.
  *
- * The append happens after the plugin registry's entries and only under
- * workflow mode with `context.rules.delivery: "index"`: plugin handlers keep
+ * The append happens after the plugin registry's entries whenever
+ * `context.rules.delivery: "index"`: plugin handlers keep
  * their registration order (a plugin nudging the same call is meant to be
  * superseded by the rule-delivery one — `registry.ts` keeps the last nudge), and
  * `push` restores the plugin set untouched, by identity.
@@ -31,7 +31,7 @@ import {
   makeTempDir,
 } from "@test/helpers";
 import { RULE_DELIVERY_PLUGIN } from "@/context/rules/rule-delivery";
-import { _runRulesSetupDeps } from "@/execution/lifecycle/run-rules-setup";
+import { _runRulesSetupDeps, configureRunRules } from "@/execution/lifecycle/run-rules-setup";
 import { type InitializeAfterLockDeps, initializeAfterLock } from "@/execution/lifecycle/run-setup-init";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,6 +135,26 @@ function deliveredSet(configure: ConfigureSpy): LoopHandlerSet {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("initializeAfterLock — the rule-delivery handlers appended to the plugin set", () => {
+  test.each(["index", "push"] as const)(
+    "fork-cut AC-3/4: hand-built pipeline config with %s delivery",
+    async (delivery) => {
+      const stub = stubRuleDeliveryHandlers();
+      const plugins: LoopHandlerSet = [{ plugin: "plugin", event: "before_turn", handler: () => ({}) }];
+      const out = await configureRunRules({
+        config: makeNaxConfig({ execution: { mode: "pipeline" }, context: { rules: { delivery } } }),
+        workdir,
+        pluginHandlers: plugins,
+      });
+      expect(stub.calls).toBe(delivery === "index" ? 1 : 0);
+      if (delivery === "index") {
+        expect(out).toEqual([...plugins, STUB_ENTRY]);
+        expect(out[0]).toBe(plugins[0]);
+        expect(out[1]).toBe(STUB_ENTRY);
+      } else {
+        expect(out).toBe(plugins);
+      }
+    },
+  );
   test("AC-22: workflow mode with delivery 'index' delivers the plugin entries, then the rule-delivery entry", async () => {
     workdir = makeTempDir("nax-run-rules-delivery-index-");
     stubRuleDeliveryHandlers();
