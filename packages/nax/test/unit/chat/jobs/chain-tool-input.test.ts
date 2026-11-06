@@ -40,7 +40,6 @@ beforeEach(async () => {
   options = {
     repoRoot: root,
     naxEntry: ["bun", "nax.js"],
-    maxIterations: 20,
     interactionPlugin: "cli",
     jobs,
     approve,

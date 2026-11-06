@@ -18,7 +18,7 @@
  * unattended `review` profile governs.
  */
 import { createWorkflowProvider, type FeatureStateOptions, mapSubagentTools } from "@/chat";
-import { getProjectKey, isWorkflowMode, type NaxConfig } from "@/config";
+import { getProjectKey, type NaxConfig } from "@/config";
 import { createRuleDeliveryHandlers, type RuleDeliveryInput } from "@/context/rules/rule-delivery";
 import { type AgentResource, createSkillsProvider, type ResourceCatalog } from "@/resources";
 import { projectOutputDir } from "@/runtime";
@@ -75,12 +75,11 @@ function allowedToolsFor(model: string, tools: readonly string[] | undefined): r
   return model.startsWith(ACP_MODEL_PREFIX) ? undefined : AGENTS_RUN_NATIVE_READ_TOOLS;
 }
 
-/** The artifact directory and the iteration budget the workflow provider reads, as chat passes them. */
+/** The artifact directory the workflow provider reads, as chat passes it. */
 function workflowOptions(input: AgentsRunComposeInput): FeatureStateOptions {
   return {
     repoRoot: input.repoRoot,
     outputDir: projectOutputDir(getProjectKey(input.config, input.repoRoot), input.config.outputDir),
-    maxIterations: isWorkflowMode(input.config) ? undefined : input.config.execution.maxIterations,
   };
 }
 

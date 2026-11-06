@@ -47,7 +47,6 @@ beforeEach(async () => {
   options = {
     repoRoot,
     naxEntry: ["bun", "/n.ts"],
-    maxIterations: 20,
     interactionPlugin: "cli",
     jobs,
     approve,
@@ -91,11 +90,7 @@ function runArgv() {
 describe("createJobsProvider", () => {
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
-    [
-      "run",
-      { feature: { type: "string" }, maxIterations: { type: "integer" }, maxCost: { type: "number" } },
-      "feature",
-    ],
+    ["run", { feature: { type: "string" }, maxCost: { type: "number" } }, "feature"],
     ["bot_review", { pr: { type: "integer" }, model: { type: "string" }, decisions: { type: "string" } }, "pr"],
     [
       "bot_fix",
@@ -236,19 +231,21 @@ describe("createJobsProvider", () => {
       content: "[chat] the user declined nax run f1; do not retry with different arguments unless the user asks",
     });
   });
-  test("AC-10 counts pending stories and uses resolved limit", async () => {
+  test("US-005 AC-6 counts pending stories without cap text", async () => {
     await launch();
-    expect(card().reason).toContain("stories 3 pending of 3; max iterations 20");
+    expect(card().reason).toContain("stories 3 pending of 3");
+    expect(card().reason).not.toContain("max iterations");
   });
-  test("AC-11 input limit warns on pending overflow", async () => {
-    await launch("run", { feature: "f1", maxIterations: 2 });
-    expect(card().reason).toContain(
-      "warning: 3 stories pending but max iterations is 2; pass maxIterations (nax#2706)",
-    );
+  test("US-005 AC-7 removed input never starts", async () => {
+    expect(await launch("run", { feature: "f1", maxIterations: 2 })).toEqual({
+      isError: true,
+      content: "[chat] maxIterations was removed: workflow mode bounds a run by its stories",
+    });
+    expect(start).not.toHaveBeenCalled();
+    expect(approve).not.toHaveBeenCalled();
   });
-  test("nax#2706 workflow mode (no maxIterations) shows no limit and no overflow warning, even with an input -m", async () => {
-    options = { ...options, maxIterations: undefined };
-    await launch("run", { feature: "f1", maxIterations: 2 });
+  test("workflow run shows no limit or overflow warning", async () => {
+    await launch("run", { feature: "f1" });
     expect(card().reason).toContain("stories 3 pending of 3");
     expect(card().reason).not.toContain("max iterations");
     expect(card().reason).not.toContain("nax#2706");

@@ -47,7 +47,6 @@ beforeEach(async () => {
   options = {
     repoRoot: root,
     naxEntry: ["bun", "/n.ts"],
-    maxIterations: 20,
     interactionPlugin: "cli",
     approve,
     now: () => new Date("2026-10-01T00:00:00Z"),

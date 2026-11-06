@@ -115,7 +115,6 @@ async function startApproved(
 type Prepared = {
   readonly input: JobLaunchInput;
   readonly details: readonly string[];
-  readonly overLimit?: { readonly pending: number; readonly limit: number };
 };
 type TargetError = { readonly error: string };
 
@@ -170,19 +169,10 @@ async function prepareRun(
     return { error: `[chat] prd.json for ${input.feature} is unreadable: ${errorMessage(cause)}` };
   }
   const { pending, total } = countStories(prd);
-  // Workflow mode bounds the loop by the story count and ignores maxIterations (nax#2706), so there is no limit to compare.
-  const limit = options.maxIterations === undefined ? undefined : (input.maxIterations ?? options.maxIterations);
-  const details = [
-    limit === undefined
-      ? `stories ${pending} pending of ${total}`
-      : `stories ${pending} pending of ${total}; max iterations ${limit}`,
-  ];
-  const overLimit = limit !== undefined && pending > limit ? { pending, limit } : undefined;
-  if (overLimit)
-    details.push(`warning: ${pending} stories pending but max iterations is ${limit}; pass maxIterations (nax#2706)`);
+  const details = [`stories ${pending} pending of ${total}`];
   if (options.interactionPlugin === "cli")
     details.push("asks you do not answer in chat fall to the run's timeout defaults");
-  return { input, details, ...(overLimit ? { overLimit } : {}) };
+  return { input, details };
 }
 
 async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions): Promise<Prepared | TargetError> {
@@ -234,13 +224,7 @@ export async function launchJob(
     if (busy) return busy;
   }
   const argv = buildJobArgv(input, options);
-  let admission = options.chains?.admit({ kind: input.kind, argv, ...("pr" in input ? { pr: input.pr } : {}) });
-  if (admission?.kind === "auto" && prepared.overLimit) {
-    const { pending, limit } = prepared.overLimit;
-    const reason = `step ${admission.step}: ${pending} stories pending but max iterations is ${limit} (nax#2706)`;
-    options.chains?.stop(reason);
-    admission = { kind: "card", note: `chain ${admission.chainId} stopped: ${reason}` };
-  }
+  const admission = options.chains?.admit({ kind: input.kind, argv, ...("pr" in input ? { pr: input.pr } : {}) });
   if (admission?.kind === "auto") {
     const result = await startApproved(input, { argv, auto: admission, details: prepared.details }, options);
     if (result.isError)

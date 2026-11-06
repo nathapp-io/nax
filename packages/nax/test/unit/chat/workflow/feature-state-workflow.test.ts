@@ -43,7 +43,7 @@ function loader(fn: typeof reader._featureStateDeps.loadRunVerdict) {
 }
 beforeEach(() => {
   const repoRoot = makeTempDir("workflow-state-");
-  options = { repoRoot, outputDir: join(repoRoot, "output"), maxIterations: 10 };
+  options = { repoRoot, outputDir: join(repoRoot, "output") };
   loader(async () => loaded());
   reader._featureStateDeps.git = mock(async () => ({ exitCode: 1, stdout: "", stderr: "" }));
 });

@@ -1,4 +1,4 @@
-import { isWorkflowMode, type NaxConfig } from "@/config";
+import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { ChatAskController } from "../ask-controller";
 import type { ChatMode } from "../chat-mode";
@@ -20,6 +20,8 @@ interface HostJobsOptions {
   readonly now: () => Date;
   readonly logger: Pick<Logger, "warn">;
 }
+
+export const _jobsHostDeps = { createJobsProvider };
 
 /** Compose repo-scoped jobs only for the parent chat, never for subagent providers. */
 export function createHostJobs(options: HostJobsOptions): {
@@ -49,13 +51,12 @@ export function createHostJobs(options: HostJobsOptions): {
     if (options.mode() !== "full") return options.asks.requestHostApproval(card);
     return Promise.resolve(card.signal?.aborted ? "deny" : "allow");
   };
-  const provider = createJobsProvider({
+  const provider = _jobsHostDeps.createJobsProvider({
     ...options,
     jobs,
     chains,
     runAsks,
     approve,
-    maxIterations: isWorkflowMode(options.config) ? undefined : options.config.execution.maxIterations,
     interactionPlugin: options.config.interaction?.plugin ?? "cli",
   });
   const close = (): void => {

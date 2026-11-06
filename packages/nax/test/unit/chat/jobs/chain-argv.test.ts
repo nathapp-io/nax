@@ -6,6 +6,11 @@ const ctx = { naxEntry: ["bun", "/n.ts"], repoRoot: "/r" };
 const argv = ["bun", "/n.ts", "bot", "review", "<pr>", "-d", "/r"];
 
 describe("parseChainStepInput", () => {
+  test("US-005 AC-4 rejects removed chain field", () => {
+    expect(parseChainStepInput("run", { feature: "f1", maxIterations: 40 })).toEqual({
+      error: "[chat] unknown field maxIterations",
+    });
+  });
   test("AC-1 accepts repo and keeps it", () => {
     expect(parseChainStepInput("run", { feature: "f1", repo: "repos/nax" })).toEqual({
       kind: "run",
@@ -21,7 +26,7 @@ describe("parseChainStepInput", () => {
     expect(parseChainStepInput("bot_fix", { pr: 0 })).toEqual({ error: "[chat] pr must be a positive integer" });
   });
   test("AC-14 delegates run validation", () => {
-    const raw = { feature: "f1", maxIterations: 40 };
+    const raw = { feature: "f1", maxCost: 2 };
     expect(parseChainStepInput("run", raw)).toEqual(parseJobInput("run", raw));
   });
   test("AC-15 rejects unknown run keys", () => {
@@ -40,7 +45,7 @@ describe("parseChainStepInput", () => {
   test("defines exactly the launch schema fields", () => {
     expect(CHAIN_STEP_FIELDS).toEqual({
       plan: ["feature", "spec", "profiles", "repo"],
-      run: ["feature", "profiles", "maxIterations", "maxCost", "repo"],
+      run: ["feature", "profiles", "maxCost", "repo"],
       bot_review: ["pr", "profiles", "model", "decisions", "repo"],
       bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
     });

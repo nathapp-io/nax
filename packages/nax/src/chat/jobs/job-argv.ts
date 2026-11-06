@@ -12,7 +12,6 @@ type JobLaunchBody =
       readonly kind: "run";
       readonly feature: string;
       readonly profiles: readonly string[];
-      readonly maxIterations?: number;
       readonly maxCost?: number;
     }
   | {
@@ -34,7 +33,6 @@ type JobLaunchBody =
 type InputError = { readonly error: string };
 const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
-const MAX_ITERATIONS = 1_000;
 
 function parseProfiles(raw: unknown): readonly string[] | InputError {
   if (raw === undefined) return [];
@@ -77,14 +75,8 @@ function parseRun(
   profiles: readonly string[],
 ): JobLaunchBody | InputError {
   const { maxIterations, maxCost } = raw;
-  if (
-    maxIterations !== undefined &&
-    (typeof maxIterations !== "number" ||
-      !Number.isInteger(maxIterations) ||
-      maxIterations < 1 ||
-      maxIterations > MAX_ITERATIONS)
-  ) {
-    return { error: "[chat] maxIterations must be an integer from 1 to 1000" };
+  if (maxIterations !== undefined) {
+    return { error: "[chat] maxIterations was removed: workflow mode bounds a run by its stories" };
   }
   if (maxCost !== undefined && (typeof maxCost !== "number" || !Number.isFinite(maxCost) || maxCost <= 0)) {
     return { error: "[chat] maxCost must be a positive number" };
@@ -93,7 +85,6 @@ function parseRun(
     kind: "run",
     feature,
     profiles,
-    ...(maxIterations === undefined ? {} : { maxIterations }),
     ...(maxCost === undefined ? {} : { maxCost }),
   };
 }
@@ -180,7 +171,6 @@ export function buildJobArgv(
       ctx.repoRoot,
       "--headless",
       ...profiles,
-      ...(input.maxIterations === undefined ? [] : ["-m", String(input.maxIterations)]),
       ...(input.maxCost === undefined ? [] : ["--max-cost", String(input.maxCost)]),
     ];
   }

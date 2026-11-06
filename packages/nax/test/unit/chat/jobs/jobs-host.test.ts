@@ -13,6 +13,7 @@ import { createChatAskController } from "@/chat/ask-controller";
 import type { ChatMode } from "@/chat/chat-mode";
 import { createHostJobs } from "@/chat/jobs";
 import { _jobRunnerDeps } from "@/chat/jobs/job-runner";
+import { _jobsHostDeps } from "@/chat/jobs/jobs-host";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import { featureDir } from "@/config";
 
@@ -69,6 +70,16 @@ async function compose(mode: () => ChatMode) {
 }
 
 describe("createHostJobs approve", () => {
+  test("US-005 AC-11 provider options omit maxIterations", async () => {
+    const factory = spyOn(_jobsHostDeps, "createJobsProvider");
+    try {
+      await compose(() => "guarded");
+      expect(factory).toHaveBeenCalledTimes(1);
+      expect(factory.mock.calls[0]?.[0]).not.toHaveProperty("maxIterations");
+    } finally {
+      factory.mockRestore();
+    }
+  });
   test("AC-1/2 full mode starts the job without calling requestHostApproval", async () => {
     const f = await compose(() => "full");
     const result = await f.call();

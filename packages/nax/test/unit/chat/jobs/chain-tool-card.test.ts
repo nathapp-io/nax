@@ -11,7 +11,7 @@ import { createJobsProvider, type JobsProviderOptions } from "@/chat/jobs/jobs-p
 
 const steps = [
   { kind: "plan", input: { feature: "f1" } },
-  { kind: "run", input: { feature: "f1", maxIterations: 40 } },
+  { kind: "run", input: { feature: "f1" } },
 ];
 const declined = { isError: true, content: "[chat] the user declined the chain; propose steps one at a time" };
 const originalGit = _jobsLaunchDeps.git;
@@ -52,7 +52,6 @@ beforeEach(async () => {
   options = {
     repoRoot: root,
     naxEntry: ["bun", "nax.js"],
-    maxIterations: 20,
     interactionPlugin: "cli",
     jobs,
     approve,
@@ -82,7 +81,7 @@ function card(): HostApprovalCard {
 function expectedCommands(): string {
   return [
     buildJobArgv({ kind: "plan", feature: "f1", spec: ".nax/features/f1/spec.md", profiles: [] }, options),
-    buildJobArgv({ kind: "run", feature: "f1", maxIterations: 40, profiles: [] }, options),
+    buildJobArgv({ kind: "run", feature: "f1", profiles: [] }, options),
   ]
     .map((argv) => argv.join(" "))
     .join("\n");

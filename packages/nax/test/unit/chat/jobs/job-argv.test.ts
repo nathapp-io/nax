@@ -6,6 +6,19 @@ import { validateFeatureName } from "@/utils/feature-name";
 const ctx = { naxEntry: ["bun", "/n.ts"], repoRoot: "/r" };
 
 describe("buildJobArgv", () => {
+  test("US-005 AC-3 exact cost-only argv", () => {
+    expect(buildJobArgv({ kind: "run", feature: "f1", profiles: [], maxCost: 2 }, ctx)).toEqual([
+      ...ctx.naxEntry,
+      "run",
+      "-f",
+      "f1",
+      "-d",
+      ctx.repoRoot,
+      "--headless",
+      "--max-cost",
+      "2",
+    ]);
+  });
   test("rejects an unresolved plan spec", () => {
     expect(() => buildJobArgv({ kind: "plan", feature: "f1", profiles: [] }, ctx)).toThrow(
       "[chat] plan spec must be resolved before building argv",
@@ -43,9 +56,7 @@ describe("buildJobArgv", () => {
     ]);
   });
   test("AC-3 run limits after profiles", () => {
-    expect(
-      buildJobArgv({ kind: "run", feature: "f1", profiles: ["a"], maxIterations: 40, maxCost: 12.5 }, ctx),
-    ).toEqual([
+    expect(buildJobArgv({ kind: "run", feature: "f1", profiles: ["a"], maxCost: 12.5 }, ctx)).toEqual([
       "bun",
       "/n.ts",
       "run",
@@ -56,8 +67,6 @@ describe("buildJobArgv", () => {
       "--headless",
       "--profile",
       "a",
-      "-m",
-      "40",
       "--max-cost",
       "12.5",
     ]);
@@ -105,11 +114,11 @@ const invalid: [string, ChatJobKind, Record<string, unknown>, string][] = [
   ["AC-10 string", "run", { feature: "f1", profiles: "a" }, "profiles must be an array of strings"],
   ["AC-10 member", "run", { feature: "f1", profiles: [1] }, "profiles must be an array of strings"],
   ["AC-11", "run", { feature: "f1", profiles: ["--evil"] }, "profile --evil is not a valid profile name"],
-  ...[0, 2.5, 1001].map((maxIterations): [string, ChatJobKind, Record<string, unknown>, string] => [
+  ...[40, 0, 2.5, 1001, null, "40"].map((maxIterations): [string, ChatJobKind, Record<string, unknown>, string] => [
     maxIterations === 0 ? "AC-12" : "AC-13",
     "run",
     { feature: "f1", maxIterations },
-    "maxIterations must be an integer from 1 to 1000",
+    "maxIterations was removed: workflow mode bounds a run by its stories",
   ]),
   ...[-1, 0, NaN, Infinity].map((maxCost): [string, ChatJobKind, Record<string, unknown>, string] => [
     "AC-14",
@@ -133,6 +142,11 @@ const invalid: [string, ChatJobKind, Record<string, unknown>, string][] = [
 ];
 
 describe("parseJobInput", () => {
+  test("US-005 AC-2 removal precedes invalid maxCost", () => {
+    expect(parseJobInput("run", { feature: "f1", maxIterations: 40, maxCost: -1 })).toEqual({
+      error: "[chat] maxIterations was removed: workflow mode bounds a run by its stories",
+    });
+  });
   test.each(invalid)("%s rejects %s %j", (_ac, kind, raw, message) => {
     expect(parseJobInput(kind, raw)).toEqual({ error: `[chat] ${message}` });
   });
@@ -171,11 +185,10 @@ describe("parseJobInput", () => {
       parseJobInput("run", {
         feature: "f1",
         profiles: ["a", "B_2.3-x"],
-        maxIterations: 1000,
         maxCost: 0.01,
         headless: false,
       }),
-    ).toEqual({ kind: "run", feature: "f1", profiles: ["a", "B_2.3-x"], maxIterations: 1000, maxCost: 0.01 });
+    ).toEqual({ kind: "run", feature: "f1", profiles: ["a", "B_2.3-x"], maxCost: 0.01 });
     expect(parseJobInput("plan", { feature: "f1", spec: "docs/my spec.md" })).toEqual({
       kind: "plan",
       feature: "f1",

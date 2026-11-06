@@ -56,7 +56,6 @@ beforeEach(() => {
   options = {
     repoRoot,
     naxEntry: ["nax"],
-    maxIterations: 20,
     interactionPlugin: "cli",
     jobs,
     approve,
