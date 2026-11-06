@@ -71,11 +71,6 @@ export interface RunnerCompletionOptions extends DispatchContext {
   /**
    * Max parallel sessions, straight from RunnerOptions: undefined, 0 and 1 all
    * run one story at a time (the CLI rejects 0 outright), N > 1 caps at N.
-   *
-   * The deferred-regression gate needs this to know whether its per-story gate
-   * snapshots are causally ordered. It was never forwarded, so `isSequential`
-   * was only ever set by tests and the parallel branch was dead in production —
-   * snapshots reached the gate on every run, including parallel ones.
    */
   parallel?: number;
   /** Per-run plugin-provider cache (Finding 5 / issue #473). Disposed in handleRunCompletion. */
