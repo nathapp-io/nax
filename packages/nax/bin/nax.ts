@@ -231,9 +231,8 @@ program
   .description("Run the orchestration loop for a feature")
   .requiredOption("-f, --feature <name>", "Feature name")
   .option("-a, --agent <name>", "Force a specific agent")
-  // US-001: no Commander default — `undefined` means the flag was not passed,
-  // so a configured execution.maxIterations is not silently replaced.
-  .option("-m, --max-iterations <n>", "Max iterations (pipeline mode only; workflow mode ignores it)")
+  // Keep removed flags declared so callers get the explicit removal diagnostic.
+  .option("-m, --max-iterations <n>", "Removed: workflow mode sets its own limits")
   .option("--max-cost <usd>", "Override cost limit (USD) for this run — aborts execution when exceeded")
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")
@@ -242,7 +241,7 @@ program
   .option("--rules-dir <path>", "Override rules directory (absolute, ~/… , or relative to the workdir)")
   .option("--context-file <path>", "Project-context override file (absolute, ~/… , or relative to the workdir)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
-  .option("--parallel <n>", "Max parallel sessions (omit = sequential)")
+  .option("--parallel <n>", "Removed: workflow mode sets its own limits")
   .option("--plan", "Run plan phase first before execution", false)
   .option("--from <spec-path>", "Path to spec file (required when --plan is used)")
   .option("--no-spec-lint", "Plan even when the spec declares sections that extract to nothing")
@@ -276,7 +275,7 @@ program
   )
   .action(async (options) => {
     const workdir = resolveRunWorkdir(options);
-    const { maxIterationsFlag, parallel, chatAsksDir } = parseRunPreconditionFlags(options);
+    const { chatAsksDir } = parseRunPreconditionFlags(options);
     await validateBakeoffPreflight(options, workdir);
     const scheduleGate = resolveRunScheduleAndPlanFlags(options);
 
@@ -345,7 +344,7 @@ program
     });
 
     const chatAskSecret = await readRunChatAskSecret(chatAsksDir);
-    config = applyRunCliOverrides(config, options, maxIterationsFlag);
+    config = applyRunCliOverrides(config, options);
 
     const globalNaxDir = join(homedir(), ".nax");
     const hooks = await loadHooksConfig(naxDir, globalNaxDir);
@@ -392,7 +391,6 @@ program
       prdPath,
       workdir,
       featureDir,
-      parallel,
       eventEmitter,
       statusFilePath,
       logFilePath,

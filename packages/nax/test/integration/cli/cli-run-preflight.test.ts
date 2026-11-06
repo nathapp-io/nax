@@ -77,14 +77,14 @@ describe("nax run pre-flight gates (A4 characterisation)", () => {
     const { exitCode, stderr } = await spawnRun(tempDir, ["--parallel", "0"]);
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("--parallel must be a positive integer (omit it to run sequentially)");
+    expect(stderr).toContain("nax run --parallel was removed: workflow mode runs stories one at a time");
   }, 20000);
 
   test("gate order: -m 0 fails before --plan/--from validation", async () => {
     const { exitCode, stderr } = await spawnRun(tempDir, ["-m", "0", "--plan"]);
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("--max-iterations must be a positive integer");
+    expect(stderr).toContain("nax run -m/--max-iterations was removed");
     expect(stderr).not.toContain("--plan requires --from");
   }, 20000);
 
@@ -92,7 +92,7 @@ describe("nax run pre-flight gates (A4 characterisation)", () => {
     const { exitCode, stderr } = await spawnRun(tempDir, ["--parallel", "0", "--schedule", "never"]);
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("--parallel must be a positive integer");
+    expect(stderr).toContain("nax run --parallel was removed");
     expect(stderr).not.toContain("Invalid --schedule");
   }, 20000);
 
@@ -109,15 +109,15 @@ describe("nax run pre-flight gates (A4 characterisation)", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Invalid directory");
-    expect(stderr).not.toContain("--max-iterations must be a positive integer");
+    expect(stderr).not.toContain("nax run -m/--max-iterations was removed");
   }, 20000);
 
   test("gate order: -m 0 fails before --parallel validation", async () => {
     const { exitCode, stderr } = await spawnRun(tempDir, ["-m", "0", "--parallel", "0"]);
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("--max-iterations must be a positive integer");
-    expect(stderr).not.toContain("--parallel must be a positive integer");
+    expect(stderr).toContain("nax run -m/--max-iterations was removed");
+    expect(stderr).not.toContain("nax run --parallel was removed");
   }, 20000);
 
   test("gate order: --parallel 0 fails before the bake-off --compare/--agent check", async () => {
@@ -131,7 +131,7 @@ describe("nax run pre-flight gates (A4 characterisation)", () => {
     ]);
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("--parallel must be a positive integer");
+    expect(stderr).toContain("nax run --parallel was removed");
     expect(stderr).not.toContain("mutually exclusive");
   }, 20000);
 
