@@ -21,8 +21,8 @@
  * `buildDispatchAskWiring` / `buildRunDispatchAskWiring` (src/interaction).
  * Without one the tool runtime falls back to `headlessAskResolver()` and
  * escalation always denies even for a stage this reports as healthy — which is
- * what the finish phase, the acceptance fix cycle and the deferred regression
- * gate did before #2201. `scripts/check-bash-dispatch-ask.ts` (in
+ * what the finish phase, the acceptance fix cycle (since deleted) and the
+ * deferred regression gate did before #2201. `scripts/check-bash-dispatch-ask.ts` (in
  * `lint:checks`) fails on any CallContext construction that omits either
  * field unless it is allowlisted as dispatching no Bash-declaring op (#2202),
  * so "grantable per stage" here implies "reachable at every call site".
@@ -36,11 +36,16 @@ import type { NaxConfig } from "./runtime-types";
 /**
  * Stages that dispatch at least one operation declaring the Bash tool.
  *
- * Mirrors the `stage` field of the eight operations that declare `Bash`:
+ * Mirrors the `stage` field of the six operations that declare `Bash`:
  * `implementerOp` / `testWriterOp` (run); `rectifyOp` (review);
  * `fullSuiteRectifyOp` / `implementerRectifyOp` / `testWriterRectifyOp`
- * (rectification); `acceptanceFixSourceOp` / `acceptanceFixTestOp`
- * (acceptance).
+ * (rectification).
+ *
+ * `"acceptance"` is retained as a registry member even though the two ops that
+ * put it here (`acceptanceFixSourceOp` / `acceptanceFixTestOp`) were deleted by
+ * pipeline-post-run-delete US-006: emptying a name registry is wave B3's job
+ * (spec Out of Scope), and a reader of a recorded artifact still has to accept
+ * the old string.
  */
 export const BASH_DECLARING_STAGES: readonly PipelineStage[] = ["run", "review", "rectification", "acceptance"];
 

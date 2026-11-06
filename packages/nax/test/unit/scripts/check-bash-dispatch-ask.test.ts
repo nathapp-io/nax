@@ -144,18 +144,10 @@ describe("bashCarryingNames", () => {
 
   test("the real barrel: the #2201 ops and the regression strategy factory are all Bash-carrying", () => {
     const names = bashCarryingNames(operations);
-    for (const name of [
-      "acceptanceFixSourceOp",
-      "acceptanceFixTestOp",
-      "fullSuiteRectifyOp",
-      "makeFullSuiteRectifyStrategy",
-      "implementerOp",
-      "testWriterOp",
-    ]) {
+    for (const name of ["fullSuiteRectifyOp", "makeFullSuiteRectifyStrategy", "implementerOp", "testWriterOp"]) {
       expect(names.has(name)).toBe(true);
     }
     expect(names.has("classifyRouteOp")).toBe(false);
-    expect(names.has("acceptanceDiagnoseOp")).toBe(false);
   });
 });
 
@@ -188,7 +180,7 @@ describe("the real tree", () => {
   test("every #2201 Bash-dispatching site is wired and the gate reads clean", async () => {
     const { sites, findings } = await scanTree();
     const wired = new Set(sites.filter((s) => s.kind === "wired").map((s) => s.file));
-    for (const file of ["src/pipeline/stages/execution.ts", "src/execution/lifecycle/acceptance-fix-scope.ts"]) {
+    for (const file of ["src/pipeline/stages/execution.ts"]) {
       expect(wired.has(file)).toBe(true);
     }
     expect(findings).toEqual({ violations: [], stale: [], leaks: [] });

@@ -71,7 +71,7 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
     // exact placeholder match; a template that takes anything other than
     // `{{files}}` hands the agent a tool call the runtime always rejects
     // (`value "files" is not a placeholder in this command`). See
-    // src/execution/lifecycle/acceptance-helpers.ts:89.
+    // packages/nax-agent/src/tools/run-command.ts.
     const scopedCommandName = commandSpecIncludes(testScopedTemplate, "{{files}}") ? "testScoped" : undefined;
     const prompt = RectifierPromptBuilder.failingTestRectification(input.findings as Finding[], input.story, {
       // US-004 (AC5/AC6) — `# TEST COMMAND` block always names the declared
@@ -79,7 +79,8 @@ export const fullSuiteRectifyOp: RunOperation<FullSuiteRectifyInput, FullSuiteRe
       ...(testCommand ? { testCommand: renderCommandSpec(testCommand), testCommandScopeCommandName: "test" } : {}),
       // US-004 (AC4/AC7) — per-failing-file block uses the declared
       // `testScoped` key, but only when the template carries the
-      // `{{files}}` placeholder (the SSOT gate at acceptance-helpers.ts:89).
+      // `{{files}}` placeholder (the gate `RunCommand`'s exact-placeholder
+      // match enforces — packages/nax-agent/src/tools/run-command.ts).
       ...(testCommand && scopedCommandName
         ? { testScopedTemplate: renderCommandSpec(testScopedTemplate), fileScopeCommandName: scopedCommandName }
         : {}),

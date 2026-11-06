@@ -219,10 +219,11 @@ export interface PipelineContext extends DispatchContext {
   selfVerification?: import("../quality").SelfVerificationResult;
   /**
    * Retry attempts consumed before this acceptance attempt (0 on the first).
-   * Set by `runAcceptanceLoop`, which owns the counter; the stage only reports it.
+   * Nothing maintains this any more: the counter lived in the completion
+   * acceptance loop, deleted by pipeline-post-run-delete US-006.
    */
   acceptanceRetries?: number;
-  /** Acceptance test failures. Nothing produces these any more: the acceptance stage that set them was deleted (pipeline-post-run-delete US-005); the loop that still reads them is deleted by US-006. */
+  /** Acceptance test failures. Nothing produces or reads these any more: the acceptance stage was deleted by US-005 and the completion acceptance loop by US-006. */
   acceptanceFailures?: {
     failedACs: string[];
     /** Structured findings (ADR-021 phase 5). Parallel to failedACs; same order. */

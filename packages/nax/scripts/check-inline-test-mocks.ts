@@ -150,7 +150,6 @@ const SKIP_FILES = new Set([
   "test/unit/execution/story-context.test.ts",
   "test/unit/execution/runner-completion-skip.test.ts",
   "test/unit/execution/lifecycle/run-setup.test.ts",
-  "test/unit/execution/lifecycle/acceptance-fix.test.ts",
   "test/unit/execution/runner-completion-postrun.test.ts",
   "test/unit/execution/runner-completion-finish.test.ts",
   "test/unit/execution/lifecycle-completion.test.ts",

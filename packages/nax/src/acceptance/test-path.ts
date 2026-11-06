@@ -120,8 +120,8 @@ export interface AcceptanceTestGroup {
  * acceptance test path for each group.
  *
  * This is the SSOT for per-package test path computation. Call it from:
- *   - acceptance-setup stage (to generate test files + set ctx.acceptanceTestPaths)
- *   - runner-completion (to pass acceptanceTestPaths into runAcceptanceLoop)
+ *   - `nax features resolve` (src/cli/features-acceptance.ts), to report where
+ *     each package's acceptance test belongs
  *
  * @param prd         - The loaded PRD
  * @param workdir     - Absolute repo root (ctx.workdir / options.workdir)
@@ -180,7 +180,7 @@ export async function groupStoriesByPackage(
   );
 }
 
-// ─── Suggested test path helpers (hardening pass) ───────────────────────────
+// ─── Suggested test path helpers ────────────────────────────────────────────
 
 /**
  * Return the suggested test filename for a given language.

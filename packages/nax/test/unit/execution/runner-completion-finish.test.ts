@@ -16,7 +16,6 @@ import {
   makeTestRuntime,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
-import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import { StatusWriter } from "@/execution/status-writer";
@@ -208,16 +207,11 @@ describe("feature workflow placement", () => {
 // ---------------------------------------------------------------------------
 
 describe("post-run ask wiring inputs (#2201)", () => {
-  test("the interaction chain reaches acceptance, completion and workflow", async () => {
+  test("the interaction chain reaches completion and workflow", async () => {
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const chain = new InteractionChain({ defaultTimeout: 1000, defaultFallback: "abort" });
-    const acceptanceCtxs: AcceptanceLoopContext[] = [];
     const completionOpts: RunCompletionOptions[] = [];
     const workflowCtxs: WorkflowFeatureInput[] = [];
-    _runnerCompletionDeps.runAcceptanceLoop = mock(async (ctx: AcceptanceLoopContext) => {
-      acceptanceCtxs.push(ctx);
-      return { success: true, prd, totalCost: 0, iterations: 1, storiesCompleted: 1, prdDirty: false };
-    });
     _runnerCompletionDeps.handleRunCompletion = mock(async (opts: RunCompletionOptions) => {
       completionOpts.push(opts);
       return defaultCompletionResult;
@@ -232,7 +226,6 @@ describe("post-run ask wiring inputs (#2201)", () => {
       interactionChain: chain,
     });
 
-    expect(acceptanceCtxs[0]?.interactionChain).toBe(chain);
     expect(completionOpts[0]?.interactionChain).toBe(chain);
     expect(workflowCtxs[0]?.interactionChain).toBe(chain);
   });

@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 21,
-    "looseCast": 1445
+    "looseCast": 1412
   },
   "updatedAt": "2026-11-06T08:49:23.533Z",
   "byFile": {
@@ -322,9 +322,6 @@
     "test/unit/execution/crash-signals.test.ts": {
       "looseCast": 2
     },
-    "test/unit/execution/runner-completion-events.test.ts": {
-      "looseCast": 8
-    },
     "test/unit/execution/non-blocking-fix.test.ts": {
       "looseCast": 6
     },
@@ -448,14 +445,8 @@
     "test/unit/execution/story-orchestrator/phase-details.test.ts": {
       "looseCast": 39
     },
-    "test/unit/execution/lifecycle/acceptance-loop-skipped-packages.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/execution/lifecycle/run-completion-events.test.ts": {
       "looseCast": 9
-    },
-    "test/unit/execution/lifecycle/acceptance-loop-routing.test.ts": {
-      "looseCast": 6
     },
     "test/unit/execution/lifecycle/run-completion-postrun.test.ts": {
       "looseCast": 1
@@ -466,22 +457,13 @@
     "test/unit/execution/lifecycle/run-setup-command-interceptor.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/lifecycle/acceptance-loop-cycle.test.ts": {
-      "looseCast": 8
-    },
     "test/unit/execution/lifecycle/run-setup.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/execution/lifecycle/acceptance-fix.test.ts": {
       "looseCast": 3
     },
     "test/unit/execution/checkpoint/writer.test.ts": {
       "looseCast": 3
     },
     "test/unit/findings/_cycle-fixtures.ts": {
-      "looseCast": 1
-    },
-    "test/unit/findings/adapters/acceptance-diagnose.test.ts": {
       "looseCast": 1
     },
     "test/unit/bakeoff/coordinator.test.ts": {
@@ -495,9 +477,6 @@
     },
     "test/unit/acceptance/refinement.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/acceptance/hardening.test.ts": {
-      "looseCast": 6
     },
     "test/unit/test-runners/detect.test.ts": {
       "looseCast": 1

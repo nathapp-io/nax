@@ -29,7 +29,7 @@ export async function handleThreeSessionTddPrompts(
   // US-004 — gate the `run-test` region on the SSOT for naming the
   // `testScoped` key (a template that takes anything other than
   // `{{files}}` would render a tool call the `RunCommand` runtime
-  // rejects). The SSOT lives at src/execution/lifecycle/acceptance-helpers.ts:89.
+  // rejects). The rule is `RunCommand`'s: packages/nax-agent/src/tools/run-command.ts.
   const scopedTestCommand = commandSpecIncludes(ctx.config.quality?.commands?.testScoped, "{{files}}")
     ? "testScoped"
     : undefined;

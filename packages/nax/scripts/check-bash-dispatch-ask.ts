@@ -98,12 +98,6 @@ export const ALLOWED_BARE_SITES: readonly AllowedBareSite[] = [
   { file: "src/cli/advisor-replay.ts", fn: "buildCallContext", reason: "adviseOp (Read/Glob/Grep)" },
   { file: "src/execution/uncategorised-advice.ts", fn: "callContextFor", reason: "adviseOp (Read/Glob/Grep)" },
   { file: "src/cli/plan-decompose.ts", fn: "planDecomposeCommand", reason: "decomposeOp (complete-kind)" },
-  {
-    file: "src/acceptance/hardening.ts",
-    fn: "processPackageGroup",
-    reason: "acceptanceRefineOp (complete-kind) / acceptanceGenerateOp (Read/Glob/Grep/Write)",
-  },
-  { file: "src/execution/lifecycle/acceptance-fix.ts", fn: "fixCallCtx", reason: "acceptanceDiagnoseOp (read-only)" },
 ];
 
 // ─── Source scan ─────────────────────────────────────────────────────────────

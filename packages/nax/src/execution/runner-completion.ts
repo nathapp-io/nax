@@ -1,13 +1,10 @@
 /**
  * Runner Completion Phase
  *
- * Handles post-execution steps: acceptance loop, hooks, metrics, and cleanup.
+ * Handles post-execution steps: hooks, metrics, finish and cleanup.
  * Extracted from runner.ts for better code organization.
  */
 
-import path from "node:path";
-import { errorMessage } from "@nathapp/nax-agent/internal";
-import { groupStoriesByPackage } from "@/acceptance";
 import { loadConfigForPackage, type NaxConfig } from "@/config";
 import type { LoadedHooksConfig } from "@/hooks";
 import { fireHook } from "@/hooks";
@@ -30,11 +27,9 @@ import { reportAuthRelogins } from "./auth-relogin-report";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { ExitReason } from "./executor-types";
-import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
 import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
 import { writeFinalFeatureStatus } from "./lifecycle/run-completion-phases";
 import { workflowFinalRunStatus } from "./lifecycle/workflow-run-status";
-import type { AcceptancePhaseStatus } from "./status-file";
 import { hookCtx } from "./story-context";
 import { createRunCompleteGate, runEndPhaseReported } from "./workflow-end-report";
 
@@ -65,7 +60,7 @@ export interface RunnerCompletionOptions extends DispatchContext {
   eventEmitter?: PipelineEventEmitter;
   /** Protocol-aware agent resolver */
   agentGetFn?: AgentGetFn;
-  /** Path to prd.json — required for acceptance fix story writes */
+  /** Path to prd.json — forwarded by the runner; no completion-phase step reads it. */
   prdPath: string;
   /**
    * Max parallel sessions, straight from RunnerOptions: undefined, 0 and 1 all
@@ -82,8 +77,9 @@ export interface RunnerCompletionOptions extends DispatchContext {
   exitReason?: ExitReason;
   /**
    * The run's interaction chain (alive until cleanupRun destroys it, after this
-   * phase). Threaded to every post-run Bash-dispatching site — acceptance fix,
-   * deferred regression, finish — as the human link of its ask resolver (#2201).
+   * phase). Threaded to every post-run Bash-dispatching site — deferred
+   * regression, finish, the feature workflow — as the human link of its ask
+   * resolver (#2201).
    */
   interactionChain?: InteractionChain | null;
 }
@@ -113,7 +109,6 @@ export interface RunnerCompletionResult {
  * @internal - test use only.
  */
 export const _runnerCompletionDeps: {
-  runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult>;
   handleRunCompletion(opts: RunCompletionOptions): Promise<RunCompletionResult>;
   // `from` is required, so this call site cannot drop the run's --profile chain
   // the way acceptance-setup's did (nax#2126).
@@ -122,10 +117,6 @@ export const _runnerCompletionDeps: {
   /** The run clock (wall ms); a seam so the workflow-duration split is testable. */
   now(): number;
 } = {
-  async runAcceptanceLoop(ctx) {
-    const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
-    return runAcceptanceLoop(ctx);
-  },
   async handleRunCompletion(opts) {
     const { handleRunCompletion } = await import("./lifecycle/run-completion");
     return handleRunCompletion(opts);
@@ -148,191 +139,8 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   const logger = getSafeLogger();
 
   logger?.debug("execution", "Completion phase started", {
-    acceptanceEnabled: options.config.acceptance?.enabled,
     isComplete: isComplete(options.prd),
   });
-
-  // Track whether acceptance passed (or was skipped/already-passed) — surfaced in
-  // RunnerCompletionResult so runner.ts can include it in RunResult.success.
-  let acceptancePassed = true;
-
-  // Check post-run status to determine if phases can be skipped on rerun
-  const postRunStatus = options.statusWriter.getPostRunStatus?.();
-  const acceptanceAlreadyPassed = postRunStatus?.acceptance?.status === "passed";
-  const regressionAlreadyPassed = postRunStatus?.regression?.status === "passed";
-
-  if (acceptanceAlreadyPassed && regressionAlreadyPassed) {
-    logger?.info("execution", "Post-run phases already passed — skipping acceptance and regression");
-  } else {
-    if (acceptanceAlreadyPassed) {
-      logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
-    } else if (
-      // nax#1809: under a dry run the acceptance loop would spawn the real test
-      // suite and dispatch acceptance-source-fix / acceptance-test-fix agents
-      // that edit source files. "Show plan without executing" means no tests.
-      !options.runtime?.dryRun &&
-      options.config.acceptance.enabled &&
-      isComplete(options.prd)
-    ) {
-      options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
-      const acceptanceStartTime = Date.now();
-      pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance" });
-
-      // Compute per-package acceptance test paths from PRD story workdirs.
-      // This is necessary because preRunCtx.acceptanceTestPaths is ephemeral and
-      // not propagated here; it's also skipped entirely when the PRD is already
-      // complete at run start (re-run). groupStoriesByPackage is the SSOT.
-      const acceptanceTestPaths = options.featureDir
-        ? await Promise.all(
-            (
-              await groupStoriesByPackage(
-                options.prd,
-                options.workdir,
-                options.feature,
-                options.config.acceptance.testPath,
-                options.config.project?.language,
-              )
-            ).map(async (g) => {
-              const relativeWorkdir = path.relative(options.workdir, g.packageDir);
-              let groupConfig = options.config;
-
-              if (relativeWorkdir && relativeWorkdir !== ".") {
-                try {
-                  groupConfig = await _runnerCompletionDeps.loadConfigForPackage(
-                    options.workdir,
-                    relativeWorkdir,
-                    options.config,
-                  );
-                } catch (error) {
-                  logger?.warn("execution", "Falling back to root config for package acceptance settings", {
-                    packageDir: g.packageDir,
-                    relativeWorkdir,
-                    error: errorMessage(error),
-                  });
-                }
-              }
-
-              return {
-                testPath: g.testPath,
-                packageDir: g.packageDir,
-                testFramework: groupConfig.project?.testFramework,
-                commandOverride: groupConfig.acceptance.command,
-                storyCount: g.stories.length,
-                acceptanceEnabled: groupConfig.acceptance.enabled,
-              };
-            }),
-          )
-        : undefined;
-
-      let acceptanceResult: Awaited<ReturnType<typeof _runnerCompletionDeps.runAcceptanceLoop>>;
-      try {
-        acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
-          config: options.config,
-          prd: options.prd,
-          prdPath: options.prdPath,
-          workdir: options.workdir,
-          featureDir: options.featureDir,
-          hooks: options.hooks,
-          feature: options.feature,
-          totalCost: options.totalCost,
-          iterations: options.iterations,
-          storiesCompleted: options.storiesCompleted,
-          allStoryMetrics: options.allStoryMetrics,
-          pluginRegistry: options.pluginRegistry,
-          eventEmitter: options.eventEmitter,
-          statusWriter: options.statusWriter,
-          agentGetFn: options.agentGetFn,
-          agentManager: options.agentManager,
-          sessionManager: options.sessionManager,
-          runtime: options.runtime,
-          abortSignal: options.abortSignal,
-          acceptanceTestPaths,
-          // US-004 (AC-35): forward the prior run's missing-target packages
-          // onto the context so a resumed run's acceptance loop is invoked
-          // with that history available, rather than the resume decision
-          // (driven by postRunStatus.acceptance.status, see
-          // acceptanceAlreadyPassed above) losing it entirely.
-          skippedPackages: postRunStatus?.acceptance?.skippedPackages,
-          interactionChain: options.interactionChain,
-        });
-      } catch (err) {
-        // A thrown error here would otherwise leave "acceptance" permanently
-        // "running" in the TUI/status.json — no postrun:phase:completed ever
-        // fires (post-impl-review quality finding).
-        pipelineEventBus.emit({
-          type: "postrun:phase:completed",
-          phase: "acceptance",
-          passed: false,
-          durationMs: Date.now() - acceptanceStartTime,
-        });
-        throw err;
-      }
-
-      const lastRunAt = new Date().toISOString();
-      const acceptanceDurationMs = Date.now() - acceptanceStartTime;
-      if (acceptanceResult.success) {
-        // US-004 (AC-4): explicitly clear skippedPackages on the passed
-        // transition so a stale list from a prior failed run is not
-        // retained. StatusWriter merges updates shallowly, so omitting
-        // the field would leave the previous value in place.
-        options.statusWriter.setPostRunPhase("acceptance", {
-          status: "passed",
-          lastRunAt,
-          skippedPackages: undefined,
-        });
-        pipelineEventBus.emit({
-          type: "postrun:phase:completed",
-          phase: "acceptance",
-          passed: true,
-          durationMs: acceptanceDurationMs,
-          details: {
-            retries: acceptanceResult.retries ?? 0,
-            failedACCount: acceptanceResult.failedACs?.length ?? 0,
-            // ADR-022 replaced fix-story PRD mutation with in-place runFixCycle
-            // rectification — the acceptance loop never appends US-FIX-* stories,
-            // so this is always accurately 0, not an unmeasured placeholder.
-            fixStoriesCreated: 0,
-          },
-        });
-      } else {
-        acceptancePassed = false;
-        // US-004: surface missing-target packages on the failed phase so a
-        // resumed run can re-evaluate them. The field is always written —
-        // explicitly undefined when this failure has none — because
-        // StatusWriter merges updates shallowly and would otherwise leave a
-        // stale list from an earlier missing-target failure in place.
-        const failureUpdate: Partial<AcceptancePhaseStatus> = {
-          status: "failed",
-          failedACs: acceptanceResult.failedACs ?? [],
-          retries: acceptanceResult.retries ?? 0,
-          lastRunAt,
-          skippedPackages:
-            acceptanceResult.skippedPackages && acceptanceResult.skippedPackages.length > 0
-              ? acceptanceResult.skippedPackages
-              : undefined,
-        };
-        options.statusWriter.setPostRunPhase("acceptance", failureUpdate);
-        pipelineEventBus.emit({
-          type: "postrun:phase:completed",
-          phase: "acceptance",
-          passed: false,
-          durationMs: acceptanceDurationMs,
-          details: {
-            retries: acceptanceResult.retries ?? 0,
-            failedACCount: acceptanceResult.failedACs?.length ?? 0,
-            fixStoriesCreated: 0,
-          },
-        });
-      }
-
-      Object.assign(options, {
-        prd: acceptanceResult.prd,
-        totalCost: acceptanceResult.totalCost,
-        iterations: acceptanceResult.iterations,
-        storiesCompleted: acceptanceResult.storiesCompleted,
-      });
-    }
-  }
 
   // Fire on-all-stories-complete before regression gate (RL-001)
   if (isComplete(options.prd)) {
@@ -429,7 +237,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   return {
     durationMs,
     runCompletedAt,
-    acceptancePassed,
+    // Until US-007 deletes the field, the completion phase no longer runs an
+    // acceptance loop, so it never fails on one.
+    acceptancePassed: true,
     pluginGateFailed,
     reportedTotal: finalTotal,
     ...(workflowPassed !== undefined ? { workflowPassed } : {}),

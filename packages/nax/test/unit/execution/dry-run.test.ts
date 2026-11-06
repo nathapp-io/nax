@@ -194,10 +194,10 @@ describe("executeUnified — no acceptance artifacts under a dry run (nax#1809)"
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Gate 4 — completion phase skips acceptance and finish under a dry run
+// Gate 4 — completion phase under a dry run
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)", () => {
+describe("runCompletionPhase — dry run (nax#1809)", () => {
   let tempDir: string;
   let prdPath: string;
 
@@ -213,15 +213,14 @@ describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)"
     cleanupTempDir(tempDir);
   });
 
-  // The acceptance loop is the test subject here: a dry run must never spawn the
-  // suite or dispatch an acceptance fix agent.
-  test("does not dispatch the acceptance loop", async () => {
+  // The completion phase ran the real acceptance suite plus the acceptance fix
+  // agents until pipeline-post-run-delete US-006 deleted its acceptance loop.
+  // What a dry run must still guarantee is that completion itself runs and the
+  // run reports no acceptance failure.
+  test("completes the run without an acceptance phase", async () => {
     const { runCompletionPhase } = await import("@/execution/runner-completion");
     const { handleRunCompletion } = await import("@/execution/lifecycle/run-completion");
 
-    const acceptanceSpy = spyOn(_runnerCompletionDeps, "runAcceptanceLoop").mockImplementation(async () => {
-      throw new Error("acceptance loop dispatched under a dry run");
-    });
     const completionSpy = spyOn(_runnerCompletionDeps, "handleRunCompletion").mockImplementation(async (opts) => {
       await handleRunCompletion(opts);
       return {
@@ -275,10 +274,9 @@ describe("runCompletionPhase — dry run skips acceptance and finish (nax#1809)"
       };
       const result = await runCompletionPhase(completionOpts);
 
-      expect(acceptanceSpy).not.toHaveBeenCalled();
+      expect(completionSpy).toHaveBeenCalled();
       expect(result.acceptancePassed).toBe(true);
     } finally {
-      acceptanceSpy.mockRestore();
       completionSpy.mockRestore();
     }
   });

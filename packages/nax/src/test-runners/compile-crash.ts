@@ -4,11 +4,11 @@
  * A run that exits non-zero with no `AC-N`-tagged failure is either
  * `expected-red` (the acceptance file references a symbol the feature has not
  * created yet — the RED gate should see it) or `repairable` (anything else,
- * including a broken load the acceptance-repair op can fix).
+ * including a broken load an agent could repair).
  *
  * Scope: only Go and Rust compiler output is recognised; every other language
  * (including `undefined`) classifies as `repairable`, because their missing
- * symbols also surface as load failures the repair op can still attempt.
+ * symbols also surface as load failures worth attempting a repair on.
  */
 
 import { stripAnsi } from "./detector";

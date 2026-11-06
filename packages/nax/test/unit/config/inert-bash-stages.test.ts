@@ -23,8 +23,6 @@ import { BASH_DECLARING_STAGES, findInertBashStages } from "@/config";
 import { resolvePermissions } from "@/config/permissions";
 import { PermissionsBlockSchema } from "@/config/schemas-execution";
 import {
-  acceptanceFixSourceOp,
-  acceptanceFixTestOp,
   fullSuiteRectifyOp,
   implementerOp,
   implementerRectifyOp,
@@ -75,7 +73,7 @@ function sorted(stages: readonly PipelineStage[]): string[] {
 const OTHER_THREE: PipelineStage[] = ["acceptance", "rectification", "review"];
 
 /**
- * The nine operations that declare the Bash tool, with the stage each
+ * The six operations that declare the Bash tool, with the stage each
  * dispatches on. AC9 is the reason this list exists in the test at all: the
  * constant is only correct if it covers exactly these.
  */
@@ -86,8 +84,6 @@ const BASH_DECLARING_OPS: Array<[string, { stage: PipelineStage; tools?: readonl
   ["fullSuiteRectifyOp", fullSuiteRectifyOp],
   ["implementerRectifyOp", implementerRectifyOp],
   ["testWriterRectifyOp", testWriterRectifyOp],
-  ["acceptanceFixSourceOp", acceptanceFixSourceOp],
-  ["acceptanceFixTestOp", acceptanceFixTestOp],
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,8 +275,16 @@ describe("BASH_DECLARING_STAGES — US-003 AC9: mirrors the Bash-declaring opera
     },
   );
 
-  test("AC9 boundary: BASH_DECLARING_STAGES names exactly the stages those nine operations use", () => {
-    const opStages = [...new Set(BASH_DECLARING_OPS.map(([, op]) => op.stage))].sort((a, b) => a.localeCompare(b));
+  // `BASH_DECLARING_STAGES` is a name registry (src/config/inert-bash-stages.ts).
+  // The two acceptance fix ops that put "acceptance" in it were deleted with the
+  // completion acceptance loop (pipeline-post-run-delete US-006), but emptying the
+  // registry is wave B3's job (spec Out of Scope), so the string stays for now.
+  const RETAINED_REGISTRY_STAGES: PipelineStage[] = ["acceptance"];
+
+  test("AC9 boundary: BASH_DECLARING_STAGES names exactly the stages those six operations use", () => {
+    const opStages = [...new Set([...BASH_DECLARING_OPS.map(([, op]) => op.stage), ...RETAINED_REGISTRY_STAGES])].sort(
+      (a, b) => a.localeCompare(b),
+    );
 
     expect([...BASH_DECLARING_STAGES].sort((a, b) => a.localeCompare(b))).toEqual(opStages);
   });

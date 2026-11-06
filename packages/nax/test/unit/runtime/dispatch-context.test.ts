@@ -12,7 +12,6 @@
 
 import { describe, expect, test } from "bun:test";
 import type { SequentialExecutionContext } from "@/execution/executor-types";
-import type { AcceptanceLoopContext } from "@/execution/lifecycle/acceptance-loop";
 import type { RunCompletionOptions } from "@/execution/lifecycle/run-completion";
 import type { RunnerExecutionOptions } from "@/execution/runner-execution";
 import type { PipelineContext } from "@/pipeline/types";
@@ -36,13 +35,6 @@ describe("DispatchContext type hierarchy", () => {
     const ctx = {} as PipelineContext;
     const base: DispatchContext = ctx;
     assertExtends<PipelineContext, DispatchContext>(ctx);
-    expect(base).toBeDefined();
-  });
-
-  test("AcceptanceLoopContext extends DispatchContext", () => {
-    const ctx = {} as AcceptanceLoopContext;
-    const base: DispatchContext = ctx;
-    assertExtends<AcceptanceLoopContext, DispatchContext>(ctx);
     expect(base).toBeDefined();
   });
 

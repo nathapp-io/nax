@@ -195,7 +195,7 @@ export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
 export { type MockPluginRegistry, makePluginRegistry } from "./plugin-registry";
 export { psCanReportProcessGroup } from "./ps-probe";
 export { expectRetryStrategy } from "./retry-strategy";
-export { makeAdversarialOutput, makeDiagnoseOutput, makeSemanticOutput } from "./review-outputs";
+export { makeAdversarialOutput, makeSemanticOutput } from "./review-outputs";
 export {
   type MockRuntimeOptions,
   makeMockRuntime,

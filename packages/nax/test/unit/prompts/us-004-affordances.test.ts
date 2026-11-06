@@ -227,12 +227,13 @@ describe("US-004 AC6 — rectifier full-suite block under acp", () => {
 
   // AC6 says the block names "the same command string the verifier replays".
   // The rendered body is the `quality.commands.test` slot verbatim — that slot
-  // IS the full suite by definition (acceptance-helpers.ts:21-23), and the
-  // full-suite rectification cycle replays the full suite. The override/scoped
-  // fallback chain in `resolveAcceptanceFixTarget` belongs to the ACCEPTANCE
-  // fix cycle, which re-runs one acceptance test rather than the suite, so it
-  // is deliberately not consulted here. This pins that equality so the parity
-  // is checked rather than assumed.
+  // IS the full suite by definition, and the full-suite rectification cycle
+  // replays the full suite. The override/scoped fallback chain that used to
+  // resolve an acceptance fix target belonged to the ACCEPTANCE fix cycle,
+  // which re-ran one acceptance test rather than the suite (deleted with the
+  // completion acceptance loop, pipeline-post-run-delete US-006), so it is
+  // deliberately not consulted here. This pins that equality so the parity is
+  // checked rather than assumed.
   test("the rendered body is the configured full-suite slot verbatim", () => {
     const prompt = RectifierPromptBuilder.failingTestRectification(FINDINGS, STORY, {
       testCommand: TEST_CMD,

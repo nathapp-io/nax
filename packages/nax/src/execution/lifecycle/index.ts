@@ -3,12 +3,6 @@
  */
 
 export {
-  _runAcceptanceTestsOnceDeps,
-  type AcceptanceLoopContext,
-  type AcceptanceLoopResult,
-  runAcceptanceLoop,
-} from "./acceptance-loop";
-export {
   applyBackfill,
   type BackfillMetricArgs,
   backfillDomain,

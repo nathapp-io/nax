@@ -1,13 +1,10 @@
 /**
- * Tests for rerun skip logic in runCompletionPhase (US-003)
+ * runCompletionPhase — run-status classification and dry-run/index-sweep behaviour.
  *
- * Verifies that runCompletionPhase checks getPostRunStatus() before running the
- * acceptance phase, and skips it when it already passed.
- *
- * AC1: skips acceptance when getPostRunStatus() returns both "passed"
- * AC2: skips acceptance when acceptance "passed" and regression not "passed"
- * AC3: runs acceptance when acceptance.status === "not-run"
- * AC4: runs acceptance when acceptance.status === "failed"
+ * The rerun-skip tests these used to carry (AC1–AC4, plus the "skip only applies
+ * when acceptance/regression config is active" guard) exercised the completion
+ * phase's post-run status block, which pipeline-post-run-delete US-006 removed
+ * along with the acceptance loop. What remains here does not involve acceptance.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -21,7 +18,6 @@ import {
   makeStatusWriter,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
-import type { AcceptanceLoopResult } from "@/execution/lifecycle/acceptance-loop";
 import { _runCompletionDeps } from "@/execution/lifecycle/run-completion";
 import { _runnerCompletionDeps, type RunnerCompletionOptions, runCompletionPhase } from "@/execution/runner-completion";
 import type { PostRunStatus } from "@/execution/status-file";
@@ -163,21 +159,11 @@ function makeOpts(config: NaxConfig, prd: PRD, statusWriter: MockStatusWriter): 
   };
 }
 
-const defaultAcceptanceResult: AcceptanceLoopResult = {
-  success: true,
-  prd: makePRD([{ id: "US-001", status: "passed" }]),
-  totalCost: 0,
-  iterations: 1,
-  storiesCompleted: 1,
-  prdDirty: false,
-};
-
 const origRunnerDeps = { ..._runnerCompletionDeps };
 const origRunDeps = { ..._runCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.runWorkflowFeature = mock(async () => null);
-  _runnerCompletionDeps.runAcceptanceLoop = mock(async (): Promise<AcceptanceLoopResult> => defaultAcceptanceResult);
 });
 
 afterEach(() => {
@@ -186,101 +172,6 @@ afterEach(() => {
   pipelineEventBus.clear();
   mock.restore();
 });
-
-// ---------------------------------------------------------------------------
-// AC1: both phases "passed" → skip acceptance AND regression
-// ---------------------------------------------------------------------------
-
-describe("runCompletionPhase - AC1: skips both when both postRun phases are already passed", () => {
-  test("does not call runAcceptanceLoop when both phases are passed", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runnerCompletionDeps.runAcceptanceLoop).not.toHaveBeenCalled();
-  });
-
-  test("calls getPostRunStatus to check existing phase status", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(statusWriter.getPostRunStatus).toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC2: acceptance "passed", regression not "passed" → skip acceptance, run regression
-// ---------------------------------------------------------------------------
-
-describe("runCompletionPhase - AC2: skips acceptance but runs regression when acceptance already passed", () => {
-  test("does not call runAcceptanceLoop when acceptance is already passed", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("passed", "not-run"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runnerCompletionDeps.runAcceptanceLoop).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC3: acceptance "not-run" → run both phases
-// ---------------------------------------------------------------------------
-
-describe("runCompletionPhase - AC3: runs both when acceptance.status is not-run", () => {
-  test("calls runAcceptanceLoop when acceptance is not-run and PRD is complete", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runnerCompletionDeps.runAcceptanceLoop).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC4: acceptance "failed" → run both phases
-// ---------------------------------------------------------------------------
-
-describe("runCompletionPhase - AC4: runs both when acceptance.status is failed", () => {
-  test("calls runAcceptanceLoop when acceptance previously failed", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("failed", "not-run"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runnerCompletionDeps.runAcceptanceLoop).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Guard: no skip when acceptance is disabled (config gate still applies)
-// ---------------------------------------------------------------------------
-
-describe("runCompletionPhase - skip only applies when acceptance/regression config is active", () => {
-  test("does not call runAcceptanceLoop when acceptance is disabled, regardless of status", async () => {
-    const statusWriter = makeWriter(makePostRunStatus("not-run", "not-run"));
-    const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    // acceptance disabled
-    const config = makeConfig(false);
-
-    await runCompletionPhase(makeOpts(config, prd, statusWriter));
-
-    expect(_runnerCompletionDeps.runAcceptanceLoop).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Cost-limit exit reason surfaces as a distinct feature-level run status
-// ---------------------------------------------------------------------------
 
 describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () => {
   test("sets feature-level run status to cost-limit when exitReason is cost-limit, even with incomplete stories", async () => {

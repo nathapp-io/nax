@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  acceptanceFixSourceOp,
-  acceptanceFixTestOp,
   adversarialReviewOp,
   fullSuiteRectifyOp,
   implementerOp,
@@ -18,8 +16,6 @@ const FILE_MUTATING_OPS = [
   ["autofix-implementer", implementerRectifyOp],
   ["autofix-test-writer", testWriterRectifyOp],
   ["write-test", testWriterOp],
-  ["acceptance-fix-source", acceptanceFixSourceOp],
-  ["acceptance-fix-test", acceptanceFixTestOp],
   ["rectify", rectifyOp],
   ["full-suite-rectify", fullSuiteRectifyOp],
 ] as const;

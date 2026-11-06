@@ -8,8 +8,6 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
-  acceptanceFixSourceOp,
-  acceptanceFixTestOp,
   adversarialReviewOp,
   fullSuiteRectifyOp,
   implementerOp,
@@ -32,8 +30,6 @@ describe("ops that may hold Bash", () => {
     ["rectify", rectifyOp],
     ["autofix-implementer", implementerRectifyOp],
     ["autofix-test-writer", testWriterRectifyOp],
-    ["acceptance-fix-source", acceptanceFixSourceOp],
-    ["acceptance-fix-test", acceptanceFixTestOp],
     ["full-suite-rectify", fullSuiteRectifyOp],
     ["adversarial-review", adversarialReviewOp],
     ["semantic-review", semanticReviewOp],

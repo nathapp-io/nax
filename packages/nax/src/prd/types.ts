@@ -189,7 +189,7 @@ export interface UserStory {
   description: string;
   /** Acceptance criteria */
   acceptanceCriteria: string[];
-  /** Criteria the planner suggested beyond the spec — tested in hardening pass, never blocks pipeline. */
+  /** Criteria the planner suggested beyond the spec — never blocks the pipeline; the hardening pass that tested them was deleted by pipeline-post-run-delete US-006. */
   suggestedCriteria?: string[];
   /**
    * Exclusions this story must not implement — the feature-level `PRD.outOfScope`
