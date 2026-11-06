@@ -198,8 +198,9 @@ async function runCanonicalReviewPair(options: {
  *
  * This reverts the verifierExempt path added in ff640e6b — that change let
  * the verifier run on broken-gate code as an "unrelated regression" escape
- * hatch, at the cost of every common case. The escalation boundary in
- * deriveTddFailureCategory now handles that case instead.
+ * hatch, at the cost of every common case. The escalation boundary handled that
+ * case instead, via the failure-category derivation the post-run inspection layer
+ * owned (deleted, US-003).
  *
  * #1666 amendment: `semantic-review` failing is an EXCEPTION to the
  * unconditional halt above, scoped narrowly to that one transition

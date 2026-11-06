@@ -614,9 +614,10 @@ async function runPlanResumeScenario(
 
 // ---------------------------------------------------------------------------
 // nax#1707 follow-up: phaseOutputs.rectification is last-write-wins, and
-// runRectification re-enters within a single attempt (execution-plan.ts). post-run.ts
-// reads iterationCount into ctx.rectifyAttempt, where any non-zero disqualifies
-// firstPassSuccess (BUG-067 / #679) — so a later cycle must not erase an earlier one.
+// runRectification re-enters within a single attempt (execution-plan.ts). The
+// post-run inspection layer read iterationCount into ctx.rectifyAttempt, where any
+// non-zero disqualifies firstPassSuccess (BUG-067 / #679) — so a later cycle must
+// not erase an earlier one.
 // ---------------------------------------------------------------------------
 
 describe("runRectification — iterationCount accumulates across re-entries", () => {

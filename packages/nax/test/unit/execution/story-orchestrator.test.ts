@@ -906,7 +906,7 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
 
   test("when rectification NOT configured: gate failure halts plan (no verifier called)", async () => {
     // New contract: gate failure halts the plan — no verifier call on broken code.
-    // Without rectification, escalation uses deriveTddFailureCategory("tests-failing").
+    // Without rectification, escalation routes on the "tests-failing" failure category.
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
@@ -944,9 +944,9 @@ describe("AC-6: short-circuit carve-out for gate + verifier when rectification c
 
   test("gate-only failure (no rectification) halts before verifier and fails the plan — escalation handles unrelated-regression case", async () => {
     // Behaviour change: the old verifier-as-SSOT escape hatch (gate fails but
-    // verifier judges OK → pass) is now handled at the escalation boundary via
-    // deriveTddFailureCategory (returns "tests-failing" → escalate). In-plan,
-    // gate failure halts immediately when no rectification is configured.
+    // verifier judges OK → pass) is now handled at the escalation boundary
+    // ("tests-failing" → escalate). In-plan, gate failure halts immediately when
+    // no rectification is configured.
     const config = makeNaxConfig();
     rt = makeTestRuntime({ config });
 
@@ -1447,7 +1447,7 @@ describe("AC-4 + AC-5: validate callback re-runs gate and verifier, lite-mode sk
         const beforeGate = gateRunCount.n;
         const beforeVerifier = verifierRunCount.n;
         await capturedCycle.current.validate(ctx, { mode: "full" });
-        // Gate still runs during validate (keeps phaseOutputs current for applyPostRunInspection).
+        // Gate still runs during validate (keeps phaseOutputs current for the verdict).
         expect(gateRunCount.n).toBeGreaterThan(beforeGate);
         // New contract (Task 2): verifier IS re-run when the strategy maps to it or is unknown.
         // Unknown strategy "s" → fallback to all phases (conservative default) → verifier included.

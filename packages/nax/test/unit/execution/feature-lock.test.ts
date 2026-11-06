@@ -46,12 +46,11 @@ describe("US-001 barrel importability (public surface parity)", () => {
   test("every feature-lock symbol is re-exported from @/execution, matching the rest of the execution primitives", () => {
     // The execution module's public surface is its barrel (`@/execution`).
     // Every other execution primitive — `acquireLock`, `releaseLock`,
-    // `_lockDeps`, `inspectRecurrenceBreaker`, `recordOscillations`, etc. —
-    // is re-exported there, and the test suite imports from the barrel, not
-    // from the internal file. The feature-lock primitive must follow the
-    // same convention so (a) tests can target the public surface, and
-    // (b) production callers depending on the barrel can use the new
-    //     feature-lock API without reaching into an internal path.
+    // `_lockDeps`, `recordOscillations`, etc. — is re-exported there, and the
+    // test suite imports from the barrel, not from the internal file. The
+    // feature-lock primitive must follow the same convention so (a) tests can
+    // target the public surface, and (b) production callers depending on the
+    // barrel can use the new feature-lock API without reaching into an internal path.
     expect(typeof executionBarrel.featureLockPath).toBe("function");
     expect(typeof executionBarrel.acquireFeatureLock).toBe("function");
     expect(typeof executionBarrel.releaseFeatureLock).toBe("function");

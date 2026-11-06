@@ -7,7 +7,7 @@
  *
  * No-op when `storyId` is absent (ad-hoc calls with no story context) or the
  * runtime lacks the store — recording is best-effort bookkeeping, not a
- * correctness requirement; `inspectRecurrenceBreaker` is separately fail-open.
+ * correctness requirement; the breaker that read it was separately fail-open.
  */
 import { type ReviewRecurrenceStore, recordReviewFindings } from "../recurrence-store";
 import { extractPhaseFindings, phasePassed } from "./phase-eval";

@@ -47,7 +47,7 @@ export interface VerdictInputs {
  * (pos 9-10). The verifier-SSOT carve-out must NOT launder such a story into
  * a pass: it cannot be certified without the semantic/adversarial judgment it
  * was configured to require. Forcing success=false routes it to escalation
- * (deriveTddFailureCategory → "review-incomplete") so a stronger tier can
+ * (failure category "review-incomplete") so a stronger tier can
  * green the gate and actually run the review; the story becomes terminal only
  * once escalation is exhausted.
  */
@@ -106,9 +106,11 @@ export function buildStoryOrchestratorResult(
   });
 
   // Part C (#1666) — feed this attempt's review findings into the cross-attempt
-  // recurrence store so `inspectRecurrenceBreaker` (post-run.ts) can see a same-source
-  // finding repeating across escalation attempts. Runs regardless of `success` — the
-  // breaker needs every attempt's data, not just failing ones.
+  // recurrence store. A same-source finding repeating across escalation attempts was
+  // the input to the recurrence breaker, which went with the post-run inspection layer
+  // (US-003); the store is retained and still written so a future breaker has the data.
+  // Runs regardless of `success` — a breaker needs every attempt's data, not just
+  // failing ones.
   recordReviewRecurrencesForAttempt(ctx.runtime, ctx.storyId, phaseOutputs);
 
   const success =

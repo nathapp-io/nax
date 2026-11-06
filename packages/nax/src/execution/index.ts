@@ -81,7 +81,6 @@ export type { NbfWorthCheckRequest } from "./nbf-worth-check";
 export { _nbfWorthCheckDeps, runNbfWorthCheck } from "./nbf-worth-check";
 export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
 export { runNonBlockingFix } from "./non-blocking-fix";
-export { type BreakerDecision, inspectOscillationBreaker } from "./oscillation-breaker";
 export { countOscillationOutcomes, getOscillations, recordOscillations } from "./oscillation-store";
 export { _pidRegistryDeps, PidRegistry } from "./pid-registry";
 export {
@@ -93,20 +92,9 @@ export {
   type PipelineSuccessResult,
 } from "./pipeline-result-handler";
 export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
-export {
-  _postRunDeps,
-  applyPostRunInspection,
-  decideStageAction,
-  deriveTddFailureCategory,
-  extractPauseReason,
-  type InspectionOptions,
-  type PostRunInspectionResult,
-} from "./post-run";
 export { appendProgress } from "./progress";
 export type { BatchQueueDrainResult } from "./queue-handler";
 export { clearQueueFile, drainQueueAtBatchBoundary, processQueueFile, readQueueFile } from "./queue-handler";
-export { inspectRecurrenceBreaker, type RecurrenceBreakerDecision } from "./recurrence-breaker";
-export { maybeHandleRecurrenceBreaker } from "./recurrence-pause";
 export {
   getReviewRecurrenceCount,
   type ReviewRecurrenceEntry,

@@ -54,7 +54,8 @@ export interface SkipPhaseForRectificationInput {
  * Verifier-as-SSOT: when the verifier explicitly passed, full-suite-gate
  * failures represent unrelated regressions that this story did not cause.
  * Excluded from rectification (mirrors the carve-out in ExecutionPlan.run
- * success aggregation and post-run.ts:deriveFailureCategory).
+ * success aggregation and in the post-run failure-category derivation, which
+ * this module's requirement outlived — the derivation was deleted in US-003).
  */
 export function shouldSkipPhaseForRectification(input: SkipPhaseForRectificationInput): boolean {
   const { phase, state, phaseOutputs, nbfPath } = input;
@@ -497,9 +498,10 @@ export async function runRectification(
       : cycleResult.exitReason;
 
   // runRectification can re-enter within a single attempt (execution-plan.ts), and this
-  // key is last-write-wins. iterationCount must accumulate: post-run.ts reads it into
-  // ctx.rectifyAttempt, where any non-zero disqualifies firstPassSuccess (BUG-067 / #679),
-  // so a later cycle exiting with 0 iterations must not erase an earlier cycle's work.
+  // key is last-write-wins. iterationCount must accumulate: the post-run inspection
+  // layer read it into ctx.rectifyAttempt, where any non-zero disqualifies
+  // firstPassSuccess (BUG-067 / #679), so a later cycle exiting with 0 iterations must
+  // not erase an earlier cycle's work.
   const priorRectifyIterations =
     (phaseOutputs.rectification as { iterationCount?: number } | undefined)?.iterationCount ?? 0;
   phaseOutputs.rectification = {

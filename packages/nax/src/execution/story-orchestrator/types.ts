@@ -71,7 +71,7 @@ export interface StoryOrchestratorResult {
    * never executed before the verdict — e.g. the post-rectification resume loop
    * broke at a still-red full-suite-gate (canonical pos 4) before reaching the
    * review (pos 9-10). A non-empty list forces success=false and routes to
-   * escalation via `deriveTddFailureCategory` → `review-incomplete`, so the story
+   * escalation via the "review-incomplete" failure category, so the story
    * cannot pass on the verifier-SSOT carve-out without semantic/adversarial
    * judgment (US-002 regression).
    */

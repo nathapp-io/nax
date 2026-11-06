@@ -26,8 +26,6 @@ export { PipelineEventEmitter } from "./events";
 export type { PipelineRunResult } from "./runner";
 export { MAX_STAGE_RESETS, MAX_STAGE_RETRIES, runPipeline } from "./runner";
 export { _scopeFilesDeps, resolveScopeFiles } from "./scope-files";
-export type { ResolvedExecutionAgent } from "./stages/execution-helpers";
-export { resolveExecutionAgent } from "./stages/execution-helpers";
 export { queueCheckStage } from "./stages/queue-check";
 export { wireReporters } from "./subscribers/reporters";
 export type {

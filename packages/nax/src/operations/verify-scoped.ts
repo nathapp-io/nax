@@ -130,8 +130,9 @@ export const verifyScopedOp: DeterministicOperation<
     const quality = ctx.packageView.select(qualityConfigSelector);
     let baseCommand = quality.quality?.commands?.test;
     // nax#1757: verify-result scratch capture — gated on v2 being enabled, mirroring
-    // src/execution/post-run.ts:172. sessionScratchDir threads via input (production)
-    // or deps (tests), matching the lint-check / typecheck-check precedent.
+    // the post-run inspection path (deleted, US-003) that captured the same scratch.
+    // sessionScratchDir threads via input (production) or deps (tests), matching the
+    // lint-check / typecheck-check precedent.
     const v2Enabled = ctx.packageView.config.context?.v2?.enabled === true;
     const scratchDir = input.sessionScratchDir ?? deps.sessionScratchDir;
 

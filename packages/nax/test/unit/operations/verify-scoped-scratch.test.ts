@@ -8,9 +8,10 @@
  * the right moment, so it is the writer.
  *
  * Capture is gated on BOTH `config.context.v2.enabled` AND a wired scratch
- * dir + append fn — mirroring `src/execution/post-run.ts:172` (v2 gate) and
- * the `lint-check.ts` / `typecheck-check.ts` `tool-diagnostics` precedent
- * (best-effort dep pair). Capture must never block the verify result.
+ * dir + append fn — mirroring the post-run inspection path's v2 gate (that path
+ * was deleted, US-003) and the `lint-check.ts` / `typecheck-check.ts`
+ * `tool-diagnostics` precedent (best-effort dep pair). Capture must never block
+ * the verify result.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";

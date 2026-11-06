@@ -494,8 +494,9 @@ describe("collectStoryMetrics - AC-41 fallback.hops field", () => {
 // ---------------------------------------------------------------------------
 // nax#1707: the hops AgentManager records reach metrics via the run-scoped
 // runtime.agentFallbacks store that callOp writes — not via ctx.agentFallbacks
-// (which had no writer) nor via ctx.agentResult (which post-run.ts rebuilds
-// without them). These assert the store is what collectStoryMetrics reads.
+// (which had no writer) nor via ctx.agentResult (which the deleted post-run
+// inspection layer rebuilt without them). These assert the store is what
+// collectStoryMetrics reads.
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics - #1707 agent-swap hops come from the run-scoped store", () => {

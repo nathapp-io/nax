@@ -34,8 +34,9 @@ export type FailureCategory =
    *
    * So a real producer would need NEW verifier scope (a verdict field where the verifier judges
    * the test-writer's isolation legitimacy) or a plugin. The routing/rollback machinery stays
-   * wired for such a producer via `deriveTddFailureCategory`'s `verifierOutput.failureCategory`
-   * passthrough; until then it is dormant, not dead.
+   * wired for such a producer via the `verifierOutput.failureCategory` passthrough in the
+   * failure-category derivation the post-run inspection layer owned (deleted, US-003); until a
+   * producer arrives it is dormant, not dead.
    */
   | "isolation-violation"
   /** A session crashed, timed out, or the agent failed to produce usable output */
