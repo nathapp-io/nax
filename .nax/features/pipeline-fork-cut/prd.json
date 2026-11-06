@@ -1,0 +1,554 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-fork-cut",
+  "branchName": "feat/pipeline-fork-cut",
+  "createdAt": "2026-11-06T00:00:00.000Z",
+  "updatedAt": "2026-11-06T02:23:21.058Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Reject removed pipeline keys in every raw config layer",
+      "description": "**Goal** \u2014 Reject explicit pipeline mode and maxIterations at config load boundaries, normalize every config as workflow, and preserve acceptance-command testability through an injectable loader.\n\n**Motivation** \u2014 Cutting the fork first makes wave B2 a pure deletion, because after B1 no production path reaches the pipeline-only modules.\n\n**Approach** \u2014 Design Part 1: the config guard (US-001)\n\nA new pre-parse guard in `packages/nax/src/config/config-guards.ts`, next to `rejectRemovedPlanModes`:\n\n```typescript\n/** Pipeline mode was removed (C1 B1). Runs on each raw config layer, before it is merged. */\nexport function rejectPipelineModeKeys(layer: Record<string, unknown>, source: string): void;\n```\n\nIt reads `layer.execution`. When `execution` is an object and either its `mode` is the string `\"pipeline\"` or it has an own `maxIterations` key (any value), it throws:\n\n```typescript\nthrow new NaxError(message, \"CONFIG_PIPELINE_MODE_REMOVED\", { stage: \"config\", source, keys });\n```\n\n`keys` lists the offending keys in this order: `\"execution.mode\"` (only when it is `\"pipeline\"`), then `\"execution.maxIterations\"`. `message` is these lines joined with `\\n`:\n\n```\nInvalid configuration in <source> \u2014 pipeline mode was removed: <keys joined with \", \">.\nWorkflow mode is the only execution mode, and it bounds a run by its stories.\n- execution.mode: remove it, or set it to \"workflow\".\n- execution.maxIterations: remove it.\n```\n\nOnly the bullet lines for keys in `keys` are printed. `execution.mode: \"workflow\"` and an absent `execution.mode` are accepted (user ruling 2026-11-05).\n\n**Why per layer, not on the merged config.** `loadConfig` (`packages/nax/src/config/loader.ts:264`) starts from `DEFAULT_CONFIG`, which carries `execution.maxIterations: 20` (`schemas.ts:160`), so the merged object always has the key. The guard therefore runs on each raw layer, after its compat shims and before it is merged:\n\n| Layer | Call site (loader) | `source` |\n|:---|:---|:---|\n| Global `~/.nax/config.json` | `applyGlobalLayer`, on `globalConf` | `\"global config\"` |\n| Project `.nax/config.json` | `applyProjectLayer`, on `resolvedProjConf` | `\"project config\"` |\n| Each root profile | `applyProfileChainLayer`, on `shimmedProfileData` | `` `profile \"${name}\"` `` |\n| CLI overrides | `applyCliOverridesLayer`, on `shimmedCliOverrides` | `\"CLI overrides\"` |\n| Per-package `.nax/mono/<pkg>/config.json` | `loadConfigForWorkdir` path, on `shimmedPackageFields` | `` `per-package config \"${packageDir}\"` `` |\n| Each per-package profile | `loadPackageProfileLayers` (`package-profile.ts:16`), on each `layer` | `` `per-package profile \"${name}\" (${packageDir})` `` |\n\nThe guard is never called on a merged object: not in `finalizeAndValidateRootConfig` (`loader.ts:213-252`, where `rejectRemovedPlanModes` sits at `:222`) and not on the per-package `rawMerged` (`loader.ts:538-546`). Both carry the default `maxIterations: 20` and would reject every config.\n\nThe schema keeps `ExecutionModeSchema = z.enum([\"pipeline\", \"workflow\"])` and `execution.maxIterations` with its default until wave B3, so hand-built test configs that carry the literal still typecheck. The guard is the only thing that rejects them.\n\n**Normalisation.** `applyWorkflowMode` (`config/workflow-mode.ts:17`) drops its `isWorkflowMode` check and applies the workflow overrides to every config it is given (acceptance off, the advisor on when an advisor block exists, story isolation shared). A loaded config can no longer be in pipeline mode, so this changes nothing for a config that loads; it changes the result only for a hand-built config that still says `mode: \"pipeline\"`. The `warnDeprecatedPipelineMode` call in `finalizeAndValidateRootConfig` (`loader.ts:250`) is removed; the function itself is deleted in US-006.\n\n**`nax features acceptance` keeps its tests.** `resolveFeatureAcceptance` (`packages/nax/src/cli/features-acceptance.ts:78`) reads `config.acceptance.enabled` from `loadConfig`. Its tests, and those of `resolveFeatures` and the `features resolve` CLI, used `execution.mode: \"pipeline\"` in their fixture so acceptance stayed on. That route is closed by the guard and the normalisation. The module gains an injectable seam so the tests can keep driving the acceptance-on path:\n\n```typescript\nexport const _featuresAcceptanceDeps = { loadConfig };\n```\n\n`resolveFeatureAcceptance` calls `_featuresAcceptanceDeps.loadConfig(workdir, configOverrides)` in place of `loadConfig(workdir, configOverrides)`. Production behaviour is unchanged. Wave B2 decides whether the command stays.\n\n**Fixture migration** \u2014 Apply the US-001 test migrations recorded in analysis: remove obsolete pipeline identity/package-acceptance expectations; change the deferred deprecation test to CONFIG_PIPELINE_MODE_REMOVED; use loader wrappers restored in afterEach for acceptance-on unit paths; expect disabled in spawned features-resolve CLI tests; retain CONFIG_SCHEMA_INVALID for bogus storyIsolation; replace maxIterations merge/view/diff fixture pins with costLimit using the same numbers and its description. Retain the deprecation helper's describe/import until US-006. Extend existing guard and loader suites rather than weakening invalid-config checks.\n\n**Scope** \u2014 In: guard, six raw-layer integrations, unconditional workflow normalization, root warning-call removal, acceptance seam and directly affected fixtures. Out: execution-loop fork removal (US-002), setup/dispatch (US-003), run flags (US-004), chat contracts (US-005), and deletion of deprecated helpers (US-006). Do not narrow schemas/defaults, reject other pipeline-only keys, remove acceptance commands, or edit user config.\n\n**Interface** \u2014\n```typescript\nexport function rejectPipelineModeKeys(layer: Record<string, unknown>, source: string): void;\n(config: NaxConfig, warn: (msg: string) => void): NaxConfig\nexport const _featuresAcceptanceDeps = { loadConfig };\n```\nThe second signature is the unchanged applyWorkflowMode contract. The seam AC uses an initialized dir because resolveFeatureAcceptance returns before loading config if no .nax directory exists. In the two-argument call the forwarded configOverrides is undefined; a supplied third argument must be forwarded unchanged. The wrapper used by acceptance-on fixtures must call the saved real loadConfig function, not the replaced seam recursively.",
+      "acceptanceCriteria": [
+        "[unit] rejectPipelineModeKeys({ execution: { mode: \"pipeline\" } }, \"project config\") throws a NaxError whose code is CONFIG_PIPELINE_MODE_REMOVED and whose context.keys is [\"execution.mode\"].",
+        "[unit] rejectPipelineModeKeys({ execution: { mode: \"pipeline\", maxIterations: 5 } }, \"project config\") throws a NaxError whose message is exactly: Invalid configuration in project config \u2014 pipeline mode was removed: execution.mode, execution.maxIterations.\nWorkflow mode is the only execution mode, and it bounds a run by its stories.\n- execution.mode: remove it, or set it to \"workflow\".\n- execution.maxIterations: remove it.",
+        "[unit] rejectPipelineModeKeys({ execution: { maxIterations: 5 } }, \"global config\") throws a NaxError whose message names global config, lists only execution.maxIterations and contains no execution.mode: bullet line.",
+        "[unit] rejectPipelineModeKeys returns without throwing for { execution: { mode: \"workflow\" } }, for { execution: {} }, for {} and for { execution: \"x\" }.",
+        "[integration] loadConfig on a project whose .nax/config.json sets execution: { mode: \"pipeline\" } rejects with a NaxError whose code is CONFIG_PIPELINE_MODE_REMOVED and whose context.source is project config.",
+        "[integration] loadConfig on a project whose .nax/config.json sets execution: { maxIterations: 40 } rejects with a NaxError whose code is CONFIG_PIPELINE_MODE_REMOVED.",
+        "[integration] loadConfig on a project whose .nax/config.json sets no execution.maxIterations resolves, and the resolved execution.maxIterations is the schema default 20.",
+        "[integration] loadConfig with a project profile file that sets execution: { mode: \"pipeline\" }, selected through the CLI override { profile: \"<name>\" }, rejects with CONFIG_PIPELINE_MODE_REMOVED and context.source profile \"<name>\".",
+        "[integration] loadConfig with CLI overrides { execution: { maxIterations: 3 } } rejects with CONFIG_PIPELINE_MODE_REMOVED and context.source CLI overrides.",
+        "[integration] loadConfigForWorkdir for a package whose .nax/mono/<pkg>/config.json sets execution: { maxIterations: 3 } rejects with CONFIG_PIPELINE_MODE_REMOVED and context.source per-package config \"<pkg>\".",
+        "[integration] loadConfig on a project whose .nax/config.json sets execution: { mode: \"workflow\" } resolves with execution.mode \"workflow\" and records no warning containing deprecated.",
+        "[unit] applyWorkflowMode(makeNaxConfig({ execution: { mode: \"pipeline\", storyIsolation: \"worktree\" }, acceptance: { enabled: true } }), warn) returns a config with acceptance.enabled false and execution.storyIsolation \"shared\".",
+        "[unit] Given an initialized dir and _featuresAcceptanceDeps.loadConfig replaced by a stub, resolveFeatureAcceptance(\"feat\", dir) calls the stub once with (dir, undefined), the omitted configOverrides argument, and returns status disabled when the stub resolves a config with acceptance.enabled false."
+      ],
+      "tags": [
+        "config",
+        "workflow",
+        "breaking-change"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integrates one raw-layer guard across root and package/profile loading, normalization and an acceptance-command seam, with extensive compatibility-fixture migration and default/merge-order risk."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/config-guards.ts",
+        "packages/nax/src/config/loader.ts",
+        "packages/nax/src/config/package-profile.ts",
+        "packages/nax/src/config/workflow-mode.ts",
+        "packages/nax/src/cli/features-acceptance.ts"
+      ],
+      "suggestedCriteria": [
+        "loadConfig rejects a global raw layer setting execution.mode to pipeline with CONFIG_PIPELINE_MODE_REMOVED and context.source global config even when the project layer sets mode to workflow.",
+        "loadConfigForWorkdir rejects a selected per-package profile setting execution.maxIterations with CONFIG_PIPELINE_MODE_REMOVED and context.source per-package profile \"<name>\" (<pkg>).",
+        "rejectPipelineModeKeys rejects an own execution.maxIterations key whose value is undefined, null, false, 0 or a string, with context.keys [\"execution.maxIterations\"].",
+        "rejectPipelineModeKeys does not reject execution.maxIterations inherited from a prototype when execution has no own maxIterations key and mode is not pipeline.",
+        "applyWorkflowMode enables an existing disabled advisor block for a hand-built pipeline config and does not add an advisor block when none was supplied."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/workflow-mode-normalise.test.ts",
+          "reason": "test \"pipeline mode returns the same object untouched and never warns\" pins that `applyWorkflowMode` returns its input for a `mode: \"pipeline\"` config; it is deleted, because `applyWorkflowMode` now normalises every config. The `configFor` helper's default `opts.mode ?? \"pipeline\"` becomes `?? \"workflow\"`. The `warnDeprecatedPipelineMode` describe and its import stay until US-006."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/packages-workflow.test.ts",
+          "reason": "test at lines 19-26 (\"outside workflow mode the package override still enables acceptance\") builds a `mode: \"pipeline\"` root and expects the package's `acceptance.enabled` true; it is deleted, because `applyWorkflowMode` now forces acceptance off for every package config."
+        },
+        {
+          "path": "packages/nax/test/integration/config-deferred-warnings.test.ts",
+          "reason": "test \"AC-8: loadConfig defers the pipeline deprecation until logging starts\" writes `execution.mode: \"pipeline\"` and expects the deprecation warning; it becomes: `loadConfig` on that project rejects with a `NaxError` whose code is `CONFIG_PIPELINE_MODE_REMOVED`, because the guard replaces the deprecation."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/features-acceptance.test.ts",
+          "reason": "`initRepo` writes `execution: { mode: \"pipeline\" }` and `INVALID_EXECUTION` carries `mode: \"pipeline\"` so acceptance stays on; both drop the `mode` key, and every test that expects `enabled` true or an `ok` / `no-prd` status sets `_featuresAcceptanceDeps.loadConfig` to a wrapper that calls the real `loadConfig` and returns its result with `acceptance.enabled` true, restored in `afterEach`. Tests expecting `CONFIG_SCHEMA_INVALID` keep that expectation (the `storyIsolation: \"bogus\"` value still fails the schema)."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/features-resolve.test.ts",
+          "reason": "its fixture config writes `execution: { mode: \"pipeline\" }` (line 25) so the attached acceptance block is enabled; the key is dropped, and tests that assert an enabled acceptance block set the same `_featuresAcceptanceDeps.loadConfig` wrapper."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/features-resolve-profile.test.ts",
+          "reason": "its `INVALID` fixture (line 43) carries `mode: \"pipeline\"` so a repairing profile leaves acceptance on; the key is dropped, and tests that assert an acceptance result other than the schema error set the same `_featuresAcceptanceDeps.loadConfig` wrapper."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-features-resolve-profile.test.ts",
+          "reason": "its fixture (line 50) carries `mode: \"pipeline\"` for the same reason; the key is dropped, and an assertion that needs acceptance enabled asserts the `disabled` status the spawned CLI now reports, because a spawned process cannot take the in-process seam."
+        },
+        {
+          "path": "packages/nax/test/integration/config/profile-loader.test.ts",
+          "reason": "tests \"later profile in the chain overrides the earlier one (B overrides A)\" and \"a resolved chain round-trips through loadConfigForWorkdir via profileOverrideFromConfig\" write `maxIterations: 5` into profile a.json as A's unique surviving key; the guard now rejects that profile. Both use `costLimit: 5` as the unique key instead, and assert `execution.costLimit` is 5."
+        },
+        {
+          "path": "packages/nax/test/unit/config/loader-legacy-shim.test.ts",
+          "reason": "tests \"applyRemovedStrategyCompat: the removed value in a per-package PROFILE maps to keyword too\", \"a legacy key carried by BOTH the overlay and a per-package profile warns once per resolution\" and \"a removed no-op key in both the overlay and a per-package profile warns once, not twice\" write `execution: { maxIterations: 7 }` into a per-package profile as a pin that the profile layer merged; the guard now rejects that layer. Each uses `execution: { costLimit: 7 }` instead and asserts `execution.costLimit` is 7, keeping the pin."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-config-default-view.test.ts",
+          "reason": "tests \"shows project config path when present\", \"works when run from project subdirectory\", \"handles deep nesting when walking up directory tree\", \"merges nested config overrides correctly\" and \"handles project config with schema version mismatch\" write `execution.maxIterations` (20, 30, 50, 15, 25) into the project config and read it back; the guard now rejects that config. Each writes and asserts `execution.costLimit` with the same number instead."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-config-diff.test.ts",
+          "reason": "tests \"shows table with field path, project value, and global value\", \"shows multiple differences when multiple fields override\", \"shows field descriptions when available\" and \"skips fields that are only in global (not overridden)\" write `maxIterations: 25` into the project config and expect an `execution.maxIterations` row (and, in the descriptions test, its description); the guard now rejects that config. Each uses `costLimit: 25` instead and expects an `execution.costLimit` row, and the descriptions test expects the `execution.costLimit` description."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-config-command.test.ts",
+          "reason": "test \"shows project config path when present\" and the test at lines 222-232 write `execution: { maxIterations: 20 }` into the project config; the guard now rejects it. Both write `execution: { costLimit: 20 }` instead."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Keep only workflow execution and completion arms",
+      "description": "**Goal** \u2014 Make iteration selection, loop bounds, preflight, completion reporting and the end phase use their workflow behavior regardless of a hand-built config's mode literal.\n\n**Motivation** \u2014 Until the fork is cut, none of the pipeline-only code can be deleted: it is still reachable from a config that sets `execution.mode: \"pipeline\"`.\n\n**Approach** \u2014 Design Part 2: the run loop and end phase (US-002)\n\nEach site keeps only its workflow arm:\n\n| Site | After |\n|:---|:---|\n| `selectPipeline` (`execution/iteration-runner.ts:41-44`) | returns `stages.getWorkflowPipeline()` |\n| `runEndPhase` (`execution/end-phase.ts:187-195`) | calls `runWorkflowEnd(options, deps, branch)` and returns its result; return type `Promise<EndPhaseOutcome>`; the `runFinish` call and import go |\n| `shouldSkipRegression` (`execution/runner-completion.ts:467-469`) | removed; the deferred regression gate is never run from `runner-completion.ts` |\n| the `gate.ensureSafely` block (`runner-completion.ts:579-586`) | always `featureWorkflowDurationMs: 0` and `workflowPassed: false` |\n| `isSequential` (`runner-completion.ts:396`) | `true`; the `effectiveParallelCount` import goes |\n| `loopIterationLimit` (`execution/iteration-bound.ts:33-42`) | returns `iterationsDone + workflowIterationsRemaining(prd, config, lastStoryId)` |\n| `logIterationCapReached` (`execution/unified-executor.ts:44-58`) | always logs the derived-bound message (`Exit reason max-iterations: the derived loop bound (<limit>) was exhausted with ...`) |\n| `nextLoopGuard` (`unified-executor.ts:66-80`) | always computes the progress signature and the derived limit |\n| `runWorkflowPreflightOnce` (`unified-executor.ts:83-84`) | skips only on a dry run |\n| the defence-in-depth completion check (`unified-executor.ts:303`) | runs on every iteration exit: `if (await refreshedIsComplete())` |\n| the `catch` path of `handleRunCompletion` (`execution/lifecycle/run-completion.ts:302-318`) | the held-back `run:completed` event always carries `workflowPassed: false`; the `isWorkflowMode` import (`:22`) goes |\n\n`runFinish`, `runFinishPhase` (and `EndPhaseDeps.runFinishPhase`), `runDeferredRegression` and `defaultPipeline` stay exported and unchanged; wave B2 deletes them. The `outcome === undefined` handling in `execution/workflow-end-report.ts` becomes unreachable and stays for wave B2.\n\n**Baseline clarification** \u2014 runFinish is actually a local helper in end-phase.ts, not an import/export in this checkout; retain it unchanged and remove its invocation. Do not introduce a new export merely to match that baseline wording. Keep runFinishPhase and the EndPhaseDeps member. Make skipRegression unconditional rather than deleting the underlying regression implementation.\n\n**Test migration** \u2014 Follow the US-002 inventory in analysis. Keep workflow halves, delete pipeline-only finish/status/duration/event expectations, replace deferred-regression assertions with never-called cases, and migrate finish/re-login timing stubs to runWorkflowFeature returning null. Remove obsolete fixed-cap fixtures and arrange PRDs/stub outcomes to progress and settle under the derived bound, including direct parallel integration stubs; do not delete direct parallel dispatch coverage. Keep intentional makeNaxConfig({execution:{mode:\"pipeline\"}}) regression cases from the ACs. Preserve workflow null-result passed=true semantics, exactly-once held-back events, drain-before-rethrow, runtime-close ordering and existing max-iterations exitReason.\n\n**Scope** \u2014 In: iteration-runner.ts, end-phase.ts, runner-completion.ts, iteration-bound.ts, unified-executor.ts, lifecycle/run-completion.ts and their behavioral test migrations. Out: raw config rejection (US-001), setup/batch/parallel harness wiring (US-003), CLI rejection (US-004), chat changes (US-005), shared-helper deletion (US-006). Pipeline-only runFinish/runFinishPhase, deferred regression, stages, parallel/batch dispatch, post-run acceptance and undefined-outcome fallback deletion remain B2 work.\n\n**Interface** \u2014\n```typescript\n(options: RunnerCompletionOptions, deps: EndPhaseDeps): Promise<EndPhaseOutcome>\n```\nThis is the target runEndPhase contract. loopIterationLimit keeps the same signature and always returns the derived bound; workflowIterationsRemaining and progressSignature retain their existing algorithms.\n\n**Failure-fixture and observation notes** \u2014 runFinish is private: prove that it is unreachable by observing zero calls to the retained deps.runFinishPhase seam while deps.runWorkflowFeature runs once. A null workflow maps to { passed: true, reasons: [] } with no url. For the gate.ensureSafely rejection ACs, inject rejection through the existing _endPhaseDeps.resolveBranch seam, before runWorkflowEnd's caught body, so the end phase really rejects before the completion gate closes; merely throwing from runWorkflowFeature is caught and converted to a negative EndPhaseOutcome and does not exercise that fallback. Observe the summary through the deferred logRunComplete/emitRunCompleted callbacks. Retain the existing workflow-duration tests for caught workflow failures, which report workflowPassed false while returning normally. Read execution/iteration-bound.ts as an additional known implementation file; the five context slots mirror the spec, including lifecycle/run-completion.ts for the separate catch-path event assertion.",
+      "acceptanceCriteria": [
+        "[unit] runIteration on a context whose config has no execution.mode runs the stages getWorkflowPipeline() returns, and no stage named execution (a regression guard: this already holds on main).",
+        "[unit] runIteration on a context built with makeNaxConfig({ execution: { mode: \"pipeline\" } }) runs the stages getWorkflowPipeline() returns.",
+        "[unit] runEndPhase with a config built with makeNaxConfig({ execution: { mode: \"pipeline\" } }) calls deps.runWorkflowFeature once and never calls runFinish, observable as zero calls to deps.runFinishPhase.",
+        "[unit] When deps.runWorkflowFeature resolves null (a skipped workflow), runEndPhase returns the EndPhaseOutcome the workflow end produced: { passed: true, reasons: [] }, with no url key.",
+        "[unit] loopIterationLimit(prd, makeNaxConfig({ execution: { mode: \"pipeline\", maxIterations: 7 } }), 2, null) returns 2 + workflowIterationsRemaining(prd, config, null), not 7.",
+        "[unit] runCompletionPhase with the post-run regression status not-run and regressionGate.mode \"deferred\" never calls runDeferredRegression.",
+        "[unit] runCompletionPhase with the post-run regression status failed never calls runDeferredRegression.",
+        "[unit] When the end phase rejects inside runCompletionPhase, the run-completed summary that gate.ensureSafely records has featureWorkflowDurationMs 0 and workflowPassed false, and no endPhaseDurationMs key.",
+        "[unit] When the end phase rejects inside runCompletionPhase for a run whose config was built with makeNaxConfig({ execution: { mode: \"pipeline\" } }), the recorded summary still has featureWorkflowDurationMs 0 and workflowPassed false.",
+        "[unit] runCompletionPhase with options.parallel 4 calls _runnerCompletionDeps.handleRunCompletion with isSequential true (a regression guard: this already holds on main).",
+        "[unit] executeUnified, on a run whose PRD has three pending stories and a config built with makeNaxConfig({ execution: { mode: \"pipeline\", maxIterations: 1 } }), completes all three stories.",
+        "[unit] When executeUnified exhausts its derived bound with a story still pending, the logger's warn is called with stage execution, a message that starts Exit reason max-iterations: the derived loop bound (, and data whose storyId is _run and exitReason is max-iterations.",
+        "[unit] executeUnified stops with exit reason max-iterations when an iteration changes no story's status or attempts, for a config built with makeNaxConfig({ execution: { mode: \"pipeline\" } }).",
+        "[unit] executeUnified calls _unifiedExecutorDeps.runWorkflowPreflight once for a non-dry run whose config was built with makeNaxConfig({ execution: { mode: \"pipeline\" } }).",
+        "[unit] executeUnified never calls _unifiedExecutorDeps.runWorkflowPreflight on a dry run.",
+        "[unit] When the iteration that finishes the last story ends the loop, executeUnified returns the completed-run result (the one completeRun builds), not the max-iterations exit, for a config built with makeNaxConfig({ execution: { mode: \"pipeline\" } }).",
+        "[unit] handleRunCompletion with deferRunCompletedEvent true and a config built with makeNaxConfig({ execution: { mode: \"pipeline\" } }), when a late phase rejects, emits exactly one run:completed event with workflowPassed false and then rejects."
+      ],
+      "tags": [
+        "execution",
+        "workflow",
+        "completion",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module control-flow refactor spans derived iteration bounds, progress detection, end-phase verdicts and exactly-once asynchronous completion events; existing workflow algorithms and seams are retained."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/iteration-runner.ts",
+        "packages/nax/src/execution/end-phase.ts",
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/src/execution/lifecycle/run-completion.ts",
+        "packages/nax/src/execution/unified-executor.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/iteration-runner.test.ts",
+          "reason": "test \"pipeline selection: workflow mode runs the workflow pipeline, pipeline mode runs defaultPipeline\" runs a `mode: \"pipeline\"` context and expects the `execution` stage; it keeps only the workflow half and is renamed \"pipeline selection: every iteration runs the workflow pipeline\", because `selectPipeline` has one arm."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/end-phase.test.ts",
+          "reason": "the `PIPELINE` const and tests \"pipeline mode: finish runs with the same context as before; workflowPassed undefined\" and \"pipeline mode: a finish throw is swallowed (fail-open)\" are deleted, because `runEndPhase` no longer calls `runFinish`."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/iteration-bound.test.ts",
+          "reason": "test \"pipeline mode: execution.maxIterations, whatever the PRD holds\" is deleted, because `loopIterationLimit` always returns the derived bound."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-skip.test.ts",
+          "reason": "the fixture sets `mode: \"pipeline\"`; tests \"calls runDeferredRegression when acceptance is passed but regression is not-run\", \"... but regression is failed\", \"calls runDeferredRegression when acceptance is not-run and deferred mode is set\", \"calls runDeferredRegression when acceptance previously failed\" and \"calls runDeferredRegression when both acceptance and regression previously failed\" expect the deferred regression gate to run; they are deleted and one test is added asserting `runDeferredRegression` is never called when regression status is `not-run`, because runner-completion.ts no longer runs the gate. The fixture drops `mode: \"pipeline\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-finish.test.ts",
+          "reason": "the fixture sets `mode: \"pipeline\"`, and tests \"runs before the runtime is closed\", \"a throwing finish phase does not fail the run\" and \"gating is the phase's own concern \u2014 the runner always calls it\" expect `runFinishPhase` to be called; they assert the workflow end phase instead (called before the runtime closes; a throw does not fail the run; always called), and the fixture drops `mode: \"pipeline\"`. Test \"the interaction chain reaches acceptance, completion (regression) and finish\" drops its finish and regression expectations, because neither runs."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-pipeline-duration.test.ts",
+          "reason": "the whole file tests the pipeline-mode duration split (nax#2494) and is deleted; runner-completion-workflow-duration.test.ts covers the workflow split."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-workflow-status.test.ts",
+          "reason": "test \"pipeline mode makes no setRunStatus call after the end phase\" is deleted, because the end phase is always the workflow one."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/run-completed-after-end-phase.test.ts",
+          "reason": "the describe that uses `opts(\"pipeline\")` (lines 196-204) is deleted, because there is no pipeline end phase."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completed-deferred.test.ts",
+          "reason": "test \"AC-14: either late phase in pipeline mode emits workflowPassed true\" is deleted, because the `handleRunCompletion` catch path now always reports `workflowPassed` false. The `PIPELINE` const (line 30) drops `mode: \"pipeline\"`; the tests that use it (AC-1 to AC-4) keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-state-handoff.test.ts",
+          "reason": "test \"pipeline mode: warns with the cap and the ids of the stories still pending\" is deleted, because the loop no longer reads `execution.maxIterations`; the fixture's `mode: \"pipeline\"` is dropped and any test that relied on `maxIterations` bounding the loop sets its PRD so the derived bound applies."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-preflight.test.ts",
+          "reason": "test \"pipeline mode and dry runs: never called\" keeps only the dry-run assertion and is renamed \"dry runs: never called\", because the preflight skips only on a dry run."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-dispatch.test.ts",
+          "reason": "its fixture sets `mode: \"pipeline\"` with `maxIterations`; the `mode` key is dropped, and a test whose loop length relied on `maxIterations` sets its PRD so the derived bound gives the same number of iterations."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-failure.test.ts",
+          "reason": "its fixture sets `mode: \"pipeline\"`; same change as unified-executor-dispatch.test.ts."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-logging.test.ts",
+          "reason": "its fixture sets `mode: \"pipeline\"`; same change as unified-executor-dispatch.test.ts, and an assertion on the cap message expects the derived-bound wording."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-tier-budget.test.ts",
+          "reason": "its fixture sets `mode: \"pipeline\"`; same change as unified-executor-dispatch.test.ts."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-auth-relogin.test.ts",
+          "reason": "the fixture sets `mode: \"pipeline\"` (line 58) and the AC-20 / AC-21 tests stub `_runnerCompletionDeps.runFinishPhase` to make the re-login notice appear after the end phase; the fixture drops `mode: \"pipeline\"`, and the stub moves to `_runnerCompletionDeps.runWorkflowFeature` (resolving `null`), because the end phase now runs the feature workflow, not finish."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-postrun.test.ts",
+          "reason": "the fixture sets `mode: \"pipeline\"` (line 59); the key is dropped so the fixture runs the only remaining arm. Its assertions stay."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/_parallel-metrics-helpers.ts",
+          "reason": "`makeCtx` sets `mode: \"pipeline\"` with `maxIterations` default 1; the `mode` key is dropped, because the loop now always uses the derived bound."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-parallel-metrics.test.ts",
+          "reason": "test \"result.exitReason is 'max-iterations' after consuming all iterations in a parallel batch\" relies on `maxIterations: 1` ending the loop after one batch; it is deleted, because the loop no longer has a fixed cap to consume. Any other test in the file whose loop now runs past one batch gives its batch stub a story outcome that settles every story."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-parallel-metrics-rectification-events.test.ts",
+          "reason": "its contexts come from `makeCtx`, whose `maxIterations: 1` used to stop the loop after one batch; a test whose loop now runs past one batch gives its batch stub a story outcome that settles every story."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/parallel-story-router.test.ts",
+          "reason": "same as runner-parallel-metrics-rectification-events.test.ts: a test whose loop now runs past one batch gives its batch stub a story outcome that settles every story."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Make run setup and harness dispatch unconditionally workflow",
+      "description": "**Goal** \u2014 Create workflow run resources for every non-dry run and force harness dispatch to sequential, unbatched execution without ignored-option warnings.\n\n**Motivation** \u2014 Pipeline mode has been deprecated since v0.88.0 and frozen since 2026-10-16.\n\n**Approach** \u2014 Design Part 3: run setup and dispatch (US-003)\n\n| Site | After |\n|:---|:---|\n| `runMemoryFor` (`execution/lifecycle/run-setup.ts:123-126`) | returns `undefined` only on a dry run |\n| `withRuleDeliveryHandlers` (`execution/lifecycle/run-rules-setup.ts:161-167`) | the `isWorkflowMode` early return goes; the `delivery !== \"index\"` check stays |\n| `runExecutionPhase` (`execution/runner-execution.ts:122`, `:274`) | `useBatch` is `false`; `parallelCount` is not passed to the executor; neither warns |\n| `run` (`execution/runner.ts:185`) | `useBatch` is `false`, with no warning |\n| `parallel-worker.ts:93`, `merge-conflict-rectify.ts:221` | the `assertPipelineMode` call and import go |\n\n`RunnerOptions.useBatch`, `RunnerExecutionOptions.useBatch` and `.parallel` stay as fields, read by nothing, for wave B2 to remove with the parallel modules. `--no-batch` stays accepted by `nax run`.\n\n**Test migration** \u2014 Remove pipeline-no-memory tests from run-setup-memory.test.ts; retain the dry-run guard and add the hand-built pipeline-config non-dry assertion. In run-rules-setup-agent-hooks.test.ts, replace testConfig({workflow:false}) with a non-index delivery setting, remove the helper's workflow option, and preserve plugin identity/append-order assertions. Delete test/unit/execution/runner-execution-workflow-parallel.test.ts and runner-execution-workflow-batch.test.ts because they only test obsolete clamp/assertion helpers. Keep workflow-parallel.ts itself until US-006. Exercise the production runExecutionPhase and run entry points for unbatched/no-parallelCount behavior, and directly exercise executeStoryInWorktree with a workflow root to prove only the assertion was severed.\n\n**Scope** \u2014 In: run-setup.ts, run-rules-setup.ts, runner-execution.ts, runner.ts, parallel-worker.ts, merge-conflict-rectify.ts and related tests. Out: config guard/normalization (US-001), loop/end-phase simplification (US-002), CLI flag rejection (US-004), chat propagation (US-005), and deletion of workflow-parallel.ts (US-006). Do not remove the retained option fields, --no-batch, pipeline stages or parallel/batch modules; B2 owns those deletions.\n\n**Interface** \u2014 Preserve the existing RunnerOptions, RunnerExecutionOptions and executor public signatures. Retain useBatch and parallel fields without consuming them; do not include parallelCount in the executor context constructed by runExecutionPhase.",
+      "acceptanceCriteria": [
+        "[unit] setupRun with a config built with makeNaxConfig({ execution: { mode: \"pipeline\" } }) on a non-dry run calls _runSetupDeps.createRunMemory once.",
+        "[unit] setupRun on a dry run does not call _runSetupDeps.createRunMemory (a regression guard: this already holds on main).",
+        "[unit] configureRunRules with context.rules.delivery \"index\" and a config built with makeNaxConfig({ execution: { mode: \"pipeline\" } }) calls _runRulesSetupDeps.createRuleDeliveryHandlers once and returns the plugin handlers followed by the rule-delivery entries.",
+        "[unit] configureRunRules with context.rules.delivery set to a value other than \"index\" does not call _runRulesSetupDeps.createRuleDeliveryHandlers and returns the plugin handler set by identity (a regression guard: this already holds on main).",
+        "[unit] runExecutionPhase with options.useBatch true runs the stories unbatched, one per dispatch, and logs no warning containing story batching disabled.",
+        "[unit] runExecutionPhase with options.parallel 4 hands the executor no parallelCount, and logs no warning containing --parallel.",
+        "[unit] run from execution/runner.ts with useBatch true runs unbatched and logs no warning containing story batching disabled.",
+        "[unit] executeStoryInWorktree with a root config built with makeNaxConfig() (workflow mode, which currently trips the WORKFLOW_PARALLEL_UNREACHABLE NaxError inside the worker's caught body) runs the story's pipeline and returns its pipelineResult rather than rejecting or returning the error result caused by that NaxError."
+      ],
+      "tags": [
+        "execution",
+        "workflow",
+        "dispatch",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Although spread across six existing files, these are small, prescribed branch/import removals and constant dispatch settings with existing dependency seams; no new algorithm, integration or resource lifecycle is introduced, so focused same-session TDD is sufficient."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/run-setup.ts",
+        "packages/nax/src/execution/lifecycle/run-rules-setup.ts",
+        "packages/nax/src/execution/runner-execution.ts",
+        "packages/nax/src/execution/runner.ts",
+        "packages/nax/src/execution/parallel-worker.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/execution/merge-conflict-rectify.ts",
+          "reason": "the `assertPipelineMode(config, \"merge-conflict-rectify\")` call and its import are removed, because workflow-parallel.ts is deleted in US-006."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-memory.test.ts",
+          "reason": "tests \"AC-5 pipeline mode creates no run memory\" and \"AC-6 pipeline mode passes no memory key to the runtime\" are deleted, because run memory is created for every non-dry run."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-rules-setup-agent-hooks.test.ts",
+          "reason": "`testConfig({ workflow: false })` builds a pipeline config to skip rule delivery; tests \"AC-3: with pipeline mode (rule delivery skipped) ...\", \"AC-4: an empty hook set returns the plugin set itself (same array)\" and \"AC-6: returns the plugin handler set by identity when rule delivery is skipped\" use it; they skip rule delivery with `delivery` set to a value other than `\"index\"` instead, keeping their assertions, and the `workflow` option of `testConfig` is removed."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-execution-workflow-parallel.test.ts",
+          "reason": "the whole file tests `effectiveParallelCount` and `assertPipelineMode` and is deleted, because nothing calls them after this story."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-execution-workflow-batch.test.ts",
+          "reason": "the whole file tests `effectiveUseBatch` and its pipeline passthrough and is deleted, because nothing calls it after this story."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Reject removed max-iterations and parallel run flags",
+      "description": "**Goal** \u2014 Fail fast with explicit removal messages for nax run -m/--max-iterations and --parallel while preserving help discovery, chat-asks parsing, agent overrides and max-cost handling.\n\n**Motivation** \u2014 Cutting the fork first makes wave B2 a pure deletion, because after B1 no production path reaches the pipeline-only modules.\n\n**Approach** \u2014 Design Part 4: the `nax run` flags (US-004)\n\n`parseRunPreconditionFlags` (`packages/nax/bin/run-action.ts:134-161`) checks, in this order, before any config load:\n\n1. `options.maxIterations !== undefined` \u2192 prints, in red on stderr, `nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories` and exits 1.\n2. `options.parallel !== undefined` \u2192 prints, in red on stderr, `nax run --parallel was removed: workflow mode runs stories one at a time` and exits 1.\n\nThe return type loses `maxIterationsFlag` and `parallel`: `{ chatAsksDir: string | undefined }`. `applyRunCliOverrides` (`run-action.ts:491-515`) drops its `maxIterationsFlag` parameter and the `applyMaxIterationsFlag` / `maxIterationsIgnoredNotice` calls; the `--agent` and `--max-cost` handling stays. The signature change is verified by `bun run typecheck`, not by an acceptance criterion, and the existing `--agent` / `--max-cost` tests keep passing. In `bin/nax.ts` the two options stay declared, so the removal message prints instead of commander's generic unknown-option error; their help text becomes `Removed: workflow mode sets its own limits`. The `parallel` value passed to the runner (`bin/nax.ts:395`) goes.\n\n**Test migration** \u2014 Update test/integration/cli/cli-run-max-iterations.test.ts using its real Bun.spawn spawnRun harness: replace numeric validation/uninitialized-project assertions with the -m 5 removal result before initialization. Similarly replace AC-11/AC-12 in cli-run-parallel.test.ts with --parallel 2 rejection before initialization. Add direct precondition assertions for flag precedence, red stderr, exit 1 and the sole chatAsksDir return key; retain actual CLI boundary tests and help assertions. Extend surviving unit/CLI suites as appropriate; old run-max-iterations.ts and run-parallel.ts helper-only tests and sources are deleted in US-006, not here.\n\n**Scope** \u2014 In: bin/run-action.ts preconditions and override signature, bin/nax.ts declarations/help and call sites, and surviving flag integration/unit tests. Out: chat maxIterations rejection and forwarding (US-005), helper module/test deletion (US-006), config loading changes (US-001), execution-loop behavior (US-002), dispatch setup (US-003). Keep --no-batch and programmatic option fields until B2.\n\n**Interface** \u2014\n```typescript\n(options: RunActionOptions): { chatAsksDir: string | undefined }\n(config: NaxConfig, options: RunActionOptions): NaxConfig\n```\nThese are the target parseRunPreconditionFlags and applyRunCliOverrides signatures, respectively.",
+      "acceptanceCriteria": [
+        "[unit] parseRunPreconditionFlags({ maxIterations: \"5\" }) prints nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories to stderr and exits with code 1.",
+        "[unit] parseRunPreconditionFlags({ parallel: \"2\" }) prints nax run --parallel was removed: workflow mode runs stories one at a time to stderr and exits with code 1.",
+        "[unit] parseRunPreconditionFlags({ maxIterations: \"5\", parallel: \"2\" }) prints only the -m/--max-iterations removal message and exits with code 1.",
+        "[unit] parseRunPreconditionFlags({}) returns an object whose only key is chatAsksDir, and does not exit.",
+        "[cli] bun bin/nax.ts run -f demo -d <empty dir> --headless -m 5 exits 1 with the -m/--max-iterations removal message on stderr and without nax not initialized on stderr.",
+        "[cli] bun bin/nax.ts run -f demo -d <empty dir> --headless --parallel 2 exits 1 with the --parallel removal message on stderr and without nax not initialized on stderr.",
+        "[cli] bun bin/nax.ts run --help lists -m, --max-iterations and --parallel with the description Removed: workflow mode sets its own limits."
+      ],
+      "tags": [
+        "cli",
+        "workflow",
+        "breaking-change"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two production CLI files change through standard validation and argument-plumbing patterns; precedence and process-boundary behavior are explicit and no execution abstraction is added."
+      },
+      "contextFiles": [
+        "packages/nax/bin/run-action.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/test/integration/cli/cli-run-max-iterations.test.ts",
+        "packages/nax/test/integration/cli/cli-run-parallel.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseRunPreconditionFlags rejects defined maxIterations values such as \"0\", \"-1\" and \"invalid\" with the same removal message rather than the former positive-integer validation message.",
+        "nax run --max-iterations 5 reports the same removal error and exit code as the -m 5 alias before any config load.",
+        "applyRunCliOverrides preserves --agent selection and a positive --max-cost override when no removed flags are supplied."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/cli/cli-run-max-iterations.test.ts",
+          "reason": "tests \"AC-10: -m 0 exits 1 with the positive-integer message on stderr\" and \"AC-11: -m 5 passes flag validation and exits 1 at the uninitialised-project check\" become one test: `-m 5` exits 1 with \"nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories\" on stderr and without the `nax not initialized` message, because the flag is rejected before the project check."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-run-parallel.test.ts",
+          "reason": "its AC-11 and AC-12 tests become one test: `--parallel 2` exits 1 with \"nax run --parallel was removed: workflow mode runs stories one at a time\" on stderr and without the `nax not initialized` message."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Remove maxIterations from chat run tools and provider plumbing",
+      "description": "**Goal** \u2014 Reject legacy maxIterations chat input, stop generating removed CLI flags, and make job cards and workflow resources describe story-bounded runs without cap warnings or cap-based chain stops.\n\n**Motivation** \u2014 Workflow is the default and the only mode that gets work, but the harness still forks on `isWorkflowMode` at about 20 sites, so every harness change carries a pipeline branch and its tests.\n\n**Approach** \u2014 Design Part 5: chat stops forwarding `maxIterations` (US-005)\n\nThe chat `run` tool used to forward `maxIterations` as `nax run -m`, which US-004 turns into an error.\n\n| Site | After |\n|:---|:---|\n| `JobLaunchBody` `run` variant (`chat/jobs/job-argv.ts:10-16`) | no `maxIterations` field |\n| `parseRun` (`job-argv.ts:74-98`) | a defined `raw.maxIterations` returns `{ error: \"[chat] maxIterations was removed: workflow mode bounds a run by its stories\" }`, checked before `maxCost`; `MAX_ITERATIONS` goes |\n| `buildJobArgv` run argv (`job-argv.ts:171-185`) | never emits `-m` |\n| `CHAIN_STEP_FIELDS.run` (`chat/jobs/chain-argv.ts:13`) | `[\"feature\", \"profiles\", \"maxCost\", \"repo\"]`; a chain step with `maxIterations` gets the existing `[chat] unknown field maxIterations` error |\n| jobs tool schema `run` (`chat/jobs/jobs-provider.ts:30-36`) | no `maxIterations` property |\n| `JobsProviderOptions.maxIterations` (`jobs-provider.ts:16-17`) | removed |\n| `prepareRun` limit (`chat/jobs/jobs-launch.ts:173-185`) | detail line is always `stories <pending> pending of <total>`; no `overLimit` |\n| `Prepared.overLimit` and the chain stop on it (`jobs-launch.ts:118`, `:238-243`) | removed |\n| `createJobsProvider` call (`chat/jobs/jobs-host.ts:58`) | no `maxIterations` |\n| `FeatureStateOptions.maxIterations` and its warning (`chat/workflow/feature-state.ts:20-21`, `:93-97`) | removed (verified by `bun run typecheck`: the field no longer exists) |\n| `createWorkflowProvider` calls (`cli/chat.ts:275`, `cli/agents-run-compose.ts:83`) | no `maxIterations` |\n\n**Test migration** \u2014 Apply the US-005 inventory in analysis: remove maxIterations fields from run argv, parsed body, chain/card inputs and provider options throughout jobs/workflow tests; replace range rows with the explicit removal error and pin maxIterations-before-maxCost precedence. Keep the distinct chain unknown-field error and exact argv without -m. Update run schema pins, remove only cap-warning/overLimit-stop tests, retain workflow no-limit/no-warning coverage, and prove an auto-admitted 25-pending chain run starts without stop. Remove feature-state cap warning tests/options and CLI chat-resources cap-threading fixtures/assertions. agents-run-compose tests retain project outputDir and assert no maxIterations key, not maxIterations:undefined. Prove createHostJobs omits the key too. Restore dependencies after each test, and do not bypass approval, busy, repo or chain admission checks while removing the cap path.\n\n**Scope** \u2014 In: job-argv.ts, chain-argv.ts, jobs-provider.ts, jobs-launch.ts, jobs-host.ts, feature-state.ts, cli/chat.ts, cli/agents-run-compose.ts and affected chat/CLI tests. Out: config guard/defaults (US-001), harness loop/completion (US-002), dispatch/setup (US-003), run CLI preconditions (US-004), and isWorkflowMode/shared-helper deletion (US-006). Do not remove unrelated approvals, repository targeting, chain failure stops, jobs tooling or workflow diagnostics. Schema/default maxIterations removal remains B3.\n\n**Interface** \u2014 FeatureStateOptions target: `{ repoRoot: string; outputDir: string }` (no `maxIterations`). JobsProviderOptions target: the baseline fields minus `maxIterations`. JobLaunchBody's run variant retains kind, feature, profiles and optional maxCost, but no maxIterations. Existing launchJob, parseJobInput, parseChainStepInput and buildJobArgv signatures otherwise remain unchanged.",
+      "acceptanceCriteria": [
+        "[unit] parseJobInput(\"run\", { feature: \"f1\", maxIterations: 40 }) returns { error: \"[chat] maxIterations was removed: workflow mode bounds a run by its stories\" }.",
+        "[unit] parseJobInput(\"run\", { feature: \"f1\", maxIterations: 40, maxCost: -1 }) returns the maxIterations removal error, not the maxCost error.",
+        "[unit] buildJobArgv for the run input { kind: \"run\", feature: \"f1\", profiles: [], maxCost: 2 } returns exactly the context's nax entry followed by run, -f, f1, -d, the repo root, --headless, --max-cost, 2 (a regression guard: this already holds on main).",
+        "[unit] parseChainStepInput(\"run\", { feature: \"f1\", maxIterations: 40 }) returns { error: \"[chat] unknown field maxIterations\" }.",
+        "[unit] The jobs provider's run tool inputSchema.properties has the keys feature, profiles, maxCost and repo, and no maxIterations.",
+        "[unit] launchJob for the run kind for a feature with 3 pending of 3 stories puts stories 3 pending of 3 in the approval card's reason, and the reason contains no max iterations text (a regression guard: this already holds on main).",
+        "[unit] launchJob for the run kind with input { feature: \"f1\", maxIterations: 2 } returns an error result with the maxIterations removal message and starts no job.",
+        "[unit] launchJob for a run step that a chain auto-admits, for a feature with 25 pending stories, starts the job and does not call the chain's stop.",
+        "[unit] The chat resources that chatCommand composes pass createWorkflowProvider an options object with no maxIterations key.",
+        "[unit] buildAgentsRunTaskInput passes createWorkflowProvider an options object with repoRoot, the project output dir as outputDir, and no maxIterations key.",
+        "[unit] createHostJobs passes createJobsProvider an options object with no maxIterations key."
+      ],
+      "tags": [
+        "chat",
+        "workflow",
+        "jobs",
+        "breaking-change"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module input/schema/argv/provider removal also changes the auto-admitted chain launch path and approval-card composition; strict isolation protects launch authorization and admission boundaries."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-argv.ts",
+        "packages/nax/src/chat/jobs/chain-argv.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/chat/workflow/feature-state.ts"
+      ],
+      "suggestedCriteria": [
+        "parseJobInput rejects run input with a defined maxIterations value of null, false, 0 or a string with the same maxIterations removal error.",
+        "launchJob still starts no job when the approval card is denied for an otherwise accepted story-bounded run.",
+        "launchJob still reports a busy error for an otherwise accepted run when an active job or run lock blocks launch."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/jobs/job-argv.test.ts",
+          "reason": "the run argv test passes `maxIterations: 40` and expects `-m 40`; it drops `maxIterations` and the `-m` pair. The AC-12 / AC-13 `maxIterations` range rows become one row expecting `[chat] maxIterations was removed: workflow mode bounds a run by its stories`. The parse test expecting `maxIterations: 1000` in the parsed body drops it."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-argv.test.ts",
+          "reason": "the raw step `{ feature: \"f1\", maxIterations: 40 }` drops `maxIterations`, and the pinned `CHAIN_STEP_FIELDS.run` becomes `[\"feature\", \"profiles\", \"maxCost\", \"repo\"]`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-tool-card.test.ts",
+          "reason": "its run inputs and `buildJobArgv` call pass `maxIterations: 40`, and its provider options pass `maxIterations: 20`; both are dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-tools.test.ts",
+          "reason": "its provider options pass `maxIterations: 20`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-tool-input.test.ts",
+          "reason": "its provider options pass `maxIterations: 20`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-tools-repo.test.ts",
+          "reason": "its provider options pass `maxIterations: 20`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-provider.test.ts",
+          "reason": "its provider options pass `maxIterations: 20`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch-busy.test.ts",
+          "reason": "its provider options pass `maxIterations: 20`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch-nested.test.ts",
+          "reason": "its provider options pass `maxIterations: 20`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch-chain.test.ts",
+          "reason": "its options pass `maxIterations: 20`, a launch passes `maxIterations: 40`, and a test expects the chain to stop with `step 2: 25 stories pending but max iterations is 20 (nax#2706)`; the `maxIterations` values are dropped and the chain-stop test is deleted, because `overLimit` is removed."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch.test.ts",
+          "reason": "its options pass `maxIterations: 20`, the schema test pins a `maxIterations` property, and tests expect `max iterations 20` in the card and the `pass maxIterations (nax#2706)` warning; the schema pin drops `maxIterations`, the limit and warning tests are deleted, and the nax#2706 workflow test keeps its \"no limit, no warning\" assertions with the input `maxIterations` removed."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/workflow/feature-state.test.ts",
+          "reason": "its options pass `maxIterations: 2` and a test expects the `pass -m 3 to nax run (nax#2706)` warning; the option is dropped and that test is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/workflow/feature-state-workflow.test.ts",
+          "reason": "its options pass `maxIterations: 10`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/workflow/workflow-provider.test.ts",
+          "reason": "its options pass `maxIterations: 2`; dropped."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/chat-resources.test.ts",
+          "reason": "its fixture config sets `execution: { mode: \"pipeline\", maxIterations: 2 }` and test \"US-006 AC-3 threads loaded execution.maxIterations\" expects the `execution.maxIterations is 2` warning; the fixture drops both keys and that test is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/agents-run-compose.test.ts",
+          "reason": "`pipelineConfig` and test \"AC-9: pipeline mode passes the project output dir and execution.maxIterations\" are deleted; test \"AC-10: workflow mode leaves maxIterations undefined\" becomes \"the workflow provider gets the project output dir and no maxIterations key\"."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Delete obsolete mode predicates, clamp helpers and flag parsers",
+      "description": "**Goal** \u2014 Delete the now-unreferenced fork helpers and their symbol-only tests after all production consumers have been simplified.\n\n**Motivation** \u2014 Cutting the fork first makes wave B2 a pure deletion, because after B1 no production path reaches the pipeline-only modules.\n\n**Approach** \u2014 Design Part 6: cleanup (US-006)\n\nDeletion only, verified by `bun run typecheck` and `bun run check:all` in `packages/nax`:\n\n- `isWorkflowMode` (`config/schemas-workflow.ts:52-55`) and its `@/config` barrel export (`config/index.ts:167`)\n- `warnDeprecatedPipelineMode` (`config/workflow-mode.ts:10-15`)\n- `packages/nax/src/execution/workflow-parallel.ts` (`effectiveParallelCount`, `effectiveUseBatch`, `assertPipelineMode`)\n- `packages/nax/src/cli/run-max-iterations.ts` and `packages/nax/src/cli/run-parallel.ts`, with their imports in `bin/run-action.ts`\n- the tests that only test those symbols\n\n**Deletion details** \u2014 In test/unit/config/workflow-config.test.ts keep resolveWorkflowConfig assertions from the absent-block test but remove its isWorkflowMode assertions/import. In test/unit/config/workflow-mode-normalise.test.ts delete the warnDeprecatedPipelineMode describe/import. Delete test/unit/cli/run-max-iterations.test.ts, test/unit/cli/run-parallel.test.ts and test/integration/cli/cli-core-parallel.test.ts. US-003 already removes runner-execution-workflow-parallel.test.ts and runner-execution-workflow-batch.test.ts. Remove remaining imports of deleted symbols; do not replace them with new mode predicates or compatibility wrappers. Verification: `bun run typecheck` and `bun run check:all` in `packages/nax` pass, and `bun run test` passes with the deleted tests gone. The spec defines deletion-only verification rather than new behavior. The single AC is an inherited regression assertion from US-001: the config-load rejection must still hold after cleanup. Reuse that surviving integration test; add no production behaviour and no new test. The deletions themselves remain verified by the compiler and lint gates.\n\n**Scope** \u2014 In: deletion of the listed unused helpers/exports, their imports and symbol-only tests, plus preservation of the existing config-guard failure regression. Out: implementing new behavioral changes assigned to US-001 through US-005. Do not delete the story orchestrator, pipeline stages, runFinish/runFinishPhase/EndPhaseDeps.runFinishPhase, runDeferredRegression, defaultPipeline, workflow-end-report undefined handling, parallel/batch dispatch or post-run acceptance (B2); do not remove retained option fields/--no-batch (B2), narrow ExecutionMode or remove maxIterations/default 20 (B3), or update pipeline documentation/context (B4).\n\n**Interface** \u2014 Delete isWorkflowMode and warnDeprecatedPipelineMode; delete effectiveParallelCount, effectiveUseBatch, assertPipelineMode and the obsolete run-max-iterations/run-parallel module APIs. Preserve ExecutionModeSchema = z.enum([\"pipeline\", \"workflow\"]), resolveWorkflowConfig, applyWorkflowMode and the B1 guard. No replacement API is introduced.",
+      "acceptanceCriteria": [
+        "[integration] After the obsolete fork helpers are deleted, loadConfig on a project whose .nax/config.json sets execution: { mode: \"pipeline\" } still rejects with a NaxError whose code is CONFIG_PIPELINE_MODE_REMOVED and context.source is project config, rather than warning and resolving."
+      ],
+      "tags": [
+        "cleanup",
+        "workflow",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-004",
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "no-test",
+        "reasoning": "A bounded multi-file deletion with no new abstractions or behavior after all prerequisite changes; retain unrelated pipeline modules for B2.",
+        "noTestJustification": "Deletion-only structural cleanup after US-001 through US-005 sever every consumer and verify the behavior changes. No new runtime behavior or replacement interface is introduced. The refine-pass negative-path AC reuses US-001's existing integration test and requires no new test implementation; compiler, check:all and the surviving test suite verify removal and import closure."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-workflow.ts",
+        "packages/nax/src/config/index.ts",
+        "packages/nax/src/execution/workflow-parallel.ts",
+        "packages/nax/src/cli/run-max-iterations.ts",
+        "packages/nax/src/cli/run-parallel.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/workflow-config.test.ts",
+          "reason": "test \"resolveWorkflowConfig / isWorkflowMode tolerate absent blocks\" keeps only its `resolveWorkflowConfig` assertions, and `isWorkflowMode` leaves the import, because `isWorkflowMode` is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/config/workflow-mode-normalise.test.ts",
+          "reason": "the `warnDeprecatedPipelineMode` describe and its import are deleted, because the function is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/run-max-iterations.test.ts",
+          "reason": "the whole file tests the deleted run-max-iterations.ts and is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/run-parallel.test.ts",
+          "reason": "the whole file tests the deleted run-parallel.ts and is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-core-parallel.test.ts",
+          "reason": "the whole file imports `parseParallelFlag` from the deleted run-parallel.ts and is deleted."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "This is a refactor/removal in @nathapp/nax, not greenfield development. All six binding stories run in packages/nax and execute in the specified dependency order. No other workspace package, release version, user configuration, or generated context/rules file needs changing. The architecture index describes workflow as the default since v0.88.0 and identifies the deprecated pipeline subsystems separately (docs/architecture/ARCHITECTURE.md:51, docs/architecture/ARCHITECTURE.md:120, docs/architecture/ARCHITECTURE.md:142). Codebase-memory MCP tools were unavailable in this host; discovery used direct reads and targeted repository searches. References below are baseline locations, not stable edit coordinates.\n\nCONFIG ARCHITECTURE AND US-001: packages/nax/src/config/config-guards.ts:194 implements rejectRemovedPlanModes with a structured NaxError and a migration message; mirror its style, not its merged-object placement. NaxError is already re-exported from @nathapp/nax-agent/internal by packages/nax/src/errors.ts:7, so the new error code requires no new error class or cross-package work. The root loader clones DEFAULT_CONFIG before reading layers (packages/nax/src/config/loader.ts:264); DEFAULT_CONFIG already contains mode workflow and maxIterations 20 (packages/nax/src/config/schemas.ts:159). Therefore guard only raw, post-compat-shim layers BEFORE merging. Required sites are globalConf in applyGlobalLayer (loader.ts:106), resolvedProjConf in applyProjectLayer (loader.ts:131), shimmedProfileData in applyProfileChainLayer (loader.ts:162), shimmedCliOverrides in applyCliOverridesLayer (loader.ts:191), shimmedPackageFields in loadConfigForWorkdir (loader.ts:482), and each layer in loadPackageProfileLayers (packages/nax/src/config/package-profile.ts:16, package-profile.ts:35). Preserve exact layer labels, own-key maxIterations detection regardless of value, ordered keys, the exact multiline migration message, and context stage/source/keys. Never apply this guard in finalizeAndValidateRootConfig (loader.ts:213) or to per-package rawMerged (loader.ts:538), since both contain the default. The guard intentionally rejects a bad lower layer even if a higher layer would override it. Root profile environment resolution and compat shims retain their existing order (loader.ts:174); package profile layers preserve their own identity and order (package-profile.ts:25). Root/package config caches and rejection eviction already exist (loader.ts:340, loader.ts:415); tests must isolate globals, profile environment and caches rather than accidentally reuse a valid cached config. There is also a no-merged-config fast path returning cloned defaults (loader.ts:325); do not move the guard onto this path's resolved result. Package override provenance helpers at loader.ts:348-397 are distinct from the specified loadConfigForWorkdir path; avoid expanding B1 into a provenance/merge redesign.\n\napplyWorkflowMode currently gates all overrides on isWorkflowMode (packages/nax/src/config/workflow-mode.ts:17). Remove that mode gate while preserving acceptance-off, advisor-on only if the advisor block exists, shared story isolation, and existing worktree-isolation warning semantics. Remove the root loader's warnDeprecatedPipelineMode call (loader.ts:250) now, but retain the function and its tests until US-006. ExecutionModeSchema must keep both literals (packages/nax/src/config/schemas-workflow.ts:9) and maxIterations/default 20 must remain for B3 and typed hand-built regression configs. Do not reject other execution, tdd or acceptance keys: many are still consumed and users' profiles carry others. resolveFeatureAcceptance currently calls loadConfig directly (packages/nax/src/cli/features-acceptance.ts:98); insert the exported _featuresAcceptanceDeps seam and call it with workdir and configOverrides, leaving its status ordering and error-to-result handling intact. Existing no-.nax behavior precedes config loading (features-acceptance.ts:89), so seam tests need an initialized test repo. Acceptance-on fixtures must inject the real loader wrapped to re-enable acceptance, restoring the seam after each test; spawned CLI tests cannot use an in-process seam and should expect disabled.\n\nUS-001 TEST MIGRATION: Extend packages/nax/test/unit/config/config-guards.test.ts, which already tests rejectRemovedPlanModes at :69, for direct new-guard assertions. Update test/unit/config/workflow-mode-normalise.test.ts (helper defaults workflow; remove pipeline identity test, retain deprecation describe until US-006), test/unit/runtime/packages-workflow.test.ts (remove pipeline acceptance escape hatch), and test/integration/config-deferred-warnings.test.ts (replace deferred pipeline warning with structured removal rejection). Update test/unit/cli/features-acceptance.test.ts, features-resolve.test.ts and features-resolve-profile.test.ts to remove pipeline fixture keys and use _featuresAcceptanceDeps.loadConfig wrappers when exercising enabled acceptance; preserve invalid storyIsolation schema-error expectations. test/integration/cli/cli-features-resolve-profile.test.ts removes pipeline and expects disabled where appropriate. Replace maxIterations fixture pins with costLimit, preserving numbers and merge/provenance assertions, in test/integration/config/profile-loader.test.ts (5), test/unit/config/loader-legacy-shim.test.ts (7), test/integration/cli/cli-config-default-view.test.ts (20, 30, 50, 15, 25), cli-config-diff.test.ts (25, including field descriptions), and cli-config-command.test.ts (20). These are fixture migrations, not changes to cost semantics.\n\nLOOP/COMPLETION ARCHITECTURE AND US-002: selectPipeline dynamically imports the stages barrel and chooses workflow versus defaultPipeline today (packages/nax/src/execution/iteration-runner.ts:41). Keep the import but always choose getWorkflowPipeline. loopIterationLimit currently forks to config.execution.maxIterations (packages/nax/src/execution/iteration-bound.ts:33); always derive iterationsDone plus workflowIterationsRemaining. That helper counts pending stories, a retry candidate, spent-attempt escalation hops and a completion pass (iteration-bound.ts:22). Preserve its algorithm, retry/escalation accounting and progressSignature; do not replace it with a fixed story count or delete exitReason max-iterations. executeUnified has separate mode gates for the cap message (:49), progress guard (:74), preflight (:84) and refreshed completion (:303) in packages/nax/src/execution/unified-executor.ts. Keep only workflow behavior at all four. The progress signature includes status, passes, attempts and escalation count; tests whose stubs never settle/change a story will now stall rather than consume a fixed cap. Real production dispatch becomes sequential in US-003, but unified-executor's parallel branch (:268) and post-run acceptance block (:307) remain in B1, allowing direct low-level parallel tests to continue.\n\nrunEndPhase returns undefined for pipeline today (packages/nax/src/execution/end-phase.ts:187). It must return Promise<EndPhaseOutcome> and always delegate to runWorkflowEnd. Existing runWorkflowEnd maps a null workflow result to {passed:true,reasons:[]}, preserves URL/reasons, skips aborted runs negatively and converts errors to negative verdicts (end-phase.ts:141). Preserve those semantics and runtime-before-close ordering. The supplied design loosely calls runFinish exported, but the actual baseline defines it as a private local helper (end-phase.ts:109); retain that existing helper unchanged and merely sever its call from runEndPhase. Likewise retain runFinishPhase, EndPhaseDeps.runFinishPhase, runDeferredRegression and defaultPipeline until B2. runner-completion passes skipRegression from shouldSkipRegression and computes sequential classification via effectiveParallelCount (packages/nax/src/execution/runner-completion.ts:377, runner-completion.ts:396). Always skip the deferred regression gate and classify sequential true. Delete shouldSkipRegression, not the deferred-regression module/export. The finishRun finally block currently distinguishes workflow and pipeline timing/verdicts (runner-completion.ts:577); fallback summaries must always carry featureWorkflowDurationMs:0 and workflowPassed:false, with no endPhaseDurationMs. The lifecycle catch path separately emits the held-back event and drains before rethrowing (packages/nax/src/execution/lifecycle/run-completion.ts:302); always report workflowPassed:false and retain exactly-once/drain/rethrow behavior. workflow-end-report's undefined fallback is intentionally retained until B2.\n\nUS-002 TEST MIGRATION: Retain workflow coverage and remove pipeline-only assertions in test/unit/execution/iteration-runner.test.ts, end-phase.test.ts, iteration-bound.test.ts, runner-completion-workflow-status.test.ts, run-completed-after-end-phase.test.ts, lifecycle/run-completed-deferred.test.ts and unified-executor-preflight.test.ts. Delete test/unit/execution/runner-completion-pipeline-duration.test.ts; retain runner-completion-workflow-duration.test.ts. In runner-completion-skip.test.ts replace the deferred-regression execution matrix with never-called coverage for not-run and failed statuses. In runner-completion-finish.test.ts assert the feature workflow is always called before runtime close; a thrown feature workflow is caught and reported as workflowPassed false rather than rejecting runCompletionPhase (it must not be reported as passed). Remove finish/regression interaction expectations. In runner-completion-auth-relogin.test.ts move the end-phase stub from runFinishPhase to runWorkflowFeature returning null so notice ordering remains tested; auth behavior itself does not change. Remove mode pipeline in runner-completion-postrun.test.ts without weakening assertions. Update unified-executor-state-handoff.test.ts, unified-executor-dispatch.test.ts, unified-executor-failure.test.ts, unified-executor-logging.test.ts and unified-executor-tier-budget.test.ts: remove obsolete fixed-cap/pipeline fixtures, provide PRDs and stub outcomes that settle stories under the derived bound, and retain hand-built pipeline configs specifically for the new regression criteria. Update test/integration/execution/_parallel-metrics-helpers.ts to omit pipeline mode, delete the one fixed-cap parallel-batch test in runner-parallel-metrics.test.ts, and settle every story in batch stubs where needed in that file, runner-parallel-metrics-rectification-events.test.ts and parallel-story-router.test.ts. Do not delete those parallel modules/tests wholesale in B1.\n\nSETUP/DISPATCH AND US-003: runMemoryFor currently skips dry runs and pipeline configs (packages/nax/src/execution/lifecycle/run-setup.ts:123). Only dry runs should skip; continue forwarding the run logger and repository root to createRunMemory. withRuleDeliveryHandlers currently checks mode then index delivery (packages/nax/src/execution/lifecycle/run-rules-setup.ts:161). Retain the delivery check and plugin-first append order, including plugin-handler array identity for non-index delivery; remove only the mode check. runExecutionPhase clamps batching through effectiveUseBatch (packages/nax/src/execution/runner-execution.ts:122) and passes a clamped parallelCount to executeUnified (:274); useBatch becomes false and parallelCount is omitted entirely, with no ignored-option warnings. runner.ts similarly clamps requestedUseBatch today (packages/nax/src/execution/runner.ts:185); use false without reading the obsolete option. Keep RunnerOptions.useBatch, RunnerExecutionOptions.useBatch and parallel fields for B2 and keep --no-batch accepted. Remove assertion calls in parallel-worker.ts:93 and merge-conflict-rectify.ts:221 without otherwise changing those pipeline-only modules. Their direct-call behavior changes by allowing typed workflow configs, but the harness must not dispatch into them. Tests in test/unit/execution/lifecycle/run-setup-memory.test.ts drop pipeline no-memory expectations; run-rules-setup-agent-hooks.test.ts uses non-index delivery, not fake pipeline mode, to test skipped-delivery identity. Delete the helper-only runner-execution-workflow-parallel.test.ts and runner-execution-workflow-batch.test.ts in this story as specified, while retaining their source helper module until US-006.\n\nCLI AND US-004: parseRunPreconditionFlags currently parses maxIterations before parallel and chatAsks (packages/nax/bin/run-action.ts:134). Reject presence, not numeric invalidity: any defined value yields the exact red stderr removal message and exit 1. Max-iterations wins when both are supplied. Preserve chatAsks parsing and return only {chatAsksDir}. bin/nax.ts declares both flags (:236, :245), invokes preconditions (:279), applies overrides (:348) and passes parallel to the runner (:395); keep declarations with the exact removed-option help text, update destructuring/two-argument override invocation, and omit runner parallel. applyRunCliOverrides (run-action.ts:491) must retain --agent and --max-cost positive-number behavior, while removing maxIterationsFlag, applyMaxIterationsFlag and maxIterationsIgnoredNotice usage. Keep helper modules until US-006. Existing spawned CLI tests use Bun.spawn with concurrently drained stdout/stderr (packages/nax/test/integration/cli/cli-run-max-iterations.test.ts:20); reuse this harness to prove errors precede initialization and config loading. No existing tests referencing parseRunPreconditionFlags or applyRunCliOverrides were found by repository text search; extend the surviving CLI integration files and suitable existing CLI unit suites, or declare an additional unit file if implementation needs one.\n\nCHAT AND US-005: JobLaunchBody's run variant contains maxIterations at packages/nax/src/chat/jobs/job-argv.ts:10, parseRun validates its numeric range before maxCost (:74), and buildJobArgv emits -m (:171). Remove the typed field/constant/argv pair and return the exact removed-key error for any defined raw.maxIterations before validating maxCost. Chain input rejects unknown fields before normal parsing (packages/nax/src/chat/jobs/chain-argv.ts:11, chain-argv.ts:25), so deleting maxIterations from CHAIN_STEP_FIELDS.run deliberately produces the distinct existing unknown-field error. JobsProviderOptions and the run schema currently expose it (packages/nax/src/chat/jobs/jobs-provider.ts:13, jobs-provider.ts:30). prepareRun computes a limit and warning and Prepared carries overLimit (packages/nax/src/chat/jobs/jobs-launch.ts:115, jobs-launch.ts:157); use only pending/total story detail and remove the auto-admitted chain-stop block (:238), while preserving busy checks, approvals, repository targeting, chain admission and startFailed handling. Invalid maxIterations must return before any job starts. FeatureStateOptions and readFeatureState carry a separate warning (packages/nax/src/chat/workflow/feature-state.ts:16, feature-state.ts:93); remove that option/warning but retain outputDir and all unrelated stale-process/state diagnostics. Remove forwarding at jobs-host.ts:58, cli/chat.ts:275 and cli/agents-run-compose.ts:83, along with their now-unused isWorkflowMode imports.\n\nUS-005 TEST MIGRATION: Update test/unit/chat/jobs/job-argv.test.ts for removal errors and argv without -m; chain-argv.test.ts for allowed fields and unknown maxIterations; chain-tool-card.test.ts, chain-tools.test.ts, chain-tool-input.test.ts, chain-tools-repo.test.ts, jobs-provider.test.ts, jobs-launch-busy.test.ts, jobs-launch-nested.test.ts and jobs-launch-chain.test.ts for removed provider/input fields. Delete only the max-iteration overLimit chain-stop test, retaining chain launch/admission tests and adding the 25-pending auto-admit behavior. jobs-launch.test.ts drops maxIterations schema pins, limit/warning tests and obsolete input, retaining no-limit/no-warning workflow assertions. test/unit/chat/workflow/feature-state.test.ts drops the cap warning test and option; feature-state-workflow.test.ts and workflow-provider.test.ts drop the option. test/unit/cli/chat-resources.test.ts removes its pipeline/maxIterations fixture and cap-threading test; agents-run-compose.test.ts removes pipelineConfig/AC-9 and asserts the project outputDir without a maxIterations key. Test createHostJobs forwarding as well. Because the changes touch chain auto-admission and approval-card composition, use strict three-session TDD for this story to preserve launch authorization boundaries; no new permission policy is introduced.\n\nCLEANUP AND US-006: isWorkflowMode lives at packages/nax/src/config/schemas-workflow.ts:52 and is exported by config/index.ts:167; all known production imports are in the config, execution, CLI and chat modules assigned to US-001 through US-005. The helper-only execution/workflow-parallel.ts contains effectiveParallelCount, effectiveUseBatch and assertPipelineMode (:6, :21, :28). Delete it only after its consumers are gone. Delete cli/run-max-iterations.ts and cli/run-parallel.ts after run-action no longer imports them. Delete warnDeprecatedPipelineMode from workflow-mode.ts. Remove its test describe/import, remove isWorkflowMode assertions/import from test/unit/config/workflow-config.test.ts while retaining resolveWorkflowConfig assertions, and delete test/unit/cli/run-max-iterations.test.ts, test/unit/cli/run-parallel.test.ts and test/integration/cli/cli-core-parallel.test.ts. Earlier stories remove the other symbol-only helper tests. This remains deletion-only; the refine pass adds one inherited negative-path regression AC using the existing US-001 config-load rejection test, with no new behavior or separate test-writing task. Compiler/lint/test gates verify the import closure. Do not delete pipeline orchestrator, stages, batch/parallel dispatch, end-phase runFinish helper, runFinishPhase, deferred regression, or undefined-outcome compatibility paths: B2 owns those.\n\nRISKS, MIGRATION AND VERIFICATION: The deliberate breaking change is fail-fast config/flag rejection; removing mode or choosing workflow and removing maxIterations is the fix. Layer-local rejection must name the source and cannot be bypassed by later merges. Schemas remain backward-compatible for in-memory test configs, but the harness must nevertheless treat even a hand-built pipeline literal as workflow. Do not bulk-remove every pipeline fixture: some new ACs intentionally exercise those unparsed configs. Loaded acceptance is always off; test seams, not forbidden config values, preserve tests of the temporarily retained acceptance command. Derived-loop tests must settle stories or spend attempts; fixed-cap stubs can otherwise stall and misreport completion. Final events, status, timing splits, runtime-close order, spend reconciliation, aborted runs, preflight dry-run suppression and rule-delivery identity are sensitive regression anchors. Follow repository _deps seams, restore mocks after each test, use Bun-native APIs and shared test helpers, and keep current permission resolution unchanged. Work is limited to C1 B1 under the 2026-11-06 ruling, before parallel test-suite work; remaining config keys belong to B3 warn-and-strip decisions and docs/context to B4. Use targeted bun test <path> --timeout=30000 during implementation, never bare bun test or bun run nax. Required package gates are bun run typecheck, bun run check:all and bun run test; these are verification strategy, not behavioral ACs. Run coverage after test moves/deletions only outside a nax sandbox, never with NAX_SANDBOXED=1. The PRD itself does not claim any gates were executed.\n\nREFINE-PASS ADVERSARIAL AUDIT: Compared the on-disk spec.md acceptance section against every story. All 56 stated criteria remain in their original stories and order, with six literal '(a regression guard: this already holds on main)' qualifiers retained. Mapping of every spec AC to its same-numbered PRD AC: US-001 1 mode-key error/code/keys; 2 exact combined-key message; 3 global maxIterations-only message; 4 four accepted raw shapes; 5 project pipeline rejection/source; 6 project maxIterations rejection; 7 default 20 retained; 8 selected root-profile rejection/source; 9 CLI override rejection/source; 10 package override rejection/source; 11 workflow accepted/no deprecated warning; 12 unconditional acceptance/isolation normalization; 13 loader seam call and disabled result. US-002 1 absent-mode workflow stages/no execution stage with regression qualifier; 2 hand-built pipeline config workflow stages; 3 workflow called/finish never called; 4 null workflow outcome; 5 derived bound not fixed 7; 6 not-run deferred regression skipped; 7 failed regression skipped; 8 fallback summary zero workflow duration/negative verdict/no pipeline duration; 9 same fallback for hand-built pipeline config; 10 sequential true with parallel 4 and regression qualifier; 11 three stories complete despite fixed cap 1; 12 derived-bound warn/stage/data; 13 stalled-loop exit; 14 one non-dry preflight; 15 no dry-run preflight; 16 final-story completed result not cap exit; 17 one deferred negative event before late-phase rejection. US-003 1 non-dry memory despite pipeline literal; 2 no dry-run memory with regression qualifier; 3 index delivery appended after plugins despite pipeline literal; 4 non-index skip/identity with regression qualifier; 5 unbatched runExecutionPhase/no batching warning; 6 no forwarded parallelCount/no parallel warning; 7 runner unbatched/no batching warning; 8 worktree story pipeline runs instead of mode-assertion failure. US-004 1 max-iterations removal stderr/exit; 2 parallel removal stderr/exit; 3 flag precedence; 4 sole chatAsksDir key/no exit; 5 actual -m CLI rejection before initialization; 6 actual parallel CLI rejection before initialization; 7 retained flag declarations/removed help text. US-005 1 removed-input error; 2 removal error precedes maxCost error; 3 exact run argv with regression qualifier; 4 chain unknown-field error; 5 exact schema properties/no cap; 6 story-count card/no cap text with regression qualifier; 7 invalid cap launches nothing; 8 25-story auto-admit starts/no stop; 9 chat workflow-provider options omit cap; 10 agents-run forwards repo/outputDir and omits cap; 11 host jobs-provider options omit cap. US-006 originally has no spec AC; the current refine request to supply a negative-path assertion for every story adds only a preservation check of US-001's already-implemented rejection, reusing its surviving integration test rather than expanding this deletion-only story. Total revised criteria: 57.\n\nEvery AC is observable through dependency-call recording, return/error data, real CLI stderr/exit/help, schemas or logger/event output; none is a lint/typecheck/build gate. Corrected three weak spots without dropping spec intent: the omitted seam configOverrides is explicitly undefined; null feature workflow produces {passed:true,reasons:[]} with no url (end-phase.ts:169 and test/unit/execution/end-phase.test.ts:141); private runFinish non-invocation is observed via retained deps.runFinishPhase. Corrected the baseline worker failure wording: executeStoryInWorktree catches its mode NaxError and returns an error result (parallel-worker.ts:43, parallel-worker.ts:93, parallel-worker.ts:107), so success must prove the pipeline ran, not merely that no exception escaped. For rejection-summary ACs inject _endPhaseDeps.resolveBranch rejection outside runWorkflowEnd's catch (end-phase.ts:191); a runWorkflowFeature throw instead produces a negative outcome normally, as existing runner-completion-workflow-duration.test.ts:156 shows. Both behaviors remain protected.\n\nNegative paths are present in US-001 guard throws, US-002 rejected/stalled/failed completion cases, US-003 dry-run/non-index suppression, US-004 flag errors, US-005 rejected legacy input/no launch, and US-006 inherited rejection after cleanup. All six Failure Handling table rows map to existing criteria: config mode/maxIterations/workflow to US-001; removed -m/parallel to US-004; chat maxIterations/no launch to US-005. The six story IDs, workdirs and dependency arrays match the binding table exactly; none was minimized away. All eight feature-level Out of Scope items are retained verbatim and neighboring story scopes repeat the relevant boundaries. No story-local exclusions were hoisted. Context files now exactly include all five US-002 spec recommendations by replacing iteration-bound.ts with lifecycle/run-completion.ts; iteration-bound remains explicitly identified in that story's description. The other stories already include every spec context recommendation within five slots; all paths exist and none is a new output. Routing reduced US-003 to medium/tdd-simple because its six edits are straightforward existing-branch removals; US-001 and US-002 remain complex/lite due layered validation and loop/event integration, US-004 medium/simple, US-005 complex/strict because it removes a cap-triggered manual-approval fallback for an auto-admitted chain (jobs-launch.ts:238), and US-006 medium/no-test for pure unreachable-helper deletion with reused regression coverage. No additional modules or speculative replacement APIs are proposed.",
+  "outOfScope": [
+    "Deleting the pipeline-only modules (story orchestrator, pipeline stages other than the workflow ones, `runFinish` / `runFinishPhase`, `runDeferredRegression`, parallel and batch dispatch, the post-run acceptance block in `unified-executor.ts`); wave B2 deletes them.",
+    "Removing `nax run --no-batch` and the `useBatch` / `parallel` option fields; wave B2 removes them with the batch and parallel modules.",
+    "Narrowing `ExecutionMode` to `\"workflow\"` and removing `execution.maxIterations` from the schema and `DEFAULT_CONFIG`; wave B3 does this.",
+    "Rejecting or stripping other pipeline-only keys (`execution.iterationDelayMs`, `tdd.*`, `acceptance.*` subkeys, dead `permissions.<stage>` keys, dead `prompts.overrides` roles); wave B3 decides each, as warn-and-strip where user configs carry them.",
+    "Removing `nax accept`, `nax features acceptance` or the dead `nax prompts --export` roles; wave B2.",
+    "Docs, config descriptions and package context files that still describe pipeline mode; wave B4.",
+    "Editing the user's `~/.nax/config.json` or profiles; none of them sets `execution.maxIterations` or `execution.mode: \"pipeline\"`.",
+    "Changing workflow-mode behaviour: every changed site keeps its current workflow-mode result."
+  ],
+  "routingProfile": "native-codex"
+}
