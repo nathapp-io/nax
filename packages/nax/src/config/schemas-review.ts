@@ -244,11 +244,10 @@ export const NonBlockingFixConfigSchema = z.object({
 /**
  * US-001 (fix-review) — scoped review of a non-blocking fix's own delta.
  *
- * The NBF path strips both seeded LLM reviews from its re-validation
- * (`REVIEW_PHASE_KINDS` / `nonBlockingExcludePhases()` in
- * `src/execution/non-blocking-fix.ts`), so a kept pass is guarded only by the
- * deterministic gates. A fix review re-reads the fix's own diff against the
- * story's ACs and description before the pass is kept (nax#2229).
+ * The NBF path stripped both seeded LLM reviews from its re-validation, so a
+ * kept pass was guarded only by the deterministic gates; a fix review re-read
+ * the fix's own diff against the story's ACs and description before the pass
+ * was kept (nax#2229). The NBF path went with the story loop (B2b-1).
  */
 export const FixReviewConfigSchema = z.object({
   enabled: z.boolean().default(true),

@@ -18,7 +18,8 @@ export interface AutofixImplementerStrategyOptions {
    * (tdd-simple / test-after / no-test) where there is no separate test-writer
    * session — the one warm implementer session owns both source and tests, so
    * routing adversarial findings to a fresh cold test-writer session (the
-   * three-session default) is wrong. See build-plan-for-strategy.ts.
+   * three-session default) is wrong. See the story loop's plan builder
+   * (deleted in B2b-1).
    * (default: false)
    */
   includeAdversarialReview?: boolean;

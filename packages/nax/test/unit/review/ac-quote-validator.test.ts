@@ -88,7 +88,7 @@ describe("validateAcQuote", () => {
         const finding = makeFinding({
           severity: "error",
           category: "test-gap",
-          file: "test/unit/execution/story-orchestrator-gates.test.ts",
+          file: "test/unit/review/ac-quote-validator.test.ts",
           issue: "every test body is expect(true).toBe(true) — AC behaviour unverified",
           acQuote: "must return a rejection code when acQuote is absent",
           acIndex: 1,

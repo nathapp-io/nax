@@ -5,11 +5,14 @@
  * selects. When that key carries `pullToolNames`, the declared pull tools
  * can never reach an agent — the config is dead weight that looks live.
  *
- * This test builds the actual reachable stage-key set by driving the two
- * selector functions (`executionContextStage`, `contextStageForOp`) over
- * their full input domains — never by hardcoding the stage strings they
- * return — and asserts every key with a non-empty `pullToolNames` is in
- * that set (plus the always-live "context" key, the third assembly site).
+ * This test builds the stage-key set the two selector functions can return —
+ * `executionContextStage` and `contextStageForOp` — by driving them over
+ * their full input domains (never by hardcoding the stage strings they
+ * return), and asserts every key with a non-empty `pullToolNames` is in that
+ * set, plus the always-live "context" key the context stage assembles
+ * unconditionally. The `contextStageForOp` half has no production caller any
+ * more — its `run-phase` seam went with the story loop (B2b-1) — and is still
+ * driven here so the mapping keeps its coverage until B2b-2 removes both.
  *
  * Not every key in STAGE_CONTEXT_MAP is checked: the declared-but-unassembled
  * keys autofix, verify, review, acceptance, plan, route and review-dialogue
@@ -63,7 +66,10 @@ function buildReachableStageKeys(): Set<string> {
     reachable.add(executionContextStage({ isBatch: true, testStrategy }));
   }
 
-  // Site 3: src/execution/story-orchestrator/run-phase.ts, via contextStageForOp.
+  // Site 3 (inert): the story orchestrator's `run-phase` seam called
+  // contextStageForOp for every op; seam and orchestrator are gone with the
+  // story loop (B2b-1). Driven here only so the mapping stays covered until
+  // B2b-2 removes it.
   for (const opName of KNOWN_OP_NAMES) {
     for (const isThreeSession of [true, false]) {
       for (const inRectification of [true, false]) {

@@ -16,7 +16,8 @@ import { implementerOp } from "./implement";
  * never reads from `ctx.story` (which is optional on CallContext and would crash
  * at runtime for ad-hoc / non-pipeline invocations).
  *
- * Call site: buildPlanForStrategy — the story is always available.
+ * Call site: the story loop's plan builder (deleted in B2b-1), where the story
+ * was always available.
  *
  * When `sink` is provided the strategy switches to `fullSuiteRectifyOp` and
  * `extractApplied` pushes parsed declarations into the shared sink for downstream

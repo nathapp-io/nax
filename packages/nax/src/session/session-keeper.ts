@@ -38,8 +38,8 @@ export interface SessionKeeperOptions {
   readonly maxInteractions?: number;
   /**
    * Cost-aggregator scope id. Forwarded on every runAsSession call so the cost
-   * middleware attributes turn cost to the caller's scope (e.g. story-orchestrator
-   * per-phase scope). Omit when no scope is active.
+   * middleware attributes turn cost to the caller's scope (e.g. a per-phase
+   * scope the caller opened). Omit when no scope is active.
    */
   readonly scopeId?: string;
 }

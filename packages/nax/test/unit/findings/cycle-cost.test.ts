@@ -7,8 +7,9 @@
  * a callId and reads the ledger back by it. The other two links are pinned
  * elsewhere, and all three must hold or fix-cycle cost silently returns to $0:
  *
- * - cycle -> runPhase -> callOp (callId survives, scopeId does not):
- *   test/unit/execution/story-orchestrator/run-phase-callid-passthrough.test.ts
+ * - cycle -> runPhase -> callOp (callId survives, scopeId does not): pinned by
+ *   a run-phase test that went with the story loop (B2b-1). The seam hop is
+ *   gone with it; the `callOp` half still holds.
  * - callOp -> cost row (a caller-supplied callId is never re-minted):
  *   test/unit/operations/call-correlation.test.ts
  */
@@ -171,9 +172,9 @@ describe("runFixCycle — dispatch cost is read from the cost ledger (#1932)", (
 
   test("failed-dispatch spend is folded into costUsd and still carried beside it (#1960)", async () => {
     // #1960 reverses #1948's split-at-the-fix-cycle reading: `costUsd` mirrors
-    // `runPhase`'s `phaseCosts`, which folds the failed half in, so it does
-    // too. The half is still carried beside it, so wasted spend stays
-    // measurable. See cycle-cost.ts.
+    // `runPhase`'s `phaseCosts` (that seam went with the story loop, B2b-1),
+    // which folds the failed half in, so it does too. The half is still carried
+    // beside it, so wasted spend stays measurable. See cycle-cost.ts.
     const s = makeStrategy({ name: "implementer", maxAttempts: 1 });
     const callOp = makeErrorRowCallOpMock(5);
     const cycle = makeCycle([lintA], [s], async () => [lintA]);
@@ -412,9 +413,10 @@ describe("ledgerSpendFor", () => {
   });
 
   test("#1960: costUsd folds failed-dispatch spend, mirroring phaseCosts", () => {
-    // cycle-cost.ts pins its meaning to runPhase's phaseCosts. #1960 folded
-    // phaseCosts, so this folds too -- the fix-cycle number must never mean
-    // something different from the phase number beside it.
+    // cycle-cost.ts pinned its meaning to runPhase's phaseCosts (that seam went
+    // with the story loop, B2b-1). #1960 folded phaseCosts, so this folds too --
+    // the fix-cycle number must never mean something different from the phase
+    // number it used to sit beside.
     const ctx = ctxWithByCall(() => ({ "call-1": { totalCostUsd: 0.02, totalErrorCostUsd: 0.005 } }));
 
     expect(ledgerSpendFor(ctx, "call-1")).toEqual({ costUsd: 0.025, errorCostUsd: 0.005 });

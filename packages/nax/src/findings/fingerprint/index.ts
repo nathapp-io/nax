@@ -7,9 +7,10 @@
  *
  *   - `src/review/recurrence-demotion.ts` — `classifyRecurrence` mints the
  *     `meta.recurrence` stamp (and therefore the retirement decision) from it.
- *   - `src/findings/retirement-stamp` — the carry-forward prompt and the
- *     non-blocking-fix seed filter suppress a finding whose identity matches a
- *     retired stamp.
+ *   - `src/findings/retirement-stamp` — the carry-forward prompt suppresses a
+ *     finding whose identity matches a retired stamp. (The story loop's
+ *     non-blocking-fix seed filter was the stamp's second reader and went with
+ *     B2b-1.)
  *
  * A drifted copy on either side is silent: the prompt would suppress a copy the
  * classifier never retired (or keep telling the reviewer to re-flag one it did),

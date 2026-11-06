@@ -24,8 +24,7 @@ export type FailureCategory =
    * (Audit #8):
    *   - The *mechanical* isolation checks (`verifyTestWriterIsolation` /
    *     `verifyImplementerIsolation`) detect which files changed but cannot judge whether a
-   *     change is legitimate (a stub in src/ may be required), so they stay advisory — see
-   *     run-phase.ts.
+   *     change is legitimate (a stub in src/ may be required), so they stay advisory.
    *   - The verifier reviews the *implementer*, not the test-writer. Its `VerifierVerdict`
    *     (tdd/verdict.ts) has no field describing test-writer-wrote-source; `testModifications`
    *     describes the *implementer editing tests*, which correctly maps to `verifier-rejected`.

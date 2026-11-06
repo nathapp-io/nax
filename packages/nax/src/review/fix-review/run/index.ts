@@ -108,9 +108,10 @@ export async function runFixReview(
 
 /**
  * #2286 — one `review`-stage line per verdict, so `nax logs` shows the review at
- * the default level. The seeded reviewers get theirs from `run-phase`, which
- * this runner never passes through. A skip is logged as a skip: before this, a
- * disabled or no-op review read exactly like no review at all.
+ * the default level. The seeded reviewers logged theirs from the story
+ * orchestrator's `run-phase` seam (deleted, B2b-1), which this runner never
+ * passes through. A skip is logged as a skip: before this, a disabled or no-op
+ * review read exactly like no review at all.
  */
 function logVerdict(logger: Logger | undefined, storyId: string, verdict: FixReviewVerdict): void {
   if (verdict.kind === "pass") {
@@ -199,8 +200,8 @@ async function evaluateFixReview(ctx: CallContext, req: FixReviewRequest, d: Fix
   // there, and `resolveTestFilePatterns` reads them relative to its `workdir`
   // argument (`ctx.runtime.projectDir`), not the git cwd (`req.workdir`, the
   // story's package dir). Pass `undefined` for packageDir when the story is
-  // rooted at the repo root (single-package project). Mirrors
-  // `createMeasureSourceDiff` (`src/execution/non-blocking-fix.ts`).
+  // rooted at the repo root (single-package project). Same anchoring rule the
+  // story loop's `createMeasureSourceDiff` used before B2b-1 deleted it.
   const fullConfig: TestPatternConfig = ctx.config ?? ctx.packageView.config;
   const resolved = await d.resolveTestFilePatterns(
     fullConfig,

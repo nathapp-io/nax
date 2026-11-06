@@ -32,9 +32,10 @@ export interface VerifyScopedInput {
   /** ADR-009 resolved test patterns (language-agnostic, per-package override-aware). */
   readonly resolvedTestPatterns?: ResolvedTestPatterns;
   /**
-   * Session scratch dir for verify-result capture (nax#1757). Populated by
-   * plan-inputs from PipelineContext.sessionScratchDir in production; injected
-   * tests may omit it and instead set `deps.sessionScratchDir`.
+   * Session scratch dir for verify-result capture (nax#1757). The story loop's
+   * plan builder populated it from PipelineContext.sessionScratchDir in
+   * production (deleted in B2b-1, so nothing does now); injected tests may omit
+   * it and instead set `deps.sessionScratchDir`.
    */
   readonly sessionScratchDir?: string;
 }

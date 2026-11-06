@@ -438,8 +438,8 @@ export const semanticReviewOp: RunOperationWithHooks<
     // early return and partitions purely by severity, so every member of `advisory` is
     // BY DEFINITION not blocking-severity. A `.filter((f) => isBlockingSeverity(...))`
     // used to sit here, which intersected that bucket with its own complement and
-    // produced `[]` on every default-config run — nax#1865. Per the convention in
-    // non-blocking-fix.ts ("Applied at the SEEDING site only, never in the reviewer's
+    // produced `[]` on every default-config run — nax#1865. Per the convention at
+    // the seeding site ("Applied at the SEEDING site only, never in the reviewer's
     // own output"), filtering does not belong here at all: adversarialReviewOp.verify()
     // forwards its identical `advisory` bucket unfiltered, and semantic now matches it.
     //

@@ -14,9 +14,10 @@ import { globalConfigDir } from "../config/paths";
  * mode where `workdir` points outside the repo root) — callers then resolve
  * patterns against the repo root with no package scoping.
  *
- * SSOT: both the routing stage (greenfield pre-check) and plan-inputs (gate +
- * isolation inputs) call this so they resolve test-file patterns against an
- * identical package anchor. See `.claude/rules/monorepo-awareness.md` §C.
+ * SSOT: the routing stage (greenfield pre-check), the context stage and the
+ * workflow stage env and gates all call this so they resolve test-file patterns
+ * against an identical package anchor. See
+ * `.claude/rules/monorepo-awareness.md` §C.
  */
 export function packageDirRelative(projectDir: string, workdir: string): string | undefined {
   if (!projectDir || !workdir || workdir === projectDir) return undefined;

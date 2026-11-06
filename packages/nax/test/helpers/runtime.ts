@@ -105,15 +105,14 @@ export interface MockRuntimeOptions {
  * Build a runtime + agentManager pair from a mock AgentAdapter, with the fake
  * manager wired to emit `session-turn` dispatch events on the runtime's bus.
  *
- * Use when an integration test exercises `buildPlanForStrategy + plan.run()` (or any callOp
- * path) and asserts on cost/tokenUsage/etc. — those values flow through the
- * dispatch bus in production. Without this wiring, fake events are dropped.
+ * Use when an integration test exercises a `callOp` dispatch path and asserts on
+ * cost/tokenUsage/etc. — those values flow through the dispatch bus in
+ * production. Without this wiring, fake events are dropped.
  *
  * ```ts
  * const { runtime, agentManager } = makeRuntimeWithFakeAgent(agent, { config });
  * const callCtx = makeMockCallContext({ runtime });
- * const plan = buildPlanForStrategy(callCtx, story, config, "three-session-tdd", inputs);
- * const result = await plan.run();
+ * const result = await callOp(callCtx, someOp, input);
  * ```
  */
 export function makeRuntimeWithFakeAgent(

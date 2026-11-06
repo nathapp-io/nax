@@ -4,11 +4,15 @@
  * `STAGE_CONTEXT_MAP` (stage-config.ts) declares role/budget/providers/
  * pullToolNames for stage keys that nothing assembled a bundle for before
  * this change — see docs/architecture and the Phase B spec for the full
- * background. `runPhase` (src/execution/story-orchestrator/run-phase.ts) is
- * the single dispatch seam for both the CANONICAL_ORDER phases and the
- * rectification fix cycle, so this mapping is keyed off `op.name` (an
- * operation identity), never `op.stage` (a *permissions* PipelineStage —
- * "run" / "review" / "verify" / "rectification" — a different namespace).
+ * background. The mapping is keyed off `op.name` (an operation identity),
+ * never `op.stage` (a *permissions* PipelineStage — "run" / "review" /
+ * "verify" / "rectification" — a different namespace), because the story
+ * orchestrator's `runPhase` dispatch seam called it once per op, for both the
+ * CANONICAL_ORDER phases and the rectification fix cycle.
+ *
+ * That seam and its orchestrator were deleted by the pipeline story-loop cut
+ * (B2b-1), so no production code reaches this mapping today: it and its tests
+ * stay until B2b-2's orphan pass removes them.
  */
 
 import type { TestStrategy } from "@/config";
@@ -34,7 +38,7 @@ const UNCONDITIONAL_STAGE_MAP: Readonly<Record<string, StageKey>> = {
 /**
  * Op names that map to the `rectify` context-engine stage when dispatched
  * inside the rectification fix cycle (nax#1737 Phase B2). These are the ops
- * `build-plan-for-strategy.ts` actually assembles into fix-cycle strategies.
+ * the story loop's fix-cycle strategies assembled.
  *
  * `implementer` maps to `rectify` here — not `tdd-implementer` — because
  * inside the fix cycle it is doing rectification work and needs `rectify`'s
@@ -63,7 +67,7 @@ const RECTIFICATION_STAGE_MAP: Readonly<Record<string, StageKey>> = {
 export interface ContextStageForOpOptions {
   /** True under three-session (TDD) strategies. Ignored when `inRectification` is true and matches. */
   isThreeSession?: boolean;
-  /** True when the op is dispatched inside the rectification fix cycle (rectification.ts). */
+  /** True when the op is dispatched inside the rectification fix cycle. */
   inRectification?: boolean;
 }
 
@@ -101,8 +105,8 @@ export interface ExecutionContextStageOptions {
 /**
  * Resolve the context-engine stage key for the single-session execution
  * seam (promptStage, src/pipeline/stages/prompt.ts) — the execution-side
- * sibling of {@link contextStageForOp}, which covers the story-phase
- * (run-phase.ts) dispatch seam instead.
+ * sibling of {@link contextStageForOp}, which used to cover the story-phase
+ * dispatch seam before the story loop was cut.
  *
  * `test-after` and any unrecognized `testStrategy` value fall back to
  * `single-session` — there is no dedicated stage-config entry for

@@ -354,7 +354,8 @@ describe("runReview — build check (BUILD-001)", () => {
   });
 });
 
-// #1859: semantic/adversarial are op-path checks (story-orchestrator/run-phase → callOp).
+// #1859: semantic/adversarial are op-path checks (story-phase dispatch → callOp; that
+// seam went with the story loop, B2b-1).
 // runReview (reconciliation) must not dispatch them — they fall through resolveCommand
 // as command-less checks and are skipped.
 describe("runReview — LLM check names are skipped, not dispatched (#1859)", () => {

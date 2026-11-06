@@ -151,10 +151,12 @@ export const DEFAULT_STAGE_CONFIG: StageContextConfig = {
  * Based on the stage context map in SPEC-context-engine-v2.md.
  */
 // A key in this map is only "live" — actually reaches an assembled bundle —
-// if one of the three assembly sites selects it:
-//   - src/pipeline/stages/context.ts:171 (always "context")
+// if one of the two remaining assembly sites selects it:
+//   - src/pipeline/stages/context.ts (always "context")
 //   - src/pipeline/stages/prompt.ts (via executionContextStage)
-//   - src/execution/story-orchestrator/run-phase.ts (via contextStageForOp)
+// A third site, the story orchestrator's `run-phase` seam (via
+// `contextStageForOp`), went with the story loop (B2b-1), so a key only that
+// seam selected is inert until B2b-2 removes the mapping.
 // See test/unit/context/engine/stage-reachability.test.ts, which enforces
 // this for every key that declares pullToolNames. See nax#1743.
 export const STAGE_CONTEXT_MAP = {

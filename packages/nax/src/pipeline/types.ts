@@ -252,11 +252,12 @@ export interface PipelineContext extends DispatchContext {
    */
   rectifyAttempt?: number;
   /**
-   * Prior semantic review iterations carried into this pipeline pass — populated by
-   * escalation/rectification orchestrators on re-run so the reviewer LLM can see
-   * what the prior reviewer flagged and classify each finding as
-   * addressed / still-blocking / never-an-issue. Forwarded into the review op input
-   * by plan-inputs.ts.
+   * Prior semantic review iterations carried into this pipeline pass — populated
+   * by the escalation and rectification orchestrators on re-run (both deleted
+   * with the story loop, B2b-1) so the reviewer LLM could see what the prior
+   * reviewer flagged and classify each finding as
+   * addressed / still-blocking / never-an-issue. Nothing populates or forwards
+   * it any more.
    */
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;

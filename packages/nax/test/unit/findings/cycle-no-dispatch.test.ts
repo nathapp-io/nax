@@ -18,8 +18,8 @@
  *       completed UNRESOLVED dispatch keeps taking "agent-gave-up".
  *
  * The rectification-phase counterpart of these tests — the same condition driven
- * through `runRectification` and the no-progress budget — lives in
- * test/unit/execution/story-orchestrator-rectification-no-dispatch.test.ts.
+ * through `runRectification` and the no-progress budget — lived in a
+ * story-orchestrator test that was deleted with the orchestrator (B2b-1).
  */
 
 import { describe, expect, test } from "bun:test";
