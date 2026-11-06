@@ -3,7 +3,7 @@
   "feature": "pipeline-fork-cut",
   "branchName": "feat/pipeline-fork-cut",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T03:39:30.339Z",
+  "updatedAt": "2026-11-06T03:55:01.780Z",
   "userStories": [
     {
       "id": "US-001",
@@ -349,14 +349,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two production CLI files change through standard validation and argument-plumbing patterns; precedence and process-boundary behavior are explicit and no execution abstraction is added."
+        "reasoning": "Two production CLI files change through standard validation and argument-plumbing patterns; precedence and process-boundary behavior are explicit and no execution abstraction is added.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/bin/run-action.ts",
@@ -383,7 +386,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "259267ac2df883d3ac3dae901f42d4ae9e8d5f26"
     },
     {
       "id": "US-005",
