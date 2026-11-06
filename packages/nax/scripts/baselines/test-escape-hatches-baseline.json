@@ -1,8 +1,8 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 21,
-    "looseCast": 1401
+    "ratchetAllow": 20,
+    "looseCast": 1377
   },
   "updatedAt": "2026-11-06T14:20:42.778Z",
   "byFile": {
@@ -51,12 +51,6 @@
     "test/integration/review/review.test.ts": {
       "looseCast": 7
     },
-    "test/integration/review/fix-review/nbf-keep-gate.test.ts": {
-      "ratchetAllow": 1
-    },
-    "test/integration/review/fix-review/blocking-fix-review-feedback.test.ts": {
-      "looseCast": 1
-    },
     "test/integration/execution/runner-parallel-metrics-rectification-events.test.ts": {
       "looseCast": 8
     },
@@ -66,14 +60,8 @@
     "test/integration/execution/feature-status-write.test.ts": {
       "looseCast": 2
     },
-    "test/integration/execution/fullsuite-rectify-declaration.test.ts": {
-      "looseCast": 9
-    },
     "test/integration/execution/status-writer.test.ts": {
       "looseCast": 14
-    },
-    "test/integration/execution/nbf-rectify-declaration.test.ts": {
-      "looseCast": 10
     },
     "test/integration/execution/status-writer-postrun.test.ts": {
       "looseCast": 6
@@ -388,9 +376,6 @@
     "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": {
       "looseCast": 19
     },
-    "test/unit/execution/plan-inputs-review-wiring.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/execution/rectification-budget-invariants.test.ts": {
       "looseCast": 2
     },
@@ -449,9 +434,6 @@
       "looseCast": 1
     },
     "test/unit/execution/lifecycle/run-setup.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/execution/checkpoint/writer.test.ts": {
       "looseCast": 3
     },
     "test/unit/findings/_cycle-fixtures.ts": {

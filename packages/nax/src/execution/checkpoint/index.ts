@@ -1,17 +1,19 @@
 /**
- * Checkpoint Store — durable per-green-phase checkpoint log.
+ * Checkpoint module — workflow resume seam plus the checkpoint record types.
  *
- * Public surface for the feature-level `checkpoint.jsonl` log used to seed
- * orchestrator skip-state after a crash or abort. See:
- *   - `types.ts`  — CheckpointRecord, StoryCheckpoint, TreeState
- *   - `writer.ts` — CheckpointWriter.recordGreen (durable append)
- *   - `reader.ts` — loadCheckpoints (longest-valid-prefix + per-story latest-runId filter)
+ * The durable `checkpoint.jsonl` log's reader and writer are gone: nothing
+ * writes a checkpoint any more, and a `checkpoint.jsonl` left on disk by an
+ * older run stays where it is with nothing reading it. What remains here is
+ * the resume-mode seam the workflow stage reads (`_workflowResumeDeps`), the
+ * record types those files used, and the resume-plan / resume-hydrate helpers
+ * the orchestrator still calls:
+ *   - `types.ts` — CheckpointRecord, StoryCheckpoint, TreeState
+ *   - `resume-plan.ts` — buildResumePlan
  *   - `resume-hydrate.ts` — captureTreeState / hydrateFromResumePlan /
  *     buildCheckpointLogData (US-003 resume-integration helpers)
  */
 
-export { loadCheckpoints } from "./reader";
-export { _workflowResumeDeps, applyRecordGreenDeps, applyResumeModeDeps, type ResumeMode } from "./resume-cli";
+export { _workflowResumeDeps, type ResumeMode } from "./resume-cli";
 export type { CaptureTreeStateDeps, CaptureTreeStateOptions } from "./resume-hydrate";
 export {
   buildCheckpointLogData,
@@ -27,5 +29,3 @@ export type {
   StoryCheckpoint,
   TreeState,
 } from "./types";
-export type { CheckpointWriterOptions } from "./writer";
-export { CheckpointWriter, createCheckpointWriter } from "./writer";

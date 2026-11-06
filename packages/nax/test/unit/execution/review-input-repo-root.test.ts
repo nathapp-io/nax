@@ -8,14 +8,14 @@ import { _storyOrchestratorDeps, refreshReviewInputForDispatch } from "@/executi
  * package dir — a missing `repoRoot` makes every lookup double-count the package
  * prefix, return "unreadable", and fail open.
  *
- * `plan-inputs-review-wiring.test.ts` guards `repoRoot` being SET on the inputs;
- * those tests fail on the pre-fix code. These guard the value surviving
- * `refreshReviewInputForDispatch`'s **catch path**, which rebuilds the input by
- * destructuring `_refresh` off and returning the rest. That branch is otherwise
- * unexercised for field preservation, and it is the one a future refactor is
- * most likely to rewrite field-by-field — which would drop `repoRoot` and
- * silently restore the fail-open on exactly the runs where the refresh already
- * failed.
+ * The orchestrator's plan-input assembly (now deleted) guarded `repoRoot` being
+ * SET on the inputs; those tests fail on the pre-fix code. These guard the
+ * value surviving `refreshReviewInputForDispatch`'s **catch path**, which
+ * rebuilds the input by destructuring `_refresh` off and returning the rest.
+ * That branch is otherwise unexercised for field preservation, and it is the
+ * one a future refactor is most likely to rewrite field-by-field — which would
+ * drop `repoRoot` and silently restore the fail-open on exactly the runs where
+ * the refresh already failed.
  */
 describe("review input repoRoot — refresh failure path (#1668)", () => {
   const STALE = {

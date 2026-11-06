@@ -63,11 +63,6 @@ const REPAIRED_GROUPS: readonly ConfinedGroup[] = [
     paths: ["./test/integration/execution/runner-fixes.test.ts"],
   },
   {
-    ac: "AC-4",
-    what: "the checkpoint reader suite (class A: its temp dir)",
-    paths: ["./test/integration/execution/checkpoint/reader.test.ts"],
-  },
-  {
     ac: "AC-5",
     what: "the progress suite (class A: its temp dirs)",
     paths: ["./test/integration/execution/progress.test.ts"],
@@ -86,15 +81,6 @@ const REPAIRED_GROUPS: readonly ConfinedGroup[] = [
     ac: "AC-8",
     what: "the loader-security suite (class A: its plugin fixture roots)",
     paths: ["./test/integration/config/security-loader.test.ts"],
-  },
-  {
-    ac: "AC-9",
-    what: "the story-orchestrator suites (class A: their greenfield temp dirs)",
-    paths: [
-      "./test/integration/tdd/story-orchestrator-core.test.ts",
-      "./test/integration/tdd/story-orchestrator-failureCategory.test.ts",
-      "./test/integration/tdd/story-orchestrator-fallback.test.ts",
-    ],
   },
   {
     ac: "AC-10",

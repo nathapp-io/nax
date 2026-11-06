@@ -94,13 +94,13 @@ export async function hydrateResumeState(plan: PlanParams): Promise<PhaseTrackin
   // skipped in the canonical loop never reaches the `recordGreen` call at its
   // old position (the skip guard's `continue` bypasses it), so it would keep
   // only the checkpoint record from the run that originally recorded it.
-  // `loadCheckpoints` now filters per-story (see `reader.ts`), so an
-  // untouched story's older-run records already survive repeated resumes on
-  // their own — this re-recording is a cheap consolidation, not a
-  // correctness requirement: it advances this story's own checkpoint history
-  // to the current `runId` under the tree state already confirmed to match by
-  // `buildResumePlan`, so every still-green phase for THIS story shares one
-  // consistent runId rather than accumulating one stale record per resume.
+  // `loadCheckpoints` filters per-story, so an untouched story's older-run
+  // records already survive repeated resumes on their own — this re-recording
+  // is a cheap consolidation, not a correctness requirement: it advances this
+  // story's own checkpoint history to the current `runId` under the tree state
+  // already confirmed to match by `buildResumePlan`, so every still-green phase
+  // for THIS story shares one consistent runId rather than accumulating one
+  // stale record per resume.
   if (ctx.storyId) {
     for (const skippedPhase of resumePlan.skipPhases) {
       await _storyOrchestratorDeps.recordGreen(ctx.storyId, skippedPhase, tree);

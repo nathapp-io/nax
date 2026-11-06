@@ -62,9 +62,8 @@ export const _storyOrchestratorDeps = {
    * override these to capture dispatch without hitting disk or git.
    */
   recordGreen: async (_storyId: string, _phase: string, _tree: TreeState): Promise<void> => {
-    // Stub — requires filePath + runId from the CLI layer to instantiate
-    // CheckpointWriter. The CLI/runner layer overrides this with a real
-    // writer when a featureDir is available.
+    // Stub — nothing durably records green phases any more (the checkpoint
+    // writer is gone), so this stays a no-op.
   },
   buildResumePlan: async (checkpoint: StoryCheckpoint | null, current: TreeState): Promise<ResumePlan> =>
     realBuildResumePlan(checkpoint, current),

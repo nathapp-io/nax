@@ -1,29 +1,25 @@
 /**
  * `nax resume` command — orchestrator and commander wiring.
  *
- * Thin layer that:
- *   1. Probes the feature's `checkpoint.jsonl` (injected via deps)
- *   2. Either prints the "no checkpoint" line (AC-2) or a summary line
- *      naming the feature and the story count (AC-3)
- *   3. Always falls through to the underlying run invocation, inheriting its
- *      exit code and the orchestrator's seeded skip state.
+ * A thin layer over the run invocation: it hands the feature (and its resolved
+ * feature directory) to `run()` with `resumeMode: "auto"` and inherits the
+ * run's exit code. It no longer probes or summarises `checkpoint.jsonl` — that
+ * store's reader and writer are gone, so there is nothing to print.
  *
  * All I/O flows through `ResumeCommandDeps` so the orchestrator is hermetic.
  */
 
-import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Command } from "commander";
 import { globalConfigDir } from "../config/paths";
 import { NaxError } from "../errors";
-import { buildResumePlan, loadCheckpoints, type StoryCheckpoint } from "../execution/checkpoint";
 import { buildRunId } from "../execution/run-id";
 import { projectOutputDir } from "../runtime";
 import { validateFeatureName } from "../utils/feature-name";
 
 /** Options accepted by the `nax resume` command. */
 export interface ResumeCommandOptions {
-  /** Feature directory (where `checkpoint.jsonl` lives). */
+  /** Feature directory the run is bound to. */
   featureDir?: string;
 }
 
@@ -35,92 +31,34 @@ export type ResumeRunInvocation = (feature: string, options: ResumeCommandOption
 
 /** Swappable dependencies — keeps the orchestrator hermetic for tests. */
 export interface ResumeCommandDeps {
-  checkpointExists: (featureDir: string) => Promise<boolean>;
-  loadCheckpoints: (featureDir: string) => Promise<Map<string, StoryCheckpoint>>;
   runInvocation: ResumeRunInvocation;
-  stdout: (text: string) => void;
-  stderr: (text: string) => void;
-}
-
-async function defaultCheckpointExists(featureDir: string): Promise<boolean> {
-  if (!featureDir || !existsSync(featureDir)) return false;
-  return existsSync(join(featureDir, "checkpoint.jsonl"));
-}
-
-async function defaultLoadCheckpoints(featureDir: string): Promise<Map<string, StoryCheckpoint>> {
-  return loadCheckpoints(featureDir);
 }
 
 /**
- * Default deps — wired against the real filesystem. Tests inject their own.
+ * Default deps.
  *
  * `runInvocation` is intentionally left as a throwing stub in production: the
  * CLI action supplies a closure that calls `run()` directly. Tests inject a
  * mock invocation.
  */
 export const _resumeCmdDeps: ResumeCommandDeps = {
-  checkpointExists: defaultCheckpointExists,
-  loadCheckpoints: defaultLoadCheckpoints,
   runInvocation: async () => {
     throw new NaxError("resume: runInvocation must be supplied by the CLI layer", "RESUME_INVOCATION_MISSING", {
       stage: "resume",
     });
   },
-  stdout: (text: string) => process.stdout.write(text),
-  stderr: (text: string) => process.stderr.write(text),
 };
 
 /**
- * Aggregate the phases that will be elided across every loaded checkpoint.
- * Compares each `StoryCheckpoint` against its own recorded tree state (not a
- * freshly captured one) — the orchestrator's real git-tree guard runs later,
- * per story, against the tree at that point in the run. This aggregate is an
- * upper bound: the phases available to skip if the tree has not moved since
- * the checkpoint was written, keeping the resume command's deps hermetic
- * (no real git calls) for the informational summary line.
- */
-function aggregateSkipPhases(checkpoints: Map<string, StoryCheckpoint>): string[] {
-  const skip = new Set<string>();
-  for (const cp of checkpoints.values()) {
-    const plan = buildResumePlan(cp, cp.tree);
-    for (const phase of plan.skipPhases) skip.add(phase);
-  }
-  return [...skip];
-}
-
-/**
- * Build a one-line resume summary that names the feature, the count of
- * stories with a checkpoint, and the phases being skipped (AC-3).
- */
-export function renderResumeSummary(feature: string, storyCount: number, skipPhases: readonly string[]): string {
-  const noun = storyCount === 1 ? "story" : "stories";
-  const phasesText = skipPhases.length > 0 ? skipPhases.join(", ") : "none";
-  return `Resume: feature="${feature}" — ${storyCount} ${noun} with checkpoint (skipping: ${phasesText})\n`;
-}
-
-/**
- * Orchestrator — prints the appropriate line and then dispatches the
- * underlying run invocation. Returns the run's exit code (0 on success).
- *
- * - Missing checkpoint → "No checkpoint found — running from scratch" + exit 0.
- * - Existing checkpoint → "Resume: feature=… — N stories with checkpoint" + run.
+ * Dispatch the underlying run invocation for `feature` and return its exit
+ * code. `featureDir` is forwarded exactly as given: absent means the key is
+ * omitted entirely, so the run invocation keeps its own default.
  */
 export async function runResume(
   feature: string,
   options: ResumeCommandOptions = {},
   deps: ResumeCommandDeps = _resumeCmdDeps,
 ): Promise<number> {
-  const featureDir = options.featureDir ?? "";
-
-  const hasCheckpoint = await deps.checkpointExists(featureDir);
-
-  if (!hasCheckpoint) {
-    deps.stdout("No checkpoint found — running from scratch\n");
-  } else {
-    const map = await deps.loadCheckpoints(featureDir);
-    deps.stdout(renderResumeSummary(feature, map.size, aggregateSkipPhases(map)));
-  }
-
   return deps.runInvocation(feature, {
     ...(options.featureDir !== undefined ? { featureDir: options.featureDir } : {}),
   });
@@ -137,7 +75,7 @@ export async function runResume(
 export function registerResumeCommand(program: Command): void {
   program
     .command("resume")
-    .description("Resume an interrupted run for a feature (auto-detects checkpoint)")
+    .description("Resume an interrupted run for a feature (auto-resumes the run's workflow record)")
     .requiredOption("-f, --feature <name>", "Feature name")
     .option("-d, --dir <path>", "Working directory", process.cwd())
     .action(async (cmdOpts: { feature: string; dir: string }) => {
@@ -148,7 +86,6 @@ export function registerResumeCommand(program: Command): void {
 
       const { findProjectDir, validateDirectory } = await import("../config");
       const { run } = await import("../execution");
-      const { applyResumeModeDeps } = await import("../execution/checkpoint");
       const { existsSync, mkdirSync } = await import("node:fs");
       const { loadConfig } = await import("../config");
       const { loadPRD } = await import("../prd");
@@ -201,11 +138,6 @@ export function registerResumeCommand(program: Command): void {
           const globalNaxDir = globalConfigDir();
           const hooks = await loadHooksConfig(naxDir, globalNaxDir);
 
-          // Force auto-resume — that's what `nax resume` means. The runner also
-          // applies resumeMode internally, so we could omit this, but doing it
-          // here makes the intent explicit and avoids any chance of a stale dep.
-          applyResumeModeDeps(opts.featureDir ?? "", "auto");
-
           // Mirror `bin/nax.ts`'s `nax run` status-file resolution — an empty
           // path resolves to `process.cwd()` inside `StatusWriter`, so every
           // write fails silently and consumers of status.json (TUI, `nax
@@ -247,6 +179,8 @@ export function registerResumeCommand(program: Command): void {
             formatterMode: "normal",
             headless: true,
             skipPrecheck: false,
+            // Force auto-resume — that's what `nax resume` means, and this is
+            // the only seam the runner still reads it from.
             resumeMode: "auto",
             // Pin the same id so the runner doesn't generate a second one
             // (and so the resumed run's status.json reads back the same id

@@ -1,22 +1,16 @@
 export type { FailureCategory } from "../tdd/types";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
-export { buildPlanForStrategy, requiresInitialRefCapture, resolveStoryPathAnchors } from "./build-plan-for-strategy";
 export {
   _workflowResumeDeps,
-  applyResumeModeDeps,
   buildCheckpointLogData,
   buildResumePlan,
   type CaptureTreeStateDeps,
   type CaptureTreeStateOptions,
   type CheckpointReaderDeps,
   type CheckpointRecord,
-  CheckpointWriter,
   type CheckpointWriterDeps,
-  type CheckpointWriterOptions,
   captureTreeState,
-  createCheckpointWriter,
   hydrateFromResumePlan,
-  loadCheckpoints,
   type ResumeMode,
   type ResumePlan,
   type StoryCheckpoint,
@@ -91,7 +85,6 @@ export {
   type PipelineHandlerContext,
   type PipelineSuccessResult,
 } from "./pipeline-result-handler";
-export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
 export { appendProgress } from "./progress";
 export type { BatchQueueDrainResult } from "./queue-handler";
 export { clearQueueFile, drainQueueAtBatchBoundary, processQueueFile, readQueueFile } from "./queue-handler";

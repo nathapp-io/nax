@@ -26,7 +26,7 @@ import {
   makeStatusWriter,
   makeStory,
 } from "@test/helpers";
-import { _runnerDeps, _runnerReentrancyGuard, _storyOrchestratorDeps, type RunOptions, run } from "@/execution";
+import { _runnerDeps, _runnerReentrancyGuard, type RunOptions, run } from "@/execution";
 import type { RunnerSetupResult } from "@/execution/runner-setup";
 import type { PRD } from "@/prd";
 import { RunStateKeeper } from "@/runstate";
@@ -86,14 +86,10 @@ function makeSetupResult(prd: PRD): RunnerSetupResult & { sealApprovals: () => P
 // Setup / teardown
 // ---------------------------------------------------------------------------
 
-let origLoad: typeof _storyOrchestratorDeps.loadCheckpoints;
-let origRecordGreen: typeof _storyOrchestratorDeps.recordGreen;
 let origGitSpawn: typeof _gitDeps.spawn;
 let origRunnerDeps: typeof _runnerDeps;
 
 beforeEach(() => {
-  origLoad = _storyOrchestratorDeps.loadCheckpoints;
-  origRecordGreen = _storyOrchestratorDeps.recordGreen;
   origGitSpawn = _gitDeps.spawn;
   origRunnerDeps = { ..._runnerDeps };
   // #2497: keep the run-state keeper off the real filesystem.
@@ -103,8 +99,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  _storyOrchestratorDeps.loadCheckpoints = origLoad;
-  _storyOrchestratorDeps.recordGreen = origRecordGreen;
   _gitDeps.spawn = origGitSpawn;
   Object.assign(_runnerDeps, origRunnerDeps);
   _runnerReentrancyGuard.inFlight = false;
