@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { getLogger } from "../logger";
 import { applyConfigCompatShims, type createConfigWarnDedupe } from "./compat-shims";
-import { warnQualityCommandChains } from "./config-guards";
+import { rejectPipelineModeKeys, warnQualityCommandChains } from "./config-guards";
 import { loadProfile, parseProfileList, resolveProfileEnvVars } from "./profile";
 
 interface PackageProfileOptions {
@@ -33,6 +33,7 @@ export async function loadPackageProfileLayers({
       { packageDir },
     );
     const layer = applyConfigCompatShims(resolvedProfileData, logger, warnDedupe);
+    rejectPipelineModeKeys(layer, `per-package profile "${name}" (${packageDir})`);
     warnQualityCommandChains(layer, warnDedupe.warn);
     layers.push(layer);
   }

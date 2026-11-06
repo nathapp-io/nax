@@ -166,11 +166,13 @@ describe("BUG-7 — cost-limit pre-gate before parallel dispatch (source)", () =
 // AC-8 — runner-execution.ts always calls executeUnified (no conditional branch)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("AC-8 — runner-execution.ts always calls executeUnified with parallelCount", () => {
-  test("runner-execution.ts calls executeUnified with parallelCount and no legacy dispatch", async () => {
+describe("AC-8 — runner-execution.ts always calls executeUnified without parallelCount", () => {
+  test("runner-execution.ts calls executeUnified without parallelCount or legacy dispatch", async () => {
     const src = await readSrc("execution/runner-execution.ts");
     expect(src).toContain("executeUnified");
-    expect(src).toContain("parallelCount");
+    // The workflow-only harness omits this property; dispatch tests also check
+    // the actual executor context rather than relying only on source shape.
+    expect(src).not.toContain("parallelCount");
   });
 
   test.each(["executeParallel(", "runParallelExecution"])(

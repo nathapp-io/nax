@@ -58,7 +58,6 @@ beforeEach(async () => {
   options = {
     repoRoot: root,
     naxEntry: ["bun", "/n.ts"],
-    maxIterations: 20,
     interactionPlugin: "cli",
     jobs,
     approve,

@@ -38,7 +38,7 @@ function negativeBranch(name = "feat/f1") {
 
 beforeEach(() => {
   const repoRoot = makeTempDir("feature-state-");
-  options = { repoRoot, outputDir: join(repoRoot, "output"), maxIterations: 2 };
+  options = { repoRoot, outputDir: join(repoRoot, "output") };
   dir = featureDir(repoRoot, "f1");
   _featureStateDeps.git = mock(async () => ({ exitCode: 1, stdout: "", stderr: "" }));
   _featureStateDeps.isProcessAlive = mock(() => true);
@@ -86,18 +86,12 @@ describe("readFeatureState", () => {
     expect(state.branch).toBeNull();
     expect(_featureStateDeps.git).not.toHaveBeenCalled();
   });
-  test("AC-8 warns with pending count as the iteration floor", async () => {
-    await prd(["pending", "pending", "pending"]);
-    expect((await readFeatureState("f1", options)).warnings).toEqual([
-      "prd has 3 stories left but execution.maxIterations is 2; pass -m 3 to nax run (nax#2706)",
-    ]);
-  });
-  test("nax#2706 workflow mode has no iteration floor: no warning when maxIterations is undefined", async () => {
+  test("workflow runs have no iteration floor or cap warning", async () => {
     await prd(["pending", "pending", "pending"]);
     const workflowOptions = { repoRoot: options.repoRoot, outputDir: options.outputDir };
     expect((await readFeatureState("f1", workflowOptions)).warnings).toEqual([]);
   });
-  test("AC-9 does not count passed stories toward the iteration floor", async () => {
+  test("passed stories produce no warnings", async () => {
     await prd([...Array.from({ length: 24 }, () => "passed"), "pending"]);
     expect((await readFeatureState("f1", options)).warnings).toEqual([]);
   });

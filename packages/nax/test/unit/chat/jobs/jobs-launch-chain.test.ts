@@ -58,7 +58,6 @@ beforeEach(async () => {
   options = {
     repoRoot: makeTempDir("jobs-launch-chain-"),
     naxEntry: ["bun", "/n.ts"],
-    maxIterations: 20,
     interactionPlugin: "cli",
     approve,
     now: () => new Date("2026-10-02T00:00:00Z"),
@@ -151,10 +150,10 @@ describe("launchJob chain admission", () => {
     expect((await launch()).content).toContain("asks you do not answer in chat fall to the run's timeout defaults");
   });
   test("AC-7 admission receives built run argv", async () => {
-    await launch("run", { feature: "f1", maxIterations: 40 });
+    await launch("run", { feature: "f1" });
     expect(admit).toHaveBeenCalledWith({
       kind: "run",
-      argv: buildJobArgv({ kind: "run", feature: "f1", profiles: [], maxIterations: 40 }, options),
+      argv: buildJobArgv({ kind: "run", feature: "f1", profiles: [] }, options),
     });
   });
   test("AC-8 bot review admission receives PR", async () => {
@@ -222,20 +221,19 @@ describe("launchJob chain admission", () => {
     expect(chains.isActive).toHaveBeenCalledWith(chainId);
     expect(start).not.toHaveBeenCalled();
   });
-  test("AC-15/16 over-limit auto run stops chain and asks with final note", async () => {
+  test("US-005 AC-8 auto-admitted 25-pending run starts without stopping", async () => {
     await Bun.write(
       join(featureDir(options.repoRoot, "f1"), "prd.json"),
       JSON.stringify(
         makePRD({ userStories: Array.from({ length: 25 }, (_, i) => makeStory({ id: `US-${i}`, status: "pending" })) }),
       ),
     );
-    approve.mockResolvedValue("deny");
-    await launch();
-    const reason = "step 2: 25 stories pending but max iterations is 20 (nax#2706)";
-    expect(chains.stop).toHaveBeenCalledWith(reason);
-    expect(start).not.toHaveBeenCalled();
-    expect(approve).toHaveBeenCalledTimes(1);
-    expect(lastReason()).toBe(`chain ${chainId} stopped: ${reason}`);
+    const result = await launch();
+    expect(result.isError).not.toBe(true);
+    expect(result.content).toContain("stories 25 pending of 25");
+    expect(chains.stop).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(approve).not.toHaveBeenCalled();
   });
   test("AC-17 missing target never admits", async () => {
     expect(await launch("run", { feature: "f9" })).toEqual({

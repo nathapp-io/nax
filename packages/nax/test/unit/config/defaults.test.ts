@@ -264,7 +264,7 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
   });
 
   describe("loadConfig() with no config files", () => {
-    test("loadConfig() with no config files returns config deeply equal to DEFAULT_CONFIG", async () => {
+    test("loadConfig() with no config files returns workflow-normalized defaults", async () => {
       const tempProjectDir = join(tmpdir(), `nax-test-project-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       const tempGlobalDir = join(tmpdir(), `nax-test-global-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       mkdirSync(join(tempProjectDir, ".nax"), { recursive: true });
@@ -275,7 +275,11 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
 
       try {
         const result = await loadConfig(tempProjectDir);
-        expect(result).toEqual(DEFAULT_CONFIG);
+        expect(result).toEqual({
+          ...DEFAULT_CONFIG,
+          acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
+          ...(DEFAULT_CONFIG.advisor ? { advisor: { ...DEFAULT_CONFIG.advisor, enabled: true } } : {}),
+        });
       } finally {
         if (originalGlobalDir === undefined) {
           process.env.NAX_GLOBAL_CONFIG_DIR = undefined;

@@ -13,18 +13,25 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _featuresAcceptanceDeps } from "@/cli/features-acceptance";
 import { resolveFeatureSpec } from "@/cli/features-resolve";
 
+const realLoadConfig = _featuresAcceptanceDeps.loadConfig;
 let tempDir: string;
 let savedEnvProfile: string | undefined;
 
 beforeEach(() => {
+  _featuresAcceptanceDeps.loadConfig = async (...args) => {
+    const config = await realLoadConfig(...args);
+    return { ...config, acceptance: { ...config.acceptance, enabled: true } };
+  };
   tempDir = makeTempDir("nax-resolve-profile-");
   savedEnvProfile = process.env.NAX_PROFILE;
   delete process.env.NAX_PROFILE;
 });
 
 afterEach(() => {
+  _featuresAcceptanceDeps.loadConfig = realLoadConfig;
   if (savedEnvProfile === undefined) delete process.env.NAX_PROFILE;
   else process.env.NAX_PROFILE = savedEnvProfile;
   cleanupTempDir(tempDir);
@@ -32,15 +39,13 @@ afterEach(() => {
 
 /**
  * A nax repo whose config fails schema validation on its own.
- * `mode: "pipeline"` keeps workflow mode from forcing acceptance off once a
- * profile repairs the invalid value.
  */
 function initInvalidRepo(): string {
   const naxDir = join(tempDir, ".nax");
   mkdirSync(join(naxDir, "features"), { recursive: true });
   writeFileSync(
     join(naxDir, "config.json"),
-    JSON.stringify({ name: "test-project", execution: { mode: "pipeline", storyIsolation: "bogus" } }),
+    JSON.stringify({ name: "test-project", execution: { storyIsolation: "bogus" } }),
   );
   return naxDir;
 }

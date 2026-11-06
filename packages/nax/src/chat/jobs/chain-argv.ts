@@ -10,7 +10,7 @@ export type ChainStepInput =
 
 export const CHAIN_STEP_FIELDS: Readonly<Record<ChatJobKind, readonly string[]>> = {
   plan: ["feature", "spec", "profiles", "repo"],
-  run: ["feature", "profiles", "maxIterations", "maxCost", "repo"],
+  run: ["feature", "profiles", "maxCost", "repo"],
   bot_review: ["pr", "profiles", "model", "decisions", "repo"],
   bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
 };

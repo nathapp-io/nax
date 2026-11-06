@@ -33,6 +33,7 @@ function fixture() {
   const order: string[] = [];
   const deps = {
     ..._chatCommandDeps,
+    createWorkflowProvider: mock(_chatCommandDeps.createWorkflowProvider),
     createAcpCatalog: (): import("@/chat").AcpCatalog => ({
       load: async () => {},
       warm: () => {},
@@ -179,7 +180,6 @@ async function workflowFixture(dir: string) {
     makeNaxConfig({
       name: "proj-x",
       models: { native: { balanced: "test/model" } },
-      execution: { mode: "pipeline", maxIterations: 2 },
     }),
   );
   await Bun.write(
@@ -220,12 +220,11 @@ describe("chatCommand workflow composition", () => {
       expect((await workflowState(dir)).prd.total).toBe(3);
     });
   });
-  test("US-006 AC-3 threads loaded execution.maxIterations", async () => {
-    await withTempDir(async (dir) => {
-      expect((await workflowState(dir)).warnings).toEqual(
-        expect.arrayContaining([expect.stringContaining("execution.maxIterations is 2")]),
-      );
-    });
+  test("US-005 AC-9 workflow options omit maxIterations", async () => {
+    const { deps } = fixture();
+    await chatCommand({ dir: "/r" }, deps);
+    expect(deps.createWorkflowProvider).toHaveBeenCalledTimes(1);
+    expect(deps.createWorkflowProvider.mock.calls[0]?.[0]).not.toHaveProperty("maxIterations");
   });
   test("US-006 AC-4 provides nonempty workflow instructions", async () => {
     await withTempDir(async (dir) => {

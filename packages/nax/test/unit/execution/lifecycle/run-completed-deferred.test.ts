@@ -299,7 +299,7 @@ describe("handleRunCompletion — a rejection after the hold-back point (AC-6, A
     }
   });
 
-  test("AC-14: either late phase in pipeline mode emits workflowPassed true", async () => {
+  test("AC-14: either late phase with pipeline literal emits workflowPassed false", async () => {
     for (const phase of LATE_PHASES) {
       const { over, message } = rejectLatePhase(phase);
       const { events, stop } = captureCompleted();
@@ -309,7 +309,7 @@ describe("handleRunCompletion — a rejection after the hold-back point (AC-6, A
         );
 
         expect(events).toHaveLength(1);
-        expect(events[0]?.workflowPassed).toBe(true);
+        expect(events[0]?.workflowPassed).toBe(false);
       } finally {
         stop();
       }

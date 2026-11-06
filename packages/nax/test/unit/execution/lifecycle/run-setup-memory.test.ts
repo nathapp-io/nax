@@ -4,8 +4,8 @@
  * Covers AC-1..AC-7: `setupRun` creates the run memory once, from the run's own
  * config, workdir and logger, before it builds the runtime; hands that memory to
  * `createRuntime` as its `memory` option (and no key at all when there is none to
- * hand over); and creates nothing at all on the two paths that have no memory to
- * speak of — a dry run, and pipeline mode.
+ * hand over); and creates nothing at all on the path that has no memory to
+ * speak of — a dry run.
  *
  * The real `setupRun` runs in every case, with the two seams it reaches for
  * stubbed: `_runSetupDeps.createRunMemory` (so no mirror is composed) and
@@ -169,30 +169,13 @@ describe("setupRun — the run's memory", () => {
     });
   });
 
-  test("AC-5 pipeline mode creates no run memory", async () => {
+  test("fork-cut AC-1: hand-built pipeline config creates memory on a non-dry run", async () => {
     await withTempDir(async (workdir) => {
-      const calls = await driveSetupRun(
-        workdir,
-        makeNaxConfig({ execution: { mode: "pipeline" } }),
-        makeFakeRunMemory().memory,
-      );
-
-      expect(calls.memoryInputs.length).toBe(0);
-      expect(calls.order).toEqual(["createRuntime"]);
-    });
-  });
-
-  test("AC-6 pipeline mode passes no memory key to the runtime", async () => {
-    await withTempDir(async (workdir) => {
-      const calls = await driveSetupRun(
-        workdir,
-        makeNaxConfig({ execution: { mode: "pipeline" } }),
-        makeFakeRunMemory().memory,
-      );
-
-      const runtimeOptions = calls.runtimeOptions[0];
-      assertDefined(runtimeOptions, "the options setupRun passed createRuntime");
-      expect("memory" in runtimeOptions).toBe(false);
+      const memory = makeFakeRunMemory().memory;
+      const calls = await driveSetupRun(workdir, makeNaxConfig({ execution: { mode: "pipeline" } }), memory);
+      expect(calls.memoryInputs).toHaveLength(1);
+      expect(calls.runtimeOptions[0]?.memory).toBe(memory);
+      expect(calls.order).toEqual(["createRunMemory", "createRuntime"]);
     });
   });
 

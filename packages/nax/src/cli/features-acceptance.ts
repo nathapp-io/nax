@@ -7,6 +7,8 @@ import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
 import { loadPRD } from "../prd";
 
+export const _featuresAcceptanceDeps = { loadConfig };
+
 /**
  * One resolved acceptance test target — a single package the feature touches.
  *
@@ -96,7 +98,7 @@ export async function resolveFeatureAcceptance(
 
     // Status order (first match wins): no .nax dir > loadConfig throws >
     // acceptance disabled > no prd.json > loadPRD/grouping throws > ok.
-    const config = await loadConfig(workdir, configOverrides);
+    const config = await _featuresAcceptanceDeps.loadConfig(workdir, configOverrides);
     enabled = config.acceptance?.enabled ?? true;
     if (!enabled) {
       return { status: "disabled", enabled: false, groups: [] };

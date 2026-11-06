@@ -1,15 +1,5 @@
-/**
- * The end-of-run phase (spec §5.3, P4-R16): finish in pipeline mode, the A5 feature
- * workflow in workflow mode. Finish is fail-open (a throw is logged and the run is
- * unaffected); a feature workflow throw marks the run unsuccessful. Split out of
- * runner-completion.ts to keep it under the file-size limit.
- *
- * Workflow mode returns an `EndPhaseOutcome` — the verdict, the PR url and the reasons
- * behind it — rather than a bare boolean, so a caller can report *why* the run did not
- * pass (US-001). Pipeline mode has no verdict and still returns `undefined`.
- */
+/** The end-of-run feature workflow and its verdict. Retained finish helpers are removed in wave B2. */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { isWorkflowMode } from "@/config";
 import { NaxError } from "@/errors";
 import type { FinishPhaseContext, FinishResult } from "@/finish";
 import { getSafeLogger } from "@/logger";
@@ -27,8 +17,7 @@ export interface EndPhaseDeps {
 }
 
 /**
- * How the end phase closed the run. Workflow mode only — pipeline mode has no
- * verdict to report, so `runEndPhase` returns `undefined` there.
+ * How the end phase closed the run.
  *
  * `reasons` is always set once the end phase is closed (`[]` on a pass), so a
  * consumer can report "passed, for no stated reason" without guessing. `url` is
@@ -101,7 +90,8 @@ export const _endPhaseDeps = { resolveBranch };
 /** The one reason every "the workflow never ran, or was cut short" arm reports (US-001). */
 const ABORTED_REASON = "run aborted";
 
-async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, branch: string): Promise<void> {
+/** Retained for wave B2; deliberately not called by the workflow harness. */
+export async function runFinish(options: RunnerCompletionOptions, deps: EndPhaseDeps, branch: string): Promise<void> {
   try {
     await deps.runFinishPhase({
       runtime: options.runtime,
@@ -181,15 +171,10 @@ async function runWorkflowEnd(
 }
 
 /**
- * undefined in pipeline mode; workflow mode: the feature workflow's verdict — whether it passed,
+ * The feature workflow's verdict — whether it passed,
  * the PR url it produced and why it did not (P4-R13, US-001).
  */
-export async function runEndPhase(
-  options: RunnerCompletionOptions,
-  deps: EndPhaseDeps,
-): Promise<EndPhaseOutcome | undefined> {
+export async function runEndPhase(options: RunnerCompletionOptions, deps: EndPhaseDeps): Promise<EndPhaseOutcome> {
   const branch = await _endPhaseDeps.resolveBranch(options.workdir);
-  if (isWorkflowMode(options.config)) return runWorkflowEnd(options, deps, branch);
-  await runFinish(options, deps, branch);
-  return undefined;
+  return runWorkflowEnd(options, deps, branch);
 }

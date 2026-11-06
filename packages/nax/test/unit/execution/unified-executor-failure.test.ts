@@ -166,7 +166,12 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
       stoppedAtStage: "verify",
     };
 
-    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    let selected = false;
+    deps.selectIndependentBatch = mock(() => {
+      if (selected) return [];
+      selected = true;
+      return [story1, story2];
+    });
     deps.runParallelBatch = mock(async () => ({
       // story1 completed, story2 failed
       completed: [story1],
@@ -219,7 +224,12 @@ describe("exec AC-23 (behavioral): executeUnified calls handlePipelineFailure fo
       stoppedAtStage: "compile",
     };
 
-    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    let selected = false;
+    deps.selectIndependentBatch = mock(() => {
+      if (selected) return [];
+      selected = true;
+      return [story1, story2];
+    });
     deps.runParallelBatch = mock(async () => ({
       completed: [story1],
       failed: [{ story: story2, pipelineResult: failedPipelineResult }],

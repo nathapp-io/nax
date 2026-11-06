@@ -699,29 +699,13 @@ describe("runCompletionPhase - monorepo: acceptanceTestPaths passed to runAccept
 // ---------------------------------------------------------------------------
 
 describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
-  // The deferred-regression gate withholds its per-story gate snapshots when
-  // isSequential === false, because `completedAt` order is not causal across
-  // worktrees. That branch was dead: runCompletionPhase never forwarded the
-  // runner's `parallel` option, so isSequential was always undefined and every
-  // run — including parallel ones — attributed blame from those snapshots.
-  // #1527 had already deleted the git-recency fallback, leaving non-causal
-  // snapshots as the only attribution signal in parallel mode.
-  //
-  // US-002: `undefined`, `0` and `1` all execute one story at a time, so all
-  // three are sequential. Only a concurrency above 1 fans stories across
-  // worktrees. `0` can still arrive from a programmatic RunnerOptions caller
-  // after the CLI began rejecting it.
-  //
-  // NaN is unreachable from the CLI and is not pinned by an AC, but the gate
-  // must agree with the executor for it: `(parallelCount ?? 0) > 0` is false for
-  // NaN, so the run executes sequentially and the gate must not withhold its
-  // snapshots by classifying NaN as parallel.
+  // Completion is sequential regardless of a hand-built parallel option.
   test.each([
     [undefined, true],
     [0, true],
     [1, true],
     [Number.NaN, true],
-    [4, false],
+    [4, true],
   ] as const)("parallel=%s -> isSequential=%s", async (parallel, expectedIsSequential) => {
     let captured: { isSequential?: boolean } | undefined;
     _runnerCompletionDeps.handleRunCompletion = mock(async (opts) => {

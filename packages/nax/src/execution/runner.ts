@@ -37,7 +37,6 @@ import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
 import { _storyOrchestratorDeps } from "./story-orchestrator";
-import { effectiveUseBatch } from "./workflow-parallel";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -94,13 +93,9 @@ export interface RunOptions {
   featureDir?: string;
   /** Dry run */
   dryRun: boolean;
-  /** Enable story batching (default: true) */
+  /** Retained for compatibility; ignored. Every run is unbatched. */
   useBatch?: boolean;
-  /**
-   * Max parallel sessions: `undefined`, `0` and `1` all run one story at a
-   * time (the CLI rejects `0`; there is no CPU-count auto-detection), `N > 1`
-   * caps concurrency at N.
-   */
+  /** Retained for compatibility; ignored. Every run is sequential. */
   parallel?: number;
   /** Optional event emitter for TUI integration */
   eventEmitter?: PipelineEventEmitter;
@@ -168,10 +163,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
     feature,
     featureDir,
     dryRun,
-    useBatch: requestedUseBatch = true,
     eventEmitter,
     statusFile,
-    parallel,
     logFilePath,
     formatterMode = "normal",
     headless = false,
@@ -181,10 +174,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
     runId: callerRunId,
   } = options;
 
-  // A5: workflow mode never batches (one story per dispatch); `nax resume` also enters through here.
-  const useBatch = effectiveUseBatch(config, requestedUseBatch, (m) =>
-    getSafeLogger()?.warn("execution", m, { storyId: "_run" }),
-  );
+  // Every run dispatches one story at a time, including callers such as `nax resume`.
+  const useBatch = false;
 
   // Reentrant/concurrent `run()` would race on the module-global
   // `_storyOrchestratorDeps` mutation below — see `_runnerReentrancyGuard`'s
@@ -336,7 +327,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
         startTime,
         formatterMode,
         headless,
-        parallel,
         agentGetFn,
         abortSignal: shutdownController.signal,
         interactionChain,
@@ -362,7 +352,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
       hooks,
       feature,
       workdir,
-      parallel,
       prdPath,
       statusFile,
       logFilePath,

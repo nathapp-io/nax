@@ -15,7 +15,7 @@ import {
   type AgentsRunComposeInput,
   buildAgentsRunTaskInput,
 } from "@/cli/agents-run-compose";
-import { getProjectKey, type NaxConfig } from "@/config";
+import { getProjectKey } from "@/config";
 import { NaxError } from "@/errors";
 import type { ResourceCatalog } from "@/resources";
 import { projectOutputDir } from "@/runtime";
@@ -85,10 +85,6 @@ function first<T>(values: readonly T[], what: string): T {
   const [value] = values;
   if (value === undefined) throw new Error(`expected ${what} to be called once; it was never called`);
   return value;
-}
-
-function pipelineConfig(maxIterations: number): NaxConfig {
-  return makeNaxConfig({ execution: { mode: "pipeline", maxIterations } });
 }
 
 describe("buildAgentsRunTaskInput", () => {
@@ -170,21 +166,21 @@ describe("buildAgentsRunTaskInput", () => {
       expect(await load()).toBe(catalog);
     });
 
-    test("AC-9: pipeline mode passes the project output dir and execution.maxIterations", () => {
+    test("US-005 AC-10 passes project output dir without maxIterations", () => {
       const calls = stubDeps();
-      const config = pipelineConfig(7);
+      const config = makeNaxConfig({ outputDir: "/custom-output" });
       buildAgentsRunTaskInput(input({ config }));
       expect(first(calls.workflow, "createWorkflowProvider")).toEqual({
         repoRoot: REPO_ROOT,
         outputDir: projectOutputDir(getProjectKey(config, REPO_ROOT), config.outputDir),
-        maxIterations: 7,
       });
+      expect(first(calls.workflow, "createWorkflowProvider")).not.toHaveProperty("maxIterations");
     });
 
-    test("AC-10: workflow mode leaves maxIterations undefined", () => {
+    test("workflow provider omits the removed key", () => {
       const calls = stubDeps();
       buildAgentsRunTaskInput(input({ config: makeNaxConfig({ execution: { mode: "workflow" } }) }));
-      expect(first(calls.workflow, "createWorkflowProvider").maxIterations).toBeUndefined();
+      expect(first(calls.workflow, "createWorkflowProvider")).not.toHaveProperty("maxIterations");
     });
   });
 

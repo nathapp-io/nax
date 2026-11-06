@@ -19,7 +19,7 @@
  * functions receive it BY REFERENCE and read `deps.X` at call time.
  */
 
-import { isWorkflowMode, type NaxConfig } from "@/config";
+import type { NaxConfig } from "@/config";
 import { purgeStaleManifests } from "@/context/engine";
 import { fireHook } from "@/hooks";
 import type { HooksConfig } from "@/hooks/types";
@@ -304,14 +304,13 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     if (options.deferRunCompleteLog) logComplete();
     if (options.deferRunCompletedEvent) {
       // Same for the held-back event. The end phase never ran, so there is no verdict to report:
-      // emit the figures this phase holds, and report a failure in workflow mode — the workflow
-      // that was promised did not pass — while pipeline mode has no workflow to fail (US-001).
+      // emit the figures this phase holds and report that the promised workflow did not pass.
       // Drained before the error propagates so async subscribers are not cut short.
       emitRunCompleted({
         durationMs,
         storiesDurationMs: durationMs,
         totalCost: costs.reportedTotal,
-        workflowPassed: !isWorkflowMode(config),
+        workflowPassed: false,
       });
       await pipelineEventBus.drain();
     }

@@ -13,7 +13,7 @@ const originalDeps = { ..._featureStateDeps };
 
 beforeEach(() => {
   const repoRoot = makeTempDir("workflow-provider-");
-  options = { repoRoot, outputDir: join(repoRoot, "output"), maxIterations: 2 };
+  options = { repoRoot, outputDir: join(repoRoot, "output") };
 });
 afterEach(() => {
   Object.assign(_featureStateDeps, originalDeps);

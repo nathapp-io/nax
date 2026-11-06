@@ -34,7 +34,7 @@ beforeEach(() => {
     pluginGateFailed: false,
     finalCounts: { total: 1, passed: 1, failed: 0, skipped: 0, pending: 0 },
   });
-  _runnerCompletionDeps.runFinishPhase = async () => null;
+  _runnerCompletionDeps.runWorkflowFeature = async () => null;
   _workflowEndReportDeps.readSummary = async () => null;
   _workflowEndReportDeps.saveDuration = async () => true;
   _gitDeps.spawn = makeSpawn().spawn;
@@ -80,27 +80,30 @@ function options(): RunnerCompletionOptions {
     abortSignal: runtime.signal,
   };
 }
-test.each(["normal", "json"] as const)("AC-20/21 completion reports notices after finish in %s mode", async (mode) => {
-  const opts = options();
-  opts.formatterMode = mode;
-  const read = mock(() => [] as (typeof NOTICE)[]);
-  opts.agentManager.authRelogins = read;
-  _runnerCompletionDeps.runFinishPhase = async () => {
-    read.mockImplementation(() => [NOTICE]);
-    return null;
-  };
-  const output = spyOn(console, "log").mockImplementation(() => {});
-  await runCompletionPhase(opts);
-  expect(read).toHaveBeenCalledTimes(1);
-  const warnings = logs.filter(
-    (entry) => entry.level === "warn" && entry.stage === "execution" && entry.message === MESSAGE,
-  );
-  expect(warnings).toHaveLength(1);
-  expect(warnings[0]?.data).toEqual({ storyId: "_run", providerId: "openai-codex" });
-  if (mode === "normal")
-    expect(output.mock.calls.flat().join("\n")).toMatch(/Re-login needed:[\s\S]*Login for openai-codex/);
-  else expect(output.mock.calls.flat().join("\n")).not.toContain("Re-login needed:");
-});
+test.each(["normal", "json"] as const)(
+  "AC-20/21 completion reports notices after workflow in %s mode",
+  async (mode) => {
+    const opts = options();
+    opts.formatterMode = mode;
+    const read = mock(() => [] as (typeof NOTICE)[]);
+    opts.agentManager.authRelogins = read;
+    _runnerCompletionDeps.runWorkflowFeature = async () => {
+      read.mockImplementation(() => [NOTICE]);
+      return null;
+    };
+    const output = spyOn(console, "log").mockImplementation(() => {});
+    await runCompletionPhase(opts);
+    expect(read).toHaveBeenCalledTimes(1);
+    const warnings = logs.filter(
+      (entry) => entry.level === "warn" && entry.stage === "execution" && entry.message === MESSAGE,
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.data).toEqual({ storyId: "_run", providerId: "openai-codex" });
+    if (mode === "normal")
+      expect(output.mock.calls.flat().join("\n")).toMatch(/Re-login needed:[\s\S]*Login for openai-codex/);
+    else expect(output.mock.calls.flat().join("\n")).not.toContain("Re-login needed:");
+  },
+);
 test("AC-22 empty notices omit footer block", async () => {
   const opts = options();
   opts.agentManager.authRelogins = () => [];

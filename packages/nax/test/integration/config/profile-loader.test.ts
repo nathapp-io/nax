@@ -12,7 +12,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertCaughtInstanceOf, assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
-import { loadConfig } from "@/config/loader";
+import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
+import { NaxError } from "@/errors";
+import { addSink, initLogger, resetLogger } from "@/logger";
 
 /**
  * Write a JSON file, creating parent directories as needed.
@@ -61,6 +63,160 @@ describe("loadConfig — profile activation (US-002)", () => {
     } else {
       process.env.NAX_PROFILE = origNaxProfile;
     }
+  });
+
+  test.each([
+    ["AC-5", { mode: "pipeline" }],
+    ["AC-6", { maxIterations: 40 }],
+  ])("%s rejects project pipeline keys", async (_ac, execution) => {
+    writeJson(join(projectDir, ".nax", "config.json"), { execution });
+    await expect(loadConfig(projectDir)).rejects.toMatchObject({
+      code: "CONFIG_PIPELINE_MODE_REMOVED",
+      context: { source: "project config" },
+    });
+  });
+
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: exercise literal config environment references
+  test.each(["$FORK_REVIEW_MODE", "${FORK_REVIEW_MODE}"])(
+    "rejects environment-expanded pipeline mode (%s) in every file layer",
+    async (mode) => {
+      const original = process.env.FORK_REVIEW_MODE;
+      process.env.FORK_REVIEW_MODE = "pipeline";
+      const rootConfigPath = join(projectDir, ".nax", "config.json");
+      const assertRemoved = async (load: Promise<unknown>, source: string) => {
+        await expect(load).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source, keys: ["execution.mode"] },
+        });
+      };
+      try {
+        writeJson(join(globalDir, "config.json"), { execution: { mode } });
+        // A later workflow override must not hide an invalid earlier layer.
+        writeJson(rootConfigPath, { execution: { mode: "workflow" } });
+        await assertRemoved(loadConfig(projectDir), "global config");
+
+        writeJson(join(globalDir, "config.json"), {});
+        writeJson(rootConfigPath, { execution: { mode } });
+        await assertRemoved(loadConfig(projectDir), "project config");
+
+        writeJson(rootConfigPath, {});
+        writeJson(join(projectDir, ".nax", "mono", "apps/api", "config.json"), { execution: { mode } });
+        _clearRootConfigCache();
+        await assertRemoved(loadConfigForWorkdir(rootConfigPath, "apps/api"), 'per-package config "apps/api"');
+      } finally {
+        if (original === undefined) delete process.env.FORK_REVIEW_MODE;
+        else process.env.FORK_REVIEW_MODE = original;
+        _clearRootConfigCache();
+      }
+    },
+  );
+
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: exercise literal config environment references
+  test.each(["$FORK_REVIEW_MODE", "${FORK_REVIEW_MODE}"])(
+    "rejects pipeline mode (%s) despite an unrelated unresolved variable and later overrides",
+    async (mode) => {
+      const originalMode = process.env.FORK_REVIEW_MODE;
+      const originalUnset = process.env.FORK_REVIEW_UNSET;
+      process.env.FORK_REVIEW_MODE = "pipeline";
+      delete process.env.FORK_REVIEW_UNSET;
+      const rootConfigPath = join(projectDir, ".nax", "config.json");
+      const invalid = { quality: { commands: { test: "$FORK_REVIEW_UNSET" } }, execution: { mode } };
+      const override = { quality: { commands: { test: "bun test" } }, execution: { mode: "workflow" } };
+      try {
+        writeJson(join(globalDir, "config.json"), invalid);
+        writeJson(rootConfigPath, override);
+        await expect(loadConfig(projectDir)).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source: "global config", keys: ["execution.mode"] },
+        });
+        writeJson(join(globalDir, "config.json"), {});
+        writeJson(rootConfigPath, invalid);
+        await expect(loadConfig(projectDir, override)).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source: "project config", keys: ["execution.mode"] },
+        });
+        writeJson(rootConfigPath, {});
+        writeJson(join(projectDir, ".nax", "mono", "apps/api", "config.json"), invalid);
+        _clearRootConfigCache();
+        await expect(loadConfigForWorkdir(rootConfigPath, "apps/api")).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source: 'per-package config "apps/api"', keys: ["execution.mode"] },
+        });
+      } finally {
+        if (originalMode === undefined) delete process.env.FORK_REVIEW_MODE;
+        else process.env.FORK_REVIEW_MODE = originalMode;
+        if (originalUnset === undefined) delete process.env.FORK_REVIEW_UNSET;
+        else process.env.FORK_REVIEW_UNSET = originalUnset;
+        _clearRootConfigCache();
+      }
+    },
+  );
+
+  test("AC-7 preserves the default maxIterations without rejecting defaults", async () => {
+    writeJson(join(projectDir, ".nax", "config.json"), {});
+    expect((await loadConfig(projectDir)).execution.maxIterations).toBe(20);
+  });
+
+  test("AC-8 rejects a selected project profile", async () => {
+    writeJson(join(projectDir, ".nax", "profiles", "removed.json"), { execution: { mode: "pipeline" } });
+    await expect(loadConfig(projectDir, { profile: "removed" })).rejects.toMatchObject({
+      code: "CONFIG_PIPELINE_MODE_REMOVED",
+      context: { source: 'profile "removed"' },
+    });
+  });
+
+  test("AC-9 rejects CLI maxIterations", async () => {
+    await expect(loadConfig(projectDir, { execution: { maxIterations: 3 } })).rejects.toMatchObject({
+      code: "CONFIG_PIPELINE_MODE_REMOVED",
+      context: { source: "CLI overrides" },
+    });
+  });
+
+  test("AC-10 rejects per-package maxIterations", async () => {
+    _clearRootConfigCache();
+    writeJson(join(projectDir, ".nax", "mono", "apps/api", "config.json"), { execution: { maxIterations: 3 } });
+    await expect(loadConfigForWorkdir(join(projectDir, ".nax", "config.json"), "apps/api")).rejects.toMatchObject({
+      code: "CONFIG_PIPELINE_MODE_REMOVED",
+      context: { source: 'per-package config "apps/api"' },
+    });
+  });
+
+  test("AC-11 explicit workflow loads without a deprecation warning", async () => {
+    resetLogger();
+    initLogger({ level: "warn", useChalk: false });
+    const warnings: string[] = [];
+    const removeSink = addSink((entry) => {
+      warnings.push(entry.message);
+    });
+    try {
+      writeJson(join(projectDir, ".nax", "config.json"), { execution: { mode: "workflow" } });
+      expect((await loadConfig(projectDir)).execution.mode).toBe("workflow");
+      expect(warnings.filter((message) => message.includes("deprecated"))).toEqual([]);
+    } finally {
+      removeSink();
+      resetLogger();
+    }
+  });
+
+  test("rejects global keys even if the project would overwrite them", async () => {
+    writeJson(join(globalDir, "config.json"), { execution: { mode: "pipeline" } });
+    writeJson(join(projectDir, ".nax", "config.json"), { execution: { mode: "workflow" } });
+    await expect(loadConfig(projectDir)).rejects.toBeInstanceOf(NaxError);
+    await expect(loadConfig(projectDir)).rejects.toMatchObject({
+      code: "CONFIG_PIPELINE_MODE_REMOVED",
+      context: { source: "global config" },
+    });
+  });
+
+  test("rejects every per-package profile before merging", async () => {
+    _clearRootConfigCache();
+    writeJson(join(projectDir, ".nax", "mono", "apps/api", "config.json"), { profile: ["removed", "repair"] });
+    writeJson(join(projectDir, "apps/api", ".nax", "profiles", "removed.json"), { execution: { mode: "pipeline" } });
+    writeJson(join(projectDir, "apps/api", ".nax", "profiles", "repair.json"), { execution: { mode: "workflow" } });
+    await expect(loadConfigForWorkdir(join(projectDir, ".nax", "config.json"), "apps/api")).rejects.toMatchObject({
+      code: "CONFIG_PIPELINE_MODE_REMOVED",
+      context: { source: 'per-package profile "removed" (apps/api)' },
+    });
   });
 
   // AC 1: loadConfig(dir, { profile: "fast" }) merges fast profile after global and project
@@ -382,7 +538,7 @@ describe("loadConfig — multi-profile chain override", () => {
 
   test("later profile in the chain overrides the earlier one (B overrides A)", async () => {
     writeJson(join(globalDir, "profiles", "a.json"), {
-      execution: { sessionTimeoutSeconds: 100, maxIterations: 5 },
+      execution: { sessionTimeoutSeconds: 100, costLimit: 5 },
     });
     writeJson(join(globalDir, "profiles", "b.json"), {
       execution: { sessionTimeoutSeconds: 200 },
@@ -393,7 +549,7 @@ describe("loadConfig — multi-profile chain override", () => {
     // B wins on the shared key
     expect(config.execution.sessionTimeoutSeconds).toBe(200);
     // A's unique key survives (deep merge, not replace)
-    expect(config.execution.maxIterations).toBe(5);
+    expect(config.execution.costLimit).toBe(5);
   });
 
   test("records composite profile string and ordered profileChain", async () => {
@@ -473,7 +629,7 @@ describe("loadConfig — multi-profile chain override", () => {
   // is the SSOT that picks the array; this test locks the round trip.
   test("a resolved chain round-trips through loadConfigForWorkdir via profileOverrideFromConfig", async () => {
     writeJson(join(globalDir, "profiles", "a.json"), {
-      execution: { sessionTimeoutSeconds: 1, maxIterations: 5 },
+      execution: { sessionTimeoutSeconds: 1, costLimit: 5 },
     });
     writeJson(join(globalDir, "profiles", "b.json"), { execution: { sessionTimeoutSeconds: 2 } });
 
@@ -491,7 +647,7 @@ describe("loadConfig — multi-profile chain override", () => {
     const effective = await loadConfigForWorkdir(rootConfigPath, undefined, override);
     expect(effective.profileChain).toEqual(["a", "b"]);
     expect(effective.execution.sessionTimeoutSeconds).toBe(2);
-    expect(effective.execution.maxIterations).toBe(5);
+    expect(effective.execution.costLimit).toBe(5);
   });
 
   test("feeding the composite profile string back in would fail — proving the array form is required", async () => {

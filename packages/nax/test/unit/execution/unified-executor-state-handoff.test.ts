@@ -99,12 +99,12 @@ afterEach(() => {
   mock.restore();
 });
 
-describe("1.1 — pre-check skip on the last iteration", () => {
+describe("1.1 — pre-check skip settles the last story", () => {
   function skipWithFailedStory(story: UserStory) {
     const failedPrd = makePrd([{ ...story, status: "failed" }]);
     _unifiedExecutorDeps.preIterationTierCheck = mock(async () => ({
       shouldSkipIteration: true,
-      prdDirty: true,
+      prdDirty: false,
       prd: failedPrd,
     }));
     _unifiedExecutorDeps.runIteration = mock(async () => {
@@ -119,7 +119,7 @@ describe("1.1 — pre-check skip on the last iteration", () => {
 
     const result = await executeUnified(makeCtx(), makePrd([story]));
 
-    expect(result.exitReason).toBe("max-iterations");
+    expect(result.exitReason).toBe("no-stories");
     expect(result.prd).toBe(failedPrd);
   });
 
@@ -229,7 +229,7 @@ function makeWorkflowCtx(maxIterations: number): SequentialExecutionContext {
 }
 
 describe("max-iterations exhaustion (nax#2706)", () => {
-  test("pipeline mode: warns with the cap and the ids of the stories still pending", async () => {
+  test("pipeline literal: warns with the derived bound and the ids of the stories still pending", async () => {
     const story = makePendingStory("US-001");
     const rest = makePendingStory("US-002");
     const afterFirst = makePrd([{ ...story, status: "passed", passes: true }, rest]);
@@ -251,7 +251,7 @@ describe("max-iterations exhaustion (nax#2706)", () => {
       expect(result.exitReason).toBe("max-iterations");
       const call = warn.mock.calls.find((c) => String(c[1]).includes("max-iterations"));
       expect(call).toBeDefined();
-      expect(call?.[2]).toMatchObject({ maxIterations: 1, pendingStoryIds: ["US-002"] });
+      expect(call?.[2]).toMatchObject({ pendingStoryIds: ["US-002"] });
     });
   });
 });

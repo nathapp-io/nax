@@ -120,7 +120,7 @@ describe("runIteration", () => {
     expect(result.costDelta).toBe(0);
   });
 
-  test("pipeline selection: workflow mode runs the workflow pipeline, pipeline mode runs defaultPipeline", async () => {
+  test("pipeline selection: absent mode and pipeline literal both run workflow stages", async () => {
     const seen: string[][] = [];
     _iterationRunnerDeps.runPipeline = mock(async (stages: PipelineStage[]) => {
       seen.push(stages.map((s) => s.name));
@@ -128,8 +128,9 @@ describe("runIteration", () => {
     });
     const selection = { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false };
     const workflowCtx = makeCtx(tempDir, {
-      config: makeNaxConfig({ execution: { storyIsolation: "shared", mode: "workflow" } }),
+      config: makeNaxConfig({ execution: { storyIsolation: "shared" } }),
     });
+    Reflect.deleteProperty(workflowCtx.config.execution, "mode");
     await runIteration(workflowCtx, prd, selection, 1, 0, []);
     const pipelineCtx = makeCtx(tempDir, {
       config: makeNaxConfig({ execution: { storyIsolation: "shared", mode: "pipeline" } }),
@@ -138,8 +139,9 @@ describe("runIteration", () => {
 
     expect(seen[0]).toContain("workflow");
     expect(seen[0]).not.toContain("execution");
-    expect(seen[1]).toContain("execution");
-    expect(seen[1]).not.toContain("workflow");
+    const { getWorkflowPipeline } = await import("@/pipeline/stages");
+    expect(seen[0]).toEqual(getWorkflowPipeline().map((s) => s.name));
+    expect(seen[1]).toEqual(seen[0]);
   });
 
   test("success path: runs the pipeline and returns storiesCompletedDelta/costDelta from handlePipelineSuccess", async () => {

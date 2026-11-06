@@ -101,7 +101,7 @@ describe("nax config (default view) - CLI integration", () => {
   test("shows project config path when present", async () => {
     const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
-    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ execution: { maxIterations: 20 } }));
+    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ execution: { costLimit: 20 } }));
 
     process.chdir(tempDir);
     const { stdout, error } = await captureConfigCommand(tempDir);
@@ -112,7 +112,7 @@ describe("nax config (default view) - CLI integration", () => {
     const lines = stdout.split("\n");
     const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
     const parsed = JSON.parse(lines.slice(jsonStartIndex).join("\n"));
-    expect(parsed.execution.maxIterations).toBe(20);
+    expect(parsed.execution.costLimit).toBe(20);
   });
 
   test("header precedes JSON output with blank line", async () => {
@@ -141,7 +141,7 @@ describe("nax config (default view) - CLI integration", () => {
   test("works when run from project subdirectory", async () => {
     const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
-    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ execution: { maxIterations: 30 } }));
+    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ execution: { costLimit: 30 } }));
 
     const subdir = join(tempDir, "src", "components");
     mkdirSync(subdir, { recursive: true });
@@ -155,7 +155,7 @@ describe("nax config (default view) - CLI integration", () => {
     const lines = stdout.split("\n");
     const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
     const parsed = JSON.parse(lines.slice(jsonStartIndex).join("\n"));
-    expect(parsed.execution.maxIterations).toBe(30);
+    expect(parsed.execution.costLimit).toBe(30);
   });
 });
 
@@ -200,7 +200,7 @@ describe("nax config (default view) - edge cases", () => {
   test("handles deep nesting when walking up directory tree", async () => {
     const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
-    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ execution: { maxIterations: 50 } }));
+    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ execution: { costLimit: 50 } }));
 
     const deepDir = join(tempDir, "a", "b", "c", "d", "e", "f");
     mkdirSync(deepDir, { recursive: true });
@@ -214,7 +214,7 @@ describe("nax config (default view) - edge cases", () => {
     const lines = stdout.split("\n");
     const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
     const parsed = JSON.parse(lines.slice(jsonStartIndex).join("\n"));
-    expect(parsed.execution.maxIterations).toBe(50);
+    expect(parsed.execution.costLimit).toBe(50);
   });
 
   test("outputs complete config structure with all top-level keys", async () => {
@@ -247,7 +247,7 @@ describe("nax config (default view) - edge cases", () => {
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),
-      JSON.stringify({ execution: { maxIterations: 15, rectification: { enabled: false, maxAttemptsTotal: 5 } } }),
+      JSON.stringify({ execution: { costLimit: 15, rectification: { enabled: false, maxAttemptsTotal: 5 } } }),
     );
 
     process.chdir(tempDir);
@@ -258,7 +258,7 @@ describe("nax config (default view) - edge cases", () => {
     const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
     const parsed = JSON.parse(lines.slice(jsonStartIndex).join("\n"));
 
-    expect(parsed.execution.maxIterations).toBe(15);
+    expect(parsed.execution.costLimit).toBe(15);
     expect(parsed.execution.rectification.enabled).toBe(false);
     expect(parsed.execution.rectification.maxAttemptsTotal).toBe(5);
     expect(parsed.execution.iterationDelayMs).toBeDefined();
@@ -268,7 +268,7 @@ describe("nax config (default view) - edge cases", () => {
   test("handles project config with schema version mismatch", async () => {
     const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
-    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ version: 999, execution: { maxIterations: 25 } }));
+    writeFileSync(join(naxDir, "config.json"), JSON.stringify({ version: 999, execution: { costLimit: 25 } }));
 
     process.chdir(tempDir);
     const { stdout, stderr, error } = await captureConfigCommand(tempDir);

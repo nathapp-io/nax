@@ -18,6 +18,7 @@ import {
   rejectDeadQualityFlags,
   rejectLegacyAgentKeys,
   rejectLegacyRectificationKeys,
+  rejectPipelineModeKeys,
   rejectRemovedPlanModes,
   stripRemovedNoOpKeys,
   validatePermissionsBlock,
@@ -39,7 +40,21 @@ import {
 } from "./profile";
 import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
-import { applyWorkflowMode, warnDeprecatedPipelineMode } from "./workflow-mode";
+import { applyWorkflowMode } from "./workflow-mode";
+
+/** Validate mode alone so unrelated undefined variables cannot hide a removed mode. */
+function rejectResolvedPipelineMode(config: Record<string, unknown>, source: string): void {
+  const execution = config.execution;
+  if (!execution || typeof execution !== "object" || Array.isArray(execution)) return;
+  let mode: unknown;
+  try {
+    mode = resolveEnvVars((execution as Record<string, unknown>).mode, sensitiveFilteredProcessEnv());
+  } catch (err) {
+    if (err instanceof UnresolvedEnvVarError) return;
+    throw err;
+  }
+  rejectPipelineModeKeys({ execution: { ...execution, mode } }, source);
+}
 
 /**
  * CFG-2/CFG-3: resolve `$VAR`/`${VAR}` references in a config layer that has
@@ -56,6 +71,7 @@ function resolveEnvVarsWarnOnFailure(
   logger: ReturnType<typeof getLogger> | null,
   layerName: string,
 ): Record<string, unknown> {
+  rejectResolvedPipelineMode(config, layerName);
   try {
     return resolveEnvVars(config, sensitiveFilteredProcessEnv()) as Record<string, unknown>;
   } catch (err) {
@@ -118,7 +134,9 @@ async function applyGlobalLayer(
   const globalConfRaw = await loadJsonFileStrict<Record<string, unknown>>(globalConfigPath(), "config");
   if (!globalConfRaw) return { rawConfig, globalConfRaw: null, globalLayerConf: null };
   const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-  const globalConf = applyConfigCompatShims(globalConfStripped, ctx.logger, ctx.warnDedupe);
+  const resolvedGlobalConf = resolveEnvVarsWarnOnFailure(globalConfStripped, ctx.logger, "global config");
+  const globalConf = applyConfigCompatShims(resolvedGlobalConf, ctx.logger, ctx.warnDedupe);
+  rejectPipelineModeKeys(globalConf, "global config");
   return {
     rawConfig: deepMergeConfig(rawConfig, globalConf),
     globalConfRaw,
@@ -137,7 +155,9 @@ async function applyProjectLayer(
   const projConf = await loadJsonFileStrict<Record<string, unknown>>(join(projDir, "config.json"), "config");
   if (!projConf) return rawConfig;
   const { profile: _pProfile, ...projConfStripped } = rejectGlobalOnlyKeys(projConf, "project");
-  const resolvedProjConf = applyConfigCompatShims(projConfStripped, ctx.logger, ctx.warnDedupe);
+  const envResolvedProjConf = resolveEnvVarsWarnOnFailure(projConfStripped, ctx.logger, "project config");
+  const resolvedProjConf = applyConfigCompatShims(envResolvedProjConf, ctx.logger, ctx.warnDedupe);
+  rejectPipelineModeKeys(resolvedProjConf, "project config");
   const preProjectMergeConfig = rawConfig;
   const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, resolvedProjConf);
   // SEC-2 / D-2 — warn (do not block, do not change precedence) when the
@@ -174,6 +194,7 @@ async function applyProfileChainLayer(
     // the same legacy shapes (e.g. routing.strategy: "manual") and must be remapped
     // rather than hard-failing Zod validation.
     const shimmedProfileData = applyConfigCompatShims(resolvedProfileData, ctx.logger, ctx.warnDedupe);
+    rejectPipelineModeKeys(shimmedProfileData, `profile "${name}"`);
     const preProfileMergeConfig = merged;
     merged = deepMergeConfig<Record<string, unknown>>(merged, shimmedProfileData);
     // SEC-2 — profiles merge AFTER global + project and can just as easily undo a
@@ -196,6 +217,7 @@ function applyCliOverridesLayer(
   if (!cliOverrides) return rawConfig;
   const globalOnly = rejectGlobalOnlyKeys(cliOverrides, "CLI");
   const shimmedCliOverrides = applyConfigCompatShims(globalOnly, ctx.logger, ctx.warnDedupe);
+  rejectPipelineModeKeys(shimmedCliOverrides, "CLI overrides");
   const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, shimmedCliOverrides);
   // SEC-2 — CLI overrides win over every other layer; warn when one changes a
   // security-sensitive key so the change isn't silently invisible.
@@ -247,7 +269,6 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
     });
   }
 
-  warnDeprecatedPipelineMode(result.data as NaxConfig, defaultConfigWarn);
   return applyWorkflowMode(result.data as NaxConfig, defaultConfigWarn);
 }
 
@@ -294,12 +315,6 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
 
   rawConfig = await applyProjectLayer(rawConfig, projDir, globalLayer.globalLayerConf, ctx);
 
-  // CFG-2: global + project config never ran through $VAR resolution — a value
-  // like "test": "$TEST_CMD" landed in the run config as the literal
-  // unresolved string. Resolve against the ambient (secret-filtered)
-  // process.env, same as the profile chain below.
-  rawConfig = resolveEnvVarsWarnOnFailure(rawConfig, logger, "global/project config");
-
   rawConfig = await applyProfileChainLayer(rawConfig, overlayChain, projectRoot, ctx);
 
   rawConfig = applyCliOverridesLayer(rawConfig, cliOverrides, ctx);
@@ -318,7 +333,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // DEFAULT_CONFIG already carries profile="default" and profileChain=[] (schema
   // defaults), so this fast path stays consistent with the full path's chain fields.
   if (!hasMergedConfigs) {
-    return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>) as unknown as NaxConfig;
+    return applyWorkflowMode(structuredClone(DEFAULT_CONFIG), defaultConfigWarn);
   }
 
   return finalizeAndValidateRootConfig(rawConfig);
@@ -476,11 +491,17 @@ export async function loadConfigForWorkdir(
   // carries the root's resolved value for it. `routing.llm.batchMode` -> `mode` and
   // `context.testCoverage.testPattern` -> `execution.smartTestRunner.testFilePatterns`
   // would both silently no-op if the chain ran post-merge.
-  const shimmedPackageFields = applyConfigCompatShims(
+  const envResolvedPackageFields = resolveEnvVarsWarnOnFailure(
     packageFields as Record<string, unknown>,
+    logger,
+    `per-package config "${packageDir}"`,
+  );
+  const shimmedPackageFields = applyConfigCompatShims(
+    envResolvedPackageFields,
     logger,
     warnDedupe,
   ) as Partial<NaxConfig>;
+  rejectPipelineModeKeys(shimmedPackageFields as Record<string, unknown>, `per-package config "${packageDir}"`);
   // nax#1990 — scoped to THIS layer's own `quality.commands`, not the merged
   // result below. `loadConfig` (root chain) already warns once per resolved
   // root config and is cached per `cacheKey`, so a root-only chained command
@@ -506,14 +527,6 @@ export async function loadConfigForWorkdir(
   // once.
   merged = stripRemovedNoOpKeys(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
 
-  // CFG-3: the plain per-package overlay (.nax/mono/<pkg>/config.json) also
-  // never ran through $VAR resolution — same gap as CFG-2 at the root layer.
-  const envResolvedMerged = resolveEnvVarsWarnOnFailure(
-    merged as unknown as Record<string, unknown>,
-    logger,
-    `per-package config (${packageDir})`,
-  );
-
   // Per-package profile: apply the profile chain overlay on top of merged config.
   // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).
   const { chain: packageChain, layers } = await loadPackageProfileLayers({
@@ -523,7 +536,7 @@ export async function loadConfigForWorkdir(
     logger,
     warnDedupe,
   });
-  let rawMerged = envResolvedMerged;
+  let rawMerged = merged as unknown as Record<string, unknown>;
   if (packageChain.length > 0) {
     rawMerged = applyPackageProfileLayers(rawMerged, layers);
     rawMerged.profile = packageChain.join("+");

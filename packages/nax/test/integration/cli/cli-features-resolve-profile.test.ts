@@ -38,8 +38,6 @@ afterEach(() => {
 /**
  * A nax repo whose project config fails schema validation on its own and is
  * valid only under `.nax/profiles/fix.json` (`storyIsolation: "shared"`).
- * `mode: "pipeline"` keeps workflow mode from forcing acceptance off once the
- * profile repairs the value.
  */
 function writeProject(): void {
   const naxDir = join(tempDir, ".nax");
@@ -47,7 +45,7 @@ function writeProject(): void {
   mkdirSync(featureDir, { recursive: true });
   writeFileSync(
     join(naxDir, "config.json"),
-    JSON.stringify({ name: "test-project", execution: { mode: "pipeline", storyIsolation: "bogus" } }),
+    JSON.stringify({ name: "test-project", execution: { storyIsolation: "bogus" } }),
   );
   writeFileSync(
     join(featureDir, "prd.json"),
@@ -109,13 +107,13 @@ describe("nax features resolve — profile awareness (US-001)", () => {
   }, 30000);
 
   // AC-13: --profile reaches loadConfig through resolveFeatureSpec.
-  test("AC-13: --profile fix makes the config valid so acceptance.status is ok", async () => {
+  test("AC-13: --profile fix makes the config valid so acceptance.status is disabled", async () => {
     const { exitCode, stdout } = await runResolve(["--json", "--profile", "fix", "-d", tempDir]);
 
     expect(exitCode).toBe(0);
     const doc = JSON.parse(stdout);
     expect(doc.status).toBe("ok");
-    expect(doc.acceptance.status).toBe("ok");
+    expect(doc.acceptance.status).toBe("disabled");
     expect(doc.acceptance.error).toBeUndefined();
   }, 30000);
 });

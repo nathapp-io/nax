@@ -132,7 +132,6 @@ export async function executeSingleAgentRun(params: {
   prdPath: string;
   workdir: string;
   featureDir: string;
-  parallel: number | undefined;
   eventEmitter: PipelineEventEmitter;
   statusFilePath: string;
   logFilePath: string;
@@ -150,7 +149,6 @@ export async function executeSingleAgentRun(params: {
     prdPath,
     workdir,
     featureDir,
-    parallel,
     eventEmitter,
     statusFilePath,
     logFilePath,
@@ -171,7 +169,6 @@ export async function executeSingleAgentRun(params: {
       featureDir,
       dryRun: options.dryRun,
       useBatch: options.batch ?? true,
-      parallel,
       eventEmitter,
       statusFile: statusFilePath,
       logFilePath,

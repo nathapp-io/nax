@@ -33,14 +33,7 @@ import chalk from "chalk";
 import { planCommand, promptForConfirmation, resolveRunProfileOverride, runReplanLoop } from "../src/cli";
 import { CHAT_ASK_SECRET_READ_MS, parseChatAsksFlag, readChatAskSecret } from "../src/cli/run-chat-asks";
 import { resolveContextCliOverrides } from "../src/cli/run-context-overrides";
-import {
-  applyMaxIterationsFlag,
-  type MaxIterationsFlag,
-  maxIterationsIgnoredNotice,
-  parseMaxIterationsFlag,
-} from "../src/cli/run-max-iterations";
 import { resolveUseHeadless } from "../src/cli/run-mode";
-import { parseParallelFlag } from "../src/cli/run-parallel";
 import { findProjectDir, type NaxConfig, validateDirectory } from "../src/config";
 import { initLogger, type LogLevel } from "../src/logger";
 import type { PlanResult } from "../src/plan/strategies";
@@ -87,7 +80,6 @@ export type LoadedPrd = Awaited<ReturnType<typeof loadPRD>>;
 export type FormatterMode = "quiet" | "normal" | "verbose" | "json";
 export type TuiInstance = ReturnType<typeof renderTui>;
 export type ResolvedScheduleGate = Extract<ScheduleGateResult, { ok: true }>;
-export type ResolvedMaxIterationsFlag = Extract<MaxIterationsFlag, { ok: true }>;
 
 /**
  * Surface a degraded plan. `nax plan` is deliberately recovery-tolerant — it
@@ -133,23 +125,14 @@ export function resolveRunWorkdir(options: RunActionOptions): string {
  * bake-off check or TUI mount — both errors must print before any TUI exists.
  */
 export function parseRunPreconditionFlags(options: RunActionOptions): {
-  maxIterationsFlag: ResolvedMaxIterationsFlag;
-  parallel: number | undefined;
   chatAsksDir: string | undefined;
 } {
-  // US-001: validate -m before any config load, bake-off check or TUI mount.
-  // The parsed value is applied to `config` below, once it is loaded.
-  const maxIterationsFlag = parseMaxIterationsFlag(options.maxIterations);
-  if (!maxIterationsFlag.ok) {
-    console.error(chalk.red(maxIterationsFlag.message));
+  if (options.maxIterations !== undefined) {
+    console.error(chalk.red("nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories"));
     process.exit(1);
   }
-
-  // US-002: validate --parallel alongside -m and before any config load,
-  // bake-off check or TUI mount — the error must print before any TUI exists.
-  const parallelFlag = parseParallelFlag(options.parallel);
-  if (!parallelFlag.ok) {
-    console.error(chalk.red(parallelFlag.message));
+  if (options.parallel !== undefined) {
+    console.error(chalk.red("nax run --parallel was removed: workflow mode runs stories one at a time"));
     process.exit(1);
   }
   const chatAsksFlag = parseChatAsksFlag(options.chatAsks);
@@ -157,7 +140,7 @@ export function parseRunPreconditionFlags(options: RunActionOptions): {
     console.error(chalk.red(chatAsksFlag.message));
     process.exit(1);
   }
-  return { maxIterationsFlag, parallel: parallelFlag.value, chatAsksDir: chatAsksFlag.value };
+  return { chatAsksDir: chatAsksFlag.value };
 }
 
 /** Read once after logging is initialized so invalid secrets retain the warning path. */
@@ -482,33 +465,20 @@ export function initRunLogging(params: {
   return { outputDir, runsDir, runId, logFilePath, useHeadless };
 }
 
-/**
- * Apply the CLI-only config overrides (agent, -m, --max-cost). Mutates
- * `config.agent` in place, then applies the max-iterations flag — the same
- * sequence as the original inline block.
- */
-export function applyRunCliOverrides(
-  config: NaxConfig,
-  options: RunActionOptions,
-  maxIterationsFlag: ResolvedMaxIterationsFlag,
-): NaxConfig {
+/** Apply the CLI-only agent and max-cost config overrides in place. */
+export function applyRunCliOverrides(config: NaxConfig, options: RunActionOptions): NaxConfig {
   // Override config from CLI
   if (options.agent) {
     config.agent ??= {};
     config.agent.default = options.agent;
   }
-  // US-001: override execution.maxIterations only when -m was passed, so a
-  // configured value (or the schema default of 20) still takes effect.
-  const overridden = applyMaxIterationsFlag(config, maxIterationsFlag.value);
-  const ignoredNotice = maxIterationsIgnoredNotice(overridden, maxIterationsFlag.value);
-  if (ignoredNotice) console.warn(chalk.yellow(ignoredNotice));
   if (options.maxCost !== undefined) {
     const maxCost = Number(options.maxCost);
     if (!Number.isFinite(maxCost) || maxCost <= 0) {
       console.error(chalk.red("--max-cost must be a positive number"));
       process.exit(1);
     }
-    overridden.execution.costLimit = maxCost;
+    config.execution.costLimit = maxCost;
   }
-  return overridden;
+  return config;
 }

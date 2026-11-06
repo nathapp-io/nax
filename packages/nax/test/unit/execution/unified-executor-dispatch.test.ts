@@ -461,7 +461,7 @@ describe("useBatch scheduling refresh", () => {
 
     await executeUnified(ctx, initialPrd);
 
-    expect(selectedStoryIds).toEqual(["US-000", "US-001"]);
+    expect(selectedStoryIds).toEqual(["US-000", "US-001", "US-006"]);
   });
 
   test("BUG-39: a transiently failed story is retried before other ready work, under useBatch:true", async () => {
@@ -592,8 +592,13 @@ describe("useBatch scheduling refresh", () => {
         // "failed" and the run must move on instead of retrying forever.
         // prdDirty:false (unlike production, which saves to real disk and
         // reloads) — prd already carries the failed status from the runIteration
-        // mock above, so no reload is needed here.
-        return { shouldSkipIteration: true, prdDirty: false, prd };
+        // mock above, so no reload is needed here. Exhaust its retry budget too,
+        // rather than relying on the removed fixed iteration cap.
+        return {
+          shouldSkipIteration: true,
+          prdDirty: false,
+          prd: { ...prd, userStories: prd.userStories.map((s) => (s.id === "US-000" ? { ...s, attempts: 99 } : s)) },
+        };
       },
     );
 

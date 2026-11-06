@@ -6,6 +6,7 @@ import {
   cleanupTempDir,
   makeDispatchContext,
   makeMockRuntime,
+  makeNaxConfig,
   makePRD,
   makeStory,
   makeTempDir,
@@ -353,6 +354,32 @@ describe("executeStoryInWorktree — cost includes stageCost (BUG-7)", () => {
       expect(result.success).toBe(false);
       // Regression guard: (agentResult.estimatedCostUsd ?? 0) + (stageCost ?? 0) = 2 + 0.5
       expect(result.cost).toBeCloseTo(2.5, 5);
+    } finally {
+      cleanupTempDir(workdir);
+    }
+  });
+
+  test("fork-cut AC-8: a workflow root runs the pipeline and returns its result", async () => {
+    workdir = makeTempDir("nax-worker-workflow-");
+    const execute = mock(async () => ({ action: "continue" as const, cost: 0.75 }));
+    withFakeStage({ name: "workflow-root-probe", enabled: () => true, execute });
+    try {
+      const config = makeNaxConfig();
+      const context = makeContext(config, workdir);
+      const story = makeStory();
+      const result = await executeStoryInWorktree(story, workdir, { cwd: workdir }, context, {
+        complexity: "simple",
+        modelTier: "fast",
+        testStrategy: "test-after",
+        reasoning: "probe",
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.pipelineResult?.finalAction).toBe("complete");
+      expect(result.pipelineResult?.context.rootConfig).toBe(config);
+      expect(result.pipelineResult?.context.story).toBe(story);
+      expect(result.cost).toBe(0.75);
     } finally {
       cleanupTempDir(workdir);
     }

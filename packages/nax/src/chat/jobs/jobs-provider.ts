@@ -13,8 +13,6 @@ export const JOBS_LIST_LIMIT = 20;
 export interface JobsProviderOptions {
   readonly repoRoot: string;
   readonly naxEntry: readonly string[];
-  /** config.execution.maxIterations in pipeline mode; undefined in workflow mode, which ignores it. */
-  readonly maxIterations?: number;
   readonly interactionPlugin: string;
   readonly jobs: ChatJobs;
   readonly chains?: ChatChains;
@@ -30,7 +28,6 @@ const schemas = {
   run: {
     feature: { type: "string" },
     profiles,
-    maxIterations: { type: "integer" },
     maxCost: { type: "number" },
     repo,
   },

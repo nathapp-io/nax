@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { makeDispatchContext, makePluginRegistry, makePRD, makeStatusWriter, makeTestRuntime } from "@test/helpers";
-import { DEFAULT_CONFIG } from "@/config/defaults";
+import {
+  makeDispatchContext,
+  makeNaxConfig,
+  makePluginRegistry,
+  makePRD,
+  makeStatusWriter,
+  makeTestRuntime,
+} from "@test/helpers";
 import { stopHeartbeat } from "@/execution/crash-recovery";
 import { _unifiedExecutorDeps, executeUnified, type SequentialExecutionContext } from "@/execution/unified-executor";
 import type { NaxRuntime } from "@/runtime";
@@ -18,11 +24,7 @@ afterEach(async () => {
 });
 
 function configFor(mode: "pipeline" | "workflow") {
-  return {
-    ...DEFAULT_CONFIG,
-    acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
-    execution: { ...DEFAULT_CONFIG.execution, mode, maxIterations: 0, iterationDelayMs: 0 },
-  };
+  return makeNaxConfig({ acceptance: { enabled: false }, execution: { mode, maxIterations: 0, iterationDelayMs: 0 } });
 }
 
 async function run(mode: "pipeline" | "workflow", dryRun = false): Promise<WorkflowRunStartInput[]> {
@@ -68,8 +70,12 @@ describe("executeUnified — workflow pre-flight placement (spec §5.3, P4-R14)"
     expect(typeof seen[0]?.agentName).toBe("string");
   });
 
-  test("pipeline mode and dry runs: never called", async () => {
-    expect(await run("pipeline")).toHaveLength(0);
+  test("pipeline literal: preflight runs once", async () => {
+    expect(await run("pipeline")).toHaveLength(1);
+  });
+
+  test("dry runs: never called", async () => {
     expect(await run("workflow", true)).toHaveLength(0);
+    expect(await run("pipeline", true)).toHaveLength(0);
   });
 });

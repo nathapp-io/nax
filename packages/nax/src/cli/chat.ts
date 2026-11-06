@@ -22,15 +22,7 @@ import {
   resolveChatSessionsDir,
   tierModels,
 } from "@/chat";
-import {
-  findProjectDir,
-  getProjectKey,
-  globalConfigDir,
-  isWorkflowMode,
-  loadConfig,
-  modelEntryId,
-  type NaxConfig,
-} from "@/config";
+import { findProjectDir, getProjectKey, globalConfigDir, loadConfig, modelEntryId, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { loadAgentHookHandlers } from "@/hooks";
 import { type InteractionChain, initInteractionChain } from "@/interaction";
@@ -57,6 +49,7 @@ export interface ChatCommandOptions {
 }
 
 export const _chatCommandDeps = {
+  createWorkflowProvider,
   collectAuthList,
   naxEntry: (): readonly string[] | undefined =>
     process.argv[1] === undefined ? undefined : [process.execPath, process.argv[1]],
@@ -269,10 +262,9 @@ async function chatResources(
       catalog,
       toolProviders: [
         createSkillsProvider(async () => catalog),
-        createWorkflowProvider({
+        deps.createWorkflowProvider({
           repoRoot,
           outputDir,
-          maxIterations: isWorkflowMode(config) ? undefined : config.execution.maxIterations,
         }),
         ...(memory === undefined ? [] : [createMemoryToolProvider(memory)]),
         ...mcp.providers,

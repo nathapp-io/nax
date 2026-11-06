@@ -375,7 +375,7 @@ describe("profileUseCommand", () => {
     await writeJsonAsync(join(tempDir, ".nax", "config.json"), {
       profile: "fast",
       timeout: 5000,
-      execution: { maxIterations: 3 },
+      execution: { costLimit: 3 },
     });
 
     await profileUseCommand("default", tempDir);
@@ -383,7 +383,7 @@ describe("profileUseCommand", () => {
     const config = await Bun.file(join(tempDir, ".nax", "config.json")).json();
     expect(config.profile).toBeUndefined();
     expect(config.timeout).toBe(5000);
-    expect(config.execution?.maxIterations).toBe(3);
+    expect(config.execution?.costLimit).toBe(3);
   });
 
   test("creates config.json if it does not exist; preserves existing fields when writing profile", async () => {
@@ -393,7 +393,7 @@ describe("profileUseCommand", () => {
     expect(await Bun.file(configPath).exists()).toBe(true);
     expect((await Bun.file(configPath).json()).profile).toBe("fast");
 
-    await writeJsonAsync(configPath, { timeout: 5000, execution: { maxIterations: 3 } });
+    await writeJsonAsync(configPath, { timeout: 5000, execution: { costLimit: 3 } });
     await profileUseCommand("fast", tempDir);
     const config = await Bun.file(configPath).json();
     expect(config.profile).toBe("fast");

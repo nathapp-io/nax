@@ -1,13 +1,3 @@
-/**
- * US-001 — `nax run -m/--max-iterations` validation at the CLI process boundary.
- *
- * AC-10/AC-11 are stated in terms of the process exit code and stderr of
- * `bun bin/nax.ts run`, so this test spawns the real entry point in an empty
- * temp dir (same approach as test/unit/commands/unlock.test.ts). The flag is
- * rejected before any project/config work, so no project needs to be
- * initialised and no agent is ever started.
- */
-
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 
@@ -31,7 +21,7 @@ async function spawnRun(dir: string, args: string[]): Promise<RunResult> {
   return { exitCode, stdout, stderr };
 }
 
-describe("nax run -m/--max-iterations (US-001)", () => {
+describe("nax run -m/--max-iterations (removed flags)", () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -42,18 +32,16 @@ describe("nax run -m/--max-iterations (US-001)", () => {
     cleanupTempDir(tempDir);
   });
 
-  test("AC-10: -m 0 exits 1 with the positive-integer message on stderr", async () => {
-    const { exitCode, stderr } = await spawnRun(tempDir, ["-m", "0"]);
-
-    expect(exitCode).toBe(1);
-    expect(stderr).toContain("--max-iterations must be a positive integer");
-  }, 20000);
-
-  test("AC-11: -m 5 passes flag validation and exits 1 at the uninitialised-project check", async () => {
+  test("rejects -m 5 before initialization", async () => {
     const { exitCode, stderr } = await spawnRun(tempDir, ["-m", "5"]);
-
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("nax not initialized. Run: nax init");
-    expect(stderr).not.toContain("--max-iterations must be a positive integer");
+    expect(stderr).toContain("nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories");
+    expect(stderr).not.toContain("nax not initialized");
+  }, 20000);
+  test("AC-7: help keeps removed flags discoverable", async () => {
+    const { exitCode, stdout } = await spawnRun(tempDir, ["--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toMatch(/-m, --max-iterations <n>\s+Removed: workflow mode sets its own limits/);
+    expect(stdout).toMatch(/--parallel <n>\s+Removed: workflow mode sets its own limits/);
   }, 20000);
 });
