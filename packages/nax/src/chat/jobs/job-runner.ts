@@ -8,7 +8,7 @@ import { buildJobNotice } from "@/prompts";
 import { isWithinRoot } from "../target-repo";
 import { readRunProgress, resolveJobOutcome } from "./job-outcome";
 import { jobAsksDir, jobLogPath, jobsDir, newJobId, readJobRecords, writeJobRecord } from "./job-store";
-import type { ChatJob, ChatJobKind } from "./job-types";
+import { type ChatJob, type ChatJobKind, isRunJobKind } from "./job-types";
 
 export const JOB_POLL_MS = 2_000;
 export const CANCEL_GRACE_MS = 10_000;
@@ -497,7 +497,7 @@ class DetachedJobs implements ChatJobs {
       try {
         if (!this.ownedIds.has(job.id) && !_jobRunnerDeps.isProcessAlive(job.pid)) {
           await this.mutate(job.id, () => this.finalizeAttached(this.records.get(job.id) ?? job, true));
-        } else if (job.kind === "run") {
+        } else if (isRunJobKind(job.kind)) {
           await this.refreshProgress(job);
         }
       } catch (cause) {

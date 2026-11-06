@@ -2,7 +2,7 @@ import { isAbsolute, win32 } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { validateFeatureName } from "@/utils/feature-name";
-import type { ChatJobKind } from "./job-types";
+import { type ChatJobKind, isFeatureJobKind } from "./job-types";
 
 export type JobLaunchInput = JobLaunchBody & { readonly repo?: string };
 
@@ -14,6 +14,7 @@ type JobLaunchBody =
       readonly profiles: readonly string[];
       readonly maxCost?: number;
     }
+  | { readonly kind: "finish"; readonly feature: string; readonly profiles: readonly string[] }
   | {
       readonly kind: "bot_review";
       readonly pr: number;
@@ -131,7 +132,7 @@ export function parseJobInput(kind: ChatJobKind, raw: Record<string, unknown>): 
 }
 
 function parseJobBody(kind: ChatJobKind, raw: Record<string, unknown>): JobLaunchBody | InputError {
-  if (kind === "plan" || kind === "run") {
+  if (isFeatureJobKind(kind)) {
     if (typeof raw.feature !== "string") return { error: "[chat] feature must be a string" };
     try {
       validateFeatureName(raw.feature);
@@ -140,6 +141,7 @@ function parseJobBody(kind: ChatJobKind, raw: Record<string, unknown>): JobLaunc
     }
     const profiles = parseProfiles(raw.profiles);
     if ("error" in profiles) return profiles;
+    if (kind === "finish") return { kind, feature: raw.feature, profiles };
     return kind === "plan" ? parsePlan(raw.feature, raw, profiles) : parseRun(raw.feature, raw, profiles);
   }
   const profiles = parseProfiles(raw.profiles);
@@ -160,6 +162,19 @@ export function buildJobArgv(
       });
     }
     return [...ctx.naxEntry, "plan", "-f", input.feature, "--from", input.spec, "-d", ctx.repoRoot, ...profiles];
+  }
+  if (input.kind === "finish") {
+    return [
+      ...ctx.naxEntry,
+      "run",
+      "-f",
+      input.feature,
+      "-d",
+      ctx.repoRoot,
+      "--headless",
+      "--publish-only",
+      ...profiles,
+    ];
   }
   if (input.kind === "run") {
     return [

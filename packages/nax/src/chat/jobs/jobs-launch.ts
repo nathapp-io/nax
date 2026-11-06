@@ -8,7 +8,7 @@ import { gitWithTimeout } from "@/utils/git";
 import { resolveTargetRepo } from "../target-repo";
 import type { ChainAdmission } from "./chain-controller";
 import { buildJobArgv, type JobLaunchInput, parseJobInput } from "./job-argv";
-import type { ChatJob, ChatJobKind } from "./job-types";
+import { type ChatJob, type ChatJobKind, isFeatureJobKind } from "./job-types";
 import type { JobsProviderOptions } from "./jobs-provider";
 
 export const _jobsLaunchDeps = {
@@ -35,9 +35,7 @@ async function lockHolder(repoRoot: string): Promise<number | null> {
 }
 
 function busyJob(options: JobsProviderOptions): ToolResult | undefined {
-  const job = options.jobs
-    .running()
-    .find((job) => job.cwd === options.repoRoot && (job.kind === "plan" || job.kind === "run"));
+  const job = options.jobs.running().find((job) => job.cwd === options.repoRoot && isFeatureJobKind(job.kind));
   return job
     ? { isError: true, content: `[chat] nax ${job.kind} job ${job.id} is already running in this checkout` }
     : undefined;
@@ -78,13 +76,13 @@ async function startApproved(
   options: JobsProviderOptions,
 ): Promise<ToolResult> {
   const { argv, auto } = launch;
-  if (input.kind === "plan" || input.kind === "run") {
+  if (isFeatureJobKind(input.kind)) {
     const held = await busyLock(options);
     if (held) return held;
   }
   try {
     // No await from this final in-memory check to start: the runner registers synchronously.
-    const busy = input.kind === "plan" || input.kind === "run" ? busyJob(options) : undefined;
+    const busy = isFeatureJobKind(input.kind) ? busyJob(options) : undefined;
     if (busy) return busy;
     if (auto && !options.chains?.isActive(auto.chainId)) {
       return {
@@ -198,6 +196,37 @@ async function prepareRun(
   return { input, details, ...(profileLine === undefined ? {} : { profileLine }) };
 }
 
+/**
+ * #2819: a finish job reruns only the workflow's publish step, so every story must have passed. The
+ * workflow itself refuses a run with no finished record or a moved HEAD; the card says what it does.
+ */
+async function prepareFinish(
+  input: Extract<JobLaunchInput, { kind: "finish" }>,
+  options: JobsProviderOptions,
+): Promise<Prepared | TargetError> {
+  const path = join(featureDir(options.repoRoot, input.feature), "prd.json");
+  if (!(await _jobsLaunchDeps.exists(path))) {
+    return { error: `[chat] no prd.json for ${input.feature}; run nax plan and nax run first` };
+  }
+  let prd: Awaited<ReturnType<typeof loadPRD>>;
+  try {
+    prd = await _jobsLaunchDeps.loadPRD(path);
+  } catch (cause) {
+    return { error: `[chat] prd.json for ${input.feature} is unreadable: ${errorMessage(cause)}` };
+  }
+  const { pending } = countStories(prd);
+  if (pending > 0) {
+    return { error: `[chat] ${input.feature} has ${pending} pending stories; finish them with nax-jobs__run first` };
+  }
+  return {
+    input,
+    details: [
+      "publish only: reruns the workflow's publish step from its last finished run; no story, review or fix runs",
+      "pushes the branch and opens the PR; a CI repair round may still run an agent",
+    ],
+  };
+}
+
 async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions): Promise<Prepared | TargetError> {
   if ("feature" in input) {
     try {
@@ -208,6 +237,7 @@ async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions
   }
   if (input.kind === "plan") return preparePlan(input, options);
   if (input.kind === "run") return prepareRun(input, options);
+  if (input.kind === "finish") return prepareFinish(input, options);
   if (
     input.kind === "bot_review" &&
     input.decisions !== undefined &&
@@ -242,7 +272,7 @@ export async function launchJob(
   const prepared = await prepareTarget(parsed, options);
   if ("error" in prepared) return { isError: true, content: prepared.error };
   const { input } = prepared;
-  if (input.kind === "plan" || input.kind === "run") {
+  if (isFeatureJobKind(input.kind)) {
     const busy = busyJob(options) ?? (await busyLock(options));
     if (busy) return busy;
   }
@@ -270,9 +300,11 @@ async function approvePrepared(
   const { input } = prepared;
   const target = "feature" in input ? input.feature : String(input.pr);
   const summary =
-    "feature" in input
-      ? `nax ${input.kind} ${target}`
-      : `nax bot ${input.kind === "bot_review" ? "review" : "fix"} #${target}`;
+    input.kind === "finish"
+      ? `nax run ${target} --publish-only`
+      : "feature" in input
+        ? `nax ${input.kind} ${target}`
+        : `nax bot ${input.kind === "bot_review" ? "review" : "fix"} #${target}`;
   const reason = await launchReason(prepared, options);
   const decision = await options.approve({
     tool: `nax-jobs__${input.kind}`,

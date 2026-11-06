@@ -56,6 +56,7 @@ describe("answer_ask", () => {
     expect((await f.provider.tools("/fixture")).map((t) => t.localName)).toEqual([
       "plan",
       "run",
+      "finish",
       "bot_review",
       "bot_fix",
       "list",

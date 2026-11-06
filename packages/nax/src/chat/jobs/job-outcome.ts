@@ -4,7 +4,7 @@ import { featureDir } from "@/config";
 import type { NaxStatusFile } from "@/execution/status-file";
 // biome-ignore lint/style/noRestrictedImports: leaf reader avoids the execution barrel's runtime graph (US-003).
 import { readStatusFile } from "../../execution/status-file-read";
-import type { ChatJob, ChatJobState } from "./job-types";
+import { type ChatJob, type ChatJobState, isRunJobKind } from "./job-types";
 
 export interface JobOutcome {
   readonly state: Exclude<ChatJobState, "running">;
@@ -37,7 +37,7 @@ async function matchingStatus(job: ChatJob, repoRoot: string): Promise<NaxStatus
 
 /** Only a PID-matched run record may contribute cost or progress. */
 export async function readRunProgress(job: ChatJob, repoRoot: string): Promise<RunProgress | null> {
-  if (job.kind !== "run") return null;
+  if (!isRunJobKind(job.kind)) return null;
   const status = await matchingStatus(job, repoRoot);
   return status ? projectProgress(status) : null;
 }
@@ -58,6 +58,15 @@ function runOutcome(status: NaxStatusFile | null, job: ChatJob, exitCode?: numbe
   return { state: "failed", ...metrics, note: `run status ${status.run.status}` };
 }
 
+/** #2819: a finish job is a publish-only run; its note names what the publish produced. */
+function finishOutcome(status: NaxStatusFile | null, job: ChatJob, exitCode?: number): JobOutcome {
+  const outcome = runOutcome(status, job, exitCode);
+  const workflow = status?.workflow;
+  if (outcome.state === "cancelled" || workflow?.outcome === undefined) return outcome;
+  const published = `publish ${workflow.outcome}${workflow.url ? ` ${workflow.url}` : ""}`;
+  return { ...outcome, note: [published, outcome.note].filter(Boolean).join("; ") };
+}
+
 async function planOutcome(job: ChatJob, repoRoot: string): Promise<JobOutcome> {
   try {
     const record = await _jobOutcomeDeps.stat(join(featureDir(repoRoot, job.target), "prd.json"));
@@ -76,6 +85,7 @@ export async function resolveJobOutcome(
   repoRoot: string,
 ): Promise<JobOutcome> {
   if (job.kind === "run") return runOutcome(await matchingStatus(job, repoRoot), job, exit.exitCode);
+  if (job.kind === "finish") return finishOutcome(await matchingStatus(job, repoRoot), job, exit.exitCode);
   if (job.cancelRequested) return { state: "cancelled" };
   if (job.kind === "plan") return planOutcome(job, repoRoot);
   if (exit.exitCode === 0) return { state: "succeeded" };

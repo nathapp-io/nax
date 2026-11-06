@@ -155,7 +155,7 @@ describe("buildJobNotice", () => {
 });
 
 describe("buildJobsInstructions", () => {
-  test.each(["nax-jobs__plan", "nax-jobs__run", "nax-jobs__bot_review", "nax-jobs__bot_fix"])(
+  test.each(["nax-jobs__plan", "nax-jobs__run", "nax-jobs__finish", "nax-jobs__bot_review", "nax-jobs__bot_fix"])(
     "US-004 AC-4 names billed tool %s",
     (tool) => {
       expect(workflow.buildJobsInstructions()).toContain(tool);

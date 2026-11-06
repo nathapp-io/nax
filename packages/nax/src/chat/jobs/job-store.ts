@@ -5,7 +5,7 @@ import { type ChatJob, type ChatJobKind, JOB_ID_PATTERN } from "./job-types";
 
 export const CHAT_JOBS_DIR = "chat-jobs";
 const RANDOM_HEX_LENGTH = 8;
-const JOB_KINDS: readonly string[] = ["plan", "run", "bot_review", "bot_fix"];
+const JOB_KINDS: readonly string[] = ["plan", "run", "finish", "bot_review", "bot_fix"];
 const JOB_STATES: readonly string[] = ["running", "succeeded", "failed", "cancelled", "lost"];
 
 export const _jobStoreDeps = {

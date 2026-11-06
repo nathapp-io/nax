@@ -5,7 +5,7 @@ import { resolveTargetRepo } from "../target-repo";
 import { buildChainStepArgv, CHAIN_STEP_FIELDS, type ChainStepInput, parseChainStepInput } from "./chain-argv";
 import type { ChatChains } from "./chain-controller";
 import { CHAIN_CHECK_MAX_LENGTH, CHAIN_MAX_STEPS, type ChainStep } from "./chain-types";
-import type { ChatJobKind } from "./job-types";
+import { type ChatJobKind, isRunJobKind } from "./job-types";
 import { _jobsLaunchDeps, resolvePlanSpec } from "./jobs-launch";
 import type { JobsProviderOptions } from "./jobs-provider";
 
@@ -120,6 +120,7 @@ function failure(content: string): ToolResult {
 
 function stepLabel(step: ChainStep): string {
   if (step.kind === "plan" || step.kind === "run") return `nax ${step.kind} ${step.target}`;
+  if (step.kind === "finish") return `nax run ${step.target} --publish-only`;
   const action = step.kind === "bot_review" ? "review" : "fix";
   return `nax bot ${action} ${step.prIndex === undefined ? `#${step.target}` : "(PR chosen by the agent)"}`;
 }
@@ -143,7 +144,7 @@ async function chainReason(proposal: ResolvedChainProposal, options: Options): P
     ...proposal.existingPlanPrds.map(
       ({ step, feature }) => `warning: step ${step} replaces the existing prd.json for ${feature}`,
     ),
-    ...(options.interactionPlugin === "cli" && proposal.steps.some((step) => step.kind === "run")
+    ...(options.interactionPlugin === "cli" && proposal.steps.some((step) => isRunJobKind(step.kind))
       ? ["run steps' asks you do not answer in chat fall to their timeout defaults"]
       : []),
     "Steps run in this order, each once. A failed step or check, a different step, the cost cap, a cancel or closing the chat stops the chain.",

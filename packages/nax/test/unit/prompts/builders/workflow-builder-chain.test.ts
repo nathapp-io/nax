@@ -86,16 +86,16 @@ describe("buildJobNotice — chain line", () => {
 });
 
 describe("buildJobsInstructions — chain lines", () => {
-  test("US-012 AC-16 opt-in adds a twelfth, last answer-tool line", () => {
+  test("US-012 AC-16 opt-in adds a thirteenth, last answer-tool line", () => {
     const enabled = lines(buildJobsInstructions({ answerAsks: true }));
-    expect(enabled).toHaveLength(12);
-    expect(enabled[11]).toContain("nax-jobs__answer_ask");
-    expect(enabled.slice(0, 11)).toEqual(lines(buildJobsInstructions()));
+    expect(enabled).toHaveLength(13);
+    expect(enabled[12]).toContain("nax-jobs__answer_ask");
+    expect(enabled.slice(0, 12)).toEqual(lines(buildJobsInstructions()));
   });
 
-  test("US-012 AC-17 explicit false preserves the base eleven lines", () => {
+  test("US-012 AC-17 explicit false preserves the base twelve lines", () => {
     expect(buildJobsInstructions({ answerAsks: false })).toBe(buildJobsInstructions());
-    expect(lines(buildJobsInstructions())).toHaveLength(11);
+    expect(lines(buildJobsInstructions())).toHaveLength(12);
   });
 
   test("AC-4 carries the nax-jobs__chain approval line", () => {
@@ -116,15 +116,15 @@ describe("buildJobsInstructions — chain lines", () => {
     );
   });
 
-  test("AC-8 returns exactly eleven lines, the chain lines last", () => {
+  test("AC-8 returns exactly twelve lines, the chain lines last", () => {
     const instructionLines = lines(buildJobsInstructions());
-    expect(instructionLines).toHaveLength(11);
-    expect(instructionLines.slice(8)).toEqual(CHAIN_INSTRUCTIONS);
+    expect(instructionLines).toHaveLength(12);
+    expect(instructionLines.slice(9)).toEqual(CHAIN_INSTRUCTIONS);
   });
 
   test("AC-4..AC-8 the five original instruction lines are preserved verbatim", () => {
     expect(lines(buildJobsInstructions()).slice(0, 5)).toEqual([
-      "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
+      "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__finish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
       "A denial is final for that call; do not retry with changed arguments to get round it.",
       "Jobs run in the background; a [nax-jobs] notice arrives when one ends.",
       "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
@@ -138,9 +138,13 @@ describe("buildJobsInstructions — chain lines", () => {
     expect(l[6]).toContain("Leave profiles empty to use the profile the PRD was planned with");
   });
 
+  test("#2819 explains when to finish a run that left no PR", () => {
+    expect(lines(buildJobsInstructions())[7]).toContain("`nax-jobs__finish` publishes it");
+  });
+
   test("AC-14 the repo line immediately precedes the chain lines", () => {
     const l = lines(buildJobsInstructions());
-    expect(l[7]).toContain("pass repo with that folder's path");
+    expect(l[8]).toContain("pass repo with that folder's path");
   });
 
   test("the chain lines reach the @/prompts barrel text", () => {

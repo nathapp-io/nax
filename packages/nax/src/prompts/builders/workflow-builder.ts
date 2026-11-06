@@ -54,13 +54,14 @@ export function buildJobNotice(input: JobNoticeInput): string {
 /** Fixed provider guidance; launching, approval and checkout guards live elsewhere. */
 export function buildJobsInstructions(options?: { readonly answerAsks?: boolean }): string {
   const instructions = [
-    "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
+    "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__finish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
     "A denial is final for that call; do not retry with changed arguments to get round it.",
     "Jobs run in the background; a [nax-jobs] notice arrives when one ends.",
     "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
     "Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
-    "Start nax plan, nax run and nax bot only with these tools, never with Bash: Bash skips the approval card, the profile handling and the job notice.",
+    "Start nax plan, nax run (including a publish-only finish) and nax bot only with these tools, never with Bash: Bash skips the approval card, the profile handling and the job notice.",
     "Leave profiles empty to use the profile the PRD was planned with; the approval card names it. Pass profiles only to override, with names from `nax-jobs__list`.",
+    "When a run ends with every story passed but no PR (its workflow outcome is local-only or pushed), `nax-jobs__finish` publishes it: it reruns only the publish step, then use the PR it reports for `nax-jobs__bot_review`.",
     "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
     '`nax-jobs__chain` proposes a full run: an ordered list of billed steps on one approval card. Only the user\'s yes on that card approves it; a chat message such as "go ahead" does not.',
     "While a chain is active, call each step's launch tool with exactly the approved arguments, one step at a time, after the previous step succeeded; a different call stops the chain and shows a normal card.",
