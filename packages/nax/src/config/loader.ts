@@ -119,7 +119,8 @@ async function applyGlobalLayer(
   const globalConfRaw = await loadJsonFileStrict<Record<string, unknown>>(globalConfigPath(), "config");
   if (!globalConfRaw) return { rawConfig, globalConfRaw: null, globalLayerConf: null };
   const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
-  const globalConf = applyConfigCompatShims(globalConfStripped, ctx.logger, ctx.warnDedupe);
+  const resolvedGlobalConf = resolveEnvVarsWarnOnFailure(globalConfStripped, ctx.logger, "global config");
+  const globalConf = applyConfigCompatShims(resolvedGlobalConf, ctx.logger, ctx.warnDedupe);
   rejectPipelineModeKeys(globalConf, "global config");
   return {
     rawConfig: deepMergeConfig(rawConfig, globalConf),
@@ -139,7 +140,8 @@ async function applyProjectLayer(
   const projConf = await loadJsonFileStrict<Record<string, unknown>>(join(projDir, "config.json"), "config");
   if (!projConf) return rawConfig;
   const { profile: _pProfile, ...projConfStripped } = rejectGlobalOnlyKeys(projConf, "project");
-  const resolvedProjConf = applyConfigCompatShims(projConfStripped, ctx.logger, ctx.warnDedupe);
+  const envResolvedProjConf = resolveEnvVarsWarnOnFailure(projConfStripped, ctx.logger, "project config");
+  const resolvedProjConf = applyConfigCompatShims(envResolvedProjConf, ctx.logger, ctx.warnDedupe);
   rejectPipelineModeKeys(resolvedProjConf, "project config");
   const preProjectMergeConfig = rawConfig;
   const merged = deepMergeConfig<Record<string, unknown>>(rawConfig, resolvedProjConf);
@@ -297,12 +299,6 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   rawConfig = globalLayer.rawConfig;
 
   rawConfig = await applyProjectLayer(rawConfig, projDir, globalLayer.globalLayerConf, ctx);
-
-  // CFG-2: global + project config never ran through $VAR resolution — a value
-  // like "test": "$TEST_CMD" landed in the run config as the literal
-  // unresolved string. Resolve against the ambient (secret-filtered)
-  // process.env, same as the profile chain below.
-  rawConfig = resolveEnvVarsWarnOnFailure(rawConfig, logger, "global/project config");
 
   rawConfig = await applyProfileChainLayer(rawConfig, overlayChain, projectRoot, ctx);
 
@@ -480,8 +476,13 @@ export async function loadConfigForWorkdir(
   // carries the root's resolved value for it. `routing.llm.batchMode` -> `mode` and
   // `context.testCoverage.testPattern` -> `execution.smartTestRunner.testFilePatterns`
   // would both silently no-op if the chain ran post-merge.
-  const shimmedPackageFields = applyConfigCompatShims(
+  const envResolvedPackageFields = resolveEnvVarsWarnOnFailure(
     packageFields as Record<string, unknown>,
+    logger,
+    `per-package config "${packageDir}"`,
+  );
+  const shimmedPackageFields = applyConfigCompatShims(
+    envResolvedPackageFields,
     logger,
     warnDedupe,
   ) as Partial<NaxConfig>;
@@ -511,14 +512,6 @@ export async function loadConfigForWorkdir(
   // once.
   merged = stripRemovedNoOpKeys(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
 
-  // CFG-3: the plain per-package overlay (.nax/mono/<pkg>/config.json) also
-  // never ran through $VAR resolution — same gap as CFG-2 at the root layer.
-  const envResolvedMerged = resolveEnvVarsWarnOnFailure(
-    merged as unknown as Record<string, unknown>,
-    logger,
-    `per-package config (${packageDir})`,
-  );
-
   // Per-package profile: apply the profile chain overlay on top of merged config.
   // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).
   const { chain: packageChain, layers } = await loadPackageProfileLayers({
@@ -528,7 +521,7 @@ export async function loadConfigForWorkdir(
     logger,
     warnDedupe,
   });
-  let rawMerged = envResolvedMerged;
+  let rawMerged = merged as unknown as Record<string, unknown>;
   if (packageChain.length > 0) {
     rawMerged = applyPackageProfileLayers(rawMerged, layers);
     rawMerged.profile = packageChain.join("+");

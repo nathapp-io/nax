@@ -76,6 +76,41 @@ describe("loadConfig — profile activation (US-002)", () => {
     });
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: exercise literal config environment references
+  test.each(["$FORK_REVIEW_MODE", "${FORK_REVIEW_MODE}"])(
+    "rejects environment-expanded pipeline mode (%s) in every file layer",
+    async (mode) => {
+      const original = process.env.FORK_REVIEW_MODE;
+      process.env.FORK_REVIEW_MODE = "pipeline";
+      const rootConfigPath = join(projectDir, ".nax", "config.json");
+      const assertRemoved = async (load: Promise<unknown>, source: string) => {
+        await expect(load).rejects.toMatchObject({
+          code: "CONFIG_PIPELINE_MODE_REMOVED",
+          context: { source, keys: ["execution.mode"] },
+        });
+      };
+      try {
+        writeJson(join(globalDir, "config.json"), { execution: { mode } });
+        // A later workflow override must not hide an invalid earlier layer.
+        writeJson(rootConfigPath, { execution: { mode: "workflow" } });
+        await assertRemoved(loadConfig(projectDir), "global config");
+
+        writeJson(join(globalDir, "config.json"), {});
+        writeJson(rootConfigPath, { execution: { mode } });
+        await assertRemoved(loadConfig(projectDir), "project config");
+
+        writeJson(rootConfigPath, {});
+        writeJson(join(projectDir, ".nax", "mono", "apps/api", "config.json"), { execution: { mode } });
+        _clearRootConfigCache();
+        await assertRemoved(loadConfigForWorkdir(rootConfigPath, "apps/api"), 'per-package config "apps/api"');
+      } finally {
+        if (original === undefined) delete process.env.FORK_REVIEW_MODE;
+        else process.env.FORK_REVIEW_MODE = original;
+        _clearRootConfigCache();
+      }
+    },
+  );
+
   test("AC-7 preserves the default maxIterations without rejecting defaults", async () => {
     writeJson(join(projectDir, ".nax", "config.json"), {});
     expect((await loadConfig(projectDir)).execution.maxIterations).toBe(20);
