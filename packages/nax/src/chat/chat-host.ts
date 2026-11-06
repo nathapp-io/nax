@@ -77,6 +77,7 @@ class NativeChatHost implements ChatHost {
   readonly jobs?: ChatJobs;
   readonly runAsks?: ChatRunAsks;
   readonly tasks?: ChatBackgroundTasks;
+  readonly taskNoticeTurns?: number;
   readonly confirmBeforeClose?: () => Promise<boolean>;
   private readonly hostJobs?: ReturnType<typeof createHostJobs>;
   private readonly fallback: AskFallback;
@@ -151,6 +152,7 @@ class NativeChatHost implements ChatHost {
     this.nativeModels = deps.models ?? tierModels(deps.config);
     this.projectKey = getProjectKey(deps.config, deps.repoRoot);
     this.outputDir = projectOutputDir(this.projectKey, deps.config.outputDir);
+    this.taskNoticeTurns = deps.config.interaction?.defaults.chatTaskNoticeTurns;
     this.asks = createChatAskController({
       mode: "guarded",
       approvalTimeoutMs: deps.config.execution.approvalTimeout,

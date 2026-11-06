@@ -387,11 +387,11 @@ export interface InteractionConfig {
     timeout: number;
     /** Delay before offering a terminal approval to the interaction chain (default: 60000). */
     chatAskFallbackMs?: number;
+    chatTaskNoticeTurns?: number; // ended-task notices that may wake the chat agent in a row (default: 3)
     /**
-     * Global fallback override. Undefined unless the operator explicitly set
-     * it (BUG-48 / D-9) — a schema-level default here would make every
-     * trigger's fallback identical, silently overriding each trigger's own
-     * metadata default (see TRIGGER_METADATA). Ignored for red-tier triggers.
+     * Global fallback override. Undefined unless the operator explicitly set it (BUG-48 / D-9) — a
+     * schema-level default here would make every trigger's fallback identical, silently overriding each
+     * trigger's own metadata default (see TRIGGER_METADATA). Ignored for red-tier triggers.
      */
     fallback?: "continue" | "skip" | "escalate" | "abort";
   };

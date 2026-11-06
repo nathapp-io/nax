@@ -170,12 +170,12 @@ export const InteractionConfigSchema = z.object({
   defaults: z.object({
     timeout: z.number().int().min(1000).max(3600000).default(600000),
     chatAskFallbackMs: z.number().int().min(1000).max(3600000).default(60000),
-    // No `.default()` here (BUG-48 / D-9): the field must stay undefined when
-    // the operator hasn't set it, so getTriggerConfig can tell "unset — use
-    // this trigger's own metadata default" apart from "explicitly configured".
-    // A schema-level default would make every trigger's fallback identical,
-    // silently overriding e.g. max-retries's "skip" and review-gate's
-    // "continue" with whatever the schema default happened to be.
+    chatTaskNoticeTurns: z.number().int().min(0).max(100).default(3),
+    // No `.default()` here (BUG-48 / D-9): the field must stay undefined when the operator hasn't
+    // set it, so getTriggerConfig can tell "unset — use this trigger's own metadata default" apart
+    // from "explicitly configured". A schema-level default would make every trigger's fallback
+    // identical, silently overriding e.g. max-retries's "skip" and review-gate's "continue" with
+    // whatever the schema default happened to be.
     fallback: z.enum(["continue", "skip", "escalate", "abort"]).optional(),
   }),
   triggers: z

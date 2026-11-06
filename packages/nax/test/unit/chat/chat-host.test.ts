@@ -144,6 +144,9 @@ test("US-001 AC-18 resolves effort capability using the base model", () => {
 test("US-001 AC-19 unknown models retain all levels", () => {
   expect(host.effortLevels?.("p/other")).toBe(EFFORT_LEVELS);
 });
+test("exposes the configured chat task-notice turn limit (#2816)", () => {
+  expect(host.taskNoticeTurns).toBe(3);
+});
 test("US-001 AC-20 switches with a clamped model suffix", async () => {
   await start();
   await host.switchTo({ model: "p/m[medium]" });
