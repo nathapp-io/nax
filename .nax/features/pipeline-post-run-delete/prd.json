@@ -3,7 +3,7 @@
   "feature": "pipeline-post-run-delete",
   "branchName": "feat/pipeline-post-run-delete",
   "createdAt": "2026-11-06T00:00:00.000Z",
-  "updatedAt": "2026-11-06T08:17:53.938Z",
+  "updatedAt": "2026-11-06T08:43:45.758Z",
   "userStories": [
     {
       "id": "US-001",
@@ -346,14 +346,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Broad importer-depth deletion includes acceptance edit guards and shared fixtures; strict isolated testing protects the guard boundary and retained quality-gate behavior."
+        "reasoning": "Broad importer-depth deletion includes acceptance edit guards and shared fixtures; strict isolated testing protects the guard boundary and retained quality-gate behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/index.ts",
@@ -460,7 +463,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0d9ac93fd44742f7615d2a345b50cf3bd52f9f85"
     },
     {
       "id": "US-004",
