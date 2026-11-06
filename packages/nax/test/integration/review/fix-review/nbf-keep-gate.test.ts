@@ -11,11 +11,12 @@
  *
  * Everything below the plan is a seam, so no git repository and no subprocess is
  * involved: the plan runs on the same mocked `callOp`/`runFixCycle` the existing
- * NBF wiring suite uses, the git-backed snapshot/rollback deps are stubbed
- * exactly as `test/helpers/e2e/orchestrator-harness.ts` stubs them, the fix
- * review's git layer is faked through `_treeSnapshotDeps`, and the reviewer is
- * the runtime's stubbed agent manager (AC12: "the agent stubbed to answer the
- * fix review with {"passed":true,"reason":"ok"}").
+ * NBF wiring suite uses, the git-backed snapshot/rollback deps are stubbed out
+ * so NBF works in the non-git temp workdir (`captureSnapshotRef` returns a fixed
+ * sha, the restore path is a no-op), the fix review's git layer is faked through
+ * `_treeSnapshotDeps`, and the reviewer is the runtime's stubbed agent manager
+ * (AC12: "the agent stubbed to answer the fix review with
+ * {"passed":true,"reason":"ok"}").
  *
  * Consequences asserted, all of them observable behaviour:
  *   - `snapshotWorkingTree` runs exactly once ⇒ `runFixReview` was invoked once;

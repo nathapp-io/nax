@@ -77,8 +77,6 @@ export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
 export { withDepsRestore } from "./deps";
 export { type DispatchContextOptions, makeDispatchContext } from "./dispatch-context";
-export type { E2EGates, E2EOptions, E2EResult, ScriptedAgentSpec, ScriptedTurn } from "./e2e";
-export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
 export { fullDescribe, fullTest } from "./env";
 export { makeEscalationContext } from "./escalation-context";
 export type { FakeAgentManagerOptions } from "./fake-agent-manager";
