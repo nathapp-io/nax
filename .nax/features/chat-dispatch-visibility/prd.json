@@ -1,0 +1,421 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-dispatch-visibility",
+  "branchName": "feat/chat-dispatch-visibility",
+  "createdAt": "2026-10-26T00:00:00.000Z",
+  "updatedAt": "2026-11-05T16:46:33.121Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add the built-in general agent",
+      "description": "**Goal** — Provide an uncatalogued general AgentResource and its canonical prompt for model-only chat dispatch.\n\n**Motivation** — Asked to \"dispatch native openai-codex/gpt-6-luna\", the chat agent had to guess a carrier agent: it called `agent: \"explore\"` (refused as unknown) and then `agent: \"Explore\"`.\n\n**Approach** — A new module `packages/nax/src/chat/builtin-agent.ts` exports:\n\n```typescript\nexport const GENERAL_AGENT_NAME = \"general\";\nexport const GENERAL_AGENT_DESCRIPTION = \"Runs a self-contained task on the model you pass\";\n/** The agent a nax-agents__run call with a model and no agent runs on. */\nexport function generalAgent(): AgentResource;\n```\n\n`generalAgent()` returns `{ kind: \"agent\", name: GENERAL_AGENT_NAME, qualifiedName: GENERAL_AGENT_NAME, description: GENERAL_AGENT_DESCRIPTION, prompt: buildGeneralAgentPrompt(), path: \"\", origin: { kind: \"nax-builtin\" } }` with no `model` and no `tools` keys. With no `tools`, `mapSubagentTools` returns no `allowedTools`, so a native run admits every parent tool and an ACP run gets the chat profile (the existing rules for an agent without `tools:`). `GENERAL_AGENT_NAME` and `generalAgent` are exported from the `@/chat` barrel.\n\n`ResourceOrigin` (`packages/nax/src/resources/types.ts`) gains `{ readonly kind: \"nax-builtin\" }`. `originLabel` (`packages/nax/src/resources/listing.ts`) becomes an exported function (not added to the `@/resources` barrel) and returns `\"built-in\"` for it. The general agent is never added to a `ResourceCatalog`: `/agents`, the agents index and `findAgent` do not see it.\n\n`buildGeneralAgentPrompt()` is a new function in `packages/nax/src/prompts/builders/agents-builder.ts`, exported from `@/prompts`, returning exactly:\n\n```text\nYou are a general-purpose subagent. Complete the task you are given with the tools you have, then reply with a concise final answer: the agent that called you reads only your last message.\n```\n\n**Scope** — In: the new resource factory, origin union/label, prompt builder, named barrel exports and builtin-agent.test.ts. Out: provider validation/dispatch and instructions advertisement (US-002), provenance resolution/metadata (US-003), Agent-card rendering (US-004), ACP pending events (US-005), unread-tool correction (US-006). Do not add general to catalog discovery or change the CLI's required agent argument.\n\n**Interface** —\n```typescript\nexport const GENERAL_AGENT_NAME = \"general\";\nexport const GENERAL_AGENT_DESCRIPTION = \"Runs a self-contained task on the model you pass\";\n/** The agent a nax-agents__run call with a model and no agent runs on. */\nexport function generalAgent(): AgentResource;\nexport function buildGeneralAgentPrompt(): string;\nexport function originLabel(origin: ResourceOrigin): string;\n```",
+      "acceptanceCriteria": [
+        "[unit] GENERAL_AGENT_NAME exported from @/chat equals \"general\".",
+        "[unit] generalAgent() from @/chat returns an AgentResource whose name and qualifiedName both equal GENERAL_AGENT_NAME.",
+        "[unit] generalAgent() returns origin equal to { kind: \"nax-builtin\" }.",
+        "[unit] generalAgent() returns path equal to \"\".",
+        "[unit] generalAgent() returns description equal to GENERAL_AGENT_DESCRIPTION.",
+        "[unit] generalAgent() returns an object with no model key.",
+        "[unit] generalAgent() returns an object with no tools key.",
+        "[unit] generalAgent().prompt equals buildGeneralAgentPrompt() from @/prompts.",
+        "[unit] buildGeneralAgentPrompt() returns exactly \"You are a general-purpose subagent. Complete the task you are given with the tools you have, then reply with a concise final answer: the agent that called you reads only your last message.\".",
+        "[unit] originLabel({ kind: \"nax-builtin\" }), imported directly from packages/nax/src/resources/listing.ts, returns \"built-in\".",
+        "[unit] originLabel({ kind: \"claude-user\" }) still returns \"user\".",
+        "[unit] originLabel({ kind: \"nax-plugin\", plugin: \"kit\" }) still returns \"nax-plugin kit\".",
+        "[unit] Given a catalog created by buildResourceCatalog([]), calling generalAgent() does not make the built-in agent discoverable: catalog.findAgent(GENERAL_AGENT_NAME) returns undefined."
+      ],
+      "tags": [
+        "chat",
+        "resources",
+        "prompts",
+        "2806"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small additive factory plus existing resource/prompt/barrel wiring; no new dependency, session lifecycle or permission decision changes. Write failing resource/prompt/label tests before implementation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/types.ts",
+        "packages/nax/src/resources/listing.ts",
+        "packages/nax/src/prompts/builders/agents-builder.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/chat/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/builtin-agent.ts",
+        "packages/nax/test/unit/chat/builtin-agent.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6214e67692a59baa88b36dec754a57c4ecf7f9eb"
+    },
+    {
+      "id": "US-002",
+      "title": "Dispatch model-only chat tasks through general",
+      "description": "**Goal** — Allow nax-agents__run to omit agent when model is supplied, preserving named-agent dispatch and catalog gating.\n\n**Motivation** — `createAgentsProvider` (`packages/nax/src/chat/agents-provider.ts`) requires `agent` and resolves it with `catalog.findAgent`; `model` only overrides that agent's model.\n\n**Approach** — The provider's `run` checks, in this order, and stops at the first that applies:\n\n1. `task` is not a non-empty string (after trim), or `agent` is present and is not a non-empty string: failure `[chat] run requires agent: string and task: string` (unchanged text).\n2. `model` is present and is not a non-empty string: failure `[chat] run model must be a non-empty string` (unchanged text).\n3. `agent` is absent and `model` is absent: failure `[chat] run requires agent, or model to run the built-in general agent`.\n4. `agent` is absent and `model` is present: `options.run(generalAgent(), task, ctx.signal, model)`.\n5. `agent` is present: the existing lookup (`unknown agent ...` when `findAgent` misses), then `options.run(agent, task, ctx.signal[, model])` as today.\n\nThe input schema's `required` becomes `[\"task\"]`; `properties` and `additionalProperties: false` are unchanged. The tool is still advertised only when the catalog has at least one agent (unchanged gate).\n\nThe tool description becomes:\n\n```text\nRun a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task on a model with no catalog agent, omit agent and pass model: the task runs on the built-in general agent with your tools.\n```\n\n`buildAgentsInstructions` gains a third fixed line after the existing two, before the agent entries: `To run a task on a model when no agent fits, omit agent and pass model; the task runs on the built-in general agent.`\n\nA model on the general agent that resolves to `fallback` is refused by the existing check in `runNested` (`[chat] unknown model <m>; pass provider/model ...`), unchanged.\n\n**Scope** — In: provider schema/description/ordered checks, generalAgent dispatch, third instructions line, compatible fixture changes and host integration. Out: creating the general resource/prompt (US-001), modelFor/metadata provenance (US-003), card rendering (US-004), ACP deltas (US-005) and unread-call text (US-006). Offering `nax-agents__run` when the catalog has no agents; the tool stays gated on at least one catalog agent. A bare-model run from `nax agents run`; that command still requires an `<agent>` argument.\n\n**Interface** — Existing injected runner remains unchanged:\n```typescript\nreadonly run: (\n  agent: AgentResource,\n  task: string,\n  signal: AbortSignal | undefined,\n  model?: string,\n) => Promise<ToolResult>;\n```\nTarget inputSchema.required: `[\"task\"]`.\n\n**Implementation/test notes** — Modify packages/nax/src/chat/agents-provider.ts and packages/nax/src/prompts/builders/agents-builder.ts. In packages/nax/test/unit/chat/agents-provider.test.ts, update both required-list pins from [agent, task] to [task], retaining model: string; change only the missing-agent/no-model row's expected error in AC-13, keeping every other row and the not-called assertion. In packages/nax/test/unit/prompts/builders/agents-builder.test.ts, move the first entry from out[2] to out[3] and assert the fixed third line at out[2]. Extend packages/nax/test/helpers/chat-subagents.ts with optional runInput; when set, pass it to tool.run instead of { agent: runAgentName, task }, and otherwise keep the old input. Exercise the real host/opener composition through this harness in host-subagents.test.ts without starting real providers or changing nested permission/lifecycle behavior.",
+      "acceptanceCriteria": [
+        "[unit] The nax-agents provider's run tool has inputSchema.required equal to [\"task\"].",
+        "[unit] The run tool's description equals \"Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task on a model with no catalog agent, omit agent and pass model: the task runs on the built-in general agent with your tools.\".",
+        "[unit] buildAgentsInstructions with one entry returns \"To run a task on a model when no agent fits, omit agent and pass model; the task runs on the built-in general agent.\" as its third line.",
+        "[unit] buildAgentsInstructions with one entry returns that entry's line fourth.",
+        "[unit] Running the tool with { task: \"t\", model: \"openai-codex/gpt-6-luna\" } calls the injected run once with an AgentResource whose name is \"general\" and origin.kind is \"nax-builtin\", followed by task \"t\", the context signal and model \"openai-codex/gpt-6-luna\".",
+        "[unit] Running the tool with { task: \"t\" } (no agent, no model) returns { isError: true, content: \"[chat] run requires agent, or model to run the built-in general agent\" }.",
+        "[unit] Running the tool with { task: \"t\" } (no agent, no model) does not call the injected run.",
+        "[unit] Running the tool with { task: \"t\", model: \"  \" } (no agent) returns { isError: true, content: \"[chat] run model must be a non-empty string\" }.",
+        "[unit] Running the tool with { task: \"t\", model: \"  \" } (no agent) does not call the injected run.",
+        "[unit] Running the tool with { agent: 1, task: \"t\", model: \"p/x\" } returns { isError: true, content: \"[chat] run requires agent: string and task: string\" }.",
+        "[unit] Running the tool with { agent: 1, task: \"t\", model: \"p/x\" } does not call the injected run.",
+        "[unit] Running the tool with { model: \"p/x\" } (no task) returns { isError: true, content: \"[chat] run requires agent: string and task: string\" }.",
+        "[unit] Running the tool with { model: \"p/x\" } (no task) does not call the injected run.",
+        "[unit] Running the tool with { agent: \"nobody\", task: \"t\", model: \"p/x\" } returns an error whose content starts \"unknown agent nobody; available:\".",
+        "[unit] Running the tool with { agent: \"nobody\", task: \"t\", model: \"p/x\" } does not call the injected run.",
+        "[integration] On a chat host whose catalog has one agent, a scripted chat turn running the tool with { task: \"look\", model: \"openai/gpt-x\" } opens exactly one nested native session with model \"openai/gpt-x\".",
+        "[integration] On a chat host whose catalog has one agent, the nested native session opened by the scripted run input { task: \"look\", model: \"openai/gpt-x\" } has system instructions ending with buildGeneralAgentPrompt().",
+        "[unit] The provider still advertises no tools for a catalog with no agents.",
+        "[unit] Given a catalog reviewer AgentResource and no model override, running nax-agents__run with { agent: \"reviewer\", task: \"t\" } still calls the injected run with exactly [reviewer, \"t\", ctx.signal], preserving the existing three-argument invocation."
+      ],
+      "tags": [
+        "chat",
+        "dispatch",
+        "subagents",
+        "2806"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Ordered provider validation and standard prompt/fixture edits are bounded, but the change introduces another nested-session dispatch path inheriting parent tools, so the session/access-control security override requires strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/agents-provider.ts",
+        "packages/nax/src/prompts/builders/agents-builder.ts",
+        "packages/nax/test/unit/chat/agents-provider.test.ts",
+        "packages/nax/test/helpers/chat-subagents.ts",
+        "packages/nax/src/chat/builtin-agent.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/agents-provider.test.ts",
+          "reason": "test \"AC-6 inputSchema.required is [agent, task]\" pins `[\"agent\", \"task\"]`; it becomes `[\"task\"]`, because `agent` is optional when `model` is given."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/agents-builder.test.ts",
+          "reason": "test \"AC-13 second line names provider/model, the native example and acp:<agent>; list follows\" asserts the first agent entry is `out[2]`; the new fixed third line moves the entry to `out[3]`, and `out[2]` becomes the general-agent line, because `buildAgentsInstructions` gains that line before the entries."
+        },
+        {
+          "path": "packages/nax/test/helpers/chat-subagents.ts",
+          "reason": "the scripted run hard-codes `tool.run({ agent: runAgentName, task })`; it gains an optional `runInput` setup option that, when set, is passed to `tool.run` in place of that object, so a test can script a run with no agent and a model. Existing callers that omit it get the old input."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/agents-provider.test.ts",
+          "reason": "test \"AC-1 schema has model: string and required stays [agent, task]\" pins `required` to `[\"agent\", \"task\"]`; it becomes `[\"task\"]` (the `model: string` property assertion stays), because `agent` is optional when `model` is given."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/agents-provider.test.ts",
+          "reason": "the `test.each` \"AC-13 %s does not call the injected run\" asserts `{ isError: true, content: INVALID_INPUT }` for every row; its \"missing agent\" row (no agent, no model) now expects content `[chat] run requires agent, or model to run the built-in general agent`, because a missing agent with no model is its own check (Design Part 2, step 3). Every other row and the not-called assertion stay."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "851225fcb054acceae3ac3d3537edb74104aea5c"
+    },
+    {
+      "id": "US-003",
+      "title": "Carry subagent model provenance into tool-call metadata",
+      "description": "**Goal** — Resolve a display label with each subagent model and stamp both on top-level run events, including model-only calls.\n\n**Motivation** — `withAgentCallModel` (`packages/nax/src/chat/agent-call-model.ts`) stamps only `metadata.subagentModel`.\n\n**Approach** — `packages/nax/src/chat/subagent-model.ts` gains:\n\n```typescript\nexport type SubagentModelLabel = \"inherited\" | \"alias\" | \"tier\" | \"agent file\" | \"override\" | \"fallback to parent\";\nexport function subagentModelLabel(source: SubagentModelSource, overridden: boolean): SubagentModelLabel;\n```\n\n`subagentModelLabel` maps, in this order: `overridden && source === \"model\"` -> `\"override\"`; then `inherit` -> `\"inherited\"`, `alias` -> `\"alias\"`, `tier` -> `\"tier\"`, `model` -> `\"agent file\"`, `fallback` -> `\"fallback to parent\"`. An override that resolves through an alias or a tier keeps `\"alias\"` / `\"tier\"`, because that is where the model id came from, and an override of `inherit` keeps `\"inherited\"`.\n\n`SubagentRuns.modelFor` changes shape (see Integration); `overridden` is `override !== undefined`. An absent `agentName` resolves against `generalAgent()` with no catalog lookup.\n\n`withAgentCallModel` reads the `nax-agents__run` input as: `agent` present and a string -> that name; `agent` absent and `model` a string -> no name (the general agent); anything else -> forward the event unchanged without calling `modelFor` (as today for a non-string agent). When `modelFor` returns a value, the event is forwarded with `metadata: { ...event.metadata, subagentModel: model, subagentModelSource: label }`.\n\n**Scope** — In: pure model-source labels, modelFor result/undefined-name handling, event metadata annotation and unit/host regressions. Out: generalAgent creation (US-001), provider validation/dispatch/schema (US-002), transcript/card display (US-004), ACP pending events (US-005), unread-tool text (US-006). No nested-session lifecycle, permission or model-resolution order changes.\n\n**Interface** —\n```typescript\nexport type SubagentModelLabel = \"inherited\" | \"alias\" | \"tier\" | \"agent file\" | \"override\" | \"fallback to parent\";\nexport function subagentModelLabel(source: SubagentModelSource, overridden: boolean): SubagentModelLabel;\nmodelFor(agentName: string | undefined, override?: string): { model: string; label: SubagentModelLabel } | undefined\n```\n`withAgentCallModel(onEvent, modelFor)` — the `modelFor` parameter takes the target type above. Undefined remains the result for an unknown name or a refused override, as today; an undefined name means the general agent.\n\nRead only: `resolveSubagentModel(options): ResolvedSubagentModel` and `SubagentModelSource` in subagent-model.ts; `mapSubagentTools(tools?: readonly string[]): MappedSubagentTools` in subagent-tools.ts. Preserve runNested's existing explicit-override fallback refusal: `[chat] unknown model <m>; pass provider/model ...`, with no nested session opened.\n\n**Implementation/test notes** — Modify subagent-model.ts, subagent-runs.ts and agent-call-model.ts. Update subagent-runs.test.ts modelFor string toBe assertions to { model, label } for inherited/override, leaving undefined cases. Update agent-call-model.test.ts helper signatures and all modelFor mocks from strings to { model, label }, keeping original metadata fields and adding subagentModelSource. Update host-subagents.test.ts's exact metadata pin from { subagentModel: CHAT_MODEL } to { subagentModel: CHAT_MODEL, subagentModelSource: \"inherited\" }; the existing chat-host.ts send wrapper already consumes runs.modelFor. Test source mapping in the existing subagent-model.test.ts. Do not require US-002 to have run: modelFor's absent-name behavior uses the US-001 factory directly.",
+      "acceptanceCriteria": [
+        "[unit] subagentModelLabel(\"model\", true) returns \"override\".",
+        "[unit] subagentModelLabel(\"inherit\", false) returns \"inherited\".",
+        "[unit] subagentModelLabel(\"model\", false) returns \"agent file\".",
+        "[unit] subagentModelLabel(\"alias\", false) returns \"alias\".",
+        "[unit] subagentModelLabel(\"tier\", false) returns \"tier\".",
+        "[unit] subagentModelLabel(\"fallback\", false) returns \"fallback to parent\".",
+        "[unit] subagentModelLabel(\"alias\", true) returns \"alias\".",
+        "[unit] subagentModelLabel(\"tier\", true) returns \"tier\".",
+        "[unit] subagentModelLabel(\"inherit\", true) returns \"inherited\".",
+        "[unit] modelFor(undefined, \"openai/gpt-x\") returns { model: \"openai/gpt-x\", label: \"override\" }.",
+        "[unit] Given current().model is \"anthropic/chat\", modelFor(\"reviewer\") for a catalog agent with no model: returns { model: \"anthropic/chat\", label: \"inherited\" }, preserving resolution to the parent session's model.",
+        "[unit] modelFor(\"reviewer\", \"openai/gpt-x\") for a catalog agent with no model: returns { model: \"openai/gpt-x\", label: \"override\" }.",
+        "[unit] run(generalAgent(), \"t\", undefined, \"bogus\") on createSubagentRuns returns an error result whose content starts \"[chat] unknown model bogus\".",
+        "[unit] run(generalAgent(), \"t\", undefined, \"bogus\") on createSubagentRuns never calls the injected runSubagent, so no nested session opens.",
+        "[unit] withAgentCallModel given a nax-agents__run tool_call with input { agent: \"reviewer\", task: \"t\" } and metadata { keep: \"me\" }, with modelFor returning { model: \"openai/gpt-x\", label: \"agent file\" }, forwards metadata { keep: \"me\", subagentModel: \"openai/gpt-x\", subagentModelSource: \"agent file\" }.",
+        "[unit] withAgentCallModel given input { task: \"t\", model: \"p/x\" } (no agent) calls modelFor with (undefined, \"p/x\").",
+        "[unit] withAgentCallModel given input { task: \"t\" } (no agent, no model) forwards the event unchanged.",
+        "[unit] withAgentCallModel given input { task: \"t\" } (no agent, no model) does not call modelFor.",
+        "[unit] withAgentCallModel given a nax-agents__run tool_call with no agent and no string model forwards the event unchanged, including a present non-string model.",
+        "[unit] withAgentCallModel given a nax-agents__run tool_call with no agent and no string model does not call modelFor, including a present non-string model.",
+        "[unit] modelFor(\"nobody\") still returns undefined for an unknown catalog agent name.",
+        "[unit] modelFor(\"reviewer\", \"gpt-6-luna\") still returns undefined when that override resolves to fallback rather than a configured alias, tier or explicit model.",
+        "[integration] On a chat host whose catalog has reviewer with no model:, a chat turn emitting nax-agents__run input { agent: \"reviewer\", task: \"t\" } delivers that tool_call to send's onEvent with metadata.subagentModel equal to the chat model and metadata.subagentModelSource equal to \"inherited\"."
+      ],
+      "tags": [
+        "chat",
+        "subagents",
+        "model-provenance",
+        "2807"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing production modules need a pure label mapping and a bounded modelFor/metadata signature change, with no new lifecycle abstraction; strict TDD remains required by the session security override because resolution/refusal is shared with nested-session dispatch.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/subagent-model.ts",
+        "packages/nax/src/chat/subagent-runs.ts",
+        "packages/nax/src/chat/agent-call-model.ts",
+        "packages/nax/test/unit/chat/subagent-runs.test.ts",
+        "packages/nax/src/chat/builtin-agent.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/subagent-runs.test.ts",
+          "reason": "the `SubagentRuns.modelFor` tests \"AC-1 an agent without a model resolves to the parent session's model\" and \"AC-2 an explicit provider/model override is returned\" pin a string with `toBe`; they assert `{ model, label }` objects instead (`label` \"inherited\" and \"override\"), because `modelFor` now returns the model with its label. The undefined cases stay."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/agent-call-model.test.ts",
+          "reason": "its `modelFor` mocks return a string, and the \"adds metadata.subagentModel\" test pins the forwarded metadata to the `keep` field plus `subagentModel` only; the mocks return `{ model, label }` and the pinned metadata gains `subagentModelSource`, because `modelFor` now returns the model with its label."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/host-subagents.test.ts",
+          "reason": "test \"AC-9 send delivers the run tool_call with metadata.subagentModel\" pins metadata `{ subagentModel: CHAT_MODEL }`; it becomes `{ subagentModel: CHAT_MODEL, subagentModelSource: \"inherited\" }`, because the host now stamps the label beside the model."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3767a25c2b7f80559d3d787d6e207c72f1c607bf"
+    },
+    {
+      "id": "US-004",
+      "title": "Show model source and general on the Agent card",
+      "description": "**Goal** — Carry optional model-source metadata into transcript tool rows and display it beside the model on Agent cards.\n\n**Motivation** — The `source` that `resolveSubagentModel` returns (`inherit`, `alias`, `tier`, `model`, `fallback`) is discarded, so the card cannot tell an override from the agent file's own model, an alias, a tier mapping or a fallback to the parent model.\n\n**Approach** — `reduceTranscript` (`packages/nax/src/tui/chat/transcript-model.ts`) copies `metadata.subagentModelSource` (a string) onto the top-level tool entry as `modelSource`, beside the existing `model`; an event without it gets no `modelSource` key.\n\n`agentArg` (`packages/nax/src/tui/chat/tool-card.ts`) renders, for a call with a string `task`:\n- the agent name: the input's string `agent`, or `GENERAL_AGENT_NAME` (imported from the `@/chat` barrel) when `agent` is absent;\n- then ` [<model> · <modelSource>]` when both are set, ` [<model>]` when only the model is set, nothing when there is no model;\n- then `: <task>`.\nA call whose `agent` is present but not a string, or with no string `task`, has no arg (unchanged).\n`card` passes the entry's `modelSource` to `agentArg` alongside `model`.\n\n**Scope** — In: optional modelSource on top-level tool transcript entries and argument plumbing/rendering in tool-card.ts, including general for absent agent. Out: built-in factory (US-001), dispatch (US-002), provenance resolution and stamping (US-003), pending events (US-005), unread-call guidance (US-006). Showing the subagent's model on its nested child rows; they sit under the Agent card that names it. Persisting `modelSource` for sessions recorded before this change; their cards keep `[model]`.\n\n**Interface** — `TranscriptEntry` tool entry — gains `modelSource?: string` beside `model?: string`. Metadata input is `subagentModelSource`; the transcript field is `modelSource`.\n\n**Implementation/test notes** — The existing production card entry point is toolCardModel; card is the fixture in tool-card.test.ts. Pass modelSource through its existing toolArg/rawArg/agentArg chain, retaining single-line formatting, elision and child-row behavior. Add unit cases to packages/nax/test/unit/tui/chat/transcript-model.test.ts and tool-card.test.ts. Existing toMatchObject assertions and arg assertions for events with no modelSource hold unchanged. The GENERAL_AGENT_NAME dependency must be imported from @/chat, not duplicated or inferred from the catalog. US-003 supplies the stamped metadata that reduceTranscript consumes.",
+      "acceptanceCriteria": [
+        "[unit] reduceTranscript given a top-level nax-agents__run tool_call with metadata { subagentModel: \"openai/gpt-x\", subagentModelSource: \"override\" } yields a tool entry with model \"openai/gpt-x\" and modelSource \"override\".",
+        "[unit] reduceTranscript given a top-level call with only subagentModel metadata yields an entry with no modelSource key.",
+        "[unit] The nax-agents__run tool card with input { task: \"find x\" }, model \"p/x\" and modelSource \"override\" has arg equal to \"general [p/x · override]: find x\".",
+        "[unit] The tool card for input { agent: \"explorer\", task: \"find x\" }, model \"openai/gpt-x\" and modelSource \"agent file\" has arg equal to \"explorer [openai/gpt-x · agent file]: find x\".",
+        "[unit] The tool card for input { agent: \"explorer\", task: \"find x\" }, model \"openai/gpt-x\" and no modelSource has arg equal to \"explorer [openai/gpt-x]: find x\".",
+        "[unit] The tool card for input { agent: 3, task: \"find x\" } has no arg.",
+        "[unit] The tool card for input { task: \"find x\" } with no model has arg equal to \"general: find x\"."
+      ],
+      "tags": [
+        "chat",
+        "tui",
+        "model-provenance",
+        "2807"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two pure UI-model modules and mirrored tests; additive optional metadata and deterministic formatting, without session or access-control changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/tool-card.ts",
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/test/unit/tui/chat/tool-card.test.ts",
+        "packages/nax/test/unit/tui/chat/transcript-model.test.ts",
+        "packages/nax/src/chat/builtin-agent.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7c4215e44c6b735a81e6e94045abc45d4090f918"
+    },
+    {
+      "id": "US-005",
+      "title": "Emit Writing signals while ACP tool input is pending",
+      "description": "**Goal** — Emit existing tool_input_delta events during pending ACP tool preparation so chat shows Writing before tool execution.\n\n**Motivation** — `createToolEvents` (`packages/nax-agent-acp/src/client/tool-events.ts`) emits nothing for a call whose status is `pending`; `tool_call` goes out only on the first started update.\n\n**Approach** — `createToolEvents` gains a pending signal. `CallState` gets `pendingChars?: number`. `inputChars(state)` is the length of `JSON.stringify(inputOf(state.rawInput, secrets))` (the same scrubbed, capped input `tool_call` carries; `inputOf` already returns a truncation placeholder for input it cannot serialize). In `onUpdate`, after `merge`, for a call that is neither announced nor in `running`:\n\n- an update whose `status` is `\"pending\"` on a call with no `pendingChars` yet (the first pending sighting) emits `{ type: \"tool_input_delta\", round: 0, callId, name: nameOf(state), chars: 0 }` and records `pendingChars = inputChars(state)`.\n- any later update (with status `\"pending\"` or no status) on a call that has `pendingChars` computes `chars = inputChars(state) - pendingChars`; when `chars > 0` it emits the same event with that `chars` and records `pendingChars = inputChars(state)`; otherwise it emits nothing.\n\nOnce a call is announced or started, no further `tool_input_delta` is emitted for it. A call first seen with no status, or first seen started, emits no `tool_input_delta`.\n\nNo change in `packages/nax`: `reduceTurnStatus` already maps `tool_input_delta` to Writing and `tool_call` to the tool phase, and the ACP session forwards `tool_input_delta` unchanged.\n\n**Scope** — In: pendingChars and pending-input emission in the existing per-call ACP state machine plus fake-agent event-order regression tests. Out: general dispatch (US-001/US-002), model metadata/cards (US-003/US-004), native unread-call follow-up (US-006), any nax status reducer changes. Emitting `tool_input_delta` for an ACP call first seen with no status, or for permission-request announcements. Switching the status to Writing for ACP `agent_thought_chunk` content.\n\n**Interface** — `CallState` (tool-events) — gains `pendingChars?: number`. Read only: `inputOf(raw, secrets)`, `nameOf(state)` — `packages/nax-agent-acp/src/client/tool-events.ts`; `TurnEvent` `tool_input_delta` `{ round, callId, name, chars }` — `packages/nax-agent/src/session/turn-event.ts`. No new session event type or public API is required.\n\n**Implementation/test notes** — Run the pending logic before onUpdate's status-undefined early return. Persist the pending baseline in the calls map despite merge's copy-based state updates; retain announced/result idempotence, first real title, MAX_TRACKED_CALLS and tool_progress heartbeat behavior. Compute counts from the scrubbed/capped serialized representation, not raw input or UTF-8 byte size; do not lower the recorded baseline on zero/negative growth. Update tool-events.test.ts tests \"a pending call with streaming input emits nothing until it is used\", \"in_progress announces; failed answers with isError\", \"announce() (a permission request) emits tool_call once; a later in_progress does not repeat it\", \"the first real title is kept over later ones\", \"no tool_progress before the call is announced\" and MAX_TRACKED_CALLS expectations for leading pending deltas. Rename the first test to say no tool_call goes out until the call is used; preserve existing call/result/name/ordering assertions over the remaining events. In backend-events.test.ts's \"a tool call, its result, a thought, text and the turn's usage\", admit one or more input deltas for toolu_1 between turn_start and tool_call, leaving the rest of the order unchanged. Use _acpBackendDeps.launch/inMemoryAgent, never a real ACP adapter; facade coalescing means integration should require at least one delta rather than an exact count.",
+      "acceptanceCriteria": [
+        "[unit] createToolEvents given { toolCallId: \"c1\", name: \"Write\", status: \"pending\", rawInput: {} } emits exactly { type: \"tool_input_delta\", round: 0, callId: \"c1\", name: \"Write\", chars: 0 }.",
+        "[unit] After c1's first pending update with rawInput {}, { toolCallId: \"c1\", rawInput: { path: \"a.ts\" } } (no status) emits one tool_input_delta for c1 whose chars is the serialized length of {\"path\":\"a.ts\"} minus the serialized length of {}.",
+        "[unit] After c1's statusless input-growth update to { path: \"a.ts\" }, repeating { toolCallId: \"c1\", rawInput: { path: \"a.ts\" } } emits nothing.",
+        "[unit] After c1's input has reached { path: \"a.ts\" }, { toolCallId: \"c1\", status: \"pending\", rawInput: { path: \"a.ts\" } } emits nothing.",
+        "[unit] After c1's pending-input sequence, { toolCallId: \"c1\", status: \"in_progress\" } emits the tool_call for c1.",
+        "[unit] After c1 has started, { toolCallId: \"c1\", status: \"pending\", rawInput: { path: \"much-longer.ts\" } } emits no tool_input_delta.",
+        "[unit] { toolCallId: \"c2\", name: \"Read\" } with no status, on a call never seen pending, emits nothing.",
+        "[unit] { toolCallId: \"c3\", name: \"Read\", status: \"completed\" } on a call never seen pending emits tool_call then tool_result and no tool_input_delta.",
+        "[unit] With a secret passed to createToolEvents, a pending call whose later rawInput holds that secret emits tool_input_delta chars computed from inputOf of the input.",
+        "[unit] With a secret passed to createToolEvents, no event emitted for a pending call whose later rawInput holds that secret contains the secret.",
+        "[unit] After announce({ toolCallId: \"c4\", title: \"Edit a.ts\" }) for a call first seen pending, a further update for c4 with a longer rawInput emits no tool_input_delta.",
+        "[integration] An ACP session driven by the fake agent with a tool_call update (status pending, rawInput {}), a tool_call_update with rawInput { file_path: \"/w/a.ts\" }, then a completed update, delivers at least one tool_input_delta for that call id after turn_start and before its tool_call."
+      ],
+      "tags": [
+        "acp",
+        "chat",
+        "streaming",
+        "2808"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Bounded per-call state-machine addition with existing event contracts; session-secret scrubbing and permission-announcement interactions invoke the security override for strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/tool-events.ts",
+        "packages/nax-agent-acp/src/client/events.ts",
+        "packages/nax-agent-acp/test/unit/client/tool-events.test.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-events.test.ts",
+        "packages/nax-agent-acp/test/helpers/in-memory-launch.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/tool-events.test.ts",
+          "reason": "tests \"a pending call with streaming input emits nothing until it is used\", \"in_progress announces; failed answers with isError\", \"announce() (a permission request) emits tool_call once; a later in_progress does not repeat it\", \"the first real title is kept over later ones\", \"no tool_progress before the call is announced\" and the `MAX_TRACKED_CALLS` test pin exact event lists or `events[0]` for calls that start `pending`; each now accepts the leading `tool_input_delta` events this story emits for pending updates and keeps its `tool_call` / `tool_result` / name / ordering assertions over the remaining events (the \"emits nothing\" test is renamed to say no `tool_call` goes out until the call is used)."
+        },
+        {
+          "path": "packages/nax-agent-acp/test/unit/client/backend-events.test.ts",
+          "reason": "test \"a tool call, its result, a thought, text and the turn's usage\" pins the event type list `turn_start, tool_call, ...`; one or more `tool_input_delta` events for `toolu_1` now come between `turn_start` and `tool_call`, the rest of the order unchanged."
+        }
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5327e295f86d126704dba64ba38ffb0b7e57d7c6"
+    },
+    {
+      "id": "US-006",
+      "title": "Suggest declared tool names in unread-call follow-ups",
+      "description": "**Goal** — Identify undeclared names in unread tool_call text and append bounded nearest-declared-name suggestions without executing the text.\n\n**Motivation** — `unreadToolCallFollowUp` (`packages/nax-agent/src/native/session/loop-handlers.ts`) lists every declared tool name but does not say which name in the block was wrong.\n\n**Approach** — A new module `packages/nax-agent/src/native/session/unread-tool-call.ts` exports:\n\n```typescript\nexport const MAX_SUGGEST_DISTANCE = 2;\n/** Tool names written in the <tool_call> blocks of an assistant reply, first-seen order, no duplicates. */\nexport function writtenToolNames(content: string): string[];\n/** The declared name nearest to `written`, case-insensitive, within MAX_SUGGEST_DISTANCE; first in declared order on a tie. */\nexport function nearestToolName(written: string, declared: readonly string[]): string | undefined;\nexport function buildUnreadToolCallFollowUp(content: string, declared: readonly string[]): string;\n```\n\nA tool name is a string matching `^[A-Za-z_][A-Za-z0-9_.-]{0,63}$` (`TOOL_NAME_PATTERN`). `writtenToolNames` scans each `<tool_call>` marker to the next `</tool_call>` (or the end of the text). Within a block, the name is the first `\"name\"` JSON string value (`\"name\"` followed by optional spaces, `:`, optional spaces and a double-quoted string), kept only when it matches `TOOL_NAME_PATTERN`. When the block has no `\"name\"` value, the name is the run of name characters that starts at the first non-whitespace character after the marker, kept only when that character is a letter or `_` and the run matches `TOOL_NAME_PATTERN`. A block yielding neither contributes no name.\n\n`nearestToolName` compares lowercase forms with Levenshtein distance; it returns the declared name (in its declared casing) with the smallest distance when that distance is at most `MAX_SUGGEST_DISTANCE`, and undefined otherwise or when `declared` is empty.\n\n`buildUnreadToolCallFollowUp` returns the existing text, then, for each written name that is not exactly a declared name, appends one space and `` `<written>` is not a declared tool; did you mean `<nearest>`? `` or, with no near match, `` `<written>` is not a declared tool. ``. The existing text is: `Your reply contains a <tool_call> block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: <names or (none)>.`\n\n`unreadToolCallFollowUp` in `loop-handlers.ts` keeps its guards and its once-per-turn `sent` flag, and returns `{ followUp: buildUnreadToolCallFollowUp(last.content, toolNames()) }`.\n\nThis is a nax-agent string, not a nax prompt builder: the nax prompt-builder rule covers `packages/nax/src`, and the follow-up already lives in nax-agent.\n\n**Scope** — In: new pure extraction/distance/text helpers, existing native handler delegation, helper tests and native handler/round-trip integration regressions. Out: general-agent/provider dispatch (US-001/US-002), model provenance/card display (US-003/US-004), ACP pending events (US-005). Raising the once-per-turn cap on the unread tool-call follow-up. Rewriting or running a misspelled text tool call automatically; the model must call the tool itself. US-006 only: reading the tool name from a top-level JSON key; the first `\"name\"` string value in the block is taken even when it is nested inside the arguments.\n\n**Interface** —\n```typescript\nexport const MAX_SUGGEST_DISTANCE = 2;\n/** Tool names written in the <tool_call> blocks of an assistant reply, first-seen order, no duplicates. */\nexport function writtenToolNames(content: string): string[];\n/** The declared name nearest to `written`, case-insensitive, within MAX_SUGGEST_DISTANCE; first in declared order on a tie. */\nexport function nearestToolName(written: string, declared: readonly string[]): string | undefined;\nexport function buildUnreadToolCallFollowUp(content: string, declared: readonly string[]): string;\n```\n\n**Implementation/test notes** — Create unread-tool-call.ts and test/unit/native/session/unread-tool-call-text.test.ts; these are module-level exports, not a request to expand the package public API. Keep handler registration order/plugin followUp precedence and setting sent before returning intact. In test/unit/native/session/unread-tool-call.test.ts, the existing BLOCK names ScrashpadWrite and the default tools are Read/Write, neither within distance 2; append one space followed by the exact sentence `` `ScrashpadWrite` is not a declared tool.``. Update the no-tools test to contain the existing (none) phrase and end with that same sentence; guard/once-per-turn tests stay. In test/integration/session/native-unread-tool-call.test.ts, replace the old declared-sentence toEndWith with contains plus the correct appended sentence for ScrashpadWrite against the actual declared names. Also trigger the before_turn_end registry seam with Read/ScratchpadWrite and confirm the suggestion reaches followUp once. Use exact string literals for text regressions rather than deriving every expected string from the function under test.",
+      "acceptanceCriteria": [
+        "[unit] writtenToolNames('<tool_call>{\"name\": \"ScrashpadWrite\", \"arguments\": {}}</tool_call>') returns [\"ScrashpadWrite\"].",
+        "[unit] writtenToolNames('<tool_call>\\nScrashpadWrite\\n<arg_key>path</arg_key></tool_call>') returns [\"ScrashpadWrite\"].",
+        "[unit] writtenToolNames('<tool_call>{\"arguments\": {\"path\": \"a\"}}</tool_call>') returns [] because no name string value exists and the first non-whitespace character is {.",
+        "[unit] writtenToolNames of two blocks both naming \"Raed\" returns [\"Raed\"].",
+        "[unit] writtenToolNames of blocks naming B then A returns [\"B\", \"A\"].",
+        "[unit] writtenToolNames('<tool_call></tool_call>') returns [].",
+        "[unit] writtenToolNames of the unterminated '<tool_call>{\"name\":\"Grep\"' returns [\"Grep\"].",
+        "[unit] writtenToolNames of a block whose name value is \"bad name!\" returns [].",
+        "[unit] writtenToolNames of a block whose name value is 65 characters long returns [].",
+        "[unit] nearestToolName(\"ScrashpadWrite\", [\"Read\", \"ScratchpadWrite\"]) returns \"ScratchpadWrite\".",
+        "[unit] nearestToolName(\"read\", [\"Read\", \"Write\"]) returns \"Read\".",
+        "[unit] nearestToolName(\"Deploy\", [\"Read\", \"Write\"]) returns undefined.",
+        "[unit] nearestToolName(\"Read\", []) returns undefined.",
+        "[unit] nearestToolName(\"Raad\", [\"Read\", \"Road\"]) returns \"Read\".",
+        "[unit] buildUnreadToolCallFollowUp of a block naming ScrashpadWrite with declared [\"Read\", \"ScratchpadWrite\"] returns exactly \"Your reply contains a <tool_call> block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: Read, ScratchpadWrite. `ScrashpadWrite` is not a declared tool; did you mean `ScratchpadWrite`?\".",
+        "[unit] buildUnreadToolCallFollowUp of a block naming Deploy with declared [\"Read\"] ends with \"`Deploy` is not a declared tool.\".",
+        "[unit] buildUnreadToolCallFollowUp of a block naming Read with declared [\"Read\"] returns exactly the existing text: \"Your reply contains a <tool_call> block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: Read.\".",
+        "[integration] With built-in loop handlers installed and declared tools [\"Read\", \"ScratchpadWrite\"], dispatching before_turn_end for a completed turn whose last assistant message is a block naming ScrashpadWrite returns followUp ending with \"did you mean `ScratchpadWrite`?\".",
+        "[integration] After that follow-up, a second before_turn_end dispatch in the same turn returns {}.",
+        "[unit] buildUnreadToolCallFollowUp of an unread block whose name is not a valid tool name returns only the existing declared-names text, with no suggestion sentence for that block."
+      ],
+      "tags": [
+        "native",
+        "tool-calls",
+        "repair",
+        "2809"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Pure bounded-name parsing/edit distance plus one existing handler delegation is standard multi-file work, but it changes native session before_turn_end follow-ups and per-turn state, invoking the session security override. Demonstrate old-code regression failures before implementing.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/session/loop-handlers.ts",
+        "packages/nax-agent/src/native/session/loop-events/types.ts",
+        "packages/nax-agent/test/unit/native/session/unread-tool-call.test.ts",
+        "packages/nax-agent/test/integration/session/native-unread-tool-call.test.ts",
+        "packages/nax-agent/test/helpers/agent-session.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/native/session/unread-tool-call.ts",
+        "packages/nax-agent/test/unit/native/session/unread-tool-call-text.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/native/session/unread-tool-call.test.ts",
+          "reason": "its `BLOCK` fixture is a JSON tool_call block whose name is `ScrashpadWrite`, an undeclared tool. Test \"follows up once, naming the tools, and marks sent\" pins the follow-up with `toBe`; the expected text gains `` `ScrashpadWrite` is not a declared tool.`` after one space (no declared name is within distance 2). Test \"AC-11: with no tools the follow-up ends with (none)\" asserts `toEndWith(\"using one of these exact names: (none).\")`; it now asserts the text contains that phrase and ends with `` `ScrashpadWrite` is not a declared tool.``. The guard and once-per-turn tests stay as they are."
+        },
+        {
+          "path": "packages/nax-agent/test/integration/session/native-unread-tool-call.test.ts",
+          "reason": "test \"AC-1, AC-2\" asserts the follow-up `toEndWith` the declared-names sentence; its block names `ScrashpadWrite`, so the follow-up now ends with that name's suggestion sentence. The assertion becomes: contains `using one of these exact names: <declared>.` and ends with the sentence `buildUnreadToolCallFollowUp` appends for `ScrashpadWrite` against the declared names."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c54dffb06e21beba4ebf767260a8d295e6a75bce"
+    }
+  ],
+  "analysis": "Goal: close #2806–#2809 through six binding implementation stories: allow model-only chat dispatch through an uncatalogued general agent; expose model provenance on top-level Agent cards; signal pending ACP tool preparation through existing Writing events; and give native unread-tool-call corrections with bounded nearest-name suggestions. This is an enhancement to existing code, not greenfield. Navigation: codebase-memory MCP was unavailable in this tool set, so findings were obtained with direct Read, Grep and Glob against the supplied execution root. No implementation or test execution was performed while drafting this PRD.\n\nArchitecture and constraints: docs/architecture/ARCHITECTURE.md:13 identifies conventions and dependency-injection guidance; docs/architecture/ARCHITECTURE.md:136 documents the monorepo package boundaries. nax owns chat orchestration, resource discovery, prompt builders and the TUI. nax-agent owns the session contract and native loop, and nax-agent-acp owns the ACP client event translation. No nax-ai changes, new runtime dependencies, public agent-package exports, version bumps or new transport paths are required. nax-agent and nax-agent-acp shipped source must remain Node-compatible, using #src imports or explicit .ts relative imports, not Bun APIs. ACP may import nax-agent only through its public entry. Tests should reuse seams and shared fixtures rather than monkey-patching globals; ACP tests must use fake agents, never installed real agents. All runtime prompt text in nax belongs in prompts/builders; the existing native repair text is legitimately local to nax-agent.\n\nUS-001 findings and impact: packages/nax/src/resources/types.ts:1 defines ResourceOrigin without nax-builtin; AgentResource at :37 has optional model/tools, required prompt/path/origin, so the general agent can use the existing contract without filesystem loading or new catalog machinery. packages/nax/src/resources/listing.ts:5 has the only origin.kind switch found within resources; it is currently private and needs a built-in branch and a direct module export, not a resources-barrel export. Existing user/plugin labels must remain unchanged. packages/nax/src/prompts/builders/agents-builder.ts:18 owns buildAgentsInstructions, and :60 builds nested native instructions ending in agent.prompt; add the exact general prompt here and export through packages/nax/src/prompts/index.ts:27. packages/nax/src/chat/index.ts:14 exports the provider and is the appropriate barrel for GENERAL_AGENT_NAME/generalAgent. Add builtin-agent.ts and its mirrored unit test. Do not insert general into ResourceCatalog: existing discovery, /agents, collision handling and agent index contents remain catalog-driven. With no tools key, packages/nax/src/chat/subagent-tools.ts:68 already returns only dropped: [], not allowedTools; preserve that behavior instead of adding a new grant policy.\n\nUS-002 findings and impact: packages/nax/src/chat/agents-provider.ts:28 creates the tool; :35 currently requires agent and task; :39 validates both names together before model validation; :45 resolves only catalog agents; :55 distinguishes three-argument and four-argument injected run calls. :61–62 gate tools and instructions on catalog.agents.length. Change only the ordered validation/dispatch branch, required list, full description, and the builder's new third fixed instruction line. Preserve properties/additionalProperties, catalog advertisement gate, signal identity, named lookup/error text and unchanged named-run invocation arity. The absent-agent branch must use generalAgent(), never findAgent('general'), and must forward the explicit model. Tests: packages/nax/test/unit/chat/agents-provider.test.ts:92 pins required to [agent, task], :145 includes the missing-agent INVALID_INPUT row, and :208 starts a second schema assertion for overrides. Both required assertions must become [task]; only the no-agent/no-model row gets its new error. packages/nax/test/unit/prompts/builders/agents-builder.test.ts:70 pins out[2] to the first entry: move that assertion to out[3] and pin the new out[2]. packages/nax/test/helpers/chat-subagents.ts:210 starts SubagentHostOptions and :391 hard-codes tool.run({ agent: runAgentName, task }); extend it with optional runInput, preserving the old object when omitted. Use this harness and packages/nax/test/unit/chat/host-subagents.test.ts for the integration assertion that an agentless explicit model opens exactly one nested native session ending its instructions with the general prompt. packages/nax/src/chat/subagent-session.ts:75 builds native session options and :117 composes instructions; its existing behavior is sufficient and should not be rewritten.\n\nUS-003 findings and impact: packages/nax/src/chat/subagent-model.ts:11 defines SubagentModelSource and :54 implements the ordered inherit → alias → tier → explicit model → fallback resolver. Leave that resolver and modelEntryId tier normalization intact; append the pure label mapping, testing all source/override cases. packages/nax/src/chat/subagent-runs.ts:53 exposes the old string-returning modelFor; :107 resolves requested = override ?? agent.model; :187 already rejects explicit fallback before calling runSubagent; :228 currently looks up a mandatory catalog name and discards source. Change modelFor to accept undefined as the built-in general agent and return { model, label }, deriving overridden with override !== undefined. Unknown names/refused overrides must still return undefined. Do not change nested lifecycle, asks, tools, cancellation or costs. packages/nax/src/chat/agent-call-model.ts:10 currently accepts only string input.agent; :18 uses SubagentRuns['modelFor']; :27 merges only subagentModel into metadata. Recognize agentless string-model inputs, forward malformed events without invoking modelFor, preserve metadata and add subagentModelSource. packages/nax/src/chat/chat-host.ts:491 already wraps send onEvent with withAgentCallModel(onEvent, runs.modelFor), so the shape change propagates through this existing seam without new host behavior. Direct text search found no additional production modelFor consumers beyond subagent-runs/agent-call-model/chat-host. Update packages/nax/test/unit/chat/subagent-runs.test.ts:335 (old toBe strings become object assertions; unknown/refused undefined assertions remain), packages/nax/test/unit/chat/agent-call-model.test.ts:19 (helper/mocks need the new function return type), and packages/nax/test/unit/chat/host-subagents.test.ts:535 (metadata exact equality gains inherited source). Existing packages/nax/test/unit/chat/subagent-model.test.ts can host label mapping tests. Bare-model dispatch and provenance can be implemented independently after US-001; US-002 and US-003 have deliberately no dependency on each other.\n\nUS-004 findings and impact: packages/nax/src/tui/chat/transcript-model.ts:39 defines the tool-entry arm with optional model at :50; applyToolCall at :154 first nests tagged activity under the parent, then :163 reads subagentModel for top-level rows. Add modelSource only for string metadata on that top-level path, using conditional spreading so older events have no key at all. Preserve immutable reducer references and child handling. packages/nax/src/tui/chat/tool-card.ts:108 defines agentArg; the value flows through rawArg (:117), toolArg (:129), and the actual exported card entry point toolCardModel (:340). The spec's 'card' is the test fixture, not a production function to introduce. Thread modelSource through the existing call chain while keeping argument flattening and TOOL_ARG_LIMIT=60 unchanged. Distinguish an absent agent from a present non-string agent; only the former defaults to GENERAL_AGENT_NAME imported from @/chat. A source alone never creates a model bracket. Child rows keep their existing rendering. Tests: packages/nax/test/unit/tui/chat/tool-card.test.ts:157–176 pin existing named/no-source renderings; packages/nax/test/unit/tui/chat/transcript-model.test.ts:301 pins top-level model metadata and key absence. Add source and general-name cases without changing the old expectations. No persistence migration or historical source backfill is needed: optional metadata naturally leaves old cards at [model].\n\nUS-005 findings and impact: packages/nax-agent-acp/src/client/tool-events.ts:51 defines CallState, :72 merges updates through copies stored per cleaned call id, :87 selects the display name, :91 scrubs/redacts/caps input, :179 constructs the per-turn state machine, and :222 processes onUpdate. Existing announced/resolved flags, running set, terminal resolution, heartbeat throttling and MAX_TRACKED_CALLS are independent invariants to retain. Add pendingChars and pending detection after merge and before the status-undefined early return. The first pending sighting emits chars:0 even for an empty input; later pending/statusless growth uses JSON.stringify(inputOf(...)).length, not raw content length or UTF-8 bytes. Store the baseline back in the tracked state; non-positive growth emits nothing and does not lower the recorded baseline. Restrict deltas to unannounced/not-running calls and to pending or statusless updates once pending was seen; do not emit them on terminal transitions or announce(). Never leak secret input in events or bypass inputOf's truncation/nonserializable placeholder. packages/nax-agent/src/session/turn-event.ts:28 already declares tool_input_delta with round/callId/name/chars, so no contract changes are needed. packages/nax-agent-acp/src/client/events.ts:136 already passes all tool events through the contained sink after flushing text streams. packages/nax/src/tui/chat/chat-status.ts:120 already maps tool_input_delta to Writing and :122 maps tool_call to tool phase, so no nax status changes belong in this story. Session event-channel coalescing is visible at packages/nax-agent/src/session/session-event-channel.ts:51–57: integration tests should require at least one input delta in the correct interval rather than a fixed count. Existing setup at packages/nax-agent-acp/test/unit/client/tool-events.test.ts:15 is reusable; multiple exact event-list and events[0] assertions currently start pending and must account for the leading deltas without weakening call/result/name/order assertions. packages/nax-agent-acp/test/unit/client/backend-events.test.ts:76 already supplies the exact pending → statusless-input → completed fake-agent sequence and :105 pins the old type order. Preserve all following usage/text/thought/result assertions while admitting the leading deltas.\n\nUS-006 findings and impact: packages/nax-agent/src/native/session/loop-handlers.ts:148 installs the built-in before_turn_end handler before plugins, retaining plugin followUp precedence; :177 implements guards and the once-per-turn flag and :185 inlines the existing declared-name-only text. Extract only text construction into new unread-tool-call.ts; retain the literal marker guard, completed/not-stopped/last-assistant checks and setting sent before returning, including at the round cap. Text search found no existing Levenshtein helper or TOOL_NAME_PATTERN in nax-agent/src; a local bounded-name pure implementation is appropriate with MAX_SUGGEST_DISTANCE=2, stable declared-order tie breaking and case-insensitive comparison. Extraction must scan each marker through its closing marker or end, use the first name JSON string anywhere in the block (including nested arguments), use the bare-name fallback only if no name string value exists, validate the complete candidate against the 64-character pattern, and deduplicate in first-seen order. Exact declared-name matching controls whether to add a sentence; nearest matching is separately case-insensitive. Malformed names produce only the existing generic text. No malformed block is executed or auto-rewritten. Add unread-tool-call-text.test.ts for the pure helpers and update packages/nax-agent/test/unit/native/session/unread-tool-call.test.ts:63 and :85 for the appended undeclared ScrashpadWrite sentence against Read/Write or no tools; keep guard tests. packages/nax-agent/test/integration/session/native-unread-tool-call.test.ts:70 checks the native round-trip path and :83 currently ends with the declared-tools sentence; change to contains that sentence plus the appropriate final suggestion/undeclared sentence. Also exercise registry before_turn_end with Read/ScratchpadWrite and a second same-turn dispatch returning {}. Existing integration tests cover plugin precedence, cancellation, spin/invalid-budget stops and per-turn reset; they should remain unchanged apart from text anchors that this feature intentionally changes.\n\nDependency and execution plan: exactly US-001, US-002 (US-001), US-003 (US-001), US-004 (US-001 and US-003), US-005 (none), US-006 (none), in the specified package workdirs. US-001 and US-002 both touch agents-builder.ts sequentially; US-002 and US-003 may both extend host-subagents.test.ts but implement distinct seams, so coordinate merge context without changing the binding graph. All contextFiles entries are existing files or upstream-produced builtin-agent.ts; expectedFiles contains only the four specified newly created source/test paths. No test-only stories. Runtime changes require failing-first tests; nax-agent explicitly requires showing regressions fail against the old implementation. Security override chooses strict three-session-tdd for stories involving nested session dispatch/model resolution, ACP session-secret handling, and native session handlers; pure resource/card stories use tdd-simple. Use package-scoped targeted bun test paths, never bare bun test or bun run nax. Pipeline owns regular gates; do not run coverage inside NAX_SANDBOXED=1.\n\nCompatibility and migration: provider changes are additive for valid named-agent calls but deliberately change the no-agent/no-model error and schema required list. modelFor is an internal source-level API change, requiring all mocks/consumers to migrate atomically within US-003. Source metadata and transcript fields are optional and preserve pre-change records; no stored-session rewrite. ACP consumers now observe preparatory deltas before a call, while exactly-once call/result, permission announcements and heartbeat behavior remain as before. Native follow-up strings intentionally gain sentences, but guard and once-per-turn semantics remain unchanged. Preserve all feature-level exclusions verbatim below. Done means every stated behavioral criterion, all four failure-table rows and the described cross-story integration seams hold, without broadening catalogs, permissions, CLI argument contracts, child-card provenance or automatic tool execution.\n\nRefine-pass self-audit: enumerated all 59 numbered spec acceptance criteria against each story's acceptanceCriteria; none were dropped. The following mapping uses one-based PRD acceptanceCriteria array positions after refinement. US-001 spec AC1→1–2, AC2→3–5, AC3→6–7, AC4→8, AC5→9, AC6→10, AC7→11–12. US-002 spec AC1→1, AC2→2, AC3→3–4, AC4→5, AC5→6–7, AC6→8–9, AC7→10–11, AC8→12–13, AC9→14–15, AC10→16–17, AC11→18. US-003 spec AC1→1, AC2→2–3, AC3→4–5, AC4→6, AC5→7–9, AC6→10, AC7→11–12, AC8→13–14, AC9→15, AC10→16–18, AC11→23. US-004 spec AC1→1, AC2→2, AC3→3, AC4→4, AC5→5, AC6→6, AC7→7. US-005 spec AC1→1, AC2→2, AC3→3, AC4→4, AC5→5–6, AC6→7, AC7→8, AC8→9–10, AC9→11, AC10→12. US-006 spec AC1→1, AC2→2, AC3→3, AC4→4–5, AC5→6–7, AC6→8–9, AC7→10, AC8→11, AC9→12–13, AC10→14, AC11→15, AC12→16–17, AC13→18–19. Compound spec criteria were split without losing any assertion or qualifying precondition. Regression anchors retained include still returning user/nax-plugin origin labels, still hiding tools for empty catalogs, preserving existing metadata fields, forwarding unchanged/no-callback malformed dispatch events, no modelSource key for old metadata, unchanged named-card rendering without source, no input deltas before pending or after announce/start, the existing follow-up text and same-turn second-dispatch suppression. No deprecated file/grep/verbatim criteria occur in the spec.\n\nAudit corrections: US-001 now explicitly tests the negative discovery boundary using the existing buildResourceCatalog([]) API (packages/nax/src/resources/catalog.ts:42–57) and generalAgent(); this asserts no synthetic catalog insertion, not a new factory parameter or catalog implementation. US-002 now explicitly protects the existing named-run three-argument invocation seen in agents-provider.ts:55. US-003 replaces the symbolic parent-model placeholder with the actual runsDeps fixture model anthropic/chat (test/unit/chat/subagent-runs.test.ts:33), splits the broader failure-table no-agent/no-string-model behavior into observable forwarding and no-callback assertions, and explicitly retains unknown/refused modelFor undefined results (subagent-runs.ts:228–233). The four failure-table rows are covered by US-002 criteria 6–7, US-003 criteria 13–14 and 19–20, and US-006 criterion 20 respectively. Every story has a negative/non-action path: US-001 undiscoverable general, US-002 invalid/missing inputs, US-003 refused model/unchanged malformed event, US-004 non-string agent, US-005 suppressed duplicate/forbidden preparatory deltas, US-006 invalid names/no near match. All outputs are observable through returned resource/catalog values, callback records, metadata/transcript/card values, event sequences or followUp text.\n\nContext/dependency/routing audit: every spec-recommended context file is now present, including the upstream-produced builtin-agent.ts for US-004; its fifth slot remains the existing transcript reducer test. No story lists its own newly created file as context. All six IDs, exact dependency arrays and workdirs remain binding and unchanged. US-003 is medium rather than complex: three existing runtime modules need a straightforward pure label/shape change, not a new architectural abstraction. Strict three-session-tdd remains only where the original session/secret-handling security override applies (US-002, US-003, US-005, US-006); pure resource and UI stories remain tdd-simple. Re-read provider validation, modelFor, metadata forwarding, catalog indexing, card argument plumbing, ACP update ordering and native handler guards against the spec; no description/criterion contradictions or invented runtime helpers were found. All nine feature-level exclusions were checked verbatim against the spec and retained in order. No code, tests, dependencies or new feature scope were implemented by this audit.",
+  "outOfScope": [
+    "Offering `nax-agents__run` when the catalog has no agents; the tool stays gated on at least one catalog agent.",
+    "A bare-model run from `nax agents run`; that command still requires an `<agent>` argument.",
+    "Showing the subagent's model on its nested child rows; they sit under the Agent card that names it.",
+    "Emitting `tool_input_delta` for an ACP call first seen with no status, or for permission-request announcements.",
+    "Switching the status to Writing for ACP `agent_thought_chunk` content.",
+    "Raising the once-per-turn cap on the unread tool-call follow-up.",
+    "Rewriting or running a misspelled text tool call automatically; the model must call the tool itself.",
+    "US-006 only: reading the tool name from a top-level JSON key; the first `\"name\"` string value in the block is taken even when it is nested inside the arguments.",
+    "Persisting `modelSource` for sessions recorded before this change; their cards keep `[model]`."
+  ],
+  "routingProfile": "native-codex-ds"
+}

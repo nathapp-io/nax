@@ -45,6 +45,7 @@ import {
 } from "./loop-events/index.ts";
 import type { NativeSessionState } from "./session.ts";
 import { createTruncationHandler } from "./truncation-handler.ts";
+import { buildUnreadToolCallFollowUp } from "./unread-tool-call.ts";
 
 export interface BuiltinLoopHandlerDeps {
   /**
@@ -182,10 +183,9 @@ function unreadToolCallFollowUp(state: BuiltinTurnState, payload: BeforeTurnEndP
   if (last?.role !== "assistant" || !last.content.includes(TOOL_CALL_MARKER)) return {};
   // Set before returning: a follow-up the loop drops at the cap still counts as sent.
   unreadToolCall.sent = true;
-  const names = toolNames();
-  return {
-    followUp: `Your reply contains a ${TOOL_CALL_MARKER} block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: ${names.length > 0 ? names.join(", ") : "(none)"}.`,
-  };
+  // US-006: the text comes from `buildUnreadToolCallFollowUp`, which also names
+  // every undeclared tool the block wrote and suggests the nearest declared one.
+  return { followUp: buildUnreadToolCallFollowUp(last.content, toolNames()) };
 }
 
 function repairInvalidCall(

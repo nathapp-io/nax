@@ -26,6 +26,7 @@ export {
   QUESTION_DECLINED_REPLY,
 } from "./ask-controller";
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
+export { GENERAL_AGENT_NAME, generalAgent } from "./builtin-agent";
 export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
 export {
   clampEffort,
@@ -135,7 +136,9 @@ export {
   type ResolvedSubagentModel,
   type ResolveSubagentModelOptions,
   resolveSubagentModel,
+  type SubagentModelLabel,
   type SubagentModelSource,
+  subagentModelLabel,
 } from "./subagent-model";
 export { type RunSubagentInput, type RunSubagentResult, runSubagent } from "./subagent-session";
 export { type DroppedSubagentTool, type MappedSubagentTools, mapSubagentTools } from "./subagent-tools";

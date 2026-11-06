@@ -19,6 +19,7 @@ export function buildAgentsInstructions(entries: readonly { qualifiedName: strin
   const lines = [
     "When a task suits one of these agents, call nax-agents__run with the agent name and a self-contained task.",
     "Pass model to run an agent on another model: provider/model for the nax native agent (openai-codex/gpt-6-luna is native), acp:<agent> for an installed ACP agent.",
+    "To run a task on a model when no agent fits, omit agent and pass model; the task runs on the built-in general agent.",
   ];
   for (const entry of entries.slice(0, MAX_AGENTS_INDEX_ENTRIES)) {
     lines.push(`- ${entry.qualifiedName}: ${cleanIndexDescription(entry.description)}`);
@@ -67,4 +68,13 @@ export function buildSubagentInstructions(input: SubagentInstructionsInput): str
   if (memory !== undefined) sections.push(memory);
   sections.push(input.agent.prompt);
   return sections.join("\n\n");
+}
+
+/**
+ * The whole prompt of the built-in general agent: it has no agent file, so it is told
+ * what it is and that the caller reads only its last message — the same closing
+ * constraint an ACP subagent carries.
+ */
+export function buildGeneralAgentPrompt(): string {
+  return "You are a general-purpose subagent. Complete the task you are given with the tools you have, then reply with a concise final answer: the agent that called you reads only your last message.";
 }

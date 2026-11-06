@@ -7,6 +7,7 @@
  * a light terminal, a 16-colour terminal or with colour off.
  */
 import { TOOL_RESULT_PREVIEW_BYTES } from "@nathapp/nax-agent";
+import { GENERAL_AGENT_NAME } from "@/chat";
 import type { ToolChild, TranscriptEntry } from "./transcript-model";
 
 /** One tool call in the transcript; the only entry kind a card renders. */
@@ -105,29 +106,53 @@ function grepArg(input: unknown): string | undefined {
   return path === undefined ? `"${pattern}"` : `"${pattern}", ${path}`;
 }
 
-function agentArg(input: unknown, model?: string): string | undefined {
-  const agent = stringField(input, "agent");
+/** The model a call runs on and where that model came from; a nested call carries neither. */
+interface CallModel {
+  readonly model?: string;
+  readonly modelSource?: string;
+}
+
+/** A call that names no model: nothing to show beside the title. */
+const NO_MODEL: CallModel = {};
+
+/** ` [model · source]`, ` [model]`, or nothing at all when the call names no model. */
+function modelSuffix(model?: string, modelSource?: string): string {
+  if (model === undefined) return "";
+  return modelSource === undefined ? ` [${model}]` : ` [${model} · ${modelSource}]`;
+}
+
+/**
+ * The agent a run names, or the built-in general agent when the input names none. An
+ * `agent` key the input does carry must be a string: a malformed one is a call the card
+ * cannot describe, not an agentless one.
+ */
+function agentName(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null || !Reflect.has(input, "agent")) return GENERAL_AGENT_NAME;
+  return stringField(input, "agent");
+}
+
+function agentArg(input: unknown, call: CallModel): string | undefined {
   const task = stringField(input, "task");
-  return agent === undefined || task === undefined
-    ? undefined
-    : `${agent}${model === undefined ? "" : ` [${model}]`}: ${task}`;
+  if (task === undefined) return undefined;
+  const agent = agentName(input);
+  return agent === undefined ? undefined : `${agent}${modelSuffix(call.model, call.modelSource)}: ${task}`;
 }
 
 /** The argument the call carries, derived per tool; undefined when it carries none. */
-function rawArg(name: string, input: unknown, model?: string): string | undefined {
+function rawArg(name: string, input: unknown, call: CallModel): string | undefined {
   if (PATH_TOOLS.has(name)) return stringField(input, "path");
   if (name === "Bash") return firstLine(stringField(input, "command"));
   if (name === "Grep") return grepArg(input);
   if (name === "Glob") return stringField(input, "pattern");
   if (name === "Git") return stringField(input, "subcommand");
-  if (name === AGENT_RUN_TOOL) return agentArg(input, model);
+  if (name === AGENT_RUN_TOOL) return agentArg(input, call);
   if (name === SKILL_LOAD_TOOL) return stringField(input, "name");
   return undefined;
 }
 
 /** `rawArg`, flattened to one line and elided at `TOOL_ARG_LIMIT` characters. */
-function toolArg(name: string, input: unknown, model?: string): string | undefined {
-  const value = rawArg(name, input, model);
+function toolArg(name: string, input: unknown, call: CallModel = NO_MODEL): string | undefined {
+  const value = rawArg(name, input, call);
   if (value === undefined) return undefined;
   const flat = oneLine(value);
   return flat.length > TOOL_ARG_LIMIT ? `${flat.slice(0, TOOL_ARG_LIMIT)}${ELLIPSIS}` : flat;
@@ -338,7 +363,7 @@ export function diffLines(oldText: string, newText: string): readonly DiffLine[]
 
 /** The card for one tool entry. `expanded` lifts the line caps and widens the ok summary. */
 export function toolCardModel(entry: ToolEntry, options: { expanded: boolean }): ToolCardModel {
-  const arg = toolArg(entry.name, entry.input, entry.model);
+  const arg = toolArg(entry.name, entry.input, entry);
   const tone = toolTone(entry.status);
   const succeeded = tone === "success";
   const summary = succeeded ? okSummary(entry, options.expanded) : { shown: nonResultSummary(entry, tone), hidden: 0 };

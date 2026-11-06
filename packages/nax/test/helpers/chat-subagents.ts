@@ -218,6 +218,11 @@ export interface SubagentHostOptions {
   readonly runAgent?: string;
   /** The task text the scripted chat session hands the `run` tool; defaults to `"check it"`. */
   readonly task?: string;
+  /**
+   * The exact input the scripted chat session passes to `run`, replacing the default
+   * `{ agent: runAgent, task }` — so a test can script a call with no agent and a model.
+   */
+  readonly runInput?: Record<string, unknown>;
   /** Events the scripted chat session emits itself, after its run call and before its `turn_end`. */
   readonly chatEvents?: readonly SessionEvent[];
   /** Events the nested session emits before it ends its turn. */
@@ -388,7 +393,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
         maxFileBytes: 1_000_000,
         signal: turn.signal,
       };
-      const pendingRun = tool.run({ agent: runAgentName, task: options.task ?? "check it" }, ctx);
+      const pendingRun = tool.run(options.runInput ?? { agent: runAgentName, task: options.task ?? "check it" }, ctx);
       toolResults.push(
         options.abandonToolOnAbort
           ? await Promise.race([

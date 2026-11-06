@@ -27,6 +27,7 @@ export type { AcpSubagentInstructionsInput, SubagentInstructionsInput } from "./
 export {
   buildAcpSubagentInstructions,
   buildAgentsInstructions,
+  buildGeneralAgentPrompt,
   buildSubagentInstructions,
   MAX_AGENTS_INDEX_ENTRIES,
 } from "./builders/agents-builder";

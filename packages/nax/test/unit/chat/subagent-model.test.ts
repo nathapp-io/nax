@@ -166,3 +166,52 @@ describe("resolveSubagentModel", () => {
     });
   });
 });
+
+describe("subagentModelLabel", () => {
+  test("AC-1: an overriding model source labels the model an override", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("model", true)).toBe("override");
+  });
+
+  test("AC-2: an inherited model is labelled inherited", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("inherit", false)).toBe("inherited");
+  });
+
+  test("AC-3: a model named by the agent file is labelled agent file", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("model", false)).toBe("agent file");
+  });
+
+  test("AC-4: an alias-resolved model keeps its alias source", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("alias", false)).toBe("alias");
+  });
+
+  test("AC-5: a tier-resolved model keeps its tier source", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("tier", false)).toBe("tier");
+  });
+
+  test("AC-6: a model that fell back to the parent says so", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("fallback", false)).toBe("fallback to parent");
+  });
+
+  // An override keeps the source the model id actually came from: the id is the
+  // alias's or the tier's, so naming it "override" would tell the reader nothing.
+  test("AC-7: an alias-resolved override stays labelled alias", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("alias", true)).toBe("alias");
+  });
+
+  test("AC-8: a tier-resolved override stays labelled tier", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("tier", true)).toBe("tier");
+  });
+
+  test("AC-9: an override of inherit stays labelled inherited", async () => {
+    const { subagentModelLabel } = await import("@/chat/subagent-model");
+    expect(subagentModelLabel("inherit", true)).toBe("inherited");
+  });
+});

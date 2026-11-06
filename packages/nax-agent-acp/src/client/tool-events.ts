@@ -11,6 +11,15 @@
  * name is the agent's tool name, else its first real title, else its kind (D5-d).
  * Input and preview are agent data: capped, scrubbed of the session's secret values
  * and redacted best-effort (D5-f). At most MAX_TRACKED_CALLS calls per turn.
+ *
+ * A call the agent reports pending is still having its input prepared, and that is
+ * the only sign of life a turn gets while it happens (#2808). The first pending
+ * sighting emits a tool_input_delta of 0 chars and records the input's serialized
+ * length; later growth on a call that is neither announced nor running emits the
+ * difference. Chat reads Writing from it, so a long input no longer looks stuck.
+ * The count is of the input tool_call itself carries (scrubbed, capped), never of the
+ * agent's raw bytes; the recorded baseline never moves down, and a call that was
+ * announced or started emits no further delta.
  */
 import {
   capStrings,
@@ -58,6 +67,8 @@ interface CallState {
   readonly rawOutput?: unknown;
   readonly announced: boolean;
   readonly resolved: boolean;
+  /** The serialized input length the pending deltas have reported so far (#2808). */
+  readonly pendingChars?: number;
 }
 
 type Update = Readonly<Record<string, unknown>>;
@@ -86,6 +97,11 @@ function merged(state: CallState, update: Update, secrets: readonly string[]): C
 
 function nameOf(state: CallState): string {
   return state.name ?? state.title ?? state.kind ?? "tool";
+}
+
+/** The serialized length of the input tool_call carries: scrubbed, capped, as inputOf hands it over. */
+function inputChars(state: CallState, secrets: readonly string[]): number {
+  return (JSON.stringify(inputOf(state.rawInput, secrets)) ?? "null").length;
 }
 
 export function inputOf(raw: unknown, secrets: readonly string[]): unknown {
@@ -209,6 +225,34 @@ export function createToolEvents(
     emit({ type: "tool_call", callId: state.id, name: nameOf(state), input: inputOf(state.rawInput, secrets) });
     return next;
   };
+  const inputDelta = (state: CallState, chars: number): void => {
+    emit({ type: "tool_input_delta", round: 0, callId: state.id, name: nameOf(state), chars });
+  };
+  /**
+   * A call still being prepared (#2808). The first pending sighting opens its baseline
+   * with a 0-char delta, so the turn shows Writing at once; later growth reports the
+   * serialized difference. The baseline is kept in the calls map (merge() copies the
+   * state) and never moves down, so a repeat or a shrinking input says nothing. Once
+   * the call is announced or running it says nothing at all.
+   */
+  const notePending = (state: CallState, status: unknown): CallState => {
+    if (state.announced || running.has(state.id)) return state;
+    const baseline = state.pendingChars;
+    if (baseline === undefined) {
+      if (status !== "pending") return state;
+      const next = { ...state, pendingChars: inputChars(state, secrets) };
+      calls.set(state.id, next);
+      inputDelta(state, 0);
+      return next;
+    }
+    if (status !== undefined && status !== "pending") return state;
+    const chars = inputChars(state, secrets);
+    if (chars <= baseline) return state;
+    const next = { ...state, pendingChars: chars };
+    calls.set(state.id, next);
+    inputDelta(state, chars - baseline);
+    return next;
+  };
   const resolve = (state: CallState, isError: boolean, preview: string, resultBytes: number): void => {
     if (state.resolved) return;
     calls.set(state.id, { ...state, resolved: true });
@@ -218,9 +262,11 @@ export function createToolEvents(
   };
   return {
     onUpdate(update) {
-      const state = merge(update);
+      const seen = merge(update);
+      if (seen === undefined) return;
       const status = isRecord(update) ? update.status : undefined;
-      if (state === undefined) return;
+      // The pending signal runs first: a pending update also takes the early return below.
+      const state = notePending(seen, status);
       if (status === undefined || (status === "in_progress" && running.has(state.id))) {
         beat(state);
         return;

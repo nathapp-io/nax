@@ -175,6 +175,52 @@ describe("toolCardModel arg", () => {
     );
   });
 
+  test("AC-3 an agentless call names the general agent beside its model and that model's source", () => {
+    const model = card({
+      name: "nax-agents__run",
+      input: { task: "find x" },
+      model: "p/x",
+      modelSource: "override",
+    });
+    expect(model.arg).toBe("general [p/x · override]: find x");
+  });
+
+  test("AC-4 names where the call's model came from beside the model", () => {
+    const model = card({
+      name: "nax-agents__run",
+      input: { agent: "explorer", task: "find x" },
+      model: "openai/gpt-x",
+      modelSource: "agent file",
+    });
+    expect(model.arg).toBe("explorer [openai/gpt-x · agent file]: find x");
+  });
+
+  test("AC-5 names only the model when the call's source is unknown", () => {
+    const model = card({
+      name: "nax-agents__run",
+      input: { agent: "explorer", task: "find x" },
+      model: "openai/gpt-x",
+    });
+    expect(model.arg).toBe("explorer [openai/gpt-x]: find x");
+  });
+
+  test("AC-6 an agent that is not a string leaves the call without an arg", () => {
+    expect(card({ name: "nax-agents__run", input: { agent: 3, task: "find x" } }).arg).toBeUndefined();
+  });
+
+  test("AC-7 an agentless call without a model names the general agent alone", () => {
+    expect(card({ name: "nax-agents__run", input: { task: "find x" } }).arg).toBe("general: find x");
+  });
+
+  test("names no source when the call carries a source but no model", () => {
+    const model = card({
+      name: "nax-agents__run",
+      input: { task: "find x" },
+      modelSource: "override",
+    });
+    expect(model.arg).toBe("general: find x");
+  });
+
   test("uses a skill call's name", () => {
     const model = card({ name: "nax-skills__load", input: { name: "review" } });
     expect(model.title).toBe("Skill");

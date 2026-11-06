@@ -62,8 +62,11 @@ describe("unread tool-call handler", () => {
 
   test("follows up once, naming the tools, and marks sent", async () => {
     const patch = await registry.dispatch("before_turn_end", payload());
+    // US-006: the block names ScrashpadWrite, which is neither Read nor Write
+    // and is more than MAX_SUGGEST_DISTANCE from both, so it is named without
+    // a suggestion.
     expect(patch.followUp).toBe(
-      "Your reply contains a <tool_call> block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: Read, Write.",
+      "Your reply contains a <tool_call> block that was not run: it did not read as a call of a declared tool. Call tools through the tool interface, using one of these exact names: Read, Write. `ScrashpadWrite` is not a declared tool.",
     );
     expect(unread.sent).toBe(true);
     expect(await registry.dispatch("before_turn_end", payload())).toEqual({});
@@ -83,9 +86,10 @@ describe("unread tool-call handler", () => {
     expect(patch).toEqual({});
   });
 
-  test("AC-11: with no tools the follow-up ends with (none)", async () => {
+  test("AC-11: with no tools the follow-up says (none) and names the mistake", async () => {
     install(() => []);
     const patch = await registry.dispatch("before_turn_end", payload());
-    expect(patch.followUp).toEndWith("using one of these exact names: (none).");
+    expect(patch.followUp).toContain("using one of these exact names: (none).");
+    expect(patch.followUp).toEndWith("`ScrashpadWrite` is not a declared tool.");
   });
 });

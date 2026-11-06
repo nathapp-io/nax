@@ -11,6 +11,34 @@ import { isChatAcpModel } from "./acp";
 
 export type SubagentModelSource = "inherit" | "alias" | "tier" | "model" | "fallback";
 
+/** How the chat shows where a subagent's model came from. */
+export type SubagentModelLabel = "inherited" | "alias" | "tier" | "agent file" | "override" | "fallback to parent";
+
+/**
+ * The display label for a resolved model, given where it came from and whether a
+ * `nax-agents__run` override asked for it.
+ *
+ * An override wins only when the model would otherwise have come from the agent
+ * file: the label names where the model id came from, and an override that
+ * resolves through an alias or a tier got its id there. An override of `inherit`
+ * likewise keeps "inherited", because the parent's model is what runs.
+ */
+export function subagentModelLabel(source: SubagentModelSource, overridden: boolean): SubagentModelLabel {
+  if (overridden && source === "model") return "override";
+  switch (source) {
+    case "inherit":
+      return "inherited";
+    case "alias":
+      return "alias";
+    case "tier":
+      return "tier";
+    case "model":
+      return "agent file";
+    case "fallback":
+      return "fallback to parent";
+  }
+}
+
 export interface ResolveSubagentModelOptions {
   /** The agent's `model:` frontmatter value, when set. */
   requested?: string;

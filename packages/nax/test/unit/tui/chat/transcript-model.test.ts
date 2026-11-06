@@ -312,4 +312,33 @@ describe("reduceTranscript agent call model", () => {
     expect(entries[0]).toBeDefined();
     expect("model" in (entries[0] ?? {})).toBe(false);
   });
+
+  test("AC-1 a top-level call's metadata.subagentModelSource becomes the entry's modelSource", () => {
+    const entries = reduceTranscript(
+      [],
+      toolCall({
+        name: "nax-agents__run",
+        metadata: { subagentModel: "openai/gpt-x", subagentModelSource: "override" },
+      }),
+    );
+    expect(entries[0]).toMatchObject({ kind: "tool", model: "openai/gpt-x", modelSource: "override" });
+  });
+
+  test("AC-2 a call with only subagentModel has no modelSource key", () => {
+    const entries = reduceTranscript(
+      [],
+      toolCall({ name: "nax-agents__run", metadata: { subagentModel: "openai/gpt-x" } }),
+    );
+    expect(entries[0]).toBeDefined();
+    expect(entries[0]).toMatchObject({ kind: "tool", model: "openai/gpt-x" });
+    expect("modelSource" in (entries[0] ?? {})).toBe(false);
+  });
+
+  test("AC-2 a modelSource arriving without a model is still carried", () => {
+    const entries = reduceTranscript(
+      [],
+      toolCall({ name: "nax-agents__run", metadata: { subagentModelSource: "override" } }),
+    );
+    expect(entries[0]).toMatchObject({ kind: "tool", modelSource: "override" });
+  });
 });

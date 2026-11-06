@@ -22,6 +22,7 @@ import {
   withDepsRestore,
 } from "@test/helpers";
 import { createChatAskController } from "@/chat/ask-controller";
+import { generalAgent } from "@/chat/builtin-agent";
 import type { ChatLedger } from "@/chat/chat-ledger";
 import { _subagentRunsDeps, createSubagentRuns, type SubagentRunsDeps } from "@/chat/subagent-runs";
 import { _subagentSessionDeps } from "@/chat/subagent-session";
@@ -330,25 +331,49 @@ describe("SubagentRuns.run model override", () => {
     await runs.run(haiku, "t");
     expect(runSubagent.mock.calls[0]?.[0].model).toBe("openai/fast-x");
   });
+
+  // The general agent has no model: of its own, so an unresolvable override on it is
+  // refused exactly like one on a catalog agent — no nested session is opened.
+  test("AC-13 a refused override on the general agent returns an error naming the model", async () => {
+    const { runs } = setup();
+    const result = await runs.run(generalAgent(), "t", undefined, "bogus");
+    expect(result.isError).toBe(true);
+    expect(result.content).toStartWith("[chat] unknown model bogus");
+  });
+
+  test("AC-14 a refused override on the general agent never calls the injected runSubagent", async () => {
+    const { runSubagent, runs } = setup();
+    await runs.run(generalAgent(), "t", undefined, "bogus");
+    expect(runSubagent).not.toHaveBeenCalled();
+  });
 });
 
 describe("SubagentRuns.modelFor", () => {
   const asks = () => createChatAskController({ mode: "guarded", answer: () => {} });
   const make = () => createSubagentRuns(runsDeps({ asks: asks() }));
 
-  test("AC-1 an agent without a model resolves to the parent session's model", () => {
-    expect(make().modelFor("reviewer")).toBe("anthropic/chat");
+  test("AC-11 an agent without a model resolves to the parent session's model, labelled inherited", () => {
+    expect(make().modelFor("reviewer")).toEqual({ model: "anthropic/chat", label: "inherited" });
   });
 
-  test("AC-2 an explicit provider/model override is returned", () => {
-    expect(make().modelFor("reviewer", "openai-codex/gpt-6-luna")).toBe("openai-codex/gpt-6-luna");
+  test("AC-12 an explicit provider/model override is returned, labelled override", () => {
+    expect(make().modelFor("reviewer", "openai-codex/gpt-6-luna")).toEqual({
+      model: "openai-codex/gpt-6-luna",
+      label: "override",
+    });
   });
 
-  test("AC-3 an unknown agent returns undefined", () => {
+  // An absent name is the general agent, never a catalog lookup: `nax-agents__run`
+  // with a model and no agent has no agent file to run on.
+  test("AC-10 an absent agent name resolves against the general agent", () => {
+    expect(make().modelFor(undefined, "openai/gpt-x")).toEqual({ model: "openai/gpt-x", label: "override" });
+  });
+
+  test("AC-21 an unknown agent returns undefined", () => {
     expect(make().modelFor("nobody")).toBeUndefined();
   });
 
-  test("AC-4 a refused override returns undefined", () => {
+  test("AC-22 a refused override returns undefined", () => {
     expect(make().modelFor("reviewer", "gpt-6-luna")).toBeUndefined();
   });
 });

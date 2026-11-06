@@ -21,24 +21,34 @@ function setup(secrets: readonly string[] = []) {
 
 const text = (t: string) => ({ type: "content", content: { type: "text", text: t } });
 
+/** A pending call's input deltas (US-005), set aside so the event-order assertions stay readable. */
+const inputDeltas = (events: readonly TurnEvent[]) => events.filter((e) => e.type === "tool_input_delta");
+/** The events other than those input deltas: tool_call, tool_result and liveness beats. */
+const withoutInput = (events: readonly TurnEvent[]) => events.filter((e) => e.type !== "tool_input_delta");
+
 describe("createToolEvents: when a call is announced (D5-c)", () => {
-  test("a pending call with streaming input emits nothing until it is used", () => {
+  test("a pending call with streaming input sends no tool_call until it is used", () => {
     const { events, tools } = setup();
     tools.onUpdate({ toolCallId: "c1", name: "Read", title: "Read", kind: "read", status: "pending", rawInput: {} });
     tools.onUpdate({ toolCallId: "c1", rawInput: { file_path: "/w/a.ts" } });
-    expect(events).toEqual([]);
+    expect(withoutInput(events)).toEqual([]);
+    expect(inputDeltas(events).length).toBeGreaterThan(0);
     tools.onUpdate({ toolCallId: "c1", status: "completed", content: [text("body")] });
-    expect(events).toEqual([
+    expect(withoutInput(events)).toEqual([
       { type: "tool_call", callId: "c1", name: "Read", input: { file_path: "/w/a.ts" } },
       { type: "tool_result", callId: "c1", isError: false, preview: "body", resultBytes: 4 },
     ]);
+    // The deltas all precede the tool_call: no input growth after the call is announced.
+    const callAt = events.findIndex((e) => e.type === "tool_call");
+    expect(events.slice(callAt).some((e) => e.type === "tool_input_delta")).toBe(false);
   });
 
   test("in_progress announces; failed answers with isError", () => {
     const { events, tools } = setup();
     tools.onUpdate({ toolCallId: "c2", name: "Bash", status: "pending", rawInput: { command: "ls" } });
     tools.onUpdate({ toolCallId: "c2", status: "in_progress" });
-    expect(events).toEqual([{ type: "tool_call", callId: "c2", name: "Bash", input: { command: "ls" } }]);
+    expect(withoutInput(events)).toEqual([{ type: "tool_call", callId: "c2", name: "Bash", input: { command: "ls" } }]);
+    expect(inputDeltas(events)).toEqual([{ type: "tool_input_delta", round: 0, callId: "c2", name: "Bash", chars: 0 }]);
     tools.onUpdate({ toolCallId: "c2", status: "failed", content: [text("Permission denied: no")] });
     expect(events.at(-1)).toEqual({
       type: "tool_result",
@@ -54,13 +64,133 @@ describe("createToolEvents: when a call is announced (D5-c)", () => {
     tools.onUpdate({ toolCallId: "c3", name: "Edit", status: "pending" });
     tools.announce({ toolCallId: "c3", title: "Edit a.ts", rawInput: { path: "a.ts" } });
     tools.onUpdate({ toolCallId: "c3", status: "in_progress" });
-    expect(events).toEqual([{ type: "tool_call", callId: "c3", name: "Edit", input: { path: "a.ts" } }]);
+    expect(withoutInput(events)).toEqual([{ type: "tool_call", callId: "c3", name: "Edit", input: { path: "a.ts" } }]);
+    expect(inputDeltas(events)).toHaveLength(1);
   });
 
   test("announce() for a call never seen before tracks and announces it", () => {
     const { events, tools } = setup();
     tools.announce({ toolCallId: "fresh", title: "Run tests", kind: "execute" });
     expect(events).toEqual([{ type: "tool_call", callId: "fresh", name: "Run tests", input: {} }]);
+  });
+});
+
+describe("createToolEvents: a pending call shows Writing (US-005, #2808)", () => {
+  /** The serialized length of an input, as inputOf hands it to tool_call (scrubbed, capped). */
+  const charsOf = (raw: unknown, secrets: readonly string[] = []) => JSON.stringify(inputOf(raw, secrets)).length;
+
+  /** c1 first seen pending with {}, then its input grows to { path: "a.ts" } (AC-1, AC-2). */
+  function c1Streaming(secrets: readonly string[] = []) {
+    const it = setup(secrets);
+    it.tools.onUpdate({ toolCallId: "c1", name: "Write", status: "pending", rawInput: {} });
+    it.tools.onUpdate({ toolCallId: "c1", rawInput: { path: "a.ts" } });
+    return it;
+  }
+
+  test("AC-1 a call first seen pending emits one tool_input_delta, with 0 chars", () => {
+    const { events, tools } = setup();
+    tools.onUpdate({ toolCallId: "c1", name: "Write", status: "pending", rawInput: {} });
+    expect(events).toEqual([{ type: "tool_input_delta", round: 0, callId: "c1", name: "Write", chars: 0 }]);
+  });
+
+  test("AC-2 a statusless update with more input emits the serialized growth", () => {
+    const { events } = c1Streaming();
+    expect(events).toEqual([
+      { type: "tool_input_delta", round: 0, callId: "c1", name: "Write", chars: 0 },
+      {
+        type: "tool_input_delta",
+        round: 0,
+        callId: "c1",
+        name: "Write",
+        chars: JSON.stringify({ path: "a.ts" }).length - JSON.stringify({}).length,
+      },
+    ]);
+  });
+
+  test("AC-3 repeating that statusless input emits nothing", () => {
+    const { events, tools } = c1Streaming();
+    tools.onUpdate({ toolCallId: "c1", rawInput: { path: "a.ts" } });
+    expect(events).toHaveLength(2);
+  });
+
+  test("AC-4 a pending update carrying the same input emits nothing", () => {
+    const { events, tools } = c1Streaming();
+    tools.onUpdate({ toolCallId: "c1", status: "pending", rawInput: { path: "a.ts" } });
+    expect(events).toHaveLength(2);
+  });
+
+  test("AC-5 after the pending sequence, in_progress emits the tool_call", () => {
+    const { events, tools } = c1Streaming();
+    tools.onUpdate({ toolCallId: "c1", status: "in_progress" });
+    expect(withoutInput(events).at(-1)).toEqual({
+      type: "tool_call",
+      callId: "c1",
+      name: "Write",
+      input: { path: "a.ts" },
+    });
+    expect(inputDeltas(events)).toHaveLength(2);
+  });
+
+  test("AC-6 a started call emits no tool_input_delta for later input", () => {
+    const { events, tools } = c1Streaming();
+    tools.onUpdate({ toolCallId: "c1", status: "in_progress" });
+    expect(inputDeltas(events)).toHaveLength(2);
+    tools.onUpdate({ toolCallId: "c1", status: "pending", rawInput: { path: "much-longer.ts" } });
+    expect(inputDeltas(events)).toHaveLength(2);
+    expect(events.filter((e) => e.type === "tool_call")).toHaveLength(1);
+  });
+
+  test("AC-7 a call first seen with no status emits nothing", () => {
+    const { events, tools } = setup();
+    tools.onUpdate({ toolCallId: "c2", name: "Read" });
+    expect(events).toEqual([]);
+    // The same emitter does emit for a call first seen pending: the silence is the call's, not the emitter's.
+    tools.onUpdate({ toolCallId: "c9", name: "Write", status: "pending", rawInput: {} });
+    expect(inputDeltas(events).map((e) => ("callId" in e ? e.callId : ""))).toEqual(["c9"]);
+  });
+
+  test("AC-8 a call first seen completed emits tool_call then tool_result, no delta", () => {
+    const { events, tools } = setup();
+    tools.onUpdate({ toolCallId: "c3", name: "Read", status: "completed" });
+    expect(events).toEqual([
+      { type: "tool_call", callId: "c3", name: "Read", input: {} },
+      { type: "tool_result", callId: "c3", isError: false, preview: "", resultBytes: 0 },
+    ]);
+    // The same emitter does emit for a call first seen pending: c3 produced none.
+    tools.onUpdate({ toolCallId: "c10", name: "Write", status: "pending", rawInput: {} });
+    expect(inputDeltas(events).map((e) => ("callId" in e ? e.callId : ""))).toEqual(["c10"]);
+  });
+
+  test("AC-9 the growth is of the scrubbed input tool_call carries", () => {
+    const { events, tools } = setup([SECRET]);
+    tools.onUpdate({ toolCallId: "c1", name: "Write", status: "pending", rawInput: {} });
+    tools.onUpdate({ toolCallId: "c1", rawInput: { command: `curl ${SECRET}` } });
+    expect(events.at(-1)).toEqual({
+      type: "tool_input_delta",
+      round: 0,
+      callId: "c1",
+      name: "Write",
+      chars: charsOf({ command: `curl ${SECRET}` }, [SECRET]) - charsOf({}),
+    });
+  });
+
+  test("AC-10 no event for a pending call holding a secret contains it", () => {
+    const { events, tools } = setup([SECRET]);
+    tools.onUpdate({ toolCallId: "c1", name: "Write", status: "pending", rawInput: { command: "ls" } });
+    tools.onUpdate({ toolCallId: "c1", rawInput: { command: `curl ${SECRET}` } });
+    tools.onUpdate({ toolCallId: "c1", status: "completed", content: [text(`done ${SECRET}`)] });
+    expect(inputDeltas(events).length).toBeGreaterThan(0);
+    expect(JSON.stringify(events)).not.toContain(SECRET);
+  });
+
+  test("AC-11 an announced call emits no tool_input_delta for later input", () => {
+    const { events, tools } = setup();
+    tools.onUpdate({ toolCallId: "c4", name: "Edit", status: "pending", rawInput: {} });
+    tools.announce({ toolCallId: "c4", title: "Edit a.ts" });
+    expect(inputDeltas(events)).toHaveLength(1);
+    tools.onUpdate({ toolCallId: "c4", rawInput: { path: "much-longer.ts" } });
+    expect(inputDeltas(events)).toHaveLength(1);
+    expect(events.filter((e) => e.type === "tool_call")).toHaveLength(1);
   });
 });
 
@@ -102,7 +232,10 @@ describe("createToolEvents: one result per announced call (D5-e)", () => {
     for (let i = 0; i < MAX_TRACKED_CALLS; i += 1) tools.onUpdate({ toolCallId: `c${i}`, status: "pending" });
     tools.onUpdate({ toolCallId: "one-too-many", name: "X", status: "completed" });
     tools.onUpdate({ toolCallId: "c0", name: "Y", status: "completed" });
-    expect(events.map((e) => ("callId" in e ? e.callId : ""))).toEqual(["c0", "c0"]);
+    expect(withoutInput(events).map((e) => ("callId" in e ? e.callId : ""))).toEqual(["c0", "c0"]);
+    // Each tracked call announced itself as pending once (US-005); the overflow call did not.
+    expect(inputDeltas(events)).toHaveLength(MAX_TRACKED_CALLS);
+    expect(inputDeltas(events).some((e) => "callId" in e && e.callId === "one-too-many")).toBe(false);
   });
 });
 
@@ -127,7 +260,7 @@ describe("createToolEvents: names (D5-d)", () => {
     tools.onUpdate({ toolCallId: "t", title: "tool call", status: "pending" });
     tools.onUpdate({ toolCallId: "t", title: "Read a.ts" });
     tools.onUpdate({ toolCallId: "t", title: "Read b.ts", status: "in_progress" });
-    expect(events[0]).toMatchObject({ type: "tool_call", name: "Read a.ts" });
+    expect(events.find((e) => e.type === "tool_call")).toMatchObject({ type: "tool_call", name: "Read a.ts" });
   });
 
   test("names are one line, visible, scrubbed and capped at 200 characters", () => {
@@ -268,6 +401,6 @@ describe("tool_progress (S4b-0 finding f)", () => {
     tools.onUpdate({ toolCallId: "c2", status: "completed", content: [text("x")] });
     now = 60_000;
     tools.onUpdate({ toolCallId: "c2" });
-    expect(events.map((e) => e.type)).toEqual(["tool_call", "tool_result"]);
+    expect(withoutInput(events).map((e) => e.type)).toEqual(["tool_call", "tool_result"]);
   });
 });

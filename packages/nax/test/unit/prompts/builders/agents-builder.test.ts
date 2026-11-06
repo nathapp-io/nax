@@ -67,12 +67,25 @@ describe("buildAgentsInstructions", () => {
     expect(first).toContain("nax-agents__run");
   });
 
-  test("AC-13 second line names provider/model, the native example and acp:<agent>; list follows", () => {
+  test("AC-13 second line names provider/model, the native example and acp:<agent>; the general-agent line follows", () => {
     const out = lines(prompts.buildAgentsInstructions([agent]));
     expect(out[1]).toBe(
       "Pass model to run an agent on another model: provider/model for the nax native agent (openai-codex/gpt-6-luna is native), acp:<agent> for an installed ACP agent.",
     );
-    expect(out[2]).toBe("- reviewer: Reviews diffs");
+    expect(out[3]).toBe("- reviewer: Reviews diffs");
+  });
+
+  test("AC-3 US-002: the third line names the general-agent fallback", () => {
+    const out = lines(prompts.buildAgentsInstructions([agent]));
+    expect(out[2]).toBe(
+      "To run a task on a model when no agent fits, omit agent and pass model; the task runs on the built-in general agent.",
+    );
+  });
+
+  test("AC-4 US-002: the agent's entry is the fourth line", () => {
+    const out = lines(prompts.buildAgentsInstructions([agent]));
+    expect(out[3]).toBe("- reviewer: Reviews diffs");
+    expect(out).toHaveLength(4);
   });
 
   test("lists each agent as a '- name: description' line", () => {
@@ -95,6 +108,14 @@ describe("buildAgentsInstructions", () => {
     const text = prompts.buildAgentsInstructions([{ ...agent, description: "a\u0007b" }]);
     expect(text).not.toContain("\u0007");
     expect(lines(text)).toContain("- reviewer: ab");
+  });
+});
+
+describe("buildGeneralAgentPrompt", () => {
+  test("AC-9: returns the fixed prompt of the built-in general agent", () => {
+    expect(prompts.buildGeneralAgentPrompt()).toBe(
+      "You are a general-purpose subagent. Complete the task you are given with the tools you have, then reply with a concise final answer: the agent that called you reads only your last message.",
+    );
   });
 });
 
