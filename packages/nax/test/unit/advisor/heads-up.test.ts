@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeAdviceDecision, makeAdviceQuestion } from "@test/helpers";
-import { AdvisorHeadsUpQueue, formatHeadsUp } from "@/advisor";
+import { formatHeadsUp } from "@/advisor";
 
 describe("heads-up", () => {
   test("names the feature, story, question, choice, rationale and id", () => {
@@ -39,15 +39,5 @@ describe("heads-up", () => {
       action: { type: "carry", instruction: "Keep lock order", toStories: ["US-4"] },
     });
     expect(formatHeadsUp(d, q)).toContain("Chose: carry (to US-4)");
-  });
-
-  test("queue drains per story and only once", () => {
-    const q = new AdvisorHeadsUpQueue();
-    q.push("US-1", "a");
-    q.push("US-2", "b");
-    q.push("US-1", "c");
-    expect(q.drain("US-1")).toEqual(["a", "c"]);
-    expect(q.drain("US-1")).toEqual([]);
-    expect(q.drain("US-2")).toEqual(["b"]);
   });
 });

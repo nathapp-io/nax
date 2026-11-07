@@ -312,14 +312,7 @@ async function finishRun(
 
     // Commit status.json and any other nax runtime files left dirty at run end
     logger?.debug("execution", "Completion phase — auto-committing dirty files");
-    await autoCommitIfDirty(
-      options.workdir,
-      "run.complete",
-      "run-summary",
-      options.feature,
-      options.runtime?.dirtyWorktrees,
-      options.runtime?.dryRun,
-    );
+    await autoCommitIfDirty(options.workdir, "run.complete", "run-summary", options.feature, options.runtime?.dryRun);
 
     // Native finish phase (design 4.1). Must precede runtime.close(), whose own
     // comment below says it drains the cost aggregator and aborts the signal —

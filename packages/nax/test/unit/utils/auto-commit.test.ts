@@ -37,7 +37,7 @@ describe("autoCommitIfDirty", () => {
       stderr: "",
       exitCode: args.includes("--cached") ? 1 : 0,
     }));
-    await autoCommitIfDirty("/repo", "workflow", "wf-branch-fix", "_run", undefined, false, run);
+    await autoCommitIfDirty("/repo", "workflow", "wf-branch-fix", "_run", false, run);
     expect(run.mock.calls.map(([args]) => args[0])).toContain("status");
     expect(run.mock.calls.map(([args]) => args[0])).toContain("add");
     expect(run).toHaveBeenCalledWith(["add", "-A", "--", ":/"], "/repo", 30_000);
@@ -55,6 +55,22 @@ describe("autoCommitIfDirty", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
+  // AC-2: the injected `runGit` double owns every git call — the add and the
+  // commit both reach it, not the process-level default runner.
+  test("an injected runGit double receives the add and commit calls", async () => {
+    _gitDeps.spawn = makeSpawn(() => "").spawn;
+    const run = mock(async (...[args]: Parameters<typeof gitWithTimeout>) => ({
+      stdout: args[0] === "rev-parse" ? "/repo\n" : args[0] === "status" ? " M source.txt\n" : "",
+      stderr: "",
+      exitCode: args.includes("--cached") ? 1 : 0,
+    }));
+
+    await autoCommitIfDirty("/repo", "run.complete", "run-summary", "US-001", false, run);
+
+    expect(run.mock.calls.map(([args]) => args[0])).toContain("add");
+    expect(run.mock.calls.map(([args]) => args[0])).toContain("commit");
+  });
+
   test("injected commit failure logs context and resolves best-effort", async () => {
     const logger = makeLogger();
     _gitDeps.getSafeLogger = () => logger;
@@ -64,9 +80,7 @@ describe("autoCommitIfDirty", () => {
       stderr: args[0] === "commit" ? "commit denied" : "",
       exitCode: args[0] === "commit" || args.includes("--cached") ? 1 : 0,
     }));
-    await expect(
-      autoCommitIfDirty("/repo", "workflow", "wf-branch-fix", "_run", undefined, false, run),
-    ).resolves.toBeUndefined();
+    await expect(autoCommitIfDirty("/repo", "workflow", "wf-branch-fix", "_run", false, run)).resolves.toBeUndefined();
     expect(run.mock.calls.some(([args]) => args[0] === "commit")).toBe(true);
     expect(logger.error).toHaveBeenCalledWith("workflow", "auto-commit: git commit failed or timed out", {
       storyId: "_run",
@@ -122,7 +136,7 @@ describe("autoCommitIfDirty", () => {
     const unhook = registerBeforeAutoCommit(async () => {
       ran = true;
     });
-    await autoCommitIfDirty("/repo", "s", "r", "US-001", undefined, true);
+    await autoCommitIfDirty("/repo", "s", "r", "US-001", true);
     unhook();
     expect(ran).toBe(false);
   });
@@ -130,8 +144,10 @@ describe("autoCommitIfDirty", () => {
   // nax#1808: a dry run reached the completion phase and auto-committed the
   // PRD it had just marked passed, plus any unrelated dirty file, because
   // `git add -A` is unscoped. The refusal lives here rather than at each call
-  // site so a future caller cannot silently reintroduce it -- the same
-  // reasoning the `blockedWorktrees` guard above is built on.
+  // site so a future caller cannot silently reintroduce it.
+  //
+  // AC-1: `dryRun` is the fifth argument, so a caller that still passes a
+  // blocked-worktree set in that position would silently commit instead.
   test("refuses to commit under a dry run", async () => {
     const gitRoot = "/repo";
     _gitDeps.spawn = makeSpawn(({ cmd, opts }) => {
@@ -142,7 +158,7 @@ describe("autoCommitIfDirty", () => {
       return "";
     }).spawn;
 
-    await autoCommitIfDirty(gitRoot, "run.complete", "run-summary", "US-001", undefined, true);
+    await autoCommitIfDirty(gitRoot, "run.complete", "run-summary", "US-001", true);
 
     expect(calls.some((c) => c.cmd.includes("add"))).toBe(false);
     expect(calls.some((c) => c.cmd.includes("commit"))).toBe(false);

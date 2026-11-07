@@ -106,9 +106,6 @@ import type { AgentFallbackRecord } from "../agents/manager-types";
 import type { ConfigLoader, NaxConfig } from "../config";
 import { createConfigLoader, getProjectKey } from "../config";
 import { PidRegistry } from "../execution/pid-registry";
-import type { ReviewRecurrenceStore } from "../execution/recurrence-store";
-import type { Iteration, StoryFixHistory } from "../findings";
-import { createStoryFixHistory } from "../findings";
 import type { Logger } from "../logger";
 import { getLogger, getSafeLogger } from "../logger";
 import { buildMcpRollup, createMcpPool, createMcpProviders, writeMcpRollup } from "../mcp";
@@ -120,8 +117,6 @@ import type { RoutingDecision } from "../routing/decision";
 import { repairRunState } from "../runstate";
 import type { ISessionManager } from "../session";
 import { SessionManager } from "../session";
-import { createQuarantineMemo, type QuarantineMemo } from "../verification/flake-triage";
-import { AdvisorHeadsUpQueue } from "./advisor-heads-up-queue";
 import { MiddlewareChain } from "./agent-middleware";
 import type { IAgentStreamEventBus } from "./agent-stream-events";
 import { AgentStreamEventBus } from "./agent-stream-events";
@@ -179,24 +174,6 @@ export interface NaxRuntime {
    * and all reach the runtime through DispatchContext.
    */
   readonly dryRun: boolean;
-  /** Run-scoped flaky-test quarantine memo — shared between the per-story full-suite gate and the deferred regression gate. */
-  readonly quarantineMemo: QuarantineMemo;
-  /** Run-scoped per-story adversarial-review round history (ADR-022 carry-forward + recurrence-demotion). Keyed by storyId. */
-  readonly adversarialIterations: Map<string, Iteration[]>;
-  /** Run-scoped per-story semantic-review round history. Separate map so the two reviewers' histories never mix. */
-  readonly semanticIterations: Map<string, Iteration[]>;
-  /** Run-scoped per-story rectification oscillation totals. */
-  readonly rectificationOscillations: Map<string, number>;
-  /** A1: flagged advisor decisions from the fix cycle. Flushed by the post-run inspection layer's stage-end drain until that layer was deleted (US-003). */
-  readonly advisorHeadsUps: AdvisorHeadsUpQueue;
-  /**
-   * Run-scoped cross-attempt review-finding recurrence store (#1666 Part C).
-   * Keyed per (storyId, reviewer source) — see `recurrence-store.ts`. Distinct from
-   * `rectificationOscillations`: that map counts within-cycle ping-pong, this one
-   * counts the SAME finding from the SAME reviewer recurring across escalation
-   * attempts, which the oscillation counter structurally cannot see.
-   */
-  readonly reviewFindingRecurrences: ReviewRecurrenceStore;
   /**
    * Run-scoped per-story agent-swap hops, keyed by storyId (ADR-012 PR-2, nax#1707).
    *
@@ -228,24 +205,6 @@ export interface NaxRuntime {
    * here, exactly as agent-swap hops do (nax#1707). Last write wins.
    */
   readonly lastAdapterFailure: Map<string, import("../context/engine").AdapterFailure>;
-  /** Run-scoped per-(story, tier) fix-iteration + decline history (US-004). */
-  readonly storyFixHistory: StoryFixHistory;
-  /**
-   * Working trees this run injected a change into and could NOT confirm
-   * reverted — they may still hold deliberately broken source.
-   *
-   * The mutation spot-check that wrote this set is deleted (US-005), so nothing
-   * populates it any more; it stays because `autoCommitIfDirty` still refuses to
-   * commit anything under one of these and its call sites pass the set
-   * positionally. Wave B3 removes it with the other runtime fields only the
-   * deleted code wrote.
-   *
-   * Deliberately in-memory and run-scoped rather than read back off the on-disk
-   * journal: a stale journal a sweep failed to reach would otherwise block every
-   * commit in the repo indefinitely. Only the run that actually observed the
-   * failed revert blocks anything.
-   */
-  readonly dirtyWorktrees: Set<string>;
   /**
    * Run-scoped LLM routing-decision cache (BUG-19). Previously a module-level
    * singleton keyed by bare `story.id`, which persisted across `createRuntime()`
@@ -448,17 +407,9 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
 
   const packages = createPackageRegistry(configLoader, workdir);
   const logger = getLogger();
-  const quarantineMemo = createQuarantineMemo();
-  const adversarialIterations = new Map<string, Iteration[]>();
-  const semanticIterations = new Map<string, Iteration[]>();
-  const rectificationOscillations = new Map<string, number>();
-  const advisorHeadsUps = new AdvisorHeadsUpQueue();
-  const reviewFindingRecurrences: ReviewRecurrenceStore = new Map();
   const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
   const ladderSlots = new Map<string, import("../agents/ladder-slot").LadderSlot>();
   const lastAdapterFailure = new Map<string, import("../context/engine").AdapterFailure>();
-  const storyFixHistory = createStoryFixHistory();
-  const dirtyWorktrees = new Set<string>();
   const routingCache = new Map<string, RoutingDecision>();
 
   // The one teardown, awaited by every later `close()`. An arrow, not a hoisted declaration:
@@ -545,17 +496,9 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     ...memoryKey(opts?.memory),
     commandInterceptor: opts?.commandInterceptor,
     logger,
-    quarantineMemo,
-    adversarialIterations,
-    semanticIterations,
-    rectificationOscillations,
-    advisorHeadsUps,
-    reviewFindingRecurrences,
     agentFallbacks,
     ladderSlots,
     lastAdapterFailure,
-    storyFixHistory,
-    dirtyWorktrees,
     dryRun: opts?.dryRun ?? false,
     routingCache,
 

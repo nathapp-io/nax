@@ -45,7 +45,7 @@ afterEach(() => cleanupTempDir(root));
 
 describe("autoCommitIfDirty bot hook boundary", () => {
   test("bot runner commits leftover edits without relative commit hooks", async () => {
-    await autoCommitIfDirty(worktree, "workflow", "wf-branch-fix", "_run", undefined, false, botGit);
+    await autoCommitIfDirty(worktree, "workflow", "wf-branch-fix", "_run", false, botGit);
     expect(await git(["rev-parse", "HEAD"])).not.toBe(initial);
     expect(await git(["show", "HEAD:source.txt"])).toBe("leftover fix");
     expect(await git(["status", "--porcelain"])).toBe("");
@@ -53,7 +53,7 @@ describe("autoCommitIfDirty bot hook boundary", () => {
   });
   test("bot runner restores tracked nax state without post-checkout hooks", async () => {
     await Bun.file(join(worktree, statePath)).delete();
-    await autoCommitIfDirty(worktree, "workflow", "wf-branch-fix", "_run", undefined, false, botGit);
+    await autoCommitIfDirty(worktree, "workflow", "wf-branch-fix", "_run", false, botGit);
     expect(await Bun.file(join(worktree, statePath)).text()).toBe('{"tracked":true}\n');
     expect(await git(["rev-parse", "HEAD"])).not.toBe(initial);
     expect(await Bun.file(marker).exists()).toBe(false);

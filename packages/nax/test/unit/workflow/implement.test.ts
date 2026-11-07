@@ -574,12 +574,16 @@ describe("autoCommitTurnEdits (US-004)", () => {
       calls.push(args);
     };
     expect(await autoCommitTurnEdits(makeStepContext({ projectDir: "/repo" }))).toBe(true);
-    expect(calls[0]).toEqual(["/repo", "workflow", "wf-implementer", "US-001", undefined, false]);
+    expect(calls[0]).toEqual(["/repo", "workflow", "wf-implementer", "US-001", false]);
   });
 
   // US-007 F1: `autoCommitIfDirty` is fail-open — a dry run, a rejected workdir, a failed `git add`
   // and an empty staging set all return without committing — so the seam must read whether a commit
   // landed, not whether the call returned.
+  //
+  // AC-3: the seam forwards exactly five arguments — `dryRun` is the fifth, so a
+  // caller left on the old positions would hand the auto-commit a set where a
+  // boolean belongs.
   test("an auto-commit that commits nothing resolves false, with dryRun forwarded", async () => {
     const calls: unknown[][] = [];
     _workflowDeps.git = gitStub(["h1", "h1"]); // HEAD never moves: nothing was committed
@@ -587,7 +591,8 @@ describe("autoCommitTurnEdits (US-004)", () => {
       calls.push(args);
     };
     expect(await autoCommitTurnEdits(makeStepContext({ projectDir: "/repo", dryRun: true }))).toBe(false);
-    expect(calls[0]).toEqual(["/repo", "workflow", "wf-implementer", "US-001", undefined, true]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual(["/repo", "workflow", "wf-implementer", "US-001", true]);
   });
 
   test("a clean tree resolves false without committing", async () => {

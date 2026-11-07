@@ -2,14 +2,7 @@
  * Git utility functions
  */
 
-import {
-  _gitDeps,
-  errorMessage,
-  gitlinkSafeAdd,
-  gitWithTimeout,
-  hasStagedChanges,
-  realOrRaw,
-} from "@nathapp/nax-agent/internal";
+import { _gitDeps, errorMessage, gitlinkSafeAdd, gitWithTimeout, hasStagedChanges } from "@nathapp/nax-agent/internal";
 import { restoreDeletedNaxPaths } from "./nax-path-restore";
 
 export { _gitDeps, GIT_TIMEOUT_MS, getGitRoot, gitWithTimeout } from "@nathapp/nax-agent/internal";
@@ -167,12 +160,6 @@ export function registerBeforeAutoCommit(hook: AutoCommitHook): () => void {
  * @param stage   - Log stage prefix (e.g. "tdd", "execution")
  * @param role    - Session role for the commit message (e.g. "implementer")
  * @param storyId - Story ID for the commit message
- * @param blockedWorktrees - Working trees known to hold source this run cannot
- *   account for. A commit under one of these would capture a line the run did
- *   not author, so it is refused. The mutation spot-check was the set's only
- *   writer and is deleted (US-005); the parameter stays because four production
- *   and about thirty test call sites pass it positionally, and wave B3 removes it
- *   with them. Omit when the caller has no runtime.
  * @param dryRun - When true, refuses outright (nax#1808). A dry run reached the
  *   completion phase and committed the PRD it had just marked passed, together
  *   with any unrelated dirty file, because `git add -A` is unscoped. The refusal
@@ -185,7 +172,6 @@ export async function autoCommitIfDirty(
   stage: string,
   role: string,
   storyId: string,
-  blockedWorktrees?: ReadonlySet<string>,
   dryRun?: boolean,
   runGit: typeof gitWithTimeout = gitWithTimeout,
 ): Promise<void> {
@@ -230,31 +216,6 @@ export async function autoCommitIfDirty(
     const isAtRoot = realWorkdir === realGitRoot;
     const isSubdir = realGitRoot && realWorkdir.startsWith(`${realGitRoot}/`);
     if (!isAtRoot && !isSubdir) return;
-
-    // Staging is `git add -A` from the git ROOT, so the question is whether this
-    // commit's working tree is a blocked one — compare against `realGitRoot`,
-    // not `workdir`, so a monorepo package under a blocked root is still caught.
-    //
-    // Equality, NOT containment. `blockedWorktrees` holds working-tree roots, and
-    // in parallel mode each story's worktree is a LINKED tree at
-    // `<repo>/.nax-wt/<storyId>` — inside the main repo by path, but a separate
-    // checkout that `git add -A` from the main root never stages. A containment
-    // test would block the run-summary commit whenever any story's worktree was
-    // dirty, which is a false positive.
-    if (blockedWorktrees?.size) {
-      const root = realOrRaw(realGitRoot);
-      const blocked = [...blockedWorktrees].filter((tree) => realOrRaw(tree) === root);
-      if (blocked.length > 0) {
-        logger?.error(stage, "Refusing to auto-commit — working tree may still hold an unreverted mutation", {
-          storyId,
-          role,
-          workdir,
-          blocked,
-          hint: "Check the mutation-check log for the file and line, restore it, then commit manually.",
-        });
-        return;
-      }
-    }
 
     const { stdout: statusOutput } = await runGit(["status", "--porcelain"], workdir);
 

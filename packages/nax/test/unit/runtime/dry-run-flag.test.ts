@@ -5,7 +5,7 @@
  * the completion phase (RunnerCompletionOptions) and pre-run acceptance setup
  * (PipelineContext). Both extend DispatchContext, which carries `runtime`, so a
  * single run-scoped field reaches them without threading a parameter through
- * either call chain -- the same shape as `dirtyWorktrees` and `quarantineMemo`.
+ * either call chain -- the same shape as the run-scoped routing-decision cache.
  */
 
 import { describe, expect, test } from "bun:test";
