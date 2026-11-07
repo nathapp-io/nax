@@ -1,0 +1,630 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-story-ops-delete",
+  "branchName": "feat/pipeline-story-ops-delete",
+  "createdAt": "2026-11-07T00:00:00.000Z",
+  "updatedAt": "2026-11-07T07:45:43.069Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Delete the fix strategies",
+      "description": "**Goal** \u2014 Remove the fourteen unreachable fix-strategy/declaration modules and their exports while moving retained tool-declaration guards to live workflow operations.\n\n**Motivation** \u2014 The fix strategies and TDD session operations were dispatched only by the story orchestrator and its stages, deleted in B2b-1.\n\n**Approach** \u2014 Design Part 1: the fix strategies (US-001)\n\n| Site | After |\n|:---|:---|\n| `operations/index.ts:1`, `:10-22`, `:45-46`, `:62-64`, `:71-90`, `:106-107`, `:112-113`, `:131-132` | the re-exports of `_finding-to-check`, `apply-test-edit-declarations`, `autofix-implementer`, `autofix-implementer-strategy`, `autofix-test-writer`, `autofix-test-writer-strategy`, `declaration-sink`, `full-suite-rectify`, `full-suite-rectify-op`, `mechanical-formatfix-strategy`, `mechanical-lintfix-strategy`, `rectify`, `test-edit-declaration` and `validate-mock-structure-files` go |\n| `config/selectors.ts` | `autofixConfigSelector` (`:101`), `AutofixConfig` (`:176`) and `NbfWorthCheckConfig` (`:179`) go, with imports only they used |\n| `config/index.ts:187` | `autofixConfigSelector` leaves the `./selectors` re-export |\n| `prompts/builders/rectifier-builder-helpers.ts` | `REPO_SCOPE_MANDATE` (`:475`) and `repoScopedRectification` (`:505`) go, with their doc comments |\n| `prompts/index.ts:84` | the `repoScopedRectification` re-export goes |\n| `scripts/check-worktree-id-ssot.ts:83` | unchanged in US-001; US-002 removes this entry |\n\nDeleted, under `operations/`: `_finding-to-check.ts`, `apply-test-edit-declarations.ts`, `autofix-implementer.ts`, `autofix-implementer-strategy.ts`, `autofix-test-writer.ts`, `autofix-test-writer-strategy.ts`, `declaration-sink.ts`, `full-suite-rectify.ts`, `full-suite-rectify-op.ts`, `mechanical-formatfix-strategy.ts`, `mechanical-lintfix-strategy.ts`, `rectify.ts`, `test-edit-declaration.ts`, `validate-mock-structure-files.ts`.\n\nThe four kept tests that list Bash-, Delete- or Write-declaring operations by name (`bash-declarations.test.ts`, `tool-declarations.test.ts`, `inert-bash-stages.test.ts`, `check-bash-dispatch-ask.test.ts`) are rewritten once, in this story, to name live operations, so US-002 does not edit them again. The live operations that declare Bash are `workflowImplementOp`, `workflowBranchFixOp` and `workflowRepairOp` (stage `run`) and `workflowStoryReviewOp`, `workflowReReviewOp`, `workflowBranchReviewOp` and `botPrReviewOp` (stage `review`). `BASH_DECLARING_STAGES` (`config/inert-bash-stages.ts:50`) stays `[\"run\", \"review\", \"rectification\", \"acceptance\"]`: no live operation dispatches on `rectification` or `acceptance` any more, and both strings stay registry members until wave B3, as `acceptance` already does.\n\n**Scope** \u2014 In: the above source cuts, obsolete tests, retained guard migrations, related stale comments and downward baseline updates. Out: US-002's TDD operation removal, TDD selector and marker parser; US-003's fix cycle; US-004's TDD directory and verification leaves; US-005's acceptance/prompt leaves. Keep the verify.ts scanned-file entry until US-002. Do not alter workflow operations, permission resolution, name registries or BASH_DECLARING_STAGES values.\n\n**Interface** \u2014 Existing read-only seams: `findInertBashStages(config)` and `BASH_DECLARING_STAGES` (`config/inert-bash-stages.ts`); `bashCarryingNames(mod)` (`scripts/check-bash-dispatch-ask.ts`). No new externally-visible symbol.\n\n**Test migration and deletion** \u2014 Paths below are package-relative. Delete these files under test/unit/operations/: apply-test-edit-declarations.test.ts, autofix-implementer.test.ts, autofix-implementer-strategy.test.ts, autofix-test-writer.test.ts, autofix-test-writer-strategy.test.ts, fix-strategy-composition.test.ts, full-suite-rectify.test.ts, full-suite-rectify-op.test.ts, mechanical-formatfix-strategy.test.ts, mechanical-lintfix-strategy.test.ts, rectify.test.ts, test-edit-declaration.test.ts, validate-mock-structure-files.test.ts, finding-to-check.test.ts and call-acceptance-guidance.test.ts. Each only exercises the removed modules/composition. In test/unit/operations/bash-declarations.test.ts use workflowImplementOp, workflowBranchFixOp and workflowRepairOp for Bash-capable rows; remove verifier from never-Bash rows, retaining plan. In test/unit/operations/tool-declarations.test.ts use workflowImplementOp and workflowBranchFixOp for FILE_MUTATING_OPS, preserving Write/Edit/Delete/Git assertions; remove verifier from read-only rows, retaining plan. In test/unit/config/inert-bash-stages.test.ts list all seven live Bash ops; RETAINED_REGISTRY_STAGES becomes [acceptance, rectification], with comments saying neither has a live dispatcher; update the six-operations wording without changing other assertions. Its regression guard must inspect every exported operation value with Bash, not merely a handpicked subset. In test/unit/scripts/check-bash-dispatch-ask.test.ts replace the real-barrel #2201/factory case with 'the real barrel: the workflow write ops are Bash-carrying', asserting the three workflow write names and excluding classifyRouteOp. In test/unit/prompts/rectifier-builder.test.ts remove only the repoScopedRectification describe, its comment block and its repoScopedRectification/Finding imports; retain RectifierPromptBuilder assertions. Remove unused imports and lower complexity, escape-hatch, coverage and file-size baselines as applicable; do not run coverage inside nax. Reword the comment hits the sweep finds and these known ones: Known comment hits, all reworded rather than treated as a stop: `context/engine/phase-stage-map.ts:32`, `config/inert-bash-stages.ts:38-41`, `prompts/builders/rectifier-builder.ts:8` and `:501`, `findings/fingerprint/index.ts:8`, `review/diff-utils.ts:38`, `test-runners/detect/file-scan.ts:19` and `:52`, `test-runners/detect/directory-scan.ts:17`, `utils/porcelain.ts:127`, `execution/types.ts:4-5` and `:25` and `:29`, `config/schemas-execution.ts:165`, `config/runtime-types-execution.ts:5`, `acceptance/generator.ts:35-37` (it says the builder stays because the pipeline story loop still reaches the module), `findings/index.ts:8-11`, the empty `// \u2500\u2500\u2500 Repo-scoped rectification (#1654)` section header in `prompts/builders/rectifier-builder-helpers.ts` (`:464`, removed with the code under it), `operations/full-suite-gate.ts:45`, `scripts/check-bash-dispatch-ask.ts:21` and `:234`, and in tests `runtime/middleware/_idle-watchdog-harness.ts:18`, `prompts/us-004-affordances.test.ts:159` and `acceptance/generator-core.test.ts:2`. Comments that name a deleted symbol rather than its path, which the sweep cannot find and which are reworded too: `test/helpers/op-model.ts:22`, `test/helpers/runtime.ts:67`, `operations/build-hop-callback-dispatch.ts:97`, `operations/mutation-check.ts:9`, `context/greenfield.ts:170` and `:175`, `pipeline/stages/routing.ts:149`, `prompts/core/sections/prior-failures.ts:5`, `plugins/builtin/curator/heuristics.ts:102`, `scripts/check-op-tool-capability.ts:20`, and in tests `pipeline/greenfield.test.ts:41-45`, `:82` and `:122`, `prompts/core/sections/prior-failures.test.ts:4`, `scripts/check-op-tool-capability.test.ts:20` and the `findings/story-fix-history.test.ts` header (`:1-17`).\n\nVerification, run in packages/nax: (1) bun run typecheck. (2) Path sweep: for each source file this story deletes, with <stem> its path below src/ without the extension, run rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, and the same for each deleted test file's path below test/; expected zero hits. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference: stop. A hit in a comment is a stale comment and is reworded. Expected and not a stop: the tdd config keys and three-session-tdd strings; the absence assertions in test/integration/prompts/pb-004-migration.test.ts; hits in scripts/baselines/*.json; the rectification-loop*.test.ts entries in scripts/check-inline-test-mocks.ts (:75, :77, :138, :139); the \"src/tdd/x.ts\" string in ../repo-tooling/test/unit/scripts/check-git-spawn-env.test.ts:185. A longer sibling stem is not a hit (kept siblings: operations/verify-scoped, findings/cycle-types). Line numbers are at a5f470b20; after an earlier story edited a file, locate each site by symbol or test name. (3) bun run check:complexity:update; bun run check:file-sizes -- --update-baseline when it reports a lowerable entry; after check:all is green, bun run check:test-escape-hatches:update; remove entries for deleted source files from scripts/baselines/coverage-per-file-baseline.json by hand, and do not run test:coverage. (4) bun run check:all and bun run test.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: for every value exported by @/operations whose tools array includes \"Bash\", its stage is a member of BASH_DECLARING_STAGES from @/config/inert-bash-stages, and that set of values includes workflowImplementOp and botPrReviewOp.",
+        "[unit] Regression guard: bashCarryingNames from scripts/check-bash-dispatch-ask.ts, given the @/operations module namespace, returns a set containing workflowImplementOp, workflowBranchFixOp and workflowRepairOp and not containing classifyRouteOp."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "operations",
+        "permissions"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Fourteen-module importer-first deletion with barrel, selector, prompt and retained access-control guard migrations; strict isolation applies to the Bash/tool permission regression paths."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/index.ts",
+        "packages/nax/src/config/inert-bash-stages.ts",
+        "packages/nax/scripts/check-bash-dispatch-ask.ts",
+        "packages/nax/src/operations/workflow-implement.ts",
+        "packages/nax/src/config/selectors.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/apply-test-edit-declarations.test.ts",
+          "reason": "tests only src/operations/apply-test-edit-declarations.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/autofix-implementer.test.ts",
+          "reason": "tests only src/operations/autofix-implementer.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/autofix-implementer-strategy.test.ts",
+          "reason": "tests only src/operations/autofix-implementer-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/autofix-test-writer.test.ts",
+          "reason": "tests only src/operations/autofix-test-writer.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/autofix-test-writer-strategy.test.ts",
+          "reason": "tests only src/operations/autofix-test-writer-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/fix-strategy-composition.test.ts",
+          "reason": "tests only how the fix strategies this story deletes compose; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/full-suite-rectify.test.ts",
+          "reason": "tests only src/operations/full-suite-rectify.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/full-suite-rectify-op.test.ts",
+          "reason": "tests only src/operations/full-suite-rectify-op.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/mechanical-formatfix-strategy.test.ts",
+          "reason": "tests only src/operations/mechanical-formatfix-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/mechanical-lintfix-strategy.test.ts",
+          "reason": "tests only src/operations/mechanical-lintfix-strategy.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/rectify.test.ts",
+          "reason": "tests only src/operations/rectify.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/test-edit-declaration.test.ts",
+          "reason": "tests only src/operations/test-edit-declaration.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/validate-mock-structure-files.test.ts",
+          "reason": "tests only src/operations/validate-mock-structure-files.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/finding-to-check.test.ts",
+          "reason": "tests only findingsToFailedChecks from src/operations/_finding-to-check.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/call-acceptance-guidance.test.ts",
+          "reason": "its one test.each drives buildDispatchPrologue only through implementerRectifyOp and rectifyOp, both deleted by this story; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/bash-declarations.test.ts",
+          "reason": "every row names an op this story or US-002 deletes; the \"ops that may hold Bash\" table becomes workflowImplementOp, workflowBranchFixOp and workflowRepairOp (each still declares Bash), the verifier row and its comment leave the \"ops that must never hold Bash\" table (the plan row stays), the imports follow, and the header comment drops the deleted ops; the assertions keep their meaning."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/tool-declarations.test.ts",
+          "reason": "every FILE_MUTATING_OPS row names an op this story or US-002 deletes; the table becomes workflowImplementOp and workflowBranchFixOp (each declares Write, Edit, Delete and Git), the verifier row leaves the \"read-only ops gain neither\" table (the plan row stays), and the imports follow; the assertions stay unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/config/inert-bash-stages.test.ts",
+          "reason": "BASH_DECLARING_OPS (lines 75 to 87) lists six ops this story or US-002 deletes; it becomes the seven live Bash-declaring ops (workflowImplementOp, workflowBranchFixOp, workflowRepairOp, workflowStoryReviewOp, workflowReReviewOp, workflowBranchReviewOp, botPrReviewOp) with its doc comment reworded, RETAINED_REGISTRY_STAGES in the AC9 describe becomes [\"acceptance\", \"rectification\"] with its comment saying no live op dispatches on either, the \"six operations\" wording in the AC9 boundary test name follows, and the imports follow; every other describe keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/scripts/check-bash-dispatch-ask.test.ts",
+          "reason": "the test \"the real barrel: the #2201 ops and the regression strategy factory are all Bash-carrying\" (line 145) names fullSuiteRectifyOp and makeFullSuiteRectifyStrategy, which this story deletes, and implementerOp and testWriterOp, which US-002 deletes; it becomes \"the real barrel: the workflow write ops are Bash-carrying\" and asserts workflowImplementOp, workflowBranchFixOp and workflowRepairOp are in the set and classifyRouteOp is not."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/rectifier-builder.test.ts",
+          "reason": "the describe \"repoScopedRectification\" (line 303 to the end of the file), its comment block (lines 296 to 301) the repoScopedRectification import (line 15) and the Finding type import (line 13), used only inside that describe, go, because this story removes the function; the RectifierPromptBuilder describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Delete the TDD session operations",
+      "description": "**Goal** \u2014 Delete the seven unreachable TDD session operation modules and their selector/parser dependencies while retaining tool-policy and session keep-open regression behavior with local fixtures.\n\n**Motivation** \u2014 Their last production references are the barrels (`packages/nax/src/operations/index.ts`, `src/tdd/index.ts`).\n\n**Approach** \u2014 Design Part 2: the TDD session operations (US-002)\n\n| Site | After |\n|:---|:---|\n| `operations/index.ts:49-54`, `:65-68`, `:114-115`, `:133-134`, `:171-172` | the re-exports of `execution-gates`, `greenfield-gate`, `implement`, `test-presence-gate`, `verify` and `write-test` go |\n| `tdd/index.ts:12` | the line re-exporting `implementerOp`, `implementTddOp`, `testWriterOp`, `verifierOp`, `verifyTddOp` and `writeTddTestOp` from `../operations` goes; the rest of the barrel stays until US-004 |\n| `config/selectors.ts` | `tddConfigSelector` (`:28`) and the selector slice type `TddConfig` (`:161`) go |\n| `config/index.ts:202` | `tddConfigSelector` leaves the `./selectors` re-export. The `TddConfig` re-export from `./schema` (`:89`, the `tdd` config section type) is a different type and stays |\n| `quality/self-verification.ts` | the marker parser, which has had no production caller since the TDD session runner was deleted and is in this story because it parsed the TDD sessions' self-verification marker, goes: `MarkerParseState` (`:30`), `STATUS_SET` (`:37`), `parseStatus` (`:39`), `parseMarkerBlock` (`:45`), `parsePreExisting` (`:87`) and `parseSelfVerificationMarker` (`:126`); the types and `resolveSelfVerificationPromptInput` (`:150`) stay |\n| `quality/index.ts:38` | the `parseSelfVerificationMarker` re-export goes |\n| `scripts/check-worktree-id-ssot.ts:83` | the `\"src/operations/verify.ts\"` entry goes |\n\nDeleted, under `operations/`: `_session-output.ts`, `execution-gates.ts`, `greenfield-gate.ts`, `implement.ts`, `test-presence-gate.ts`, `verify.ts`, `write-test.ts`.\n\n**Scope** \u2014 In: the above operations, selector slice, marker parser, scanned-file entry and associated test trims/deletions. Out: US-001's already-migrated four tool declaration tables; US-003's findings cycle; US-004's remaining TDD barrel/directory, FailureCategory import retargets and verification leaves; US-005's acceptance leaves. Keep config-section TddConfig, self-verification types/prompt-input resolver, verify-scoped and all permission/session forwarding implementations. No nax-agent source or public API changes.\n\n**Interface** \u2014 Existing read-only seams: `buildCodingToolSupport(options)` (`packages/nax-agent/src/coding-tools/coding-tool-support.ts`, exported from `@nathapp/nax-agent/internal`), which forwards `toolPatterns` into the compiled tool policy. `callOp(callCtx, op, input)` (`operations/call.ts`) and the `keepOpen` predicate it forwards as `runOptions.keepOpen`. No new externally-visible symbol.\n\n**Test migration and deletion** \u2014 Delete test/unit/operations/execution-gates.test.ts, greenfield-gate.test.ts, test-presence-gate.test.ts, implementer.test.ts, write-test-op.test.ts, verify-op.test.ts, verify-op-parse.test.ts, verify-op-recover.test.ts, isolation-workdir-wiring.test.ts, tdd-session-op-tools.test.ts and tdd-ops-exports.test.ts, plus test/unit/tdd/retire-legacy-surfaces.test.ts. In test/unit/agents/coding-tool-support.test.ts keep both tests in 'buildCodingToolSupport \u2014 toolPatterns reaches the compiled policy (nax#2013)' unchanged in assertion: replace verifierOp/VERDICT_FILE imports with local constants for tools Read, Glob, Grep, Git, RunCommand and Write; grants [{ tool, patterns: [\"*\"] }] per tool; declared set identical to those six; toolPatterns { Write: [\".nax-verifier-verdict.json\"] }; verdict filename '.nax-verifier-verdict.json'. Build against a temporary root and remove the stale verifierOp comment. In test/unit/operations/call.test.ts replace warmImplementerOp.keepOpen with a local predicate returning whether ctx.config.execution.rectification.enabled is true, drop shouldKeepSessionOpen from the import, and preserve both true/false forwarding assertions. In test/unit/operations/op-tool-declarations.test.ts remove only 'the verifier cannot install'. In test/unit/config/selectors.test.ts remove only 'tddConfigSelector now includes quality, agent, models, prompts, context, project, precheck', 'tddConfigSelector preserves values' and its import. In test/unit/quality/self-verification.test.ts remove the parseSelfVerificationMarker describe/import but retain 'resolveSelfVerificationPromptInput renders commands via renderCommandSpec'. All other assertions stay. Remove unused imports and apply the downward baseline updates below. Keep the TDD config and role/strategy registries untouched.\n\nVerification, run in packages/nax: (1) bun run typecheck. (2) Path sweep: for each source file this story deletes, with <stem> its path below src/ without the extension, run rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, and the same for each deleted test file's path below test/; expected zero hits. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference: stop. A hit in a comment is a stale comment and is reworded. Expected and not a stop: the tdd config keys and three-session-tdd strings; the absence assertions in test/integration/prompts/pb-004-migration.test.ts; hits in scripts/baselines/*.json; the rectification-loop*.test.ts entries in scripts/check-inline-test-mocks.ts (:75, :77, :138, :139); the \"src/tdd/x.ts\" string in ../repo-tooling/test/unit/scripts/check-git-spawn-env.test.ts:185. A longer sibling stem is not a hit (kept siblings: operations/verify-scoped, findings/cycle-types). Line numbers are at a5f470b20; after an earlier story edited a file, locate each site by symbol or test name. (3) bun run check:complexity:update; bun run check:file-sizes -- --update-baseline when it reports a lowerable entry; after check:all is green, bun run check:test-escape-hatches:update; remove entries for deleted source files from scripts/baselines/coverage-per-file-baseline.json by hand, and do not run test:coverage. (4) bun run check:all and bun run test.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: buildCodingToolSupport from @nathapp/nax-agent/internal called with a temporary root, grants [{ tool, patterns: [\"*\"] }] for each of Read, Glob, Grep, Git, RunCommand and Write, those six tools as declared, and toolPatterns { Write: [\".nax-verifier-verdict.json\"] } returns support whose runtime.callTool(\"Write\", { path: \".nax-verifier-verdict.json\", content: \"{}\" }) resolves to an outcome with kind \"ok\".",
+        "[unit] Regression guard: the same support's runtime.callTool(\"Write\", { path: \"src/index.ts\", content: \"// nope\" }) resolves to an outcome with kind \"denied\".",
+        "[unit] Regression guard: callOp with a warm run operation whose keepOpen predicate returns true passes runOptions.keepOpen true to the agent manager's runWithFallback, and with a predicate returning false passes no keepOpen value."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "tdd",
+        "permissions",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module TDD operation deletion with security-sensitive compiled tool-policy fixture migration and warm-session lifetime regression anchors requires strict test/implementation isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/index.ts",
+        "packages/nax/src/tdd/index.ts",
+        "packages/nax-agent/src/coding-tools/coding-tool-support.ts",
+        "packages/nax/src/operations/call.ts",
+        "packages/nax/src/config/index.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/execution-gates.test.ts",
+          "reason": "tests only src/operations/execution-gates.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/greenfield-gate.test.ts",
+          "reason": "tests only src/operations/greenfield-gate.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/test-presence-gate.test.ts",
+          "reason": "tests only src/operations/test-presence-gate.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/implementer.test.ts",
+          "reason": "tests only implementerOp and testWriterOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/write-test-op.test.ts",
+          "reason": "tests only testWriterOp from src/operations/write-test.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/verify-op.test.ts",
+          "reason": "tests only verifierOp from src/operations/verify.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/verify-op-parse.test.ts",
+          "reason": "tests only verifierOp parsing, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/verify-op-recover.test.ts",
+          "reason": "tests only verifierOp recovery, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/isolation-workdir-wiring.test.ts",
+          "reason": "its one test drives implementerOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/tdd-session-op-tools.test.ts",
+          "reason": "tests only the tool lists of verifierOp and testWriterOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/tdd-ops-exports.test.ts",
+          "reason": "asserts implementerOp, testWriterOp and verifierOp are exported from the operations barrel and their source files exist by path, all removed by this story; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/retire-legacy-surfaces.test.ts",
+          "reason": "asserts the TDD barrel re-exports the TDD operations, which this story removes, and otherwise tests the barrel US-004 deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/coding-tool-support.test.ts",
+          "reason": "the describe \"buildCodingToolSupport \u2014 toolPatterns reaches the compiled policy (nax#2013)\" (line 322) reads verifierOp, which this story deletes, and VERDICT_FILE from the TDD barrel, which US-004 deletes; it builds its support from local constants with the same values (tools Read, Glob, Grep, Git, RunCommand and Write; toolPatterns with Write narrowed to \".nax-verifier-verdict.json\"; the verdict file name \".nax-verifier-verdict.json\"), the two imports (lines 13 and 14) go, and its doc comment stops naming verifierOp; both tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/call.test.ts",
+          "reason": "the warmImplementerOp fixture's keepOpen (line 72) calls shouldKeepSessionOpen, which this story deletes; it becomes a local predicate returning whether ctx.config.execution.rectification.enabled is true, the import (line 15) drops shouldKeepSessionOpen, and the keep-open tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/op-tool-declarations.test.ts",
+          "reason": "the test \"the verifier cannot install\" (line 88) reads verifierOp, which this story deletes; the test goes and every other test keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/config/selectors.test.ts",
+          "reason": "the tests \"tddConfigSelector now includes quality, agent, models, prompts, context, project, precheck\" (line 112) and \"tddConfigSelector preserves values\" (line 166) and the tddConfigSelector import go, because this story removes the selector; every other test keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/quality/self-verification.test.ts",
+          "reason": "the describe \"parseSelfVerificationMarker\" (line 5) and its import go, because this story removes the parser; the describe \"resolveSelfVerificationPromptInput renders commands via renderCommandSpec\" keeps its assertions."
+        },
+        {
+          "path": "packages/nax/scripts/check-worktree-id-ssot.ts",
+          "reason": "the \"src/operations/verify.ts\" entry (line 83) in its scanned-file list goes, because this story deletes that file."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files and functions go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/coverage-per-file-baseline.json",
+          "reason": "entries for source files this story deletes go."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Delete the findings fix cycle",
+      "description": "**Goal** \u2014 Remove the unreachable findings fix-cycle machinery while retaining the live finding wire types, iteration records, empty history factory and curator normalizer.\n\n**Motivation** \u2014 `runFixCycle` (`findings/cycle.ts`) and its helpers served those strategies.\n\n**Approach** \u2014 Design Part 3: the findings fix cycle (US-003)\n\n| Site | After |\n|:---|:---|\n| `findings/index.ts` | the `pluginToFinding` name (`:19`) and the re-exports of `bail-marker`, `cycle`, `cycle-iteration-log`, `cycle-retirement` and `retirement-stamp` (`:23-28`, `:45-46`) go; the `cycle-types` re-export (`:29-43`) keeps only `FixApplied`, `Iteration` and `IterationOutcome`; the `story-fix-history` re-export (`:48-54`) keeps only `createStoryFixHistory`; the `./types` value re-export (`:61`) goes |\n| `findings/adapters/index.ts:2` | the `pluginToFinding` re-export goes |\n| `findings/cycle-types.ts` | everything from `ValidateResult` (`:140`) to the end of the file (`:386`) goes, with the `Operation` and `SessionRole` imports (`:11-12`) only it used: `ValidateResult`, `FixCycleExitReason`, `FixCycleResult`, `FixCycleContext`, `CallOpFn`, `FixCycleConfig`, `FixStrategy`, `FixStrategyWithExtractApplied`, `FixCycle`, `GiveUpInput`, `GiveUpResolution`; `IterationOutcome`, `FixApplied` and `Iteration` stay |\n| `findings/story-fix-history.ts` | `storyFixKey` (`:34`), `getStoryFixState`, `appendStoryFixIterations` and `mergeStoryFixDeclines` (`:72`) go; `StoryFixState`, `StoryFixHistory` and `createStoryFixHistory` stay |\n| `findings/types.ts` | `SEVERITY_ORDER` (`:243`), `compareSeverity` (`:256`), `findingKey` (`:275`) and `findingRecurrenceKey` (`:306`) go; the `Finding` types stay |\n| `findings/fingerprint/index.ts` | `FP_ISSUE_PREFIX` (`:38`), `normalizeFingerprintPath` (`:52`) and `fingerprintFor` (`:86`) go; `normalizeIssueText` (`:41`, read by the curator) stays |\n| `execution/recurrence-store.ts` | `storeKey` (`:47`), `recordReviewFindings` (`:60`) and `getReviewRecurrenceCount` (`:93`) go, with the `Finding` and `findingRecurrenceKey` imports (`:26-27`); `ReviewRecurrenceEntry` and `ReviewRecurrenceStore` stay |\n| `execution/index.ts:72-77` | re-exports only `ReviewRecurrenceEntry` and `ReviewRecurrenceStore` from `./recurrence-store` |\n| `test/helpers/index.ts:90` | the `fix-cycle-result` re-export goes with the helper |\n\nDeleted, under `findings/`: `adapters/plugin.ts`, `bail-marker.ts`, `classify-outcome.ts`, `cycle.ts`, `cycle-cost.ts`, `cycle-dispatch.ts`, `cycle-execute.ts`, `cycle-gates.ts`, `cycle-iteration-log.ts`, `cycle-loop.ts`, `cycle-retirement.ts`, `cycle-selection.ts`, `retirement-stamp/index.ts`. After this story `src/findings/retirement-stamp/` no longer exists.\n\n**Scope** \u2014 In: named fix-cycle declarations/modules, their obsolete tests/helpers and the retained factory regression guard. Out: US-002's TDD operations/parser, US-004's TDD directory and verification leaves, and US-005's acceptance leaves. Keep NaxRuntime.storyFixHistory, review recurrence state, Finding records, non-plugin adapters, rebaseToWorkdir, normalizeIssueText and all other unnamed declarations. B3 owns runtime field slimming.\n\n**Interface** \u2014 `findings/index.ts` barrel. Target: still exports `Finding`, `FindingSeverity`, `FindingSource`, `FixTarget`, `FixApplied`, `Iteration`, `IterationOutcome`, `StoryFixHistory`, `StoryFixState` and `createStoryFixHistory`, and no fix-cycle runner, strategy type or recurrence helper. `createStoryFixHistory(): StoryFixHistory`, called by `createRuntime` (`runtime/index.ts:477`). No new externally-visible symbol.\n\n**Test migration and deletion** \u2014 Delete test/unit/findings/adapters/plugin.test.ts. Under test/unit/findings/ delete classify-outcome.test.ts, cycle.test.ts, cycle-cost.test.ts, cycle-dispatch.test.ts, cycle-give-up-hook.test.ts, cycle-iteration-log.test.ts, cycle-no-dispatch.test.ts, cycle-prior-iterations.test.ts, cycle-retirement.test.ts, cycle-types.test.ts, retirement-stamp.test.ts, types.test.ts and _cycle-fixtures.ts. Delete test/unit/execution/recurrence-store.test.ts and test/helpers/fix-cycle-result.ts, and remove the helper barrel re-export. These tests/helpers exclusively exercise removed functions/types. In test/unit/findings/story-fix-history.test.ts remove 'storyFixKey (US-004)' and 'createStoryFixHistory / getStoryFixState (US-004)', local makeIteration and the appendStoryFixIterations/getStoryFixState/storyFixKey/Iteration/makeFinding imports; retain only createStoryFixHistory's import and the 'createStoryFixHistory \u2014 store shape (US-004)' assertions. Ensure that retained guard imports createStoryFixHistory through @/findings.  Reword its obsolete header and the findings/fingerprint headers. Explicitly remove the deleted cycle.test.ts file-size baseline entry through the updater, lower escape-hatch totals for deleted helpers/tests, remove deleted-source coverage entries by hand and update complexity as needed. No new factory or replacement store is introduced.\n\nVerification, run in packages/nax: (1) bun run typecheck. (2) Path sweep: for each source file this story deletes, with <stem> its path below src/ without the extension, run rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, and the same for each deleted test file's path below test/; expected zero hits. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference: stop. A hit in a comment is a stale comment and is reworded. Expected and not a stop: the tdd config keys and three-session-tdd strings; the absence assertions in test/integration/prompts/pb-004-migration.test.ts; hits in scripts/baselines/*.json; the rectification-loop*.test.ts entries in scripts/check-inline-test-mocks.ts (:75, :77, :138, :139); the \"src/tdd/x.ts\" string in ../repo-tooling/test/unit/scripts/check-git-spawn-env.test.ts:185. A longer sibling stem is not a hit (kept siblings: operations/verify-scoped, findings/cycle-types). Line numbers are at a5f470b20; after an earlier story edited a file, locate each site by symbol or test name. (3) bun run check:complexity:update; bun run check:file-sizes -- --update-baseline when it reports a lowerable entry; after check:all is green, bun run check:test-escape-hatches:update; remove entries for deleted source files from scripts/baselines/coverage-per-file-baseline.json by hand, and do not run test:coverage. (4) bun run check:all and bun run test.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: createStoryFixHistory() imported from @/findings returns a Map instance with size 0."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "findings"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "no-test",
+        "reasoning": "Thirteen source deletions plus shared findings/execution barrel and type trims justify complex scope, but no behavioral implementation or new integration warrants separate TDD sessions.",
+        "noTestJustification": "Pure structural removal of unreachable fix-cycle code and exports; the empty Map factory, retained record types and curator normalizer keep their existing implementations. No new runtime behavior needs failing-first tests; still perform all specified test trims, the retained factory regression assertion and shared verification steps."
+      },
+      "contextFiles": [
+        "packages/nax/src/findings/index.ts",
+        "packages/nax/src/findings/cycle-types.ts",
+        "packages/nax/src/findings/story-fix-history.ts",
+        "packages/nax/src/execution/recurrence-store.ts",
+        "packages/nax/src/runtime/index.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/findings/adapters/plugin.test.ts",
+          "reason": "tests only pluginToFinding from src/findings/adapters/plugin.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/classify-outcome.test.ts",
+          "reason": "tests only src/findings/classify-outcome.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle.test.ts",
+          "reason": "tests only runFixCycle from src/findings/cycle.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-cost.test.ts",
+          "reason": "tests only src/findings/cycle-cost.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-dispatch.test.ts",
+          "reason": "tests only src/findings/cycle-dispatch.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-give-up-hook.test.ts",
+          "reason": "tests only runFixCycle, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-iteration-log.test.ts",
+          "reason": "tests only src/findings/cycle-iteration-log.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-no-dispatch.test.ts",
+          "reason": "tests only runFixCycle, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-prior-iterations.test.ts",
+          "reason": "tests only runFixCycle, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-retirement.test.ts",
+          "reason": "tests only src/findings/cycle-retirement.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/cycle-types.test.ts",
+          "reason": "tests only FixCycle, FixCycleContext, FixCycleExitReason and ValidateResult, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/retirement-stamp.test.ts",
+          "reason": "tests only src/findings/retirement-stamp/index.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/types.test.ts",
+          "reason": "tests only findingKey and findingRecurrenceKey, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/_cycle-fixtures.ts",
+          "reason": "builds FixCycle, FixCycleContext, FixStrategy and CallOpFn fixtures, which this story removes; its last importer is trimmed below; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/fix-cycle-result.ts",
+          "reason": "makeFixCycleResult and makeIteration build values typed by FixCycleResult, which this story removes, and no test outside this story's deletions imports them; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the fix-cycle-result re-export (line 90) goes with the helper."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/recurrence-store.test.ts",
+          "reason": "tests only recordReviewFindings and getReviewRecurrenceCount, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/findings/story-fix-history.test.ts",
+          "reason": "the describes \"storyFixKey (US-004)\" (line 35) and \"createStoryFixHistory / getStoryFixState (US-004)\" (line 74), the local makeIteration helper (line 23) and the imports of appendStoryFixIterations, getStoryFixState, storyFixKey, Iteration and makeFinding (lines 19 to 21) go, because this story removes those functions and the fixture module, leaving only the createStoryFixHistory import; the describe \"createStoryFixHistory \u2014 store shape (US-004)\" keeps its assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/coverage-per-file-baseline.json",
+          "reason": "entries for source files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "the entry for test/unit/findings/cycle.test.ts goes with the deleted file, through bun run check:file-sizes -- --update-baseline."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files and helpers this story deletes go."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Delete src/tdd and the verification leaves",
+      "description": "**Goal** \u2014 Retarget retained FailureCategory consumers to their canonical owner, delete src/tdd and six verification leaves, and retain only live execution types and quarantine memo behavior.\n\n**Motivation** \u2014 Live code imports only the `FailureCategory` type from `tdd/types.ts`, which re-exports it from `execution/types.ts`, its canonical owner.\n\n**Approach** \u2014 Design Part 4: `src/tdd/` and the verification leaves (US-004)\n\n| Site | After |\n|:---|:---|\n| `pipeline/types.ts:18`, `prd/types.ts:8`, `execution/escalation/tier-outcome.ts:14`, `execution/escalation/max-attempts-outcome.ts:1`, `execution/escalation/tier-escalation.ts:20` | each imports `FailureCategory` from the `execution/types` module (`@/execution/types` or `../execution/types`, matching the file's current alias style) instead of `tdd/types` |\n| `prd/index.ts:7`, `:11` | the `FailureCategory` import and type re-export come from `../execution/types` |\n| `execution/index.ts:1` | re-exports `FailureCategory` from `./types` |\n| `execution/index.ts:88` | the `StoryRunResult` re-export goes |\n| `execution/types.ts` | `TddSessionRole` (`:14`), `TddSessionResult` (`:76`) and `StoryRunResult` (`:97`) go, with the `TokenUsage`, `SelfVerificationResult` and `VerifierVerdict` imports (`:9-11`), which leaves the file with no imports; `FailureCategory` (`:17`) and `IsolationCheck` (`:62`) stay; the module header (`:4-5`) no longer names `src/tdd` |\n| `verification/index.ts:10-11`, `:13`, `:15` | the `flake-baseline-diff`, `flake-probe`, `flake-triage-telemetry` and `rectification` star re-exports go; the `flake-triage` re-export (`:12`) stays |\n| `verification/flake-triage.ts` | everything except `QuarantineMemo` (`:31`) and `createQuarantineMemo` (`:99`) goes: `FlakeTriageDiff`, `FlakeProbeCall`, `FlakeTriageInput`, `FlakeQuarantineReport`, `FlakeTriageResult`, `flakeMemoKey`, `_flakeTriageDeps`, `triageFlakyFindings` (`:133`), `basename` and `isProbeCandidate`, with the imports only they used (`:20-28`) |\n| `utils/git.ts` | `getUntrackedPaths` (`:184`) and its doc comment go; `parsePorcelainUntrackedPaths` in `utils/porcelain.ts` stays |\n| `verification/types.ts` | `RectificationState` (`:62-72`, with its doc comment) goes: its only user is `verification/rectification.ts`, which this story deletes |\n\nDeleted: all of `src/tdd/` (`index.ts`, `cleanup.ts`, `isolation.ts`, `red-commit.ts`, `rollback.ts`, `types.ts`, `verdict.ts`, `verdict-reader.ts`), and under `verification/`: `crash-detector.ts`, `failure-records.ts`, `flake-baseline-diff.ts`, `flake-probe.ts`, `flake-triage-telemetry.ts`, `rectification.ts`. After this story `src/tdd/` no longer exists.\n\n**Scope** \u2014 In: the above directory/leaves, exact type/import trims, memo regression guard and obsolete tests/helpers. Out: US-005's acceptance/prompt/agent leaves. Keep FailureCategory values, IsolationCheck, markStoryFailed behavior, runtime quarantine/history/recurrence fields, all config keys and selectors not explicitly removed in US-001/US-002, role/stage registries and parsePorcelainUntrackedPaths. B2c owns the latter's orphan removal, B3 owns registry/config/runtime slimming, and B4 owns stale rule/documentation paths.\n\n**Interface** \u2014 `execution/types.ts`. Target: exports `FailureCategory` and `IsolationCheck` only. `verification/flake-triage.ts`. Target: exports `QuarantineMemo` and `createQuarantineMemo` only. Read-only regression seam: `markStoryFailed(prd, storyId, failureCategory?, failureStage?, statusWriter?)` (`prd/index.ts:312`). `createQuarantineMemo(): QuarantineMemo`. No new externally-visible symbol.\n\n**Test migration and deletion** \u2014 Under test/unit/tdd/ delete capture-snapshot-ref.test.ts, cleanup-grace-poll.test.ts, isolation.test.ts, red-commit.test.ts, rollback.test.ts and story-run-result-shape.test.ts. Under test/unit/verification/ delete crash-detector.test.ts, failure-records.test.ts, flake-probe.test.ts, flake-triage-telemetry.test.ts, tdd-verdict.test.ts, tdd-verdict-coerce-edges.test.ts, tdd-token-usage.test.ts and unit-isolation.test.ts. Delete test/contracts/rollback-deps-shape.contract.ts, test/integration/execution/execution-isolation.test.ts, test/integration/tdd/tdd-cleanup.test.ts and test/integration/tdd/_tdd-test-helpers.ts. In test/unit/verification/flake-triage.test.ts remove all triageFlakyFindings describes, fixtures and imports, replacing them with the createQuarantineMemo describe required by AC2, imported from @/verification. In test/unit/execution/escalation/tier-escalation-greenfield.test.ts import FailureCategory from @/execution rather than @/tdd/types; preserve assertions. In test/unit/utils/git.test.ts remove only getUntrackedPaths's describe/import and rename the shared section comment to name parsePorcelainUntrackedPaths only; preserve every other describe. The existing markStoryFailed() section in test/unit/prd/prd-failure-category.test.ts hosts AC1 and stays unchanged if it already pins the required state. Do not alter production failure routing or status transitions. In addition to every deleted source/test stem, sweep @/tdd, src/tdd/ and /tdd\" with the exceptions listed below. Lower complexity/escape-hatch baselines and remove deleted-source coverage entries without running coverage in nax. Reword source comments naming removed paths or symbols without pruning deferred registry values.\n\nVerification, run in packages/nax: (1) bun run typecheck. (2) Path sweep: for each source file this story deletes, with <stem> its path below src/ without the extension, run rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, and the same for each deleted test file's path below test/; expected zero hits. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference: stop. A hit in a comment is a stale comment and is reworded. Expected and not a stop: the tdd config keys and three-session-tdd strings; the absence assertions in test/integration/prompts/pb-004-migration.test.ts; hits in scripts/baselines/*.json; the rectification-loop*.test.ts entries in scripts/check-inline-test-mocks.ts (:75, :77, :138, :139); the \"src/tdd/x.ts\" string in ../repo-tooling/test/unit/scripts/check-git-spawn-env.test.ts:185. A longer sibling stem is not a hit (kept siblings: operations/verify-scoped, findings/cycle-types). Line numbers are at a5f470b20; after an earlier story edited a file, locate each site by symbol or test name. (3) bun run check:complexity:update; bun run check:file-sizes -- --update-baseline when it reports a lowerable entry; after check:all is green, bun run check:test-escape-hatches:update; remove entries for deleted source files from scripts/baselines/coverage-per-file-baseline.json by hand, and do not run test:coverage. (4) bun run check:all and bun run test.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard (host: the existing \"markStoryFailed()\" section of test/unit/prd/prd-failure-category.test.ts, which already pins this; it stays unchanged if so): markStoryFailed(prd, \"US-001\", \"isolation-violation\"), with markStoryFailed imported from @/prd and a PRD whose story US-001 is pending with attempts 0, leaves that story with status \"failed\", passes false, attempts 1 and failureCategory \"isolation-violation\".",
+        "[unit] Regression guard (host: test/unit/verification/flake-triage.test.ts, trimmed in this story): a memo from createQuarantineMemo() imported from @/verification reports has(\"a\") false, then after add(\"a\") reports has(\"a\") true and has(\"b\") false."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "tdd",
+        "verification",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Whole TDD directory removal crosses session isolation/rollback machinery and shared failure-category consumers; strict isolation protects session-related regression anchors while memo and PRD behavior remain unchanged."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/types.ts",
+        "packages/nax/src/execution/index.ts",
+        "packages/nax/src/verification/index.ts",
+        "packages/nax/src/verification/flake-triage.ts",
+        "packages/nax/src/prd/index.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tdd/capture-snapshot-ref.test.ts",
+          "reason": "tests only captureSnapshotRef from src/tdd/rollback.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/cleanup-grace-poll.test.ts",
+          "reason": "tests only src/tdd/cleanup.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/isolation.test.ts",
+          "reason": "tests only src/tdd/isolation.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/red-commit.test.ts",
+          "reason": "tests only src/tdd/red-commit.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/rollback.test.ts",
+          "reason": "tests only src/tdd/rollback.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/story-run-result-shape.test.ts",
+          "reason": "tests only the StoryRunResult type, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/crash-detector.test.ts",
+          "reason": "tests only src/verification/crash-detector.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/failure-records.test.ts",
+          "reason": "tests only src/verification/failure-records.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/flake-probe.test.ts",
+          "reason": "tests only src/verification/flake-probe.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/flake-triage-telemetry.test.ts",
+          "reason": "tests only src/verification/flake-triage-telemetry.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/flake-triage.test.ts",
+          "reason": "every describe tests triageFlakyFindings, which this story removes; those describes, their fixtures and their imports go, and the file holds only a new describe \"createQuarantineMemo\" with the US-004 AC2 test."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/tdd-verdict.test.ts",
+          "reason": "tests only src/tdd/verdict.ts and src/tdd/verdict-reader.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/tdd-verdict-coerce-edges.test.ts",
+          "reason": "tests only coerceVerdict from src/tdd/verdict-reader.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/tdd-token-usage.test.ts",
+          "reason": "tests only sumTddTokenUsage from src/tdd/types.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/unit-isolation.test.ts",
+          "reason": "tests only src/tdd/isolation.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/contracts/rollback-deps-shape.contract.ts",
+          "reason": "pins the shape of _rollbackDeps from src/tdd/rollback.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/execution-isolation.test.ts",
+          "reason": "tests only verifyTestWriterIsolation from the TDD barrel, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/tdd-cleanup.test.ts",
+          "reason": "tests only src/tdd/cleanup.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/_tdd-test-helpers.ts",
+          "reason": "saves and restores _isolationDeps and _rollbackDeps from src/tdd, which this story deletes, and no remaining test imports it; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/escalation/tier-escalation-greenfield.test.ts",
+          "reason": "the FailureCategory type import (line 38) comes from @/execution instead of @/tdd/types, which this story deletes; the assertions stay unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/git.test.ts",
+          "reason": "the describe \"getUntrackedPaths\" (line 703) and the getUntrackedPaths import (line 19) go, because this story removes the function, and the section comment at line 678 names only parsePorcelainUntrackedPaths; every other describe keeps its assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files and functions go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/coverage-per-file-baseline.json",
+          "reason": "entries for source files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Delete the acceptance and prompt leaves",
+      "description": "**Goal** \u2014 Remove the ten unreachable acceptance, prompt and agent leaves while preserving workflow acceptance execution and command construction byte-for-byte.\n\n**Motivation** \u2014 The acceptance leftovers and the acceptance prompt builder served the post-run acceptance loop deleted in B2a.\n\n**Approach** \u2014 Design Part 5: the acceptance and prompt leaves (US-005)\n\n| Site | After |\n|:---|:---|\n| `acceptance/index.ts` | the `failed-criteria`, `heuristics`, `test-path` and `./types` re-exports (`:9-15`, `:25-40`) go; the `./generator` re-export (`:16-24`) keeps `buildAcceptanceRunCommand`, `effectiveAcceptanceFramework` and `substituteAcceptanceTestPath` |\n| `acceptance/generator.ts` | `acceptanceTestFilename` and `resolveAcceptanceTestFile` (`:21-22`), `parseAcceptanceCriteria` (`:127`), `buildAcceptanceTestPrompt` (`:175`), the `generator-helpers` re-export (`:19`) and the imports only they used (`:12-17`) go; `resolvePytestBin`, `substituteAcceptanceTestPath`, `effectiveAcceptanceFramework` and `buildAcceptanceRunCommand` (`:78`) stay |\n| `prd/index.ts:13` | the `acceptance-scope` re-export goes |\n| `prompts/index.ts:9-18` | the `acceptance-builder` and `acceptance-builder-helpers` re-exports and their comments go |\n| `prompts/index.ts:81` | re-exports only `FailureRecord` and `RectifierTrigger` from `./builders/rectifier-builder` |\n| `prompts/builders/rectifier-builder.ts:24`, `:51` | `ReviewFinding` leaves the `../core` import and the type re-export; no file imports `ReviewFinding` through `@/prompts`, and its owner is `plugins/types.ts`. The file does not grow (`check:file-sizes` holds it at its grandfathered size) |\n| `prompts/core/sections/index.ts:8-9` | the two `./findings` re-exports go |\n| `agents/index.ts:46` | the `./shared/validation` re-export goes |\n| `utils/llm-json.ts` | `wrapJsonPrompt` (`:308`) and its doc comment go |\n| `scripts/check-inline-test-mocks.ts:78` | the `\"test/unit/acceptance/test-path.test.ts\"` entry goes |\n\nDeleted: under `acceptance/`: `failed-criteria.ts`, `generator-helpers.ts`, `heuristics.ts`, `test-path.ts`, `types.ts`; `prd/acceptance-scope.ts`; under `prompts/`: `builders/acceptance-builder.ts`, `builders/acceptance-builder-helpers.ts`, `core/sections/findings.ts`; `agents/shared/validation.ts`.\n\n**Scope** \u2014 In: the ten leaves, named export/declaration cuts, obsolete tests/snapshot and acceptance command regression guards. Out: further changes to US-001's rectification helper cut, US-003's finding records or US-004's failure types/memo. Do not delete acceptance/execution-description.ts or generator.ts, change quote-safe command semantics, remove the RectifierPromptBuilder value export or its unrelated helpers, delete the prompts assemble/TDD builders/verdict section, or prune acceptance config. B2c owns remaining prompt-path/orphan cuts; B3 owns config and registries.\n\n**Interface** \u2014 `acceptance/index.ts` barrel. Target: exports the `execution-description` symbols and `buildAcceptanceRunCommand`, `effectiveAcceptanceFramework` and `substituteAcceptanceTestPath`. `buildAcceptanceRunCommand(testPath, testFramework?, commandOverride?, packageDir?)` (`acceptance/generator.ts:78`). No new externally-visible symbol.\n\n**Test migration and deletion** \u2014 Delete test/unit/acceptance/failed-criteria.test.ts, generator-helpers.test.ts, heuristics.test.ts and test-path.test.ts; test/unit/agents/shared/validation.test.ts; test/unit/prd/acceptance-scope.test.ts; test/unit/prompts/acceptance-builder.test.ts and its test/unit/prompts/__snapshots__/acceptance-builder.test.ts.snap; test/unit/prompts/builders/acceptance-builder.test.ts and acceptance-builder-helpers.test.ts; and test/unit/prompts/core/sections/findings.test.ts. In test/unit/acceptance/generator-core.test.ts remove only acceptanceTestFilename and parseAcceptanceCriteria describes/imports, reword its header to describe generator.ts only, and preserve the buildAcceptanceRunCommand describe's assertions. Ensure regression calls use @/acceptance.  In test/unit/config/acceptance-fix-config.test.ts remove the 'DiagnosisResult interface (US-001)' describe/import and header reference; keep AcceptanceFixConfig and AcceptanceConfigSchema assertions. In test/unit/utils/llm-json.test.ts remove only wrapJsonPrompt's describe, section comment and import; preserve other assertions. Remove the deleted test-path.test.ts scanned entry from scripts/check-inline-test-mocks.ts, but do not clean its unrelated stale rectification-loop substring entries. Lower escape-hatch/file-size/complexity baselines as applicable and manually drop deleted-source coverage entries. Reword generator.ts's stale pipeline-loop explanation to reflect the retained workflow reader. Leave shellQuoteArg usage, literal placeholder replacement, framework precedence and local pytest executable resolution unchanged.\n\nVerification, run in packages/nax: (1) bun run typecheck. (2) Path sweep: for each source file this story deletes, with <stem> its path below src/ without the extension, run rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test, and the same for each deleted test file's path below test/; expected zero hits. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference: stop. A hit in a comment is a stale comment and is reworded. Expected and not a stop: the tdd config keys and three-session-tdd strings; the absence assertions in test/integration/prompts/pb-004-migration.test.ts; hits in scripts/baselines/*.json; the rectification-loop*.test.ts entries in scripts/check-inline-test-mocks.ts (:75, :77, :138, :139); the \"src/tdd/x.ts\" string in ../repo-tooling/test/unit/scripts/check-git-spawn-env.test.ts:185. A longer sibling stem is not a hit (kept siblings: operations/verify-scoped, findings/cycle-types). Line numbers are at a5f470b20; after an earlier story edited a file, locate each site by symbol or test name. (3) bun run check:complexity:update; bun run check:file-sizes -- --update-baseline when it reports a lowerable entry; after check:all is green, bun run check:test-escape-hatches:update; remove entries for deleted source files from scripts/baselines/coverage-per-file-baseline.json by hand, and do not run test:coverage. (4) bun run check:all and bun run test.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: buildAcceptanceRunCommand(\"/project/.nax-acceptance.test.ts\") imported from @/acceptance returns 'bun' 'test' '/project/.nax-acceptance.test.ts' '--timeout=60000'.",
+        "[unit] Regression guard: buildAcceptanceRunCommand(\"/pkg/a.test.ts\", \"jest\", \"bun test {{FILE}}\") imported from @/acceptance returns bun test '/pkg/a.test.ts'."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "acceptance",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "no-test",
+        "reasoning": "Ten source deletions across five subsystems and dependent barrels/tests justify complex scope, while unchanged retained command logic makes no-test lighter and more realistic than multi-session TDD.",
+        "noTestJustification": "Pure structural deletion of unreachable acceptance/prompt/agent leaves and unused exports; retained workflow command building, quoting and framework fallback are unchanged. No new runtime behavior needs failing-first tests; still perform specified test/snapshot deletions, retained command/fallback assertions and shared verification steps."
+      },
+      "contextFiles": [
+        "packages/nax/src/acceptance/index.ts",
+        "packages/nax/src/acceptance/generator.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/prompts/builders/rectifier-builder.ts",
+        "packages/nax/src/plugins/types.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/acceptance/failed-criteria.test.ts",
+          "reason": "tests only src/acceptance/failed-criteria.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/generator-helpers.test.ts",
+          "reason": "tests only src/acceptance/generator-helpers.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/heuristics.test.ts",
+          "reason": "tests only src/acceptance/heuristics.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/test-path.test.ts",
+          "reason": "tests only src/acceptance/test-path.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/shared/validation.test.ts",
+          "reason": "tests only src/agents/shared/validation.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prd/acceptance-scope.test.ts",
+          "reason": "tests only src/prd/acceptance-scope.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/acceptance-builder.test.ts",
+          "reason": "tests only AcceptancePromptBuilder, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/__snapshots__/acceptance-builder.test.ts.snap",
+          "reason": "the snapshot file of acceptance-builder.test.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/acceptance-builder.test.ts",
+          "reason": "tests only src/prompts/builders/acceptance-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/acceptance-builder-helpers.test.ts",
+          "reason": "tests only src/prompts/builders/acceptance-builder-helpers.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/core/sections/findings.test.ts",
+          "reason": "tests only src/prompts/core/sections/findings.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/generator-core.test.ts",
+          "reason": "the describes \"acceptanceTestFilename\" (line 13) and \"parseAcceptanceCriteria\" (line 131) and their imports go, because this story removes both functions, and the header comment describes only src/acceptance/generator.ts; the describe \"buildAcceptanceRunCommand\" keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/config/acceptance-fix-config.test.ts",
+          "reason": "the describe \"DiagnosisResult interface (US-001)\" (line 57) and the DiagnosisResult import (line 8) go, because this story deletes src/acceptance/types.ts, and the header comment (lines 2 to 4) drops DiagnosisResult; the AcceptanceFixConfig and AcceptanceConfigSchema describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/llm-json.test.ts",
+          "reason": "the describe \"wrapJsonPrompt\" (line 287), its section comment (line 284) and the wrapJsonPrompt import (line 17) go, because this story removes the function; every other describe keeps its assertions."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "the \"test/unit/acceptance/test-path.test.ts\" entry (line 78) goes, because this story deletes that test file."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "lowered through bun run check:file-sizes -- --update-baseline when the check reports a lowerable entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "REFINE-PASS ADVERSARIAL AUDIT\nEnumerated all ten original spec ACs and retained each in its original story: US-001 AC1 checks every Bash export's stage and includes workflowImplementOp/botPrReviewOp; AC2 includes the three workflow write names and excludes classifyRouteOp. US-002 AC1 permits the narrowed verdict-file Write using the exact six-tool grants/declared fixture; AC2 denies src/index.ts; AC3 forwards keepOpen=true and omits the value for false, even for a warm operation. US-003 AC1 returns an empty Map via the findings barrel. US-004 AC1 preserves the pending story's failed/false/1/isolation-violation result, including its existing-host/already-pins-this/stays-unchanged-if-so qualifier; AC2 preserves memo absence, add and key isolation, including its trimmed-host qualifier. US-005 AC1 preserves the exact quote-joined Bun default; AC2 preserves explicit override precedence over jest. Every original AC keeps its Regression guard annotation and qualifying clauses. All assertions are observable through exported values, tool outcomes, captured dispatch arguments, Maps, memo queries, PRD state or returned command strings. No quality gate was added as an AC.\nNegative-path audit: US-001 already excludes classifyRouteOp; US-002 already denies an unauthorized Write and omits keepOpen for false; US-004 already rejects absent memo keys. This refinement explicitly requested negative-path ACs for every story, so add two existing-behavior regression assertions, not new production features: US-003's fresh Map returns undefined for a missing key; US-005's unsupported framework falls back to the quote-joined Bun command. Their hosts are the existing retained describes; neither requires a new helper or file. These are refinement additions, not claims that the original spec enumerated extra ACs.\nRe-read the spec's Context Files and Out of Scope sections: all five context lists exactly match the five recommended existing files, all nine exclusion bullets and the earlier inline exclusion paragraph remain verbatim, and dependencies exactly match the binding graph. No story/dependency was added, removed or renamed. Source checks confirm the Map factory at findings/story-fix-history.ts:30-32, unsupported-framework default at acceptance/generator.ts:121-125, keepOpen evaluation at operations/call-dispatch-run.ts:111 and omission at operations/call-run-options.ts:119. The existing PRD tests cover the required fields across several cases, not all together for the exact isolation-violation initial state; retain them and add an aggregate state assertion in the existing host only if needed to pin that precise regression. No description contradicts an original or added criterion.\nRouting audit: keep complex scope because every story cuts multiple modules and dependent barrels/tests; this is not a single-file additive task. Keep strict three-session-tdd for US-001/US-002/US-004 under the explicit permissions/session security override, not because new functionality is needed. Reduce US-003 and US-005 to no-test: their production changes are purely structural removal of unreachable declarations and exports, with existing retained implementations unchanged. no-test waives failing-first implementation sessions, not the explicitly required test trims, negative regression assertions or shared verification steps. No red test should be manufactured by changing preserved behavior.\n\nCONTEXT AND DISCOVERY\nThis is C1 wave B2b-3, a removal-only refactor following pipeline-fork-cut (#2812), pipeline-post-run-delete (#2813), pipeline-story-loop-cut (#2821), and pipeline-review-delete (#2824). The supplied reachability analysis at main a5f470b20 governs over the older C1 shared-code table: 58 source modules are deleted, 32 kept source files are trimmed, and the associated obsolete tests, helpers and snapshot are removed without changing workflow-mode results. No new production feature, input, failure handling or exit path is introduced. Codebase-memory MCP was unavailable; discovery used direct source reads and targeted text searches. The architecture index was read at docs/architecture/ARCHITECTURE.md:11; its workflow entry is at :113 and its package boundaries at :133. Generated package context still describes deleted pipeline infrastructure (packages/nax/CLAUDE.md:55); do not restore obsolete modules to satisfy stale documentation.\n\nVERIFIED OWNERSHIP AND IMPACT\nUS-001: packages/nax/src/operations/index.ts:1, :10-22, :45-46, :62-64, :71-90, :106-113 and :131-132 currently export the fix strategies and declaration machinery. packages/nax/src/config/selectors.ts:101 and :176-179 hold the autofix selector and slice types; keep unrelated selectors, including rectifyConfigSelector (:27), executionGatesConfigSelector (:102) and mutationCheckConfigSelector (:51). packages/nax/src/config/inert-bash-stages.ts:38-48 has stale six-operation commentary, while :50 deliberately retains [run, review, rectification, acceptance]. The actual live workflow write tool list includes Bash, Write, Edit, Delete and Git at packages/nax/src/operations/workflow-implement.ts:28-42, and workflowImplementOp dispatches on run at :51. packages/nax/scripts/check-bash-dispatch-ask.ts:236 discovers Bash-carrying operations from the barrel namespace; preserve this algorithm and its dispatch-wiring enforcement. Its obsolete factory example at :234 is only a comment cleanup. Existing inert-stage tests still list the six obsolete operations at packages/nax/test/unit/config/inert-bash-stages.test.ts:75-87. Rewrite all four affected tool-declaration/dispatch test tables in US-001, including operations deleted later by US-002, so they need no second rewrite.\nUS-002: packages/nax/src/tdd/index.ts:12 re-exports TDD operations from the operations barrel; remove that line now but defer deleting the rest of the barrel to US-004. packages/nax/src/quality/self-verification.ts:30-148 is the dead marker parser; preserve its result/input types (:5-28) and resolveSelfVerificationPromptInput (:150-160). The selector-slice TddConfig at packages/nax/src/config/selectors.ts:161 is not the config-section TddConfig exported from config/schema; only the former goes. The access-control regression at packages/nax/test/unit/agents/coding-tool-support.test.ts:312-357 currently obtains declarations from verifierOp and the verdict filename from tdd; replace those dependencies with the identical six-tool local fixture and filename. The production seam is read-only: packages/nax-agent/src/coding-tools/coding-tool-support.ts:77 exports buildCodingToolSupport; use @nathapp/nax-agent/internal from nax, not a cross-package relative import, and do not edit nax-agent. packages/nax/test/unit/operations/call.test.ts:62-73 has the warm keepOpen fixture that must become a local rectification-enabled predicate. callOp's forwarding is implemented through packages/nax/src/operations/call-dispatch-run.ts:111, :126 and call-run-options.ts:119, not a keepOpen literal directly in call.ts: an explicit false predicate must omit keepOpen even for a warm operation. Preserve all dispatch and session behavior.\nUS-003: packages/nax/src/findings/index.ts:15-61 currently exports the fix cycle, retirement and story-history mutators. Trim these exports without deleting still-live finding adapters or rebaseToWorkdir. packages/nax/src/findings/cycle-types.ts:140 begins ValidateResult; everything from that declaration onward is dead, while IterationOutcome, FixApplied and Iteration stay. packages/nax/src/findings/story-fix-history.ts:21-32 defines StoryFixState, StoryFixHistory and the empty-Map factory; everything after :32 is removed. The factory remains live: packages/nax/src/runtime/index.ts:112 imports it and :477 constructs the run's history. Preserve runtime state fields until B3. packages/nax/src/execution/recurrence-store.ts:29-45 contains the retained entry/store types; remove the Finding imports at :26-27 and functions at :47 onward. Update execution/index.ts:72-77 accordingly. packages/nax/src/findings/fingerprint/index.ts:41 exports normalizeIssueText; retain its MAX_ISSUE_PREFIX constant (:29) and implementation because packages/nax/src/plugins/builtin/curator/heuristics.ts:9 imports it and :111 uses it. Delete only fingerprint-specific machinery. packages/nax/test/unit/findings/story-fix-history.test.ts:117-123 already asserts an empty Map; preserve that describe while removing the mutator tests and fixtures.\nUS-004: packages/nax/src/execution/types.ts:17 is FailureCategory's canonical owner, :62 is IsolationCheck, :14 is the obsolete role type, :76 is TddSessionResult, and :97 is StoryRunResult. The retained module must export only FailureCategory and IsolationCheck and have no imports. A targeted search confirms remaining FailureCategory forwarding/imports through tdd/types in pipeline/types.ts:18, prd/types.ts:8, prd/index.ts:7 and :11, execution/index.ts:1, escalation/tier-outcome.ts:14, max-attempts-outcome.ts:1 and tier-escalation.ts:20; operation consumers disappear in US-002. Retarget all kept importers to execution/types before removing src/tdd. packages/nax/src/verification/flake-triage.ts:31-34 and :99-107 are the retained QuarantineMemo contract and Set-backed factory; all probe and classification logic goes. The runtime still imports the memo at packages/nax/src/runtime/index.ts:124 and constructs it at :467. packages/nax/src/verification/types.ts:62-72 defines the now-orphan RectificationState and must be trimmed, unlike unrelated unlisted orphans. packages/nax/src/prd/index.ts:312-339 already sets failed status, passes=false, increments attempts and preserves a supplied failureCategory. packages/nax/test/unit/prd/prd-failure-category.test.ts:73-146 contains its existing regression section; keep unchanged if it already pins the required state, otherwise pin the exact pending/attempts=0 case in that section without changing production behavior. Remove getUntrackedPaths but retain parsePorcelainUntrackedPaths for B2c, including its tests.\nUS-005: packages/nax/src/acceptance/index.ts:7-8 exports execution-description, which stays; :16-24 currently mixes command builders with dead generation exports. packages/nax/src/acceptance/generator.ts:38-125 contains the retained venv resolution, literal placeholder substitution, framework resolution and shell-command builder. Its :127 onward criteria parser/prompt generator and :12-22 dead dependencies/aliases go. The retained production reader is packages/nax/src/acceptance/execution-description.ts:6 and :91; this is why the module must not be deleted. Preserve shell quoting and override precedence exactly: packages/nax/test/unit/acceptance/generator-core.test.ts:38-129 already pins the default string, framework defaults, quote handling, env assignments and overrides; retain that describe while deleting filename and criteria-parser describes. packages/nax/src/prompts/index.ts:9-18 exports the acceptance builders to remove, :81 includes the stale ReviewFinding re-export to trim, and :84 exports repoScopedRectification removed in US-001. Keep RectifierPromptBuilder itself and its other helpers; ReviewFinding's canonical owner is plugins/types.ts. Do not expand grandfathered rectifier-builder.ts.\n\nMIGRATION AND RISKS\nImplement importer-first in the binding five layers. US-002 and US-003 both depend on US-001 and touch some shared barrels/baselines; respect those dependencies and reconcile shared-file changes if executed concurrently. US-004 joins them, and US-005 follows US-004. Line numbers in design tables are at a5f470b20: locate subsequent edits by symbol or test name. Deleting exported modules intentionally contracts an unreachable pipeline surface; do not add shims, replacement runners, new abstractions or new files. Avoid confusing kept sibling names with removed modules: verify-scoped is not verify, full-suite-gate is not full-suite-rectify, and findings/cycle-types is not findings/cycle. A fully unreachable file is safe to delete only if named in this wave, not merely because a broader search discovers it. The main risks are missed barrel/string-literal imports, source-reading tests and scanned-file lists that TypeScript cannot protect, deleting types still embedded in runtime records, weakening permission regression guards when changing fixtures, deleting quote-safe command helpers shared with workflow, and stale ratchets that fail despite correct source removal. No workflow-mode migration or new error handling is needed. Every kept test must preserve its assertions except the exact describes/rows explicitly removed; regression anchors may already pass before removal and must not be turned into new behavior merely to manufacture a red test. Security/session fixture stories use the strict test strategy; complete their specified test migrations/deletions in the test-writing stage so source-only implementation does not weaken retained guards.\n\nCOMMON IMPLEMENTATION VERIFICATION (EVERY STORY, FROM packages/nax)\n1. Run bun run typecheck; static and string-literal dynamic imports and deleted barrel names must resolve after each layer.\n2. For each deleted source stem below src/ without .ts, sweep rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test. Also sweep every deleted test path below test/. For deleting src/tdd as a whole use @/tdd, src/tdd/ and /tdd\". Unexpected code, source-reading test, or iterated path-list hits are missed references: stop and resolve them within scope. Reword stale comments rather than accepting them. Expected exceptions: tdd config keys and three-session-tdd strategy strings; absence assertions in test/integration/prompts/pb-004-migration.test.ts; scripts/baselines/*.json entries until baseline cleanup; stale rectification-loop*.test.ts substring entries at scripts/check-inline-test-mocks.ts:75, :77, :138, :139; and the src/tdd/x.ts fixture in ../repo-tooling/test/unit/scripts/check-git-spawn-env.test.ts:185. Longer sibling stems are not hits on the shorter removed module; deleted siblings get their own sweep and kept siblings stay. No edits outside packages/nax are needed for those exceptions.\n3. Run bun run check:complexity:update. Run bun run check:file-sizes -- --update-baseline when a lowerable entry is reported. After check:all is green, run bun run check:test-escape-hatches:update to lower deleted-test totals. Manually remove deleted-source entries from scripts/baselines/coverage-per-file-baseline.json. Do not run test:coverage or test:coverage:update inside a nax session (NAX_SANDBOXED=1); they are separate CI gates. Baselines may only ratchet down, not mask unrelated failures. Every story performs this housekeeping as applicable, even where the spec's per-story Modifies list names only a subset of baselines.\n4. Run bun run check:all and bun run test. Never run bare bun test or bun run nax. Remove imports used only by deleted declarations; Biome reports noUnusedImports. Gate/test execution is verification, not an acceptance criterion or separate story.\n\nCOMMENT-ONLY CLEANUP INVENTORY\nReword known path hits as their layer is removed: src/context/engine/phase-stage-map.ts:32; src/config/inert-bash-stages.ts:38-41; src/prompts/builders/rectifier-builder.ts:8 and :501; src/findings/fingerprint/index.ts:8; src/review/diff-utils.ts:38; src/test-runners/detect/file-scan.ts:19 and :52; src/test-runners/detect/directory-scan.ts:17; src/utils/porcelain.ts:127; src/execution/types.ts:4-5, :25 and :29; src/config/schemas-execution.ts:165; src/config/runtime-types-execution.ts:5; src/acceptance/generator.ts:35-37; src/findings/index.ts:8-11; src/prompts/builders/rectifier-builder-helpers.ts:464 (remove its empty repo-scoped section header with the code); src/operations/full-suite-gate.ts:45; scripts/check-bash-dispatch-ask.ts:21 and :234; test/unit/runtime/middleware/_idle-watchdog-harness.ts:18; test/unit/prompts/us-004-affordances.test.ts:159; test/unit/acceptance/generator-core.test.ts:2. Also reword deleted-symbol comments that path sweeps cannot catch: test/helpers/op-model.ts:22, test/helpers/runtime.ts:67, src/operations/build-hop-callback-dispatch.ts:97, src/operations/mutation-check.ts:9, src/context/greenfield.ts:170 and :175, src/pipeline/stages/routing.ts:149, src/prompts/core/sections/prior-failures.ts:5, src/plugins/builtin/curator/heuristics.ts:102, scripts/check-op-tool-capability.ts:20, test/unit/pipeline/greenfield.test.ts:41-45, :82 and :122, test/unit/prompts/core/sections/prior-failures.test.ts:4, test/unit/scripts/check-op-tool-capability.test.ts:20 and test/unit/findings/story-fix-history.test.ts:1-17. Comment-only edits are allowed without extending behavioral scope; do not remove registry values while rewording their comments.\n\nTEST OWNERSHIP\nThe per-story descriptions enumerate the obsolete test files and retained-test edits, including the helper barrel, scanned-file lists and snapshot. All paths there are relative to packages/nax unless explicitly repo-rooted. No new files are expected. The only cross-package source is the read-only nax-agent tool-policy seam; all implementation changes remain in packages/nax. Repository documentation, generated context/rules and the broader orphan pass remain deferred exactly as listed in outOfScope.",
+  "outOfScope": [
+    "`src/optimizer/`, `IPromptOptimizer`, `verification/mutation/`, `operations/mutation-check.ts`, `verification/changed-line-ranges.ts`, `utils/diff-files.ts`, the `nax prompts` assemble path with its TDD prompt builders and verdict prompt section, and the `mutationCheckConfigSelector`; wave B2c deletes them.",
+    "Declarations in kept files whose last caller an earlier wave deleted and that Design Parts 1 to 5 do not name (for example `phase-stage-map.ts` stage maps, the `test-baseline-capture.ts` roll-forward helpers, `queue-handler.ts` batch-boundary helpers, `selectIndependentBatch`, `checkMergeConflict`, `detectMergeConflict`, `isTestFile` in `test-runners/detector.ts`, `extractWholeTestDirs`, `countStoryRulings`, `discardAcpSessionLeftover`, `reshapeSelector`, `AdvisorCaller`), and `parsePorcelainUntrackedPaths` in `utils/porcelain.ts`, whose last production caller US-004 removes with `getUntrackedPaths`; wave B2c's orphan pass removes them.",
+    "The runtime fields that now hold state nothing writes (`NaxRuntime.storyFixHistory`, the review recurrence store, the quarantine memo) and `PipelineContext` fields: wave B3 slims them.",
+    "The `tdd`, `execution.rectification`, `autofix`, `flakeDetection` and acceptance config keys, their schemas, migrations, merge handling and config descriptions, and the selectors other than `tddConfigSelector` and `autofixConfigSelector`; wave B3 decides them.",
+    "Removing deleted operation, stage and role strings (`implementer`, `test-writer`, `verifier`, `rectify`, `autofix-implementer`, `full-suite-rectify`, the `rectification` and `acceptance` stages, `three-session-tdd`) from the name registries, `BASH_DECLARING_STAGES` and `context/engine/phase-stage-map.ts`; wave B3.",
+    "The rule files under `.nax/rules/` (and their generated `.claude/rules/` copies) that still name `src/tdd/isolation.ts`, `src/tdd/cleanup.ts`, `src/tdd/rollback.ts` or `test/integration/tdd/_tdd-test-helpers.ts`; `.nax/` is read-only to the run, so they are updated by hand in wave B4.",
+    "Docs, the README and the package context files that still describe TDD sessions, the fix cycle, flake triage or acceptance generation; wave B4.",
+    "Code that was already unreachable before C1 and has no pipeline cause (`constitution/generators/`, `session/session-keeper.ts`, `session/session-runner.ts`, `agent-runtime/bun-runtime.ts`, `agents/cost/token-mapper.ts`, `agents/cost/types.ts`, `agents/retry/compose.ts`, `agents/shared/model-resolution.ts`, `config/validate.ts`, `config/validate-fields.ts`, `execution/timeout-handler.ts`); not part of C1, tracked in issue #2823.",
+    "Changing workflow-mode behaviour: every cut site keeps its current workflow-mode result."
+  ],
+  "routingProfile": "native-codex-router"
+}
