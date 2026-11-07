@@ -146,10 +146,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
       error: errorMessage(err),
     });
   }
-  // Publish onto the pipeline context so later assemblies via assembleForStage
-  // (today the batch / no-test / single-session execution bundles built by
-  // promptStage) reuse this resolution instead of skipping sibling-test hinting
-  // or repeating the I/O.
+  // Publish onto the pipeline context so later assemblies reuse this
+  // resolution instead of skipping sibling-test hinting or repeating the I/O.
   if (resolvedTestPatterns) ctx.resolvedTestPatterns = resolvedTestPatterns;
 
   // nax#2134 (US-001): thread the story execution root so context providers
@@ -161,8 +159,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // carries the worktree root under storyIsolation: "worktree".
   const execRoot = ctx.packageView ? storyExecRoot(ctx.packageView) : undefined;
 
-  // Honour the per-stage v2 config for this stage exactly as assembleForStage
-  // does. Without this, `v2.stages.context.budgetTokens` and `extraProviderIds`
+  // Honour the per-stage v2 config for this stage. Without this,
+  // `v2.stages.context.budgetTokens` and `extraProviderIds`
   // were inert on the first — and largest — assembly of every story.
   const stageOverrides = ctx.config.context?.v2?.stages?.context;
 
@@ -308,10 +306,10 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
     }
 
     // A typo in v2.stages.context.extraProviderIds is a config error, not a
-    // runtime hiccup — fail closed exactly as assembleForStage does
-    // (stage-assembler.ts). Swallowing it here would silently drop v2 context
-    // for the whole story on strategies where promptStage never re-assembles,
-    // contradicting the documented "typos surface immediately" contract.
+    // runtime hiccup — fail closed rather than degrade. Swallowing it here
+    // would silently drop v2 context for the whole story on strategies where
+    // promptStage never re-assembles, contradicting the documented "typos
+    // surface immediately" contract.
     if (err instanceof NaxError && err.code === "CONTEXT_UNKNOWN_PROVIDER_IDS") {
       throw err;
     }

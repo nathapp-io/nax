@@ -233,8 +233,8 @@ export interface ContextRequest {
    * Used by GitHistoryProvider and CodeNeighborProvider (Phase 3).
    *
    * REPO-ROOTED, per the path-frame convention (nax#2071) — see
-   * `src/utils/path-frame.ts`. Both build sites
-   * (src/pipeline/stages/context.ts and stage-assembler.ts) pass the PRD's
+   * `src/utils/path-frame.ts`. The request builder
+   * (src/pipeline/stages/context.ts) passes the PRD's
    * repo-rooted `contextFiles` through unchanged. Providers resolve these
    * against `request.repoRoot` and emit repo-rooted: git-history.ts runs
    * `git log` in repoRoot with the repo-rooted pathspec and applies
@@ -257,7 +257,7 @@ export interface ContextRequest {
    * silently drops every entry (nax#2069, nax path-frame follow-up C1).
    *
    * Populated at request-build time by producers that have the story
-   * (src/pipeline/stages/context.ts, src/context/engine/stage-assembler.ts).
+   * (src/pipeline/stages/context.ts).
    * Producers that call a provider directly with a pre-resolved package root
    * passed as BOTH repoRoot and packageDir (the pull-tool handlers,
    * handlers/query-neighbor.ts and handlers/query-feature-context.ts, which
@@ -293,11 +293,10 @@ export interface ContextRequest {
    * never read (the identically-named `scopeFiles` on the mechanical-fix
    * strategies is an unrelated field that IS shell-interpolated).
    *
-   * Its neighbour `touchedFiles` is repo-rooted the same way: both
-   * ContextRequest build sites (src/pipeline/stages/context.ts and
-   * stage-assembler.ts) pass the PRD's repo-rooted `contextFiles` through
-   * unchanged, and each provider resolves against repoRoot and emits
-   * repo-rooted.
+   * Its neighbour `touchedFiles` is repo-rooted the same way: the
+   * ContextRequest build site (src/pipeline/stages/context.ts) passes the
+   * PRD's repo-rooted `contextFiles` through unchanged, and each provider
+   * resolves against repoRoot and emits repo-rooted.
    */
   scopeFiles?: string[];
   /**
@@ -373,8 +372,7 @@ export interface ContextRequest {
    * Per-provider effectiveness weights derived from prior manifests (US-004).
    * Sourced from `deriveProviderWeights(await loadFeatureManifests({ featureId, projectDir })
    * .then(stored => stored.map(s => s.manifest)))` — set by the V2 context
-   * stage's own request, and by every request `assembleForStage()` builds for
-   * the stages it serves (execution, rectify, tdd, review). When present,
+   * stage's own request. When present,
    * `scoreChunk` multiplies the chunk's score by the weight keyed on
    * `chunk.providerId` (identity = 1.0 when omitted).
    */

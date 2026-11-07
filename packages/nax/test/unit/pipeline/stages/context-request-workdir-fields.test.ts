@@ -166,12 +166,11 @@ describe("contextStage — producer pins storyWorkdir / contextFilesCanonical (B
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-001 / AC8-AC10 (context stage side): pin the producer of ContextRequest's
-// new `execRoot` field. Mirrors `assembleForStage`'s producer at stage-
-// assembler.ts:215 — same `storyExecRoot(ctx.packageView)` derivation. Two
-// producers must agree on the spelling; the context stage builds the FIRST
-// ContextRequest for every story, and a producer regression here is exactly
-// the "silently dropped field" defect that BLOCKER 2 was written to catch
-// for `storyWorkdir`/`contextFilesCanonical`.
+// new `execRoot` field, derived with `storyExecRoot(ctx.packageView)`. The
+// context stage builds the FIRST ContextRequest for every story, and a
+// producer regression here is exactly the "silently dropped field" defect
+// that BLOCKER 2 was written to catch for
+// `storyWorkdir`/`contextFilesCanonical`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("contextStage — producer pins execRoot (US-001)", () => {

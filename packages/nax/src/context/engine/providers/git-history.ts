@@ -219,8 +219,8 @@ export class GitHistoryProvider implements IContextProvider {
     // repoRoot — today's behaviour.
     const workdir = request.execRoot ?? request.repoRoot;
     // request.storyWorkdir is the PRD-declared story workdir (repo-relative),
-    // threaded onto the request by the callers that build it from a story
-    // (pipeline/stages/context.ts, stage-assembler.ts). It must NOT be derived
+    // threaded onto the request by the caller that builds it from a story
+    // (pipeline/stages/context.ts). It must NOT be derived
     // as packageDirRelative(repoRoot, packageDir): under storyIsolation:
     // "worktree", packageDir is `<root>/.nax-wt/<storyId>/<pkg>` while repoRoot
     // is the main checkout, so that derivation yields `.nax-wt/<storyId>/<pkg>`,

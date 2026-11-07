@@ -191,7 +191,7 @@ describe("SessionScratchProvider", () => {
 
   // nax#2111 (path-filters follow-up): under execution.storyIsolation
   // "worktree", request.packageDir is rooted at the story's worktree checkout
-  // (context.ts:175 / stage-assembler.ts:221 set packageDir: ctx.workdir,
+  // (context.ts:175 sets packageDir: ctx.workdir,
   // documented as pointing at .nax-wt/<id>/ in worktree mode) while
   // request.repoRoot stays the main checkout. Without storyWorkdir threaded
   // through, resolveNaxIgnorePatterns's packagePrefix falls back to

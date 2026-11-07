@@ -14,10 +14,10 @@ const GLOBAL_CONFIG_DIR_ENV = "NAX_GLOBAL_CONFIG_DIR";
 
 /**
  * Feature ID charset, mirroring `validateStoryId` (`src/prd/validate.ts`) but with
- * a leading underscore also allowed — `"_unattached"` (`src/pipeline/stages/context.ts`,
- * `src/context/engine/stage-assembler.ts`) is a real internal sentinel used when a
- * context request has no attached feature, and it must keep resolving through this
- * same path. Traversal (`..`) and a leading `--` (git-flag-shaped) are rejected
+ * a leading underscore also allowed — `"_unattached"` (`src/pipeline/stages/context.ts`)
+ * is a real internal sentinel used when a context request has no attached
+ * feature, and it must keep resolving through this same path. Traversal (`..`)
+ * and a leading `--` (git-flag-shaped) are rejected
  * explicitly first so the error names the actual problem instead of a generic
  * pattern mismatch.
  */

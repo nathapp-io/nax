@@ -154,5 +154,3 @@ export type { PromptSection, SectionSlot } from "./core/types";
 export { SLOT_ORDER } from "./core/types";
 // Out-of-scope section — shared by the story sections.
 export { buildOutOfScopeLines } from "./sections";
-
-export { buildAcceptanceExecutionSection } from "./sections/acceptance";

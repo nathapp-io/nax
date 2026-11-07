@@ -211,8 +211,8 @@ describe("ContextOrchestrator.assemble()", () => {
 
   test("NeutralityLintError from a rules provider aborts assembly instead of silently dropping rules", async () => {
     // A neutrality-lint failure is special: proceeding means the run gets
-    // zero rules chunks, silently. This must abort assemble() so callers
-    // (stage-assembler.ts / pipeline/stages/context.ts) can fall back to the
+    // zero rules chunks, silently. This must abort assemble() so the caller
+    // (pipeline/stages/context.ts) can fall back to the
     // v1 context path instead of continuing ruleless in v2.
     const failingRules: IContextProvider = {
       id: "static-rules",

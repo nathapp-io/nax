@@ -3,10 +3,9 @@
  *
  * loadFeatureManifests() re-reads and re-parses every manifest file under a
  * feature's stories/ directory. Deriving providerWeights on every stage
- * assembly — the context stage's own request, plus every assembleForStage()
- * call for execution, rectify, tdd, and review stages — without caching makes
- * per-story context I/O grow with the number of already-completed stories in
- * the feature: manifest reads grow quadratically across a full run.
+ * assembly — the context stage's own request plus every later one — without
+ * caching makes per-story context I/O grow with the number of already-completed
+ * stories in the feature: manifest reads grow quadratically across a full run.
  *
  * ProviderWeightsCache memoizes the derived weights per featureId for the
  * lifetime of one run. It is invalidated by annotateManifestEffectiveness when

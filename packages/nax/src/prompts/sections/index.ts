@@ -4,8 +4,6 @@
  * Non-overridable section builders shared by the composed prompt builders.
  */
 
-export type { AcceptanceEntry } from "./acceptance";
-export { buildAcceptanceExecutionSection, buildAcceptanceSection } from "./acceptance";
 export { buildAgentScopeSection } from "./agent-scope";
 export type { GuardrailLevel, GuardrailRole } from "./behavioral-guardrails";
 export { buildBehavioralGuardrailsSection } from "./behavioral-guardrails";

@@ -6,10 +6,8 @@
  * unresolvable, when collectDiffFileList returns undefined, and when
  * collectDiffFileList rejects.
  *
- * AC-8/AC-9 (context stage threading) and AC-10/AC-11 (assembleForStage
- * threading) live in:
+ * AC-8/AC-9 (context stage threading) live in:
  *   - test/unit/pipeline/stages/context-scope-files.test.ts
- *   - test/unit/context/engine/stage-assembler-scope-files.test.ts
  *
  * Tests rely on `_scopeFilesDeps` injection — no `mock.module()`, no real git.
  */

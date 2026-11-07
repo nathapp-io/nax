@@ -153,12 +153,9 @@ export const DEFAULT_STAGE_CONFIG: StageContextConfig = {
 // A key in this map is only "live" — actually reaches an assembled bundle —
 // if a remaining assembly site selects it:
 //   - src/pipeline/stages/context.ts (always "context")
-// The single-session execution seam (`executionContextStage`) went with the
-// prompt stage (B2c-1), and the story orchestrator's `run-phase` seam (via
-// `contextStageForOp`) went with the story loop (B2b-1), so a key only those
-// seams selected is inert until B3 removes the mapping.
-// See test/unit/context/engine/stage-reachability.test.ts, which enforces
-// this for every key that declares pullToolNames. See nax#1743.
+// The single-session execution seam and the story orchestrator's `run-phase`
+// seam went with the prompt stage and the story loop, so a key only those
+// seams selected is inert until B3 removes the mapping. See nax#1743.
 export const STAGE_CONTEXT_MAP = {
   // Context stage — initial assembly before execution; uses git history + code neighbors
   // so the agent sees touched-file history and import-graph neighbors from the start.
@@ -329,22 +326,15 @@ export const STAGE_CONTEXT_MAP = {
   },
 
   // `satisfies`, not a `Record<string, StageContextConfig>` annotation: the
-  // annotation would widen the key type to `string` and make `StageKey` below
-  // vacuous (every string assignable), defeating the point of typing the
-  // selector seams in phase-stage-map.ts. See nax#1743.
+  // annotation would widen the key type to `string` and lose the literal key
+  // inference, while `satisfies` still checks every entry. See nax#1743.
 } satisfies Record<string, StageContextConfig>;
-
-/**
- * The set of stage keys declared in {@link STAGE_CONTEXT_MAP}. Not every key
- * is "live" — see the reachability comment above the map.
- */
-export type StageKey = keyof typeof STAGE_CONTEXT_MAP;
 
 /**
  * Get the context config for a given stage name.
  * Falls back to DEFAULT_STAGE_CONFIG for unknown stages.
  *
- * Accepts `string`, not `StageKey`: callers pass raw `testStrategy` values
+ * Accepts `string`: callers pass raw `testStrategy` values
  * and other unvalidated strings, and unknown values must still fall back to
  * DEFAULT_STAGE_CONFIG rather than fail to compile.
  */

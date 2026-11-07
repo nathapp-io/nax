@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1022
+    "looseCast": 1015
   },
-  "updatedAt": "2026-11-07T10:25:26.137Z",
+  "updatedAt": "2026-11-07T12:53:17.118Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -624,12 +624,6 @@
       "looseCast": 2
     },
     "test/unit/context/engine/manifest-types.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/context/engine/stage-assembler-scope-files.test.ts": {
-      "looseCast": 6
-    },
-    "test/unit/context/engine/stage-assembler.test.ts": {
       "looseCast": 1
     },
     "test/unit/context/engine/orchestrator.test.ts": {

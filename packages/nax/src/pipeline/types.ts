@@ -100,7 +100,7 @@ export interface PipelineContext extends DispatchContext {
   /**
    * Story-scoped ADR-009 test-file patterns, resolved once by the context stage
    * and reused by every later assembly. Carried here rather than re-resolved per
-   * stage so `assembleForStage` performs no extra I/O; absent when the context
+   * stage so later assembly performs no extra I/O; absent when the context
    * stage did not run or pattern resolution failed (providers then degrade by
    * skipping sibling-test hinting).
    */
@@ -170,7 +170,7 @@ export interface PipelineContext extends DispatchContext {
   /**
    * Per-run plugin-provider cache (Finding 5 / issue #473).
    * Constructed once in runner.ts and disposed at run completion.
-   * When present, context stage and stage-assembler call
+   * When present, the context stage calls
    * pluginProviderCache.loadOrGet() instead of loadPluginProviders() so
    * providers are not re-imported and re-initialised on every assemble() call.
    */
@@ -178,7 +178,7 @@ export interface PipelineContext extends DispatchContext {
   /**
    * Per-run effectiveness provider-weights cache (nax-finish MEDIUM finding,
    * effectiveness-scoring-loop). Constructed once in runner.ts. When present,
-   * the context stage and stage-assembler call
+   * the context stage calls
    * providerWeightsCache.loadOrGet() instead of loadFeatureManifests() +
    * deriveProviderWeights() directly, so a feature's manifests are read and
    * parsed once per run instead of once per story per stage. Invalidated by
@@ -202,8 +202,8 @@ export interface PipelineContext extends DispatchContext {
    */
   sessionScratchDir?: string;
   /**
-   * Full set of story scratch directories resolved by the stage-assembly path
-   * (assembleForStage). Includes ctx.sessionScratchDir plus any sibling/prior
+   * Full set of story scratch directories resolved by the context stage's
+   * stage assembly. Includes ctx.sessionScratchDir plus any sibling/prior
    * session dirs the SessionManager or on-disk discovery surfaced. Published so
    * the pull-tool runtime's query_scratch handler reads the same dirs the push
    * providers read, rather than only the single sessionScratchDir. Absent when
