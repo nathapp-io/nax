@@ -65,7 +65,7 @@ async function captureToolDiagnostics(
 ): Promise<void> {
   if (!sessionScratchDir || !appendScratchEntry) return;
   try {
-    const diagnostics = await parseDiagnostics(result, tool);
+    const diagnostics = parseDiagnostics(result, tool);
     await appendScratchEntry(sessionScratchDir, {
       kind: "tool-diagnostics",
       timestamp: new Date().toISOString(),
