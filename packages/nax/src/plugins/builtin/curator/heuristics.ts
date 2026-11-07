@@ -99,13 +99,13 @@ const CROSS_FEATURE_MESSAGE_PREFIX = 48;
 /**
  * Identity of a defect ACROSS features (#1422).
  *
- * Deliberately NOT `fingerprintFor` (`@/findings/fingerprint`): that key leads
- * with the file path, which is correct for its own job (same story, successive
- * rounds, where the file is stable) and exactly wrong here. Different features
- * touch different files by definition, so a file-led key can only ever group
- * the same-file case — meaning H1 would stay silent on "test-gap recurs across
- * the project", the signal it exists to surface. The file is evidence, not
- * identity.
+ * Deliberately NOT the retired file-led fingerprint (`fingerprintFor`, which
+ * went with the findings fix cycle in C1 wave B2b-3): that key led with the file
+ * path, which is correct for its own job (same story, successive rounds, where
+ * the file is stable) and exactly wrong here. Different features touch different
+ * files by definition, so a file-led key can only ever group the same-file case —
+ * meaning H1 would stay silent on "test-gap recurs across the project", the
+ * signal it exists to surface. The file is evidence, not identity.
  */
 function crossFeatureKey(category: string | undefined, message: string): string {
   return `${category ?? ""}|${normalizeIssueText(message).slice(0, CROSS_FEATURE_MESSAGE_PREFIX)}`;

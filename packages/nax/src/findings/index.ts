@@ -1,14 +1,16 @@
 /**
- * src/findings — unified Finding wire format (ADR-021) and cycle orchestration
- * types + runtime (ADR-022).
+ * src/findings — unified Finding wire format (ADR-021) and the iteration records
+ * that carry a fix attempt's history.
  *
- * ADR-021: Finding wire format — types, severity ordering, stable identity key,
- * and per-producer adapter converters.
+ * ADR-021: Finding wire format — types and per-producer adapter converters.
  *
- * ADR-022 Phase 1: cycle orchestration types — Iteration, FixApplied,
- * FixStrategy, FixCycle, FixCycleResult, FixCycleContext, FixCycleConfig.
+ * ADR-022 Phase 1: iteration record types — `Iteration`, `FixApplied`,
+ * `IterationOutcome` — plus the run-scoped story fix history store.
  *
- * ADR-022 Phase 2: runFixCycle and classifyOutcome behaviour.
+ * The cycle orchestration that consumed these types (`runFixCycle`, the strategy
+ * contract, the decline ledger, the retirement stamps and the review recurrence
+ * helpers) went with the findings fix cycle in C1 wave B2b-3. What remains is the
+ * wire format, the iteration record and the store `createRuntime` still builds.
  */
 
 export type { ReviewCheckResult } from "../review/types";
@@ -16,46 +18,16 @@ export {
   executionFailureToFinding,
   genericTypecheckDiagnosticToFinding,
   lintDiagnosticToFinding,
-  pluginToFinding,
   testFailureToFinding,
   testSummaryToFindings,
 } from "./adapters";
-export { isNaxBailWrapper, markNaxBailWrapper } from "./bail-marker";
-export { _cycleDeps, classifyOutcome, runFixCycle } from "./cycle";
-export type { RecordIterationContext, RecordIterationInput } from "./cycle-iteration-log";
-export { recordIteration } from "./cycle-iteration-log";
-export type { DeclineLedger } from "./cycle-retirement";
-export { createDeclineLedger } from "./cycle-retirement";
-export type {
-  FixApplied,
-  FixCycle,
-  FixCycleConfig,
-  FixCycleContext,
-  FixCycleExitReason,
-  FixCycleResult,
-  FixStrategy,
-  FixStrategyWithExtractApplied,
-  GiveUpInput,
-  GiveUpResolution,
-  Iteration,
-  IterationOutcome,
-  ValidateResult,
-} from "./cycle-types";
+export type { FixApplied, Iteration, IterationOutcome } from "./cycle-types";
 export { rebaseToWorkdir } from "./path-utils";
-export type { RecurrenceDisposition, RecurrenceStamp } from "./retirement-stamp";
-export { isRecurrenceRetired, readRecurrenceDisposition, retirementIdentity } from "./retirement-stamp";
 export type { StoryFixHistory, StoryFixState } from "./story-fix-history";
-export {
-  appendStoryFixIterations,
-  createStoryFixHistory,
-  getStoryFixState,
-  mergeStoryFixDeclines,
-  storyFixKey,
-} from "./story-fix-history";
+export { createStoryFixHistory } from "./story-fix-history";
 export type {
   Finding,
   FindingSeverity,
   FindingSource,
   FixTarget,
 } from "./types";
-export { compareSeverity, findingKey, findingRecurrenceKey, SEVERITY_ORDER } from "./types";

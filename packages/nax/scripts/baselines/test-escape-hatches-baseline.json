@@ -1,16 +1,13 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 14,
-    "looseCast": 1043
+    "ratchetAllow": 13,
+    "looseCast": 1042
   },
-  "updatedAt": "2026-11-07T08:46:09.985Z",
+  "updatedAt": "2026-11-07T09:15:16.115Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
-    },
-    "test/helpers/fix-cycle-result.ts": {
-      "ratchetAllow": 1
     },
     "test/helpers/agent-registry.ts": {
       "looseCast": 1
@@ -294,9 +291,6 @@
     },
     "test/unit/execution/lifecycle/run-setup.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/findings/_cycle-fixtures.ts": {
-      "looseCast": 1
     },
     "test/unit/bakeoff/coordinator.test.ts": {
       "looseCast": 21

@@ -18,9 +18,9 @@
  *
  * What counts as a construction: an object literal whose top-level members
  * include `runtime`, `packageView` and `agentName` -- the required core of
- * `CallContext` (and so of `FixCycleContext`). Matching on the members rather
- * than on a `: CallContext` annotation also catches an unannotated literal
- * passed straight to `callOp`. Each is classified:
+ * `CallContext`. Matching on the members rather than on a `: CallContext`
+ * annotation also catches an unannotated literal passed straight to `callOp`.
+ * Each is classified:
  *
  *   wired    names both `askResolver` and `commandShadow` (as a member, or
  *            inside a spread such as `...(commandShadow ? { commandShadow } : {})`)

@@ -69,12 +69,7 @@ export {
 export { appendProgress } from "./progress";
 export type { BatchQueueDrainResult } from "./queue-handler";
 export { clearQueueFile, drainQueueAtBatchBoundary, processQueueFile, readQueueFile } from "./queue-handler";
-export {
-  getReviewRecurrenceCount,
-  type ReviewRecurrenceEntry,
-  type ReviewRecurrenceStore,
-  recordReviewFindings,
-} from "./recurrence-store";
+export type { ReviewRecurrenceEntry, ReviewRecurrenceStore } from "./recurrence-store";
 export type { RunOptions, RunResult } from "./runner";
 export { _runnerDeps, _runnerReentrancyGuard, run } from "./runner";
 export {
