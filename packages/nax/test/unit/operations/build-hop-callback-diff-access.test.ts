@@ -42,11 +42,11 @@ import { DEFAULT_CODING_TOOLS } from "@/config/permissions";
 import type { ContextBundle, ToolDescriptor } from "@/context/engine";
 import type { BuildHopCallbackContext } from "@/operations";
 import { _buildHopCallbackDeps, buildHopCallback } from "@/operations";
-import { wrapDiffAccess } from "@/prompts/sections/diff-access";
+import { wrapAffordance } from "@/prompts/sections";
 import { PROTOCOL_REGION_MARKER_PREFIX } from "@/prompts/sections/protocol-region";
 
 const WORKDIR = "/repo";
-const PROMPT = `review US-001\n${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}end`;
+const PROMPT = `review US-001\n${wrapAffordance("diff-access", { ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}end`;
 const SESSION_ID = "sess-1744";
 const CODING_TOOLS_SESSION_ID = "sess-c1";
 
@@ -388,7 +388,7 @@ describe("AC8 — the bound `send` closure substitutes every turn prompt it is h
     const config = configForProfile("unrestricted");
     const ctx = makeDiffAccessCtx("native", records, config);
     const options: AgentRunOptions = {
-      prompt: `first prompt ${wrapDiffAccess({ ref: "r1", fullExclude: ["."] }, "SHELL BODY\n")}`,
+      prompt: `first prompt ${wrapAffordance("diff-access", { ref: "r1", fullExclude: ["."] }, "SHELL BODY\n")}`,
       workdir: WORKDIR,
       modelTier: "balanced",
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
@@ -399,9 +399,9 @@ describe("AC8 — the bound `send` closure substitutes every turn prompt it is h
       storyId: "US-001",
     };
     // Use a hopBody that calls send with a second region-bearing prompt. This
-    // mimics the review-op pattern that retries on JSON-parse failure: the
+    // mimics a multi-turn operation that retries on JSON-parse failure: the
     // follow-up turn must be substituted independently of the first.
-    const region = wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n");
+    const region = wrapAffordance("diff-access", { ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n");
     const secondPrompt = `second turn ${region}`;
     const cb = buildHopCallback(
       {
@@ -447,7 +447,7 @@ describe("AC9 — the hop callback returns the substituted initial prompt", () =
     const config = configForProfile("unrestricted");
     const ctx = makeDiffAccessCtx("native", records, config);
     const options: AgentRunOptions = {
-      prompt: `head ${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
+      prompt: `head ${wrapAffordance("diff-access", { ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
       workdir: WORKDIR,
       modelTier: "balanced",
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
@@ -479,7 +479,7 @@ describe("AC9 — the hop callback returns the substituted initial prompt", () =
     const config = configForProfile("unrestricted");
     const ctx = makeDiffAccessCtx("claude", records, config);
     const options: AgentRunOptions = {
-      prompt: `head ${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
+      prompt: `head ${wrapAffordance("diff-access", { ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
       workdir: WORKDIR,
       modelTier: "balanced",
       modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },

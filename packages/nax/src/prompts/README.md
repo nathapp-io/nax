@@ -18,7 +18,6 @@ agent/session surfaces is built here.
 | Builder | Domains |
 |---|---|
 | `TddPromptBuilder` | implementer, test-writer, verifier, no-test, tdd-simple, batch |
-| `ReviewPromptBuilder` | dialogue, semantic |
 | `AcceptancePromptBuilder` | generator, diagnoser, fix-executor |
 | `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings |
 | `OneShotPromptBuilder` | router, decomposer, auto-approver |

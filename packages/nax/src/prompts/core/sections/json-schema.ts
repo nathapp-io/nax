@@ -2,7 +2,7 @@
  * JSON Schema Section
  *
  * Describes the expected JSON output format for one-shot LLM prompts.
- * Used by ReviewPromptBuilder (Phase 3) and OneShotPromptBuilder (Phase 6).
+ * Used by OneShotPromptBuilder.
  */
 
 import type { PromptSection } from "../types";

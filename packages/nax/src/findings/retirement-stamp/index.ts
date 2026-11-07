@@ -1,17 +1,11 @@
 /**
  * Stamp shape and queries for the `meta.recurrence` field that US-001 writes
  * onto a `Finding` once `classifyRecurrence` has placed it in a terminal bucket
- * (`retired` / `demoted`). One consumer reads this shape today:
+ * (`retired` / `demoted`). The pipeline carry-forward prompt and the
+ * actionability filter that seeded a paid fix pass have both been removed.
  *
- *   - `src/prompts/builders/prior-iterations-builder.ts` uses it to move a
- *     finding out of the verdict-required list and into the acknowledgement
- *     section of the carry-forward prompt.
- *
- * A second reader — the actionability filter that seeded a paid fix pass —
- * went with the story loop (B2b-1). Centralising the predicate here means a
- * future change to the stamp shape (a renamed field, a different disposition
- * value, a wrapper type) only has to be made once. Each prior hand-rolled copy
- * could drift and silently de-synchronise the prompt from the fix lane.
+ * Centralising the predicate here keeps the stamp shape in one place for
+ * remaining callers and tests.
  *
  * Pure / repo-scoped — no I/O, no config. Lives at its own nested barrel
  * (`@/findings/retirement-stamp`) so consumers that already sit inside the

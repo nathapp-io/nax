@@ -3,7 +3,7 @@
  *
  * Cross-domain: needs TDD context (story, isolation, role task) AND review context
  * (prior failures, findings). A dedicated builder avoids forcing rectification prompts
- * into either TddPromptBuilder or ReviewPromptBuilder.
+ * into the TDD builder.
  *
  * Replaces: buildImplementerRectificationPrompt / buildRectificationPrompt from src/tdd/prompts.ts
  *

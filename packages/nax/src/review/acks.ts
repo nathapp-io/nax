@@ -1,8 +1,8 @@
 /**
  * Review acknowledgements (#1423).
  *
- * The carry-forward verdict template (`buildPriorIterationsBlock`) asks the
- * reviewer to classify every prior finding as `addressed`, `still-blocking`, or
+ * The pipeline carry-forward verdict template asked the reviewer to classify
+ * every prior finding as `addressed`, `still-blocking`, or
  * `never-an-issue`. Only `still-blocking` is a defect. Before `acks` existed the
  * reviewer's only output channel was `findings`, so the other two verdicts were
  * emitted as findings — 2.2% of July's, all `info`, and they became the evidence
