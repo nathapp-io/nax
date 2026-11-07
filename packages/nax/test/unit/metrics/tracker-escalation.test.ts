@@ -272,9 +272,11 @@ describe("collectStoryMetrics — attempt count includes all cross-tier attempts
 // Bug: collectStoryMetrics uses only agentResult.estimatedCostUsd (the final
 // successful attempt). Prior attempt costs from failed escalations are lost.
 //
-// Fix: The runner/escalation handler must persist prior attempt costs so
-// collectStoryMetrics can include them. The mechanism is the story's
-// priorFailures list, whose costs the metrics tracker sums.
+// Fix: Every attempt's spend must reach the run-scoped cost aggregator
+// (runtime.costAggregator), because that is where collectStoryMetrics reads
+// the story's total cost from — it never sums priorFailures. The story's
+// priorFailures list carries attempt metadata (and a per-failure cost the
+// tracker does not read).
 // ---------------------------------------------------------------------------
 
 // BUG-067
