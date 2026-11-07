@@ -91,16 +91,6 @@ export const queueCheckStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // BUG-9: in parallel mode every story's worktree pipeline runs on a stale
-    // structuredClone of the PRD (skipPrdPersistence: true). Claiming the queue
-    // file here would consume-and-destroy a command this clone cannot durably
-    // persist — the coordinator drains the queue once per batch boundary
-    // instead (unified-executor), where the root PRD is owned. A cloned
-    // pipeline must never claim a command it cannot apply.
-    if (ctx.skipPrdPersistence === true) {
-      return { action: "continue" };
-    }
-
     // BUG-11: claim, process, and clear all happen inside one queue-file-lock
     // critical section (processQueueFile) — a crash between "commands applied"
     // and "processing file cleared" used to leave the same commands to be
@@ -122,9 +112,6 @@ async function processQueueCommands(
     return { action: "continue" };
   }
 
-  // BUG-9: queueCheckStage.execute now refuses to reach this function at all
-  // when ctx.skipPrdPersistence is true, so every mutation below is always
-  // safe to persist against the real PRD.
   for (const [index, cmd] of queueCommands.entries()) {
     if (cmd.type === "PAUSE") {
       logger.warn("queue", "Paused by user", { storyId: ctx.story?.id ?? "unknown", command: "PAUSE" });

@@ -1,25 +1,28 @@
 /**
- * Unit tests for skipPrdPersistence gate in completion stage (CR-1)
+ * Unit tests for the completion stage's persistence and completion events.
  *
  * Covers:
- * - savePRD is NOT called when skipPrdPersistence is true (parallel worktree mode)
- * - Story status is NOT mutated to "passed" when skipPrdPersistence is true
- * - savePRD IS called and story IS marked passed when skipPrdPersistence is unset (serial mode)
+ * - the story is marked passed in ctx.prd and the PRD is saved once, to ctx.prdPath
+ * - exactly one story:completed event is emitted for the story
+ * - the bounded stream reading of the `git diff` output
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import {
+  cleanupTempDir,
   makeMockRuntime,
   makeNaxConfig,
   makePRD,
   makeSpawn,
   makeSpawnResult,
   makeStory,
+  makeTempDir,
   makeTestContext,
 } from "@test/helpers";
 import { pipelineEventBus } from "@/pipeline";
 import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
 import type { PipelineContext } from "@/pipeline/types";
+import type { PRD } from "@/prd";
 import type { PrdProgressCommitOptions } from "@/prd/progress-commit";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,59 +82,27 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// skipPrdPersistence tests
+// Persistence — the story is marked passed in ctx.prd and the PRD is saved
+// to ctx.prdPath.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("completionStage skipPrdPersistence", () => {
-  test("does NOT call savePRD when skipPrdPersistence is true", async () => {
-    const saveSpy = mock(async () => {});
-    _completionDeps.savePRD = saveSpy;
+describe("completionStage persists the PRD", () => {
+  test("AC-1: marks the story passed in ctx.prd and saves the PRD once with that path", async () => {
+    const saved: Array<[PRD, string]> = [];
+    _completionDeps.savePRD = mock(async (prd: PRD, prdPath: string) => {
+      saved.push([prd, prdPath]);
+    });
+    _completionDeps.commitPrdProgress = mock(async () => true);
     _completionDeps.getDiffText = mock(async () => "");
-    const ctx = makeCtx({ skipPrdPersistence: true });
+    const ctx = makeCtx({ prdPath: PRD_PATH });
 
-    await completionStage.execute(ctx);
+    const result = await completionStage.execute(ctx);
 
-    expect(saveSpy).not.toHaveBeenCalled();
-  });
-
-  test("calls NEITHER savePRD NOR commitPrdProgress when skipPrdPersistence is true", async () => {
-    // Both halves of the write: a commit without a save would be an empty one,
-    // and a save without a commit is the state #2533 removes. In parallel
-    // worktree mode neither belongs to this pipeline at all.
-    const saveSpy = mock(async () => {});
-    const commitSpy = mock(async () => true);
-    _completionDeps.savePRD = saveSpy;
-    _completionDeps.commitPrdProgress = commitSpy;
-    _completionDeps.getDiffText = mock(async () => "");
-    const ctx = makeCtx({ skipPrdPersistence: true });
-
-    await completionStage.execute(ctx);
-
-    expect(saveSpy).not.toHaveBeenCalled();
-    expect(commitSpy).not.toHaveBeenCalled();
-  });
-
-  test("does NOT mutate story status to passed when skipPrdPersistence is true", async () => {
-    _completionDeps.savePRD = mock(async () => {});
-    _completionDeps.getDiffText = mock(async () => "");
-    const ctx = makeCtx({ skipPrdPersistence: true });
-
-    await completionStage.execute(ctx);
-
-    // Shared PRD must not be mutated to "passed" by a parallel worktree pipeline
-    expect(ctx.prd.userStories[0].status).not.toBe("passed");
-  });
-
-  test("calls savePRD and marks story passed when skipPrdPersistence is unset (serial mode)", async () => {
-    const saveSpy = mock(async () => {});
-    _completionDeps.savePRD = saveSpy;
-    _completionDeps.getDiffText = mock(async () => "");
-    const ctx = makeCtx({});
-
-    await completionStage.execute(ctx);
-
-    expect(saveSpy).toHaveBeenCalledTimes(1);
     expect(ctx.prd.userStories[0].status).toBe("passed");
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.[0]).toBe(ctx.prd);
+    expect(saved[0]?.[1]).toBe(PRD_PATH);
+    expect(result.action).toBe("continue");
   });
 
   test("commits the PRD once, after saving it, with the story id and label 'passed'", async () => {
@@ -160,57 +131,39 @@ describe("completionStage skipPrdPersistence", () => {
     expect(commits[0]?.storyId).toBe("US-001");
     expect(commits[0]?.label).toBe("passed");
   });
-
-  test("still returns { action: continue } when skipPrdPersistence is true", async () => {
-    _completionDeps.savePRD = mock(async () => {});
-    _completionDeps.getDiffText = mock(async () => "");
-    const ctx = makeCtx({ skipPrdPersistence: true });
-
-    const result = await completionStage.execute(ctx);
-
-    expect(result.action).toBe("continue");
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// skipCompletionEvents tests (BUG-36) — a rectification re-run must not
-// double-emit story:completed for a story whose worktree pipeline already
-// emitted it once, before the merge conflict that triggered rectification.
+// Completion events — the story:completed emit is unconditional.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("completionStage skipCompletionEvents", () => {
+describe("completionStage emits story:completed", () => {
+  let featureDir: string;
+  let unsubscribe: (() => void) | undefined;
+
   afterEach(() => {
-    pipelineEventBus.clear();
+    unsubscribe?.();
+    unsubscribe = undefined;
+    cleanupTempDir(featureDir);
   });
 
-  test("does NOT emit story:completed when skipCompletionEvents is true", async () => {
+  test("AC-2: emits exactly one story:completed event for the story", async () => {
+    featureDir = makeTempDir("nax-completion-events-");
     _completionDeps.savePRD = mock(async () => {});
+    _completionDeps.commitPrdProgress = mock(async () => true);
     _completionDeps.getDiffText = mock(async () => "");
-    const ctx = makeCtx({ skipPrdPersistence: true, skipCompletionEvents: true });
+    const ctx = makeCtx({ featureDir });
 
-    const received: unknown[] = [];
-    pipelineEventBus.on("story:completed", (ev) => {
-      received.push(ev);
-    });
-
-    await completionStage.execute(ctx);
-
-    expect(received).toHaveLength(0);
-  });
-
-  test("still emits story:completed when skipCompletionEvents is unset (normal worktree pass)", async () => {
-    _completionDeps.savePRD = mock(async () => {});
-    _completionDeps.getDiffText = mock(async () => "");
-    const ctx = makeCtx({ skipPrdPersistence: true });
-
-    const received: unknown[] = [];
-    pipelineEventBus.on("story:completed", (ev) => {
-      received.push(ev);
+    const received: Array<{ storyId: string; passed: boolean }> = [];
+    unsubscribe = pipelineEventBus.on("story:completed", (event) => {
+      received.push(event);
     });
 
     await completionStage.execute(ctx);
 
     expect(received).toHaveLength(1);
+    expect(received[0]?.storyId).toBe("US-001");
+    expect(received[0]?.passed).toBe(true);
   });
 });
 

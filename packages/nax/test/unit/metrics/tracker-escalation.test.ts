@@ -14,8 +14,8 @@
  *     story.escalations is empty, which handleTierEscalation never populates).
  *
  * US-002: the formula's third term — the rectify cycle count — went with the
- * constant metrics. It read `ctx.rectifyAttempt`, which nothing in src/
- * writes (the rectify phase that set it was deleted), so it was always 0.
+ * constant metrics. The pipeline context field it read had no writer (the
+ * rectify phase that set it was deleted), so it was always 0.
  * `firstPassSuccess` now depends only on the agent result, the escalations
  * and the prior failures.
  *
@@ -273,9 +273,8 @@ describe("collectStoryMetrics — attempt count includes all cross-tier attempts
 // successful attempt). Prior attempt costs from failed escalations are lost.
 //
 // Fix: The runner/escalation handler must persist prior attempt costs so
-// collectStoryMetrics can include them. The anticipated mechanism is a new
-// `accumulatedAttemptCost` field on PipelineContext that the runner sets
-// when an escalation iteration produces a cost delta.
+// collectStoryMetrics can include them. The mechanism is the story's
+// priorFailures list, whose costs the metrics tracker sums.
 // ---------------------------------------------------------------------------
 
 // BUG-067

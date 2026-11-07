@@ -192,7 +192,7 @@ describe("workflowStage", () => {
     async (failureAt) => {
       const dir = makeTempDir("wf-stage-setup-");
       dirs.push(dir);
-      const ctx = makeTestContext({ projectDir: dir, workdir: dir, skipCompletionEvents: true });
+      const ctx = makeTestContext({ projectDir: dir, workdir: dir });
       const runDir = workflowRunDir(dir, ctx.prd.feature, ctx.runtime.runId);
       let loopCalls = 0;
       const disposed = wire(async () => {

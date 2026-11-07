@@ -52,10 +52,6 @@ export function releaseHeavyPipelineContext(ctx: PipelineContext): void {
   ctx.builtContext = undefined;
   ctx.contextBundle = undefined;
   ctx.constitution = undefined;
-  ctx.acceptanceFailures = undefined;
-  ctx.reviewFindings = undefined;
-  ctx.selfVerification = undefined;
-  ctx.tddIsolations = undefined;
 }
 
 export async function runIteration(
@@ -128,9 +124,6 @@ export async function runIteration(
     }
   }
 
-  // @design: BUG-067: Accumulate cost from all prior failed attempts (stored in priorFailures by handleTierEscalation)
-  const accumulatedAttemptCost = (story.priorFailures || []).reduce((sum, f) => sum + (f.cost || 0), 0);
-
   // PKG-003: Resolve per-package effective config once per story (not per-stage)
   // Thread the CLI profile override through so --profile flags apply to per-package configs.
   // Use profileOverrideFromConfig (passes the round-trippable chain array, not the "a+b" composite).
@@ -202,7 +195,6 @@ export async function runIteration(
     projectDir: ctx.workdir,
     workdir: resolvedWorkdir,
     naxIgnoreIndex: ctx.naxIgnoreIndex,
-    worktreeDependencyContext: dependencyContext,
     prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,
@@ -210,13 +202,11 @@ export async function runIteration(
     storyStartTime: new Date().toISOString(),
     storyGitRef: storyGitRef ?? undefined,
     interaction: ctx.interactionChain ?? undefined,
-    agentGetFn: ctx.agentGetFn,
     abortSignal: ctx.abortSignal,
     sessionManager: ctx.sessionManager,
     agentManager: ctx.agentManager,
     pluginProviderCache: ctx.pluginProviderCache,
     providerWeightsCache: ctx.providerWeightsCache,
-    accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
     runtime: ctx.runtime,
     // US-001: the context producers derive ContextRequest.execRoot from
     // `storyExecRoot(ctx.packageView)` — the documented producer of that field

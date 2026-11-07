@@ -8,8 +8,6 @@ import type { AgentResult } from "@/agents/types";
 import type { NaxConfig } from "@/config/schema";
 import type { ConstitutionResult } from "@/constitution/types";
 import type { BuiltContext } from "@/context/types";
-import type { FailureCategory } from "@/execution/types";
-import type { Finding } from "@/findings";
 import type { HooksConfig } from "@/hooks/types";
 import type { InteractionChain } from "@/interaction/chain";
 import type { StoryMetrics } from "@/metrics/types";
@@ -29,8 +27,6 @@ export interface RoutingResult {
   testStrategy: "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite";
   /** Reasoning for the classification */
   reasoning: string;
-  /** Estimated cost for this story */
-  estimatedCostUsd?: number;
   /** Agent override from story.routing.agent (PRD-level per-agent routing) */
   agent?: string;
 }
@@ -111,37 +107,14 @@ export interface PipelineContext extends DispatchContext {
    * resolution) does not run twice per story.
    */
   scopeFiles?: string[];
-  /** Dependency-preparation context for worktree execution, if one was created. */
-  worktreeDependencyContext?: import("../worktree/types").WorktreeDependencyContext;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */
   prdPath?: string;
-  /**
-   * When true, the completion stage must NOT mutate or save the shared PRD.
-   * Set by the parallel batch orchestrator so concurrent worktree pipelines
-   * do not race on the shared `prd` object or `prd.json` file. The unified
-   * executor becomes the single PRD writer after the batch (see plan A4).
-   */
-  skipPrdPersistence?: boolean;
-  /**
-   * When true, the completion stage must NOT emit `story:completed`. Set on a
-   * rectification re-run (BUG-36): the story's original worktree pipeline pass
-   * already emitted the event before the merge conflict was discovered, so an
-   * unconditional re-emit here would double-count hooks/reporters for the same
-   * story. Independent of `skipPrdPersistence` — a fresh worktree pipeline pass
-   * still needs its one and only completion event.
-   */
-  skipCompletionEvents?: boolean;
   /** Feature directory (optional, e.g., nax/features/my-feature/) */
   featureDir?: string;
   /** Hooks configuration */
   hooks: HooksConfig;
   /** Plugin registry (optional, for plugin-provided extensions) */
   plugins?: PluginRegistry;
-  /**
-   * Protocol-aware agent resolver. When set (ACP mode), returns AcpAgentAdapter;
-   * falls back to standalone getAgent (CLI mode) when absent.
-   */
-  agentGetFn?: AgentGetFn;
   /** Interaction chain (optional, for human-in-the-loop triggers) */
   interaction?: InteractionChain;
   /** Constitution result (set by constitutionStage) */
@@ -198,134 +171,20 @@ export interface PipelineContext extends DispatchContext {
    * Absolute path to this pipeline run's session scratch directory.
    * Set by the context stage when config.context.v2.enabled is true.
    * Format: <projectDir>/.nax/features/<featureId>/sessions/<sessionId>/
-   * Written by verify and rectify; read by SessionScratchProvider via storyScratchDirs.
+   * Written by verify and rectify; read by SessionScratchProvider via the
+   * context request's storyScratchDirs.
    */
   sessionScratchDir?: string;
-  /**
-   * Full set of story scratch directories resolved by the context stage's
-   * stage assembly. Includes ctx.sessionScratchDir plus any sibling/prior
-   * session dirs the SessionManager or on-disk discovery surfaced. Published so
-   * the pull-tool runtime's query_scratch handler reads the same dirs the push
-   * providers read, rather than only the single sessionScratchDir. Absent when
-   * no stage assembly has resolved it (the execution stage falls back to
-   * [sessionScratchDir]).
-   */
-  storyScratchDirs?: string[];
   /** Final prompt sent to agent (set by promptStage) */
   prompt?: string;
   /** Agent execution result (set by executionStage) */
   agentResult?: AgentResult;
-  /** Parsed self-verification marker from the latest execution session. */
-  selfVerification?: import("../quality").SelfVerificationResult;
-  /**
-   * Retry attempts consumed before this acceptance attempt (0 on the first).
-   * Nothing maintains this any more: the counter lived in the completion
-   * acceptance loop, deleted by pipeline-post-run-delete US-006.
-   */
-  acceptanceRetries?: number;
-  /** Acceptance test failures. Nothing produces or reads these any more: the acceptance stage was deleted by US-005 and the completion acceptance loop by US-006. */
-  acceptanceFailures?: {
-    failedACs: string[];
-    /** Structured findings (ADR-021 phase 5). Parallel to failedACs; same order. */
-    findings: Finding[];
-    testOutput: string;
-    /** Package-scoped failures from acceptance stage for monorepo command/path routing. */
-    failedPackages?: Array<{
-      testPath: string;
-      packageDir: string;
-      testFramework?: string;
-      commandOverride?: string;
-      /** This package's own combined stdout+stderr (not the cross-package dump). */
-      output: string;
-      /** This package's own failed AC ids (not the deduped global union). */
-      failedACs: string[];
-    }>;
-    /** Package dirs whose required acceptance test target was missing (US-003). */
-    missingTargets?: string[];
-  };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;
-  /**
-   * Total rectification ITERATIONS run this attempt, accumulated across every
-   * runRectification re-entry — not a count of rectify stage invocations. Any non-zero
-   * value disqualifies firstPassSuccess in collectStoryMetrics (BUG-067 / #679).
-   */
-  rectifyAttempt?: number;
-  /**
-   * Prior semantic review iterations carried into this pipeline pass — populated
-   * by the escalation and rectification orchestrators on re-run (both deleted
-   * with the story loop, B2b-1) so the reviewer LLM could see what the prior
-   * reviewer flagged and classify each finding as
-   * addressed / still-blocking / never-an-issue. Nothing populates or forwards
-   * it any more.
-   */
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */
   storyMetrics?: StoryMetrics[];
-  /** Whether to retry the story in lite mode after a failure */
-  retryAsLite?: boolean;
-  /**
-   * Per-package acceptance test paths. Nothing produces this any more: the
-   * acceptance-setup stage that set it was deleted with the pipeline post-run
-   * acceptance phase (pipeline-post-run-delete US-005). The acceptance loop that
-   * still reads it is deleted by US-006, which removes this field.
-   */
-  acceptanceTestPaths?: Array<{
-    testPath: string;
-    packageDir: string;
-    /** Resolved test framework for this package (e.g. "jest", "vitest"). Undefined = bun default. */
-    testFramework?: string;
-    /** Per-package acceptance.command override. Undefined = use framework default. */
-    commandOverride?: string;
-    /** Number of non-fix, non-decomposed PRD stories grouped into this package. US-003. */
-    storyCount?: number;
-    /** Whether acceptance is enabled for this package's config. US-003. */
-    acceptanceEnabled?: boolean;
-  }>;
-  /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
-  tddFailureCategory?: FailureCategory;
-  /** Isolation results aggregated from TDD phase outputs. No writer since the post-run inspection layer was deleted (US-003). */
-  tddIsolations?: Record<string, import("../execution/types").IsolationCheck>;
-  /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */
-  fullSuiteGatePassed?: boolean;
-  /**
-   * Test files failing at this story's full-suite gate (post-rectification).
-   * Formerly captured by `applyPostRunInspection` from the gate output findings
-   * (deleted with the post-run inspection layer, US-003), so nothing populates
-   * it today. The reader that turned it into `StoryMetrics.failingTestFiles`
-   * went with the constant metrics (US-002); the metric field itself stays for
-   * the rows older `metrics.json` files carry.
-   * Absent when no gate ran or the gate passed cleanly.
-   */
-  fullSuiteGateFailingFiles?: string[];
-  /**
-   * Count of this story's semantic/adversarial review checks that returned
-   * `success:true, failOpen:true` (LLM dispatch failed and the gate degraded
-   * to a pass rather than blocking). Formerly set by `applyReviewsFailedOpen`,
-   * which was removed with the review operations (C1 wave B2b-2) — nothing
-   * populates this field today. The fail-open count it fed went with the
-   * constant metrics (US-002), so this field is dead too.
-   */
-  reviewsFailedOpen?: number;
-  /** Structured review findings — passed to escalation for retry context */
-  reviewFindings?: import("../findings").Finding[];
-  /** Accumulated cost across all prior escalation attempts (BUG-067) */
-  accumulatedAttemptCost?: number;
-  /**
-   * Set of review check names that already passed in a previous review pass within this
-   * pipeline run. When autofix retries from "review", checks in this set are skipped to
-   * avoid redundant re-runs (e.g. a 45s semantic check after a lint-only fix). (#136)
-   * Only checks that were NOT the cause of the retry are eligible to be skipped.
-   */
-  retrySkipChecks?: Set<string>;
-  /**
-   * True when only mechanical checks failed (build/typecheck/lint) but LLM checks
-   * (semantic/adversarial) passed in the most recent review pass. Signals to autofix
-   * that the code is functionally correct — UNRESOLVED should not trigger tier escalation
-   * for mechanical failures in files the agent cannot modify (e.g. lint in test files).
-   */
-  mechanicalFailedOnly?: boolean;
 }
 
 /**
@@ -341,20 +200,7 @@ export type StageAction =
   /** Escalate to a higher tier and retry the pipeline */
   | { action: "escalate"; reason?: string; cost?: number }
   /** Pause execution (user intervention required via queue command) */
-  | { action: "pause"; reason: string; cost?: number }
-  /** Retry from a specific stage (used by rectify/autofix stages) */
-  | {
-      action: "retry";
-      fromStage: string;
-      cost?: number;
-      /**
-       * When true, the retry counter for `fromStage` is reset to zero before
-       * this retry is counted. Use when the fixing stage (e.g. rectify/autofix)
-       * has genuinely resolved the problem and the target stage should get a
-       * fresh attempt budget.
-       */
-      resetRetryCount?: boolean;
-    };
+  | { action: "pause"; reason: string; cost?: number };
 
 /**
  * Result returned by a pipeline stage after execution.

@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1005
+    "looseCast": 1004
   },
-  "updatedAt": "2026-11-07T15:58:19.806Z",
+  "updatedAt": "2026-11-07T16:26:52.052Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -671,6 +671,9 @@
     "test/unit/pipeline/effective-config.test.ts": {
       "looseCast": 15
     },
+    "test/unit/pipeline/runner-throw-logging.test.ts": {
+      "looseCast": 1
+    },
     "test/unit/pipeline/routing-partial-override.test.ts": {
       "looseCast": 5
     },
@@ -696,7 +699,7 @@
       "looseCast": 1
     },
     "test/unit/pipeline/stages/routing-persistence.test.ts": {
-      "looseCast": 14
+      "looseCast": 12
     },
     "test/unit/pipeline/stages/routing-initial-complexity.test.ts": {
       "looseCast": 8

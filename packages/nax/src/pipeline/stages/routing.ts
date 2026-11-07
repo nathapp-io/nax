@@ -130,12 +130,8 @@ export const routingStage: PipelineStage = {
       ...(initialModelTier !== undefined && { initialModelTier }),
       ...routerAuditPatch,
     };
-    // BUG-36: gate on skipPrdPersistence like completion.ts does — without this,
-    // a worktree pipeline that now carries prdPath (routing/rectification re-use
-    // of the worker's base) would have every concurrent worker independently
-    // save its own per-story structuredClone over the shared prd.json, each
-    // clobbering the others' writes until the executor's post-batch reconcile.
-    if (ctx.prdPath && ctx.skipPrdPersistence !== true) {
+    // Persist the classification so prd.json carries the story's routing.
+    if (ctx.prdPath) {
       await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
     }
 
@@ -196,7 +192,7 @@ export const routingStage: PipelineStage = {
             testStrategy: routing.testStrategy,
             reasoning: routing.reasoning,
           };
-          if (ctx.prdPath && ctx.skipPrdPersistence !== true) {
+          if (ctx.prdPath) {
             await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
           }
         }

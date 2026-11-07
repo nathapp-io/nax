@@ -18,7 +18,6 @@ import {
   makeAgentResult,
   makeContextBundle,
   makeDispatchContext,
-  makeFinding,
   makeMockRuntime,
   makeNaxConfig,
   makePluginRegistry,
@@ -33,12 +32,10 @@ import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { SequentialExecutionContext } from "@/execution/executor-types";
 import { _iterationRunnerDeps, releaseHeavyPipelineContext, runIteration } from "@/execution/iteration-runner";
-import type { IsolationCheck } from "@/execution/types";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import type { PipelineContext, PipelineStage, RoutingResult } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
-import type { SelfVerificationResult } from "@/quality";
 import { storyExecRoot } from "@/runtime";
 import { WorktreeManager } from "@/worktree/manager";
 
@@ -468,16 +465,6 @@ describe("releaseHeavyPipelineContext", () => {
       builtContext: { elements: [], totalTokens: 0, truncated: false, summary: "" },
       contextBundle: makeContextBundle(),
       constitution: { content: "c", tokens: 1, truncated: false },
-      acceptanceFailures: { failedACs: ["AC-1"], findings: [makeFinding()], testOutput: "" },
-      reviewFindings: [makeFinding()],
-      selfVerification: {
-        lint: "pass",
-        typecheck: "pass",
-        preExistingFailures: [],
-      } satisfies SelfVerificationResult,
-      tddIsolations: {
-        implementer: { passed: true, violations: [] } satisfies IsolationCheck,
-      },
     };
 
     releaseHeavyPipelineContext(ctx);
@@ -489,10 +476,6 @@ describe("releaseHeavyPipelineContext", () => {
     expect(ctx.builtContext).toBeUndefined();
     expect(ctx.contextBundle).toBeUndefined();
     expect(ctx.constitution).toBeUndefined();
-    expect(ctx.acceptanceFailures).toBeUndefined();
-    expect(ctx.reviewFindings).toBeUndefined();
-    expect(ctx.selfVerification).toBeUndefined();
-    expect(ctx.tddIsolations).toBeUndefined();
     // Fields that must survive — not part of the "heavy" set.
     expect(ctx.story.id).toBe("US-001");
   });
@@ -510,10 +493,6 @@ describe("releaseHeavyPipelineContext", () => {
       builtContext: { elements: [], totalTokens: 0, truncated: false, summary: largeText },
       contextBundle: makeContextBundle({ pushMarkdown: largeText }),
       constitution: { content: largeText, tokens: 0, truncated: false },
-      acceptanceFailures: { failedACs: [], findings: [], testOutput: largeText },
-      reviewFindings: [makeFinding({ message: largeText })],
-      selfVerification: { lint: "pass", typecheck: "pass", preExistingFailures: [], rawMarker: largeText },
-      tddIsolations: { implementer: { passed: true, violations: [] } },
     });
     const prd = ctx.prd;
     const story = ctx.story;
@@ -527,10 +506,6 @@ describe("releaseHeavyPipelineContext", () => {
     expect(ctx.builtContext).toBeUndefined();
     expect(ctx.contextBundle).toBeUndefined();
     expect(ctx.constitution).toBeUndefined();
-    expect(ctx.acceptanceFailures).toBeUndefined();
-    expect(ctx.reviewFindings).toBeUndefined();
-    expect(ctx.selfVerification).toBeUndefined();
-    expect(ctx.tddIsolations).toBeUndefined();
     expect(ctx.prd).toBe(prd);
     expect(ctx.story).toBe(story);
   });

@@ -272,8 +272,8 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   const finalTier = escalationCount > 0 ? story.escalations[escalationCount - 1].toTier : routing.modelTier;
 
   // First pass success = succeeded with no tier escalation and no cross-tier
-  // failures (BUG-067). The rectify term went with the rectify phase (US-002):
-  // nothing writes `ctx.rectifyAttempt`, so it was always 0.
+  // failures (BUG-067). The rectify term went with the rectify phase (US-002),
+  // so the metric is the escalation-free, prior-failure-free case.
   const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
 
   // Extract model name and agent from config

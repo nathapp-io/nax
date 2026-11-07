@@ -24,7 +24,7 @@ export { PipelineEventBus, pipelineEventBus } from "./event-bus";
 export type { PipelineEvents, RunSummary } from "./events";
 export { PipelineEventEmitter } from "./events";
 export type { PipelineRunResult } from "./runner";
-export { MAX_STAGE_RESETS, MAX_STAGE_RETRIES, runPipeline } from "./runner";
+export { runPipeline } from "./runner";
 export { _scopeFilesDeps, resolveScopeFiles } from "./scope-files";
 export { queueCheckStage } from "./stages/queue-check";
 export { wireReporters } from "./subscribers/reporters";

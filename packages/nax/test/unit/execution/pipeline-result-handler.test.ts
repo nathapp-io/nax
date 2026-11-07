@@ -586,9 +586,8 @@ describe("handlePipelineFailure — fail action records no failure category (US-
         success: false,
         finalAction: "fail",
         reason: "tests failing",
-        // The category still exists on the pipeline context, but the fail
-        // path must not carry it onto the story.
-        context: makeTestContext({ agentResult: makeAgentResult(), tddFailureCategory: "tests-failing" }),
+        // The fail path must not carry a failure category onto the story.
+        context: makeTestContext({ agentResult: makeAgentResult() }),
       });
 
       expect(result.prdDirty).toBe(true);
