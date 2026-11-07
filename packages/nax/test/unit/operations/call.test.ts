@@ -11,8 +11,7 @@ import type { AgentRunRequest } from "@/agents/manager-types";
 import type { RetryPreset } from "@/agents/retry";
 import type { CompleteResult, TurnResult } from "@/agents/types";
 import { DEFAULT_CONFIG, pickSelector } from "@/config";
-import type { CompleteOperation, RunOperation } from "@/operations";
-import { callOp, shouldKeepSessionOpen } from "@/operations";
+import { type CompleteOperation, callOp, type RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
 let runtime: NaxRuntime | undefined;
@@ -69,7 +68,8 @@ const warmImplementerOp: RunOperation<
   name: "implementer",
   config: implementerGateSel,
   session: { role: "implementer", lifetime: "warm" },
-  keepOpen: (_input, ctx) => shouldKeepSessionOpen(ctx.config, "implementer"),
+  // Local replacement for the deleted shouldKeepSessionOpen gate.
+  keepOpen: (_input, ctx) => ctx.config.execution.rectification.enabled === true,
 };
 
 const warmAutofixOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {

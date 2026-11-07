@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-07T08:10:26.504Z",
+  "updatedAt": "2026-11-07T08:45:45.954Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -97,7 +97,6 @@
     "src/precheck/checks-warnings.ts": { "checkLanguageTools": 27 },
     "src/precheck/index.ts": { "runPrecheck": 45, "runEnvironmentPrecheck": 35 },
     "src/prompts/builders/tdd-builder.ts": { "build": 38 },
-    "src/quality/self-verification.ts": { "parsePreExisting": 22, "parseMarkerBlock": 21 },
     "src/queue/manager.ts": { "parseQueueFile": 37 },
     "src/review/lint-parsing/strategies/ruff-annotated.ts": { "parseRuffAnnotated": 26 },
     "src/review/truncation.ts": { "looksLikeTruncatedJson": 22 },

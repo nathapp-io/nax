@@ -9,7 +9,6 @@ export type {
   TddSessionResult,
   TddSessionRole,
 } from "../execution/types";
-export { implementerOp, implementTddOp, testWriterOp, verifierOp, verifyTddOp, writeTddTestOp } from "../operations";
 
 export { isTestFile } from "../test-runners";
 export { cleanupProcessTree, getPgid } from "./cleanup";

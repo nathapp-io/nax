@@ -198,7 +198,6 @@ export {
   rectifyConfigSelector,
   reviewConfigSelector,
   routingConfigSelector,
-  tddConfigSelector,
   testPatternConfigSelector,
   verifyConfigSelector,
   workflowConfigSelector,

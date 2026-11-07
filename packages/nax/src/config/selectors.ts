@@ -25,18 +25,6 @@ export const reviewConfigSelector = pickSelector(
 export const planConfigSelector = pickSelector("plan", "plan", "agent", "models", "project", "routing");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
-export const tddConfigSelector = pickSelector(
-  "tdd",
-  "tdd",
-  "execution",
-  "quality",
-  "agent",
-  "models",
-  "prompts",
-  "context",
-  "project",
-  "precheck",
-);
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
 export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({
@@ -157,7 +145,6 @@ export type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 export type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 export type DecomposeConfig = ReturnType<typeof decomposeConfigSelector.select>;
 export type RectifyConfig = ReturnType<typeof rectifyConfigSelector.select>;
-export type TddConfig = ReturnType<typeof tddConfigSelector.select>;
 export type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
 export type VerifyConfig = ReturnType<typeof verifyConfigSelector.select>;
 export type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
