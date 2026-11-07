@@ -9,7 +9,7 @@
  */
 
 import type { z } from "zod";
-import type { FixReviewConfigSchema, NbfWorthCheckConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
+import type { FixReviewConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
 import { pickSelector, reshapeSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
@@ -98,7 +98,6 @@ export const precheckConfigSelector = pickSelector(
   "routing",
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
-export const autofixConfigSelector = pickSelector("autofix", "quality", "execution");
 export const executionGatesConfigSelector = pickSelector("execution-gates", "review", "execution");
 
 // Test-pattern resolver — resolveTestFilePatterns reads execution.smartTestRunner
@@ -173,10 +172,8 @@ export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfi
 export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
 export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
 export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.select>;
-export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
-export type NbfWorthCheckConfig = z.infer<typeof NbfWorthCheckConfigSchema>;
 /** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`.
  *
  * Uses `z.infer` (the parsed shape, not the input shape) so `enabled` and

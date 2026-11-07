@@ -184,7 +184,6 @@ export type {
 export {
   advisorConfigSelector,
   agentManagerConfigSelector,
-  autofixConfigSelector,
   contextToolRuntimeConfigSelector,
   decomposeConfigSelector,
   executionGatesConfigSelector,

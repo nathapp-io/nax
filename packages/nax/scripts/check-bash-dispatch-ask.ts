@@ -231,7 +231,8 @@ export function findContextSites(file: string, source: string): ContextSite[] {
 /**
  * Export names of the operations barrel that carry a Bash-declaring op: the
  * ops themselves under every alias, plus any exported function whose source
- * names one of them (a strategy factory such as `makeFullSuiteRectifyStrategy`).
+ * names one of them (a strategy factory that builds a Bash op's spec, or a
+ * helper that re-dispatches it).
  */
 export function bashCarryingNames(mod: Record<string, unknown>): Set<string> {
   const names = new Set<string>();

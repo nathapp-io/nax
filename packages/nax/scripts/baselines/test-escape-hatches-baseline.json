@@ -1,10 +1,10 @@
 {
   "counts": {
     "tsSuppress": 0,
-    "ratchetAllow": 16,
-    "looseCast": 1233
+    "ratchetAllow": 14,
+    "looseCast": 1043
   },
-  "updatedAt": "2026-11-06T16:30:00.000Z",
+  "updatedAt": "2026-11-07T08:12:42.839Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -36,9 +36,6 @@
     "test/helpers/context-bundle.ts": {
       "looseCast": 1
     },
-    "test/helpers/e2e/orchestrator-harness.ts": {
-      "looseCast": 1
-    },
     "test/integration/interaction/interaction-chain-pipeline.test.ts": {
       "looseCast": 3
     },
@@ -51,12 +48,6 @@
     "test/integration/review/review.test.ts": {
       "looseCast": 7
     },
-    "test/integration/execution/runner-parallel-metrics-rectification-events.test.ts": {
-      "looseCast": 8
-    },
-    "test/integration/execution/runner-parallel-metrics.test.ts": {
-      "looseCast": 2
-    },
     "test/integration/execution/feature-status-write.test.ts": {
       "looseCast": 2
     },
@@ -66,20 +57,11 @@
     "test/integration/execution/status-writer-postrun.test.ts": {
       "looseCast": 6
     },
-    "test/integration/execution/rectification-routing.test.ts": {
-      "looseCast": 4
-    },
-    "test/integration/execution/parallel-batch-rectification.test.ts": {
-      "looseCast": 9
-    },
     "test/integration/execution/execution.test.ts": {
       "looseCast": 1
     },
     "test/integration/execution/runner-escalation.test.ts": {
       "looseCast": 2
-    },
-    "test/integration/execution/parallel-batch-results.test.ts": {
-      "looseCast": 4
     },
     "test/integration/execution/status-file.test.ts": {
       "looseCast": 8
@@ -202,9 +184,6 @@
     "test/unit/commands/curator.test.ts": {
       "looseCast": 5
     },
-    "test/unit/commands/resume.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/commands/replay.test.ts": {
       "looseCast": 20
     },
@@ -238,58 +217,28 @@
     "test/unit/scripts/check-story-workdir-access.test.ts": {
       "looseCast": 4
     },
-    "test/unit/finish/pr-body.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/finish/pr-title.test.ts": {
       "ratchetAllow": 1
-    },
-    "test/unit/finish/phase.test.ts": {
-      "looseCast": 2
     },
     "test/unit/hooks/on-all-stories-complete.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/parallel-batch-structure.test.ts": {
-      "looseCast": 6
+    "test/unit/hooks/agent/run-hook.test.ts": {
+      "looseCast": 2
     },
     "test/unit/execution/pipeline-result-handler-bug12.test.ts": {
       "looseCast": 1
     },
     "test/unit/execution/unified-executor-logging.test.ts": {
-      "looseCast": 18
-    },
-    "test/unit/execution/story-orchestrator-resume-integration.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/execution/story-orchestrator-carveout-staleness.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/execution/repo-scoped-fix-record.test.ts": {
-      "ratchetAllow": 1
-    },
-    "test/unit/execution/unified-executor-cost.test.ts": {
-      "looseCast": 14
+      "looseCast": 12
     },
     "test/unit/execution/crash-signals.test.ts": {
       "looseCast": 2
     },
     "test/unit/execution/unified-executor-dispatch.test.ts": {
-      "looseCast": 6
+      "looseCast": 2
     },
     "test/unit/execution/pipeline-result-handler.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/execution/merge-conflict-rectify.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/execution/parallel-batch.test.ts": {
-      "looseCast": 10
-    },
-    "test/unit/execution/_post-run-fixtures.ts": {
-      "looseCast": 1
-    },
-    "test/unit/execution/unified-executor-reconcile.test.ts": {
       "looseCast": 1
     },
     "test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts": {
@@ -302,9 +251,12 @@
       "looseCast": 2
     },
     "test/unit/execution/lifecycle-completion.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/execution/helpers.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/execution/pipeline-result-handler-merge-conflict.test.ts": {
       "looseCast": 1
     },
     "test/unit/execution/deferred-review.test.ts": {
@@ -313,23 +265,8 @@
     "test/unit/execution/session-manager-runtime.test.ts": {
       "looseCast": 2
     },
-    "test/unit/execution/unified-executor-results.test.ts": {
-      "looseCast": 10
-    },
     "test/unit/execution/unified-executor-signature.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/execution/parallel-worker.test.ts": {
-      "looseCast": 8
-    },
-    "test/unit/execution/rectification-oscillation-circuit-breaker.test.ts": {
-      "looseCast": 19
-    },
-    "test/unit/execution/post-run-review-summary.test.ts": {
-      "looseCast": 4
-    },
-    "test/unit/execution/unified-executor-failure.test.ts": {
-      "looseCast": 2
     },
     "test/unit/execution/escalation/escalation.test.ts": {
       "looseCast": 1
@@ -346,14 +283,8 @@
     "test/unit/execution/escalation/tier-escalation-story-failed.test.ts": {
       "looseCast": 1
     },
-    "test/unit/execution/story-orchestrator/regressed-gate-findings.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/execution/lifecycle/run-completion-events.test.ts": {
-      "looseCast": 9
-    },
-    "test/unit/execution/lifecycle/run-completion-postrun.test.ts": {
-      "looseCast": 1
+      "looseCast": 5
     },
     "test/unit/execution/lifecycle/run-cleanup.test.ts": {
       "looseCast": 4
@@ -376,9 +307,6 @@
     "test/unit/acceptance/test-path.test.ts": {
       "looseCast": 1
     },
-    "test/unit/acceptance/refinement.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/test-runners/detect.test.ts": {
       "looseCast": 1
     },
@@ -391,11 +319,8 @@
     "test/unit/verification/flake-probe.test.ts": {
       "looseCast": 1
     },
-    "test/unit/operations/mechanical-lintfix-strategy.test.ts": {
+    "test/unit/operations/tool-declarations.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/operations/autofix-implementer-strategy.test.ts": {
-      "looseCast": 9
     },
     "test/unit/operations/full-suite-gate.test.ts": {
       "looseCast": 1
@@ -421,9 +346,6 @@
     "test/unit/operations/setup-generate.test.ts": {
       "looseCast": 3
     },
-    "test/unit/operations/full-suite-rectify.test.ts": {
-      "looseCast": 5
-    },
     "test/unit/operations/build-hop-callback.test.ts": {
       "looseCast": 19
     },
@@ -435,9 +357,6 @@
     },
     "test/unit/operations/mutation-check-diff-scope.test.ts": {
       "looseCast": 4
-    },
-    "test/unit/operations/autofix-test-writer-strategy.test.ts": {
-      "looseCast": 8
     },
     "test/unit/operations/call-correlation.test.ts": {
       "looseCast": 7
@@ -548,7 +467,7 @@
       "looseCast": 2
     },
     "test/unit/runtime/dispatch-context.test.ts": {
-      "looseCast": 7
+      "looseCast": 6
     },
     "test/unit/runtime/cost-aggregator.test.ts": {
       "looseCast": 1
@@ -660,7 +579,7 @@
     },
     "test/unit/config/merge-agent-models-routing.test.ts": {
       "ratchetAllow": 2,
-      "looseCast": 12
+      "looseCast": 11
     },
     "test/unit/config/story-scoped-fix-budget.test.ts": {
       "looseCast": 4
@@ -678,6 +597,21 @@
       "looseCast": 1
     },
     "test/unit/quality/runner.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/chat/chat-host-compact.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/chat/subagent-runs.test.ts": {
+      "ratchetAllow": 1
+    },
+    "test/unit/chat/chat-host-steer.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/memory/koda-pull-approvals.test.ts": {
+      "looseCast": 1
+    },
+    "test/unit/memory/tool-provider.test.ts": {
       "looseCast": 1
     },
     "test/unit/logger/warn-once.test.ts": {
@@ -780,7 +714,7 @@
       "looseCast": 6
     },
     "test/unit/pipeline/effective-config.test.ts": {
-      "looseCast": 17
+      "looseCast": 15
     },
     "test/unit/pipeline/routing-partial-override.test.ts": {
       "looseCast": 5
@@ -859,6 +793,9 @@
     },
     "test/ui/useAgentStreamEvents.test.tsx": {
       "looseCast": 2
+    },
+    "test/ui/chat/turn-stats.test.tsx": {
+      "looseCast": 1
     }
   }
 }

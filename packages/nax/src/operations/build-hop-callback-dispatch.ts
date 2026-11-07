@@ -94,7 +94,7 @@ async function settleHopSession(args: {
   // either closes it in its own finally or SessionManager teardown handles it.
   // keepOpen: callers that need session continuity across pipeline stages (e.g.
   // execution.ts with review/rectification enabled, or warm-lifetime callOp ops
-  // like implementerRectifyOp) set this flag so downstream stages can reuse the
+  // such as the workflow fix ops) set this flag so downstream stages can reuse the
   // same ACP session via sessionManager.getLiveHandle().
   // Timeout overrides keepOpen: a wall-clock-timed-out session is dead —
   // leaving it cached would hand the retry a non-functional handle.

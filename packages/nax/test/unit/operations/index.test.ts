@@ -9,6 +9,10 @@
  * through a dynamic `import()` so an absent name is an assertion rather than a
  * compile error — which is what lets this guard fail while the re-exports are
  * still there, and pass once they are cut.
+ *
+ * US-001 (pipeline-story-ops-delete) applies the same rule to the fourteen
+ * fix-strategy/declaration modules: the ops and the strategies, their
+ * declaration plumbing and the prompt helpers only they reached.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -22,8 +26,43 @@ const REMOVED_OP_EXPORTS = [
   "recordNbfWorthCheck",
 ] as const;
 
+/**
+ * The fix-strategy/declaration names the barrel must stop exporting once their
+ * modules are deleted (pipeline-story-ops-delete US-001).
+ */
+const REMOVED_FIX_STRATEGY_EXPORTS = [
+  "findingsToFailedChecks",
+  "applyTestEditDeclarations",
+  "implementerRectifyOp",
+  "makeAutofixImplementerStrategy",
+  "testWriterRectifyOp",
+  "makeAutofixTestWriterStrategy",
+  "makeDeclarationSink",
+  "_repoScopedFixDeps",
+  "makeFullSuiteRectifyStrategy",
+  "makeRepoScopedTestFixStrategy",
+  "fullSuiteRectifyOp",
+  "_mechanicalFormatFixDeps",
+  "makeMechanicalFormatFixStrategy",
+  "mechanicalFormatFixOp",
+  "_mechanicalLintFixDeps",
+  "makeMechanicalLintFixStrategy",
+  "mechanicalLintFixOp",
+  "rectifyOp",
+  "parseTestEditDeclarations",
+  "validatePrdQuote",
+  "validateMockStructureFiles",
+] as const;
+
 describe("src/operations/index.ts — pipeline review operations removed", () => {
   test.each([...REMOVED_OP_EXPORTS])("no longer exports %s", async (name) => {
+    const barrel = await import("@/operations");
+    expect(Object.keys(barrel)).not.toContain(name);
+  });
+});
+
+describe("src/operations/index.ts — fix-strategy operations removed", () => {
+  test.each([...REMOVED_FIX_STRATEGY_EXPORTS])("no longer exports %s", async (name) => {
     const barrel = await import("@/operations");
     expect(Object.keys(barrel)).not.toContain(name);
   });

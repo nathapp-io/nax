@@ -155,12 +155,12 @@ describe("US-004 AC3 — isolation with no configured test command", () => {
 
 // ─── AC4 — rectifier per-failing-file block + native + RunCommand → one call per file
 //
-// The producer under test is `failingTestRectification` — the ONE the
-// `fullSuiteRectifyOp` dispatches (full-suite-rectify-op.ts:71). The other two
-// rectifier prompt producers on this builder (`escalated`, `regressionFailure`)
-// have no production call site, so threading affordance parameters through them
-// would render regions no dispatch ever sees; the ACs are pinned against the
-// reachable path instead.
+// The producer under test is `failingTestRectification` — the rectifier prompt
+// the fix cycle dispatched until the fix strategies were deleted
+// (pipeline-story-ops-delete US-001). The other two rectifier prompt producers on
+// this builder (`escalated`, `regressionFailure`) have no production call site,
+// so threading affordance parameters through them would render regions no
+// dispatch ever sees; the ACs are pinned against the builder directly.
 
 describe("US-004 AC4 — rectifier per-failing-file block under native + RunCommand", () => {
   test("renders one RunCommand call per failing file with that file in values.files", () => {

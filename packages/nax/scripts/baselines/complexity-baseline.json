@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-07T05:37:12.092Z",
+  "updatedAt": "2026-11-07T08:10:26.504Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -73,9 +73,7 @@
     "src/mcp/pool.ts": { "open": 26 },
     "src/metrics/aggregator.ts": { "calculateAggregateMetrics": 28 },
     "src/metrics/tracker.ts": { "deriveContextMetrics": 40, "collectStoryMetrics": 26 },
-    "src/operations/full-suite-rectify.ts": { "=>": 21 },
     "src/operations/mutation-check.ts": { "execute": 55 },
-    "src/operations/test-edit-declaration.ts": { "parseTestEditDeclarations": 30 },
     "src/operations/verify-scoped.ts": { "execute": 24 },
     "src/pipeline/runner.ts": { "runPipeline": 50 },
     "src/pipeline/stages/completion.ts": { "execute": 39 },
