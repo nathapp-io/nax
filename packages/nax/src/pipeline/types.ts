@@ -293,8 +293,9 @@ export interface PipelineContext extends DispatchContext {
    * Test files failing at this story's full-suite gate (post-rectification).
    * Formerly captured by `applyPostRunInspection` from the gate output findings
    * (deleted with the post-run inspection layer, US-003), so nothing populates
-   * it today; it is still read into `StoryMetrics.failingTestFiles` for
-   * deferred-regression blame attribution when a producer returns.
+   * it today. The reader that turned it into `StoryMetrics.failingTestFiles`
+   * went with the constant metrics (US-002); the metric field itself stays for
+   * the rows older `metrics.json` files carry.
    * Absent when no gate ran or the gate passed cleanly.
    */
   fullSuiteGateFailingFiles?: string[];
@@ -303,10 +304,8 @@ export interface PipelineContext extends DispatchContext {
    * `success:true, failOpen:true` (LLM dispatch failed and the gate degraded
    * to a pass rather than blocking). Formerly set by `applyReviewsFailedOpen`,
    * which was removed with the review operations (C1 wave B2b-2) — nothing
-   * populates this field today and it is kept only because `StoryMetrics`
-   * still reads it — and surfaced in StoryMetrics.reviewsFailedOpen
-   * (ENH-20) so a run whose reviews were skipped is distinguishable from one
-   * that was actually reviewed and passed.
+   * populates this field today. The fail-open count it fed went with the
+   * constant metrics (US-002), so this field is dead too.
    */
   reviewsFailedOpen?: number;
   /** Structured review findings — passed to escalation for retry context */

@@ -271,14 +271,10 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   // Determine final tier (from last escalation or initial routing)
   const finalTier = escalationCount > 0 ? story.escalations[escalationCount - 1].toTier : routing.modelTier;
 
-  // rectifyAttempt > 0 means the rectify phase ran at least once within the story orchestrator.
-  // Disqualifies first-pass success (BUG-067 / issue #679).
-  const rectifyAttemptCount = ctx.rectifyAttempt ?? 0;
-
-  // First pass success = succeeded with no tier escalation, no cross-tier failures,
-  // and no rectify repair cycles (BUG-067 / issue #679)
-  const firstPassSuccess =
-    agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0 && rectifyAttemptCount === 0;
+  // First pass success = succeeded with no tier escalation and no cross-tier
+  // failures (BUG-067). The rectify term went with the rectify phase (US-002):
+  // nothing writes `ctx.rectifyAttempt`, so it was always 0.
+  const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
 
   // Extract model name and agent from config
   const agentUsed = routing.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
@@ -298,11 +294,6 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   // initialComplexity: prefer story.routing.initialComplexity (first classify),
   // fall back to routing.complexity for backward compat
   const initialComplexity = story.routing?.initialComplexity ?? routing.complexity;
-
-  // fullSuiteGatePassed: true only for TDD strategies when gate passes
-  const isTddStrategy =
-    routing.testStrategy === "three-session-tdd" || routing.testStrategy === "three-session-tdd-lite";
-  const fullSuiteGatePassed = isTddStrategy ? (ctx.fullSuiteGatePassed ?? false) : false;
 
   const fallbackHops = toFallbackHops(ctx.runtime.agentFallbacks.get(story.id), story.id);
 
@@ -329,12 +320,6 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     firstPassSuccess,
     startedAt: storyStartTime,
     completedAt: new Date().toISOString(),
-    fullSuiteGatePassed,
-    ...(ctx.fullSuiteGateFailingFiles && ctx.fullSuiteGateFailingFiles.length > 0
-      ? { failingTestFiles: ctx.fullSuiteGateFailingFiles }
-      : {}),
-    runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(story.id) ?? 0,
-    reviewsFailedOpen: ctx.reviewsFailedOpen ?? 0,
     ...(tokens !== undefined ? { tokens, tokenAttribution: "direct" as const } : {}),
     ...(contextMetrics !== undefined && { context: contextMetrics }),
     ...(fallbackHops.length > 0 && { fallback: { hops: fallbackHops } }),
@@ -348,9 +333,9 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
  * Creates individual story metrics for each story in the batch,
  * distributing the total cost and duration proportionally.
  *
- * Agent-swap hops and crash retries are NOT distributed — each story reads its own
- * id out of the run-scoped stores (nax#1709), so they are attributed where they were
- * actually recorded and counted once at run level.
+ * Agent-swap hops are NOT distributed — each story reads its own id out of the
+ * run-scoped store (nax#1709), so they are attributed where they were actually
+ * recorded and counted once at run level.
  *
  * @param ctx - Pipeline context with batch execution results
  * @param storyStartTime - Batch start timestamp (ISO string)
@@ -419,8 +404,6 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
       firstPassSuccess: true, // batch = first pass success
       startedAt: storyStartTime,
       completedAt: new Date().toISOString(),
-      fullSuiteGatePassed: false, // batches are not TDD-gated
-      runtimeCrashes: ctx.runtime.runtimeCrashRetries.get(story.id) ?? 0,
       ...(tokensPerStory !== undefined ? { tokens: tokensPerStory, tokenAttribution: "even-split" as const } : {}),
       ...(fallbackHops.length > 0 ? { fallback: { hops: fallbackHops } } : {}),
     };

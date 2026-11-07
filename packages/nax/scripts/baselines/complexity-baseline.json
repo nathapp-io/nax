@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-07T15:36:59.505Z",
+  "updatedAt": "2026-11-07T15:57:51.961Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -56,7 +56,7 @@
     "src/context/rules/canonical-loader/index.ts": { "loadCanonicalRulesFromDir": 25 },
     "src/context/test-scanner/index.ts": { "scanTestFiles": 29 },
     "src/execution/iteration-runner.ts": { "runIteration": 40 },
-    "src/execution/lifecycle/backfill-story-metrics.ts": { "synthesizeBackfillMetric": 23 },
+    "src/execution/lifecycle/backfill-story-metrics.ts": { "synthesizeBackfillMetric": 22 },
     "src/execution/lifecycle/precheck-runner.ts": { "runPrecheckValidation": 22 },
     "src/execution/lifecycle/run-cleanup.ts": { "cleanupRun": 29 },
     "src/execution/lifecycle/run-initialization.ts": { "initializeRun": 22 },
@@ -67,7 +67,7 @@
     "src/logger/logger.ts": { "log": 22 },
     "src/mcp/pool.ts": { "open": 26 },
     "src/metrics/aggregator.ts": { "calculateAggregateMetrics": 28 },
-    "src/metrics/tracker.ts": { "deriveContextMetrics": 40, "collectStoryMetrics": 26 },
+    "src/metrics/tracker.ts": { "deriveContextMetrics": 40 },
     "src/operations/verify-scoped.ts": { "execute": 24 },
     "src/pipeline/runner.ts": { "runPipeline": 50 },
     "src/pipeline/stages/completion.ts": { "execute": 39 },

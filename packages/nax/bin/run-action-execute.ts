@@ -197,9 +197,4 @@ export function printRunSummary(result: Awaited<ReturnType<typeof run>>): void {
   console.log(chalk.dim(`   Completed:   ${result.storiesCompleted}`));
   console.log(chalk.dim(`   Cost:        $${result.totalCost.toFixed(4)}`));
   console.log(chalk.dim(`   Duration:    ${(result.durationMs / 1000 / 60).toFixed(1)} min`));
-  // ENH-20: surface fail-open reviews distinctly — a run whose review
-  // checks were skipped (LLM outage) is not the same as reviewed-and-passed.
-  if (result.reviewsFailedOpen) {
-    console.log(chalk.yellow(`   Reviews failed open: ${result.reviewsFailedOpen} (not actually reviewed)`));
-  }
 }

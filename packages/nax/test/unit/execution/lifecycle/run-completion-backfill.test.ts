@@ -6,7 +6,7 @@
  * run.complete analytics and the fallback aggregates see it.
  *
  * Seam coverage (nax#1709) pins the wiring between the pure synthesizer and the aggregate rule:
- * the back-fill reading `runtime.agentFallbacks` / `runtime.runtimeCrashRetries` for a story
+ * the back-fill reading `runtime.agentFallbacks` for a story
  * that has aggregator cost and NO execution-phase StoryMetrics entry. nax#1707 got that binding
  * wrong (a declared field with no writer), so it must be pinned through the real back-fill.
  *
@@ -15,7 +15,7 @@
  *   - a story that failed having spent nothing (a fallback chain whose candidates all fail auth
  *     instantly), which kept deriveRunFallbackAggregates' exhausted rule unreachable;
  *   - a sibling of a failed batch, whose spend was filed under the batch's LEAD.
- * The domain is now the union of the aggregator's keys, the two run-scoped stores' keys, and
+ * The domain is now the union of the aggregator's keys, the run-scoped store's keys, and
  * the PRD stories that terminated as an execution failure.
  */
 
@@ -130,18 +130,13 @@ function makeSeamOpts(prd: PRD, runtime: NaxRuntime): RunCompletionOptions {
   };
 }
 
-function runtimeWith(
-  hops: Record<string, AgentFallbackRecord[]>,
-  crashes: Record<string, number>,
-  storyCosts: Record<string, number>,
-): NaxRuntime {
+function runtimeWith(hops: Record<string, AgentFallbackRecord[]>, storyCosts: Record<string, number>): NaxRuntime {
   const runtime = makeMockRuntime();
   Object.defineProperty(runtime, "costAggregator", {
     value: makeAggregatorWithStoryCost(storyCosts),
     writable: true,
   });
   for (const [id, records] of Object.entries(hops)) runtime.agentFallbacks.set(id, records);
-  for (const [id, n] of Object.entries(crashes)) runtime.runtimeCrashRetries.set(id, n);
   return runtime;
 }
 
@@ -185,12 +180,12 @@ function makeFailedBatchPRD(ids: string[]): PRD {
 }
 
 // ---------------------------------------------------------------------------
-// nax#1709 — the back-fill reads the run-scoped stores
+// nax#1709 — the back-fill reads the run-scoped store
 // ---------------------------------------------------------------------------
 
-describe("handleRunCompletion — nax#1709 back-fill reads the run-scoped stores", () => {
+describe("handleRunCompletion — nax#1709 back-fill reads the run-scoped store", () => {
   test("a failed story with no execution-phase metric still carries its swap hops", async () => {
-    const runtime = runtimeWith({ "US-001": [hop()] }, {}, { "US-001": 1.25 });
+    const runtime = runtimeWith({ "US-001": [hop()] }, { "US-001": 1.25 });
 
     const event = await captureRunCompleted(makeSeamOpts(makeFailedPRD("US-001"), runtime));
 
@@ -210,7 +205,6 @@ describe("handleRunCompletion — nax#1709 back-fill reads the run-scoped stores
           hop({ priorAgent: "claude", newAgent: "opencode", hop: 2, outcome: "fail-service-down", costUsd: 0.02 }),
         ],
       },
-      {},
       { "US-001": 1.25 },
     );
 
@@ -221,8 +215,8 @@ describe("handleRunCompletion — nax#1709 back-fill reads the run-scoped stores
     expect(event?.fallback?.totalWastedCostUsd).toBeCloseTo(0.07, 5);
   });
 
-  test("crash retries and hops reach the back-filled metric itself", async () => {
-    const runtime = runtimeWith({ "US-001": [hop()] }, { "US-001": 3 }, { "US-001": 1.25 });
+  test("hops reach the back-filled metric itself", async () => {
+    const runtime = runtimeWith({ "US-001": [hop()] }, { "US-001": 1.25 });
     const opts = makeSeamOpts(makeFailedPRD("US-001"), runtime);
 
     // handleRunCompletion back-fills into options.allStoryMetrics in place.
@@ -232,13 +226,12 @@ describe("handleRunCompletion — nax#1709 back-fill reads the run-scoped stores
     expect(metric).toBeDefined();
     expect(metric?.source).toBe("execution-failed");
     expect(metric?.success).toBe(false);
-    expect(metric?.runtimeCrashes).toBe(3);
     expect(metric?.fallback?.hops).toHaveLength(1);
     expect(metric?.fallback?.hops[0].storyId).toBe("US-001");
   });
 
   test("a story with no recorded swaps produces no fallback aggregate", async () => {
-    const runtime = runtimeWith({}, {}, { "US-001": 1.25 });
+    const runtime = runtimeWith({}, { "US-001": 1.25 });
 
     const event = await captureRunCompleted(makeSeamOpts(makeFailedPRD("US-001"), runtime));
 
@@ -253,7 +246,7 @@ describe("handleRunCompletion — nax#1709 back-fill reads the run-scoped stores
 describe("handleRunCompletion — back-fill domain covers every story that ran (#1721)", () => {
   test("AC-1: a zero-cost failed story with hops still gets a row carrying them", async () => {
     const zeroHop = hop({ costUsd: 0, outcome: "fail-auth" });
-    const runtime = runtimeWith({ "US-001": [zeroHop] }, {}, {});
+    const runtime = runtimeWith({ "US-001": [zeroHop] }, {});
     const opts = makeSeamOpts(makeFailedPRD("US-001"), runtime);
 
     await captureRunCompleted(opts);
@@ -265,7 +258,7 @@ describe("handleRunCompletion — back-fill domain covers every story that ran (
   });
 
   test("AC-2: the exhausted rule is reachable for a story that spent nothing", async () => {
-    const runtime = runtimeWith({ "US-001": [hop({ costUsd: 0, outcome: "fail-auth" })] }, {}, {});
+    const runtime = runtimeWith({ "US-001": [hop({ costUsd: 0, outcome: "fail-auth" })] }, {});
 
     const event = await captureRunCompleted(makeSeamOpts(makeFailedPRD("US-001"), runtime));
 
@@ -275,7 +268,7 @@ describe("handleRunCompletion — back-fill domain covers every story that ran (
   test("AC-3/AC-4: a failed batch's siblings get rows, not just the lead", async () => {
     // All spend is filed under the lead, matching how the cost aggregator groups a
     // batch: one session, ctx.storyId = US-001.
-    const runtime = runtimeWith({}, {}, { "US-001": 3.0 });
+    const runtime = runtimeWith({}, { "US-001": 3.0 });
     const opts = makeSeamOpts(makeFailedBatchPRD(["US-001", "US-002", "US-003"]), runtime);
 
     await captureRunCompleted(opts);
@@ -299,7 +292,7 @@ describe("handleRunCompletion — back-fill domain covers every story that ran (
         makeStory({ id: "US-002", status: "pending", passes: false, attempts: 0 }),
       ],
     });
-    const opts = makeSeamOpts(prd, runtimeWith({}, {}, { "US-001": 1.25 }));
+    const opts = makeSeamOpts(prd, runtimeWith({}, { "US-001": 1.25 }));
 
     await captureRunCompleted(opts);
 
@@ -307,7 +300,7 @@ describe("handleRunCompletion — back-fill domain covers every story that ran (
   });
 
   test("AC-6: a story already in allStoryMetrics is merged, not duplicated", async () => {
-    const opts = makeSeamOpts(makeFailedPRD("US-001"), runtimeWith({}, {}, { "US-001": 5.0 }));
+    const opts = makeSeamOpts(makeFailedPRD("US-001"), runtimeWith({}, { "US-001": 5.0 }));
     opts.allStoryMetrics.push({
       storyId: "US-001",
       complexity: "simple",
@@ -328,14 +321,5 @@ describe("handleRunCompletion — back-fill domain covers every story that ran (
     const rows = opts.allStoryMetrics.filter((m) => m.storyId === "US-001");
     expect(rows).toHaveLength(1);
     expect(rows[0].cost).toBe(5.0);
-  });
-
-  test("AC-7: a zero-cost failed story with only crash retries gets a row", async () => {
-    const opts = makeSeamOpts(makeFailedPRD("US-001"), runtimeWith({}, { "US-001": 2 }, {}));
-
-    await captureRunCompleted(opts);
-
-    const metric = opts.allStoryMetrics.find((m) => m.storyId === "US-001");
-    expect(metric?.runtimeCrashes).toBe(2);
   });
 });

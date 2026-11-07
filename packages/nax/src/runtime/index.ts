@@ -228,17 +228,6 @@ export interface NaxRuntime {
    * here, exactly as agent-swap hops do (nax#1707). Last write wins.
    */
   readonly lastAdapterFailure: Map<string, import("../context/engine").AdapterFailure>;
-  /**
-   * Run-scoped cumulative count of runtime-crash retries per story (BUG-070, nax#1707
-   * follow-up).
-   *
-   * The escalation layer no longer performs a runtime-crash same-tier retry, so
-   * nothing writes this map any more; the store survives only because the metrics
-   * that read it (`StoryMetrics.runtimeCrashes`) are still in place.
-   * Read by collectStoryMetrics as StoryMetrics.runtimeCrashes — sequential path only;
-   * the parallel executor builds its own StoryMetrics literals and does not read this.
-   */
-  readonly runtimeCrashRetries: Map<string, number>;
   /** Run-scoped per-(story, tier) fix-iteration + decline history (US-004). */
   readonly storyFixHistory: StoryFixHistory;
   /**
@@ -468,7 +457,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const agentFallbacks = new Map<string, AgentFallbackRecord[]>();
   const ladderSlots = new Map<string, import("../agents/ladder-slot").LadderSlot>();
   const lastAdapterFailure = new Map<string, import("../context/engine").AdapterFailure>();
-  const runtimeCrashRetries = new Map<string, number>();
   const storyFixHistory = createStoryFixHistory();
   const dirtyWorktrees = new Set<string>();
   const routingCache = new Map<string, RoutingDecision>();
@@ -566,7 +554,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     agentFallbacks,
     ladderSlots,
     lastAdapterFailure,
-    runtimeCrashRetries,
     storyFixHistory,
     dirtyWorktrees,
     dryRun: opts?.dryRun ?? false,

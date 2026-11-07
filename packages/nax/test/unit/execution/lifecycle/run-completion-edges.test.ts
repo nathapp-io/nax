@@ -105,7 +105,6 @@ function makeStoryMetrics(overrides: Partial<StoryMetrics> = {}): StoryMetrics {
     firstPassSuccess: true,
     startedAt: "2026-01-01T00:00:00.000Z",
     completedAt: "2026-01-01T00:01:00.000Z",
-    fullSuiteGatePassed: true,
     ...overrides,
   };
 }

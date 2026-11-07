@@ -32,8 +32,8 @@ export interface BackfillMetricArgs {
   /**
    * Total spend for this story (successful plus failed-dispatch). May be `0`:
    * nax#1714 — a story can fail having spent nothing (a fallback chain whose
-   * candidates all fail auth instantly), and its hops and crash retries are still
-   * worth recording. Nothing below branches on this being positive.
+   * candidates all fail auth instantly), and its hops are still worth recording.
+   * Nothing below branches on this being positive.
    */
   totalCostUsd: number;
   /** The failed-dispatch half of `totalCostUsd` (#1960). Omitted from the metric when zero. */
@@ -51,8 +51,6 @@ export interface BackfillMetricArgs {
    * where no execution happened.
    */
   fallbackHops?: readonly AgentFallbackHop[];
-  /** Runtime-crash retries tallied for this story during execution (nax#1709). */
-  runtimeCrashes?: number;
 }
 
 /**
@@ -60,9 +58,8 @@ export interface BackfillMetricArgs {
  *
  * nax#1714: this used to also require `attempts > 0`, which excluded a story that
  * died at session creation — it carries a failed status with no attempt recorded, and
- * so fell to the completion-phase placeholder that drops its hops and crash retries.
- * The requirement was redundant anyway: the branch it guards floors attempts at
- * `Math.max(1, ...)`.
+ * so fell to the completion-phase placeholder that drops its hops. The requirement was
+ * redundant anyway: the branch it guards floors attempts at `Math.max(1, ...)`.
  *
  * Exported because nax#1721's back-fill domain must admit stories using the same
  * definition this function branches on — a story the loop admits but this rejects
@@ -77,8 +74,7 @@ export function isExecutionFailure(story: UserStory | undefined): boolean {
  * Pure over its inputs — exported for unit testing.
  */
 export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics {
-  const { storyId, story, totalCostUsd, errorCostUsd, config, defaultAgent, timestamp, fallbackHops, runtimeCrashes } =
-    args;
+  const { storyId, story, totalCostUsd, errorCostUsd, config, defaultAgent, timestamp, fallbackHops } = args;
 
   if (story != null && isExecutionFailure(story)) {
     const tier = story.routing?.modelTier ?? "balanced";
@@ -110,7 +106,6 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
       startedAt: timestamp,
       completedAt: timestamp,
       source: "execution-failed",
-      runtimeCrashes: runtimeCrashes ?? 0,
       ...(fallbackHops && fallbackHops.length > 0 ? { fallback: { hops: [...fallbackHops] } } : {}),
     };
   }
@@ -131,7 +126,6 @@ export function synthesizeBackfillMetric(args: BackfillMetricArgs): StoryMetrics
     startedAt: timestamp,
     completedAt: timestamp,
     source: "completion-phase",
-    runtimeCrashes: 0,
   };
 }
 
@@ -159,7 +153,7 @@ export const RUN_LEVEL_STORY_KEY = "_run";
  * of its own.
  *
  * Aggregator keys come first so the pre-existing emission order is preserved; the
- * other sources only append ids that order did not already cover.
+ * other source only appends ids that order did not already cover.
  *
  * US-004: the run-level key is skipped from every source. It has cost and so passed
  * the evidence rule, which stamped a `storyId: ""` row into `storyMetrics` for spend
@@ -168,7 +162,6 @@ export const RUN_LEVEL_STORY_KEY = "_run";
 export function backfillDomain(input: {
   aggregatorKeys: Iterable<string>;
   fallbackKeys: Iterable<string>;
-  crashKeys: Iterable<string>;
   stories: readonly UserStory[];
 }): string[] {
   const ordered: string[] = [];
@@ -180,7 +173,6 @@ export function backfillDomain(input: {
   };
   for (const id of input.aggregatorKeys) add(id);
   for (const id of input.fallbackKeys) add(id);
-  for (const id of input.crashKeys) add(id);
   for (const story of input.stories) if (isExecutionFailure(story)) add(story.id);
   return ordered;
 }
@@ -189,18 +181,17 @@ export function backfillDomain(input: {
  * Whether a story in the domain has any evidence worth a metric.
  *
  * Preserves the original guard's purpose — do not synthesize a row for a story that
- * genuinely did nothing — without using cost as the proxy for it. A swap hop and a
- * crash retry are both evidence of something that can cost nothing, and a story that
- * terminated as an execution failure ran whether or not it left any of the three.
+ * genuinely did nothing — without using cost as the proxy for it. A swap hop is
+ * evidence of something that can cost nothing, and a story that terminated as an
+ * execution failure ran whether or not it left either of the two.
  * A `pending` story a cost limit stopped the run before reaching matches none.
  */
 export function hasBackfillEvidence(input: {
   costUsd: number;
   hopCount: number;
-  crashCount: number;
   story: UserStory | undefined;
 }): boolean {
-  return input.costUsd > 0 || input.hopCount > 0 || input.crashCount > 0 || isExecutionFailure(input.story);
+  return input.costUsd > 0 || input.hopCount > 0 || isExecutionFailure(input.story);
 }
 
 /**
@@ -219,11 +210,10 @@ export function applyBackfill(input: {
   aggByStory: Record<string, { totalCostUsd: number; totalErrorCostUsd: number }>;
   stories: readonly UserStory[];
   agentFallbacks: ReadonlyMap<string, AgentFallbackRecord[]>;
-  runtimeCrashRetries: ReadonlyMap<string, number>;
   config: NaxConfig;
   defaultAgent: string;
 }): void {
-  const { allStoryMetrics, aggByStory, stories, agentFallbacks, runtimeCrashRetries, config, defaultAgent } = input;
+  const { allStoryMetrics, aggByStory, stories, agentFallbacks, config, defaultAgent } = input;
   const existingIndex = new Map(allStoryMetrics.map((m, i) => [m.storyId, i]));
   // Indexed once: the widened domain can span every story, so a linear find per id
   // would be quadratic in PRD size.
@@ -233,7 +223,6 @@ export function applyBackfill(input: {
   const domain = backfillDomain({
     aggregatorKeys: Object.keys(aggByStory),
     fallbackKeys: agentFallbacks.keys(),
-    crashKeys: runtimeCrashRetries.keys(),
     stories,
   });
 
@@ -241,14 +230,13 @@ export function applyBackfill(input: {
     const snap = aggByStory[storyId];
     const errorCostUsd = snap?.totalErrorCostUsd ?? 0;
     const totalCostUsd = (snap?.totalCostUsd ?? 0) + errorCostUsd;
-    // nax#1709: the run-scoped stores outlive the per-attempt PipelineContext, so a
-    // story that failed in the execution stage still has its swap hops and crash
-    // retries here even though it never reached collectStoryMetrics.
+    // nax#1709: the run-scoped store outlives the per-attempt PipelineContext, so a
+    // story that failed in the execution stage still has its swap hops here even
+    // though it never reached collectStoryMetrics.
     const fallbackHops = toFallbackHops(agentFallbacks.get(storyId), storyId);
-    const runtimeCrashes = runtimeCrashRetries.get(storyId) ?? 0;
     const story = storyById.get(storyId);
     const hopCount = fallbackHops.length;
-    if (!hasBackfillEvidence({ costUsd: totalCostUsd, hopCount, crashCount: runtimeCrashes, story })) continue;
+    if (!hasBackfillEvidence({ costUsd: totalCostUsd, hopCount, story })) continue;
 
     const existingIdx = existingIndex.get(storyId);
     if (existingIdx === undefined) {
@@ -267,7 +255,6 @@ export function applyBackfill(input: {
           defaultAgent,
           timestamp,
           fallbackHops,
-          runtimeCrashes,
         }),
       );
       continue;

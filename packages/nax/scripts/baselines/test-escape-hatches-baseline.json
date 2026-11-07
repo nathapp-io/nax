@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1008
+    "looseCast": 1005
   },
-  "updatedAt": "2026-11-07T15:37:55.130Z",
+  "updatedAt": "2026-11-07T15:58:19.806Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -730,9 +730,6 @@
     },
     "test/unit/metrics/tracker.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/metrics/tracker-provider-cost.test.ts": {
-      "looseCast": 3
     },
     "test/ui/useAgentStreamEvents.test.tsx": {
       "looseCast": 2

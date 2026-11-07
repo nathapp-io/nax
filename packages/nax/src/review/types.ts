@@ -156,8 +156,7 @@ export interface ReviewCheckResult {
    *
    * Always accompanies `success: false` and is mutually exclusive with
    * `failOpen: true`: a fail-open check is a degraded PASS, while `noDispatch`
-   * is the absence of a review. Degraded-pass metrics (`RunResult.reviewsFailedOpen`)
-   * count only the former.
+   * is the absence of a review.
    */
   noDispatch?: boolean;
   /**
