@@ -3,7 +3,7 @@
   "feature": "pipeline-dead-fields-delete",
   "branchName": "feat/pipeline-dead-fields-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T16:13:01.346Z",
+  "updatedAt": "2026-11-07T16:38:34.479Z",
   "userStories": [
     {
       "id": "US-001",
@@ -203,14 +203,17 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Shared contract contraction spans context construction, runner dispatch and three live stages; persistence/event regressions and the runtime unknown-action error require coordinated behavioral tests."
+        "reasoning": "Shared contract contraction spans context construction, runner dispatch and three live stages; persistence/event regressions and the runtime unknown-action error require coordinated behavioral tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/pipeline/types.ts",
@@ -269,7 +272,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "eed5f5d08838a03181a5413e31a34d9e9959c1b7"
     },
     {
       "id": "US-004",
