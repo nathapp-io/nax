@@ -3,8 +3,11 @@
  *
  * Covers:
  * - Resolution chain order (per-package → root-config → detected → fallback)
- * - resolveReviewExcludePatterns parity with old hardcoded default
  * - Immutability and field consistency of ResolvedTestPatterns
+ *
+ * `resolveReviewExcludePatterns` (and the review-diff parity suite that pinned
+ * it) went with the pipeline review operations in US-003
+ * (pipeline-review-delete): its only caller was `review/prepare-inputs.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -12,12 +15,7 @@ import { makeNaxConfig } from "@test/helpers";
 import { testPatternConfigSelector } from "@/config";
 import type { TestPatternConfig } from "@/config/selectors";
 import type { DetectionResult } from "@/test-runners/detect";
-import {
-  _resolverDeps,
-  findPackageDir,
-  resolveReviewExcludePatterns,
-  resolveTestFilePatterns,
-} from "@/test-runners/resolver";
+import { _resolverDeps, findPackageDir, resolveTestFilePatterns } from "@/test-runners/resolver";
 
 const WORKDIR = "/fake/workdir";
 
@@ -333,101 +331,5 @@ describe("findPackageDir", () => {
     _resolverDeps.fileExists = async (p) => p === `${WORKDIR}/packages/api/package.json`;
     const result = await findPackageDir(`${WORKDIR}/packages/api/src/nested/deep/file.ts`, WORKDIR);
     expect(result).toBe("packages/api");
-  });
-});
-
-// ─── resolveReviewExcludePatterns ─────────────────────────────────────────────
-
-describe("resolveReviewExcludePatterns", () => {
-  test("user explicit array returned verbatim (including empty)", async () => {
-    const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR);
-    const explicit = [":!custom/"];
-    expect(resolveReviewExcludePatterns(explicit, resolved)).toEqual([":!custom/"]);
-    expect(resolveReviewExcludePatterns([], resolved)).toEqual([]);
-  });
-
-  test("undefined user patterns: derives from resolved patterns + well-known noise", async () => {
-    const config = makeNaxConfig({
-      execution: {
-        smartTestRunner: {
-          enabled: true,
-          fallback: "import-grep",
-          maxScanFiles: 200,
-          testFilePatterns: ["test/**/*.test.ts"],
-        },
-      },
-    });
-    const resolved = await resolveTestFilePatterns(config, WORKDIR);
-    const derived = resolveReviewExcludePatterns(undefined, resolved);
-
-    // Well-known test dirs always present
-    expect(derived).toContain(":!test/");
-    expect(derived).toContain(":!tests/");
-    expect(derived).toContain(":!__tests__/");
-    // Well-known suffixes
-    expect(derived).toContain(":!*.test.ts");
-    expect(derived).toContain(":!*.spec.ts");
-    expect(derived).toContain(":!*_test.go");
-    // nax noise paths
-    expect(derived).toContain(":!.nax/");
-    expect(derived).toContain(":!.nax-pids");
-  });
-
-  test("parity: default config excludePatterns match old hardcoded default", async () => {
-    const resolved = await resolveTestFilePatterns(makeNaxConfig(), WORKDIR);
-    const derived = resolveReviewExcludePatterns(undefined, resolved);
-    // Old hardcoded default; resolver produces ":!__tests__/" (without "**/" prefix) for
-    // __tests__ — a minor Phase 1 difference that's lower-risk in practice.
-    const mustContain = [
-      ":!test/",
-      ":!tests/",
-      ":!__tests__/",
-      ":!*_test.go",
-      ":!*.test.ts",
-      ":!*.spec.ts",
-      ":!.nax/",
-      ":!.nax-pids",
-    ];
-    for (const pattern of mustContain) {
-      expect(derived).toContain(pattern);
-    }
-  });
-
-  test("no duplicates in derived list", async () => {
-    const config = makeNaxConfig({
-      execution: {
-        smartTestRunner: {
-          enabled: true,
-          fallback: "import-grep",
-          maxScanFiles: 200,
-          testFilePatterns: ["test/**/*.test.ts"],
-        },
-      },
-    });
-    const resolved = await resolveTestFilePatterns(config, WORKDIR);
-    const derived = resolveReviewExcludePatterns(undefined, resolved);
-    expect(derived.length).toBe(new Set(derived).size);
-  });
-
-  test("colocated test patterns never exclude the source directory itself", async () => {
-    const config = makeNaxConfig({
-      execution: {
-        smartTestRunner: {
-          enabled: true,
-          fallback: "import-grep",
-          maxScanFiles: 200,
-          testFilePatterns: ["src/**/*.test.ts", "tests/**/*.py", "test_*.py"],
-        },
-      },
-    });
-    const resolved = await resolveTestFilePatterns(config, WORKDIR);
-    const derived = resolveReviewExcludePatterns(undefined, resolved);
-
-    expect(derived).not.toContain(":!src/");
-    expect(derived).not.toContain(":!*.py");
-    expect(derived).toContain(":!*.test.ts");
-    expect(derived).toContain(":!tests/");
-    expect(derived).toContain(":!test_*.py");
-    expect(derived).toContain(":!*/test_*.py");
   });
 });

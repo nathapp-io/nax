@@ -238,18 +238,6 @@
     "test/unit/scripts/check-story-workdir-access.test.ts": {
       "looseCast": 4
     },
-    "test/unit/review/review-iteration-store.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/review/ac-quote-validator.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/review/recurrence-demotion.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/review/semantic-categories.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/finish/pr-body.test.ts": {
       "looseCast": 1
     },

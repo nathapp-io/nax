@@ -1,14 +1,12 @@
 /**
- * Fix-review module barrel (US-001 + US-002).
+ * Fix-review module barrel.
  *
- * The verdict / op-output types and the model-resolution helper that the
- * scoped fix review and its consumers (US-003, US-004, US-005) share (US-001),
- * plus the working-tree snapshot / path-diff / scope-classification helpers
- * the US-003+ fix review calls (US-002).
+ * Exports the two working-tree helpers the scoped fix review runs on:
+ * `snapshotWorkingTree` and `changedPathsBetween` (from `./tree-snapshot`).
+ * Both throw on a git failure rather than returning an empty result, and both
+ * are the only symbols this module makes public — the verdict / op-output
+ * types, the model-resolution helper and the scope check belonged to the
+ * fix-review operation deleted in US-001 (pipeline-review-delete).
  */
 
-export { resolveFixReviewModel } from "./config";
-export type { FixScopeInput, FixScopeResult } from "./scope";
-export { checkFixScope } from "./scope";
-export { changedPathsBetween, diffBetween, snapshotWorkingTree } from "./tree-snapshot";
-export type { FixReviewOpOutput, FixReviewRequest, FixReviewVerdict } from "./types";
+export { changedPathsBetween, snapshotWorkingTree } from "./tree-snapshot";

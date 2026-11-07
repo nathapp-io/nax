@@ -39,7 +39,6 @@ export {
   _resolverDeps,
   buildResolved,
   findPackageDir,
-  resolveReviewExcludePatterns,
   resolveTestFilePatterns,
 } from "./resolver";
 export type { SelectScopedTestsInput, SelectScopedTestsResult } from "./scoped-selection";

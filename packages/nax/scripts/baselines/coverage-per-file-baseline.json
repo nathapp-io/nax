@@ -7,7 +7,6 @@
     "src/findings/story-fix-history.ts": 0.75,
     "src/operations/implement.ts": 0.783,
     "src/operations/write-test.ts": 0.728,
-    "src/review/no-dispatch.ts": 0.25,
     "src/verification/flake-baseline-diff.ts": 0.109,
     "src/verification/rectification.ts": 0
   }

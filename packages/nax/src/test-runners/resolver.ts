@@ -21,13 +21,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { TestPatternConfig } from "../config/selectors";
 import { NaxError } from "../errors";
 import { getSafeLogger } from "../logger";
-import {
-  DEFAULT_TEST_FILE_PATTERNS,
-  extractTestDirs,
-  extractWholeTestDirs,
-  globsToPathspec,
-  globsToTestRegex,
-} from "./conventions";
+import { DEFAULT_TEST_FILE_PATTERNS, extractTestDirs, globsToPathspec, globsToTestRegex } from "./conventions";
 import type { DetectionResult } from "./detect";
 import { detectTestFilePatterns } from "./detect";
 
@@ -54,27 +48,6 @@ export interface ResolvedTestPatterns {
    */
   readonly resolution: "per-package" | "root-config" | "detected" | "fallback";
 }
-
-// ─── Parity constants (§4.4) ──────────────────────────────────────────────────
-
-/**
- * Well-known test directory names always excluded from review diffs.
- *
- * Included in the derived `excludePatterns` regardless of user config to
- * prevent regressing against the current hardcoded default and to handle
- * polyglot repos where some directories may not be covered by user patterns.
- */
-const WELL_KNOWN_TEST_DIRS = ["test", "tests", "__tests__"] as const;
-
-/**
- * Well-known test file suffixes always excluded from review diffs.
- * Prevents vendored test files from leaking into semantic review even when
- * the user configures non-default `testFilePatterns`.
- */
-const WELL_KNOWN_TEST_SUFFIXES = ["*.test.ts", "*.spec.ts", "*_test.go"] as const;
-
-/** nax metadata paths — always noise, always excluded. */
-const NAX_NOISE_PATHS = [".nax/", ".nax-pids"] as const;
 
 // ─── Injectable deps ──────────────────────────────────────────────────────────
 
@@ -218,40 +191,6 @@ export async function resolveTestFilePatterns(
 
   // 4. Fallback to canonical default
   return buildResolved(DEFAULT_TEST_FILE_PATTERNS, "fallback");
-}
-
-/**
- * Resolve the effective `excludePatterns` list for review diff exclusion.
- *
- * When the user has set `excludePatterns` explicitly (any value, including
- * empty array) → returned verbatim. User override always wins.
- *
- * When `userExplicit` is `undefined` → derives from resolved test patterns +
- * well-known noise dirs. Derivation preserves parity with the current
- * hardcoded default for TS projects (see §4.4 of the spec for proof).
- */
-export function resolveReviewExcludePatterns(
-  userExplicit: readonly string[] | undefined,
-  resolved: ResolvedTestPatterns,
-): readonly string[] {
-  if (userExplicit !== undefined) return userExplicit;
-
-  const result = new Set<string>();
-
-  // 1. Project's resolved test patterns (from user config / detection).
-  //    Only directories that hold nothing but tests: `src/**/*.test.ts` must not exclude `src/`.
-  for (const p of resolved.pathspec) result.add(p);
-  for (const d of extractWholeTestDirs(resolved.globs)) result.add(`:!${d}/`);
-
-  // 2. Well-known test dirs/suffixes — always excluded to prevent regression
-  //    vs. current hardcoded default and to handle polyglot repos.
-  for (const d of WELL_KNOWN_TEST_DIRS) result.add(`:!${d}/`);
-  for (const s of WELL_KNOWN_TEST_SUFFIXES) result.add(`:!${s}`);
-
-  // 3. nax noise paths
-  for (const p of NAX_NOISE_PATHS) result.add(`:!${p}`);
-
-  return [...result];
 }
 
 /**

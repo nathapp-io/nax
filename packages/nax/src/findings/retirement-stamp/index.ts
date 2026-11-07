@@ -18,17 +18,19 @@ import { fingerprintFor } from "../fingerprint";
 import type { Finding } from "../types";
 
 /**
- * Disposition string the stamp may carry. Mirrors the union that
- * `classifyRecurrence` (`src/review/recurrence-demotion.ts`) writes; kept
- * inline here to avoid a value import through `@/review/recurrence-demotion`
- * from `src/prompts/...` (cycles), and to avoid re-importing the wider
+ * Disposition string the stamp may carry. Mirrors the union the deleted
+ * `classifyRecurrence` (`src/review/recurrence-demotion.ts`, removed with the
+ * pipeline review operations in C1 wave B2b-2) wrote; kept inline here to
+ * avoid a value import through `@/review/recurrence-demotion` from
+ * `src/prompts/...` (cycles), and to avoid re-importing the wider
  * `@/findings` barrel from `src/execution/...` (cycles).
  */
 export type RecurrenceDisposition = "blocking" | "advisory" | "demoted" | "retired";
 
 /**
  * The shape US-001 stamps onto `meta.recurrence`. Field names mirror
- * `stampRecurrence` in `src/review/recurrence-demotion.ts` exactly.
+ * `stampRecurrence` in the deleted `src/review/recurrence-demotion.ts` exactly,
+ * so stamps written by earlier runs still read correctly here.
  */
 export interface RecurrenceStamp {
   disposition: RecurrenceDisposition;
@@ -71,16 +73,18 @@ export function readRecurrenceDisposition(f: Finding): RecurrenceDisposition | u
  * Identity for "is THIS finding the same defect a retired stamp was written
  * for?" — `fingerprintFor` by another name.
  *
- * This is a THIN wrapper, deliberately: the identity that decides a finding is
- * retired (`classifyRecurrence` in `src/review/recurrence-demotion.ts`) and the
- * identity that suppresses the earlier-round / elsewhere copy of it must be the
- * same function, not two implementations that agree today. Both read
- * `@/findings/fingerprint`, the shared dependency-free module — a fork here
- * (even a faithful one, with a "keep in sync" comment) fails silently: the
- * prompt would keep a copy the classifier retired, or suppress one it did not,
- * and each copy's own tests would stay green.
+ * This is a THIN wrapper, deliberately: the identity that decided a finding was
+ * retired (`classifyRecurrence` in `src/review/recurrence-demotion.ts`, deleted
+ * with the pipeline review operations in C1 wave B2b-2) and the identity that
+ * suppresses the earlier-round / elsewhere copy of it must be the same function,
+ * not two implementations that agree today. Both read `@/findings/fingerprint`,
+ * the shared dependency-free module — a fork here (even a faithful one, with a
+ * "keep in sync" comment) fails silently: the prompt would keep a copy the
+ * classifier retired, or suppress one it did not, and each copy's own tests
+ * would stay green. A future recurrence classifier must reuse this wrapper, not
+ * re-derive the key.
  *
- * The `text` argument is the persisted `Finding.message`; the classifier passes
+ * The `text` argument is the persisted `Finding.message`; the classifier passed
  * the wire-shape `issue`. Same field, same normaliser.
  */
 export function retirementIdentity(f: Finding): string {

@@ -3,38 +3,24 @@
  *
  * Covers:
  * - resolveEffectiveRef: valid ref, merge-base fallback, both-invalid undefined
- * - collectDiff: correct spawn args, non-zero exit returns ""
- * - collectDiffStat: --stat flag passed to spawn
  * - truncateDiff: passthrough under cap, truncation with stat preamble
- * - computeTestInventory: test file classification, untested source detection, non-zero exit
+ * - collectDiffFileList: parsed file list, no output, git failure, BUG-31 timeout
+ *
+ * The embedded-diff collectors (`collectDiff`, `collectDiffStat`) and
+ * `computeTestInventory` were deleted with the embedded-diff prompt path in
+ * US-003 (pipeline-review-delete); `collectDiffFileList` is the surviving
+ * collector and carries the BUG-31 hung-git deadline assertions with it.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeSpawn } from "@test/helpers";
-import {
-  _diffUtilsDeps,
-  collectDiff,
-  collectDiffFileList,
-  collectDiffStat,
-  computeTestInventory,
-  DIFF_CAP_BYTES,
-  resolveEffectiveRef,
-  truncateDiff,
-} from "@/review";
+import { _diffUtilsDeps, collectDiffFileList, DIFF_CAP_BYTES, resolveEffectiveRef, truncateDiff } from "@/review";
 
 // ─── Mock helpers ──────────────────────────────────────────────────────────────
 
 /** Build a mock spawn that returns the provided stdout with the given exit code. */
 function makeSpawnMock(stdout: string, exitCode = 0) {
   return makeSpawn(() => ({ exitCode, stdout })).spawn;
-}
-
-/** Build a mock spawn that captures cmd args and returns stdout. */
-function makeCapturingSpawnMock(stdout: string, capturedCmd: { value?: string[] }) {
-  return makeSpawn(({ cmd }) => {
-    capturedCmd.value = cmd;
-    return stdout;
-  }).spawn;
 }
 
 // ─── Dep originals ─────────────────────────────────────────────────────────────
@@ -98,83 +84,6 @@ describe("resolveEffectiveRef()", () => {
   });
 });
 
-// ─── collectDiff ──────────────────────────────────────────────────────────────
-
-describe("collectDiff()", () => {
-  test("calls spawn with correct args: ref..HEAD, excludePatterns, and always-excluded paths", async () => {
-    const captured: { value?: string[] } = {};
-    _diffUtilsDeps.spawn = makeCapturingSpawnMock("diff output", captured);
-
-    await collectDiff("/repo", "abc123", [":!test/"]);
-
-    expect(captured.value).toBeDefined();
-    expect(captured.value).toContain("git");
-    expect(captured.value).toContain("diff");
-    expect(captured.value).toContain("abc123..HEAD");
-    expect(captured.value).toContain(":!test/");
-    // Always-excluded paths
-    expect(captured.value).toContain(":!.nax/");
-    expect(captured.value).toContain(":!.nax-pids");
-  });
-
-  // Single-frame redesign: the agent's file tools are now repo-rooted, so the
-  // reviewer can read repo-root-relative paths directly. These collectors share
-  // collectDiffFileList's no---relative convention; the collector's own cwd
-  // (`workdir`, still the package dir) scopes the bare `-- .` pathspec.
-  test("omits --relative because the agent's tools are repo-rooted; bare -- . scopes to cwd", async () => {
-    const captured: { value?: string[] } = {};
-    _diffUtilsDeps.spawn = makeCapturingSpawnMock("diff output", captured);
-
-    await collectDiff("/repo/packages/lib", "abc123", []);
-
-    expect(captured.value).not.toContain("--relative");
-    expect(captured.value).toContain("--");
-    expect(captured.value).toContain(".");
-  });
-
-  test("returns stdout string on exit code 0; null on non-zero", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("diff content");
-    expect(await collectDiff("/repo", "abc123", [])).toBe("diff content");
-
-    _diffUtilsDeps.spawn = makeSpawnMock("some output", 1);
-    expect(await collectDiff("/repo", "abc123", [])).toBeNull();
-  });
-});
-
-// ─── collectDiffStat ──────────────────────────────────────────────────────────
-
-describe("collectDiffStat()", () => {
-  test("calls spawn with --stat flag", async () => {
-    const captured: { value?: string[] } = {};
-    _diffUtilsDeps.spawn = makeCapturingSpawnMock("stat output", captured);
-
-    await collectDiffStat("/repo", "abc123");
-
-    expect(captured.value).toBeDefined();
-    expect(captured.value).toContain("--stat");
-    expect(captured.value).toContain("abc123..HEAD");
-  });
-
-  // Same consolidation as collectDiff above: repo-rooted agent tools, cwd-scoped
-  // bare `-- .` pathspec, no --relative.
-  test("omits --relative (shares collectDiffFileList's convention)", async () => {
-    const captured: { value?: string[] } = {};
-    _diffUtilsDeps.spawn = makeCapturingSpawnMock("stat output", captured);
-
-    await collectDiffStat("/repo/packages/lib", "abc123");
-
-    expect(captured.value).not.toContain("--relative");
-  });
-
-  test("returns trimmed stdout on success; empty string on non-zero exit code", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("  stat output  ");
-    expect(await collectDiffStat("/repo", "abc123")).toBe("stat output");
-
-    _diffUtilsDeps.spawn = makeSpawnMock("stat output", 2);
-    expect(await collectDiffStat("/repo", "abc123")).toBe("");
-  });
-});
-
 // ─── truncateDiff ─────────────────────────────────────────────────────────────
 
 describe("truncateDiff()", () => {
@@ -201,60 +110,6 @@ describe("truncateDiff()", () => {
   });
 });
 
-// ─── computeTestInventory ─────────────────────────────────────────────────────
-
-describe("computeTestInventory() path convention", () => {
-  // Single-frame redesign: this inventory is rendered alongside the embedded
-  // diff as paths the (now repo-rooted) agent is told to inspect. It shares
-  // collectDiffFileList's no---relative convention; the bare `-- .` pathspec
-  // still scopes output to the collector's cwd (`workdir`).
-  test("scopes to the workdir via bare -- . and emits no --relative", async () => {
-    const captured: { value?: string[] } = {};
-    _diffUtilsDeps.spawn = makeCapturingSpawnMock("", captured);
-
-    await computeTestInventory("/repo/packages/lib", "abc123");
-
-    expect(captured.value).not.toContain("--relative");
-    expect(captured.value).toContain("--");
-    expect(captured.value).toContain(".");
-  });
-});
-
-describe("computeTestInventory()", () => {
-  test("classifies .test.ts and .spec.ts files as addedTestFiles", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("src/foo/bar.ts\ntest/unit/foo/bar.test.ts\n");
-    expect((await computeTestInventory("/repo", "abc123")).addedTestFiles).toContain("test/unit/foo/bar.test.ts");
-
-    _diffUtilsDeps.spawn = makeSpawnMock("src/utils.ts\nsrc/utils.spec.ts\n");
-    expect((await computeTestInventory("/repo", "abc123")).addedTestFiles).toContain("src/utils.spec.ts");
-  });
-
-  test("classifies source files with no matching test as newSourceFilesWithoutTests", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("src/foo/orphan.ts\n");
-
-    const result = await computeTestInventory("/repo", "abc123");
-
-    expect(result.newSourceFilesWithoutTests).toContain("src/foo/orphan.ts");
-  });
-
-  test("does not flag source file as untested when a matching test file was added", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("src/foo/bar.ts\ntest/unit/foo/bar.test.ts\n");
-
-    const result = await computeTestInventory("/repo", "abc123");
-
-    expect(result.newSourceFilesWithoutTests).not.toContain("src/foo/bar.ts");
-  });
-
-  test("returns empty arrays on non-zero exit code", async () => {
-    _diffUtilsDeps.spawn = makeSpawnMock("src/foo/bar.ts\n", 1);
-
-    const result = await computeTestInventory("/repo", "abc123");
-
-    expect(result.addedTestFiles).toHaveLength(0);
-    expect(result.newSourceFilesWithoutTests).toHaveLength(0);
-  });
-});
-
 describe("collectDiffFileList", () => {
   test("returns parsed file list on git success", async () => {
     _diffUtilsDeps.spawn = makeSpawnMock("src/a.ts\nsrc/b.ts\n", 0);
@@ -276,13 +131,15 @@ describe("collectDiffFileList", () => {
 
 // BUG-31: a hung git (NFS / lock contention) must not stall the review
 // stage indefinitely. The runGitWithTimeout wrapper applies a SIGKILL
-// deadline so collectDiff resolves with null rather than blocking forever.
-describe("collectDiff() — BUG-31: hung git returns rather than blocking", () => {
+// deadline so the collector resolves rather than blocking forever; it covers
+// both surviving collectors, so the deadline is pinned on the survivor after
+// `collectDiff` went with the embedded-diff prompt path (US-003).
+describe("collectDiffFileList() — BUG-31: hung git returns rather than blocking", () => {
   /**
    * The SIGKILL deadline under test, shrunk from the production GIT_TIMEOUT_MS
    * (10s) so the hang path costs milliseconds instead of ten seconds. The
    * contract exercised is identical — the timer fires, git is SIGKILLed, and
-   * collectDiff resolves null — and the tightened bound below is strictly
+   * the collector resolves — and the tightened bound below is strictly
    * stronger than the 60s one it replaces.
    */
   const TEST_TIMEOUT_MS = 50;
@@ -298,7 +155,7 @@ describe("collectDiff() — BUG-31: hung git returns rather than blocking", () =
     _diffUtilsDeps.timeoutMs = origTimeout;
   });
 
-  test("returns null within the deadline when proc.exited never resolves", async () => {
+  test("returns undefined within the deadline when proc.exited never resolves", async () => {
     const hungSpawn = makeSpawn(() => ({
       // Promise that never resolves — the timeout must save us.
       hang: true,
@@ -306,10 +163,12 @@ describe("collectDiff() — BUG-31: hung git returns rather than blocking", () =
     _diffUtilsDeps.spawn = hungSpawn;
 
     const start = Date.now();
-    const out = await collectDiff("/workdir", "abc123", []);
+    const out = await collectDiffFileList("/workdir", "abc123");
     const elapsed = Date.now() - start;
 
-    expect(out).toBeNull();
+    // `undefined` is the collector's "git failed" result: the deadline fired,
+    // so the caller degrades instead of treating a wedged git as "no changes".
+    expect(out).toBeUndefined();
     // Assert the call returned on the timeout path rather than blocking
     // indefinitely (pre-fix: hangs forever on the never-resolving `exited`).
     expect(elapsed).toBeLessThan(1_000);

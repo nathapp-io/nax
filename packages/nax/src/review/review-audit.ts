@@ -25,13 +25,13 @@ import type { ReviewAck } from "./types";
  * What a reviewer hands the audit as an advisory finding.
  *
  * #1861 ruling: the review audit persists `Finding` — the shape
- * `operations/{adversarial,semantic}-review.ts` (the live op path) actually
- * writes. #942's canonical-`ReviewFinding` clause is obsolete for LLM
- * findings: measured over 5,346 real `review-audit/*.json` records, the live
- * path never wrote `ReviewFinding`, so that clause tested a shape production
- * never produced. `review/{adversarial,semantic}-outcomes.ts`, the only
- * would-be `ReviewFinding` producer, was itself an unreachable entry point
- * (#1859) and is deleted.
+ * `operations/{adversarial,semantic}-review.ts` (the live op path until C1 wave
+ * B2b-2 deleted it) actually wrote. #942's canonical-`ReviewFinding` clause is
+ * obsolete for LLM findings: measured over 5,346 real `review-audit/*.json`
+ * records, the live path never wrote `ReviewFinding`, so that clause tested a
+ * shape production never produced. `review/{adversarial,semantic}-outcomes.ts`,
+ * the only would-be `ReviewFinding` producer, was itself an unreachable entry
+ * point (#1859) and is deleted.
  *
  * Typed as `Finding` rather than `unknown[]` because of #1816: the summary
  * mapper read `f.issue`, a field `Finding` does not have, and a structural

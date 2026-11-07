@@ -106,8 +106,9 @@ export const AdversarialReviewConfigSchema = z.object({
   /** LLM call timeout in milliseconds. Default 600s (matches semantic — both review paths may need full tool traversal). */
   timeoutMs: z.number().int().positive().default(600_000),
   /**
-   * Pathspec exclusions applied in embedded mode (to collectDiff) and in ref mode
-   * (shown in the prompt's git commands).
+   * Pathspec exclusions for the review diff — in the (since deleted) embedded
+   * mode they reached the `collectDiff` collector, in ref mode they appear in
+   * the prompt's git commands.
    *
    * Optional — undefined means "derive from testFilePatterns + noise dirs" (adversarial
    * defaults to minimal exclusions so it sees test files). Any user-set value (including [])
