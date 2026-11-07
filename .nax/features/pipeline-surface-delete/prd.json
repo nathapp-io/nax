@@ -3,7 +3,7 @@
   "feature": "pipeline-surface-delete",
   "branchName": "feat/pipeline-surface-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T12:50:05.804Z",
+  "updatedAt": "2026-11-07T13:11:01.874Z",
   "userStories": [
     {
       "id": "US-001",
@@ -294,14 +294,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module deletion touching role-conditional session dispatch and shared prompt composition; strict isolation protects the session/role seam while proving the former branch stays empty."
+        "reasoning": "Cross-module deletion touching role-conditional session dispatch and shared prompt composition; strict isolation protects the session/role seam while proving the former branch stays empty.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/call-dispatch-prologue.ts",
@@ -355,7 +358,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "cd121d80e1a6c5d199e70f663fcb1e894b2dfe73"
     },
     {
       "id": "US-004",
