@@ -1,6 +1,6 @@
 /**
  * A1 advisor operation (spec §4.4, §12.1). A verdict-only, read-only run op: it rules on one judgment
- * call and returns a typed reply. Like `fixReviewOp`, it has no parse retry — a missing, invalid or
+ * call and returns a typed reply. It declares no parse retry — a missing, invalid or
  * off-menu reply is a typed `{ ok: false }`, which the advisor service turns into a safe fallback.
  */
 

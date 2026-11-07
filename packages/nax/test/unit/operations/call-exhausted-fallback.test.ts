@@ -410,7 +410,7 @@ describe("callOp empty-output — no regression: non-empty output uses op.parse"
 // ---------------------------------------------------------------------------
 // BUG-62 regression: a provider-refusal turn (non-empty output, no op.recover,
 // strict op.parse that throws on non-JSON) must still return exhaustedFallback,
-// not a raw TurnResult — mirrors adversarialReviewOp's shape (strict parser +
+// not a raw TurnResult — mirrors a strict review op's shape (strict parser +
 // exhaustedFallback + no op.recover).
 // ---------------------------------------------------------------------------
 
@@ -455,7 +455,7 @@ describe("callOp — BUG-62: provider-refusal turn with a strict parser returns 
           prompts: { invalid: () => "reformat as JSON", truncated: () => "truncated — resend" },
           exhaustedFallback: () => FAIL_OPEN,
         }),
-      // Strict — mirrors adversarialReviewOp: throws on non-JSON instead of degrading gracefully.
+      // Strict — mirrors a strict review op: throws on non-JSON instead of degrading gracefully.
       parse: (output) => {
         return JSON.parse(output);
       },

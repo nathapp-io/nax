@@ -64,8 +64,9 @@ export interface LLMResponse {
  *
  * Category normalization happens HERE, not only in `llmFindingToFinding`,
  * because most consumers read the accepted `LLMFinding[]` directly rather
- * than the converted `Finding[]`: the raw findings are what
- * `operations/semantic-review.ts` persists as `ReviewAuditEntry.result.findings`
+ * than the converted `Finding[]`: the raw findings are what the (now deleted,
+ * C1 wave B2b-2) pipeline semantic review op persisted as
+ * `ReviewAuditEntry.result.findings`
  * (#1861 — the review audit persists the raw op shape, not a canonical
  * projection), and the curator's `findingRuleId()` derives a ruleId from that
  * raw record's `category` (falling back past `ruleId`/`rule`/`checkId`, none

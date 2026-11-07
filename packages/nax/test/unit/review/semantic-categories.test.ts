@@ -185,8 +185,9 @@ describe("downstream consumers read the normalized category", () => {
   test("review-audit / curator ruleId is derived from the canonical category", () => {
     // `Partial` and `partial` must not split into two curator H1 buckets.
     //
-    // #1861: the review audit persists the raw LLM finding (via
-    // `llmFindingToFinding` on the live op path, `operations/semantic-review.ts`),
+    // #1861: the review audit persisted the raw LLM finding (via
+    // `llmFindingToFinding` on the pipeline op path, whose semantic review op
+    // was deleted with C1 wave B2b-2),
     // which carries no `ruleId`/`rule`/`checkId`. Curator's `findingRuleId()`
     // (`src/plugins/builtin/curator/collect.ts`) falls back to `category` in
     // that case — so canonicalising category at the parse boundary is what

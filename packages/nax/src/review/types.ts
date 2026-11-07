@@ -366,7 +366,8 @@ export interface ReviewConfig {
  *
  * Without this, the two shapes can silently diverge — which they already had:
  * `SemanticReviewConfig.acRegroundOnDrop` existed here and was read
- * unconditionally by `src/operations/semantic-review.ts`, but the schema had
+ * unconditionally by the pipeline semantic review op (deleted with C1 wave
+ * B2b-2), but the schema had
  * no such field, so it was always `undefined` at runtime and the knob could
  * never be disabled via config (fixed alongside this guard, see
  * schemas-review.ts). This assertion fails `bun run typecheck` the moment

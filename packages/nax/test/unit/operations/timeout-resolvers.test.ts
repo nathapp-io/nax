@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeTestRuntime, opModelResolver, opSelector } from "@test/helpers";
-import { adversarialReviewOp, decomposeOp, planInteractiveOp, semanticReviewOp } from "@/operations";
+import { decomposeOp, planInteractiveOp } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
 let runtime: NaxRuntime | undefined;
@@ -83,60 +83,5 @@ describe("operation timeout resolvers", () => {
     );
 
     expect(model).toEqual({ agent: "opencode", model: "opencode-go/deepseek-v4-pro" });
-  });
-
-  test("semanticReviewOp timeoutMs resolves from semanticConfig.timeoutMs input", () => {
-    runtime = makeTestRuntime();
-    const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(opSelector(semanticReviewOp.config)) };
-    const timeoutMs = semanticReviewOp.timeoutMs?.(
-      {
-        workdir: "/tmp/test",
-        story: {
-          id: "US-001",
-          title: "title",
-          description: "desc",
-          acceptanceCriteria: ["AC-1"],
-        },
-        semanticConfig: {
-          model: "balanced",
-          diffMode: "ref",
-          resetRefOnRerun: false,
-          rules: [],
-          timeoutMs: 321_000,
-        },
-        mode: "ref",
-      },
-      ctx,
-    );
-    expect(timeoutMs).toBe(321_000);
-  });
-
-  test("adversarialReviewOp timeoutMs resolves from adversarialConfig.timeoutMs input", () => {
-    runtime = makeTestRuntime();
-    const view = runtime.packages.repo();
-    const ctx = { packageView: view, config: view.select(opSelector(adversarialReviewOp.config)) };
-    const timeoutMs = adversarialReviewOp.timeoutMs?.(
-      {
-        workdir: "/tmp/test",
-        story: {
-          id: "US-002",
-          title: "title",
-          description: "desc",
-          acceptanceCriteria: ["AC-1"],
-        },
-        adversarialConfig: {
-          model: "balanced",
-          diffMode: "ref",
-          rules: [],
-          timeoutMs: 654_000,
-          parallel: false,
-          maxConcurrentSessions: 2,
-        },
-        mode: "ref",
-      },
-      ctx,
-    );
-    expect(timeoutMs).toBe(654_000);
   });
 });

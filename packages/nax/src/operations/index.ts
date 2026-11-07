@@ -1,6 +1,4 @@
 export { findingsToFailedChecks } from "./_finding-to-check";
-export type { AdversarialReviewInput, AdversarialReviewOutput } from "./adversarial-review";
-export { adversarialReviewOp } from "./adversarial-review";
 export { type AdviseOpInput, type AdviseOpOutput, adviseOp, validateAdvisorReply } from "./advise";
 export {
   type AdviseBatchOpInput,
@@ -54,8 +52,6 @@ export {
   shouldRunRectification,
   shouldRunReview,
 } from "./execution-gates";
-export type { FixReviewOpInput } from "./fix-review";
-export { fixReviewOp } from "./fix-review";
 export type {
   FullSuiteGateDeps,
   FullSuiteGateInput,
@@ -94,15 +90,6 @@ export {
 } from "./mechanical-lintfix-strategy";
 export type { MutationCheckDeps, MutationCheckInput, MutationCheckOutput } from "./mutation-check";
 export { _mutationCheckDeps, mutationCheckOp } from "./mutation-check";
-export type {
-  NbfWorthCheckOpInput,
-  NbfWorthCheckOpOutput,
-  NbfWorthCheckPendingStory,
-  NbfWorthVerdict,
-} from "./nbf-worth-check";
-export { _nbfWorthCheckDeps, nbfWorthCheckOp, parseNbfWorthReply } from "./nbf-worth-check";
-export type { NbfWorthCheckAuditFile, NbfWorthCheckRecord } from "./nbf-worth-check-audit";
-export { _nbfWorthCheckAuditDeps, recordNbfWorthCheck } from "./nbf-worth-check-audit";
 export type { OpModelPreview } from "./op-model-preview";
 export { previewOpModel } from "./op-model-preview";
 export type { PlanInteractiveInput } from "./plan";
@@ -120,8 +107,6 @@ export type { RectifyInput, RectifyOutput } from "./rectify";
 export { rectifyOp } from "./rectify";
 export type { SelfHealSpec, SelfHealStep } from "./self-heal";
 export { makeSelfHealStep, runSelfHealChain } from "./self-heal";
-export type { SemanticReviewInput, SemanticReviewOutput } from "./semantic-review";
-export { semanticReviewOp } from "./semantic-review";
 export type { MonoPackageConfig, RawSetupPlan, SetupPlan } from "./setup-generate";
 export { MAX_SETUP_LLM_ATTEMPTS, setupGenerateOp } from "./setup-generate";
 export type { TestEditDeclaration } from "./test-edit-declaration";

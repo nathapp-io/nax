@@ -1,7 +1,7 @@
 /**
  * Tests for adversarial findings carrying fixTarget through
- * `toAdversarialReviewFindings` — the live op path's LLMFinding -> Finding
- * converter (`operations/adversarial-review.ts`).
+ * `toAdversarialReviewFindings` — the LLMFinding -> Finding converter of the
+ * pipeline adversarial review op, deleted with C1 wave B2b-2.
  *
  * US-002 — every AC must be covered by exactly one test.
  *

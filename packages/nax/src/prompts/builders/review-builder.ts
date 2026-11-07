@@ -1,7 +1,8 @@
 /**
  * ReviewPromptBuilder — centralises semantic review prompt construction.
  *
- * Owns the semantic reviewer prompt, consumed by `src/operations/semantic-review.ts` via `callOp`.
+ * Owns the semantic reviewer prompt. Its only consumer was the pipeline semantic
+ * review op, deleted with C1 wave B2b-2.
  * Extracted from the inline `buildPrompt()` function in semantic.ts.
  *
  * Imports types from src/review/types.ts (not src/review/semantic.ts) to

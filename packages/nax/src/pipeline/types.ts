@@ -301,9 +301,10 @@ export interface PipelineContext extends DispatchContext {
   /**
    * Count of this story's semantic/adversarial review checks that returned
    * `success:true, failOpen:true` (LLM dispatch failed and the gate degraded
-   * to a pass rather than blocking). Set by `applyReviewsFailedOpen` from
-   * phaseOutputs — which no longer has a caller since the post-run inspection
-   * layer was deleted (US-003) — and surfaced in StoryMetrics.reviewsFailedOpen
+   * to a pass rather than blocking). Formerly set by `applyReviewsFailedOpen`,
+   * which was removed with the review operations (C1 wave B2b-2) — nothing
+   * populates this field today and it is kept only because `StoryMetrics`
+   * still reads it — and surfaced in StoryMetrics.reviewsFailedOpen
    * (ENH-20) so a run whose reviews were skipped is distinguishable from one
    * that was actually reviewed and passed.
    */

@@ -7,9 +7,10 @@
 export * from "./ac-quote-validator";
 // Review acknowledgements (#1423) — shared read path for both reviewers.
 export { extractAcks, MAX_ACKS } from "./acks";
-// Projection of adversarial LLM findings to the ADR-021 wire format. Already consumed
-// outside src/review (src/operations/adversarial-review.ts); exported here so callers
-// and tests reach it through the barrel rather than the leaf path.
+// Projection of adversarial LLM findings to the ADR-021 wire format. Its pipeline
+// review consumer (the adversarial review operation) was deleted in C1 wave
+// B2b-2; exported here so callers and tests reach it through the barrel rather
+// than the leaf path.
 export { toAdversarialReviewFindings, validateAdversarialShape } from "./adversarial-helpers";
 export * from "./categorization";
 export type { ResolveFixTargetArgs } from "./category-fix-target";

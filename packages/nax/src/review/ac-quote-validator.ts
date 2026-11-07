@@ -6,12 +6,14 @@
  * **Adversarial path (Issue #930):** validateAcQuote / filterByAcQuote
  * - Requires acQuote to be a whitespace-normalised substring of the indexed AC
  * - Requires acQuote to contain a locus keyword (file basename or issue token)
- * - Used by src/operations/adversarial-review.ts (also re-exported via finding-filters.ts)
+ * - The pipeline adversarial review op that consumed it went with C1 wave B2b-2
+ *   (also re-exported via finding-filters.ts)
  *
  * **Semantic path (Issue #985):** validateAcGroundingMinimal / filterByAcGroundingMinimal
  * - Requires only a valid acIndex (1-based, in range)
  * - acQuote is advisory metadata, never inspected
- * - Used by src/operations/semantic-review.ts (also re-exported via finding-filters.ts)
+ * - The pipeline semantic review op that consumed it went with C1 wave B2b-2
+ *   (also re-exported via finding-filters.ts)
  *
  * Ungrounded findings are dropped before they can block a story or bias
  * next-tier escalation context.
