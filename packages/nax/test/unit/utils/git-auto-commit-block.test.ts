@@ -1,10 +1,12 @@
 /**
  * autoCommitIfDirty — blocked-worktree guard.
  *
- * The mutation spot-check is advisory and never fails a story, but when it
- * cannot confirm a revert the working tree holds a line it did not author.
- * Committing then captures the injected defect (and, under autoPR, pushes it),
- * so `autoCommitIfDirty` must refuse rather than sweep it in with `git add -A`.
+ * A working tree named in `blockedWorktrees` may hold source this run cannot
+ * account for. Committing there would capture a line the run did not author
+ * (and, under autoPR, push it), so `autoCommitIfDirty` must refuse rather than
+ * sweep it in with `git add -A`. The mutation spot-check was the set's only
+ * writer and is deleted (US-005), but the refusal is retained: wave B3 removes
+ * it with the other runtime fields only the deleted code wrote.
  *
  * Also covers captureDiffSummary (MED-04); both suites share the same
  * `_gitDeps.spawn` save/restore hook, so they live under one file.
@@ -15,6 +17,28 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeSpawn, makeTempDir } from "@test/helpers";
 import { _gitDeps, autoCommitIfDirty, captureDiffSummary } from "@/utils/git";
+
+/** The injectable runner `autoCommitIfDirty` takes as its last positional argument. */
+type GitRunner = NonNullable<Parameters<typeof autoCommitIfDirty>[6]>;
+
+/**
+ * `runGit` double for a repo that IS dirty — the only state in which a commit
+ * would run. Answers `rev-parse --show-toplevel` with `gitRoot`, stages
+ * cleanly, and reports staged changes so a refusal is the only reason `commit`
+ * can be missing from `calls`.
+ */
+function makeRunGit(gitRoot: string, calls: string[][]): GitRunner {
+  return async (args) => {
+    calls.push(args);
+    const sub = args[0];
+    if (sub === "rev-parse") return { stdout: `${gitRoot}\n`, stderr: "", exitCode: 0 };
+    if (sub === "status") return { stdout: " M src/a.ts\n", stderr: "", exitCode: 0 };
+    if (sub === "diff") return { stdout: "", stderr: "", exitCode: 1 };
+    return { stdout: "", stderr: "", exitCode: 0 };
+  };
+}
+
+const subcommands = (calls: string[][]): string[] => calls.map(([sub]) => sub ?? "");
 
 /**
  * Spawn stub that answers each git invocation by subcommand, so the guard under
@@ -132,6 +156,50 @@ describe("autoCommitIfDirty — blocked worktrees", () => {
     await autoCommitIfDirty(repo, "execution", "implementer", "US-001", new Set());
 
     expect(calls.some(([, sub]) => sub === "add")).toBe(true);
+  });
+});
+
+/**
+ * The same refusal, driven through the injectable `runGit` argument rather than
+ * `_gitDeps.spawn`. The mutation spot-check that used to populate
+ * `blockedWorktrees` is deleted, so nothing in the pipeline can reach this
+ * branch any more — these two guards are what keep the refusal alive until
+ * wave B3 removes it deliberately.
+ */
+describe("autoCommitIfDirty — blocked root through an injected runGit runner", () => {
+  test("issues no add call when the working tree's git root is blocked", async () => {
+    const repo = makeRepo();
+    const calls: string[][] = [];
+    const runGit = makeRunGit(repo, calls);
+
+    await autoCommitIfDirty(repo, "run.complete", "run-summary", "US-005", new Set([repo]), false, runGit);
+
+    expect(subcommands(calls)).toContain("rev-parse");
+    expect(subcommands(calls)).not.toContain("add");
+  });
+
+  test("issues no commit call when the working tree's git root is blocked", async () => {
+    const repo = makeRepo();
+    const calls: string[][] = [];
+    const runGit = makeRunGit(repo, calls);
+
+    await autoCommitIfDirty(repo, "run.complete", "run-summary", "US-005", new Set([repo]), false, runGit);
+
+    expect(subcommands(calls)).toContain("rev-parse");
+    expect(subcommands(calls)).not.toContain("commit");
+  });
+
+  test("control: the same double does add and commit without a blocked set", async () => {
+    // Proves the two guards above are not vacuous — same repo, same runner, and
+    // the only difference is the blocked set.
+    const repo = makeRepo();
+    const calls: string[][] = [];
+    const runGit = makeRunGit(repo, calls);
+
+    await autoCommitIfDirty(repo, "run.complete", "run-summary", "US-005", undefined, false, runGit);
+
+    expect(subcommands(calls)).toContain("add");
+    expect(subcommands(calls)).toContain("commit");
   });
 });
 

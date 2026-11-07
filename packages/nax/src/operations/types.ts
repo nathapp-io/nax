@@ -22,8 +22,6 @@ export interface CallContext {
   /** Call-local providers, appended after runtime providers for run-kind dispatches. */
   readonly toolProviders?: readonly import("@nathapp/nax-agent").ToolProvider[];
   readonly instructionDirectories?: readonly string[];
-  /** Resolved story acceptance guidance, shared with fix-role sessions. */
-  readonly acceptanceExecution?: import("../acceptance").AcceptanceExecution[];
   readonly runtime: NaxRuntime;
   readonly packageView: PackageView;
   readonly packageDir: string;
@@ -86,7 +84,7 @@ export interface CallContext {
   /**
    * Assemble a ContextBundle for a context-engine stage key on demand (nax#1737
    * Phase B). Wired by the execution stage, which owns the PipelineContext that
-   * `assembleForStage` requires; the operations layer never sees that type.
+   * context assembly requires; the operations layer never sees that type.
    * Returns undefined when v2 is disabled or assembly failed — callers keep the
    * bundle they already have.
    */

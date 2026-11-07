@@ -1,0 +1,741 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-surface-delete",
+  "branchName": "feat/pipeline-surface-delete",
+  "createdAt": "2026-11-07T00:00:00.000Z",
+  "updatedAt": "2026-11-07T14:07:21.580Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Remove the nax prompts command",
+      "description": "**Goal** — Replace the entire `nax prompts` implementation, including `--init` and `--export`, with a config-free removal stub and delete its exclusive CLI modules. **Motivation** — After B2b-3 the only production path into the pipeline prompt code is `nax prompts`. **Approach** — Design Part 1: the `nax prompts` command. Paths in this design table are below `packages/nax/src/` unless prefixed `bin/` or `scripts/`. | Site | After |\n|:---|:---|\n| `bin/nax.ts:1371-1451` | the `prompts` command keeps its name and option list (`-f/--feature`, `--init`, `--export <role>`, `--force`, `--story <id>`, `--out <path>`, `-d/--dir <path>`) with plain `option` calls, description `Removed: workflow mode does not read prompt templates`, and an action that prints `nax prompts was removed: workflow mode does not read prompt templates` in red to stderr and exits 1, reading no config, no PRD and no trust state; same shape as the `accept` stub at `:1355-1369` |\n| `bin/nax.ts:52`, `:58`, `:59` | `exportPromptCommand`, `promptsCommand` and `promptsInitCommand` leave the `../src/cli` import |\n| `cli/index.ts:176-184` | the `./prompts` re-export block goes |\n| `cli/init.ts:434` | the `Optional: nax prompts --init` hint line goes |\n| `scripts/check-worktree-id-ssot.ts:94` | the `src/cli/prompts-init.ts` entry goes |\n\nDeleted, under `cli/`: `prompts.ts`, `prompts-export.ts`, `prompts-init.ts`, `prompts-main.ts`, `prompts-shared.ts`, `prompts-tdd.ts`. **Scope** — In: the removal action, CLI imports/barrel/hint, six CLI source deletions, obsolete tests/allowlists and the new real-binary integration. Delete unit CLI prompts-export/init/main/tdd tests and integration/prompts/pb-004-migration.test.ts. Remove only the two prompts cases from cli-trust-gate.test.ts and the obsolete title phrase in unit/cli/init.test.ts, retaining all other trust and no-template-scaffolding assertions. Out: US-002's prompt stage/builders, US-003's leaves, US-004's plugin optimizer, US-005's mutation subsystem, US-006's orphan declarations; Config keys and their schemas, defaults, merge handling, migrations and descriptions: `optimizer.*` (with the `_applyRemovedOptimizerKeysShim` shim), `prompts.overrides` (with `PROMPT_OVERRIDE_ROLES`, the precheck override-file warning in `precheck/checks-warnings.ts` and the `prompts.overrides` lines in `cli/config-display.ts` and `cli/config-descriptions.ts`), `execution.mutationCheck` and the `advisor.callers` flags; wave B3 decides them. Docs and package context files that describe `nax prompts`, prompt overrides, `IPromptOptimizer`, `src/optimizer/` or mutation testing (`docs/guides/prompt-customization.md`, `docs/guides/cli-reference.md`, the `.nax/context.md` files and the `CLAUDE.md` / `AGENTS.md` files generated from them); `.nax/` is read-only to the run, so they are updated in wave B4. **Interface** — Keep the command name `prompts` and the former options as plain `option` calls; its action takes no project initialization path. `prompts --help` is Commander's successful help path, not the removal action. No replacement prompt-generation API is introduced. **Verification** — Create `packages/nax/test/integration/cli/cli-prompts-removed.test.ts`, following the accept-removed real-bin pattern: absolute bin path, empty temporary cwd, concurrent pipe draining and exit wait, cleanup. Exercise the full option combination, no options, directory emptiness and command help. Also use the existing isolated NAX_GLOBAL_CONFIG_DIR test pattern with malformed project config, feature PRD and trust.json to assert the removal message is the entire normalized stderr; do not change the trust gate for any other command.\n\nVerification, run in packages/nax, after the story's changes: (1) `bun run typecheck`; a missed reference or a barrel re-exporting a deleted module or name fails here. (2) A path sweep: for each source file this story deletes, with `<stem>` its path below `src/` without the extension, run `rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test`, and the same for each deleted test file's path below `test/`. Expected: zero hits, else stop. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Known comment hits for this story's stems, reworded rather than a stop: `execution/story-context/index.ts:155` (\"Used by `nax prompts` CLI\"). Expected and not a stop: hits in `scripts/baselines/*.json`, which step 3 clears; the historical note in `../repo-tooling/scripts/check-coverage.ts:103`; the `stage-assembler-scope-files.test.ts` fixture string in `../repo-tooling/test/unit/scripts/check-test-satellites.test.ts:17`, which tests a file-name classifier; the stale `test/unit/acceptance/generator-*.test.ts` entries in `scripts/check-inline-test-mocks.ts` (`:48`, `:78`, `:139`, `:140`), which name test files earlier waves deleted; and the config keys, selectors and registry strings Out of Scope leaves to wave B3 (`optimizer`, `prompts.overrides`, `mutationCheck`, the `\"prompt\"` and `\"optimizer\"` stage names). A longer sibling stem that shares the prefix is not a hit when that sibling is deleted too or is a deleted test. Line numbers are at `c3266de8a`; when an earlier story edited the same file, locate each site by its symbol or test name. (3) `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry; `check:complexity` fails with \"baseline is stale\" while a deleted file or function is still listed. After `check:all` is green, `bun run check:test-escape-hatches:update`. Do not edit `scripts/baselines/coverage-per-file-baseline.json` (no deleted file has an entry). (4) `bun run check:all` and `bun run test`. A trimmed source file also drops the imports only its removed declarations used; biome's noUnusedImports reports them.",
+      "acceptanceCriteria": [
+        "[cli] When `bun bin/nax.ts prompts -f demo --init --force --export implementer --story US-001 --out out.md -d .` runs from an empty temporary directory, then its exit code is 1.",
+        "[cli] When `bun bin/nax.ts prompts -f demo --init --force --export implementer --story US-001 --out out.md -d .` runs from an empty temporary directory, then stderr contains `nax prompts was removed: workflow mode does not read prompt templates`.",
+        "[cli] When `bun bin/nax.ts prompts -f demo --init --force --export implementer --story US-001 --out out.md -d .` runs from an empty temporary directory, then that directory has no entries afterwards.",
+        "[cli] When `bun bin/nax.ts prompts` runs with no options from an empty temporary directory, then its exit code is 1.",
+        "[cli] When `bun bin/nax.ts prompts` runs with no options from an empty temporary directory, then stderr contains `nax prompts was removed: workflow mode does not read prompt templates`.",
+        "[cli] When `bun bin/nax.ts prompts --help` runs, then its exit code is 0.",
+        "[cli] When `bun bin/nax.ts prompts --help` runs, then stdout contains `Removed: workflow mode does not read prompt templates`.",
+        "[cli] Given an untrusted temporary project with malformed `.nax/config.json` and `.nax/features/demo/prd.json`, and an isolated `NAX_GLOBAL_CONFIG_DIR` containing malformed `trust.json`, when `bun bin/nax.ts prompts -f demo -d .` runs with that project as cwd, then stderr, after ANSI removal and trimming, equals exactly `nax prompts was removed: workflow mode does not read prompt templates`, preserving the removal-before-config/PRD/trust-initialization behavior."
+      ],
+      "tags": [
+        "pipeline-deletion",
+        "cli",
+        "trust-boundary"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The implementation mirrors the existing accept stub and mechanically removes six CLI-only files, with no new abstraction; strict TDD remains required because the changed action bypasses a former trust gate and must leave other command access controls untouched.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/bin/nax.ts",
+        "packages/nax/test/integration/cli/cli-accept-removed.test.ts",
+        "packages/nax/src/cli/index.ts",
+        "packages/nax/test/integration/cli/cli-trust-gate.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/cli/cli-prompts-removed.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/cli/prompts-export.test.ts",
+          "reason": "tests only src/cli/prompts-export.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/prompts-init.test.ts",
+          "reason": "tests only src/cli/prompts-init.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/prompts-main.test.ts",
+          "reason": "tests only src/cli/prompts-main.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/prompts-tdd.test.ts",
+          "reason": "tests only src/cli/prompts-tdd.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/integration/prompts/pb-004-migration.test.ts",
+          "reason": "reads src/cli/prompts.ts by path (line 285), which this story deletes, and every other test in it exercises PromptBuilder, which US-002 deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-trust-gate.test.ts",
+          "reason": "the tests \"US-003 AC14: rejects regular prompts for an untrusted project\" (line 151) and \"US-003 AC15: allows prompts export for an untrusted project\" (line 157) go, because `nax prompts` no longer reads the project and exits 1 for every invocation; every other trust-gate test keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/init.test.ts",
+          "reason": "the title of the test at line 34 drops its mention of `nax prompts --init`; its assertions that `nax init` scaffolds no prompt templates stay."
+        },
+        {
+          "path": "packages/nax/scripts/check-worktree-id-ssot.ts",
+          "reason": "the \"src/cli/prompts-init.ts\" entry (line 94) goes, because this story deletes that file."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "the src/cli/prompts-main.ts entry goes, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "every \"test/integration/prompts/pb-004-migration.test.ts\" entry (lines 116 and 171) goes, because this story deletes that test file."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "lowered through bun run check:file-sizes -- --update-baseline when the check reports a lowerable entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4173c4ea179e61494db185c5acf551218647093f"
+    },
+    {
+      "id": "US-002",
+      "title": "Delete the prompt stage and TDD prompt builder",
+      "description": "**Goal** — Delete the pipeline prompt stage, TDD builder/override loader and exclusive prompt sections while preserving workflow prompt construction. **Motivation** — Workflow mode builds its prompts with the workflow builders (`prompts/builders/workflow-implementer-builder.ts` and siblings) and never calls either. **Approach** — Design Part 2: the prompt stage, the TDD prompt builder and its sections. All source paths below are relative to `packages/nax/src/`. | Site | After |\n|:---|:---|\n| `pipeline/stages/index.ts:51` | the `promptStage` re-export goes |\n| `prompts/index.ts:98-101` | the `TddPromptBuilder` / `PromptBuilder` re-export and its three comment lines go |\n| `prompts/index.ts:157` | `PromptOptions` and `PromptRole` leave the `./core/types` type re-export; `PromptSection` and `SectionSlot` stay |\n| `prompts/core/index.ts:10` | `PromptOptions` and `PromptRole` leave the `./types` type re-export |\n| `prompts/core/types.ts` | `PromptRole` (`:9`) and `PromptOptions` (`:36`) go, with their doc comments |\n| `prompts/sections/index.ts` | the re-exports of `hermetic`, `role-task`, `self-verification`, `tdd-conventions`, `test-baseline`, `test-quality` and `verdict` go; `buildBatchStorySection`, `buildStoryReminderSection` (`:34`) and `unwrapProtocolRegions` (`:28`) leave their re-exports |\n| `prompts/sections/story.ts` | `buildBatchStorySection` (`:45`) and `buildStoryReminderSection` (`:74`) go; `buildStorySection` stays |\n| `prompts/sections/protocol-region.ts` | `unwrapProtocolRegions` (`:364`) goes |\n| `quality/self-verification.ts` | `SelfVerificationPromptInput` (`:23`) and `resolveSelfVerificationPromptInput` (`:30`) go |\n| `quality/index.ts:32`, `:37` | both leave the barrel |\n| `test-runners/detector.ts` | `buildTestFrameworkHint` (`:56`) goes |\n| `test-runners/index.ts:32` | `buildTestFrameworkHint` leaves the `./detector` re-export |\n| `context/index.ts:33` | the `./feature-context-filter` re-export block goes |\n\nDeleted: `pipeline/stages/prompt.ts`, `prompts/builders/tdd-builder.ts`, `prompts/loader.ts`, `context/feature-context-filter.ts`, and under `prompts/sections/`: `hermetic.ts`, `role-task.ts`, `self-verification.ts`, `tdd-conventions.ts`, `test-baseline.ts`, `test-quality.ts`, `verdict.ts`. **Scope** — In: the modules/declarations above, their imports/barrels, exclusive tests and obsolete test cases/allowlists listed under modifiedFiles. Delete `test/unit/acceptance/execution-description.test.ts` here because it imports the removed builder, even though US-003 deletes its source. Preserve workflow builder, composition, story, isolation, conventions, modified-file and protocol-rendering behavior. Out: US-003's acceptance modules, dispatch append, assembler and phase map; US-004's estimator move and optimizer; US-005's mutation code; US-006's remaining test-runner orphans. Prompt config keys, role/stage registries and docs are deferred to B3/B4. The selectors `mutationCheckConfigSelector`, `MutationCheckConfig`, `promptLoaderConfigSelector`, `PromptLoaderConfig` and `reshapeSelector`, which become unreachable with this spec; wave B3 removes them with the rest of `config/selectors.ts`. Changing workflow-mode behaviour: every cut site keeps its current workflow-mode result. **Interface** — Kept integration symbols, verbatim: `getWorkflowPipeline(): PipelineStage[]` (`pipeline/stages/index.ts:41`); `buildStorySection(story)` (`prompts/sections/story.ts`), exported from `@/prompts/sections`; `applyProtocolRegions` and `wrapAffordance` (`prompts/sections/protocol-region.ts`). Remove only the listed obsolete exports, with no replacement aliases. **Verification** — Retain the six-stage order regression via `@/pipeline/stages` in the existing workflow-pipeline tests, and exercise `buildStorySection` via `@/prompts/sections` with title `Add login` and criterion `AC-1: form renders`. Add the empty-criteria negative regression in the same retained story-section test file, preserving the existing header/body rendering without adding fallback criteria. Delete the prompt-stage, builder, loader, seven section, self-verification-input and feature-context-filter tests; trim only cases for removed helpers in retained test files, preserving all surviving API assertions.\n\nVerification, run in packages/nax, after the story's changes: (1) `bun run typecheck`; a missed reference or a barrel re-exporting a deleted module or name fails here. (2) A path sweep: for each source file this story deletes, with `<stem>` its path below `src/` without the extension, run `rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test`, and the same for each deleted test file's path below `test/`. Expected: zero hits, else stop. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Known comment hits for this story's stems, reworded rather than a stop: `context/engine/stage-config.ts:156` (names `src/pipeline/stages/prompt.ts`), `operations/typecheck-check.ts:171` (names `prompts/sections/self-verification.ts`), `config/paths/index.ts:18`. Expected and not a stop: hits in `scripts/baselines/*.json`, which step 3 clears; the historical note in `../repo-tooling/scripts/check-coverage.ts:103`; the `stage-assembler-scope-files.test.ts` fixture string in `../repo-tooling/test/unit/scripts/check-test-satellites.test.ts:17`, which tests a file-name classifier; the stale `test/unit/acceptance/generator-*.test.ts` entries in `scripts/check-inline-test-mocks.ts` (`:48`, `:78`, `:139`, `:140`), which name test files earlier waves deleted; and the config keys, selectors and registry strings Out of Scope leaves to wave B3 (`optimizer`, `prompts.overrides`, `mutationCheck`, the `\"prompt\"` and `\"optimizer\"` stage names). A longer sibling stem that shares the prefix is not a hit when that sibling is deleted too or is a deleted test. Line numbers are at `c3266de8a`; when an earlier story edited the same file, locate each site by its symbol or test name. (3) `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry; `check:complexity` fails with \"baseline is stale\" while a deleted file or function is still listed. After `check:all` is green, `bun run check:test-escape-hatches:update`. Do not edit `scripts/baselines/coverage-per-file-baseline.json` (no deleted file has an entry). (4) `bun run check:all` and `bun run test`. A trimmed source file also drops the imports only its removed declarations used; biome's noUnusedImports reports them.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: `getWorkflowPipeline()` imported from `@/pipeline/stages` returns stages whose `name` values are, in order, `queue-check`, `routing`, `constitution`, `context`, `workflow` and `completion`.",
+        "[unit] Regression guard: `buildStorySection(story)` imported from `@/prompts/sections`, for a story with title `Add login` and acceptance criteria `[\"AC-1: form renders\"]`, returns text that includes `Add login`.",
+        "[unit] Regression guard: `buildStorySection(story)` imported from `@/prompts/sections`, for a story with title `Add login` and acceptance criteria `[\"AC-1: form renders\"]`, returns text that includes `AC-1: form renders`.",
+        "[unit] Negative-path regression guard: `buildStorySection(story)` imported from `@/prompts/sections`, given title `Add login`, description `Add a login form`, acceptanceCriteria `[]`, and no outOfScope or modifiedFiles, returns text with no numbered acceptance-criterion lines, preserving existing empty-criteria rendering rather than inventing requirements."
+      ],
+      "tags": [
+        "pipeline-deletion",
+        "prompts",
+        "workflow-regression"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Broad but explicitly bounded removal across prompt, quality, context and test-runner barrels; shared workflow rendering and many retained tests must remain unchanged.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/stages/index.ts",
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/prompts/sections/index.ts",
+        "packages/nax/src/prompts/sections/story.ts",
+        "packages/nax/src/quality/self-verification.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/prompt-acceptance.test.ts",
+          "reason": "tests only src/pipeline/stages/prompt.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/prompt-batch.test.ts",
+          "reason": "tests only src/pipeline/stages/prompt.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/prompt-config-root.test.ts",
+          "reason": "tests only src/pipeline/stages/prompt.ts and TddPromptBuilder, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/prompt-scope-files.test.ts",
+          "reason": "tests only src/pipeline/stages/prompt.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/prompt-tdd-simple.test.ts",
+          "reason": "tests only src/pipeline/stages/prompt.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builder.test.ts",
+          "reason": "tests only PromptBuilder (src/prompts/builders/tdd-builder.ts), which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/tdd-builder.test.ts",
+          "reason": "tests only src/prompts/builders/tdd-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/tdd-builder-config-root.test.ts",
+          "reason": "tests only src/prompts/builders/tdd-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/loader.test.ts",
+          "reason": "tests only src/prompts/loader.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/hermetic.test.ts",
+          "reason": "tests only src/prompts/sections/hermetic.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/role-task.test.ts",
+          "reason": "tests only src/prompts/sections/role-task.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/self-verification.test.ts",
+          "reason": "tests only src/prompts/sections/self-verification.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/tdd-conventions.test.ts",
+          "reason": "tests only src/prompts/sections/tdd-conventions.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/test-baseline.test.ts",
+          "reason": "tests only src/prompts/sections/test-baseline.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/test-quality.test.ts",
+          "reason": "tests only src/prompts/sections/test-quality.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/verdict.test.ts",
+          "reason": "tests only src/prompts/sections/verdict.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/quality/self-verification.test.ts",
+          "reason": "tests only resolveSelfVerificationPromptInput, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/context/feature-context-filter.test.ts",
+          "reason": "tests only src/context/feature-context-filter.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/context/budget-warn-once.test.ts",
+          "reason": "tests only truncateToContextBudget from src/context/feature-context-filter.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/execution-description.test.ts",
+          "reason": "imports TddPromptBuilder, which this story deletes, and otherwise tests only src/acceptance/execution-description.ts, which US-003 deletes; the file is deleted here."
+        },
+        {
+          "path": "packages/nax/test/integration/context/feature-engine-read-path.test.ts",
+          "reason": "the four tests that call filterContextByRole or truncateToContextBudget (the three \"role filtering\" tests from line 150 and \"budget enforcement: truncate when filtered content exceeds budget\" at line 195) and the feature-context-filter import (line 14) go, because this story deletes that module; the FeatureContextProvider tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/story.test.ts",
+          "reason": "the describes \"buildStoryReminderSection\" (line 35) and \"buildBatchStorySection\" (line 83), the two tests in \"out-of-scope rendering\" that call them (lines 151 and 155) and their imports go, because this story removes both functions; the buildStorySection, out-of-scope and modifiedFiles tests for buildStorySection keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/modified-files.test.ts",
+          "reason": "the buildStoryReminderSection and buildBatchStorySection rows of the \"story sections carry modifiedFiles to every builder\" table (lines 50 and 51), the reminder assertion at line 70 and their imports go, because this story removes both functions; the buildStorySection row and the buildModifiedFilesLines describe keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/sections.test.ts",
+          "reason": "the describes \"buildRoleTaskSection\" (line 55) and \"buildVerdictSection\" (line 99) and their imports (lines 5 and 7) go, because this story deletes role-task.ts and verdict.ts; the isolation, story and conventions describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/protocol-region.test.ts",
+          "reason": "the describe \"unwrapProtocolRegions (AC12)\" (line 405), its section comment (line 403), the import (line 20) and the header mention (line 6) go, because this story removes the function; every applyProtocolRegions and wrapAffordance describe keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/us-004-affordances.test.ts",
+          "reason": "the test \"unwrapProtocolRegions returns the prompt without any marker for a wrapped isolation prompt\" (line 336) and the unwrapProtocolRegions import (line 35) go, because this story removes the function; the other cross-cutting seam tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/rectifier-builder-review-labels.test.ts",
+          "reason": "the describe \"AC8: src/prompts/sections/verdict.ts is not modified by this story\" (line 319) and its comment (line 260) go, because this story deletes verdict.ts; every rectifier label describe keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/test-runners/detector.test.ts",
+          "reason": "the describe \"buildTestFrameworkHint\" (line 8) and its import go, because this story removes the function; the detectFramework and stripAnsi tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "every entry for test/unit/prompts/loader.test.ts, test/unit/prompts/sections/tdd-conventions.test.ts, test/unit/prompts/builder.test.ts, test/unit/pipeline/stages/prompt-batch.test.ts and test/unit/pipeline/stages/prompt-tdd-simple.test.ts go, because this story deletes those test files."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "the src/prompts/builders/tdd-builder.ts and src/context/feature-context-filter.ts entries go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "lowered through bun run check:file-sizes -- --update-baseline when the check reports a lowerable entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3ad3719f4e5169df7b0038453f2dadc00581df94"
+    },
+    {
+      "id": "US-003",
+      "title": "Delete acceptance and context-assembly leaves",
+      "description": "**Goal** — Delete acceptance generation/execution descriptions and obsolete context assembly/mapping, removing the always-empty acceptance dispatch append. **Motivation** — Nothing in `src/` sets `CallContext.acceptanceExecution`, so the section is always empty. **Approach** — Design Part 3: the acceptance, stage-assembler and phase-stage-map leaves. Paths below are relative to `packages/nax/src/`, except paths beginning `test/`. | Site | After |\n|:---|:---|\n| `operations/call-dispatch-prologue.ts:1` | the `buildAcceptanceExecutionSection` import goes |\n| `operations/call-dispatch-prologue.ts:143-149` | the `acceptance` constant goes; `prompt` is `join(sections)` |\n| `operations/types.ts:25-26` | `CallContext.acceptanceExecution` and its doc comment go |\n| `prompts/index.ts:162` | the `./sections/acceptance` re-export goes |\n| `prompts/sections/index.ts:7-8` | the `./acceptance` re-exports go |\n| `context/engine/index.ts:56-61` | the `./phase-stage-map` re-export block goes |\n| `context/engine/index.ts:105-106` | the `./stage-assembler` re-exports go |\n| `context/engine/index.ts:107` | `StageKey` leaves the `./stage-config` type re-export; `StageContextConfig` stays |\n| `context/engine/stage-config.ts:341` | `StageKey` goes |\n\nDeleted: `acceptance/index.ts`, `acceptance/generator.ts`, `acceptance/execution-description.ts` (the whole directory), `prompts/sections/acceptance.ts`, `prompts/sections/acceptance-section.ts` (a re-export-only alias of `acceptance.ts` that nothing imports), `context/engine/stage-assembler.ts`, `context/engine/phase-stage-map.ts`. `test/unit/context/engine/stage-reachability.test.ts` (nax#1743) is deleted, not rewritten: it derives the reachable stage keys from `executionContextStage` and `contextStageForOp`, which this story deletes, and after this story the only assembly site is the context stage's `\"context\"` key, so the pipeline stage keys in `STAGE_CONTEXT_MAP` that declare pull tools become unreachable. Removing those keys and re-establishing the guard over the remaining site is wave B3's (Out of Scope). **Scope** — In: the exact deletions/barrel trims above, the six exclusive test deletions, and the assembleForStage-only fixture/describe removal in orchestrator-rebuild.test.ts; preserve rebuildForAgent, dedupe and remaining planDigestBoost assertions. Out: US-004's plugin optimizer/estimator, US-005's mutation code and US-006's orphan pass; keep all workflow context behavior. Registry strings that name a deleted stage, role or extension: the pipeline stage keys in `STAGE_CONTEXT_MAP` (`context/engine/stage-config.ts`) and the nax#1743 reachability guard rebuilt over the remaining assembly site, `\"prompt\"` and `\"optimizer\"` in `EXTRA_KNOWN_STAGES` (`context/rules/rules-frontmatter.ts`), the session role registries, and the `templates/` and `prompts/` entries in `agents/nax-owned-writes.ts`; wave B3. These stay unchanged, because later waves own them (Out of Scope): config keys, their schemas, merge handling, migrations, selectors and descriptions; name registries that still list a deleted stage, role or extension string; runtime and context fields that only deleted code wrote, unless their type comes from a module this spec deletes. **Interface** — `buildDispatchPrologue(ctx, op, input): DispatchPrologue` (`operations/call-dispatch-prologue.ts:134`). `CallContext` (`operations/types.ts`). Target: no `acceptanceExecution` field. Keep the dispatch prologue signature and all resolution behavior; only the unused append is removed. **Verification** — Use an existing operation call unit-test harness to call the prologue with a run-kind operation, `session.role` implementer, `stage` rectification, and one built section of content `fix it`; compare `prompt` to that section joined by `join` from `@/prompts` and assert no acceptance-execution heading. Add the build-throws negative regression with an otherwise valid context and assert the same Error instance escapes, without introducing catches or partial-prompt fallback behavior. Run the story's path sweep, including the alias, deleted tests and the allowed repo-tooling filename-classifier fixture, and lower baselines through the prescribed update commands. No new test file is required.\n\nVerification, run in packages/nax, after the story's changes: (1) `bun run typecheck`; a missed reference or a barrel re-exporting a deleted module or name fails here. (2) A path sweep: for each source file this story deletes, with `<stem>` its path below `src/` without the extension, run `rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test`, and the same for each deleted test file's path below `test/`. Expected: zero hits, else stop. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Known comment hits for this story's stems, reworded rather than a stop: `context/engine/stage-config.ts:334`, `pipeline/types.ts:173` and `:181`, `pipeline/stages/workflow-context.ts:32`, `pipeline/stages/context.ts:312`, `context/engine/types.ts:237`, `:260` and `:298`, `context/fragments/store.ts:9`, `context/engine/providers/plugin-cache.ts:82`, `context/engine/providers/git-history.ts:223`, and in tests `pipeline/scope-files.test.ts:13`, `context/engine/orchestrator.test.ts:215`, `context/engine/providers/session-scratch.test.ts:194`, `context/rules/nax-rules-stage-scoping.test.ts:11`. For `src/acceptance/` as a whole the sweep patterns are `@/acceptance` and `src/acceptance/`. Expected and not a stop: hits in `scripts/baselines/*.json`, which step 3 clears; the historical note in `../repo-tooling/scripts/check-coverage.ts:103`; the `stage-assembler-scope-files.test.ts` fixture string in `../repo-tooling/test/unit/scripts/check-test-satellites.test.ts:17`, which tests a file-name classifier; the stale `test/unit/acceptance/generator-*.test.ts` entries in `scripts/check-inline-test-mocks.ts` (`:48`, `:78`, `:139`, `:140`), which name test files earlier waves deleted; and the config keys, selectors and registry strings Out of Scope leaves to wave B3 (`optimizer`, `prompts.overrides`, `mutationCheck`, the `\"prompt\"` and `\"optimizer\"` stage names). A longer sibling stem that shares the prefix is not a hit when that sibling is deleted too or is a deleted test. Line numbers are at `c3266de8a`; when an earlier story edited the same file, locate each site by its symbol or test name. (3) `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry; `check:complexity` fails with \"baseline is stale\" while a deleted file or function is still listed. After `check:all` is green, `bun run check:test-escape-hatches:update`. Do not edit `scripts/baselines/coverage-per-file-baseline.json` (no deleted file has an entry). (4) `bun run check:all` and `bun run test`. A trimmed source file also drops the imports only its removed declarations used; biome's noUnusedImports reports them.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: `buildDispatchPrologue(ctx, op, input)` for a run-kind operation whose session role is `implementer`, whose stage is `rectification` and whose `build` returns one section with content `fix it`, returns a `prompt` equal to that section joined by `join` from `@/prompts`, with no `# Acceptance execution` heading.",
+        "[unit] Negative-path regression guard: given an otherwise valid context and a run-kind implementer/rectification operation whose `build` throws a particular `Error(\"build failed\")` instance, `buildDispatchPrologue(ctx, op, input)` throws that same instance, preserving the existing build-error propagation rather than returning a partial prompt."
+      ],
+      "tags": [
+        "pipeline-deletion",
+        "acceptance",
+        "context",
+        "dispatch"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module deletion touching role-conditional session dispatch and shared prompt composition; strict isolation protects the session/role seam while proving the former branch stays empty.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/call-dispatch-prologue.ts",
+        "packages/nax/src/operations/types.ts",
+        "packages/nax/src/context/engine/index.ts",
+        "packages/nax/src/context/engine/stage-config.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/acceptance/generator-core.test.ts",
+          "reason": "tests only src/acceptance/generator.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/acceptance.test.ts",
+          "reason": "tests only src/prompts/sections/acceptance.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/phase-stage-map.test.ts",
+          "reason": "tests only src/context/engine/phase-stage-map.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/stage-assembler.test.ts",
+          "reason": "tests only src/context/engine/stage-assembler.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/stage-assembler-scope-files.test.ts",
+          "reason": "tests only src/context/engine/stage-assembler.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/stage-reachability.test.ts",
+          "reason": "derives the reachable stage keys only from executionContextStage and contextStageForOp, which this story deletes (Design Part 3); the file is deleted, and wave B3 rebuilds the guard."
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/orchestrator-rebuild.test.ts",
+          "reason": "the describe \"assembleForStage — planDigestBoost is resolved from testStrategy, not the assembled stage (nax#1759)\" (line 641), the makeAssembleCtx fixture and its comment above it (from line 594), the makeMockOrchestrator helper and its doc comment (lines 609 to 640, used only inside that describe), the stage-assembler import (line 23) and the imports only those used go, because this story deletes assembleForStage; the rebuildForAgent, dedupe, StageContextConfig.planDigestBoost and ContextOrchestrator planDigestBoost describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "the src/context/engine/stage-assembler.ts entry goes, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "lowered through bun run check:file-sizes -- --update-baseline when the check reports a lowerable entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cd121d80e1a6c5d199e70f663fcb1e894b2dfe73"
+    },
+    {
+      "id": "US-004",
+      "title": "Delete the prompt optimizer and reject its plugin extension",
+      "description": "**Goal** — Preserve the shared token estimator in a leaf utility, delete the optimizer subsystem/API and explicitly reject plugins declaring its removed extension. **Motivation** — `src/optimizer/` (`resolveOptimizer`, `NoopOptimizer`) was consumed only by the optimizer stage B2b-1 deleted. **Approach** — Design Part 4: the prompt optimizer. Source paths below are relative to `packages/nax/src/`. `estimateTokens` moves, unchanged, to a new leaf module:\n\n```typescript\n// src/utils/tokens.ts\n/**\n * Estimate token count using simple heuristic. * ~4 chars per token for English text (rough estimate). */\nexport function estimateTokens(text: string): number {\n  return Math.ceil(text.length / 4);\n}\n```\n\n`src/utils/` has no barrel; its modules are imported by path (`../utils/json-file`, `@/utils/git`), and `utils/tokens.ts` follows that. | Site | After |\n|:---|:---|\n| `context/builder.ts:12`, `context/elements.ts:8`, `constitution/loader.ts:11` | import `estimateTokens` from `../utils/tokens` |\n| `context/fragments/store.ts:25`, `context/test-scanner/index.ts:14`, `context/rules/rule-sections/index.ts:21`, `context/engine/providers/static-rules.ts:28`, `context/engine/providers/static-rules-budget-notice.ts:13` | import `estimateTokens` from `@/utils/tokens` |\n| `context/index.ts:5`, `constitution/index.ts:9` | re-export `estimateTokens` from `../utils/tokens` |\n| `plugins/types.ts:9` | the `IPromptOptimizer` import goes |\n| `plugins/types.ts:49` | `\"optimizer\"` leaves the `PluginType` union |\n| `plugins/types.ts:127-128` | `PluginExtensions.optimizer` and its doc comment go |\n| `plugins/types.ts:163-175` | the \"Optimizer Extension\" section header and the optimizer type re-export go |\n| `plugins/index.ts:23`, `:29`, `:42-43` | the comment and the `IPromptOptimizer`, `PromptOptimizerInput` and `PromptOptimizerResult` re-exports go |\n| `plugins/registry.ts:18`, `:206-216` | the `IPromptOptimizer` import and `getOptimizers()` with its doc comment go |\n| `plugins/validator.ts:24`, `:129-130`, `:153-176` | `\"optimizer\"` leaves `VALID_PLUGIN_TYPES`; the `\"optimizer\"` case and `validateOptimizer` go |\n| `plugins/validator.ts` | new: `removedOptimizerMessage(pluginName)` exported, and a check in `validatePlugin`, after the `provides` array is validated as non-empty and before each entry is checked against `VALID_PLUGIN_TYPES`, that returns `null` after a `warn` on stage `\"plugins\"` with `removedOptimizerMessage(plugin.name)` when `provides` includes `\"optimizer\"` |\n\nThe new validator code:\n\n```typescript\n/** Extension type removed with pipeline mode; a plugin still declaring it fails validation by name. */\nconst REMOVED_OPTIMIZER_TYPE = \"optimizer\";\n\n/** Warning for a plugin that still declares the removed optimizer extension. */\nexport function removedOptimizerMessage(pluginName: string): string {\n  return `Plugin '${pluginName}' validation failed: the 'optimizer' extension was removed with pipeline mode; remove it from 'provides'`;\n}\n\n// in validatePlugin, after the non-empty `provides` check:\nif (plugin.provides.includes(REMOVED_OPTIMIZER_TYPE)) {\n  getSafeLogger()?.warn(\"plugins\", removedOptimizerMessage(plugin.name));\n  return null;\n}\n```\n\nA `null` from `validatePlugin` already makes the loader skip the plugin with its existing `Plugin validation failed for '<path>'` warning (`plugins/loader.ts:449-455`). A plugin that carries `extensions.optimizer` without listing `\"optimizer\"` in `provides` is unaffected: extensions not named in `provides` were already ignored. Deleted: `optimizer/index.ts`, `optimizer/noop.optimizer.ts`, `optimizer/types.ts` (the whole directory). The plugin tests that use `optimizer` as their sample extension (`registry.test.ts`, `plugins-registry.test.ts`, `validator.test.ts`, `loader.test.ts`, `config-resolution.test.ts`, `config-integration.test.ts`, `runner-config-plugins.test.ts`, `cli-plugins.test.ts`) switch those fixtures to the `reporter` extension (an object with a `name` string, which `validateReporter` requires) and keep their assertions about loading, ordering, config resolution and listing. **Scope** — In: estimator implementation/imports/re-exports, optimizer plugin types/registry/validator removals, named rejection, reporter fixture migrations and optimizer test-helper cleanup. Delete test/unit/optimizer/index.test.ts and test/helpers/optimizer-result.ts; remove makeOptimizerResult from helpers/index.ts and getOptimizers from helpers/plugin-registry.ts; remove only optimizer-specific assertions in retained plugin tests. Out: US-005's mutation subsystem and US-006's other orphans. Keep loader allowed-root/security checks unchanged. Config keys and their schemas, defaults, merge handling, migrations and descriptions: `optimizer.*` (with the `_applyRemovedOptimizerKeysShim` shim), `prompts.overrides` (with `PROMPT_OVERRIDE_ROLES`, the precheck override-file warning in `precheck/checks-warnings.ts` and the `prompts.overrides` lines in `cli/config-display.ts` and `cli/config-descriptions.ts`), `execution.mutationCheck` and the `advisor.callers` flags; wave B3 decides them. Docs and package context files that describe `nax prompts`, prompt overrides, `IPromptOptimizer`, `src/optimizer/` or mutation testing (`docs/guides/prompt-customization.md`, `docs/guides/cli-reference.md`, the `.nax/context.md` files and the `CLAUDE.md` / `AGENTS.md` files generated from them); `.nax/` is read-only to the run, so they are updated in wave B4. Stage/role registry strings also remain B3 work; the PluginType and validator entries explicitly named above are in scope here. Do not consolidate unrelated private estimator functions or create a utils barrel. **Interface** — `validatePlugin(module: unknown): NaxPlugin | null` (`plugins/validator.ts:42`). Target: same signature; returns `null` for a plugin whose `provides` includes `\"optimizer\"`, after a `warn` with `removedOptimizerMessage(name)`. `PluginType` (`plugins/types.ts:48`). Target: `\"router\" | \"agent\" | \"reviewer\" | \"context-provider\" | \"reporter\" | \"post-run-action\" | \"loop-handlers\" | \"resources\"`. `PluginRegistry` (`plugins/registry.ts`). Target: no `getOptimizers()` method; every other method unchanged. `estimateTokens(text: string): number`. Target: declared in `utils/tokens.ts`; `@/context` and `@/constitution` re-export it from there. **Verification** — Create only the utility and `packages/nax/test/unit/utils/tokens.test.ts`; test the direct heuristic and identity of both barrel re-exports. Add legacy-only and mixed optimizer/reporter rejection plus unchanged reporter identity assertions through `validatePlugin` imported from `@/plugins`, using the exact exported message from validator.ts and a restored logger fixture. In the existing loader integration tests, create real plugin modules for optimizer and reporter, disable `nax-curator` and `nax-auto-pr` through disabledPlugins, assert the registry contains only the reporter and the error sink receives the existing validation-failed warning; reset the sink afterward. Retain generic fixture loading/order/config/listing assertions after migration.\n\nVerification, run in packages/nax, after the story's changes: (1) `bun run typecheck`; a missed reference or a barrel re-exporting a deleted module or name fails here. (2) A path sweep: for each source file this story deletes, with `<stem>` its path below `src/` without the extension, run `rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test`, and the same for each deleted test file's path below `test/`. Expected: zero hits, else stop. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Known comment hits for this story's stems, reworded rather than a stop: `plugins/extensions.ts:145`. For `src/optimizer/` as a whole the sweep patterns are `@/optimizer`, `/optimizer\"` and `optimizer/types`. Expected and not a stop: hits in `scripts/baselines/*.json`, which step 3 clears; the historical note in `../repo-tooling/scripts/check-coverage.ts:103`; the `stage-assembler-scope-files.test.ts` fixture string in `../repo-tooling/test/unit/scripts/check-test-satellites.test.ts:17`, which tests a file-name classifier; the stale `test/unit/acceptance/generator-*.test.ts` entries in `scripts/check-inline-test-mocks.ts` (`:48`, `:78`, `:139`, `:140`), which name test files earlier waves deleted; and the config keys, selectors and registry strings Out of Scope leaves to wave B3 (`optimizer`, `prompts.overrides`, `mutationCheck`, the `\"prompt\"` and `\"optimizer\"` stage names). A longer sibling stem that shares the prefix is not a hit when that sibling is deleted too or is a deleted test. Line numbers are at `c3266de8a`; when an earlier story edited the same file, locate each site by its symbol or test name. (3) `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry; `check:complexity` fails with \"baseline is stale\" while a deleted file or function is still listed. After `check:all` is green, `bun run check:test-escape-hatches:update`. Do not edit `scripts/baselines/coverage-per-file-baseline.json` (no deleted file has an entry). (4) `bun run check:all` and `bun run test`. A trimmed source file also drops the imports only its removed declarations used; biome's noUnusedImports reports them.",
+      "acceptanceCriteria": [
+        "[unit] `estimateTokens` imported from `@/utils/tokens` returns 2 for `\"abcde\"`.",
+        "[unit] `estimateTokens` imported from `@/utils/tokens` returns 1 for `\"abcd\"`.",
+        "[unit] `estimateTokens` imported from `@/utils/tokens` returns 0 for `\"\"`.",
+        "[unit] `estimateTokens` re-exported by `@/context` is the same function as the one exported by `@/utils/tokens`.",
+        "[unit] `estimateTokens` re-exported by `@/constitution` is the same function as the one exported by `@/utils/tokens`.",
+        "[unit] `validatePlugin` imported from `@/plugins`, given `{ name: \"legacy-opt\", version: \"1.0.0\", provides: [\"optimizer\"], extensions: { optimizer: { name: \"x\", optimize: async () => ({}) } } }`, returns `null`.",
+        "[unit] When `validatePlugin` imported from `@/plugins` receives `{ name: \"legacy-opt\", version: \"1.0.0\", provides: [\"optimizer\"], extensions: { optimizer: { name: \"x\", optimize: async () => ({}) } } }`, then the logger records a `warn` on stage `plugins` whose message equals `removedOptimizerMessage(\"legacy-opt\")`, which is `Plugin 'legacy-opt' validation failed: the 'optimizer' extension was removed with pipeline mode; remove it from 'provides'`.",
+        "[unit] `validatePlugin`, given `{ name: \"mixed\", version: \"1.0.0\", provides: [\"reporter\", \"optimizer\"], extensions: { reporter: { name: \"r\" } } }`, returns `null`.",
+        "[unit] When `validatePlugin` receives `{ name: \"mixed\", version: \"1.0.0\", provides: [\"reporter\", \"optimizer\"], extensions: { reporter: { name: \"r\" } } }`, then the logger records a `warn` whose message equals `removedOptimizerMessage(\"mixed\")`.",
+        "[unit] Regression guard: `validatePlugin`, given `{ name: \"rep\", version: \"1.0.0\", provides: [\"reporter\"], extensions: { reporter: { name: \"r\" } } }`, returns the same object.",
+        "[integration] `loadPlugins`, given a plugin directory holding one plugin module that exports provides `[\"optimizer\"]` and one that exports provides `[\"reporter\"]`, with the built-in plugins `nax-curator` and `nax-auto-pr` disabled through `disabledPlugins`, returns a registry holding only the reporter plugin.",
+        "[integration] When `loadPlugins` loads a plugin directory holding one plugin module that exports provides `[\"optimizer\"]` and one that exports provides `[\"reporter\"]`, with `nax-curator` and `nax-auto-pr` disabled through `disabledPlugins`, then the plugin error sink set through `_setPluginErrorSink` receives a message containing `Plugin validation failed for`."
+      ],
+      "tags": [
+        "pipeline-deletion",
+        "plugins",
+        "optimizer",
+        "token-estimation"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module estimator relocation and intentional plugin API break with runtime validation and loader integration; estimator tokens are budget estimates, not security credentials, and loader access controls remain untouched.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/optimizer/types.ts",
+        "packages/nax/src/plugins/validator.ts",
+        "packages/nax/src/plugins/types.ts",
+        "packages/nax/src/plugins/registry.ts",
+        "packages/nax/src/plugins/loader.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/utils/tokens.ts",
+        "packages/nax/test/unit/utils/tokens.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Given a valid reporter plugin whose provides is [\"reporter\"] and whose extensions also carries an undeclared optimizer property, validatePlugin returns that same plugin object, preserving the existing behavior of ignoring extensions not named in provides."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/optimizer/index.test.ts",
+          "reason": "tests only src/optimizer/, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/helpers/optimizer-result.ts",
+          "reason": "a factory for PromptOptimizerResult, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the makeOptimizerResult re-export (line 188) goes, because this story deletes test/helpers/optimizer-result.ts."
+        },
+        {
+          "path": "packages/nax/test/helpers/plugin-registry.ts",
+          "reason": "the getOptimizers mock field and its default (lines 21 and 37) go, because PluginRegistry no longer has getOptimizers."
+        },
+        {
+          "path": "packages/nax/test/unit/plugins/registry.test.ts",
+          "reason": "the describe \"PluginRegistry.getOptimizers\" and the PromptOptimizerResult import (line 10) go, because this story removes getOptimizers; the other fixtures that declare \"optimizer\" switch to the reporter extension and keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/integration/plugins/plugins-registry.test.ts",
+          "reason": "fixtures that declare the \"optimizer\" extension switch to the reporter extension, and assertions that read getOptimizers go, because this story removes the optimizer extension; registration, ordering and teardown assertions stay."
+        },
+        {
+          "path": "packages/nax/test/integration/plugins/validator.test.ts",
+          "reason": "the optimizer-extension validation tests and the PromptOptimizerInput import (line 9) go, because this story removes validateOptimizer; fixtures used by other validation tests switch from \"optimizer\" to \"reporter\" and keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/integration/plugins/loader.test.ts",
+          "reason": "plugin files written with provides [\"optimizer\"] and makeOptimizerResult switch to the reporter extension, because a plugin declaring \"optimizer\" now fails validation; the loading, ordering and error-path assertions stay."
+        },
+        {
+          "path": "packages/nax/test/integration/plugins/config-resolution.test.ts",
+          "reason": "plugin fixtures that declare the \"optimizer\" extension switch to the reporter extension, because a plugin declaring \"optimizer\" now fails validation; the config-resolution assertions stay."
+        },
+        {
+          "path": "packages/nax/test/integration/plugins/config-integration.test.ts",
+          "reason": "plugin fixtures with provides [\"optimizer\"] (lines 64 and 100) switch to the reporter extension, because a plugin declaring \"optimizer\" now fails validation; the config assertions stay."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-config-plugins.test.ts",
+          "reason": "plugin fixtures with provides [\"optimizer\"] (lines 76, 154, 218, 381 and 416) switch to the reporter extension, because a plugin declaring \"optimizer\" now fails validation; the runner and config assertions stay."
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-plugins.test.ts",
+          "reason": "plugin fixtures that declare the \"optimizer\" extension switch to the reporter extension and the expected listing changes with them, because a plugin declaring \"optimizer\" now fails validation and is not listed."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes or trims go or are lowered."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "lowered through bun run check:file-sizes -- --update-baseline when the check reports a lowerable entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2f91efcec0eb3aa8b6bb9f128889c9808f384918"
+    },
+    {
+      "id": "US-005",
+      "title": "Delete mutation testing and run-end mutation summaries",
+      "description": "**Goal** — Delete mutation execution and reporting while retaining historical-journal ignore and blocked-worktree auto-commit safety. **Motivation** — It is the only writer of `runtime.mutationSummaries`, so the run-end mutation summary (`runner-completion.ts:308-315`, `outputMutationSummary`, `formatMutationSummary`) always prints nothing. **Approach** — Design Part 5: mutation testing. Source paths below are relative to `packages/nax/src/`, except `scripts/` paths. | Site | After |\n|:---|:---|\n| `operations/index.ts:42-43` | the `./mutation-check` re-exports go |\n| `verification/index.ts:11` | `export * from \"./mutation\"` goes |\n| `runtime/index.ts:73` | the `./mutation-summary` type re-export goes |\n| `runtime/index.ts:144` | the `MutationStorySummary` import goes |\n| `runtime/index.ts:249-250`, `:478`, `:577` | `NaxRuntime.mutationSummaries`, its doc comment, its construction and its property in the returned object go |\n| `log-format/index.ts:18` | the `formatMutationSummary` re-export goes |\n| `execution/lifecycle/headless-formatter.ts:11`, `:16`, `:118-125` | the `formatMutationSummary` import, the `MutationStorySummary` type import and `outputMutationSummary` go |\n| `execution/lifecycle/index.ts:15`, `execution/index.ts:52` | `outputMutationSummary` leaves both barrels |\n| `execution/runner-completion.ts:185`, `:204-208` | `finishRun`'s result is destructured without `mutationSummaries`; the dynamic import drops `outputMutationSummary` and its call goes |\n| `execution/runner-completion.ts:308-315`, `:348` | the `mutationSummaries` / `survivorCount` block and its warning go; `finishRun` returns `{ advisoryFindings, endReport }` |\n| `scripts/check-worktree-id-ssot.ts:83` | the `src/operations/mutation-check.ts` entry goes |\n| `utils/gitignore.ts:72-77` | the `.nax/mutation-journal/` entry stays, so a journal an older nax left behind after a crash is never committed; its comment is reworded to say so and stops citing `journal.ts` |\n\nDeleted: `operations/mutation-check.ts`, `verification/mutation/` (`apply.ts`, `classify.ts`, `index.ts`, `journal.ts`, `mutator.ts`, `operators.ts`, `select.ts`, `types.ts`), `verification/changed-line-ranges.ts`, `utils/diff-files.ts`, `runtime/mutation-summary.ts`, `log-format/mutation-summary.ts`. `NaxRuntime.dirtyWorktrees` and the `blockedWorktrees` parameter of `autoCommitIfDirty` (`utils/git.ts:209-216`, `:260-281`) stay: `mutationCheckOp` was their only writer, but removing the parameter changes a positional signature used by four production and about thirty test call sites. Wave B3 removes them with the other runtime fields only deleted code wrote (Out of Scope). **Scope** — In: the exact mutation sources, runtime summary field/type/map/property, reporting imports/exports/calls, exclusive tests/helper, gitignore comment and worktree-SSOT entry above. Preserve all non-mutation completion behavior and remove only mutation-specific assertions from retained runtime/gitignore tests. Out: US-006's remaining C1 orphans and porcelain cleanup; Mutation config/selectors remain B3 work. `NaxRuntime.dirtyWorktrees` and the `blockedWorktrees` parameter and refusal branch of `autoCommitIfDirty`, written only by the deleted mutation check; wave B3 removes them with the other runtime and `PipelineContext` fields only deleted code wrote. The `.nax/mutation-journal/` entry in `NAX_GITIGNORE_ENTRIES` stays, so a journal left by an older nax is never committed. Do not change the autoCommitIfDirty positional signature or refusal branch and do not remove the journal ignore entry. **Interface** — `NaxRuntime` (`runtime/index.ts`). Target: no `mutationSummaries` field; every other field unchanged, including `dirtyWorktrees`. Kept: `NAX_GITIGNORE_ENTRIES` (`utils/gitignore.ts`); `autoCommitIfDirty(workdir, stage, role, storyId, blockedWorktrees?, dryRun?, runGit?)` (`utils/git.ts:209`). `finishRun` returns `{ advisoryFindings, endReport }`. Remove only the runtime initialization case for mutationSummaries, and the gitignore journalDir implementation-link case/import; retain the actual ignore-entry assertion. Add/retain the blocked git-root regression using autoCommitIfDirty's injected runGit double and asserting no add/commit. Keep advisory footer, status/cost reconciliation, completion events, heartbeat/repair, runtime close and existing safety assertions intact.\n\nVerification, run in packages/nax, after the story's changes: (1) `bun run typecheck`; a missed reference or a barrel re-exporting a deleted module or name fails here. (2) A path sweep: for each source file this story deletes, with `<stem>` its path below `src/` without the extension, run `rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test`, and the same for each deleted test file's path below `test/`. Expected: zero hits, else stop. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Known comment hits for this story's stems, reworded rather than a stop: `utils/gitignore.ts:72-76` (keep the `.nax/mutation-journal/` entry; reword the comment to say it protects a journal an older nax left and stop citing `journal.ts`), `utils/git.ts:199-202`. For `src/verification/mutation/` as a whole the sweep pattern is `verification/mutation`. Expected and not a stop: hits in `scripts/baselines/*.json`, which step 3 clears; the historical note in `../repo-tooling/scripts/check-coverage.ts:103`; the `stage-assembler-scope-files.test.ts` fixture string in `../repo-tooling/test/unit/scripts/check-test-satellites.test.ts:17`, which tests a file-name classifier; the stale `test/unit/acceptance/generator-*.test.ts` entries in `scripts/check-inline-test-mocks.ts` (`:48`, `:78`, `:139`, `:140`), which name test files earlier waves deleted; and the config keys, selectors and registry strings Out of Scope leaves to wave B3 (`optimizer`, `prompts.overrides`, `mutationCheck`, the `\"prompt\"` and `\"optimizer\"` stage names). A longer sibling stem that shares the prefix is not a hit when that sibling is deleted too or is a deleted test. Line numbers are at `c3266de8a`; when an earlier story edited the same file, locate each site by its symbol or test name. (3) `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry; `check:complexity` fails with \"baseline is stale\" while a deleted file or function is still listed. After `check:all` is green, `bun run check:test-escape-hatches:update`. Do not edit `scripts/baselines/coverage-per-file-baseline.json` (no deleted file has an entry). (4) `bun run check:all` and `bun run test`. A trimmed source file also drops the imports only its removed declarations used; biome's noUnusedImports reports them.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: `NAX_GITIGNORE_ENTRIES` imported from `@/utils/gitignore` contains `.nax/mutation-journal/`.",
+        "[unit] Regression guard: `autoCommitIfDirty` imported from `@/utils/git`, called with a `blockedWorktrees` set holding the working tree's git root and a `runGit` double whose `rev-parse --show-toplevel` call returns that root, issues no `add` call through `runGit`.",
+        "[unit] Regression guard: `autoCommitIfDirty` imported from `@/utils/git`, called with a `blockedWorktrees` set holding the working tree's git root and a `runGit` double whose `rev-parse --show-toplevel` call returns that root, issues no `commit` call through `runGit`."
+      ],
+      "tags": [
+        "pipeline-deletion",
+        "mutation-testing",
+        "runtime",
+        "git-safety"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Removal spans operations, verification, runtime and completion/reporting; explicit regressions protect the retained journal ignore and positional auto-commit safety contract.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/index.ts",
+        "packages/nax/src/execution/runner-completion.ts",
+        "packages/nax/src/execution/lifecycle/headless-formatter.ts",
+        "packages/nax/src/utils/gitignore.ts",
+        "packages/nax/src/utils/git.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/mutation-check.test.ts",
+          "reason": "tests only src/operations/mutation-check.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/mutation-check-diff-scope.test.ts",
+          "reason": "tests only src/operations/mutation-check.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/mutation-check-revert.test.ts",
+          "reason": "tests only src/operations/mutation-check.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/mutation-check-selection.test.ts",
+          "reason": "tests only src/operations/mutation-check.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/helpers/mutation-check.ts",
+          "reason": "context and deps factories for mutationCheckOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the re-exports from ./mutation-check (lines 184 and 185) go, because this story deletes test/helpers/mutation-check.ts."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/mutation/apply.test.ts",
+          "reason": "tests only src/verification/mutation/apply.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/mutation/classify.test.ts",
+          "reason": "tests only src/verification/mutation/classify.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/mutation/journal.test.ts",
+          "reason": "tests only src/verification/mutation/journal.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/mutation/mutator.test.ts",
+          "reason": "tests only src/verification/mutation/mutator.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/mutation/operators.test.ts",
+          "reason": "tests only src/verification/mutation/operators.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/mutation/select.test.ts",
+          "reason": "tests only src/verification/mutation/select.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/verification/changed-line-ranges.test.ts",
+          "reason": "tests only src/verification/changed-line-ranges.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/diff-files.test.ts",
+          "reason": "tests only src/utils/diff-files.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/log-format/mutation-summary.test.ts",
+          "reason": "tests only src/log-format/mutation-summary.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/mutation-summary-completion.test.ts",
+          "reason": "tests only the run-end mutation summary this story removes from runner-completion.ts and headless-formatter.ts; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/runtime.test.ts",
+          "reason": "the test \"runtime initializes an empty mutation summary store\" (line 87) goes, because this story removes NaxRuntime.mutationSummaries; every other createRuntime test keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/gitignore.test.ts",
+          "reason": "the test \"the ignored path is the one journalDir actually writes to\" (line 31) and the journalDir import go, because this story deletes journal.ts; \"covers the mutation journal directory\" (line 27) stays and keeps asserting the entry."
+        },
+        {
+          "path": "packages/nax/scripts/check-worktree-id-ssot.ts",
+          "reason": "the \"src/operations/mutation-check.ts\" entry (line 83) goes, because this story deletes that file."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "the src/operations/mutation-check.ts and src/verification/mutation/mutator.ts entries go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "lowered through bun run check:file-sizes -- --update-baseline when the check reports a lowerable entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e7b8bfbba66c0c26260658cbd26a64f0bb7ff5dc"
+    },
+    {
+      "id": "US-006",
+      "title": "Remove the remaining C1 orphan declarations",
+      "description": "**Goal** — Remove only the kept-file declarations whose final production callers C1 deleted, preserving all adjacent live APIs and parser behavior. **Motivation** — Each declaration was compared with the same pass at the commit before C1 began: what was live before C1 and is dead now is this spec; what was already dead then is issue #2823's. **Approach** — Design Part 6: the orphan pass. Paths in the table are relative to `packages/nax/src/`. Declarations in kept files whose last production caller a C1 wave deleted. Each was reachable from `bin/` at the commit before C1 began and is unreachable at `c3266de8a` once Parts 1 to 5 apply. | Site | After |\n|:---|:---|\n| `advisor/ledger.ts` | `STORY_RULING_KINDS` and `countStoryRulings` (`:94`) go |\n| `advisor/index.ts:28` | `countStoryRulings` leaves the barrel |\n| `agents/acp/session.ts` | `discardAcpSessionLeftover` (`:127`) goes |\n| `agents/acp/index.ts:4` | `discardAcpSessionLeftover` leaves the `./session` re-export; `_acpDeps` stays |\n| `config/runtime-types-advisor.ts` | the `AdvisorCaller` type (`:29`) goes |\n| `config/schemas-advisor.ts` | `isAdvisorCallerEnabled` (`:37`) and the `AdvisorCaller` import (`:6`) go |\n| `config/index.ts:54`, `:118` | `AdvisorCaller` and `isAdvisorCallerEnabled` leave the barrel |\n| `execution/lifecycle/test-baseline-capture.ts` | `RollForwardOptions`, `resolveNextStoryId`, `RollForwardContext`, `invokeRollForwardFromContext` and `persistNextStoryRollForward` go |\n| `execution/queue-handler.ts` | `BatchQueueDrainResult`, `drainQueueAtBatchBoundary`, `logDroppedCommands` and `applyBatchBoundaryCommands` go |\n| `execution/index.ts` | `BatchQueueDrainResult` and `drainQueueAtBatchBoundary` leave the `./queue-handler` re-exports |\n| `execution/session-manager-runtime.ts` | `failAndClose` (`:93`) goes |\n| `execution/story-selector.ts` | `selectIndependentBatch` (`:160`) goes |\n| `interaction/triggers.ts` | `checkMergeConflict` (`:182`) goes |\n| `interaction/index.ts:89` | `checkMergeConflict` leaves the barrel |\n| `test-runners/conventions.ts` | `extractWholeTestDirs` (`:217`) goes |\n| `test-runners/detector.ts` | `TEST_FILE_PATTERNS` (`:22`) and `isTestFile` (`:43`) go |\n| `test-runners/index.ts:19`, `:32` | `extractWholeTestDirs` and `isTestFile` leave the barrel |\n| `utils/git.ts` | `detectMergeConflict` (`:149`) goes; `parsePorcelainUntrackedPaths` leaves the `./porcelain` re-export (`:166`) |\n| `utils/porcelain.ts` | `parsePorcelainUntrackedPaths` (`:136`) goes |\n\nAfter this story, the reachability pass from `bin/` over the tree finds no declaration that was reachable before C1 and is unreachable now, other than the five config selector declarations named in Motivation. A file-level check finds no source file under `src/` that only tests import, other than those listed in #2823. **Scope** — In: the table's exact declarations/barrels, exclusively used imports, deleted parallel-batch-selector test/allowlist entry, targeted test-case trims and preservation of private porcelain decoding through its remaining live API. Out: revisiting US-001–US-005's removal surfaces, arbitrary currently unreachable code, caller config flags and runtime/context residue. The selectors `mutationCheckConfigSelector`, `MutationCheckConfig`, `promptLoaderConfigSelector`, `PromptLoaderConfig` and `reshapeSelector`, which become unreachable with this spec; wave B3 removes them with the rest of `config/selectors.ts`. Code that was already unreachable before C1 and has no pipeline cause (among others `constitution/generators/`, `session/session-keeper.ts`, `session/session-runner.ts`, `agent-runtime/bun-runtime.ts`, `agents/cost/token-mapper.ts`, `agents/cost/types.ts`, `agents/retry/compose.ts`, `agents/shared/model-resolution.ts`, `config/validate.ts`, `config/validate-fields.ts`, `execution/timeout-handler.ts`, the routing LLM strategy leftovers, `groupStoriesIntoBatches`, `groupStoriesByDependencies`, `markStoryAsBlocked`, `generateHumanHaltSummary`, `context/engine/handlers/index.ts`, `review/fix-review/index.ts`); tracked in issue #2823. Keep `_acpDeps`, physical/session close paths, queue lock/read/process/clear, run-start baseline capture, advisor resolution/defaults, framework detection, isTestFileByPatterns and porcelain .nax-path restoration unchanged. **Interface** — Kept integration symbols, verbatim: `parsePorcelainForNaxPaths(porcelain)` (`utils/porcelain.ts`), the remaining public path into the private `unquotePorcelainPath`; `resolveAdvisorConfig(config: { advisor?: AdvisorConfig } | undefined): AdvisorConfig` and `ADVISOR_DEFAULTS` (`config/schemas-advisor.ts:30`). No replacement public API is introduced for any removed declaration. **Test adaptation** — Delete `test/integration/execution/parallel-batch-selector.test.ts` and its inline-mock allowlist entry. The required porcelain test adaptation is: `packages/nax/test/unit/utils/porcelain.test.ts` - the untracked helper (lines 13 to 15) stops calling parsePorcelainUntrackedPaths, which this story removes: it inserts the .nax directory segment after the opening quote of the quoted path, passes the unstaged-deletion line made of a space, D, a space and that path to parsePorcelainForNaxPaths, and returns each result's path with that leading segment removed, so every escape-decoding test keeps its expected value; the import (line 11) drops parsePorcelainUntrackedPaths; every test keeps its assertions. Do not export unquotePorcelainPath or weaken escape-decoding expectations. **Verification** — Assert the single unstaged deletion with a quoted .nax path and literal backslash-t decodes into one entry with a tab in its path and staged=false. In the same existing porcelain test file, assert that the malformed line consisting only of a space and D returns an empty array, preserving the parser's non-actionable-record guard. Apply the shared per-story source/test path sweep and additionally sweep removed symbol names; reword stale comments, not deferred registries/config. Lower applyBatchBoundaryCommands complexity debt and deleted/trimmed test escape-hatch/size baselines through the prescribed commands. Confirm final declaration/file-level reachability against the pre-C1 distinction when that checker is available; the only newly unreachable declarations allowed outside these cuts are reshapeSelector, mutationCheckConfigSelector, MutationCheckConfig, promptLoaderConfigSelector and PromptLoaderConfig, all deferred to B3.\n\nVerification, run in packages/nax, after the story's changes: (1) `bun run typecheck`; a missed reference or a barrel re-exporting a deleted module or name fails here. (2) A path sweep: for each source file this story deletes, with `<stem>` its path below `src/` without the extension, run `rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test`, and the same for each deleted test file's path below `test/`. Expected: zero hits, else stop. A hit in code, in a test that reads a source file by path, or in a path list a test or script iterates is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Known comment hits for this story's stems: `interaction/triggers.test.ts:184` names checkMergeConflict and is reworded. The orphan pass is complete when the sweep finds no reference to a removed symbol outside comments. Expected and not a stop: hits in `scripts/baselines/*.json`, which step 3 clears; the historical note in `../repo-tooling/scripts/check-coverage.ts:103`; the `stage-assembler-scope-files.test.ts` fixture string in `../repo-tooling/test/unit/scripts/check-test-satellites.test.ts:17`, which tests a file-name classifier; the stale `test/unit/acceptance/generator-*.test.ts` entries in `scripts/check-inline-test-mocks.ts` (`:48`, `:78`, `:139`, `:140`), which name test files earlier waves deleted; and the config keys, selectors and registry strings Out of Scope leaves to wave B3 (`optimizer`, `prompts.overrides`, `mutationCheck`, the `\"prompt\"` and `\"optimizer\"` stage names). A longer sibling stem that shares the prefix is not a hit when that sibling is deleted too or is a deleted test. Line numbers are at `c3266de8a`; when an earlier story edited the same file, locate each site by its symbol or test name. (3) `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry; `check:complexity` fails with \"baseline is stale\" while a deleted file or function is still listed. After `check:all` is green, `bun run check:test-escape-hatches:update`. Do not edit `scripts/baselines/coverage-per-file-baseline.json` (no deleted file has an entry). (4) `bun run check:all` and `bun run test`. A trimmed source file also drops the imports only its removed declarations used; biome's noUnusedImports reports them.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: `parsePorcelainForNaxPaths` imported from `@/utils/porcelain`, given the single unstaged-deletion line ` D \".nax/a\\tb.ts\"` (the path double-quoted, with a backslash followed by `t`), returns one entry.",
+        "[unit] Regression guard: `parsePorcelainForNaxPaths` imported from `@/utils/porcelain`, given the single unstaged-deletion line ` D \".nax/a\\tb.ts\"` (the path double-quoted, with a backslash followed by `t`), returns an entry whose `path` is `.nax/a`, a tab character, then `b.ts`.",
+        "[unit] Regression guard: `parsePorcelainForNaxPaths` imported from `@/utils/porcelain`, given the single unstaged-deletion line ` D \".nax/a\\tb.ts\"` (the path double-quoted, with a backslash followed by `t`), returns an entry whose `staged` is `false`.",
+        "[unit] Negative-path regression guard: `parsePorcelainForNaxPaths` imported from `@/utils/porcelain`, given the malformed line ` D` with no path field, returns `[]`, preserving the existing rejection of non-actionable porcelain records."
+      ],
+      "tags": [
+        "pipeline-deletion",
+        "dead-code",
+        "sessions",
+        "porcelain"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-004",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-cutting declaration cleanup touches ACP/session lifecycle and path-restoration safety alongside live queue/baseline helpers; security/session override requires strict test-implementation isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/queue-handler.ts",
+        "packages/nax/src/execution/lifecycle/test-baseline-capture.ts",
+        "packages/nax/src/utils/porcelain.ts",
+        "packages/nax/src/test-runners/index.ts",
+        "packages/nax/src/config/schemas-advisor.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/execution/parallel-batch-selector.test.ts",
+          "reason": "tests only selectIndependentBatch, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-selector.test.ts",
+          "reason": "the describe \"selectIndependentBatch\" (line 45) and its import go, because this story removes the function; the selectNextStories and retry-candidate tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/queue-handler.test.ts",
+          "reason": "the describe \"drainQueueAtBatchBoundary (BUG-9)\" (line 235) and its import go, because this story removes the function; the processQueueFile, readQueueFile and clearQueueFile tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/session-manager-runtime.test.ts",
+          "reason": "the describe \"failAndClose() — H-1\" (line 132) and its import go, because this story removes the function; the close-path describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/advisor/ledger.test.ts",
+          "reason": "the test \"counts only story rulings (kinds 2 + 3) for that story\" (line 82) and the countStoryRulings import (line 8) go, because this story removes the function; the ledger and readTrustedDecisions tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/acp/session.test.ts",
+          "reason": "the describe \"discardAcpSessionLeftover (BUG-122 rectification, S4b-5)\" (line 286) and its import go, because this story removes the function; the AcpSession tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/config/advisor-config.test.ts",
+          "reason": "the test \"a caller runs only when the master switch AND its own flag are on\" (line 49) and the isAdvisorCallerEnabled import (line 6) go, because this story removes the function; the resolveAdvisorConfig tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/interaction/triggers.test.ts",
+          "reason": "the tests \"checkMergeConflict aborts on timeout when fallback is abort\" (line 204) and \"checkMergeConflict: true when disabled or not configured\" (line 402), the checkMergeConflict import (line 18) and its name in the comment at line 184 go, because this story removes the function; every other trigger test keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/test-runners/conventions.test.ts",
+          "reason": "the describe \"extractWholeTestDirs\" (line 178) and its import go, because this story removes the function; the isTestFileByPatterns and glob describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/git.test.ts",
+          "reason": "the describes \"detectMergeConflict\" (line 23) and \"parsePorcelainUntrackedPaths\" (line 680), its section comment (line 676) and both imports go, because this story removes both functions; every other git helper test keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/porcelain.test.ts",
+          "reason": "the untracked helper (lines 13 to 15) stops calling parsePorcelainUntrackedPaths, which this story removes: it inserts the .nax directory segment after the opening quote of the quoted path, passes the unstaged-deletion line made of a space, D, a space and that path to parsePorcelainForNaxPaths, and returns each result's path with that leading segment removed, so every escape-decoding test keeps its expected value; the import (line 11) drops parsePorcelainUntrackedPaths; every test keeps its assertions."
+        },
+        {
+          "path": "packages/nax/scripts/check-inline-test-mocks.ts",
+          "reason": "the \"test/integration/execution/parallel-batch-selector.test.ts\" entry goes, because this story deletes that test file."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "the applyBatchBoundaryCommands entry under src/execution/queue-handler.ts goes, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes or trims go or are lowered."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/file-sizes-baseline.json",
+          "reason": "lowered through bun run check:file-sizes -- --update-baseline when the check reports a lowerable entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "58245d766e9295d545ec0de19813a1ca81d8931f"
+    }
+  ],
+  "analysis": "Repository exploration: codebase-memory MCP is not exposed in this host, so direct Read/Grep/Glob navigation was used against /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. This is an existing-code removal feature, not a greenfield build. No source code or tests were changed or executed during PRD drafting; historical declaration reachability and deletion totals below come from the supplied spec, not a newly executed checker. The inspected source sites match the spec's baseline locations. All implementation changes belong to packages/nax; repo-tooling is included in reference sweeps, not an invitation to change other packages. Keep exactly US-001 through US-006 in the specified serial dependency chain, with US-006 explicitly depending on all five predecessors.\n\nGoal and provenance: C1 wave B2c follows pipeline-fork-cut #2812, pipeline-post-run-delete #2813, pipeline-story-loop-cut #2821, pipeline-review-delete #2824 and pipeline-story-ops-delete #2825, under docs/superpowers/specs/2026-11-05-nax-c1-pipeline-deletion-design.md (#2810). At baseline c3266de8a the spec derives 40 deleted source files, 49 deleted tests/helpers, 57 trimmed kept source/script files, approximately 30 trimmed tests, and the single added source leaf utils/tokens.ts. These totals explain scale, not extra scope. Delete importer-first; preserve workflow results. The only intentional observable changes are the prompts removal stub and named optimizer-plugin rejection. User rulings include deleting --init too, and leaving code that was already unreachable before C1 to #2823.\n\nConventions and execution: root AGENTS.md and packages/nax/AGENTS.md apply; no deeper AGENTS.md files were found under nax. docs/architecture/ARCHITECTURE.md:11-49 indexes conventions, _deps injection, cause-preserving errors, Bun process management, testing and security; :170-190 summarizes limits and canonical interfaces. packages/nax/package.json:14 defines typecheck as source plus test checks, :51 uses the package's scripted test runner, :69-94 exposes coverage, escape-hatch, complexity and check:all gates. Work from packages/nax; do not run bare bun test or bun run nax. Use existing Bun-native APIs, shared @test/helpers and _deps seams; do not introduce mock.module contamination or broad casts to restore obsolete fixtures. The pipeline runs normal gates automatically; the verification protocol below describes required checks, not work already performed. Do not run coverage inside NAX_SANDBOXED=1; the spec says none of the deleted files has a coverage-per-file-baseline entry, so do not edit that baseline. No version bumps, dependency changes, generated context edits, or config migration are part of this feature.\n\nUS-001 findings: packages/nax/bin/nax.ts:1355-1369 already implements accept's config-free removal stub, using plain option calls, chalk.red on stderr, process.exit(1). The prompts command at :1371-1451 currently validates options.dir, runs --init / --export branches, calls runTrustGate, requires feature, loads config and dispatches promptsCommand. Replace that whole body with the same removal shape while retaining all former option spellings and help. Remove the three prompts imports from bin, the prompts re-export block in src/cli/index.ts:176-184, init's optional prompt-template hint in src/cli/init.ts:434, and the prompts-init entry in scripts/check-worktree-id-ssot.ts:94. Delete src/cli/{prompts,prompts-export,prompts-init,prompts-main,prompts-shared,prompts-tdd}.ts. Existing test/integration/cli/cli-accept-removed.test.ts:27-58 demonstrates an absolute binary path resolved before spawn, empty temporary cwd, concurrent draining of stdout/stderr and proc.exited, and cleanup through @test/helpers. Create only test/integration/cli/cli-prompts-removed.test.ts for the new binary seam. Delete test/unit/cli/{prompts-export,prompts-init,prompts-main,prompts-tdd}.test.ts and test/integration/prompts/pb-004-migration.test.ts (its source-file read and remaining PromptBuilder tests both become obsolete). Remove only the regular-prompts and prompts-export trust tests in test/integration/cli/cli-trust-gate.test.ts; preserve every other trust assertion. In test/unit/cli/init.test.ts remove the prompt-init mention from the title but retain assertions that init scaffolds no templates. Remove all pb-004-migration allowlist entries in scripts/check-inline-test-mocks.ts. Do not move the trust boundary for other commands.\n\nUS-002 findings: src/pipeline/stages/index.ts:36-44 constructs and memoizes exactly queue-check, routing, constitution, context, workflow, completion; :51 separately re-exports promptStage. The lazy workflow stage at :19-26 uses a string-literal dynamic import to avoid a load-time operations cycle. Preserve that arrangement and the workflow builders; do not replace the remaining context stage or remove its push/v2-disabled fallback. Existing test/unit/pipeline/workflow-pipeline.test.ts:5-18 already pins stage order, memoization and absence of the old default-pipeline API. src/prompts/index.ts:98-101 exports TddPromptBuilder under both its own name and PromptBuilder. src/prompts/core/types.ts:8-9 and :35-36 contain the removed PromptRole and PromptOptions, while PromptSection, SectionSlot and SLOT_ORDER remain. src/prompts/sections/index.ts:7-38 locates the removable TDD sections plus separately retained story, isolation, conventions, protocol rendering and modified-file helpers. src/quality/self-verification.ts:5-21 contains kept result/status types; only :23-40 is the obsolete prompt-input interface/resolver and its imports. Delete src/pipeline/stages/prompt.ts, src/prompts/builders/tdd-builder.ts, src/prompts/loader.ts, src/context/feature-context-filter.ts and src/prompts/sections/{hermetic,role-task,self-verification,tdd-conventions,test-baseline,test-quality,verdict}.ts. Trim buildBatchStorySection/buildStoryReminderSection from story.ts, unwrapProtocolRegions from protocol-region.ts, buildTestFrameworkHint from test-runners/detector.ts and their barrels, plus the feature-context-filter barrel block. Preserve buildStorySection, applyProtocolRegions, wrapAffordance, result types, detectFramework and stripAnsi. Searches confirm promptStage imports resolveAcceptanceExecution (src/pipeline/stages/prompt.ts:24,50), whereas workflow never calls this builder. Do not eliminate other functions called estimateTokens simply because names match: src/context/engine/providers/feature-context.ts:108 and src/context/rules/canonical-loader/index.ts:284 have independent private implementations outside this move.\n\nUS-002 test ownership: delete test/unit/pipeline/stages/{prompt-acceptance,prompt-batch,prompt-config-root,prompt-scope-files,prompt-tdd-simple}.test.ts; test/unit/prompts/builder.test.ts; test/unit/prompts/builders/{tdd-builder,tdd-builder-config-root}.test.ts; test/unit/prompts/loader.test.ts; test/unit/prompts/sections/{hermetic,role-task,self-verification,tdd-conventions,test-baseline,test-quality,verdict}.test.ts; test/unit/quality/self-verification.test.ts; test/unit/context/{feature-context-filter,budget-warn-once}.test.ts; and test/unit/acceptance/execution-description.test.ts here, before its source disappears in US-003, because it imports TddPromptBuilder. In test/integration/context/feature-engine-read-path.test.ts remove the three role-filtering tests and budget truncation test plus their obsolete import, retaining FeatureContextProvider assertions. In test/unit/prompts/sections/story.test.ts remove reminder/batch describes and their out-of-scope rendering cases but preserve buildStorySection including out-of-scope and modifiedFiles coverage; :8-29 already exercises title and numbered criteria. In sections/modified-files.test.ts remove only reminder/batch table rows and reminder assertion. In sections/sections.test.ts remove only role-task/verdict describes. In sections/protocol-region.test.ts remove only unwrap describe/import/header mention; in prompts/us-004-affordances.test.ts remove only the unwrap seam. In prompts/builders/rectifier-builder-review-labels.test.ts remove the verdict.ts source-file guard and its associated comment, not the rectifier-label assertions. In test-runners/detector.test.ts remove only buildTestFrameworkHint tests. Remove allowlist entries naming deleted builder, loader, tdd-conventions, prompt-batch and prompt-tdd-simple tests from scripts/check-inline-test-mocks.ts. Add/retain the explicit workflow-order and buildStorySection regression assertions using existing tests and the public barrels.\n\nUS-003 findings: src/operations/call-dispatch-prologue.ts:134-150 composes sections, then conditionally appends acceptance guidance for run-kind fix/implementer roles in rectification. Nothing sets CallContext.acceptanceExecution; src/operations/types.ts:25-26 imports its type from ../acceptance. Remove this always-empty append branch and the context field; compute prompt with join(sections) and leave all config selection, model/session resolution, timeout, signal, correlation and dispatch-target behavior unchanged (:151-177). The run-kind rectification regression must exercise the former true branch (implementer, rectification, build section 'fix it'), not merely a complete-kind operation. Reuse the existing test/unit/operations/call*.test.ts harness rather than adding unspecified output files. src/context/engine/index.ts:56-61 and :105-108 export phase-stage mapping, assembler and StageKey; remove those exports, retaining StageContextConfig, STAGE_CONTEXT_MAP, DEFAULT_STAGE_CONFIG, getStageContextConfig and ContextOrchestrator. Delete the whole src/acceptance/ directory (index.ts, generator.ts, execution-description.ts), src/prompts/sections/{acceptance,acceptance-section}.ts and src/context/engine/{stage-assembler,phase-stage-map}.ts. Delete test/unit/acceptance/generator-core.test.ts, test/unit/prompts/sections/acceptance.test.ts, and test/unit/context/engine/{phase-stage-map,stage-assembler,stage-assembler-scope-files,stage-reachability}.test.ts. stage-reachability is deliberately deleted, not rewritten: it derives reachability from the two removed mapping helpers; B3 owns stage-key cleanup and replacement guard. In test/unit/context/engine/orchestrator-rebuild.test.ts remove only the assembleForStage planDigestBoost describe, makeAssembleCtx fixture, makeMockOrchestrator helper, associated comments/imports; keep rebuildForAgent, dedupe, StageContextConfig.planDigestBoost and ContextOrchestrator planDigestBoost assertions.\n\nUS-004 findings and seam: src/optimizer/types.ts:47-53 defines estimateTokens as Math.ceil(text.length / 4); copy it unchanged, including its comment, into src/utils/tokens.ts, without introducing a utils barrel. There are exactly eight live importers and two re-exports to redirect: src/context/builder.ts:12, src/context/elements.ts:8 and src/constitution/loader.ts:11 use ../utils/tokens; src/context/fragments/store.ts:25, src/context/test-scanner/index.ts:14, src/context/rules/rule-sections/index.ts:21, src/context/engine/providers/static-rules.ts:28 and static-rules-budget-notice.ts:13 use @/utils/tokens; src/context/index.ts:5 and src/constitution/index.ts:9 re-export from ../utils/tokens. New test/unit/utils/tokens.test.ts must exercise direct and both public-barrel identities, not copies that happen to return equal values. src/plugins/types.ts:48-57 is PluginType, :126-151 is PluginExtensions, :163-175 is the optimizer type re-export; remove only optimizer surface. src/plugins/index.ts:23-49 removes optimizer exports but already exposes validatePlugin. removedOptimizerMessage must be exported from validator.ts as specified; the spec does not require a new plugins barrel re-export of that helper. src/plugins/validator.ts:68-83 validates provides as a non-empty array then each known type; place the optimizer rejection between those checks so a mixed plugin is rejected as a whole and gets the removal diagnostic instead of a generic unknown-type error. :129-130 and :156-176 contain removed optimizer dispatch/validator, whereas :342-371 validates a reporter object by name with optional function handlers. src/plugins/loader.ts:422-439 enforces allowed-root module paths and must remain unchanged; :449-455 already emits 'Plugin validation failed for' to the existing error sink when validatePlugin returns null, before setup. Keep that failure path and keep loading other plugins. Delete src/optimizer/{index,noop.optimizer,types}.ts, test/unit/optimizer/index.test.ts and test/helpers/optimizer-result.ts. Drop makeOptimizerResult and getOptimizers from helper barrels/doubles. Token estimation is budgeting, not an authentication-token change.\n\nUS-004 fixture migration: convert generic optimizer fixtures to reporter objects with a name string in test/unit/plugins/registry.test.ts, test/integration/plugins/{plugins-registry,validator,loader,config-resolution,config-integration}.test.ts, test/integration/execution/runner-config-plugins.test.ts and test/integration/cli/cli-plugins.test.ts. Preserve original loading, ordering, config resolution, registration, teardown, runner and listing assertions with corresponding reporter expectations. Delete only getOptimizers-specific assertions and optimizer-extension shape validation tests; keep/add the explicit new legacy-optimizer rejection assertions. The serializer helper in test/integration/plugins/loader.test.ts:35-82 itself emits optimizer code and needs a reporter branch; changing provides alone is insufficient. Its existing wrapper at :86-100 disables nax-curator/nax-auto-pr; use the same disabledPlugins mechanism for the mixed legacy/reporter integration, and restore _setPluginErrorSink with _resetPluginErrorSink afterward. Do not cast obsolete optimizer fixtures to NaxPlugin after PluginType excludes that string; validatePlugin accepts unknown, so rejection examples can be ordinary objects. An extensions.optimizer property that is not declared in provides remains ignored, as before.\n\nUS-005 findings: src/runtime/index.ts:73,144,250,478,577 contains the mutation summary type export/import, field, map creation and returned property; dirtyWorktrees at :264,479,578 stays. src/execution/runner-completion.ts:185 destructures finishRun, :204-208 prints the mutation footer, :308-315 gathers survivors/logs, :348 returns the redundant summaries. Trim only those paths; keep advisory findings, run completion events/gate, final status/cost reconciliation, heartbeat stop, repairRunState, runtime.close and dirty-file commit argument ordering. src/execution/lifecycle/headless-formatter.ts:118-125 prints the optional mutation summary; its other header/footer/advisory formatting remains. Delete src/operations/mutation-check.ts, src/verification/mutation/{apply,classify,index,journal,mutator,operators,select,types}.ts, src/verification/changed-line-ranges.ts, src/utils/diff-files.ts, src/runtime/mutation-summary.ts and src/log-format/mutation-summary.ts, plus all related re-exports in operations/index.ts, verification/index.ts, runtime/index.ts, log-format/index.ts, execution/lifecycle/index.ts and execution/index.ts. Remove mutation-check's worktree SSOT script entry. src/utils/gitignore.ts:72-77 must continue to ignore .nax/mutation-journal/; reword the comment for journals older versions left after crashes. src/utils/git.ts:209-217 is a widely used positional API; :260-281 compares real working-tree root equality and returns before staging for blocked trees. Do not remove/reorder blockedWorktrees, dryRun, runGit, the guard or NaxRuntime.dirtyWorktrees. Existing test/unit/utils/auto-commit.test.ts:26-55 demonstrates injecting the seventh runGit argument and checking git commands without spawning real git; add the blocked-root regression there using runGit, not only _gitDeps.spawn.\n\nUS-005 tests: delete test/unit/operations/{mutation-check,mutation-check-diff-scope,mutation-check-revert,mutation-check-selection}.test.ts; test/helpers/mutation-check.ts and its two barrel exports; test/unit/verification/mutation/{apply,classify,journal,select,operators,mutator}.test.ts; test/unit/verification/changed-line-ranges.test.ts; test/unit/utils/diff-files.test.ts; test/unit/log-format/mutation-summary.test.ts; test/unit/execution/lifecycle/mutation-summary-completion.test.ts. In test/unit/runtime/runtime.test.ts remove only the empty mutation-summary-store case. In test/unit/utils/gitignore.test.ts remove journalDir import and implementation-link assertion, retaining the actual ignored-entry assertion. Add/retain the specified gitignore and injected-runGit blocked-root regressions without depending on deleted journal code.\n\nUS-006 findings: text searches locate only declarations/barrels/internal calls for the nominated orphans, consistent with the spec's prior reachability analysis; no new checker was run here. src/execution/queue-handler.ts:178-309 contains the removable batch drain result, public drain and its private logDroppedCommands/applyBatchBoundaryCommands; :99-176 and :325-341 contain the kept atomic read/process/clear queue behavior and locks. Drop only imports exclusively used by batch handling. src/execution/lifecycle/test-baseline-capture.ts:139-215 and :422-441 contain the five removed roll-forward declarations; retain captureRunBaseline, its shared helpers/deps and run-start failure behavior. Do not opportunistically simplify surviving private baseline persistence or config fields. src/execution/session-manager-runtime.ts:93-113 removes failAndClose while closeStorySessions (:64-80), closeAllRunSessions (:115 onward), physical-close handling, force flags and abort forwarding stay. Remove countStoryRulings/STORY_RULING_KINDS from advisor/ledger.ts, discardAcpSessionLeftover from agents/acp/session.ts (retain _acpDeps), AdvisorCaller and isAdvisorCallerEnabled from config/runtime-types-advisor.ts and schemas-advisor.ts and their barrels; keep resolveAdvisorConfig and ADVISOR_DEFAULTS (schemas-advisor.ts:27-31) and caller config flags. Remove selectIndependentBatch from execution/story-selector.ts:160, checkMergeConflict from interaction/triggers.ts:182 and barrel, extractWholeTestDirs from test-runners/conventions.ts:217 and barrel, TEST_FILE_PATTERNS/isTestFile from detector.ts and barrel, detectMergeConflict from utils/git.ts:149 and parsePorcelainUntrackedPaths from utils/porcelain.ts:136 and the git re-export. Preserve isTestFileByPatterns and the real framework detector.\n\nUS-006 porcelain regression: src/utils/porcelain.ts:78-120 parses deletions/renames of .nax paths and preserves staged status; :174-254 contains the private C-escape decoder still reached by that live parser. test/unit/utils/porcelain.test.ts:13-15 currently reaches the private decoder via the obsolete untracked parser. Rewire its helper by inserting .nax/ immediately after the opening quote, passing an unstaged deletion line (' D ' plus the quoted path) to parsePorcelainForNaxPaths, then stripping only that injected leading .nax/ from returned paths. Keep all control-character, octal, hex, UTF-8, escaped-quote/backslash, unknown-escape and rename assertions; the spec's new tab-path result must assert one entry, the decoded path and staged=false. Do not export the private unquote function for tests.\n\nUS-006 test trims: delete only test/integration/execution/parallel-batch-selector.test.ts and its scripts/check-inline-test-mocks.ts entry. Remove selectIndependentBatch describe/import in test/unit/execution/story-selector.test.ts, batch-boundary describe/import in execution/queue-handler.test.ts, failAndClose describe/import in execution/session-manager-runtime.test.ts, countStoryRulings case/import in advisor/ledger.test.ts, discardAcpSessionLeftover describe/import in agents/acp/session.test.ts, isAdvisorCallerEnabled case/import in config/advisor-config.test.ts, the two checkMergeConflict cases/import/comment in interaction/triggers.test.ts, extractWholeTestDirs describe/import in test-runners/conventions.test.ts, detectMergeConflict and parsePorcelainUntrackedPaths describes/imports/comment in utils/git.test.ts. Preserve every surviving API's assertions and the rewritten porcelain helper's existing expected values. This is not general dead-code cleanup.\n\nVerification protocol for EVERY story (inside packages/nax, outside automatic pipeline execution when manual runs are appropriate): (1) bun run typecheck, including string-literal dynamic imports and barrels; (2) sweep every deleted source path's stem below src/ without extension across src bin test scripts ../repo-tooling/scripts ../repo-tooling/test using rg -n --fixed-strings '<stem>', and every deleted test path below test/ the same way. For whole directories also sweep '@/acceptance', 'src/acceptance/', '@/optimizer', '/optimizer\"', 'optimizer/types', 'verification/mutation'. Expect zero actionable references; stop for code, source-reading tests and iterated path-list references. Drop noUnusedImports-only dependencies from trimmed files. Reword stale comments in any file; a comment-only edit needs no Modifies entry. (3) bun run check:complexity:update and, when the file-size check reports a lowerable entry, bun run check:file-sizes -- --update-baseline. After check:all is green, bun run check:test-escape-hatches:update to lower totals, then recheck the gate if needed. (4) bun run check:all and bun run test. Never raise baselines to preserve deleted debt. Complexity entries specifically removed by story: US-001 cli/prompts-main.ts; US-002 prompts/builders/tdd-builder.ts and context/feature-context-filter.ts; US-003 context/engine/stage-assembler.ts; US-005 operations/mutation-check.ts and verification/mutation/mutator.ts; US-006 applyBatchBoundaryCommands under execution/queue-handler.ts. Escape-hatch entries for deleted/trimmed tests go or lower on each story; lower file-size entries only through the prescribed command.\n\nSweep exceptions and stale comments: scripts/baselines/*.json hits are cleared through the prescribed update commands. Keep repo-tooling/scripts/check-coverage.ts:103's historical note about prompts/loader.ts; keep the stage-assembler-scope-files.test.ts fixture string in repo-tooling/test/unit/scripts/check-test-satellites.test.ts:17 (classifier input, not a disk read); keep stale acceptance/generator-*.test.ts entries in scripts/check-inline-test-mocks.ts:48,78,139,140 (deleted by previous waves). Deferred config keys/selectors and registry strings listed in outOfScope are expected hits, not reasons to extend scope. A longer sibling stem sharing a prefix is not an actionable match. Known comments to reword as their story deletes the corresponding path: context/engine/stage-config.ts:156,334; operations/typecheck-check.ts:171; pipeline/types.ts:173,181; pipeline/stages/workflow-context.ts:32; pipeline/stages/context.ts:312; context/engine/types.ts:237,260,298; context/fragments/store.ts:9; context/engine/providers/plugin-cache.ts:82; context/engine/providers/git-history.ts:223; config/paths/index.ts:18; execution/story-context/index.ts:155; utils/gitignore.ts:72-76; utils/git.ts:199-202; plugins/extensions.ts:145; test/unit/pipeline/scope-files.test.ts:13; test/unit/context/engine/orchestrator.test.ts:215; test/unit/context/engine/providers/session-scratch.test.ts:194; test/unit/context/rules/nax-rules-stage-scoping.test.ts:11. Baseline line numbers are locating hints; find by symbol/test title after preceding stories shift lines.\n\nRisks and migration: Retaining the command declaration and former options avoids commander's unknown-command/required-option errors and guarantees an explicit migration message, even from an empty cwd with no project/trust/config. --help remains a successful Commander help path; it must not execute the removal action. Optimizer is an intentional plugin API break; return null with the exact named warning before ordinary type validation, use the existing loader skip/sink, and retain valid reporters including mixed-directory loading. Plugin authors remove optimizer from provides; no automatic rewrite or replacement optimizer is introduced. Keep workflow prompt formatting byte-for-byte equivalent where join(sections) replaces an always-empty append. Move the single estimator implementation, not its heuristic or all similarly named local helpers, to preserve budgets and both barrel identities. Preserve historical mutation-journal ignore and blocked-worktree safety even though no new run populates the set. The closing orphan pass must not delete close/session safety paths, private porcelain decoding or baseline capture merely because adjacent declarations are removed. Final spec reachability target: no declarations live before C1 and dead now remain except reshapeSelector, mutationCheckConfigSelector, MutationCheckConfig, promptLoaderConfigSelector and PromptLoaderConfig; no source file imported only by tests remains except #2823's pre-existing orphans. If a reachability tool is available during implementation, compare against the pre-C1 baseline rather than treating every current orphan as in scope. B3 owns config, runtime/context residue and registries; B4 owns docs/generated context. No workflow result, permissions policy or unrelated package changes are authorized.\n\nRefine-pass self-audit (spec-ac-preservation): re-read .nax/features/pipeline-surface-delete/spec.md:574-607 and enumerated all 15 explicit spec ACs against this revised PRD. US-001 spec AC1 maps to PRD AC1-3 (full option set: exit 1, exact message substring, empty directory), spec AC2 to AC4-5 (bare invocation: exit 1 and message), spec AC3 to AC6-7 (help: exit 0 and removal description). US-002 spec AC1 maps to AC1 (the six names in order), spec AC2 to AC2-3 (title Add login and AC-1: form renders through the public barrel). US-003 spec AC1 maps verbatim to AC1, keeping the trailing 'with no # Acceptance execution heading' qualification alongside the joined-prompt assertion. US-004 spec AC1 maps to AC1-3 (2/1/0 token estimates); spec AC2 to AC4-5 (both barrel function identities); spec AC3 to AC6-7 (legacy-opt null plus plugins/warn with the exact named message); spec AC4 to AC8-9 (mixed null plus named warning); spec AC5 to AC10 (same reporter object); spec AC6 to AC11-12 (only reporter in registry with both named built-ins disabled, plus the existing error-sink warning). US-005 spec AC1 maps to AC1 (historical journal ignore), spec AC2 to AC2-3 (no add/no commit through the injected runGit with matching blocked git root). US-006 spec AC1 maps to AC1-3 (one entry, literal-backslash-t input decoded to a tab in the path, staged=false). All Regression guard labels, specified import seams, test inputs, built-in disabling, existing warning qualifiers and quoted-path qualifications survive. No deprecated file-content-tag ACs are present.\n\nFailure table audit: spec.md:321-327 has two rows. The prompts row is represented by US-001 AC8-9 for every supported former-option combination (excluding the authoritative successful --help path) plus AC10's directly observable poisoned-config/PRD/trust scenario; the description retains the no-reads implementation requirement. This replaces an unobservable claim about reads with an exact stderr assertion while preserving the removal-before-initialization qualifier. The optimizer row is represented by US-004 AC6-9 and AC11-12, retaining whole-plugin rejection, the precise warning, loader skip and continued reporter loading. US-001 already has failing invocations, US-004 has invalid-plugin rejections, and US-005 has blocked-root refusals. At the operator's refine request, add narrowly scoped negative-path regression criteria for US-002's empty acceptance list (AC4), US-003's build exception (AC2), and US-006's malformed porcelain line (AC4); these are additional refine guards, not replacements for spec ACs and not new production features. Direct source evidence: src/prompts/sections/story.ts:101-122 maps an empty list to no numbered lines; src/operations/call-dispatch-prologue.ts:134-150 does not catch op.build exceptions; src/utils/porcelain.ts:78-90 skips lines without a path. Assert the thrown error by identity and the malformed parse result as [] using existing test files.\n\nRemaining audit checks: every story's contextFiles exactly matches its spec Context Files list (4,5,4,5,5,5 entries respectively); all are existing and none is this story's output. Keep expectedFiles restricted to the three spec outputs. Dependencies reference only the six real story IDs and remain exactly binding, even where optimizer or mutation work could otherwise execute independently. Complexity remains complex for the genuinely cross-module prompt/context/plugin/runtime/orphan cuts; US-001 is lowered to medium because it mirrors the existing accept stub and deletes only CLI-owned implementations. Strict strategies remain only for the trust-boundary, role/session dispatch and ACP/session cleanup stories as required by the security/session override. Other complex removals use three-session-tdd-lite, not expert routing. All eight feature-level Out of Scope bullets are preserved verbatim, and the inline pre-Stories 'These stay unchanged' exclusion is also retained at top level; nearby boundaries are echoed in story scope. Descriptions retain their verbatim design decisions and have no result contradicting any retained or added AC. All negative guards and the poisoned-project fixture fit the touched interfaces and existing test harnesses; no helper, dependency, replacement subsystem or cross-package edit is invented. This is a source/spec audit only, not a claim that implementation tests or a new reachability checker have run.",
+  "outOfScope": [
+    "Config keys and their schemas, defaults, merge handling, migrations and descriptions: `optimizer.*` (with the `_applyRemovedOptimizerKeysShim` shim), `prompts.overrides` (with `PROMPT_OVERRIDE_ROLES`, the precheck override-file warning in `precheck/checks-warnings.ts` and the `prompts.overrides` lines in `cli/config-display.ts` and `cli/config-descriptions.ts`), `execution.mutationCheck` and the `advisor.callers` flags; wave B3 decides them.",
+    "The selectors `mutationCheckConfigSelector`, `MutationCheckConfig`, `promptLoaderConfigSelector`, `PromptLoaderConfig` and `reshapeSelector`, which become unreachable with this spec; wave B3 removes them with the rest of `config/selectors.ts`.",
+    "`NaxRuntime.dirtyWorktrees` and the `blockedWorktrees` parameter and refusal branch of `autoCommitIfDirty`, written only by the deleted mutation check; wave B3 removes them with the other runtime and `PipelineContext` fields only deleted code wrote.",
+    "Registry strings that name a deleted stage, role or extension: the pipeline stage keys in `STAGE_CONTEXT_MAP` (`context/engine/stage-config.ts`) and the nax#1743 reachability guard rebuilt over the remaining assembly site, `\"prompt\"` and `\"optimizer\"` in `EXTRA_KNOWN_STAGES` (`context/rules/rules-frontmatter.ts`), the session role registries, and the `templates/` and `prompts/` entries in `agents/nax-owned-writes.ts`; wave B3.",
+    "The `.nax/mutation-journal/` entry in `NAX_GITIGNORE_ENTRIES` stays, so a journal left by an older nax is never committed.",
+    "Docs and package context files that describe `nax prompts`, prompt overrides, `IPromptOptimizer`, `src/optimizer/` or mutation testing (`docs/guides/prompt-customization.md`, `docs/guides/cli-reference.md`, the `.nax/context.md` files and the `CLAUDE.md` / `AGENTS.md` files generated from them); `.nax/` is read-only to the run, so they are updated in wave B4.",
+    "Code that was already unreachable before C1 and has no pipeline cause (among others `constitution/generators/`, `session/session-keeper.ts`, `session/session-runner.ts`, `agent-runtime/bun-runtime.ts`, `agents/cost/token-mapper.ts`, `agents/cost/types.ts`, `agents/retry/compose.ts`, `agents/shared/model-resolution.ts`, `config/validate.ts`, `config/validate-fields.ts`, `execution/timeout-handler.ts`, the routing LLM strategy leftovers, `groupStoriesIntoBatches`, `groupStoriesByDependencies`, `markStoryAsBlocked`, `generateHumanHaltSummary`, `context/engine/handlers/index.ts`, `review/fix-review/index.ts`); tracked in issue #2823.",
+    "Changing workflow-mode behaviour: every cut site keeps its current workflow-mode result.",
+    "These stay unchanged, because later waves own them (Out of Scope): config keys, their schemas, merge handling, migrations, selectors and descriptions; name registries that still list a deleted stage, role or extension string; runtime and context fields that only deleted code wrote, unless their type comes from a module this spec deletes."
+  ],
+  "routingProfile": "native-codex-router"
+}

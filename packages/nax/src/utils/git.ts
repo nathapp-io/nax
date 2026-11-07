@@ -130,40 +130,12 @@ export async function hasCommitsForStory(workdir: string, storyId: string, maxCo
 }
 
 /**
- * Detect if git operation output contains merge conflict markers.
- *
- * Matches git-specific conflict signals only — not general use of the word
- * "conflict" in agent output (e.g. HTTP 409 Conflict implementations).
- *
- * @param output - Combined stdout/stderr output from a git operation
- * @returns true if output contains git conflict markers
- *
- * @example
- * ```typescript
- * const hasConflict = detectMergeConflict(agentOutput);
- * if (hasConflict) {
- *   // fire merge-conflict trigger
- * }
- * ```
- */
-export function detectMergeConflict(output: string): boolean {
-  return (
-    output.includes("<<<<<<<") ||
-    output.includes(">>>>>>>") ||
-    // "CONFLICT (content):", "CONFLICT (delete/modify):", etc.
-    /\bCONFLICT\s*\(/.test(output) ||
-    // "Merge conflict in <file>"
-    output.includes("Merge conflict in")
-  );
-}
-
-/**
  * Re-exports of the porcelain parser for callers that import from
  * `@/utils/git`. The parser itself lives in `./porcelain.ts` to keep the
  * pure string-handling code separate from the subprocess orchestration here.
  */
 export type { NaxProtectedPath } from "./porcelain";
-export { parsePorcelainForNaxPaths, parsePorcelainUntrackedPaths } from "./porcelain";
+export { parsePorcelainForNaxPaths } from "./porcelain";
 
 /** Context handed to before-auto-commit hooks (#2497: run-state repair runs here). */
 export interface AutoCommitHookContext {
@@ -196,9 +168,11 @@ export function registerBeforeAutoCommit(hook: AutoCommitHook): () => void {
  * @param role    - Session role for the commit message (e.g. "implementer")
  * @param storyId - Story ID for the commit message
  * @param blockedWorktrees - Working trees known to hold source this run cannot
- *   account for — currently an unreverted mutation from the mutation spot-check
- *   (`runtime.dirtyWorktrees`). A commit under one of these would capture the
- *   injected defect, so it is refused. Omit when the caller has no runtime.
+ *   account for. A commit under one of these would capture a line the run did
+ *   not author, so it is refused. The mutation spot-check was the set's only
+ *   writer and is deleted (US-005); the parameter stays because four production
+ *   and about thirty test call sites pass it positionally, and wave B3 removes it
+ *   with them. Omit when the caller has no runtime.
  * @param dryRun - When true, refuses outright (nax#1808). A dry run reached the
  *   completion phase and committed the PRD it had just marked passed, together
  *   with any unrelated dirty file, because `git add -A` is unscoped. The refusal

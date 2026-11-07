@@ -48,7 +48,6 @@ export { _completionDeps, completionStage } from "./completion";
 export { constitutionStage } from "./constitution";
 export { _contextStageDeps, contextStage } from "./context";
 export { _contextSessionDeps, allocateStorySession } from "./context-session";
-export { promptStage } from "./prompt";
 // Re-export individual stages for custom pipeline construction
 export { queueCheckStage } from "./queue-check";
 export { routingStage } from "./routing";

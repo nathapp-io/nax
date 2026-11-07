@@ -20,13 +20,11 @@ export { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
 export { loadPlugins } from "./loader";
 export { createPluginLogger } from "./plugin-logger";
 export { PluginRegistry, type PostRunActionRegistration } from "./registry";
-// Re-export optimizer types from optimizer module (via types.ts)
 export type {
   ContextProviderResult,
   IContextProvider,
   ILoopHandlerProvider,
   IPostRunAction,
-  IPromptOptimizer,
   IReporter,
   IResourceProvider,
   IReviewPlugin,
@@ -39,11 +37,9 @@ export type {
   PluginType,
   PostRunActionResult,
   PostRunContext,
-  PromptOptimizerInput,
-  PromptOptimizerResult,
   ReviewCheckResult,
   RunEndEvent,
   RunStartEvent,
   StoryCompleteEvent,
 } from "./types";
-export { validatePlugin } from "./validator";
+export { removedOptimizerMessage, validatePlugin } from "./validator";

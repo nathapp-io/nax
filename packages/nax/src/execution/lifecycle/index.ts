@@ -12,7 +12,6 @@ export {
 } from "./backfill-story-metrics";
 export {
   outputAdvisoryFindingsSummary,
-  outputMutationSummary,
   outputRunFooter,
   outputRunHeader,
   type RunFooterOptions,

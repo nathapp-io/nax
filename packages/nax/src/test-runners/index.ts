@@ -16,7 +16,6 @@ export {
   DEFAULT_TEST_FILE_PATTERNS,
   DEFAULT_TS_DERIVE_SUFFIXES,
   extractTestDirs,
-  extractWholeTestDirs,
   globsToPathspec,
   globsToTestRegex,
   isTestFileByPatterns,
@@ -29,7 +28,7 @@ export {
   discoverWorkspacePackages,
 } from "./detect";
 export type { Framework } from "./detector";
-export { buildTestFrameworkHint, detectFramework, isTestFile } from "./detector";
+export { detectFramework } from "./detector";
 export { parseBunOutput } from "./parse-bun";
 export { parseMochaOutput } from "./parse-mocha";
 export { parseRustTestOutput } from "./parse-rust";

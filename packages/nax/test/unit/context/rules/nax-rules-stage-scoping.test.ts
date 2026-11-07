@@ -8,7 +8,7 @@
  * rules that must NOT reach a stage, and rules that must.
  *
  * Why the assertion is worth having: the fresh TDD implementer session
- * (op `implementer` -> stage `tdd-implementer`, phase-stage-map.ts) is
+ * (op `implementer` -> stage `tdd-implementer`) is
  * forbidden from writing test files, yet the four test-authoring rules below
  * listed that stage and made up ~28% of its prompt. Re-adding the stage is a
  * one-line edit in a file nobody reads twice; this test is what notices.

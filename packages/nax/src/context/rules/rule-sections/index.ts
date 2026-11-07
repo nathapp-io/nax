@@ -18,8 +18,8 @@
  * See: docs/specs/SPEC-context-engine-v2.md §Section-level rule chunking
  */
 
-import { estimateTokens } from "@/optimizer";
 import { fencedLineIndices } from "@/utils/markdown-fence";
+import { estimateTokens } from "@/utils/tokens";
 import type { CanonicalRule } from "../rules-frontmatter";
 
 export interface RuleSection {

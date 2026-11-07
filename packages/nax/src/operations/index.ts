@@ -39,8 +39,6 @@ export type {
 export { _fullSuiteGateDeps, fullSuiteGateOp } from "./full-suite-gate";
 export type { LintCheckDeps, LintCheckInput, LintCheckOutput } from "./lint-check";
 export { _lintCheckDeps, lintCheckOp } from "./lint-check";
-export type { MutationCheckDeps, MutationCheckInput, MutationCheckOutput } from "./mutation-check";
-export { _mutationCheckDeps, mutationCheckOp } from "./mutation-check";
 export type { OpModelPreview } from "./op-model-preview";
 export { previewOpModel } from "./op-model-preview";
 export type { PlanInteractiveInput } from "./plan";

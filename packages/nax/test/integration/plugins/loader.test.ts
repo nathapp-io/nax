@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { makeOptimizerResult, makeTempDir } from "@test/helpers";
+import { makeTempDir } from "@test/helpers";
 import {
   _loadAndValidatePlugin,
   _resetPluginErrorSink,
@@ -36,19 +36,10 @@ async function cleanupTempDir(dir: string): Promise<void> {
 async function writePluginFile(dir: string, filename: string, plugin: NaxPlugin): Promise<void> {
   let extensionsCode = "";
 
-  if (plugin.extensions.optimizer) {
+  if (plugin.extensions.reporter) {
     extensionsCode += `
-    optimizer: {
-      name: "${plugin.extensions.optimizer.name}",
-      async optimize(input) {
-        return {
-          prompt: input.prompt,
-          originalTokens: 0,
-          optimizedTokens: 0,
-          savings: 0,
-          appliedRules: []
-        };
-      }
+    reporter: {
+      name: "${plugin.extensions.reporter.name}"
     },`;
   }
 
@@ -152,25 +143,20 @@ describe("loadPlugins", () => {
       await fs.mkdir(globalDir, { recursive: true });
 
       const plugin: NaxPlugin = {
-        name: "global-optimizer",
+        name: "global-reporter",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
-      await writePluginFile(globalDir, "optimizer.ts", plugin);
+      await writePluginFile(globalDir, "reporter.ts", plugin);
 
       const registry = await loadPlugins(globalDir, path.join(tempDir, "nonexistent"), []);
 
       expect(registry.plugins).toHaveLength(1);
-      expect(registry.plugins[0].name).toBe("global-optimizer");
+      expect(registry.plugins[0].name).toBe("global-reporter");
     });
 
     test("loads plugin from subdirectory with index.ts", async () => {
@@ -207,14 +193,9 @@ describe("loadPlugins", () => {
       const plugin1: NaxPlugin = {
         name: "plugin-1",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "opt1",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "rep1" },
         },
       };
 
@@ -232,7 +213,7 @@ describe("loadPlugins", () => {
         },
       };
 
-      await writePluginFile(globalDir, "optimizer.ts", plugin1);
+      await writePluginFile(globalDir, "reporter.ts", plugin1);
       await writePluginFile(globalDir, "router.ts", plugin2);
 
       const registry = await loadPlugins(globalDir, path.join(tempDir, "nonexistent"), []);
@@ -278,14 +259,9 @@ describe("loadPlugins", () => {
       const globalPlugin: NaxPlugin = {
         name: "global-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "global",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "global" },
         },
       };
 
@@ -321,14 +297,9 @@ describe("loadPlugins", () => {
       const plugin: NaxPlugin = {
         name: "valid-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -351,14 +322,9 @@ describe("loadPlugins", () => {
       const plugin: NaxPlugin = {
         name: "config-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -392,24 +358,13 @@ describe("loadPlugins", () => {
 export default {
   name: "setup-plugin",
   version: "1.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     // This would be captured in a real test
     global.testSetupConfig = config;
   },
   extensions: {
-    optimizer: {
-      name: "test",
-      async optimize(input) {
-        return {
-          prompt: input.prompt,
-          originalTokens: 0,
-          optimizedTokens: 0,
-          savings: 0,
-          appliedRules: []
-        };
-      }
-    }
+    reporter: { name: "test" }
   }
 };
 `;
@@ -442,7 +397,7 @@ export default {
       const invalidPlugin = `
 export default {
   name: "invalid-plugin",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   extensions: {}
 };
 `;
@@ -461,7 +416,7 @@ export default {
       const invalidPlugin = `
 export default {
   name: "invalid",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   extensions: {}
 };
 `;
@@ -471,14 +426,9 @@ export default {
       const validPlugin: NaxPlugin = {
         name: "valid-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "test" },
         },
       };
       await writePluginFile(globalDir, "valid.ts", validPlugin);
@@ -503,42 +453,27 @@ export default {
       const globalPlugin: NaxPlugin = {
         name: "global",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "global",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "global" },
         },
       };
 
       const projectPlugin: NaxPlugin = {
         name: "project",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "project",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "project" },
         },
       };
 
       const configPlugin: NaxPlugin = {
         name: "config",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "config",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "config" },
         },
       };
 
@@ -573,28 +508,18 @@ export default {
       const globalPlugin: NaxPlugin = {
         name: "duplicate",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "global",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "global" },
         },
       };
 
       const projectPlugin: NaxPlugin = {
         name: "duplicate",
         version: "2.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "project",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
-          },
+          reporter: { name: "project" },
         },
       };
 
@@ -608,7 +533,69 @@ export default {
       // registered too and ran twice per invocation of getPostRunActions()/
       // getReporters(), breaking the "each finding appears exactly once" invariant.
       expect(registry.plugins).toHaveLength(1);
-      expect(registry.plugins[0].extensions?.optimizer?.name).toBe("project");
+      expect(registry.plugins[0].extensions?.reporter?.name).toBe("project");
+    });
+  });
+
+  describe("removed optimizer extension (US-004)", () => {
+    // A plugin module that still declares the deleted optimizer extension is
+    // rejected by name and skipped wholesale; the plugins beside it still load,
+    // and the rejection reaches the plugin error sink. Both modules are written
+    // as raw source because `NaxPlugin` no longer has an optimizer extension to
+    // build the fixture from.
+    const LEGACY_OPTIMIZER_PLUGIN = `
+export default {
+  name: "legacy-opt",
+  version: "1.0.0",
+  provides: ["optimizer"],
+  extensions: {
+    optimizer: {
+      name: "x",
+      async optimize() { return {}; }
+    }
+  }
+};
+`;
+
+    const KEPT_REPORTER_PLUGIN = `
+export default {
+  name: "kept-reporter",
+  version: "1.0.0",
+  provides: ["reporter"],
+  extensions: {
+    reporter: { name: "kept" }
+  }
+};
+`;
+
+    async function loadLegacyOptimizerFixture(): Promise<{ names: string[]; errors: string[] }> {
+      const globalDir = path.join(tempDir, "global", "plugins");
+      await fs.mkdir(globalDir, { recursive: true });
+      await fs.writeFile(path.join(globalDir, "legacy-optimizer.ts"), LEGACY_OPTIMIZER_PLUGIN, "utf-8");
+      await fs.writeFile(path.join(globalDir, "reporter.ts"), KEPT_REPORTER_PLUGIN, "utf-8");
+
+      const errors: string[] = [];
+      _setPluginErrorSink((...args: unknown[]) => {
+        errors.push(args.map((arg) => String(arg)).join(" "));
+      });
+      try {
+        const registry = await loadPlugins(globalDir, path.join(tempDir, "nonexistent"), []);
+        return { names: registry.plugins.map((p) => p.name), errors };
+      } finally {
+        _resetPluginErrorSink();
+      }
+    }
+
+    test("loads only the reporter plugin, skipping the one declaring the removed extension", async () => {
+      const { names } = await loadLegacyOptimizerFixture();
+
+      expect(names).toEqual(["kept-reporter"]);
+    });
+
+    test("reports the rejected plugin through the plugin error sink", async () => {
+      const { errors } = await loadLegacyOptimizerFixture();
+
+      expect(errors.join("\n")).toContain("Plugin validation failed for");
     });
   });
 

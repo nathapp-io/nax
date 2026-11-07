@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
 import type { UserStory } from "@/prd/types";
-import { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "@/prompts/sections/story";
+import { buildStorySection } from "@/prompts/sections";
+
+/** Lines that read as a rendered acceptance criterion (`1. something`). */
+function numberedCriterionLines(text: string): string[] {
+  return text.split("\n").filter((line) => /^\d+\.\s/.test(line));
+}
 
 describe("buildStorySection", () => {
   const mockStory = makeStory({
@@ -26,108 +31,35 @@ describe("buildStorySection", () => {
 
   test("formats criteria with numeric prefixes", () => {
     const result = buildStorySection(mockStory);
-    const lines = result.split("\n");
-    const criteriaLines = lines.filter((l) => /^\d+\./.test(l.trim()));
-    expect(criteriaLines.length).toBe(3);
+    expect(numberedCriterionLines(result).length).toBe(3);
   });
 });
 
-describe("buildStoryReminderSection", () => {
-  test("mirrors numbered acceptance criteria", () => {
-    const story = makeStory({
-      title: "Reminder Recency Story",
-      acceptanceCriteria: ["Save the reminder AC", "Render it near the bottom"],
-    });
+// US-002 (pipeline-surface-delete) regression guards. `buildStorySection` is
+// the one story-section builder that survives the deletion — its remaining
+// caller, RectifierPromptBuilder, reaches it through the public
+// `@/prompts/sections` barrel, so the barrel entry is what these pin.
+describe("buildStorySection via the @/prompts/sections barrel", () => {
+  const story = makeStory({ title: "Add login", acceptanceCriteria: ["AC-1: form renders"] });
 
-    const result = buildStoryReminderSection(story);
-
-    expect(result).toContain("Reminder Recency Story");
-    expect(result).toContain("1. Save the reminder AC");
-    expect(result).toContain("2. Render it near the bottom");
+  test("includes the story title", () => {
+    expect(buildStorySection(story)).toContain("Add login");
   });
 
-  test("wraps mirrored criteria as user-supplied data", () => {
-    const criterion = "Boundary-protected AC";
-    const result = buildStoryReminderSection(makeStory({ acceptanceCriteria: [criterion] }));
-
-    const boundaryStartIdx = result.indexOf("<!-- USER-SUPPLIED DATA");
-    const criterionIdx = result.indexOf(criterion);
-    const boundaryEndIdx = result.indexOf("<!-- END USER-SUPPLIED DATA -->");
-
-    expect(boundaryStartIdx).toBeGreaterThanOrEqual(0);
-    expect(criterionIdx).toBeGreaterThan(boundaryStartIdx);
-    expect(boundaryEndIdx).toBeGreaterThan(criterionIdx);
+  test("includes the acceptance criterion verbatim", () => {
+    expect(buildStorySection(story)).toContain("AC-1: form renders");
   });
 
-  test("falls back cleanly with no acceptance criteria", () => {
-    const result = buildStoryReminderSection(makeStory({ title: "Empty AC Story", acceptanceCriteria: [] }));
-
-    expect(result).toBe(
-      "---\n\n**Reminder:** Your task is to implement **Empty AC Story**. Satisfy every acceptance criterion listed above before finishing.",
+  // Negative path: a story with no acceptance criteria must render no numbered
+  // criterion line. The section keeps its "**Acceptance Criteria:**" heading
+  // and renders nothing under it — it must not invent a requirement.
+  test("renders no numbered acceptance-criterion line for a story with none", () => {
+    const rendered = buildStorySection(
+      makeStory({ title: "Add login", description: "Add a login form", acceptanceCriteria: [] }),
     );
-    expect(result).not.toContain("**Acceptance Criteria:**");
-  });
 
-  test("preserves acceptance criterion text verbatim", () => {
-    const criterion = "Preserve **markdown-ish** text, punctuation, and `code()` exactly.";
-    const result = buildStoryReminderSection(makeStory({ acceptanceCriteria: [criterion] }));
-
-    expect(result).toContain(`1. ${criterion}`);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// BP-001: buildBatchStorySection tests (RED phase — will fail until implemented)
-// ---------------------------------------------------------------------------
-
-describe("buildBatchStorySection", () => {
-  const storyA = makeStory({
-    id: "BP-001",
-    title: "First Batch Story",
-    description: "Description for first story",
-    acceptanceCriteria: ["AC 1a", "AC 1b"],
-  });
-
-  const storyB = makeStory({
-    id: "BP-002",
-    title: "Second Batch Story",
-    description: "Description for second story",
-    acceptanceCriteria: ["AC 2a"],
-  });
-
-  test("includes USER-SUPPLIED DATA opening boundary tag; includes END USER-SUPPLIED DATA closing boundary tag; single story uses heading '## Story 1: {id} - {title}'", () => {
-    const result = buildBatchStorySection([storyA]);
-    expect(result).toContain("<!-- USER-SUPPLIED DATA:");
-    expect(result).toContain("<!-- END USER-SUPPLIED DATA -->");
-    expect(result).toContain("## Story 1: BP-001 - First Batch Story");
-  });
-
-  test("formats each story heading as '## Story N: {id} - {title}'", () => {
-    const result = buildBatchStorySection([storyA, storyB]);
-    expect(result).toContain("## Story 1: BP-001 - First Batch Story");
-    expect(result).toContain("## Story 2: BP-002 - Second Batch Story");
-  });
-
-  test("includes description for each story", () => {
-    const result = buildBatchStorySection([storyA, storyB]);
-    expect(result).toContain("Description for first story");
-    expect(result).toContain("Description for second story");
-  });
-
-  test("includes numbered acceptance criteria for each story", () => {
-    const result = buildBatchStorySection([storyA, storyB]);
-    expect(result).toContain("1. AC 1a");
-    expect(result).toContain("2. AC 1b");
-    expect(result).toContain("1. AC 2a");
-  });
-
-  test("renders all story IDs in order", () => {
-    const result = buildBatchStorySection([storyA, storyB]);
-    const idxA = result.indexOf("BP-001");
-    const idxB = result.indexOf("BP-002");
-    expect(idxA).toBeGreaterThanOrEqual(0);
-    expect(idxB).toBeGreaterThanOrEqual(0);
-    expect(idxA).toBeLessThan(idxB);
+    expect(numberedCriterionLines(rendered)).toEqual([]);
+    expect(rendered).not.toContain("**Acceptance Criteria:**\n1.");
   });
 });
 
@@ -146,19 +78,6 @@ describe("out-of-scope rendering", () => {
     expect(result).toContain("**Out of Scope — do NOT implement these:**");
     expect(result).toContain("- An interactive Ink TUI");
     expect(result).toContain("- Per-story checkpoints");
-  });
-
-  test("buildStoryReminderSection repeats the out-of-scope block", () => {
-    expect(buildStoryReminderSection(withExclusions())).toContain("- An interactive Ink TUI");
-  });
-
-  test("buildBatchStorySection renders each story's own exclusions", () => {
-    const result = buildBatchStorySection([
-      withExclusions(),
-      makeStory({ id: "STORY-002", outOfScope: ["No caching"] }),
-    ]);
-    expect(result).toContain("- An interactive Ink TUI");
-    expect(result).toContain("- No caching");
   });
 
   test("omits the block entirely when the story declares no exclusions", () => {
@@ -255,34 +174,5 @@ describe("modifiedFiles rendered repo-rooted as stored (single-frame PR 2)", () 
     expect(rendered).toContain("- `packages/api/src/in-package.ts` — in-package reason");
     expect(rendered).toContain("- `packages/web/src/out-of-package.ts` — out-of-package reason");
     expect(rendered).not.toContain("undefined");
-  });
-
-  // nax#2085 H6 is moot under the single-frame redesign: with repo-rooted
-  // rendering there is no frame to pick, so a batch's single agent root no
-  // longer forces a per-batch anchor. Each story's entries render as stored,
-  // regardless of whose package the batch's agent happens to be rooted in.
-  test("buildBatchStorySection renders every story's entries as stored, no cross-frame re-spell", () => {
-    const rendered = buildBatchStorySection([
-      makeStory({
-        id: "BATCH-001",
-        workdir: "packages/api",
-        workdirSource: "stated",
-        acceptanceCriteria: ["works"],
-        modifiedFiles: [mod("packages/api/src/x.ts", "r-US-1")],
-      }),
-      makeStory({
-        id: "BATCH-002",
-        workdir: "packages/web",
-        workdirSource: "stated",
-        acceptanceCriteria: ["works"],
-        modifiedFiles: [mod("packages/web/src/app.ts", "r-US-2")],
-      }),
-    ]);
-
-    expect(rendered).toContain("- `packages/api/src/x.ts` — r-US-1");
-    expect(rendered).toContain("- `packages/web/src/app.ts` — r-US-2");
-    // No entry is re-spelled into a same-named path the batch root could open.
-    expect(rendered).not.toContain("- `src/x.ts` — r-US-1");
-    expect(rendered).not.toContain("- `src/app.ts` — r-US-2");
   });
 });

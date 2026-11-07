@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { makeNaxConfig, makeOptimizerResult, makeTempDir } from "@test/helpers";
+import { makeNaxConfig, makeTempDir } from "@test/helpers";
 import { pluginsListCommand } from "@/cli/plugins";
 import type { NaxConfig } from "@/config/schema";
 import type { NaxPlugin } from "@/plugins/types";
@@ -29,22 +29,6 @@ async function cleanupTempDir(dir: string): Promise<void> {
 
 async function writePluginFile(dir: string, filename: string, plugin: NaxPlugin): Promise<void> {
   let extensionsCode = "";
-
-  if (plugin.extensions.optimizer) {
-    extensionsCode += `
-    optimizer: {
-      name: "${plugin.extensions.optimizer.name}",
-      async optimize(input) {
-        return {
-          prompt: input.prompt,
-          originalTokens: 0,
-          optimizedTokens: 0,
-          savings: 0,
-          appliedRules: []
-        };
-      }
-    },`;
-  }
 
   if (plugin.extensions.router) {
     extensionsCode += `
@@ -155,15 +139,15 @@ describe("pluginsListCommand", () => {
       const canWriteGlobal = true;
 
       const plugin: NaxPlugin = {
-        name: "test-global-optimizer",
+        name: "test-global-reporter",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
+          reporter: {
             name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
+            async onRunStart() {},
+            async onStoryComplete() {},
+            async onRunEnd() {},
           },
         },
       };
@@ -179,9 +163,9 @@ describe("pluginsListCommand", () => {
 
         const output = capture.output.join("\n");
         expect(output).toContain("Installed Plugins:");
-        expect(output).toContain("test-global-optimizer");
+        expect(output).toContain("test-global-reporter");
         expect(output).toContain("1.0.0");
-        expect(output).toContain("optimizer");
+        expect(output).toContain("reporter");
         expect(output).toContain("global");
       } finally {
         capture.restore();
@@ -286,14 +270,15 @@ describe("pluginsListCommand", () => {
       await fs.mkdir(plugin2Dir, { recursive: true });
 
       const plugin1: NaxPlugin = {
-        name: "optimizer-plugin",
+        name: "reviewer-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reviewer"],
         extensions: {
-          optimizer: {
+          reviewer: {
             name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
+            description: "Test reviewer",
+            async check() {
+              return { passed: true, output: "OK" };
             },
           },
         },
@@ -343,9 +328,9 @@ describe("pluginsListCommand", () => {
         expect(output).toContain("Source");
 
         // Check plugin data
-        expect(output).toContain("optimizer-plugin");
+        expect(output).toContain("reviewer-plugin");
         expect(output).toContain("1.0.0");
-        expect(output).toContain("optimizer");
+        expect(output).toContain("reviewer");
 
         expect(output).toContain("reporter-plugin");
         expect(output).toContain("2.0.0");
@@ -362,13 +347,13 @@ describe("pluginsListCommand", () => {
       const plugin: NaxPlugin = {
         name: "multi-extension",
         version: "1.0.0",
-        provides: ["optimizer", "reviewer"],
+        provides: ["reporter", "reviewer"],
         extensions: {
-          optimizer: {
+          reporter: {
             name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
+            async onRunStart() {},
+            async onStoryComplete() {},
+            async onRunEnd() {},
           },
           reviewer: {
             name: "test",
@@ -398,7 +383,7 @@ describe("pluginsListCommand", () => {
 
         const output = capture.output.join("\n");
         expect(output).toContain("multi-extension");
-        expect(output).toContain("optimizer, reviewer");
+        expect(output).toContain("reporter, reviewer");
       } finally {
         capture.restore();
       }
@@ -484,13 +469,13 @@ describe("pluginsListCommand", () => {
       const plugin: NaxPlugin = {
         name: "test-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
+          reporter: {
             name: "test",
-            async optimize(input) {
-              return makeOptimizerResult({ prompt: input.prompt });
-            },
+            async onRunStart() {},
+            async onStoryComplete() {},
+            async onRunEnd() {},
           },
         },
       };

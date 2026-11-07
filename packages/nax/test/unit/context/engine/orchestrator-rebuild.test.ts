@@ -9,18 +9,9 @@
  * 400-line file limit; split is by describe block concern.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  DEFAULT_TEST_ROUTING,
-  makeContextBundle,
-  makeNaxConfig,
-  makePRD,
-  makeStory,
-  makeTestContext,
-} from "@test/helpers";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { SIMILARITY_THRESHOLD } from "@/context/engine/dedupe";
 import { _orchestratorDeps, ContextOrchestrator } from "@/context/engine/orchestrator";
-import { _stageAssemblerDeps, assembleForStage } from "@/context/engine/stage-assembler";
 import { getStageContextConfig } from "@/context/engine/stage-config";
 import type {
   AdapterFailure,
@@ -29,7 +20,6 @@ import type {
   ContextRequest,
   IContextProvider,
 } from "@/context/engine/types";
-import type { RoutingResult } from "@/pipeline/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -589,101 +579,6 @@ describe("StageContextConfig.planDigestBoost", () => {
       expect(cfg.planDigestBoost ?? 1.0).toBeLessThanOrEqual(1.0);
     },
   );
-});
-
-/** Minimal PipelineContext for assembleForStage, mirroring stage-assembler.test.ts's makeCtx. */
-function makeAssembleCtx(testStrategy: RoutingResult["testStrategy"]) {
-  const config = makeNaxConfig({ context: { v2: { enabled: true, pluginProviders: [] } } });
-  const story = makeStory({ id: "US-001" });
-  return makeTestContext({
-    config,
-    rootConfig: config,
-    prd: makePRD({ feature: "test-feature", userStories: [] }),
-    story,
-    stories: [],
-    routing: { ...DEFAULT_TEST_ROUTING, agent: undefined, testStrategy },
-    projectDir: undefined, // suppresses manifest writes in tests
-    workdir: "/repo",
-    hooks: { hooks: {} },
-  });
-}
-
-/**
- * Mock orchestrator that captures the last assemble() request via a mutable
- * ref. Built as a real `ContextOrchestrator` instance with `assemble`
- * monkey-patched — `_stageAssemblerDeps.createOrchestrator` returns
- * `ContextOrchestrator`, and a genuine instance satisfies that return type
- * with no cast needed (unlike a structurally-mocked object literal).
- */
-function makeMockOrchestrator() {
-  const ref: { captured: ContextRequest | null } = { captured: null };
-  const orchestrator = new ContextOrchestrator([]);
-  orchestrator.assemble = async (r: ContextRequest): Promise<ContextBundle> => {
-    ref.captured = r;
-    return makeContextBundle({
-      digest: "abc",
-      manifest: {
-        requestId: "req-1",
-        stage: "single-session",
-        totalBudgetTokens: 0,
-        usedTokens: 0,
-        includedChunks: [],
-        excludedChunks: [],
-        floorItems: [],
-        digestTokens: 0,
-        buildMs: 0,
-      },
-    });
-  };
-  return { ref, orchestrator };
-}
-
-describe("assembleForStage — planDigestBoost is resolved from testStrategy, not the assembled stage (nax#1759)", () => {
-  let origReaddir: typeof _stageAssemblerDeps.readdir;
-  let origReadDescriptor: typeof _stageAssemblerDeps.readDescriptor;
-  let origCreateOrchestrator: typeof _stageAssemblerDeps.createOrchestrator;
-
-  beforeEach(() => {
-    origReaddir = _stageAssemblerDeps.readdir;
-    origReadDescriptor = _stageAssemblerDeps.readDescriptor;
-    origCreateOrchestrator = _stageAssemblerDeps.createOrchestrator;
-    _stageAssemblerDeps.readdir = async () => {
-      throw new Error("ENOENT");
-    };
-    _stageAssemblerDeps.readDescriptor = async () => null;
-  });
-
-  afterEach(() => {
-    _stageAssemblerDeps.readdir = origReaddir;
-    _stageAssemblerDeps.readDescriptor = origReadDescriptor;
-    _stageAssemblerDeps.createOrchestrator = origCreateOrchestrator;
-  });
-
-  test("a tdd-simple story gets planDigestBoost=1.5 whether assembling 'single-session' or 'tdd-implementer'", async () => {
-    const execMock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => execMock.orchestrator;
-    await assembleForStage(makeAssembleCtx("tdd-simple"), "single-session");
-    expect(execMock.ref.captured?.planDigestBoost).toBe(1.5);
-
-    const tddMock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => tddMock.orchestrator;
-    await assembleForStage(makeAssembleCtx("tdd-simple"), "tdd-implementer");
-    expect(tddMock.ref.captured?.planDigestBoost).toBe(1.5);
-  });
-
-  test("a test-after story gets no planDigestBoost, even assembling 'single-session' (the stage it maps to)", async () => {
-    const mock = makeMockOrchestrator();
-    _stageAssemblerDeps.createOrchestrator = () => mock.orchestrator;
-
-    // test-after is resolveTestStrategy's fallback and a single-session mode,
-    // and executionContextStage maps it to the "single-session" stage — whose
-    // own entry no longer declares a boost. It has no STAGE_CONTEXT_MAP entry
-    // of its own, so the strategy-keyed lookup finds nothing: a known gap
-    // (ADR-010 Amendment B, nax#1759).
-    await assembleForStage(makeAssembleCtx("test-after"), "single-session");
-
-    expect(mock.ref.captured?.planDigestBoost).toBeUndefined();
-  });
 });
 
 describe("ContextOrchestrator — planDigestBoost (Amendment B AC-51)", () => {

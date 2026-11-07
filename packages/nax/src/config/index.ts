@@ -51,7 +51,7 @@ export {
 } from "./profile";
 export { getProjectKey } from "./project-key";
 export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
-export type { AdvisorCaller, AdvisorConfig } from "./runtime-types-advisor";
+export type { AdvisorConfig } from "./runtime-types-advisor";
 export type { BotConfig, BotModelsConfig } from "./runtime-types-bot";
 export type { MemoryConfig, MemoryKodaConfig, MemoryMcpConfig } from "./runtime-types-memory";
 export type {
@@ -115,7 +115,7 @@ export {
   DEFAULT_AGENT_GEMINI_ACP_CONFIG,
   DEFAULT_AGENT_OPENCODE_ACP_CONFIG,
 } from "./schemas-acp-agents";
-export { ADVISOR_DEFAULTS, isAdvisorCallerEnabled, resolveAdvisorConfig } from "./schemas-advisor";
+export { ADVISOR_DEFAULTS, resolveAdvisorConfig } from "./schemas-advisor";
 export { BotConfigSchema } from "./schemas-bot";
 export type { CommandSafetyConfig } from "./schemas-command-safety";
 export { CommandSafetyConfigSchema } from "./schemas-command-safety";

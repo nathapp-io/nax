@@ -10,7 +10,7 @@
  */
 
 import type { RuleSection, SectionBudgetResult } from "@/context";
-import { estimateTokens } from "@/optimizer";
+import { estimateTokens } from "@/utils/tokens";
 import type { ProviderBudgetPressure } from "../manifest-types";
 import type { RawChunk } from "../types";
 

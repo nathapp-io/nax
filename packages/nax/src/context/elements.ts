@@ -5,8 +5,8 @@
  */
 
 import { getLogger } from "../logger";
-import { estimateTokens } from "../optimizer/types";
 import type { StructuredFailure, UserStory } from "../prd";
+import { estimateTokens } from "../utils/tokens";
 import type { ContextElement } from "./types";
 
 /** Create context element from current story */

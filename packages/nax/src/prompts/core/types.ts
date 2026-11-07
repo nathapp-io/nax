@@ -5,9 +5,6 @@
  * All builders and section functions import types from here.
  */
 
-/** Role determining which default template body to use in TddPromptBuilder. */
-export type PromptRole = "no-test" | "test-writer" | "implementer" | "verifier" | "tdd-simple" | "batch";
-
 /** Wave 1 minimal slot set — grows per wave as builders migrate. */
 export type SectionSlot = "constitution" | "instructions" | "input" | "candidates" | "json-schema";
 
@@ -31,6 +28,3 @@ export interface PromptSection {
   /** Optional slot for ordered composition via composeSections(). Wave 1 — existing builders still compile without it. */
   readonly slot?: SectionSlot;
 }
-
-/** Options passed to builder factory methods (e.g. TddPromptBuilder.for()). */
-export type PromptOptions = Record<string, unknown>;

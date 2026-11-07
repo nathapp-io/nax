@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { makeStory } from "@test/helpers";
-import {
-  buildBatchStorySection,
-  buildModifiedFilesLines,
-  buildStoryReminderSection,
-  buildStorySection,
-} from "@/prompts/sections";
+import { buildModifiedFilesLines, buildStorySection } from "@/prompts/sections";
 
 const ENTRY = {
   path: "test/unit/engine/orchestrator.test.ts",
@@ -42,15 +37,11 @@ describe("buildModifiedFilesLines", () => {
   });
 });
 
-describe("story sections carry modifiedFiles to every builder", () => {
+describe("buildStorySection carries modifiedFiles", () => {
   const story = makeStory({ id: "US-001", acceptanceCriteria: ["it works"], modifiedFiles: [ENTRY] });
 
-  test.each([
-    ["buildStorySection", () => buildStorySection(story)],
-    ["buildStoryReminderSection", () => buildStoryReminderSection(story)],
-    ["buildBatchStorySection", () => buildBatchStorySection([story])],
-  ])("%s renders the authorisation block", (_label, build) => {
-    const rendered = build();
+  test("renders the authorisation block", () => {
+    const rendered = buildStorySection(story);
 
     expect(rendered).toContain("**Existing files this story is authorised to modify:**");
     expect(rendered).toContain(ENTRY.path);
@@ -60,14 +51,9 @@ describe("story sections carry modifiedFiles to every builder", () => {
     expect(buildStorySection(makeStory({ id: "US-002" }))).not.toContain("authorised to modify");
   });
 
-  // Pre-existing shape, pinned here so it is a decision rather than a surprise:
-  // the reminder section short-circuits to a one-line nudge when a story has no
-  // acceptance criteria, which drops the out-of-scope block too. A story with no
-  // ACs is degenerate — nothing to implement, so nothing to authorise.
-  test("reminder section drops the block for a story with no acceptance criteria", () => {
+  test("renders the block even for a story with no acceptance criteria", () => {
     const noCriteria = makeStory({ id: "US-003", acceptanceCriteria: [], modifiedFiles: [ENTRY] });
 
-    expect(buildStoryReminderSection(noCriteria)).not.toContain("authorised to modify");
     expect(buildStorySection(noCriteria)).toContain("authorised to modify");
   });
 });

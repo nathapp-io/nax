@@ -8,7 +8,6 @@ import {
   DEFAULT_SEPARATED_TEST_DIRS,
   DEFAULT_TEST_FILE_PATTERNS,
   DEFAULT_TS_DERIVE_SUFFIXES,
-  extractWholeTestDirs,
   globsToPathspec,
   globsToTestRegex,
   isTestFileByPatterns,
@@ -172,15 +171,5 @@ describe("globsToPathspec", () => {
         "**/*_test.go",
       ]),
     ).toEqual([":!*.test.ts", ":!test_*.py", ":!*/test_*.py", ":!*_test.py", ":!*_test.go"]);
-  });
-});
-
-describe("extractWholeTestDirs", () => {
-  test("claims a directory only when every file under it is a test", () => {
-    expect(extractWholeTestDirs(["tests/**/*.py", "tests/**/*.rs", "spec/**"])).toEqual(["tests", "spec"]);
-  });
-
-  test("a marker-carrying pattern does not claim its directory", () => {
-    expect(extractWholeTestDirs(["src/**/*.test.ts", "test/**/*.test.ts", "**/*.spec.ts"])).toEqual([]);
   });
 });

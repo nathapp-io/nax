@@ -6,7 +6,7 @@
  *
  * `projectDir` is the repo root, so the `.nax` segment is required — it is what
  * puts fragments in the same feature directory as `prd.json` and the context
- * manifests (`manifest-store.ts`, `stage-assembler.ts` join it the same way).
+ * manifests (`manifest-store.ts` joins it the same way).
  * Omitting it wrote fragments to a stray top-level `features/` dir that no
  * `.nax`-scoped gitignore entry covered.
  *
@@ -22,8 +22,8 @@ import { dirname, join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
-import { estimateTokens } from "@/optimizer";
 import { atomicWriteText } from "@/utils/json-file";
+import { estimateTokens } from "@/utils/tokens";
 
 /** Injectable file I/O — tests override to use in-memory stores. */
 export const _fragmentStoreDeps = {

@@ -2,7 +2,7 @@
  * Context builder module for story-scoped prompt optimization
  */
 
-export { estimateTokens } from "../optimizer/types";
+export { estimateTokens } from "../utils/tokens";
 export { type AutoDetectOptions, autoDetectContextFiles, extractKeywords } from "./auto-detect";
 export {
   buildContext,
@@ -24,13 +24,6 @@ export {
 } from "./engine";
 export type { PackedChunk } from "./engine/packing";
 export type { AdapterFailure, ContextBundle, ContextChunk } from "./engine/types";
-export {
-  estimateContextTokens,
-  filterContextByRole,
-  parseAudienceTags,
-  shouldIncludeEntry,
-  truncateToContextBudget,
-} from "./feature-context-filter";
 export { clearFeatureResolverCache, disposeFeatureResolver, resolveFeatureId } from "./feature-resolver";
 export {
   _fragmentStoreDeps,

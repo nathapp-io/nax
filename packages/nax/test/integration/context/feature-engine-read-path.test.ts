@@ -2,7 +2,7 @@
  * Integration test: Feature Engine v1 read path.
  *
  * Sets up a real temp directory with .nax/features/<id>/prd.json and context.md,
- * then verifies end-to-end feature context loading + role filtering.
+ * then verifies end-to-end feature context loading.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -11,7 +11,6 @@ import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config/types";
-import { filterContextByRole, truncateToContextBudget } from "@/context/feature-context-filter";
 import { clearFeatureResolverCache } from "@/context/feature-resolver";
 import { FeatureContextProvider } from "@/context/providers/feature-context";
 import type { UserStory } from "@/prd";
@@ -145,65 +144,5 @@ describe("Feature Engine v1 read path (integration)", () => {
     const config = makeConfig(true);
     const result = await provider.getContext(story, tempDir, config);
     expect(result).toBeNull();
-  });
-
-  test("role filtering: implementer sees [implementer] and [all], not [test-writer] or [reviewer-semantic]", async () => {
-    const provider = new FeatureContextProvider();
-    const story = makeStory("US-001");
-    const config = makeConfig(true);
-    const result = await provider.getContext(story, tempDir, config);
-
-    assertDefined(result, "context result");
-    const filtered = filterContextByRole(result.content, "implementer");
-
-    expect(filtered).toContain("Database schema defined");
-    expect(filtered).toContain("Shared constraint");
-    expect(filtered).not.toContain("Test fixtures available");
-    expect(filtered).not.toContain("Security concern");
-  });
-
-  test("role filtering: test-writer sees [test-writer] and [all], not [implementer] or [reviewer-semantic]", async () => {
-    const provider = new FeatureContextProvider();
-    const story = makeStory("US-001");
-    const config = makeConfig(true);
-    const result = await provider.getContext(story, tempDir, config);
-
-    assertDefined(result, "context result");
-    const filtered = filterContextByRole(result.content, "test-writer");
-
-    expect(filtered).toContain("Test fixtures available");
-    expect(filtered).toContain("Shared constraint");
-    expect(filtered).not.toContain("Database schema defined");
-    expect(filtered).not.toContain("Security concern");
-  });
-
-  test("role filtering: reviewer-semantic sees [reviewer-semantic] and [all], not [implementer] or [test-writer]", async () => {
-    const provider = new FeatureContextProvider();
-    const story = makeStory("US-001");
-    const config = makeConfig(true);
-    const result = await provider.getContext(story, tempDir, config);
-
-    assertDefined(result, "context result");
-    const filtered = filterContextByRole(result.content, "reviewer-semantic");
-
-    expect(filtered).toContain("Security concern");
-    expect(filtered).toContain("Shared constraint");
-    expect(filtered).not.toContain("Database schema defined");
-    expect(filtered).not.toContain("Test fixtures available");
-  });
-
-  test("budget enforcement: truncate when filtered content exceeds budget", async () => {
-    const provider = new FeatureContextProvider();
-    const story = makeStory("US-001");
-    const config = makeConfig(true, 10); // very small budget (10 tokens = 40 chars)
-    const result = await provider.getContext(story, tempDir, config);
-
-    assertDefined(result, "context result");
-    const filtered = filterContextByRole(result.content, "implementer");
-    const truncated = truncateToContextBudget(filtered, 10, result.featureId);
-
-    // Truncated should be shorter than filtered
-    expect(truncated.length).toBeLessThan(filtered.length);
-    expect(truncated.length).toBeGreaterThan(0);
   });
 });

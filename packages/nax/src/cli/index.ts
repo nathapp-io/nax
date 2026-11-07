@@ -173,15 +173,6 @@ export { planDecomposeCommand, runReplanLoop } from "./plan-decompose";
 export { buildPackageSummary, buildSourceRootsSection } from "./plan-helpers";
 export { createPlanRuntime, DEFAULT_TIMEOUT_SECONDS, detectProjectName } from "./plan-runtime";
 export { pluginsListCommand } from "./plugins";
-export {
-  _promptsMainDeps,
-  type ExportPromptCommandOptions,
-  exportPromptCommand,
-  type PromptsCommandOptions,
-  type PromptsInitCommandOptions,
-  promptsCommand,
-  promptsInitCommand,
-} from "./prompts";
 export { type PublishOnlyRunFlags, publishOnlyRefusal } from "./publish-only-refusal";
 export { resolveRunProfileOverride } from "./resolve-run-profile";
 export {

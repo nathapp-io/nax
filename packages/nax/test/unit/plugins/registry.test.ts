@@ -7,12 +7,10 @@
 
 import { describe, expect, it, mock } from "bun:test";
 import { makeAgentAdapter } from "@test/helpers";
-import type { PromptOptimizerResult } from "@/optimizer/types";
 import { PluginRegistry } from "@/plugins/registry";
 import type {
   IContextProvider,
   IPostRunAction,
-  IPromptOptimizer,
   IReporter,
   IReviewPlugin,
   NaxPlugin,
@@ -30,18 +28,6 @@ const createMockPlugin = (name: string, provides: PluginType[], extensions: Plug
   version: "1.0.0",
   provides,
   extensions,
-});
-
-const optimizerResult: PromptOptimizerResult = {
-  prompt: "optimized",
-  originalTokens: 0,
-  optimizedTokens: 0,
-  savings: 0,
-  appliedRules: [],
-};
-const makeOptimizerStub = (name: string): IPromptOptimizer => ({
-  name,
-  optimize: async () => optimizerResult,
 });
 
 const makeReviewerStub = (name: string): IReviewPlugin => ({
@@ -66,39 +52,6 @@ const makePostRunActionStub = (name: string): IPostRunAction => ({
 const makeRouterStub = (name: string): RoutingStrategy => ({
   name,
   route: () => null,
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PluginRegistry.getOptimizers
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("PluginRegistry.getOptimizers", () => {
-  it("returns empty array when no optimizer plugins; returns all when present", () => {
-    expect(new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]).getOptimizers().length).toBe(0);
-
-    const optimizer1 = makeOptimizerStub("optimizer1");
-    const optimizer2 = makeOptimizerStub("optimizer2");
-    const optimizers = new PluginRegistry([
-      createMockPlugin("opt-1", ["optimizer"], { optimizer: optimizer1 }),
-      createMockPlugin("opt-2", ["optimizer"], { optimizer: optimizer2 }),
-    ]).getOptimizers();
-    expect(optimizers.length).toBe(2);
-    expect(optimizers).toContain(optimizer1);
-    expect(optimizers).toContain(optimizer2);
-  });
-
-  it("filters out plugins without optimizer extension", () => {
-    const optimizer1 = makeOptimizerStub("optimizer1");
-
-    const registry = new PluginRegistry([
-      createMockPlugin("opt-1", ["optimizer"], { optimizer: optimizer1 }),
-      createMockPlugin("no-opt", ["optimizer"], {}),
-    ]);
-
-    const optimizers = registry.getOptimizers();
-    expect(optimizers.length).toBe(1);
-    expect(optimizers[0]).toBe(optimizer1);
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,9 +80,7 @@ describe("PluginRegistry.getRouters", () => {
 
 describe("PluginRegistry.getAgent", () => {
   it("returns undefined when no agent plugins or name not found; returns agent by name when present", () => {
-    expect(
-      new PluginRegistry([createMockPlugin("optimizer-plugin", ["optimizer"])]).getAgent("claude"),
-    ).toBeUndefined();
+    expect(new PluginRegistry([createMockPlugin("reporter-plugin", ["reporter"])]).getAgent("claude")).toBeUndefined();
 
     const claudeAgent = makeAgentAdapter({ name: "claude" });
     const cursorAgent = makeAgentAdapter({ name: "cursor" });
@@ -281,7 +232,7 @@ describe("PluginRegistry.teardownAll", () => {
     const plugin1 = createMockPlugin("plugin-1", ["agent"]);
     plugin1.teardown = teardown1;
 
-    const plugin2 = createMockPlugin("plugin-2", ["optimizer"]);
+    const plugin2 = createMockPlugin("plugin-2", ["reporter"]);
     plugin2.teardown = teardown2;
 
     const registry = new PluginRegistry([plugin1, plugin2]);
@@ -296,7 +247,7 @@ describe("PluginRegistry.teardownAll", () => {
     const teardown1 = mock(async () => {});
     const plugin1 = createMockPlugin("plugin-1", ["agent"]);
     plugin1.teardown = teardown1;
-    const plugin2 = createMockPlugin("plugin-2", ["optimizer"]);
+    const plugin2 = createMockPlugin("plugin-2", ["reporter"]);
     await new PluginRegistry([plugin1, plugin2]).teardownAll();
     expect(teardown1).toHaveBeenCalledTimes(1);
 
@@ -312,7 +263,7 @@ describe("PluginRegistry.teardownAll", () => {
     const plugin1 = createMockPlugin("plugin-1", ["agent"]);
     plugin1.teardown = teardown1;
 
-    const plugin2 = createMockPlugin("plugin-2", ["optimizer"]);
+    const plugin2 = createMockPlugin("plugin-2", ["reporter"]);
     plugin2.teardown = teardown2;
 
     const registry = new PluginRegistry([plugin1, plugin2]);

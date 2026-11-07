@@ -25,7 +25,7 @@ import { getLogger } from "@/logger";
 // Same estimator the section budget uses (via `rule-sections`). A second local
 // `length / 4` here would let a chunk's reported token count disagree with the
 // number the budget admitted it on.
-import { estimateTokens } from "@/optimizer";
+import { estimateTokens } from "@/utils/tokens";
 import type { ProviderScopingReport } from "../manifest-types";
 import { normalizePath, ruleMatchesScopeFiles } from "../scope-path-match";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";

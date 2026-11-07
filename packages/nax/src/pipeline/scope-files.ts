@@ -6,9 +6,8 @@
  * for the curated, capped list the content-fetching providers consume.
  *
  * Lives under `src/pipeline/` because `src/context/` value-imports from
- * `src/review/` (filterContextByRole), so any module under `src/context/`
- * that value-imported from `src/review/` to reach `collectDiffFileList`
- * would close a circular import.
+ * `src/review/`, so a module under `src/context/` that value-imported from
+ * `src/review/` to reach `collectDiffFileList` would close a circular import.
  *
  * The returned set is repo-rooted (nax#2071). A story stamped by plan-time
  * canonicalization (`workdirSource` defined) declares repo-rooted paths as

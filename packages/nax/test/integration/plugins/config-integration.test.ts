@@ -61,7 +61,7 @@ describe("Plugin config integration (US-007)", () => {
 export default {
   name: "local-plugin",
   version: "1.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
@@ -76,17 +76,7 @@ export default {
     await fs.writeFile(trackerPath, JSON.stringify(tracker, null, 2), "utf-8");
   },
   extensions: {
-    optimizer: {
-      name: "local",
-      async optimize(input) {
-        return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
-        };
-      }
-    }
+    reporter: { name: "local" }
   }
 };
 `;
@@ -97,7 +87,7 @@ export default {
 export default {
   name: "external-plugin",
   version: "2.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
@@ -112,17 +102,7 @@ export default {
     await fs.writeFile(trackerPath, JSON.stringify(tracker, null, 2), "utf-8");
   },
   extensions: {
-    optimizer: {
-      name: "external",
-      async optimize(input) {
-        return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
-        };
-      }
-    }
+    reporter: { name: "external" }
   }
 };
 `;

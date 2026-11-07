@@ -29,7 +29,7 @@
  * - `ctx.contextMarkdown` — story context, set only by `runV1Path`; workflow
  *   v2 runs have never had it.
  * - `ctx.scopeFiles` / `ctx.resolvedTestPatterns` — read only by pipeline-mode
- *   stages (`prompt.ts`, `execution.ts`, `stage-assembler.ts`); the workflow
+ *   stages (`prompt.ts`, `execution.ts`); the workflow
  *   stage resolves its own test patterns from config.
  * - any manifest or digest — both exist to thread the orchestrator's own
  *   assemblies together.

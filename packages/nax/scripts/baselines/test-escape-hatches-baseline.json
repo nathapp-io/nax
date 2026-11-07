@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1037
+    "looseCast": 1010
   },
-  "updatedAt": "2026-11-07T10:25:26.137Z",
+  "updatedAt": "2026-11-07T12:53:17.118Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -35,9 +35,6 @@
     },
     "test/integration/interaction/interaction-chain-pipeline.test.ts": {
       "looseCast": 3
-    },
-    "test/integration/prompts/pb-004-migration.test.ts": {
-      "looseCast": 1
     },
     "test/integration/review/review.test.ts": {
       "looseCast": 7
@@ -181,16 +178,7 @@
     "test/unit/commands/replay.test.ts": {
       "looseCast": 20
     },
-    "test/unit/prompts/builder.test.ts": {
-      "looseCast": 3
-    },
     "test/unit/prompts/builders/rectifier-builder.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/prompts/sections/role-task.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/prompts/sections/tdd-conventions.test.ts": {
       "looseCast": 2
     },
     "test/unit/prd/dependency-cycle.test.ts": {
@@ -325,9 +313,6 @@
     "test/unit/operations/plan-refine-out-of-scope.test.ts": {
       "looseCast": 2
     },
-    "test/unit/operations/mutation-check-revert.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/operations/setup-generate.test.ts": {
       "looseCast": 3
     },
@@ -339,9 +324,6 @@
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/operations/mutation-check-diff-scope.test.ts": {
-      "looseCast": 4
     },
     "test/unit/operations/call-correlation.test.ts": {
       "looseCast": 7
@@ -638,12 +620,6 @@
     "test/unit/context/engine/manifest-types.test.ts": {
       "looseCast": 1
     },
-    "test/unit/context/engine/stage-assembler-scope-files.test.ts": {
-      "looseCast": 6
-    },
-    "test/unit/context/engine/stage-assembler.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/context/engine/orchestrator.test.ts": {
       "looseCast": 2
     },
@@ -728,16 +704,7 @@
     "test/unit/pipeline/stages/routing-initial-complexity.test.ts": {
       "looseCast": 8
     },
-    "test/unit/pipeline/stages/prompt-batch.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/pipeline/stages/execution-unified.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/pipeline/stages/prompt-tdd-simple.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/pipeline/stages/prompt-scope-files.test.ts": {
       "looseCast": 1
     },
     "test/unit/pipeline/stages/context-digest.test.ts": {
@@ -754,9 +721,6 @@
     },
     "test/unit/pipeline/stages/context-request-workdir-fields.test.ts": {
       "looseCast": 5
-    },
-    "test/unit/pipeline/stages/prompt-acceptance.test.ts": {
-      "looseCast": 1
     },
     "test/unit/pipeline/stages/queue-check.test.ts": {
       "looseCast": 1

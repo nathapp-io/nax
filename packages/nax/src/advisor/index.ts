@@ -25,7 +25,6 @@ export { formatHeadsUp, type HeadsUpChannel } from "./heads-up";
 export {
   _ledgerDeps,
   appendDecision,
-  countStoryRulings,
   type DecisionDraft,
   ledgerPath,
   readDecisions,

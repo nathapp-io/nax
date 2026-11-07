@@ -79,7 +79,7 @@ function stableCacheKey(configs: ContextPluginProviderConfig[], workdir: string)
  * Lifecycle:
  *   1. Construct once per run in runner.ts alongside AgentManager.
  *   2. Thread into PipelineContext.pluginProviderCache.
- *   3. Call loadOrGet() from context stage and stage-assembler instead of
+ *   3. Call loadOrGet() from the context stage instead of
  *      loadPluginProviders() to reuse instances across assemble() calls.
  *   4. Call disposeAll() in handleRunCompletion() before session teardown ends.
  */

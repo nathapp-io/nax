@@ -6,7 +6,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { PromptOptimizerInput } from "@/optimizer/types";
 import type { NaxPlugin, RunEndEvent, RunStartEvent, StoryCompleteEvent } from "@/plugins/types";
 import { validatePlugin } from "@/plugins/validator";
 import type { UserStory } from "@/prd/types";
@@ -14,49 +13,31 @@ import type { RoutingContext } from "@/routing/router";
 
 describe("validatePlugin", () => {
   describe("valid plugins", () => {
-    test("accepts minimal valid plugin with optimizer", () => {
+    test("accepts minimal valid plugin with reporter", () => {
       const plugin = {
-        name: "test-optimizer",
+        name: "test-reporter",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
+          reporter: {
             name: "test",
-            async optimize(input: PromptOptimizerInput) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 100,
-                optimizedTokens: 100,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
           },
         },
       } satisfies NaxPlugin;
 
       const result = validatePlugin(plugin);
       expect(result).not.toBeNull();
-      expect(result?.name).toBe("test-optimizer");
+      expect(result?.name).toBe("test-reporter");
     });
 
     test("accepts plugin with multiple extension types", () => {
       const plugin = {
         name: "multi-extension",
         version: "2.0.0",
-        provides: ["optimizer", "router"],
+        provides: ["reporter", "router"],
         extensions: {
-          optimizer: {
+          reporter: {
             name: "test",
-            async optimize(input: PromptOptimizerInput) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 100,
-                optimizedTokens: 100,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
           },
           router: {
             name: "test-router",
@@ -69,7 +50,7 @@ describe("validatePlugin", () => {
 
       const result = validatePlugin(plugin);
       expect(result).not.toBeNull();
-      expect(result?.provides).toEqual(["optimizer", "router"]);
+      expect(result?.provides).toEqual(["reporter", "router"]);
     });
 
     test("accepts plugin with setup and teardown", () => {
@@ -154,52 +135,22 @@ describe("validatePlugin", () => {
       ["null", null],
       ["undefined", undefined],
       ["non-object", "not an object"],
-      ["missing name", { version: "1.0.0", provides: ["optimizer"], extensions: {} }],
-      ["non-string name", { name: 123, version: "1.0.0", provides: ["optimizer"], extensions: {} }],
-      ["missing version", { name: "test", provides: ["optimizer"], extensions: {} }],
-      ["non-string version", { name: "test", version: 1.0, provides: ["optimizer"], extensions: {} }],
+      ["missing name", { version: "1.0.0", provides: ["reporter"], extensions: {} }],
+      ["non-string name", { name: 123, version: "1.0.0", provides: ["reporter"], extensions: {} }],
+      ["missing version", { name: "test", provides: ["reporter"], extensions: {} }],
+      ["non-string version", { name: "test", version: 1.0, provides: ["reporter"], extensions: {} }],
       ["missing provides", { name: "test", version: "1.0.0", extensions: {} }],
-      ["non-array provides", { name: "test", version: "1.0.0", provides: "optimizer", extensions: {} }],
+      ["non-array provides", { name: "test", version: "1.0.0", provides: "reporter", extensions: {} }],
       ["empty provides", { name: "test", version: "1.0.0", provides: [], extensions: {} }],
       ["invalid provides type", { name: "test", version: "1.0.0", provides: ["invalid-type"], extensions: {} }],
-      ["missing extensions", { name: "test", version: "1.0.0", provides: ["optimizer"] }],
+      ["missing extensions", { name: "test", version: "1.0.0", provides: ["reporter"] }],
       [
         "non-object extensions",
-        { name: "test", version: "1.0.0", provides: ["optimizer"], extensions: "not an object" },
+        { name: "test", version: "1.0.0", provides: ["reporter"], extensions: "not an object" },
       ],
-      ["missing required extension", { name: "test", version: "1.0.0", provides: ["optimizer"], extensions: {} }],
+      ["missing required extension", { name: "test", version: "1.0.0", provides: ["reporter"], extensions: {} }],
     ])("rejects %s", (_label, plugin) => {
       expect(validatePlugin(plugin)).toBeNull();
-    });
-
-    test("rejects invalid optimizer (missing name or missing optimize)", () => {
-      expect(
-        validatePlugin({
-          name: "test",
-          version: "1.0.0",
-          provides: ["optimizer"],
-          extensions: {
-            optimizer: {
-              async optimize(input: PromptOptimizerInput) {
-                return {
-                  optimizedPrompt: input.prompt,
-                  estimatedTokens: input.stories.length,
-                  tokensSaved: 0,
-                  appliedStrategies: [],
-                };
-              },
-            },
-          },
-        }),
-      ).toBeNull();
-      expect(
-        validatePlugin({
-          name: "test",
-          version: "1.0.0",
-          provides: ["optimizer"],
-          extensions: { optimizer: { name: "test" } },
-        }),
-      ).toBeNull();
     });
 
     test("rejects invalid router (missing name or missing route)", () => {
@@ -294,19 +245,12 @@ describe("validatePlugin", () => {
     });
 
     test("rejects plugin with non-function setup or teardown", () => {
-      const ext = {
-        optimizer: {
-          name: "test",
-          async optimize(input: PromptOptimizerInput) {
-            return { prompt: input.prompt, originalTokens: 100, optimizedTokens: 100, savings: 0, appliedRules: [] };
-          },
-        },
-      };
+      const ext = { reporter: { name: "test" } };
       expect(
         validatePlugin({
           name: "test",
           version: "1.0.0",
-          provides: ["optimizer"],
+          provides: ["reporter"],
           setup: "not a function",
           extensions: ext,
         }),
@@ -315,7 +259,7 @@ describe("validatePlugin", () => {
         validatePlugin({
           name: "test",
           version: "1.0.0",
-          provides: ["optimizer"],
+          provides: ["reporter"],
           teardown: "not a function",
           extensions: ext,
         }),

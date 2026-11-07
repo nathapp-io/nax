@@ -48,19 +48,10 @@ async function cleanupTempDir(dir: string): Promise<void> {
 async function writePluginFile(filePath: string, plugin: NaxPlugin, setupFn?: string): Promise<void> {
   let extensionsCode = "";
 
-  if (plugin.extensions.optimizer) {
+  if (plugin.extensions.reporter) {
     extensionsCode += `
-    optimizer: {
-      name: "${plugin.extensions.optimizer.name}",
-      async optimize(input) {
-        return {
-          prompt: input.prompt,
-          originalTokens: 0,
-          optimizedTokens: 0,
-          savings: 0,
-          appliedRules: []
-        };
-      }
+    reporter: {
+      name: "${plugin.extensions.reporter.name}"
     },`;
   }
 
@@ -100,20 +91,9 @@ describe("Plugin config path resolution (US-007)", () => {
       const plugin: NaxPlugin = {
         name: "config-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -146,40 +126,18 @@ describe("Plugin config path resolution (US-007)", () => {
       const plugin1: NaxPlugin = {
         name: "plugin-one",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
       const plugin2: NaxPlugin = {
         name: "plugin-two",
         version: "2.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -212,20 +170,9 @@ describe("Plugin config path resolution (US-007)", () => {
       const plugin: NaxPlugin = {
         name: "relative-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -258,20 +205,9 @@ describe("Plugin config path resolution (US-007)", () => {
       const plugin: NaxPlugin = {
         name: "parent-relative-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -303,20 +239,9 @@ describe("Plugin config path resolution (US-007)", () => {
       const plugin: NaxPlugin = {
         name: "absolute-plugin",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -440,20 +365,9 @@ describe("Plugin config path resolution (US-007)", () => {
       const plugin: NaxPlugin = {
         name: "config-receiver",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 
@@ -500,20 +414,9 @@ describe("Plugin config path resolution (US-007)", () => {
       const plugin: NaxPlugin = {
         name: "empty-config-receiver",
         version: "1.0.0",
-        provides: ["optimizer"],
+        provides: ["reporter"],
         extensions: {
-          optimizer: {
-            name: "test",
-            async optimize(input) {
-              return {
-                prompt: input.prompt,
-                originalTokens: 0,
-                optimizedTokens: 0,
-                savings: 0,
-                appliedRules: [],
-              };
-            },
-          },
+          reporter: { name: "test" },
         },
       };
 

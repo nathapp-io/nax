@@ -167,8 +167,7 @@ export const typecheckCheckOp: DeterministicOperation<
       // `declaredCommands` is built from `quality.commands` verbatim, so a
       // command that was auto-detected above has no key and naming one would
       // send the model into `unknown command "typecheck"`. The shell string
-      // stays for the ACP transport, which has no RunCommand at all. See the
-      // note in prompts/sections/self-verification.ts.
+      // stays for the ACP transport, which has no RunCommand at all.
       message: `typecheck failed (no structured findings parsed), please re-run the typecheck: ${
         detectedFromPackage
           ? `\`${command}\``

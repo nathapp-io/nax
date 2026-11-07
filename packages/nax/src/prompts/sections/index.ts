@@ -1,16 +1,13 @@
 /**
  * Prompt Sections
  *
- * Non-overridable section builders for the PromptBuilder.
+ * Non-overridable section builders shared by the composed prompt builders.
  */
 
-export type { AcceptanceEntry } from "./acceptance";
-export { buildAcceptanceExecutionSection, buildAcceptanceSection } from "./acceptance";
 export { buildAgentScopeSection } from "./agent-scope";
 export type { GuardrailLevel, GuardrailRole } from "./behavioral-guardrails";
 export { buildBehavioralGuardrailsSection } from "./behavioral-guardrails";
 export { buildConventionsSection } from "./conventions";
-export { buildHermeticSection } from "./hermetic";
 export { buildIsolationSection } from "./isolation";
 export { buildModifiedFilesLines } from "./modified-files";
 export { buildNaxArtifactsSection } from "./nax-artifacts";
@@ -22,17 +19,6 @@ export type {
   RunCommandSpec,
   RunCommandTestSpec,
 } from "./protocol-region";
-export {
-  applyProtocolRegions,
-  PROTOCOL_REGION_MARKER_PREFIX,
-  unwrapProtocolRegions,
-  wrapAffordance,
-} from "./protocol-region";
-export { buildRoleTaskSection } from "./role-task";
+export { applyProtocolRegions, PROTOCOL_REGION_MARKER_PREFIX, wrapAffordance } from "./protocol-region";
 export { buildScratchpadSection } from "./scratchpad";
-export { buildSelfVerificationSection } from "./self-verification";
-export { buildBatchStorySection, buildStoryReminderSection, buildStorySection } from "./story";
-export { buildTddLanguageSection } from "./tdd-conventions";
-export { buildTestBaselineSection, MAX_BASELINE_SECTION_CHARS } from "./test-baseline";
-export { buildTestQualitySection } from "./test-quality";
-export { buildVerdictSection } from "./verdict";
+export { buildStorySection } from "./story";

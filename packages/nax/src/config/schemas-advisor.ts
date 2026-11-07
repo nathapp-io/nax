@@ -3,7 +3,7 @@
  * field defaults apply — `.default({})` would short-circuit to a bare `{}`.
  */
 import { z } from "zod";
-import type { AdvisorCaller, AdvisorConfig } from "./runtime-types-advisor";
+import type { AdvisorConfig } from "./runtime-types-advisor";
 import { ConfiguredModelSchema } from "./schemas-model";
 
 export const AdvisorConfigObjectSchema = z.object({
@@ -29,13 +29,4 @@ export const ADVISOR_DEFAULTS: AdvisorConfig = AdvisorConfigObjectSchema.parse({
 /** The effective advisor config; an absent block (hand-built test configs) reads as the defaults. */
 export function resolveAdvisorConfig(config: { advisor?: AdvisorConfig } | undefined): AdvisorConfig {
   return config?.advisor ?? ADVISOR_DEFAULTS;
-}
-
-/** A caller runs only when the master switch and its own flag are both on. */
-export function isAdvisorCallerEnabled(
-  config: { advisor?: AdvisorConfig } | undefined,
-  caller: AdvisorCaller,
-): boolean {
-  const advisor = resolveAdvisorConfig(config);
-  return advisor.enabled && advisor.callers[caller];
 }

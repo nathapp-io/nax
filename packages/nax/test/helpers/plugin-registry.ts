@@ -18,7 +18,6 @@ export type MockPluginRegistry = PluginRegistry & {
   getContextProviders: ReturnType<typeof mock>;
   getReviewers: ReturnType<typeof mock>;
   getRouters: ReturnType<typeof mock>;
-  getOptimizers: ReturnType<typeof mock>;
   getPostRunActions: ReturnType<typeof mock>;
   getPostRunActionRegistrations: ReturnType<typeof mock>;
   getAgent: ReturnType<typeof mock>;
@@ -34,7 +33,6 @@ export function makePluginRegistry(overrides: Partial<Record<keyof PluginRegistr
       getContextProviders: mock(() => []),
       getReviewers: mock(() => []),
       getRouters: mock(() => []),
-      getOptimizers: mock(() => []),
       getPostRunActions: mock(() => []),
       getPostRunActionRegistrations: mock(() => []),
       getAgent: mock(() => undefined),

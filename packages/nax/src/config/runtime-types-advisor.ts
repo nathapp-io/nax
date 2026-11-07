@@ -25,5 +25,3 @@ export interface AdvisorConfig {
   notify: { headsUp: boolean };
   timeoutMs?: number;
 }
-
-export type AdvisorCaller = keyof AdvisorCallersConfig;

@@ -1,9 +1,8 @@
 /**
- * Run-start baseline capture and sequential roll-forward (US-002).
+ * Run-start baseline capture (US-002).
  *
- * Owns the harness-side capture step at the top of `runExecutionPhase` and
- * the per-story roll-forward writes in the post-run story-completion path.
- * Delegates persistence to `writeRunBaseline` / `writeStoryBaseline` from
+ * Owns the harness-side capture step at the top of `runExecutionPhase`.
+ * Delegates persistence to `writeRunBaseline` from
  * `src/verification/test-baseline.ts`; this module is the orchestration layer,
  * not the IO layer.
  *
@@ -135,103 +134,19 @@ export interface CaptureRunBaselineOptions {
   readonly workdir: string;
 }
 
-/** Options for the sequential roll-forward write. */
-export interface RollForwardOptions {
-  readonly root: string;
-  readonly featureId: string;
-  readonly executionMode: "sequential" | "parallel";
-  /** Populated only in sequential mode — the next story's id, or undefined if this is the last story. */
-  readonly nextStoryId?: string;
-  /** The summary the gate phase just produced, or undefined when the gate did not produce one. */
-  readonly summary?: CaptureParsedSummary;
-}
-
-/** Resolve the story id that follows `currentStoryId` in the PRD's userStories array. */
-export function resolveNextStoryId(
-  userStories: ReadonlyArray<{ id: string }>,
-  currentStoryId: string,
-): string | undefined {
-  const idx = userStories.findIndex((s) => s.id === currentStoryId);
-  if (idx < 0 || idx >= userStories.length - 1) return undefined;
-  return userStories[idx + 1]?.id;
-}
-
-/** Minimal shape the post-run story-completion path must forward to `persistNextStoryRollForward`. */
-export interface RollForwardContext {
-  /** Repository root — anchors the baseline artifact paths. */
-  readonly root: string;
-  /** Feature id — segments the artifact tree. */
-  readonly featureId: string;
-  /** The current story's userStories array, used to resolve the next story id. */
-  readonly userStories: ReadonlyArray<{ id: string }>;
-  /** The current story id. */
-  readonly currentStoryId: string;
-  /**
-   * True when the story is running under a parallel batch orchestrator (concurrent worktrees,
-   * no total order). False for shared / sequential-worktree modes.
-   */
-  readonly isParallelMode: boolean;
-  /** Optional full-suite-gate summary produced by the gate phase, when available. */
-  readonly gateSummary?: CaptureParsedSummary;
-}
-
-/**
- * Resolves the next story id, builds the roll-forward options, and delegates to
- * `persistNextStoryRollForward`. Single entry point the post-run story-completion
- * hook called — keeps that hook at one delegated call (AC12). The hook itself went
- * with the post-run inspection layer (US-003), so this has no production caller
- * today and is retained for wave B2b-2.
- *
- * Outer try/catch matches the run-start hook's invariant ("never blocks or
- * fails the run"): the helper writes either a captured roll-forward baseline
- * or a `no-baseline: no-gate-parse` marker for the documented degraded paths,
- * but `writeStoryBaseline` (mkdir + atomic write) can throw on disk /
- * permission failure. That throw must never abort the story's success path
- * or escalate a passing story. The catch logs and resolves — same posture
- * the run-start hook's outer catch uses.
- */
-export async function invokeRollForwardFromContext(ctx: RollForwardContext): Promise<void> {
-  const nextStoryId = resolveNextStoryId(ctx.userStories, ctx.currentStoryId);
-  try {
-    await persistNextStoryRollForward({
-      root: ctx.root,
-      featureId: ctx.featureId,
-      executionMode: ctx.isParallelMode ? "parallel" : "sequential",
-      nextStoryId,
-      summary: ctx.gateSummary,
-    });
-  } catch (err) {
-    // The write (mkdir + atomic write) can fail on a full / read-only volume.
-    // A baseline write must never abort a passing story's success path, but the
-    // failure is still surfaced so a missing roll-forward artifact is traceable
-    // rather than invisible — same posture as the run-start hook's outer catch.
-    getSafeLogger()?.warn("execution", "Roll-forward baseline write failed — continuing", {
-      storyId: ctx.currentStoryId,
-      error: errorMessage(err),
-    });
-  }
-}
-
 /** Write a `no-baseline` marker with the given reason. Single persistence seam for every degraded path. */
 async function writeNoBaseline(
-  kind: "run" | "story",
   root: string,
   featureId: string,
-  storyId: string | undefined,
-  reason: "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error" | "no-gate-parse",
+  reason: "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error",
 ): Promise<void> {
   const baseline: TestBaseline = {
     kind: "no-baseline",
     reason,
     capturedAt: _captureDeps.now(),
   };
-  if (kind === "run") {
-    await _captureDeps.writeRunBaseline(root, featureId, baseline);
-    getSafeLogger()?.info("execution", "No run-start test baseline", { reason });
-  } else {
-    if (storyId === undefined) return;
-    await _captureDeps.writeStoryBaseline(root, featureId, storyId, baseline);
-  }
+  await _captureDeps.writeRunBaseline(root, featureId, baseline);
+  getSafeLogger()?.info("execution", "No run-start test baseline", { reason });
 }
 
 /**
@@ -259,7 +174,7 @@ export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promi
     await captureRunBaselineInner(opts);
   } catch (err) {
     try {
-      await writeNoBaseline("run", opts.root, opts.featureId, undefined, "error");
+      await writeNoBaseline(opts.root, opts.featureId, "error");
     } catch (writeErr) {
       getSafeLogger()?.warn("execution", "Run baseline error marker write failed — continuing", {
         featureId: opts.featureId,
@@ -287,14 +202,14 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
 
   // AC6 — gate disabled, no spawn.
   if (!_captureDeps.regressionGateEnabled(config)) {
-    await writeNoBaseline("run", root, featureId, undefined, "gate-disabled");
+    await writeNoBaseline(root, featureId, "gate-disabled");
     return;
   }
 
   // AC7 — no resolvable command, no spawn.
   const resolved = await _captureDeps.resolveTestCommands(config, workdir);
   if (resolved === undefined) {
-    await writeNoBaseline("run", root, featureId, undefined, "no-test-command");
+    await writeNoBaseline(root, featureId, "no-test-command");
     return;
   }
 
@@ -337,12 +252,12 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
   }
 
   if (runnerThrew) {
-    await writeNoBaseline("run", root, featureId, undefined, "error");
+    await writeNoBaseline(root, featureId, "error");
     return;
   }
 
   if (aggregateTimedOut) {
-    await writeNoBaseline("run", root, featureId, undefined, "timeout");
+    await writeNoBaseline(root, featureId, "timeout");
     return;
   }
 
@@ -364,7 +279,7 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
   // a captured baseline with no entries, and every pre-existing failure would
   // later be labelled as introduced.
   if (!aggregateSuccess && summary.failures.length === 0) {
-    await writeNoBaseline("run", root, featureId, undefined, "unparseable");
+    await writeNoBaseline(root, featureId, "unparseable");
     return;
   }
 
@@ -392,50 +307,5 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
     failed: summary.failed,
     entries: summary.failures.length,
     baseRef,
-  });
-}
-
-/**
- * Persists the next-story roll-forward baseline after a sequential story
- * completes. Skipped entirely in parallel mode (every parallel story inherits
- * the run-start baseline) and on the last story in the PRD (no next story to
- * roll forward to).
- *
- * Decision tree (per AC12–AC14):
- *   1. Parallel mode → no-op.
- *   2. No `nextStoryId` → no-op (last story).
- *   3. `summary` provided → `captured` with `source: "roll-forward"`, one
- *      entry per failure.
- *   4. `summary` undefined → `no-baseline: no-gate-parse`.
- *
- * Note on branch 4: `execution.regressionGate.mode` defaults to `"deferred"`, and
- * non-TDD plans added the per-story full-suite gate only when the mode was
- * `"per-story"` (the story loop's plan builder, deleted in B2b-1; issue #1116) —
- * so for an ordinary non-TDD sequential run branch 4 is the steady state, not an
- * anomaly. That is designed (spec §3.2: record that no roll-forward was available
- * rather than guess a baseline); do NOT "fix" it by substituting the run-start
- * `preflight` artifact here — it predates the stories in between, so their
- * failures would be re-attributed to this story as introduced rather than left
- * unattributed.
- * TDD plans always carry the gate and do exercise branch 3.
- */
-export async function persistNextStoryRollForward(opts: RollForwardOptions): Promise<void> {
-  // AC14 — parallel mode skips entirely.
-  if (opts.executionMode === "parallel") return;
-  // Last story — no next story to write for.
-  if (opts.nextStoryId === undefined) return;
-
-  // AC13 — no usable gate parse → no-gate-parse marker.
-  if (opts.summary === undefined) {
-    await writeNoBaseline("story", opts.root, opts.featureId, opts.nextStoryId, "no-gate-parse");
-    return;
-  }
-
-  // AC12 — summary carries parsed failures → captured roll-forward baseline.
-  await _captureDeps.writeStoryBaseline(opts.root, opts.featureId, opts.nextStoryId, {
-    kind: "captured",
-    source: "roll-forward",
-    capturedAt: _captureDeps.now(),
-    entries: opts.summary.failures.map((f) => ({ file: f.file, testName: f.testName })),
   });
 }

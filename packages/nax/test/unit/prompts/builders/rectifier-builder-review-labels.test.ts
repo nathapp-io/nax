@@ -257,8 +257,6 @@ describe("RectifierPromptBuilder.reviewRectification — mechanical-only regress
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AC7: RectifierPromptBuilder.verifierContext static method exists on the class
-// AC8: src/prompts/sections/verdict.ts is byte-identical to SHA 52634c0b (not
-//      modified by this story)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const VERIFIER_FINDING: Finding = {
@@ -313,28 +311,5 @@ describe("AC7: RectifierPromptBuilder.verifierContext static method", () => {
     const content = await file.text();
     const matches = content.split("\n").filter((line) => /static verifierContext\(/.test(line));
     expect(matches.length).toBe(1);
-  });
-});
-
-describe("AC8: src/prompts/sections/verdict.ts is not modified by this story", () => {
-  test("AC8: verdict.ts still exports buildVerdictSection function", async () => {
-    const mod = await import("@/prompts/sections/verdict");
-    expect(typeof mod.buildVerdictSection).toBe("function");
-  });
-
-  test("AC8: verdict.ts does not contain verifierContext or normalizedFindings references", async () => {
-    const file = Bun.file(join(import.meta.dir, "../../../../src/prompts/sections/verdict.ts"));
-    const content = await file.text();
-    expect(content).not.toContain("verifierContext");
-    expect(content).not.toContain("normalizedFindings");
-  });
-
-  test("AC8: verdict.ts contains the canonical approved:true schema example", async () => {
-    const file = Bun.file(join(import.meta.dir, "../../../../src/prompts/sections/verdict.ts"));
-    const content = await file.text();
-    // Key marker from the known content at SHA 52634c0b
-    expect(content).toContain('"approved":true');
-    expect(content).toContain("buildVerdictSection");
-    expect(content).toContain(".nax-verifier-verdict.json");
   });
 });

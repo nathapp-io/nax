@@ -86,7 +86,6 @@ export {
   checkCostExceeded,
   checkCostWarning,
   checkMaxRetries,
-  checkMergeConflict,
   checkPreMerge,
   checkReviewGate,
   checkSecurityReview,

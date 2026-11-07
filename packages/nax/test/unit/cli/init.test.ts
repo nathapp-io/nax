@@ -31,7 +31,7 @@ describe("initProject — creates the project config scaffold", () => {
     });
   });
 
-  test("does not scaffold prompt templates — `nax prompts --init` is the opt-in path", async () => {
+  test("does not scaffold prompt templates", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
       expect(existsSync(join(tempDir, ".nax", "templates"))).toBe(false);

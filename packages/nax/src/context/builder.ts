@@ -9,10 +9,10 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { storyWorkdir, toRepoFrame } from "@/utils/path-frame";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
-import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";
 import { countStories, getContextFiles, getExpectedFiles } from "../prd";
 import { resolveTestFilePatterns } from "../test-runners/resolver";
+import { estimateTokens } from "../utils/tokens";
 import { autoDetectContextFiles } from "./auto-detect";
 import {
   createDependencyContext,
