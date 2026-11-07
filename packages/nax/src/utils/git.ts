@@ -130,40 +130,12 @@ export async function hasCommitsForStory(workdir: string, storyId: string, maxCo
 }
 
 /**
- * Detect if git operation output contains merge conflict markers.
- *
- * Matches git-specific conflict signals only — not general use of the word
- * "conflict" in agent output (e.g. HTTP 409 Conflict implementations).
- *
- * @param output - Combined stdout/stderr output from a git operation
- * @returns true if output contains git conflict markers
- *
- * @example
- * ```typescript
- * const hasConflict = detectMergeConflict(agentOutput);
- * if (hasConflict) {
- *   // fire merge-conflict trigger
- * }
- * ```
- */
-export function detectMergeConflict(output: string): boolean {
-  return (
-    output.includes("<<<<<<<") ||
-    output.includes(">>>>>>>") ||
-    // "CONFLICT (content):", "CONFLICT (delete/modify):", etc.
-    /\bCONFLICT\s*\(/.test(output) ||
-    // "Merge conflict in <file>"
-    output.includes("Merge conflict in")
-  );
-}
-
-/**
  * Re-exports of the porcelain parser for callers that import from
  * `@/utils/git`. The parser itself lives in `./porcelain.ts` to keep the
  * pure string-handling code separate from the subprocess orchestration here.
  */
 export type { NaxProtectedPath } from "./porcelain";
-export { parsePorcelainForNaxPaths, parsePorcelainUntrackedPaths } from "./porcelain";
+export { parsePorcelainForNaxPaths } from "./porcelain";
 
 /** Context handed to before-auto-commit hooks (#2497: run-state repair runs here). */
 export interface AutoCommitHookContext {

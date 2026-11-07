@@ -206,28 +206,6 @@ export function extractTestDirs(globs: readonly string[]): string[] {
   return [...dirs];
 }
 
-/**
- * Leading directories whose glob covers EVERY file under them (`tests/**\/*.py`, `spec/**`),
- * so excluding the whole directory from review loses no implementation code.
- *
- * Narrower than {@link extractTestDirs}: `src/**\/*.test.ts` declares where tests live
- * (smart-runner and the test scanner probe it) but `src/` itself is implementation, so it
- * must never become a `:!src/` review exclusion.
- */
-export function extractWholeTestDirs(globs: readonly string[]): string[] {
-  const dirs = new Set<string>();
-  for (const glob of globs) {
-    const segments = glob.split("/");
-    const first = segments[0];
-    if (!first || first.includes("*") || segments.length < 2) continue;
-    const filename = segments[segments.length - 1] ?? "";
-    const coversEverything =
-      filename === "*" || filename === "**" || (filename.startsWith("*") && BARE_EXTENSION.test(filename.slice(1)));
-    if (coversEverything) dirs.add(first);
-  }
-  return [...dirs];
-}
-
 /** Candidate test directory roots for heuristic detection when no resolver patterns are available */
 export const DEFAULT_SCAN_TEST_DIRS: readonly string[] = Object.freeze([
   "test",

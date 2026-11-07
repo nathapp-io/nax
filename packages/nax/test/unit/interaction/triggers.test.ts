@@ -15,7 +15,6 @@ import {
   checkCostExceeded,
   checkCostWarning,
   checkMaxRetries,
-  checkMergeConflict,
   checkPreMerge,
   checkReviewGate,
   checkSecurityReview,
@@ -181,8 +180,8 @@ describe("checkPreMerge — approve/abort responses", () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BUG-17: every trigger honors its configured fallback on timeout, not just
-// review-gate. Before the fix, checkCostExceeded/checkMergeConflict/
-// checkSecurityReview compared response.action directly — a timeout response
+// review-gate. Before the fix, checkCostExceeded/checkSecurityReview compared
+// response.action directly — a timeout response
 // (action: "skip") always compared !== "abort" and proceeded, even when
 // fallback: "abort" was configured. checkMaxRetries had the mirror bug
 // (action: "skip" always meant "skip", ignoring a "continue" fallback).
@@ -199,12 +198,6 @@ describe("BUG-17: trigger fallback honored on timeout for every trigger", () => 
     const cfg = makeConfig({ "cost-exceeded": { enabled: true, fallback: "continue" } });
     const context = { featureName: "feature-x", cost: 1.0, limit: 1.0 };
     expect(await checkCostExceeded(context, cfg, makeTimeoutChain())).toBe(true);
-  });
-
-  test("checkMergeConflict aborts on timeout when fallback is abort", async () => {
-    const cfg = makeConfig({ "merge-conflict": { enabled: true, fallback: "abort" } });
-    const context = { featureName: "feature-x" };
-    expect(await checkMergeConflict(context, cfg, makeTimeoutChain())).toBe(false);
   });
 
   test("checkSecurityReview aborts on timeout when fallback is abort", async () => {
@@ -397,11 +390,6 @@ describe("triggers — narrowed config (Pick<NaxConfig, 'interaction'>)", () => 
     test("checkCostExceeded: true when disabled or not configured", async () => {
       expect(await checkCostExceeded(ctx, makeSlicedConfig({ "cost-exceeded": false }), mockChain)).toBe(true);
       expect(await checkCostExceeded(ctx, empty, mockChain)).toBe(true);
-    });
-
-    test("checkMergeConflict: true when disabled or not configured", async () => {
-      expect(await checkMergeConflict(ctx, makeSlicedConfig({ "merge-conflict": false }), mockChain)).toBe(true);
-      expect(await checkMergeConflict(ctx, empty, mockChain)).toBe(true);
     });
 
     test("checkCostWarning: continue when disabled or not configured", async () => {

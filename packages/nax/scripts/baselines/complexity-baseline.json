@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-07T13:32:45.877Z",
+  "updatedAt": "2026-11-07T13:53:02.841Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -63,7 +63,6 @@
     "src/execution/lifecycle/run-initialization.ts": { "initializeRun": 22 },
     "src/execution/lifecycle/run-setup-init.ts": { "initializeAfterLock": 21 },
     "src/execution/pipeline-result-handler.ts": { "handlePipelineFailure": 35, "handlePipelineSuccess": 33 },
-    "src/execution/queue-handler.ts": { "applyBatchBoundaryCommands": 27 },
     "src/interaction/plugins/telegram.ts": { "send": 21 },
     "src/log-format/formatter.ts": { "formatStoryComplete": 26, "formatDefault": 22 },
     "src/logger/logger.ts": { "log": 22 },

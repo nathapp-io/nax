@@ -89,12 +89,6 @@ export async function appendDecision(repoRoot: string, feature: string, draft: D
   });
 }
 
-const STORY_RULING_KINDS = new Set(["fix-cycle-give-up", "uncategorised-failure"]);
-
-export function countStoryRulings(decisions: readonly AdviceDecision[], storyId: string): number {
-  return decisions.filter((d) => d.storyId === storyId && STORY_RULING_KINDS.has(d.kind)).length;
-}
-
 /**
  * The ledger lives in the repo tree, so a line is only trusted when the advisor
  * actually wrote it: its `auditRef` is relative, has no `..`, and the audit

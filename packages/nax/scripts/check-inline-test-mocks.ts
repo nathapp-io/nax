@@ -106,7 +106,6 @@ const SKIP_FILES = new Set([
   "test/unit/tdd/rectification-gate-session.test.ts",
   "test/integration/context/feature-engine-read-path.test.ts",
   "test/integration/execution/feature-status-write.test.ts",
-  "test/integration/execution/parallel-batch-selector.test.ts",
   "test/integration/execution/status-writer.test.ts",
   "test/integration/execution/status-writer-postrun.test.ts",
   "test/integration/execution/status-file.test.ts",

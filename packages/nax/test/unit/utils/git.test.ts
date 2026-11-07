@@ -1,7 +1,7 @@
 /**
  * Unit tests for git utility functions (TC-003)
  *
- * Covers: detectMergeConflict helper, captureOutputFiles helper (ENH-005),
+ * Covers: captureOutputFiles helper (ENH-005),
  * captureWorkingTreeChanges helper (US-003).
  */
 
@@ -15,41 +15,8 @@ import {
   autoCommitIfDirty,
   captureOutputFiles,
   captureWorkingTreeChanges,
-  detectMergeConflict,
   parsePorcelainForNaxPaths,
-  parsePorcelainUntrackedPaths,
 } from "@/utils/git";
-
-describe("detectMergeConflict", () => {
-  // True positives — real git conflict signals
-  test.each([
-    ["CONFLICT (content): marker", "CONFLICT (content): Merge conflict in src/foo.ts"],
-    ["CONFLICT (modify/delete) rebase output", "CONFLICT (modify/delete): src/bar.ts deleted in HEAD"],
-    ["<<<<<<< conflict marker", "<<<<<<< HEAD\nconst x = 1;\n=======\nconst x = 2;\n>>>>>>> feature"],
-    [">>>>>>> conflict marker", ">>>>>>> feature-branch"],
-    ["Merge conflict in <file> message", "Merge conflict in src/index.ts"],
-    [
-      "typical merge output with CONFLICT",
-      "Auto-merging src/index.ts\nCONFLICT (content): Merge conflict in src/index.ts\nAutomatic merge failed; fix conflicts and then commit the result.",
-    ],
-    ["combined stderr output", "stdout: commit abc123\nstderr: CONFLICT (content): Merge conflict in src/foo.ts"],
-  ])("returns true for %s", (_label, output) => {
-    expect(detectMergeConflict(output)).toBe(true);
-  });
-
-  // False positives — words that must NOT trigger the detector
-  test.each([
-    ["bare lowercase 'conflict'", "Auto-merging failed due to conflict in file"],
-    ["HTTP 409 Conflict in agent output", "throw new HttpException('HTTP 409 Conflict: duplicate connection', 409)"],
-    ["'already-synced conflict' wording", "// return 409 when there is a duplicate conflict"],
-    ["CONFLICT without parenthesised type", "stderr: CONFLICT detected in merge"],
-    ["no conflict markers", "All changes committed successfully."],
-    ["empty string", ""],
-    ["unrelated git output", "3 files changed, 10 insertions(+), 2 deletions(-)"],
-  ])("returns false for %s", (_label, output) => {
-    expect(detectMergeConflict(output)).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // captureOutputFiles (ENH-005)
@@ -670,31 +637,5 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     assertDefined(checkoutCall, "checkout call");
     expect(checkoutCall.args).not.toContain("HEAD");
     expect(checkoutCall.args).toContain("--");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parsePorcelainUntrackedPaths (BUG-07)
-// ---------------------------------------------------------------------------
-
-describe("parsePorcelainUntrackedPaths", () => {
-  test("returns untracked paths from '?? path' lines", () => {
-    const porcelain = "?? stray-agent-file.ts\n?? scratch/notes.md\n";
-    expect(parsePorcelainUntrackedPaths(porcelain)).toEqual(["stray-agent-file.ts", "scratch/notes.md"]);
-  });
-
-  test("ignores non-untracked status lines", () => {
-    const porcelain = " M src/index.ts\nA  src/new.ts\n?? actually-untracked.ts\n";
-    expect(parsePorcelainUntrackedPaths(porcelain)).toEqual(["actually-untracked.ts"]);
-  });
-
-  test("unquotes a quoted path (space-containing filename)", () => {
-    const porcelain = '?? "with space.ts"\n';
-    expect(parsePorcelainUntrackedPaths(porcelain)).toEqual(["with space.ts"]);
-  });
-
-  test("returns an empty array for empty or all-clean porcelain output", () => {
-    expect(parsePorcelainUntrackedPaths("")).toEqual([]);
-    expect(parsePorcelainUntrackedPaths(" M src/index.ts\n")).toEqual([]);
   });
 });

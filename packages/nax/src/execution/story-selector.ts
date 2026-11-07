@@ -27,18 +27,16 @@ const DEFAULT_MAX_STORY_RETRIES = 12;
  * powers (BUG-39): specifically a `status === "failed"` story with attempts
  * remaining. Deliberately narrower than getNextStory's own resumability
  * check, which also treats an escalated-but-still-`"pending"` story as
- * retryable — that class was never excluded by the batch-plan filter or by
- * selectIndependentBatch (both only exclude `"failed"`), so pre-empting for
- * it bought nothing and instead silently downgraded a multi-story batch to
- * one-story-at-a-time dispatch after its first escalation. A `"pending"`
- * story's own existing retry path (getNextStory's single-story fallback,
- * reached without going through this function) is untouched.
+ * retryable — that class was never excluded by the batch-plan filter (it only
+ * excludes `"failed"`), so pre-empting for it bought nothing and instead
+ * silently downgraded a multi-story batch to one-story-at-a-time dispatch
+ * after its first escalation. A `"pending"` story's own existing retry path
+ * (getNextStory's single-story fallback, reached without going through this
+ * function) is untouched.
  *
- * Shared by selectNextStories (single-story fallback + batch-plan pre-empt)
- * and unified-executor.ts's parallel-dispatch branch (pre-empting
- * selectIndependentBatch, which has no id-based override and excludes
- * "failed" stories outright) — both need the identical "is this really a
- * failed-story retry" check.
+ * Shared by selectNextStories' single-story fallback and its batch-plan
+ * pre-empt — both need the identical "is this really a failed-story retry"
+ * check.
  */
 export function maxStoryRetries(config: NaxConfig): number {
   return config.execution.rectification?.maxAttemptsTotal ?? DEFAULT_MAX_STORY_RETRIES;
@@ -150,38 +148,6 @@ export function selectNextStories(
     },
     nextBatchIndex: currentBatchIndex,
   };
-}
-
-/**
- * Select up to maxCount pending stories whose dependencies are all fulfilled.
- * A dependency is fulfilled if its story has passes=true, or status is "passed"/"completed",
- * or the dependency does not appear in the stories list.
- */
-export function selectIndependentBatch(stories: UserStory[], maxCount: number): UserStory[] {
-  const storyMap = new Map(stories.map((s) => [s.id, s]));
-  const result: UserStory[] = [];
-
-  for (const story of stories) {
-    if (result.length >= maxCount) break;
-    if (
-      story.passes ||
-      story.status === "passed" ||
-      story.status === "skipped" ||
-      story.status === "failed" ||
-      story.status === "paused" ||
-      story.status === "decomposed"
-    )
-      continue;
-    const allDepsFulfilled = story.dependencies.every((depId) => {
-      const dep = storyMap.get(depId);
-      if (!dep) return true;
-      return dep.passes || dep.status === "passed";
-    });
-    if (allDepsFulfilled) {
-      result.push(story);
-    }
-  }
-  return result;
 }
 
 /**

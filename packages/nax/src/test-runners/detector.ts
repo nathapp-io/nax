@@ -3,49 +3,9 @@
  *
  * Single source of truth for identifying which test runner produced a given output.
  * Used by both parseTestOutput() (structured summary) and parseTestFailures() (AC-ID extraction).
- *
- * Also exports isTestFile() — language-agnostic test file classification used across
- * the pipeline (autofix scope routing, TDD isolation, diff analysis).
  */
-
-import { isTestFileByPatterns } from "./conventions";
 
 export type Framework = "bun" | "jest" | "vitest" | "pytest" | "go" | "rust" | "mocha" | "unknown";
-
-/**
- * Language-agnostic patterns that identify test files. Covers:
- * - Directory segments: test/, tests/, __tests__/, spec/, specs/
- * - Extension-based: .test.<ext>, .spec.<ext>, .e2e-spec.<ext>
- * - Go suffix: _test.go
- * - Python prefix: test_<name>.py
- */
-const TEST_FILE_PATTERNS = [
-  /(?:^|\/)(?:test|tests|__tests__|specs?)(?:\/|$)/, // dir segment — any language
-  /\.test\.\w+$/, // foo.test.ts, foo.test.py
-  /\.spec\.\w+$/, // foo.spec.ts, foo.spec.rb
-  /\.e2e-spec\.\w+$/, // foo.e2e-spec.ts
-  /_test\.go$/, // Go: foo_test.go
-  /(?:^|\/)test_[^/]+$/, // Python: test_foo.py
-];
-
-/**
- * Returns true when the given file path looks like a test file.
- *
- * When `testFilePatterns` is supplied, delegates to `isTestFileByPatterns()`
- * (config-aware path — ADR-009 preferred usage). When omitted, falls back to
- * the broad language-agnostic regex (backward-compat Phase 1 path).
- *
- * All first-party call sites have been migrated to the resolver + classifier
- * pattern (ADR-009). The no-argument form is kept as a Phase 1 backward-compat
- * shim for any third-party plugins that import it directly; it will be removed
- * in Phase 2 once detection guarantees the resolver always yields patterns.
- */
-export function isTestFile(filePath: string, testFilePatterns?: readonly string[]): boolean {
-  if (testFilePatterns !== undefined) {
-    return isTestFileByPatterns(filePath, testFilePatterns);
-  }
-  return TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath));
-}
 
 /**
  * Strip ANSI CSI escape sequences (e.g. `\x1b[32m` SGR color, `\x1b[0m` reset,

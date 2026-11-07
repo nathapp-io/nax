@@ -177,23 +177,6 @@ export async function checkCostExceeded(
 }
 
 /**
- * Check merge-conflict trigger (abort on conflict)
- */
-export async function checkMergeConflict(
-  context: TriggerContext,
-  config: InteractionConfig,
-  chain: InteractionChain,
-): Promise<boolean> {
-  if (!isTriggerEnabled("merge-conflict", config)) return true;
-
-  const { fallback } = getTriggerConfig("merge-conflict", config);
-  const response = await executeTrigger("merge-conflict", context, config, chain);
-  // BUG-17 — see checkCostExceeded.
-  const effectiveAction = chain.applyFallback(response, fallback);
-  return effectiveAction !== "abort";
-}
-
-/**
  * Check cost-warning trigger (escalate on approaching limit)
  */
 export async function checkCostWarning(

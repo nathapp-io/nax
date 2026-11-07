@@ -2,14 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import type { AdviceDecision } from "@/advisor";
-import {
-  _ledgerDeps,
-  appendDecision,
-  countStoryRulings,
-  ledgerPath,
-  readDecisions,
-  readTrustedDecisions,
-} from "@/advisor";
+import { _ledgerDeps, appendDecision, ledgerPath, readDecisions, readTrustedDecisions } from "@/advisor";
 import { naxOwnedWriteRefusal } from "@/agents/nax-owned-writes";
 import { featureDir } from "@/config";
 import { getSafeLogger } from "@/logger";
@@ -77,16 +70,6 @@ describe("ledger", () => {
 
   test("an absent ledger reads as empty", async () => {
     await withTempDir(async (dir) => expect(await readDecisions(dir, "nope")).toEqual([]));
-  });
-
-  test("counts only story rulings (kinds 2 + 3) for that story", () => {
-    const ds = [
-      { ...draft({ kind: "fix-cycle-give-up", storyId: "US-1" }), id: "D-1" },
-      { ...draft({ kind: "uncategorised-failure", storyId: "US-1" }), id: "D-2" },
-      { ...draft({ kind: "finish-judgment", storyId: "US-1" }), id: "D-3" },
-      { ...draft({ kind: "fix-cycle-give-up", storyId: "US-2" }), id: "D-4" },
-    ];
-    expect(countStoryRulings(ds, "US-1")).toBe(2);
   });
 
   test("agents can never write the ledger (nax-owned path)", () => {
