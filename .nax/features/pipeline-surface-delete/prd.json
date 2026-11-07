@@ -3,7 +3,7 @@
   "feature": "pipeline-surface-delete",
   "branchName": "feat/pipeline-surface-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T12:32:31.693Z",
+  "updatedAt": "2026-11-07T12:50:05.804Z",
   "userStories": [
     {
       "id": "US-001",
@@ -121,14 +121,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Broad but explicitly bounded removal across prompt, quality, context and test-runner barrels; shared workflow rendering and many retained tests must remain unchanged."
+        "reasoning": "Broad but explicitly bounded removal across prompt, quality, context and test-runner barrels; shared workflow rendering and many retained tests must remain unchanged.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/pipeline/stages/index.ts",
@@ -271,7 +274,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3ad3719f4e5169df7b0038453f2dadc00581df94"
     },
     {
       "id": "US-003",
