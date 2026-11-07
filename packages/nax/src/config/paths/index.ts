@@ -4,7 +4,7 @@
  * Provides path resolution for global and project-level config directories.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { NaxError } from "@/errors";
@@ -158,7 +158,38 @@ export function toolAuditDir(anchor: ToolAuditAnchor, featureId?: string): strin
 }
 
 /**
+ * Per-machine half of the global layer, next to `config.json` in `globalConfigDir()`.
+ * It is deep-merged over `config.json`, so a global dir shared across machines can
+ * keep machine-specific settings (an `auth.exec.command` path) out of the shared file.
+ */
+export const GLOBAL_LOCAL_CONFIG_FILE = "config.local.json";
+
+/** `path` with symlinks resolved, or just absolutized when it does not exist. */
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    // A missing path has no symlinks to follow; compare it by its absolute form.
+    return resolve(path);
+  }
+}
+
+/**
+ * True when `naxDir` is the global config dir, also when either side is reached
+ * through a symlink (a synced repo linked to `~/.nax`, or `NAX_GLOBAL_CONFIG_DIR`
+ * pointing at a link).
+ */
+export function isGlobalConfigDir(naxDir: string): boolean {
+  return canonicalPath(naxDir) === canonicalPath(globalConfigDir());
+}
+
+/**
  * Find the project `.nax/` directory by walking up from `startDir`.
+ *
+ * The global config dir is never a project (#2827): started anywhere under the
+ * directory that holds `~/.nax` with no nearer project config, the walk would
+ * otherwise return the global dir and its config would load a second time as
+ * the project layer, where global-only keys such as `auth` are rejected.
  *
  * Takes no cwd default on purpose: `process.cwd()` is a CLI-boundary bootstrap
  * value, and this module is imported from everywhere. Callers at that boundary
@@ -170,7 +201,7 @@ export function findProjectDir(startDir: string): string | null {
 
   while (depth < MAX_DIRECTORY_DEPTH) {
     const candidate = join(dir, PROJECT_NAX_DIR);
-    if (existsSync(join(candidate, "config.json"))) {
+    if (existsSync(join(candidate, "config.json")) && !isGlobalConfigDir(candidate)) {
       return candidate;
     }
     const parent = join(dir, "..");
