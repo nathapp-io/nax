@@ -3,7 +3,7 @@
   "feature": "pipeline-story-ops-delete",
   "branchName": "feat/pipeline-story-ops-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T09:02:45.221Z",
+  "updatedAt": "2026-11-07T09:45:07.372Z",
   "userStories": [
     {
       "id": "US-001",
@@ -278,15 +278,18 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "no-test",
         "reasoning": "Thirteen source deletions plus shared findings/execution barrel and type trims justify complex scope, but no behavioral implementation or new integration warrants separate TDD sessions.",
-        "noTestJustification": "Pure structural removal of unreachable fix-cycle code and exports; the empty Map factory, retained record types and curator normalizer keep their existing implementations. No new runtime behavior needs failing-first tests; still perform all specified test trims, the retained factory regression assertion and shared verification steps."
+        "noTestJustification": "Pure structural removal of unreachable fix-cycle code and exports; the empty Map factory, retained record types and curator normalizer keep their existing implementations. No new runtime behavior needs failing-first tests; still perform all specified test trims, the retained factory regression assertion and shared verification steps.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/findings/index.ts",
@@ -385,7 +388,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "75c2d6544fce4a028c9021df9d772b75c209d210"
     },
     {
       "id": "US-004",
