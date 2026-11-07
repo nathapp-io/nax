@@ -386,6 +386,35 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
     expect(summary[0]?.issue).toBe("demoted recurrence");
   });
 
+  // Negative path of the coverageGap branch: the mapper must tag ONLY a finding
+  // whose `meta.coverageGap` is true. Without this, a mapper that stamped
+  // coverageGap on every advisory finding would still satisfy the AC-1 test and
+  // the #1359 test below (which asserts only `actionRequired`), and every
+  // ordinary advisory finding would silently be reported as a recurrence gap.
+  test("an ordinary advisory finding carries no coverageGap flag", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-cg-none", "/tmp/workdir");
+
+    auditor.recordDecision({
+      reviewer: "adversarial",
+      storyId: "US-004",
+      featureName: "f",
+      parsed: true,
+      passed: true,
+      blockingThreshold: "error",
+      result: { passed: true, findings: [] },
+      advisoryFindings: [advisoryFinding({ file: "lib/s.ts", line: 2, message: "ordinary" })],
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    expect(summary).toHaveLength(1);
+    expect(summary[0]?.issue).toBe("ordinary");
+    expect(summary[0]?.coverageGap).toBeUndefined();
+  });
+
   test("preserves actionRequired:false on the summary entry (#1359)", async () => {
     const { deps } = makeDeps();
     Object.assign(_reviewAuditDeps, deps);
