@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1015
+    "looseCast": 1010
   },
   "updatedAt": "2026-11-07T12:53:17.118Z",
   "byFile": {
@@ -313,9 +313,6 @@
     "test/unit/operations/plan-refine-out-of-scope.test.ts": {
       "looseCast": 2
     },
-    "test/unit/operations/mutation-check-revert.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/operations/setup-generate.test.ts": {
       "looseCast": 3
     },
@@ -327,9 +324,6 @@
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/operations/mutation-check-diff-scope.test.ts": {
-      "looseCast": 4
     },
     "test/unit/operations/call-correlation.test.ts": {
       "looseCast": 7

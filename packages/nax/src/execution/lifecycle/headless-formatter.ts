@@ -6,14 +6,8 @@
  */
 
 import chalk from "chalk";
-import {
-  formatAdvisorySummary,
-  formatMutationSummary,
-  formatRunSummary,
-  type RunSummary,
-  type WorkflowSummaryView,
-} from "@/log-format";
-import type { AdvisoryFindingSummaryEntry, MutationStorySummary } from "@/runtime";
+import { formatAdvisorySummary, formatRunSummary, type RunSummary, type WorkflowSummaryView } from "@/log-format";
+import type { AdvisoryFindingSummaryEntry } from "@/runtime";
 import { NAX_VERSION } from "@/version";
 
 export interface RunHeaderOptions {
@@ -113,15 +107,6 @@ export function outputRunFooter(options: RunFooterOptions): void {
   });
 
   console.log(summaryOutput);
-}
-
-export function outputMutationSummary(
-  summaries: Iterable<MutationStorySummary>,
-  formatterMode: "quiet" | "normal" | "verbose" | "json",
-): void {
-  if (formatterMode === "json") return;
-  const output = formatMutationSummary(summaries);
-  if (output) console.log(output);
 }
 
 /**

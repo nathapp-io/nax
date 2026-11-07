@@ -49,7 +49,6 @@ export {
   handleRunCompletion,
   isExecutionFailure,
   outputAdvisoryFindingsSummary,
-  outputMutationSummary,
   type RunCleanupOptions,
   type RunCompletionOptions,
   type RunCompletionResult,

@@ -15,7 +15,6 @@ export {
   formatLogEntry,
   formatTimestamp,
 } from "./formatter.js";
-export { formatMutationSummary } from "./mutation-summary.js";
 export { formatAdvisorySummary, formatRunSummary } from "./summary.js";
 export {
   EMOJI,

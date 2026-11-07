@@ -196,9 +196,11 @@ export function registerBeforeAutoCommit(hook: AutoCommitHook): () => void {
  * @param role    - Session role for the commit message (e.g. "implementer")
  * @param storyId - Story ID for the commit message
  * @param blockedWorktrees - Working trees known to hold source this run cannot
- *   account for — currently an unreverted mutation from the mutation spot-check
- *   (`runtime.dirtyWorktrees`). A commit under one of these would capture the
- *   injected defect, so it is refused. Omit when the caller has no runtime.
+ *   account for. A commit under one of these would capture a line the run did
+ *   not author, so it is refused. The mutation spot-check was the set's only
+ *   writer and is deleted (US-005); the parameter stays because four production
+ *   and about thirty test call sites pass it positionally, and wave B3 removes it
+ *   with them. Omit when the caller has no runtime.
  * @param dryRun - When true, refuses outright (nax#1808). A dry run reached the
  *   completion phase and committed the PRD it had just marked passed, together
  *   with any unrelated dirty file, because `git add -A` is unscoped. The refusal

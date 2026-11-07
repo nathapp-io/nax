@@ -70,7 +70,6 @@ export {
   attachUsageAuditSubscriber,
   resolveIdleWatchdogSettings,
 } from "./middleware";
-export type { MutationOutcomeSummary, MutationStorySummary } from "./mutation-summary";
 export type { PackageRegistry, PackageView } from "./packages";
 export { createPackageRegistry, storyExecRoot } from "./packages";
 export type { ProjectIdentity } from "./paths";
@@ -141,7 +140,6 @@ import {
   attachUsageAuditSubscriber,
   cancellationMiddleware,
 } from "./middleware";
-import type { MutationStorySummary } from "./mutation-summary";
 import type { PackageRegistry } from "./packages";
 import { createPackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
@@ -246,15 +244,15 @@ export interface NaxRuntime {
   readonly runtimeCrashRetries: Map<string, number>;
   /** Run-scoped per-(story, tier) fix-iteration + decline history (US-004). */
   readonly storyFixHistory: StoryFixHistory;
-  /** Run-scoped per-story mutation-check results. */
-  readonly mutationSummaries: Map<string, MutationStorySummary>;
   /**
-   * Working trees the mutation spot-check injected a mutation into and could
-   * NOT confirm reverted — they may still hold deliberately broken source.
+   * Working trees this run injected a change into and could NOT confirm
+   * reverted — they may still hold deliberately broken source.
    *
-   * `autoCommitIfDirty` refuses to commit anything under one of these. The
-   * spot-check is advisory and never fails a story, but "advisory" cannot mean
-   * letting an injected defect into a commit (and, with autoPR, a push).
+   * The mutation spot-check that wrote this set is deleted (US-005), so nothing
+   * populates it any more; it stays because `autoCommitIfDirty` still refuses to
+   * commit anything under one of these and its call sites pass the set
+   * positionally. Wave B3 removes it with the other runtime fields only the
+   * deleted code wrote.
    *
    * Deliberately in-memory and run-scoped rather than read back off the on-disk
    * journal: a stale journal a sweep failed to reach would otherwise block every
@@ -475,7 +473,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const lastAdapterFailure = new Map<string, import("../context/engine").AdapterFailure>();
   const runtimeCrashRetries = new Map<string, number>();
   const storyFixHistory = createStoryFixHistory();
-  const mutationSummaries = new Map<string, MutationStorySummary>();
   const dirtyWorktrees = new Set<string>();
   const routingCache = new Map<string, RoutingDecision>();
 
@@ -574,7 +571,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     lastAdapterFailure,
     runtimeCrashRetries,
     storyFixHistory,
-    mutationSummaries,
     dirtyWorktrees,
     dryRun: opts?.dryRun ?? false,
     routingCache,

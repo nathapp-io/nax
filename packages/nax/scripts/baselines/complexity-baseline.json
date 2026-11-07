@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-07T12:53:10.880Z",
+  "updatedAt": "2026-11-07T13:32:45.877Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -70,7 +70,6 @@
     "src/mcp/pool.ts": { "open": 26 },
     "src/metrics/aggregator.ts": { "calculateAggregateMetrics": 28 },
     "src/metrics/tracker.ts": { "deriveContextMetrics": 40, "collectStoryMetrics": 26 },
-    "src/operations/mutation-check.ts": { "execute": 55 },
     "src/operations/verify-scoped.ts": { "execute": 24 },
     "src/pipeline/runner.ts": { "runPipeline": 50 },
     "src/pipeline/stages/completion.ts": { "execute": 39 },
@@ -115,7 +114,6 @@
     "src/utils/path-filters.ts": { "globToRegex": 27 },
     "src/utils/porcelain.ts": { "unquotePorcelainPath": 39 },
     "src/verification/executor.ts": { "appendFlag": 28 },
-    "src/verification/mutation/mutator.ts": { "generateMutants": 23 },
     "src/verification/smart-runner.ts": { "buildTestCandidates": 25 },
     "src/worktree/manager.ts": { "create": 34 },
     "src/worktree/merge.ts": { "mergeAll": 21 },

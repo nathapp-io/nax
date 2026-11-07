@@ -181,8 +181,6 @@ export {
 } from "./mock-nax-config";
 export { makeSessionManager } from "./mock-session-manager";
 export { makeInProgressStory, makePendingStory, makePRD, makeStory } from "./mock-story";
-export type { MutationCheckCtxOptions } from "./mutation-check";
-export { makeMutationCheckCtx, makeMutationCheckDeps } from "./mutation-check";
 export { opModelResolver } from "./op-model";
 export { type OpencodeAcpEnvDeps, stubOpencodeAcpEnvDeps } from "./opencode-acp-deps";
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";

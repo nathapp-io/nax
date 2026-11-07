@@ -182,7 +182,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   const { runCompletedAt, finalCounts, reportedTotal, pluginGateFailed } = completionResult;
   let durationMs = completionResult.durationMs;
 
-  const { advisoryFindings, mutationSummaries, endReport } = await finishRun(options, completionResult, logger);
+  const { advisoryFindings, endReport } = await finishRun(options, completionResult, logger);
   const authRelogins = reportAuthRelogins(options.agentManager, logger);
   const { workflowPassed } = endReport;
   durationMs = endReport.durationMs;
@@ -201,11 +201,8 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 
   // Output run footer in headless mode
   if (options.headless && options.formatterMode !== "json") {
-    const { outputAdvisoryFindingsSummary, outputMutationSummary, outputRunFooter } = await import(
-      "./lifecycle/headless-formatter"
-    );
+    const { outputAdvisoryFindingsSummary, outputRunFooter } = await import("./lifecycle/headless-formatter");
     outputAdvisoryFindingsSummary(advisoryFindings, options.formatterMode);
-    outputMutationSummary(mutationSummaries, options.formatterMode);
     outputRunFooter({
       finalCounts: {
         total: finalCounts.total,
@@ -259,7 +256,7 @@ async function persistFinishStatus(
 }
 
 /**
- * Everything between handleRunCompletion and the run footer: final feature status, advisory and mutation
+ * Everything between handleRunCompletion and the run footer: final feature status, the advisory
  * warnings, the dirty-file auto-commit and the end phase. `run.complete` is held back by
  * handleRunCompletion in both modes; the gate guarantees it is written exactly once, with the timing so far,
  * even if something in here rejects before the end phase is closed (nax#2491, nax#2494).
@@ -305,15 +302,6 @@ async function finishRun(
       });
     }
 
-    const mutationSummaries = [...(options.runtime?.mutationSummaries?.values() ?? [])];
-    const survivorCount = mutationSummaries.reduce((count, summary) => count + summary.survivors.length, 0);
-    if (survivorCount > 0) {
-      logger?.warn("mutation-check", "Surviving mutants detected at run end", {
-        storyId: "_run",
-        survivorCount,
-      });
-    }
-
     // Stop heartbeat before finish so stale execution totals cannot overwrite
     // the final status snapshot.
     stopHeartbeat();
@@ -345,7 +333,7 @@ async function finishRun(
     // US-004: only "completed" with an explicit negative verdict is downgraded.
     const nextStatus = workflowFinalRunStatus(options.statusWriter.runStatus, endReport.workflowPassed);
     if (nextStatus !== options.statusWriter.runStatus) options.statusWriter.setRunStatus(nextStatus);
-    return { advisoryFindings, mutationSummaries, endReport };
+    return { advisoryFindings, endReport };
   } finally {
     gate.ensureSafely(() => {
       const durationMs = _runnerCompletionDeps.now() - options.startTime;

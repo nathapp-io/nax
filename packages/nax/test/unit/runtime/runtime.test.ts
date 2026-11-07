@@ -84,12 +84,6 @@ describe("createRuntime", () => {
     expect(rt.rectificationOscillations.size).toBe(0);
   });
 
-  test("runtime initializes an empty mutation summary store", () => {
-    const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
-    expect(rt.mutationSummaries).toBeInstanceOf(Map);
-    expect(rt.mutationSummaries.size).toBe(0);
-  });
-
   test("runtime initializes an empty routing-decision cache (BUG-19)", () => {
     const rt = makeRuntime(DEFAULT_CONFIG, "/tmp/test");
     expect(rt.routingCache).toBeInstanceOf(Map);

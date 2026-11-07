@@ -80,7 +80,6 @@ const ALLOWED_FILES = new Set([
   "src/context/engine/providers/static-rules.ts",
   "src/context/engine/providers/git-history.ts",
   "src/operations/call-run-options.ts",
-  "src/operations/mutation-check.ts",
   "src/agents/types.ts",
   "src/utils/git.ts",
   "src/utils/path-filters.ts",
