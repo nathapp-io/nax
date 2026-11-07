@@ -23,6 +23,7 @@ import {
 } from "@test/helpers";
 import { type TierConfig, TierConfigSchema } from "@/config";
 import { isThreeSessionStrategy } from "@/config/test-strategy";
+import type { FailureCategory } from "@/execution";
 import {
   _tierEscalationDeps,
   type EscalationHandlerContext,
@@ -35,7 +36,6 @@ import type { StoryRouting, UserStory } from "@/prd";
 import { resolveOperatingTier, resolveRouting } from "@/routing";
 import type { NaxRuntime } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
-import type { FailureCategory } from "@/tdd/types";
 
 describe("S5: greenfield-no-tests fallback", () => {
   /**

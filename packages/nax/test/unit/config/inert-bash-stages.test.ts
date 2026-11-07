@@ -22,13 +22,15 @@ import type { NaxConfig, PipelineStage } from "@/config";
 import { BASH_DECLARING_STAGES, findInertBashStages } from "@/config";
 import { resolvePermissions } from "@/config/permissions";
 import { PermissionsBlockSchema } from "@/config/schemas-execution";
+import * as operations from "@/operations";
 import {
-  fullSuiteRectifyOp,
-  implementerOp,
-  implementerRectifyOp,
-  rectifyOp,
-  testWriterOp,
-  testWriterRectifyOp,
+  botPrReviewOp,
+  workflowBranchFixOp,
+  workflowBranchReviewOp,
+  workflowImplementOp,
+  workflowRepairOp,
+  workflowReReviewOp,
+  workflowStoryReviewOp,
 } from "@/operations";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,18 +75,39 @@ function sorted(stages: readonly PipelineStage[]): string[] {
 const OTHER_THREE: PipelineStage[] = ["acceptance", "rectification", "review"];
 
 /**
- * The six operations that declare the Bash tool, with the stage each
- * dispatches on. AC9 is the reason this list exists in the test at all: the
- * constant is only correct if it covers exactly these.
+ * The seven operations that still declare the Bash tool AND have a live
+ * dispatcher, with the stage each dispatches on. AC9 is the reason this list
+ * exists in the test at all: the constant is only correct if it covers them.
+ *
+ * The four fix-strategy ops that also declared Bash (`rectifyOp`,
+ * `fullSuiteRectifyOp`, `implementerRectifyOp`, `testWriterRectifyOp`) were
+ * deleted with the story orchestrator (pipeline-story-ops-delete US-001); the
+ * four retained ops that still declare it (`implementerOp`, `testWriterOp`,
+ * `implementTddOp`, `writeTddTestOp`) have no live dispatcher and are covered
+ * by the AC1 barrel sweep below rather than by this handpicked list.
  */
 const BASH_DECLARING_OPS: Array<[string, { stage: PipelineStage; tools?: readonly string[] }]> = [
-  ["implementerOp", implementerOp],
-  ["testWriterOp", testWriterOp],
-  ["rectifyOp", rectifyOp],
-  ["fullSuiteRectifyOp", fullSuiteRectifyOp],
-  ["implementerRectifyOp", implementerRectifyOp],
-  ["testWriterRectifyOp", testWriterRectifyOp],
+  ["workflowImplementOp", workflowImplementOp],
+  ["workflowBranchFixOp", workflowBranchFixOp],
+  ["workflowRepairOp", workflowRepairOp],
+  ["workflowStoryReviewOp", workflowStoryReviewOp],
+  ["workflowReReviewOp", workflowReReviewOp],
+  ["workflowBranchReviewOp", workflowBranchReviewOp],
+  ["botPrReviewOp", botPrReviewOp],
 ];
+
+/** Every barrel export whose declared `tools` include Bash. */
+function exportedBashOps(): Array<{ name: string; stage: PipelineStage }> {
+  const rows: Array<{ name: string; stage: PipelineStage }> = [];
+  for (const [name, value] of Object.entries(operations)) {
+    if (typeof value !== "object" || value === null) continue;
+    const op = value as { kind?: unknown; stage?: PipelineStage; tools?: readonly string[] };
+    if (op.kind !== "run" || op.stage === undefined) continue;
+    if (!(op.tools ?? []).includes("Bash")) continue;
+    rows.push({ name, stage: op.stage });
+  }
+  return rows.sort((a, b) => a.name.localeCompare(b.name));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // US-003 AC1 — escalate + unrestricted + no permissions block
@@ -276,16 +299,42 @@ describe("BASH_DECLARING_STAGES — US-003 AC9: mirrors the Bash-declaring opera
   );
 
   // `BASH_DECLARING_STAGES` is a name registry (src/config/inert-bash-stages.ts).
-  // The two acceptance fix ops that put "acceptance" in it were deleted with the
-  // completion acceptance loop (pipeline-post-run-delete US-006), but emptying the
-  // registry is wave B3's job (spec Out of Scope), so the string stays for now.
-  const RETAINED_REGISTRY_STAGES: PipelineStage[] = ["acceptance"];
+  // Neither "acceptance" nor "rectification" has a live dispatcher any more:
+  // the acceptance fix ops went with the completion acceptance loop
+  // (pipeline-post-run-delete US-006) and the four fix-strategy ops with the
+  // story orchestrator (pipeline-story-ops-delete US-001). Emptying the registry
+  // is wave B3's job (spec Out of Scope), so both strings stay for now.
+  const RETAINED_REGISTRY_STAGES: PipelineStage[] = ["acceptance", "rectification"];
 
-  test("AC9 boundary: BASH_DECLARING_STAGES names exactly the stages those six operations use", () => {
+  test("AC9 boundary: BASH_DECLARING_STAGES names exactly the stages those seven operations use", () => {
     const opStages = [...new Set([...BASH_DECLARING_OPS.map(([, op]) => op.stage), ...RETAINED_REGISTRY_STAGES])].sort(
       (a, b) => a.localeCompare(b),
     );
 
     expect([...BASH_DECLARING_STAGES].sort((a, b) => a.localeCompare(b))).toEqual(opStages);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 AC1 — every Bash-declaring operation stays inside the registry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BASH_DECLARING_STAGES — US-001 AC1: no Bash-declaring operation escapes the registry", () => {
+  // The sweep reads the whole barrel rather than a handpicked list: the four
+  // retained ops that declare Bash without a live dispatcher (`implementerOp`,
+  // `testWriterOp`, `implementTddOp`, `writeTddTestOp`) are exactly the rows a
+  // handpicked list would leave behind when a later wave deletes or re-wires
+  // them. A new op declaring Bash on a stage the constant does not name fails
+  // here instead of silently making the pre-flight warning inert.
+  test("AC1: every exported operation whose tools include Bash declares a BASH_DECLARING_STAGES stage", () => {
+    const rows = exportedBashOps();
+
+    // Non-vacuity: the sweep reaches real rows, and the two named ops are among
+    // them — a sweep that matched nothing would otherwise pass this guard.
+    expect(rows.map((row) => row.name)).toContain("workflowImplementOp");
+    expect(rows.map((row) => row.name)).toContain("botPrReviewOp");
+
+    const escaped = rows.filter((row) => !BASH_DECLARING_STAGES.includes(row.stage));
+    expect(escaped).toEqual([]);
   });
 });

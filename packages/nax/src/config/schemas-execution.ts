@@ -161,9 +161,9 @@ const WorktreeDependenciesConfigSchema = z
   });
 
 /**
- * Flake-detection probe config. Controls the isolation re-run mechanic
- * (`src/verification/flake-probe.ts`) used to distinguish deterministic
- * failures from transient flakes before attributing them to a story.
+ * Flake-detection probe config. Controls the isolation re-run mechanic that
+ * distinguishes deterministic failures from transient flakes before
+ * attributing them to a story.
  */
 const FlakeDetectionConfigSchema = z.object({
   enabled: z.boolean().default(true),

@@ -10,8 +10,6 @@ import { loadConfigForPackage, packageConfigCache } from "@/config";
 import { _clearRootConfigCache } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import { verifierOp } from "@/operations";
-import { VERDICT_FILE } from "@/tdd";
 import { gitWithTimeout } from "@/utils/git";
 
 afterEach(async () => {
@@ -310,16 +308,22 @@ describe("buildCodingToolSupport — commandCwd reaches RunCommand (PR1)", () =>
 });
 
 /**
- * End-to-end proof that an op's `toolPatterns` actually reach the compiled
+ * End-to-end proof that a tool's `toolPatterns` actually reach the compiled
  * policy at dispatch time (nax#2013) -- not just that `narrowGrants` behaves
- * correctly in isolation, and not just that `verifierOp.tools` /
- * `verifierOp.toolPatterns` hold the right literals. Exercises the real seam
+ * correctly in isolation. Exercises the real seam
  * (`buildCodingToolSupport` -> `narrowGrants` -> `compileToolPolicy`) under an
  * `unrestricted`-shaped grant set (`["*"]`), the exact shape that would hide a
  * dropped forwarding: a permit-only assertion would still pass if
  * `toolPatterns` were silently ignored, so the refusal case is load-bearing.
+ *
+ * The fixture is local: it mirrors the shape of the deleted verifier op's
+ * declaration (read + run + one Write narrowed to a single filename) without
+ * importing that op, so the guard keeps its coverage after the op is gone.
  */
 describe("buildCodingToolSupport — toolPatterns reaches the compiled policy (nax#2013)", () => {
+  const VERIFIER_TOOLS = ["Read", "Glob", "Grep", "Git", "RunCommand", "Write"] as const;
+  const VERDICT_FILE = ".nax-verifier-verdict.json";
+
   let verifierRoot: string;
 
   beforeEach(() => {
@@ -331,12 +335,12 @@ describe("buildCodingToolSupport — toolPatterns reaches the compiled policy (n
   });
 
   function buildVerifierSupport() {
-    const unrestrictedGrants = verifierOp.tools?.map((tool) => ({ tool, patterns: ["*"] })) ?? [];
+    const unrestrictedGrants = VERIFIER_TOOLS.map((tool) => ({ tool, patterns: ["*"] }));
     return buildCodingToolSupport({
       root: verifierRoot,
       grants: unrestrictedGrants,
-      declared: verifierOp.tools ?? [],
-      toolPatterns: verifierOp.toolPatterns,
+      declared: VERIFIER_TOOLS,
+      toolPatterns: { Write: [VERDICT_FILE] },
     });
   }
 

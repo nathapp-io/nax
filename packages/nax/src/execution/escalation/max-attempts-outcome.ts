@@ -1,4 +1,4 @@
-import type { FailureCategory } from "@/tdd/types";
+import type { FailureCategory } from "@/execution/types";
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.

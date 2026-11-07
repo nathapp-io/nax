@@ -6,10 +6,7 @@
  * changing code. The fileOutput-shaped ops (plan, plan-refine,
  * acceptance-generate) declare `Write` because each writes ONE fresh
  * artifact (a PRD, an acceptance file) -- never source -- and have no
- * business installing packages, so they must NOT carry Exec. The verifier
- * is the deliberate exception on the other side: it judges the
- * implementer's work and must not itself be able to install packages, even
- * though it can run commands.
+ * business installing packages, so they must NOT carry Exec.
  *
  * US-001 later gave plan-refine and acceptance-generate `Edit` as well: those
  * ops now revise the single artifact they just wrote, which is still not
@@ -83,11 +80,5 @@ describe("Exec declarations", () => {
       expect(tools).toContain("Edit");
       expect(tools).not.toContain("Exec");
     }
-  });
-
-  test("the verifier cannot install", () => {
-    const tools = resolveDeclaredTools(ops.verifierOp);
-    expect(tools).toContain("RunCommand");
-    expect(tools).not.toContain("Exec");
   });
 });

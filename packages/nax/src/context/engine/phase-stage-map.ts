@@ -29,9 +29,9 @@ const THREE_SESSION_STAGE_MAP: Readonly<Record<string, StageKey>> = {
 const UNCONDITIONAL_STAGE_MAP: Readonly<Record<string, StageKey>> = {
   "semantic-review": "review-semantic",
   "adversarial-review": "review-adversarial",
-  // rectifyOp (src/operations/rectify.ts) has no production dispatcher today
-  // (nax#1737 Phase B follow-up finding) — this entry is currently inert.
-  // Retained for correctness if rectifyOp is ever wired to a caller.
+  // The "rectify" op name has no production dispatcher today (nax#1737 Phase B
+  // follow-up finding) — this entry is currently inert. Retained for correctness
+  // if a rectify op is ever wired to a caller.
   rectify: "rectify",
 };
 

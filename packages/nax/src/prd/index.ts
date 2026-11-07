@@ -4,13 +4,12 @@
 
 import { existsSync, statSync } from "node:fs";
 import { NaxError } from "../errors";
-import type { FailureCategory } from "../tdd/types";
+import type { FailureCategory } from "../execution/types";
 import { propagateOutOfScopeToStories } from "./out-of-scope";
 import type { PRD, UserStory } from "./types";
 
-export type { FailureCategory } from "../tdd/types";
+export type { FailureCategory } from "../execution/types";
 export { findAcNumericReferences } from "./ac-references";
-export { isInAcceptanceScope, isLegacyFixStory } from "./acceptance-scope";
 export type { SpecContextFile } from "./context-files-extract";
 export { extractSpecContextFiles, MAX_SPEC_CONTEXT_FILES } from "./context-files-extract";
 export { deriveNextStoryId, validateInjectedStory } from "./inject";

@@ -59,18 +59,6 @@ export interface VerificationResult {
   command?: string;
 }
 
-/** Rectification state tracking per story execution */
-export interface RectificationState {
-  /** Current attempt number (0 = initial run, 1+ = retries) */
-  attempt: number;
-  /** Number of test failures on initial run */
-  initialFailures: number;
-  /** Number of test failures on current run */
-  currentFailures: number;
-  /** #89: Exit code from the last test run */
-  lastExitCode?: number;
-}
-
 /** Verification gate options */
 export interface VerificationGateOptions {
   /** Working directory */

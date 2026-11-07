@@ -34,7 +34,4 @@ export type {
   SelfVerificationStatus,
   SelfVerificationTool,
 } from "./self-verification";
-export {
-  parseSelfVerificationMarker,
-  resolveSelfVerificationPromptInput,
-} from "./self-verification";
+export { resolveSelfVerificationPromptInput } from "./self-verification";

@@ -1,9 +1,9 @@
 /**
  * Prior Failures Section
  *
- * Builds the "PRIOR FAILURES" section used by acceptance and rectifier builders.
- * Exported from core/sections so both AcceptancePromptBuilder (Phase 4) and
- * RectifierPromptBuilder (Phase 5) can import without duplication.
+ * Builds the "PRIOR FAILURES" section used by the rectifier builder.
+ * Exported from core/sections so RectifierPromptBuilder can import it without
+ * duplication.
  */
 
 import type { PromptSection } from "../types";

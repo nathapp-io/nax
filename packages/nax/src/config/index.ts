@@ -184,7 +184,6 @@ export type {
 export {
   advisorConfigSelector,
   agentManagerConfigSelector,
-  autofixConfigSelector,
   contextToolRuntimeConfigSelector,
   decomposeConfigSelector,
   executionGatesConfigSelector,
@@ -199,7 +198,6 @@ export {
   rectifyConfigSelector,
   reviewConfigSelector,
   routingConfigSelector,
-  tddConfigSelector,
   testPatternConfigSelector,
   verifyConfigSelector,
   workflowConfigSelector,

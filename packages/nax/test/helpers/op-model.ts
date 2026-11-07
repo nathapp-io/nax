@@ -19,7 +19,7 @@
  * cast pretend it cannot happen.
  *
  * @example
- * expect(opModelResolver(implementerRectifyOp)(input, makeBuildCtx())).toBe("powerful");
+ * expect(opModelResolver(workflowImplementOp)(input, makeBuildCtx())).toBe("powerful");
  */
 
 import type { ConfiguredModel } from "@/config";

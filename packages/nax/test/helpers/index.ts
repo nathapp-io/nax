@@ -87,7 +87,6 @@ export type { FakeRunMemory, FakeRunMemoryOptions } from "./fake-run-memory";
 export { FAKE_MEMORY_PROVIDER, makeFakeMemoryHost, makeFakeRunMemory } from "./fake-run-memory";
 export { makeFinalizeAdvisor, wireFinalize } from "./finalize";
 export { makeFinding } from "./finding";
-export { makeFixCycleResult, makeIteration } from "./fix-cycle-result";
 export { waitForFile } from "./fs";
 export { type GeminiAcpEnvDeps, stubGeminiAcpEnvDeps } from "./gemini-acp-deps";
 export { type MockInteractionChain, makeInteractionChain } from "./interaction-chain";

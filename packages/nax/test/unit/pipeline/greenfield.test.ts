@@ -37,12 +37,12 @@ async function createTestFile(workdir: string, filepath: string, content = ""): 
 
 /**
  * Broad polyglot globs equivalent to what the ADR-009 SSOT resolver's detection
- * tier yields for a repo with co-located tests. Production callers (routing
- * pre-check, greenfieldGateOp) always pass patterns resolved via
- * `resolveTestFilePatterns()`; these exercise the classifier + IGNORE_DIRS logic
- * for co-located-test layouts. With NO patterns, `isGreenfieldStory` falls back
- * to DEFAULT_TEST_FILE_PATTERNS ("test/**\/*.test.ts") — parity with
- * `verifyTestWriterIsolation`.
+ * tier yields for a repo with co-located tests. Production callers (the routing
+ * pre-check) always pass patterns resolved via `resolveTestFilePatterns()`;
+ * these exercise the classifier + IGNORE_DIRS logic for co-located-test
+ * layouts. With NO patterns, `isGreenfieldStory` falls back to
+ * DEFAULT_TEST_FILE_PATTERNS ("test/**\/*.test.ts") — parity with the
+ * test-writer isolation check.
  */
 const BROAD_PATTERNS = [
   "**/*.test.ts",
@@ -79,8 +79,8 @@ describe("isGreenfieldStory", () => {
   // Co-located-src layouts: production resolves broad globs via the SSOT detection
   // tier, so these pass BROAD_PATTERNS to exercise the classifier. (With the
   // DEFAULT_TEST_FILE_PATTERNS fallback, src-co-located tests do not match — that
-  // is the intended parity with verifyTestWriterIsolation; see default-fallback
-  // test below.)
+  // is the intended parity with the test-writer isolation check; see
+  // default-fallback test below.)
   it("returns false when .test.ts files exist (resolved globs)", async () => {
     await createTestFile(workdir, "src/foo.test.ts", "test('foo', () => {})");
     const story = createMockStory();
@@ -119,7 +119,7 @@ describe("isGreenfieldStory", () => {
 
   it("falls back to DEFAULT_TEST_FILE_PATTERNS when no patterns supplied (parity with isolation)", async () => {
     // src-co-located test does NOT match the narrow DEFAULT (test/**/*.test.ts).
-    // verifyTestWriterIsolation uses the same default, so both agree.
+    // The test-writer isolation check used the same default, so both agree.
     await createTestFile(workdir, "src/foo.test.ts", "test('foo', () => {})");
     const story = createMockStory();
     const result = await isGreenfieldStory(story, workdir);

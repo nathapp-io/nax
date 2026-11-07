@@ -5,7 +5,7 @@
  * (prior failures, findings). A dedicated builder avoids forcing rectification prompts
  * into the TDD builder.
  *
- * Replaces: buildImplementerRectificationPrompt / buildRectificationPrompt from src/tdd/prompts.ts
+ * Replaces: the rectifier prompt builders from the deleted TDD prompt module.
  *
  * NOTE: This class is being deprecated in favor of static factory methods.
  * The old `for(trigger)` builder pattern is removed in ADR-018 / Issue #737 PR 2.
@@ -21,7 +21,7 @@ import { isBlockingSeverity } from "@/review";
 import { formatFailureSummary } from "@/test-runners";
 import { storyPackageDir } from "@/utils/path-frame";
 import type { TestFailure } from "@/verification";
-import type { FailureRecord, ReviewFinding } from "../core";
+import type { FailureRecord } from "../core";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { GuardrailLevel } from "../sections";
 import {
@@ -48,7 +48,7 @@ import {
 
 export { CONTRADICTION_ESCAPE_HATCH } from "./rectifier-builder-helpers";
 
-export type { FailureRecord, ReviewFinding };
+export type { FailureRecord };
 
 /**
  * Trigger type for rectification sessions.
@@ -498,7 +498,7 @@ Commit your fixes when done.${scopeConstraint}`;
   /**
    * Prompt for escalation to a higher-tier model after exhausting retries.
    *
-   * Migrated from createEscalatedRectificationPrompt() in src/verification/rectification.ts.
+   * Migrated from the escalated-rectification builder in the deleted verification module.
    */
   static escalated(
     failures: TestFailure[],

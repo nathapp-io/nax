@@ -5,8 +5,6 @@
  * Builders import from here — consumers import from src/prompts (public barrel).
  */
 
-export type { ReviewFinding } from "./findings";
-export { findingsSection } from "./findings";
 export { instructionsSection } from "./instructions";
 export type { SchemaDescriptor } from "./json-schema";
 

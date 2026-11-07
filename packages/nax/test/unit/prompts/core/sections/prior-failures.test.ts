@@ -1,8 +1,7 @@
 /**
  * Tests for priorFailuresSection() in src/prompts/core/sections/prior-failures.ts
  *
- * This section is reserved for use by AcceptancePromptBuilder (Phase 4, unused)
- * and RectifierPromptBuilder (Phase 5).
+ * This section is used by RectifierPromptBuilder.
  */
 
 import { describe, expect, test } from "bun:test";

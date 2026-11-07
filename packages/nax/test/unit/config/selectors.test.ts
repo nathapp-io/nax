@@ -10,7 +10,6 @@ import {
   qualityConfigSelector,
   reviewConfigSelector,
   routingConfigSelector,
-  tddConfigSelector,
   testPatternConfigSelector,
 } from "@/config";
 
@@ -109,30 +108,6 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(Object.keys(slice).sort()).toEqual(["agent", "execution", "models", "project", "quality", "review"]);
     });
 
-    test("tddConfigSelector now includes quality, agent, models, prompts, context, project, precheck", () => {
-      const slice = tddConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice).toHaveProperty("tdd");
-      expect(slice).toHaveProperty("execution");
-      expect(slice).toHaveProperty("quality");
-      expect(slice).toHaveProperty("agent");
-      expect(slice).toHaveProperty("models");
-      expect(slice).toHaveProperty("prompts");
-      expect(slice).toHaveProperty("context");
-      expect(slice).toHaveProperty("project");
-      expect(slice).toHaveProperty("precheck");
-      expect(Object.keys(slice).sort()).toEqual([
-        "agent",
-        "context",
-        "execution",
-        "models",
-        "precheck",
-        "project",
-        "prompts",
-        "quality",
-        "tdd",
-      ]);
-    });
-
     test("routingConfigSelector now includes autoMode and tdd", () => {
       const slice = routingConfigSelector.select(DEFAULT_CONFIG);
       expect(slice).toHaveProperty("routing");
@@ -161,14 +136,6 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(slice.review).toEqual(DEFAULT_CONFIG.review);
       expect(slice.models).toEqual(DEFAULT_CONFIG.models);
       expect(slice.execution).toEqual(DEFAULT_CONFIG.execution);
-    });
-
-    test("tddConfigSelector preserves values", () => {
-      const slice = tddConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice.tdd).toEqual(DEFAULT_CONFIG.tdd);
-      expect(slice.quality).toEqual(DEFAULT_CONFIG.quality);
-      expect(slice.models).toEqual(DEFAULT_CONFIG.models);
-      expect(slice.agent).toEqual(DEFAULT_CONFIG.agent);
     });
 
     test("routingConfigSelector preserves values", () => {

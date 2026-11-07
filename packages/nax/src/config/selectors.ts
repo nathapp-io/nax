@@ -9,7 +9,7 @@
  */
 
 import type { z } from "zod";
-import type { FixReviewConfigSchema, NbfWorthCheckConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
+import type { FixReviewConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
 import { pickSelector, reshapeSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
@@ -25,18 +25,6 @@ export const reviewConfigSelector = pickSelector(
 export const planConfigSelector = pickSelector("plan", "plan", "agent", "models", "project", "routing");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
 export const rectifyConfigSelector = pickSelector("rectify", "execution");
-export const tddConfigSelector = pickSelector(
-  "tdd",
-  "tdd",
-  "execution",
-  "quality",
-  "agent",
-  "models",
-  "prompts",
-  "context",
-  "project",
-  "precheck",
-);
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
 
 export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({
@@ -98,7 +86,6 @@ export const precheckConfigSelector = pickSelector(
   "routing",
 );
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
-export const autofixConfigSelector = pickSelector("autofix", "quality", "execution");
 export const executionGatesConfigSelector = pickSelector("execution-gates", "review", "execution");
 
 // Test-pattern resolver — resolveTestFilePatterns reads execution.smartTestRunner
@@ -158,7 +145,6 @@ export type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
 export type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 export type DecomposeConfig = ReturnType<typeof decomposeConfigSelector.select>;
 export type RectifyConfig = ReturnType<typeof rectifyConfigSelector.select>;
-export type TddConfig = ReturnType<typeof tddConfigSelector.select>;
 export type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
 export type VerifyConfig = ReturnType<typeof verifyConfigSelector.select>;
 export type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
@@ -173,10 +159,8 @@ export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfi
 export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
 export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
 export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.select>;
-export type AutofixConfig = ReturnType<typeof autofixConfigSelector.select>;
 export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
 export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
-export type NbfWorthCheckConfig = z.infer<typeof NbfWorthCheckConfigSchema>;
 /** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`.
  *
  * Uses `z.infer` (the parsed shape, not the input shape) so `enabled` and

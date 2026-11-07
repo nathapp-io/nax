@@ -1,15 +1,15 @@
 /**
- * ADR-022 Phase 1 — Fix Strategy and Cycle orchestration types.
+ * ADR-022 Phase 1 — iteration record types.
  *
- * These types sit above runRetryLoop and model the outer iteration history:
- * which strategies ran, what findings looked like before/after, and how to
- * classify progress across multiple fix attempts.
+ * These types model one fix attempt's history: which strategies ran, what the
+ * findings looked like before/after, and how progress was classified across
+ * attempts.
  *
- * Only types live here; behaviour is in cycle.ts (ADR-022 Phase 2).
+ * Only types live here. The cycle behaviour that produced these records
+ * (`cycle.ts`, ADR-022 Phase 2) went with the findings fix cycle in C1 wave
+ * B2b-3.
  */
 
-import type { Operation } from "@/operations/types";
-import type { SessionRole } from "@/runtime/session-role";
 import type { Finding } from "./types";
 
 // ─── Iteration record ────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ export interface FixApplied {
    *
    * Folds failed-dispatch spend, mirroring the story orchestrator's per-phase
    * `phaseCosts` (that seam went with the story loop, B2b-1); the failed half is
-   * still carried beside it in `errorCostUsd`. See cycle-cost.ts.
+   * still carried beside it in `errorCostUsd`.
    */
   costUsd?: number;
   /**
@@ -65,32 +65,32 @@ export interface Iteration<F extends Finding = Finding> {
   /** Findings observed before the iteration ran. */
   findingsBefore: F[];
   /**
-   * Strategies that ran during this iteration. At least one entry when the
-   * iteration is produced by runFixCycle (one per strategy that ran).
+   * Strategies that ran during this iteration. At least one entry when the fix
+   * cycle produced the iteration (one per strategy that ran).
    *
    * Exception: carry-forward iterations recorded by review orchestrators
    * (e.g. adversarial) have fixesApplied: [] because the fix ran in the
-   * implementation session outside the FixCycle. The rendered table shows "-"
+   * implementation session outside the fix cycle. The rendered table shows "-"
    * in the "Strategies run" column for these rows.
    */
   fixesApplied: FixApplied[];
   /** Findings observed after the iteration ran. */
   findingsAfter: F[];
   /**
-   * Exact `findingKey(f)` (message included) per entry in the pre-iteration
-   * findings, in array order. Set by `recordIteration`; omitted on
+   * Exact finding key (message included) per entry in the pre-iteration
+   * findings, in array order. Set by the iteration recorder; omitted on
    * carry-forward iterations recorded by review orchestrators (which retain
    * the array form above). This is the strict identity — for the coarser
-   * identity `classifyOutcome` actually classifies by, see
+   * identity the outcome classifier used, see
    * `findingRecurrenceKeysBefore`/`After` (nax#1581).
    */
   findingKeysBefore?: string[];
   /** Mirror of `findingKeysBefore` for the post-iteration findings. */
   findingKeysAfter?: string[];
   /**
-   * `findingRecurrenceKey(f)` per entry in the pre-iteration findings, in
-   * array order — the coarse (message-excluded) identity `classifyOutcome`
-   * uses to compute `outcome`. Logged alongside the strict `findingKeys*`
+   * The coarse recurrence key per entry in the pre-iteration findings, in
+   * array order — the message-excluded identity the outcome classifier used
+   * to compute `outcome`. Logged alongside the strict `findingKeys*`
    * fields so a reader can tell why two `message`-differing findings were
    * classified as the same defect (nax#1581).
    */
@@ -122,7 +122,7 @@ export interface Iteration<F extends Finding = Finding> {
    * was skipped (`findingsAfter` equals `findingsBefore`, and the failed
    * dispatch's spend rides on `fixesApplied` like any other attempt).
    *
-   * Consumers care about exactly one thing: `withNoProgressBail` excludes these
+   * Consumers cared about exactly one thing: the no-progress bail excluded these
    * iterations from the no-progress window. An iteration that reached no model
    * is evidence of nothing — it neither advances the streak nor resets it —
    * where a completed no-edit iteration (same `outcome`, no marker) is real
@@ -132,255 +132,4 @@ export interface Iteration<F extends Finding = Finding> {
   outcome: IterationOutcome;
   startedAt: string; // ISO-8601
   finishedAt: string; // ISO-8601
-}
-
-// ─── Cycle result ────────────────────────────────────────────────────────────
-
-/** Structured return from a validate callback, enabling short-circuit signalling. */
-export interface ValidateResult<F extends Finding> {
-  readonly findings: readonly F[];
-  readonly shortCircuited?: boolean;
-}
-
-export type FixCycleExitReason =
-  | "resolved"
-  | "no-strategy"
-  | "max-attempts-total"
-  | "max-attempts-per-strategy"
-  | "validator-error"
-  | "bail-when"
-  | "agent-gave-up"
-  | "validate-short-circuit"
-  /**
-   * US-003 — a strategy dispatch raised `CALL_OP_NO_DISPATCH`: no hop of the
-   * operation ever reached a model, so the iteration attempted nothing and
-   * there is nothing for `validate` to judge. Distinct from `agent-gave-up`
-   * (the agent answered UNRESOLVED) and from `validate-short-circuit`.
-   */
-  | "no-dispatch";
-
-export interface FixCycleResult<F extends Finding = Finding> {
-  iterations: Iteration<F>[];
-  finalFindings: F[];
-  exitReason: FixCycleExitReason;
-  /** Strategy name that hit its maxAttempts cap. Set when exitReason is "max-attempts-per-strategy". */
-  exhaustedStrategy?: string;
-  /** Human-readable detail from strategy.bailWhen(). Set when exitReason is "bail-when". */
-  bailDetail?: string;
-  /** Reason text from the agent's UNRESOLVED sentinel. Set when exitReason is "agent-gave-up". */
-  unresolvedDetail?: string;
-  /**
-   * Total cost of all fix attempts in the cycle.
-   *
-   * Sourced from the run's cost ledger, keyed on the `callId` `runFixCycle`
-   * stamps onto each dispatch (#1932); a strategy's own
-   * `extractApplied.costUsd` overrides that when it supplies one. Before #1932
-   * this read from `extractApplied` alone and no implementation supplied it, so
-   * it was structurally always 0.
-   */
-  costUsd?: number;
-}
-
-// ─── Context ─────────────────────────────────────────────────────────────────
-
-/**
- * Context passed to validate and buildInput. Structural superset of CallContext
- * with storyId made required (parallel logging discipline). Satisfies CallContext
- * so runFixCycle can pass it directly to callOp.
- */
-export type FixCycleContext = import("../operations/types").CallContext & {
-  readonly storyId: string;
-};
-
-/**
- * The `callOp` seam `runFixCycle` dispatches through, injectable for tests.
- *
- * Lives here rather than in cycle.ts so cycle-dispatch.ts can name it without
- * an import edge back to its own caller; cycle.ts re-exports it.
- */
-export type CallOpFn = <I, O, C>(ctx: FixCycleContext, op: Operation<I, O, C>, input: I) => Promise<O>;
-
-// ─── Config ──────────────────────────────────────────────────────────────────
-
-export interface FixCycleConfig {
-  /** Hard cap on total fix invocations across all strategies. Default: 10. */
-  maxAttemptsTotal: number;
-  /** How many times to retry the validator on throw before terminal exit. Default: 1. */
-  validatorRetries: number;
-}
-
-// ─── Strategy ────────────────────────────────────────────────────────────────
-
-export interface FixStrategy<
-  F extends Finding,
-  I,
-  O,
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategies share a cycle; C is opaque at the cycle layer
-  C = any,
-> {
-  name: string;
-
-  /**
-   * Returns true for findings this strategy should fix. Must be discriminating
-   * (by source, category, fixTarget, or file pattern) — never `() => true`.
-   */
-  appliesTo: (finding: F) => boolean;
-
-  /**
-   * Optional fallback selector consulted only when findings.length === 0 (e.g.
-   * acceptance fast-path verdicts that produce no structured findings). When
-   * unset, the strategy is skipped in empty-findings iterations.
-   */
-  appliesToVerdict?: (verdict: string) => boolean;
-
-  fixOp: Operation<I, O, C>;
-
-  /**
-   * Build the input for fixOp. Captures closure context (diagnosis, verdict,
-   * test output, packageDir) — do not thread extras through FixCycleContext.
-   *
-   * `findings` is pre-filtered to only the findings where appliesTo returned
-   * true. For empty-findings iterations (appliesToVerdict path), it is [].
-   */
-  buildInput: (findings: F[], priorIterations: Iteration<F>[], ctx: FixCycleContext) => I;
-
-  /**
-   * Optional hook run on every dispatch of this strategy, after `buildInput`
-   * and before `callOp`. `dispatchStrategy` awaits it, so work that must
-   * precede the dispatch (e.g. snapshotting the working tree the fix is about
-   * to edit) is complete before any agent turn runs.
-   *
-   * A strategy without it dispatches exactly as it did before the field
-   * existed.
-   */
-  beforeDispatch?: (ctx: FixCycleContext) => Promise<void>;
-
-  /**
-   * Optional: extract targetFiles, summary, and cost from the op output for FixApplied
-   * record-keeping. When absent, targetFiles defaults to [] and summary to "".
-   *
-   * `costUsd` is the exception: since #1932 the cycle reads the dispatch's spend
-   * from the cost ledger, so `FixApplied.costUsd` is populated whether or not
-   * this hook is defined. Return a `costUsd` here only when the strategy knows
-   * its own cost better than the ledger does — e.g. it dispatches outside
-   * `callOp` — because an explicit value overrides the ledger reading.
-   */
-  extractApplied?: (
-    output: O,
-    input: I,
-  ) =>
-    | { targetFiles?: string[]; summary?: string; costUsd?: number; unresolved?: string }
-    | Promise<{ targetFiles?: string[]; summary?: string; costUsd?: number; unresolved?: string }>;
-
-  /**
-   * Optional bail predicate called before each iteration. Return a non-null
-   * string reason to exit with exitReason "bail-when". Returning null continues.
-   */
-  bailWhen?: (priorIterations: readonly Iteration<F>[]) => string | null;
-
-  /** Per-strategy attempt cap. Counted via fixesApplied[].strategyName. */
-  maxAttempts: number;
-
-  /**
-   * Optional session role for this strategy's dispatches (#1654).
-   *
-   * `runFixCycle` forwards it as `CallContext.sessionOverride.role`, which
-   * `callOp` prefers over `op.session.role`. Because session resume is keyed on
-   * the role, a role no other strategy uses yields a session of its own — so two
-   * strategies can share one `fixOp` without sharing its conversation. Set this
-   * when the second dispatch must not inherit the first one's framing; leave it
-   * unset to keep the op's declared role and its normal reuse.
-   */
-  sessionRole?: SessionRole;
-
-  /**
-   * Co-run discipline. Default (undefined or "exclusive") means this strategy
-   * runs alone — all other matching strategies are skipped for this iteration.
-   * "co-run-sequential" means run alongside other co-run-sequential strategies
-   * in declaration order.
-   */
-  coRun?: "exclusive" | "co-run-sequential";
-}
-
-/**
- * A FixStrategy whose factory always supplies extractApplied — the declared
- * type keeps the method required instead of optional, so consumers (tests
- * included) can call it without asserting away the absence check.
- */
-export type FixStrategyWithExtractApplied<
-  F extends Finding,
-  I,
-  O,
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategies share a cycle; C is opaque at the cycle layer
-  C = any,
-> = FixStrategy<F, I, O, C> & {
-  extractApplied: NonNullable<FixStrategy<F, I, O, C>["extractApplied"]>;
-};
-
-// ─── Cycle ───────────────────────────────────────────────────────────────────
-
-export interface FixCycle<F extends Finding> {
-  /** Mutable: updated to findingsAfter at the end of each iteration. */
-  findings: F[];
-  /** Mutable: pushed to at the end of each iteration. */
-  iterations: Iteration<F>[];
-  /**
-   * Iterations completed by earlier cycles for the same story/tier; never mutated by
-   * this cycle. Cap checks, terminal-exhaustion counters, and `bailWhen` predicates
-   * read the concatenation `[...priorIterations, ...iterations]`; `cycle.iterations`
-   * and `FixCycleResult.iterations` continue to report only this cycle.
-   *
-   * Construction of this array is the caller's responsibility (US-001/US-003).
-   */
-  priorIterations?: readonly Iteration<F>[];
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous strategy array; I/O types are coherent per-strategy
-  strategies: FixStrategy<F, any, any, any>[];
-  /**
-   * Single validator for the cycle. Runs once per iteration, after all co-run
-   * strategies complete. On throw, retried config.validatorRetries times before
-   * exiting with "validator-error".
-   *
-   * `strategiesRun` is an optional list of strategy names that just ran in this
-   * iteration. Implementations may use it to scope re-validation to only the
-   * phases relevant to those strategies (e.g. skipping the full test suite when
-   * only a lint-fix strategy ran).
-   */
-  validate: (
-    ctx: FixCycleContext,
-    opts: { mode: "full" | "lite"; strategiesRun?: readonly string[] },
-  ) => Promise<F[] | ValidateResult<F>>;
-  config: FixCycleConfig;
-  /**
-   * Optional verdict string used to bias strategy selection when findings is
-   * empty. Passed to strategy.appliesToVerdict when findings.length === 0.
-   */
-  verdict?: string;
-  /**
-   * A1: called when every strategy in a group gave up (UNRESOLVED) and no other
-   * claimant remains (after the #1654 fall-through), before the cycle exits
-   * `agent-gave-up`. `null` (or a throw) keeps that exit. A resolution replaces
-   * the working findings and un-declines the named strategies, and the loop
-   * continues; `exit` keeps the exit with the detail extended.
-   */
-  onGiveUp?: (input: GiveUpInput<F>) => Promise<GiveUpResolution<F> | null>;
-}
-
-/** What `onGiveUp` is told about a give-up. */
-export interface GiveUpInput<F extends Finding> {
-  readonly findings: readonly F[];
-  readonly gaveUp: readonly { strategyName: string; unresolvedDetail: string }[];
-  /** Attempts left per strategy name (per-strategy cap minus attempts so far). */
-  readonly attemptsLeft: Readonly<Record<string, number>>;
-  /** Attempts left under `config.maxAttemptsTotal`. */
-  readonly totalAttemptsLeft: number;
-}
-
-/** How `onGiveUp` resolved a give-up. */
-export interface GiveUpResolution<F extends Finding> {
-  /** Replacement working set (waived findings removed; retargeted ones carry a new fixTarget). */
-  readonly findings: F[];
-  /** Strategy names to un-decline for those findings. */
-  readonly reinstate: readonly string[];
-  /** Keep today's agent-gave-up exit; `detailSuffix` is appended to unresolvedDetail. */
-  readonly exit?: { detailSuffix: string };
 }

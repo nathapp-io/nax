@@ -1,4 +1,3 @@
-export type { FailureCategory } from "../tdd/types";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
 export { _workflowResumeDeps, type ResumeMode } from "./checkpoint";
 export {
@@ -69,12 +68,7 @@ export {
 export { appendProgress } from "./progress";
 export type { BatchQueueDrainResult } from "./queue-handler";
 export { clearQueueFile, drainQueueAtBatchBoundary, processQueueFile, readQueueFile } from "./queue-handler";
-export {
-  getReviewRecurrenceCount,
-  type ReviewRecurrenceEntry,
-  type ReviewRecurrenceStore,
-  recordReviewFindings,
-} from "./recurrence-store";
+export type { ReviewRecurrenceEntry, ReviewRecurrenceStore } from "./recurrence-store";
 export type { RunOptions, RunResult } from "./runner";
 export { _runnerDeps, _runnerReentrancyGuard, run } from "./runner";
 export {
@@ -85,7 +79,7 @@ export {
 } from "./runner-completion";
 export type { WorkflowStatusBlock } from "./status-file";
 export { StatusWriter, type StatusWriterContext } from "./status-writer";
-export type { StoryRunResult } from "./types";
+export type { FailureCategory } from "./types";
 export { headsUpChannel } from "./uncategorised-advice";
 // BUG-2 testability seam: re-export `executeUnified` + its `_deps`
 // shim so test files can mutate `_unifiedExecutorDeps` via the barrel

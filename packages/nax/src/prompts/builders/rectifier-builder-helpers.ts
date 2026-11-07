@@ -460,56 +460,6 @@ Do NOT add new features — only fix the quality check errors.
 After fixing, re-run the failing check(s) to verify they pass, then commit your changes.${scopeConstraint}${noTestIsolationBlock(story)}${escapeHatchFor(story)}`;
 }
 
-// ─── Repo-scoped rectification (#1654) ────────────────────────────────────────
-
-/**
- * The mandate for the repo-scoped fallthrough dispatch.
- *
- * Reached only after a story-scoped rectifier answered UNRESOLVED on a failing
- * test it judged out of scope. The story-scoped prompt asks the agent to fix a
- * test while forbidding it from touching what is broken; UNRESOLVED is the
- * agent correctly reporting that contradiction. This lifts the scope constraint
- * and nothing else — an agent free to edit any file is exactly the one that must
- * still be barred from making a red test green by weakening it.
- */
-const REPO_SCOPE_MANDATE = `
-These tests are failing, and a previous story-scoped attempt declined them as outside
-this story's scope. That constraint is lifted: you MAY modify any file in the repository,
-including files this story did not otherwise touch, when that is what it takes to make
-these tests pass.
-
-The scope constraint is lifted. The test-integrity rules are NOT:
-- Fix the SOURCE. Never weaken, loosen, delete, or \`skip\` a test to make it pass.
-- Do not edit test files outside the declared exceptions below.
-- Make the smallest change that makes the test pass. This is not a refactor.
-- Re-run the test suite after each change to verify.
-
-If a test does not fail consistently, do NOT try to make it pass. Re-run it a few
-times in isolation first. A test that passes on some runs is flaky, and editing it to
-be green hides a real defect — emit UNRESOLVED naming the test and say it is flaky.
-
-"It was not caused by this story" is not a reason to decline. Whether the failure
-predates this story or was introduced by it, the remedy is the same and it is yours to
-apply. Emit UNRESOLVED only when these tests cannot be made to pass at all — they
-contradict each other, or they require infrastructure that does not exist and cannot be
-created here. Say which, specifically.`;
-
-/**
- * Build the repo-scoped failing-test rectification prompt.
- *
- * Drops Exception 3 (sibling spillover) — it instructs the agent to declare
- * `sibling_scope` and move on, which re-licenses the refusal this dispatch
- * responds to — and Exception 4 (mock-structure handoff), whose target is the
- * story's own test-writer and does not own tests outside the story.
- */
-export function repoScopedRectification(findings: Finding[], story: UserStory): string {
-  if (implementerOwnsTests(story)) {
-    return [formatFailingTestsList(findings), REPO_SCOPE_MANDATE, SINGLE_SESSION_TEST_EDIT_POLICY].join("\n");
-  }
-  const hatch = buildEscapeHatch({ includeMockHandoff: false, includeSiblingScope: false });
-  return [formatFailingTestsList(findings), REPO_SCOPE_MANDATE, hatch].join("\n");
-}
-
 /**
  * US-004 — options for the failing-test rectification prompt's affordance
  * regions. Absent options render the pre-change prompt verbatim.

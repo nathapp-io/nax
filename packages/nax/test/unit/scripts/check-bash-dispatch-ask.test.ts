@@ -142,9 +142,15 @@ describe("bashCarryingNames", () => {
     expect([...names].sort()).toEqual(["fixAliasOp", "fixOp", "makeFixStrategy"]);
   });
 
-  test("the real barrel: the #2201 ops and the regression strategy factory are all Bash-carrying", () => {
+  test("the real barrel: the workflow write ops are Bash-carrying", () => {
+    // Regression guard (US-001 AC2): the gate's allowlist-exclusion check reads
+    // this set, so a workflow write op that stopped declaring Bash would silently
+    // drop out of it and an allowlisted site could reference it unseen. The three
+    // write ops are the ones that still carry a live dispatcher; the four
+    // fix-strategy ops that used to carry it were deleted with the story
+    // orchestrator (pipeline-story-ops-delete US-001).
     const names = bashCarryingNames(operations);
-    for (const name of ["fullSuiteRectifyOp", "makeFullSuiteRectifyStrategy", "implementerOp", "testWriterOp"]) {
+    for (const name of ["workflowImplementOp", "workflowBranchFixOp", "workflowRepairOp"]) {
       expect(names.has(name)).toBe(true);
     }
     expect(names.has("classifyRouteOp")).toBe(false);

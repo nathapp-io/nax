@@ -6,16 +6,6 @@
  * (src/prompts/core/*, src/prompts/builders/*).
  */
 
-export type {
-  AcceptanceRole,
-  DiagnosisPromptParams,
-  FixGeneratorParams,
-  RefinementPromptOptions,
-} from "./builders/acceptance-builder";
-// Acceptance prompt builder — generator, diagnoser, and fix-executor prompt construction.
-export { AcceptancePromptBuilder, MAX_FILE_LINES } from "./builders/acceptance-builder";
-// fenceLangFor: no production call site yet — prepared for follow-up F3 (SSOT fence-lang across all prompt builders).
-export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-builder-helpers";
 export { type AdvisorBatchPromptInput, buildAdvisorBatchPrompt } from "./builders/advisor-batch-builder";
 export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-builder";
 export type { AcpSubagentInstructionsInput, SubagentInstructionsInput } from "./builders/agents-builder";
@@ -78,10 +68,9 @@ export { PlanPromptBuilder } from "./builders/plan-builder";
 // US-007 (SPEC-lazy-rules-delivery) — the run's project-context override section,
 // carried by the story brief and the branch review package.
 export { buildProjectContextSection } from "./builders/project-context-builder";
-export type { FailureRecord, RectifierTrigger, ReviewFinding } from "./builders/rectifier-builder";
+export type { FailureRecord, RectifierTrigger } from "./builders/rectifier-builder";
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { CONTRADICTION_ESCAPE_HATCH, RectifierPromptBuilder } from "./builders/rectifier-builder";
-export { repoScopedRectification } from "./builders/rectifier-builder-helpers";
 export { reviewerCommandsSection } from "./builders/reviewer-commands-section";
 export type { ChangedFileRuleGroup, RulesIndexEntry } from "./builders/rules-index-builder";
 // US-003 (SPEC-lazy-rules-delivery) — the rules index section of a workflow brief.

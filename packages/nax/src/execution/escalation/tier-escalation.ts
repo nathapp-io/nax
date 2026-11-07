@@ -9,6 +9,7 @@
 
 import type { NaxConfig } from "@/config";
 import { isThreeSessionStrategy } from "@/config";
+import type { FailureCategory } from "@/execution/types";
 import type { Finding } from "@/findings";
 import type { LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";
@@ -17,7 +18,6 @@ import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd
 import { markStoryFailed, savePrdProgress } from "@/prd";
 import type { RoutingDecision } from "@/routing";
 import { storySpendUsd } from "@/runtime";
-import type { FailureCategory } from "@/tdd/types";
 import { appendProgress } from "../progress";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 import { verifyEscalationQuotes } from "./quote-integrity";

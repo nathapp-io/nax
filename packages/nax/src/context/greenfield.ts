@@ -167,12 +167,12 @@ async function hasTestFiles(workdir: string, patterns: readonly string[]): Promi
  * A story is greenfield if no test files matching the given patterns exist
  * in the working directory.
  *
- * Production callers (the routing pre-check and `greenfieldGateOp`) always pass
- * patterns resolved through `resolveTestFilePatterns()` — the ADR-009 SSOT,
- * whose detection tier finds pre-existing tests across languages. The `patterns`
- * argument is therefore the single source of truth. When omitted (ad-hoc / test
- * callers only), it falls back to `DEFAULT_TEST_FILE_PATTERNS` — the SAME default
- * `verifyTestWriterIsolation` uses, so greenfield detection and test-writer
+ * Production callers (the routing pre-check) always pass patterns resolved
+ * through `resolveTestFilePatterns()` — the ADR-009 SSOT, whose detection tier
+ * finds pre-existing tests across languages. The `patterns` argument is
+ * therefore the single source of truth. When omitted (ad-hoc / test callers
+ * only), it falls back to `DEFAULT_TEST_FILE_PATTERNS` — the same default the
+ * test-writer isolation check used, so greenfield detection and test-writer
  * isolation classify test files identically.
  *
  * @returns true if no test files exist (greenfield), false otherwise

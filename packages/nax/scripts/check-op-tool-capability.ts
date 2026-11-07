@@ -16,10 +16,9 @@
  * it should. So the role table is ENFORCED here, never APPLIED at runtime.
  *
  * The check imports the operations barrel instead of parsing source, because
- * the source shape misleads twice: ops are exported under aliases
- * (`implementerOp` and `implementTddOp` are the same object), and one module can
- * define several ops (`acceptance-fix.ts` defines both `acceptance-fix-source`
- * and `acceptance-fix-test`). Reading the barrel reads what dispatch reads.
+ * the source shape misleads: one module can define several ops
+ * (`bot-pr-review.ts` defines both `botPrReviewOp` and `botPrStaticReviewOp`),
+ * so the barrel's export list is what dispatch reads, not the file list.
  *
  * Usage:
  *   bun scripts/check-op-tool-capability.ts                   # check (CI mode)
