@@ -1,24 +1,24 @@
 /**
- * registerResumeCommand + runResume — Resume CLI command (US-004)
+ * runResume + registerResumeCommand — Resume CLI command.
  *
- * AC-1: registerResumeCommand is exported and adds a `resume` subcommand on a
- *       fresh commander `Command` instance.
- * AC-2: runResume for a feature whose `checkpoint.jsonl` is absent prints
- *       "No checkpoint found — running from scratch" to stdout and resolves
- *       to exit code 0.
- * AC-3: runResume for a feature WITH a checkpoint prints a resume summary
- *       line that names the feature and the count of stories with a
- *       checkpoint before the run output.
+ * AC-1/AC-2: runResume dispatches the underlying run invocation exactly once,
+ *            forwarding the feature name and the `featureDir` option verbatim.
+ * AC-3/AC-4: a feature WITH a `checkpoint.jsonl` prints nothing and still runs once.
+ * AC-7:      a feature WITHOUT one prints nothing either.
+ *
+ * `nax resume` no longer probes or summarises `checkpoint.jsonl`: the checkpoint
+ * store's reader and writer are gone, so the command's only job is to hand the
+ * feature to the real run invocation and inherit its exit code.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertCaughtInstanceOf, assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { Command } from "commander";
 import {
   _resumeCmdDeps,
-  type ResumeCommandDeps,
+  type ResumeCommandOptions,
   registerResumeCommand as registerResumeCommandFromCmd,
   runResume,
 } from "@/commands";
@@ -40,28 +40,142 @@ function writeCheckpoint(featureDir: string, records: Array<{ storyId: string; p
   writeFileSync(cpPath, `${lines.join("\n")}\n`);
 }
 
-function makeBaseDeps(
-  _featureDir: string,
-  stdoutWrites: string[],
-  stderrWrites: string[],
-  overrides: Partial<ResumeCommandDeps> = {},
-): ResumeCommandDeps {
-  return {
-    checkpointExists: mock(async (dir: string) => existsSync(join(dir, "checkpoint.jsonl"))),
-    loadCheckpoints: mock(async (dir: string) => {
-      // Default: read via real reader. Tests that want a specific map inject via overrides.
-      const { loadCheckpoints } = await import("@/execution");
-      return loadCheckpoints(dir);
-    }),
-    runInvocation: mock(async () => 0),
-    stdout: (s: string) => stdoutWrites.push(s),
-    stderr: (s: string) => stderrWrites.push(s),
-    ...overrides,
-  };
+/** A run invocation that records its calls and resolves to `exitCode`. */
+function makeRunInvocation(exitCode = 0) {
+  return mock(async (_feature: string, _options: ResumeCommandOptions): Promise<number> => exitCode);
 }
 
 // ---------------------------------------------------------------------------
-// AC-1: registerResumeCommand is exported and registers a "resume" subcommand
+// AC-1/AC-2: runResume dispatches the run invocation exactly once
+// ---------------------------------------------------------------------------
+
+describe("runResume — AC-1/AC-2: dispatches the run invocation", () => {
+  test("AC-1: resolves the exit code the run invocation resolves", async () => {
+    const runInvocation = makeRunInvocation(0);
+
+    const exit = await runResume("demo", { featureDir: "/tmp/feat" }, { runInvocation });
+
+    expect(exit).toBe(0);
+  });
+
+  test("AC-2: calls runInvocation exactly once with the feature name and the featureDir option", async () => {
+    const runInvocation = makeRunInvocation(0);
+
+    await runResume("demo", { featureDir: "/tmp/feat" }, { runInvocation });
+
+    expect(runInvocation.mock.calls).toHaveLength(1);
+    expect(runInvocation.mock.calls[0]).toEqual(["demo", { featureDir: "/tmp/feat" }]);
+  });
+
+  test("propagates a non-zero invocation result unchanged", async () => {
+    const runInvocation = makeRunInvocation(3);
+
+    const exit = await runResume("demo", { featureDir: "/tmp/feat" }, { runInvocation });
+
+    expect(exit).toBe(3);
+  });
+
+  test("omits the featureDir key entirely when the option is not provided", async () => {
+    const runInvocation = makeRunInvocation(0);
+
+    await runResume("demo", {}, { runInvocation });
+
+    expect(runInvocation.mock.calls).toHaveLength(1);
+    const forwarded = runInvocation.mock.calls[0]?.[1] ?? {};
+    expect(Object.hasOwn(forwarded, "featureDir")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-3/AC-4: an existing checkpoint.jsonl prints nothing and still runs once
+// ---------------------------------------------------------------------------
+
+describe("runResume — AC-3/AC-4: an existing checkpoint prints nothing", () => {
+  let featureDir: string;
+  let stdoutSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    featureDir = makeTempDir("nax-resume-with-cp-");
+    writeCheckpoint(featureDir, [
+      { storyId: "US-001", phase: "test-writer" },
+      { storyId: "US-001", phase: "implementer" },
+      { storyId: "US-002", phase: "test-writer" },
+    ]);
+    stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stdoutSpy.mockRestore();
+    cleanupTempDir(featureDir);
+  });
+
+  test("AC-3: never writes to stdout", async () => {
+    const runInvocation = makeRunInvocation(0);
+
+    await runResume("demo", { featureDir }, { runInvocation });
+
+    expect(stdoutSpy.mock.calls).toHaveLength(0);
+  });
+
+  test("AC-4: calls runInvocation exactly once", async () => {
+    const runInvocation = makeRunInvocation(0);
+
+    const exit = await runResume("demo", { featureDir }, { runInvocation });
+
+    expect(exit).toBe(0);
+    expect(runInvocation.mock.calls).toHaveLength(1);
+    expect(runInvocation.mock.calls[0]?.[0]).toBe("demo");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-7: a missing checkpoint.jsonl prints nothing either
+// ---------------------------------------------------------------------------
+
+describe("runResume — AC-7: a missing checkpoint prints nothing", () => {
+  let featureDir: string;
+  let stdoutSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    featureDir = makeTempDir("nax-resume-no-cp-");
+    stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    stdoutSpy.mockRestore();
+    cleanupTempDir(featureDir);
+  });
+
+  test("AC-7: never writes to stdout and still runs once", async () => {
+    const runInvocation = makeRunInvocation(0);
+
+    const exit = await runResume("demo", { featureDir }, { runInvocation });
+
+    expect(exit).toBe(0);
+    expect(stdoutSpy.mock.calls).toHaveLength(0);
+    expect(runInvocation.mock.calls).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _resumeCmdDeps — the production default is a throwing stub
+// ---------------------------------------------------------------------------
+
+describe("_resumeCmdDeps", () => {
+  test("default runInvocation stub throws — the CLI layer must supply its own", async () => {
+    let caught: unknown;
+    try {
+      await _resumeCmdDeps.runInvocation("some-feature", {});
+    } catch (e) {
+      caught = e;
+    }
+    assertCaughtInstanceOf(caught, NaxError, "_resumeCmdDeps.runInvocation");
+    expect(caught.code).toBe("RESUME_INVOCATION_MISSING");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registerResumeCommand — commander wiring
 // ---------------------------------------------------------------------------
 
 describe("registerResumeCommand — AC1: commander wiring", () => {
@@ -219,139 +333,5 @@ describe("registerResumeCommand — AC1: commander wiring", () => {
     expect(exitCode).toBe(1);
     expect(stderrChunks.join("")).toMatch(/feature/i);
     expect(stderrChunks.join("")).toMatch(/single path segment|cannot contain path traversal/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-2: No checkpoint → "No checkpoint found — running from scratch" + exit 0
-// ---------------------------------------------------------------------------
-
-describe("runResume — AC2: no-checkpoint path", () => {
-  let featureDir: string;
-  let stdoutWrites: string[];
-  let stderrWrites: string[];
-
-  beforeEach(() => {
-    featureDir = makeTempDir("nax-resume-no-cp-");
-    stdoutWrites = [];
-    stderrWrites = [];
-  });
-
-  afterEach(() => {
-    cleanupTempDir(featureDir);
-  });
-
-  test("AC2: missing checkpoint.jsonl prints 'No checkpoint found — running from scratch' and resolves to exit 0", async () => {
-    const deps = makeBaseDeps(featureDir, stdoutWrites, stderrWrites, {
-      checkpointExists: mock(async () => false),
-      loadCheckpoints: mock(async () => new Map()),
-      runInvocation: mock(async () => 0),
-    });
-
-    const exit = await runResume("feat-x", { featureDir }, deps);
-
-    expect(exit).toBe(0);
-    expect(stdoutWrites.join("")).toContain("No checkpoint found");
-    expect(stdoutWrites.join("")).toContain("running from scratch");
-    // The underlying run() should still be invoked (resume falls through to nax run).
-    expect((deps.runInvocation as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-3: With checkpoint → resume summary line names feature + story count
-// ---------------------------------------------------------------------------
-
-describe("runResume — AC3: resume summary with checkpoint", () => {
-  let featureDir: string;
-  let stdoutWrites: string[];
-  let stderrWrites: string[];
-
-  beforeEach(() => {
-    featureDir = makeTempDir("nax-resume-with-cp-");
-    stdoutWrites = [];
-    stderrWrites = [];
-  });
-
-  afterEach(() => {
-    cleanupTempDir(featureDir);
-  });
-
-  test("AC3: existing checkpoint prints summary naming feature and story count, then runs", async () => {
-    // Write a real checkpoint so the default loadCheckpoints reads it.
-    writeCheckpoint(featureDir, [
-      { storyId: "US-001", phase: "test-writer" },
-      { storyId: "US-001", phase: "implementer" },
-      { storyId: "US-002", phase: "test-writer" },
-    ]);
-
-    const deps = makeBaseDeps(featureDir, stdoutWrites, stderrWrites);
-
-    const exit = await runResume("feat-x", { featureDir }, deps);
-
-    expect(exit).toBe(0);
-    const out = stdoutWrites.join("");
-    // Summary line names the feature and the count of stories with a checkpoint (2 here).
-    expect(out).toContain("feat-x");
-    expect(out).toContain("2");
-    // The summary must appear BEFORE the run output — assert by checking the
-    // first non-empty stdout write is the summary line, not the underlying run output.
-    const firstWrite = stdoutWrites.find((w) => w.trim().length > 0);
-    expect(firstWrite).toBeDefined();
-    assertDefined(firstWrite, "firstWrite");
-    expect(firstWrite).toContain("Resume:");
-    // The underlying run was invoked exactly once.
-    expect((deps.runInvocation as ReturnType<typeof mock>).mock.calls).toHaveLength(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Default deps smoke test — _resumeCmdDeps wires checkpointExists/loadCheckpoints
-// against the real filesystem via @/execution/checkpoint/reader.
-// ---------------------------------------------------------------------------
-
-describe("_resumeCmdDeps — default checkpointExists wiring", () => {
-  let featureDir: string;
-
-  beforeEach(() => {
-    featureDir = makeTempDir("nax-resume-deps-default-");
-  });
-
-  afterEach(() => {
-    cleanupTempDir(featureDir);
-  });
-
-  test("default checkpointExists returns false when checkpoint.jsonl is absent", async () => {
-    const exists = await _resumeCmdDeps.checkpointExists(featureDir);
-    expect(exists).toBe(false);
-  });
-
-  test("default checkpointExists returns true when checkpoint.jsonl exists", async () => {
-    writeCheckpoint(featureDir, [{ storyId: "US-001", phase: "test-writer" }]);
-    const exists = await _resumeCmdDeps.checkpointExists(featureDir);
-    expect(exists).toBe(true);
-  });
-
-  test("default runInvocation stub throws — the CLI layer must supply its own", async () => {
-    let caught: unknown;
-    try {
-      await _resumeCmdDeps.runInvocation("some-feature", {});
-    } catch (e) {
-      caught = e;
-    }
-    assertCaughtInstanceOf(caught, NaxError, "_resumeCmdDeps.runInvocation");
-    expect(caught.code).toBe("RESUME_INVOCATION_MISSING");
-  });
-
-  test("default loadCheckpoints returns the parsed map for a real checkpoint.jsonl", async () => {
-    writeCheckpoint(featureDir, [
-      { storyId: "US-001", phase: "test-writer" },
-      { storyId: "US-001", phase: "implementer" },
-    ]);
-    const map = await _resumeCmdDeps.loadCheckpoints(featureDir);
-    expect(map).toBeInstanceOf(Map);
-    // Two phase records for the same story collapse into a single StoryCheckpoint.
-    expect(map.size).toBe(1);
-    expect(map.get("US-001")?.greenPhases).toEqual(["test-writer", "implementer"]);
   });
 });

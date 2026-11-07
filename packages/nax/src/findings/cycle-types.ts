@@ -37,8 +37,9 @@ export interface FixApplied {
    * supplied its own. Populated on every fix since #1932 — the `?` is retained
    * only for the records the cycle's own exit paths build without a dispatch.
    *
-   * Folds failed-dispatch spend, mirroring `runPhase`'s `phaseCosts`; the
-   * failed half is still carried beside it in `errorCostUsd`. See cycle-cost.ts.
+   * Folds failed-dispatch spend, mirroring the story orchestrator's per-phase
+   * `phaseCosts` (that seam went with the story loop, B2b-1); the failed half is
+   * still carried beside it in `errorCostUsd`. See cycle-cost.ts.
    */
   costUsd?: number;
   /**

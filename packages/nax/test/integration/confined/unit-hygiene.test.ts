@@ -72,10 +72,8 @@ const REPAIRED_GROUPS: readonly ConfinedGroup[] = [
     ac: "AC-10",
     what: "the unified executor suites (class B: their PRD fixture writes)",
     paths: [
-      "./test/unit/execution/unified-executor-cost.test.ts",
       "./test/unit/execution/unified-executor-dispatch.test.ts",
       "./test/unit/execution/unified-executor-failure.test.ts",
-      "./test/unit/execution/unified-executor-fallback-seam.test.ts",
       "./test/unit/execution/unified-executor-results.test.ts",
     ],
   },

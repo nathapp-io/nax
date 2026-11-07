@@ -17,9 +17,10 @@ export interface LintCheckInput {
   readonly workdir: string;
   readonly storyId: string;
   /**
-   * Session scratch dir for tool-diagnostics capture (US-001). Populated by
-   * plan-inputs from PipelineContext.sessionScratchDir in production; injected
-   * tests may omit it and instead set `deps.sessionScratchDir`.
+   * Session scratch dir for tool-diagnostics capture (US-001). The story loop's
+   * plan builder populated it from PipelineContext.sessionScratchDir in
+   * production (deleted in B2b-1, so nothing does now); injected tests may omit
+   * it and instead set `deps.sessionScratchDir`.
    */
   readonly sessionScratchDir?: string;
 }

@@ -50,7 +50,7 @@ export interface CaptureParsedSummary {
  *
  * Fields are non-readonly so tests can override individual members (the
  * established _deps pattern in this codebase — e.g. _fullSuiteGateDeps,
- * _postRunDeps — uses the same shape).
+ * _lockDeps — uses the same shape).
  */
 export interface TestBaselineCaptureDeps {
   /**
@@ -178,7 +178,9 @@ export interface RollForwardContext {
 /**
  * Resolves the next story id, builds the roll-forward options, and delegates to
  * `persistNextStoryRollForward`. Single entry point the post-run story-completion
- * path calls — keeps post-run.ts's hook at one delegated call (AC12).
+ * hook called — keeps that hook at one delegated call (AC12). The hook itself went
+ * with the post-run inspection layer (US-003), so this has no production caller
+ * today and is retained for wave B2b-2.
  *
  * Outer try/catch matches the run-start hook's invariant ("never blocks or
  * fails the run"): the helper writes either a captured roll-forward baseline
@@ -407,13 +409,14 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
  *   4. `summary` undefined → `no-baseline: no-gate-parse`.
  *
  * Note on branch 4: `execution.regressionGate.mode` defaults to `"deferred"`, and
- * non-TDD plans add the per-story full-suite gate only when the mode is
- * `"per-story"` (`build-plan-for-strategy.ts`, issue #1116) — so for an ordinary
- * non-TDD sequential run branch 4 is the steady state, not an anomaly. That is
- * designed (spec §3.2: record that no roll-forward was available rather than
- * guess a baseline); do NOT "fix" it by substituting the run-start `preflight`
- * artifact here — it predates the stories in between, so their failures would be
- * re-attributed to this story as introduced rather than left unattributed.
+ * non-TDD plans added the per-story full-suite gate only when the mode was
+ * `"per-story"` (the story loop's plan builder, deleted in B2b-1; issue #1116) —
+ * so for an ordinary non-TDD sequential run branch 4 is the steady state, not an
+ * anomaly. That is designed (spec §3.2: record that no roll-forward was available
+ * rather than guess a baseline); do NOT "fix" it by substituting the run-start
+ * `preflight` artifact here — it predates the stories in between, so their
+ * failures would be re-attributed to this story as introduced rather than left
+ * unattributed.
  * TDD plans always carry the gate and do exercise branch 3.
  */
 export async function persistNextStoryRollForward(opts: RollForwardOptions): Promise<void> {

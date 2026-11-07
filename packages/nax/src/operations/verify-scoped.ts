@@ -32,9 +32,10 @@ export interface VerifyScopedInput {
   /** ADR-009 resolved test patterns (language-agnostic, per-package override-aware). */
   readonly resolvedTestPatterns?: ResolvedTestPatterns;
   /**
-   * Session scratch dir for verify-result capture (nax#1757). Populated by
-   * plan-inputs from PipelineContext.sessionScratchDir in production; injected
-   * tests may omit it and instead set `deps.sessionScratchDir`.
+   * Session scratch dir for verify-result capture (nax#1757). The story loop's
+   * plan builder populated it from PipelineContext.sessionScratchDir in
+   * production (deleted in B2b-1, so nothing does now); injected tests may omit
+   * it and instead set `deps.sessionScratchDir`.
    */
   readonly sessionScratchDir?: string;
 }
@@ -130,8 +131,9 @@ export const verifyScopedOp: DeterministicOperation<
     const quality = ctx.packageView.select(qualityConfigSelector);
     let baseCommand = quality.quality?.commands?.test;
     // nax#1757: verify-result scratch capture — gated on v2 being enabled, mirroring
-    // src/execution/post-run.ts:172. sessionScratchDir threads via input (production)
-    // or deps (tests), matching the lint-check / typecheck-check precedent.
+    // the post-run inspection path (deleted, US-003) that captured the same scratch.
+    // sessionScratchDir threads via input (production) or deps (tests), matching the
+    // lint-check / typecheck-check precedent.
     const v2Enabled = ctx.packageView.config.context?.v2?.enabled === true;
     const scratchDir = input.sessionScratchDir ?? deps.sessionScratchDir;
 

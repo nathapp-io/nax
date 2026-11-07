@@ -77,11 +77,8 @@ export { makeContextBundle, makeContextManifest } from "./context-bundle";
 export { type MockContextOrchestrator, makeContextOrchestrator } from "./context-orchestrator";
 export { withDepsRestore } from "./deps";
 export { type DispatchContextOptions, makeDispatchContext } from "./dispatch-context";
-export type { E2EGates, E2EOptions, E2EResult, ScriptedAgentSpec, ScriptedTurn } from "./e2e";
-export { makeScriptedAgent, runOrchestratorE2E } from "./e2e";
 export { fullDescribe, fullTest } from "./env";
 export { makeEscalationContext } from "./escalation-context";
-export { type ExecutionDepsOverrides, withExecutionDeps } from "./execution-deps-stub";
 export type { FakeAgentManagerOptions } from "./fake-agent-manager";
 export { fakeAgentManager } from "./fake-agent-manager";
 export type { FakeClock } from "./fake-clock";
@@ -191,7 +188,7 @@ export { opModelResolver } from "./op-model";
 export { type OpencodeAcpEnvDeps, stubOpencodeAcpEnvDeps } from "./opencode-acp-deps";
 export { makeOptimizerResult } from "./optimizer-result";
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
-export { makeMockPlanInputs, makeResolvedTestPatterns } from "./plan-inputs";
+export { makeResolvedTestPatterns } from "./plan-inputs";
 export { type MockPluginRegistry, makePluginRegistry } from "./plugin-registry";
 export { psCanReportProcessGroup } from "./ps-probe";
 export { expectRetryStrategy } from "./retry-strategy";
@@ -204,6 +201,7 @@ export {
   type TestRuntimeOptions,
 } from "./runtime";
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
+export { makeSequentialExecutionContext } from "./sequential-execution-context";
 export {
   type ConfinedSessionOptions,
   type ConfinedSessionSeam,

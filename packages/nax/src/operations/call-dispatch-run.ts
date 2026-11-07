@@ -173,9 +173,10 @@ export async function dispatchRunOp<I, O, C>(params: RunDispatchParams<I, O, C>)
   const outcome = normalizeRunOutcome(rawOutcome);
 
   // nax#1707: this is the only point where agent-swap hops are both available and
-  // attributable to a story. `outcome.result` is not that carrier — post-run.ts
-  // rebuilds ctx.agentResult from the implementer's phase output, so anything left
-  // on the AgentResult here is dropped before metrics run. Record on the run-scoped
+  // attributable to a story. `outcome.result` is not that carrier — the post-run
+  // inspection layer that rebuilt ctx.agentResult from the implementer's phase
+  // output (and dropped anything left on it) was deleted (US-003), but nothing
+  // else copies the result forward either. Record on the run-scoped
   // store instead, so hops from every op in the story reach StoryMetrics.fallback on the
   // sequential success path. Parallel and failed stories build metrics elsewhere and do
   // not read this yet — see #1709.

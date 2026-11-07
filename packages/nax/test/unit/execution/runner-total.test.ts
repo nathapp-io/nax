@@ -31,7 +31,6 @@ import {
 import {
   _runnerDeps,
   _runnerReentrancyGuard,
-  _storyOrchestratorDeps,
   type RunCleanupOptions,
   type RunnerCompletionOptions,
   type RunOptions,
@@ -113,14 +112,10 @@ function makeSetupResult(prd: PRD): SetupResultWithSeal {
 // Setup / teardown
 // ---------------------------------------------------------------------------
 
-let origLoad: typeof _storyOrchestratorDeps.loadCheckpoints;
-let origRecordGreen: typeof _storyOrchestratorDeps.recordGreen;
 let origGitSpawn: typeof _gitDeps.spawn;
 let origRunnerDeps: typeof _runnerDeps;
 
 beforeEach(() => {
-  origLoad = _storyOrchestratorDeps.loadCheckpoints;
-  origRecordGreen = _storyOrchestratorDeps.recordGreen;
   origGitSpawn = _gitDeps.spawn;
   origRunnerDeps = { ..._runnerDeps };
   // #2497: keep the run-state keeper off the real filesystem.
@@ -132,8 +127,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  _storyOrchestratorDeps.loadCheckpoints = origLoad;
-  _storyOrchestratorDeps.recordGreen = origRecordGreen;
   _gitDeps.spawn = origGitSpawn;
   // Restore the real phase functions — _runnerDeps is a process-wide singleton,
   // and leaving the mocks wired would contaminate every later test file's run().

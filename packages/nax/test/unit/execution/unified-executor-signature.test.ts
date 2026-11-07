@@ -1,19 +1,17 @@
 /**
- * Unit tests for US-003: Unify executors — integrate parallel dispatch into
- * the sequential loop.
+ * Unit tests for US-003: Unify executors — the executor's public surface.
  *
  * File: unified-executor-signature.test.ts
  * Covers:
  *   AC-1  executeUnified exports SequentialExecutionResult return type
  *   _unifiedExecutorDeps — injectable deps
- *   AC-2/3/4 dispatch routing (source-code level)
- *   AC-5  story:started events emitted per story before runParallelBatch (source)
- *   AC-6  parallel failure routed through handlePipelineFailure (source)
- *   AC-7  cost-limit check runs after parallel batch (source)
  *   AC-8  runner-execution.ts always calls executeUnified
  *   AC-9  parallel-executor.ts deleted
  *   AC-10 lifecycle/parallel-lifecycle.ts deleted
  *   AC-11 runner.ts has no reference to _runnerDeps.runParallelExecution
+ *
+ * The AC-2 to AC-7 and BUG-7 cases here read the parallel dispatch module by
+ * path; US-001 deleted that module with the parallel dispatch path.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -57,108 +55,10 @@ describe("_unifiedExecutorDeps — injectable dispatch dependencies", () => {
     expect((mod as Record<string, unknown>)._unifiedExecutorDeps).toBeDefined();
   });
 
-  test.each(["runParallelBatch", "runIteration", "selectIndependentBatch"])(
-    "_unifiedExecutorDeps contains %s function",
-    async (fnName) => {
-      const mod = await import("@/execution/unified-executor");
-      const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
-      expect(typeof deps[fnName]).toBe("function");
-    },
-  );
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-2 / AC-3 / AC-4 — parallel dispatch routing (source-code level)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("AC-2/AC-3 — parallel dispatch routing (source)", () => {
-  test("unified-executor-parallel-dispatch.ts has selectIndependentBatch, runParallelBatch (guarded), runIteration in same dispatch", async () => {
-    // Complexity drain A1 (docs/plans/STATUS-complexity-drain.md) moved the parallel
-    // dispatch shapes out of unified-executor.ts into this sibling file; the loop in
-    // unified-executor.ts now just calls runParallelDispatch and checks parallelCount.
-    const src = await readSrc("execution/unified-executor-parallel-dispatch.ts");
-    expect(src).toContain("selectIndependentBatch");
-    expect(src).toContain("runParallelBatch");
-    expect(src).toContain("runIteration");
-    expect(src).toMatch(/\.length\s*[>!]/);
-    const loopSrc = await readSrc("execution/unified-executor.ts");
-    expect(loopSrc).toMatch(/parallelCount\s*[><!]/);
-  });
-});
-
-describe("AC-4 — runIteration always used when parallelCount is undefined or 0 (source)", () => {
-  test("the parallel dispatch branch requires ctx.parallelCount to be truthy / > 0", async () => {
-    const src = await readSrc("execution/unified-executor.ts");
-    expect(src).toMatch(/parallelCount/);
-    const runParallelIdx = src.indexOf("runParallelBatch");
-    const ifBeforeParallel = src.lastIndexOf("if", runParallelIdx);
-    expect(ifBeforeParallel).toBeGreaterThan(0);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-5 — story:started events emitted before runParallelBatch (source)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("AC-5 — story:started emitted for each batch story before runParallelBatch (source)", () => {
-  test("unified-executor-parallel-dispatch.ts emits story:started before runParallelBatch with storyId in the batch", async () => {
-    const src = await readSrc("execution/unified-executor-parallel-dispatch.ts");
-    const startedIdx = src.indexOf("story:started");
-    const batchIdx = src.indexOf("deps.runParallelBatch");
-    expect(startedIdx).toBeGreaterThan(0);
-    expect(batchIdx).toBeGreaterThan(0);
-    expect(startedIdx).toBeLessThan(batchIdx);
-    expect(src).toMatch(/story:started[\s\S]{0,200}storyId\s*:/);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-6 — failure routing through handlePipelineFailure (source)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("AC-6 — parallel failures routed through handlePipelineFailure (source)", () => {
-  test("unified-executor-parallel-dispatch.ts has handlePipelineFailure and escalation handling", async () => {
-    const src = await readSrc("execution/unified-executor-parallel-dispatch.ts");
-    expect(src).toContain("handlePipelineFailure");
-    expect(src.indexOf("failed")).toBeGreaterThan(0);
-    expect(src.includes("handleTierEscalation") || src.includes("handlePipelineFailure")).toBe(true);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC-7 — cost-limit check runs after parallel batch (source)
-// BUG-7 — cost-limit pre-gate runs before dispatch (source)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("AC-7 — cost-limit check after parallel batch (source)", () => {
-  test("runManyStoryParallelBatch runs its own cost-limit check after deps.runParallelBatch", async () => {
-    const src = await readSrc("execution/unified-executor-parallel-dispatch.ts");
-    // Scope to runManyStoryParallelBatch's body: a whole-file search after the
-    // batch call would also match runSingleStoryInBatch's single-story gate
-    // further down, so it would still pass with the post-batch check deleted.
-    const fnStart = src.indexOf("async function runManyStoryParallelBatch(");
-    const fnEnd = src.indexOf("\n}\n", fnStart);
-    expect(fnStart).toBeGreaterThan(0);
-    expect(fnEnd).toBeGreaterThan(fnStart);
-    const body = src.slice(fnStart, fnEnd);
-
-    const batchIdx = body.indexOf("deps.runParallelBatch");
-    const postCheckIdx = body.indexOf("enforceCostLimit(", batchIdx);
-    const postExitIdx = body.indexOf('exitReason: "cost-limit"', postCheckIdx);
-    expect(batchIdx).toBeGreaterThan(0);
-    expect(postCheckIdx).toBeGreaterThan(batchIdx);
-    expect(postExitIdx).toBeGreaterThan(postCheckIdx);
-  });
-});
-
-describe("BUG-7 — cost-limit pre-gate before parallel dispatch (source)", () => {
-  test("unified-executor-parallel-dispatch.ts has a cost-limit check before runParallelBatch in source order", async () => {
-    const src = await readSrc("execution/unified-executor-parallel-dispatch.ts");
-    const batchIdx = src.indexOf("deps.runParallelBatch");
-    const preGateIdx = src.indexOf("cost-limit");
-    expect(batchIdx).toBeGreaterThan(0);
-    expect(preGateIdx).toBeGreaterThan(0);
-    expect(preGateIdx).toBeLessThan(batchIdx);
+  test.each(["runIteration"])("_unifiedExecutorDeps contains %s function", async (fnName) => {
+    const mod = await import("@/execution/unified-executor");
+    const deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    expect(typeof deps[fnName]).toBe("function");
   });
 });
 

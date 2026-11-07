@@ -1,9 +1,10 @@
 /**
  * AC#6 — Orchestrator vs Reconciliation parity.
  *
- * The orchestrator path (plan-inputs.ts → callOp(semanticReviewOp)) and the
- * reconciliation path (run-initialization.ts → runReview → runSemantic/AdversarialReview)
- * both prepare review inputs. They must produce equivalent SemanticReviewInput /
+ * The orchestrator path (the story loop's plan builder → callOp(semanticReviewOp);
+ * that builder went with B2b-1) and the reconciliation path
+ * (run-initialization.ts → runReview → runSemantic/AdversarialReview) both prepare
+ * review inputs. They must produce equivalent SemanticReviewInput /
  * AdversarialReviewInput shapes for the same git state.
  *
  * This test calls prepareSemanticReviewInput / prepareAdversarialReviewInput with

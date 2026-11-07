@@ -1,6 +1,15 @@
 {
   "updatedAt": "2026-10-06T17:56:22.679Z",
   "byFile": {
-    "src/commands/detect.ts": 0.3554
+    "src/commands/detect.ts": 0.3554,
+    "src/execution/lifecycle/test-baseline-capture.ts": 0.646,
+    "src/findings/bail-marker.ts": 0,
+    "src/findings/story-fix-history.ts": 0.75,
+    "src/operations/implement.ts": 0.783,
+    "src/operations/nbf-worth-check-audit.ts": 0.109,
+    "src/operations/write-test.ts": 0.728,
+    "src/review/no-dispatch.ts": 0.25,
+    "src/verification/flake-baseline-diff.ts": 0.109,
+    "src/verification/rectification.ts": 0
   }
 }

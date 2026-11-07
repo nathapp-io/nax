@@ -2,12 +2,14 @@
  * contextStageForOp — nax#1737 Phase B op-name -> context-engine stage-key mapping,
  * extended by the Phase B follow-up (nax#1737 Phase B2) with a rectification branch.
  *
- * `runPhase` (src/execution/story-orchestrator/run-phase.ts) is the single
- * dispatch seam for both the CANONICAL_ORDER phases and the rectification fix
- * cycle. This mapping tells it which context-engine stage config (declared in
- * stage-config.ts's STAGE_CONTEXT_MAP) applies to a given op, so it can
- * request a bundle assembled for that stage instead of reusing whatever
- * bundle Phase A already put on ctx.contextBundle.
+ * `runPhase` (the story orchestrator's dispatch seam, deleted with the story
+ * loop in B2b-1) called contextStageForOp once per op, for both the
+ * CANONICAL_ORDER phases and the rectification fix cycle. This mapping told it
+ * which context-engine stage config (declared in stage-config.ts's
+ * STAGE_CONTEXT_MAP) applied to a given op, so it could request a bundle
+ * assembled for that stage instead of reusing whatever bundle Phase A already
+ * put on ctx.contextBundle. Nothing in production reads the mapping now; it and
+ * this test stay until B2b-2's orphan pass removes them.
  *
  * The three TDD op names are gated on `isThreeSession` because the same op
  * names (`test-writer`, `implementer`, `verifier`) also run under

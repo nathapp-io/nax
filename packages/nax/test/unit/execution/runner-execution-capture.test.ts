@@ -22,11 +22,8 @@ import { _captureDeps } from "@/execution/lifecycle/test-baseline-capture";
 import type { RunnerExecutionOptions } from "@/execution/runner-execution";
 import { runExecutionPhase } from "@/execution/runner-execution";
 import { _unifiedExecutorDeps } from "@/execution/unified-executor";
-import type { UserStory } from "@/prd";
 
 const origRunIteration = _unifiedExecutorDeps.runIteration;
-const origRunParallelBatch = _unifiedExecutorDeps.runParallelBatch;
-const origSelectIndependentBatch = _unifiedExecutorDeps.selectIndependentBatch;
 
 function makeOptions(overrides: Partial<RunnerExecutionOptions> = {}): RunnerExecutionOptions {
   const runtime = makeMockRuntime();
@@ -61,8 +58,6 @@ function makeOptions(overrides: Partial<RunnerExecutionOptions> = {}): RunnerExe
 describe("runExecutionPhase — AC11: invokes captureRunBaseline exactly once", () => {
   afterEach(() => {
     _unifiedExecutorDeps.runIteration = origRunIteration;
-    _unifiedExecutorDeps.runParallelBatch = origRunParallelBatch;
-    _unifiedExecutorDeps.selectIndependentBatch = origSelectIndependentBatch;
   });
 
   test("AC11: capture is invoked exactly once before the first story pipeline dispatch with run config + workdir", async () => {
@@ -71,15 +66,6 @@ describe("runExecutionPhase — AC11: invokes captureRunBaseline exactly once", 
       writes.push({ root, featureId });
     };
     // Stub the unified executor's iterators so `executeUnified` returns quickly.
-    _unifiedExecutorDeps.runParallelBatch = (async () => ({
-      batchResults: [],
-      totalCost: 0,
-      completed: [] satisfies UserStory[],
-      exitReason: "all-stories-passed" as const,
-      failed: [],
-      mergeConflicts: [],
-      storyCosts: new Map(),
-    })) as typeof _unifiedExecutorDeps.runParallelBatch;
     _unifiedExecutorDeps.runIteration = (async () => ({
       prd: makePRD({ feature: "feat-capture", userStories: [makeStory({ id: "US-001", status: "passed" })] }),
       storiesCompletedDelta: 0,
@@ -87,7 +73,6 @@ describe("runExecutionPhase — AC11: invokes captureRunBaseline exactly once", 
       prdDirty: false,
       finalAction: "continue",
     })) as typeof _unifiedExecutorDeps.runIteration;
-    _unifiedExecutorDeps.selectIndependentBatch = (() => []) as typeof _unifiedExecutorDeps.selectIndependentBatch;
 
     const options = makeOptions();
     await runExecutionPhase(
@@ -105,15 +90,6 @@ describe("runExecutionPhase — AC11: invokes captureRunBaseline exactly once", 
     _captureDeps.writeRunBaseline = async (root, featureId) => {
       writes.push({ root, featureId });
     };
-    _unifiedExecutorDeps.runParallelBatch = (async () => ({
-      batchResults: [],
-      totalCost: 0,
-      completed: [] satisfies UserStory[],
-      exitReason: "all-stories-passed" as const,
-      failed: [],
-      mergeConflicts: [],
-      storyCosts: new Map(),
-    })) as typeof _unifiedExecutorDeps.runParallelBatch;
     _unifiedExecutorDeps.runIteration = (async () => ({
       prd: makePRD({ feature: "feat-capture", userStories: [makeStory({ id: "US-001", status: "passed" })] }),
       storiesCompletedDelta: 0,
@@ -121,7 +97,6 @@ describe("runExecutionPhase — AC11: invokes captureRunBaseline exactly once", 
       prdDirty: false,
       finalAction: "continue",
     })) as typeof _unifiedExecutorDeps.runIteration;
-    _unifiedExecutorDeps.selectIndependentBatch = (() => []) as typeof _unifiedExecutorDeps.selectIndependentBatch;
 
     const workdir = "/tmp/custom-workdir-99";
     const feature = "feat-custom-name";

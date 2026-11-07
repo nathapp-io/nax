@@ -51,6 +51,51 @@ function ctx(maxIterations: number): SequentialExecutionContext {
     interactionChain: null,
   };
 }
+describe("executeUnified — an already-passed PRD completes without an iteration", () => {
+  function allPassedPrd(): PRD {
+    return makePRD({
+      userStories: [
+        makeStory({ id: "US-1", status: "passed", passes: true }),
+        makeStory({ id: "US-2", status: "passed", passes: true }),
+      ],
+    });
+  }
+
+  test("US-007 AC-1: returns exit reason completed", async () => {
+    const result = await executeUnified(ctx(3), allPassedPrd());
+    expect(result.exitReason).toBe("completed");
+    expect(result.prd.userStories.every((s) => s.passes)).toBe(true);
+  });
+
+  test("US-007 AC-2: never calls the stubbed runIteration", async () => {
+    const runIteration = mock(async () => {
+      throw new Error("runIteration must not run for an already-passed PRD");
+    });
+    _unifiedExecutorDeps.runIteration = runIteration;
+    const result = await executeUnified(ctx(3), allPassedPrd());
+    expect(result.exitReason).toBe("completed");
+    expect(runIteration).not.toHaveBeenCalled();
+  });
+
+  test("US-007 AC-2: a workflow-mode run reaches the same completion without an iteration", async () => {
+    const runIteration = mock(async () => {
+      throw new Error("runIteration must not run for an already-passed PRD");
+    });
+    _unifiedExecutorDeps.runIteration = runIteration;
+    const workflowCtx = {
+      ...ctx(3),
+      config: makeNaxConfig({
+        execution: { mode: "workflow", maxIterations: 3, iterationDelayMs: 0 },
+        acceptance: { enabled: false },
+        autoMode: { escalation: { enabled: false } },
+      }),
+    };
+    const result = await executeUnified(workflowCtx, allPassedPrd());
+    expect(result.exitReason).toBe("completed");
+    expect(runIteration).not.toHaveBeenCalled();
+  });
+});
+
 describe("executeUnified derived bound", () => {
   test("pipeline literal ignores maxIterations 1 and completes three pending stories", async () => {
     const prd = makePRD({
@@ -93,22 +138,5 @@ describe("executeUnified derived bound", () => {
       );
       expect(_unifiedExecutorDeps.runIteration).toHaveBeenCalledTimes(1);
     });
-  });
-  test("pipeline literal completes when the final derived-bound iteration settles the last story", async () => {
-    // A failed story has no pending-work allowance and no lastStoryId retry yet: bound = 1.
-    // Direct parallel dispatch supplies that story; completion must be detected after loop exit.
-    const story = makeStory({ status: "failed", passes: false, attempts: 0 });
-    const prd = makePRD({ userStories: [story] });
-    _unifiedExecutorDeps.selectIndependentBatch = () => [story];
-    _unifiedExecutorDeps.runIteration = mock(async () => ({
-      prd: { ...prd, userStories: [{ ...story, status: "passed" as const, passes: true }] },
-      storiesCompletedDelta: 1,
-      costDelta: 0,
-      prdDirty: false,
-    }));
-    const result = await executeUnified({ ...ctx(1), parallelCount: 2 }, prd);
-    expect(result.iterations).toBe(1);
-    expect(result.exitReason).toBe("completed");
-    expect(result.storiesCompleted).toBe(1);
   });
 });

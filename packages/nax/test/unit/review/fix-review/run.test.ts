@@ -363,9 +363,10 @@ describe("runFixReview — the embedded fix diff (US-003 AC20)", () => {
 
 /**
  * #2286 — the verdict must be visible in `nax logs` at the default level. The
- * seeded reviewers log `Running … check` / `… review passed` from `run-phase`,
- * which the fix review never passes through, so the runner logs its own
- * outcome. A pass, a skip and a scope fail used to leave no info line at all.
+ * seeded reviewers logged `Running … check` / `… review passed` from the story
+ * orchestrator's phase dispatch (deleted with the story loop, B2b-1), which the
+ * fix review never passes through, so the runner logs its own outcome. A pass, a
+ * skip and a scope fail used to leave no info line at all.
  */
 describe("runFixReview — the logged verdict (#2286)", () => {
   function makeLoggedCtx(): { ctx: CallContext; logger: ReturnType<typeof makeLogger> } {

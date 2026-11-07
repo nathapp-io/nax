@@ -1,14 +1,13 @@
 import { totalSpendUsd } from "@/runtime";
 import { checkCostExceeded, isTriggerEnabled } from "../interaction/triggers";
 // The leaf, not the `@/pipeline` barrel: the barrel reaches back into
-// `src/execution` and would put this module in an import cycle. Same reason
-// `merge-conflict-outcomes.ts` imports the bus this way.
+// `src/execution` and would put this module in an import cycle.
 import { pipelineEventBus } from "../pipeline/event-bus";
 import type { SequentialExecutionContext } from "./executor-types";
 
 /**
- * BUG-6 / D-4: shared costLimit gate for all three dispatch paths (parallel batch,
- * single-story, sequential). Emits `run:paused` and returns `stop: true` unless the
+ * BUG-6 / D-4: the shared costLimit gate every dispatch path runs before it
+ * spends. Emits `run:paused` and returns `stop: true` unless the
  * cost-exceeded trigger is enabled and the user approves continuing (`run:resumed`).
  *
  * Sibling of `cost-warning.ts`, and the two must read the same number: a warning

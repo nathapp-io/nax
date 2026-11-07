@@ -11,11 +11,11 @@
  * `callOp` preserves a caller-supplied `callId`, and one id per dispatch keeps
  * co-running strategies from conflating.
  *
- * Deliberately a callId and NOT a cost scope: the rectification path routes the
- * fix-cycle dispatch through `runPhase`, which opens its own scope and
- * overwrites `scopeId` on the context it forwards — a scope opened in the cycle
- * would read zero on the single biggest-spending caller. `callId` survives that
- * hop untouched.
+ * Deliberately a callId and NOT a cost scope: the rectification path routed the
+ * fix-cycle dispatch through the story orchestrator's phase seam, which opened
+ * its own scope and overwrote `scopeId` on the context it forwarded (that seam
+ * went with the story loop, B2b-1) — a scope opened in the cycle would read zero
+ * on the single biggest-spending caller. `callId` survives that hop untouched.
  *
  * scope: repo-scoped (telemetry only; never fails a cycle)
  */
@@ -40,7 +40,8 @@ export interface DispatchSpend {
  * the total, keeping the failed half visible beside it (#1960):
  *
  * - `costUsd` is total spend -- successful plus failed-dispatch -- mirroring
- *   `runPhase`'s `phaseCosts`, so the fix-cycle number never means something
+ *   the story orchestrator's per-phase `phaseCosts` (that seam went with the
+ *   story loop, B2b-1), so the fix-cycle number never meant something
  *   different from the phase number beside it. #1960 folded `phaseCosts`, and
  *   this moved with it deliberately, reversing #1948's original
  *   split-at-the-fix-cycle reading. Every run total that consumes it

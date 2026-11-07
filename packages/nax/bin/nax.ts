@@ -240,7 +240,7 @@ program
   // because --no-context above already defines `options.context` as a boolean.
   .option("--rules-dir <path>", "Override rules directory (absolute, ~/… , or relative to the workdir)")
   .option("--context-file <path>", "Project-context override file (absolute, ~/… , or relative to the workdir)")
-  .option("--no-batch", "Disable story batching (execute all stories individually)")
+  .option("--no-batch", "Removed: workflow mode runs stories one at a time")
   .option("--parallel <n>", "Removed: workflow mode sets its own limits")
   .option("--plan", "Run plan phase first before execution", false)
   .option("--from <spec-path>", "Path to spec file (required when --plan is used)")

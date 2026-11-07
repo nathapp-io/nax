@@ -1,27 +1,6 @@
 export type { FailureCategory } from "../tdd/types";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
-export { buildPlanForStrategy, requiresInitialRefCapture, resolveStoryPathAnchors } from "./build-plan-for-strategy";
-export {
-  _workflowResumeDeps,
-  applyResumeModeDeps,
-  buildCheckpointLogData,
-  buildResumePlan,
-  type CaptureTreeStateDeps,
-  type CaptureTreeStateOptions,
-  type CheckpointReaderDeps,
-  type CheckpointRecord,
-  CheckpointWriter,
-  type CheckpointWriterDeps,
-  type CheckpointWriterOptions,
-  captureTreeState,
-  createCheckpointWriter,
-  hydrateFromResumePlan,
-  loadCheckpoints,
-  type ResumeMode,
-  type ResumePlan,
-  type StoryCheckpoint,
-  type TreeState,
-} from "./checkpoint";
+export { _workflowResumeDeps, type ResumeMode } from "./checkpoint";
 export {
   type CrashRecoveryContext,
   installCrashHandlers,
@@ -77,13 +56,7 @@ export {
   type RunCompletionResult,
   synthesizeBackfillMetric,
 } from "./lifecycle";
-export type { NbfWorthCheckRequest } from "./nbf-worth-check";
-export { _nbfWorthCheckDeps, runNbfWorthCheck } from "./nbf-worth-check";
 export { _newPackageSetupDeps, markNewPackageDirs, maybeRunNewPackageSetup } from "./new-package-setup";
-export { runNonBlockingFix } from "./non-blocking-fix";
-export { type BreakerDecision, inspectOscillationBreaker } from "./oscillation-breaker";
-export { countOscillationOutcomes, getOscillations, recordOscillations } from "./oscillation-store";
-export { type ParallelStoryMetricArgs, synthesizeParallelStoryMetric } from "./parallel-story-metrics";
 export { _pidRegistryDeps, PidRegistry } from "./pid-registry";
 export {
   _resultHandlerDeps,
@@ -93,21 +66,9 @@ export {
   type PipelineHandlerContext,
   type PipelineSuccessResult,
 } from "./pipeline-result-handler";
-export { assemblePlanInputs, assemblePlanInputsFromCtx, type PlanInputs } from "./plan-inputs";
-export {
-  _postRunDeps,
-  applyPostRunInspection,
-  decideStageAction,
-  deriveTddFailureCategory,
-  extractPauseReason,
-  type InspectionOptions,
-  type PostRunInspectionResult,
-} from "./post-run";
 export { appendProgress } from "./progress";
 export type { BatchQueueDrainResult } from "./queue-handler";
 export { clearQueueFile, drainQueueAtBatchBoundary, processQueueFile, readQueueFile } from "./queue-handler";
-export { inspectRecurrenceBreaker, type RecurrenceBreakerDecision } from "./recurrence-breaker";
-export { maybeHandleRecurrenceBreaker } from "./recurrence-pause";
 export {
   getReviewRecurrenceCount,
   type ReviewRecurrenceEntry,
@@ -124,54 +85,6 @@ export {
 } from "./runner-completion";
 export type { WorkflowStatusBlock } from "./status-file";
 export { StatusWriter, type StatusWriterContext } from "./status-writer";
-export {
-  _storyOrchestratorDeps,
-  CANONICAL_ORDER,
-  createNbfFlakeTriageTransaction,
-  deriveRepoScopedFixes,
-  describeGateRegression,
-  EXHAUSTED_EXIT_REASONS,
-  ExecutionPlan,
-  extractPhaseFindings,
-  type GateRegressionDetail,
-  type GateRegressionInput,
-  gateFailureKeys,
-  type InternalBuildState,
-  type NbfFlakeTriageTransaction,
-  type OrchestratorSlot,
-  orderGateLast,
-  PHASE_KIND_TO_STATE_KEY,
-  type PhaseKind,
-  phasePassed,
-  phasesToRevalidate,
-  REPO_SCOPED_STRATEGY_NAME,
-  type RectificationOverrides,
-  type RectificationPhaseOptions,
-  type RepoScopedFixRecord,
-  recordRepoScopedFixes,
-  refreshReviewInputForDispatch,
-  runPhase,
-  runRectification,
-  STRICT_VERDICT_PHASE_NAMES,
-  StoryOrchestratorBuilder,
-  type StoryOrchestratorResult,
-  selectRegressedGateFindings,
-  toReviewDecisionPayload,
-  withIncreasingFailuresBail,
-  withNoProgressBail,
-} from "./story-orchestrator";
-export {
-  type DeriveNbfSeedInput,
-  deriveNbfSeed,
-  type NbfSeed,
-  type NbfSource,
-  type PhaseOutputsLike,
-} from "./story-orchestrator/nbf-seed";
-export {
-  buildPhaseOutcomeLogData,
-  formatPhaseResultMessage,
-  logDeterministicPhaseOutcome,
-} from "./story-orchestrator-logging";
 export type { StoryRunResult } from "./types";
 export { headsUpChannel } from "./uncategorised-advice";
 // BUG-2 testability seam: re-export `executeUnified` + its `_deps`

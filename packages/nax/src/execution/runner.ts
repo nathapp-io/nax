@@ -27,7 +27,7 @@ import type { PRD } from "../prd/types";
 import { activateRunState, type RunStateHandle, repairRunState } from "../runstate";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
-import { _workflowResumeDeps, applyRecordGreenDeps, applyResumeModeDeps } from "./checkpoint";
+import { _workflowResumeDeps } from "./checkpoint";
 import { stopHeartbeat } from "./crash-recovery";
 import type { RunCleanupOptions } from "./lifecycle/run-cleanup";
 import { sumReviewsFailedOpen } from "./post-run-review-summary";
@@ -36,7 +36,6 @@ import { buildRunId } from "./run-id";
 import { runCompletionPhase } from "./runner-completion";
 import { runExecutionPhase } from "./runner-execution";
 import { runSetupPhase } from "./runner-setup";
-import { _storyOrchestratorDeps } from "./story-orchestrator";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -62,16 +61,15 @@ export { resolveMaxAttemptsOutcome } from "./escalation";
 
 /**
  * Guards `run()` against reentrant/concurrent invocation in the same process.
- * `run()` saves and mutates the module-global `_storyOrchestratorDeps`
- * (`loadCheckpoints` / `recordGreen`) for its own duration and restores the
- * originals in its `finally`. A second `run()` starting while one is still
- * in flight would race on that global: the second call's save/restore would
- * clobber the first call's checkpoint deps mid-run, corrupting which
- * feature's `checkpoint.jsonl` phases get read/recorded. There is currently
- * no legitimate concurrent-`run()` caller (parallel execution fans out
- * within a single `run()`, not across separate `run()` calls) — this guard
- * turns a silent, hard-to-diagnose cross-feature corruption into an
- * immediate, explicit failure if that assumption is ever violated.
+ * `run()` mutates the module-global `_workflowResumeDeps.mode` for its own
+ * duration and restores the original in its `finally`. A second `run()`
+ * starting while one is still in flight would race on that global: the second
+ * call's save/restore would clobber the first call's mode mid-run, so
+ * `buildStoryEnv` would read the wrong resume decision. There is currently no
+ * legitimate concurrent-`run()` caller (stories run one at a time within a
+ * single `run()`, not across separate `run()` calls) — this guard turns a
+ * silent, hard-to-diagnose corruption into an immediate, explicit failure if
+ * that assumption is ever violated.
  * @internal - test use only.
  */
 export const _runnerReentrancyGuard = { inFlight: false };
@@ -115,11 +113,11 @@ export interface RunOptions {
   /** Pre-built AgentStreamEventBus so the TUI can subscribe to live agent events. */
   agentStreamEvents?: import("../runtime").IAgentStreamEventBus;
   /**
-   * Resume mode for checkpoint seeding. The orchestrator's
-   * `_storyOrchestratorDeps.loadCheckpoints` is overridden based on this:
-   *   - `"auto"` (default): read real checkpoint.jsonl when present.
-   *   - `"fresh"` / `"no-resume"`: always return empty Map (no skip phases).
-   * Driven by `nax run --fresh` / `--no-resume` flags.
+   * Resume mode for checkpoint seeding, read by the workflow stage through
+   * `_workflowResumeDeps`:
+   *   - `"auto"` (default): resume from the feature's workflow record.
+   *   - `"fresh"` / `"no-resume"`: ignore the prior record and start over.
+   * Driven by `nax run --fresh` / `--no-resume` flags and `nax resume`.
    */
   resumeMode?: import("./checkpoint").ResumeMode;
   /**
@@ -201,32 +199,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // no longer collide on `run-<iso>`.
   const runId = callerRunId ?? buildRunId(workdir, new Date(startTime));
 
-  // US-004 — wire the orchestrator's checkpoint deps based on the resume mode.
-  // Auto: read real checkpoint.jsonl when present. Fresh / no-resume: ignore any
-  // prior checkpoint and seed an empty skip plan. `recordGreen` is always wired
-  // to a real CheckpointWriter so green phases are durably recorded regardless
-  // of resume mode — without this, checkpoint.jsonl is never written and resume
-  // has nothing to seed from on the next run. Save the original deps so we can
-  // restore them in the outer finally — even if runSetupPhase throws before we
-  // enter the inner try block below.
-  const origLoadCheckpoints = _storyOrchestratorDeps.loadCheckpoints;
-  const origRecordGreen = _storyOrchestratorDeps.recordGreen;
   // US-003 — the workflow stage reads the resume mode from its own seam (see
   // _workflowResumeDeps): `execution/` cannot import `@/workflow`, so this is
   // how `--fresh` / `--no-resume` reaches `buildStoryEnv`'s resume decision.
   // Saved here so both restore points below can put the prior value back.
   const origWorkflowResumeMode = _workflowResumeDeps.mode;
-  // Feature-less runs have no directory to durably record checkpoints under —
-  // `join("", "checkpoint.jsonl")` resolves to a bare relative path, which lands in
-  // whatever the process CWD happens to be and cross-seeds unrelated runs (BUG-40).
-  // Leave the default no-op stubs wired in that case instead of pointing them at CWD.
-  if (featureDir) {
-    applyResumeModeDeps(featureDir, resumeMode);
-    applyRecordGreenDeps(featureDir, runId);
-    // Workflow mode only runs against a feature, so a feature-less run has no
-    // workflow record to resume and no reason to touch the seam.
-    _workflowResumeDeps.mode = resumeMode;
-  }
+  // Workflow mode only runs against a feature, so a feature-less run has no
+  // workflow record to resume and no reason to touch the seam.
+  if (featureDir) _workflowResumeDeps.mode = resumeMode;
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
@@ -240,10 +220,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let prd: PRD | undefined;
 
   // ── Phase 1: Setup ──────────────────────────────────────────────────────────
-  // Wrapped in try/catch so a setup-time throw still restores the orchestrator
-  // dep we overrode above — without this, a crash before the inner finally
-  // would leave _storyOrchestratorDeps.loadCheckpoints mutated across the
-  // entire process (test harnesses and any subsequent in-process runs).
+  // Wrapped in try/catch so a setup-time throw still restores the workflow
+  // resume mode written above — without this, a crash before the inner finally
+  // would leave `_workflowResumeDeps.mode` mutated across the entire process
+  // (test harnesses and any subsequent in-process runs).
   let setupResult: Awaited<ReturnType<typeof _runnerDeps.runSetupPhase>>;
   try {
     setupResult = await _runnerDeps.runSetupPhase({
@@ -284,8 +264,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
       getTotalStories: () => (prd ? countStories(prd).total : 0),
     });
   } catch (err) {
-    _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
-    _storyOrchestratorDeps.recordGreen = origRecordGreen;
     _workflowResumeDeps.mode = origWorkflowResumeMode;
     _runnerReentrancyGuard.inFlight = false;
     throw err;
@@ -406,13 +384,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const logger = getSafeLogger();
     try {
       logger?.debug("execution", "Runner finally block — starting cleanup");
-      // US-004 — restore the orchestrator's default checkpoint dep stubs so
-      // subsequent in-process runs (or test harnesses) are not contaminated.
-      // The setup-phase error path has its own restore above; this one covers
-      // the success-and-throw-later path through runExecutionPhase /
-      // runCompletionPhase.
-      _storyOrchestratorDeps.loadCheckpoints = origLoadCheckpoints;
-      _storyOrchestratorDeps.recordGreen = origRecordGreen;
+      // US-003 — restore the workflow resume mode so subsequent in-process runs
+      // (or test harnesses) are not contaminated. The setup-phase error path has
+      // its own restore above; this one covers the success-and-throw-later path
+      // through runExecutionPhase / runCompletionPhase.
       _workflowResumeDeps.mode = origWorkflowResumeMode;
       _runnerReentrancyGuard.inFlight = false;
       // Stop heartbeat on any exit (US-007)

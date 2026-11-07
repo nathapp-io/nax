@@ -2,7 +2,10 @@
  * ENH-20: count review checks that degraded to a fail-open pass (LLM
  * dispatch failed, gate returned success:true, failOpen:true) so the run
  * summary can distinguish "reviewed green" from "not actually checked".
- * Extracted from post-run.ts to stay within the 600-line file limit.
+ * Extracted from post-run.ts (itself deleted with the post-run inspection layer,
+ * US-003) to stay within the 600-line file limit. `sumReviewsFailedOpen` still
+ * feeds `RunResult.reviewsFailedOpen`; `applyReviewsFailedOpen` lost its only
+ * caller with that layer and is retained for wave B2b-2.
  */
 
 import type { StoryMetrics } from "../metrics/types";

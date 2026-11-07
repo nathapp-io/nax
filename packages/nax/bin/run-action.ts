@@ -6,7 +6,7 @@
  * sequences the named phases below; every phase preserves the original's exit
  * codes, stderr messages and gate ORDER. test/integration/cli/cli-run-preflight.test.ts
  * pins each adjacent pair of the pre-flight gates: feature name -> directory
- * -> -m -> --parallel -> --compare/--agent exclusivity -> empty contestant
+ * -> -m -> --parallel -> --no-batch -> --compare/--agent exclusivity -> empty contestant
  * list -> contestant validation -> --max-cost -> worst-case confirmation ->
  * --schedule -> --plan/--from. ("--plan without --from" and "missing --from
  * file" cannot fire together, so their relative order is unobservable.) The
@@ -123,8 +123,10 @@ export function resolveRunWorkdir(options: RunActionOptions): string {
 }
 
 /**
- * Validate `-m/--max-iterations` and `--parallel` before any config load,
- * bake-off check or TUI mount — both errors must print before any TUI exists.
+ * Validate `-m/--max-iterations`, `--parallel` and `--no-batch` before any
+ * config load, bake-off check or TUI mount — every removal error must print
+ * before any TUI exists. The checks run in that order, so the earliest removed
+ * flag names itself.
  */
 export function parseRunPreconditionFlags(options: RunActionOptions): {
   chatAsksDir: string | undefined;
@@ -135,6 +137,10 @@ export function parseRunPreconditionFlags(options: RunActionOptions): {
   }
   if (options.parallel !== undefined) {
     console.error(chalk.red("nax run --parallel was removed: workflow mode runs stories one at a time"));
+    process.exit(1);
+  }
+  if (options.batch === false) {
+    console.error(chalk.red("nax run --no-batch was removed: workflow mode runs stories one at a time"));
     process.exit(1);
   }
   const chatAsksFlag = parseChatAsksFlag(options.chatAsks);

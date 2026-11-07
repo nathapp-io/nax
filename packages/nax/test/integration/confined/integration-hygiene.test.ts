@@ -58,22 +58,9 @@ const REPAIRED_GROUPS: readonly ConfinedGroup[] = [
     paths: ["./test/integration/execution/execution.test.ts"],
   },
   {
-    ac: "AC-2",
-    what: "the parallel-metrics suites (class B: their PRD fixture write)",
-    paths: [
-      "./test/integration/execution/runner-parallel-metrics.test.ts",
-      "./test/integration/execution/runner-parallel-metrics-rectification-events.test.ts",
-    ],
-  },
-  {
     ac: "AC-3",
     what: "the runner-fixes suite (class A: its PRD temp dir)",
     paths: ["./test/integration/execution/runner-fixes.test.ts"],
-  },
-  {
-    ac: "AC-4",
-    what: "the checkpoint reader suite (class A: its temp dir)",
-    paths: ["./test/integration/execution/checkpoint/reader.test.ts"],
   },
   {
     ac: "AC-5",
@@ -94,15 +81,6 @@ const REPAIRED_GROUPS: readonly ConfinedGroup[] = [
     ac: "AC-8",
     what: "the loader-security suite (class A: its plugin fixture roots)",
     paths: ["./test/integration/config/security-loader.test.ts"],
-  },
-  {
-    ac: "AC-9",
-    what: "the story-orchestrator suites (class A: their greenfield temp dirs)",
-    paths: [
-      "./test/integration/tdd/story-orchestrator-core.test.ts",
-      "./test/integration/tdd/story-orchestrator-failureCategory.test.ts",
-      "./test/integration/tdd/story-orchestrator-fallback.test.ts",
-    ],
   },
   {
     ac: "AC-10",

@@ -1,4 +1,4 @@
-/** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
+/** Unified Story Executor (ADR-005, Phase 4) — the sequential story loop. */
 
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { WorkflowRunStartInput } from "@/workflow";
@@ -23,11 +23,8 @@ import { preIterationTierCheck } from "./escalation";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 import { loopIterationLimit, progressSignature } from "./iteration-bound";
 import { runIteration } from "./iteration-runner";
-import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
-import { selectIndependentBatch } from "./story-selector";
 import type { LoopState } from "./unified-executor-dispatch-phases";
 import { runSequentialDispatch } from "./unified-executor-dispatch-phases";
-import { runParallelDispatch } from "./unified-executor-parallel-dispatch";
 
 export type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 
@@ -241,24 +238,6 @@ export async function executeUnified(
       };
       const dispatchParams = { ctx, state, iterations, allStoryMetrics, naxIgnoreIndex, costLimit, reportCost };
 
-      // Parallel dispatch when parallelCount > 0 and batch > 1 story. Never under a dry run: runIteration owns that short-circuit (nax#1808).
-      if ((ctx.parallelCount ?? 0) > 0 && !ctx.dryRun) {
-        const step = await runParallelDispatch(dispatchParams, {
-          savePrdProgress: _unifiedExecutorDeps.savePrdProgress,
-          selectIndependentBatch: _unifiedExecutorDeps.selectIndependentBatch,
-          preIterationTierCheck: _unifiedExecutorDeps.preIterationTierCheck,
-          runParallelBatch: _unifiedExecutorDeps.runParallelBatch,
-          runIteration: _unifiedExecutorDeps.runIteration,
-        });
-        if (step.action !== "fallthrough") {
-          state = step.state;
-          if (step.action === "return") return buildResult(step.exitReason);
-          continue;
-        }
-        // batch.length === 0: fall through to sequential single-story path
-        state = step.state;
-      }
-
       const seqStep = await runSequentialDispatch(dispatchParams, {
         runIteration: _unifiedExecutorDeps.runIteration,
         preIterationTierCheck: _unifiedExecutorDeps.preIterationTierCheck,
@@ -295,24 +274,18 @@ export async function executeUnified(
     }
   }
 }
-export { reconcileBatchOutcome } from "./reconcile-batch-outcome";
 
 /**
  * Injectable dependencies for testing.
  * @internal — test use only.
  */
 export const _unifiedExecutorDeps = {
-  runParallelBatch: async (opts: RunParallelBatchOptions): Promise<RunParallelBatchResult> => {
-    const { runParallelBatch } = await import("./parallel-batch");
-    return runParallelBatch(opts);
-  },
   // Dynamic import: src/workflow is loaded lazily everywhere (no load-time cycle through operations).
   runWorkflowPreflight: async (input: WorkflowRunStartInput): Promise<void> => {
     const { runWorkflowPreflight } = await import("@/workflow");
     return runWorkflowPreflight(input);
   },
   runIteration,
-  selectIndependentBatch,
   preIterationTierCheck,
   savePrdProgress,
 };

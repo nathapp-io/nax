@@ -2,7 +2,6 @@
  * Escalation module exports
  */
 
-export { type BatchPreCheckOptions, type BatchPreCheckResult, runBatchPreChecks } from "./batch-pre-check";
 export { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 export { verifyEscalationQuotes } from "./quote-integrity";
 export {

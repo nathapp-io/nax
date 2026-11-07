@@ -1,19 +1,14 @@
 /**
- * Per-iteration dispatch phases for `executeUnified` (./unified-executor.ts).
+ * Per-iteration dispatch phase for `executeUnified` (./unified-executor.ts).
  *
  * Split out during the complexity drain (docs/plans/STATUS-complexity-drain.md
  * A1): `executeUnified`'s while-loop body scored 165 as one function covering
  * three dispatch shapes (many-story parallel batch, single-story-in-batch,
- * sequential). Each shape is its own function, taking the loop's mutable state
- * as an explicit `LoopState` object and returning the next one. A pure
- * extraction: no dispatch rule changed.
- *
- * This file holds the shared types/helpers plus sequential dispatch; the two
- * parallel-batch shapes live in ./unified-executor-parallel-dispatch.ts (kept
- * separate so neither file grows past the 600-line gate).
+ * sequential). The parallel-batch shapes are gone (US-001); this file holds the
+ * shared types/helpers plus the sequential dispatch every iteration now runs.
  *
  * `_unifiedExecutorDeps` (the test-injection seam) stays in unified-executor.ts
- * — these functions take the seam's functions as `deps` parameters instead of
+ * — this function takes the seam's functions as `deps` parameters instead of
  * importing the seam directly, which would cycle back to unified-executor.ts.
  */
 
@@ -51,9 +46,7 @@ export interface LoopState {
 
 export type DispatchStep =
   | { action: "continue"; state: LoopState }
-  | { action: "return"; state: LoopState; exitReason: ExitReason }
-  /** Only `runParallelDispatch` returns this — batch.length === 0, fall through to sequential dispatch. */
-  | { action: "fallthrough"; state: LoopState };
+  | { action: "return"; state: LoopState; exitReason: ExitReason };
 
 export interface DispatchPhaseParams {
   ctx: SequentialExecutionContext;
@@ -108,8 +101,8 @@ export async function runIterationDelay(
 }
 
 /**
- * Sequential single-story dispatch — the fallback path when parallel dispatch
- * is off, or its batch selector returned nothing (`batch.length === 0`).
+ * Sequential single-story dispatch — the only dispatch shape: one story per
+ * iteration, selected by `selectNextStories`.
  */
 export async function runSequentialDispatch(
   params: DispatchPhaseParams,

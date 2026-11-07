@@ -234,8 +234,9 @@ function sanitizeProviderPressure(raw: unknown): NonNullable<ContextProviderMetr
  * size driver behind the `MAX_RETAINED_RUNS` cap on metrics.json.
  *
  * Records are read from the run-scoped `runtime.agentFallbacks` store, which callOp
- * populates (nax#1707) — not from `AgentResult.agentFallbacks`, which post-run.ts
- * discards when it rebuilds `ctx.agentResult` from the implementer's phase output.
+ * populates (nax#1707) — not from `AgentResult.agentFallbacks`, which nothing copies
+ * onto `ctx.agentResult` since the post-run inspection layer that rebuilt it was
+ * deleted (US-003).
  * The store accumulates hops from every op in the story, so a swap during review or
  * verification is counted too.
  *

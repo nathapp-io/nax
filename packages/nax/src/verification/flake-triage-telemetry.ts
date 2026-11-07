@@ -10,9 +10,10 @@
  * been judged deterministic. Every skip path below is a hole in that guarantee:
  * a flake there is indistinguishable from a deterministic failure.
  *
- * Gating the fallthrough on `flakeTriageRan` means threading it through
- * run-phase → rectification → the cycle context. This module measures the hole
- * first so that plumbing is only paid for if the rate justifies it (#1657 §3).
+ * Gating the fallthrough on `flakeTriageRan` means threading it through the
+ * story orchestrator's phase dispatch → rectification → the cycle context. That
+ * seam is gone with the story loop (B2b-1); this module still measures the hole
+ * so the plumbing is only paid for if the rate justifies it (#1657 §3).
  *
  * `flakeDetection.enabled: false` is deliberately NOT counted — that is an
  * operator turning the feature off, not a gap in a feature believed to be on.
@@ -47,8 +48,9 @@ export type FlakeTriageCandidateBasis = "probe-eligible" | "gate-findings";
 
 /**
  * Which cycle the skipped gate belongs to. Load-bearing for #1657 §3: only
- * `blocking-gate` can dispatch `repo-scoped-test-fix` — the strategy is
- * "registered on the blocking cycle only" (see `build-plan-for-strategy.ts`).
+ * `blocking-gate` can dispatch `repo-scoped-test-fix` — the story loop
+ * registered that strategy on the blocking cycle only (its plan builder was
+ * deleted in B2b-1).
  * `nbf` emits are multiplied by the per-attempt revalidation loop and `regression`
  * is the run-scoped deferred gate; counting either toward the decision would
  * argue for plumbing on traffic that carries none of the risk. Required, not

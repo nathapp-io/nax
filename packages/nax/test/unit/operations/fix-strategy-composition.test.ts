@@ -2,9 +2,9 @@
  * AC-008: Behavior-preservation test fixtures for fix strategy composition.
  *
  * These tests verify the expected ordering and selection of strategies under
- * different config conditions. The assembly helper mirrors the logic that
- * buildPlanForStrategy (US-005a) will wire — tested here so the composition
- * contract is locked before wiring occurs.
+ * different config conditions. The assembly helper mirrors the logic the story
+ * loop's plan builder wired (that builder went with B2b-1) — tested here so the
+ * composition contract stays locked independently of who calls it.
  */
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory } from "@test/helpers";
@@ -29,8 +29,8 @@ type ComposedStrategy =
   | ReturnType<typeof makeAutofixTestWriterStrategy>;
 
 /**
- * Assemble strategy array from config options in the same order that
- * buildPlanForStrategy (US-005a) will use: mechanical before agent.
+ * Assemble strategy array from config options in the same order the story loop's
+ * plan builder used: mechanical before agent.
  */
 function assembleStrategies(opts: {
   lintFix?: string;

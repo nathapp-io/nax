@@ -189,7 +189,7 @@ export interface NaxRuntime {
   readonly semanticIterations: Map<string, Iteration[]>;
   /** Run-scoped per-story rectification oscillation totals. */
   readonly rectificationOscillations: Map<string, number>;
-  /** A1: flagged advisor decisions from the fix cycle, flushed by decideStageAction. */
+  /** A1: flagged advisor decisions from the fix cycle. Flushed by the post-run inspection layer's stage-end drain until that layer was deleted (US-003). */
   readonly advisorHeadsUps: AdvisorHeadsUpQueue;
   /**
    * Run-scoped cross-attempt review-finding recurrence store (#1666 Part C).
@@ -221,13 +221,13 @@ export interface NaxRuntime {
   /**
    * The most recent adapter failure per story, written by callOp.
    *
-   * post-run.ts rebuilds ctx.agentResult from the implementer's phase output,
-   * which drops everything the AgentResult carried -- including whether the
-   * failure was a rate limit, which the run log then reported as false on every
-   * rate-limited story (nax#1897). Result-side data may not travel back through
-   * CallContext (adapter-wiring.md Rule 6), so it travels here, exactly as
-   * agent-swap hops do (nax#1707). Last write wins: post-run runs immediately
-   * after its story's plan, so the last recorded failure is the failing op's.
+   * The post-run inspection layer used to rebuild ctx.agentResult from the
+   * implementer's phase output, which dropped everything the AgentResult carried
+   * -- including whether the failure was a rate limit, which the run log then
+   * reported as false on every rate-limited story (nax#1897). That rebuild is gone
+   * with the layer itself (US-003), but the field stays: result-side data may not
+   * travel back through CallContext (adapter-wiring.md Rule 6), so it travels
+   * here, exactly as agent-swap hops do (nax#1707). Last write wins.
    */
   readonly lastAdapterFailure: Map<string, import("../context/engine").AdapterFailure>;
   /**

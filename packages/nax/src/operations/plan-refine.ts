@@ -156,11 +156,11 @@ interface StoryNormalization {
  * Collect every file produced (created) by the stories `story` transitively
  * depends on. A file created by an upstream dependency does not exist at plan
  * time but WILL exist at this story's execution time — sequential mode shares one
- * workdir (the producer ran first), and parallel mode merges each batch back to
- * HEAD before the next batch's worktrees branch from it (see
- * docs/architecture/spec-to-prd-pipeline.md, src/execution/parallel-batch.ts,
- * src/worktree/manager.ts). So an absent `contextFiles` entry that an upstream
- * story creates is a legitimate read hint, NOT a file this story authors.
+ * workdir (the producer ran first), and any isolated run merges its story branch
+ * back to HEAD before the next story branches from it (see
+ * docs/architecture/spec-to-prd-pipeline.md, src/worktree/manager.ts). So an
+ * absent `contextFiles` entry that an upstream story creates is a legitimate
+ * read hint, NOT a file this story authors.
  */
 function collectUpstreamProducedFiles(story: UserStory, byId: Map<string, UserStory>): Set<string> {
   const produced = new Set<string>();

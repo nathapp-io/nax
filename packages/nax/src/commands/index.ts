@@ -32,7 +32,6 @@ export {
   type ResumeCommandOptions,
   type ResumeRunInvocation,
   registerResumeCommand,
-  renderResumeSummary,
   runResume,
 } from "./resume";
 export { type RunsOptions, runsCommand } from "./runs";

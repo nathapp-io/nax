@@ -138,10 +138,10 @@ describe("prepareAdversarialReviewInput", () => {
     });
     expect(result.skipReason).toBe("no changes detected");
     // Note: testGlobs / refExcludePatterns aren't read by downstream callers when
-    // skipReason is set (both runSemantic/AdversarialReview and plan-inputs.ts
-    // early-return on skipReason). These assertions exist purely to prove that
-    // resolveTestFilePatterns was NOT invoked — i.e. they're a side-effect proof,
-    // not a behavioral contract.
+    // skipReason is set (both runSemantic/AdversarialReview and the story loop's
+    // plan builder early-returned on skipReason). These assertions exist purely to
+    // prove that resolveTestFilePatterns was NOT invoked — i.e. they're a
+    // side-effect proof, not a behavioral contract.
     expect(result.testGlobs).toEqual([]);
     expect(result.refExcludePatterns).toEqual([]);
   });

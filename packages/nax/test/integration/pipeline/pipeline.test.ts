@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { makeDispatchContext } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import type { NaxConfig } from "@/config/schema";
 import { initLogger, resetLogger } from "@/logger";
@@ -439,126 +440,5 @@ describe("Pipeline Runner", () => {
       expect(result.reason).toBe("Critical failure");
       expect(result.stoppedAtStage).toBe("failStage");
     });
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// routeTddFailure — TDD failure routing by failureCategory
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { makeDispatchContext } from "@test/helpers";
-import type { InspectionOptions, PostRunInspectionResult, StoryOrchestratorResult } from "@/execution";
-import { decideStageAction } from "@/execution/post-run";
-import { routeTddFailure } from "@/pipeline/stages/execution";
-import type { FailureCategory } from "@/tdd/types";
-
-describe("routeTddFailure", () => {
-  /** Minimal context stub — only retryAsLite is used */
-  function makeCtx(): { retryAsLite?: boolean } {
-    return {};
-  }
-
-  describe("isolation-violation", () => {
-    test("strict mode sets retryAsLite=true; lite mode does not", () => {
-      const ctx1 = makeCtx();
-      expect(routeTddFailure("isolation-violation", false, ctx1, "isolation error").action).toBe("escalate");
-      expect(ctx1.retryAsLite).toBe(true);
-
-      const ctx2 = makeCtx();
-      expect(routeTddFailure("isolation-violation", true, ctx2, "isolation error lite").action).toBe("escalate");
-      expect(ctx2.retryAsLite).toBeUndefined();
-    });
-  });
-
-  describe("session-failure", () => {
-    test("escalates in strict and lite mode via decideStageAction; does not set retryAsLite", async () => {
-      for (const isLite of [false, true]) {
-        const ctx = createTestContext();
-        const planResult: StoryOrchestratorResult = {
-          success: false,
-          phaseCosts: {},
-          totalCostUsd: 0,
-          durationMs: 1,
-          phaseOutputs: {},
-        };
-        const inspection: PostRunInspectionResult = {
-          agentResult: {
-            success: false,
-            exitCode: 1,
-            output: "",
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCostUsd: 0,
-          },
-          selfVerificationFailed: false,
-          needsHumanReview: true,
-          providerUnavailable: true,
-          failureCategory: "session-failure",
-          combinedOutput: "",
-        };
-        const opts: InspectionOptions = {
-          capturedResponse: "",
-          capturedCostUsd: 0,
-          tddMode: { isLite, rollbackEnabled: false },
-          initialRef: null,
-          untrackedBefore: null,
-        };
-        const result = await decideStageAction(ctx, planResult, inspection, opts);
-        expect(result.action).toBe("escalate");
-        if (result.action === "escalate") expect(result.reason).toBe("TDD session-failure");
-        expect(ctx.retryAsLite).toBeUndefined();
-      }
-    });
-  });
-
-  describe("tests-failing, full-suite-gate-exhausted, verifier-rejected", () => {
-    test("all return escalate without setting retryAsLite", () => {
-      for (const cat of ["tests-failing", "full-suite-gate-exhausted", "verifier-rejected"] as const) {
-        const ctx = makeCtx();
-        expect(routeTddFailure(cat, false, ctx, `${cat} reason`).action, cat).toBe("escalate");
-        expect(ctx.retryAsLite, cat).toBeUndefined();
-      }
-    });
-  });
-
-  describe("test-incorrect", () => {
-    test("pauses with the verifier review reason", () => {
-      const result = routeTddFailure("test-incorrect", false, makeCtx(), "Assertion conflicts with AC7");
-      expect(result.action).toBe("pause");
-      if (result.action === "pause") expect(result.reason).toBe("Assertion conflicts with AC7");
-    });
-  });
-
-  describe("no failureCategory (backward compat)", () => {
-    test("undefined category → pause with reviewReason, default message, and in lite mode", () => {
-      const r1 = routeTddFailure(undefined, false, makeCtx(), "human review needed");
-      expect(r1.action).toBe("pause");
-      if (r1.action === "pause") expect(r1.reason).toBe("human review needed");
-
-      const r2 = routeTddFailure(undefined, false, makeCtx());
-      expect(r2.action).toBe("pause");
-      if (r2.action === "pause") expect(r2.reason).toBe("Three-session TDD requires review");
-
-      expect(routeTddFailure(undefined, true, makeCtx(), "lite mode no category").action).toBe("pause");
-    });
-  });
-
-  describe("retryAsLite is not set for non-isolation failures", () => {
-    const nonIsolationCategories: Array<FailureCategory | undefined> = [
-      "session-failure",
-      "tests-failing",
-      "test-incorrect",
-      "full-suite-gate-exhausted",
-      "verifier-rejected",
-      undefined,
-    ];
-
-    for (const category of nonIsolationCategories) {
-      test(`category=${category ?? "undefined"} does not set retryAsLite`, () => {
-        const ctx = makeCtx();
-        routeTddFailure(category, false, ctx);
-        expect(ctx.retryAsLite).toBeUndefined();
-      });
-    }
   });
 });

@@ -20,9 +20,8 @@
  *
  * Why routability is the thing that matters: `normalizedFindings` carries blocking
  * findings only. A `passed: false` with none of them is unactionable — the cycle exits
- * "resolved" without dispatching a fix strategy, `deriveTddFailureCategory` derives
- * nothing, and the story pauses on findings no agent was ever asked to fix. Retrying
- * reproduces it exactly.
+ * "resolved" without dispatching a fix strategy, no failure category is derived, and the
+ * story pauses on findings no agent was ever asked to fix. Retrying reproduces it exactly.
  *
  * The one sanctioned exception is pinned below as INV-3: when *every* finding is
  * dropped as ungrounded the ops deliberately fall back to the model's flag (fail
