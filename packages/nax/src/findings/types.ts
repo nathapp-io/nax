@@ -5,8 +5,10 @@
  *
  * Designed as a strict superset of:
  *   - src/plugins/extensions.ts ReviewFinding   (mechanical / plugin findings)
- *   - src/review/semantic-helpers.ts   LLMFinding (semantic review)
- *   - src/review/adversarial-helpers.ts   AdversarialLLMFinding (adversarial review)
+ *   - the (since deleted) semantic-review LLMFinding and adversarial-review
+ *     AdversarialLLMFinding producer types — their last home,
+ *     `src/review/{semantic,adversarial}-helpers.ts`, went with the pipeline
+ *     review operations in C1 wave B2b-2
  *
  * Producers convert to Finding[] at the boundary; the wire format is uniform
  * regardless of subsystem. See ADR-021 §3 for the file-path SSOT decision and

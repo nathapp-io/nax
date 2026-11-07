@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-06T16:43:18.212Z",
+  "updatedAt": "2026-11-07T05:37:12.092Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -73,7 +73,6 @@
     "src/mcp/pool.ts": { "open": 26 },
     "src/metrics/aggregator.ts": { "calculateAggregateMetrics": 28 },
     "src/metrics/tracker.ts": { "deriveContextMetrics": 40, "collectStoryMetrics": 26 },
-    "src/operations/adversarial-review.ts": { "verify": 21 },
     "src/operations/full-suite-rectify.ts": { "=>": 21 },
     "src/operations/mutation-check.ts": { "execute": 55 },
     "src/operations/test-edit-declaration.ts": { "parseTestEditDeclarations": 30 },
@@ -102,10 +101,7 @@
     "src/prompts/builders/tdd-builder.ts": { "build": 38 },
     "src/quality/self-verification.ts": { "parsePreExisting": 22, "parseMarkerBlock": 21 },
     "src/queue/manager.ts": { "parseQueueFile": 37 },
-    "src/review/acks.ts": { "extractAcks": 21 },
-    "src/review/fix-review/run/index.ts": { "evaluateFixReview": 40 },
     "src/review/lint-parsing/strategies/ruff-annotated.ts": { "parseRuffAnnotated": 26 },
-    "src/review/recurrence-demotion.ts": { "classifyRecurrence": 27 },
     "src/review/truncation.ts": { "looksLikeTruncatedJson": 22 },
     "src/routing/router.ts": { "resolveRouting": 43 },
     "src/runtime/index.ts": { "createRuntime": 28 },

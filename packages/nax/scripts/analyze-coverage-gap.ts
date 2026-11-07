@@ -2,6 +2,11 @@
 /**
  * Adversarial recurrence-demotion — coverage-gap telemetry (Phase 0).
  *
+ * NOTE: the producer side of this telemetry (recurrence-demotion, which stamped
+ * `meta.coverageGap`) was deleted with the pipeline review operations in C1 wave
+ * B2b-2. The script is kept because it reads HISTORICAL `review-audit/*.json`
+ * records, which still carry the stamp; no new record will gain one.
+ *
  * PR #1337 shipped recurrence-demotion: an adversarial "error" finding that
  * recurs past `maxBlockingRounds` (default 2) is auto-demoted to advisory and
  * tagged `meta.coverageGap: true`. Demoted findings are the Phase-0 telemetry

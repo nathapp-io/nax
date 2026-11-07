@@ -155,10 +155,9 @@ export function promptWithToolPreamble(agentName: string, options: AgentRunOptio
  * US-003 — the registered kinds are `diff-access`, `run-check` and `run-test`
  * (US-005 will add `commit`). Each kind carries its own `requires` list and
  * native renderer; `applyProtocolRegions` substitutes every region in one
- * pass and gates each on its `requires` set. The legacy `applyDiffAccess`
- * entry point is retained for its existing test suite as a thin adapter,
- * but the dispatch seam routes through the SSOT so a new kind added to the
- * registry is substituted without further dispatch changes.
+ * pass and gates each on its `requires` set. The dispatch seam routes through
+ * the SSOT so a new kind added to the registry is substituted without further
+ * dispatch changes.
  *
  * Named for the protocol, not the agent: the agent name is only how the
  * protocol is derived. Every ACP agent gets the same rendering, so nothing here

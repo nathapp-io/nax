@@ -12,7 +12,7 @@ import { resolveCodingToolSupport } from "@/agents/coding-tool-support-resolve";
 import type { RunAsSessionOpts } from "@/agents/manager-types";
 import type { AgentRunOptions, SessionHandle, TurnResult } from "@/agents/types";
 import type { AdapterFailure, ToolDescriptor } from "@/context/engine";
-import { wrapDiffAccess } from "@/prompts/sections/diff-access";
+import { wrapAffordance } from "@/prompts/sections";
 import { _sessionRunHopDeps, createSessionRunHop } from "@/runtime/session-run-hop";
 import type { OpenSessionRequest, SendPromptOpts } from "@/session/types";
 
@@ -569,7 +569,7 @@ describe("createSessionRunHop — diff-access substitution", () => {
         : undefined);
     const options: AgentRunOptions = {
       ...baseOptions,
-      prompt: `head\n${wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
+      prompt: `head\n${wrapAffordance("diff-access", { ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n")}tail`,
       ...(overrides.declaredTools ? { declaredTools: overrides.declaredTools } : {}),
       ...(overrides.codingToolRoot ? { codingToolRoot: overrides.codingToolRoot } : {}),
       ...(config ? { config } : {}),
@@ -632,9 +632,8 @@ describe("createSessionRunHop — diff-access substitution", () => {
   });
 
   test("an ACP session receives the shell body unchanged regardless of the gating", async () => {
-    // ACP is the agent-side-of-non-native path; gating is irrelevant to it,
-    // and the existing byte-parity suite (test/unit/prompts/diff-access-acp-parity.test.ts)
-    // pins the exact text it receives. The test below only asserts that
+    // ACP is the agent-side-of-non-native path; gating is irrelevant to it.
+    // The tool-preamble regression tests pin its exact text; here we assert that
     // a no-tools ACP session still receives the shell body.
     const prompt = await promptSentTo("claude", {});
     expect(prompt).toContain("SHELL BODY");

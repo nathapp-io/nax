@@ -14,7 +14,7 @@ export { buildHermeticSection } from "./hermetic";
 export { buildIsolationSection } from "./isolation";
 export { buildModifiedFilesLines } from "./modified-files";
 export { buildNaxArtifactsSection } from "./nax-artifacts";
-export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./out-of-scope";
+export { buildOutOfScopeLines } from "./out-of-scope";
 export type {
   AffordanceNativeRenderer,
   ApplyProtocolRegionsOpts,

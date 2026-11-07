@@ -67,24 +67,6 @@ export type DiffContext =
       pathspec: string;
     };
 
-/** Story fields required for semantic review */
-export interface SemanticStory {
-  id: string;
-  title: string;
-  description: string;
-  acceptanceCriteria: string[];
-  /**
-   * Feature-level exclusions the spec declared out of scope, propagated onto
-   * every story by `propagateOutOfScopeToStories` (src/prd/out-of-scope.ts).
-   *
-   * Structurally satisfied by `UserStory`, so callers keep passing the story
-   * unchanged. Reviewers render this as its own list — it is NOT an acceptance
-   * criterion and must never be quoted as one; a finding about excluded work
-   * cites `scopeQuote`/`scopeIndex` against this array instead.
-   */
-  outOfScope?: string[];
-}
-
 /** Semantic review configuration */
 export interface SemanticReviewConfig {
   /**
@@ -123,9 +105,13 @@ export interface SemanticReviewConfig {
   excludePatterns?: string[];
   /**
    * When true (default), after the first semantic pass, if all blocking findings
-   * were dropped by AC-grounding (filterByAcGroundingMinimal) while no blocking
-   * findings remain, issue one reprompt asking the reviewer to re-ground their
-   * findings against the AC text.
+   * were dropped by AC-grounding while no blocking findings remain, issue one
+   * reprompt asking the reviewer to re-ground their findings against the AC text.
+   *
+   * Read by nobody today: the semantic review operation and the AC-grounding
+   * filter were deleted with C1 wave B2b-2 (US-001/US-003 of
+   * pipeline-review-delete). The key survives here because the config surface
+   * is reconciled in a later wave.
    */
   acRegroundOnDrop?: boolean;
   /**
@@ -344,7 +330,9 @@ export interface ReviewConfig {
   /**
    * US-001 (fix-review) — scoped review of a fix's own delta. Required: the
    * schema declares it with `.default({})`, so every parsed config carries the
-   * block. `resolveFixReviewModel` (src/review/fix-review/config.ts) reads it.
+   * block. The fix-review operation and its `resolveFixReviewModel` helper were
+   * deleted with C1 wave B2b-2 (US-001/US-003 of pipeline-review-delete), so
+   * nothing reads this today; the config surface is reconciled in a later wave.
    */
   fixReview: import("../config/selectors").FixReviewConfig;
   /** Parsed oscillation + cross-attempt review-recurrence circuit-breaker configuration. */
@@ -366,7 +354,8 @@ export interface ReviewConfig {
  *
  * Without this, the two shapes can silently diverge — which they already had:
  * `SemanticReviewConfig.acRegroundOnDrop` existed here and was read
- * unconditionally by `src/operations/semantic-review.ts`, but the schema had
+ * unconditionally by the pipeline semantic review op (deleted with C1 wave
+ * B2b-2), but the schema had
  * no such field, so it was always `undefined` at runtime and the knob could
  * never be disabled via config (fixed alongside this guard, see
  * schemas-review.ts). This assertion fails `bun run typecheck` the moment

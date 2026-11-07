@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  adversarialReviewOp,
   fullSuiteRectifyOp,
   implementerOp,
   implementerRectifyOp,
@@ -38,7 +37,6 @@ describe("file-mutating ops declare Delete and Git", () => {
 describe("read-only ops gain neither", () => {
   test.each([
     ["verifier", verifierOp],
-    ["adversarial-review", adversarialReviewOp],
     ["plan", planInteractiveOp],
   ] as const)("%s does not declare Delete", (_name, op) => {
     expect(op.tools ?? []).not.toContain("Delete");

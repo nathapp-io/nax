@@ -1,5 +1,5 @@
 /**
- * Shared diff utilities for review runners (semantic + adversarial).
+ * Shared diff utilities for review runners.
  *
  * Extracted from semantic.ts to avoid duplication.
  * BUG-114 ref fallback chain lives here as resolveEffectiveRef().
@@ -8,10 +8,9 @@
 import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
-import { isTestFile } from "../test-runners";
 import { GIT_TIMEOUT_MS, getMergeBase, isGitRefValid } from "../utils/git";
 import { NAX_OWNED_REVIEW_EXCLUDE_PATHSPECS } from "../utils/nax-owned-paths";
-import { filterNaxInternalPaths, type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
+import { type NaxIgnoreIndex, resolveNaxIgnorePatterns } from "../utils/path-filters";
 
 /** Maximum diff size in bytes before truncation. 50KB keeps prompts within LLM context. */
 export const DIFF_CAP_BYTES = 51_200;
@@ -103,74 +102,18 @@ async function runGitWithTimeout(
   return { stdout, stderr, exitCode: result.code };
 }
 
-export interface TestInventory {
-  addedTestFiles: string[];
-  newSourceFilesWithoutTests: string[];
-}
-
 /**
  * Build the shared `git diff` args (argv after `git`, which
- * `runGitWithTimeout` prepends) for the story-range collectors below.
+ * `runGitWithTimeout` prepends) for the story-range collector below.
  *
- * All four converge on the same shape and deliberately omit `--relative`: the
- * agent's file tools are repo-rooted after the single-frame redesign, so
- * repo-root-relative paths are read directly. Each collector's own cwd
- * (`workdir` — still the package dir for a package story) scopes the bare
- * `-- .` pathspec, exactly the convention `collectDiffFileList` always used.
- * `excludePathspecs` ride as trailing `:!` pathspec exclusions.
+ * It deliberately omits `--relative`: the agent's file tools are repo-rooted
+ * after the single-frame redesign, so repo-root-relative paths are read
+ * directly. The collector's own cwd (`workdir` — still the package dir for a
+ * package story) scopes the bare `-- .` pathspec. `excludePathspecs` ride as
+ * trailing `:!` pathspec exclusions.
  */
 function buildDiffArgv(flags: readonly string[], ref: string, excludePathspecs: readonly string[] = []): string[] {
   return ["diff", ...flags, `${ref}..HEAD`, "--", ".", ...excludePathspecs];
-}
-
-/**
- * Collect git diff for the story range.
- * excludePatterns: pathspec exclusions (e.g. test files for semantic). Pass [] for adversarial (sees all).
- * Always excludes .nax/ and .nax-pids regardless of caller config.
- */
-export async function collectDiff(
-  workdir: string,
-  storyGitRef: string,
-  excludePatterns: string[],
-  options?: DiffIgnoreOptions,
-): Promise<string | null> {
-  const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
-  const merged = [...new Set([...excludePatterns, ...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
-  // BUG-31: route through runGitWithTimeout — a wedged git (NFS / lock
-  // contention) must not stall the review stage indefinitely.
-  // No `--relative`: the agent's file tools are repo-rooted post-single-frame
-  // redesign, so repo-root-relative paths are read directly. The collector's own
-  // cwd (`workdir`, still the package dir) scopes the bare `-- .` pathspec —
-  // the same no-`--relative` convention collectDiffFileList already used.
-  const { stdout, stderr, exitCode } = await runGitWithTimeout(
-    buildDiffArgv(["--unified=3"], storyGitRef, merged),
-    workdir,
-  );
-
-  if (exitCode !== 0) {
-    getSafeLogger()?.warn("diff-utils", "git diff failed — skipping review diff", { storyGitRef, stderr });
-    return null;
-  }
-  return stdout;
-}
-
-/**
- * Collect git diff --stat summary (all files including tests — for context).
- * Used as a preamble when the full diff is truncated so the reviewer
- * always knows which files changed even if content is cut off.
- */
-export async function collectDiffStat(
-  workdir: string,
-  storyGitRef: string,
-  options?: DiffIgnoreOptions,
-): Promise<string> {
-  const naxIgnoreExcludes = await resolveNaxIgnorePathspecExcludes(workdir, options);
-  const merged = [...new Set([...naxIgnoreExcludes, ...ALWAYS_EXCLUDED])];
-  // BUG-31: route through runGitWithTimeout — same convention as collectDiff.
-  // No `--relative` — shares collectDiffFileList's repo-rooted convention.
-  const { stdout, exitCode } = await runGitWithTimeout(buildDiffArgv(["--stat"], storyGitRef, merged), workdir);
-
-  return exitCode === 0 ? stdout.trim() : "";
 }
 
 /**
@@ -225,91 +168,6 @@ export async function resolveEffectiveRef(
   return undefined;
 }
 
-/** Default suffix-strip regexes when no testFilePatterns are configured. */
-const DEFAULT_SUFFIX_STRIPPERS = [/\.(test|spec)\.(ts|js|tsx|jsx)$/, /_test\.go$/];
-
-/**
- * Build regexes that strip test suffixes from basenames.
- * Derived from the glob patterns (suffix after last `*`), falling back to defaults.
- */
-function buildSuffixStrippers(testFilePatterns?: readonly string[]): RegExp[] {
-  if (!testFilePatterns || testFilePatterns.length === 0) return DEFAULT_SUFFIX_STRIPPERS;
-  const regexes: RegExp[] = [];
-  for (const pattern of testFilePatterns) {
-    const lastStar = pattern.lastIndexOf("*");
-    if (lastStar === -1) continue;
-    const suffix = pattern.slice(lastStar + 1);
-    if (suffix.length > 0) {
-      regexes.push(new RegExp(`${suffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
-    }
-  }
-  return regexes.length > 0 ? regexes : DEFAULT_SUFFIX_STRIPPERS;
-}
-
-/** Strip the first matching test suffix from a basename, returning the source basename. */
-function stripTestSuffix(base: string, strippers: RegExp[]): string {
-  for (const re of strippers) {
-    const stripped = base.replace(re, "");
-    if (stripped !== base) return stripped;
-  }
-  return base;
-}
-
-/**
- * Classify added files in the story's diff into test files vs source files without tests.
- * Used by adversarial review (embedded mode) to pre-compute a TestInventory for the prompt.
- *
- * Detection heuristics:
- * - Test file: path matches configured testFilePatterns (ADR-009), falling back to defaults.
- * - Source file without test: new source file whose basename has no matching test file in the added set.
- *
- * @param testFilePatterns - Configured test file globs (ADR-009). Falls back to DEFAULT_TEST_FILE_PATTERNS.
- */
-export async function computeTestInventory(
-  workdir: string,
-  storyGitRef: string,
-  testFilePatterns?: readonly string[],
-  options?: DiffIgnoreOptions,
-): Promise<TestInventory> {
-  // No `--relative` — shares collectDiffFileList's repo-rooted convention; the
-  // bare `-- .` pathspec scopes to this collector's cwd (`workdir`).
-  const { stdout, exitCode } = await runGitWithTimeout(
-    buildDiffArgv(["--name-only", "--diff-filter=A"], storyGitRef),
-    workdir,
-  );
-
-  if (exitCode !== 0) {
-    return { addedTestFiles: [], newSourceFilesWithoutTests: [] };
-  }
-
-  const addedFiles = stdout.trim().split("\n").filter(Boolean);
-  const ignoreMatchers =
-    options?.naxIgnoreIndex?.getMatchers(options.packageDir) ??
-    (await resolveNaxIgnorePatterns(workdir, options?.packageDir));
-  const visibleAddedFiles = filterNaxInternalPaths(addedFiles, ignoreMatchers);
-
-  const addedTestFiles = visibleAddedFiles.filter((f) => isTestFile(f, testFilePatterns));
-  const addedSourceFiles = visibleAddedFiles.filter((f) => !isTestFile(f, testFilePatterns));
-
-  // For each added source file, check whether a matching test file was also added.
-  // Match by basename: src/foo/bar.ts → looks for bar.test.ts, bar.spec.ts in addedFiles.
-  // Suffixes are derived from testFilePatterns so custom patterns (e.g. *.integration.ts) normalize correctly.
-  const suffixStrippers = buildSuffixStrippers(testFilePatterns);
-  const testFileBasenames = new Set(
-    addedTestFiles.map((f) => {
-      const base = f.split("/").at(-1) ?? f;
-      return stripTestSuffix(base, suffixStrippers);
-    }),
-  );
-
-  const newSourceFilesWithoutTests = addedSourceFiles.filter((f) => {
-    const base = (f.split("/").at(-1) ?? f).replace(/\.(ts|js|tsx|jsx|go)$/, "");
-    return !testFileBasenames.has(base);
-  });
-
-  return { addedTestFiles, newSourceFilesWithoutTests };
-}
-
 /**
  * Collect the list of file paths modified between `storyGitRef` and HEAD.
  *
@@ -317,9 +175,9 @@ export async function computeTestInventory(
  * declared sources. Returns `undefined` on git failure so callers can degrade
  * rather than treat "git failed" as "nothing changed".
  *
- * DELIBERATELY WITHOUT `--relative`, the convention all four collectors above
- * now share. Those feed the AGENT, whose file tools are repo-rooted after the
- * single-frame redesign. This one feeds `scopeFiles`, which is repo-rooted by
+ * DELIBERATELY WITHOUT `--relative`, the convention the review collectors
+ * shared. It feeds the AGENT, whose file tools are repo-rooted after the
+ * single-frame redesign, and `scopeFiles`, which is repo-rooted by
  * the path-frame convention (nax#2071), so repo-rooted output is the correct
  * spelling and the caller frames the declared side to match. The `-- .`
  * pathspec already restricts output to the cwd subtree, so `--relative` would

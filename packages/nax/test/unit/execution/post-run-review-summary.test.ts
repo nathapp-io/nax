@@ -4,9 +4,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { applyReviewsFailedOpen, sumReviewsFailedOpen } from "@/execution/post-run-review-summary";
+import { sumReviewsFailedOpen } from "@/execution/post-run-review-summary";
 import type { StoryMetrics } from "@/metrics/types";
-import type { PipelineContext } from "@/pipeline/types";
 
 function makeStoryMetrics(overrides: Partial<StoryMetrics> = {}): StoryMetrics {
   return {
@@ -26,35 +25,18 @@ function makeStoryMetrics(overrides: Partial<StoryMetrics> = {}): StoryMetrics {
   };
 }
 
-describe("applyReviewsFailedOpen", () => {
-  test("counts a fail-opened semantic-review phase", () => {
-    const ctx = {} as PipelineContext;
-    applyReviewsFailedOpen(ctx, { "semantic-review": { success: true, failOpen: true } });
-    expect(ctx.reviewsFailedOpen).toBe(1);
+describe("applyReviewsFailedOpen removal (US-001 pipeline-review-delete)", () => {
+  test("the module no longer exports applyReviewsFailedOpen", async () => {
+    // The function's only caller went with the pipeline story loop (B2b-1), so
+    // this wave deletes it. Read the module namespace dynamically: a static
+    // import of a removed name would be a compile error, not a failing test.
+    const summary = await import("@/execution/post-run-review-summary");
+    expect(Object.keys(summary)).not.toContain("applyReviewsFailedOpen");
   });
 
-  test("counts both semantic and adversarial fail-opens", () => {
-    const ctx = {} as PipelineContext;
-    applyReviewsFailedOpen(ctx, {
-      "semantic-review": { success: true, failOpen: true },
-      "adversarial-review": { success: true, failOpen: true },
-    });
-    expect(ctx.reviewsFailedOpen).toBe(2);
-  });
-
-  test("leaves ctx.reviewsFailedOpen unset when neither review fail-opened", () => {
-    const ctx = {} as PipelineContext;
-    applyReviewsFailedOpen(ctx, {
-      "semantic-review": { success: true },
-      "adversarial-review": { success: true },
-    });
-    expect(ctx.reviewsFailedOpen).toBeUndefined();
-  });
-
-  test("leaves ctx.reviewsFailedOpen unset when the review phases are absent", () => {
-    const ctx = {} as PipelineContext;
-    applyReviewsFailedOpen(ctx, {});
-    expect(ctx.reviewsFailedOpen).toBeUndefined();
+  test("the module still exports sumReviewsFailedOpen", async () => {
+    const summary = await import("@/execution/post-run-review-summary");
+    expect(Object.keys(summary)).toContain("sumReviewsFailedOpen");
   });
 });
 

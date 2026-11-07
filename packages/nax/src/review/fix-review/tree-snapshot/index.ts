@@ -14,10 +14,8 @@
  *   snapshot a tree that already holds staged changes.
  * - `changedPathsBetween` — repo-root-relative paths that differ between two
  *   tree-ishes, with no rename detection.
- * - `diffBetween` — unified diff between two tree-ishes, excluding paths under
- *   `.nax/`.
- * - All three throw `NaxError` with code `FIX_REVIEW_GIT_FAILED` on a non-zero
- *   git exit, so an empty result can never mean "git failed".
+ * - Both throw `NaxError` with code `FIX_REVIEW_GIT_FAILED` on a non-zero git
+ *   exit, so an empty result can never mean "git failed".
  */
 
 import { mkdtemp, rm } from "node:fs/promises";
@@ -26,13 +24,6 @@ import { join } from "node:path";
 import { gitlinkSafeAdd, gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { type SpawnOptions, type SpawnResult, typedSpawn } from "@/utils/bun-deps";
-
-/**
- * `diffBetween` pathspecs: the whole tree, minus every `.nax/` directory. All
- * three are anchored at the repo top (`:/`, `top` magic), so the diff is the
- * same whatever the cwd, matching the repo-wide `changedPathsBetween`.
- */
-const DIFF_PATHSPECS = [":/", ":(top,exclude).nax", ":(top,glob,exclude)**/.nax/**"] as const;
 
 /** A git object id: 40 hex (SHA-1) or 64 hex (SHA-256 repositories). */
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -225,19 +216,4 @@ export async function changedPathsBetween(workdir: string, from: string, to: str
   // An empty stdout means `from` and `to` describe the same tree — NOT "git
   // failed"; the non-zero exit above already covers that case.
   return result.stdout.split("\0").filter((path) => path.length > 0);
-}
-
-/**
- * Unified diff between two tree-ishes, excluding every `.nax/` directory.
- *
- * Repo-wide like `changedPathsBetween`, so the diff the reviewer reads covers
- * exactly the files the scope check judged. A cwd-scoped diff from a package
- * workdir would hide an out-of-package change the scope check had allowed.
- */
-export async function diffBetween(workdir: string, from: string, to: string): Promise<string> {
-  const stage = "fix-review-diff";
-  const args = ["diff", from, to, "--", ...DIFF_PATHSPECS];
-  const result = await runGit(args, workdir);
-  if (result.exitCode !== 0) gitFailed(stage, args, workdir, result.stderr.trim() || `exit ${result.exitCode}`);
-  return result.stdout;
 }

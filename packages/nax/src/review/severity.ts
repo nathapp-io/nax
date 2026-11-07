@@ -1,6 +1,11 @@
 /**
  * Shared severity rank table for review helpers.
- * Single source of truth used by both semantic-helpers.ts and adversarial-helpers.ts.
+ *
+ * Single source of truth for the severity vocabulary the review domain reads.
+ * The semantic/adversarial producer helpers it once shared with
+ * (`src/review/{semantic,adversarial}-helpers.ts`) were deleted with the
+ * pipeline review operations in C1 wave B2b-2; `@/review` still exports this
+ * table and the two helpers below for the consumers that remain.
  */
 
 import type { FindingSeverity } from "../findings";
@@ -34,10 +39,12 @@ export function isBlockingSeverity(sev: string, threshold: "error" | "warning" |
  * Normalize an LLM-emitted severity string to the canonical `FindingSeverity`
  * vocabulary (BUG-2). Case-insensitive, synonym-mapped, and fail-closed: an
  * unrecognized value maps to `error` rather than the advisory `info`, because
- * unfounded promotions are caught downstream by evidence gating
- * (`finding-filters.ts`'s HEAD-verification downgrade and the `acIndex`
+ * unfounded promotions used to be caught downstream by evidence gating
+ * (`review/finding-filters.ts`'s HEAD-verification downgrade and the `acIndex`
  * requirement on `error` findings) — silently demoting an unrecognized
- * severity to advisory is not similarly caught.
+ * severity to advisory was not similarly caught. That downstream gate went
+ * with the pipeline review operations (C1 wave B2b-2), so the fail-closed
+ * direction is now the only guard: keep it.
  */
 export function normalizeSeverity(sev: string): FindingSeverity {
   const s = sev.trim().toLowerCase();

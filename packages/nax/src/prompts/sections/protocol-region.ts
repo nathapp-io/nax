@@ -9,12 +9,11 @@
  * is the worse failure and the harder one to notice.
  *
  * Why the marker carries a per-process nonce: a prompt is not all trusted
- * text. `buildPriorIterationsBlock` splices LLM-authored findings from earlier
- * iterations into the same string, ahead of the region, and an embedded diff
- * can carry the contents of any file in the repository. Without a nonce, one
- * forged opener in that content captures everything up to the genuine close
- * — deleting the genuine region's body and substituting an attacker-chosen
- * spec. Content cannot forge a marker it cannot predict.
+ * text. Prompts can carry LLM-authored findings from earlier iterations,
+ * and an embedded diff can carry the contents of any file in the repository.
+ * Without a nonce, one forged opener in that content captures everything up
+ * to the genuine close — deleting the genuine region's body and substituting
+ * an attacker-chosen spec. Content cannot forge a marker it cannot predict.
  *
  * Why one marker grammar for every kind, with `kind` inside the marker: a
  * placeholder would have to be aware of every affordance's syntax, and the
@@ -50,7 +49,7 @@ function diffCall(ref: string, paths: readonly string[] | undefined, extra: Reco
   });
 }
 
-/** Native renderer for the diff-access registry entry and legacy adapter. */
+/** Native renderer for the diff-access registry entry. */
 export function renderNative(spec: DiffAccessSpec): string {
   const lines = [
     "## Diff Access",
@@ -110,10 +109,7 @@ export function renderNative(spec: DiffAccessSpec): string {
  *  produces an opener that REGION can never read. */
 const KIND_PATTERN = /^[a-z][a-z-]*$/;
 
-/** Per-process nonce. Re-exported here so `wrapAffordance` and
- *  `applyProtocolRegions` produce markers with the same nonce as
- *  `wrapDiffAccess`. Both entry points can then substitute each other's
- *  regions in the same process. */
+/** Per-process nonce shared by marker production and substitution. */
 export const NONCE = randomUUID().slice(0, 8);
 
 /** Every registered kind's opener begins with this prefix — the single

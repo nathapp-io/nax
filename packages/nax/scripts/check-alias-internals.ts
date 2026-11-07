@@ -13,7 +13,7 @@
  * the parent barrel — typically because the barrel closes an import cycle —
  * promote it to its own nested barrel (`x.ts` -> `x/index.ts`). An exact barrel
  * match such as `@/review/runner` is legal; an internal path is not. See
- * `src/review/{runner,semantic-categories}` and `src/execution/{helpers,story-context}`.
+ * `src/review/runner` and `src/execution/{helpers,story-context}`.
  *
  * NOTE: an earlier version of this comment claimed alias-internal imports
  * "fragment singletons across Bun's module registry (BUG-035)". That is not

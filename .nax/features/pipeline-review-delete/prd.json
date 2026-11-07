@@ -1,0 +1,449 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-review-delete",
+  "branchName": "feat/pipeline-review-delete",
+  "createdAt": "2026-11-07T00:00:00.000Z",
+  "updatedAt": "2026-11-07T06:02:45.222Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Delete the review operations",
+      "description": "**Goal** — Remove the unreachable pipeline review operations, fix-review runner, and applyReviewsFailedOpen without changing run-summary aggregation.\n\n**Motivation** — Their last reference outside their own tests is `applyReviewsFailedOpen` (`execution/post-run-review-summary.ts:16`), which lost its only caller in B2b-1 and was left for this wave.\n\n**Approach** — Removal only, importer-first, in three layers: the operations first, then the prompt builders the operations imported, then the review leaves both imported. Every story leaves a tree that compiles and passes the suite. No story adds a feature or changes a workflow-mode result.\n\n### Part 1: the review operations (US-001)\n\n| Site | After |\n|:---|:---|\n| `operations/index.ts:2-3` | the `adversarial-review` type and value re-exports go |\n| `operations/index.ts:57-58` | the `fix-review` type and value re-exports go |\n| `operations/index.ts:97-105` | the `nbf-worth-check` and `nbf-worth-check-audit` type and value re-exports go |\n| `operations/index.ts:123-124` | the `semantic-review` type and value re-exports go |\n| `execution/post-run-review-summary.ts` | `applyReviewsFailedOpen` (`:15-26`), its `../operations` and `PipelineContext` imports (`:12-13`) and the doc-comment sentence about it (`:7-8`) go; `sumReviewsFailedOpen` is unchanged |\n| `test/helpers/index.ts:195` | the `review-outputs` re-export goes with the helper |\n\nDeleted: `operations/semantic-review.ts`, `adversarial-review.ts`, `adversarial-requote.ts`, `adversarial-reprompt-marker.ts`, `_review-fallback.ts`, `fix-review.ts`, `nbf-worth-check.ts`, `nbf-worth-check-audit.ts`, and `review/fix-review/run/index.ts`.\n\nAll source deletion paths above are below packages/nax/src/, with the operation siblings under operations/. First cut the barrel and applyReviewsFailedOpen importers, then delete these nine source files.\n\nTest deletions, all below packages/nax/test/: unit/operations/semantic-review.test.ts, semantic-review-reground.test.ts, semantic-review-verify.test.ts, adversarial-review.test.ts, adversarial-review-reground.test.ts, adversarial-review-reground-cost.test.ts, adversarial-review-requote.test.ts, adversarial-review-verify.test.ts, adversarial-advisory-findings.test.ts, recurrence-stamps.test.ts, reviewer-verdict-invariant.test.ts, reviewer-tools.test.ts, fix-review.test.ts, and nbf-worth-check.test.ts (all preceding sibling names are under unit/operations/); unit/review/adversarial-retry-truncation.test.ts, unit/review/audit-shape.test.ts, unit/review/fix-review/run.test.ts, unit/review/surviving-review-helpers.test.ts; helpers/review-outputs.ts. The surviving-review-helpers test is deleted now because it imports adversarial-reprompt-marker, although its other helpers are removed only in US-003.\n\nMixed-test edits: in test/unit/operations/bash-declarations.test.ts remove only the adversarial-review and semantic-review imports and rows in 'ops that may hold Bash'; in tool-declarations.test.ts remove only the adversarial-review import and row in 'read-only ops gain neither'; in timeout-resolvers.test.ts remove the semanticReviewOp and adversarialReviewOp timeout tests/imports while retaining planInteractiveOp and decomposeOp assertions. In test/unit/execution/post-run-review-summary.test.ts remove only the applyReviewsFailedOpen describe/imports and retain the sumReviewsFailedOpen assertions. Remove the helpers/index.ts review-outputs re-export with its helper.\n\nApply the shared four-step verification protocol in analysis, including per-deleted-source/test path sweeps and stale-comment cleanup. Update scripts/baselines/complexity-baseline.json via bun run check:complexity:update, remove deleted-source coverage entries and deleted-test escape-hatch entries, and lower the file-size baseline only if reported. Keep every other baseline threshold.\n\n**Scope** — In: the nine listed source deletions, operation/helper export cuts, the applyReviewsFailedOpen removal, associated test deletions/trims and baseline cleanup. Out: US-002's prompt builders and adapter; US-003's review leaves and retained-helper reductions. Do not remove configuration keys/selectors or deleted-operation/role strings from registries; later waves own those. Workflow review and sumReviewsFailedOpen remain unchanged.\n\n**Interface** — Existing read-only integration signature from the spec: `sumReviewsFailedOpen(allStoryMetrics: readonly StoryMetrics[]): number | undefined` (`execution/post-run-review-summary.ts:33`). No new externally-visible symbol. This story only removes exports.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: sumReviewsFailedOpen, imported from @/execution/post-run-review-summary, returns 3 when given two story metrics whose reviewsFailedOpen values are 1 and 2.",
+        "[unit] Regression guard: sumReviewsFailedOpen, imported from @/execution/post-run-review-summary, returns undefined when given story metrics with no reviewsFailedOpen.",
+        "[unit] Negative-path regression guard: sumReviewsFailedOpen([]) returns undefined rather than zero when no story metrics are available."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "review",
+        "operations"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "no-test",
+        "reasoning": "The nine source deletions plus barrels, mixed tests, helpers, and baselines justify complex coordination, but all reachable behavior is preserved, making no-test lighter and more realistic than a three-session TDD cycle for dead-code deletion.",
+        "noTestJustification": "Pure structural removal of unreachable pipeline code; sumReviewsFailedOpen and its empty/absent-metric behavior remain unchanged and already have regression tests. Retain/adapt those tests and perform the mandatory suite and path sweeps; no new runtime behavior requires a failing-test implementation cycle.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/index.ts",
+        "packages/nax/src/execution/post-run-review-summary.ts",
+        "packages/nax/test/unit/operations/bash-declarations.test.ts",
+        "packages/nax/test/unit/execution/post-run-review-summary.test.ts",
+        "packages/nax/test/helpers/index.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/semantic-review.test.ts",
+          "reason": "tests only src/operations/semantic-review.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/semantic-review-reground.test.ts",
+          "reason": "tests only semanticReviewOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/semantic-review-verify.test.ts",
+          "reason": "tests only semanticReviewOp.verify, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/adversarial-review.test.ts",
+          "reason": "tests only src/operations/adversarial-review.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/adversarial-review-reground.test.ts",
+          "reason": "tests only adversarialReviewOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/adversarial-review-reground-cost.test.ts",
+          "reason": "tests only adversarialReviewOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/adversarial-review-requote.test.ts",
+          "reason": "tests only adversarialReviewOp and src/operations/adversarial-requote.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/adversarial-review-verify.test.ts",
+          "reason": "tests only adversarialReviewOp.verify, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/adversarial-advisory-findings.test.ts",
+          "reason": "tests only adversarialReviewOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/recurrence-stamps.test.ts",
+          "reason": "tests recurrence stamping through semanticReviewOp and adversarialReviewOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/reviewer-verdict-invariant.test.ts",
+          "reason": "tests only the semantic and adversarial review ops, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/reviewer-tools.test.ts",
+          "reason": "tests only the tool lists of semanticReviewOp, adversarialReviewOp and fixReviewOp, all deleted by this story; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/fix-review.test.ts",
+          "reason": "tests only src/operations/fix-review.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/nbf-worth-check.test.ts",
+          "reason": "tests only src/operations/nbf-worth-check.ts (parseNbfWorthReply and nbfWorthCheckOp), which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/adversarial-retry-truncation.test.ts",
+          "reason": "drives adversarialReviewOp, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/review/audit-shape.test.ts",
+          "reason": "drives semanticReviewOp.verify and adversarialReviewOp.verify, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/review/fix-review/run.test.ts",
+          "reason": "tests only runFixReview from src/review/fix-review/run/index.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/review/surviving-review-helpers.test.ts",
+          "reason": "imports src/operations/adversarial-reprompt-marker.ts, which this story deletes, and otherwise tests only review helper modules US-003 deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/review-outputs.ts",
+          "reason": "makeAdversarialOutput and makeSemanticOutput build outputs typed by src/operations/adversarial-review.ts and src/operations/semantic-review.ts, which this story deletes, and no test imports them; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the review-outputs re-export (line 195) goes with the helper."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/bash-declarations.test.ts",
+          "reason": "the rows for \"adversarial-review\" and \"semantic-review\" in the \"ops that may hold Bash\" table (lines 34 and 35) and their imports go, because this story deletes both ops; the other rows keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/tool-declarations.test.ts",
+          "reason": "the \"adversarial-review\" row in \"read-only ops gain neither\" (line 41) and its import go, because this story deletes the op; the other rows keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/timeout-resolvers.test.ts",
+          "reason": "the tests \"semanticReviewOp timeoutMs resolves from semanticConfig.timeoutMs input\" (line 88) and \"adversarialReviewOp timeoutMs resolves from adversarialConfig.timeoutMs input\" (line 115) and their imports go, because this story deletes both ops; the planInteractiveOp and decomposeOp tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/post-run-review-summary.test.ts",
+          "reason": "the describe \"applyReviewsFailedOpen\" (line 29) and its imports go, because this story removes the function; the describe \"sumReviewsFailedOpen\" keeps its assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/coverage-per-file-baseline.json",
+          "reason": "entries for source files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cddcef923ceff638a4027ea46822701c0bec0c52"
+    },
+    {
+      "id": "US-002",
+      "title": "Delete the review prompt builders and the diff-access adapter",
+      "description": "**Goal** — Remove five pipeline review prompt builders and the legacy diff-access adapter, preserving the existing live protocol renderer through equivalent fixtures.\n\n**Motivation** — Workflow review does not use any of this.\n\n**Approach** — Removal only, importer-first, in three layers: the operations first, then the prompt builders the operations imported, then the review leaves both imported. Every story leaves a tree that compiles and passes the suite. No story adds a feature or changes a workflow-mode result.\n\n### Part 2: the review prompt builders and the diff-access adapter (US-002)\n\n| Site | After |\n|:---|:---|\n| `prompts/index.ts:19-21` | the `adversarial-review-builder` re-exports (`AdversarialReviewPromptOptions`, `TestInventory`, `AdversarialReviewPromptBuilder`) and their comment go |\n| `prompts/index.ts:23`, `:62-63`, `:75-76`, `:87`, `:95-97` | the `fix-review-builder`, `nbf-worth-check-builder`, `prior-iterations-builder` and `review-builder` re-exports and their comments go, including the stray \"Fix-review prompt builder\" comment at `:23` above the `advisor-builder` export |\n| `prompts/index.ts:183-184` | re-exports only `buildOutOfScopeLines` from `./sections`; the comment above it no longer mentions the reviewer prompts |\n| `prompts/sections/index.ts:17` | re-exports only `buildOutOfScopeLines` from `./out-of-scope` |\n| `prompts/sections/out-of-scope.ts` | `buildReviewOutOfScopeBlock` (`:43` onward) and the doc comments that describe the review block go; `buildOutOfScopeLines` is unchanged |\n\nDeleted: `prompts/builders/review-builder.ts`, `adversarial-review-builder.ts`, `fix-review-builder.ts`, `nbf-worth-check-builder.ts`, `prior-iterations-builder.ts`, and `prompts/sections/diff-access.ts`.\n\n`diff-access.ts` is the legacy adapter: `wrapDiffAccess(spec, body)` returns `wrapAffordance(\"diff-access\", spec, body)` and `applyDiffAccess` calls `applyProtocolRegions`, both from `prompts/sections/protocol-region.ts`. Only the deleted review builders produced diff-access regions in production. The `diff-access` entry in the protocol-region registry, its native renderer and `applyDiffAccessForAgentProtocol` (`agents/tool-preamble.ts`) stay. Kept tests that built a diff-access fixture with `wrapDiffAccess` build it with `wrapAffordance(\"diff-access\", spec, body)` imported from `@/prompts/sections`, which yields the same bytes, so their assertions on the live renderer keep their meaning.\n\nAll deletion paths are below packages/nax/src/; the builder sibling names are under prompts/builders/. Cut the exports and review-only scope block and migrate retained tests before removing the six source files. Keep the live advisor builder export despite its adjacent obsolete comment.\n\nTest deletions below packages/nax/test/: unit/prompts/review-builder.test.ts and unit/prompts/__snapshots__/review-builder.test.ts.snap; unit/prompts/adversarial-review-builder.test.ts, unit/prompts/diff-access.test.ts, unit/prompts/review-diff-frame-ssot.test.ts, unit/prompts/sections/diff-access-gating.test.ts; unit/prompts/builders/fix-review-builder.test.ts, nbf-worth-check-builder.test.ts, prior-iterations-builder.test.ts, and prior-iterations-builder-token-guard.test.ts (the last four are all under unit/prompts/builders/).\n\nMixed-test edits below packages/nax/test/: in unit/prompts/sections/out-of-scope.test.ts remove only buildReviewOutOfScopeBlock's describe/import and retain buildOutOfScopeLines assertions. In unit/prompts/sections/protocol-region.test.ts remove the describe 'cross-entry seam with the retained diff-access adapter', its preceding legacy comment block, the applyDiffAccess/wrapDiffAccess imports, and nonceFromMarker plus its doc comment; reword the header reference to the deleted diff-access.test.ts and keep every other describe's assertions. In unit/agents/tool-preamble.test.ts replace the wrapDiffAccess fixture with wrapAffordance(\"diff-access\", { ref: \"abc123\", fullExclude: [\".\", \":!.nax/\"] }, \"SHELL BODY\\n\"), importing wrapAffordance from @/prompts/sections, and retain all existing native/ACP/gating assertions. Exercise the exact acceptance prompt with fullExclude:[\".\"] as well. In unit/operations/build-hop-callback-diff-access.test.ts convert EVERY wrapDiffAccess fixture call to wrapAffordance(\"diff-access\", spec, body), preserving the original spec/body arguments and assertions; current code has calls at lines 49, 391, 404, 450, and 482. Convert the unit/runtime/session-run-hop.test.ts fixture at line 572 likewise. These are fixture changes, not changes to dispatch or session lifecycle.\n\nIn unit/operations/run-operation-retry.test.ts, the tests 'op.retry runs all attempts in a single session (Phase A same-session regression)' and 'cost is summed across retry attempts via sendWithParseRetry' must no longer depend on ReviewPromptBuilder or validateLLMShape. Each validate callback becomes a local check that the parsed value is an object with a boolean passed field, and each retry prompt becomes a local string constant; the assertions stay unchanged. Remove those imports now so US-003 can delete semantic-helpers without breaking this kept test.\n\nApply the shared four-step verification protocol in analysis, including path sweeps for every removed source/test/snapshot and stale-comment cleanup. Update complexity, deleted-source coverage, deleted-test escape-hatch baselines, and lower file sizes only when reported.\n\n**Scope** — In: the six source deletions, review-only scope block and export removal, retained-fixture migrations, deleted-builder/adapter tests, and baselines. Out: US-001's operations, already removed; US-003's review leaves, diff-utils reductions, and AC-quote validator deletion. Keep the diff-access affordance kind, native renderer, applyProtocolRegions, applyDiffAccessForAgentProtocol, buildOutOfScopeLines, workflow review builders, bot PR review builder, and retry/session algorithms unchanged.\n\n**Interface** — Existing integration signatures verbatim from the spec: `wrapAffordance(kind: string, spec: unknown, acpBody: string): string` and `applyProtocolRegions(prompt: string, options)` (`prompts/sections/protocol-region.ts`), exported from `@/prompts/sections`; `applyDiffAccessForAgentProtocol(agentName, prompt, advertisedTools)` (`agents/tool-preamble.ts`). Target: exports `buildOutOfScopeLines` and no review block builder. No new externally-visible symbol. Each story only removes exports. US-002 switches kept tests from `wrapDiffAccess` to the existing `wrapAffordance`, and its AC drives `applyDiffAccessForAgentProtocol`, the function the agent preamble calls on every dispatched prompt.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: applyDiffAccessForAgentProtocol(\"native\", prompt, [\"Git\", \"Read\"]), where prompt is \"head\\n\" + wrapAffordance(\"diff-access\", { ref: \"abc123\", fullExclude: [\".\"] }, \"SHELL BODY\\n\") + \"tail\" with wrapAffordance imported from @/prompts/sections, returns text that names abc123 and contains neither SHELL BODY nor nax:diff-access.",
+        "[unit] Regression guard: applyDiffAccessForAgentProtocol(\"claude\", prompt, [\"Git\", \"Read\"]), where prompt is \"head\\n\" + wrapAffordance(\"diff-access\", { ref: \"abc123\", fullExclude: [\".\"] }, \"SHELL BODY\\n\") + \"tail\" with wrapAffordance imported from @/prompts/sections, returns exactly \"head\\nSHELL BODY\\ntail\".",
+        "[unit] Negative-path regression guard: applyDiffAccessForAgentProtocol(\"native\", prompt, [\"Read\"]) returns exactly \"head\\nSHELL BODY\\ntail\" when prompt is \"head\\n\" + wrapAffordance(\"diff-access\", { ref: \"abc123\", fullExclude: [\".\"] }, \"SHELL BODY\\n\") + \"tail\", preserving the existing ACP-body fallback when Git is not advertised."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "review",
+        "prompts",
+        "protocol-regions"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "no-test",
+        "reasoning": "Six source deletions and multiple retained prompt/dispatch fixtures require complex cross-module coordination, while byte-equivalent fixture substitution and unchanged live rendering make no-test appropriate; no session implementation or access-control policy is changed.",
+        "noTestJustification": "Pure structural deletion of unreachable prompt builders and a redundant adapter. wrapAffordance produces the same fixture bytes and the live renderer, dispatch helper, tool gate, retry loop, and session behavior are unchanged. Retain/adapt existing tests and assert the specified native/ACP/fallback regressions without a new-behavior TDD cycle.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/index.ts",
+        "packages/nax/src/prompts/sections/index.ts",
+        "packages/nax/src/prompts/sections/protocol-region.ts",
+        "packages/nax/src/prompts/sections/out-of-scope.ts",
+        "packages/nax/src/agents/tool-preamble.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prompts/review-builder.test.ts",
+          "reason": "tests only ReviewPromptBuilder from src/prompts/builders/review-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/__snapshots__/review-builder.test.ts.snap",
+          "reason": "the snapshot file of review-builder.test.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/adversarial-review-builder.test.ts",
+          "reason": "tests only src/prompts/builders/adversarial-review-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/diff-access.test.ts",
+          "reason": "tests only src/prompts/sections/diff-access.ts and the two review builders, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/review-diff-frame-ssot.test.ts",
+          "reason": "tests only the diff frame shared by ReviewPromptBuilder and AdversarialReviewPromptBuilder, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/diff-access-gating.test.ts",
+          "reason": "tests only applyDiffAccess and wrapDiffAccess from src/prompts/sections/diff-access.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/fix-review-builder.test.ts",
+          "reason": "tests only src/prompts/builders/fix-review-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/nbf-worth-check-builder.test.ts",
+          "reason": "tests only src/prompts/builders/nbf-worth-check-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/prior-iterations-builder.test.ts",
+          "reason": "tests only src/prompts/builders/prior-iterations-builder.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/prior-iterations-builder-token-guard.test.ts",
+          "reason": "tests only buildPriorIterationsBlock, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/out-of-scope.test.ts",
+          "reason": "the describe \"buildReviewOutOfScopeBlock\" (line 12) and its import go, because this story removes the function; the describe \"buildOutOfScopeLines\" keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/protocol-region.test.ts",
+          "reason": "the describe \"cross-entry seam with the retained diff-access adapter\" (from line 528 to its close), its preceding comment block (from line 506) the import of applyDiffAccess and wrapDiffAccess (line 24) and the nonceFromMarker helper with its doc comment (lines 25 to 33), used only by that describe, go, because they test the legacy adapter this story deletes; the header comment's sentence about diff-access.test.ts is reworded; every other describe keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/tool-preamble.test.ts",
+          "reason": "the wrapDiffAccess import (line 16) goes, because line 17 already imports wrapAffordance, and the fixture at line 105 becomes wrapAffordance(\"diff-access\", { ref: \"abc123\", fullExclude: [\".\", \":!.nax/\"] }, \"SHELL BODY\\n\"); the \"applyDiffAccessForAgentProtocol\" assertions stay unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/build-hop-callback-diff-access.test.ts",
+          "reason": "the wrapDiffAccess import (line 45) becomes an import of wrapAffordance from @/prompts/sections, and each wrapDiffAccess(spec, body) fixture call (lines 49, 391, 404, 450 and 482) becomes wrapAffordance(\"diff-access\", spec, body) with the same arguments; the assertions stay unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/session-run-hop.test.ts",
+          "reason": "the wrapDiffAccess import (line 15) becomes an import of wrapAffordance from @/prompts/sections, and the fixture at line 572 becomes wrapAffordance(\"diff-access\", spec, body) with the same arguments; the assertions stay unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/run-operation-retry.test.ts",
+          "reason": "the tests \"op.retry runs all attempts in a single session (Phase A same-session regression)\" (line 404) and \"cost is summed across retry attempts via sendWithParseRetry\" (line 461) import ReviewPromptBuilder from @/prompts, which this story deletes, and validateLLMShape from @/review, which US-003 deletes; each validate callback becomes a local check that the parsed value is an object with a boolean passed field, and each retry prompt becomes a local string constant; the assertions stay unchanged."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/coverage-per-file-baseline.json",
+          "reason": "entries for source files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5bd3a8e63f9f4ada4dbd798176f910a088063e28"
+    },
+    {
+      "id": "US-003",
+      "title": "Delete the review leaves and the AC-quote validator",
+      "description": "**Goal** — Delete seventeen pipeline-only review leaves, including the AC-quote validator, and trim explicitly named shared modules to their retained interfaces.\n\n**Motivation** — The AC-quote validator (`review/ac-quote-validator.ts`) filters semantic and adversarial findings by `acQuote` / `scopeQuote` grounding; only those two operations and their prompt builders call it.\n\n**Approach** — Removal only, importer-first, in three layers: the operations first, then the prompt builders the operations imported, then the review leaves both imported. Every story leaves a tree that compiles and passes the suite. No story adds a feature or changes a workflow-mode result.\n\n### Part 3: the review leaves (US-003)\n\n| Site | After |\n|:---|:---|\n| `review/index.ts` | the re-exports of `ac-quote-validator`, `acks`, `adversarial-helpers`, `categorization`, `category-fix-target`, `finding-filters`, `no-dispatch`, `prepare-inputs`, `recurrence-demotion`, `requote-response`, `review-iteration-store`, `semantic-categories`, `semantic-evidence` and `semantic-helpers` and their comments go; `diff-utils`, `severity`, `truncation` and `types` stay |\n| `review/fix-review/index.ts` | re-exports only `changedPathsBetween` and `snapshotWorkingTree` from `./tree-snapshot`; its doc comment describes only that |\n| `review/fix-review/tree-snapshot/index.ts` | `diffBetween` (`:237` onward), `DIFF_PATHSPECS` (`:35`) and their doc comments (`:31-34`) go, and the module header (`:14-21`) lists only `snapshotWorkingTree` and `changedPathsBetween` and says both throw; those two functions are unchanged |\n| `review/diff-utils.ts` | `collectDiff` (`:131`), `collectDiffStat` (`:162`), `TestInventory` (`:106`), `computeTestInventory` (`:268`) and its private helpers `DEFAULT_SUFFIX_STRIPPERS`, `buildSuffixStrippers` and `stripTestSuffix` (`:229-256`) go, with imports only they used; `collectDiffFileList`, `resolveEffectiveRef`, `truncateDiff`, `ALWAYS_EXCLUDED`, `DIFF_CAP_BYTES` and `_diffUtilsDeps` stay |\n| `review/types.ts` | `SemanticStory` (`:71` onward) goes |\n| `test-runners/resolver.ts`, `test-runners/index.ts:42` | `resolveReviewExcludePatterns` (`:233`) and its barrel re-export go, with the private constants only it used (`WELL_KNOWN_TEST_DIRS` `:67`, `WELL_KNOWN_TEST_SUFFIXES` `:74`, `NAX_NOISE_PATHS` `:77`) and the `extractWholeTestDirs` import (`:27`); `extractWholeTestDirs` stays exported from `test-runners/conventions.ts` |\n| `plugins/builtin/curator/heuristics.ts:9` | imports `normalizeIssueText` from `@/findings/fingerprint` instead of `@/review`: the `@/review` barrel reached it only through `review/recurrence-demotion.ts:12`, which this story deletes, and the curator is live (`commands/curator.ts`, wired in `bin/nax.ts`) |\n\nDeleted: under `review/`: `ac-quote-validator.ts`, `acks.ts`, `adversarial-helpers.ts`, `categorization.ts`, `category-fix-target.ts`, `finding-filters.ts`, `no-dispatch.ts`, `prepare-inputs.ts`, `recurrence-demotion.ts`, `requote-response.ts`, `review-iteration-store.ts`, `semantic-categories/index.ts`, `semantic-evidence.ts`, `semantic-helpers.ts`, `fix-review/config.ts`, `fix-review/scope.ts`, `fix-review/types.ts`. After this story `src/review/semantic-categories/` and `src/review/fix-review/run/` no longer exist.\n\nAll source paths above are below packages/nax/src/. Perform the barrel cuts, direct curator import, specified shared-module reductions, and retained-test fixture decoupling before deleting the seventeen leaves. The AC-quote validator is pipeline-only and is deleted, not repaired, which resolves #2822 (its carve-out test passes vacuously; the test goes with the validator). Do not broaden the deletion to other orphan declarations.\n\nTest deletions below packages/nax/test/: unit/review/ac-quote-validator.test.ts, acks.test.ts, adversarial-fixtarget.test.ts, categorization.test.ts, category-fix-target.test.ts, orchestrator-vs-reconciliation-parity.test.ts, parse-boundary-recurrence.test.ts, prepare-inputs.test.ts, recurrence-demotion.test.ts, requote-response.test.ts, review-iteration-store.test.ts, semantic-categories.test.ts, semantic-evidence.test.ts (all thirteen are under unit/review/); unit/review/fix-review/config.test.ts and unit/review/fix-review/scope.test.ts; integration/review/diff-path-convention.test.ts. Remove the validator's entire test file, including the vacuous carve-out case.\n\nMixed-test edits below packages/nax/test/: in unit/review/fix-review/index-exports.test.ts remove only the unified-diff, deterministic-scope, and model-resolution re-export tests/import references; keep snapshot/changed-path function assertions and reword the header. In integration/review/diff-always-excluded.test.ts remove the two collectDiff tests, the collectDiffStat test, the cwd-level .nax load-bearing test, their imports, and the now-unused libDir helper; retain the collectDiffFileList exclusion test's assertions. In unit/review/diff-utils.test.ts remove the collectDiff(), collectDiffStat(), computeTestInventory() path convention, computeTestInventory(), and collectDiff() BUG-31 hung-git describes, their imports, the makeCapturingSpawnMock helper used only by them, and obsolete header bullets; retain resolveEffectiveRef(), truncateDiff(), and collectDiffFileList assertions. In integration/review/fix-review/tree-snapshot.test.ts remove the diffBetween describe/import, and rename the mixed package-workdir test to 'changedPathsBetween from a package workdir reports repo-wide changes', dropping its diffBetween call and diff-assertion loop while keeping its paths assertion. Preserve snapshotWorkingTree, changedPathsBetween, nested-repo filter safety, awkward-path, SHA-256, and git-timeout assertions. In unit/test-runners/resolver.test.ts remove only the resolveReviewExcludePatterns describe/import while keeping resolveTestFilePatterns and findPackageDir assertions.\n\nIn unit/review/review-audit.test.ts remove imports of toAdversarialReviewFindings, tagCoverageGap, and toReviewFindings because their modules are deleted. Remove formatAdvisorySummary only because its two remaining consumers are the removed #1816 producer tests. In 'ReviewAuditor.getAdvisoryFindings', replace each producer-built advisoryFindings fixture with hand-written typed Finding literals, with no as unknown as cast. Preserve the fields each test asserts: Finding.message carries the old producer's issue text, meta.coverageGap:true supplies the coverage-gap marker, and actionRequired:false supplies #1359's non-actionable flag. Delete only 'carries the reviewer’s text through from the adversarial producer (#1816)' and 'carries the reviewer’s text through from the semantic producer (#1816)' producer tests; keep writeReviewAudit and ReviewAuditor assertions. Ensure a single hand-built coverage-gap finding and the real barrel-to-snapshot-to-changed-path integration seam exercise the stated regression guards. Do not change review-audit.ts behavior.\n\nApply the shared four-step verification protocol in analysis, including per-file source/test path sweeps, known stale comments, complexity regeneration, deleted-source coverage and deleted-test escape-hatch entry removal, and lowerable file-size entries. Verify the final 32-source deletion set without deleting later-wave modules merely to satisfy an estimate.\n\n**Scope** — In: the seventeen listed leaf deletions, named shared declarations/barrels, live curator import repair, retained audit/snapshot fixtures, corresponding tests and baselines. Out: US-001's operation/runner layer and US-002's builders/legacy adapter, already removed. Keep workflow review, review-audit, snapshotWorkingTree, changedPathsBetween, and the named diff utilities unchanged. Newly orphaned findings/TDD/acceptance code, findingRecurrenceKey/fingerprintFor, extractWholeTestDirs, isTestFile, configuration selectors/keys, and operation/role registries belong to later waves; do not remove them here.\n\n**Interface** — Verbatim target from the spec: `review/fix-review/index.ts` barrel. Target: exports exactly `changedPathsBetween` and `snapshotWorkingTree`. Existing read-only integration symbols: `ReviewAuditor` and `getAdvisoryFindings` (`review/review-audit.ts`); `snapshotWorkingTree` and `changedPathsBetween` (`review/fix-review/tree-snapshot/index.ts`), `collectDiffFileList` (`review/diff-utils.ts:328`). Current retained signatures, unchanged: `snapshotWorkingTree(workdir: string): Promise<string>`; `changedPathsBetween(workdir: string, from: string, to: string): Promise<string[]>`. No new externally-visible symbol.",
+      "acceptanceCriteria": [
+        "[unit] Regression guard: ReviewAuditor.getAdvisoryFindings() returns one summary entry whose coverageGap is true after recordDecision with an advisoryFindings list holding one hand-built finding whose meta.coverageGap is true.",
+        "[integration] Regression guard: the exports of @/review/fix-review are exactly snapshotWorkingTree and changedPathsBetween, both functions.",
+        "[integration] Regression guard: changedPathsBetween returns a list containing a new file's repo-relative path when called on a temporary git repository between HEAD and a snapshotWorkingTree tree taken after writing that file, using the functions imported from @/review/fix-review.",
+        "[integration] Negative-path regression guard: changedPathsBetween(repo, \"no-such-ref\", \"HEAD\") rejects with a NaxError whose code is FIX_REVIEW_GIT_FAILED when repo is a temporary git repository with a committed HEAD, preserving the existing distinction between git failure and an empty changed-path list."
+      ],
+      "tags": [
+        "refactor",
+        "pipeline-deletion",
+        "review",
+        "ac-quote-validator",
+        "findings"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "no-test",
+        "reasoning": "Seventeen leaf deletions, shared-module reductions, a live curator import repair, and mixed unit/integration fixture edits justify complex scope, but unchanged audit, fingerprint, and hardened-git behavior supports the lighter no-test structural-refactor strategy.",
+        "noTestJustification": "Pure structural removal of unreachable review leaves and explicitly named dead declarations. The curator still calls the same normalizeIssueText implementation, audit summaries use equivalent typed fixtures, and both retained git helpers keep their implementations and errors. Preserve/adapt the existing regression tests, including the unknown-ref rejection, and run all required validation; no new runtime behavior requires TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/review/index.ts",
+        "packages/nax/src/review/fix-review/index.ts",
+        "packages/nax/src/review/diff-utils.ts",
+        "packages/nax/src/review/review-audit.ts",
+        "packages/nax/src/findings/types.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/review/ac-quote-validator.test.ts",
+          "reason": "tests only src/review/ac-quote-validator.ts, which this story deletes; the file is deleted with it, which also removes the vacuous carve-out test of issue 2822."
+        },
+        {
+          "path": "packages/nax/test/unit/review/acks.test.ts",
+          "reason": "tests only src/review/acks.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/adversarial-fixtarget.test.ts",
+          "reason": "tests only toAdversarialReviewFindings from src/review/adversarial-helpers.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/review/categorization.test.ts",
+          "reason": "tests only src/review/categorization.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/category-fix-target.test.ts",
+          "reason": "tests only src/review/category-fix-target.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/orchestrator-vs-reconciliation-parity.test.ts",
+          "reason": "tests only prepareSemanticReviewInput and prepareAdversarialReviewInput from src/review/prepare-inputs.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/review/parse-boundary-recurrence.test.ts",
+          "reason": "tests only the semantic and adversarial parse boundary in src/review/semantic-helpers.ts and src/review/adversarial-helpers.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/review/prepare-inputs.test.ts",
+          "reason": "tests only src/review/prepare-inputs.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/recurrence-demotion.test.ts",
+          "reason": "tests only src/review/recurrence-demotion.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/requote-response.test.ts",
+          "reason": "tests only src/review/requote-response.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/review-iteration-store.test.ts",
+          "reason": "tests only src/review/review-iteration-store.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/semantic-categories.test.ts",
+          "reason": "tests only src/review/semantic-categories/index.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/semantic-evidence.test.ts",
+          "reason": "tests only src/review/semantic-evidence.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/fix-review/config.test.ts",
+          "reason": "tests only resolveFixReviewModel from src/review/fix-review/config.ts, which this story deletes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/review/fix-review/scope.test.ts",
+          "reason": "tests only src/review/fix-review/scope.ts, which this story deletes; the file is deleted with it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/fix-review/index-exports.test.ts",
+          "reason": "the tests \"re-exports the unified diff helper from the barrel\" (line 59), \"re-exports the deterministic scope check from the barrel\" (line 65) and \"keeps the US-001 model-resolution helper it already exported\" (line 71) go, because this story removes those exports; the snapshot-helper and changed-paths tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/integration/review/diff-path-convention.test.ts",
+          "reason": "every test exercises collectDiff, collectDiffStat or computeTestInventory, which this story removes; the file is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/review/diff-always-excluded.test.ts",
+          "reason": "the tests \"collectDiff at the repo root excludes all four nax-owned shapes and keeps ordinary files\" (line 87), \"collectDiff at a package workdir excludes both the package's own and the root's nax-owned paths\" (line 99), \"collectDiffStat excludes nax-owned paths and keeps ordinary files\" (line 109) and \"the cwd-level .nax/ entry is load-bearing: without it the directory would leak\" (line 133) go with the collectDiff and collectDiffStat imports, because this story removes both, and the libDir helper (line 46), used only by the line-99 test, goes; the test \"collectDiffFileList excludes nax-owned paths and keeps ordinary files\" (line 120) keeps its assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/review/diff-utils.test.ts",
+          "reason": "the describes \"collectDiff()\" (line 103), \"collectDiffStat()\" (line 146), \"computeTestInventory() path convention\" (line 206), \"computeTestInventory()\" (line 223) and \"collectDiff() — BUG-31: hung git returns rather than blocking\" (line 280) go with their imports and the makeCapturingSpawnMock helper (line 33) only they use, because this story removes those functions, and the header comment drops its collectDiff, collectDiffStat and computeTestInventory bullets; the \"resolveEffectiveRef()\", \"truncateDiff()\" and \"collectDiffFileList\" describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/integration/review/fix-review/tree-snapshot.test.ts",
+          "reason": "the describe \"diffBetween\" (line 291) and the diffBetween import go, because this story removes the function; the test at line 391 stays, renamed \"changedPathsBetween from a package workdir reports repo-wide changes\", with its diffBetween call and the loop asserting on the diff dropped and its paths assertion kept; the snapshotWorkingTree, changedPathsBetween, nested-repo and git-timeout tests keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/test-runners/resolver.test.ts",
+          "reason": "the describe \"resolveReviewExcludePatterns\" (line 341) and its import go, because this story removes the function; the resolveTestFilePatterns and findPackageDir describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/test/unit/review/review-audit.test.ts",
+          "reason": "the imports of toAdversarialReviewFindings, tagCoverageGap and toReviewFindings (lines 3, 4 and 13) go, because this story deletes their modules, and the formatAdvisorySummary import (line 2) goes, because only the two deleted #1816 tests use it; in the describe \"ReviewAuditor.getAdvisoryFindings\" each advisoryFindings fixture built with them becomes a hand-written, typed Finding literal (no as unknown as cast) carrying the fields the test asserts on (meta.coverageGap: true for the coverage-gap test, actionRequired: false for the #1359 test); the two tests \"carries the reviewer's text through from the adversarial producer (#1816)\" and \"carries the reviewer's text through from the semantic producer (#1816)\" test the deleted producers and are deleted; the writeReviewAudit and ReviewAuditor describes keep their assertions."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "entries for deleted files go, through bun run check:complexity:update."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/coverage-per-file-baseline.json",
+          "reason": "entries for source files this story deletes go."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "entries for test files this story deletes go."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "93b1933629588b7e49fc7132c0f3bc0e39cd01bc"
+    }
+  ],
+  "analysis": "Purpose and baseline: C1 wave B2b-2 follows pipeline-fork-cut (#2812), pipeline-post-run-delete (#2813), and pipeline-story-loop-cut (#2821), and closes #2822 by deleting the pipeline-only AC-quote validator and its vacuous carve-out test, not repairing it. The spec derives a 32-source-file deletion set from main cd204a8fd: nine operation/runner files, six prompt/adapter files, and seventeen review leaves. Its declaration-level reachability and file-level import analysis establish the importer-first order; this planning pass inspected the actual files and targeted references, not a fresh whole-repository reachability computation. No codebase-memory MCP tools are exposed in this host, so discovery used direct Read, Glob, and regex Grep. No production implementation or tests were changed while drafting this PRD. Exactly three stories execute sequentially in packages/nax; no new source files, dependencies, public APIs, configuration migrations, runtime failures, or workflow results are introduced.\n\nRepository conventions: docs/architecture/ARCHITECTURE.md:19 documents injectable _deps and :40 documents testing/type-safety conventions; :130 describes the existing workflow default. Package-local commands are authoritative: packages/nax/package.json:11 typechecks both source and test projects; :50 runs the wrapped suite; :84 and :86 provide test escape-hatch ratchets; :93 defines check:all. Use bun:test and the existing test files/helpers; never bare bun test or bun run nax. Keep all contextFiles repo-root-relative despite the package workdir. Do not edit generated AGENTS.md/CLAUDE.md, other packages' implementations, versions, or release pins.\n\nUS-001 observations and change map: packages/nax/src/operations/index.ts:2-3 exports adversarial review, :57-58 fix review, :97-105 non-blocking-fix-worth operations/audit, and :123-124 semantic review. Remove these exports before deleting their modules. packages/nax/src/execution/post-run-review-summary.ts:12-25 imports the operations and PipelineContext solely for applyReviewsFailedOpen; :32-35 sums metrics using a positive-count check, returning undefined rather than zero. Keep sumReviewsFailedOpen unchanged: packages/nax/src/execution/runner.ts:33 imports it and :373 consumes it for the run result. packages/nax/test/unit/execution/post-run-review-summary.test.ts:29-59 covers only the removed apply function; :61-82 already covers totals, absent values, and empty runs and must remain. Delete the helper test/helpers/review-outputs.ts and its test/helpers/index.ts re-export, and only the obsolete rows/imports in bash-declarations, tool-declarations, and timeout-resolvers tests. Delete all eighteen operation/runner/helper-only test files explicitly enumerated in US-001's description, plus the review-outputs helper; do not delete mixed tests wholesale.\n\nUS-002 observations and seams: packages/nax/src/prompts/index.ts:19-23, :62-63, :75-76, :87, :95-97 and :183-184 contain the removable exports/comments; the fix-review comment above advisor-builder is misplaced and must go without removing the live advisor export. packages/nax/src/prompts/sections/index.ts:17 exports both scope helpers, while :25-29 already exports wrapAffordance and applyProtocolRegions. packages/nax/src/prompts/sections/out-of-scope.ts:23-34 implements buildOutOfScopeLines, which must remain byte-for-byte in behavior; :43-76 is the deleted review-only block. packages/nax/src/prompts/sections/protocol-region.ts:172-175 registers diff-access with required tools Git and Read, :270 defines wrapAffordance, and :310 defines applyProtocolRegions. packages/nax/src/agents/tool-preamble.ts:171-182 delegates to applyProtocolRegions, selecting native only for the native agent and preserving the advertised tool gate; do not alter it or the registry/native renderer. Its comment at :156-160 still describes the legacy adapter and should be reworded as stale commentary, not used as a reason to retain it. packages/nax/test/unit/agents/tool-preamble.test.ts:105-150 already exercises native rendering, missing-tool fallback, ACP behavior, and marker removal. Convert its fixture to wrapAffordance imported through @/prompts/sections and ensure the spec's exact fullExclude:[\".\"] regression prompt is exercised, without weakening existing assertions. Grep found wrapDiffAccess in kept test/unit/operations/build-hop-callback-diff-access.test.ts:49, :391, :404, :450, and :482, not only the three call sites listed in the spec; convert ALL five with identical spec/body arguments. Also convert test/unit/runtime/session-run-hop.test.ts:572. Delete only the legacy cross-entry describe and nonce helper in test/unit/prompts/sections/protocol-region.test.ts, retaining all other registry/rendering tests. packages/nax/test/unit/operations/run-operation-retry.test.ts:407-408 imports the deleted builder/validator for the same-session case, and :463 imports the validator for cost accumulation; :438-445 and :492-499 show their uses. Replace validations locally with an object/non-null check and boolean passed field, and replace retry prompts with local string constants. This is fixture decoupling, not a retry/session/cost algorithm change. Current cost-test assertions must remain unchanged; do not expand this deletion feature into a retry bug fix.\n\nUS-003 observations and dependencies: packages/nax/src/review/index.ts:7-29 re-exports the seventeen-leaf layer and must retain only its existing diff-utils, severity, truncation, and types exports plus the deliberate runner import guidance. packages/nax/src/review/fix-review/index.ts:10-14 currently exports config, scope, tree helpers, and types; target exactly changedPathsBetween and snapshotWorkingTree. packages/nax/src/review/fix-review/tree-snapshot/index.ts:35 has DIFF_PATHSPECS and :237-243 implements diffBetween, both removed; snapshotWorkingTree at :156 and changedPathsBetween at :220 are unchanged, including throw semantics, repo-wide paths, gitlink safety, temporary-index cleanup, argv hardening, and timeout behavior. Its existing injectable dependency seam at :48-71 stays. packages/nax/src/review/diff-utils.ts:106 defines TestInventory, :131 collectDiff, :162 collectDiffStat, :229-256 private suffix helpers, and :268 computeTestInventory; remove these plus imports used exclusively by them, especially isTestFile and filterNaxInternalPaths. Retain helpers still needed by collectDiffFileList at :328, including ignore/pathspec handling, hardened timeout-aware git execution, _diffUtilsDeps, ALWAYS_EXCLUDED, DIFF_CAP_BYTES, truncateDiff at :180, and resolveEffectiveRef at :204. Reword obsolete four-collector/semantic-adversarial comments without changing retained code. packages/nax/src/review/types.ts:71-86 defines only the removable SemanticStory interface; other newly orphaned declarations are explicitly deferred. packages/nax/src/test-runners/resolver.ts:27 imports extractWholeTestDirs; :67-77 defines the three review-only constant sets and :233-256 defines resolveReviewExcludePatterns. Remove those and its test-runners/index.ts export while preserving resolveTestFilePatterns, buildResolved, findPackageDir, and the conventions.ts export of extractWholeTestDirs. packages/nax/src/plugins/builtin/curator/heuristics.ts:9 imports normalizeIssueText from @/review and :110 uses it for a grouping key. The old route is an indirect re-export in review/recurrence-demotion.ts:12; point this live curator at @/findings/fingerprint instead. The canonical implementation is packages/nax/src/findings/fingerprint/index.ts:38 and must remain unchanged.\n\nRetained consumer testing: packages/nax/src/review/review-audit.ts:296-298 maps Finding.message, meta.coverageGap, and acDropped into advisory summaries, :300 preserves explicit actionRequired:false, :319-320 records advisory summaries, and :355-356 returns a copy. Do not change this live module's behavior or declarations. packages/nax/src/findings/types.ts:88 defines Finding with required source, severity, category, and message, and :225 permits meta. Replace deleted producer-based fixtures in test/unit/review/review-audit.test.ts:299 onward with directly typed Finding literals, preserving asserted message/category/file/line fields, meta.coverageGap:true, and actionRequired:false. Delete only the two #1816 producer tests and their now-unused formatter import. Existing coverage-gap fixtures contain a demoted and an ordinary finding; retain those assertions and add/adapt a single hand-built coverage-gap case to satisfy the stated regression anchor. packages/nax/test/unit/review/fix-review/index-exports.test.ts:47-57 pins the two surviving functions; :59-76 pins removed exports and goes. packages/nax/test/integration/review/fix-review/tree-snapshot.test.ts:291-322 covers deleted diffBetween; :391-402 mixes both helpers and must become changedPathsBetween-only, named 'changedPathsBetween from a package workdir reports repo-wide changes'. Preserve :325-382 nested-repo filter-driver protection, :405 onward awkward-filename/SHA-256 tests, and existing timeout/index-preservation tests. The spec's integration AC must import through @/review/fix-review and exercise the actual snapshot-to-path-list seam on a temporary committed git repository after writing a new file.\n\nWorkflow compatibility and boundaries: packages/nax/src/operations/workflow-story-review.ts:33 and workflow-re-review.ts:27 still fall back to ctx.config.review?.semantic?.model. These live workflow operations, their builders, review/runner, reviewer-guard, and review-audit are not pipeline remnants. Keep review.semantic/adversarial/nonBlockingFix schemas, configuration descriptions/migrations/selectors, operation/role name registries, inert-bash-stages, and phase-stage-map unchanged except stale path comments mandated by the sweep. Keep all orphan declarations not explicitly named in the Design, even if newly unused; B2b-3/B2c own them. Do not delete findings fingerprints or retained snapshot helpers just because their old review barrel path disappears. No compatibility shim or deprecation stub is wanted for deleted pipeline exports. This is internal removal of unreachable code, not a user data/config migration or a change to workflow behavior.\n\nVerification protocol for EVERY story, from packages/nax: (1) bun run typecheck; static and string-literal dynamic imports and barrels must resolve. (2) For EVERY deleted source file, take its path below src/ without the extension and run rg -n --fixed-strings '<stem>' src bin test scripts ../repo-tooling/scripts ../repo-tooling/test. Expected zero hits; code, source-read paths, path lists, require, dynamic imports, and mock.module references are missed importers and must stop the cut until resolved. Repeat for every deleted test file's path below test/. Longer sibling stems sharing a prefix belong to their own sweep and are not evidence of a dependency on the shorter deleted module. Reword stale comments in any scanned file rather than treating commentary as a live dependency; known hits include findings/types.ts:8-9, findings/retirement-stamp/index.ts, findings/fingerprint/index.ts:8, findings/cycle-dispatch.ts:146, review/types.ts:329 and :369, config/schemas-review.ts:61, prompts/sections/out-of-scope.ts, and bash-declarations, diff-always-excluded, protocol-region, session-run-hop:636, tree-snapshot, and fix-review/index-exports test headers. Future-story modules may contain such comments; comment-only edits are permitted without moving their functional deletion earlier. Do not remove bare registered role strings to force a sweep result: sweep actual module/test paths. (3) Run bun run check:complexity:update; run bun run check:file-sizes -- --update-baseline when lowerable entries are reported. Remove entries for the deleted source files from scripts/baselines/coverage-per-file-baseline.json and for deleted tests from test-escape-hatches-baseline.json, preserving unrelated thresholds. Stale complexity entries fail the gate. (4) bun run check:all and bun run test. Use targeted existing tests while iterating. Run test:coverage manually only outside a nax sandbox; NAX_SANDBOXED=1 must not run coverage because skips can lower unrelated floors. Baseline cleanup and gates are implementation verification, not acceptance criteria or separate stories.\n\nRisks and mitigation: the principal risk is deleting a leaf before all operations/builders/tests/barrels that import it, mitigated by the strict dependency chain and compiling each story independently. Path-based tests, dynamic imports, baselines, and stale comments are not all captured by a simple import search, hence the mandatory path sweep. Mixed tests contain live regression value; trim only the specified sections and preserve assertions. The protocol adapter's removal must not remove its live affordance renderer or capability gating; assert byte-exact ACP output and native reference/marker hygiene. Direct typed audit fixtures must use message rather than the deleted producers' issue input field. Keep snapshot semantics and hardened git execution untouched. About fifty tests/helpers and seventeen mixed-test trims are estimates, not deletion quotas; the explicit paths and reference sweep govern. Failure Handling in the spec is 'None': this adds no input, error, or exit path, and missing references are compile/sweep failures rather than new runtime requirements.\n\nSecond-pass adversarial audit: Enumerated all five original spec ACs from spec.md:308-320. US-001 AC1 contains two return assertions, retained as US-001 acceptanceCriteria[0] (1+2 returns 3) and [1] (absent reviewsFailedOpen returns undefined), both retaining the import seam and Regression guard qualification. US-002 AC1 remains acceptanceCriteria[0] with native, Git/Read, the exact fullExclude:[\".\"] prompt, abc123, absence of SHELL BODY and marker text, and the @/prompts/sections import; AC2 remains [1] with the identical prompt and byte-exact ACP output. US-003 AC1 remains [0] with the hand-built finding, recordDecision, meta.coverageGap:true and one returned coverageGap:true summary; AC2 is retained as [1] (barrel functions) and [2] (temporary-repository HEAD-to-snapshot changed-path result). No qualifying clause, original assertion, or regression anchor was removed. All ACs observe a value, export surface, or rejection; none is a quality gate. The refine request additionally requires a negative path per story: US-001 now explicitly retains the existing empty-input undefined result (test/unit/execution/post-run-review-summary.test.ts:79-81), US-002 explicitly retains native missing-Git fallback (test/unit/agents/tool-preamble.test.ts:124-128), and US-003 explicitly retains unknown-ref NaxError/FIX_REVIEW_GIT_FAILED rejection rather than an empty result (test/integration/review/fix-review/tree-snapshot.test.ts:263-269; src/review/fix-review/tree-snapshot/index.ts:221-228 and :138-144). These are existing behavior, not new failure-handling implementation or changes to workflow behavior. Description/AC comparison found no contradiction: all describe unchanged retained consumers and the added negatives assert only those existing behaviors.\n\nContext/dependency audit: Every Context Files recommendation at spec.md:202-225 appears in the corresponding contextFiles array, including all three US-001 recommendations and all five recommendations each for US-002/US-003; no output or deleted-upstream file is listed. All story IDs, package workdirs, and dependencies match the binding structure exactly; US-002 cannot delete builders while US-001 operations still import them, and US-003 cannot delete leaves while US-002 builders still import them. Keep these binding dependencies despite the general minimization rule. Scope and filenames match the code; the two extra hop-callback fixture occurrences are actual references, not invented work. The unchanged functions and converted fixtures need regression verification, not RED/GREEN implementation of new behavior, so all three retain complex multi-module scope but use the lighter no-test strategy with explicit structural-refactor justifications; no-test does not waive required AC assertions, existing-test adaptation, path sweeps, baselines, or the full gates. No session or access-control implementation changes are authorized.\n\nOut-of-scope audit: All ten feature-level items at spec.md:164-173 remain verbatim in the top-level array: (1) B2b-3 operations/findings/TDD/flake/acceptance leftovers and tests; (2) unnamed orphan declarations; (3) B2c optimizer/mutation/diff utilities; (4) B3 review configuration; (5) B3 operation/role name registries; (6) retained diff-access kind/native renderer; (7) retained workflow review/audit/builders; (8) unrelated pre-C1 unreachable modules/#2823; (9) B4 docs/README/context; (10) unchanged workflow results. There is no story-local exclusion block to hoist. Descriptions echo the nearby boundaries in Scope Out, while their Scope In includes the test/helper/baseline work required for the named deletions. No new files or helpers are required.",
+  "outOfScope": [
+    "The modules this spec leaves unreachable: the TDD, autofix, full-suite-rectify, rectify, verify, implement and write-test operations and their strategies and gates, the findings fix cycle (`findings/cycle*`, `bail-marker`, `classify-outcome`, `retirement-stamp`), `src/tdd/`, the verification flake-triage modules, the acceptance leftovers (`acceptance/test-path`, `heuristics`, `failed-criteria`, `generator-helpers`, `types`, `prd/acceptance-scope`, the acceptance prompt builder), the pre-C1 pipeline leftovers (`operations/rectify`, `tdd/cleanup`, `tdd/types`, `verification/rectification`, `failure-records`, `crash-detector`, `findings/adapters/plugin`, `prompts/core/sections/findings`) and their tests; feature B2b-3 deletes them.",
+    "Declarations in kept files whose last caller this spec or an earlier wave deletes, other than those Design Parts 1 to 3 name (for example `findingRecurrenceKey`, `fingerprintFor`, `recordReviewFindings`, `extractWholeTestDirs`, `isTestFile` in `test-runners/detector.ts`, `wrapJsonPrompt`, the semantic and adversarial config selectors); B2b-3 and B2c's orphan pass remove them.",
+    "`src/optimizer/`, `IPromptOptimizer`, `verification/mutation/`, `operations/mutation-check.ts`, `verification/changed-line-ranges.ts` and `utils/diff-files.ts`; wave B2c deletes them.",
+    "The `review.semantic`, `review.adversarial` and `review.nonBlockingFix` config keys, their schemas, migrations, merge handling and config descriptions: workflow review still reads `review.semantic.model` as its model fallback; wave B3 decides them.",
+    "Removing deleted operation and role strings (`semantic-review`, `adversarial-review`, `fix-review`, `nbf-worth-check`, `reviewer-semantic`, `reviewer-adversarial`) from the name registries, `inert-bash-stages` and `context/engine/phase-stage-map.ts`; wave B3.",
+    "The `diff-access` affordance kind in the protocol-region registry and its native renderer: kept, because the renderer is live and tested; B2c's orphan pass decides it.",
+    "Workflow-mode review (`src/review/runner/`, `reviewer-guard/`, `review-audit.ts`, the workflow story and re-review builders, the bot PR review builder): kept and unchanged.",
+    "Code that was already unreachable before C1 and has no pipeline cause (`constitution/generators/`, `session/session-keeper.ts`, `session/session-runner.ts`, `agent-runtime/bun-runtime.ts`, `agents/cost/token-mapper.ts`, `agents/retry/compose.ts`, `agents/shared/model-resolution.ts`, `config/validate.ts`, `execution/timeout-handler.ts`); not part of C1, tracked in issue #2823.",
+    "Docs, the README and the package context files that still describe semantic or adversarial review, AC-quote grounding or fix review; wave B4.",
+    "Changing workflow-mode behaviour: every cut site keeps its current workflow-mode result."
+  ],
+  "routingProfile": "native-codex-ds"
+}

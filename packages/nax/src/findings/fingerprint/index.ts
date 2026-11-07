@@ -2,22 +2,25 @@
  * Cross-round finding identity — `fingerprintFor` and the text normalisers it is
  * built from.
  *
- * **Single source of truth.** Two subsystems answer "is this the same finding as
- * the one retired earlier?" and MUST agree exactly:
+ * **Single source of truth.** Answering "is this the same finding as the one
+ * retired earlier?" must not be re-derived per consumer:
  *
- *   - `src/review/recurrence-demotion.ts` — `classifyRecurrence` mints the
- *     `meta.recurrence` stamp (and therefore the retirement decision) from it.
  *   - `src/findings/retirement-stamp` — the carry-forward prompt suppresses a
  *     finding whose identity matches a retired stamp. (The story loop's
  *     non-blocking-fix seed filter was the stamp's second reader and went with
  *     B2b-1.)
  *
- * A drifted copy on either side is silent: the prompt would suppress a copy the
- * classifier never retired (or keep telling the reviewer to re-flag one it did),
- * and every test would still pass, because each copy is internally consistent.
- * The two consumers also sit on opposite sides of an import cycle, so the
- * primitive lives here — a dependency-free nested barrel both can reach without
- * loading the other's parent barrel (project-conventions, nested-barrel rule).
+ * The pipeline-side consumer that used to mint the `meta.recurrence` stamp from
+ * this key (`src/review/recurrence-demotion.ts`) went with the pipeline review
+ * operations in C1 wave B2b-2, leaving the retirement-stamp reader below.
+ *
+ * A drifted copy of the normalisers would be silent: the prompt would suppress
+ * a finding a different key never retired (or keep telling the reviewer to
+ * re-flag one it did), and every test would still pass, because each copy is
+ * internally consistent. The consumers also sat on opposite sides of an import
+ * cycle, so the primitive lives here — a dependency-free nested barrel both can
+ * reach without loading the other's parent barrel (project-conventions,
+ * nested-barrel rule).
  *
  * Pure / repo-scoped — no I/O, no config, and no imports at all.
  */
@@ -58,8 +61,9 @@ function normalizeFingerprintPath(file: string | undefined): string {
  * key is `file + acIndex` and the prose is not consulted at all. That pair is
  * structurally stable: `acIndex` is a validated 1-based index into the story's
  * acceptance criteria, mandatory for every blocking finding (the reviewer prompt
- * requires it and `filterByAcGroundingMinimal` drops findings whose index is
- * absent or out of range), so every recurrence-demotion decision takes this path.
+ * required it, and the AC-grounding filter that dropped findings whose index was
+ * absent or out of range went with the pipeline review operations in C1 wave
+ * B2b-2), so every recurrence decision takes this path.
  *
  * **Prose fallback.** Without an `acIndex` the key degrades to
  * file + category + issue topic prefix. Retained for non-blocking findings and

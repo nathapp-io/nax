@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { formatAdvisorySummary } from "@/log-format/summary";
-import { toAdversarialReviewFindings } from "@/review/adversarial-helpers";
-import { tagCoverageGap } from "@/review/recurrence-demotion";
+import type { Finding } from "@/findings";
 import type { ReviewAuditEntry } from "@/review/review-audit";
 import {
   _reviewAuditDeps,
@@ -10,12 +8,33 @@ import {
   toPersistedEntry,
   writeReviewAudit,
 } from "@/review/review-audit";
-import { toReviewFindings } from "@/review/semantic-helpers";
 import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A hand-built advisory `Finding` — the shape `recordDecision` is documented to
+ * accept (#1861). Purposefully NOT built through a producer projection
+ * (`toAdversarialReviewFindings` / `toReviewFindings`): both producers were
+ * deleted with the pipeline review operations (US-001 / US-003), and a fixture
+ * that runs through a projector silently changes meaning when the projector
+ * does. `message` is the field `toAdvisorySummaryEntries` reads — spelled here
+ * by hand so a wrong field name fails typecheck (#1816).
+ */
+function advisoryFinding(overrides: Partial<Finding> = {}): Finding {
+  return {
+    source: "adversarial-review",
+    severity: "warning",
+    category: "correctness",
+    file: "src/foo.ts",
+    line: 3,
+    message: "off-AC bug",
+    suggestion: "",
+    ...overrides,
+  };
+}
 
 function makeEntry(overrides: Partial<ReviewAuditEntry> = {}): ReviewAuditEntry {
   return {
@@ -317,16 +336,7 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       passed: true,
       blockingThreshold: "error",
       result: { passed: true, findings: [] },
-      advisoryFindings: toAdversarialReviewFindings([
-        {
-          severity: "warning",
-          category: "correctness",
-          file: "src/foo.ts",
-          line: 3,
-          issue: "off-AC bug",
-          suggestion: "",
-        },
-      ]),
+      advisoryFindings: [advisoryFinding()],
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);
@@ -343,7 +353,7 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
     });
   });
 
-  test("preserves meta.coverageGap as a coverageGap flag on the summary entry", async () => {
+  test("AC-1: one hand-built coverage-gap finding yields one summary entry whose coverageGap is true", async () => {
     const { deps } = makeDeps();
     Object.assign(_reviewAuditDeps, deps);
     const auditor = new ReviewAuditor("run-cg", "/tmp/workdir");
@@ -357,29 +367,52 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       blockingThreshold: "error",
       result: { passed: true, findings: [] },
       advisoryFindings: [
-        ...tagCoverageGap(
-          toAdversarialReviewFindings([
-            { severity: "error", category: "assumption", file: "lib/s.ts", line: 1, issue: "demoted", suggestion: "" },
-          ]),
-        ),
-        ...toAdversarialReviewFindings([
-          {
-            severity: "warning",
-            category: "correctness",
-            file: "lib/s.ts",
-            line: 2,
-            issue: "ordinary",
-            suggestion: "",
-          },
-        ]),
+        advisoryFinding({
+          severity: "error",
+          category: "assumption",
+          file: "lib/s.ts",
+          line: 1,
+          message: "demoted recurrence",
+          meta: { coverageGap: true },
+        }),
       ],
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);
 
     const summary = auditor.getAdvisoryFindings();
-    expect(summary.find((s) => s.issue === "demoted")?.coverageGap).toBe(true);
-    expect(summary.find((s) => s.issue === "ordinary")?.coverageGap).toBeUndefined();
+    expect(summary).toHaveLength(1);
+    expect(summary[0]?.coverageGap).toBe(true);
+    expect(summary[0]?.issue).toBe("demoted recurrence");
+  });
+
+  // Negative path of the coverageGap branch: the mapper must tag ONLY a finding
+  // whose `meta.coverageGap` is true. Without this, a mapper that stamped
+  // coverageGap on every advisory finding would still satisfy the AC-1 test and
+  // the #1359 test below (which asserts only `actionRequired`), and every
+  // ordinary advisory finding would silently be reported as a recurrence gap.
+  test("an ordinary advisory finding carries no coverageGap flag", async () => {
+    const { deps } = makeDeps();
+    Object.assign(_reviewAuditDeps, deps);
+    const auditor = new ReviewAuditor("run-cg-none", "/tmp/workdir");
+
+    auditor.recordDecision({
+      reviewer: "adversarial",
+      storyId: "US-004",
+      featureName: "f",
+      parsed: true,
+      passed: true,
+      blockingThreshold: "error",
+      result: { passed: true, findings: [] },
+      advisoryFindings: [advisoryFinding({ file: "lib/s.ts", line: 2, message: "ordinary" })],
+    });
+    await auditor.flush();
+    Object.assign(_reviewAuditDeps, saved);
+
+    const summary = auditor.getAdvisoryFindings();
+    expect(summary).toHaveLength(1);
+    expect(summary[0]?.issue).toBe("ordinary");
+    expect(summary[0]?.coverageGap).toBeUndefined();
   });
 
   test("preserves actionRequired:false on the summary entry (#1359)", async () => {
@@ -395,18 +428,16 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       passed: true,
       blockingThreshold: "error",
       result: { passed: true, findings: [] },
-      advisoryFindings: toAdversarialReviewFindings([
-        {
-          severity: "warning",
+      advisoryFindings: [
+        advisoryFinding({
           category: "out-of-scope",
           file: "lib/s.ts",
           line: 1,
-          issue: "compliance",
-          suggestion: "",
+          message: "compliance",
           actionRequired: false,
-        },
-        { severity: "warning", category: "correctness", file: "lib/s.ts", line: 2, issue: "ordinary", suggestion: "" },
-      ]),
+        }),
+        advisoryFinding({ file: "lib/s.ts", line: 2, message: "ordinary" }),
+      ],
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);
@@ -417,26 +448,15 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
     expect(summary.find((s) => s.issue === "ordinary")?.actionRequired).toBeUndefined();
   });
 
-  // #1816 — the summary mapper read `f.issue`, a field NO producer emits, so every
-  // advisory finding rendered as "(no description)" while the audit file held the text.
-  // The bug survived because the fixtures above were hand-authored in a shape that only
-  // the (unreachable, #1859) legacy reviewer path ever produced. These two tests feed the
-  // REAL projection functions instead, so the seam is asserted against what actually flows.
-  test("carries the reviewer's text through from the adversarial producer (#1816)", async () => {
+  // #1816 — the summary mapper read `f.issue`, a field `Finding` does not have, so
+  // every advisory finding rendered as "(no description)" while the audit file held
+  // the text. The guard that replaced it is the `Finding` type on `advisoryFinding()`
+  // above: `message` is the only field the mapper may read, so a wrong field name is
+  // now a typecheck error rather than an unread slot in the run-end report.
+  test("carries the finding's message through to the summary's issue text (#1816)", async () => {
     const { deps } = makeDeps();
     Object.assign(_reviewAuditDeps, deps);
-    const auditor = new ReviewAuditor("run-1816-adv", "/tmp/workdir");
-
-    const advisoryFindings = toAdversarialReviewFindings([
-      {
-        severity: "warning",
-        category: "error-path",
-        file: "src/session-token.ts",
-        line: 54,
-        issue: "JSON.parse(decoded) throws a raw SyntaxError on an invalid payload",
-        suggestion: "Wrap the parse and surface a typed error",
-      },
-    ]);
+    const auditor = new ReviewAuditor("run-1816", "/tmp/workdir");
 
     auditor.recordDecision({
       reviewer: "adversarial",
@@ -446,7 +466,15 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       passed: true,
       blockingThreshold: "error",
       result: { passed: true, findings: [] },
-      advisoryFindings,
+      advisoryFindings: [
+        advisoryFinding({
+          category: "error-path",
+          file: "src/session-token.ts",
+          line: 54,
+          message: "JSON.parse(decoded) throws a raw SyntaxError on an invalid payload",
+          suggestion: "Wrap the parse and surface a typed error",
+        }),
+      ],
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);
@@ -454,49 +482,7 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
     const summary = auditor.getAdvisoryFindings();
     expect(summary).toHaveLength(1);
     expect(summary[0]?.issue).toBe("JSON.parse(decoded) throws a raw SyntaxError on an invalid payload");
-
-    // The rendered block is the actual deliverable — assert the operator sees the text.
-    const rendered = formatAdvisorySummary(summary, { mode: "normal", useColor: false });
-    expect(rendered).toContain("JSON.parse(decoded) throws a raw SyntaxError on an invalid payload");
-    expect(rendered).not.toContain("(no description)");
-  });
-
-  test("carries the reviewer's text through from the semantic producer (#1816)", async () => {
-    const { deps } = makeDeps();
-    Object.assign(_reviewAuditDeps, deps);
-    const auditor = new ReviewAuditor("run-1816-sem", "/tmp/workdir");
-
-    const advisoryFindings = toReviewFindings([
-      {
-        severity: "info",
-        category: "incomplete",
-        file: "src/auth.ts",
-        line: 10,
-        issue: "AC-2's expiry boundary is never exercised",
-        suggestion: "Add a test at exactly expiresAt",
-      },
-    ]);
-
-    auditor.recordDecision({
-      reviewer: "semantic",
-      storyId: "US-002",
-      featureName: "my-feature",
-      parsed: true,
-      passed: true,
-      blockingThreshold: "error",
-      result: { passed: true, findings: [] },
-      advisoryFindings,
-    });
-    await auditor.flush();
-    Object.assign(_reviewAuditDeps, saved);
-
-    const summary = auditor.getAdvisoryFindings();
-    expect(summary).toHaveLength(1);
-    expect(summary[0]?.issue).toBe("AC-2's expiry boundary is never exercised");
-
-    const rendered = formatAdvisorySummary(summary, { mode: "normal", useColor: false });
-    expect(rendered).toContain("AC-2's expiry boundary is never exercised");
-    expect(rendered).not.toContain("(no description)");
+    expect(summary[0]?.issue).not.toBe("(no description)");
   });
 
   test("decisions with no advisory findings contribute nothing", async () => {
@@ -528,9 +514,7 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       parsed: true,
       passed: true,
       result: { passed: true, findings: [] },
-      advisoryFindings: toAdversarialReviewFindings([
-        { severity: "info", category: "input", file: "a.ts", line: 1, issue: "a", suggestion: "" },
-      ]),
+      advisoryFindings: [advisoryFinding({ severity: "info", category: "input", file: "a.ts", line: 1, message: "a" })],
     });
     auditor.recordDecision({
       reviewer: "semantic",
@@ -538,10 +522,10 @@ describe("ReviewAuditor.getAdvisoryFindings", () => {
       parsed: true,
       passed: true,
       result: { passed: true, findings: [] },
-      advisoryFindings: toReviewFindings([
-        { severity: "warning", category: "incomplete", file: "b.ts", line: 1, issue: "b", suggestion: "" },
-        { severity: "warning", category: "incomplete", file: "c.ts", line: 1, issue: "c", suggestion: "" },
-      ]),
+      advisoryFindings: [
+        advisoryFinding({ source: "semantic-review", category: "incomplete", file: "b.ts", line: 1, message: "b" }),
+        advisoryFinding({ source: "semantic-review", category: "incomplete", file: "c.ts", line: 1, message: "c" }),
+      ],
     });
     await auditor.flush();
     Object.assign(_reviewAuditDeps, saved);

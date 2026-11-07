@@ -13,8 +13,7 @@ import {
   QUERY_SCRATCH_DESCRIPTOR,
 } from "@/context/engine/pull-tools";
 import type { ToolDescriptor } from "@/context/engine/types";
-import { wrapDiffAccess } from "@/prompts/sections/diff-access";
-import { wrapAffordance } from "@/prompts/sections/protocol-region";
+import { wrapAffordance } from "@/prompts/sections";
 
 function makeOptions(overrides: Partial<AgentRunOptions> = {}, prompt = "do the thing"): AgentRunOptions {
   return {
@@ -102,8 +101,24 @@ describe("promptWithToolPreamble", () => {
  * for "native + no tools" — these are the two ends of the gate AC3/AC4 cover.
  */
 describe("applyDiffAccessForAgentProtocol", () => {
-  const region = wrapDiffAccess({ ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n");
+  const region = wrapAffordance("diff-access", { ref: "abc123", fullExclude: [".", ":!.nax/"] }, "SHELL BODY\n");
   const prompt = `head\n${region}tail`;
+
+  test.each([
+    { agent: "native", tools: ["Git", "Read"], native: true },
+    { agent: "claude", tools: ["Git", "Read"], native: false },
+    { agent: "native", tools: ["Read"], native: false },
+  ])("renders the exact acceptance fixture for $agent with $tools", ({ agent, tools, native }) => {
+    const exactPrompt = `head\n${wrapAffordance("diff-access", { ref: "abc123", fullExclude: ["."] }, "SHELL BODY\n")}tail`;
+    const out = applyDiffAccessForAgentProtocol(agent, exactPrompt, tools);
+    if (native) {
+      expect(out).toContain("abc123");
+      expect(out).not.toContain("SHELL BODY");
+      expect(out).not.toContain("nax:diff-access");
+    } else {
+      expect(out).toBe("head\nSHELL BODY\ntail");
+    }
+  });
 
   // AC3 — native + advertised Git + Read ⇒ native rendering.
   test("AC3: native with advertised Git and Read renders the tool-shaped diff instructions", () => {
@@ -157,8 +172,7 @@ describe("applyDiffAccessForAgentProtocol", () => {
  * helper; without these tests a regression that reverted the helper to its
  * pre-US-003 behaviour would still pass every other suite in the repo
  * (the kind-registration tests in `protocol-region.test.ts` exercise the
- * renderer in isolation, and the legacy `applyDiffAccess` tests cover the
- * diff-access path). The tests here pin the end-to-end contract: a region
+ * renderer in isolation). The tests here pin the end-to-end contract: a region
  * written by a builder reaches the agent with the right body for its
  * protocol + advertised tools.
  */

@@ -3,26 +3,11 @@
  * dispatch failed, gate returned success:true, failOpen:true) so the run
  * summary can distinguish "reviewed green" from "not actually checked".
  * Extracted from post-run.ts (itself deleted with the post-run inspection layer,
- * US-003) to stay within the 600-line file limit. `sumReviewsFailedOpen` still
- * feeds `RunResult.reviewsFailedOpen`; `applyReviewsFailedOpen` lost its only
- * caller with that layer and is retained for wave B2b-2.
+ * US-003) to stay within the 600-line file limit. `sumReviewsFailedOpen` feeds
+ * `RunResult.reviewsFailedOpen`.
  */
 
 import type { StoryMetrics } from "../metrics/types";
-import { adversarialReviewOp, semanticReviewOp } from "../operations";
-import type { PipelineContext } from "../pipeline/types";
-
-/** Sets `ctx.reviewsFailedOpen` (only when nonzero) from the story's review phase outputs. */
-export function applyReviewsFailedOpen(ctx: PipelineContext, phaseOutputs: Record<string, unknown>): void {
-  const count = [phaseOutputs[semanticReviewOp.name], phaseOutputs[adversarialReviewOp.name]].filter((output) => {
-    const result = output as { failOpen?: boolean; noDispatch?: boolean } | undefined;
-    // ENH-20 counts degraded PASSES. A `noDispatch` result is the absence of a
-    // review, not a pass — it is reported through the failed check result and
-    // must never inflate this tally (US-002).
-    return result?.failOpen === true && result.noDispatch !== true;
-  }).length;
-  if (count) ctx.reviewsFailedOpen = count;
-}
 
 /**
  * Sums `StoryMetrics.reviewsFailedOpen` across a completed run, for

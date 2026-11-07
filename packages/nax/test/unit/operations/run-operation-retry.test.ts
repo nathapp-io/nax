@@ -405,8 +405,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
     // All parse-retry attempts must share one session — openSession called exactly once.
     let sendCallCount = 0;
     const { makeParseRetryStrategy } = await import("@/agents");
-    const { ReviewPromptBuilder } = await import("@/prompts");
-    const { validateLLMShape } = await import("@/review");
+    const retryPrompt = "retry json please";
 
     const validOutput = JSON.stringify({ passed: true, findings: [] });
 
@@ -436,12 +435,13 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       ...runEchoOp,
       name: "parse-retry-same-session-op",
       retry: makeParseRetryStrategy({
-        validate: (parsed) => validateLLMShape(parsed) !== null,
+        validate: (parsed) =>
+          typeof parsed === "object" && parsed !== null && "passed" in parsed && typeof parsed.passed === "boolean",
         reviewerKind: "test",
         maxAttempts: 2,
         prompts: {
-          invalid: () => ReviewPromptBuilder.jsonRetry(),
-          truncated: () => ReviewPromptBuilder.jsonRetry(),
+          invalid: () => retryPrompt,
+          truncated: () => retryPrompt,
         },
       }),
     };
@@ -460,7 +460,7 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
 
   test("cost is summed across retry attempts via sendWithParseRetry", async () => {
     const { makeParseRetryStrategy } = await import("@/agents");
-    const { validateLLMShape } = await import("@/review");
+    const retryPrompt = "retry json please";
 
     let sendCallCount = 0;
     const validOutput = JSON.stringify({ passed: true, findings: [] });
@@ -490,12 +490,13 @@ describe("callOp — RunOperation.retry behavior (US-004)", () => {
       ...runEchoOp,
       name: "cost-accumulation-op",
       retry: makeParseRetryStrategy({
-        validate: (parsed) => validateLLMShape(parsed) !== null,
+        validate: (parsed) =>
+          typeof parsed === "object" && parsed !== null && "passed" in parsed && typeof parsed.passed === "boolean",
         reviewerKind: "test",
         maxAttempts: 2,
         prompts: {
-          invalid: () => "retry json please",
-          truncated: () => "retry json please",
+          invalid: () => retryPrompt,
+          truncated: () => retryPrompt,
         },
       }),
     };

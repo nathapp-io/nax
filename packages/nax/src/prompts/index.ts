@@ -16,11 +16,7 @@ export type {
 export { AcceptancePromptBuilder, MAX_FILE_LINES } from "./builders/acceptance-builder";
 // fenceLangFor: no production call site yet — prepared for follow-up F3 (SSOT fence-lang across all prompt builders).
 export { fenceLangFor, formatTestOutputForFix } from "./builders/acceptance-builder-helpers";
-export type { AdversarialReviewPromptOptions, TestInventory } from "./builders/adversarial-review-builder";
-// Adversarial review prompt builder — adversarial reviewer prompt construction.
-export { AdversarialReviewPromptBuilder } from "./builders/adversarial-review-builder";
 export { type AdvisorBatchPromptInput, buildAdvisorBatchPrompt } from "./builders/advisor-batch-builder";
-// Fix-review prompt builder — verdict-only review of a fix's own delta (ADR-033).
 export { type AdvisorPromptInput, buildAdvisorPrompt } from "./builders/advisor-builder";
 export type { AcpSubagentInstructionsInput, SubagentInstructionsInput } from "./builders/agents-builder";
 // Agents prompt builder — agent discovery index, nested-session instructions and ACP subagent instructions.
@@ -59,8 +55,6 @@ export {
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptSync } from "./builders/decompose-builder";
-export type { FixReviewPromptInput } from "./builders/fix-review-builder";
-export { buildFixReviewPrompt } from "./builders/fix-review-builder";
 export { buildForgeReadInstructions } from "./builders/forge-read-builder";
 // Memory prompt builder — the protocol a session follows for the nax-memory tools,
 // the ## Memory index section the chat, ACP and subagent builders carry last, and the
@@ -72,8 +66,6 @@ export {
   memoryReferenceSectionOf,
   memorySectionOf,
 } from "./builders/memory-builder";
-export type { NbfWorthCheckPromptInput } from "./builders/nbf-worth-check-builder";
-export { buildNbfWorthCheckPrompt } from "./builders/nbf-worth-check-builder";
 // One-line transcript summaries of the background notices the builders above write.
 export { summarizeBackgroundNotice } from "./builders/notice-summary";
 export type { OneShotRole } from "./builders/one-shot-builder";
@@ -83,8 +75,6 @@ export { OneShotPromptBuilder } from "./builders/one-shot-builder";
 export type { PackageSummary, PlanningPromptParts } from "./builders/plan-builder";
 // Plan prompt builder — centralises planning prompt construction.
 export { PlanPromptBuilder } from "./builders/plan-builder";
-// Prior iterations prompt block — ADR-022 §8; replaces legacy carry-forward blocks.
-export { buildPriorIterationsBlock } from "./builders/prior-iterations-builder";
 // US-007 (SPEC-lazy-rules-delivery) — the run's project-context override section,
 // carried by the story brief and the branch review package.
 export { buildProjectContextSection } from "./builders/project-context-builder";
@@ -92,9 +82,6 @@ export type { FailureRecord, RectifierTrigger, ReviewFinding } from "./builders/
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { CONTRADICTION_ESCAPE_HATCH, RectifierPromptBuilder } from "./builders/rectifier-builder";
 export { repoScopedRectification } from "./builders/rectifier-builder-helpers";
-export type { SemanticReviewPromptOptions } from "./builders/review-builder";
-// Review prompt builder — semantic review prompt construction.
-export { ReviewPromptBuilder } from "./builders/review-builder";
 export { reviewerCommandsSection } from "./builders/reviewer-commands-section";
 export type { ChangedFileRuleGroup, RulesIndexEntry } from "./builders/rules-index-builder";
 // US-003 (SPEC-lazy-rules-delivery) — the rules index section of a workflow brief.
@@ -180,7 +167,7 @@ export type { RoutingCandidate } from "./core/sections/routing-candidates";
 // Core types — re-exported for callsites that need them
 export type { PromptOptions, PromptRole, PromptSection, SectionSlot } from "./core/types";
 export { SLOT_ORDER } from "./core/types";
-// Out-of-scope section — shared by the story sections and both reviewer prompts.
-export { buildOutOfScopeLines, buildReviewOutOfScopeBlock } from "./sections";
+// Out-of-scope section — shared by the story sections.
+export { buildOutOfScopeLines } from "./sections";
 
 export { buildAcceptanceExecutionSection } from "./sections/acceptance";

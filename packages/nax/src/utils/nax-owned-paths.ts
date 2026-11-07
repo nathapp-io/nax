@@ -34,7 +34,7 @@
 export const NAX_OWNED_GIT_EXCLUDE_PATHSPECS: readonly string[] = [":(exclude).nax", ":(glob,exclude)**/.nax/**"];
 
 /**
- * Short-form excludes for the review diff collectors (`collectDiff` & friends)
+ * Short-form excludes for the review diff collector (`collectDiffFileList`)
  * and the review builders' self-serve `git diff` prompts.
  *
  * Four entries, not two (the per-entry comments below carry the exact

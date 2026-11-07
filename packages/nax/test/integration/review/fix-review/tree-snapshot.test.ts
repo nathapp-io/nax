@@ -1,12 +1,16 @@
 /**
  * Working-tree snapshot helpers against a real git repository (US-002).
  *
- * `snapshotWorkingTree` / `changedPathsBetween` / `diffBetween`
+ * `snapshotWorkingTree` / `changedPathsBetween`
  * (`src/review/fix-review/tree-snapshot.ts`) exist because the review collectors
  * cannot answer "what did this fix change in the working tree?": the helpers in
  * `src/review/diff-utils.ts` are pinned to `<ref>..HEAD`, and
  * `captureWorkingTreeChanges` returns `[]` on any git failure while listing
  * every untracked file, pre-existing ones included.
+ *
+ * Both functions are imported from the `@/review/fix-review` barrel, not from
+ * the leaf module: since US-003 (pipeline-review-delete) the barrel is the
+ * whole retained fix-review surface, and `src/` consumers reach it that way.
  *
  * Real git in a throwaway repository is the point of these tests — the contract
  * is about what git reports (tree ids, repo-root-relative path spelling,
@@ -23,12 +27,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
-import {
-  _treeSnapshotDeps,
-  changedPathsBetween,
-  diffBetween,
-  snapshotWorkingTree,
-} from "@/review/fix-review/tree-snapshot";
+import { changedPathsBetween, snapshotWorkingTree } from "@/review/fix-review";
+import { _treeSnapshotDeps } from "@/review/fix-review/tree-snapshot";
 
 let testDir: string;
 let repo: string;
@@ -288,39 +288,6 @@ describe("changedPathsBetween", () => {
   });
 });
 
-describe("diffBetween", () => {
-  test("AC10: returns the fix's changed line and no hunk for a file under .nax/", async () => {
-    write("src/a.ts", 'export const greeting = "hello from the fix";\n');
-    write(".nax/state.json", '{"status":"running"}\n');
-
-    const diff = await diffBetween(repo, "HEAD", await snapshotWorkingTree(repo));
-
-    expect(diff).toContain('export const greeting = "hello from the fix";');
-    expect(diff).not.toContain(".nax");
-  });
-
-  test("AC10: excludes .nax/ paths that are tracked, not only untracked ones", async () => {
-    write(".nax/tracked.json", '{"v":1}\n');
-    await git(["add", ".nax/tracked.json"]);
-    await git(["commit", "-m", "chore: track a nax state file"]);
-    write("src/a.ts", 'export const greeting = "hello from the fix";\n');
-    write(".nax/tracked.json", '{"v":2}\n');
-
-    const diff = await diffBetween(repo, "HEAD", await snapshotWorkingTree(repo));
-
-    expect(diff).toContain('export const greeting = "hello from the fix";');
-    expect(diff).not.toContain(".nax");
-  });
-
-  test("AC10: rejects with FIX_REVIEW_GIT_FAILED for an unknown ref rather than returning an empty diff", async () => {
-    const err = await captureRejection(diffBetween(repo, "no-such-ref", "HEAD"));
-
-    expect(err).toBeInstanceOf(NaxError);
-    assertNaxError(err, "diffBetween with an unknown ref");
-    expect(err.code).toBe("FIX_REVIEW_GIT_FAILED");
-  });
-});
-
 /**
  * #2210: a nested repository the agent created can name a filter driver in its
  * own config. A plain `git add -A` dirty-checks every gitlink by running git
@@ -383,22 +350,20 @@ describe("snapshotWorkingTree — #2210 nested-repo filter driver", () => {
 });
 
 /**
- * Hardening from the discarded NBF commit 268d13fe0 (points 3, 4, 5): the two
- * path helpers must agree on scope, survive awkward file names, and accept
- * SHA-256 object ids.
+ * Hardening from the discarded NBF commit 268d13fe0 (points 3, 4, 5):
+ * `changedPathsBetween` must keep its repo-wide scope, survive awkward file
+ * names, and accept SHA-256 object ids.
  */
 describe("tree-snapshot hardening", () => {
-  test("diffBetween from a package workdir shows the same repo-wide changes changedPathsBetween reports", async () => {
+  test("changedPathsBetween from a package workdir reports repo-wide changes", async () => {
     write("packages/a/src/x.ts", "export const x = 2;\n");
     write("packages/b/src/y.ts", "export const y = 2;\n");
     const pkgDir = join(repo, "packages/a");
     const tree = await snapshotWorkingTree(pkgDir);
 
     const paths = await changedPathsBetween(pkgDir, "HEAD", tree);
-    const diff = await diffBetween(pkgDir, "HEAD", tree);
 
     expect(paths).toEqual(["packages/a/src/x.ts", "packages/b/src/y.ts"]);
-    for (const path of paths) expect(diff).toContain(`+++ b/${path}`);
   });
 
   test("changedPathsBetween keeps non-ASCII names and surrounding spaces verbatim", async () => {
@@ -470,5 +435,49 @@ describe("tree-snapshot git timeout", () => {
     } finally {
       Object.assign(_treeSnapshotDeps, orig);
     }
+  });
+});
+
+/**
+ * US-003 (pipeline-review-delete) — the retained `@/review/fix-review` seam.
+ *
+ * The barrel is the ONLY surface `src/` may reach the fix review through
+ * (`check:alias-internals` legalises the nested `tree-snapshot` barrel, so the
+ * gate alone would not notice a fourth symbol appearing here). Everything else
+ * the barrel used to re-export — the verdict/request types, `resolveFixReviewModel`
+ * and `checkFixScope` — belonged to the fix-review operation deleted in US-001
+ * and the scope check it drove, so the surface is pinned exactly.
+ *
+ * The AC-3/AC-4 cases below run the two functions AS IMPORTED FROM THE BARREL,
+ * not from the leaf module: a barrel re-export that resolved to a different
+ * implementation, or that dropped a symbol the leaf still exports, would pass a
+ * leaf-level test and fail here.
+ */
+describe("@/review/fix-review — retained barrel surface (US-003)", () => {
+  test("AC-2: exports exactly snapshotWorkingTree and changedPathsBetween, both functions", async () => {
+    const barrel: Record<string, unknown> = await import("@/review/fix-review");
+
+    expect(Object.keys(barrel).sort()).toEqual(["changedPathsBetween", "snapshotWorkingTree"]);
+    expect(typeof barrel.snapshotWorkingTree).toBe("function");
+    expect(typeof barrel.changedPathsBetween).toBe("function");
+  });
+
+  test("AC-3: reports a newly written file's repo-relative path between HEAD and a post-write snapshot", async () => {
+    write("src/brand-new.ts", "export const brandNew = 1;\n");
+    const tree = await snapshotWorkingTree(repo);
+
+    const paths = await changedPathsBetween(repo, "HEAD", tree);
+
+    expect(paths).toContain("src/brand-new.ts");
+  });
+
+  test("AC-4: rejects with FIX_REVIEW_GIT_FAILED for an unknown ref instead of reporting an empty list", async () => {
+    const err = await captureRejection(changedPathsBetween(repo, "no-such-ref", "HEAD"));
+
+    expect(err).toBeInstanceOf(NaxError);
+    assertNaxError(err, "barrel changedPathsBetween with an unknown from ref");
+    expect(err.code).toBe("FIX_REVIEW_GIT_FAILED");
+    // The distinction AC-4 protects: a failure must not read as "nothing changed".
+    expect(await changedPathsBetween(repo, "HEAD", "HEAD")).toEqual([]);
   });
 });

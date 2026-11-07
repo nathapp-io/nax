@@ -142,8 +142,9 @@ export async function dispatchStrategy<F extends Finding>(
 /**
  * The error code `callOp` raises for an operation whose hops never reached a
  * model. Spelled here because this module is where the fix cycle reads it:
- * `src/operations/call.ts` writes the same literal, and
- * `src/review/no-dispatch.ts` is the review side's reader.
+ * `src/operations/call.ts` writes the same literal, and the review side's
+ * reader (`src/review/no-dispatch.ts`) was deleted with the pipeline review
+ * operations in C1 wave B2b-2.
  */
 const NO_DISPATCH_ERROR_CODE = "CALL_OP_NO_DISPATCH";
 

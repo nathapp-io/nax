@@ -57,8 +57,9 @@ export const SemanticReviewConfigSchema = z.object({
    * findings against the AC text. Mirrors the adversarial field of the same name.
    *
    * #1666 — this field existed on the hand-written `SemanticReviewConfig`
-   * interface (src/review/types.ts) and was read unconditionally by
-   * src/operations/semantic-review.ts, but was missing from THIS schema — so
+   * interface (src/review/types.ts) and was read unconditionally by the
+   * pipeline semantic review op (deleted with C1 wave B2b-2), but was missing
+   * from THIS schema — so
    * `semanticConfig.acRegroundOnDrop` was always `undefined` at runtime and the
    * knob could never actually be disabled via config. Caught by the drift guard
    * added alongside this fix (see review/types.ts).
@@ -105,8 +106,9 @@ export const AdversarialReviewConfigSchema = z.object({
   /** LLM call timeout in milliseconds. Default 600s (matches semantic — both review paths may need full tool traversal). */
   timeoutMs: z.number().int().positive().default(600_000),
   /**
-   * Pathspec exclusions applied in embedded mode (to collectDiff) and in ref mode
-   * (shown in the prompt's git commands).
+   * Pathspec exclusions for the review diff — in the (since deleted) embedded
+   * mode they reached the `collectDiff` collector, in ref mode they appear in
+   * the prompt's git commands.
    *
    * Optional — undefined means "derive from testFilePatterns + noise dirs" (adversarial
    * defaults to minimal exclusions so it sees test files). Any user-set value (including [])

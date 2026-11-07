@@ -433,7 +433,7 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
 // Issue #725 — RunOperation.model / CompleteOperation.model accept either a
 // literal ConfiguredModel or a resolver `(input, ctx) => ConfiguredModel`. The
 // resolver form is what unblocks per-call tier selection from input config
-// (e.g. semanticReviewOp reads `input.semanticConfig.model`). Without these
+// (e.g. a review op reading its model from the input's own config slice). Without these
 // tests a future refactor could silently drop the resolver path and we'd be
 // back to "balanced is hardcoded".
 describe("callOp — op.model resolver (issue #725)", () => {
