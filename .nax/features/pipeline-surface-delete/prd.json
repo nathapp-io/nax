@@ -3,7 +3,7 @@
   "feature": "pipeline-surface-delete",
   "branchName": "feat/pipeline-surface-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T13:28:39.707Z",
+  "updatedAt": "2026-11-07T13:49:14.859Z",
   "userStories": [
     {
       "id": "US-001",
@@ -497,14 +497,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Removal spans operations, verification, runtime and completion/reporting; explicit regressions protect the retained journal ignore and positional auto-commit safety contract."
+        "reasoning": "Removal spans operations, verification, runtime and completion/reporting; explicit regressions protect the retained journal ignore and positional auto-commit safety contract.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/runtime/index.ts",
@@ -607,7 +610,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e7b8bfbba66c0c26260658cbd26a64f0bb7ff5dc"
     },
     {
       "id": "US-006",
