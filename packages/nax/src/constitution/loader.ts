@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { validateFilePath } from "../config/path-security";
 import { globalConfigDir } from "../config/paths";
-import { estimateTokens } from "../optimizer/types";
+import { estimateTokens } from "../utils/tokens";
 import type { ConstitutionConfig, ConstitutionResult } from "./types";
 
 /**

@@ -15,7 +15,6 @@ import type {
   IContextProvider,
   ILoopHandlerProvider,
   IPostRunAction,
-  IPromptOptimizer,
   IReporter,
   IReviewPlugin,
   LoopHandlerRegistrar,
@@ -201,18 +200,6 @@ export class PluginRegistry {
       });
     }
     return dirs;
-  }
-
-  /**
-   * Get all prompt optimizers.
-   *
-   * @returns Array of optimizer implementations
-   */
-  getOptimizers(): IPromptOptimizer[] {
-    return this.plugins
-      .filter((p) => p.provides.includes("optimizer"))
-      .map((p) => p.extensions.optimizer)
-      .filter((opt): opt is IPromptOptimizer => opt !== undefined);
   }
 
   /**

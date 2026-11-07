@@ -2,7 +2,7 @@
  * Context builder module for story-scoped prompt optimization
  */
 
-export { estimateTokens } from "../optimizer/types";
+export { estimateTokens } from "../utils/tokens";
 export { type AutoDetectOptions, autoDetectContextFiles, extractKeywords } from "./auto-detect";
 export {
   buildContext,

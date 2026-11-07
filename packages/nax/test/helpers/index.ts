@@ -185,7 +185,6 @@ export type { MutationCheckCtxOptions } from "./mutation-check";
 export { makeMutationCheckCtx, makeMutationCheckDeps } from "./mutation-check";
 export { opModelResolver } from "./op-model";
 export { type OpencodeAcpEnvDeps, stubOpencodeAcpEnvDeps } from "./opencode-acp-deps";
-export { makeOptimizerResult } from "./optimizer-result";
 export { DEFAULT_TEST_ROUTING, makeTestContext, makeTestPRD, makeTestStory } from "./pipeline-context";
 export { makeResolvedTestPatterns } from "./plan-inputs";
 export { type MockPluginRegistry, makePluginRegistry } from "./plugin-registry";

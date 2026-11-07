@@ -6,7 +6,6 @@
  */
 
 import type { AgentAdapter } from "../agents/types";
-import type { IPromptOptimizer } from "../optimizer/types";
 import type { RoutingStrategy } from "../routing/router";
 import type {
   IContextProvider,
@@ -46,7 +45,6 @@ export type {
  * Extension point types that plugins can provide.
  */
 export type PluginType =
-  | "optimizer"
   | "router"
   | "agent"
   | "reviewer"
@@ -124,9 +122,6 @@ export interface NaxPlugin {
  * Only extensions matching the plugin's `provides` array are required.
  */
 export interface PluginExtensions {
-  /** Custom prompt optimizer */
-  optimizer?: IPromptOptimizer;
-
   /** Custom routing strategy (inserted into the strategy chain) */
   router?: RoutingStrategy;
 
@@ -159,20 +154,6 @@ export interface PluginResourceDirs {
   readonly commands?: string;
   readonly agents?: string;
 }
-
-// ============================================================================
-// Optimizer Extension
-// ============================================================================
-
-/**
- * Re-export optimizer types from the optimizer module.
- * Plugin optimizers use the same interface as built-in optimizers.
- */
-export type {
-  IPromptOptimizer,
-  PromptOptimizerInput,
-  PromptOptimizerResult,
-} from "../optimizer/types";
 
 // ============================================================================
 // Plugin Logger

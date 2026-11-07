@@ -22,8 +22,8 @@ import { dirname, join } from "node:path";
 import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
-import { estimateTokens } from "@/optimizer";
 import { atomicWriteText } from "@/utils/json-file";
+import { estimateTokens } from "@/utils/tokens";
 
 /** Injectable file I/O — tests override to use in-memory stores. */
 export const _fragmentStoreDeps = {

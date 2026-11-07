@@ -142,7 +142,7 @@ export interface ContextProviderResult {
  *     const ticket = await jiraApi.getTicket(story.tags[0]);
  *     return {
  *       content: `## ${ticket.key}\n\n${ticket.description}`,
- *       estimatedTokens: estimateTokens(ticket.description),
+ *       estimatedTokens: estimateTokens(ticket.description), // from src/utils/tokens
  *       label: "Jira Context"
  *     };
  *   }

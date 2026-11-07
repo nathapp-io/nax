@@ -21,7 +21,6 @@ function getSafeLogger() {
 }
 
 const VALID_PLUGIN_TYPES: readonly PluginType[] = [
-  "optimizer",
   "router",
   "agent",
   "reviewer",
@@ -31,6 +30,14 @@ const VALID_PLUGIN_TYPES: readonly PluginType[] = [
   "loop-handlers",
   "resources",
 ] as const;
+
+/** Extension type removed with pipeline mode; a plugin still declaring it fails validation by name. */
+const REMOVED_OPTIMIZER_TYPE = "optimizer";
+
+/** Warning for a plugin that still declares the removed optimizer extension. */
+export function removedOptimizerMessage(pluginName: string): string {
+  return `Plugin '${pluginName}' validation failed: the 'optimizer' extension was removed with pipeline mode; remove it from 'provides'`;
+}
 
 /**
  * Validate a plugin module at runtime.
@@ -72,6 +79,11 @@ export function validatePlugin(module: unknown): NaxPlugin | null {
 
   if (plugin.provides.length === 0) {
     getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: 'provides' must not be empty`);
+    return null;
+  }
+
+  if (plugin.provides.includes(REMOVED_OPTIMIZER_TYPE)) {
+    getSafeLogger()?.warn("plugins", removedOptimizerMessage(plugin.name));
     return null;
   }
 
@@ -126,8 +138,6 @@ export function validatePlugin(module: unknown): NaxPlugin | null {
  */
 function validateExtension(pluginName: string, type: PluginType, extensions: Record<string, unknown>): boolean {
   switch (type) {
-    case "optimizer":
-      return validateOptimizer(pluginName, extensions.optimizer);
     case "router":
       return validateRouter(pluginName, extensions.router);
     case "agent":
@@ -148,30 +158,6 @@ function validateExtension(pluginName: string, type: PluginType, extensions: Rec
       getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: unknown extension type '${type}'`);
       return false;
   }
-}
-
-/**
- * Validate optimizer extension.
- */
-function validateOptimizer(pluginName: string, optimizer: unknown): boolean {
-  if (typeof optimizer !== "object" || optimizer === null) {
-    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: optimizer extension must be an object`);
-    return false;
-  }
-
-  const opt = optimizer as Record<string, unknown>;
-
-  if (typeof opt.name !== "string") {
-    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: optimizer.name must be a string`);
-    return false;
-  }
-
-  if (typeof opt.optimize !== "function") {
-    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: optimizer.optimize must be a function`);
-    return false;
-  }
-
-  return true;
 }
 
 /**

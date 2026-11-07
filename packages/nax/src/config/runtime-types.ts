@@ -357,9 +357,9 @@ export interface AcceptanceConfig {
 
 /** Optimizer config (v0.10) */
 export interface OptimizerConfig {
-  /** Enable prompt optimizer. With no optimizer plugin loaded this is a
-   * pass-through: the built-in `rule-based` strategy and its `strategies`
-   * knobs were removed, so a custom optimizer arrives via `IPromptOptimizer`. */
+  /** Enable prompt optimizer. No longer read: the optimizer stage is gone and
+   * the plugin `optimizer` extension is rejected, so nothing consumes this flag.
+   * The key itself is retained until a later change removes it. */
   enabled: boolean;
 }
 

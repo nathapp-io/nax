@@ -6,6 +6,6 @@
  * architectural rules, testing requirements, and forbidden patterns.
  */
 
-export { estimateTokens } from "../optimizer/types";
+export { estimateTokens } from "../utils/tokens";
 export { loadConstitution, truncateToTokens } from "./loader";
 export type { ConstitutionConfig, ConstitutionResult } from "./types";

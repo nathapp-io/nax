@@ -73,7 +73,7 @@ describe("Runner config plugins integration (US-007)", () => {
 export default {
   name: "config-test-plugin",
   version: "1.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     const fs = await import("node:fs/promises");
     await fs.writeFile("${initTracker}", JSON.stringify({
@@ -82,17 +82,7 @@ export default {
     }), "utf-8");
   },
   extensions: {
-    optimizer: {
-      name: "test",
-      async optimize(input) {
-        return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
-        };
-      }
-    }
+    reporter: { name: "test" }
   }
 };
 `;
@@ -151,23 +141,13 @@ export default {
 export default {
   name: "relative-path-plugin",
   version: "1.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     const fs = await import("node:fs/promises");
     await fs.writeFile("${initTracker}", JSON.stringify({ loaded: true }), "utf-8");
   },
   extensions: {
-    optimizer: {
-      name: "test",
-      async optimize(input) {
-        return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
-        };
-      }
-    }
+    reporter: { name: "test" }
   }
 };
 `;
@@ -215,23 +195,13 @@ export default {
 export default {
   name: "absolute-plugin",
   version: "1.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     const fs = await import("node:fs/promises");
     await fs.writeFile("${initTracker}", JSON.stringify({ absolutePath: true }), "utf-8");
   },
   extensions: {
-    optimizer: {
-      name: "test",
-      async optimize(input) {
-        return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
-        };
-      }
-    }
+    reporter: { name: "test" }
   }
 };
 `;
@@ -378,7 +348,7 @@ export default {
 export default {
   name: "collision-plugin",
   version: "1.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     const fs = await import("node:fs/promises");
     let tracker = [];
@@ -389,17 +359,7 @@ export default {
     await fs.writeFile("${initTracker}", JSON.stringify(tracker), "utf-8");
   },
   extensions: {
-    optimizer: {
-      name: "auto",
-      async optimize(input) {
-        return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
-        };
-      }
-    }
+    reporter: { name: "auto" }
   }
 };
 `;
@@ -413,7 +373,7 @@ export default {
 export default {
   name: "collision-plugin",
   version: "2.0.0",
-  provides: ["optimizer"],
+  provides: ["reporter"],
   async setup(config) {
     const fs = await import("node:fs/promises");
     let tracker = [];
@@ -424,17 +384,7 @@ export default {
     await fs.writeFile("${initTracker}", JSON.stringify(tracker), "utf-8");
   },
   extensions: {
-    optimizer: {
-      name: "config",
-      async optimize(input) {
-        return {
-          optimizedPrompt: input.prompt,
-          estimatedTokens: input.estimatedTokens,
-          tokensSaved: 0,
-          appliedStrategies: []
-        };
-      }
-    }
+    reporter: { name: "config" }
   }
 };
 `;

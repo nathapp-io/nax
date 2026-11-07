@@ -12,28 +12,6 @@ import type { NaxPlugin } from "@/plugins/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeOptPlugin(id: number): NaxPlugin {
-  return {
-    name: `opt${id}`,
-    version: "1.0.0",
-    provides: ["optimizer"],
-    extensions: {
-      optimizer: {
-        name: `optimizer-${id}`,
-        async optimize(input) {
-          return {
-            prompt: input.prompt,
-            originalTokens: 0,
-            optimizedTokens: 0,
-            savings: 0,
-            appliedRules: [],
-          };
-        },
-      },
-    },
-  };
-}
-
 function makeRouterPlugin(id: number): NaxPlugin {
   return {
     name: `router${id}`,
@@ -116,35 +94,22 @@ describe("PluginRegistry", () => {
     test("creates empty registry; stores plugins when provided", () => {
       expect(new PluginRegistry([]).plugins).toEqual([]);
 
-      const registry = new PluginRegistry([makeOptPlugin(1)]);
+      const registry = new PluginRegistry([makeReporterPlugin(1)]);
       expect(registry.plugins).toHaveLength(1);
-      expect(registry.plugins[0].name).toBe("opt1");
+      expect(registry.plugins[0].name).toBe("rep1");
     });
   });
 
   describe("empty getters", () => {
     test("all getters return empty array when registry has no matching plugins", () => {
       const empty = new PluginRegistry([]);
-      expect(empty.getOptimizers()).toEqual([]);
       expect(empty.getRouters()).toEqual([]);
       expect(empty.getReviewers()).toEqual([]);
       expect(empty.getContextProviders()).toEqual([]);
       expect(empty.getReporters()).toEqual([]);
 
       // Plugins with wrong type are ignored by other getters
-      expect(new PluginRegistry([makeRouterPlugin(1)]).getOptimizers()).toEqual([]);
-    });
-  });
-
-  describe("getOptimizers", () => {
-    test("returns optimizer from plugin; returns multiple in load order", () => {
-      const r1 = new PluginRegistry([makeOptPlugin(1)]);
-      expect(r1.getOptimizers()).toHaveLength(1);
-      expect(r1.getOptimizers()[0].name).toBe("optimizer-1");
-
-      const r2 = new PluginRegistry([makeOptPlugin(1), makeOptPlugin(2)]);
-      expect(r2.getOptimizers()).toHaveLength(2);
-      expect(r2.getOptimizers().map((o) => o.name)).toEqual(["optimizer-1", "optimizer-2"]);
+      expect(new PluginRegistry([makeRouterPlugin(1)]).getReporters()).toEqual([]);
     });
   });
 
@@ -214,7 +179,7 @@ describe("PluginRegistry", () => {
     test("calls teardown on all plugins; does not throw if plugin has no teardown; continues if one fails", async () => {
       const teardownCalls: string[] = [];
       const p1: NaxPlugin = {
-        ...makeOptPlugin(1),
+        ...makeReporterPlugin(1),
         async teardown() {
           teardownCalls.push("plugin1");
         },
@@ -228,7 +193,7 @@ describe("PluginRegistry", () => {
       await new PluginRegistry([p1, p2]).teardownAll();
       expect(teardownCalls).toEqual(["plugin1", "plugin2"]);
 
-      await expect(new PluginRegistry([makeOptPlugin(1)]).teardownAll()).resolves.toBeUndefined();
+      await expect(new PluginRegistry([makeReporterPlugin(1)]).teardownAll()).resolves.toBeUndefined();
 
       teardownCalls.length = 0;
       const failing: NaxPlugin = {
@@ -253,16 +218,16 @@ describe("PluginRegistry", () => {
       const plugin: NaxPlugin = {
         name: "multi",
         version: "1.0.0",
-        provides: ["optimizer", "router", "reviewer"],
+        provides: ["reporter", "router", "reviewer"],
         extensions: {
-          optimizer: makeOptPlugin(1).extensions.optimizer,
+          reporter: makeReporterPlugin(1).extensions.reporter,
           router: makeRouterPlugin(1).extensions.router,
           reviewer: makeReviewerPlugin(1).extensions.reviewer,
         },
       };
 
       const registry = new PluginRegistry([plugin]);
-      expect(registry.getOptimizers()).toHaveLength(1);
+      expect(registry.getReporters()).toHaveLength(1);
       expect(registry.getRouters()).toHaveLength(1);
       expect(registry.getReviewers()).toHaveLength(1);
     });

@@ -8,7 +8,7 @@ import { describe, expect, it, spyOn, test } from "bun:test";
 import { makeAgentAdapter } from "@test/helpers";
 import type { AgentAdapter } from "@/agents/types";
 import * as loggerModule from "@/logger";
-import { validatePlugin } from "@/plugins/validator";
+import { type NaxPlugin, removedOptimizerMessage, validatePlugin } from "@/plugins";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // validatePlugin with post-run-action
@@ -184,6 +184,80 @@ describe("validatePlugin with post-run-action", () => {
 
     const result = validatePlugin(validPlugin);
     expect(result).not.toBeNull();
+  });
+});
+
+describe("validatePlugin with the removed optimizer extension", () => {
+  // The optimizer extension was deleted with pipeline mode. A plugin still
+  // declaring it must be rejected by name rather than by the generic
+  // "'optimizer' is not a valid plugin type" message, so the operator learns the
+  // extension is gone and what to do about it.
+  const legacyOptimizerPlugin = (name: string) => ({
+    name,
+    version: "1.0.0",
+    provides: ["optimizer"],
+    extensions: { optimizer: { name: "x", optimize: async () => ({}) } },
+  });
+
+  const captureWarnings = (): { calls: unknown[][]; restore: () => void } => {
+    const logger = loggerModule.getSafeLogger();
+    if (!logger) throw new Error("expected getSafeLogger() to return a logger");
+    const warn = spyOn(logger, "warn").mockImplementation(() => {});
+    return { calls: warn.mock.calls as unknown[][], restore: () => warn.mockRestore() };
+  };
+
+  test("rejects a plugin that provides only the removed optimizer extension", () => {
+    expect(validatePlugin(legacyOptimizerPlugin("legacy-opt"))).toBeNull();
+  });
+
+  test("warns with the removal message on the plugins stage", () => {
+    const captured = captureWarnings();
+    try {
+      validatePlugin(legacyOptimizerPlugin("legacy-opt"));
+
+      expect(captured.calls).toContainEqual(["plugins", removedOptimizerMessage("legacy-opt")]);
+      expect(removedOptimizerMessage("legacy-opt")).toBe(
+        "Plugin 'legacy-opt' validation failed: the 'optimizer' extension was removed with pipeline mode; remove it from 'provides'",
+      );
+    } finally {
+      captured.restore();
+    }
+  });
+
+  test("rejects a plugin whose provides mixes a kept extension with the removed one", () => {
+    const mixed = {
+      name: "mixed",
+      version: "1.0.0",
+      provides: ["reporter", "optimizer"],
+      extensions: { reporter: { name: "r" } },
+    };
+    expect(validatePlugin(mixed)).toBeNull();
+  });
+
+  test("names the removed extension in the warning for a mixed plugin", () => {
+    const captured = captureWarnings();
+    try {
+      validatePlugin({
+        name: "mixed",
+        version: "1.0.0",
+        provides: ["reporter", "optimizer"],
+        extensions: { reporter: { name: "r" } },
+      });
+
+      expect(captured.calls.map((call) => call[1])).toContain(removedOptimizerMessage("mixed"));
+    } finally {
+      captured.restore();
+    }
+  });
+
+  test("accepts a reporter-only plugin unchanged", () => {
+    const reporterPlugin: NaxPlugin = {
+      name: "rep",
+      version: "1.0.0",
+      provides: ["reporter"],
+      extensions: { reporter: { name: "r" } },
+    };
+    expect(validatePlugin(reporterPlugin)).toBe(reporterPlugin);
   });
 });
 
