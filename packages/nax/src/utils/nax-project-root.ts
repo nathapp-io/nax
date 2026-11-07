@@ -1,4 +1,5 @@
 import { dirname, join, resolve } from "node:path";
+import { isGlobalConfigDir } from "@/config/paths";
 
 const MAX_NAX_WALK_DEPTH = 10;
 
@@ -18,7 +19,9 @@ export const _naxProjectRootDeps = {
 export async function findNaxProjectRoot(startDir: string): Promise<string> {
   let dir = resolve(startDir);
   for (let depth = 0; depth < MAX_NAX_WALK_DEPTH; depth++) {
-    if (await _naxProjectRootDeps.exists(join(dir, ".nax", "config.json"))) {
+    const naxDir = join(dir, ".nax");
+    // The global config dir is not a project root (#2827).
+    if ((await _naxProjectRootDeps.exists(join(naxDir, "config.json"))) && !isGlobalConfigDir(naxDir)) {
       return dir;
     }
     const parent = dirname(dir);

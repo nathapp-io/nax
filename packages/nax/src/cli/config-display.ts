@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { globalConfigPath } from "../config/loader";
-import { findProjectDir } from "../config/paths";
+import { findProjectDir, GLOBAL_LOCAL_CONFIG_FILE, globalConfigDir } from "../config/paths";
 import type { NaxConfig } from "../config/schema";
 import { FIELD_DESCRIPTIONS } from "./config-descriptions";
 import { deepDiffConfigs } from "./config-diff";
@@ -95,8 +95,7 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     console.log("# nax Configuration");
     console.log("#");
     console.log("# Resolution order: defaults → global → project → CLI overrides");
-    console.log(`# Global config: ${sources.global ? sources.global : "(not found)"}`);
-    console.log(`# Project config: ${sources.project ? sources.project : "(not found)"}`);
+    printConfigSources("#", sources);
     console.log();
 
     // SEC-05: mask resolved secrets before display — this branch was
@@ -107,27 +106,39 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     // Default view: JSON with header showing config sources
     console.log("// nax Configuration");
     console.log("// Resolution order: defaults → global → project → CLI overrides");
-    console.log(`// Global config: ${sources.global ? sources.global : "(not found)"}`);
-    console.log(`// Project config: ${sources.project ? sources.project : "(not found)"}`);
+    printConfigSources("//", sources);
     console.log();
     const masked = maskProfileValues(config as unknown as Record<string, unknown>);
     console.log(JSON.stringify(masked, null, 2));
   }
 }
 
+/** Print the config-source header lines, each prefixed with the view's comment marker. */
+function printConfigSources(marker: string, sources: ReturnType<typeof determineConfigSources>): void {
+  console.log(`${marker} Global config: ${sources.global ?? "(not found)"}`);
+  if (sources.globalLocal) console.log(`${marker} Global local config: ${sources.globalLocal}`);
+  console.log(`${marker} Project config: ${sources.project ?? "(not found)"}`);
+}
+
 /**
  * Determine which config files are present.
  *
  * @param startDir - Directory to resolve the project config from (defaults to cwd)
- * @returns Paths to global and project config files (null if not found)
+ * @returns Paths to the global, per-machine global and project config files (null if not found)
  */
-export function determineConfigSources(startDir?: string): { global: string | null; project: string | null } {
+export function determineConfigSources(startDir?: string): {
+  global: string | null;
+  globalLocal: string | null;
+  project: string | null;
+} {
   const globalPath = globalConfigPath();
+  const globalLocalPath = join(globalConfigDir(), GLOBAL_LOCAL_CONFIG_FILE);
   const projectDir = findProjectDir(startDir ?? process.cwd());
   const projectPath = projectDir ? join(projectDir, "config.json") : null;
 
   return {
     global: fileExists(globalPath) ? globalPath : null,
+    globalLocal: fileExists(globalLocalPath) ? globalLocalPath : null,
     project: projectPath && fileExists(projectPath) ? projectPath : null,
   };
 }

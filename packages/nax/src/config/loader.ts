@@ -25,6 +25,7 @@ import {
   warnQualityCommandChains,
 } from "./config-guards";
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
+import { loadGlobalConfigRaw } from "./global-files";
 import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
@@ -118,7 +119,10 @@ function resolveProjectPaths(startDir: string | undefined): { projDir: string | 
   return { projDir, projectRoot };
 }
 
-/** Layer 1: Global config (~/.nax/config.json) — strip "profile" field before merging (AC 7). */
+/**
+ * Layer 1: Global config (~/.nax/config.json, with ~/.nax/config.local.json merged over it,
+ * #2827) — strip "profile" field before merging (AC 7).
+ */
 async function applyGlobalLayer(
   rawConfig: Record<string, unknown>,
   ctx: ConfigLoadCtx,
@@ -131,7 +135,7 @@ async function applyGlobalLayer(
   // flowing through defaults + global merge". null when there is no global config file.
   globalLayerConf: Record<string, unknown> | null;
 }> {
-  const globalConfRaw = await loadJsonFileStrict<Record<string, unknown>>(globalConfigPath(), "config");
+  const globalConfRaw = await loadGlobalConfigRaw();
   if (!globalConfRaw) return { rawConfig, globalConfRaw: null, globalLayerConf: null };
   const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
   const resolvedGlobalConf = resolveEnvVarsWarnOnFailure(globalConfStripped, ctx.logger, "global config");

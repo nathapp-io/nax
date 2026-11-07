@@ -10,15 +10,18 @@ Config is layered — project overrides global:
 | File | Scope |
 |:-----|:------|
 | `~/.nax/config.json` | Global (all projects) |
+| `~/.nax/config.local.json` | Global, this machine only — deep-merged over `~/.nax/config.json` |
 | `.nax/config.json` | Project-level override |
 | `.nax/mono/<package>/config.json` | Per-package override (monorepos) |
 
 The authoritative source is the Zod schema (`packages/nax/src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Most keys have a schema default. A few are unset until you add them (`project`, `curator`, `plugins`, `disabledPlugins`, `optimizer`, `generate`). Run `nax config --explain` to see the merged result with field descriptions.
 
+**Sharing `~/.nax` across machines.** If `~/.nax` is a synced repo, put per-machine settings (an `auth.exec.command` with absolute paths, local cost limits) in `~/.nax/config.local.json` and keep that file out of version control. The global dir is never treated as a project: running nax from a directory under `$HOME` with no nearer `.nax/config.json` loads `~/.nax` once, as the global layer.
+
 Some blocks are restricted by layer:
 
 - **Root-only** (a package config or package profile that sets them is ignored, and the root value applies): `execution.mode`, `execution.bashApproval`, `execution.approvalTimeout`, `execution.sandbox`, `execution.commandSafety`, `advisor` and `workflow` ([ADR-031](../adr/ADR-031-root-scoped-command-safety-config.md)).
-- **Global-only** (`~/.nax/config.json` only; a project, profile or package value fails the load): `auth`. Profiles (`profile`, `--profile`, `NAX_PROFILE`) overlay on top — see `nax config profile` in the [CLI reference](cli-reference.md).
+- **Global-only** (`~/.nax/config.json` or `~/.nax/config.local.json` only; a project, profile or package value fails the load): `auth`. Profiles (`profile`, `--profile`, `NAX_PROFILE`) overlay on top — see `nax config profile` in the [CLI reference](cli-reference.md).
 
 **Key options:**
 
