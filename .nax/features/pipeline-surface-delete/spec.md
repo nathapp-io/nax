@@ -99,6 +99,8 @@ Each story is verified by these steps, run in `packages/nax`:
    deletes too, and `pipeline/stages/prompt` matches the deleted `prompt-*.test.ts` files only. Line numbers in Design
    and `### Modifies` are at `c3266de8a`; a story that runs after another story edited the same file locates each site
    by its symbol or test name. The same sweep runs for each deleted test file's path below `test/`.
+   Each story's description carries these four steps in full, with the known comment hits for the stems that
+   story deletes; none of it is left to a shared section the implementer does not see.
 3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a
    lowerable entry. `check:complexity` fails with "baseline is stale" while a deleted file or function is still
    listed. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the
