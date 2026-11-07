@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1038
+    "looseCast": 1037
   },
-  "updatedAt": "2026-11-07T09:58:14.593Z",
+  "updatedAt": "2026-11-07T10:25:26.137Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -294,9 +294,6 @@
     },
     "test/unit/bakeoff/contestant.test.ts": {
       "looseCast": 3
-    },
-    "test/unit/acceptance/test-path.test.ts": {
-      "looseCast": 1
     },
     "test/unit/test-runners/detect.test.ts": {
       "looseCast": 1

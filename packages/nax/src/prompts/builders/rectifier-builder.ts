@@ -21,7 +21,7 @@ import { isBlockingSeverity } from "@/review";
 import { formatFailureSummary } from "@/test-runners";
 import { storyPackageDir } from "@/utils/path-frame";
 import type { TestFailure } from "@/verification";
-import type { FailureRecord, ReviewFinding } from "../core";
+import type { FailureRecord } from "../core";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { GuardrailLevel } from "../sections";
 import {
@@ -48,7 +48,7 @@ import {
 
 export { CONTRADICTION_ESCAPE_HATCH } from "./rectifier-builder-helpers";
 
-export type { FailureRecord, ReviewFinding };
+export type { FailureRecord };
 
 /**
  * Trigger type for rectification sessions.

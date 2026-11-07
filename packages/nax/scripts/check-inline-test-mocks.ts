@@ -75,7 +75,6 @@ const SKIP_FILES = new Set([
   "test/unit/verification/rectification-loop.test.ts",
   "test/unit/verification/fix-generator.test.ts",
   "test/unit/verification/rectification-loop-escalation.test.ts",
-  "test/unit/acceptance/test-path.test.ts",
   "test/unit/acceptance/generator-strategy.test.ts",
   "test/unit/execution/unified-executor-rl002.test.ts",
   "test/unit/execution/story-context.test.ts",

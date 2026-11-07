@@ -294,21 +294,6 @@ function parseFirstBalancedJsonCandidate<T>(text: string, openChar: "{" | "[", l
   return { value: undefined, truncatedAt: -1 };
 }
 
-/**
- * Wrap a prompt to instruct the LLM to respond with JSON only.
- *
- * Adds a JSON-only instruction at the top (primacy) and a reinforcement
- * reminder at the bottom (recency) — both improve compliance on cheap models.
- *
- * Pair with the multi-tier extraction functions above to parse the response.
- *
- * @param prompt - The core prompt content
- * @returns The prompt wrapped with JSON-only framing
- */
-export function wrapJsonPrompt(prompt: string): string {
-  return `IMPORTANT: Your entire response must be a single JSON object or array. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON.\n\n${prompt.trim()}\n\nYOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text.`;
-}
-
 /** JSON's named escapes for the control characters that have one. */
 const CONTROL_CHAR_ESCAPES: Record<string, string> = {
   "\b": "\\b",

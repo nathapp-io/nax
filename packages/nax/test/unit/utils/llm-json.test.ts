@@ -14,7 +14,6 @@ import {
   extractJsonObject,
   parseLLMJson,
   stripTrailingCommas,
-  wrapJsonPrompt,
 } from "@/utils/llm-json";
 
 // ---------------------------------------------------------------------------
@@ -277,39 +276,6 @@ describe("parseLLMJson", () => {
   test("counter-example — a closing brace inside a JSON string still parses", () => {
     const input = '{"ok": true, "note": "closing brace } inside string"}';
     expect(parseLLMJson<Obj>(input)).toEqual({ ok: true, note: "closing brace } inside string" });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// wrapJsonPrompt
-// ---------------------------------------------------------------------------
-
-describe("wrapJsonPrompt", () => {
-  test("prepends JSON-only instruction", () => {
-    const result = wrapJsonPrompt("my prompt");
-    expect(result).toContain("IMPORTANT:");
-    expect(result).toContain("single JSON object or array");
-    expect(result).toContain("my prompt");
-  });
-
-  test("appends JSON boundary reminder", () => {
-    const result = wrapJsonPrompt("my prompt");
-    expect(result).toContain("YOUR RESPONSE MUST START WITH");
-  });
-
-  test("trims whitespace from core prompt", () => {
-    const result = wrapJsonPrompt("  spaced prompt  ");
-    expect(result).toContain("spaced prompt");
-    expect(result).not.toContain("  spaced prompt  ");
-  });
-
-  test("core prompt appears between preamble and suffix", () => {
-    const result = wrapJsonPrompt("core content");
-    const coreIdx = result.indexOf("core content");
-    const importantIdx = result.indexOf("IMPORTANT:");
-    const mustStartIdx = result.indexOf("YOUR RESPONSE MUST START WITH");
-    expect(importantIdx).toBeLessThan(coreIdx);
-    expect(coreIdx).toBeLessThan(mustStartIdx);
   });
 });
 

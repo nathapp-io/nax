@@ -43,7 +43,6 @@ export {
 export { computeAcpHandle } from "./session-naming";
 export type { ResolvedAgentAssignment } from "./shared";
 export { resolveAgentAssignment } from "./shared";
-export { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "./shared/validation";
 export type { AgentVersionInfo } from "./shared/version-detection";
 export { getAgentVersion, getAgentVersions } from "./shared/version-detection";
 export {
