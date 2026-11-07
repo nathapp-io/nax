@@ -3,7 +3,7 @@
   "feature": "pipeline-dead-fields-delete",
   "branchName": "feat/pipeline-dead-fields-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T15:50:15.137Z",
+  "updatedAt": "2026-11-07T16:13:01.346Z",
   "userStories": [
     {
       "id": "US-001",
@@ -101,14 +101,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Coordinates persisted metric output, run/CLI summary, runtime ownership and several backfill layers; compatibility and zero-cost failure attribution require cross-module regression tests."
+        "reasoning": "Coordinates persisted metric output, run/CLI summary, runtime ownership and several backfill layers; compatibility and zero-cost failure attribution require cross-module regression tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/metrics/tracker.ts",
@@ -176,7 +179,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "33115de3e620bcf7b17ba84bad7d10675c6fae37"
     },
     {
       "id": "US-003",
