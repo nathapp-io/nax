@@ -39,7 +39,7 @@ export interface FixApplied {
    *
    * Folds failed-dispatch spend, mirroring the story orchestrator's per-phase
    * `phaseCosts` (that seam went with the story loop, B2b-1); the failed half is
-   * still carried beside it in `errorCostUsd`. See cycle-cost.ts.
+   * still carried beside it in `errorCostUsd`.
    */
   costUsd?: number;
   /**
@@ -65,32 +65,32 @@ export interface Iteration<F extends Finding = Finding> {
   /** Findings observed before the iteration ran. */
   findingsBefore: F[];
   /**
-   * Strategies that ran during this iteration. At least one entry when the
-   * iteration is produced by runFixCycle (one per strategy that ran).
+   * Strategies that ran during this iteration. At least one entry when the fix
+   * cycle produced the iteration (one per strategy that ran).
    *
    * Exception: carry-forward iterations recorded by review orchestrators
    * (e.g. adversarial) have fixesApplied: [] because the fix ran in the
-   * implementation session outside the FixCycle. The rendered table shows "-"
+   * implementation session outside the fix cycle. The rendered table shows "-"
    * in the "Strategies run" column for these rows.
    */
   fixesApplied: FixApplied[];
   /** Findings observed after the iteration ran. */
   findingsAfter: F[];
   /**
-   * Exact `findingKey(f)` (message included) per entry in the pre-iteration
-   * findings, in array order. Set by `recordIteration`; omitted on
+   * Exact finding key (message included) per entry in the pre-iteration
+   * findings, in array order. Set by the iteration recorder; omitted on
    * carry-forward iterations recorded by review orchestrators (which retain
    * the array form above). This is the strict identity — for the coarser
-   * identity `classifyOutcome` actually classifies by, see
+   * identity the outcome classifier used, see
    * `findingRecurrenceKeysBefore`/`After` (nax#1581).
    */
   findingKeysBefore?: string[];
   /** Mirror of `findingKeysBefore` for the post-iteration findings. */
   findingKeysAfter?: string[];
   /**
-   * `findingRecurrenceKey(f)` per entry in the pre-iteration findings, in
-   * array order — the coarse (message-excluded) identity `classifyOutcome`
-   * uses to compute `outcome`. Logged alongside the strict `findingKeys*`
+   * The coarse recurrence key per entry in the pre-iteration findings, in
+   * array order — the message-excluded identity the outcome classifier used
+   * to compute `outcome`. Logged alongside the strict `findingKeys*`
    * fields so a reader can tell why two `message`-differing findings were
    * classified as the same defect (nax#1581).
    */
@@ -122,7 +122,7 @@ export interface Iteration<F extends Finding = Finding> {
    * was skipped (`findingsAfter` equals `findingsBefore`, and the failed
    * dispatch's spend rides on `fixesApplied` like any other attempt).
    *
-   * Consumers care about exactly one thing: `withNoProgressBail` excludes these
+   * Consumers cared about exactly one thing: the no-progress bail excluded these
    * iterations from the no-progress window. An iteration that reached no model
    * is evidence of nothing — it neither advances the streak nor resets it —
    * where a completed no-edit iteration (same `outcome`, no marker) is real
