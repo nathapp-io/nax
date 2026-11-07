@@ -58,7 +58,9 @@ function buildReachableStageKeys(): Set<string> {
   // Site 1: src/pipeline/stages/context.ts always assembles "context".
   reachable.add("context");
 
-  // Site 2: src/pipeline/stages/prompt.ts, via executionContextStage.
+  // Site 2 (inert): `executionContextStage` mapped the single-session execution
+  // seam; that seam's stage is gone (B2c-1), so the mapping is driven here only
+  // so it stays covered until B3 removes it.
   reachable.add(executionContextStage({ isBatch: true }));
   reachable.add(executionContextStage({ isBatch: false }));
   for (const testStrategy of VALID_TEST_STRATEGIES) {

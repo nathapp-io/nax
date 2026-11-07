@@ -21,7 +21,7 @@ export interface IPromptOptimizer {
 }
 
 export interface PromptOptimizerInput {
-  /** Assembled prompt from promptStage */
+  /** Assembled prompt for the agent session */
   prompt: string;
   /** Stories being executed (for context) */
   stories: UserStory[];

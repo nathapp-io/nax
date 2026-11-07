@@ -104,9 +104,10 @@ export interface ExecutionContextStageOptions {
 
 /**
  * Resolve the context-engine stage key for the single-session execution
- * seam (promptStage, src/pipeline/stages/prompt.ts) — the execution-side
- * sibling of {@link contextStageForOp}, which used to cover the story-phase
- * dispatch seam before the story loop was cut.
+ * seam — the execution-side sibling of {@link contextStageForOp}, which used to
+ * cover the story-phase dispatch seam before the story loop was cut. The prompt
+ * stage that called this went in B2c-1, so the mapping is inert until B3 removes
+ * it.
  *
  * `test-after` and any unrecognized `testStrategy` value fall back to
  * `single-session` — there is no dedicated stage-config entry for

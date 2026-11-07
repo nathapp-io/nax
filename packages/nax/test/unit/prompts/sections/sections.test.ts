@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { UserStory } from "@/prd/types";
+import * as sectionsBarrel from "@/prompts/sections";
+import { applyProtocolRegions, buildStorySection, wrapAffordance } from "@/prompts/sections";
 import { buildConventionsSection } from "@/prompts/sections/conventions";
 import { buildIsolationSection } from "@/prompts/sections/isolation";
-import { buildRoleTaskSection } from "@/prompts/sections/role-task";
-import { buildStorySection } from "@/prompts/sections/story";
-import { buildVerdictSection } from "@/prompts/sections/verdict";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -49,26 +48,6 @@ describe("buildIsolationSection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildRoleTaskSection
-// ---------------------------------------------------------------------------
-
-describe("buildRoleTaskSection", () => {
-  test("standard: Do NOT modify test files, make failing tests pass; is pure", () => {
-    const result = buildRoleTaskSection("standard");
-    expect(result).toContain("Do NOT modify test files");
-    expect(result.toLowerCase()).toMatch(/make.*fail.*test.*pass|failing tests pass/);
-    expect(buildRoleTaskSection("standard")).toBe(buildRoleTaskSection("standard"));
-  });
-
-  test("lite: test-writer session, implements; is pure", () => {
-    const result = buildRoleTaskSection("lite");
-    expect(result).toContain("test-writer session");
-    expect(result.toLowerCase()).toMatch(/implement|then implement/);
-    expect(buildRoleTaskSection("lite")).toBe(buildRoleTaskSection("lite"));
-  });
-});
-
-// ---------------------------------------------------------------------------
 // buildStorySection
 // ---------------------------------------------------------------------------
 
@@ -93,29 +72,6 @@ describe("buildStorySection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildVerdictSection
-// ---------------------------------------------------------------------------
-
-describe("buildVerdictSection", () => {
-  test("includes verdict file, schema fields, approved conditions, quality values, no-commit instruction; is pure", () => {
-    const result = buildVerdictSection(STORY);
-    expect(result).toContain(".nax-verifier-verdict.json");
-    expect(result).toContain('"version"');
-    expect(result).toContain('"approved"');
-    expect(result).toContain('"tests"');
-    expect(result).toContain('"acceptanceCriteria"');
-    expect(result).toContain('"quality"');
-    expect(result).toContain("approved: true");
-    expect(result).toContain("approved: false");
-    expect(result).toContain('"good"');
-    expect(result).toContain('"acceptable"');
-    expect(result).toContain('"poor"');
-    expect(result).toContain("do not commit code changes");
-    expect(buildVerdictSection(STORY)).toBe(buildVerdictSection(STORY));
-  });
-});
-
-// ---------------------------------------------------------------------------
 // buildConventionsSection
 // ---------------------------------------------------------------------------
 
@@ -126,5 +82,37 @@ describe("buildConventionsSection", () => {
     expect(result.toLowerCase()).toMatch(/idiomatic|maintainable/);
     expect(result.toLowerCase()).toMatch(/commit/);
     expect(buildConventionsSection()).toBe(buildConventionsSection());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (pipeline-surface-delete) — the barrel's surviving surface
+// ---------------------------------------------------------------------------
+
+describe("prompt-sections barrel surface", () => {
+  // The TDD prompt builder was the last consumer of these; with it gone they
+  // are removed outright, with no replacement aliases.
+  test.each([
+    "buildHermeticSection",
+    "buildRoleTaskSection",
+    "buildSelfVerificationSection",
+    "buildTddLanguageSection",
+    "buildTestBaselineSection",
+    "MAX_BASELINE_SECTION_CHARS",
+    "buildTestQualitySection",
+    "buildVerdictSection",
+    "buildBatchStorySection",
+    "buildStoryReminderSection",
+    "unwrapProtocolRegions",
+  ])("no longer re-exports %s", (name) => {
+    expect(name in sectionsBarrel).toBe(false);
+  });
+
+  test("still re-exports the integration symbols workflow mode uses", () => {
+    expect(typeof sectionsBarrel.buildStorySection).toBe("function");
+    expect(typeof sectionsBarrel.applyProtocolRegions).toBe("function");
+    expect(typeof sectionsBarrel.wrapAffordance).toBe("function");
+    expect(applyProtocolRegions("plain prompt", { protocol: "acp" })).toBe("plain prompt");
+    expect(typeof wrapAffordance).toBe("function");
   });
 });

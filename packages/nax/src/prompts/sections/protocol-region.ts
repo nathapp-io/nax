@@ -259,10 +259,9 @@ function renderGitCommit(spec: CommitSpec): string {
  *  matches an object-literal JSON. Without this guard a producer passing an
  *  uppercase kind or a non-object spec (array, string, number, null) silently
  *  emits an opener that REGION cannot match: `applyProtocolRegions` will not
- *  strip it under ACP, `unwrapProtocolRegions` will not strip it for
- *  persistence, and the AC9 freeze will not even recognise the opener as one
- *  of ours. Marker text would ship into dispatched and persisted prompts with
- *  no error. Throw at the wrap site so the producer fixes the call. */
+ *  strip it under ACP, and the AC9 freeze will not even recognise the opener as
+ *  one of ours. Marker text would ship into dispatched prompts with no error.
+ *  Throw at the wrap site so the producer fixes the call. */
 export function wrapAffordance(kind: string, spec: unknown, acpBody: string): string {
   if (typeof kind !== "string" || !KIND_PATTERN.test(kind)) {
     throw new NaxError(
@@ -348,20 +347,4 @@ export function applyProtocolRegions(prompt: string, opts: ApplyProtocolRegionsO
       return body;
     }
   });
-}
-
-/** Strip every region marker from a prompt, returning the full unwrapped text.
- *
- *  Each region (of any kind and any nonce) is replaced by its ACP body, so
- *  every surrounding character is preserved byte-for-byte. The result contains
- *  every ACP body and no region marker at all — which is what a caller that
- *  persists a prompt to disk needs: the marker grammar is internal bookkeeping
- *  and must not ship with the recorded text.
- *
- *  A marker written by another process is not interpreted (its nonce is not
- *  ours) — only its HTML-comment wrapper is removed and its content kept,
- *  exactly as it appeared in the prompt. */
-export function unwrapProtocolRegions(text: string): string {
-  if (!text.includes(PROTOCOL_REGION_MARKER_PREFIX)) return text;
-  return text.replace(REGION, (_whole, _kind, _nonce, _spec, body) => body);
 }

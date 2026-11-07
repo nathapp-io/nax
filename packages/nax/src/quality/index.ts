@@ -29,9 +29,7 @@ export type { QualityCommandOptions, QualityCommandResult } from "./runner";
 export { runQualityCommand } from "./runner";
 export type {
   PreExistingFailure,
-  SelfVerificationPromptInput,
   SelfVerificationResult,
   SelfVerificationStatus,
   SelfVerificationTool,
 } from "./self-verification";
-export { resolveSelfVerificationPromptInput } from "./self-verification";

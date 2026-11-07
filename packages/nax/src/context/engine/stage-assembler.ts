@@ -332,7 +332,7 @@ export async function assembleForStage(
  *
  * When a v2 bundle is present its pushMarkdown is returned directly — the orchestrator
  * already applied role filtering, dedup, and budget packing, so no additional
- * v1-style filterContextByRole() pass is needed or wanted.
+ * v1-style per-role audience filter is needed or wanted.
  */
 export function getBundleMarkdown(ctx: PipelineContext, bundle: ContextBundle | null | undefined): string {
   if (bundle) return bundle.pushMarkdown;

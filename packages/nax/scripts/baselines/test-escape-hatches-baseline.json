@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1036
+    "looseCast": 1022
   },
   "updatedAt": "2026-11-07T10:25:26.137Z",
   "byFile": {
@@ -178,16 +178,7 @@
     "test/unit/commands/replay.test.ts": {
       "looseCast": 20
     },
-    "test/unit/prompts/builder.test.ts": {
-      "looseCast": 3
-    },
     "test/unit/prompts/builders/rectifier-builder.test.ts": {
-      "looseCast": 2
-    },
-    "test/unit/prompts/sections/role-task.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/prompts/sections/tdd-conventions.test.ts": {
       "looseCast": 2
     },
     "test/unit/prd/dependency-cycle.test.ts": {
@@ -725,16 +716,7 @@
     "test/unit/pipeline/stages/routing-initial-complexity.test.ts": {
       "looseCast": 8
     },
-    "test/unit/pipeline/stages/prompt-batch.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/pipeline/stages/execution-unified.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/pipeline/stages/prompt-tdd-simple.test.ts": {
-      "looseCast": 3
-    },
-    "test/unit/pipeline/stages/prompt-scope-files.test.ts": {
       "looseCast": 1
     },
     "test/unit/pipeline/stages/context-digest.test.ts": {
@@ -751,9 +733,6 @@
     },
     "test/unit/pipeline/stages/context-request-workdir-fields.test.ts": {
       "looseCast": 5
-    },
-    "test/unit/pipeline/stages/prompt-acceptance.test.ts": {
-      "looseCast": 1
     },
     "test/unit/pipeline/stages/queue-check.test.ts": {
       "looseCast": 1

@@ -7,6 +7,6 @@
 
 export { SectionAccumulator } from "./section-accumulator";
 export * from "./sections";
-export type { PromptOptions, PromptRole, PromptSection } from "./types";
+export type { PromptSection } from "./types";
 export { universalConstitutionSection, universalContextSection } from "./universal-sections";
 export { SECTION_SEP, wrapConstitution, wrapContext } from "./wrappers";

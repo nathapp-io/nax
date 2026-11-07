@@ -29,11 +29,7 @@ import { makeStory } from "@test/helpers";
 import type { Finding } from "@/findings/types";
 import { RectifierPromptBuilder } from "@/prompts";
 import { buildIsolationSection } from "@/prompts/sections/isolation";
-import {
-  applyProtocolRegions,
-  PROTOCOL_REGION_MARKER_PREFIX,
-  unwrapProtocolRegions,
-} from "@/prompts/sections/protocol-region";
+import { applyProtocolRegions, PROTOCOL_REGION_MARKER_PREFIX } from "@/prompts/sections/protocol-region";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -331,15 +327,6 @@ describe("US-004 cross-cutting seam", () => {
     for (const result of [withCmd, withCmdLite, withCmdVerifier, withCmdSingle]) {
       expect(result).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
     }
-  });
-
-  test("unwrapProtocolRegions returns the prompt without any marker for a wrapped isolation prompt", () => {
-    const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
-    const unwrapped = unwrapProtocolRegions(wrapped);
-
-    expect(unwrapped).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
-    expect(unwrapped).toContain("`bun test <path/to/test-file>`");
-    expect(unwrapped).toContain("NEVER run the full test suite without a filter");
   });
 
   test("idempotence: applying twice under acp equals applying once under acp", () => {

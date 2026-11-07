@@ -48,34 +48,6 @@ export function isTestFile(filePath: string, testFilePatterns?: readonly string[
 }
 
 /**
- * Map a test command string to a human-readable framework hint for agent prompts.
- *
- * Centralised in src/test-runners/ so callers (e.g. prompt builders) do not
- * inline language-detection logic outside the SSOT module (ADR-009).
- */
-export function buildTestFrameworkHint(testCommand: string): string {
-  const raw = testCommand.trim();
-  // #543: do not assume Bun when no command is configured — that falsely tells
-  // Go / Python / Rust packages to run `bun test`.
-  if (!raw) return "Use your project's test framework";
-  // #1939: a scoped command commonly carries leading env assignments (this repo's
-  // testScoped is "CI=1 AGENT=1 bun test --timeout=60000 {{files}}") — matched
-  // against the raw string every branch below misses and falls through to the
-  // generic hint even though the runner is plainly bun. Strip a run of leading
-  // `NAME=value` tokens (value = no whitespace, so it can't consume the command
-  // itself) before matching. A command that is ONLY env assignments strips to
-  // "" and still falls through to the same generic default as an empty command.
-  const cmd = raw.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
-  if (cmd.startsWith("bun test")) return "Use Bun test (describe/test/expect)";
-  if (cmd.startsWith("pytest") || cmd.startsWith("python -m pytest")) return "Use pytest";
-  if (cmd.startsWith("cargo test")) return "Use Rust's cargo test";
-  if (cmd.startsWith("go test")) return "Use Go's testing package";
-  if (cmd.includes("vitest")) return "Use Vitest (describe/test/expect)";
-  if (cmd.includes("jest") || cmd === "npm test" || cmd === "yarn test") return "Use Jest (describe/test/expect)";
-  return "Use your project's test framework";
-}
-
-/**
  * Strip ANSI CSI escape sequences (e.g. `\x1b[32m` SGR color, `\x1b[0m` reset,
  * `\x1b[2K` erase-line, cursor-movement codes) from output.
  *

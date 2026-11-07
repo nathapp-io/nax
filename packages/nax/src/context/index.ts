@@ -24,13 +24,6 @@ export {
 } from "./engine";
 export type { PackedChunk } from "./engine/packing";
 export type { AdapterFailure, ContextBundle, ContextChunk } from "./engine/types";
-export {
-  estimateContextTokens,
-  filterContextByRole,
-  parseAudienceTags,
-  shouldIncludeEntry,
-  truncateToContextBudget,
-} from "./feature-context-filter";
 export { clearFeatureResolverCache, disposeFeatureResolver, resolveFeatureId } from "./feature-resolver";
 export {
   _fragmentStoreDeps,

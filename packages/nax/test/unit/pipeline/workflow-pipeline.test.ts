@@ -16,4 +16,11 @@ describe("getWorkflowPipeline", () => {
     expect("getDefaultPipeline" in stagesModule).toBe(false);
     expect("defaultPipeline" in stagesModule).toBe(false);
   });
+
+  // US-002 (pipeline-surface-delete): workflow mode builds its own prompts
+  // through the workflow builders, so the prompt stage had no caller left and
+  // is gone from the barrel entirely — no re-export, no alias.
+  test("exposes no prompt stage", () => {
+    expect("promptStage" in stagesModule).toBe(false);
+  });
 });

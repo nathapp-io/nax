@@ -95,10 +95,6 @@ export {
   MAX_SKILLS_INDEX_ENTRIES,
 } from "./builders/skills-builder";
 export { buildSourceRootsSection } from "./builders/source-roots-builder";
-// Primary export — use TddPromptBuilder for all TDD execution prompts
-// Backwards-compatible alias — existing callsites continue to work without change.
-// Migrate to TddPromptBuilder when touching adjacent code.
-export { TddPromptBuilder, TddPromptBuilder as PromptBuilder } from "./builders/tdd-builder";
 export type { TimeoutRetryInput } from "./builders/timeout-retry-builder";
 // Timeout-retry prompt builder — informed retry prompt conditioned on whether the
 // working tree changed during the timed-out attempt (US-003).
@@ -154,7 +150,7 @@ export { composeSections, join } from "./compose";
 export type { SchemaDescriptor } from "./core/sections/json-schema";
 export type { RoutingCandidate } from "./core/sections/routing-candidates";
 // Core types — re-exported for callsites that need them
-export type { PromptOptions, PromptRole, PromptSection, SectionSlot } from "./core/types";
+export type { PromptSection, SectionSlot } from "./core/types";
 export { SLOT_ORDER } from "./core/types";
 // Out-of-scope section — shared by the story sections.
 export { buildOutOfScopeLines } from "./sections";
