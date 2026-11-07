@@ -232,12 +232,9 @@ export interface NaxRuntime {
    * Run-scoped cumulative count of runtime-crash retries per story (BUG-070, nax#1707
    * follow-up).
    *
-   * Distinct from `_runtimeCrashRetryCounts` in tier-escalation.ts, which counts
-   * *consecutive* crashes and is deliberately cleared by any ordinary pipeline outcome
-   * so the retry cap applies to a crash streak. This is the per-story total, and it is
-   * run-scoped rather than on PipelineContext because that is rebuilt on every attempt.
-   * Counts retries PERFORMED, which is one fewer than crashes seen: a crash that exceeds
-   * RUNTIME_CRASH_RETRY_CAP pauses the story instead of retrying and is not tallied.
+   * The escalation layer no longer performs a runtime-crash same-tier retry, so
+   * nothing writes this map any more; the store survives only because the metrics
+   * that read it (`StoryMetrics.runtimeCrashes`) are still in place.
    * Read by collectStoryMetrics as StoryMetrics.runtimeCrashes — sequential path only;
    * the parallel executor builds its own StoryMetrics literals and does not read this.
    */

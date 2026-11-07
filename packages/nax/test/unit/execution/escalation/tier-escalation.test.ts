@@ -1,62 +1,24 @@
 /**
- * Tier Escalation — Runtime Crash Branching (BUG-070)
+ * Tier Escalation — tier advance behaviour
  *
- * Integration tests for escalation path branching:
- * - RUNTIME_CRASH → retry same tier (transient failure, not a code issue)
- * - TEST_FAILURE  → escalate to next tier (existing behaviour)
+ * Integration tests for the escalation path:
+ * - a failed story escalates to the next tier and keeps its test strategy
+ * - the escalation is recorded on the story's priorFailures
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { assertDefined, makeLogger, makeMockAgentManager, makeNaxConfig, makePRD, makeStory } from "@test/helpers";
+import {
+  assertDefined,
+  makeEscalationContext,
+  makeLogger,
+  makeMockAgentManager,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+} from "@test/helpers";
 import { resolveMaxAttemptsOutcome } from "@/execution";
 import type { EscalationHandlerContext } from "@/execution/escalation/tier-escalation";
 import { pipelineEventBus } from "@/pipeline";
-
-// ---------------------------------------------------------------------------
-// shouldRetrySameTier — pure predicate (BUG-070)
-// ---------------------------------------------------------------------------
-
-describe("shouldRetrySameTier", () => {
-  test("returns true when verifyResult status is RUNTIME_CRASH", async () => {
-    const mod = await import("@/execution/escalation/tier-escalation");
-    const { shouldRetrySameTier } = mod;
-
-    expect(typeof shouldRetrySameTier).toBe("function");
-    expect(shouldRetrySameTier({ status: "RUNTIME_CRASH", success: false })).toBe(true);
-  });
-
-  test("returns false when verifyResult status is TEST_FAILURE", async () => {
-    const mod = await import("@/execution/escalation/tier-escalation");
-    const { shouldRetrySameTier } = mod;
-
-    expect(typeof shouldRetrySameTier).toBe("function");
-    expect(shouldRetrySameTier({ status: "TEST_FAILURE", success: false })).toBe(false);
-  });
-
-  test("returns false when verifyResult is undefined", async () => {
-    const mod = await import("@/execution/escalation/tier-escalation");
-    const { shouldRetrySameTier } = mod;
-
-    expect(typeof shouldRetrySameTier).toBe("function");
-    expect(shouldRetrySameTier(undefined)).toBe(false);
-  });
-
-  test("returns false when verifyResult status is TIMEOUT", async () => {
-    const mod = await import("@/execution/escalation/tier-escalation");
-    const { shouldRetrySameTier } = mod;
-
-    expect(typeof shouldRetrySameTier).toBe("function");
-    expect(shouldRetrySameTier({ status: "TIMEOUT", success: false })).toBe(false);
-  });
-
-  test("returns false when verifyResult status is PASS", async () => {
-    const mod = await import("@/execution/escalation/tier-escalation");
-    const { shouldRetrySameTier } = mod;
-
-    expect(typeof shouldRetrySameTier).toBe("function");
-    expect(shouldRetrySameTier({ status: "PASS", success: true })).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // resolveMaxAttemptsOutcome — runtime-crash category (BUG-070)
@@ -873,151 +835,164 @@ describe("handleTierEscalation — ADR-025 gap #2: cross-agent escalation proven
 });
 
 // ---------------------------------------------------------------------------
-// handleTierEscalation — runtime-crash retry-same (US-002)
+// handleTierEscalation — tier advance invariants (US-001)
 //
-// The verify layer no longer threads a parallel runtimeCrashResult — instead
-// the runtime-crash signal rides on `pipelineResult.context.tddFailureCategory`
-// and the pipeline-result handler is expected to derive a runtimeCrashResult
-// from it. These tests pin the contract on the receiving side: a context that
-// already carries a runtimeCrashResult must short-circuit to "retry-same"
-// (no tier advance, no PRD mutation, no savePRD) so the next iteration can
-// re-run on the same tier.
+// The escalation layer carries no runtime-crash same-tier retry and no
+// TDD strategy switch. What remains is the ordinary ladder: a failed story
+// moves exactly one rung up, keeps its test strategy, and records the
+// failure under the "escalation" stage.
 // ---------------------------------------------------------------------------
 
-describe("handleTierEscalation — runtime-crash retry-same (US-002)", () => {
-  test("returns outcome: 'retry-same' when runtimeCrashResult is RUNTIME_CRASH (AC-4)", async () => {
-    const mod = await import("@/execution/escalation");
-    const { handleTierEscalation, _tierEscalationDeps } = mod;
+describe("handleTierEscalation — tier advance invariants (US-001)", () => {
+  const TIER_ORDER = [
+    { tier: "fast", attempts: 1 },
+    { tier: "balanced", attempts: 1 },
+    { tier: "powerful", attempts: 1 },
+  ];
 
-    const origSavePRD = _tierEscalationDeps.savePrdProgress;
-    let saveCalls = 0;
-    _tierEscalationDeps.savePrdProgress = () => {
-      saveCalls++;
-      return Promise.resolve();
-    };
+  function makeLadderConfig() {
+    return makeNaxConfig({
+      autoMode: {
+        escalation: {
+          enabled: true,
+          tierOrder: TIER_ORDER,
+          escalateEntireBatch: false,
+          resetMode: "initial",
+        },
+      },
+      routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+      models: {},
+    });
+  }
 
-    try {
-      const story = makeStory({
-        id: "US-002-retry-1",
-        title: "Story",
-        description: "Test",
-        status: "in-progress",
-        attempts: 2,
-        routing: { complexity: "simple", reasoning: "", modelTier: "fast", testStrategy: "test-after" },
-      });
+  function makeThreeSessionStory() {
+    return makeStory({
+      id: "US-001",
+      title: "Story",
+      description: "Test",
+      status: "in-progress",
+      attempts: 1,
+      routing: { complexity: "medium", reasoning: "", modelTier: "fast", testStrategy: "three-session-tdd" },
+    });
+  }
 
-      const ctx: EscalationHandlerContext = {
-        story,
-        agentManager: makeMockAgentManager(),
-        storiesToExecute: [story],
-        isBatchExecution: false,
-        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
-        pipelineResult: { reason: "Bun runtime crash", context: { tddFailureCategory: "runtime-crash" } },
-        config: makeNaxConfig({
-          autoMode: {
-            escalation: {
-              enabled: true,
-              tierOrder: [
-                { tier: "fast", attempts: 2 },
-                { tier: "balanced", attempts: 3 },
-              ],
-              resetMode: "initial",
-            },
-          },
-          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-          models: {},
-        }),
-        prd: makePRD({
-          project: "test",
-          feature: "f",
-          branchName: "b",
-          userStories: [story],
-        }),
-        prdPath: "/tmp/test-prd-us002-retry-1.json",
-        featureDir: undefined,
-        hooks: { hooks: {} },
-        feature: "f",
-        totalCost: 0,
-        workdir: "/tmp",
-        runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
-      };
-
-      const result = await handleTierEscalation(ctx);
-
-      expect(result.outcome).toBe("retry-same");
-      // retry-same must not write to disk — a save here would corrupt the
-      // existing in-flight PRD with a tier-unchanged-but-prdDirty=true record
-      expect(saveCalls).toBe(0);
-    } finally {
-      _tierEscalationDeps.savePrdProgress = origSavePRD;
-    }
-  });
-
-  test("returns prdDirty: false and the unmodified PRD by reference when outcome is 'retry-same' (AC-5)", async () => {
-    const mod = await import("@/execution/escalation");
+  test("AC-1: escalates to the next tier and leaves the test strategy unchanged", async () => {
+    const mod = await import("@/execution/escalation/tier-escalation");
     const { handleTierEscalation, _tierEscalationDeps } = mod;
 
     const origSavePRD = _tierEscalationDeps.savePrdProgress;
     _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
 
     try {
-      const story = makeStory({
-        id: "US-002-retry-2",
-        title: "Story",
-        description: "Test",
-        status: "in-progress",
-        attempts: 1,
-        routing: { complexity: "simple", reasoning: "", modelTier: "balanced", testStrategy: "test-after" },
-      });
-
-      const originalPrd = {
-        project: "test",
-        feature: "f",
-        branchName: "b",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        userStories: [story],
-      };
-
-      const ctx: EscalationHandlerContext = {
+      const story = makeThreeSessionStory();
+      const ctx = makeEscalationContext({
         story,
-        agentManager: makeMockAgentManager(),
-        storiesToExecute: [story],
-        isBatchExecution: false,
-        routing: { modelTier: "balanced", testStrategy: "test-after", complexity: "medium", reasoning: "test-fixture" },
-        pipelineResult: { reason: "Runtime crash", context: {} },
-        config: makeNaxConfig({
-          autoMode: {
-            escalation: {
-              enabled: true,
-              tierOrder: [
-                { tier: "fast", attempts: 2 },
-                { tier: "balanced", attempts: 3 },
-              ],
-              resetMode: "initial",
-            },
-          },
-          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-          models: {},
-        }),
-        prd: originalPrd,
-        prdPath: "/tmp/test-prd-us002-retry-2.json",
-        featureDir: undefined,
-        hooks: { hooks: {} },
-        feature: "f",
-        totalCost: 0,
-        workdir: "/tmp",
-        runtimeCrashResult: { status: "RUNTIME_CRASH", success: false },
-      };
+        routing: {
+          complexity: "medium",
+          modelTier: "fast",
+          testStrategy: "three-session-tdd",
+          reasoning: "test-fixture",
+        },
+        pipelineResult: { reason: "verify failed", context: {} },
+        config: makeLadderConfig(),
+      });
 
       const result = await handleTierEscalation(ctx);
 
-      expect(result.outcome).toBe("retry-same");
-      expect(result.prdDirty).toBe(false);
-      // PRD reference must be unchanged — no copy, no new object
-      expect(result.prd).toBe(originalPrd);
-      // The story in the result must also be the same reference (no spread)
-      expect(result.prd.userStories[0]).toBe(story);
+      expect(result.outcome).toBe("escalated");
+      const escalated = result.prd.userStories.find((s) => s.id === story.id);
+      assertDefined(escalated, "escalated story");
+      expect(escalated.routing?.modelTier).toBe("balanced");
+      expect(escalated.routing?.testStrategy).toBe("three-session-tdd");
+    } finally {
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
+    }
+  });
+
+  test("AC-2: records the escalation failure under the 'escalation' stage with no review findings", async () => {
+    const mod = await import("@/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
+
+    try {
+      const story = makeThreeSessionStory();
+      const ctx = makeEscalationContext({
+        story,
+        routing: {
+          complexity: "medium",
+          modelTier: "fast",
+          testStrategy: "three-session-tdd",
+          reasoning: "test-fixture",
+        },
+        pipelineResult: { reason: "verify failed", context: {} },
+        config: makeLadderConfig(),
+      });
+
+      const result = await handleTierEscalation(ctx);
+
+      const escalated = result.prd.userStories.find((s) => s.id === story.id);
+      assertDefined(escalated, "escalated story");
+      const failures = escalated.priorFailures ?? [];
+      expect(failures.length).toBeGreaterThan(0);
+      const lastFailure = failures[failures.length - 1];
+      expect(lastFailure.stage).toBe("escalation");
+      expect(lastFailure.summary).toBe("Tier fast: verify failed");
+      // The escalation failure carries no review findings — the escalation
+      // layer no longer receives them.
+      expect(Object.hasOwn(lastFailure, "reviewFindings")).toBe(false);
+    } finally {
+      _tierEscalationDeps.savePrdProgress = origSavePRD;
+    }
+  });
+
+  test("AC-3: a repeat escalation advances a rung instead of retrying the same tier", async () => {
+    const mod = await import("@/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePrdProgress;
+    _tierEscalationDeps.savePrdProgress = () => Promise.resolve();
+
+    try {
+      const story = makeThreeSessionStory();
+      const first = await handleTierEscalation(
+        makeEscalationContext({
+          story,
+          routing: {
+            complexity: "medium",
+            modelTier: "fast",
+            testStrategy: "three-session-tdd",
+            reasoning: "test-fixture",
+          },
+          pipelineResult: { reason: "verify failed", context: {} },
+          config: makeLadderConfig(),
+        }),
+      );
+      expect(first.outcome).toBe("escalated");
+
+      const escalatedStory = first.prd.userStories.find((s) => s.id === story.id);
+      assertDefined(escalatedStory, "escalated story");
+
+      const second = await handleTierEscalation(
+        makeEscalationContext({
+          story: escalatedStory,
+          routing: {
+            complexity: "medium",
+            modelTier: "balanced",
+            testStrategy: "three-session-tdd",
+            reasoning: "test-fixture",
+          },
+          pipelineResult: { reason: "verify failed", context: {} },
+          config: makeLadderConfig(),
+          prd: first.prd,
+        }),
+      );
+
+      expect(second.outcome).toBe("escalated");
+      const twiceEscalated = second.prd.userStories.find((s) => s.id === story.id);
+      assertDefined(twiceEscalated, "twice-escalated story");
+      expect(twiceEscalated.routing?.modelTier).toBe("powerful");
     } finally {
       _tierEscalationDeps.savePrdProgress = origSavePRD;
     }

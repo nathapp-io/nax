@@ -464,11 +464,8 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
       routing: { modelTier: "fast", testStrategy: "test-after" },
       pipelineResult: {
         reason: "Tests failing",
-        context: {
-          tddFailureCategory: undefined,
-          retryAsLite: false,
-          reviewFindings: undefined,
-        },
+        // The escalation layer reads no field of the pipeline context.
+        context: {},
       },
       config: makeNaxConfig({
         autoMode: {

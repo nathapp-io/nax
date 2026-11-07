@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1010
+    "looseCast": 1008
   },
-  "updatedAt": "2026-11-07T12:53:17.118Z",
+  "updatedAt": "2026-11-07T15:37:55.130Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -243,9 +243,6 @@
     },
     "test/unit/execution/deferred-review.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/execution/session-manager-runtime.test.ts": {
-      "looseCast": 2
     },
     "test/unit/execution/unified-executor-signature.test.ts": {
       "looseCast": 3

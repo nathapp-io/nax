@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeAgentResult,
   makeDispatchContext,
@@ -503,200 +504,14 @@ describe("handlePipelineSuccess — a failed worktree merge is not a passed stor
 });
 
 // ---------------------------------------------------------------------------
-// US-002: handlePipelineFailure — runtime-crash derives retry-same
+// handlePipelineFailure — an escalate result always advances one rung
 //
-// When the pipeline hands back an `escalate` finalAction and the
-// pipelineResult.context.tddFailureCategory is `runtime-crash`,
-// handlePipelineFailure must derive a runtimeCrashResult and pass it to
-// handleTierEscalation. The observable consequence: the returned PRD is the
-// same reference (retry-same returns ctx.prd verbatim), prdDirty is false,
-// the story's routing.modelTier is unchanged, and the story's attempts is
-// not reset. A non-crash failure (e.g. tests-failing) must still escalate
-// and advance the tier by one rung.
+// The runtime-crash same-tier retry is gone, so every `escalate` result takes
+// the ordinary escalation flow: the story moves to the next tier and the
+// returned PRD is a new object.
 // ---------------------------------------------------------------------------
 
-describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", () => {
-  test("derives runtimeCrashResult and routes to retry-same when tddFailureCategory is 'runtime-crash' (AC-7)", async () => {
-    const story = makeStory("US-002-handler-7", {
-      status: "in-progress",
-      passes: false,
-      attempts: 2,
-      routing: {
-        modelTier: "fast",
-        testStrategy: "test-after",
-        complexity: "medium",
-        reasoning: "",
-      },
-    });
-    const ctx = makeCtx(story, {
-      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    });
-
-    const escalateResult: PipelineRunResult = {
-      success: false,
-      finalAction: "escalate",
-      reason: "Bun runtime crash",
-      context: makeTestContext({
-        agentResult: makeAgentResult(),
-        tddFailureCategory: "runtime-crash",
-      }),
-    };
-
-    const result = await handlePipelineFailure(ctx, escalateResult);
-
-    // retry-same returns the original PRD by reference; prdDirty is false
-    // because nothing was written or updated. If the derive-and-pass step
-    // is missing, handleTierEscalation escalates to "balanced" and produces
-    // a brand-new PRD object — this assertion catches that.
-    expect(result.prd).toBe(ctx.prd);
-    expect(result.prdDirty).toBe(false);
-  });
-
-  // #1707 follow-up: handleTierEscalation tallies the crash on ctx.runtime, but only
-  // if handlePipelineFailure actually threads runtime through. Without this the tally
-  // is inert in production for exactly the reason StoryMetrics.runtimeCrashes was.
-  test("does not tally a story whose escalation was not a runtime crash", async () => {
-    const story = makeStory("US-002-no-crash", {
-      status: "in-progress",
-      passes: false,
-      attempts: 2,
-      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
-    });
-    const ctx = makeCtx(story, {
-      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    });
-
-    await handlePipelineFailure(ctx, {
-      success: false,
-      finalAction: "escalate",
-      reason: "tests failing",
-      context: makeTestContext({ agentResult: makeAgentResult() }),
-    });
-
-    expect(ctx.runtime.runtimeCrashRetries.has("US-002-no-crash")).toBe(false);
-  });
-
-  test("accumulates the tally across repeated runtime crashes for the same story", async () => {
-    const story = makeStory("US-002-repeat-crash", {
-      status: "in-progress",
-      passes: false,
-      attempts: 2,
-      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
-    });
-    const ctx = makeCtx(story, {
-      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    });
-    const crash = () =>
-      handlePipelineFailure(ctx, {
-        success: false,
-        finalAction: "escalate" as const,
-        reason: "Bun runtime crash",
-        context: makeTestContext({ agentResult: makeAgentResult(), tddFailureCategory: "runtime-crash" }),
-      });
-
-    await crash();
-    await crash();
-
-    expect(ctx.runtime.runtimeCrashRetries.get("US-002-repeat-crash")).toBe(2);
-  });
-
-  test("threads runtime through so the crash is tallied for StoryMetrics.runtimeCrashes", async () => {
-    const story = makeStory("US-002-handler-tally", {
-      status: "in-progress",
-      passes: false,
-      attempts: 2,
-      routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
-    });
-    const ctx = makeCtx(story, {
-      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    });
-
-    await handlePipelineFailure(ctx, {
-      success: false,
-      finalAction: "escalate",
-      reason: "Bun runtime crash",
-      context: makeTestContext({ agentResult: makeAgentResult(), tddFailureCategory: "runtime-crash" }),
-    });
-
-    expect(ctx.runtime.runtimeCrashRetries.get("US-002-handler-tally")).toBe(1);
-  });
-
-  test("does not change story routing.modelTier for a runtime-crash escalation (AC-8)", async () => {
-    const story = makeStory("US-002-handler-8", {
-      status: "in-progress",
-      passes: false,
-      attempts: 2,
-      routing: {
-        modelTier: "fast",
-        testStrategy: "test-after",
-        complexity: "medium",
-        reasoning: "",
-      },
-    });
-    const ctx = makeCtx(story, {
-      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    });
-
-    const escalateResult: PipelineRunResult = {
-      success: false,
-      finalAction: "escalate",
-      reason: "Bun runtime crash",
-      context: makeTestContext({
-        agentResult: makeAgentResult(),
-        tddFailureCategory: "runtime-crash",
-      }),
-    };
-
-    const result = await handlePipelineFailure(ctx, escalateResult);
-
-    const resultStory = result.prd.userStories.find((s) => s.id === "US-002-handler-8");
-    expect(resultStory).toBeDefined();
-    // Model tier must remain "fast" — the entire point of US-002 is that
-    // runtime crashes do not trigger tier escalation. A non-crash path
-    // would advance to "balanced" (the next rung in DEFAULT_CONFIG).
-    expect(resultStory?.routing?.modelTier).toBe("fast");
-  });
-
-  test("does not reset story attempts to 0 for a runtime-crash escalation (AC-9)", async () => {
-    const story = makeStory("US-002-handler-9", {
-      status: "in-progress",
-      passes: false,
-      // Use a non-zero attempts value distinct from a tier reset (0) and
-      // distinct from a no-op leave-as-1 (1) so a regression on either
-      // side is observable. 3 is also above the default "fast" budget (5
-      // in DEFAULT_CONFIG but the assertion is order-independent).
-      attempts: 3,
-      routing: {
-        modelTier: "fast",
-        testStrategy: "test-after",
-        complexity: "medium",
-        reasoning: "",
-      },
-    });
-    const ctx = makeCtx(story, {
-      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    });
-
-    const escalateResult: PipelineRunResult = {
-      success: false,
-      finalAction: "escalate",
-      reason: "Bun runtime crash",
-      context: makeTestContext({
-        agentResult: makeAgentResult(),
-        tddFailureCategory: "runtime-crash",
-      }),
-    };
-
-    const result = await handlePipelineFailure(ctx, escalateResult);
-
-    const resultStory = result.prd.userStories.find((s) => s.id === "US-002-handler-9");
-    expect(resultStory).toBeDefined();
-    // BUG regression guard: an escalated tier-change normally resets
-    // attempts to 0. For runtime-crash we want neither a reset nor an
-    // increment — the same tier is being retried with the existing counter.
-    expect(resultStory?.attempts).toBe(3);
-  });
-
+describe("handlePipelineFailure — an escalate result advances one rung", () => {
   test("advances story routing.modelTier by one rung for a non-crash escalation (AC-10)", async () => {
     const story = makeStory("US-002-handler-10", {
       status: "in-progress",
@@ -719,14 +534,13 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
       reason: "Tests failed",
       context: makeTestContext({
         agentResult: makeAgentResult(),
-        tddFailureCategory: "tests-failing",
       }),
     };
 
     const result = await handlePipelineFailure(ctx, escalateResult);
 
-    // Non-crash path must take the existing escalation flow:
-    // produce a new PRD, advance "fast" → "balanced", mark prdDirty.
+    // The escalate path takes the ordinary escalation flow: produce a new
+    // PRD, advance "fast" → "balanced", mark prdDirty.
     const resultStory = result.prd.userStories.find((s) => s.id === "US-002-handler-10");
     expect(resultStory).toBeDefined();
     expect(resultStory?.routing?.modelTier).toBe("balanced");
@@ -734,5 +548,57 @@ describe("handlePipelineFailure — runtime-crash derives retry-same (US-002)", 
     // And the returned PRD must be a different reference (escalation
     // builds a new userStories array via .map()).
     expect(result.prd).not.toBe(ctx.prd);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-001: handlePipelineFailure — the fail action records no failure category
+//
+// The failure category no longer reaches the escalation layer, so the fail
+// path saves the story as failed without stamping a category on it.
+// ---------------------------------------------------------------------------
+
+describe("handlePipelineFailure — fail action records no failure category (US-001)", () => {
+  test("AC-4: marks the story failed and leaves failureCategory unset", async () => {
+    const story = makeStory("US-001-fail", {
+      status: "in-progress",
+      passes: false,
+      attempts: 1,
+      routing: {
+        modelTier: "fast",
+        testStrategy: "test-after",
+        complexity: "medium",
+        reasoning: "",
+      },
+    });
+    const ctx = makeCtx(story, {
+      routing: { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    });
+
+    const origSavePrdProgress = _resultHandlerDeps.savePrdProgress;
+    let savedPrd: PRD | undefined;
+    _resultHandlerDeps.savePrdProgress = async (prd) => {
+      savedPrd = prd;
+    };
+
+    try {
+      const result = await handlePipelineFailure(ctx, {
+        success: false,
+        finalAction: "fail",
+        reason: "tests failing",
+        // The category still exists on the pipeline context, but the fail
+        // path must not carry it onto the story.
+        context: makeTestContext({ agentResult: makeAgentResult(), tddFailureCategory: "tests-failing" }),
+      });
+
+      expect(result.prdDirty).toBe(true);
+
+      assertDefined(savedPrd, "saved prd");
+      const savedStory = savedPrd.userStories.find((s) => s.id === "US-001-fail");
+      expect(savedStory?.status).toBe("failed");
+      expect(savedStory?.failureCategory).toBeUndefined();
+    } finally {
+      _resultHandlerDeps.savePrdProgress = origSavePrdProgress;
+    }
   });
 });
