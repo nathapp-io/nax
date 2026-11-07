@@ -201,6 +201,7 @@ export {
   type TestRuntimeOptions,
 } from "./runtime";
 export { type FakeSandboxMode, makeFakeSandboxBackend } from "./sandbox";
+export { makeSequentialExecutionContext } from "./sequential-execution-context";
 export {
   type ConfinedSessionOptions,
   type ConfinedSessionSeam,
