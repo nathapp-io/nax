@@ -148,18 +148,6 @@ describe("CLI trust gate entry points", () => {
     expect(exitCode).toBe(2);
   }, 60_000);
 
-  test("US-003 AC14: rejects regular prompts for an untrusted project", async () => {
-    const { exitCode } = await runCli(["prompts", "-f", "demo", "-d", projectDir]);
-
-    expect(exitCode).toBe(2);
-  }, 60_000);
-
-  test("US-003 AC15: allows prompts export for an untrusted project", async () => {
-    const { exitCode } = await runCli(["prompts", "--export", "implementer", "-d", projectDir]);
-
-    expect(exitCode).toBe(0);
-  }, 60_000);
-
   test("US-003 AC16: rejects mcp lock in an untrusted current directory", async () => {
     const { exitCode } = await runCli(["mcp", "lock"], projectDir);
 

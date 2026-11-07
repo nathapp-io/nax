@@ -431,7 +431,6 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   _initDeps.log("  4. Run: nax generate");
   _initDeps.log("  5. Run: nax plan");
   _initDeps.log("  6. Run: nax run");
-  _initDeps.log("\nOptional: nax prompts --init  (scaffold overridable prompt templates)");
 
   logger.info("init", "Project config initialized successfully", { path: projectDir });
 }

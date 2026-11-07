@@ -91,7 +91,6 @@ const ALLOWED_FILES = new Set([
   "src/cli/features-resolve.ts",
   "src/cli/generate.ts",
   "src/cli/plugins.ts",
-  "src/cli/prompts-init.ts",
   "src/cli/rules-lint.ts",
   "src/cli/rules-migrate.ts",
   "src/commands/curator.ts",

@@ -2,7 +2,7 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1037
+    "looseCast": 1036
   },
   "updatedAt": "2026-11-07T10:25:26.137Z",
   "byFile": {
@@ -35,9 +35,6 @@
     },
     "test/integration/interaction/interaction-chain-pipeline.test.ts": {
       "looseCast": 3
-    },
-    "test/integration/prompts/pb-004-migration.test.ts": {
-      "looseCast": 1
     },
     "test/integration/review/review.test.ts": {
       "looseCast": 7

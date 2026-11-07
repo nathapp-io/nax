@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-07T10:25:04.500Z",
+  "updatedAt": "2026-11-07T12:23:19.186Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -27,7 +27,6 @@
     "src/cli/init-context.ts": { "generateContextTemplate": 25 },
     "src/cli/init.ts": { "initProject": 23 },
     "src/cli/plan-decompose.ts": { "planDecomposeCommand": 26 },
-    "src/cli/prompts-main.ts": { "promptsCommand": 22 },
     "src/cli/status-features.ts": { "displayAllFeatures": 37 },
     "src/commands/common.ts": { "resolveProject": 22 },
     "src/commands/curator.ts": { "curatorCommit": 46, "parseCheckedProposals": 27 },

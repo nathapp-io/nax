@@ -152,7 +152,8 @@ async function loadPackageContextMd(packageWorkdir: string): Promise<string | nu
 
 /**
  * Build story context returning both markdown and element-level data.
- * Used by `nax prompts` CLI for accurate frontmatter token counts.
+ * The element-level data lets a caller compute accurate frontmatter token
+ * counts without re-parsing the rendered markdown.
  *
  * When `packageWorkdir` is provided (absolute path of story.workdir),
  * appends the package-level nax/context.md after the root context.

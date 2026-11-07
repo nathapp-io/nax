@@ -113,7 +113,6 @@ const SKIP_FILES = new Set([
   "test/integration/execution/status-writer-postrun.test.ts",
   "test/integration/execution/status-file.test.ts",
   "test/integration/execution/agent-swap.test.ts",
-  "test/integration/prompts/pb-004-migration.test.ts",
   // Pattern A (makeConfig) - complex full configs not spreading DEFAULT_CONFIG
   "test/unit/pipeline/stages/completion-semantic.test.ts",
   "test/unit/pipeline/stages/verify-crash-detection.test.ts",
@@ -168,7 +167,6 @@ const SKIP_FILES = new Set([
   "test/integration/execution/status-writer-postrun.test.ts",
   "test/integration/execution/agent-swap.test.ts",
   "test/integration/execution/deferred-review-integration.test.ts",
-  "test/integration/prompts/pb-004-migration.test.ts",
   // Pattern A (makeConfig) — local factory for ContextPluginProviderConfig (not NaxConfig)
   "test/unit/context/engine/providers/plugin-cache.test.ts",
 ]);

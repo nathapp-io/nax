@@ -49,14 +49,11 @@ import {
   authRmCommand,
   contextInspectCommand,
   effectivenessEvalCommand,
-  exportPromptCommand,
   fragmentsInspectCommand,
   fragmentsPruneCommand,
   planCommand,
   planDecomposeCommand,
   pluginsListCommand,
-  promptsCommand,
-  promptsInitCommand,
   publishOnlyRefusal,
   registerAdvisorCommand,
   registerAgentsRunCommand,
@@ -1369,84 +1366,24 @@ program
   });
 
 // ── prompts ──────────────────────────────────────────
+// Workflow mode does not read prompt templates, so there is nothing left to
+// assemble, scaffold (`--init`) or export (`--export`). The command keeps its
+// former option list so a user gets this message instead of commander's
+// unknown-command error; it reads no config, no PRD and no trust state, which
+// is why its options are plain `option` calls rather than `requiredOption`.
 program
   .command("prompts")
-  .description("Assemble or initialize prompts")
-  .option("-f, --feature <name>", "Feature name (required unless using --init or --export)")
+  .description("Removed: workflow mode does not read prompt templates")
+  .option("-f, --feature <name>", "Feature name")
   .option("--init", "Initialize default prompt templates", false)
   .option("--export <role>", "Export default prompt for a role to stdout or --out file")
   .option("--force", "Overwrite existing template files", false)
   .option("--story <id>", "Filter to a single story ID (e.g., US-003)")
   .option("--out <path>", "Output file path for --export, or directory for regular prompts (default: stdout)")
-  .option("-d, --dir <path>", "Project directory", process.cwd())
-  .action(async (options) => {
-    // Validate directory path
-    let workdir: string;
-    try {
-      workdir = validateDirectory(options.dir);
-    } catch (err) {
-      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
-      process.exit(1);
-    }
-
-    // Handle --init command
-    if (options.init) {
-      try {
-        await promptsInitCommand({
-          workdir,
-          force: options.force,
-        });
-      } catch (err) {
-        console.error(chalk.red(`Error: ${(err as Error).message}`));
-        process.exit(1);
-      }
-      return;
-    }
-
-    // Handle --export command
-    if (options.export) {
-      try {
-        await exportPromptCommand({
-          role: options.export,
-          out: options.out,
-        });
-      } catch (err) {
-        console.error(chalk.red(`Error: ${(err as Error).message}`));
-        process.exit(1);
-      }
-      return;
-    }
-
-    // US-003: regular prompts read the project's feature tree and config —
-    // gate them; --init and --export returned above and stay ungated.
-    await runTrustGate(workdir);
-
-    // Handle regular prompts command (requires --feature)
-    if (!options.feature) {
-      console.error(chalk.red("Error: --feature is required (unless using --init or --export)"));
-      process.exit(1);
-    }
-
-    // Load config
-    const config = await loadConfig(workdir);
-
-    try {
-      const processedStories = await promptsCommand({
-        feature: options.feature,
-        workdir,
-        config,
-        storyId: options.story,
-        outputDir: options.out,
-      });
-
-      if (options.out) {
-        console.log(chalk.green(`\n✅ Prompts written to ${options.out}`));
-        console.log(chalk.dim(`   Processed ${processedStories.length} stories`));
-      }
-    } catch (err) {
-      console.error(chalk.red(`Error: ${(err as Error).message}`));
-      process.exit(1);
-    }
+  .option("-d, --dir <path>", "Project directory")
+  .action(() => {
+    console.error(chalk.red("nax prompts was removed: workflow mode does not read prompt templates"));
+    process.exit(1);
   });
 
 // ── generate ──────────────────────────────────────────
