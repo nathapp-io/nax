@@ -3,7 +3,7 @@
   "feature": "pipeline-story-ops-delete",
   "branchName": "feat/pipeline-story-ops-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T08:34:28.927Z",
+  "updatedAt": "2026-11-07T09:02:45.221Z",
   "userStories": [
     {
       "id": "US-001",
@@ -155,14 +155,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module TDD operation deletion with security-sensitive compiled tool-policy fixture migration and warm-session lifetime regression anchors requires strict test/implementation isolation."
+        "reasoning": "Cross-module TDD operation deletion with security-sensitive compiled tool-policy fixture migration and warm-session lifetime regression anchors requires strict test/implementation isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/index.ts",
@@ -257,7 +260,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3b3525ce4bdd61224c58cb8386672444fb4f98e6"
     },
     {
       "id": "US-003",
