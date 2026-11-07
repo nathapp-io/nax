@@ -3,7 +3,7 @@
   "feature": "pipeline-review-delete",
   "branchName": "feat/pipeline-review-delete",
   "createdAt": "2026-11-07T00:00:00.000Z",
-  "updatedAt": "2026-11-07T04:27:07.215Z",
+  "updatedAt": "2026-11-07T04:46:01.006Z",
   "userStories": [
     {
       "id": "US-001",
@@ -177,15 +177,18 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "no-test",
         "reasoning": "Six source deletions and multiple retained prompt/dispatch fixtures require complex cross-module coordination, while byte-equivalent fixture substitution and unchanged live rendering make no-test appropriate; no session implementation or access-control policy is changed.",
-        "noTestJustification": "Pure structural deletion of unreachable prompt builders and a redundant adapter. wrapAffordance produces the same fixture bytes and the live renderer, dispatch helper, tool gate, retry loop, and session behavior are unchanged. Retain/adapt existing tests and assert the specified native/ACP/fallback regressions without a new-behavior TDD cycle."
+        "noTestJustification": "Pure structural deletion of unreachable prompt builders and a redundant adapter. wrapAffordance produces the same fixture bytes and the live renderer, dispatch helper, tool gate, retry loop, and session behavior are unchanged. Retain/adapt existing tests and assert the specified native/ACP/fallback regressions without a new-behavior TDD cycle.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/index.ts",
@@ -276,7 +279,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5bd3a8e63f9f4ada4dbd798176f910a088063e28"
     },
     {
       "id": "US-003",
