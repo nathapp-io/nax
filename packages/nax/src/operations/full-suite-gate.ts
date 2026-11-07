@@ -42,7 +42,7 @@ import type { CallContext, DeterministicOperation } from "./types";
 /**
  * Full-Suite Gate execution status.
  * Statuses disabled/failed-no-rectification/rectification-exhausted removed in US-006.
- * Rectification is now handled externally by the general runFixCycle phase.
+ * Rectification is now handled outside this gate, by the fix cycle.
  * issue #1116: added "passed-on-timeout" (BUG-026), "timeout", "skipped" (enabled=false).
  */
 export type FullSuiteGateStatus =

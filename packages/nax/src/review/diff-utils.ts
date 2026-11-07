@@ -34,10 +34,9 @@ async function resolveNaxIgnorePathspecExcludes(workdir: string, options?: DiffI
 /**
  * Injectable dependencies for diff-utils — avoids mock.module() in tests.
  *
- * `timeoutMs` is injectable (same convention as `_isolationDeps` in
- * `src/tdd/isolation.ts` and `_gitDeps.gitTimeoutMs` in `src/utils/git.ts`) so
- * the BUG-31 hang-path tests can assert the SIGKILL contract without burning
- * the full production deadline in wall-clock.
+ * `timeoutMs` is injectable (same convention as `_gitDeps.gitTimeoutMs` in
+ * `src/utils/git.ts`) so the BUG-31 hang-path tests can assert the SIGKILL
+ * contract without burning the full production deadline in wall-clock.
  */
 export const _diffUtilsDeps = {
   spawn: spawn as typeof spawn,

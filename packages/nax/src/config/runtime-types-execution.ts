@@ -2,7 +2,7 @@
  * Execution-config sub-types split out of runtime-types.ts (file-size limit).
  */
 
-/** Flake-detection probe config — see src/verification/flake-probe.ts. */
+/** Flake-detection probe config — see `FlakeDetectionConfigSchema` in schemas-execution.ts. */
 export interface FlakeDetectionConfig {
   /** Enable isolation re-runs to distinguish deterministic failures from flakes. */
   enabled: boolean;

@@ -15,7 +15,7 @@
  * The injection is module-scoped, not global: the logger's own timers keep
  * using the real clock, so `flush()` still behaves normally.
  *
- * Naming follows test/integration/tdd/_tdd-test-helpers.ts — the leading
+ * Naming follows the local-helper convention in this suite — the leading
  * underscore marks a local, non-collected helper module.
  */
 

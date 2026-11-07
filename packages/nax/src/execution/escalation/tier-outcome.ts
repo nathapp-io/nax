@@ -7,11 +7,11 @@
  * Phase 3 (ADR-005): Replaced direct fireHook() calls with event bus emissions.
  */
 
+import type { FailureCategory } from "@/execution/types";
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
 import { markStoryFailed, markStoryPaused, savePrdProgress } from "@/prd";
 import { storySpendUsd } from "@/runtime";
-import type { FailureCategory } from "@/tdd/types";
 import { appendProgress } from "../progress";
 import { resolveMaxAttemptsOutcome } from "./max-attempts-outcome";
 import { verifyEscalationQuotes } from "./quote-integrity";

@@ -146,8 +146,8 @@ export const routingStage: PipelineStage = {
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
       const greenfieldScanDir = ctx.workdir;
       // Resolve test-file patterns through the ADR-009 SSOT — the SAME resolver
-      // greenfieldGateOp and test-writer isolation use — so the routing pre-check,
-      // the orchestrator gate, and isolation all classify test files identically.
+      // the greenfield gate and test-writer isolation used — so the routing
+      // pre-check and the gate classify test files identically.
       // Its detection tier discovers pre-existing tests across languages; falls
       // back to DEFAULT_TEST_FILE_PATTERNS only when nothing is found/configured.
       const root = ctx.projectDir ?? ctx.workdir;

@@ -93,9 +93,9 @@ async function settleHopSession(args: {
   // cached in _liveHandles; the subsequent hop (success, swap, or exhaustion)
   // either closes it in its own finally or SessionManager teardown handles it.
   // keepOpen: callers that need session continuity across pipeline stages (e.g.
-  // execution.ts with review/rectification enabled, or warm-lifetime callOp ops
-  // such as the workflow fix ops) set this flag so downstream stages can reuse the
-  // same ACP session via sessionManager.getLiveHandle().
+  // a review/rectification-enabled run, or warm-lifetime callOp ops such as the
+  // workflow fix ops) set this flag so downstream stages can reuse the same ACP
+  // session via sessionManager.getLiveHandle().
   // Timeout overrides keepOpen: a wall-clock-timed-out session is dead —
   // leaving it cached would hand the retry a non-functional handle.
   if (input.hopKind.kind !== "stale-retry" && (!input.resolvedRunOptions.keepOpen || timedOut)) {

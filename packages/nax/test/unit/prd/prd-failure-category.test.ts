@@ -91,6 +91,24 @@ describe("markStoryFailed()", () => {
     expect(prd.userStories[0].status).toBe("failed");
   });
 
+  // AC-1 (pipeline-story-ops-delete US-004): FailureCategory's canonical owner
+  // moves to src/execution/types. The retarget must not change
+  // markStoryFailed's transition, so this pins the whole state change —
+  // status, passes, attempts and category — in one place from a pending story
+  // at attempts 0.
+  test("marks a pending story failed with isolation-violation, attempts 1 and passes false", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    expect(prd.userStories[0].status).toBe("pending");
+    expect(prd.userStories[0].attempts).toBe(0);
+
+    markStoryFailed(prd, "US-001", "isolation-violation");
+
+    expect(prd.userStories[0].status).toBe("failed");
+    expect(prd.userStories[0].passes).toBe(false);
+    expect(prd.userStories[0].attempts).toBe(1);
+    expect(prd.userStories[0].failureCategory).toBe("isolation-violation");
+  });
+
   test.each([["isolation-violation" as const], ["tests-failing" as const], ["verifier-rejected" as const]])(
     "stores failureCategory='%s'",
     (category) => {

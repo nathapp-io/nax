@@ -124,11 +124,11 @@ export function parsePorcelainForNaxPaths(porcelain: string): NaxProtectedPath[]
  * Parse `git status --porcelain` output and return every untracked path
  * (`?? path` lines), unquoted. Pure — no I/O.
  *
- * Used by the BUG-07 snapshot-diff clean (`src/tdd/rollback.ts`): a snapshot
- * taken before an agent phase, diffed against the same call after the phase,
- * yields exactly the untracked paths the phase itself created — so rollback
- * can delete those without touching pre-existing untracked files (`.env`,
- * WIP notes) that predate the phase and happen to still be untracked.
+ * Untracked-file snapshotting: a snapshot taken before an agent phase, diffed
+ * against the same call after the phase, yields exactly the untracked paths the
+ * phase itself created — so a rollback can delete those without touching
+ * pre-existing untracked files (`.env`, WIP notes) that predate the phase and
+ * happen to still be untracked.
  *
  * @param porcelain - The stdout of `git status --porcelain`
  * @returns Array of untracked paths, unquoted, in input order

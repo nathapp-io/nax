@@ -6,7 +6,7 @@
  * always restores the worktree (revertMutant runs in a `finally`).
  *
  * Combination shape:
- *  - DeterministicOperation like greenfieldGateOp (filesystem/inspection, no LLM)
+ *  - DeterministicOperation like verifyScopedOp (filesystem/inspection, no LLM)
  *  - Executes tests like verifyScopedOp (DI'd regression + selectScopedTests)
  *
  * DI collaborators (mirrors _verifyScopedDeps) so unit tests need no real git/test run.

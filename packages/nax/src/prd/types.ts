@@ -5,7 +5,7 @@
  */
 
 import type { Complexity, ModelTier, TestStrategy } from "../config";
-import type { FailureCategory } from "../tdd/types";
+import type { FailureCategory } from "../execution/types";
 
 /** A contextFiles entry — may be a plain path string or an object carrying citation metadata */
 export interface ContextFileEntry {

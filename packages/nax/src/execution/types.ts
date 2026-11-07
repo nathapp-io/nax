@@ -1,33 +1,24 @@
 /**
  * Execution-layer wrapper types.
  *
- * Owned by the wrapper layer (not src/tdd) — the wrapper produces StoryRunResult
- * from any strategy, and strategy implementations (src/tdd, etc.) are consumers.
- * Per US-005 §5: StoryRunResult is the canonical wrapper-level result.
+ * Failure categories and the isolation-check result. The canonical owner of
+ * `FailureCategory` is this module — the execution layer and the pipeline/PRD
+ * layers import it from here rather than from a strategy-specific module.
  */
-
-import type { TokenUsage } from "../agents/cost";
-import type { SelfVerificationResult } from "../quality";
-import type { VerifierVerdict } from "../tdd/verdict";
-
-/** Session role for TDD strategies. */
-export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
 /** Failure categories for story-run results. */
 export type FailureCategory =
   /**
    * Test-writer violated file isolation or created no test files. Routed (escalate →
-   * retryAsLite → pause) by `routeTddFailure` / `resolveMaxAttemptsOutcome` and rolled back
-   * by `shouldRollbackTddFailure`.
+   * retryAsLite → pause) by the escalation layer's failure-category handling.
    *
    * NO producer currently emits this, by design — and the verifier *structurally cannot*
    * (Audit #8):
-   *   - The *mechanical* isolation checks (`verifyTestWriterIsolation` /
-   *     `verifyImplementerIsolation`) detect which files changed but cannot judge whether a
-   *     change is legitimate (a stub in src/ may be required), so they stay advisory.
-   *   - The verifier reviews the *implementer*, not the test-writer. Its `VerifierVerdict`
-   *     (tdd/verdict.ts) has no field describing test-writer-wrote-source; `testModifications`
-   *     describes the *implementer editing tests*, which correctly maps to `verifier-rejected`.
+   *   - The *mechanical* isolation checks detect which files changed but cannot judge whether
+   *     a change is legitimate (a stub in src/ may be required), so they stay advisory.
+   *   - The verifier reviews the *implementer*, not the test-writer. Its verdict type has no
+   *     field describing test-writer-wrote-source; `testModifications` describes the
+   *     *implementer editing tests*, which correctly maps to `verifier-rejected`.
    *     Routing that to `isolation-violation` would be wrong — `retryAsLite` *relaxes* isolation
    *     on retry, the opposite of enforcing "don't edit tests."
    *
@@ -70,46 +61,4 @@ export interface IsolationCheck {
   warnings?: string[];
   /** Human-readable description of what was checked */
   description?: string;
-}
-
-/** Result of a single session within a story run (typically TDD-shaped). */
-export interface TddSessionResult {
-  role: TddSessionRole;
-  success: boolean;
-  isolation?: IsolationCheck;
-  estimatedCostUsd: number;
-  tokenUsage?: TokenUsage;
-  filesChanged: string[];
-  durationMs: number;
-  branch?: string;
-  timestamp?: string;
-  error?: string;
-  outputTail?: string;
-  selfVerification?: SelfVerificationResult;
-  tests?: {
-    total: number;
-    passed: number;
-    failed: number;
-  };
-}
-
-/** Wrapper-level result of a story run. Owned by the execution wrapper layer. */
-export interface StoryRunResult {
-  success: boolean;
-  sessions: TddSessionResult[];
-  needsHumanReview: boolean;
-  reviewReason?: string;
-  totalCost: number;
-  totalTokenUsage?: TokenUsage;
-  totalDurationMs?: number;
-  lite: boolean;
-  failureCategory?: FailureCategory;
-  /**
-   * Verifier verdict parsed from .nax-verifier-verdict.json (for logging/debugging).
-   * null      = verdict file was missing or malformed (no verdict available)
-   * undefined = verdict was not attempted (e.g. early-exit before session 3 ran)
-   */
-  verdict?: VerifierVerdict | null;
-  /** Whether the TDD full-suite gate passed (used by verify stage to skip redundant run, BUG-054) */
-  fullSuiteGatePassed?: boolean;
 }

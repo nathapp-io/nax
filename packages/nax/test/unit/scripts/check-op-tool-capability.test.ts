@@ -17,7 +17,7 @@ describe("REQUIRED_TOOLS_BY_ROLE", () => {
 
     expect(required).toContain("RunCommand");
     // Write is required so the mandatory verdict-file write is satisfiable
-    // (nax#2013) — narrowed to that one file by verifierOp.toolPatterns.
+    // (nax#2013) — narrowed to that one file by the verifier's toolPatterns.
     expect(required).toContain("Write");
     expect(required).not.toContain("Edit");
   });

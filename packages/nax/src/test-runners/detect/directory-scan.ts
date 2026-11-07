@@ -14,9 +14,8 @@ import type { DetectionSource } from "./types";
  * Sentinel returned by {@link raceWithDeadline} when the deadline wins. Mirrors
  * the DRAIN_TIMEOUT symbol in `src/verification/executor.ts` — duplicated here
  * because routing the import through `@/verification`'s barrel would create a
- * runtime cycle (`verification/flake-baseline-diff.ts` already pulls from
- * `test-runners`, closing the loop on detect/). Local copy keeps the cycle
- * ratchet at its baseline.
+ * runtime cycle on the detect/ layer. Local copy keeps the cycle ratchet at
+ * its baseline.
  */
 const DRAIN_TIMEOUT = Symbol("drain-timeout");
 

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-07T08:45:45.954Z",
+  "updatedAt": "2026-11-07T09:56:45.710Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -105,7 +105,6 @@
     "src/runtime/middleware/cost.ts": { "=>": 44, "=>#2": 25 },
     "src/runtime/middleware/idle-watchdog/index.ts": { "=>": 37 },
     "src/runtime/session-run-hop.ts": { "=>": 57 },
-    "src/tdd/verdict-reader.ts": { "isValidVerdict": 27 },
     "src/test-runners/conventions.ts": { "globToRegex": 22 },
     "src/test-runners/detect/framework-configs-python.ts": { "parsePytestIni": 26 },
     "src/test-runners/parse-bun.ts": { "extractBunFailureDetail": 22 },
@@ -120,8 +119,6 @@
     "src/utils/path-filters.ts": { "globToRegex": 27 },
     "src/utils/porcelain.ts": { "unquotePorcelainPath": 39 },
     "src/verification/executor.ts": { "appendFlag": 28 },
-    "src/verification/flake-probe.ts": { "runFlakeProbe": 22 },
-    "src/verification/flake-triage.ts": { "triageFlakyFindings": 25 },
     "src/verification/mutation/mutator.ts": { "generateMutants": 23 },
     "src/verification/smart-runner.ts": { "buildTestCandidates": 25 },
     "src/worktree/manager.ts": { "create": 34 },

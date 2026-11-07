@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1042
+    "looseCast": 1038
   },
-  "updatedAt": "2026-11-07T09:15:16.115Z",
+  "updatedAt": "2026-11-07T09:58:14.593Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -35,9 +35,6 @@
     },
     "test/integration/interaction/interaction-chain-pipeline.test.ts": {
       "looseCast": 3
-    },
-    "test/integration/tdd/tdd-cleanup.test.ts": {
-      "looseCast": 2
     },
     "test/integration/prompts/pb-004-migration.test.ts": {
       "looseCast": 1
@@ -310,9 +307,6 @@
     "test/unit/verification/smart-runner-config.test.ts": {
       "looseCast": 2
     },
-    "test/unit/verification/flake-probe.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/operations/tool-declarations.test.ts": {
       "looseCast": 1
     },
@@ -404,9 +398,6 @@
       "looseCast": 25
     },
     "test/unit/cli/config-display.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/utils/git.test.ts": {
       "looseCast": 1
     },
     "test/unit/agents/agent-stderr-capture.test.ts": {
