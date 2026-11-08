@@ -138,7 +138,7 @@ The shared mutable state passed through all stages (`src/pipeline/types.ts`; ext
 |:------|:-----|:--------|
 | Setup | `run-setup.ts` | Load PRD, init loggers, crash handlers |
 | Init | `run-initialization.ts` | Reconcile story state, resume from crash, review re-run for reconciled stories |
-| Completion | `run-completion.ts`, `run-completion-phases.ts` | Final metrics, hooks, cleanup, deferred regression gate |
+| Completion | `run-completion.ts`, `run-completion-phases.ts` | Final metrics, hooks, cleanup |
 | Cleanup | `run-cleanup.ts` | Remove temp files |
 | Paused prompts | `paused-story-prompts.ts` | Interactive re-run prompts for paused stories (resume, skip, keep paused) |
 
@@ -559,7 +559,7 @@ root-only.
 | `on-all-stories-complete` | All stories processed |
 | `on-complete` | Run finishes successfully |
 | `on-error` | Unrecoverable run error |
-| `on-final-regression-fail` | Post-run regression fails |
+| `on-final-regression-fail` | Declared and accepted in `hooks.json`, but nothing fires it since pipeline mode was removed |
 | `on-post-run-action` | A registered post-run action settles (success, failure, skip, or error) |
 | `on-workflow-start` | The feature workflow begins (workflow mode) |
 | `on-workflow-step` | A feature-workflow step begins, the starting step included |

@@ -31,8 +31,8 @@ requirement from `tsconfig.json` instead and the story passed.
 An `Exec` call runs only when **both** hold:
 
 1. **The operation declares it.** `Exec` is a capability marker in an op's `tools` list.
-   The ops that declare it are the ones that write code: `workflow-implement`, `workflow-branch-fix`
-   and `workflow-repair` (via `WORKFLOW_WRITE_TOOLS`). A review, verification or
+   The ops that declare it include the ones that write code: `workflow-implement`, `workflow-branch-fix`
+   and `workflow-repair` (via `WORKFLOW_WRITE_TOOLS`); check an op's `tools` list for the full set. A review, verification or
    planning op cannot install anything, whatever config says.
 2. **The policy grants it.** Either the built-in list below, or an `Exec(...)` expression
    you write.

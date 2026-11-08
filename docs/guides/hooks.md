@@ -40,6 +40,7 @@ Integrate notifications, CI triggers, or custom scripts via lifecycle hooks.
 | `on-workflow-step` | Each feature-workflow step begins, the starting step included |
 | `on-workflow-publish` | The feature workflow finished publishing |
 | `on-complete` | The run finished: fires after the end phase (the feature workflow), with whole-run cost |
+| `on-final-regression-fail` | Accepted in `hooks.json`, but nothing fires it: the post-run regression gate went with pipeline mode |
 | `on-error` | Unhandled error terminates the run |
 | `on-post-run-action` | A post-run plugin action succeeds, fails, skips, or throws |
 

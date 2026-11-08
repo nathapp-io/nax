@@ -69,7 +69,7 @@ Some blocks are restricted by layer:
 | `constitution` | `enabled: true`, `path: "constitution.md"`, `maxTokens: 2000` | Constitution injected into prompts |
 | `interaction` | `plugin: "cli"`, `defaults.timeout: 600000` | Interaction triggers/plugins — see [Triggers](triggers.md) |
 | `precheck` | `storySizeGate.enabled: true`, `action: "block"` | Pre-run checks and the story-size gate |
-| `prompts` | `behavioralGuardrails: "lite"` | Behavioral guardrail level (`off`/`lite`/`strict`) |
+| `prompts` | `behavioralGuardrails: "lite"` | Accepted, but nothing reads it: prompts always use the `lite` guardrails (#2832) |
 | `autoPr` | `enabled: false`, `draft: true` | Open a (draft) PR after a run |
 | `finish` | `enabled: false` | Autonomous finish — [below](#autonomous-finish-finish) |
 | `mcp` | `servers: {}` | MCP servers the native agent may call — [below](#mcp-servers) |

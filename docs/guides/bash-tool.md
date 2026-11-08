@@ -38,11 +38,12 @@ a grant is told the session already holds `Glob` rather than simply refused.
 ## Turning it on
 
 **1. The operation must declare it** (every mode) — a code-owned ceiling, not config. The
-operations that declare `Bash` are the workflow write operations (`workflow-implement`,
+operations that declare `Bash` include the workflow write operations (`workflow-implement`,
 `workflow-branch-fix`, `workflow-repair`, which share `WORKFLOW_WRITE_TOOLS`). The workflow
 reviewers (`workflow-story-review`, `workflow-re-review`, `workflow-branch-review`) declare it too,
 but their command tools are withheld unless the dispatch sandbox is usable
-(`src/agents/reviewer-command-withhold.ts`). The scoped verifier (`verify-scoped.ts`) does not
+(`src/agents/reviewer-command-withhold.ts`), as does the bot PR reviewer (`bot-pr-review.ts`,
+`REVIEWER_VERIFY_TOOLS`). Check an op's `tools` list for the full picture. The scoped verifier (`verify-scoped.ts`) does not
 declare `Bash` or `Exec`, so it cannot install packages while judging the implementer's work, and
 a `Bash(...)` rule covering an install command would hand that back by another route.
 

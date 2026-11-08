@@ -240,7 +240,7 @@ See [Story Decomposition Guide](https://github.com/nathapp-io/nax/blob/main/docs
 
 ### Regression Gate
 
-In workflow mode the full-suite checks are the `full-suite` gate in each story and the `final-gates` step of the feature workflow. `execution.regressionGate.timeoutSeconds` bounds the full-suite run, and `acceptOnTimeout` controls whether a timeout counts as a pass.
+In workflow mode the full-suite checks are the `full-suite` gate in each story and the `final-gates` step of the feature workflow. `execution.regressionGate.timeoutSeconds` bounds the full-suite run. `acceptOnTimeout` only changes the status label (`passed-on-timeout` instead of `timeout`); either way a timed-out suite is a red gate in workflow mode.
 
 See [Regression Gate Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/regression-gate.md).
 
