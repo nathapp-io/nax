@@ -1,0 +1,872 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-config-keys-slim",
+  "branchName": "feat/pipeline-config-keys-slim",
+  "createdAt": "2026-11-08T00:00:00.000Z",
+  "updatedAt": "2026-11-08T08:20:06.669Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Delete the dead config selectors",
+      "description": "**Goal** — Delete the 13 unused config selector values and unused factory/types without changing retained selector behavior or live slice shapes.\n\n**Motivation** — 13 selector values in `config/selectors.ts` have no production importer besides the `src/config/index.ts` barrel.\n\n**Approach** — Part 1: selectors (US-001)\n\n| Site | After |\n|:---|:---|\n| `config/selectors.ts` | the 13 dead selector values go |\n| `config/selectors.ts` | `RectifyConfig`, `VerifyConfig`, `RectificationGateConfig`, `PromptLoaderConfig`, `MutationCheckConfig` and `ExecutionGatesConfig` go |\n| `config/selectors.ts` | each of the eight live slice types is redefined as `Pick<NaxConfig, ...>` over the same section list its selector picked, for example `export type ReviewConfig = Pick<NaxConfig, \"review\" | \"models\" | \"execution\" | \"project\" | \"quality\" | \"agent\">;` |\n| `config/selector.ts` | `reshapeSelector` is deleted; `pickSelector` and `ConfigSelector` stay; the header comment describes one factory |\n| `config/index.ts` | the barrel exports of every deleted value and type go |\n\nThe redefined types keep their current shape, so no production consumer changes. A test that called a deleted selector to build a slice calls `pickSelector` with the same keys, or builds the `Pick` type directly. `RectificationGateConfig` has no importer. `rectificationGateConfigSelector` stays, and its picks do not change.\n\n**Scope** — In: remove reviewConfigSelector, rectifyConfigSelector, verifyConfigSelector, mutationCheckConfigSelector, agentConfigSelector, interactionConfigSelector, precheckConfigSelector, executionGatesConfigSelector, testPatternConfigSelector, contextConfigSelector, contextToolRuntimeConfigSelector, promptLoaderConfigSelector and llmRoutingConfigSelector. Preserve ReviewConfig, AgentConfig, InteractionConfig, PrecheckConfig, TestPatternConfig, ContextConfig, ContextToolRuntimeConfig and LlmRoutingConfig as Pick aliases over the original key lists. Update slice-construction tests and pin retained selector key boundaries, including exclusion of non-selected sections. Out: US-002's runtime MutationCheckConfig interface and config-key/schema deletion; US-003's timeout/mode removal; US-004/US-005's maxIterations changes; narrowing live selector picks; changes to .nax rules or B4 documentation.\n\n**Interface** — `export type ReviewConfig = Pick<NaxConfig, \"review\" | \"models\" | \"execution\" | \"project\" | \"quality\" | \"agent\">;`\nPreserve `pickSelector` and `ConfigSelector`; do not introduce a replacement transform factory.\n\n**Modification inventory** — Paths below are relative to packages/nax.\n- src/config/selectors.ts — 13 dead selector values and six unused slice types go; eight live slice types become Pick aliases.\n- src/config/selector.ts — reshapeSelector and its documentation go; header describes one factory.\n- src/config/index.ts — remove deleted value/type/factory exports only.\n- test/unit/config/selectors.test.ts — cases for deleted selectors go; agent-manager, quality, routing and plan cases stay; add/preserve the three retention ACs, including workflow selector keys.\n- test/unit/config/selector.test.ts — reshapeSelector describe and import go.\n- test/unit/config/mutation-check-schema.test.ts — selector describe and mutationCheckConfigSelector import go; do not delete the remaining schema tests until US-002.\n- test/unit/acceptance/default-agent-acceptance.test.ts, test/unit/execution/lifecycle/default-agent-migration.test.ts, test/unit/tdd/default-agent-tdd.test.ts — agentConfigSelector calls become pickSelector(\"agent\", \"agent\").\n- test/unit/context/engine/query-feature-context-fragments.test.ts — use pickSelector with the same four sections.\n- test/unit/context/engine/tool-runtime.test.ts — delete selector key-list test; replace other selector call with pickSelector over the same sections.\n- test/unit/test-runners/resolver.test.ts — replace selector call with pickSelector; delete selector key-list test.\n- test/unit/precheck/precheck-config-slice-widening.test.ts — rewrite as a PrecheckConfig type assertion, without a selector call.\n- scripts/baselines/complexity-baseline.json — regenerate.\n- scripts/baselines/test-escape-hatches-baseline.json — lower totals carried by deleted tests.\n\n**Verification — all steps run in packages/nax**\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep:\n   - for each removed key, `rg -n -w '<leaf>' src bin scripts test`;\n   - for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`.\n   Sweep names: `reviewConfigSelector`, `rectifyConfigSelector`, `verifyConfigSelector`, `mutationCheckConfigSelector`, `agentConfigSelector`, `interactionConfigSelector`, `precheckConfigSelector`, `executionGatesConfigSelector`, `testPatternConfigSelector`, `contextConfigSelector`, `contextToolRuntimeConfigSelector`, `promptLoaderConfigSelector`, `llmRoutingConfigSelector`, `reshapeSelector`, `RectifyConfig`, `VerifyConfig`, `RectificationGateConfig`, `PromptLoaderConfig`, `ExecutionGatesConfig`.\n   Expected remaining hits: none. `MutationCheckConfig` is not swept here, because `config/runtime-types-execution.ts` has its own interface of that name and US-002 removes it.\n   Expected result: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file. A comment edit needs no Modifies entry. A hit that names a different concept with the same word is listed in the story, not changed. Line numbers are at `fc24a6805`. A story that runs after another story edited the same file locates each site by its symbol.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\n\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. A test that only exercises a removed key, selector or method is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. The three original spec ACs and the explicit non-selected-key exclusion criterion are retention pins that already pass, not new fail-first gaps.",
+      "acceptanceCriteria": [
+        "[unit] planConfigSelector.select(config) returns an object whose own keys are exactly plan, agent, models, project and routing.",
+        "[unit] workflowConfigSelector.select(config) returns an object whose own keys are exactly workflow, review, execution, autoMode, quality, agent, models and finish.",
+        "[unit] routingConfigSelector.select(config) returns an object whose own keys are exactly routing, autoMode and tdd.",
+        "[unit] Given a config containing an execution section, planConfigSelector.select(config) returns no own execution property, preserving the existing boundary that excludes non-selected sections."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "selectors",
+        "c1"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three config source files undergo mechanical export deletion and equivalent Pick aliases; existing selector tests and an explicit non-selected-key exclusion pin cover the unchanged projection without requiring isolated implementation sessions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/selectors.ts",
+        "packages/nax/src/config/selector.ts",
+        "packages/nax/src/config/index.ts",
+        "packages/nax/test/unit/config/selectors.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/selectors.ts",
+          "reason": "13 dead selector values and six unused slice types go; eight live slice types become `Pick<NaxConfig, ...>` aliases"
+        },
+        {
+          "path": "packages/nax/src/config/selector.ts",
+          "reason": "`reshapeSelector` is deleted; the header describes one factory"
+        },
+        {
+          "path": "packages/nax/src/config/index.ts",
+          "reason": "barrel exports of the deleted selectors, types and `reshapeSelector` go"
+        },
+        {
+          "path": "packages/nax/test/unit/config/selectors.test.ts",
+          "reason": "cases for deleted selectors go; the agent-manager, quality, routing and plan cases stay, plus US-001 AC1 to AC3"
+        },
+        {
+          "path": "packages/nax/test/unit/config/selector.test.ts",
+          "reason": "the `reshapeSelector` describe and import go"
+        },
+        {
+          "path": "packages/nax/test/unit/config/mutation-check-schema.test.ts",
+          "reason": "the selector describe and its `mutationCheckConfigSelector` import go (the file is deleted in US-002)"
+        },
+        {
+          "path": "packages/nax/test/unit/acceptance/default-agent-acceptance.test.ts",
+          "reason": "the `agentConfigSelector` call becomes `pickSelector(\"agent\", \"agent\")`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/default-agent-migration.test.ts",
+          "reason": "the `agentConfigSelector` call becomes `pickSelector(\"agent\", \"agent\")`"
+        },
+        {
+          "path": "packages/nax/test/unit/tdd/default-agent-tdd.test.ts",
+          "reason": "the `agentConfigSelector` call becomes `pickSelector(\"agent\", \"agent\")`"
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/query-feature-context-fragments.test.ts",
+          "reason": "the selector call becomes `pickSelector` with the same four sections"
+        },
+        {
+          "path": "packages/nax/test/unit/context/engine/tool-runtime.test.ts",
+          "reason": "the selector key-list test is deleted; the other call becomes `pickSelector` with the same sections"
+        },
+        {
+          "path": "packages/nax/test/unit/test-runners/resolver.test.ts",
+          "reason": "the selector call becomes `pickSelector`; the selector key-list test is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/precheck/precheck-config-slice-widening.test.ts",
+          "reason": "rewritten as a `PrecheckConfig` type assertion, no selector call"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the deleted tests"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fc24a68050b6a9e9f9311bd75610e465461d3ab3"
+    },
+    {
+      "id": "US-002",
+      "title": "Add removed-key stripping and remove dead rectification and execution sections",
+      "description": "**Goal** — Introduce a shared immutable warn-and-strip module and remove eleven unused rectification leaves, flakeDetection, mutationCheck and commandInterceptor.provider.\n\n**Motivation** — Only `maxAttemptsTotal` (`execution/story-selector.ts:42`, `unified-executor-dispatch-phases.ts:198`) and `fullSuiteTimeoutSeconds` (`quality/gate-timeout.ts:29`) are read.\n\n**Approach** — Part 2: the removed-key strip, the rectification keys and three dead execution sections (US-002)\n\nA new module `src/config/removed-config-keys.ts`. `config-guards.ts` is at 592 of its 600 allowed lines.\n\n**Interface**\n```typescript\n/** Hint for a key that only configured the removed pipeline mode. */\nexport const PIPELINE_ONLY_KEY_HINT = \"nothing reads this key since pipeline mode was removed\";\n\n/** Config keys removed in C1, each with the hint its warning appends. */\nexport const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>>;\n\n/** Strip each dotted path in `keys` from `conf`, warning once per path present:\n *  `Config key \"<path>\" has been removed — <hint>. Remove it from your config.`\n *  Tolerates missing and non-object intermediates. Returns a new object; never mutates `conf`. */\nexport function stripKeysAtPaths(\n  conf: Record<string, unknown>,\n  keys: Readonly<Record<string, string>>,\n  warn?: (msg: string) => void,\n): Record<string, unknown>;\n\n/** stripKeysAtPaths(conf, REMOVED_CONFIG_KEYS, warn). */\nexport function stripRemovedConfigKeys(\n  conf: Record<string, unknown>,\n  warn?: (msg: string) => void,\n): Record<string, unknown>;\n```\n\n- The path walk and `rebuildAtPath` move out of `config-guards.ts` (`:319-377`), and `stripRemovedNoOpKeys` becomes a one-line call to `stripKeysAtPaths(conf, REMOVED_NO_OP_KEYS, warn)`. Its warning text and behaviour are unchanged: it still returns a new top-level object when no key matched. Its doc comment stays with it.\n- `stripRemovedConfig` (`config/removed-stage-names.ts`) runs `stripRemovedNoOpKeys`, then `stripRemovedConfigKeys`, then `stripRemovedStageNames`, with one sink. `loader.ts` already calls `stripRemovedConfig` at all three strip sites (`:256`, `:533`, `:569`), so `loader.ts` does not change. The strip runs before `NaxConfigSchema.safeParse` at each site, so a key under a `.strict()` schema such as `CommandInterceptorConfigSchema` is gone before the schema sees it.\n\nUS-002 then removes these keys and adds each to `REMOVED_CONFIG_KEYS`. The rectification leaves, `flakeDetection` and `mutationCheck` get `PIPELINE_ONLY_KEY_HINT`. `execution.commandInterceptor.provider` gets `nothing read this key; the interceptor is always rtk`, because it was never read, even in pipeline mode:\n\n| Key | Sites |\n|:---|:---|\n| `execution.rectification.{enabled, maxAttemptsPerStrategy, maxFailureSummaryChars, abortOnIncreasingFailures, consecutiveIncreasesToBail, abortOnNoProgress, consecutiveNoProgressToBail, storyScopedFixBudget, rethinkAtAttempt, urgencyAtAttempt, repoScopedFallback}` | `RectificationConfigSchema` (`schemas-execution.ts:62-105`); `RectificationConfig` (`runtime-types.ts:55-83`) keeps `maxAttemptsTotal` and `fullSuiteTimeoutSeconds`; descriptions (`cli/config-descriptions.ts:133-149`) |\n| (same) | `RectifierPromptBuilder.continuation` (`rectifier-builder.ts:234-277`) and `.escalated` (`:503-530`) are deleted with the imports only they used |\n| `execution.flakeDetection` (section) | `FlakeDetectionConfigSchema` (`schemas-execution.ts:165-176`) and its field (`:342-347`); `FlakeDetectionConfig` (`runtime-types-execution.ts`); default (`schemas.ts:193`); merge (`merge.ts:137-140`); descriptions |\n| `execution.mutationCheck` (section) | its schema (`schemas-execution.ts:178-190`) and field (`:348-352`); `MutationCheckConfig` (`runtime-types-execution.ts`); default (`schemas.ts:199`); merge (`merge.ts:141-144`); descriptions (`config-descriptions.ts:154-160`) |\n| `execution.commandInterceptor.provider` | its schema field (`schemas-execution.ts:228`); the `provider` field (`runtime-types-execution.ts:86`); the default `provider: \"rtk\"` (`schemas-execution.ts:354`) |\n\nAlso in US-002, `rejectLegacyRectificationKeys` (`config-guards.ts:81-153`) still rejects `quality.autofix.rethinkAtAttempt` and `.urgencyAtAttempt`. Their hints become the lines: - Remove `quality.autofix.rethinkAtAttempt` and - Remove `quality.autofix.urgencyAtAttempt`, in place of the old - Move ... → `execution.rectification.*` lines. Its other three keys keep their hints.\n\n**Timing constraint.** `loadConfig` starts from `structuredClone(DEFAULT_CONFIG)` (`config/loader.ts`), and `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. If a key is added to the strip list while the schema still defaults it, every load warns. So a story adds a key to `REMOVED_CONFIG_KEYS` in the same change that removes the key's schema field and default.\n\n**Scope** — In: create the shared traversal and compatibility map; wire it through the existing composition; remove the listed schema/default/type/description/merge surfaces and the two uncalled builder methods; retain all kept behavior. Warn once for each removed whole section, not once per leaf under it. Out: US-003's verificationTimeoutSeconds/regressionGate.mode entries; US-004/US-005's maxIterations work; US-001's already-deleted selectors; acceptance, worktree isolation, other tdd/autoMode/quality/prompts/optimizer keys, permission vocabulary and B4 documentation. Do not change stage-name stripping or interceptor instance provider metadata. Do not edit the repository's own .nax config/rules to silence expected warnings.\n\n**Modification inventory** — All paths below are relative to packages/nax. Create src/config/removed-config-keys.ts and test/unit/config/removed-config-keys.test.ts.\n- src/config/config-guards.ts — move traversal/rebuildAtPath; delegate stripRemovedNoOpKeys; update only rethink/urgency removal hints and the related migration/consolidation comments/text.\n- src/config/removed-stage-names.ts — compose the new strip between the existing two strips with one sink.\n- src/config/schemas-execution.ts — remove the eleven rectification leaves, FlakeDetectionConfigSchema, MutationCheckConfigSchema, both section fields, commandInterceptor.provider and its provider default.\n- src/config/schemas.ts — remove flakeDetection/mutationCheck root defaults.\n- src/config/merge.ts — remove flakeDetection/mutationCheck merge rules and their doc-comment names; retain rectification and regressionGate merging.\n- src/config/runtime-types.ts — RectificationConfig keeps maxAttemptsTotal/fullSuiteTimeoutSeconds; remove flakeDetection/mutationCheck fields and unused type imports/re-exports.\n- src/config/runtime-types-execution.ts — remove FlakeDetectionConfig, MutationCheckConfig and CommandInterceptorConfig.provider.\n- src/cli/config-descriptions.ts — delete every removed key's description.\n- src/prompts/builders/rectifier-builder.ts — delete complete continuation/escalated methods and exclusively used imports.\n- test/unit/config/strip-removed-noop-keys.test.ts — replace removed retained rectification fixtures with maxAttemptsTotal; every existing assertion still holds.\n- test/unit/config/legacy-rectification-keys.test.ts — rethink/urgency assert Remove and never their old execution.rectification targets; reports all five legacy keys at once stays unchanged; accepts canonical config drops maxAttemptsPerStrategy from fixture/title/assertion.\n- test/unit/config/schemas.test.ts — delete US-1496 no-progress and US-004 storyScopedFixBudget describes.\n- test/unit/config/story-scoped-fix-budget.test.ts, test/unit/config/flake-detection-schema.test.ts, test/unit/config/mutation-check-schema.test.ts — delete files testing only removed behavior.\n- test/unit/config/defaults.test.ts — delete maxAttemptsPerStrategy default test.\n- test/unit/cli/config-descriptions.test.ts — delete mutationCheck description describe; add removed-prefix/retained-key assertions.\n- test/unit/config/command-interceptor-config.test.ts — remove provider default assertion.\n- test/unit/config/smart-runner-flag.test.ts, test/unit/config/permissions.test.ts, test/unit/verification/smart-runner-config.test.ts — drop removed rectification fixtures.\n- test/unit/review/runner.test.ts — drop rectification.enabled spread.\n- test/unit/operations/call.test.ts — delete keepOpen test covering only rectification.enabled; test-local predicate returns true.\n- test/unit/precheck/precheck-run-story-size-gate-routing.test.ts — drop removed rectification keys, verificationTimeoutSeconds and maxIterations from its DeepPartial literal (the latter two are optional there and are removed early to keep later stories green).\n- test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts — drop removed rectification keys and optional maxIterations.\n- test/unit/prompts/rectifier-builder.test.ts — delete continuation describe.\n- test/unit/prompts/builders/rectifier-builder.test.ts — delete continuation describe and its unused constants.\n- test/unit/prompts/builders/rectifier-builder-helpers.test.ts — delete escalated describe/test.\n- test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap — prune the three continuation snapshot entries.\n- test/integration/cli/cli-precheck-run.test.ts — drop removed rectification fixtures.\n- test/integration/cli/cli-config-default-view.test.ts — drop rectification.enabled default assertion/fixture line.\n- test/integration/interaction/interaction-chain-pipeline.test.ts — keep only live rectification keys; drop optional verificationTimeoutSeconds early.\n- test/integration/routing/routing-stage-greenfield.test.ts, test/integration/routing/routing-stage-final-state.test.ts — drop removed rectification keys, optional verificationTimeoutSeconds and maxIterations early.\n- scripts/baselines/complexity-baseline.json — regenerate, including the shrinking merge function.\n- scripts/baselines/test-escape-hatches-baseline.json — lower totals carried by deleted tests.\n\n**Verification — all steps run in packages/nax**\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep:\n   - for each removed key, `rg -n -w '<leaf>' src bin scripts test`;\n   - for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`.\n   Sweep names: `maxAttemptsPerStrategy`, `maxFailureSummaryChars`, `abortOnIncreasingFailures`, `consecutiveIncreasesToBail`, `abortOnNoProgress`, `consecutiveNoProgressToBail`, `storyScopedFixBudget`, `rethinkAtAttempt`, `urgencyAtAttempt`, `repoScopedFallback`, `flakeDetection`, `FlakeDetectionConfigSchema`, `FlakeDetectionConfig`, `mutationCheck`, `MutationCheckConfig`, `rebuildAtPath`. Also read the hits of `rg -n 'rectification\\.enabled|provider: \"rtk\"' src test`. Sweep the removed methods with `rg -n 'RectifierPromptBuilder\\.(continuation|escalated)|\\.continuation\\(|\\.escalated\\(' src test`; expected: no hits.\n   Expected remaining hits:\n   - the strip entries in `config/removed-config-keys.ts`;\n   - `rethinkAtAttempt` and `urgencyAtAttempt` in `config-guards.ts` `rejectLegacyRectificationKeys`, and in its test for the two `quality.autofix` names. Its doc comment's migration map (`:69-79`) says the two keys are removed rather than moved, and the thrown message's \"consolidated under `execution.rectification.*`\" line names only the keys that still move there. The `mergePackageConfig` doc comment (`merge.ts:55-58`) stops listing `flakeDetection`, `mutationCheck` and (in US-003) `verificationTimeoutSeconds`;\n   - `rebuildAtPath` in `config/removed-config-keys.ts` only;\n   - `provider` meaning other things (agent providers, memory providers), and `provider: \"rtk\"` as an interceptor-instance field in `execution/interceptors/` and its tests.\n   Loader-seam tests intentionally supplying retired keys are compatibility-test hits, not production readers; inspect/list these alongside strip entries. Expected result: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file. A comment edit needs no Modifies entry. A hit that names a different concept with the same word is listed in the story, not changed. Line numbers are at `fc24a6805`. A story that runs after another story edited the same file locates each site by its symbol.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\n\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. A test that only exercises a removed key, selector or method is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. In the ACs, \"warns\" means the loader's warning reaches a logger sink registered with `addSink`, as `test/unit/config/removed-stage-names.test.ts` captures it; `loadConfig` takes no warn parameter. Exercise loadConfigForWorkdir as well as loadConfig. ACs 3, 7 and 9 to 15 are retention pins (they already pass before the change), not fail-first gaps. All newly removed-key loader tests assert warning and resolved-property absence, not just direct schema behavior.",
+      "acceptanceCriteria": [
+        "[unit] When loadConfig reads a project .nax/config.json setting execution.rectification.abortOnNoProgress: false, it resolves with no abortOnNoProgress property on execution.rectification.",
+        "[unit] When loadConfig reads execution.rectification.abortOnNoProgress: false, an addSink logger sink receives exactly 'Config key \"execution.rectification.abortOnNoProgress\" has been removed — nothing reads this key since pipeline mode was removed. Remove it from your config.'.",
+        "[unit] When loadConfig reads execution.mutationCheck: { enabled: true }, execution.flakeDetection: { enabled: false } and execution.commandInterceptor: { enabled: true, provider: \"rtk\" }, it resolves rather than rejecting the removed keys.",
+        "[unit] When loadConfig reads a project config with execution: { mutationCheck: { enabled: true }, flakeDetection: { enabled: false }, commandInterceptor: { enabled: true, provider: \"rtk\" } }, an addSink logger sink receives exactly one removed-key warning for each of execution.mutationCheck, execution.flakeDetection and execution.commandInterceptor.provider, with the section warnings using 'nothing reads this key since pipeline mode was removed' and the provider warning using 'nothing read this key; the interceptor is always rtk'.",
+        "[unit] When loadConfig reads a project config with execution: { mutationCheck: { enabled: true }, flakeDetection: { enabled: false }, commandInterceptor: { enabled: true, provider: \"rtk\" } }, the resolved execution has no mutationCheck property.",
+        "[unit] When loadConfig reads a project config with execution: { mutationCheck: { enabled: true }, flakeDetection: { enabled: false }, commandInterceptor: { enabled: true, provider: \"rtk\" } }, the resolved execution has no flakeDetection property.",
+        "[unit] When loadConfig reads a project config with execution: { mutationCheck: { enabled: true }, flakeDetection: { enabled: false }, commandInterceptor: { enabled: true, provider: \"rtk\" } }, the resolved execution.commandInterceptor.enabled equals true.",
+        "[unit] When loadConfig reads a project config with execution: { mutationCheck: { enabled: true }, flakeDetection: { enabled: false }, commandInterceptor: { enabled: true, provider: \"rtk\" } }, the resolved execution.commandInterceptor has no provider property.",
+        "[unit] When loadConfig runs with no project config file, an addSink logger sink receives no warning containing 'has been removed'.",
+        "[unit] When loadConfig reads execution.rectification.maxAttemptsTotal: 7, it resolves with execution.rectification.maxAttemptsTotal === 7.",
+        "[unit] stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: true, strategy: \"auto\" } }, warn) returns { tdd: { strategy: \"auto\" } }.",
+        "[unit] stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: true, strategy: \"auto\" } }, warn) calls warn exactly once with 'Config key \"tdd.autoVerifyIsolation\" has been removed — this key had no effect — isolation verification is currently unconditional. Remove it from your config.'.",
+        "[unit] stripRemovedNoOpKeys(input, warn), when input is { quality: {} }, returns an object that is not input.",
+        "[unit] stripRemovedNoOpKeys(input, warn), when input is { quality: {} }, returns an object deep-equal to input.",
+        "[unit] stripRemovedNoOpKeys({ quality: {} }, warn) does not call warn.",
+        "[unit] stripKeysAtPaths({ a: { b: 1, c: 2 } }, { \"a.b\": \"h\" }, warn) returns { a: { c: 2 } }.",
+        "[unit] stripKeysAtPaths({ a: { b: 1, c: 2 } }, { \"a.b\": \"h\" }, warn) calls warn once with 'Config key \"a.b\" has been removed — h. Remove it from your config.'.",
+        "[unit] When stripKeysAtPaths(input, { \"a.b\": \"h\" }, warn) receives input = { a: { b: 1, c: 2 } }, input.a.b remains 1.",
+        "[unit] stripKeysAtPaths({ a: 42 }, { \"a.b\": \"h\" }, warn) returns { a: 42 }.",
+        "[unit] stripKeysAtPaths({ a: 42 }, { \"a.b\": \"h\" }, warn) does not call warn.",
+        "[unit] When loadConfig reads a project config setting quality.autofix.rethinkAtAttempt: 2, it rejects with CONFIG_LEGACY_RECTIFICATION_KEYS and a hint telling the user to remove that key, preserving the failure-handling table's config-load rejection.",
+        "[unit] rejectLegacyRectificationKeys({ quality: { autofix: { rethinkAtAttempt: 2 } } }) throws a NaxError with code CONFIG_LEGACY_RECTIFICATION_KEYS.",
+        "[unit] When rejectLegacyRectificationKeys receives quality.autofix.rethinkAtAttempt: 2, the thrown error text names quality.autofix.rethinkAtAttempt after the word Remove.",
+        "[unit] When rejectLegacyRectificationKeys receives quality.autofix.rethinkAtAttempt: 2, the thrown error text never names execution.rectification.rethinkAtAttempt.",
+        "[unit] FIELD_DESCRIPTIONS has no key equal to or starting with execution.mutationCheck, execution.flakeDetection or execution.rectification.abortOnNoProgress.",
+        "[unit] FIELD_DESCRIPTIONS still has execution.rectification.maxAttemptsTotal.",
+        "[unit] When loadConfigForWorkdir reads a package .nax/mono/<pkg>/config.json setting execution.rectification.abortOnNoProgress: false and execution.rectification.maxAttemptsTotal: 5, it resolves with execution.rectification.maxAttemptsTotal === 5.",
+        "[unit] When loadConfigForWorkdir reads a package .nax/mono/<pkg>/config.json setting execution.rectification.abortOnNoProgress: false and execution.rectification.maxAttemptsTotal: 5, resolved execution.rectification has no abortOnNoProgress property.",
+        "[unit] When loadConfigForWorkdir reads a package .nax/mono/<pkg>/config.json setting execution.rectification.abortOnNoProgress: false and execution.rectification.maxAttemptsTotal: 5, an addSink logger sink records one warning naming execution.rectification.abortOnNoProgress."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "compatibility",
+        "execution",
+        "c1"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Introduces a shared immutable traversal and integrates warning compatibility through root/package loaders while deleting coordinated schema, default, type, merge, description and prompt surfaces."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/config-guards.ts",
+        "packages/nax/src/config/removed-stage-names.ts",
+        "packages/nax/src/config/schemas-execution.ts",
+        "packages/nax/src/config/runtime-types-execution.ts",
+        "packages/nax/src/prompts/builders/rectifier-builder.ts",
+        "packages/nax/test/unit/config/strip-removed-noop-keys.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/removed-config-keys.ts",
+        "packages/nax/test/unit/config/removed-config-keys.test.ts"
+      ],
+      "suggestedCriteria": [
+        "stripKeysAtPaths({ a: null }, { \"a.b\": \"h\" }, warn) returns { a: null } without emitting a warning.",
+        "When stripRemovedConfig is applied twice to an input containing a newly removed execution key, the second application emits no warning for that key.",
+        "When loadConfig reads execution.commandInterceptor.provider: \"custom\" with enabled: true, it resolves with enabled === true and no provider property while warning once with the rtk-specific removal hint.",
+        "When rejectLegacyRectificationKeys receives quality.autofix.urgencyAtAttempt: 3, it throws CONFIG_LEGACY_RECTIFICATION_KEYS with a Remove hint and no execution.rectification.urgencyAtAttempt migration target."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/config-guards.ts",
+          "reason": "the path walk and `rebuildAtPath` move out; `stripRemovedNoOpKeys` delegates to `stripKeysAtPaths`; the rethink and urgency hints say to remove the key"
+        },
+        {
+          "path": "packages/nax/src/config/removed-stage-names.ts",
+          "reason": "`stripRemovedConfig` runs `stripRemovedConfigKeys` between the two existing strips"
+        },
+        {
+          "path": "packages/nax/src/config/schemas-execution.ts",
+          "reason": "the 11 rectification leaves, `FlakeDetectionConfigSchema`, the `mutationCheck` schema, both fields, `commandInterceptor.provider` and its default `provider: \"rtk\"` (`:354`) go"
+        },
+        {
+          "path": "packages/nax/src/config/schemas.ts",
+          "reason": "the `flakeDetection` and `mutationCheck` defaults go"
+        },
+        {
+          "path": "packages/nax/src/config/merge.ts",
+          "reason": "the `flakeDetection` and `mutationCheck` merge lines go"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "`RectificationConfig` keeps `maxAttemptsTotal` and `fullSuiteTimeoutSeconds`; the `flakeDetection` and `mutationCheck` fields go"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types-execution.ts",
+          "reason": "`FlakeDetectionConfig`, `MutationCheckConfig` and the `provider` field go"
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "description entries for the removed keys go"
+        },
+        {
+          "path": "packages/nax/src/prompts/builders/rectifier-builder.ts",
+          "reason": "`continuation` and `escalated` go with the imports only they used"
+        },
+        {
+          "path": "packages/nax/test/unit/config/strip-removed-noop-keys.test.ts",
+          "reason": "fixtures that used a removed rectification key use `maxAttemptsTotal` instead; every existing assertion still holds"
+        },
+        {
+          "path": "packages/nax/test/unit/config/legacy-rectification-keys.test.ts",
+          "reason": "the rethink and urgency cases assert the new `Remove` hint and no longer expect `execution.rectification.rethinkAtAttempt` / `.urgencyAtAttempt`; `reports all five legacy keys at once` is unchanged; `accepts canonical config` drops `maxAttemptsPerStrategy` from its fixture, title and assertion"
+        },
+        {
+          "path": "packages/nax/test/unit/config/schemas.test.ts",
+          "reason": "the US-1496 no-progress and US-004 storyScopedFixBudget describes are deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/config/story-scoped-fix-budget.test.ts",
+          "reason": "deleted: it tests only `storyScopedFixBudget`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/flake-detection-schema.test.ts",
+          "reason": "deleted: it tests only `flakeDetection`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/mutation-check-schema.test.ts",
+          "reason": "deleted: it tests only `mutationCheck`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "the `maxAttemptsPerStrategy` default test is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/cli/config-descriptions.test.ts",
+          "reason": "the `execution.mutationCheck` description describe is deleted; gains US-002 AC25 and AC26"
+        },
+        {
+          "path": "packages/nax/test/unit/config/command-interceptor-config.test.ts",
+          "reason": "the `provider` default assertion is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/config/smart-runner-flag.test.ts",
+          "reason": "fixtures drop the removed rectification keys"
+        },
+        {
+          "path": "packages/nax/test/unit/config/permissions.test.ts",
+          "reason": "fixtures drop the removed rectification keys"
+        },
+        {
+          "path": "packages/nax/test/unit/verification/smart-runner-config.test.ts",
+          "reason": "fixtures drop the removed rectification keys"
+        },
+        {
+          "path": "packages/nax/test/unit/review/runner.test.ts",
+          "reason": "the `rectification.enabled` spread is dropped"
+        },
+        {
+          "path": "packages/nax/test/unit/operations/call.test.ts",
+          "reason": "the `keepOpen` test that only covered `rectification.enabled` is deleted; the test-local predicate returns `true`"
+        },
+        {
+          "path": "packages/nax/test/unit/precheck/precheck-run-story-size-gate-routing.test.ts",
+          "reason": "fixtures drop the removed rectification keys, `verificationTimeoutSeconds` and `maxIterations` (all optional in this `DeepPartial` literal, so dropping them early keeps US-003 and US-005 green)"
+        },
+        {
+          "path": "packages/nax/test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts",
+          "reason": "fixtures drop the removed rectification keys and `maxIterations` (optional in this `DeepPartial` literal, so US-005 stays green)"
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/rectifier-builder.test.ts",
+          "reason": "the `continuation` describe is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/rectifier-builder.test.ts",
+          "reason": "the `continuation` describe and its unused constants are deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/rectifier-builder-helpers.test.ts",
+          "reason": "the `escalated` describe and test are deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/__snapshots__/rectifier-builder.test.ts.snap",
+          "reason": "the three `continuation` snapshot entries are pruned"
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-precheck-run.test.ts",
+          "reason": "fixtures drop the removed rectification keys"
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-config-default-view.test.ts",
+          "reason": "the `rectification.enabled` default assertion and fixture line are dropped"
+        },
+        {
+          "path": "packages/nax/test/integration/interaction/interaction-chain-pipeline.test.ts",
+          "reason": "the rectification fixture keeps only the remaining keys; the fixture also drops `verificationTimeoutSeconds`, optional in this `DeepPartial` literal, so US-003 stays green"
+        },
+        {
+          "path": "packages/nax/test/integration/routing/routing-stage-greenfield.test.ts",
+          "reason": "fixtures drop the removed rectification keys, `verificationTimeoutSeconds` and `maxIterations` (all optional in this `DeepPartial` literal, so dropping them early keeps US-003 and US-005 green)"
+        },
+        {
+          "path": "packages/nax/test/integration/routing/routing-stage-final-state.test.ts",
+          "reason": "fixtures drop the removed rectification keys, `verificationTimeoutSeconds` and `maxIterations` (all optional in this `DeepPartial` literal, so dropping them early keeps US-003 and US-005 green)"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3, because the merge function shrinks"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the deleted tests"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Remove verification timeout and regression-gate mode keys",
+      "description": "**Goal** — Remove the dead verification timeout and regression-gate mode configuration while preserving the live regression settings and plugin event vocabulary.\n\n**Motivation** — Verify timeouts come from `regressionGate.timeoutSeconds` (`operations/verify-scoped.ts:233`).\n\n**Approach** — Part 3: verification timeout and regression-gate mode (US-003)\n\n| Key | Sites |\n|:---|:---|\n| `execution.verificationTimeoutSeconds` | schema field (`schemas-execution.ts:262`) and `DEFAULT_VERIFICATION_TIMEOUT_SECONDS`; its barrel export (`config/index.ts`); default (`schemas.ts:166`); `ExecutionConfig` field; merge (`merge.ts:135-136`); description (`config-descriptions.ts:126`) |\n| `execution.regressionGate.mode` | schema field (`schemas-execution.ts:111`); `RegressionGateConfig.mode`; description |\n| (same) | `RunPhaseDetails` (`plugins/extensions.ts:401`) spells the mode as the literal union `\"deferred\" | \"per-story\" | \"disabled\"` (the current enum values, copied as they are), and its `RegressionGateConfig` import goes when nothing else uses it |\n\n`execution.regressionGate.mode` gets `PIPELINE_ONLY_KEY_HINT`. `execution.verificationTimeoutSeconds` gets `verification uses execution.regressionGate.timeoutSeconds`. `regressionGate.enabled`, `.timeoutSeconds` and `.acceptOnTimeout` stay, and keep their merge.\n\n**Interface** — `RunPhaseDetails` retains the mode-bearing variant with `mode: \"deferred\" | \"per-story\" | \"disabled\"`; extend upstream `REMOVED_CONFIG_KEYS: Readonly<Record<string, string>>` with exactly these two paths and hints. The strip's warning contract remains `Config key \"<path>\" has been removed — <hint>. Remove it from your config.`\n\n**Timing constraint.** `loadConfig` starts from `structuredClone(DEFAULT_CONFIG)` (`config/loader.ts`), and `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. If a key is added to the strip list while the schema still defaults it, every load warns. So a story adds a key to `REMOVED_CONFIG_KEYS` in the same change that removes the key's schema field and default.\n\n**Scope** — In: remove these two keys from schema/default/type/description/merge surfaces, remove DEFAULT_VERIFICATION_TIMEOUT_SECONDS and its imports/exports, extend US-002's strip map/tests, trim completion fixtures, preserve plugin mode literals and retain invalid-timeout rejection through loadConfig. Out: revisiting US-002's shared strip/rectification removals; US-004/US-005's maxIterations changes; removal of regressionGate.enabled/timeoutSeconds/acceptOnTimeout; changing verification behavior, routing modes, deferred review, permissions or B4 docs.\n\n**Modification inventory** — All paths below are relative to packages/nax. src/config/removed-config-keys.ts and test/unit/config/removed-config-keys.test.ts already exist from US-002: modify them, do not recreate them. Add this story's two map entries, public-loader warning/property-absence tests and retained invalid-timeout rejection pin there.\n- src/config/schemas-execution.ts — remove verificationTimeoutSeconds, DEFAULT_VERIFICATION_TIMEOUT_SECONDS and regressionGate.mode.\n- src/config/schemas.ts — remove timeout constant import and verificationTimeoutSeconds default plus obsolete related comment.\n- src/config/merge.ts — remove verificationTimeoutSeconds merge and its doc-comment name; keep regressionGate merge.\n- src/config/runtime-types.ts — remove ExecutionConfig.verificationTimeoutSeconds and RegressionGateConfig.mode with their obsolete comments.\n- src/config/index.ts — remove DEFAULT_VERIFICATION_TIMEOUT_SECONDS export.\n- src/cli/config-descriptions.ts — remove execution.verificationTimeoutSeconds entry; regressionGate.mode currently has none.\n- src/plugins/extensions.ts — spell the mode union inline and remove the unused RegressionGateConfig import.\n- test/unit/config/regression-gate-schema.test.ts — delete regressionGate.mode describe.\n- test/unit/config/defaults.test.ts — delete verificationTimeoutSeconds default test.\n- test/unit/config/merge.test.ts — delete verificationTimeoutSeconds describe/table row and mode fixture; preserve live regression merge assertions.\n- test/unit/review/runner.test.ts, test/unit/execution/story-context.test.ts — drop verificationTimeoutSeconds fixture key.\n- test/unit/pipeline/effective-config.test.ts — delete regressionGate.mode override test; fixtures drop mode.\n- test/integration/config/config.test.ts — delete verificationTimeoutSeconds bounds test.\n- test/e2e/workflow-mode.e2e.test.ts, test/unit/execution/dry-run.test.ts — regressionGate fixtures drop mode.\n- test/unit/execution/lifecycle-completion.test.ts — drop fixture mode; remove leading regressionMode helper parameter and its spread; every caller drops its first argument.\n- test/unit/execution/lifecycle/run-completed-deferred.test.ts, test/unit/execution/lifecycle/run-completion-aggregator.test.ts, test/unit/execution/lifecycle/run-completion-backfill.test.ts — fixtures drop mode.\n- test/unit/execution/lifecycle/run-completion-edges.test.ts — drop fixture mode; remove leading regressionMode helper parameter and its spread; every caller drops its first argument.\n- test/unit/execution/lifecycle/run-completion-events.test.ts, test/unit/execution/lifecycle/run-completion-fallback.test.ts, test/unit/execution/lifecycle/run-completion-plugin-review.test.ts, test/unit/execution/lifecycle/run-completion-session-close.test.ts, test/unit/execution/lifecycle/run-completion-workflow-duration.test.ts — fixtures drop mode.\n- test/unit/execution/run-completed-after-end-phase.test.ts, test/unit/execution/runner-completion-auth-relogin.test.ts, test/unit/execution/runner-completion-finish.test.ts, test/unit/execution/runner-completion-no-acceptance.test.ts, test/unit/execution/runner-completion-postrun.test.ts, test/unit/execution/runner-completion-skip.test.ts, test/unit/execution/runner-completion-total.test.ts, test/unit/execution/runner-completion-workflow-duration.test.ts, test/unit/execution/runner-completion-workflow-status.test.ts — fixtures drop mode.\n- scripts/baselines/complexity-baseline.json — regenerate.\n- scripts/baselines/test-escape-hatches-baseline.json — lower totals carried by deleted tests.\n\n**Verification — all steps run in packages/nax**\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep:\n   - for each removed key, `rg -n -w '<leaf>' src bin scripts test`;\n   - for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`.\n   Sweep names: `verificationTimeoutSeconds`, `DEFAULT_VERIFICATION_TIMEOUT_SECONDS`. Also read the hits of `rg -n 'regressionGate[^\\n]*mode|RegressionGateConfig\\[\"mode\"\\]' src test`.\n   Expected remaining hits:\n   - the strip entries;\n   - the inline union in `plugins/extensions.ts`;\n   - `\"deferred\"` and `\"per-story\"` meaning other things (the routing `routing.llm.mode` values `per-story` and `one-shot`, and deferred review). These are listed, not changed.\n   Intentional public-loader compatibility inputs/assertions for the retired paths remain in removed-config-keys.test.ts; list them rather than deleting the seam tests. Expected result: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file. A comment edit needs no Modifies entry. A hit that names a different concept with the same word is listed in the story, not changed. Line numbers are at `fc24a6805`. A story that runs after another story edited the same file locates each site by its symbol.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\n\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. A test that only exercises a removed key, selector or method is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. In the ACs, \"warns\" means the loader's warning reaches a logger sink registered with `addSink`, as `test/unit/config/removed-stage-names.test.ts` captures it; `loadConfig` takes no warn parameter. ACs 6 to 10 are retention pins (they already pass before the change). Default-only loads must remain free of removed-key warnings as required by the failure-handling table.",
+      "acceptanceCriteria": [
+        "[unit] When loadConfig reads a project config setting execution.verificationTimeoutSeconds: 120, it resolves with no verificationTimeoutSeconds property on execution.",
+        "[unit] When loadConfig reads execution.verificationTimeoutSeconds: 120, an addSink logger sink receives exactly one warning with text 'Config key \"execution.verificationTimeoutSeconds\" has been removed — verification uses execution.regressionGate.timeoutSeconds. Remove it from your config.'.",
+        "[unit] When loadConfig reads execution.regressionGate: { mode: \"per-story\", timeoutSeconds: 90 }, it resolves with execution.regressionGate.timeoutSeconds === 90.",
+        "[unit] When loadConfig reads execution.regressionGate: { mode: \"per-story\", timeoutSeconds: 90 }, an addSink logger sink receives exactly one warning for execution.regressionGate.mode using 'nothing reads this key since pipeline mode was removed'.",
+        "[unit] When loadConfig reads execution.regressionGate: { mode: \"per-story\", timeoutSeconds: 90 }, the resolved execution.regressionGate has no mode property.",
+        "[unit] When loadConfig runs with no project config file, it resolves with execution.regressionGate.enabled === true.",
+        "[unit] When loadConfig runs with no project config file, it resolves with execution.regressionGate.acceptOnTimeout === true.",
+        "[unit] When loadConfigForWorkdir reads a package .nax/mono/<pkg>/config.json setting execution.regressionGate.timeoutSeconds: 45, it resolves with execution.regressionGate.timeoutSeconds === 45.",
+        "[unit] When loadConfig runs with no project config file after these removals, an addSink logger sink receives no warning containing 'has been removed', preserving the failure-handling table's default-load behavior.",
+        "[unit] When loadConfig reads a project config setting execution.regressionGate.timeoutSeconds: 0, it rejects with a NaxError whose code is CONFIG_SCHEMA_INVALID and whose text names execution.regressionGate.timeoutSeconds, preserving validation of the retained timeout field."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "compatibility",
+        "verification",
+        "plugins",
+        "c1"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two dead keys are removed using US-002's existing strip API, with a literal plugin type replacement and mechanical fixture cleanup; loader warning/absence and retained timeout-validation pins are sufficient without a new abstraction or heavier isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-execution.ts",
+        "packages/nax/src/config/merge.ts",
+        "packages/nax/src/config/removed-stage-names.ts",
+        "packages/nax/src/plugins/extensions.ts",
+        "packages/nax/src/config/removed-config-keys.ts"
+      ],
+      "suggestedCriteria": [
+        "When a package profile supplies execution.regressionGate.mode together with timeoutSeconds: 45, loadConfigForWorkdir resolves with timeoutSeconds === 45 and no mode property while emitting exactly one removed-mode warning.",
+        "When loadConfig reads only execution.verificationTimeoutSeconds: 120, the retained regressionGate.timeoutSeconds equals its existing default rather than 120."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas-execution.ts",
+          "reason": "`verificationTimeoutSeconds`, `DEFAULT_VERIFICATION_TIMEOUT_SECONDS` and `regressionGate.mode` go"
+        },
+        {
+          "path": "packages/nax/src/config/schemas.ts",
+          "reason": "the `verificationTimeoutSeconds` default goes"
+        },
+        {
+          "path": "packages/nax/src/config/merge.ts",
+          "reason": "the `verificationTimeoutSeconds` merge line goes; `regressionGate` keeps its merge"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "`ExecutionConfig.verificationTimeoutSeconds` and `RegressionGateConfig.mode` go"
+        },
+        {
+          "path": "packages/nax/src/config/index.ts",
+          "reason": "the `DEFAULT_VERIFICATION_TIMEOUT_SECONDS` export goes"
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "the `execution.verificationTimeoutSeconds` entry goes (`regressionGate.mode` has none)"
+        },
+        {
+          "path": "packages/nax/src/plugins/extensions.ts",
+          "reason": "`RunPhaseDetails` spells the mode union inline"
+        },
+        {
+          "path": "packages/nax/test/unit/config/regression-gate-schema.test.ts",
+          "reason": "the `regressionGate.mode` describe is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "the `verificationTimeoutSeconds` default test is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/config/merge.test.ts",
+          "reason": "the `verificationTimeoutSeconds` describe and table row and the `mode` fixture go"
+        },
+        {
+          "path": "packages/nax/test/unit/review/runner.test.ts",
+          "reason": "the `verificationTimeoutSeconds` fixture line is dropped"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-context.test.ts",
+          "reason": "the `verificationTimeoutSeconds` fixture key is dropped"
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/effective-config.test.ts",
+          "reason": "the `regressionGate.mode` override test is deleted; fixtures drop `mode`"
+        },
+        {
+          "path": "packages/nax/test/integration/config/config.test.ts",
+          "reason": "the `verificationTimeoutSeconds` bounds test is deleted"
+        },
+        {
+          "path": "packages/nax/test/e2e/workflow-mode.e2e.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/dry-run.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle-completion.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`; the helper's leading `regressionMode` parameter and its spread go, and every caller drops its first argument"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completed-deferred.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-aggregator.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-backfill.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-edges.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`; the helper's leading `regressionMode` parameter and its spread go, and every caller drops its first argument"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-events.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-fallback.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-plugin-review.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-session-close.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-completion-workflow-duration.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/run-completed-after-end-phase.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-auth-relogin.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-finish.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-no-acceptance.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-postrun.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-skip.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-total.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-workflow-duration.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-workflow-status.test.ts",
+          "reason": "the `regressionGate` fixture drops `mode`"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the deleted tests"
+        },
+        {
+          "path": "packages/nax/src/config/removed-config-keys.ts",
+          "reason": "created by US-002; US-003 adds the `execution.verificationTimeoutSeconds` and `execution.regressionGate.mode` entries"
+        },
+        {
+          "path": "packages/nax/test/unit/config/removed-config-keys.test.ts",
+          "reason": "created by US-002; US-003 adds the loadConfig tests for its two keys"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Make maxIterations optional and migrate integration fixtures",
+      "description": "**Goal** — Make execution.maxIterations optional as a compiling intermediate state and remove it from integration fixtures while preserving default 20 and existing user-key rejection.\n\n**Motivation** — `rejectPipelineModeKeys` (`config/config-guards.ts:195-215`) throws on it in every raw layer, so a parsed config never carries a user value.\n\n**Approach** — Part 4: `execution.maxIterations`, step 1 (US-004)\n\n- `schemas-execution.ts:254` becomes `maxIterations: z.number().int().positive({ message: \"maxIterations must be > 0\" }).optional(),`.\n- `ExecutionConfig.maxIterations` (`runtime-types.ts:111`) becomes optional.\n- The default `maxIterations: 20` (`schemas.ts:160`) stays, so the resolved default is unchanged.\n- `validate-fields.ts:87-88` checks `config.execution.maxIterations !== undefined && config.execution.maxIterations <= 0`.\n- The integration-test fixtures listed in US-004's Modifies drop the key.\n\n**Interface** — `maxIterations: z.number().int().positive({ message: \"maxIterations must be > 0\" }).optional(),` and `ExecutionConfig.maxIterations?: number`; floor predicate: `config.execution.maxIterations !== undefined && config.execution.maxIterations <= 0`.\n\n**Scope** — In: optional schema/type, an explicit undefined-safe floor check, integration fixture migration and the absent-value validation retention pin. This is a deliberate intermediate stage, not a new supported user option. Out: US-005's final schema/default/type/description/floor deletion and unit fixture migration; changing rejectPipelineModeKeys; adding maxIterations to the strip map; revisiting US-001/US-002/US-003 removals. Keep default 20 until US-005. The two unused helper parameters named maxIterations remain out of scope.\n\n`execution.maxIterations` takes two stories (US-004, US-005) to stay under the 40-entry Modifies cap per story:\n- US-004 makes the field optional in the schema and in `ExecutionConfig`, keeping its default of 20, and drops it from the integration-test fixtures.\n- US-005 removes the field, its default and its floor check, and drops it from the unit-test fixtures.\n\n**Modification inventory** — All paths below are relative to packages/nax.\n- src/config/schemas-execution.ts — maxIterations becomes optional.\n- src/config/runtime-types.ts — ExecutionConfig.maxIterations becomes optional.\n- src/config/validate-fields.ts — floor check skips undefined.\n- test/integration/cli/cli-precheck-checks.test.ts\n- test/integration/cli/cli-precheck-integration.test.ts\n- test/integration/cli/cli-precheck-run.test.ts\n- test/integration/context/context-integration.test.ts\n- test/integration/execution/deferred-review-integration.test.ts\n- test/integration/execution/execution.test.ts\n- test/integration/execution/feature-status-write.test.ts\n- test/integration/execution/runner-plugin-integration.test.ts\n- test/integration/execution/status-file-integration.test.ts\n- test/integration/execution/status-writer-postrun.test.ts\n- test/integration/execution/status-writer.test.ts\n- test/integration/interaction/interaction-chain-pipeline.test.ts\n- test/integration/pipeline/pipeline-events.test.ts\n- test/integration/pipeline/reporter-lifecycle-basic.test.ts\n- test/integration/pipeline/reporter-lifecycle-resilience.test.ts\n- test/integration/routing/routing-stage-final-state.test.ts\n- test/integration/routing/routing-stage-greenfield.test.ts\nThe 17 integration files above drop maxIterations from their typed fixtures; some optional routing fixture values may already be absent after US-002. Preserve intentional raw-layer rejection inputs.\n- test/unit/config/validate.test.ts — add the absent-maxIterations validation pin (US-004 AC2).\nDo not delete the default-value test in test/integration/config/profile-loader.test.ts yet; it pins the retained default for this story. Existing rejection cases cover the user-supplied maxIterations failure.\n\n**Verification — all steps run in packages/nax**\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep:\n   - for each removed key, `rg -n -w '<leaf>' src bin scripts test`;\n   - for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`.\n   Sweep: `rg -n -w maxIterations test/integration`. Expected remaining hits:\n   - `test/integration/config/profile-loader.test.ts` and `test/integration/config/config.test.ts` (US-005);\n   - any rejection test that passes the key on purpose to assert `CONFIG_PIPELINE_MODE_REMOVED`;\n   - `test/integration/cli/cli-config-diff.test.ts`: the current file's line 458 is a negative display assertion excluding execution.maxIterations, not a typed fixture or a raw maxIterations override. Its raw project fixture only sets costLimit. Preserve/list that negative display assertion; US-005 reads it again.\n   Expected result: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file. A comment edit needs no Modifies entry. A hit that names a different concept with the same word is listed in the story, not changed. Line numbers are at `fc24a6805`. A story that runs after another story edited the same file locates each site by its symbol.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\n\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. A test that only exercises a removed key, selector or method is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. All three ACs already pass and are retention pins; AC2 pins that an absent value passes the check because undefined <= 0 is already false. In loader assertions use logger capture only if warnings are examined; loadConfig takes no warn parameter.",
+      "acceptanceCriteria": [
+        "[unit] When loadConfig runs with no project config file, it resolves with execution.maxIterations === 20.",
+        "[unit] When validateConfig receives the default config with execution.maxIterations deleted, it reports no error mentioning maxIterations.",
+        "[unit] When loadConfig reads a project config setting execution.maxIterations: 5, it rejects with a NaxError whose code is CONFIG_PIPELINE_MODE_REMOVED."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "fixtures",
+        "execution",
+        "c1"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The production change is a bounded schema/type optionality and validator adjustment using established patterns; the larger file count is mechanical integration fixture cleanup with unchanged rejection/default contracts."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-execution.ts",
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/src/config/validate-fields.ts",
+        "packages/nax/test/unit/config/validate.test.ts",
+        "packages/nax/test/integration/config/profile-loader.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas-execution.ts",
+          "reason": "`maxIterations` becomes `.optional()`"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "`ExecutionConfig.maxIterations` becomes optional"
+        },
+        {
+          "path": "packages/nax/src/config/validate-fields.ts",
+          "reason": "the floor check skips an undefined `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-precheck-checks.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-precheck-integration.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-precheck-run.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/context/context-integration.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/deferred-review-integration.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/execution.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/feature-status-write.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-plugin-integration.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/status-file-integration.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/status-writer-postrun.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/status-writer.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/interaction/interaction-chain-pipeline.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/pipeline-events.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/reporter-lifecycle-basic.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/reporter-lifecycle-resilience.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/routing/routing-stage-final-state.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/integration/routing/routing-stage-greenfield.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/validate.test.ts",
+          "reason": "gains US-004 AC2 (an absent `maxIterations` passes the floor check)"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-005",
+      "title": "Remove the maxIterations schema field and remaining fixtures",
+      "description": "**Goal** — Finish removing execution.maxIterations from the resolved configuration and its validation/display surfaces while retaining raw-layer rejection.\n\n**Motivation** — Only `validate-fields.ts:87-88` reads it, to check the default is positive.\n\n**Approach** — Part 5: `execution.maxIterations`, step 2 (US-005)\n\n- The field leaves `ExecutionConfigSchema`, the default (`schemas.ts:160`), `ExecutionConfig`, the description (`config-descriptions.ts:119`) and the doc bullet in `config/validate.ts:37`.\n- The `validate-fields.ts:84-91` floor check loses its `maxIterations` arm. Its doc comment names `costLimit` and `sessionTimeoutSeconds`.\n- It gets no `REMOVED_CONFIG_KEYS` entry. `rejectPipelineModeKeys` still throws on the key in every raw layer, before any strip runs, and is unchanged.\n- The unit-test fixtures listed in US-005's Modifies drop the key. So do `test/integration/config/profile-loader.test.ts`, whose default-value test is deleted while its rejection tests stay, and `test/integration/config/config.test.ts`, whose `maxIterations: 0` row is deleted and whose multi-error count follows.\n\n**Interface** — execution.maxIterations no longer appears on the parsed ExecutionConfig shape. Retain `rejectPipelineModeKeys(layer: Record<string, unknown>, source: string): void` with error code CONFIG_PIPELINE_MODE_REMOVED and the existing remove-it hint. The surviving checkExecutionLimits behavior still validates costLimit and sessionTimeoutSeconds.\n\n**Scope** — In: remove the field/default/type/description/floor/doc bullet, migrate the remaining listed unit fixtures, delete obsolete default/floor-only tests and retain raw-key rejection. Out: changing the strip map or rejectPipelineModeKeys; altering US-004's already-migrated integration fixtures except the two named integration config files; changing unrelated local iteration counters, chat argv concepts, the B1 CLI stub or the two unused helper parameters; deferred B4 documentation beyond the specified source doc comments.\n\n**Modification inventory** — All paths below are relative to packages/nax.\n- src/config/schemas-execution.ts — delete maxIterations field.\n- src/config/schemas.ts — delete maxIterations: 20 default.\n- src/config/runtime-types.ts — delete ExecutionConfig.maxIterations and its doc comment.\n- src/config/validate-fields.ts — delete maxIterations floor arm; comment names costLimit/sessionTimeoutSeconds.\n- src/config/validate.ts — delete execution.maxIterations > 0 doc bullet.\n- src/cli/config-descriptions.ts — delete execution.maxIterations entry.\n- test/integration/config/profile-loader.test.ts — delete default-value test; preserve rejection tests.\n- test/integration/config/config.test.ts — delete maxIterations: 0 table row and fixture; adjust multi-error count to remaining errors.\n- test/unit/cli/run-plan.test.ts — drop fixture key.\n- test/unit/config/bash-approval.test.ts, test/unit/config/command-interceptor-config.test.ts — drop fixture key.\n- test/unit/config/defaults.test.ts — delete maxIterations default test.\n- test/unit/config/execution-compaction-shared-schema.test.ts, test/unit/config/execution-compaction.test.ts, test/unit/config/permissions.test.ts, test/unit/config/selector.test.ts, test/unit/config/smart-runner-flag.test.ts — drop fixture key.\n- test/unit/config/validate.test.ts — remove maxIterations rows/expectations including the absent-value pin from US-004; adjust aggregate-error expectations without weakening retained costLimit/sessionTimeoutSeconds checks.\n- test/unit/execution/dry-run.test.ts, test/unit/execution/end-phase.test.ts, test/unit/execution/iteration-bound.test.ts — drop fixture key.\n- test/unit/execution/unified-executor-abort.test.ts, test/unit/execution/unified-executor-bound.test.ts, test/unit/execution/unified-executor-dispatch.test.ts, test/unit/execution/unified-executor-logging.test.ts, test/unit/execution/unified-executor-no-acceptance.test.ts, test/unit/execution/unified-executor-preflight.test.ts, test/unit/execution/unified-executor-session-close.test.ts — drop fixture key.\n- test/unit/execution/unified-executor-state-handoff.test.ts — delete ignores execution.maxIterations test; fixtures drop key.\n- test/unit/execution/unified-executor-tier-budget.test.ts — drop fixture key.\n- test/unit/operations/setup-generate.test.ts — drop the two maxIterations assertions.\n- test/unit/pipeline/stages/completion-review-gate.test.ts, test/unit/review/runner.test.ts, test/unit/verification/smart-runner-config.test.ts — drop fixture key.\n- scripts/baselines/test-escape-hatches-baseline.json — lower totals carried by deleted tests.\nUse existing config loader rejection tests as retention pins; no loader/guard implementation change is needed.\n\n**Verification — all steps run in packages/nax**\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep:\n   - for each removed key, `rg -n -w '<leaf>' src bin scripts test`;\n   - for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`.\n   Sweep: `rg -n -w maxIterations src bin scripts test`. Expected remaining hits:\n   - `config/config-guards.ts` `rejectPipelineModeKeys` and its tests;\n   - the B1 CLI stub for `-m/--max-iterations` and its tests;\n   - `execution/unified-executor.ts`'s local variable, `execution/iteration-bound.ts`'s doc comment, the chat job argv builders and their tests (`chat/jobs/*`), `run-action`, `agents-run-compose` and `chat-resources`. These are different concepts and are listed, not changed;\n   - the two unused test-helper parameters (Out of Scope);\n   - any rejection test that passes the key on purpose.\n   Re-read test/integration/cli/cli-config-diff.test.ts:458: current code has an assertion that output does not contain execution.maxIterations, not a typed fixture. Preserve/list this negative display-regression assertion rather than deleting useful retained behavior. Newly added absent-property checks may name the removed key as an assertion subject, never as a supported fixture value.\n   Expected result: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file. A comment edit needs no Modifies entry. A hit that names a different concept with the same word is listed in the story, not changed. Line numbers are at `fc24a6805`. A story that runs after another story edited the same file locates each site by its symbol.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\n\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. A test that only exercises a removed key, selector or method is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. AC1 and AC3 already pass and are retention pins. AC2 must inspect property absence, not an undefined value on a still-declared/defaulted field. The removal must not reclassify maxIterations as warn-and-strip.",
+      "acceptanceCriteria": [
+        "[unit] When loadConfig reads a project config setting execution.maxIterations: 5, it rejects with a NaxError whose code is CONFIG_PIPELINE_MODE_REMOVED.",
+        "[unit] When loadConfig runs with no project config file, it resolves with no maxIterations property on execution.",
+        "[unit] When validateConfig receives a config with execution.costLimit: 0, it reports an error mentioning costLimit."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "compatibility",
+        "execution",
+        "c1"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "US-004 has already unblocked fixture omission, leaving standard field/default/description deletion and mechanical unit fixture cleanup; existing raw-layer rejection and costLimit checks plus a default-property-absence test cover the behavior without new algorithms or integrations."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-execution.ts",
+        "packages/nax/src/config/validate-fields.ts",
+        "packages/nax/src/config/config-guards.ts",
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/test/unit/config/validate.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas-execution.ts",
+          "reason": "the `maxIterations` field goes"
+        },
+        {
+          "path": "packages/nax/src/config/schemas.ts",
+          "reason": "the `maxIterations: 20` default goes"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "`ExecutionConfig.maxIterations` and its doc comment go"
+        },
+        {
+          "path": "packages/nax/src/config/validate-fields.ts",
+          "reason": "the floor check loses its `maxIterations` arm"
+        },
+        {
+          "path": "packages/nax/src/config/validate.ts",
+          "reason": "the `execution.maxIterations > 0` doc bullet goes"
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "the `execution.maxIterations` entry goes"
+        },
+        {
+          "path": "packages/nax/test/integration/config/profile-loader.test.ts",
+          "reason": "the default-value test is deleted; the rejection tests stay"
+        },
+        {
+          "path": "packages/nax/test/integration/config/config.test.ts",
+          "reason": "the `maxIterations: 0` row and fixture go; the multi-error count assertion follows the remaining errors"
+        },
+        {
+          "path": "packages/nax/test/unit/cli/run-plan.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/bash-approval.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/command-interceptor-config.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "the `maxIterations` default test is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/config/execution-compaction-shared-schema.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/execution-compaction.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/permissions.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/selector.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/smart-runner-flag.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/validate.test.ts",
+          "reason": "the `maxIterations` rows and expectations go, including US-004 AC2"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/dry-run.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/end-phase.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/iteration-bound.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-abort.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-bound.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-dispatch.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-logging.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-no-acceptance.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-preflight.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-session-close.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-state-handoff.test.ts",
+          "reason": "the test `ignores execution.maxIterations` is deleted; fixtures drop the key"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-tier-budget.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/operations/setup-generate.test.ts",
+          "reason": "the two `maxIterations` assertions are dropped"
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/stages/completion-review-gate.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/review/runner.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/test/unit/verification/smart-runner-config.test.ts",
+          "reason": "fixtures drop `maxIterations`"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the deleted tests"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "This is a removal/refactoring feature in @nathapp/nax, not greenfield work. All five implementation stories are scoped to packages/nax and execute in the binding chain US-001 -> US-002 -> US-003 -> US-004 -> US-005. This is C1 B3c-1 after B3a/B3b; do not extend the deletion to B3c-2, B3c-3 or B4. Graph-navigation MCP is not exposed in this session, so discovery used direct Read/Grep/Glob tools against the supplied execution repository. Findings below cite current repository paths and lines; line numbers will move as predecessor stories delete code. No implementation or validation commands were run while drafting this PRD.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:11 indexes dependency injection, error handling, testing and config architecture; its quick-reference section specifies source/type-file hard limits of 600 lines and test-file hard limits of 800 lines. packages/nax uses Bun, TypeScript strict, Zod and bun:test. Use the existing config leaf imports internally, avoiding config -> barrel -> config cycles. .nax/rules/config-patterns.md:35 requires schema-derived defaults; .nax/rules/config-patterns.md:101 requires slice types to come from the selectors leaf because similarly named whole-schema types collide. The spec deliberately allows eight type aliases without their former selectors; do not update that read-only rule file in this feature. .nax/rules/test-helpers.md:43 catalogs makeNaxConfig, makeTempDir, makeLogger and other shared helpers; use those rather than introducing duplicate mock factories. Fixture-only edits to permissions/session-related tests do not authorize changes to security, permission resolution or session lifecycle.\n\nUS-001 source impact and dependencies: packages/nax/src/config/selectors.ts:16-125 defines the 13 dead selector values; packages/nax/src/config/index.ts:174-203 re-exports selector factories, values and types. A production-source symbol search found these dead values only in their definitions, derived aliases and the index barrel, not in production consumers. packages/nax/src/config/selector.ts:32 implements pickSelector by copying the requested top-level keys; :62 defines reshapeSelector, whose only production uses are the two dead reshape selectors at selectors.ts:30 and :39. Remove the dead exports without narrowing any retained selector. Preserve the eight live slice shapes as Pick<NaxConfig, ...>: ReviewConfig = review/models/execution/project/quality/agent; AgentConfig = agent; InteractionConfig = interaction; PrecheckConfig = precheck/quality/execution/prompts/review/project/agent/models/plan/acceptance/autoMode/tdd/routing; TestPatternConfig = execution/project/quality; ContextConfig = context; ContextToolRuntimeConfig = context/execution/project/quality; LlmRoutingConfig = routing/models/agent/tdd/execution/precheck. Their live consumers include packages/nax/src/review/runner/index.ts:10, src/agents/utils.ts:2, src/interaction/check.ts:10, src/precheck/index.ts:13, src/test-runners/resolver.ts:21, src/context/providers/feature-context/index.ts:11, src/context/engine/tool-runtime.ts:10, src/pipeline/stages/workflow-context.ts:44 and src/routing/router.ts:9, all under packages/nax. Keep rectificationGateConfigSelector but delete its unused RectificationGateConfig alias. There are two distinct MutationCheckConfig names: US-001 deletes the selectors.ts:161 alias; US-002 deletes the runtime-types-execution.ts:42 interface. Tests in packages/nax/test/unit/config/selectors.test.ts:1-150 import many retired values and mix dead-selector cases with retained agent-manager/quality/routing/plan behavior. Replace selector-based slice construction in the listed acceptance, lifecycle, tdd, context and resolver tests with pickSelector using identical keys; rewrite the precheck test as a type assertion rather than removing live slice coverage.\n\nUS-002 compatibility architecture: packages/nax/src/config/config-guards.ts is currently 592 lines. Its stripRemovedNoOpKeys implementation at :319-377 already walks dotted paths, warns and rebuilds ancestor objects immutably, and returns a fresh top-level object even on no match. Extract that behavior, including rebuildAtPath, into the new removed-config-keys.ts rather than growing config-guards.ts or duplicating its traversal. Keep the old REMOVED_NO_OP_KEYS map and public wrapper documentation in config-guards.ts, with a one-line delegation. The new module is a leaf shared by guards and removed-stage-names; avoid importing the guards or loader back into it. packages/nax/src/config/removed-stage-names.ts:164-174 currently composes no-op stripping and stage-name stripping. Insert the new key strip between them using the same sink, without changing permission-block inheritance or MCP-stage semantics. packages/nax/src/config/loader.ts:256, :533 and :569 already call stripRemovedConfig; :265 and :574 parse the stripped objects. Loader wiring changes are unnecessary. Its root path clones DEFAULT_CONFIG at :292; packages/nax/src/config/defaults.ts:11 derives DEFAULT_CONFIG from NaxConfigSchema.parse({}). Consequently each new strip-map entry MUST land with removal of that field's schema/default, or normal default-only loads will warn. Root strips operate post-merge; package strips run both before and after package profiles and already share the per-resolution warning dedupe. Preserve one warning per present dotted path and one per removed whole section, not one per nested property.\n\nUS-002 removal surfaces: packages/nax/src/config/schemas-execution.ts:62-105 defines 13 rectification leaves; only maxAttemptsTotal and fullSuiteTimeoutSeconds survive. The live retry cap is read at packages/nax/src/execution/story-selector.ts:42, :107, :138 and src/execution/unified-executor-dispatch-phases.ts:198; src/quality/gate-timeout.ts:29 still reads fullSuiteTimeoutSeconds. packages/nax/src/prompts/builders/rectifier-builder.ts:234 and :503 define continuation/escalated; a production-source search found no RectifierPromptBuilder.continuation or .escalated calls. Delete the complete methods by symbol, not just the cited initial line spans, and remove only imports used exclusively by them. Preserve other prompt builder methods. FlakeDetectionConfigSchema and MutationCheckConfigSchema are at schemas-execution.ts:165 and :183, with fields/defaults at :342-352; runtime interfaces are in runtime-types-execution.ts:6 and :42, their imports/fields/re-exports in runtime-types.ts:14-22, :179-190, root defaults in schemas.ts:193-203 and merge branches in merge.ts:137-144. Remove their schema/default/type/merge/description surfaces together. CommandInterceptorConfigSchema is strict at schemas-execution.ts:226-250, so provider must be stripped BEFORE parse, not merely omitted from the type. Remove its :228 field, :354 default and runtime-types-execution.ts:86 property; keep enabled, git.verbs and bash.enabled. packages/nax/src/execution/lifecycle/run-setup.ts:243 wires createRtkInterceptor without selecting a provider, so do not change interceptor-instance provider metadata. packages/nax/src/cli/config-descriptions.ts:133-160 and :184 contain the removed rectification/mutation/provider entries.\n\nLegacy rejection stays distinct from warn-and-strip: packages/nax/src/config/config-guards.ts:81-125 rejects five legacy rectification names. Only quality.autofix.rethinkAtAttempt and urgencyAtAttempt change hints to Remove; their CONFIG_LEGACY_RECTIFICATION_KEYS rejection remains. The migration-map comment at :73-79 and consolidation sentence at :120 must stop pointing these two keys at removed execution.rectification leaves, while the other three hints stay byte-for-byte unchanged. The existing legacy tests must keep the all-five-keys case and canonical maxAttemptsTotal behavior. packages/nax/test/unit/config/strip-removed-noop-keys.test.ts:47-140 already pins warning counts, copy semantics, retained siblings, missing parents and numeric intermediates; change its retained rectification fixture from abortOnNoProgress to maxAttemptsTotal, retaining the assertions. packages/nax/test/unit/config/removed-stage-names.test.ts:39-50 demonstrates resetLogger/initLogger/addSink capture with cleanup; :301-398 demonstrates loadConfig and loadConfigForWorkdir seam tests. New removed-config-keys.test.ts should follow that capture pattern, isolate global/project/profile state with shared temp helpers, clear root/package caches where needed and unregister sinks. loadConfig has no warning callback parameter; direct helper tests can pass warn but public-loader tests must capture logger output. Delete tests devoted solely to removed keys/methods, trim mixed tests and snapshots, and preserve kept assertions.\n\nUS-003 source impact and plugin compatibility: verificationTimeoutSeconds is defined at packages/nax/src/config/schemas-execution.ts:262; its derived DEFAULT_VERIFICATION_TIMEOUT_SECONDS is at :370-371, imported/defaulted in schemas.ts:31/:166 and exported in config/index.ts:123. Its ExecutionConfig property is at runtime-types.ts:123 and merge rule at merge.ts:135-136. Remove all those surfaces plus its CLI description, adding the migration hint that verification uses execution.regressionGate.timeoutSeconds. The reachable timeout read is packages/nax/src/operations/verify-scoped.ts:233, passed to the runner at :256. RegressionGateConfigSchema.mode is at schemas-execution.ts:111, with its optional type at runtime-types.ts:100. Remove only mode, not enabled, timeoutSeconds, acceptOnTimeout or the merge at merge.ts:131-134. packages/nax/src/plugins/extensions.ts:401 indexes RegressionGateConfig[\"mode\"] in RunPhaseDetails; replace that with the literal union \"deferred\" | \"per-story\" | \"disabled\" to preserve the named event modes without depending on a deleted config field, and remove the now-unused import. Do not repurpose this cleanup to remove plugin payloads or deferred review. Most test edits here remove mode from completion fixtures; lifecycle-completion and run-completion-edges also have leading regressionMode helper arguments that must be removed at every call site. The strip source/test files are created by upstream US-002, so they are existing inputs for US-003, not outputs to recreate.\n\nUS-004/US-005 staged maxIterations migration: packages/nax/src/config/config-guards.ts:205-207 rejects any own execution.maxIterations value with CONFIG_PIPELINE_MODE_REMOVED. packages/nax/src/config/loader.ts:143, :165, :202, :224 and :512 applies that guard to raw global/project/profile/CLI/package layers before merge; preserve it and equivalent existing package-profile handling. Defaults are intentionally not passed through that per-layer rejection. Schema/type/default currently remain at schemas-execution.ts:254, runtime-types.ts:111 and schemas.ts:160; packages/nax/src/config/validate-fields.ts:84-96 additionally checks its positive floor. US-004 makes the schema and type optional, keeps default 20 and explicitly guards the floor check against undefined, allowing integration typed literals to omit the field without collapsing the per-story 40-entry modification bound. US-005 removes that schema/type/default/floor/description/documentation surface after integration fixture migration, then removes unit fixture values. Never add maxIterations to REMOVED_CONFIG_KEYS or silently strip it. packages/nax/test/integration/config/profile-loader.test.ts:66-74, :156-160, :171-182 already pin raw-layer rejection and default 20; delete only the default expectation in US-005. packages/nax/test/integration/config/config.test.ts:29, :112, :161-176 has maxIterations bounds/multi-error fixtures and verification timeout bounds that must be trimmed in their respective stories. packages/nax/test/unit/config/validate.test.ts:495-496, :549, :567-568 and :585-593 has exact floor/error-order expectations: remove maxIterations rows and adjust aggregate errors, retaining costLimit and sessionTimeoutSeconds checks and their messages. packages/nax/src/config/validate.ts:37 contains the obsolete doc bullet.\n\nObserved drift from the spec's historical fixture survey: packages/nax/test/integration/cli/cli-config-diff.test.ts:458 currently contains only expect(output).not.toContain(\"execution.maxIterations\") in a project override containing costLimit, rather than a raw JSON maxIterations fixture. Re-read it during US-005's sweep; preserve that useful negative display assertion if unchanged and explicitly list it as a remaining display-regression hit. Do not invent a fixture or delete unrelated coverage to force historical sweep expectations. Other same-word maxIterations concepts (local execution bounds, chat argv, CLI rejection stubs, two unused test-helper parameters) are explicitly not the removed schema key.\n\nUser-visible contract and risks: old dead execution keys continue to load, warn with the exact Config key \"<path>\" has been removed — <hint>. Remove it from your config. format, and disappear from the resolved config. The provider-specific hint is nothing read this key; the interceptor is always rtk; the verification timeout hint names execution.regressionGate.timeoutSeconds; all other new removals use PIPELINE_ONLY_KEY_HINT. Whole flakeDetection/mutationCheck sections warn once. No user behavior is activated or rerouted. Remove descriptions together with fields/defaults because packages/nax/src/cli/config-display.ts:94, :175 and :223 traverses parsed config with FIELD_DESCRIPTIONS; both normal/explain views must stop advertising dead keys. Avoid deleting live siblings or changing package merge precedence. Immutability, falsy values, missing/non-object intermediates, repeated package strip passes and default-only warning silence are critical regression risks. A compile-only type/slice migration must not change production consumers.\n\nExecution and verification: each description below supplies its own sweep and expected exceptions plus all four verification steps. Use commands from packages/nax, never root bare bun test or bun run nax. Keep complexity/file-size/escape-hatch baselines lowered rather than weakening gates; remove only tests exclusively exercising deleted behavior and trim mixed cases. The initial selector ACs, US-002 AC3-6, US-003 AC3-4, all US-004 ACs, and US-005 AC1/AC3 are retention pins rather than fail-first gaps. The public loader warning-plus-key-absence tests are the fail-first behavior seams; US-002 introduces the traversal through the existing composition and US-003 extends its map. The acceptance criteria split compound spec criteria into independently testable assertions without moving any assertion to another story. The failure-handling table's removed-key, provider, legacy-key, maxIterations and default-load cases are represented in their owning stories. No release, package/version/dependency changes or other-package modifications are needed. The repository's own .nax/config.json and .nax/rules remain read-only: its provider/mutationCheck warnings after US-002 are expected until the maintainer removes them after merge. The sole requested planning artifact is this feature PRD, not permission to modify runtime .nax files.\n\nSecond-pass adversarial audit: all 24 numbered spec acceptance criteria remain in their original stories; compound criteria are split only into independently observable assertions. Enumeration: US-001 AC1 = exact plan own keys; AC2 = exact workflow own keys; AC3 = exact routing own keys. US-002 AC1 = project abortOnNoProgress:false resolves, exact addSink warning, property absent; AC2 = combined mutationCheck/flakeDetection/provider config resolves, exactly one warning per named path, both sections absent, interceptor.enabled true and provider absent; AC3 = default-only load emits no removed warning; AC4 = maxAttemptsTotal:7 survives; AC5 = old no-op strip returns retained strategy and the exact single isolation warning; AC6 = no-match strip is fresh, deep-equal and silent; AC7 = generic strip returns only c, emits the exact single h warning and leaves input.a.b at 1; AC8 = numeric intermediate is unchanged and silent; AC9 = legacy rethink throws NaxError/CONFIG_LEGACY_RECTIFICATION_KEYS, says Remove and never names the removed execution target; AC10 = the three forbidden FIELD_DESCRIPTIONS prefixes are absent while maxAttemptsTotal is still present; AC11 = package overlay retains maxAttemptsTotal:5, removes abortOnNoProgress and emits one logger-sink warning. US-003 AC1 = verification timeout config resolves, exact single migration warning and property absent; AC2 = per-story mode config resolves, one removed-mode warning, timeoutSeconds:90 retained and mode absent; AC3 = default regression enabled and acceptOnTimeout both true; AC4 = package timeoutSeconds:45 survives. US-004 AC1 = default maxIterations:20 retained; AC2 = absent maxIterations produces no validation error naming it; AC3 = explicit maxIterations:5 still rejects with NaxError/CONFIG_PIPELINE_MODE_REMOVED. US-005 AC1 = the same explicit-key rejection remains; AC2 = default execution has no own maxIterations property; AC3 = costLimit:0 still produces a costLimit error. Exact warning strings, one-warning counts, negative-property checks, no-mutation/reference semantics and the still-retained description/default anchors were retained, not weakened. No deprecated grep/file/verbatim AC tags were present.\n\nAll five failure-handling rows are covered: removed keys/sections warn and disappear (US-002/003), strict interceptor.provider is stripped rather than rejected (US-002), maxIterations remains a load error (US-004/005), legacy rethink remains a load error with the Remove hint (US-002), and default-only loads remain silent (US-002/003). Added explicit negative-path pins where the draft lacked an unambiguous one: US-001 rejects leakage of execution into the plan projection without introducing any new throwing behavior; US-003 rejects timeoutSeconds:0 with CONFIG_SCHEMA_INVALID, preserving the existing min(10) validation at packages/nax/src/config/schemas-execution.ts:109 and loader error reporting at src/config/loader.ts:265-275. US-002 already covers non-object traversal and legacy rejection, and US-004/005 already cover rejected user input. These additions respond to the refine-pass negative-path requirement; optional hardening cases remain in suggestedCriteria. Criteria now repeat their complete input where the draft previously said that combined config or that package config, so each can be exercised independently.\n\nContext/routing audit: US-001 retains all four spec context files. US-002 now uses five spec-recommended source contexts (guards, stage composition, execution schema, execution runtime subtypes and rectifier builder); the sixth recommended file, strip-removed-noop-keys.test.ts, remains explicitly required reading and a modification target in its description, and removed-stage-names.test.ts remains the sink-capture reference. US-003 includes all four explicitly recommended contexts plus US-002's upstream-created strip module; the upstream-created test is modified rather than listed as a new output. US-004 and US-005 retain all their explicitly recommended contexts. No story reads one of its own new outputs. Binding IDs, packages and the full dependency chain are unchanged; none of those dependencies may be minimized away. US-001/003/005 are reduced to medium/tdd-simple because they use standard deletion/fixture patterns rather than new integrations; US-002 remains complex/three-session-tdd-lite for the shared traversal extraction and coordinated compatibility wiring. The ten feature-level exclusions are all retained verbatim in outOfScope, with no story-local exclusion hoisted there. No runtime source files were changed by this audit.",
+  "outOfScope": [
+    "The `acceptance` section, `execution.storyIsolation`, `execution.worktreeDependencies` and the worktree-isolation path: wave B3c-2.",
+    "The dead `tdd`, `autoMode` and `quality` keys, `optimizer`, `prompts.overrides`, `plan.outputPath`, `routing.llm.timeoutMs`, `routing.llm.batchMode`, `routing.agents.strategy` and the `hooks` section: wave B3c-3.",
+    "The keys kept by user ruling and tracked in #2832: `quality.testing.*`, `prompts.behavioralGuardrails`, `review.nonBlockingFix.*`, and the review keys listed there.",
+    "`execution.regressionGate.acceptOnTimeout`, `execution.contextProviderTokenBudget`: each still has a reachable reader.",
+    "`execution.mode`: `\"workflow\"` stays accepted (B1 ruling).",
+    "`execution.permissions.<stage>.mode`: it declares the permission vocabulary that `check-permission-mode-ssot` keys off, a permissions-schema decision, not a pipeline key.",
+    "Narrowing the picks of live selectors (`rectificationGateConfigSelector`'s `models`, `agent` and `review`): a slice is passed whole to its op, so a pick with no direct reader is not proof it is unused.",
+    "The unused `maxIterations` parameters of the test helpers `ctx(...)` in `unified-executor-bound.test.ts` and `makeWorkflowCtx(...)` in `unified-executor-state-handoff.test.ts`: they may stay, since typecheck does not flag them.",
+    "`docs/`, release notes and the package context files: wave B4.",
+    "Editing the repository's own `.nax/config.json`, `.nax/rules/` or any file under `.nax/`: read-only to the run. The repo config sets `execution.commandInterceptor.provider` and `execution.mutationCheck`, so a run of this repo warns about both after US-002, and the maintainer removes them after merge. `.nax/rules/config-patterns.md` still says each selector owns its slice type; after US-001 eight slice types have no selector, and that rule text is updated in wave B4."
+  ],
+  "routingProfile": "native-codex-ds"
+}
