@@ -5,8 +5,6 @@
       "testScoped": "bun x vitest --run {{files}}",
       "typecheck": "bun run typecheck",
       "lint": "bun run lint",
-      "lintFix": "bun run lint:fix",
-      "formatFix": "bun run lint:fix",
       "build": "bun run build"
     },
     "lintOutput": {

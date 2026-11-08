@@ -13,9 +13,7 @@
       ],
       "coverage": "bun run test:coverage",
       "build": "bun run build",
-      "testScoped": "CI=1 AGENT=1 bun test --timeout=60000 {{files}}",
-      "lintFix": "bun run lint:fix",
-      "formatFix": "bun run lint:fix"
+      "testScoped": "CI=1 AGENT=1 bun test --timeout=60000 {{files}}"
     }
   }
 }
