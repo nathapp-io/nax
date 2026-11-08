@@ -84,7 +84,7 @@ export function checkModelsMapping(config: NaxConfig): string[] {
 /** Execution limit floors: maxIterations, costLimit, sessionTimeoutSeconds. */
 export function checkExecutionLimits(config: NaxConfig): string[] {
   const errors: string[] = [];
-  if (config.execution.maxIterations <= 0) {
+  if (config.execution.maxIterations !== undefined && config.execution.maxIterations <= 0) {
     errors.push(`maxIterations must be > 0, got ${config.execution.maxIterations}`);
   }
   if (config.execution.costLimit <= 0) {

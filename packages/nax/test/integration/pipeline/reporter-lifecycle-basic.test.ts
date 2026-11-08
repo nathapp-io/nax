@@ -41,7 +41,6 @@ function makeConfig(_tmpDir: string, pluginDir: string): NaxConfig {
       escalation: { enabled: false, tierOrder: [] },
     },
     execution: {
-      maxIterations: 20,
       costLimit: 100,
       iterationDelayMs: 0,
       maxStoriesPerFeature: 100,

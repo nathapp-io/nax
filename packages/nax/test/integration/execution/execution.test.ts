@@ -63,7 +63,7 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       statusFile: `${tmpDir}/status.json`,
-      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
+      config: TEST_CONFIG,
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -104,7 +104,7 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       statusFile: `${tmpDir}/status.json`,
-      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
+      config: TEST_CONFIG,
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -239,7 +239,7 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       statusFile: `${tmpDir}/status.json`,
-      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
+      config: TEST_CONFIG,
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -308,7 +308,6 @@ describe("execution runner", () => {
       statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
-        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
         // Acceptance off keeps this test about the completion path alone —
         // and it is what makes the run provably agent-free, so the preflight
         // is skipped and no agent need be installed.
@@ -397,7 +396,6 @@ describe("execution runner", () => {
             escalateEntireBatch: true, // Default behavior
           },
         },
-        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
       },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -477,7 +475,6 @@ describe("execution runner", () => {
             escalateEntireBatch: false, // Individual retry mode
           },
         },
-        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
       },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -533,7 +530,7 @@ describe("execution runner — lite mode routing", () => {
       prdPath,
       workdir: tmpDir,
       statusFile: `${tmpDir}/status.json`,
-      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
+      config: TEST_CONFIG,
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -638,7 +635,6 @@ describe("execution runner — lite mode routing", () => {
       config: {
         ...TEST_CONFIG,
         tdd: { ...TEST_CONFIG.tdd, strategy: "lite" as const },
-        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
       },
       hooks: { hooks: {} },
       feature: "test-feature",

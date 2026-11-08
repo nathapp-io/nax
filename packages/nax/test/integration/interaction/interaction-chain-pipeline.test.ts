@@ -55,7 +55,6 @@ afterAll(() => {
 
 const baseConfig: DeepPartial<NaxConfig> = {
   execution: {
-    maxIterations: 10,
     costLimit: 100,
     iterationDelayMs: 0,
     sessionTimeoutSeconds: 60,

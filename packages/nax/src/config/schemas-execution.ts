@@ -184,7 +184,7 @@ export const CommandInterceptorConfigSchema = z
 export const ExecutionConfigSchema = z.object({
   /** A5: "workflow" (default) runs the workflow loop; "pipeline" (deprecated) runs the story pipeline. */
   mode: ExecutionModeSchema.default("workflow"),
-  maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
+  maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }).optional(),
   iterationDelayMs: z.number().int().nonnegative(),
   costLimit: z.number().positive({ message: "costLimit must be > 0" }),
   sessionTimeoutSeconds: z.number().int().positive({ message: "sessionTimeoutSeconds must be > 0" }).default(3600),

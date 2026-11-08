@@ -41,7 +41,6 @@ const mockConfig: NaxConfig = makeNaxConfig({
     },
   },
   execution: {
-    maxIterations: 10,
     iterationDelayMs: 1000,
     costLimit: 10.0,
     sessionTimeoutSeconds: 300,

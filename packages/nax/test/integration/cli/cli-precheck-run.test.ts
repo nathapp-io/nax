@@ -56,7 +56,6 @@ async function setupGitRepo(dir: string): Promise<void> {
 const createConfig = (_workdir: string): NaxConfig =>
   makeNaxConfig({
     execution: {
-      maxIterations: 10,
       iterationDelayMs: 0,
       costLimit: 10,
       testCommand: "echo test",
@@ -363,13 +362,7 @@ describe("Precheck Integration with nax run", () => {
       const logFilePath = join(nonGitDir, ".nax", "features", "skip-test", "runs", "test.jsonl");
       const statusFilePath = join(nonGitDir, ".nax", "features", "skip-test", "status.json");
 
-      const config: NaxConfig = {
-        ...PRECHECK_TEST_CONFIG,
-        execution: {
-          ...PRECHECK_TEST_CONFIG.execution,
-          maxIterations: 1,
-        },
-      };
+      const config: NaxConfig = { ...PRECHECK_TEST_CONFIG };
 
       const result = await run({
         prdPath,
@@ -402,13 +395,7 @@ describe("Precheck Integration with nax run", () => {
     spawnSync(["git", "add", "."], { cwd: testDir });
     spawnSync(["git", "commit", "-m", "Add runs dir"], { cwd: testDir });
 
-    const config: NaxConfig = {
-      ...PRECHECK_TEST_CONFIG,
-      execution: {
-        ...PRECHECK_TEST_CONFIG.execution,
-        maxIterations: 1,
-      },
-    };
+    const config: NaxConfig = { ...PRECHECK_TEST_CONFIG };
 
     await run({
       prdPath,
@@ -475,13 +462,7 @@ describe("Precheck Integration with nax run", () => {
       const logFilePath = join(featureDir, "runs", "test.jsonl");
       const statusFilePath = join(featureDir, "status.json");
 
-      const config: NaxConfig = {
-        ...PRECHECK_TEST_CONFIG,
-        execution: {
-          ...PRECHECK_TEST_CONFIG.execution,
-          maxIterations: 1,
-        },
-      };
+      const config: NaxConfig = { ...PRECHECK_TEST_CONFIG };
 
       let caught: unknown;
       try {
@@ -528,13 +509,7 @@ describe("Precheck Integration with nax run", () => {
     spawnSync(["git", "add", "."], { cwd: testDir });
     spawnSync(["git", "commit", "-m", "Add runs dir"], { cwd: testDir });
 
-    const config: NaxConfig = {
-      ...PRECHECK_TEST_CONFIG,
-      execution: {
-        ...PRECHECK_TEST_CONFIG.execution,
-        maxIterations: 1,
-      },
-    };
+    const config: NaxConfig = { ...PRECHECK_TEST_CONFIG };
 
     const result = await run({
       prdPath,
@@ -566,13 +541,7 @@ describe("Precheck Integration with nax run", () => {
     spawnSync(["git", "add", "."], { cwd: testDir });
     spawnSync(["git", "commit", "-m", "Add runs dir"], { cwd: testDir });
 
-    const config: NaxConfig = {
-      ...PRECHECK_TEST_CONFIG,
-      execution: {
-        ...PRECHECK_TEST_CONFIG.execution,
-        maxIterations: 1,
-      },
-    };
+    const config: NaxConfig = { ...PRECHECK_TEST_CONFIG };
 
     await run({
       prdPath,
@@ -628,13 +597,7 @@ describe("Precheck Integration with nax run", () => {
 
       const statusFilePath = join(featureDir, "status.json");
 
-      const config: NaxConfig = {
-        ...PRECHECK_TEST_CONFIG,
-        execution: {
-          ...PRECHECK_TEST_CONFIG.execution,
-          maxIterations: 1,
-        },
-      };
+      const config: NaxConfig = { ...PRECHECK_TEST_CONFIG };
 
       try {
         await run({

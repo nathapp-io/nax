@@ -596,3 +596,17 @@ describe("validateConfig — error order across field groups", () => {
     ]);
   });
 });
+
+describe("validateConfig — absent execution.maxIterations (US-004)", () => {
+  test("an execution block without maxIterations reports no maxIterations error", () => {
+    // `maxIterations` is optional (US-004) and its floor check must skip an
+    // absent value rather than compare `undefined <= 0` (false, but accidental).
+    const { maxIterations: _absent, ...execution } = DEFAULT_CONFIG.execution;
+    const config: NaxConfig = { ...DEFAULT_CONFIG, execution };
+
+    const result = validateConfig(config);
+
+    expect(result.errors.filter((e) => e.includes("maxIterations"))).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+});

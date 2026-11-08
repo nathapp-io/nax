@@ -32,7 +32,6 @@ async function setupValidGitEnv(testDir: string): Promise<void> {
 const createMockConfig = (_cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig =>
   makeNaxConfig({
     execution: {
-      maxIterations: 10,
       iterationDelayMs: 0,
       testCommand: "echo 'test'",
       lintCommand: "echo 'lint'",
