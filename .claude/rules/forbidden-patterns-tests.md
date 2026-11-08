@@ -80,7 +80,7 @@ for (const glob of resolved.globs) { /* ... */ }
 
 ### Scope
 
-Applies to `src/context/`, `src/pipeline/`, `src/review/`, `src/tdd/`, `src/verification/`, `src/acceptance/`, `src/plugins/`, `src/analyze/`. The only module permitted to hold raw patterns is `src/test-runners/`.
+Applies to `src/context/`, `src/pipeline/`, `src/review/`, `src/verification/`, `src/plugins/`, `src/analyze/`. The only module permitted to hold raw patterns is `src/test-runners/`.
 
 ## Test-Only Helpers
 

@@ -30,7 +30,7 @@ stages:
 
 # Monorepo & Language-Agnostic Awareness
 
-> nax orchestrates AI agents across **polyglot monorepos**. Every subsystem (context, verification, review, TDD, acceptance) can run against a TS frontend in one package and a Go backend in another, sometimes in the same run. Code that silently assumes a single-language, single-package layout is a latent bug.
+> nax orchestrates AI agents across **polyglot monorepos**. Every subsystem (context, verification, review, workflow) can run against a TS frontend in one package and a Go backend in another, sometimes in the same run. Code that silently assumes a single-language, single-package layout is a latent bug.
 
 This document is the SSOT for "how do I handle paths / languages / packages?" rules. When in doubt, consult the resolver or registry listed below — never reintroduce a hardcoded assumption.
 
@@ -51,7 +51,7 @@ This document is the SSOT for "how do I handle paths / languages / packages?" ru
 
 | Forbidden in | Permitted in |
 |:---|:---|
-| `src/context/`, `src/pipeline/`, `src/verification/`, `src/review/`, `src/tdd/`, `src/acceptance/`, `src/agents/`, `src/plugins/`, `src/execution/` (anywhere called inside a run) | `src/cli/*.ts`, `src/commands/*.ts`, `src/config/loader.ts` as the bootstrap default |
+| `src/context/`, `src/pipeline/`, `src/verification/`, `src/review/`, `src/agents/`, `src/plugins/`, `src/execution/` (anywhere called inside a run) | `src/cli/*.ts`, `src/commands/*.ts`, `src/config/loader.ts` as the bootstrap default |
 
 Reason: a run may be launched from any cwd (parent shell, editor, CI worker); the only authoritative anchor is the workdir passed into the pipeline.
 
@@ -73,7 +73,7 @@ Covered by [forbidden-patterns-tests.md](./forbidden-patterns-tests.md) → **Te
 
 Reason: `bun test` works only for TS. Go packages run `go test ./...`, Python runs `pytest`, Rust runs `cargo test`. A single-run config cannot encode all three without per-package layering.
 
-A fallback string (`?? "bun test"`) is permitted **only** at the outermost pipeline boundary (e.g. `src/execution/lifecycle/run-regression.ts`) where the error path is a friendly "no test command configured" warning. Deeper consumers must have the command passed in.
+A fallback string (`?? "bun test"`) is permitted **only** at the outermost boundary where defaults are derived (e.g. `src/quality/command-defaults.ts`, which falls back to `bun test` for a bun package with no `test` script). Deeper consumers must have the command passed in.
 
 ### 4. No hardcoded source-file prefix
 

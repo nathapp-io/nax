@@ -5,8 +5,6 @@ paths:
   - "packages/nax/src/operations/**/*.ts"
   - "packages/nax/src/pipeline/**/*.ts"
   - "packages/nax/src/execution/**/*.ts"
-  - "packages/nax/src/tdd/**/*.ts"
-  - "packages/nax/src/acceptance/**/*.ts"
   - "packages/nax/src/review/**/*.ts"
   - "packages/nax/src/routing/**/*.ts"
   - "packages/nax/src/cli/**/*.ts"
@@ -50,7 +48,7 @@ The agent adapter exposes exactly 4 primitives: `openSession`, `sendTurn`, `clos
 
 | Role | Dispatch |
 |:---|:---|
-| `main` *(default)*, `test-writer`, `verifier`, `implementer`, `diagnose`, `source-fix`, `test-fix`, `repo-scoped-test-fix`, `reviewer-semantic`, `reviewer-adversarial`, `reviewer-fix`, `nbf-worth-check`, `acceptance-gen`, `plan`, `plan-refine`, `setup`, `finish-review-spec`, `finish-review-quality`, `finish-fix`, `advisor`, `wf-implementer`, `wf-story-review`, `wf-rereview`, `wf-branch-review`, `wf-branch-fix`, `wf-repair` | `callOp` run-kind |
+| `main` *(default)*, `implementer`, `reviewer-semantic`, `reviewer-adversarial`, `reviewer-fix`, `plan`, `plan-refine`, `setup`, `advisor`, `wf-implementer`, `wf-story-review`, `wf-rereview`, `wf-branch-review`, `wf-branch-fix`, `wf-repair` | `callOp` run-kind |
 | `decompose`, `refine`, `fix-gen`, `auto` | `callOp` complete-kind |
 
 ## Rule 3: Adapter primitives stay inside the wiring layer

@@ -76,11 +76,12 @@ avoid; the same assembly belongs on `RectifierPromptBuilder`.
 
 | Builder class | Handles |
 |:---|:---|
-| `RectifierPromptBuilder` | All rectification prompts: TDD failures, verify failures, review findings, autofix retries |
-| `ReviewPromptBuilder` | Semantic and adversarial review prompts |
-| `TddPromptBuilder` | TDD session prompts (test-writer, implementer, verifier) |
-| `AcceptancePromptBuilder` | Acceptance test generation, diagnosis, refinement, fix execution |
-| `OneShotPromptBuilder` | Single-turn utility prompts (router, decomposer, auto-approver) |
+| `RectifierPromptBuilder` | Rectification and fix prompts: review-finding rectification, failing-test and regression-failure context, re-prompts |
+| `PlanPromptBuilder` | The `nax plan` planning prompt |
+| `SetupPromptBuilder` | The `nax setup` repo-analysis prompt |
+| `OneShotPromptBuilder` | Single-turn utility prompts (router, decomposer) |
+
+Workflow, bot, chat, advisor and memory prompts are function builders in the same directory (for example `workflow-implementer-builder.ts`, `workflow-story-review-builder.ts`, `bot-pr-review-builder.ts`); check there before adding a new one.
 
 If no existing builder fits, create `src/prompts/builders/<domain>-builder.ts` and export from `src/prompts/index.ts`.
 
