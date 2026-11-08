@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1004
+    "looseCast": 1002
   },
-  "updatedAt": "2026-11-07T16:43:50.345Z",
+  "updatedAt": "2026-11-08T04:06:50.704Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -423,9 +423,6 @@
     },
     "test/unit/runtime/session-run-hop.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/runtime/session-role.test.ts": {
-      "looseCast": 2
     },
     "test/unit/runtime/dispatch-context.test.ts": {
       "looseCast": 6

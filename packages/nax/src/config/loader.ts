@@ -20,7 +20,6 @@ import {
   rejectLegacyRectificationKeys,
   rejectPipelineModeKeys,
   rejectRemovedPlanModes,
-  stripRemovedNoOpKeys,
   validatePermissionsBlock,
   warnQualityCommandChains,
 } from "./config-guards";
@@ -39,6 +38,7 @@ import {
   resolveProfileNames,
   sensitiveFilteredProcessEnv,
 } from "./profile";
+import { stripRemovedConfig } from "./removed-stage-names";
 import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 import { applyWorkflowMode } from "./workflow-mode";
@@ -248,12 +248,12 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   rejectRemovedPlanModes(rawConfig);
   // The block is enforced now, so validate it rather than reject it.
   validatePermissionsBlock(rawConfig);
-  // Strip the removed no-op keys (warn-and-strip, not throw — see
-  // config-guards.ts for the divergence rationale). Runs AFTER the reject guards
-  // and BEFORE safeParse, so the removed key is gone before the schema sees it.
-  // Post-merge placement yields one warning per resolved config regardless of
-  // which layer supplied the key.
-  const stripped = stripRemovedNoOpKeys(rawConfig, defaultConfigWarn);
+  // Strip the removed no-op keys and the removed stage names (warn-and-strip,
+  // not throw — see config-guards.ts for the divergence rationale). Runs AFTER
+  // the reject guards and BEFORE safeParse, so the removed key is gone before
+  // the schema sees it. Post-merge placement yields one warning per resolved
+  // config regardless of which layer supplied the key.
+  const stripped = stripRemovedConfig(rawConfig, defaultConfigWarn);
 
   // nax#1990 — warn (never throw) when a declared quality command chains with
   // `&&`, naming the list form as the remedy. Same post-merge placement as the
@@ -519,17 +519,18 @@ export async function loadConfigForWorkdir(
   warnQualityCommandChains(shimmedPackageFields as Record<string, unknown>, warnDedupe.warn);
   let merged = mergePackageConfig(rootConfig, shimmedPackageFields);
 
-  // Strip the removed no-op keys from the per-package overlay result.
-  // Runs for BOTH ordinary package overlays and package profiles (the profile
-  // branch re-runs the strip on the profile-merged result, so this also covers
-  // the case where a per-package overlay introduces a no-op key on a mergeable
-  // field like acceptance.generateTests). Post-merge placement yields one
-  // warning per resolved config regardless of which layer supplied the key.
+  // Strip the removed no-op keys and the removed stage names from the
+  // per-package overlay result. Runs for BOTH ordinary package overlays and
+  // package profiles (the profile branch re-runs the strip on the
+  // profile-merged result, so this also covers the case where a per-package
+  // overlay introduces a no-op key on a mergeable field like
+  // acceptance.generateTests). Post-merge placement yields one warning per
+  // resolved config regardless of which layer supplied the key.
   // #1620: the shared per-resolution dedupe, not the bare sink — this strip and
   // the post-profile one below are two layers of the same resolution, so a key in
   // both the overlay and a package profile warned twice where the root path warns
   // once.
-  merged = stripRemovedNoOpKeys(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
+  merged = stripRemovedConfig(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
 
   // Per-package profile: apply the profile chain overlay on top of merged config.
   // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).
@@ -560,11 +561,12 @@ export async function loadConfigForWorkdir(
   // CFG-1: same validation as the root chain — a per-package
   // `execution.permissions` block is now enforced, so validate it here too.
   validatePermissionsBlock(rawMerged);
-  // Strip the removed no-op keys again post-profile-overlay (a package
-  // profile can reintroduce one). Runs after the reject guards and before
-  // safeParse, mirroring the root chain. Post-merge placement yields one
-  // warning per resolved config regardless of which layer supplied the key.
-  rawMerged = stripRemovedNoOpKeys(rawMerged, warnDedupe.warn);
+  // Strip the removed no-op keys and the removed stage names again
+  // post-profile-overlay (a package profile can reintroduce one). Runs after
+  // the reject guards and before safeParse, mirroring the root chain.
+  // Post-merge placement yields one warning per resolved config regardless of
+  // which layer supplied the key.
+  rawMerged = stripRemovedConfig(rawMerged, warnDedupe.warn);
   // nax#1990's warnQualityCommandChains check runs per-layer, above (on
   // shimmedPackageFields and each shimmedProfileData) — not here on the
   // merged result, which would re-warn every root-inherited chained command

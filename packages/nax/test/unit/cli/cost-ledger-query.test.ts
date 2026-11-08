@@ -319,6 +319,25 @@ describe("queryCostLedger", () => {
     );
   });
 
+  // US-003 AC-8/AC-9 — a ledger written by an older run names a session role
+  // that has since left the canonical registry. The row is otherwise valid, so
+  // it is still counted and still grouped under the role it recorded.
+  test("US-003 AC-8: a row naming a removed role is counted, not skipped", async () => {
+    await withLedgerFile([row({ ts: 1, sessionRole: "test-writer", costUsd: 0.5 })], async (file) => {
+      const report = await queryCostLedger([file], q({ groupBy: ["role"] }));
+
+      expect(report.skippedRows).toBe(0);
+    });
+  });
+
+  test("US-003 AC-9: a row naming a removed role still groups under that role", async () => {
+    await withLedgerFile([row({ ts: 1, sessionRole: "test-writer", costUsd: 0.5 })], async (file) => {
+      const { groups } = await queryCostLedger([file], q({ groupBy: ["role"] }));
+
+      expect(groups.map((g) => [g.key.role, g.costUsd])).toEqual([["test-writer", 0.5]]);
+    });
+  });
+
   test("AC-16 counts only rows matching the projects, feature or runId filter", async () => {
     await withTempDir(async (dir) => {
       const files = [

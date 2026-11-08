@@ -11,6 +11,5 @@ export {
   handleTierEscalation,
   type PreIterationCheckResult,
   preIterationTierCheck,
-  resolveMaxAttemptsOutcome,
 } from "./tier-escalation";
 export { _tierOutcomeDeps, handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";

@@ -176,11 +176,11 @@ export interface RunErroredEvent {
   feature?: string;
 }
 
-/** Emitted at the start of each orchestrator phase (test-writer, implementer, verifier, etc.). */
+/** Emitted at the start of each orchestrator phase (implementer, story-review, branch-review, etc.). */
 export interface StoryStepEvent {
   type: "story:step";
   storyId: string;
-  /** Op name — e.g. "test-writer", "implementer", "verifier", "semantic-review", "adversarial-review",
+  /** Op name — e.g. "implementer", "story-review", "branch-review", "semantic-review", "adversarial-review",
    *  "lint-check", "typecheck-check", "full-suite-gate", "greenfield-gate" */
   step: string;
 }
@@ -201,7 +201,14 @@ export interface StoryPhaseCompletedEvent {
   details?: PhaseDetails;
 }
 
-export type PostRunPhase = "regression" | "acceptance" | "review" | "acceptance-setup" | "finish";
+/**
+ * The post-run phases the pipeline reports on the bus.
+ *
+ * Only the deferred review still emits these events — the other post-run
+ * phases never reached the bus, so their registry members were dead weight
+ * (US-002).
+ */
+export type PostRunPhase = "review";
 
 export interface PostRunPhaseStartedEvent {
   type: "postrun:phase:started";

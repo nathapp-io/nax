@@ -16,7 +16,12 @@ import { makeNaxConfig } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import * as configExports from "@/config";
 import type { PipelineStage } from "@/config/permissions";
-import { DEFAULT_PERMISSION_PROFILE, resolvePermissions, SESSION_CLOSE_PERMISSION_MODE } from "@/config/permissions";
+import {
+  DEFAULT_PERMISSION_PROFILE,
+  isPipelineStage,
+  resolvePermissions,
+  SESSION_CLOSE_PERMISSION_MODE,
+} from "@/config/permissions";
 import { initLogger, resetLogger } from "@/logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +58,39 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}, rawProfile?
   } as NaxConfig;
 }
 
-const REPRESENTATIVE_STAGES: PipelineStage[] = ["plan", "run", "rectification", "complete"];
+const REPRESENTATIVE_STAGES: PipelineStage[] = ["plan", "run", "review", "complete"];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-006 AC1 — the stage registry names the six dispatched stages
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("isPipelineStage — US-006 AC1: the registry names only the live stages", () => {
+  test("AC1: the six live stages map to true and the three removed ones to false", () => {
+    const values = [
+      "plan",
+      "run",
+      "setup",
+      "verify",
+      "review",
+      "complete",
+      "rectification",
+      "regression",
+      "acceptance",
+    ];
+
+    expect(values.map((value) => isPipelineStage(value))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+  });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Profile: unrestricted

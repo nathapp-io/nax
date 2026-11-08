@@ -132,7 +132,7 @@ export interface AgentRunOptions {
   featureName?: string;
   /** Story ID for ACP session naming and logging */
   storyId?: string;
-  /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
+  /** Session role for this dispatch (e.g. "implementer" | "wf-implementer" | "plan") */
   sessionRole?: SessionRole;
   /**
    * Human/context interaction budget for a turn (default: 10 when the

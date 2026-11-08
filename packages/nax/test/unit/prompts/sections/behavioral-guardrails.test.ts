@@ -1,130 +1,82 @@
+/**
+ * Behavioral Guardrails — only the implementer role renders a section.
+ *
+ * US-004 narrowed `GuardrailRole` to `"implementer"`: the test-writer, verifier,
+ * no-test, tdd-simple and batch branches had no caller. The implementer's text
+ * is unchanged, and the retired branches are pinned as gone.
+ */
 import { describe, expect, test } from "bun:test";
-import type { GuardrailLevel, GuardrailRole } from "@/prompts/sections/behavioral-guardrails";
+import { assertDefined } from "@test/helpers";
+import type { GuardrailRole } from "@/prompts/sections/behavioral-guardrails";
 import { buildBehavioralGuardrailsSection } from "@/prompts/sections/behavioral-guardrails";
 
-// AC-11: exports exist (verified by the imports above compiling)
+/**
+ * Compile-time pin (US-004): the retired roles are out of `GuardrailRole`.
+ * While one of them is still in the union the assertion below does not
+ * typecheck — `bun run typecheck` is the gate that enforces it. It is also
+ * what keeps the retired branches unreachable: a branch for a role the union
+ * no longer admits has no caller.
+ */
+type AssertTrue<T extends true> = T;
+type AssertOnlyTheImplementerRoleRemains = AssertTrue<"test-writer" extends GuardrailRole ? false : true>;
+
+const _onlyTheImplementerRoleRemains: AssertOnlyTheImplementerRoleRemains = true;
 
 describe("buildBehavioralGuardrailsSection", () => {
-  // AC-12: returns null when level === "off" regardless of role
-  describe("level === off", () => {
-    const roles: GuardrailRole[] = ["implementer", "test-writer", "tdd-simple", "batch", "verifier", "no-test"];
-    test.each(roles)('returns null for role="%s" when level=off', (role) => {
-      expect(buildBehavioralGuardrailsSection(role, "off")).toBeNull();
-    });
+  // AC-2
+  test('level="off" returns null for the implementer role', () => {
+    expect(buildBehavioralGuardrailsSection("implementer", "off")).toBeNull();
   });
 
-  // AC-13: returns null when role === "verifier" or role === "no-test"
-  describe("null roles", () => {
-    const nullRoles: GuardrailRole[] = ["verifier", "no-test"];
-    const levels: GuardrailLevel[] = ["lite", "strict"];
-
-    test.each(nullRoles.flatMap((role) => levels.map((level) => [role, level] as const)))(
-      'returns null for role="%s" level="%s"',
-      (role, level) => {
-        expect(buildBehavioralGuardrailsSection(role, level)).toBeNull();
-      },
-    );
+  // AC-1
+  test('level="lite" returns a string that starts with "# Behavioral Guardrails"', () => {
+    const result = buildBehavioralGuardrailsSection("implementer", "lite");
+    assertDefined(result, "guardrails");
+    expect(result.startsWith("# Behavioral Guardrails")).toBe(true);
   });
 
-  // AC-14: lite content for implementer roles — at most 8 lines including header
-  describe("lite level for implementer roles", () => {
-    const implRoles: GuardrailRole[] = ["implementer", "tdd-simple", "batch"];
-
-    test.each(implRoles)('role="%s" lite: returns string with header', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "lite");
-      expect(result).not.toBeNull();
-      expect(result).toContain("# Behavioral Guardrails");
+  describe("implementer role", () => {
+    test('level="lite": at most 8 lines including the header', () => {
+      const result = buildBehavioralGuardrailsSection("implementer", "lite");
+      assertDefined(result, "guardrails");
+      expect(result.split("\n").length).toBeLessThanOrEqual(8);
     });
 
-    test.each(implRoles)('role="%s" lite: ≤8 lines', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "lite") as string;
-      const lines = result.split("\n");
-      expect(lines.length).toBeLessThanOrEqual(8);
-    });
-
-    test.each(implRoles)('role="%s" lite: includes all 5 bullet rules', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "lite") as string;
+    test('level="lite": includes all 5 bullet rules', () => {
+      const result = buildBehavioralGuardrailsSection("implementer", "lite");
+      assertDefined(result, "guardrails");
       expect(result).toContain("Simplicity");
       expect(result).toContain("Surgical");
       expect(result).toContain("Anti-cheat");
       expect(result).toContain("Orphans");
       expect(result).toContain("Commit");
     });
-  });
 
-  // AC-15: strict content includes "## State Assumptions" subsection for implementer roles
-  describe("strict level for implementer roles", () => {
-    const implRoles: GuardrailRole[] = ["implementer", "tdd-simple", "batch"];
+    test('level="lite": contains none of the retired role rule sets', () => {
+      const result = buildBehavioralGuardrailsSection("implementer", "lite");
+      assertDefined(result, "guardrails");
+      // The retired test-writer rule set.
+      expect(result).not.toContain("No tests for behaviors the story does not require");
+      // The retired combined (tdd-simple / batch) rule set.
+      expect(result).not.toContain("Simplicity (tests)");
+      expect(result).not.toContain("Simplicity (source)");
+    });
 
-    test.each(implRoles)('role="%s" strict: includes ## State Assumptions', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "strict");
-      expect(result).not.toBeNull();
+    test('level="strict": includes the "## State Assumptions" subsection', () => {
+      const result = buildBehavioralGuardrailsSection("implementer", "strict");
+      assertDefined(result, "guardrails");
       expect(result).toContain("## State Assumptions");
     });
 
-    test.each(implRoles)('role="%s" strict: includes all section headers', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "strict") as string;
+    test('level="strict": includes all section headers', () => {
+      const result = buildBehavioralGuardrailsSection("implementer", "strict");
+      assertDefined(result, "guardrails");
       expect(result).toContain("## Simplicity");
       expect(result).toContain("## Surgical");
       expect(result).toContain("## Anti-cheat");
       expect(result).toContain("## Orphans");
       expect(result).toContain("## Commit");
       expect(result).toContain("## State Assumptions");
-    });
-  });
-
-  // AC-16: test-writer role — both lite and strict
-  describe("role === test-writer", () => {
-    test("lite: does NOT include Anti-cheat rule (+5 more assertions)", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "lite") as string;
-      expect(result).not.toContain("Anti-cheat");
-      expect(result).not.toContain("Orphans");
-      expect(result).not.toContain("Commit");
-      expect(result).toContain("Simplicity");
-      expect(result).toContain("Surgical");
-      expect(result).not.toContain("State Assumptions");
-    });
-
-    test("strict: does NOT include Anti-cheat rule (+5 more assertions)", () => {
-      const result = buildBehavioralGuardrailsSection("test-writer", "strict") as string;
-      expect(result).not.toContain("Anti-cheat");
-      expect(result).not.toContain("Orphans");
-      expect(result).not.toContain("Commit");
-      expect(result).toContain("Simplicity");
-      expect(result).toContain("Surgical");
-      expect(result).toContain("State Assumptions");
-    });
-  });
-
-  // Combined roles (tdd-simple, batch) write both tests and source —
-  // their guardrails must include both test-scope AND source-scope Simplicity rules.
-  describe("combined roles include both test-scope and source-scope Simplicity", () => {
-    const combinedRoles: GuardrailRole[] = ["tdd-simple", "batch"];
-
-    test.each(combinedRoles)('role="%s" lite: includes test-scope Simplicity', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "lite") as string;
-      expect(result).toContain("Simplicity (tests)");
-    });
-
-    test.each(combinedRoles)('role="%s" lite: includes source-scope Simplicity', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "lite") as string;
-      expect(result).toContain("Simplicity (source)");
-    });
-
-    test.each(combinedRoles)('role="%s" strict: includes test-scope Simplicity', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "strict") as string;
-      expect(result).toContain("## Simplicity (Tests)");
-    });
-
-    test.each(combinedRoles)('role="%s" strict: includes source-scope Simplicity', (role) => {
-      const result = buildBehavioralGuardrailsSection(role, "strict") as string;
-      expect(result).toContain("## Simplicity (Source)");
-    });
-
-    test("pure implementer lite: does NOT include test-scope Simplicity", () => {
-      const result = buildBehavioralGuardrailsSection("implementer", "lite") as string;
-      expect(result).not.toContain("Simplicity (tests)");
-      expect(result).not.toContain("Simplicity (source)");
     });
   });
 

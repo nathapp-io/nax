@@ -44,7 +44,7 @@ describe("SessionManager.create()", () => {
   test("storyId and featureName stored; derives scratch dir when projectDir and featureName provided", () => {
     const mgr = new SessionManager();
     const desc = mgr.create({
-      role: "test-writer",
+      role: "plan",
       agent: "claude",
       workdir: "/repo",
       projectDir: "/repo",
@@ -76,7 +76,7 @@ describe("SessionManager.create() — descriptor persistence", () => {
 
     const mgr = new SessionManager();
     mgr.create({
-      role: "test-writer",
+      role: "plan",
       agent: "claude",
       workdir: "/repo",
       projectDir: "/repo",
@@ -92,7 +92,7 @@ describe("SessionManager.create() — descriptor persistence", () => {
     expect(writes[0]?.scratchDir).toBe("/repo/.nax/features/auth/sessions/sess-00000000-0000-0000-0000-000000000001");
     const persisted = writes[0]?.descriptor as { storyId?: string; role?: string };
     expect(persisted.storyId).toBe("US-001");
-    expect(persisted.role).toBe("test-writer");
+    expect(persisted.role).toBe("plan");
     expect(writes[0]?.projectDir).toBe("/repo");
 
     _sessionManagerDeps.writeDescriptor = originalWriteDescriptor;

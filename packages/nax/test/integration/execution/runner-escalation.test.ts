@@ -3,13 +3,12 @@
  * Runner Tests — Story Batching + TDD Escalation
  *
  * Tests for grouping consecutive simple stories into batches,
- * and TDD escalation handling (retryAsLite, failure category outcomes).
+ * and TDD escalation handling (retryAsLite, tier budgets).
  */
 
 import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
 import { escalateTier } from "@/execution/escalation";
-import { resolveMaxAttemptsOutcome } from "@/execution/runner";
 import type { UserStory } from "@/prd";
 
 describe("Batch Failure Escalation Strategy", () => {
@@ -392,25 +391,6 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
     expect(story.attempts).toBeLessThan(tierCfg.attempts);
 
     // Should NOT escalate (continue at same tier)
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// T6: resolveMaxAttemptsOutcome — failure category → pause vs fail
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("resolveMaxAttemptsOutcome", () => {
-  test.each([
-    ["isolation-violation", "pause"],
-    ["verifier-rejected", "pause"],
-    ["greenfield-no-tests", "pause"],
-    ["test-incorrect", "pause"],
-    ["session-failure", "fail"],
-    ["tests-failing", "fail"],
-    ["full-suite-gate-exhausted", "fail"],
-    [undefined, "fail"],
-  ] as const)("%s → %s", (category, expected) => {
-    expect(resolveMaxAttemptsOutcome(category)).toBe(expected);
   });
 });
 

@@ -1,9 +1,9 @@
 /**
- * Tier Escalation Outcome Handlers — pause-reason persistence (nax#1582)
+ * Tier Escalation Outcome Handlers — the exhausted-tier outcome is always a failure
  *
- * Verifies the pause path appends a structured reason to `priorErrors`
- * instead of leaving it empty (which surfaces as "no reason recorded" in
- * the resume prompt).
+ * US-001: the pause branch is gone. Both handlers take the context and nothing
+ * else, always mark the story failed and always emit `story:failed` — never
+ * `story:paused`.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -13,6 +13,22 @@ import { cleanupTempDir, makeMockRuntime, makePRD, makeStory, makeTempDir } from
 import type { EscalationHandlerContext } from "@/execution/escalation";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "@/execution/escalation";
 import { pipelineEventBus } from "@/pipeline/event-bus";
+
+/**
+ * Compile-time pin (US-001): both handlers take the context and nothing else.
+ * The failure-category parameter is gone, so no caller can route a story to the
+ * pause branch. `bun run typecheck` is the gate that enforces it.
+ */
+type AssertTrue<T extends true> = T;
+type AssertMaxAttemptsTakesOnlyTheContext = AssertTrue<
+  Parameters<typeof handleMaxAttemptsReached>["length"] extends 1 ? true : false
+>;
+type AssertNoTierTakesOnlyTheContext = AssertTrue<
+  Parameters<typeof handleNoTierAvailable>["length"] extends 1 ? true : false
+>;
+
+const _maxAttemptsTakesOnlyTheContext: AssertMaxAttemptsTakesOnlyTheContext = true;
+const _noTierTakesOnlyTheContext: AssertNoTierTakesOnlyTheContext = true;
 
 function makeCtx(overrides: Partial<EscalationHandlerContext>, prdPath: string): EscalationHandlerContext {
   const story = makeStory({ id: "US-001", status: "in-progress" });
@@ -35,89 +51,6 @@ function makeCtx(overrides: Partial<EscalationHandlerContext>, prdPath: string):
   } as EscalationHandlerContext;
 }
 
-describe("handleNoTierAvailable — pause-reason persistence (nax#1582)", () => {
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = makeTempDir("nax-tier-outcome-");
-  });
-
-  afterEach(() => {
-    cleanupTempDir(tempDir);
-  });
-
-  test("appends the pause reason, including the pipeline diagnosis, to priorErrors instead of leaving it empty", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    const ctx = makeCtx({}, prdPath);
-
-    const result = await handleNoTierAvailable(ctx, "verifier-rejected");
-
-    expect(result.outcome).toBe("paused");
-    const pausedStory = result.prd.userStories.find((s) => s.id === "US-001");
-    expect(pausedStory?.priorErrors).toEqual([
-      "PAUSED: Execution stopped (verifier-rejected requires human review): Rectification exhausted",
-    ]);
-  });
-
-  test("omits the trailing colon when the pipeline result carries no reason", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    const ctx = makeCtx({ pipelineResult: { reason: undefined, context: {} } }, prdPath);
-
-    const result = await handleNoTierAvailable(ctx, "verifier-rejected");
-
-    const pausedStory = result.prd.userStories.find((s) => s.id === "US-001");
-    expect(pausedStory?.priorErrors).toEqual(["PAUSED: Execution stopped (verifier-rejected requires human review)"]);
-  });
-
-  test("scrubs a fabricated quote in the pipeline reason before persisting (nax#930 convention)", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    const ctx = makeCtx(
-      { pipelineResult: { reason: "src/does-not-exist.ts:1 says `this quote is fabricated`", context: {} } },
-      prdPath,
-    );
-
-    const result = await handleNoTierAvailable(ctx, "verifier-rejected");
-
-    const pausedStory = result.prd.userStories.find((s) => s.id === "US-001");
-    expect(pausedStory?.priorErrors?.[0]).toContain("<UNVERIFIED_QUOTE>");
-    expect(pausedStory?.priorErrors?.[0]).not.toContain("this quote is fabricated");
-  });
-});
-
-describe("handleMaxAttemptsReached — pause-reason persistence (nax#1582)", () => {
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = makeTempDir("nax-tier-outcome-");
-  });
-
-  afterEach(() => {
-    cleanupTempDir(tempDir);
-  });
-
-  test("appends the pause reason, including the pipeline diagnosis, to priorErrors instead of leaving it empty", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    const ctx = makeCtx({}, prdPath);
-
-    const result = await handleMaxAttemptsReached(ctx, "runtime-crash");
-
-    expect(result.outcome).toBe("paused");
-    const pausedStory = result.prd.userStories.find((s) => s.id === "US-001");
-    expect(pausedStory?.priorErrors).toEqual([
-      "PAUSED: Max attempts reached (runtime-crash requires human review): Rectification exhausted",
-    ]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// nax#1707 follow-up: these emitters read
-// `ctx.runtime?.costAggregator.byStory()[id]?.totalCostUsd ?? ctx.totalCost`. The only
-// caller of handleTierEscalation never passed `runtime`, so the fallback was taken
-// unconditionally and every paused story reported the RUN-WIDE total. Threading runtime
-// switches them to per-story cost; the sibling emitter in preIterationTierCheck is
-// already pinned both ways (tier-escalation-story-failed.test.ts), these four were not.
-// ---------------------------------------------------------------------------
-
 describe("handleNoTierAvailable — fail outcome and progress logging", () => {
   let tempDir: string;
 
@@ -129,11 +62,13 @@ describe("handleNoTierAvailable — fail outcome and progress logging", () => {
     cleanupTempDir(tempDir);
   });
 
-  test("marks the story failed (not paused) when the failure category maps to 'fail'", async () => {
+  // AC-7 (outcome) and the failure transition itself.
+  test("marks the story failed (not paused)", async () => {
     const prdPath = join(tempDir, "prd.json");
     const ctx = makeCtx({}, prdPath);
+    expect(ctx.story.status).toBe("in-progress");
 
-    const result = await handleNoTierAvailable(ctx, "tests-failing");
+    const result = await handleNoTierAvailable(ctx);
 
     expect(result.outcome).toBe("failed");
     const failedStory = result.prd.userStories.find((s) => s.id === "US-001");
@@ -144,21 +79,11 @@ describe("handleNoTierAvailable — fail outcome and progress logging", () => {
     const prdPath = join(tempDir, "prd.json");
     const ctx = makeCtx({}, prdPath);
 
-    const result = await handleNoTierAvailable(ctx, undefined);
+    const result = await handleNoTierAvailable(ctx);
 
     expect(result.outcome).toBe("failed");
-  });
-
-  test("appends a paused progress entry when featureDir is set", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    const featureDir = join(tempDir, "feature");
-    const ctx = makeCtx({ featureDir }, prdPath);
-
-    await handleNoTierAvailable(ctx, "verifier-rejected");
-
-    const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
-    expect(progress).toContain("PAUSED");
-    expect(progress).toContain("needs human review");
+    const failedStory = result.prd.userStories.find((s) => s.id === "US-001");
+    expect(Object.hasOwn(failedStory ?? {}, "failureCategory")).toBe(false);
   });
 
   test("appends a failed progress entry when featureDir is set", async () => {
@@ -166,7 +91,7 @@ describe("handleNoTierAvailable — fail outcome and progress logging", () => {
     const featureDir = join(tempDir, "feature");
     const ctx = makeCtx({ featureDir }, prdPath);
 
-    await handleNoTierAvailable(ctx, "tests-failing");
+    await handleNoTierAvailable(ctx);
 
     const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
     expect(progress).toContain("FAILED");
@@ -182,10 +107,47 @@ describe("handleNoTierAvailable — fail outcome and progress logging", () => {
       const prdPath = join(tempDir, "prd.json");
       const ctx = makeCtx({}, prdPath);
 
-      await handleNoTierAvailable(ctx, "tests-failing");
+      await handleNoTierAvailable(ctx);
 
       expect(seen).toHaveLength(1);
       expect((seen[0] as { countsTowardEscalation?: boolean }).countsTowardEscalation).toBe(true);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  // AC-8: exactly one terminal event, and it is the failure.
+  test("AC-8: emits exactly one story:failed event with reason 'Execution failed'", async () => {
+    const seen: Array<{ reason?: string }> = [];
+    const unsubscribe = pipelineEventBus.on("story:failed", (event) => {
+      seen.push({ reason: event.reason });
+    });
+    try {
+      const prdPath = join(tempDir, "prd.json");
+      const ctx = makeCtx({}, prdPath);
+
+      await handleNoTierAvailable(ctx);
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.reason).toBe("Execution failed");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  // AC-9: the pause branch is unreachable.
+  test("AC-9: emits no story:paused event", async () => {
+    const seen: unknown[] = [];
+    const unsubscribe = pipelineEventBus.on("story:paused", (event) => {
+      seen.push(event);
+    });
+    try {
+      const prdPath = join(tempDir, "prd.json");
+      const ctx = makeCtx({}, prdPath);
+
+      await handleNoTierAvailable(ctx);
+
+      expect(seen).toHaveLength(0);
     } finally {
       unsubscribe();
     }
@@ -203,27 +165,17 @@ describe("handleMaxAttemptsReached — fail outcome and progress logging", () =>
     cleanupTempDir(tempDir);
   });
 
-  test("marks the story failed (not paused) when the failure category maps to 'fail'", async () => {
+  // AC-1 (outcome) and AC-3 (the failed transition on the returned PRD).
+  test("marks the story failed (not paused)", async () => {
     const prdPath = join(tempDir, "prd.json");
     const ctx = makeCtx({}, prdPath);
+    expect(ctx.story.status).toBe("in-progress");
 
-    const result = await handleMaxAttemptsReached(ctx, "tests-failing");
+    const result = await handleMaxAttemptsReached(ctx);
 
     expect(result.outcome).toBe("failed");
     const failedStory = result.prd.userStories.find((s) => s.id === "US-001");
     expect(failedStory?.status).toBe("failed");
-  });
-
-  test("appends a paused progress entry when featureDir is set", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    const featureDir = join(tempDir, "feature");
-    const ctx = makeCtx({ featureDir }, prdPath);
-
-    await handleMaxAttemptsReached(ctx, "verifier-rejected");
-
-    const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
-    expect(progress).toContain("PAUSED");
-    expect(progress).toContain("Max attempts reached");
   });
 
   test("appends a failed progress entry when featureDir is set", async () => {
@@ -231,29 +183,11 @@ describe("handleMaxAttemptsReached — fail outcome and progress logging", () =>
     const featureDir = join(tempDir, "feature");
     const ctx = makeCtx({ featureDir }, prdPath);
 
-    await handleMaxAttemptsReached(ctx, "tests-failing");
+    await handleMaxAttemptsReached(ctx);
 
     const progress = await readFile(join(featureDir, "progress.txt"), "utf8");
     expect(progress).toContain("FAILED");
     expect(progress).toContain("Max attempts reached");
-  });
-
-  test("emits a story:paused event carrying the fallback totalCost when no runtime is threaded", async () => {
-    const seen: { cost?: number }[] = [];
-    const unsubscribe = pipelineEventBus.on("story:paused", (event) => {
-      seen.push({ cost: (event as { cost?: number }).cost });
-    });
-    try {
-      const prdPath = join(tempDir, "prd.json");
-      const ctx = makeCtx({ totalCost: 4.5 }, prdPath);
-
-      await handleMaxAttemptsReached(ctx, "verifier-rejected");
-
-      expect(seen).toHaveLength(1);
-      expect(seen[0].cost).toBe(4.5);
-    } finally {
-      unsubscribe();
-    }
   });
 
   test("emits a story:failed event carrying the per-story cost from the aggregator", async () => {
@@ -279,7 +213,7 @@ describe("handleMaxAttemptsReached — fail outcome and progress logging", () =>
       const prdPath = join(tempDir, "prd.json");
       const ctx = makeCtx({ runtime, totalCost: 9.99 }, prdPath);
 
-      await handleMaxAttemptsReached(ctx, "tests-failing");
+      await handleMaxAttemptsReached(ctx);
 
       expect(seen).toHaveLength(1);
       expect(seen[0].cost).toBe(1.25);
@@ -287,56 +221,52 @@ describe("handleMaxAttemptsReached — fail outcome and progress logging", () =>
       unsubscribe();
     }
   });
-});
 
-describe("handleNoTierAvailable — cost source on story:paused", () => {
-  let tempDir: string;
-  let unsubscribe: (() => void) | undefined;
-  const seen: { cost?: number }[] = [];
+  // AC-4: the handler records no category of its own.
+  test("AC-4: the initially uncategorized story has no failureCategory property", async () => {
+    const prdPath = join(tempDir, "prd.json");
+    const ctx = makeCtx({}, prdPath);
 
-  beforeEach(() => {
-    tempDir = makeTempDir("nax-tier-outcome-cost-");
-    seen.length = 0;
-    unsubscribe = pipelineEventBus.on("story:paused", (event) => {
-      seen.push({ cost: (event as { cost?: number }).cost });
+    const result = await handleMaxAttemptsReached(ctx);
+
+    const failedStory = result.prd.userStories.find((s) => s.id === "US-001");
+    expect(Object.hasOwn(failedStory ?? {}, "failureCategory")).toBe(false);
+  });
+
+  // AC-5: exactly one terminal event, and it is the failure.
+  test("AC-5: emits exactly one story:failed event with reason 'Max attempts reached'", async () => {
+    const seen: Array<{ reason?: string }> = [];
+    const unsubscribe = pipelineEventBus.on("story:failed", (event) => {
+      seen.push({ reason: event.reason });
     });
+    try {
+      const prdPath = join(tempDir, "prd.json");
+      const ctx = makeCtx({}, prdPath);
+
+      await handleMaxAttemptsReached(ctx);
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.reason).toBe("Max attempts reached");
+    } finally {
+      unsubscribe();
+    }
   });
 
-  afterEach(() => {
-    unsubscribe?.();
-    cleanupTempDir(tempDir);
-  });
-
-  test("reports the per-story total from the aggregator, not the run-wide totalCost", async () => {
-    const runtime = makeMockRuntime();
-    runtime.costAggregator.record({
-      ts: Date.now(),
-      runId: "test-run",
-      agentName: "claude",
-      model: "test-model",
-      storyId: "US-001",
-      tokens: { input: 10, output: 10 },
-      estimatedCostUsd: 0.75,
-      exactCostUsd: 0.75,
-      costUsd: 0.75,
-      confidence: "estimated",
-      durationMs: 100,
+  // AC-6: the pause branch is unreachable.
+  test("AC-6: emits no story:paused event", async () => {
+    const seen: unknown[] = [];
+    const unsubscribe = pipelineEventBus.on("story:paused", (event) => {
+      seen.push(event);
     });
-    // Deliberately different from the per-story cost so a fallback read is visible.
-    const ctx = makeCtx({ runtime, totalCost: 9.99 }, join(tempDir, "prd.json"));
+    try {
+      const prdPath = join(tempDir, "prd.json");
+      const ctx = makeCtx({}, prdPath);
 
-    await handleNoTierAvailable(ctx, "verifier-rejected");
+      await handleMaxAttemptsReached(ctx);
 
-    expect(seen).toHaveLength(1);
-    expect(seen[0].cost).toBe(0.75);
-  });
-
-  test("falls back to the run-wide totalCost when no runtime is threaded", async () => {
-    const ctx = makeCtx({ totalCost: 9.99 }, join(tempDir, "prd.json"));
-
-    await handleNoTierAvailable(ctx, "verifier-rejected");
-
-    expect(seen).toHaveLength(1);
-    expect(seen[0].cost).toBe(9.99);
+      expect(seen).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
   });
 });

@@ -73,10 +73,10 @@ const ROLES_BY_DESCENDING_LENGTH: readonly CanonicalSessionRole[] = [...KNOWN_SE
 /**
  * Derive the canonical session role from a session name by the longest
  * trailing, `-`-bounded match against `KNOWN_SESSION_ROLES`. Multi-segment roles
- * (`repo-scoped-test-fix`, `reviewer-semantic`) require the longest match — a
- * last-segment-only split would mislabel them. Unmatched names return
- * undefined so the row omits `sessionRole` rather than emitting a
- * free-form string (`session-role.ts` bans those outright).
+ * (`wf-implementer`, `reviewer-semantic`) require the longest match — a
+ * last-segment-only split would label `...-wf-implementer` as `implementer`.
+ * Unmatched names return undefined so the row omits `sessionRole` rather than
+ * emitting a free-form string (`session-role.ts` bans those outright).
  */
 export function deriveSessionRole(sessionName: string): CanonicalSessionRole | undefined {
   for (const role of ROLES_BY_DESCENDING_LENGTH) {

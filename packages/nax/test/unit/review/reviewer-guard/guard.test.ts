@@ -74,10 +74,8 @@ function captureLogs(): LogEntry[] {
 }
 
 describe("ReviewerTreeGuard (nax#2500)", () => {
-  test("the role set is the seven reviewer roles", () => {
+  test("the role set is the five reviewer roles", () => {
     expect([...REVIEWER_SESSION_ROLES].sort()).toEqual([
-      "finish-review-quality",
-      "finish-review-spec",
       "reviewer-adversarial",
       "reviewer-semantic",
       "wf-branch-review",
@@ -102,14 +100,31 @@ describe("ReviewerTreeGuard (nax#2500)", () => {
     expect(calls).toEqual(["take", "restore"]);
   });
 
+  test("US-003 AC-3: a wf-branch-review turn takes the repo snapshot exactly once", async () => {
+    const calls = fakes();
+    const g = new ReviewerTreeGuard();
+    await g.beforeTurn(desc("wf-branch-review"));
+    expect(calls.filter((c) => c === "take")).toHaveLength(1);
+  });
+
+  test("US-003 AC-4: a turn in the removed finish-review-spec role takes no snapshot", async () => {
+    const calls = fakes();
+    const g = new ReviewerTreeGuard();
+    // The role left the canonical registry in US-003; the fixture injects it
+    // so the guard's membership check is still exercised against it.
+    const historical = Object.assign(desc("wf-story-review", "a"), { role: "finish-review-spec" });
+    await g.beforeTurn(historical);
+    expect(calls).toEqual([]);
+  });
+
   test("two concurrent reviewers on one repo: one snapshot, restored once by the last out", async () => {
     const calls = fakes();
     const g = new ReviewerTreeGuard();
-    await g.beforeTurn(desc("finish-review-spec", "a"));
-    await g.beforeTurn(desc("finish-review-quality", "b", "/repo"));
-    await g.afterTurn(desc("finish-review-spec", "a"));
+    await g.beforeTurn(desc("wf-branch-review", "a"));
+    await g.beforeTurn(desc("wf-story-review", "b", "/repo"));
+    await g.afterTurn(desc("wf-branch-review", "a"));
     expect(calls).toEqual(["take"]);
-    await g.afterTurn(desc("finish-review-quality", "b", "/repo"));
+    await g.afterTurn(desc("wf-story-review", "b", "/repo"));
     expect(calls).toEqual(["take", "restore"]);
   });
 
@@ -266,11 +281,11 @@ describe("ReviewerTreeGuard with a real repository", () => {
     await run("commit", "-q", "-m", "seed");
 
     const g = new ReviewerTreeGuard();
-    await g.beforeTurn(desc("finish-review-spec", "a", d));
+    await g.beforeTurn(desc("wf-branch-review", "a", d));
     await writeFile(join(d, "a.txt"), "edited\n");
-    await g.beforeTurn(desc("finish-review-quality", "b", d));
-    await g.afterTurn(desc("finish-review-spec", "a", d));
-    await g.afterTurn(desc("finish-review-quality", "b", d));
+    await g.beforeTurn(desc("wf-story-review", "b", d));
+    await g.afterTurn(desc("wf-branch-review", "a", d));
+    await g.afterTurn(desc("wf-story-review", "b", d));
     expect(await readFile(join(d, "a.txt"), "utf8")).toBe("a\n");
   });
 });

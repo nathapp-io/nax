@@ -41,7 +41,7 @@ export interface RunSummary {
   totalCost?: number;
 }
 
-/** Status of a single post-run phase (acceptance, regression, or deferred review). */
+/** Status of a single post-run phase (the deferred review). */
 export interface PostRunPhaseState {
   status: "running" | "passed" | "failed";
 }
@@ -62,15 +62,11 @@ export interface PipelineBusState {
   runErrored: boolean;
   /** Log of escalation events (story:escalated) */
   escalationLog: EscalationEntry[];
-  /** Current orchestrator step per story (e.g. "test-writer", "implementer", "verifier") */
+  /** Current orchestrator step per story (e.g. "implementer", "story-review", "branch-review") */
   storySteps: Record<string, string>;
-  /** Post-run phase statuses (acceptance, acceptance-setup, regression, review, finish) */
+  /** Post-run phase status (review) */
   postRunPhases: {
-    acceptance?: PostRunPhaseState;
-    "acceptance-setup"?: PostRunPhaseState;
-    regression?: PostRunPhaseState;
     review?: PostRunPhaseState;
-    finish?: PostRunPhaseState;
   };
   /**
    * Id of the most recently failed story — target for the TUI "retry last failed" (r) key.

@@ -776,7 +776,7 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
     expect((await loadForPackage()).execution.costLimit).toBe(7);
   });
 
-  // The two `stripRemovedNoOpKeys` calls on this path are two layers of ONE
+  // The two `stripRemovedConfig` calls on this path are two layers of ONE
   // resolution, but each got the bare `defaultConfigWarn` sink — so a no-op key
   // in both the overlay and a package profile warned twice, where the root path
   // warns once per resolved config. They now share the per-resolution dedupe.

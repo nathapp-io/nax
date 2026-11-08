@@ -25,22 +25,11 @@ export const MCP_SERVER_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
 export const MCP_DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
- * PipelineStage (src/config/permissions.ts:18-27) plus `"*"`. Spelled out rather
- * than derived so an unknown stage is a schema error at load, not a server that
- * silently attaches to nothing. There is no `implement` stage.
+ * The `PipelineStage` union (`src/config/permissions.ts`) plus `"*"`. Spelled
+ * out rather than derived so an unknown stage is a schema error at load, not a
+ * server that silently attaches to nothing. There is no `implement` stage.
  */
-export const McpStageSchema = z.enum([
-  "plan",
-  "run",
-  "setup",
-  "verify",
-  "review",
-  "rectification",
-  "regression",
-  "acceptance",
-  "complete",
-  "*",
-]);
+export const McpStageSchema = z.enum(["plan", "run", "setup", "verify", "review", "complete", "*"]);
 
 export const McpServerSchema = z
   .object({

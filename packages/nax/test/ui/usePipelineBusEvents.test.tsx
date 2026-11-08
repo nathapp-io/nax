@@ -328,51 +328,58 @@ describe("usePipelineBusEvents", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC10: TUI records acceptance-setup phase as running without throwing
+// AC1/AC2: the TUI tracks the review post-run phase
 // ---------------------------------------------------------------------------
 
 function PostRunPhaseOutput({ stories }: { stories: StoryDisplayState[] }) {
   const state = usePipelineBusEvents(stories);
-  const phase = state.postRunPhases["acceptance-setup"];
-  return <Text>acceptanceSetupPhase:{phase?.status ?? "none"}</Text>;
+  const phase = state.postRunPhases.review;
+  return (
+    <Text>
+      reviewStatus:{phase?.status ?? "none"}|reviewKeys:{Object.keys(phase ?? {}).join("+")}
+    </Text>
+  );
 }
 
-describe("usePipelineBusEvents — AC10: acceptance-setup phase:started", () => {
-  test("AC10: records acceptance-setup phase as running when postrun:phase:started fires", () => {
+describe("usePipelineBusEvents — post-run review phase", () => {
+  test("AC1: records the review phase as running when postrun:phase:started fires", () => {
     const { lastFrame } = render(<PostRunPhaseOutput stories={[]} />);
 
     act(() => {
       pipelineEventBus.emit({
         type: "postrun:phase:started",
-        phase: "acceptance-setup",
+        phase: "review",
       });
     });
 
-    expect(lastFrame()).toContain("acceptanceSetupPhase:running");
+    expect(lastFrame()).toContain("reviewStatus:running|reviewKeys:status");
   });
 
-  test("AC10: does not throw when receiving acceptance-setup started event", () => {
-    expect(() => {
-      render(<PostRunPhaseOutput stories={[]} />);
-      act(() => {
-        pipelineEventBus.emit({
-          type: "postrun:phase:started",
-          phase: "acceptance-setup",
-        });
-      });
-    }).not.toThrow();
-  });
-
-  test("AC10 boundary: acceptance-setup phase transitions to passed on completed event", () => {
+  test("AC2: records the review phase as failed when postrun:phase:completed carries passed: false", () => {
     const { lastFrame } = render(<PostRunPhaseOutput stories={[]} />);
 
     act(() => {
-      pipelineEventBus.emit({ type: "postrun:phase:started", phase: "acceptance-setup" });
+      pipelineEventBus.emit({ type: "postrun:phase:started", phase: "review" });
     });
+    expect(lastFrame()).toContain("reviewStatus:running|reviewKeys:status");
+
     act(() => {
-      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "acceptance-setup", passed: true });
+      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "review", passed: false });
     });
 
-    expect(lastFrame()).toContain("acceptanceSetupPhase:passed");
+    expect(lastFrame()).toContain("reviewStatus:failed|reviewKeys:status");
+  });
+
+  test("the review phase transitions to passed on a passing completion event", () => {
+    const { lastFrame } = render(<PostRunPhaseOutput stories={[]} />);
+
+    act(() => {
+      pipelineEventBus.emit({ type: "postrun:phase:started", phase: "review" });
+    });
+    act(() => {
+      pipelineEventBus.emit({ type: "postrun:phase:completed", phase: "review", passed: true });
+    });
+
+    expect(lastFrame()).toContain("reviewStatus:passed|reviewKeys:status");
   });
 });

@@ -20,7 +20,7 @@ export interface LiveActivityPanelProps {
   focused?: boolean;
   /** Active agent call states from stream events */
   activeCalls?: Map<string, ActiveCallState>;
-  /** Current orchestrator step per storyId (e.g. "test-writer", "implementer") */
+  /** Current orchestrator step per storyId (e.g. "implementer", "story-review") */
   storySteps?: Record<string, string>;
   /** Run completion summary, set when run:completed fires */
   runSummary?: RunSummary;
@@ -28,7 +28,7 @@ export interface LiveActivityPanelProps {
   runErrored?: string;
   /** Log of escalation events from pipeline bus */
   escalationLog?: EscalationEntry[];
-  /** Current phase/stage label for display (e.g. "acceptance-setup", "post-run: acceptance") */
+  /** Current phase/stage label for display (e.g. "acceptance-setup", "post-run: review") */
   currentStage?: string;
 }
 

@@ -67,7 +67,7 @@ const FINDINGS: Finding[] = [
 
 describe("US-004 AC1 — isolation under acp", () => {
   test("renders the existing shell example including the surrounding full-suite warning sentence", () => {
-    const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
+    const wrapped = buildIsolationSection("implementer", "strict", "bun test", "testScoped");
     const out = applyProtocolRegions(wrapped, { protocol: "acp" });
 
     // The shell example is preserved verbatim.
@@ -85,7 +85,7 @@ describe("US-004 AC1 — isolation under acp", () => {
 
 describe("US-004 AC2 — isolation native with advertised RunCommand and scoped key", () => {
   test("renders a RunCommand call with values.files and no shell command", () => {
-    const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
+    const wrapped = buildIsolationSection("implementer", "strict", "bun test", "testScoped");
     const out = applyProtocolRegions(wrapped, {
       protocol: "native",
       advertisedTools: new Set(["RunCommand"]),
@@ -107,7 +107,7 @@ describe("US-004 AC2 — isolation native with advertised RunCommand and scoped 
     // dispatch and hand the agent a `RunCommand` call without a file filter.
     // The example is the only affordance-rendered
     // segment; the surrounding prose is plain text in both transports.
-    const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
+    const wrapped = buildIsolationSection("implementer", "strict", "bun test", "testScoped");
     const out = applyProtocolRegions(wrapped, {
       protocol: "native",
       advertisedTools: new Set(["RunCommand"]),
@@ -123,7 +123,7 @@ describe("US-004 AC2 — isolation native with advertised RunCommand and scoped 
 
 describe("US-004 AC3 — isolation with no configured test command", () => {
   test("renders the existing 'scope each run to the files you changed' wording and emits no region", () => {
-    const result = buildIsolationSection("test-writer", "strict");
+    const result = buildIsolationSection("implementer", "strict");
 
     // The fallback text is preserved.
     expect(result).toContain("scope each run to the files you changed");
@@ -141,7 +141,7 @@ describe("US-004 AC3 — isolation with no configured test command", () => {
   test("even when a scoped key is supplied, the no-test-command case still emits no region", () => {
     // The affordance wrapping only fires when BOTH a configured test command AND
     // a declared scoped key are present — AC3 is the no-command fallback path.
-    const result = buildIsolationSection("test-writer", "strict", undefined, "testScoped");
+    const result = buildIsolationSection("implementer", "strict", undefined, "testScoped");
 
     expect(result).toContain("scope each run to the files you changed");
     expect(result).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
@@ -309,28 +309,28 @@ describe("US-004 AC7 — rectifier blocks under native without advertised RunCom
 
 describe("US-004 cross-cutting seam", () => {
   test("isolation + scoped key: the wrapping is contained in the test filter rule, not the header", () => {
-    const result = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
+    const result = buildIsolationSection("implementer", "strict", "bun test", "testScoped");
 
     // The marker must be inside the test filter rule, not the role header.
     expect(result).toContain("<!--nax:");
-    expect(result.indexOf("isolation scope: Only create or modify files in the test/ directory")).toBeLessThan(
+    expect(result.indexOf("isolation scope: Implement source code in src/")).toBeLessThan(
       result.indexOf(PROTOCOL_REGION_MARKER_PREFIX),
     );
   });
 
   test("isolation without scoped key: no region emitted, regardless of testCommand", () => {
-    const withCmd = buildIsolationSection("test-writer", "strict", "bun test");
+    const withCmd = buildIsolationSection("implementer", "strict", "bun test");
     const withCmdLite = buildIsolationSection("implementer", "lite", "bun test");
-    const withCmdVerifier = buildIsolationSection("verifier", undefined, "bun test");
-    const withCmdSingle = buildIsolationSection("tdd-simple", undefined, "bun test");
+    const withCmdDefault = buildIsolationSection("implementer", undefined, "bun test");
+    const withCmdNoTest = buildIsolationSection("no-test", undefined, "bun test");
 
-    for (const result of [withCmd, withCmdLite, withCmdVerifier, withCmdSingle]) {
+    for (const result of [withCmd, withCmdLite, withCmdDefault, withCmdNoTest]) {
       expect(result).not.toContain(PROTOCOL_REGION_MARKER_PREFIX);
     }
   });
 
   test("idempotence: applying twice under acp equals applying once under acp", () => {
-    const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
+    const wrapped = buildIsolationSection("implementer", "strict", "bun test", "testScoped");
     const first = applyProtocolRegions(wrapped, { protocol: "acp" });
     const second = applyProtocolRegions(first, { protocol: "acp" });
 
@@ -338,7 +338,7 @@ describe("US-004 cross-cutting seam", () => {
   });
 
   test("idempotence: applying twice under native with RunCommand equals applying once", () => {
-    const wrapped = buildIsolationSection("test-writer", "strict", "bun test", "testScoped");
+    const wrapped = buildIsolationSection("implementer", "strict", "bun test", "testScoped");
     const first = applyProtocolRegions(wrapped, {
       protocol: "native",
       advertisedTools: new Set(["RunCommand"]),

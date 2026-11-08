@@ -233,7 +233,7 @@ describe("callOp — CallContext.signal (Task 4: caller-supplied abort signal)",
       name,
       stage: "review",
       config: abortSel,
-      session: { role: "finish-review-spec", lifetime: "fresh" },
+      session: { role: "wf-branch-review", lifetime: "fresh" },
       build: () => ({
         role: { id: "role", content: "You retry.", overridable: false },
         task: { id: "task", content: "go", overridable: false },

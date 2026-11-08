@@ -12,43 +12,21 @@ import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { collectOps, findViolations, REQUIRED_TOOLS_BY_ROLE } from "@scripts/check-op-tool-capability";
 
 describe("REQUIRED_TOOLS_BY_ROLE", () => {
-  test("a verifier must be able to run commands and write its verdict, but never to edit", () => {
-    const required = REQUIRED_TOOLS_BY_ROLE.verifier;
-
-    expect(required).toContain("RunCommand");
-    // Write is required so the mandatory verdict-file write is satisfiable
-    // (nax#2013) — narrowed to that one file by the verifier's toolPatterns.
-    expect(required).toContain("Write");
-    expect(required).not.toContain("Edit");
+  test("US-003 AC-5: the table covers exactly the three live roles", () => {
+    expect(Object.keys(REQUIRED_TOOLS_BY_ROLE).sort()).toEqual(["implementer", "plan", "plan-refine"]);
   });
 
   test("write-capable roles require Write and Edit", () => {
-    for (const role of [
-      "implementer",
-      "test-writer",
-      "source-fix",
-      "test-fix",
-      "repo-scoped-test-fix",
-      "fix-gen",
-      "finish-fix",
-    ]) {
+    for (const role of ["implementer"]) {
       expect(REQUIRED_TOOLS_BY_ROLE[role]).toContain("Write");
       expect(REQUIRED_TOOLS_BY_ROLE[role]).toContain("Edit");
     }
   });
 
   test("fileOutput-shaped roles require Write only — they author one fresh file, never edit an existing one", () => {
-    for (const role of ["plan", "plan-refine", "acceptance-gen"]) {
+    for (const role of ["plan", "plan-refine"]) {
       expect(REQUIRED_TOOLS_BY_ROLE[role]).toContain("Write");
       expect(REQUIRED_TOOLS_BY_ROLE[role]).not.toContain("Edit");
-    }
-  });
-
-  // #1936: a fix role that cannot re-run what it is fixing is the same defect
-  // this gate already blocks for verifier (which requires RunCommand above).
-  test("the fix roles must be able to run commands, same as the verifier", () => {
-    for (const role of ["source-fix", "test-fix"]) {
-      expect(REQUIRED_TOOLS_BY_ROLE[role]).toContain("RunCommand");
     }
   });
 });
@@ -64,15 +42,15 @@ describe("collectOps", () => {
 
   test("collects two distinct ops defined in one module", () => {
     const rows = collectOps({
-      acceptanceFixSourceOp: { kind: "run", name: "acceptance-fix-source", session: { role: "source-fix" } },
-      acceptanceFixTestOp: { kind: "run", name: "acceptance-fix-test", session: { role: "test-fix" } },
+      workflowImplementOp: { kind: "run", name: "workflow-implement", session: { role: "implementer" } },
+      planOpFixture: { kind: "run", name: "plan-fixture", session: { role: "plan" } },
     });
 
-    expect(rows.map((r) => r.name).sort(byCodePoint)).toEqual(["acceptance-fix-source", "acceptance-fix-test"]);
+    expect(rows.map((r) => r.name).sort(byCodePoint)).toEqual(["plan-fixture", "workflow-implement"]);
   });
 
   test("an op with no tools field reports the read-only default, not an empty set", () => {
-    const rows = collectOps({ verifierOp: { kind: "run", name: "verifier", session: { role: "verifier" } } });
+    const rows = collectOps({ implementerOp: { kind: "run", name: "implementer", session: { role: "implementer" } } });
 
     expect(rows[0]?.tools).toEqual(["Read", "Glob", "Grep"]);
   });
@@ -104,7 +82,7 @@ describe("findViolations", () => {
   });
 
   test("a declared op passes", () => {
-    const rows = [{ name: "test-writer", role: "test-writer", tools: ["Read", "Write", "Edit", "RunCommand"] }];
+    const rows = [{ name: "implementer", role: "implementer", tools: ["Read", "Write", "Edit", "RunCommand"] }];
 
     expect(findViolations(rows, [])).toEqual([]);
   });
@@ -115,15 +93,12 @@ describe("findViolations", () => {
     expect(findViolations(rows, [])).toEqual([]);
   });
 
-  // #1936: source-fix / test-fix now require RunCommand alongside Write/Edit —
-  // an op that can edit a file but never re-run it is flagged, same as a
-  // verifier that could write but never run would be.
-  test("a fix-role op missing RunCommand is a violation", () => {
-    const rows = [{ name: "acceptance-fix-source", role: "source-fix", tools: ["Read", "Write", "Edit"] }];
+  test("an implementer op missing Edit is a violation", () => {
+    const rows = [{ name: "workflow-implement", role: "implementer", tools: ["Read", "Write"] }];
 
     const violations = findViolations(rows, []);
 
     expect(violations).toHaveLength(1);
-    expect(violations[0]?.missing).toEqual(["RunCommand"]);
+    expect(violations[0]?.missing).toEqual(["Edit"]);
   });
 });

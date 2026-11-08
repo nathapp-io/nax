@@ -9,7 +9,7 @@ export {
   writeExitSummary,
 } from "./crash-recovery";
 export { ensureStoryPackageDirs } from "./ensure-package-dirs";
-export { calculateMaxIterations, escalateTier, getTierConfig, resolveMaxAttemptsOutcome } from "./escalation";
+export { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 export { buildPreviewRouting } from "./executor-types";
 // US-001 public surface: feature-lock primitive must be importable from the
 // execution barrel (matching `acquireLock` / `_lockDeps` / etc.) so tests and

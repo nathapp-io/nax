@@ -1,6 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { NaxConfigSchema } from "@/config";
-import { McpConfigSchema } from "@/config/schemas-mcp";
+import { _clearRootConfigCache, loadConfig } from "@/config/loader";
+import { McpConfigSchema, McpStageSchema } from "@/config/schemas-mcp";
 
 const server = { command: "codebase-memory-mcp", stages: ["run"] };
 
@@ -96,5 +100,56 @@ describe("McpConfigSchema", () => {
   test("mounts on NaxConfigSchema and defaults to no servers", () => {
     const config = NaxConfigSchema.parse({ name: "x" });
     expect(config.mcp).toEqual({ servers: {} });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-006 AC2 — the stage enum names only the live stages (plus the wildcard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("McpStageSchema — US-006 AC2: the removed stages leave the enum", () => {
+  test("AC2: accepts verify and the wildcard, rejects rectification, regression and acceptance", () => {
+    const values = ["verify", "*", "rectification", "regression", "acceptance"];
+
+    expect(values.map((value) => McpStageSchema.safeParse(value).success)).toEqual([true, true, false, false, false]);
+  });
+
+  test("AC2 boundary: every live stage and the wildcard remain accepted", () => {
+    for (const value of ["plan", "run", "setup", "verify", "review", "complete", "*"]) {
+      expect(McpStageSchema.safeParse(value).success).toBe(true);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-006 AC5 — the loader strips a removed stage before the schema parses
+//
+// The raw schema rejects the removed labels (AC2), so a config that still
+// names one only loads because the loader's removed-stage guard runs BEFORE
+// `NaxConfigSchema.safeParse` (src/config/loader.ts). This test drives the
+// real loader: a guard that were missing, or misplaced after the parse, would
+// make this load throw instead of resolving to the stripped list.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadConfig — US-006 AC5: a server naming a removed stage still loads", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(() => {
+    _clearRootConfigCache();
+    for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
+  });
+
+  test("AC5: resolves to the stripped stage list instead of throwing", async () => {
+    const root = makeTempDir("nax-mcp-removed-stage-");
+    tempDirs.push(root);
+    await mkdir(join(root, ".nax"), { recursive: true });
+    await Bun.write(
+      join(root, ".nax", "config.json"),
+      JSON.stringify({ mcp: { servers: { graph: { command: "g", stages: ["run", "acceptance"] } } } }),
+    );
+
+    const config = await loadConfig(root);
+
+    expect(config.mcp?.servers.graph?.stages).toEqual(["run"]);
   });
 });

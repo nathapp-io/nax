@@ -114,7 +114,7 @@ describe("a story's ladder across three operations", () => {
       agentName: "native",
       role: "implementer",
       workdir: "/w",
-      pipelineStage: "rectification",
+      pipelineStage: "review",
       modelDef: { provider: "unknown", model: MODELS.native.powerful },
       timeoutSeconds: 30,
       storyId: "US-1",
@@ -233,7 +233,7 @@ const sel = pickSelector("ladder-composite-test", "routing");
 
 function makeRunOp(
   name: string,
-  stage: "run" | "rectification",
+  stage: "run" | "review",
 ): RunOperation<string, string, Pick<typeof DEFAULT_CONFIG, "routing">> {
   return {
     kind: "run",
@@ -304,10 +304,10 @@ describe("a story's ladder across two callOp-dispatched operations (nax#1965 rea
     expect(slot?.target).toEqual({ agent: "native", tier: "powerful" });
     expect(slot?.depth).toBe(1);
 
-    // Op 2: a DIFFERENT op (rectification stage) of the SAME story/role. It
+    // Op 2: a DIFFERENT op (review stage) of the SAME story/role. It
     // must dispatch native B because it read the slot op 1 wrote — this test
     // supplies no modelDef for it at all.
-    await callOp(ctx, makeRunOp("autofix-implementer", "rectification"), "fix the failure");
+    await callOp(ctx, makeRunOp("autofix-implementer", "review"), "fix the failure");
 
     // Four hops total: op 1's A (fail) and B (ok); op 2's B (fail, reused
     // handle — no new openSession, but sendTurn still dispatches against it)

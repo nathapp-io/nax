@@ -31,19 +31,21 @@ const STORY: UserStory = {
 // ---------------------------------------------------------------------------
 
 describe("buildIsolationSection", () => {
-  test("strict mode: no MAY read, forbids src/ modification; is pure", () => {
-    const result = buildIsolationSection("strict");
+  // US-004 — the role argument is narrowed to the two live roles; the
+  // implementer arms are the ones that render.
+  test("implementer mode: no MAY read, forbids test-file edits; is pure", () => {
+    const result = buildIsolationSection("implementer");
     expect(result).not.toContain("MAY read");
     expect(result).toMatch(/src\//);
     expect(result.toLowerCase()).toMatch(/do not|forbidden|must not|not modify|no.*src/);
-    expect(buildIsolationSection("strict")).toBe(buildIsolationSection("strict"));
+    expect(buildIsolationSection("implementer")).toBe(buildIsolationSection("implementer"));
   });
 
-  test("lite mode: MAY read src/, allows stubs; is pure", () => {
-    const result = buildIsolationSection("lite");
-    expect(result).toContain("MAY read src/");
-    expect(result.toLowerCase()).toMatch(/stub|create.*src|src.*stub/);
-    expect(buildIsolationSection("lite")).toBe(buildIsolationSection("lite"));
+  test("lite mode: MAY add tests for uncovered ACs; is pure", () => {
+    const result = buildIsolationSection("implementer", "lite");
+    expect(result).toContain("MAY add tests");
+    expect(result).not.toMatch(/do not modify test files/i);
+    expect(buildIsolationSection("implementer", "lite")).toBe(buildIsolationSection("implementer", "lite"));
   });
 });
 

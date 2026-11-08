@@ -24,14 +24,12 @@ const SECTION: PromptSection = { id: "task", content: SECTION_CONTENT, overridab
 type OpInput = Record<string, never>;
 type OpOutput = string;
 
-/** A run-kind implementer/rectification op whose build emits exactly one section. */
-function makeRectificationOp(
-  build: RunOperation<OpInput, OpOutput, unknown>["build"],
-): RunOperation<OpInput, OpOutput, unknown> {
+/** A run-kind fix op whose build emits exactly one section. */
+function makeFixOp(build: RunOperation<OpInput, OpOutput, unknown>["build"]): RunOperation<OpInput, OpOutput, unknown> {
   return {
     name: "rectify",
     kind: "run",
-    stage: "rectification",
+    stage: "review",
     config: ["agent"],
     session: { role: "implementer", lifetime: "fresh" },
     build,
@@ -50,7 +48,7 @@ function makeCtx(): CallContext {
 
 describe("buildDispatchPrologue — prompt assembly", () => {
   test("AC-1: the prompt is the op's sections joined, with no acceptance-execution heading", () => {
-    const out = buildDispatchPrologue(makeCtx(), makeRectificationOp(oneSectionBuild), {});
+    const out = buildDispatchPrologue(makeCtx(), makeFixOp(oneSectionBuild), {});
 
     expect(out.prompt).toBe(join([SECTION]));
     expect(out.prompt).toBe(SECTION_CONTENT);
@@ -60,7 +58,7 @@ describe("buildDispatchPrologue — prompt assembly", () => {
   test("AC-2: a build error escapes as the same Error instance, never a partial prompt", () => {
     const ctx = makeCtx();
     const failure = new Error("build failed");
-    const op = makeRectificationOp(() => {
+    const op = makeFixOp(() => {
       throw failure;
     });
 

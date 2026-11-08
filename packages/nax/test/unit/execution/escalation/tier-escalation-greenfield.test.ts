@@ -1,6 +1,6 @@
 // RE-ARCH: keep
 /**
- * S5: greenfield-no-tests outcome resolution
+ * Tier escalation — the pre-iteration tier budget and the escalation rewrites.
  *
  * Moved from test/integration/context/ — pure logic, no integration surface.
  * Import goes to the leaf module, not runner.ts barrel, to avoid importing
@@ -27,25 +27,12 @@ import {
   type EscalationHandlerContext,
   handleTierEscalation,
   preIterationTierCheck,
-  resolveMaxAttemptsOutcome,
 } from "@/execution/escalation/tier-escalation";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { StoryRouting, UserStory } from "@/prd";
 import { resolveOperatingTier, resolveRouting } from "@/routing";
 import type { NaxRuntime } from "@/runtime";
 import type { DispatchContext } from "@/runtime/dispatch-context";
-
-describe("S5: greenfield-no-tests fallback", () => {
-  describe("resolveMaxAttemptsOutcome for greenfield-no-tests", () => {
-    test("greenfield-no-tests returns pause (requires human review)", () => {
-      expect(resolveMaxAttemptsOutcome("greenfield-no-tests")).toBe("pause");
-    });
-
-    test("greenfield-no-tests pauses only when max attempts exhausted", () => {
-      expect(resolveMaxAttemptsOutcome("greenfield-no-tests")).toBe("pause");
-    });
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Shared scaffolding (#1575 first-iteration + #1710/#1745/#1761 reroute/deps)

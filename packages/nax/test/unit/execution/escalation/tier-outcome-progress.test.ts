@@ -1,7 +1,7 @@
 /**
- * #2554 item 10: paused/failed tier outcomes are status transitions, so they
- * must go through savePrdProgress (write + commit, #2533) rather than a bare
- * savePRD that leaves prd.json dirty.
+ * #2554 item 10: a failed tier outcome is a status transition, so it must go
+ * through savePrdProgress (write + commit, #2533) rather than a bare savePRD
+ * that leaves prd.json dirty.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -39,27 +39,15 @@ describe("tier outcomes commit the PRD status write (#2554)", () => {
     cleanupTempDir(tempDir);
   });
 
-  test("handleNoTierAvailable pause", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    await handleNoTierAvailable(makeCtx(prdPath), "verifier-rejected");
-    expect(calls).toEqual([{ path: prdPath, storyId: "US-001", label: "paused", status: "paused" }]);
-  });
-
   test("handleNoTierAvailable fail", async () => {
     const prdPath = join(tempDir, "prd.json");
-    await handleNoTierAvailable(makeCtx(prdPath), undefined);
+    await handleNoTierAvailable(makeCtx(prdPath));
     expect(calls).toEqual([{ path: prdPath, storyId: "US-001", label: "failed", status: "failed" }]);
-  });
-
-  test("handleMaxAttemptsReached pause", async () => {
-    const prdPath = join(tempDir, "prd.json");
-    await handleMaxAttemptsReached(makeCtx(prdPath), "runtime-crash");
-    expect(calls).toEqual([{ path: prdPath, storyId: "US-001", label: "paused", status: "paused" }]);
   });
 
   test("handleMaxAttemptsReached fail", async () => {
     const prdPath = join(tempDir, "prd.json");
-    await handleMaxAttemptsReached(makeCtx(prdPath), undefined);
+    await handleMaxAttemptsReached(makeCtx(prdPath));
     expect(calls).toEqual([{ path: prdPath, storyId: "US-001", label: "failed", status: "failed" }]);
   });
 });

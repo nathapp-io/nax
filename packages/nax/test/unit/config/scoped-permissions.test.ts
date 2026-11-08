@@ -39,8 +39,13 @@ describe("resolvePermissions — scoped", () => {
     permissions: {
       default: { allowedTools: ["Read", "Glob", "Grep"] },
       run: { allowedTools: ["Read", "Write(src/**,test/**)"] },
+      // An OLD TEMPLATE: a removed stage's block is still a legal config key
+      // (`PermissionsBlockSchema` accepts arbitrary string keys) and a live
+      // block may still inherit from it. The removed name is never passed to
+      // the resolver as a PipelineStage.
       rectification: { inherit: "run" },
-      review: { allowedTools: ["Read", "Git(diff,log)"] },
+      review: { inherit: "rectification" },
+      setup: { allowedTools: ["Read", "Git(diff,log)"] },
     },
   });
 
@@ -56,17 +61,17 @@ describe("resolvePermissions — scoped", () => {
   });
 
   test("follows an inherit chain", () => {
-    const resolved = resolvePermissions(scoped, "rectification");
+    const resolved = resolvePermissions(scoped, "review");
     expect(resolved.toolGrants?.find((g) => g.tool === "Write")?.patterns).toEqual(["src/**", "test/**"]);
   });
 
   test("falls back to the default block for an unlisted stage", () => {
-    const resolved = resolvePermissions(scoped, "acceptance");
+    const resolved = resolvePermissions(scoped, "plan");
     expect((resolved.toolGrants ?? []).map((g) => g.tool).sort()).toEqual(["Glob", "Grep", "Read"]);
   });
 
   test("carries subcommand patterns for a verb-gated tool", () => {
-    const resolved = resolvePermissions(scoped, "review");
+    const resolved = resolvePermissions(scoped, "setup");
     expect(resolved.toolGrants?.find((g) => g.tool === "Git")?.patterns).toEqual(["diff", "log"]);
   });
 

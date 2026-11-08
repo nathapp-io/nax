@@ -1,0 +1,556 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-registries-slim",
+  "branchName": "feat/pipeline-registries-slim",
+  "createdAt": "2026-11-08T00:00:00.000Z",
+  "updatedAt": "2026-11-08T05:12:43.205Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Remove the dead failure categories and the tier-outcome pause path",
+      "description": "**Goal** — Remove ten dead FailureCategory members and make both exhausted-tier handlers retain only their existing failure path.\n\n**Motivation** — Both callers of `handleNoTierAvailable` and `handleMaxAttemptsReached` (`execution/escalation/tier-escalation.ts:334`, `:350`) pass no category, so `resolveMaxAttemptsOutcome` (`escalation/max-attempts-outcome.ts`) always returns `\"fail\"` and both handlers' pause branches (`tier-outcome.ts:36-67`, `:106-137`) never run.\n\n**Approach** — Part 1: failure categories and the tier-outcome pause path (US-001)\n\n| Site | After |\n|:---|:---|\n| `execution/types.ts:10-50` `FailureCategory` | `\"dependency-prep\"` only, with its doc comment; the other ten members and the `isolation-violation` \"dormant, not dead\" comment go |\n| `execution/escalation/max-attempts-outcome.ts` | deleted; `resolveMaxAttemptsOutcome` leaves `escalation/tier-escalation.ts:66`, `escalation/index.ts:14`, `execution/index.ts:12` and `execution/runner.ts:59` |\n| `escalation/tier-outcome.ts:29-32`, `:99-102` | `handleNoTierAvailable(ctx)` and `handleMaxAttemptsReached(ctx)` lose the `failureCategory` parameter |\n| `tier-outcome.ts:34-67`, `:104-137` | the `outcome` lookup and the pause branch go; each handler always marks the story failed, saves with `\"failed\"`, logs, appends progress and emits `story:failed` exactly as its fail branch does today, and passes `undefined` as the category to `markStoryFailed`; the `failureCategory` log field goes |\n| `tier-outcome.ts:10`, `:17` | the `FailureCategory`, `markStoryPaused` and `verifyEscalationQuotes` imports go when nothing else in the file uses them |\n| `prd/index.ts:311-335` `markStoryFailed` | unchanged: its optional `failureCategory?: FailureCategory` now admits only `\"dependency-prep\"`, which `iteration-runner.ts:160` still passes |\n\n`prd.json` loading does not validate `failureCategory` (`prd/schema*.ts` has no rule for it), so a PRD saved by an older run with, for example, `\"failureCategory\": \"verifier-rejected\"` still loads and keeps the string.\n\n**Interface** — `handleNoTierAvailable(ctx)` and `handleMaxAttemptsReached(ctx)` lose the `failureCategory` parameter. Keep their EscalationHandlerResult contract and the optional `failureCategory?: FailureCategory` on `markStoryFailed`. Do not clear a previously recorded category as an incidental change; absence pins use a story with no existing category.\n\n**Scope** — In: the registry, deleted resolver module/re-exports, both handlers, their affected fixtures/tests, unused imports and associated ratchet reductions. Out: post-run/metrics (US-002), session roles (US-003), prompt roles (US-004), config guard/stages (US-005/US-006). Keep dependency-prep, markStoryFailed's optional category, UserStory.failureCategory and WorktreeDependencyPreparationError.failureCategory.\n- Out: Removing the `dependency-prep` failure category, the `failureCategory` parameter of `markStoryFailed`, or `UserStory.failureCategory`: `iteration-runner.ts:160` still writes it.\n- Out: Removing the `failureCategory` field of `WorktreeDependencyPreparationError` (`worktree/types.ts:22`), which nothing reads: it belongs to issue #2823 (declarations unreachable for reasons other than the pipeline).\n\n**Implementation and test updates** — In test/unit/execution/escalation/tier-outcome.test.ts delete the two pause-reason persistence describes and the cost source on story:paused describe; delete both paused-progress tests and the fallback-totalCost story:paused test. Rename both fail-category tests to `marks the story failed (not paused)` and remove category arguments from every retained call. In tier-outcome-progress.test.ts delete the two pause tests and drop undefined arguments from the fail tests. In test/unit/execution/story-failure-spend.test.ts drop all three handler category arguments; convert `story:paused reports total spend too` to `story:failed reports total spend for a story with no tier left` asserting the same spend on story:failed, and remove its resolver comment. Delete resolver-only describes/imports from tier-escalation.test.ts, tier-escalation-greenfield.test.ts and test/integration/execution/runner-escalation.test.ts; keep the greenfield file's #1575, #1710, #1745 and #1761 describes. Other integration tests passing removed categories are deleted. In test/unit/prd/prd-failure-category.test.ts use dependency-prep for retained writer tests; remove member-only enumeration tests and retain absence, unknown-story and passed-to-failed-reset behavior. Extend those existing tests with the loadPRD historical-input pin, without registry validation or casts that restore removed members. Both handlers always return outcome failed; retain reason strings, progress, savePrdProgress and total/error spend semantics.\n\n**Verification** — Run these steps in `packages/nax` under the session's gate policy.\n1. `bun run typecheck`. A removed union member, field, parameter or export that is still referenced fails here.\n2. A string sweep. For each registry value the story removes, `rg -n --fixed-strings '\"<value>\"' src bin scripts`, and for each function, constant, type and file it removes, `rg -n -w '<name>' src bin test scripts`. Expected: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Line numbers in Design and `### Modifies` are at `dfcbc053a`; a story that runs after another story edited the same file locates each site by its symbol or test name. Sweep values: `\"isolation-violation\"`, `\"session-failure\"`, `\"tests-failing\"`, `\"test-incorrect\"`, `\"full-suite-gate-exhausted\"`, `\"verifier-rejected\"`, `\"greenfield-no-tests\"`, `\"no-tests-authored\"`, `\"review-incomplete\"`, `\"runtime-crash\"`; names `resolveMaxAttemptsOutcome`, `max-attempts-outcome`. Expected remaining hits: none in `src`, `bin` or `scripts` (the `\"runtime-crash\"` strings in `packages/nax-agent` are the separate `AdapterFailure` registry and are outside the swept paths). Delete resolver references in tests as well; deliberate historical category test inputs stay.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. Regenerate scripts/baselines/complexity-baseline.json and lower scripts/baselines/test-escape-hatches-baseline.json for deleted/shrunk code only. AC4 and AC5 are retention pins that may pass before removal.",
+      "acceptanceCriteria": [
+        "[unit; spec AC1] handleMaxAttemptsReached(ctx) for a story at status in-progress returns outcome: \"failed\".",
+        "[unit; spec AC1] handleMaxAttemptsReached(ctx) for a story at status in-progress saves the PRD through _tierOutcomeDeps.savePrdProgress with status \"failed\".",
+        "[unit; spec AC1] The story in the PRD returned by handleMaxAttemptsReached(ctx) has status \"failed\" when its initial status is in-progress.",
+        "[unit; spec AC1] The initially uncategorized story in the PRD returned by handleMaxAttemptsReached(ctx) has no failureCategory property.",
+        "[unit; spec AC2] handleMaxAttemptsReached(ctx) emits exactly one story:failed event with reason: \"Max attempts reached\" on pipelineEventBus.",
+        "[unit; spec AC2] handleMaxAttemptsReached(ctx) emits no story:paused event on pipelineEventBus.",
+        "[unit; spec AC3] handleNoTierAvailable(ctx) returns outcome: \"failed\".",
+        "[unit; spec AC3] handleNoTierAvailable(ctx) emits exactly one story:failed event with reason: \"Execution failed\" on pipelineEventBus.",
+        "[unit; spec AC3] handleNoTierAvailable(ctx) emits no story:paused event on pipelineEventBus.",
+        "[unit; spec AC4] markStoryFailed(prd, \"US-001\", \"dependency-prep\", \"worktree-dependencies\") leaves story US-001 with failureCategory === \"dependency-prep\".",
+        "[unit; spec AC4] markStoryFailed(prd, \"US-001\", \"dependency-prep\", \"worktree-dependencies\") leaves story US-001 with failureStage === \"worktree-dependencies\".",
+        "[unit; spec AC5; historical-artifact failure handling] loadPRD on a prd.json whose story carries \"failureCategory\": \"verifier-rejected\" resolves with that story's failureCategory equal to the string \"verifier-rejected\"."
+      ],
+      "tags": [
+        "refactor",
+        "execution",
+        "compatibility"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Both callers already take the retained fail branches; removing the unused resolver, parameter and barrel exports is a bounded mechanical refactor with existing persistence/event test seams, not a new execution integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/escalation/tier-outcome.ts",
+        "packages/nax/src/execution/escalation/max-attempts-outcome.ts",
+        "packages/nax/src/execution/types.ts",
+        "packages/nax/src/prd/index.ts",
+        "packages/nax/test/unit/execution/escalation/tier-outcome.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/escalation/tier-outcome.test.ts",
+          "reason": "the `handleNoTierAvailable — pause-reason persistence (nax#1582)`, `handleMaxAttemptsReached — pause-reason persistence (nax#1582)` and `handleNoTierAvailable — cost source on story:paused` describes test the removed pause path and are deleted; in the two `fail outcome and progress logging` describes, the tests `appends a paused progress entry when featureDir is set` (both describes) and `emits a story:paused event carrying the fallback totalCost when no runtime is threaded` are deleted, and the two tests titled `marks the story failed (not paused) when the failure category maps to 'fail'` are renamed `marks the story failed (not paused)`; every remaining call drops its category argument. Invariant: both handlers always return `outcome: \"failed\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/escalation/tier-outcome-progress.test.ts",
+          "reason": "the `handleNoTierAvailable pause` and `handleMaxAttemptsReached pause` tests are deleted; the two fail tests drop their `undefined` argument."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/story-failure-spend.test.ts",
+          "reason": "the three handler calls drop their category argument; the test `story:paused reports total spend too` (which passed `\"verifier-rejected\"` to `handleNoTierAvailable`) becomes `story:failed reports total spend for a story with no tier left` and asserts the same spend on `story:failed`, and the comment about `resolveMaxAttemptsOutcome` goes."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/escalation/tier-escalation.test.ts",
+          "reason": "the `resolveMaxAttemptsOutcome — runtime-crash category` describe and its import are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/escalation/tier-escalation-greenfield.test.ts",
+          "reason": "the `resolveMaxAttemptsOutcome for greenfield-no-tests` describe and its import are deleted; the describes tagged #1575, #1710, #1745 and #1761 stay."
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-escalation.test.ts",
+          "reason": "the `resolveMaxAttemptsOutcome` describe (T6) and its import are deleted, and any other test that passes a removed category is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/prd/prd-failure-category.test.ts",
+          "reason": "tests that call `markStoryFailed` with a removed category, or iterate the removed members, use `\"dependency-prep\"` instead or are deleted when they only enumerate members; the tests of absence, unknown story and passed-to-failed reset stay. Invariant: `markStoryFailed` writes the category it is given and leaves it unset when given none."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3 for the functions this story deletes or shrinks."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the escape hatches the deleted tests carried."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "dfcbc053a775a9110a7b3f3fa0d84bf5fd64c776"
+    },
+    {
+      "id": "US-002",
+      "title": "Remove the dead post-run phases and metrics sources",
+      "description": "**Goal** — Narrow post-run event/TUI state to review and metrics/curator source handling to the two produced source values.\n\n**Motivation** — The TUI keeps state and rows for `acceptance`, `acceptance-setup`, `regression` and `finish` (`tui/hooks/usePipelineBusEvents.ts:70-75`, `tui/components/StoriesPanel.tsx:184-191`, `tui/App.tsx:115-122`) that are never set.\n\n**Approach** — Part 2: post-run phases and metrics sources (US-002)\n\n| Site | After |\n|:---|:---|\n| `pipeline/event-bus/index.ts:204` `PostRunPhase` | `\"review\"` |\n| `tui/hooks/usePipelineBusEvents.ts:69-75` `postRunPhases` | `{ review?: PostRunPhaseState }`, its doc comment says \"Post-run phase status (review)\"; the two `postrun:phase:*` handlers (`:245-261`) are unchanged |\n| `tui/components/StoriesPanel.tsx:23-28` `StoriesPanelProps.postRunPhases` | `{ review?: PostRunPhaseState }`, with its comment trimmed to match |\n| `tui/components/StoriesPanel.tsx:184-192` | the section renders when `postRunPhases.review` is set and holds only the review row; the acceptance and regression rows go |\n| `tui/App.tsx:115-122` `runningPostRunPhase` | `\"post-run: review\"` when the review phase is running, else `undefined` |\n| `metrics/types.ts:169-170` `StoryMetrics.source` | `\"completion-phase\" | \"execution-failed\"`, with the doc comment trimmed to those two |\n| `metrics/types.ts:182-183` `rectificationCost` | deleted with its doc comment |\n| `plugins/builtin/curator/collect.ts:48-58` `verdictSource` | returns `\"completion-phase\"` or `\"execution-failed\"` when the row carries one, else `\"execution\"` |\n| `plugins/builtin/curator/types.ts:181` `VerdictObservation.payload.source` | `\"execution\" | \"completion-phase\" | \"execution-failed\"` |\n\nAn older `metrics.json` row whose `source` is `parallel`, `sequential` or `rectification` now reaches the curator as `\"execution\"`, the existing fallback for an unknown value.\n\n**Interface** — `PostRunPhase` is `\"review\"`; post-run state is `{ review?: PostRunPhaseState }`; `StoryMetrics.source` is `\"completion-phase\" | \"execution-failed\"`; `VerdictObservation.payload.source` is `\"execution\" | \"completion-phase\" | \"execution-failed\"`. Preserve event handler and artifact-reader entry points.\n\n**Scope** — In: the post-run registry, hook/props/App presentation, metrics field deletion and curator normalization/types, affected tests and ratchet reductions. Out: failure categories (US-001), session registry (US-003), prompt roles (US-004), permission/MCP guards and stages (US-005/US-006). Keep status.json post-run state, PRE_RUN_STAGES, pre-run rows, rules stages, plugin PhaseDetails/RunPhaseDetails and historical failingTestFiles. Do not rewrite or reject old metrics rows.\n- Out: Removing the status-file post-run state (`StatusWriter.setPostRunPhase`, `AcceptancePhaseStatus`, `RegressionPhaseStatus`, `FinishPhaseStatus`, `PostRunStatus` in `execution/status-file.ts`, and the `nax status` post-run display in `cli/status-features-details.ts`): it is a persisted `status.json` section with its own readers, separate from the event-bus `PostRunPhase` registry.\n- Out: Removing `PRE_RUN_STAGES` (`tui/hooks/usePipelineEvents.ts:22`, `\"acceptance-setup\"`) and the pre-run phase rows it drives: it reads the pipeline-event stage names, a registry separate from `PostRunPhase`.\n- Out: Removing the `PhaseDetails` variants (`plugins/extensions.ts:382-390`) or the `RunPhaseDetails` variants (`:397-402`) that no producer constructs: `story:phase:completed` has no emitter at all and only one `RunPhaseDetails` shape is produced, so trimming them is a plugin-API decision about the whole event payload family, not a registry member.\n\n**Implementation and test updates** — Update test/ui/StoriesPanel.test.tsx fixtures to review and delete acceptance/regression-row assertions. Delete acceptance-setup phase tests in test/ui/usePipelineBusEvents.test.tsx; other removed post-run phase fixtures use review and pin running-to-failed state. In test/unit/pipeline/event-bus.test.ts change postrun started/completed fixtures to review; the bus still delivers the phase supplied. In test/unit/pipeline/subscribers/reporters.test.ts emit review and update expected phase fields. Extend packages/nax/test/unit/plugins/builtin/curator-collector-metrics.test.ts for completion-phase preservation and historical rectification fallback through collectObservations; use matching runId artifacts, not private-function or source-content checks. Keep non-compact review row/empty heading behavior. Reword the LiveActivityPanel post-run example only.\n\n**Verification** — Run these steps in `packages/nax` under the session's gate policy.\n1. `bun run typecheck`. A removed union member, field, parameter or export that is still referenced fails here.\n2. A string sweep. For each registry value the story removes, `rg -n --fixed-strings '\"<value>\"' src bin scripts`, and for each function, constant, type and file it removes, `rg -n -w '<name>' src bin test scripts`. Expected: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Line numbers in Design and `### Modifies` are at `dfcbc053a`; a story that runs after another story edited the same file locates each site by its symbol or test name. Sweep values: `\"acceptance-setup\"`, `\"parallel\"`, `\"sequential\"`; names `rectificationCost`. Expected remaining hits for `\"acceptance-setup\"`: `context/rules/rules-frontmatter.ts` (rules stage, Out of Scope), `tui/hooks/usePipelineEvents.ts:22` (`PRE_RUN_STAGES`, Out of Scope), and the pre-run-row comments at `tui/components/StoriesPanel.tsx:21` and `tui/components/LiveActivityPanel.tsx:31`. Known comment hit to reword: the `\"post-run: acceptance\"` example in the `LiveActivityPanel.tsx:31` comment becomes `\"post-run: review\"`; its pre-run half stays. For `\"parallel\"` and `\"sequential\"`: any hit outside `metrics/` and `plugins/builtin/curator/` is a different vocabulary (run mode, plan strategy) and is listed, not changed. The values `\"regression\"`, `\"acceptance\"` and `\"finish\"` are swept by reading the hits in the files this story edits only, because other registries keep those strings. rectificationCost has no remaining references.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. Regenerate scripts/baselines/complexity-baseline.json and lower scripts/baselines/test-escape-hatches-baseline.json for deleted/shrunk code only. AC1 to AC4 retain existing live behavior. AC5 pins the required compatibility fallback after the dead explicit source arms are removed; it need not pass before the change, because collect.ts currently returns rectification explicitly. Keep the normalized observation source separate from the unchanged recorded metrics source.",
+      "acceptanceCriteria": [
+        "[unit; spec AC1] With usePipelineBusEvents mounted, emitting { type: \"postrun:phase:started\", phase: \"review\" } sets postRunPhases.review to { status: \"running\" }.",
+        "[unit; spec AC1] With usePipelineBusEvents mounted after review has started, emitting { type: \"postrun:phase:completed\", phase: \"review\", passed: false } sets postRunPhases.review to { status: \"failed\" }.",
+        "[unit; spec AC2] StoriesPanel rendered non-compact with postRunPhases: { review: { status: \"passed\" } } shows a \"Post-Run\" heading followed by one row labelled review.",
+        "[unit; spec AC3] StoriesPanel rendered with postRunPhases: {} shows no \"Post-Run\" heading.",
+        "[unit; spec AC4] collectObservations over a run whose metrics.json story row carries source: \"completion-phase\" yields a verdict observation whose payload.source is \"completion-phase\".",
+        "[unit; spec AC5; historical-artifact failure handling] collectObservations over a run whose metrics.json story row carries source: \"rectification\" yields a verdict observation whose payload.source is \"execution\"."
+      ],
+      "tags": [
+        "refactor",
+        "tui",
+        "metrics",
+        "compatibility"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Existing generic bus handlers and curator fallback remain in place; narrowing their registries, React state/rows and source whitelist follows established patterns with no new abstraction or asynchronous coordination.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/pipeline/event-bus/index.ts",
+        "packages/nax/src/tui/hooks/usePipelineBusEvents.ts",
+        "packages/nax/src/tui/components/StoriesPanel.tsx",
+        "packages/nax/src/metrics/types.ts",
+        "packages/nax/src/plugins/builtin/curator/collect.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/StoriesPanel.test.tsx",
+          "reason": "the fixture's `postRunPhases` drops `acceptance` and `regression` and sets `review`; assertions on the acceptance and regression rows are deleted."
+        },
+        {
+          "path": "packages/nax/test/ui/usePipelineBusEvents.test.tsx",
+          "reason": "the `acceptance-setup` phase tests are deleted; any other test emitting a removed phase emits `\"review\"` instead."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/event-bus.test.ts",
+          "reason": "the `postrun:phase:started` / `:completed` tests emit `\"review\"` instead of `\"acceptance-setup\"` and `\"acceptance\"`. Invariant: the bus delivers the phase it was given."
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/subscribers/reporters.test.ts",
+          "reason": "the post-run reporter tests emit `\"review\"` instead of `\"acceptance\"` and `\"regression\"`, and their expected `phase` fields follow."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3 for the functions this story shrinks."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the escape hatches the deleted tests carried."
+        },
+        {
+          "path": "packages/nax/test/unit/plugins/builtin/curator-collector-metrics.test.ts",
+          "reason": "gains the US-002 AC4 and AC5 `collectObservations` tests (a `completion-phase` row keeps its source; a historical `rectification` row reports `execution`); its existing tests stay."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "72679ff320930f535f756b231b1346e4b7b87c0b"
+    },
+    {
+      "id": "US-003",
+      "title": "Remove the dead session roles",
+      "description": "**Goal** — Remove fourteen dead canonical session roles and their reviewer-guard/tool-capability entries while retaining old artifact readability.\n\n**Motivation** — `REVIEWER_SESSION_ROLES` (`review/reviewer-guard/guard.ts:14-22`) and `REQUIRED_TOOLS_BY_ROLE` (`scripts/check-op-tool-capability.ts:46-73`) are typed as plain strings, so their dead entries are not even compile-checked.\n\n**Approach** — Part 3: session roles (US-003)\n\n| Site | After |\n|:---|:---|\n| `runtime/session-role.ts:14-86` | the union and `KNOWN_SESSION_ROLES` drop the 14 roles in Motivation; the remaining 16, in this order: `main`, `implementer`, `reviewer-semantic`, `reviewer-adversarial`, `reviewer-fix`, `plan`, `plan-refine`, `auto`, `setup`, `advisor`, `wf-implementer`, `wf-story-review`, `wf-rereview`, `wf-branch-review`, `wf-branch-fix`, `wf-repair` |\n| `review/reviewer-guard/guard.ts:14-22` `REVIEWER_SESSION_ROLES` | drops `finish-review-spec` and `finish-review-quality` |\n| `scripts/check-op-tool-capability.ts:46-73` `REQUIRED_TOOLS_BY_ROLE` | keeps `implementer`, `plan`, `plan-refine`; drops `test-writer`, `source-fix`, `test-fix`, `repo-scoped-test-fix`, `fix-gen`, `finish-fix`, `verifier`, `acceptance-gen`, with the comments that describe only them (the #1936 note, the verifier doc block, and the doc line \"`verifier` never edits\"); both occurrences of \"three roles\" in the comments (\"the three roles below\", \"These three roles never edit\") become \"these roles\" |\n\n`reviewer-semantic`, `reviewer-adversarial` and `reviewer-fix` also have no producer, but they stay in this wave: `runtime/middleware/review-audit.ts:11-17` maps exactly those three to the review audit's reviewer kind, and no workflow role maps to it, so deleting them decides whether workflow reviewers are audited. That decision is Out of Scope. `deriveSessionRole` (`runtime/usage-auditor.ts:81-86`) matches a session name's trailing role over `KNOWN_SESSION_ROLES`; live session names never end in a removed role, and rows already written keep the `sessionRole` they recorded. `knownSessionRole` (`runtime/session-role.ts:99`) returns `undefined` for a removed role, as for any unknown string. When a resumed ACP session header names such a role, the caller at `agents/manager.ts:507` falls back to the caller's role or `\"main\"`; that existing fallback belongs to the manager, not to `knownSessionRole` itself.\n\n**Interface** — Remove precisely `test-writer`, `verifier`, `diagnose`, `source-fix`, `test-fix`, `repo-scoped-test-fix`, `acceptance-gen`, `refine`, `fix-gen`, `finish-review-spec`, `finish-review-quality`, `finish-fix`, `nbf-worth-check` and `decompose` from CanonicalSessionRole and KNOWN_SESSION_ROLES. Keep the existing isSessionRole, knownSessionRole, deriveSessionRole, ReviewerTreeGuard and queryCostLedger entry points. `knownSessionRole` itself returns undefined for an unknown role; the caller at agents/manager.ts supplies the caller-role/main fallback.\n\n**Scope** — In: the canonical role registry, two removed guard memberships, eight removed capability rows, stale role comments and affected fixtures/ratchets. Out: FailureCategory and outcomes (US-001), PostRunPhase/metrics (US-002), prompt guardrail/isolation roles (US-004), permission/MCP stages (US-005/US-006). Keep reviewer-semantic/adversarial/fix audit mappings, config override/session-tier/CLI vocabularies, scratch readers, plugin payload families and old ledger/audit/token rows. Do not broaden or redesign tool policies or reviewer auditing.\n- Out: Removing the session roles `reviewer-semantic`, `reviewer-adversarial` and `reviewer-fix`, or changing `reviewerFromRole` in `runtime/middleware/review-audit.ts`: no workflow role reaches the review audit's dispatch recording today, and whether it should is a follow-up decision, not a deletion.\n- Out: Removing the scratch kinds `tdd-session` and `self-verification` or their role fields in `session/scratch-writer.ts`: their readers (`context/engine/providers/session-scratch.ts`, `context/engine/handlers/query-scratch.ts`) render entries persisted by older runs, the same reason B3a kept `StoryMetrics.failingTestFiles`.\n- Out: Removing `prompts.overrides` roles, `PROMPT_OVERRIDE_ROLES`, `tdd.sessionTiers.testWriter` / `.verifier`, or the role lists in `cli/config-display.ts`: they are config keys, wave B3c.\n- Out: Removing `STAGE_CONTEXT_MAP` keys in `context/engine/stage-config.ts`, `EXTRA_KNOWN_STAGES` or any other rules-frontmatter stage name: deferred by user ruling to issue #2830, which first establishes how workflow sessions see rule stages.\n\n**Implementation and test updates** — In test/unit/runtime/session-role.test.ts delete/flip positive assertions for removed roles and pin the ordered sixteen-element list. In test/unit/review/reviewer-guard/guard.test.ts retitle the seven-role closed-world test as `the role set is the five reviewer roles`, asserting reviewer-semantic, reviewer-adversarial, wf-story-review, wf-rereview, wf-branch-review; drive former finish-review beforeTurn/afterTurn and concurrency cases with wf-branch-review/wf-story-review. SessionDescriptor.role is typed as SessionRole (src/session/types.ts:69-73), not an opaque string. For the intentional old-role negative pin, construct the normal descriptor with the existing desc helper, then use Object.assign on that test fixture to inject the historical runtime role before calling beforeTurn. This follows the cast-free fixture technique documented in .nax/rules/test-ratchets.md; do not widen the production descriptor, restore a removed role, add a helper or introduce a cast/suppression. The opaque string boundary is SessionHandle.role, not SessionDescriptor.role. In test/unit/scripts/check-op-tool-capability.test.ts delete verifier/fix-role requirement tests, iterate implementer only for Write/Edit and plan/plan-refine for Write-only. Replace `a fix-role op missing RunCommand is a violation` with `an implementer op missing Edit is a violation`: role implementer, tools [Read, Write], missing [Edit]. Other removed fixture roles become implementer/plan where expectations still hold, otherwise delete them. A table role missing a tool remains a violation and an absent role remains unconstrained. Update usage-auditor.test.ts to live wf-branch-fix/wf-repair suffix fixtures, retaining the longest-suffix rule. Replace removed sessionRole fixtures with live roles in runtime/middleware/cost.test.ts, agents/manager-dispatch-error-event.test.ts, operations/call-root-collapse.test.ts, session/manager.test.ts, session/manager-phase-b-prompt.test.ts, plugins/builtin/otel-span-tree.test.ts and runtime/in-flight-usage.test.ts. In test/integration/tdd/audit-naming.test.ts use implementer/wf-implementer; in test/integration/acceptance/audit-naming.test.ts use a live role; delete tests existing only to name a removed role. Pin queryCostLedger's historical string grouping in packages/nax/test/unit/cli/cost-ledger-query.test.ts using an otherwise valid ledger row with a finite ts; parseRow at src/cli/cost-ledger-query.ts:272-284 requires that timestamp independently of the role. Do not make role-only malformed rows countable or add reader enum validation.\n\n**Verification** — Run these steps in `packages/nax` under the session's gate policy.\n1. `bun run typecheck`. A removed union member, field, parameter or export that is still referenced fails here.\n2. A string sweep. For each registry value the story removes, `rg -n --fixed-strings '\"<value>\"' src bin scripts`, and for each function, constant, type and file it removes, `rg -n -w '<name>' src bin test scripts`. Expected: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Line numbers in Design and `### Modifies` are at `dfcbc053a`; a story that runs after another story edited the same file locates each site by its symbol or test name. Sweep values: `\"diagnose\"`, `\"source-fix\"`, `\"test-fix\"`, `\"repo-scoped-test-fix\"`, `\"acceptance-gen\"`, `\"fix-gen\"`, `\"finish-review-spec\"`, `\"finish-review-quality\"`, `\"finish-fix\"`, `\"nbf-worth-check\"` (expected remaining hits: none), and `\"test-writer\"`, `\"verifier\"`, `\"refine\"`, `\"decompose\"`. Expected remaining hits for `\"test-writer\"` and `\"verifier\"`: `prompts/sections/behavioral-guardrails.ts` and `prompts/sections/isolation.ts` (US-004), `config/runtime-types.ts`, `config/schemas-infra.ts`, `cli/config-display.ts` and `precheck/checks-model-resolution-walk.ts` (B3c config keys), `session/scratch-writer.ts` and `plugins/extensions.ts` (Out of Scope). For `\"refine\"`: the plan mode in `cli/plan-command.ts`, `config/runtime-types.ts`, `config/schemas-infra.ts`, `plan/strategies/factory.ts`, `plan/strategies/refine.ts`, `plan/strategies/types.ts`. For `\"decompose\"`: the op and stage tags in `agents/shared/decompose.ts`, `agents/shared/types-extended.ts`, `cli/plan-decompose.ts`, `config/selectors.ts`, `context/rules/rules-frontmatter.ts`, `operations/decompose.ts`, `plugins/validator.ts`. Known comment hits to reword: `agents/types.ts:135` and `agents/shared/types-extended.ts:52` (\"Session role for TDD isolation\"), `pipeline/event-bus/index.ts:183`, `tui/hooks/usePipelineBusEvents.ts:65`, `tui/components/LiveActivityPanel.tsx:23`, `runtime/usage-auditor.ts:75-77`, `runtime/cost-aggregator.ts:43`, `execution/run-cost-reconcile.ts:9`. US-004 is independent: its prompt hits may already be absent. No exported function/type/file is deleted wholesale in this story; sweep any symbols actually removed.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. Regenerate scripts/baselines/complexity-baseline.json and lower scripts/baselines/test-escape-hatches-baseline.json for deleted/shrunk code only. AC1/AC5 are runtime registry-content pins, AC2/AC4/AC6/AC7 exercise old-input boundaries, and AC3/AC7 retain existing behavior; none is a file-content check.",
+      "acceptanceCriteria": [
+        "[unit; spec AC1] KNOWN_SESSION_ROLES equals, in order, [\"main\", \"implementer\", \"reviewer-semantic\", \"reviewer-adversarial\", \"reviewer-fix\", \"plan\", \"plan-refine\", \"auto\", \"setup\", \"advisor\", \"wf-implementer\", \"wf-story-review\", \"wf-rereview\", \"wf-branch-review\", \"wf-branch-fix\", \"wf-repair\"].",
+        "[unit; spec AC2] knownSessionRole(\"test-writer\") returns undefined.",
+        "[unit; spec AC3] ReviewerTreeGuard.beforeTurn with a descriptor whose role is \"wf-branch-review\" calls the stubbed _reviewerGuardDeps.take once.",
+        "[unit; spec AC4] ReviewerTreeGuard.beforeTurn with a descriptor whose role is \"finish-review-spec\" does not call the stubbed _reviewerGuardDeps.take.",
+        "[unit; spec AC5] The keys of REQUIRED_TOOLS_BY_ROLE exported by scripts/check-op-tool-capability.ts are exactly implementer, plan and plan-refine.",
+        "[unit; spec AC6] deriveSessionRole(\"nax-1a2b-feat-us-001-repo-scoped-test-fix\") returns undefined.",
+        "[unit; spec AC6] deriveSessionRole(\"nax-1a2b-feat-wf-branch-fix\") returns \"wf-branch-fix\".",
+        "[unit; spec AC7; historical-artifact failure handling] queryCostLedger over a ledger file holding one otherwise valid row, including finite ts: 1, sessionRole: \"test-writer\" and costUsd: 0.5, with groupBy: [\"role\"], reports skippedRows: 0.",
+        "[unit; spec AC7; historical-artifact failure handling] queryCostLedger over a ledger file holding one otherwise valid row, including finite ts: 1, sessionRole: \"test-writer\" and costUsd: 0.5, with groupBy: [\"role\"], reports one group for role test-writer costing 0.5."
+      ],
+      "tags": [
+        "refactor",
+        "sessions",
+        "security",
+        "compatibility"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing role tables lose entries and the suffix algorithm remains unchanged; fixture breadth is mechanical, but session roles, reviewer checks and tool capability policy require the strict security strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/session-role.ts",
+        "packages/nax/src/review/reviewer-guard/guard.ts",
+        "packages/nax/scripts/check-op-tool-capability.ts",
+        "packages/nax/src/runtime/usage-auditor.ts",
+        "packages/nax/src/cli/cost-ledger-query.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/runtime/session-role.test.ts",
+          "reason": "tests that assert a removed role is known are deleted or flipped to assert `isSessionRole` returns false for it."
+        },
+        {
+          "path": "packages/nax/test/unit/review/reviewer-guard/guard.test.ts",
+          "reason": "the closed-world test `the role set is the seven reviewer roles` asserts the five remaining roles (`reviewer-semantic`, `reviewer-adversarial`, `wf-story-review`, `wf-rereview`, `wf-branch-review`) and is retitled `the role set is the five reviewer roles`; tests that drive `beforeTurn` or `afterTurn` with `finish-review-spec` or `finish-review-quality`, including the concurrency test, use `wf-branch-review` and `wf-story-review` instead."
+        },
+        {
+          "path": "packages/nax/test/unit/scripts/check-op-tool-capability.test.ts",
+          "reason": "in the `REQUIRED_TOOLS_BY_ROLE` describe, the tests `a verifier must be able to run commands and write its verdict, but never to edit` and `the fix roles must be able to run commands, same as the verifier` are deleted, `write-capable roles require Write and Edit` iterates only `implementer`, and the `fileOutput-shaped roles require Write only` test iterates only `plan` and `plan-refine`; the test `a fix-role op missing RunCommand is a violation` becomes `an implementer op missing Edit is a violation` (row role `implementer`, tools `[\"Read\", \"Write\"]`, expected `missing` `[\"Edit\"]`); any other fixture row whose role is removed uses `implementer` or `plan` where its expectation still holds and is deleted where it does not. Invariant: a role in the table with a missing tool is a violation; a role absent from the table is unconstrained."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/usage-auditor.test.ts",
+          "reason": "tests that derive a removed role from a session name derive a live role instead (`wf-branch-fix`, `wf-repair`); a test of the longest-suffix rule keeps that rule with live roles."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/middleware/cost.test.ts",
+          "reason": "dispatch fixtures with a removed `sessionRole` use `wf-implementer` or `implementer`."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/manager-dispatch-error-event.test.ts",
+          "reason": "dispatch fixtures with a removed `sessionRole` use a live role."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/call-root-collapse.test.ts",
+          "reason": "op fixtures with a removed session role use a live role."
+        },
+        {
+          "path": "packages/nax/test/unit/session/manager.test.ts",
+          "reason": "session-create fixtures with a removed role use `implementer`."
+        },
+        {
+          "path": "packages/nax/test/unit/session/manager-phase-b-prompt.test.ts",
+          "reason": "session-create fixtures with a removed role use `implementer`."
+        },
+        {
+          "path": "packages/nax/test/integration/tdd/audit-naming.test.ts",
+          "reason": "fixtures with the removed `test-writer` / `verifier` roles use `implementer` and `wf-implementer`; a test that exists only to name a removed role is deleted."
+        },
+        {
+          "path": "packages/nax/test/integration/acceptance/audit-naming.test.ts",
+          "reason": "fixtures with the removed `acceptance-gen` role use a live role; a test that exists only to name the removed role is deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/plugins/builtin/otel-span-tree.test.ts",
+          "reason": "a fixture using the removed `source-fix` role as a session role uses a live role."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/in-flight-usage.test.ts",
+          "reason": "a fixture using the removed `acceptance-gen` role uses a live role."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3 for the functions this story shrinks."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the escape hatches the deleted tests carried."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/cost-ledger-query.test.ts",
+          "reason": "gains the US-003 AC7 test: a historical row whose `sessionRole` is the removed `test-writer` role still parses and groups under that role; its existing tests stay."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bddfa690ff2cd28bf12a7f7fc82f8858fb8d0c51"
+    },
+    {
+      "id": "US-004",
+      "title": "Narrow the prompt guardrail and isolation sections to their live roles",
+      "description": "**Goal** — Delete unused prompt-role branches and the old isolation call form while preserving the exact text for live implementer/no-test callers.\n\n**Motivation** — The test-writer, verifier, tdd-simple/batch arms and the `\"strict\"`/`\"lite\"` old-API call form have no caller.\n\n**Approach** — Part 4: prompt section roles (US-004)\n\n| Site | After |\n|:---|:---|\n| `prompts/sections/behavioral-guardrails.ts:3` `GuardrailRole` | `\"implementer\"` |\n| `behavioral-guardrails.ts:5-25` `buildBehavioralGuardrailsSection` | returns `null` for level `\"off\"`, else `buildImplementerGuardrails(level)`; the verifier/no-test null branch, `buildTestWriterGuardrails` and `buildCombinedGuardrails` go |\n| `prompts/sections/isolation.ts:48-96` `buildIsolationSection` | first parameter `role: \"no-test\" | \"implementer\"`; the old-API `\"strict\"`/`\"lite\"` self-call, the test-writer and verifier arms and the trailing tdd-simple return go; `\"no-test\"` returns `\"\"` and `\"implementer\"` keeps both its `mode === \"lite\"` text and its default text |\n| `prompts/sections/nax-artifacts.ts:15-26` `buildNaxArtifactsSection` | its `role` parameter keeps the `GuardrailRole` type, now `\"implementer\"`; output unchanged |\n\n**Interface** — `GuardrailRole` is `\"implementer\"`; `buildIsolationSection` first parameter is `role: \"no-test\" | \"implementer\"`. Preserve the optional variant/isolation parameters on buildBehavioralGuardrailsSection/buildNaxArtifactsSection and the mode/testCommand/scopedCommandName parameters on buildIsolationSection. Prompt text for the two live callers is unchanged.\n\n**Scope** — In: behavioral-guardrails.ts, isolation.ts, nax-artifacts.ts's shared role typing, their affected tests and ratchet reductions. Out: FailureCategory (US-001), post-run/metrics (US-002), canonical session roles/guard tables (US-003), permission/MCP guard/stages (US-005/US-006). Keep TestStrategy values, config prompt override roles/session tiers and all live implementer isolation/affordance text. Narrowing this prompt role does not remove the separate no-test test strategy.\n- Out: Removing `TestStrategy` values `three-session-tdd`, `three-session-tdd-lite` or `tdd-simple`, or `isThreeSessionStrategy`: routing (`routing/classify.ts`), the planner prompt and saved PRDs still produce them, and `resolveTestStrategy` maps an unknown value to `test-after`, so removing one would silently change how saved PRDs run. B3a's Out of Scope listed them for this wave in error.\n- Out: Removing `prompts.overrides` roles, `PROMPT_OVERRIDE_ROLES`, `tdd.sessionTiers.testWriter` / `.verifier`, or the role lists in `cli/config-display.ts`: they are config keys, wave B3c.\n\n**Implementation and test updates** — In test/unit/prompts/sections/behavioral-guardrails.test.ts delete test-writer, verifier, no-test, tdd-simple and batch role tests; retain implementer output pins. In isolation.test.ts delete test-writer/verifier arms, tdd-simple fallthrough and strict/lite first-argument old-API tests; retain no-test and implementer tests. In nax-artifacts.test.ts replace removed role arguments with implementer without changing text assertions. In sections.test.ts delete removed-only cases or use live roles. In test/unit/prompts/us-004-affordances.test.ts use implementer for still-relevant protocol affordance tests and delete removed-only arms/old-API cases. Preserve buildTestFilterRule and shell/protocol formatting for configured and absent test commands; preserve both implementer lite and default text. Reword obsolete role/old-API header comments. These are retention pins, not a request to rewrite prompt content.\n\n**Verification** — Run these steps in `packages/nax` under the session's gate policy.\n1. `bun run typecheck`. A removed union member, field, parameter or export that is still referenced fails here.\n2. A string sweep. For each registry value the story removes, `rg -n --fixed-strings '\"<value>\"' src bin scripts`, and for each function, constant, type and file it removes, `rg -n -w '<name>' src bin test scripts`. Expected: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Line numbers in Design and `### Modifies` are at `dfcbc053a`; a story that runs after another story edited the same file locates each site by its symbol or test name. Sweep names: `buildTestWriterGuardrails`, `buildCombinedGuardrails` (expected remaining hits: none). Sweep values in `src/prompts/sections/`: `\"test-writer\"`, `\"verifier\"`, `\"tdd-simple\"`, `\"batch\"`, `\"strict\"` (expected remaining hits: `GuardrailLevel` at `behavioral-guardrails.ts:1`, the `_isolation?: \"strict\" | \"lite\"` parameter types of `buildBehavioralGuardrailsSection` and `buildNaxArtifactsSection`, and the `mode?: \"strict\" | \"lite\"` parameter of `buildIsolationSection`). Known comment hit to reword: the old-API note at `isolation.ts:11-12`. Values outside this bounded sections sweep may belong to US-003 or deferred config/TestStrategy vocabularies and are not this story's deletion targets.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. Regenerate scripts/baselines/complexity-baseline.json and lower scripts/baselines/test-escape-hatches-baseline.json for deleted/shrunk code only. AC1 to AC6 already pass before the change and must still pass after deletion.",
+      "acceptanceCriteria": [
+        "[unit; spec AC1] buildBehavioralGuardrailsSection(\"implementer\", \"lite\") returns a string that starts with \"# Behavioral Guardrails\".",
+        "[unit; spec AC2] buildBehavioralGuardrailsSection(\"implementer\", \"off\") returns null.",
+        "[unit; spec AC3] buildIsolationSection(\"no-test\") returns \"\".",
+        "[unit; spec AC4] buildIsolationSection(\"implementer\", \"lite\", \"bun test\") returns text containing \"You MAY add tests for acceptance criteria that have no coverage yet\".",
+        "[unit; spec AC5] buildIsolationSection(\"implementer\", undefined, \"bun test\") returns text containing \"Do not modify test files.\".",
+        "[unit; spec AC6] buildNaxArtifactsSection(\"implementer\") returns text that starts with \"# .nax/ artifact immutability\"."
+      ],
+      "tags": [
+        "refactor",
+        "prompts",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A bounded deletion in three prompt-section modules with unchanged live text; strict strategy applies because role-specific isolation and artifact safety guardrails constrain session behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/sections/behavioral-guardrails.ts",
+        "packages/nax/src/prompts/sections/isolation.ts",
+        "packages/nax/src/prompts/sections/nax-artifacts.ts",
+        "packages/nax/src/prompts/builders/rectifier-builder.ts",
+        "packages/nax/test/unit/prompts/us-004-affordances.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prompts/sections/behavioral-guardrails.test.ts",
+          "reason": "tests of the test-writer, verifier, no-test, tdd-simple and batch roles are deleted; the implementer tests stay. Invariant: implementer output is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/isolation.test.ts",
+          "reason": "tests of the test-writer and verifier arms, the tdd-simple fallthrough and the `\"strict\"`/`\"lite\"` old-API form are deleted; the no-test and implementer tests stay."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/nax-artifacts.test.ts",
+          "reason": "calls that pass a removed role pass `\"implementer\"`; the asserted text is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/sections/sections.test.ts",
+          "reason": "calls that pass a removed role or the old-API form are deleted or pass a live role."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/us-004-affordances.test.ts",
+          "reason": "calls of `buildIsolationSection` with the test-writer or verifier role, or the old-API form, use `\"implementer\"` or are deleted when they test only a removed arm."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3 for the functions this story deletes or shrinks."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the escape hatches the deleted tests carried."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ca60a82173fac5410793caba4dfc857c1ec114b3"
+    },
+    {
+      "id": "US-005",
+      "title": "Warn about and strip removed stage names at config load",
+      "description": "**Goal** — Introduce immutable warned-and-stripped compatibility handling for removed MCP/permission stage names at all three existing loader strip sites, before US-006 contracts the enums.\n\n**Motivation** — No op declares the `rectification`, `regression` or `acceptance` stage; the last ones went in B2a and B2b-3.\n\n**Approach** — Part 5: the removed-stage config guard (US-005)\n\nA new module `src/config/removed-stage-names.ts` (`config-guards.ts` is at 592 of its 600 allowed lines, and `loader.ts` at 591):\n\n**Interface**\n```typescript\n/** Stage names no operation runs in since pipeline mode was removed. */\nexport const REMOVED_STAGE_NAMES: readonly string[] = [\"rectification\", \"regression\", \"acceptance\"];\n\nconst REMOVED_STAGE_HINT = \"no nax operation runs in this stage since pipeline mode was removed\";\n\n/** Drop removed stage names from mcp.servers.<id>.stages and drop un-inherited\n *  execution.permissions.<removed> blocks, warning once per dropped item.\n *  Returns a new object; never mutates `conf`. */\nexport function stripRemovedStageNames(\n  conf: Record<string, unknown>,\n  warn?: (msg: string) => void,\n): Record<string, unknown>;\n\n/** stripRemovedNoOpKeys, then stripRemovedStageNames, with one sink. */\nexport function stripRemovedConfig(\n  conf: Record<string, unknown>,\n  warn?: (msg: string) => void,\n): Record<string, unknown>;\n```\n\n- For each `mcp.servers.<id>` object whose `stages` is an array, every element equal to a removed name is dropped, and `warn` receives `Config value \"<name>\" in mcp.servers.<id>.stages has been removed — <hint>. Remove it from your config.` once per dropped element. A server whose stages become `[]` stays: an empty list attaches the server to no stage (`providerAttachesTo`, `nax-agent/src/tools/provider-types.ts:78-80`), the same as a removed stage did.\n- For each removed name `<name>` that is a key of `execution.permissions`, if no other block under `execution.permissions` has `inherit === \"<name>\"`, the key is dropped and `warn` receives `Config key \"execution.permissions.<name>\" has been removed — <hint>. Remove it from your config.` Otherwise the block stays and nothing is warned. \"Inherited\" is judged against the input object, before any block is dropped: with `rectification: { inherit: \"regression\" }` and `regression: { ... }` and nothing inheriting `rectification`, `rectification` is dropped and `regression` stays. A sibling value that is `null` or not an object names no inherit target and is skipped by the scan.\n- Missing or non-object `mcp`, `mcp.servers`, a server, `execution` or `execution.permissions`, and a non-array `stages`, are left as they are, with no warning.\n- `loader.ts` imports `stripRemovedConfig` in place of `stripRemovedNoOpKeys` and calls it at each of the three sites that call `stripRemovedNoOpKeys` today (`:256`, `:532`, `:567`), with the same sink each passes now. The strip runs after `validatePermissionsBlock` (`loader.ts:250`), so an `inherit` that names a dropped block cannot occur. The `:567` site strips the per-package result after the package profile layers are applied (`applyPackageProfileLayers`, `loader.ts:545`) and before `NaxConfigSchema.safeParse` at `:573`. A package overlay file's own top-level `mcp` block never reaches it (`mergePackageConfig`, `config/merge.ts:72-100`, merges only agent, models, routing, execution, review, acceptance, quality, context and project), but a package profile (`<package>/.nax/profiles/<name>.json`, named by the overlay's `profile`) deep-merges any key, `mcp` included.\n\n**Scope** — In: create src/config/removed-stage-names.ts and test/unit/config/removed-stage-names.test.ts; replace the loader import/three strip calls while preserving their warning sinks, validation order and existing no-op key handling. Out: registry contraction and inert-Bash stage deletion (US-006); failure categories, post-run/metrics, session roles and prompt roles (US-001 through US-004). The registries keep their members in this story; US-006 removes them. No warning-count assertion for a value reaching both root/package strips; warnDedupe owns that unchanged. No repository .nax files are modified by implementation; .nax test fixture paths are under temporary projects only.\n- Out: US-005 only: asserting how many times a warning is emitted when the same removed value reaches both the root strip and a package-merge strip (`loader.ts:532`, `:567`): the existing per-resolution dedupe (`warnDedupe`) owns that, unchanged by this wave.\n- Out: Updating `docs/`, config field descriptions or release notes for the removed stages: wave B4.\n- Out: Editing the repository's own `.nax/config.json`, `.nax/rules/` or any file under `.nax/`: read-only to the run.\n\n**Implementation and test updates** — Mirror stripRemovedNoOpKeys' reconstruction/ownership pattern without copying its near-limit module or mutating any nested object. Treat JSON records defensively, including null/scalar siblings; preserve unknown/invalid nonremoved values for the existing schema to diagnose. Compute inheritance against the input, not an incrementally stripped result; do not transitively remove now-unused templates. stripRemovedConfig calls stripRemovedNoOpKeys and then stripRemovedStageNames with the same optional sink. At the root use defaultConfigWarn, at both package sites keep warnDedupe.warn. Unit tests go in the new test file, and loadConfig/loadConfigForWorkdir seam tests also go there as specified, using the existing strip-removed-noop-keys.test.ts temp-project, cache reset and logger/addSink pattern. Root AC8/AC9 enter above the root strip; package AC10 uses overlay profile p plus packages/app/.nax/profiles/p.json, because a plain package overlay mcp block is not merged. Assert resolved values, not source text or helper-only behavior. In the same new seam-test file, exercise the Failure Handling permission-block cases through loadConfig: an un-inherited removed block resolves absent with its warning, while a removed block inherited by review resolves retained without a removed-stage warning. Capture matching messages via the existing logger sink and keep unrelated config warnings out of these assertions. Preserve existing no-op-key loader tests. The guard is prerequisite behavior, not a schema relaxation: unknown stages remain errors once existing schemas run.\n\n**Verification** — Run these steps in `packages/nax` under the session's gate policy.\n1. `bun run typecheck`. A removed union member, field, parameter or export that is still referenced fails here.\n2. A string sweep. For each registry value the story removes, `rg -n --fixed-strings '\"<value>\"' src bin scripts`, and for each function, constant, type and file it removes, `rg -n -w '<name>' src bin test scripts`. Expected: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Line numbers in Design and `### Modifies` are at `dfcbc053a`; a story that runs after another story edited the same file locates each site by its symbol or test name. This story removes no registry member/function/constant/type/file, so the deletion sweep has no targets. Inspect `stripRemovedNoOpKeys` call references to confirm loader no longer calls it directly: expected references remain in config-guards.ts, the new stripRemovedConfig wrapper and existing direct-helper tests, not loader.ts. `\"rectification\"`, `\"regression\"`, `\"acceptance\"` remain in all current stage registries until US-006 and now in REMOVED_STAGE_NAMES; they are not deletion failures in US-005.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. Regenerate scripts/baselines/complexity-baseline.json for added functions under the ratchet policy, avoiding new file-size exemptions. Existing loader/config-guards files must stay within their limits.",
+      "acceptanceCriteria": [
+        "[unit; spec AC1] stripRemovedStageNames given { mcp: { servers: { graph: { command: \"g\", stages: [\"run\", \"acceptance\"] } } } } returns a config whose mcp.servers.graph.stages is [\"run\"].",
+        "[unit; spec AC2] In the same stripRemovedStageNames call with graph stages [\"run\", \"acceptance\"], the warn sink receives exactly one message: Config value \"acceptance\" in mcp.servers.graph.stages has been removed — no nax operation runs in this stage since pipeline mode was removed. Remove it from your config.",
+        "[unit; spec AC3] stripRemovedStageNames given a server whose stages is [\"regression\"] returns that server with stages: [], with every other server field unchanged.",
+        "[unit; spec AC4] stripRemovedStageNames given { execution: { permissions: { rectification: { allow: [\"Read\"] }, review: { allow: [\"Read\"] } } } } returns execution.permissions with only the review key.",
+        "[unit; spec AC4] For the call with un-inherited rectification and review permission blocks, warn receives exactly one message: Config key \"execution.permissions.rectification\" has been removed — no nax operation runs in this stage since pipeline mode was removed. Remove it from your config.",
+        "[unit; spec AC5] stripRemovedStageNames given { execution: { permissions: { acceptance: { allow: [\"Read\"] }, review: { inherit: \"acceptance\" } } } } returns execution.permissions with both keys unchanged.",
+        "[unit; spec AC5] stripRemovedStageNames given { execution: { permissions: { acceptance: { allow: [\"Read\"] }, review: { inherit: \"acceptance\" } } } } does not call warn.",
+        "[unit; spec AC6] stripRemovedStageNames given { execution: { permissions: { rectification: { inherit: \"regression\" }, regression: { allow: [\"Read\"] }, other: null } } } returns execution.permissions with the keys regression and other only.",
+        "[unit; spec AC6] For the call with rectification inheriting regression and other: null, warn receives exactly one message naming execution.permissions.rectification.",
+        "[unit; spec AC7] stripRemovedStageNames given { mcp: 7, execution: { permissions: \"x\" } } returns a value deep-equal to its input.",
+        "[unit; spec AC7] stripRemovedStageNames given { mcp: 7, execution: { permissions: \"x\" } } does not call warn.",
+        "[unit; spec AC7] stripRemovedStageNames given { mcp: 7, execution: { permissions: \"x\" } } leaves the input object deep-equal to a copy taken before the call.",
+        "[integration; spec AC8; removed-MCP-stage failure handling] loadConfig on a project whose .nax/config.json declares server graph with command: \"g\" and stages: [\"review\", \"regression\"] resolves config.mcp.servers.graph.stages to [\"review\"].",
+        "[integration; spec AC9] In that same loadConfig call, a logger sink added with addSink receives exactly one warning whose message contains Config value \"regression\" in mcp.servers.graph.stages has been removed.",
+        "[integration; spec AC10] loadConfigForWorkdir for package directory packages/app, whose .nax/mono/packages/app/config.json is { \"profile\": \"p\" } and whose package profile packages/app/.nax/profiles/p.json declares server graph with command: \"g\" and stages: [\"review\", \"regression\"], while the root config declares no mcp, resolves without throwing to mcp.servers.graph.stages equal to [\"review\"].",
+        "[integration; Failure Handling row: un-inherited removed permission block] loadConfig on a project whose .nax/config.json has execution.permissions.rectification: { allow: [\"Read\"] } with no other block inheriting rectification resolves with that block absent.",
+        "[integration; Failure Handling row: un-inherited removed permission block] In that same loadConfig resolution, a logger sink receives exactly one warning naming the removed execution.permissions.rectification key.",
+        "[integration; Failure Handling row: inherited removed permission template] loadConfig on a project whose .nax/config.json has execution.permissions.acceptance: { allow: [\"Read\"] } and execution.permissions.review: { inherit: \"acceptance\" } resolves with the acceptance block retained.",
+        "[integration; Failure Handling row: inherited removed permission template] In that same loadConfig resolution, a logger sink receives no removed-stage warning for execution.permissions.acceptance."
+      ],
+      "tags": [
+        "config",
+        "compatibility",
+        "security",
+        "mcp"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One immutable config transformer and a composing wrapper reuse the existing stripping pattern at three established loader sites; permission-template inheritance affects grants, so the security override requires strict isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/config-guards.ts",
+        "packages/nax/src/config/loader.ts",
+        "packages/nax/src/config/schemas-mcp.ts",
+        "packages/nax/src/config/compat-shims.ts",
+        "packages/nax/test/unit/config/strip-removed-noop-keys.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/removed-stage-names.ts",
+        "packages/nax/test/unit/config/removed-stage-names.test.ts"
+      ],
+      "suggestedCriteria": [
+        "stripRemovedStageNames given graph stages [\"acceptance\", \"run\", \"acceptance\", \"review\"] returns graph stages [\"run\", \"review\"] and calls the direct warn sink once for each of the two removed elements.",
+        "stripRemovedStageNames given nested MCP and permission objects containing removable entries leaves the complete original input deep-equal to a pre-call copy.",
+        "stripRemovedStageNames preserves a server's non-array stages value and emits no warning for it.",
+        "stripRemovedConfig given both tdd.autoVerifyIsolation and an MCP acceptance stage removes both and forwards both corresponding warnings to the supplied sink."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/loader.ts",
+          "reason": "imports `stripRemovedConfig` instead of `stripRemovedNoOpKeys` and calls it at the three existing strip sites."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3 for the functions this story adds."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "143eaa3b42d993a4ae002db44dad83c38bb4d8e5"
+    },
+    {
+      "id": "US-006",
+      "title": "Remove the rectification, regression and acceptance stages",
+      "description": "**Goal** — Contract permission/MCP stage registries to the six dispatched stages and reduce inert-Bash candidates to run/review after US-005 protects legacy config loading.\n\n**Motivation** — `BASH_DECLARING_STAGES` (`config/inert-bash-stages.ts:53`) still iterates `rectification` and `acceptance`, so run setup checks two stages nothing dispatches; its doc comment (`:44-52`) already names wave B3 as the owner.\n\n**Approach** — Part 6: removing the dead stages (US-006)\n\n| Site | After |\n|:---|:---|\n| `config/permissions.ts:21-52` `PipelineStage`, `PIPELINE_STAGES` | `plan`, `run`, `setup`, `verify`, `review`, `complete`; the `McpStageSchema` note says \"the same six labels plus `*`\" |\n| `config/runtime-types-mcp.ts:7-17` `McpStage` | the same six plus `\"*\"` |\n| `config/schemas-mcp.ts:26-42` `McpStageSchema` | the same six plus `\"*\"`; the doc comment points at `permissions.ts` `PipelineStage` by name rather than by line |\n| `config/inert-bash-stages.ts:44-53` `BASH_DECLARING_STAGES` | `[\"run\", \"review\"]`; the paragraph about `rectification` and `acceptance` having no dispatcher goes |\n\n**Interface** — `PipelineStage`, `PIPELINE_STAGES`: `plan`, `run`, `setup`, `verify`, `review`, `complete`. `McpStage`, `McpStageSchema`: the same six plus `\"*\"`. `BASH_DECLARING_STAGES`: `[\"run\", \"review\"]`. Preserve isPipelineStage, resolvePermissions and findInertBashStages entry points; do not derive the intentionally hand-spelled MCP enum from the type registry.\n\n**Scope** — In: the three registry copies and exhaustive record, Bash-declaring constant/comment, affected typed fixtures, run-setup warning expectations and schema/loadConfig seams. Out: removed-stage stripping is US-005's prerequisite; failure categories (US-001), post-run/metrics (US-002), session roles (US-003), prompt roles (US-004). Keep verify, string-keyed permission templates retained by US-005, rules/context stage names, acceptance config-section selector, docs/field descriptions and B3c keys. No permission resolver policy or artifact schema migration.\n- Out: Removing `STAGE_CONTEXT_MAP` keys in `context/engine/stage-config.ts`, `EXTRA_KNOWN_STAGES` or any other rules-frontmatter stage name: deferred by user ruling to issue #2830, which first establishes how workflow sessions see rule stages.\n- Out: Removing the `implementer` session role, the `verify` permission stage, or the `review` post-run phase: each has a live producer.\n- Out: Updating `docs/`, config field descriptions or release notes for the removed stages: wave B4.\n\n**Implementation and test updates** — In test/unit/config/inert-bash-stages.test.ts replace the old dispatched-stages-plus-retired assertion with [run, review]; delete removed-stage resolution-only tests and change typed fixtures appropriately, while retaining the AC3 direct config with run/review/rectification/acceptance raw block names, each holding bashApproval gated and no Bash allow rule. PermissionsBlockSchema accepts arbitrary string keys, so do not pass removed names as PipelineStage arguments or bypass the real resolver to construct this case. In test/unit/execution/lifecycle/run-setup-warnings.test.ts INERT_STAGES becomes [review], fixtures stop configuring rectification/acceptance, all old warning toHaveLength(3) assertions become 1 and AC10 expects one permissions-stage entry; retitle it `AC10: warns once, stage permissions, for review`. This must preserve the invariant that warnings list exactly Bash-declaring stages whose grants contain no Bash rule. In config/permissions.test.ts and scoped-permissions.test.ts change removed PipelineStage arguments to review/run, without erasing intentional old-template inputs. Update op-stage fixtures in agents/ladder-across-ops.test.ts, operations/call-dispatch-prologue.test.ts, operations/call.test.ts, runtime/middleware/cost.test.ts, runtime/middleware/usage-audit.test.ts and session/session-keeper.test.ts to run/review. Extend test/unit/config/schemas-mcp.test.ts with enum acceptance/rejection and loadConfig on the old acceptance stage, retaining existing tests. The latter enters the real loader after enum contraction so a missing/pre-parse misplaced US-005 guard breaks the test. All six live schema stages and wildcard remain accepted; removed labels are rejected by the raw schema but warned-and-stripped by config loading.\n\n**Verification** — Run these steps in `packages/nax` under the session's gate policy.\n1. `bun run typecheck`. A removed union member, field, parameter or export that is still referenced fails here.\n2. A string sweep. For each registry value the story removes, `rg -n --fixed-strings '\"<value>\"' src bin scripts`, and for each function, constant, type and file it removes, `rg -n -w '<name>' src bin test scripts`. Expected: only the remaining hits the story lists, else stop. A hit in code is a missed reference. A hit in a comment is a stale comment and is reworded, in any file (a comment edit needs no Modifies entry). Line numbers in Design and `### Modifies` are at `dfcbc053a`; a story that runs after another story edited the same file locates each site by its symbol or test name. Sweep values in `src/config/`, `src/runtime/agent-stream-events.ts` and `src/execution/lifecycle/run-setup-warnings.ts`: `\"rectification\"`, `\"regression\"`, `\"acceptance\"`. Expected remaining hits: `config/removed-stage-names.ts` (US-005's list), and `config/selectors.ts:83`, where `\"acceptance\"` is a config-section key of a selector (wave B3c). These names remain in old-input tests and unrelated external vocabularies intentionally. No exported function/type/file is deleted wholesale; sweep any symbols actually removed.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's `noUnusedImports` reports them. Regenerate scripts/baselines/complexity-baseline.json and lower scripts/baselines/test-escape-hatches-baseline.json for deleted/shrunk code only. Registry-content ACs read runtime values through live functions, not file text.",
+      "acceptanceCriteria": [
+        "[unit; spec AC1] Mapping isPipelineStage over [\"plan\", \"run\", \"setup\", \"verify\", \"review\", \"complete\", \"rectification\", \"regression\", \"acceptance\"] yields [true, true, true, true, true, true, false, false, false].",
+        "[unit; spec AC2] Mapping McpStageSchema.safeParse(value).success over [\"verify\", \"*\", \"rectification\", \"regression\", \"acceptance\"] yields [true, true, false, false, false].",
+        "[unit; spec AC3] findInertBashStages(config) returns [\"run\", \"review\"] when execution.permissions has run, review, rectification and acceptance blocks, each with bashApproval: \"gated\" and no Bash allow rule; these are raw permission-block keys, not removed PipelineStage arguments.",
+        "[unit; spec AC4] BASH_DECLARING_STAGES equals [\"run\", \"review\"].",
+        "[integration; spec AC5; removed-MCP-stage failure handling] loadConfig on a project whose .nax/config.json declares server graph with command: \"g\" and stages: [\"run\", \"acceptance\"] resolves, without throwing, to config.mcp.servers.graph.stages equal to [\"run\"]."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "security",
+        "mcp"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "After US-005, this is a synchronized deletion from existing stage lists and fixtures without resolver redesign; permission/MCP attachment decisions still require the strict security strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/permissions.ts",
+        "packages/nax/src/config/schemas-mcp.ts",
+        "packages/nax/src/config/runtime-types-mcp.ts",
+        "packages/nax/src/config/inert-bash-stages.ts",
+        "packages/nax/src/config/removed-stage-names.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/inert-bash-stages.test.ts",
+          "reason": "the assertion that `BASH_DECLARING_STAGES` equals the dispatched ops' stages plus `rectification` and `acceptance` becomes equality with `[\"run\", \"review\"]`; tests that resolve `rectification` or `acceptance` blocks are deleted."
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-warnings.test.ts",
+          "reason": "`INERT_STAGES` becomes `[\"review\"]` and its fixtures stop configuring `rectification` and `acceptance` blocks; every `toHaveLength(3)` on the warnings becomes `toHaveLength(1)`, the AC10 expectation of three `\"permissions\"` stage entries becomes one, and the AC10 test title \"warns exactly three times, stage permissions, for review, rectification and acceptance\" (written with slashes in the file) becomes \"AC10: warns once, stage permissions, for review\". Invariant: the warning lists exactly the declaring stages whose grants hold no Bash rule."
+        },
+        {
+          "path": "packages/nax/test/unit/config/permissions.test.ts",
+          "reason": "uses of a removed stage as a `PipelineStage` use `review` or `run`."
+        },
+        {
+          "path": "packages/nax/test/unit/config/scoped-permissions.test.ts",
+          "reason": "uses of a removed stage as a `PipelineStage` use `review` or `run`."
+        },
+        {
+          "path": "packages/nax/test/unit/agents/ladder-across-ops.test.ts",
+          "reason": "op fixtures with a removed stage use `run` or `review`."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/call-dispatch-prologue.test.ts",
+          "reason": "op fixtures with a removed stage use `run` or `review`."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/call.test.ts",
+          "reason": "op fixtures with a removed stage use `run` or `review`."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/middleware/cost.test.ts",
+          "reason": "fixtures with a removed stage use `run` or `review`."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/middleware/usage-audit.test.ts",
+          "reason": "fixtures with a removed stage use `run` or `review`."
+        },
+        {
+          "path": "packages/nax/test/unit/session/session-keeper.test.ts",
+          "reason": "fixtures with a removed stage use `run` or `review`."
+        },
+        {
+          "path": "packages/nax/test/unit/config/schemas-mcp.test.ts",
+          "reason": "gains the US-006 AC2 test (`McpStageSchema` accepts the live stages and `*` and rejects the three removed ones) and the US-006 AC5 `loadConfig` test; its existing tests stay."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "regenerated by step 3 for the functions this story shrinks."
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the escape hatches the deleted tests carried."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ef9d9bba2f21aa576c8375e65ead1e082fded9ca"
+    }
+  ],
+  "analysis": "This is C1 wave B3b, a bounded deletion/refactoring of existing @nathapp/nax code after B3a (#2829), not a greenfield feature. All six stories are package-scoped to packages/nax; no nax-agent, nax-agent-acp or nax-ai implementation or manifest changes are required. The binding decomposition is preserved: US-001 through US-005 have no dependencies, and only US-006 depends on US-005. Shared files and ratchet baselines can overlap between independent stories; locate edits by symbol/test name and regenerate baselines against the current tree, not the historical line numbers at dfcbc053a. No shell or codebase-memory MCP was available during PRD preparation, so discovery used direct Read/Grep/Glob; validation commands below are implementation instructions, not claims that tests have been run.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:10 indexes DI, errors, testing and permission conventions; :164 records the source/test size limits and required _deps seams. packages/nax/package.json:13 typechecks both source and test projects, :53 uses the package test wrapper, and :85-86 defines check:all. Use Bun, TypeScript strict, bun:test and Ink/React test helpers; do not introduce dependencies, public any, runtime permission fallbacks, raw external-call mocks or source-text assertions. Use the existing resolvePermissions SSOT and swappable _deps. Tests may already pass before a deletion: retain behavioral pins rather than manufacture failures. Do not run bare bun test or bun run nax. The pipeline owns normal gates; follow its execution policy, and do not run coverage inside NAX_SANDBOXED=1. The explicitly requested PRD is the sole output of this drafting task; implementation must not edit repository .nax config, rules or other .nax artifacts.\n\nUS-001 findings: packages/nax/src/execution/types.ts:10-50 contains eleven FailureCategory members and an obsolete dormant-isolation rationale. packages/nax/src/execution/iteration-runner.ts:160 is the live dependency-prep producer. packages/nax/src/execution/escalation/tier-escalation.ts:334 and :350 already call the two outcome handlers with ctx alone. packages/nax/src/execution/escalation/max-attempts-outcome.ts:12-40 maps removed categories to pause; packages/nax/src/execution/escalation/tier-outcome.ts:29-93 and :99-165 duplicate pause/fail branches. Delete the resolver module and re-exports at escalation/tier-escalation.ts:66, escalation/index.ts:14, execution/index.ts:12 and execution/runner.ts:59. Keep the current fail-branch side effects, persistence seam at tier-outcome.ts:24, spend/errorCostUsd behavior, progress text, reason strings and escalation flag; remove only the category parameter and pause-specific imports/branches/log data. packages/nax/src/prd/index.ts:311-338 shows markStoryFailed must stay optional and must not be changed to clear existing category fields: it writes a category only when one is supplied, clears passes and increments attempts. ACs requiring absence concern an initially uncategorized story. loadPRD at :90-139 reads JSON and normalizes story fields without FailureCategory enum validation; old verifier-rejected artifacts must keep loading. Tests: test/unit/execution/escalation/tier-outcome.test.ts:38, :87 and :292 are obsolete pause suites; :121 and :195 retain fail/progress/cost cases. test/unit/execution/escalation/tier-outcome-progress.test.ts:23-65 provides the savePrdProgress seam and contains two pause cases to delete, two fail cases to keep. Also update story-failure-spend, tier-escalation, tier-escalation-greenfield, integration runner-escalation and prd-failure-category fixtures. Runtime-crash strings in nax-agent belong to AdapterFailure and are unrelated.\n\nUS-002 findings: packages/nax/src/pipeline/event-bus/index.ts:204 declares five PostRunPhase values but production emitters found at execution/unified-executor.ts:166 and execution/lifecycle/run-completion-phases.ts:75 use only review. The hook's dead state is at tui/hooks/usePipelineBusEvents.ts:68-74; handlers at :245-261 are generic and need no behavior rewrite. StoriesPanel props at tui/components/StoriesPanel.tsx:23-28 and conditional rows at :184-193 must narrow together with tui/App.tsx:115-122. Keep the pre-run acceptance-setup vocabulary and persisted status-file/status-writer API separate. metrics/types.ts:169-170 carries five source values, :182-183 the unwritten/unread rectificationCost; keep failingTestFiles at :172-181 for historical readers. plugins/builtin/curator/collect.ts:48-58 explicitly normalizes all five sources today; narrow to completion-phase/execution-failed and use existing execution fallback for old sources. Its artifact reader works with unknown JSON records (:32-34, :76-80, :107-125), so do not add schema rejection or rewrite old metrics files. Match VerdictObservation.payload.source in curator/types.ts:181. Tests are test/ui/StoriesPanel.test.tsx, test/ui/usePipelineBusEvents.test.tsx (removed acceptance-setup suite at :340), test/unit/pipeline/event-bus.test.ts and test/unit/pipeline/subscribers/reporters.test.ts; curator ACs can extend existing test/unit/plugins/builtin/curator-collector-metrics.test.ts:91 or curator-collector.test.ts:52 instead of adding a test file. Curator fixtures must match the runId filter at collect.ts:119. Reword LiveActivityPanel's post-run acceptance example only; its pre-run example stays.\n\nUS-003 findings: packages/nax/src/runtime/session-role.ts:14-86 holds the union and ordered registry; isSessionRole at :88 and knownSessionRole at :99 consume that list. Remove precisely the fourteen specified roles, retaining all sixteen listed live/reserved members in order. review/reviewer-guard/guard.ts:14-22 is a separate plain-string set; beforeTurn at :47 performs the actual role check and _reviewerGuardDeps.take at :25 is the snapshot seam. Delete only two finish-review roles and keep concurrency/restore semantics for the five remaining reviewers. scripts/check-op-tool-capability.ts:46-82 has the other plain-string table: keep implementer Write/Edit and plan/plan-refine Write. findViolations at :140 treats absent table roles as unconstrained, not rejected; this policy must remain. runtime/usage-auditor.ts:69-86 sorts by descending length and matches a trailing bounded suffix; keep that algorithm and use live multi-segment role examples. agents/manager.ts:507 already falls back from an unrecognized resumed session header to the caller role or main; do not alter it. cli/cost-ledger-query.ts:185 maps role grouping to sessionRole and :272/:356 reads loose records: preserve old ledger strings rather than validating against the new union. runtime/middleware/review-audit.ts:11-17 maps reviewer-semantic, reviewer-adversarial and reviewer-fix to the audit; no wf role maps there. Their deletion or a new wf mapping would be a policy change and is excluded. Tests: session-role.test.ts:6-88 contains positive assertions/finish-registration suites to flip or remove; keep reviewer-fix pins. Update reviewer-guard tests to five roles and live concurrency descriptors, check-op-tool-capability tests to the three retained keys and tool requirements, usage-auditor suffix tests, runtime middleware/dispatch/session/operation fixtures and the spec-listed audit-naming/otel/in-flight tests. Add old-header/old-ledger assertions through live readers without restoring removed registry members.\n\nUS-004 findings: prompts/sections/behavioral-guardrails.ts:3-25 exposes six role labels but production guardrail callers found at prompts/builders/rectifier-builder.ts:219, :261 and :829 use implementer. The removed builder bodies are :28-75; retain buildImplementerGuardrails unchanged. prompts/sections/isolation.ts:48-95 mixes the old strict/lite first-argument API, test-writer/verifier arms and combined fallthrough; callers at rectifier-builder.ts:824 and rectifier-builder-helpers.ts:243 use implementer and no-test. Keep implementer lite/default wording and buildTestFilterRule including protocol affordance rendering unchanged. prompts/sections/nax-artifacts.ts:22-29 shares GuardrailRole but renders the same artifact immutability text irrespective of role; retain variant/isolation/options parameters. Update the five spec-listed prompt test files, keeping live outputs as retention pins. This does not retire routing TestStrategy values or config override roles.\n\nUS-005 findings and migration: config/config-guards.ts:319-363 provides immutable stripRemovedNoOpKeys and :371 rebuildAtPath, but is already 592 lines; config/loader.ts is 591 lines. Put the new bounded compatibility guard and wrapper in config/removed-stage-names.ts, not either near-limit file. config/compat-shims.ts:26-28 exposes defaultConfigWarn through warnOrDefer and :48-72 owns warning deduplication. Preserve the sink at each existing loader strip call: root defaultConfigWarn at loader.ts:256, package warnDedupe.warn at :532 and :567. Root validation at :250 precedes stripping and schema safeParse at :264 follows it; package final validation at :562 likewise precedes :567/:573. Keep these orders so invalid inheritance remains rejected by existing guards and valid template grants remain intact. config/config-guards.ts:485-520 validates inheritance references and cycles; :532-592 validates rule lists. config/schemas-execution.ts:215 uses a string-keyed permission record, so removed stage names may remain legitimate inherited template names after PipelineStage shrinks. The guard must compute all inherit targets against its input before dropping any key, not transitively prune/recompute after deletions. Tolerate null/scalar/non-object intermediates and non-array stages without warnings; clone only the relevant ancestors and never mutate inputs. Strip array entries individually, preserving order and all server fields; retain an empty stages list because provider attachment to [] means no stage. Compose stripRemovedNoOpKeys before stripRemovedStageNames with one sink; do not replace or weaken prior compatibility stripping. The first package merge at config/merge.ts:72-100 does not admit top-level mcp; package profiles applied at loader.ts:545 do. Therefore the post-profile seam test must enter loadConfigForWorkdir with a package profile, not merely a package overlay declaring mcp. Mirror test/unit/config/strip-removed-noop-keys.test.ts:22-48 for temp project configs, _clearRootConfigCache, logger addSink/init/reset and cleanup; isolate any global-config/profile environment with sanctioned test helpers. Create exactly the source module and test/unit/config/removed-stage-names.test.ts specified. Integration-level ACs may live in that unit-path seam test file per the binding spec. This story intentionally leaves stage registries unchanged until US-006.\n\nUS-006 findings: config/permissions.ts:21-52 hand-spells PipelineStage and its exhaustive PIPELINE_STAGES record, config/runtime-types-mcp.ts:7-17 duplicates it plus *, and config/schemas-mcp.ts:31-42 duplicates it for Zod. Remove the three values consistently; keep the intentionally hand-spelled schema and strict rejection of all other unknown stage names. config/inert-bash-stages.ts:44-53 lists run, review, rectification, acceptance despite the doc already identifying seven live Bash-declaring ops at :39-42. Narrow the list to run/review, not a newly inferred runtime registry, and keep findInertBashStages' use of resolvePermissions at :69-78. runtime/agent-stream-events.ts:28-44 already narrows labels through isPipelineStage and drops unknown labels; no artifact-reader migration is needed there. Tests in test/unit/config/inert-bash-stages.test.ts:76 use removed PipelineStage fixtures, and its live op list at :89-97 already describes the expected surviving stage set. Update run-setup-warnings to warn once for review in its fixtures, keeping the real per-stage warning rule; direct findInertBashStages AC3 still exercises raw removed-named permission blocks. Update permissions/scoped-permissions, op dispatch, session and middleware fixtures to run/review; extend schemas-mcp.test.ts:34-46 with enum and loadConfig seams after US-005.\n\nRisks and done: literal union deletions can silently leave plain-string readers, comment examples and registry copies behind, so typecheck plus each story's bounded string/name sweep are required in addition to behavioral tests. Do not indiscriminately replace shared words such as acceptance, parallel, refine, decompose, verifier or strict across unrelated vocabularies. Test-only legacy strings are deliberate historical-input pins and are not producers. Config compatibility must land before enum contraction; dropping inherited permission templates, rejecting an old MCP stage at safeParse, removing a server whose stages become [] or forgetting the post-package-profile strip would violate the user ruling. Older PRDs, metrics, ledger, usage audit and workflow-token artifacts remain readable and unrewritten. No feature expansion, audit-policy choice, status schema migration, release work, doc sweep or B3c config-key cleanup is authorized. Each story removes unused imports, deletes obsolete branch-specific tests but preserves remaining behavior, regenerates only appropriate complexity/file-size entries and lowers deleted-test escape-hatch totals; do not weaken baseline thresholds. Execute the four verification steps included in each description from packages/nax under the session's gate policy. Done means exact registry membership, no unaccounted sweep references, all retained behavior/seam ACs passing, and the only user-facing changes being warned-and-stripped dead config values and the reduced inert-Bash candidate stages.\n\nRefine-pass adversarial audit: all 38 numbered spec acceptance criteria were enumerated and retained in their original stories, splitting compound outcomes only into independently observable assertions. Inventory (spec AC -> acceptanceCriteria entry, one-based within the story): US-001 AC1 -> 1-4 (failed outcome, failed save, returned failed status, absent category on an initially uncategorized story); AC2 -> 5-6 (one failed event with exact reason, no paused event); AC3 -> 7-9 (no-tier failed result/event/reason and no pause); AC4 -> 10-11 (dependency-prep and worktree-dependencies); AC5 -> 12 (old verifier-rejected PRD loads unchanged). US-002 AC1 -> 1-2 (mounted hook started-running then completed-false-failed); AC2 -> 3 (non-compact Post-Run heading and one review row); AC3 -> 4 (empty state hides heading); AC4 -> 5 (completion-phase retained); AC5 -> 6 (old rectification normalizes to execution). Entry 7 directly pins the Failure Handling table's unchanged historical metrics file, separately from the normalized observation. US-003 AC1 -> 1 (ordered sixteen roles); AC2 -> 2 (unknown old role returns undefined); AC3 -> 3 (live reviewer snapshot); AC4 -> 4 (removed reviewer takes no snapshot); AC5 -> 5 (three tool-role keys); AC6 -> 6-7 (old suffix undefined/live suffix retained); AC7 -> 8-9 (old ledger row not skipped and same role/cost grouping). US-004 AC1 -> 1 (guardrail heading); AC2 -> 2 (off returns null); AC3 -> 3 (no-test empty string); AC4 -> 4 (lite allowance text); AC5 -> 5 (default test immutability text, including its period); AC6 -> 6 (artifact immutability heading). US-005 AC1 -> 1 (MCP list stripped); AC2 -> 2 (same call, one exact warning); AC3 -> 3 (empty stages with every other field unchanged); AC4 -> 4-5 (un-inherited key dropped and exact warning); AC5 -> 6-7 (both inherited-template keys unchanged and no warning); AC6 -> 8-9 (input-based inheritance retention/null sibling and one warning); AC7 -> 10-12 (malformed intermediates deep-equal, silent, input unchanged); AC8 -> 13 (root load seam); AC9 -> 14 (same root load's matching logger warning); AC10 -> 15 (package-profile seam, root has no mcp, no throw). Entries 16-19 separately observe the two permission-block Failure Handling rows through loadConfig and the logger. US-006 AC1 -> 1 (stage predicate map); AC2 -> 2 (raw schema map); AC3 -> 3 (only run/review inert despite four named permission blocks); AC4 -> 4 (Bash list); AC5 -> 5 (old MCP acceptance loads after enum contraction without throwing). No spec AC was dropped or moved. Qualifiers preserved include ordered registry membership, mounted/then-following event sequence, same-call warning coupling, unchanged server fields and inherited blocks, no input mutation, root-without-mcp, and resolves-without-throwing clauses. There are no deprecated file/grep AC tags to rewrite.\n\nNegative-path and regression audit: US-001 retains exhaustion failure and no-pause assertions plus old PRD loading; US-002 retains failed review state, empty-panel suppression and old-source fallback/file preservation; US-003 retains rejected old role/suffix and no-snapshot old reviewer plus old ledger compatibility; US-004 retains disabled/off and no-test suppression plus all six live-output pins; US-005 retains malformed-input tolerance, uninherited stripping and inherited-template retention plus root/profile seams; US-006 retains removed-stage schema rejection and ignored dead inert stages plus legacy load compatibility. These are observable results/events/files/state/warnings, not quality-gate or source-text assertions. No extra invalid-role runtime API or new failure policy was invented.\n\nCodebase-fit corrections from re-reading: src/session/types.ts:69-73 makes SessionDescriptor.role canonical, so the old reviewer negative test must inject a historical runtime value into a normal test descriptor (the existing Object.assign technique in .nax/rules/test-ratchets.md), not claim an opaque descriptor role or widen its public type; only SessionHandle.role is opaque. knownSessionRole returns undefined itself, with caller-role/main fallback in agents/manager.ts:507; its description now distinguishes those data flows. cli/cost-ledger-query.ts:272-284 independently requires finite ts, so historical ledger AC fixtures are otherwise valid rows rather than malformed role-only rows. config/schemas-execution.ts:190-215 and config/permissions.ts:169-199 place bashApproval inside each permission block, with string record keys; US-006 AC3 now unambiguously sets the four named blocks rather than a fictitious execution.permissions.bashApproval field. collect.ts:48-58 currently explicitly returns rectification, so US-002 AC5 must remain even though the spec calls it a pre-existing retention pin; the required fallback takes precedence and need not pass before implementation. All six contextFiles sets retain every critical spec-recommended context file, at most five each; US-006 additionally reads the upstream US-005 module, not an output of its own. Expected new files remain exactly US-005's module and test file.\n\nScope/dependency/routing audit: the fourteen feature-level Out of Scope items remain verbatim: TestStrategy retirement; the three review-audit roles/mapping; context/rules stage names; persisted status-file post-run state; historical scratch kinds; deferred config role/session-tier keys; dependency-prep/PRD category fields; live implementer/verify/review values; unrelated worktree error field; US-005 cross-resolution warning count; plugin phase payload families; pre-run registry/rows; B4 docs/field descriptions/release notes; repository .nax writes. Near-boundary items are also echoed in the relevant description scopes. Only US-006 depends on US-005, exactly as bound; every referenced ID exists. Removal-only work and broad mechanical fixture changes use medium complexity rather than complex by file count alone. US-001/US-002 use tdd-simple; US-003/US-004/US-005/US-006 retain the mandatory strict strategy for session role checks, isolation guardrails or access-control-sensitive permission processing. No tests or executable JSON validation were run during this drafting/refinement pass; the audit records inspected code and requirements, not execution results.",
+  "outOfScope": [
+    "Removing `TestStrategy` values `three-session-tdd`, `three-session-tdd-lite` or `tdd-simple`, or `isThreeSessionStrategy`: routing (`routing/classify.ts`), the planner prompt and saved PRDs still produce them, and `resolveTestStrategy` maps an unknown value to `test-after`, so removing one would silently change how saved PRDs run. B3a's Out of Scope listed them for this wave in error.",
+    "Removing the session roles `reviewer-semantic`, `reviewer-adversarial` and `reviewer-fix`, or changing `reviewerFromRole` in `runtime/middleware/review-audit.ts`: no workflow role reaches the review audit's dispatch recording today, and whether it should is a follow-up decision, not a deletion.",
+    "Removing `STAGE_CONTEXT_MAP` keys in `context/engine/stage-config.ts`, `EXTRA_KNOWN_STAGES` or any other rules-frontmatter stage name: deferred by user ruling to issue #2830, which first establishes how workflow sessions see rule stages.",
+    "Removing the status-file post-run state (`StatusWriter.setPostRunPhase`, `AcceptancePhaseStatus`, `RegressionPhaseStatus`, `FinishPhaseStatus`, `PostRunStatus` in `execution/status-file.ts`, and the `nax status` post-run display in `cli/status-features-details.ts`): it is a persisted `status.json` section with its own readers, separate from the event-bus `PostRunPhase` registry.",
+    "Removing the scratch kinds `tdd-session` and `self-verification` or their role fields in `session/scratch-writer.ts`: their readers (`context/engine/providers/session-scratch.ts`, `context/engine/handlers/query-scratch.ts`) render entries persisted by older runs, the same reason B3a kept `StoryMetrics.failingTestFiles`.",
+    "Removing `prompts.overrides` roles, `PROMPT_OVERRIDE_ROLES`, `tdd.sessionTiers.testWriter` / `.verifier`, or the role lists in `cli/config-display.ts`: they are config keys, wave B3c.",
+    "Removing the `dependency-prep` failure category, the `failureCategory` parameter of `markStoryFailed`, or `UserStory.failureCategory`: `iteration-runner.ts:160` still writes it.",
+    "Removing the `implementer` session role, the `verify` permission stage, or the `review` post-run phase: each has a live producer.",
+    "Removing the `failureCategory` field of `WorktreeDependencyPreparationError` (`worktree/types.ts:22`), which nothing reads: it belongs to issue #2823 (declarations unreachable for reasons other than the pipeline).",
+    "US-005 only: asserting how many times a warning is emitted when the same removed value reaches both the root strip and a package-merge strip (`loader.ts:532`, `:567`): the existing per-resolution dedupe (`warnDedupe`) owns that, unchanged by this wave.",
+    "Removing the `PhaseDetails` variants (`plugins/extensions.ts:382-390`) or the `RunPhaseDetails` variants (`:397-402`) that no producer constructs: `story:phase:completed` has no emitter at all and only one `RunPhaseDetails` shape is produced, so trimming them is a plugin-API decision about the whole event payload family, not a registry member.",
+    "Removing `PRE_RUN_STAGES` (`tui/hooks/usePipelineEvents.ts:22`, `\"acceptance-setup\"`) and the pre-run phase rows it drives: it reads the pipeline-event stage names, a registry separate from `PostRunPhase`.",
+    "Updating `docs/`, config field descriptions or release notes for the removed stages: wave B4.",
+    "Editing the repository's own `.nax/config.json`, `.nax/rules/` or any file under `.nax/`: read-only to the run."
+  ],
+  "routingProfile": "native-codex-m3-flash"
+}

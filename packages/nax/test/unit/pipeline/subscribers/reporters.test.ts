@@ -274,11 +274,11 @@ describe("wireReporters", () => {
     const bus = new PipelineEventBus();
     wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
-    bus.emit({ type: "postrun:phase:started", phase: "acceptance" });
+    bus.emit({ type: "postrun:phase:started", phase: "review" });
     await bus.drain();
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual(expect.objectContaining({ runId: "run-1", scope: "run", phase: "acceptance" }));
+    expect(events[0]).toEqual(expect.objectContaining({ runId: "run-1", scope: "run", phase: "review" }));
     expect(events[0]).not.toHaveProperty("storyId");
   });
 
@@ -293,11 +293,11 @@ describe("wireReporters", () => {
     const bus = new PipelineEventBus();
     wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
-    bus.emit({ type: "postrun:phase:completed", phase: "acceptance", passed: true, durationMs: 15 });
+    bus.emit({ type: "postrun:phase:completed", phase: "review", passed: true, durationMs: 15 });
     await bus.drain();
 
     expect(events).toEqual([
-      expect.objectContaining({ runId: "run-1", scope: "run", phase: "acceptance", outcome: "passed", durationMs: 15 }),
+      expect.objectContaining({ runId: "run-1", scope: "run", phase: "review", outcome: "passed", durationMs: 15 }),
     ]);
   });
 
@@ -312,7 +312,7 @@ describe("wireReporters", () => {
     const bus = new PipelineEventBus();
     wireReporters(bus, makeRegistry(reporter), "run-1", Date.now(), "test-project");
 
-    bus.emit({ type: "postrun:phase:completed", phase: "regression", passed: true, durationMs: 10 });
+    bus.emit({ type: "postrun:phase:completed", phase: "review", passed: true, durationMs: 10 });
     await bus.drain();
 
     expect(events[0]?.costUsd).toBeUndefined();

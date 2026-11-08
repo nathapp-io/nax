@@ -22,7 +22,7 @@ import type { GuardrailRole } from "./behavioral-guardrails";
 export function buildNaxArtifactsSection(
   role: GuardrailRole,
   // Reserved for future per-variant / per-isolation rule differentiation.
-  // Currently unused — all variants/isolation modes produce identical output per role.
+  // Currently unused — all variants/isolation modes produce identical output.
   _variant?: "standard" | "lite",
   _isolation?: "strict" | "lite",
   options?: { configReadable?: boolean },

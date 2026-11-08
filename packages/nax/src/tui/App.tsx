@@ -112,14 +112,7 @@ export function App({ feature, version, stories: initialStories, events, queueFi
   const currentRunningStory = runningStories[0];
 
   // Resolve current phase label for Live Activity: post-run phases take priority over pipeline stage
-  const runningPostRunPhase =
-    busState.postRunPhases.acceptance?.status === "running"
-      ? "post-run: acceptance"
-      : busState.postRunPhases.regression?.status === "running"
-        ? "post-run: regression"
-        : busState.postRunPhases.review?.status === "running"
-          ? "post-run: review"
-          : undefined;
+  const runningPostRunPhase = busState.postRunPhases.review?.status === "running" ? "post-run: review" : undefined;
   const currentPhaseLabel = runningPostRunPhase ?? currentStage;
 
   // Adapt busState.runErrored (boolean) to string | undefined for LiveActivityPanel

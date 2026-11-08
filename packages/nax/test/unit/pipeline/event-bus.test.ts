@@ -173,16 +173,16 @@ describe("PipelineEventBus", () => {
     expect(receivedCost).toBe(0.42);
   });
 
-  test("AC3: post-run phase start preserves acceptance-setup phase", () => {
+  test("AC3: post-run phase start preserves the review phase", () => {
     const bus = new PipelineEventBus();
     let receivedPhase: string | undefined;
     bus.on("postrun:phase:started", (event) => {
       receivedPhase = event.phase;
     });
 
-    bus.emit({ type: "postrun:phase:started", phase: "acceptance-setup" });
+    bus.emit({ type: "postrun:phase:started", phase: "review" });
 
-    expect(receivedPhase).toBe("acceptance-setup");
+    expect(receivedPhase).toBe("review");
   });
 
   test("AC4: post-run phase completion preserves details payload", () => {
@@ -195,7 +195,7 @@ describe("PipelineEventBus", () => {
 
     bus.emit({
       type: "postrun:phase:completed",
-      phase: "acceptance",
+      phase: "review",
       passed: false,
       details,
     });

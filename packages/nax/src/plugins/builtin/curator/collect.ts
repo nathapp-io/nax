@@ -45,17 +45,16 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function verdictSource(
-  value: unknown,
-): "execution" | "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed" {
+/**
+ * Normalize a metrics row's recorded `source` onto the curator's vocabulary.
+ *
+ * Only the two sources the metrics writer still produces are preserved; a
+ * historical row carrying a retired execution mode falls back to 'execution',
+ * the same fallback an unknown value already had.
+ */
+function verdictSource(value: unknown): "execution" | "completion-phase" | "execution-failed" {
   const source = optionalString(value);
-  return source === "parallel" ||
-    source === "sequential" ||
-    source === "rectification" ||
-    source === "completion-phase" ||
-    source === "execution-failed"
-    ? source
-    : "execution";
+  return source === "completion-phase" || source === "execution-failed" ? source : "execution";
 }
 
 function tokenAttribution(value: unknown): "direct" | "even-split" | undefined {

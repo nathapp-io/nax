@@ -238,7 +238,7 @@ describe("attachUsageAuditSubscriber", () => {
         scopeId: "scope-9",
         sessionName: "nax-abc-feat-US-002-auto",
         storyId: "US-002",
-        stage: "acceptance",
+        stage: "review",
         agentName: "codex",
         callId: "call-777",
         tokenUsage: { inputTokens: 1, outputTokens: 1 },
@@ -251,7 +251,7 @@ describe("attachUsageAuditSubscriber", () => {
       scopeId: "scope-9",
       sessionName: "nax-abc-feat-US-002-auto",
       storyId: "US-002",
-      stage: "acceptance",
+      stage: "review",
       agentName: "codex",
       streamCallId: "call-777",
     });

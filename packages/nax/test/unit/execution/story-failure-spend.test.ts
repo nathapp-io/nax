@@ -1,7 +1,7 @@
 /**
- * #1960 — story:failed and story:paused report total spend.
+ * #1960 — story:failed reports total spend.
  *
- * These eight sites are the concentration finding: they fire exactly where
+ * These sites are the concentration finding: they fire exactly where
  * failed-dispatch spend lands, and pre-#1960 they reported successful spend
  * only -- reporting 0 for a story whose every dispatch threw, because the
  * error row created the byStory key and killed the `?? ctx.totalCost` fallback.
@@ -84,9 +84,7 @@ describe("failure-path spend (#1960)", () => {
 
   test("story:failed reports failed-dispatch spend for a story that only threw", async () => {
     const { seen, unsub } = capture("story:failed");
-    // "tests-failing" maps to the fail outcome in resolveMaxAttemptsOutcome;
-    // "verifier-rejected" takes the pause branch instead (#1960 swap contingency).
-    await handleMaxAttemptsReached(makeCtx(errorOnlyAggregator(), join(tempDir, "prd.json")), "tests-failing");
+    await handleMaxAttemptsReached(makeCtx(errorOnlyAggregator(), join(tempDir, "prd.json")));
     unsub();
 
     expect(seen[0]?.cost).toBe(0.004);
@@ -95,16 +93,16 @@ describe("failure-path spend (#1960)", () => {
 
   test("story:failed omits errorCostUsd when nothing threw", async () => {
     const { seen, unsub } = capture("story:failed");
-    await handleMaxAttemptsReached(makeCtx(successOnlyAggregator(), join(tempDir, "prd.json")), "tests-failing");
+    await handleMaxAttemptsReached(makeCtx(successOnlyAggregator(), join(tempDir, "prd.json")));
     unsub();
 
     expect(seen[0]?.cost).toBe(0.02);
     expect(seen[0]?.errorCostUsd).toBeUndefined();
   });
 
-  test("story:paused reports total spend too", async () => {
-    const { seen, unsub } = capture("story:paused");
-    await handleNoTierAvailable(makeCtx(errorOnlyAggregator(), join(tempDir, "prd.json")), "verifier-rejected");
+  test("story:failed reports total spend for a story with no tier left", async () => {
+    const { seen, unsub } = capture("story:failed");
+    await handleNoTierAvailable(makeCtx(errorOnlyAggregator(), join(tempDir, "prd.json")));
     unsub();
 
     expect(seen[0]?.cost).toBe(0.004);

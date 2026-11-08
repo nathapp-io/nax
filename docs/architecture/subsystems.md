@@ -167,7 +167,7 @@ UnifiedExecutor → runParallelBatch()        [parallel-batch.ts]
 
 `src/execution/escalation/tier-escalation.ts`:
 - Retries failed stories at higher tiers: `fast → balanced → powerful`
-- `tier-outcome.ts` / `max-attempts-outcome.ts` decide the next action per tier
+- `tier-outcome.ts` decides the next action per tier — an exhausted tier fails the story
 - Per-tier attempts come from `autoMode.escalation.tierOrder` (default `{ tier, attempts: 2 }` for each of fast / balanced / powerful); `autoMode.escalation.enabled` defaults to `true`
 
 ### Crash Recovery
@@ -859,11 +859,10 @@ interface StoryMetrics {
   firstPassSuccess: boolean;
   startedAt: string;
   completedAt: string;
-  source?: "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed";
+  source?: "completion-phase" | "execution-failed";
   runtimeCrashes?: number;
   reviewsFailedOpen?: number;
   fullSuiteGatePassed?: boolean;
-  rectificationCost?: number;
   tokens?: TokenUsage;
   tokenAttribution?: "direct" | "even-split";
   fallback?: { hops: AgentFallbackHop[] };   // cross-agent swaps (ADR-012)
