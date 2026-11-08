@@ -261,21 +261,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     'Model selector for planning. Accepts a tier string or an explicit object like { agent: "codex", model: "gpt-5.4" }.',
   "plan.outputPath": "Output path for generated spec (relative to nax/)",
 
-  // Acceptance
-  acceptance: "Acceptance test configuration",
-  "acceptance.enabled": "Enable acceptance test generation and validation",
-  "acceptance.maxRetries": "Max retry loops for fix stories",
-  "acceptance.testPath": "Path to acceptance test file (relative to feature dir)",
-  "acceptance.command":
-    "Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path (default: 'bun test {{FILE}} --timeout=60000')",
-  "acceptance.model":
-    'Model selector for acceptance generation/refinement LLM calls. Accepts a tier string such as "fast", "balanced", or "powerful", or an explicit object like { agent: "codex", model: "gpt-5.4" }. Default: "fast".',
-  "acceptance.generateModel":
-    'Model selector specifically for acceptance test generation and criteria refinement LLM calls. When set, overrides acceptance.model for these two operations. Accepts a tier string such as "fast", "balanced", or "powerful", or an explicit object like { agent: "opencode", model: "opencode-go/deepseek-v4.1-flash" }. Defaults to acceptance.model when not set.',
-  "acceptance.refinement":
-    "Enable acceptance criteria refinement step before execution (default: true). Disable to skip refinement and use generated criteria as-is.",
-  "acceptance.timeoutMs": "Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min)",
-
   // Context
   context: "Context injection configuration",
   "context.fileInjection":

@@ -101,7 +101,7 @@ export const PROJECT_FEATURES_DIR = `${PROJECT_NAX_DIR}/features`;
  *
  * @param root - Repo root for repo-scoped features; a package root for
  *   package-scoped ones (monorepos keep a `.nax/features` tree per package, so
- *   an acceptance test resolves against its own package's imports).
+ *   an artifact written there resolves against its own package's imports).
  */
 export function featuresDir(root: string): string {
   return join(root, PROJECT_NAX_DIR, "features");

@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 function configFor(mode: "pipeline" | "workflow") {
-  return makeNaxConfig({ acceptance: { enabled: false }, execution: { mode, iterationDelayMs: 0 } });
+  return makeNaxConfig({ execution: { mode, iterationDelayMs: 0 } });
 }
 
 async function run(mode: "pipeline" | "workflow", dryRun = false): Promise<WorkflowRunStartInput[]> {

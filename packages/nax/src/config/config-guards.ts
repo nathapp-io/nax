@@ -277,14 +277,12 @@ export function warnQualityCommandChains(conf: Record<string, unknown>, warn?: (
  * Map value is a migration hint appended to the warning message, telling the
  * user where (or whether) the behaviour they thought they were toggling
  * actually lives. The three `tdd.*` and `execution.rectification.*` entries
- * describe the unconditional behaviour the user was already getting;
- * `acceptance.generateTests` points at the single surviving switch.
+ * describe the unconditional behaviour the user was already getting.
  */
 const REMOVED_NO_OP_KEYS: Readonly<Record<string, string>> = {
   "execution.rectification.escalateOnExhaustion": "this key had no effect — tier escalation is currently unconditional",
   "tdd.autoVerifyIsolation": "this key had no effect — isolation verification is currently unconditional",
   "tdd.autoApproveVerifier": "this key had no effect — verifier auto-approval is currently unconditional",
-  "acceptance.generateTests": "use `acceptance.enabled` instead",
   "review.gateLLMChecksOnMechanicalPass":
     "LLM review checks are sequenced by the story orchestrator; this key never had an effect after #1859",
   debate:

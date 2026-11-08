@@ -69,7 +69,7 @@ describe("workflow harness dispatch", () => {
   function options(mode: "workflow" | "pipeline" = "workflow"): RunnerExecutionOptions {
     return {
       ...makeDispatchContext({ runtime: makeMockRuntime({ workdir }) }),
-      config: makeNaxConfig({ acceptance: { enabled: false }, execution: { mode, iterationDelayMs: 0 } }),
+      config: makeNaxConfig({ execution: { mode, iterationDelayMs: 0 } }),
       prdPath: `${workdir}/prd.json`,
       workdir,
       feature: "dispatch",

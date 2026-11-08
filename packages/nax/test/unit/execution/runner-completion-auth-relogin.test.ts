@@ -54,7 +54,6 @@ function options(): RunnerCompletionOptions {
   runtimes.push(runtime);
   return {
     config: makeNaxConfig({
-      acceptance: { enabled: false },
       execution: { mode: "pipeline" },
     }),
     hooks: { hooks: {}, _skipGlobal: false },

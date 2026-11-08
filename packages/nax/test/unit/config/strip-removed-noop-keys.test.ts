@@ -2,11 +2,14 @@
 //
 // Tests for stripRemovedNoOpKeys (US-005c: no-op config key removal).
 //
-// Four config keys were declared but never read at any code site:
+// Three config keys were declared but never read at any code site:
 //   - execution.rectification.escalateOnExhaustion
 //   - tdd.autoVerifyIsolation
 //   - tdd.autoApproveVerifier
-//   - acceptance.generateTests
+//
+// A fourth, `acceptance.generateTests`, left this map with the whole
+// `acceptance` section in pipeline-acceptance-isolation-delete US-003: the
+// section is one entry in `REMOVED_CONFIG_KEYS`, so the leaf is gone with it.
 //
 // Setting any of them to false was a silent no-op (the behaviour ran anyway).
 // The previous behaviour was to silently strip them, which let the user keep
@@ -46,22 +49,20 @@ async function writeProjectConfig(contents: object, projectRoot?: string): Promi
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("stripRemovedNoOpKeys — direct unit", () => {
-  test("AC-1: warns exactly four times when all four removed paths are present", () => {
+  test("AC-1: warns exactly three times when all three removed paths are present", () => {
     const captured: string[] = [];
     stripRemovedNoOpKeys(
       {
         execution: { rectification: { escalateOnExhaustion: false } },
         tdd: { autoVerifyIsolation: false, autoApproveVerifier: false },
-        acceptance: { generateTests: false },
       },
       (msg) => captured.push(msg),
     );
 
-    expect(captured.length).toBe(4);
+    expect(captured.length).toBe(3);
     expect(captured.some((m) => m.includes("execution.rectification.escalateOnExhaustion"))).toBe(true);
     expect(captured.some((m) => m.includes("tdd.autoVerifyIsolation"))).toBe(true);
     expect(captured.some((m) => m.includes("tdd.autoApproveVerifier"))).toBe(true);
-    expect(captured.some((m) => m.includes("acceptance.generateTests"))).toBe(true);
   });
 
   test("AC-2: strips tdd.autoVerifyIsolation without mutating the input", () => {
@@ -76,7 +77,7 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
     const captured: string[] = [];
     const input = {
       tdd: { maxRetries: 3 },
-      acceptance: { enabled: true },
+      quality: { enabled: true },
       execution: { rectification: { maxAttemptsTotal: 12 } },
     };
     const result = stripRemovedNoOpKeys(input, (msg) => captured.push(msg));
@@ -93,14 +94,6 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
     const tdd = result.tdd as Record<string, unknown>;
     expect(tdd.maxRetries).toBe(5);
     expect(tdd.autoVerifyIsolation).toBeUndefined();
-  });
-
-  test("AC-5: retains other acceptance fields when stripping acceptance.generateTests", () => {
-    const result = stripRemovedNoOpKeys({ acceptance: { generateTests: false, enabled: true } }, () => {});
-
-    const acceptance = result.acceptance as Record<string, unknown>;
-    expect(acceptance.enabled).toBe(true);
-    expect(acceptance.generateTests).toBeUndefined();
   });
 
   test("AC-6: retains other execution.rectification fields when stripping execution.rectification.escalateOnExhaustion", () => {
@@ -252,7 +245,11 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
     expect("autoVerifyIsolation" in config.tdd).toBe(false);
   });
 
-  test("AC-11: loadConfig strips acceptance.generateTests from global config", async () => {
+  // A leftover acceptance section is now stripped whole, by the section entry
+  // in `REMOVED_CONFIG_KEYS` rather than by a leaf entry. This keeps the
+  // per-layer coverage the AC originally gave the global layer: the warning
+  // names the SECTION, never the leaf.
+  test("AC-11: loadConfig drops a global acceptance section and warns once naming the section", async () => {
     // Set only the global config; isolate it from any test env
     const globalDir = makeTempDir("nax-noop-global-");
     tempDirs.push(globalDir);
@@ -264,10 +261,24 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
       // Use a fresh project root with no .nax so only the global layer applies
       const root = makeTempDir("nax-noop-proj-");
       tempDirs.push(root);
-      const config = await loadConfig(root);
-      // `acceptance` became optional on NaxConfig in US-001; the no-op strip still
-      // has to drop `generateTests` whenever the section is present.
-      expect("generateTests" in (config.acceptance ?? {})).toBe(false);
+      const captured: string[] = [];
+      resetLogger();
+      initLogger({ level: "warn" });
+      const removeSink = addSink((entry) => captured.push(entry.message));
+      let config: Awaited<ReturnType<typeof loadConfig>> | undefined;
+      try {
+        config = await loadConfig(root);
+      } finally {
+        removeSink();
+        resetLogger();
+      }
+
+      assertDefined(config, "loadConfig result");
+      expect(Object.hasOwn(config, "acceptance")).toBe(false);
+      const removed = captured.filter((m) => m.includes("has been removed") && m.startsWith("Config key "));
+      expect(removed).toHaveLength(1);
+      expect(removed[0]).toContain('"acceptance"');
+      expect(removed.filter((m) => m.includes("acceptance.generateTests"))).toEqual([]);
     } finally {
       if (orig === undefined) {
         delete process.env.NAX_GLOBAL_CONFIG_DIR;
@@ -323,11 +334,11 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
   // case where a per-package overlay can actually contribute a no-op key to
   // the merged result, which is when the strip has something to do.
   //
-  // The vehicle is `quality.autofix.enforceTestWriterIsolation`, not
-  // `acceptance.generateTests`: pipeline-acceptance-isolation-delete US-001
-  // stopped merging the `acceptance` section per package, so an overlay setting
-  // it is now dropped before the strip sees it and the assertion would hold
-  // vacuously.
+  // The vehicle is `quality.autofix.enforceTestWriterIsolation`: the retired
+  // acceptance section is no longer merged per package (pipeline-acceptance-
+  // isolation-delete US-001) and no longer exists at all (US-003), so an
+  // overlay setting one of its keys is dropped before the strip sees it and
+  // the assertion would hold vacuously.
   test("AC-13b: loadConfigForWorkdir strips quality.autofix.enforceTestWriterIsolation from a per-package overlay on a mergeable field", async () => {
     const root = makeTempDir("nax-noop-mono-mergeable-");
     tempDirs.push(root);
@@ -394,10 +405,9 @@ describe("NaxConfigSchema and FIELD_DESCRIPTIONS — removed keys", () => {
     expect("autoApproveVerifier" in tdd).toBe(false);
   });
 
-  test("AC-17: NaxConfigSchema parses {} without an acceptance.generateTests property", () => {
+  test("AC-17: NaxConfigSchema parses {} without an acceptance section at all", () => {
     const parsed = NaxConfigSchema.parse({});
-    const acceptance = (parsed.acceptance ?? {}) as Record<string, unknown>;
-    expect("generateTests" in acceptance).toBe(false);
+    expect(Object.hasOwn(parsed, "acceptance")).toBe(false);
   });
 
   test("AC-18: FIELD_DESCRIPTIONS has no execution.rectification.escalateOnExhaustion entry", () => {
@@ -412,14 +422,12 @@ describe("NaxConfigSchema and FIELD_DESCRIPTIONS — removed keys", () => {
     expect(FIELD_DESCRIPTIONS["tdd.autoApproveVerifier"]).toBeUndefined();
   });
 
-  test("AC-21: FIELD_DESCRIPTIONS has no acceptance.generateTests entry", () => {
-    expect(FIELD_DESCRIPTIONS["acceptance.generateTests"]).toBeUndefined();
-  });
+  test("AC-21: FIELD_DESCRIPTIONS documents no key of the removed acceptance section", () => {
+    const acceptanceEntries = Object.keys(FIELD_DESCRIPTIONS).filter(
+      (key) => key === "acceptance" || key.startsWith("acceptance."),
+    );
 
-  test("AC-22: FIELD_DESCRIPTIONS has a non-empty acceptance.enabled entry (the surviving control)", () => {
-    const entry = FIELD_DESCRIPTIONS["acceptance.enabled"];
-    expect(typeof entry).toBe("string");
-    expect(entry.length).toBeGreaterThan(0);
+    expect(acceptanceEntries).toEqual([]);
   });
 });
 

@@ -1,29 +1,20 @@
 /**
- * `executeUnified` no longer runs acceptance setup or the post-run acceptance
- * stage — pipeline-post-run-delete US-005.
+ * `executeUnified` runs no acceptance setup and no post-run acceptance stage —
+ * pipeline-post-run-delete US-005, made structural by pipeline-acceptance-
+ * isolation-delete US-003 (the config section they were gated on no longer
+ * exists).
  *
- * Workflow mode turns `acceptance.enabled` off for every loaded config
- * (`config/workflow-mode.ts`), so both acceptance blocks in the run loop were
- * dead in production yet still reachable from a hand-built config. The story
- * deletes the stages themselves, so these tests pin the invariant at the seam a
- * caller actually observes: a config that IS enabled must still run no
- * acceptance setup and no post-run acceptance stage.
- *
- * Deliberately asserted at `executeUnified`, not as source-string absence: a
- * hand-built `acceptance.enabled: true` config is the only input that used to
- * reach the removed blocks, and the exit reasons plus the recorded stage names
- * are observable behaviour rather than a grep.
+ * These tests pin the invariant at the seam a caller actually observes: an
+ * ordinary run must enter neither block, on either exit branch. The exit
+ * reasons plus the recorded stage names are observable behaviour rather than a
+ * grep of the source, so a re-introduced stage shows up here — including one
+ * renamed in the logs, because `stage:enter` is asserted separately.
  *
  * Two seams are observed:
  *   - the captured logger, for the two block-entry messages that only the
  *     removed blocks emitted;
  *   - `ctx.eventEmitter`, for `stage:enter` names (`pipeline/runner.ts`), so a
  *     re-introduced stage would show up even if it were renamed in the logs.
- *
- * The hand-built config disables `acceptance.redGate` and `acceptance.refinement`
- * on purpose: on the pre-change tree the setup stage then reaches its generation
- * step without spawning a shell test run or a refine dispatch, so the failing
- * baseline is deterministic instead of running a real suite in a temp dir.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -61,11 +52,10 @@ const original = { ..._unifiedExecutorDeps };
 let dir: string;
 let logEntries: LogEntry[];
 
-/** A config that reaches the removed blocks: acceptance is explicitly ENABLED. */
-function acceptanceConfig(): NaxConfig {
+/** The run config every case below executes with. */
+function runConfig(): NaxConfig {
   return makeNaxConfig({
     execution: { mode: "pipeline", iterationDelayMs: 0 },
-    acceptance: { enabled: true, refinement: false, redGate: false },
     autoMode: { escalation: { enabled: false } },
   });
 }
@@ -73,7 +63,7 @@ function acceptanceConfig(): NaxConfig {
 function makeCtx(emitter: PipelineEventEmitter): SequentialExecutionContext {
   return {
     ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: dir }) }),
-    config: acceptanceConfig(),
+    config: runConfig(),
     prdPath: join(dir, "prd.json"),
     workdir: dir,
     featureDir: dir,
@@ -151,7 +141,7 @@ afterEach(() => {
   cleanupTempDir(dir);
 });
 
-describe("executeUnified — an acceptance-enabled config runs no acceptance setup", () => {
+describe("executeUnified — a run executes no acceptance setup", () => {
   test("AC-1: returns exit reason completed when the stubbed iteration marks the pending story passed", async () => {
     const emitter = new PipelineEventEmitter();
     stubIterationCompletesStory();
@@ -173,7 +163,7 @@ describe("executeUnified — an acceptance-enabled config runs no acceptance set
   });
 });
 
-describe("executeUnified — an acceptance-enabled config runs no post-run acceptance stage", () => {
+describe("executeUnified — a run executes no post-run acceptance stage", () => {
   test("AC-3: returns exit reason max-iterations when the iteration leaves the story pending", async () => {
     const emitter = new PipelineEventEmitter();
     stubIterationLeavesStoryPending();

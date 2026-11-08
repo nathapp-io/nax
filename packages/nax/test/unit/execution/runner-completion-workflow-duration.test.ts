@@ -39,7 +39,6 @@ function opts(mode: "workflow" | "pipeline", over: Partial<RunnerCompletionOptio
   runtime.costAggregator.snapshot = mock(() => ({ ...EMPTY_SNAPSHOT, totalCostUsd: 4.25 }));
   return {
     config: makeNaxConfig({
-      acceptance: { enabled: false },
       execution: { mode },
     }),
     hooks: { hooks: {}, _skipGlobal: false },

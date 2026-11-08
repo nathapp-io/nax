@@ -511,7 +511,7 @@ export async function loadConfigForWorkdir(
   // root config and is cached per `cacheKey`, so a root-only chained command
   // must not be re-warned here on every `loadConfigForWorkdir` call for every
   // package/story in a run (iteration-runner.ts, parallel-batch.ts,
-  // runner-completion.ts, acceptance-setup.ts each call this once per story).
+  // runner-completion.ts each call this once per story).
   // Running the check on the raw per-layer object rather than the merged
   // config means only a command actually declared (or overridden) at THIS
   // package layer can warn here — an inherited root value cannot, since it is

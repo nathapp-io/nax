@@ -296,20 +296,6 @@ describe("configured model selector schema", () => {
     expect(result.data.plan.model).toEqual({ agent: "codex", model: "gpt-5.4" });
   });
 
-  test("accepts object form for acceptance.model", () => {
-    const result = NaxConfigSchema.safeParse({
-      ...DEFAULT_CONFIG,
-      acceptance: {
-        ...DEFAULT_CONFIG.acceptance,
-        model: { agent: "codex", model: "fast" },
-      },
-    });
-
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.acceptance.model).toEqual({ agent: "codex", model: "fast" });
-  });
-
   test("accepts object form for routing.llm.model", () => {
     const result = NaxConfigSchema.safeParse({
       ...DEFAULT_CONFIG,

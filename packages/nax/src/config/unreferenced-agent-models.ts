@@ -5,9 +5,9 @@
  * `agent.protocol` does not route: work nobody assigned runs on
  * `agent.default`, which is `native` by default. An ACP agent runs only where
  * config or the PRD points at it — the default, an enabled fallback rung, any
- * `{agent, model}` / `{agent, tier}` pin (review, finish, acceptance, plan, TDD
- * session tiers, escalation rungs, complexity routes, routing profiles), or a
- * story's `routing.agent`.
+ * `{agent, model}` / `{agent, tier}` pin (review, finish, plan, TDD session
+ * tiers, escalation rungs, complexity routes, routing profiles), or a story's
+ * `routing.agent`.
  *
  * A user-declared `models.<ACP agent>` map that none of those reaches is dead
  * config: before `native` became the default it was the map every run used, so
@@ -16,8 +16,9 @@
  *
  * Pins are found by SHAPE rather than from a list of config keys: any object
  * carrying a string `agent` beside a `model` or `tier`. A key list goes stale
- * as sites are added (it had already missed finish and acceptance-fix), and a
- * stale list here produces exactly the false warning this must not give.
+ * as sites are added (it had already missed finish and the acceptance fix
+ * cycle, whose keys have since been removed), and a stale list here produces
+ * exactly the false warning this must not give.
  * `models` (ModelDef objects carry no `agent`) and `agent` (the fallback map is
  * read separately, gated on `enabled`) are skipped.
  *

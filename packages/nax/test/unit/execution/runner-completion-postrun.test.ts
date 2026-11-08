@@ -47,12 +47,8 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeConfig(acceptanceEnabled = true): NaxConfig {
+function makeConfig(): NaxConfig {
   return makeNaxConfig({
-    acceptance: {
-      enabled: acceptanceEnabled,
-      maxRetries: 3,
-    },
     execution: {
       mode: "pipeline",
     },
@@ -107,7 +103,7 @@ const origDeps = { ..._runnerCompletionDeps };
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => defaultCompletionResult);
-  _runnerCompletionDeps.loadConfigForPackage = mock(async () => makeConfig(true));
+  _runnerCompletionDeps.loadConfigForPackage = mock(async () => makeConfig());
 });
 
 afterEach(() => {
@@ -135,7 +131,7 @@ describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
       return defaultCompletionResult;
     });
 
-    const config = makeConfig(false);
+    const config = makeConfig();
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const statusWriter = makeStatusWriter();
     const opts: RunnerCompletionOptions = {
@@ -155,7 +151,7 @@ describe("runCompletionPhase - forwards parallel mode as isSequential", () => {
       return defaultCompletionResult;
     });
 
-    const base = makeConfig(false);
+    const base = makeConfig();
     const config = { ...base, execution: { ...base.execution, mode: "workflow" as const } };
     const opts: RunnerCompletionOptions = {
       ...makeOpts(config, makePRD([{ id: "US-001", status: "passed" }]), makeStatusWriter()),

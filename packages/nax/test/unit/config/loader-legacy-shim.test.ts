@@ -780,17 +780,20 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
   // resolution, but each got the bare `defaultConfigWarn` sink — so a no-op key
   // in both the overlay and a package profile warned twice, where the root path
   // warns once per resolved config. They now share the per-resolution dedupe.
+  //
+  // The vehicle is `review.gateLLMChecksOnMechanicalPass` — a mergeable
+  // per-package section, so the profile can reintroduce the key after the first strip.
   test("a removed no-op key in both the overlay and a per-package profile warns once, not twice", async () => {
     await writeRootConfig({});
-    await writePackageOverride({ profile: "legacy", acceptance: { generateTests: false } });
+    await writePackageOverride({ profile: "legacy", review: { gateLLMChecksOnMechanicalPass: false } });
     await writePackageProfile("legacy", {
-      acceptance: { generateTests: false },
+      review: { gateLLMChecksOnMechanicalPass: false },
       execution: { costLimit: 7 },
     });
 
     const captured = await captureWorkdirWarnings(loadForPackage);
 
-    expect(captured.filter((m) => m.includes("generateTests"))).toHaveLength(1);
+    expect(captured.filter((m) => m.includes("review.gateLLMChecksOnMechanicalPass"))).toHaveLength(1);
     expect((await loadForPackage()).execution.costLimit).toBe(7);
   });
 });

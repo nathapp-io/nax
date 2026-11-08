@@ -286,7 +286,6 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "constitution",
   "review",
   "plan",
-  "acceptance",
   "context",
   "optimizer",
   "plugins",

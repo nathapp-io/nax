@@ -256,8 +256,8 @@ describe("loadConfigForWorkdir", () => {
   // nax#1990 fix round 1 — a root-level chained command must warn exactly
   // once across an entire run, not once per `loadConfigForWorkdir` call.
   // `loadConfigForWorkdir` is called once per package/story
-  // (iteration-runner.ts, parallel-batch.ts, runner-completion.ts,
-  // acceptance-setup.ts), and the root config load it wraps is cached per
+  // (iteration-runner.ts, parallel-batch.ts, runner-completion.ts), and the
+  // root config load it wraps is cached per
   // `cacheKey` — but the per-package overlay validation used to re-run the
   // check against the ROOT-inherited value on every call, producing one
   // warning per story instead of one per run.

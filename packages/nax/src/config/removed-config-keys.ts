@@ -50,10 +50,16 @@ const VERIFICATION_TIMEOUT_HINT = "verification uses execution.regressionGate.ti
  * merged and documented but read at no code site; and the verification timeout
  * is `regressionGate.timeoutSeconds`, not a key of its own.
  *
+ * `acceptance` is the third whole section: `src/acceptance/` was deleted with
+ * pipeline mode, so every leaf under it configured a phase no run has. The whole
+ * section was pipeline-only, which is why it takes `PIPELINE_ONLY_KEY_HINT`
+ * rather than a per-key hint.
+ *
  * A section entry strips the WHOLE section — one warning for the section, not one
  * per leaf under it.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
+  acceptance: PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.enabled": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxAttemptsPerStrategy": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxFailureSummaryChars": PIPELINE_ONLY_KEY_HINT,

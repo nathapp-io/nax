@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 947
+    "looseCast": 945
   },
-  "updatedAt": "2026-11-08T12:38:09.558Z",
+  "updatedAt": "2026-11-08T13:20:06.780Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -534,7 +534,7 @@
       "looseCast": 2
     },
     "test/unit/config/strip-removed-noop-keys.test.ts": {
-      "looseCast": 10
+      "looseCast": 8
     },
     "test/unit/config/schemas-infra.test.ts": {
       "looseCast": 1

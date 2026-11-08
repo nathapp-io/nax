@@ -92,7 +92,6 @@ export type {
   TierConfig,
 } from "./schema";
 export {
-  AcceptanceConfigSchema,
   CLAUDE_MODEL_SHORTHANDS,
   ContextConfigSchema,
   ContextV2ConfigSchema,
