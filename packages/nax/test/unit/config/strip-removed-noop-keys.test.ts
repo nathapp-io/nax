@@ -328,17 +328,15 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
     expect("autoApproveVerifier" in config.tdd).toBe(false);
   });
 
-  // AC-13b: tdd is a root-only field, so the per-package overlay above does
-  // not actually exercise the strip call — the override is silently dropped
-  // by mergePackageConfig. The mergeable-field companion test below covers the
-  // case where a per-package overlay can actually contribute a no-op key to
-  // the merged result, which is when the strip has something to do.
-  //
-  // The vehicle is `quality.autofix.enforceTestWriterIsolation`: the retired
-  // acceptance section is no longer merged per package (pipeline-acceptance-
-  // isolation-delete US-001) and no longer exists at all (US-003), so an
-  // overlay setting one of its keys is dropped before the strip sees it and
-  // the assertion would hold vacuously.
+  // AC-13b: the case where a per-package overlay can contribute a no-op key to
+  // the merged result. `tdd` is a root-only field, but AC-13 above still
+  // exercises the strip: `loadConfigForWorkdir` strips the overlay layer BEFORE
+  // the `mergePackageConfig` whitelist, so a removed key in a section the merge
+  // would drop is still warned about and removed. The vehicle here is a
+  // mergeable section instead — `quality.autofix.enforceTestWriterIsolation` —
+  // so the merged result is what carries the key. (The retired acceptance
+  // section is no longer merged per package (US-001) and no longer exists at all
+  // (US-003).)
   test("AC-13b: loadConfigForWorkdir strips quality.autofix.enforceTestWriterIsolation from a per-package overlay on a mergeable field", async () => {
     const root = makeTempDir("nax-noop-mono-mergeable-");
     tempDirs.push(root);

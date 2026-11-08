@@ -517,19 +517,18 @@ export async function loadConfigForWorkdir(
   // package layer can warn here — an inherited root value cannot, since it is
   // absent from `shimmedPackageFields`.
   warnQualityCommandChains(shimmedPackageFields as Record<string, unknown>, warnDedupe.warn);
-  let merged = mergePackageConfig(rootConfig, shimmedPackageFields);
+  // Strip the removed keys from THIS layer BEFORE the whitelist merge: the merge
+  // carries only its mergeable sections, so a removed key anywhere else
+  // (`acceptance`, a root-only section) is dropped by the whitelist — silently,
+  // and never reaches the post-merge strip, which left an acceptance-only
+  // package config resolving to the root config with no warning.
+  const packageLayer = stripRemovedConfig(shimmedPackageFields as unknown as Record<string, unknown>, warnDedupe.warn);
+  let merged = mergePackageConfig(rootConfig, packageLayer as unknown as Partial<NaxConfig>);
 
-  // Strip the removed no-op keys and the removed stage names from the
-  // per-package overlay result. Runs for BOTH ordinary package overlays and
-  // package profiles (the profile branch re-runs the strip on the
-  // profile-merged result, so this also covers the case where a per-package
-  // overlay introduces a no-op key on a mergeable field like
-  // quality.autofix.enforceTestWriterIsolation). Post-merge placement yields one
-  // warning per resolved config regardless of which layer supplied the key.
-  // #1620: the shared per-resolution dedupe, not the bare sink — this strip and
-  // the post-profile one below are two layers of the same resolution, so a key in
-  // both the overlay and a package profile warned twice where the root path warns
-  // once.
+  // Second pass, on the merged result: a package PROFILE reintroduces its own
+  // removed keys after the strip above, so it needs its own pass. #1620: the
+  // shared per-resolution dedupe, not the bare sink — a key in both the overlay
+  // and a profile warns once.
   merged = stripRemovedConfig(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
 
   // Per-package profile: apply the profile chain overlay on top of merged config.
