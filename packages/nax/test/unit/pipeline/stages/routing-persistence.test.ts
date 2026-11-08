@@ -81,7 +81,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
     }
   });
 
-  test("calls savePRD with updated prd when story.routing is undefined", async () => {
+  test("AC-4: calls savePRD with ctx.prd and ctx.prdPath when story.routing is undefined", async () => {
     const { routingStage, _routingDeps } = await import("@/pipeline/stages/routing");
 
     origRoutingDeps = { ..._routingDeps };
@@ -100,6 +100,8 @@ describe("routingStage - first classification persists routing to prd.json", () 
 
     // savePRD must have been called exactly once
     expect(savePRDCallArgs).toHaveLength(1);
+    expect(savePRDCallArgs[0]?.[0]).toBe(ctx.prd);
+    expect(savePRDCallArgs[0]?.[1]).toBe(ctx.prdPath);
   });
 
   test("persists correct prdPath to savePRD on first classification", async () => {
@@ -351,14 +353,11 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
 });
 
 // ---------------------------------------------------------------------------
-// BUG-36 (review follow-up): skipPrdPersistence must gate savePRD here too.
-// Worktree pipelines now carry a real prdPath (needed by rectification), so
-// without this guard every concurrent worker in a parallel batch would save
-// its own per-story clone over the shared prd.json on the routing stage's
-// very first classification write.
+// BUG-35: the greenfield override re-saves the PRD so the persisted routing
+// agrees with the in-memory one.
 // ---------------------------------------------------------------------------
 
-describe("routingStage - skipPrdPersistence gates savePRD (BUG-36)", () => {
+describe("routingStage - the greenfield re-save path (BUG-35)", () => {
   let origRoutingDeps: typeof _routingDeps;
 
   afterEach(() => {
@@ -368,28 +367,7 @@ describe("routingStage - skipPrdPersistence gates savePRD (BUG-36)", () => {
     }
   });
 
-  test("does NOT call savePRD when skipPrdPersistence is true, even with a real prdPath", async () => {
-    origRoutingDeps = { ..._routingDeps };
-
-    let savePRDCalled = false;
-    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
-    _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
-    _routingDeps.savePRD = mock(() => {
-      savePRDCalled = true;
-      return Promise.resolve();
-    });
-
-    const story = makeStory({ routing: undefined });
-    const ctx = makeCtx(story, { skipPrdPersistence: true } as Partial<PipelineContext>);
-
-    await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
-
-    expect(savePRDCalled).toBe(false);
-    // ctx.story.routing is still populated locally — only the disk write is skipped.
-    expect(ctx.story.routing).toBeDefined();
-  });
-
-  test("still calls savePRD on the greenfield re-save path when skipPrdPersistence is unset", async () => {
+  test("still calls savePRD on the greenfield re-save path", async () => {
     origRoutingDeps = { ..._routingDeps };
 
     let savePRDCallCount = 0;

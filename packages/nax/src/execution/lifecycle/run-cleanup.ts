@@ -30,7 +30,6 @@ import { countStories, type PRD } from "@/prd";
 import { clearLanguageCache } from "@/project";
 import { clearWorkspaceCache } from "@/test-runners/detect";
 import { clearGitRootCache } from "@/verification";
-import { resetRuntimeCrashRetryCounts } from "../escalation";
 import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
 import { wipeRunTmp } from "./run-tmp-wipe";
@@ -47,7 +46,6 @@ type PostRunActionOutcome =
 
 export const _runCleanupDeps = {
   fireHook,
-  resetRuntimeCrashRetryCounts,
   clearLanguageCache,
   clearWorkspaceCache,
   clearGitRootCache,
@@ -339,10 +337,6 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
 
   // Release per-workdir feature resolver index to prevent memory leak across runs
   disposeFeatureResolver(workdir);
-
-  // BUG-15: clear the runtime-crash retry budget so the next run in this
-  // process starts with a fresh budget (tests, watch mode).
-  _runCleanupDeps.resetRuntimeCrashRetryCounts();
 
   // MEM-7: clear per-run detection memos so subsequent runs in the same process
   // start fresh. These live in the finally (cleanupRun), not in run-completion:

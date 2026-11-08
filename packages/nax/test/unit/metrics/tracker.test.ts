@@ -5,14 +5,14 @@
  * AC-5: collectStoryMetrics() reads story.routing.initialComplexity,
  *       falls back to routing.complexity for backward compat
  *
- * Also absorbs collectBatchMetrics agent-swap / crash-retry attribution
- * (nax#1709): nax#1711 wired the run-scoped runtime.agentFallbacks /
- * runtime.runtimeCrashRetries stores into the sequential success path, the
- * failure back-fill and the parallel path; batch execution read neither
- * store, so a swap while a batch ran was recorded by callOp and then
- * discarded. callOp keys hops by ctx.story.id, so in a batch the lead story
- * carries the hops and the siblings carry none — that under-attributes per
- * story but counts every hop exactly once at run level.
+ * Also absorbs collectBatchMetrics agent-swap attribution
+ * (nax#1709): nax#1711 wired the run-scoped runtime.agentFallbacks store
+ * into the sequential success path, the failure back-fill and the parallel
+ * path; batch execution read none of it, so a swap while a batch ran was
+ * recorded by callOp and then discarded. callOp keys hops by ctx.story.id, so
+ * in a batch the lead story carries the hops and the siblings carry none —
+ * that under-attributes per story but counts every hop exactly once at run
+ * level.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -660,21 +660,44 @@ describe("collectBatchMetrics - agent-swap hops (nax#1709)", () => {
   });
 });
 
-describe("collectBatchMetrics - runtimeCrashes (nax#1709)", () => {
-  test("reads the per-story crash tally instead of hardcoding zero", () => {
-    const stories = twoStories();
-    const ctx = batchCtx(stories);
-    ctx.runtime.runtimeCrashRetries.set("US-001", 2);
+// ---------------------------------------------------------------------------
+// US-002: the constant metric keys are gone.
+//
+// fullSuiteGatePassed, reviewsFailedOpen and runtimeCrashes were constants
+// (false, 0, 0) since the pipeline that wrote them was deleted, so a metrics
+// row now carries neither the keys nor their values.
+// ---------------------------------------------------------------------------
 
-    const metrics = collectBatchMetrics(ctx, STORY_START_TIME);
+describe("collectStoryMetrics - the constant metric keys are gone (US-002)", () => {
+  test("AC-1: a successful story's metric carries none of them", async () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
 
-    expect(metrics.find((m) => m.storyId === "US-001")?.runtimeCrashes).toBe(2);
-    expect(metrics.find((m) => m.storyId === "US-002")?.runtimeCrashes).toBe(0);
+    const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
+
+    expect("fullSuiteGatePassed" in metrics).toBe(false);
+    expect("reviewsFailedOpen" in metrics).toBe(false);
+    expect("runtimeCrashes" in metrics).toBe(false);
   });
 
-  test("stays 0 for a batch where nothing crashed", () => {
+  test("AC-2: success with no escalations and no prior failures is a first pass", async () => {
+    const story = makeStory({ attempts: 1, escalations: [], priorFailures: [] });
+    const ctx = makeCtx(story);
+
+    const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
+
+    expect(metrics.firstPassSuccess).toBe(true);
+  });
+});
+
+describe("collectBatchMetrics - the constant metric keys are gone (US-002)", () => {
+  test("AC-3: neither row of a two-story batch carries a gate or crash key", () => {
     const metrics = collectBatchMetrics(batchCtx(twoStories()), STORY_START_TIME);
 
-    for (const m of metrics) expect(m.runtimeCrashes).toBe(0);
+    expect(metrics).toHaveLength(2);
+    for (const m of metrics) {
+      expect("fullSuiteGatePassed" in m).toBe(false);
+      expect("runtimeCrashes" in m).toBe(false);
+    }
   });
 });

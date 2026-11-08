@@ -8,13 +8,10 @@
  */
 
 import type { NaxConfig } from "@/config";
-import { isThreeSessionStrategy } from "@/config";
-import type { FailureCategory } from "@/execution/types";
-import type { Finding } from "@/findings";
 import type { LoadedHooksConfig } from "@/hooks";
 import { getSafeLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import type { PRD, StructuredFailure, UserStory, VerificationStage } from "@/prd";
+import type { PRD, StructuredFailure, UserStory } from "@/prd";
 import { markStoryFailed, savePrdProgress } from "@/prd";
 import type { RoutingDecision } from "@/routing";
 import { storySpendUsd } from "@/runtime";
@@ -27,29 +24,22 @@ import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome"
 function buildEscalationFailure(
   story: UserStory,
   currentTier: string,
-  reviewFindings: Finding[] | undefined,
   cost: number | undefined,
   pipelineReason: string | undefined,
-  failureCategory: FailureCategory | undefined,
 ): StructuredFailure {
-  // AC-3: Use stage='review' when there are semantic review findings
-  const stage: VerificationStage = reviewFindings && reviewFindings.length > 0 ? "review" : "escalation";
-
   // Compose a meaningful summary from the actual failure context so priorFailures
-  // surfaces real signal (category + pipeline reason) into the next tier's prompt
+  // surfaces real signal (the pipeline reason) into the next tier's prompt
   // instead of the previous hardcoded "Failed with tier X, escalating".
   const trimmedReason = pipelineReason?.trim();
-  const categoryPart = failureCategory ? ` [${failureCategory}]` : "";
   const summary = trimmedReason
-    ? `Tier ${currentTier}${categoryPart}: ${trimmedReason}`
-    : `Tier ${currentTier}${categoryPart} failed — no pipeline reason recorded`;
+    ? `Tier ${currentTier}: ${trimmedReason}`
+    : `Tier ${currentTier} failed — no pipeline reason recorded`;
 
   return {
     attempt: (story.attempts ?? 0) + 1,
     modelTier: currentTier,
-    stage,
+    stage: "escalation",
     summary,
-    reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
     cost: cost ?? 0,
     timestamp: new Date().toISOString(),
     ...(story.routing?.agent !== undefined ? { agent: story.routing.agent } : {}),
@@ -162,10 +152,8 @@ export async function preIterationTierCheck(
     const preIterationFailure = buildEscalationFailure(
       story,
       currentTier,
-      undefined, // no review findings — iteration never ran
       undefined, // no attempt cost — iteration never ran
       budgetReason,
-      undefined, // no TDD failure category — pre-iteration
     );
     const preIterationError = `Attempt ${story.attempts} exhausted budget on tier: ${currentTier}`;
     // A queued INJECT story has no persisted routing yet. Resolve its real decision
@@ -286,11 +274,8 @@ export interface EscalationHandlerContext {
   routing: RoutingDecision;
   pipelineResult: {
     reason?: string;
-    context: {
-      retryAsLite?: boolean;
-      tddFailureCategory?: FailureCategory;
-      reviewFindings?: Finding[];
-    };
+    /** The pipeline context. The escalation layer reads no field of it. */
+    context: object;
   };
   config: NaxConfig;
   prd: PRD;
@@ -300,8 +285,6 @@ export interface EscalationHandlerContext {
   feature: string;
   totalCost: number;
   workdir: string;
-  /** Runtime crash detection result — used to detect RUNTIME_CRASH (BUG-070) and retry same tier */
-  runtimeCrashResult?: { status: string; success: boolean };
   /** Cost of the failed attempt being escalated (BUG-067: accumulated across escalations) */
   attemptCost?: number;
   /** Per-run AgentManager — threaded for LLM batch re-routing after escalation */
@@ -311,48 +294,9 @@ export interface EscalationHandlerContext {
 }
 
 export interface EscalationHandlerResult {
-  outcome: "escalated" | "paused" | "failed" | "retry-same";
+  outcome: "escalated" | "paused" | "failed";
   prdDirty: boolean;
   prd: PRD;
-}
-
-/**
- * Determine if the pipeline should retry the same tier due to a transient runtime crash.
- *
- * Returns true when the verify result status is RUNTIME_CRASH — these are Bun
- * runtime-level failures, not code quality issues, so escalating the model tier
- * would not help. Instead the same tier should be retried.
- *
- * @param runtimeCrashResult - Runtime result checked for RUNTIME_CRASH status (BUG-070)
- */
-export function shouldRetrySameTier(runtimeCrashResult: { status: string; success: boolean } | undefined): boolean {
-  return runtimeCrashResult?.status === "RUNTIME_CRASH";
-}
-
-/**
- * Max consecutive same-tier retries allowed for a runtime crash before the
- * story pauses for human review. Bounds BUG-070's retry-same loop.
- */
-export const RUNTIME_CRASH_RETRY_CAP = 2;
-
-/**
- * In-memory-only counter for consecutive runtime-crash retry-same outcomes,
- * keyed by story id. Deliberately NOT persisted to the PRD — AC-4/AC-5
- * require retry-same to never write to disk or dirty the PRD — so this
- * bounds the retry loop only within a single process; it resets on restart.
- */
-export const _runtimeCrashRetryCounts = new Map<string, number>();
-
-/**
- * BUG-15: Clear the runtime-crash retry budget map.
- *
- * Called at run teardown (cleanupRun). Entries for stories that crashed,
- * retried, and then succeeded without another handleTierEscalation call
- * would otherwise persist for the process lifetime, starving the next run's
- * budget in in-process consumers (tests, watch mode).
- */
-export function resetRuntimeCrashRetryCounts(): void {
-  _runtimeCrashRetryCounts.clear();
 }
 
 /**
@@ -371,35 +315,6 @@ export const _tierEscalationDeps = {
 export async function handleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
 
-  // @design: BUG-070: Runtime crashes are transient — retry same tier, do NOT escalate
-  if (shouldRetrySameTier(ctx.runtimeCrashResult)) {
-    const retries = (_runtimeCrashRetryCounts.get(ctx.story.id) ?? 0) + 1;
-
-    if (retries > RUNTIME_CRASH_RETRY_CAP) {
-      _runtimeCrashRetryCounts.delete(ctx.story.id);
-      logger?.warn("escalation", "Runtime crash retry cap exceeded — pausing for human review", {
-        storyId: ctx.story.id,
-        retries,
-        cap: RUNTIME_CRASH_RETRY_CAP,
-      });
-      return await handleMaxAttemptsReached(ctx, "runtime-crash");
-    }
-
-    _runtimeCrashRetryCounts.set(ctx.story.id, retries);
-    logger?.warn("escalation", "Runtime crash detected — retrying same tier (transient, not a code issue)", {
-      storyId: ctx.story.id,
-      retries,
-    });
-    // AC-4/AC-5: retry-same must never write to disk or dirty the PRD — story
-    // tier and attempts stay unchanged, per the spec's Failure Handling table.
-    return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
-  }
-
-  // The cap is for *consecutive* runtime crashes. Any ordinary pipeline
-  // outcome breaks that sequence (including an escalation to another tier),
-  // so a later transient runtime crash starts with a fresh retry budget.
-  _runtimeCrashRetryCounts.delete(ctx.story.id);
-
   // Only match by (tier, agent) tuple when the tierOrder contains agent-qualified
   // rungs (cross-agent ladder). Standard tier orders with no agent fields fall back
   // to tier-name-only matching so escalation still works for stories that carry a
@@ -414,18 +329,9 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];
 
-  // Retrieve TDD-specific context flags set by executionStage
-  const escalateRetryAsLite = ctx.pipelineResult.context.retryAsLite === true;
-  const escalateFailureCategory = ctx.pipelineResult.context.tddFailureCategory;
-  const escalateReviewFindings = ctx.pipelineResult.context.reviewFindings;
-  // S5: Auto-switch to tdd-simple on greenfield-no-tests. Single-session is required
-  // (the three-session test-writer is skipped on greenfield, BUG-010); tdd-simple is
-  // preferred over test-after because it writes tests first (RED) from the ACs.
-  const escalateRetryAsTddSimple = escalateFailureCategory === "greenfield-no-tests";
-
   if (!escalationResult || !ctx.config.autoMode.escalation.enabled) {
-    // No next tier or escalation disabled — pause or fail based on failure category
-    return await handleNoTierAvailable(ctx, escalateFailureCategory);
+    // No next tier or escalation disabled — pause or fail
+    return await handleNoTierAvailable(ctx);
   }
 
   const maxAttempts = calculateMaxIterations(ctx.config.autoMode.escalation.tierOrder);
@@ -440,34 +346,19 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   const canEscalate = storiesToEscalate.every((s) => (s.attempts ?? 0) < maxAttempts);
 
   if (!canEscalate) {
-    // Max attempts reached — pause or fail based on failure category
-    return await handleMaxAttemptsReached(ctx, escalateFailureCategory);
+    // Max attempts reached — pause or fail
+    return await handleMaxAttemptsReached(ctx);
   }
 
   const escalatedTier = escalationResult.tier;
 
   // Can escalate — log and update stories
   for (const s of storiesToEscalate) {
-    const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
-    // STRAT-001: no-test stories must NOT be escalated to a test strategy. Only
-    // three-session strategies need switching — single-session strategies (tdd-simple /
-    // test-after) already let the implementer own its tests on greenfield.
-    const shouldSwitchToTddSimple = escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy);
-
-    if (shouldSwitchToTddSimple) {
-      logger?.warn("escalation", "Switching strategy to tdd-simple (greenfield-no-tests fallback)", {
-        storyId: s.id,
-        fromStrategy: currentTestStrategy,
-        toStrategy: "tdd-simple",
-      });
-    } else {
-      logger?.warn("escalation", "Escalating story to next tier", {
-        storyId: s.id,
-        fromTier: ctx.routing.modelTier,
-        nextTier: escalatedTier,
-        retryAsLite: escalateRetryAsLite,
-      });
-    }
+    logger?.warn("escalation", "Escalating story to next tier", {
+      storyId: s.id,
+      fromTier: ctx.routing.modelTier,
+      nextTier: escalatedTier,
+    });
   }
 
   // Issue #930 Part 2: verify any (file, line, quote) triples in the escalation reason
@@ -486,43 +377,28 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const shouldEscalate = storiesToEscalate.some((story) => story.id === s.id);
       if (!shouldEscalate) return s;
 
-      // S5: Check if this is a one-time switch to tdd-simple (single-session, test-first)
-      // STRAT-001: no-test stories are exempt; single-session strategies need no switch
-      const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
-      const shouldSwitchToTddSimple = escalateRetryAsTddSimple && isThreeSessionStrategy(currentTestStrategy);
-
       const baseRouting = s.routing ?? { ...ctx.routing };
       const updatedRouting = {
         ...baseRouting,
-        modelTier: shouldSwitchToTddSimple ? baseRouting.modelTier : escalatedTier,
+        modelTier: escalatedTier,
         ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
-        ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
-        ...(shouldSwitchToTddSimple ? { testStrategy: "tdd-simple" as const } : {}),
       };
 
       // @design: BUG-011: Reset attempt counter on tier escalation
       const currentStoryTier = s.routing?.modelTier ?? ctx.routing.modelTier;
       const isChangingTier = currentStoryTier !== escalatedTier;
-      const shouldResetAttempts = isChangingTier || shouldSwitchToTddSimple;
-      const escalationRecord =
-        isChangingTier || shouldSwitchToTddSimple
-          ? buildEscalationRecord(
-              currentStoryTier,
-              shouldSwitchToTddSimple ? currentStoryTier : escalatedTier,
-              ctx.pipelineResult.reason ?? "Escalated to next retry path",
-              { fromAgent: s.routing?.agent, toAgent: nextAgent },
-            )
-          : undefined;
+      const shouldResetAttempts = isChangingTier;
+      const escalationRecord = isChangingTier
+        ? buildEscalationRecord(
+            currentStoryTier,
+            escalatedTier,
+            ctx.pipelineResult.reason ?? "Escalated to next retry path",
+            { fromAgent: s.routing?.agent, toAgent: nextAgent },
+          )
+        : undefined;
 
-      // Build escalation failure (BUG-067: include cost for accumulatedAttemptCost in metrics)
-      const escalationFailure = buildEscalationFailure(
-        s,
-        currentStoryTier,
-        escalateReviewFindings,
-        ctx.attemptCost,
-        verifiedPipelineReason,
-        escalateFailureCategory,
-      );
+      // Build escalation failure (BUG-067: record the escalated attempt's cost in metrics)
+      const escalationFailure = buildEscalationFailure(s, currentStoryTier, ctx.attemptCost, verifiedPipelineReason);
 
       return {
         ...s,

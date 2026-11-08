@@ -434,13 +434,7 @@ export async function handlePipelineFailure(
       break;
 
     case "fail": {
-      markStoryFailed(
-        prd,
-        ctx.story.id,
-        pipelineResult.context.tddFailureCategory,
-        pipelineResult.stoppedAtStage,
-        ctx.statusWriter,
-      );
+      markStoryFailed(prd, ctx.story.id, undefined, pipelineResult.stoppedAtStage, ctx.statusWriter);
       await _resultHandlerDeps.savePrdProgress(prd, ctx.prdPath, ctx.story.id, "failed");
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
@@ -506,14 +500,6 @@ export async function handlePipelineFailure(
     }
 
     case "escalate": {
-      // US-002: derive runtimeCrashResult for same-tier retry. handleTierEscalation's
-      // retry-same branch returns the PRD unmodified — story tier and attempts must
-      // stay untouched per the spec's Failure Handling table, so prd is passed through
-      // as-is rather than pre-mutated here.
-      const runtimeCrashResult =
-        pipelineResult.context.tddFailureCategory === "runtime-crash"
-          ? { status: "RUNTIME_CRASH" as const, success: false }
-          : undefined;
       const escalationResult = await _resultHandlerDeps.handleTierEscalation({
         story: ctx.story,
         storiesToExecute: ctx.storiesToExecute,
@@ -531,17 +517,7 @@ export async function handlePipelineFailure(
         attemptCost: pipelineResult.context.agentResult?.estimatedCostUsd || 0,
         agentManager: ctx.agentManager,
         runtime: ctx.runtime,
-        ...(runtimeCrashResult ? { runtimeCrashResult } : {}),
       });
-      // #1707 follow-up: "retry-same" is returned only by the runtime-crash branch, and
-      // only when the retry actually happens (a capped crash pauses instead). Tallied
-      // run-scoped because PipelineContext is rebuilt every attempt, and separately from
-      // tier-escalation's _runtimeCrashRetryCounts, which any ordinary outcome clears so
-      // the cap measures a consecutive streak. Read as StoryMetrics.runtimeCrashes.
-      if (escalationResult.outcome === "retry-same") {
-        const tally = ctx.runtime.runtimeCrashRetries;
-        tally.set(ctx.story.id, (tally.get(ctx.story.id) ?? 0) + 1);
-      }
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;
       break;

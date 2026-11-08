@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig, makeStory } from "@test/helpers";
 import {
+  applyBackfill,
   backfillDomain,
   isExecutionFailure,
   synthesizeBackfillMetric,
 } from "@/execution/lifecycle/backfill-story-metrics";
-import type { StoryRouting } from "@/prd/types";
+import type { StoryMetrics } from "@/metrics/types";
+import type { StoryRouting, UserStory } from "@/prd/types";
 
 const TS = "2026-07-03T00:00:00.000Z";
 // Default config.models = { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } }
@@ -169,8 +171,8 @@ describe("synthesizeBackfillMetric (#1296)", () => {
 
 // ---------------------------------------------------------------------------
 // nax#1709: a story that fails in the execution stage never reaches
-// collectStoryMetrics, so its agent-swap hops and crash retries were dropped —
-// which made deriveRunFallbackAggregates' exhausted rule
+// collectStoryMetrics, so its agent-swap hops were dropped — which made
+// deriveRunFallbackAggregates' exhausted rule
 // (`!success && lastHop.category === "availability"`) structurally unreachable,
 // since only successful stories ever carried hops.
 // ---------------------------------------------------------------------------
@@ -185,7 +187,7 @@ const HOP = {
   costUsd: 0.4,
 } as const;
 
-describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () => {
+describe("synthesizeBackfillMetric — swap hops (#1709)", () => {
   const failedStory = () => makeStory({ id: "US-001", status: "failed", attempts: 2, routing: routing({}) });
 
   test("carries the story's agent-swap hops onto the execution-failed metric", () => {
@@ -205,21 +207,6 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
     expect(m.fallback?.hops).toEqual([HOP]);
   });
 
-  test("carries the crash-retry tally instead of a hardcoded zero", () => {
-    const m = synthesizeBackfillMetric({
-      storyId: "US-001",
-      story: failedStory(),
-      errorCostUsd: 0,
-      totalCostUsd: 1,
-      config,
-      defaultAgent: "claude",
-      timestamp: TS,
-      runtimeCrashes: 3,
-    });
-
-    expect(m.runtimeCrashes).toBe(3);
-  });
-
   test("omits fallback entirely when the story had no swaps", () => {
     const m = synthesizeBackfillMetric({
       storyId: "US-001",
@@ -233,7 +220,6 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
     });
 
     expect(m.fallback).toBeUndefined();
-    expect(m.runtimeCrashes).toBe(0);
   });
 
   test("completion-phase-only spend carries neither — nothing executed", () => {
@@ -246,12 +232,10 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
       defaultAgent: "claude",
       timestamp: TS,
       fallbackHops: [HOP],
-      runtimeCrashes: 2,
     });
 
     expect(m.source).toBe("completion-phase");
     expect(m.fallback).toBeUndefined();
-    expect(m.runtimeCrashes).toBe(0);
   });
 });
 
@@ -260,7 +244,7 @@ describe("synthesizeBackfillMetric — swap hops and crash retries (#1709)", () 
 //
 // The back-fill was driven off the cost aggregator and skipped anything that did
 // not spend, so a story that failed having spent nothing produced no StoryMetrics
-// entry at all and its swap hops and crash retries were dropped. That kept
+// entry at all and its swap hops were dropped. That kept
 // deriveRunFallbackAggregates' exhausted rule (which requires !success)
 // unreachable for exactly the case it exists to measure: a fallback chain where
 // every candidate fails auth instantly, costing nothing.
@@ -323,12 +307,10 @@ describe("synthesizeBackfillMetric — zero-cost failed stories (#1714)", () => 
       defaultAgent: "claude",
       timestamp: TS,
       fallbackHops: [ZERO_HOP],
-      runtimeCrashes: 2,
     });
 
     expect(m.source).toBe("completion-phase");
     expect(m.fallback).toBeUndefined();
-    expect(m.runtimeCrashes).toBe(0);
   });
 });
 
@@ -344,17 +326,66 @@ describe("isExecutionFailure is exported for the back-fill domain (#1721)", () =
 
 describe("backfillDomain — the run-level story key (US-004)", () => {
   test("AC-15: the aggregator's run-level '' key is never part of the domain", () => {
-    const domain = backfillDomain({ aggregatorKeys: ["", "US-001"], fallbackKeys: [], crashKeys: [], stories: [] });
+    const domain = backfillDomain({ aggregatorKeys: ["", "US-001"], fallbackKeys: [], stories: [] });
     expect(domain).toEqual(["US-001"]);
   });
 
   test("the '' key is skipped from every source, and the order of the rest is kept", () => {
     const domain = backfillDomain({
       aggregatorKeys: ["US-002", ""],
-      fallbackKeys: [""],
-      crashKeys: ["US-003", ""],
+      fallbackKeys: ["", "US-003"],
       stories: [makeStory({ id: "", status: "failed", attempts: 0 }), makeStory({ id: "US-004", status: "failed" })],
     });
     expect(domain).toEqual(["US-002", "US-003", "US-004"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002: the crash tally is gone, and with it the crash-only evidence.
+//
+// A runtime-crash retry can no longer happen (the escalation layer's
+// same-tier retry went with US-001), so the tally that fed the back-fill's
+// evidence rule is gone: evidence is cost, hops or an execution failure.
+// ---------------------------------------------------------------------------
+
+describe("synthesizeBackfillMetric — the crash tally is gone (US-002)", () => {
+  test("AC-4: a failed story's row is an execution-failed row with no runtimeCrashes key", () => {
+    const story = makeStory({ id: "US-001", status: "failed", attempts: 2, routing: routing({}) });
+    const m = synthesizeBackfillMetric({
+      storyId: "US-001",
+      story,
+      errorCostUsd: 0,
+      totalCostUsd: 2.15,
+      config,
+      defaultAgent: "claude",
+      timestamp: TS,
+    });
+
+    expect(m.source).toBe("execution-failed");
+    expect("runtimeCrashes" in m).toBe(false);
+  });
+});
+
+describe("applyBackfill — evidence is cost, hops or an execution failure (US-002)", () => {
+  const backfill = (story: UserStory): StoryMetrics[] => {
+    const allStoryMetrics: StoryMetrics[] = [];
+    applyBackfill({
+      allStoryMetrics,
+      aggByStory: {},
+      stories: [story],
+      agentFallbacks: new Map(),
+      config,
+      defaultAgent: "claude",
+    });
+    return allStoryMetrics;
+  };
+
+  test("AC-5: a pending story that spent nothing gets no row; the same story failed does", () => {
+    const pending = backfill(makeStory({ id: "US-001", status: "pending", attempts: 0 }));
+    expect(pending).toHaveLength(0);
+
+    const failed = backfill(makeStory({ id: "US-001", status: "failed", attempts: 0 }));
+    expect(failed).toHaveLength(1);
+    expect(failed[0].source).toBe("execution-failed");
   });
 });

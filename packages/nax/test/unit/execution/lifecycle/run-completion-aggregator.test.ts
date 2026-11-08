@@ -216,7 +216,6 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
         firstPassSuccess: true,
         startedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
-        runtimeCrashes: 0,
       },
     ];
 
@@ -251,7 +250,6 @@ describe("handleRunCompletion — Bug 909: aggregator-driven totalCost reporting
         firstPassSuccess: true,
         startedAt: new Date().toISOString(),
         completedAt: new Date().toISOString(),
-        runtimeCrashes: 0,
       },
     ];
 

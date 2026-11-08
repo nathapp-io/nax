@@ -92,12 +92,15 @@ describe("runBranchFix", () => {
     expect(received).not.toBe(fc.callCtx);
     expect(fc.callCtx).not.toHaveProperty("toolProviders");
   });
-  test.each([false, true])("forwards seventh runner argument; injected=%s", async (injected) => {
+  // AC-4: the seam forwards exactly six arguments — `dryRun` is the fifth and the
+  // injected `runGit` the sixth, so a caller left on the old positions would hand
+  // the auto-commit a set where a boolean belongs.
+  test.each([false, true])("forwards sixth runner argument; injected=%s", async (injected) => {
     const { fc, commits } = setup(done, " M source.txt\n");
     const runGit = injected ? async () => ({ stdout: "", stderr: "", exitCode: 0 }) : undefined;
     await runBranchFix({ ...fc, runGit }, { findings });
-    expect(commits[0]).toHaveLength(7);
-    expect(commits).toEqual([[fc.projectDir, "workflow", "wf-branch-fix", "_run", undefined, fc.dryRun, runGit]]);
+    expect(commits[0]).toHaveLength(6);
+    expect(commits).toEqual([[fc.projectDir, "workflow", "wf-branch-fix", "_run", fc.dryRun, runGit]]);
   });
   test.each(["PR-specific prompt", ""])("AC-1/3 forwards override %j and commits leftovers", async (prompt) => {
     const { fc, inputs, commits } = setup(done, " M src/a.ts\n");

@@ -215,11 +215,3 @@ test("AC-23 unplanned story receives classification before audit write-back", as
   expect(ctx.story.routing?.routerDecision).toMatchObject({ profileId: "native-luna" });
   expect(ctx.story.routing?.routerDecision).not.toHaveProperty("plannedProfileId");
 });
-test("skipPrdPersistence still attaches the audit without saving", async () => {
-  const ctx = fixture();
-  ctx.prdPath = "/tmp/router-prd.json";
-  ctx.skipPrdPersistence = true;
-  await routingStage.execute(ctx);
-  expect(ctx.story.routing?.routerDecision?.profileId).toBe("native-luna");
-  expect(save).not.toHaveBeenCalled();
-});

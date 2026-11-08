@@ -1,12 +1,24 @@
 // RE-ARCH: keep
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeDispatchContext, makePRD, makeStory } from "@test/helpers";
+import { assertNaxError, makeDispatchContext, makePRD, makeStory } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { LogEntry } from "@/logger/types";
-import type { PipelineContext, PipelineStage } from "@/pipeline";
+import type { PipelineContext, PipelineStage, StageResult } from "@/pipeline";
 import { runPipeline } from "@/pipeline";
 import { PipelineEventEmitter } from "@/pipeline/events";
+
+/**
+ * Build a stage result the type system no longer allows.
+ *
+ * The `retry` action was removed from `StageAction` (US-003): no production
+ * stage returns it any more. The value is still assembled at runtime so the
+ * runner can be asked what it does with an action it does not know.
+ */
+function retiredRetryAction(): StageResult {
+  const retired: unknown = { action: "retry", fromStage: "a" };
+  return retired as StageResult;
+}
 
 function makeCtx(): PipelineContext {
   return {
@@ -139,5 +151,28 @@ describe("runPipeline logs a stage throw", () => {
     await runPipeline(stages, makeCtx());
 
     expect(logCalls.filter((e) => e.level === "error")).toHaveLength(0);
+  });
+
+  test("AC-5: an action the pipeline no longer knows throws UNKNOWN_STAGE_ACTION", async () => {
+    // The `retry` action was removed from StageAction (US-003). A stage that
+    // somehow still returns it must reach the unknown-action branch instead
+    // of quietly jumping back to a named stage.
+    const stages: PipelineStage[] = [
+      {
+        name: "a",
+        enabled: () => true,
+        execute: async () => retiredRetryAction(),
+      },
+    ];
+
+    let caught: unknown;
+    try {
+      await runPipeline(stages, makeCtx());
+    } catch (err) {
+      caught = err;
+    }
+
+    assertNaxError(caught, "runPipeline rejection");
+    expect(caught.code).toBe("UNKNOWN_STAGE_ACTION");
   });
 });

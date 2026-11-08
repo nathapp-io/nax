@@ -15,7 +15,6 @@ function baseInput(overrides: Partial<BackfillInput>): BackfillInput {
     aggByStory: {},
     stories: [],
     agentFallbacks: new Map(),
-    runtimeCrashRetries: new Map(),
     config: makeNaxConfig(),
     defaultAgent: "claude",
     ...overrides,
@@ -24,7 +23,7 @@ function baseInput(overrides: Partial<BackfillInput>): BackfillInput {
 
 describe("back-fill evidence includes failed-dispatch spend (#1960)", () => {
   test("a story whose only spend threw now has evidence", () => {
-    expect(hasBackfillEvidence({ costUsd: 0.004, hopCount: 0, crashCount: 0, story: undefined })).toBe(true);
+    expect(hasBackfillEvidence({ costUsd: 0.004, hopCount: 0, story: undefined })).toBe(true);
   });
 
   test("applyBackfill synthesizes a row for an error-only story", () => {

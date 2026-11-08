@@ -137,7 +137,6 @@ export function snapshotCostsAndBackfill(input: {
     aggByStory,
     stories: prd.userStories,
     agentFallbacks: options.runtime.agentFallbacks,
-    runtimeCrashRetries: options.runtime.runtimeCrashRetries,
     config,
     defaultAgent: options.agentManager?.getDefault() ?? resolveDefaultAgent(config),
   });

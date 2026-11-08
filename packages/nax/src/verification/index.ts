@@ -7,7 +7,6 @@
 
 export { shellQuoteArg } from "@nathapp/nax-agent/internal";
 export * from "./executor";
-export * from "./flake-triage";
 export * from "./runners";
 export { clearGitRootCache } from "./smart-runner";
 export * from "./test-baseline";

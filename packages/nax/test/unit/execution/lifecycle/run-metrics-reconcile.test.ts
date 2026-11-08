@@ -46,7 +46,6 @@ describe("run metrics reconcile (#1960)", () => {
       aggByStory: agg.byStory(),
       stories: [],
       agentFallbacks: new Map(),
-      runtimeCrashRetries: new Map(),
       config: makeNaxConfig(),
       defaultAgent: "claude",
     });

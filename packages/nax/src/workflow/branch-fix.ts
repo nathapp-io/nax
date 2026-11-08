@@ -48,15 +48,7 @@ async function commitLeftovers(
   try {
     if ((await listUncommitted(fc.projectDir)).length === 0) return { autoCommitted: false, dirty: false };
     hasEdits = true;
-    await _workflowDeps.autoCommitIfDirty(
-      fc.projectDir,
-      "workflow",
-      role,
-      FEATURE_SCOPE,
-      undefined,
-      fc.dryRun,
-      fc.runGit,
-    );
+    await _workflowDeps.autoCommitIfDirty(fc.projectDir, "workflow", role, FEATURE_SCOPE, fc.dryRun, fc.runGit);
     return { autoCommitted: true, dirty: false };
   } catch (err) {
     if (fc.runSignal?.aborted) throw err;

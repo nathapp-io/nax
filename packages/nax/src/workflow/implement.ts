@@ -159,14 +159,7 @@ export async function autoCommitTurnEdits(sc: StepContext): Promise<boolean> {
   if (dirty.length === 0) return false;
   const before = await headOrUndefined(sc);
   try {
-    await _workflowDeps.autoCommitIfDirty(
-      sc.projectDir,
-      "workflow",
-      "wf-implementer",
-      sc.story.id,
-      undefined,
-      sc.dryRun,
-    );
+    await _workflowDeps.autoCommitIfDirty(sc.projectDir, "workflow", "wf-implementer", sc.story.id, sc.dryRun);
   } catch (err) {
     getSafeLogger()?.warn("workflow", "Auto-commit of the implementer's edits failed; leaving them uncommitted", {
       storyId: sc.story.id,

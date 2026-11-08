@@ -13,6 +13,12 @@
  * (3) firstPassSuccess — must be false when any prior attempt failed (even if
  *     story.escalations is empty, which handleTierEscalation never populates).
  *
+ * US-002: the formula's third term — the rectify cycle count — went with the
+ * constant metrics. The pipeline context field it read had no writer (the
+ * rectify phase that set it was deleted), so it was always 0.
+ * `firstPassSuccess` now depends only on the agent result, the escalations
+ * and the prior failures.
+ *
  * Also covers handleTierEscalation recording enough data for the fix to work:
  * the escalated story must carry prior attempt info so the tracker can reconstruct
  * total cross-tier attempt counts.
@@ -266,10 +272,11 @@ describe("collectStoryMetrics — attempt count includes all cross-tier attempts
 // Bug: collectStoryMetrics uses only agentResult.estimatedCostUsd (the final
 // successful attempt). Prior attempt costs from failed escalations are lost.
 //
-// Fix: The runner/escalation handler must persist prior attempt costs so
-// collectStoryMetrics can include them. The anticipated mechanism is a new
-// `accumulatedAttemptCost` field on PipelineContext that the runner sets
-// when an escalation iteration produces a cost delta.
+// Fix: Every attempt's spend must reach the run-scoped cost aggregator
+// (runtime.costAggregator), because that is where collectStoryMetrics reads
+// the story's total cost from — it never sums priorFailures. The story's
+// priorFailures list carries attempt metadata (and a per-failure cost the
+// tracker does not read).
 // ---------------------------------------------------------------------------
 
 // BUG-067
@@ -464,11 +471,8 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
       routing: { modelTier: "fast", testStrategy: "test-after" },
       pipelineResult: {
         reason: "Tests failing",
-        context: {
-          tddFailureCategory: undefined,
-          retryAsLite: false,
-          reviewFindings: undefined,
-        },
+        // The escalation layer reads no field of the pipeline context.
+        context: {},
       },
       config: makeNaxConfig({
         autoMode: {
@@ -497,60 +501,6 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
     const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
     expect(updatedStory).toBeDefined();
     assertion(updatedStory);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// firstPassSuccess — must be false when autofix or rectify ran (issue #679)
-//
-// Bug: collectStoryMetrics only checked escalationCount and priorFailureCount.
-// A story that went through 3 autofix attempts + fail-open still had
-// attempts:1, escalationCount:0, priorFailureCount:0 → firstPassSuccess:true.
-//
-// Fix: also gate on ctx.rectifyAttempt > 0.
-//
-// #1707 follow-up: these rows also carried an `autofixAttempt` column. No such field
-// exists on PipelineContext or anywhere in src/ — it entered through makeCtx's untyped
-// overrides bag and was inert. Rectification is the mechanism that actually runs, so the
-// column is dropped rather than left implying a second gate that was never built.
-// ---------------------------------------------------------------------------
-
-describe("collectStoryMetrics — firstPassSuccess is false when autofix or rectify ran (issue #679)", () => {
-  test.each([
-    {
-      name: "firstPassSuccess is false when rectifyAttempt is 1 (one rectify iteration ran)",
-      rectifyAttempt: 1,
-      expectedFirstPassSuccess: false,
-    },
-    {
-      name: "firstPassSuccess is false when rectifyAttempt is 2 (repeated rectify iterations)",
-      rectifyAttempt: 2,
-      expectedFirstPassSuccess: false,
-    },
-    {
-      name: "firstPassSuccess is true when no cycles ran and no escalation (clean first pass)",
-      rectifyAttempt: 0,
-      expectedFirstPassSuccess: true,
-    },
-  ])("$name", async ({ rectifyAttempt, expectedFirstPassSuccess }) => {
-    const story = makeStory({
-      attempts: 1,
-      escalations: [],
-      priorFailures: [],
-    });
-    const ctx = makeCtx(story, {
-      rectifyAttempt,
-      agentResult: {
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        estimatedCostUsd: 0.05,
-        durationMs: 3000,
-      },
-    });
-    const metrics = await collectStoryMetrics(ctx, new Date().toISOString());
-    expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
   });
 });
 

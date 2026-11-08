@@ -1,9 +1,9 @@
 /**
  * Execution-layer wrapper types.
  *
- * Failure categories and the isolation-check result. The canonical owner of
- * `FailureCategory` is this module — the execution layer and the pipeline/PRD
- * layers import it from here rather than from a strategy-specific module.
+ * Failure categories. The canonical owner of `FailureCategory` is this module —
+ * the execution layer and the pipeline/PRD layers import it from here rather
+ * than from a strategy-specific module.
  */
 
 /** Failure categories for story-run results. */
@@ -48,17 +48,3 @@ export type FailureCategory =
   /** Worktree dependency preparation failed before pipeline execution started */
   | "dependency-prep"
   | "runtime-crash";
-
-/** Isolation verification result. */
-export interface IsolationCheck {
-  /** Whether isolation passed (no hard violations) */
-  passed: boolean;
-  /** Hard violation files (files that must not be modified) */
-  violations: string[];
-  /** Soft violation files (allowed-path overrides, warning only) */
-  softViolations?: string[];
-  /** Warning files (e.g., implementer touching test files slightly) */
-  warnings?: string[];
-  /** Human-readable description of what was checked */
-  description?: string;
-}

@@ -48,7 +48,7 @@ describe("`nax resume` — AC-9: log filename matches the run identifier", () =>
     // the `status.run.workdir` comparison below must spell the same path. On
     // macOS tmpdir() is `/var/folders/...` while its realpath is
     // `/private/var/folders/...` — the same realpath convention
-    // test/unit/cli/*.test.ts and flake-triage-seam.test.ts already use.
+    // test/unit/cli/*.test.ts already use.
     tempDir = realpathSync(tempDir);
     // The runner writes its status file under the isolated global config dir
     // (set by test/preload.ts via NAX_GLOBAL_CONFIG_DIR). Pin that here so

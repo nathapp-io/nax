@@ -87,7 +87,7 @@ export interface BuildHopCallbackContext {
   pipelineStage?: import("../config/permissions").PipelineStage;
   /**
    * Story scratch directories (US-005). Threaded from the stage-assembly
-   * path (PipelineContext.storyScratchDirs) so the pull-tool runtime's
+   * path (CallContext.storyScratchDirs) so the pull-tool runtime's
    * query_scratch handler reads the same set of session data as the push
    * providers (SessionScratchProvider / ToolDiagnosticsProvider). Absent /
    * empty disables the scratch handler (it returns a no-entries message on

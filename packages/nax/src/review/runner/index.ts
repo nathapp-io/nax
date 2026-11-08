@@ -39,7 +39,6 @@ export interface RunReviewOptions {
   projectDir?: string;
   env?: Record<string, string | undefined>;
   naxIgnoreIndex?: NaxIgnoreIndex;
-  runtime?: import("@/runtime").NaxRuntime;
   priorAdversarialIterations?: Iteration[];
 }
 
@@ -264,11 +263,10 @@ const NAX_RUNTIME_PATTERNS = [
 async function guardUncommittedFiles(
   workdir: string,
   storyId: string | undefined,
-  runtime: RunReviewOptions["runtime"],
   naxIgnoreIndex: NaxIgnoreIndex | undefined,
   logger: ReturnType<typeof getSafeLogger>,
 ): Promise<void> {
-  await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review", runtime?.dirtyWorktrees);
+  await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review");
 
   const allUncommittedFiles = await _reviewGitDeps.getUncommittedFiles(workdir);
   const afterRuntimeFilter = allUncommittedFiles.filter(
@@ -349,14 +347,14 @@ async function runMechanicalCheck(
  * Run all configured review checks
  */
 export async function runReview(opts: RunReviewOptions): Promise<ReviewResult> {
-  const { config, workdir, storyId, retrySkipChecks, naxIgnoreIndex, runtime } = opts;
+  const { config, workdir, storyId, retrySkipChecks, naxIgnoreIndex } = opts;
   const startTime = Date.now();
   const logger = getSafeLogger();
   const checks: ReviewCheckResult[] = [];
   let firstFailure: string | undefined;
 
   // RQ-001: Check for uncommitted tracked files before running checks
-  await guardUncommittedFiles(workdir, storyId, runtime, naxIgnoreIndex, logger);
+  await guardUncommittedFiles(workdir, storyId, naxIgnoreIndex, logger);
 
   for (const checkName of config.checks) {
     // #136: Skip checks that already passed in a previous review pass within this pipeline run.

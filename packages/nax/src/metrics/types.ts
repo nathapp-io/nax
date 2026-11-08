@@ -168,17 +168,15 @@ export interface StoryMetrics {
   completedAt: string;
   /** Execution source — 'parallel' for batch dispatch, 'sequential' for single-story loop, 'rectification' for conflict resolution, 'completion-phase' for the placeholder shape the end-of-run backfill synthesises, 'execution-failed' for stories that failed in the execution stage (pipeline stopped before the completion stage that records metrics) */
   source?: "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed";
-  /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
-  runtimeCrashes?: number;
-  /** Count of this story's semantic/adversarial review checks that fail-opened (ENH-20) */
-  reviewsFailedOpen?: number;
-  /** Whether TDD full-suite gate passed (only true for TDD strategies when gate passes) */
-  fullSuiteGatePassed?: boolean;
   /**
    * Test files failing at this story's full-suite gate (post-rectification).
    * Snapshot used by the deferred-regression gate to attribute an end-of-run
    * regression to the story where a test transitioned pass -> fail. Absent when
    * no per-story gate ran (non-TDD + deferred) or the gate passed cleanly.
+   *
+   * Historical rows only: the writer that filled it went with the full-suite
+   * gate, so a new row never carries the key. Kept because the prior-run
+   * failure provider still renders it out of older `metrics.json` rows.
    */
   failingTestFiles?: string[];
   /** Cost incurred only during rectification (only set when source === 'rectification') */

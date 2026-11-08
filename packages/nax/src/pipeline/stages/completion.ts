@@ -68,10 +68,6 @@ export const completionStage: PipelineStage = {
     const isBatch = ctx.stories.length > 1;
     const sessionSpend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, 0);
     const sessionCost = sessionSpend.cost;
-    // In parallel worktree mode, a shared PRD and prd.json file is managed by the
-    // unified executor. Worktree pipelines must not race on it — skip both the in-memory
-    // mutation and the disk write when skipPrdPersistence is set.
-    const persistPrd = ctx.skipPrdPersistence !== true;
 
     // Calculate PRD path — prefer ctx.prdPath (already resolved by runner), fall back to
     // featureDir reconstruction, with a last-resort for contexts where neither is set (e.g. tests).
@@ -101,7 +97,7 @@ export const completionStage: PipelineStage = {
         await annotateManifestEffectiveness(ctx.projectDir, featureId, ctx.story.id, {
           agentOutput: ctx.agentResult?.output ?? "",
           diffText,
-          findingMessages: (ctx.reviewFindings ?? []).map((f) => f.message),
+          findingMessages: [],
           // PERF-1: this is the only writer of manifest.chunkEffectiveness, so
           // the provider-weights cache is invalidated here — not at assembly.
           providerWeightsCache: ctx.providerWeightsCache,
@@ -139,11 +135,9 @@ export const completionStage: PipelineStage = {
       }
     }
 
-    // Mark all stories in batch as passed (skipped in parallel worktree mode)
+    // Mark all stories in the batch as passed
     for (const completedStory of ctx.stories) {
-      if (persistPrd) {
-        markStoryPassed(ctx.prd, completedStory.id);
-      }
+      markStoryPassed(ctx.prd, completedStory.id);
 
       const costPerStory = sessionCost / ctx.stories.length;
       const errorCostPerStory = sessionSpend.errorCostUsd / ctx.stories.length;
@@ -152,10 +146,8 @@ export const completionStage: PipelineStage = {
         cost: costPerStory,
       });
 
-      // Log progress. Skipped on a rectification re-run (BUG-36) for the same reason
-      // as the story:completed emit below — the worktree pipeline's first pass already
-      // logged this story "passed" once, before the merge conflict was found.
-      if (ctx.featureDir && ctx.skipCompletionEvents !== true) {
+      // Log progress.
+      if (ctx.featureDir) {
         await appendProgress(
           ctx.featureDir,
           completedStory.id,
@@ -165,27 +157,23 @@ export const completionStage: PipelineStage = {
       }
 
       // Emit story:completed event — hooks + reporter subscribers handle the rest.
-      // Skipped on a rectification re-run (BUG-36): the worktree pipeline's first
-      // pass already emitted this event before the merge conflict was found.
-      if (ctx.skipCompletionEvents !== true) {
-        const storyMetric = ctx.storyMetrics?.find((m) => m.storyId === completedStory.id) ?? ctx.storyMetrics?.[0];
-        pipelineEventBus.emit({
-          type: "story:completed",
-          storyId: completedStory.id,
-          story: {
-            id: completedStory.id,
-            title: completedStory.title,
-            status: completedStory.status,
-            attempts: completedStory.attempts,
-          },
-          passed: true,
-          runElapsedMs: storyMetric?.durationMs ?? 0,
-          cost: costPerStory,
-          ...(errorCostPerStory > 0 ? { errorCostUsd: errorCostPerStory } : {}),
-          modelTier: ctx.routing?.modelTier,
-          testStrategy: ctx.routing?.testStrategy,
-        });
-      }
+      const storyMetric = ctx.storyMetrics?.find((m) => m.storyId === completedStory.id) ?? ctx.storyMetrics?.[0];
+      pipelineEventBus.emit({
+        type: "story:completed",
+        storyId: completedStory.id,
+        story: {
+          id: completedStory.id,
+          title: completedStory.title,
+          status: completedStory.status,
+          attempts: completedStory.attempts,
+        },
+        passed: true,
+        runElapsedMs: storyMetric?.durationMs ?? 0,
+        cost: costPerStory,
+        ...(errorCostPerStory > 0 ? { errorCostUsd: errorCostPerStory } : {}),
+        modelTier: ctx.routing?.modelTier,
+        testStrategy: ctx.routing?.testStrategy,
+      });
 
       // review-gate trigger: check if story needs re-review after passing
       if (ctx.interaction && isTriggerEnabled("review-gate", ctx.config)) {
@@ -200,19 +188,17 @@ export const completionStage: PipelineStage = {
       }
     }
 
-    // Save PRD (skipped in parallel worktree mode — unified executor is the single writer)
-    if (persistPrd) {
-      await _completionDeps.savePRD(ctx.prd, prdPath);
-      // #2533: commit the status write on its own, so the next story's agent
-      // never sees an unexplained modification and `autoCommitIfDirty` cannot
-      // sweep it into someone else's commit. Best-effort (never throws).
-      await _completionDeps.commitPrdProgress({
-        prdPath,
-        feature: ctx.prd.feature,
-        storyId: ctx.story.id,
-        label: "passed",
-      });
-    }
+    // Save the PRD
+    await _completionDeps.savePRD(ctx.prd, prdPath);
+    // #2533: commit the status write on its own, so the next story's agent
+    // never sees an unexplained modification and `autoCommitIfDirty` cannot
+    // sweep it into someone else's commit. Best-effort (never throws).
+    await _completionDeps.commitPrdProgress({
+      prdPath,
+      feature: ctx.prd.feature,
+      storyId: ctx.story.id,
+      label: "passed",
+    });
 
     logHighMemoryCheckpoint(logger, ctx);
 

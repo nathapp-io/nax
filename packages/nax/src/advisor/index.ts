@@ -1,6 +1,5 @@
 /** A1 advisor — public surface. */
 
-export { AdvisorHeadsUpQueue } from "../runtime/advisor-heads-up-queue";
 export {
   _auditDeps,
   type AdviceAuditRecord,
