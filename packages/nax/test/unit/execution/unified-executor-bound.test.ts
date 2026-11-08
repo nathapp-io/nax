@@ -34,7 +34,6 @@ function ctx(): SequentialExecutionContext {
     ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: dir }) }),
     config: makeNaxConfig({
       execution: { mode: "pipeline", iterationDelayMs: 0 },
-      acceptance: { enabled: false },
       autoMode: { escalation: { enabled: false } },
     }),
     prdPath: `${dir}/prd.json`,
@@ -86,7 +85,6 @@ describe("executeUnified — an already-passed PRD completes without an iteratio
       ...ctx(),
       config: makeNaxConfig({
         execution: { mode: "workflow", iterationDelayMs: 0 },
-        acceptance: { enabled: false },
         autoMode: { escalation: { enabled: false } },
       }),
     };

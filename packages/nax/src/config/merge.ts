@@ -53,10 +53,8 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  * - agent: protocol, maxInteractionTurns, promptAudit (deep), usageAudit (deep), transcriptAudit (deep)
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
- * - execution: smartTestRunner, regressionGate (deep), rectification (deep),
- *   worktreeDependencies (deep)
+ * - execution: smartTestRunner, regressionGate (deep), rectification (deep)
  * - review: enabled, checks, commands (deep), semantic (deep), adversarial (deep)
- * - acceptance: enabled, testPath, fix (deep)
  * - quality: commands (deep), testing (deep), autofix (deep), lintOutput (deep)
  * - context: testCoverage (deep), v2.stages (deep), v2.rules (deep)
  * - project: type, language, frameworks
@@ -75,7 +73,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
     packageOverride.routing != null ||
     packageOverride.execution != null ||
     packageOverride.review != null ||
-    packageOverride.acceptance != null ||
     packageOverride.quality != null ||
     packageOverride.context != null ||
     packageOverride.project != null;
@@ -119,13 +116,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
     execution: {
       ...root.execution,
       ...packageOverride.execution,
-      worktreeDependencies:
-        packageOverride.execution?.worktreeDependencies !== undefined
-          ? {
-              ...root.execution.worktreeDependencies,
-              ...packageOverride.execution.worktreeDependencies,
-            }
-          : root.execution.worktreeDependencies,
       smartTestRunner: packageOverride.execution?.smartTestRunner ?? root.execution.smartTestRunner,
       regressionGate: {
         ...root.execution.regressionGate,
@@ -185,14 +175,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         packageOverride.review?.adversarial !== undefined
           ? { ...root.review.adversarial, ...packageOverride.review.adversarial }
           : root.review.adversarial,
-    },
-    acceptance: {
-      ...root.acceptance,
-      ...packageOverride.acceptance,
-      fix:
-        packageOverride.acceptance?.fix !== undefined
-          ? { ...root.acceptance.fix, ...packageOverride.acceptance.fix }
-          : root.acceptance.fix,
     },
     quality: {
       ...root.quality,

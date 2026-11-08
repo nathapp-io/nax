@@ -590,7 +590,7 @@ describe("StaticRulesProvider — paths: frontmatter package-scope filter", () =
 // ─────────────────────────────────────────────────────────────────────────────
 // paths: frontmatter under worktree isolation (nax#2111)
 //
-// Under execution.storyIsolation: "worktree", request.packageDir is rooted at
+// Under a story worktree, request.packageDir is rooted at
 // the story's worktree checkout (e.g. "/repo/.nax-wt/<storyId>/packages/api")
 // while request.repoRoot stays the MAIN checkout ("/repo").
 // relative(repoRoot, packageDir) then yields ".nax-wt/<storyId>/packages/api",

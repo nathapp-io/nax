@@ -38,6 +38,15 @@ const COMMAND_INTERCEPTOR_PROVIDER_HINT = "nothing read this key; the intercepto
 const VERIFICATION_TIMEOUT_HINT = "verification uses execution.regressionGate.timeoutSeconds";
 
 /**
+ * Hint for the two keys that configured story worktree isolation
+ * (`execution.storyIsolation`, `execution.worktreeDependencies`). Their readers
+ * went with the worktree execution path, so there is no replacement setting:
+ * stories always run in the project checkout.
+ */
+const STORY_ISOLATION_HINT =
+  "stories always run in the project checkout since worktree isolation was removed with pipeline mode";
+
+/**
  * Config keys removed in C1, each mapped to the hint its warning appends.
  *
  * Map value is a migration hint telling the user what the behaviour they thought
@@ -50,10 +59,20 @@ const VERIFICATION_TIMEOUT_HINT = "verification uses execution.regressionGate.ti
  * merged and documented but read at no code site; and the verification timeout
  * is `regressionGate.timeoutSeconds`, not a key of its own.
  *
+ * `acceptance` is the third whole section: `src/acceptance/` was deleted with
+ * pipeline mode, so every leaf under it configured a phase no run has. The whole
+ * section was pipeline-only, which is why it takes `PIPELINE_ONLY_KEY_HINT`
+ * rather than a per-key hint.
+ *
+ * `execution.storyIsolation` and `execution.worktreeDependencies` configured the
+ * story-worktree execution path, which was deleted with pipeline mode too; both
+ * take `STORY_ISOLATION_HINT`, which names what stories do now instead.
+ *
  * A section entry strips the WHOLE section — one warning for the section, not one
  * per leaf under it.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
+  acceptance: PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.enabled": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxAttemptsPerStrategy": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxFailureSummaryChars": PIPELINE_ONLY_KEY_HINT,
@@ -70,6 +89,8 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
   "execution.commandInterceptor.provider": COMMAND_INTERCEPTOR_PROVIDER_HINT,
   "execution.verificationTimeoutSeconds": VERIFICATION_TIMEOUT_HINT,
   "execution.regressionGate.mode": PIPELINE_ONLY_KEY_HINT,
+  "execution.storyIsolation": STORY_ISOLATION_HINT,
+  "execution.worktreeDependencies": STORY_ISOLATION_HINT,
 };
 
 /** The warning one removed path emits. */

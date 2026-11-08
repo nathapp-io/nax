@@ -119,7 +119,6 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     constitution: { enabled: false, path: "constitution.md", maxTokens: 2000 },
     review: { enabled: true, checks: ["test"], commands: {} },
     plan: { model: "balanced", outputPath: "features" },
-    acceptance: { enabled: true, maxRetries: 2, testPath: "acceptance.test.ts" },
     context: {
       testCoverage: {
         enabled: true,

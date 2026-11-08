@@ -5,7 +5,7 @@
  * `loadConfigForWorkdir(rootConfigPath, packageDir, cliOverrides?)` takes its CLI
  * overrides LAST and OPTIONAL, so omitting them is silent. A config resolved that
  * way carries no profile layer. That is invisible while it only feeds data fields
- * (`acceptance.command`, `project.testFramework`) and fatal once it is handed to
+ * (`project.testFramework`) and fatal once it is handed to
  * `callOp` as `ctx.config`: the model map normally lives in the profile, so every
  * dispatch throws `No model entry found for agent ... at tier ...` (nax#2126).
  *

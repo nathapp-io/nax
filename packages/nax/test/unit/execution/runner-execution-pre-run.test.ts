@@ -58,7 +58,7 @@ function makeOptions(
     ...makeDispatchContext(),
     prdPath: `${WORKDIR}/prd.json`,
     workdir: WORKDIR,
-    config: makeNaxConfig({ acceptance: { enabled: false }, execution: { preRun, iterationDelayMs: 0 } }),
+    config: makeNaxConfig({ execution: { preRun, iterationDelayMs: 0 } }),
     hooks: { hooks: {}, _skipGlobal: false },
     feature: FEATURE,
     featureDir: undefined,

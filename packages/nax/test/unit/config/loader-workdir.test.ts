@@ -10,6 +10,20 @@ import { _clearRootConfigCache, loadConfigForWorkdir } from "@/config/loader";
 import { _clearPackageConfigCache } from "@/config/package-config-cache";
 import { addSink, getLogger, initLogger, resetLogger } from "@/logger";
 
+/** Run `load` with a logger sink capturing every warning message it emits. */
+async function captureWarnings<T>(load: () => Promise<T>): Promise<{ result: T; messages: string[] }> {
+  const messages: string[] = [];
+  resetLogger();
+  initLogger({ level: "warn" });
+  const removeSink = addSink((entry) => messages.push(entry.message));
+  try {
+    return { result: await load(), messages };
+  } finally {
+    removeSink();
+    resetLogger();
+  }
+}
+
 describe("loadConfigForWorkdir", () => {
   let tempDir: string;
   let originalGlobalDir: string | undefined;
@@ -256,26 +270,12 @@ describe("loadConfigForWorkdir", () => {
   // nax#1990 fix round 1 — a root-level chained command must warn exactly
   // once across an entire run, not once per `loadConfigForWorkdir` call.
   // `loadConfigForWorkdir` is called once per package/story
-  // (iteration-runner.ts, parallel-batch.ts, runner-completion.ts,
-  // acceptance-setup.ts), and the root config load it wraps is cached per
+  // (iteration-runner.ts, parallel-batch.ts, runner-completion.ts), and the
+  // root config load it wraps is cached per
   // `cacheKey` — but the per-package overlay validation used to re-run the
   // check against the ROOT-inherited value on every call, producing one
   // warning per story instead of one per run.
   describe("nax#1990 — quality.commands chain warning dedup across loadConfigForWorkdir calls", () => {
-    async function captureWarnings(load: () => Promise<unknown>): Promise<string[]> {
-      const captured: string[] = [];
-      resetLogger();
-      initLogger({ level: "warn" });
-      const removeSink = addSink((entry) => captured.push(entry.message));
-      try {
-        await load();
-      } finally {
-        removeSink();
-        resetLogger();
-      }
-      return captured;
-    }
-
     test("a root-level-only chained command warns exactly once across multiple package resolutions", async () => {
       writeFileSync(
         join(tempDir, ".nax", "config.json"),
@@ -293,7 +293,7 @@ describe("loadConfigForWorkdir", () => {
       );
 
       const rootConfigPath = join(tempDir, ".nax", "config.json");
-      const captured = await captureWarnings(async () => {
+      const { messages: captured } = await captureWarnings(async () => {
         // Simulates a run resolving the same root-level chain across
         // several stories in several packages, as the real call sites do.
         await loadConfigForWorkdir(rootConfigPath, "packages/api");
@@ -317,7 +317,7 @@ describe("loadConfigForWorkdir", () => {
       );
 
       const rootConfigPath = join(tempDir, ".nax", "config.json");
-      const captured = await captureWarnings(() => loadConfigForWorkdir(rootConfigPath, "packages/api"));
+      const { messages: captured } = await captureWarnings(() => loadConfigForWorkdir(rootConfigPath, "packages/api"));
 
       const chainWarnings = captured.filter((msg) => msg.includes("quality.commands.lint"));
       expect(chainWarnings).toHaveLength(1);
@@ -332,10 +332,74 @@ describe("loadConfigForWorkdir", () => {
       writeFileSync(join(profilesDir, "ci.json"), JSON.stringify({ quality: { commands: { test: "a && b" } } }));
 
       const rootConfigPath = join(tempDir, ".nax", "config.json");
-      const captured = await captureWarnings(() => loadConfigForWorkdir(rootConfigPath, "packages/api"));
+      const { messages: captured } = await captureWarnings(() => loadConfigForWorkdir(rootConfigPath, "packages/api"));
 
       const chainWarnings = captured.filter((msg) => msg.includes("quality.commands.test"));
       expect(chainWarnings).toHaveLength(1);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Removed config keys in a per-package overlay
+  //
+  // `mergePackageConfig` carries only the sections in its mergeable whitelist,
+  // so a removed key in any OTHER section (`acceptance`, a root-only section) is
+  // dropped by the whitelist — silently — before the post-merge
+  // `stripRemovedConfig` can warn about it. An acceptance-only package config
+  // therefore used to resolve to the root config with no warning at all. The
+  // strip has to run on the overlay layer BEFORE the merge.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe("removed config keys in a per-package overlay", () => {
+    const ACCEPTANCE_WARNING =
+      'Config key "acceptance" has been removed — nothing reads this key since pipeline mode was removed. Remove it from your config.';
+
+    function writePackageConfig(contents: object): void {
+      const monoDir = join(tempDir, ".nax", "mono", "packages", "app");
+      mkdirSync(monoDir, { recursive: true });
+      writeFileSync(join(monoDir, "config.json"), JSON.stringify(contents));
+    }
+
+    function writePackageProfile(name: string, contents: object): void {
+      const profilesDir = join(tempDir, "packages", "app", ".nax", "profiles");
+      mkdirSync(profilesDir, { recursive: true });
+      writeFileSync(join(profilesDir, `${name}.json`), JSON.stringify(contents));
+    }
+
+    test("an acceptance-only package overlay resolves without the section and warns once", async () => {
+      writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
+      writePackageConfig({ acceptance: { enabled: true, generateTests: true } });
+
+      const { result, messages } = await captureWarnings(() =>
+        loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/app"),
+      );
+
+      expect(Object.hasOwn(result, "acceptance")).toBe(false);
+      expect(messages.filter((msg) => msg.includes("has been removed"))).toEqual([ACCEPTANCE_WARNING]);
+    });
+
+    test("a package profile that repeats the section adds no second warning", async () => {
+      writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
+      writePackageConfig({ profile: "legacy", acceptance: { enabled: true } });
+      writePackageProfile("legacy", { acceptance: { generateTests: true } });
+
+      const { result, messages } = await captureWarnings(() =>
+        loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/app"),
+      );
+
+      expect(Object.hasOwn(result, "acceptance")).toBe(false);
+      expect(messages.filter((msg) => msg.includes("has been removed"))).toEqual([ACCEPTANCE_WARNING]);
+    });
+
+    test("a mergeable field in the same overlay still merges after the strip", async () => {
+      writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
+      writePackageConfig({ acceptance: { enabled: true }, quality: { commands: { test: "bun test:app" } } });
+
+      const { result } = await captureWarnings(() =>
+        loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/app"),
+      );
+
+      expect(result.quality.commands.test).toBe("bun test:app");
     });
   });
 

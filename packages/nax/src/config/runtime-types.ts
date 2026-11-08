@@ -16,7 +16,6 @@ import type {
   InstallConfig,
   PreRunStepConfig,
   SmartTestRunnerConfig,
-  WorktreeDependenciesConfig,
 } from "./runtime-types-execution";
 import type {
   Complexity,
@@ -68,7 +67,7 @@ export interface RegressionGateConfig {
   acceptOnTimeout?: boolean;
 }
 
-export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtime-types-execution";
+export type { SmartTestRunnerConfig } from "./runtime-types-execution";
 
 /** Execution limits */
 export interface ExecutionConfig {
@@ -124,21 +123,11 @@ export interface ExecutionConfig {
   /** Enable smart test runner to scope test runs to changed files (default: true).
    * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
   smartTestRunner?: boolean | SmartTestRunnerConfig;
-  /** Strategy for preparing fresh git worktrees before story execution. */
-  worktreeDependencies: WorktreeDependenciesConfig;
   preRun: PreRunStepConfig[];
   /** Configured agent binary: claude, codex, opencode, gemini, aider (default: claude) */
   agent?: string;
   /** Git HEAD ref captured before agent ran — passed through pipeline for plugin reviewers (FEAT-010) */
   storyGitRef?: string;
-  /**
-   * Story isolation mode (EXEC-002).
-   * "shared": all stories run on the project root branch (current behaviour).
-   * "worktree": each story runs in its own git worktree (.nax-wt/<storyId>/).
-   *   Passed stories merge into main; failed commits never reach main.
-   * Default: "shared"
-   */
-  storyIsolation: "shared" | "worktree";
   /** Command interception (rtk git-site) — opt-in; installed into the Git tool seam at run setup. */
   commandInterceptor: CommandInterceptorConfig;
   /** Glob denylist narrowing Delete beyond tracked/gitignored (nax#1972). */
@@ -262,56 +251,6 @@ export interface PlanConfig {
    * Turn 2 and issues a repair turn if violations are found. Default: false.
    */
   specGuard?: boolean;
-}
-
-/** Valid test strategy values for acceptance testing */
-export type AcceptanceTestStrategy = "unit" | "component" | "cli" | "e2e" | "snapshot";
-
-/** Acceptance fix config (US-001) */
-export interface AcceptanceFixConfig {
-  /** Model selector for diagnosis (tier string or explicit { agent, model }) */
-  diagnoseModel: ConfiguredModel;
-  /** Model selector for fix implementation (tier string or explicit { agent, model }) */
-  fixModel: ConfiguredModel;
-  /** Fix strategy (default: "diagnose-first") */
-  strategy: "diagnose-first" | "implement-only";
-  /** @deprecated Ignored — outer loop controls retries via acceptance.maxRetries. Kept for backward compat. */
-  maxRetries: number;
-}
-
-/** Acceptance validation config */
-export interface AcceptanceConfig {
-  /** Enable acceptance test generation and validation */
-  enabled: boolean;
-  /** Maximum retry loops for the acceptance fix flow (default: 3) */
-  maxRetries: number;
-  /** Path to acceptance test file (relative to feature directory) */
-  testPath: string;
-  /** Model selector for AC refinement/generation calls (tier string or explicit { agent, model }) */
-  model: ConfiguredModel;
-  /** Model selector for acceptance test generation calls (overrides model for generate step) */
-  generateModel?: ConfiguredModel;
-  /** Whether to LLM-refine acceptance criteria before generating tests (default: true) */
-  refinement: boolean;
-  /** Max concurrent refinement LLM calls (default: 3) */
-  refinementConcurrency: number;
-  /** Whether to run RED gate check after generating acceptance tests (default: true) */
-  redGate: boolean;
-  /** Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path.
-   *  Default: "bun test {{FILE}} --timeout=60000" */
-  command?: string;
-  /** Test strategy for acceptance tests (default: auto-detect) */
-  testStrategy?: AcceptanceTestStrategy;
-  /** Test framework for acceptance tests (default: auto-detect) */
-  testFramework?: string;
-  /** Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min) */
-  timeoutMs: number;
-  /** Fix configuration for acceptance test failures (US-001) */
-  fix: AcceptanceFixConfig;
-  /** Override filename for suggested acceptance tests */
-  suggestedTestPath?: string;
-  /** Hardening pass configuration — its pass was deleted by pipeline-post-run-delete US-006; the key stays until wave B3 */
-  hardening?: { enabled: boolean };
 }
 
 /** Optimizer config (v0.10) */
@@ -499,8 +438,6 @@ export interface NaxConfig {
   review: ReviewConfig;
   /** Plan settings */
   plan: PlanConfig;
-  /** Acceptance validation settings */
-  acceptance: AcceptanceConfig;
   /** Context injection settings */
   context: ContextConfig;
   /** Optimizer settings (v0.10) */

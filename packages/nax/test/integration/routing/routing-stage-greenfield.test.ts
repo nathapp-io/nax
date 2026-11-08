@@ -142,11 +142,6 @@ function createTestContext(
       model: "balanced",
       outputPath: "features",
     },
-    acceptance: {
-      enabled: true,
-      maxRetries: 2,
-      testPath: "acceptance.test.ts",
-    },
     context: {
       testCoverage: {
         enabled: true,

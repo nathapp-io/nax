@@ -222,10 +222,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
         overlays.set(dir, resolved.overlay);
         // Workflow mode must hold per package: an overlay cannot re-enable what it turns off.
         const merged = pinRootOnlyKeys(resolved.config, rootConfig);
-        mergedConfigs.set(
-          dir,
-          applyWorkflowMode(merged, (msg) => _packagesDeps.getSafeLogger()?.warn("packages", msg, { packageDir: dir })),
-        );
+        mergedConfigs.set(dir, applyWorkflowMode(merged));
         // A pre-hydration resolve can have cached the same package through a
         // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
         // key that maps to this override, while preserving unrelated views.
@@ -254,8 +251,8 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
  *
  * `PackageView.repoRoot` is the MAIN CHECKOUT -- captured once per run in
  * createRuntime() and stamped on every view, never re-pointed at a worktree.
- * Under storyIsolation "worktree" an Exec with target "repoRoot" resolved
- * against it wrote the user's real working tree (nax#2093).
+ * An Exec with target "repoRoot" resolved against a worktree-rooted view wrote
+ * the user's real working tree (nax#2093).
  *
  * Counterpart to toOverrideKey above: that one strips the `.nax-wt/<storyId>`
  * prefix for the OVERRIDE LOOKUP; this one keeps it, because a repo-scoped

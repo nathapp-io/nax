@@ -426,10 +426,10 @@ describe("naxOwnedPathsPolicy (the OwnedPathsPolicy adapter over this module)", 
     expect(p.writeRefusal("Read", ".queue.txt", { optIns })).toBeUndefined();
   });
 
-  test("configRefusal returns today's reason text for a config file and undefined otherwise", () => {
+  test("US-002 AC2: configRefusal returns the config-file reason text for a config file and undefined otherwise", () => {
     expect(p.configRefusal(root, join(root, ".nax", "config.json"))).toBe(
       "is one of nax's own config files, which every tool is refused regardless of grant -- " +
-        "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
+        "`quality.commands` are run through a shell WITHOUT passing the " +
         "permission gate because a human wrote them, so editing this file is a route to running " +
         "an ungated command on the next run",
     );

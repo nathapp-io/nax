@@ -37,12 +37,8 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   });
 }
 
-function makeConfig(acceptanceEnabled = true): NaxConfig {
+function makeConfig(): NaxConfig {
   return makeNaxConfig({
-    acceptance: {
-      enabled: acceptanceEnabled,
-      maxRetries: 3,
-    },
     execution: {
       mode: "pipeline",
     },
@@ -95,7 +91,7 @@ const origDeps = { ..._runnerCompletionDeps };
 beforeEach(() => {
   _runnerCompletionDeps.runWorkflowFeature = mock(async () => null);
   _runnerCompletionDeps.handleRunCompletion = mock(async () => defaultCompletionResult);
-  _runnerCompletionDeps.loadConfigForPackage = mock(async () => makeConfig(true));
+  _runnerCompletionDeps.loadConfigForPackage = mock(async () => makeConfig());
 });
 
 afterEach(async () => {
@@ -131,11 +127,7 @@ describe("feature workflow placement", () => {
       order.push("workflow");
       return null;
     });
-    const opts = makeOptsWithRuntime(
-      makeConfig(false),
-      makePRD([{ id: "US-001", status: "passed" }]),
-      makeStatusWriter(),
-    );
+    const opts = makeOptsWithRuntime(makeConfig(), makePRD([{ id: "US-001", status: "passed" }]), makeStatusWriter());
     const close = opts.runtime.close.bind(opts.runtime);
     opts.runtime.close = async () => {
       order.push("close");
@@ -147,7 +139,7 @@ describe("feature workflow placement", () => {
 
   test("persists successful and failed-dispatch spend after the workflow", async () => {
     const dir = makeTempDir("workflow-persistence-");
-    const config = makeConfig(false);
+    const config = makeConfig();
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const writer = new StatusWriter(join(dir, "status.json"), config, {
       runId: "run-001",
@@ -221,7 +213,7 @@ describe("post-run ask wiring inputs (#2201)", () => {
     });
 
     await runCompletionPhase({
-      ...makeOptsWithRuntime(makeConfig(true), prd, makeStatusWriter()),
+      ...makeOptsWithRuntime(makeConfig(), prd, makeStatusWriter()),
       interactionChain: chain,
     });
 

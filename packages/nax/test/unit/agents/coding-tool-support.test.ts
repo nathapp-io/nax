@@ -593,7 +593,7 @@ describe("resolveCodingToolSupport — per-package declared commands (#2066 resi
     }
   });
 
-  // C1 regression (final whole-branch review): under storyIsolation "worktree"
+  // C1 regression (final whole-branch review): in a story worktree
   // PackageView.packageDir is `.nax-wt/<storyId>/<pkg>`. Passing it verbatim to
   // loadConfigForPackage joined a missing `.nax/mono/.nax-wt/...` path, returned
   // the ROOT config, and (being truthy) discarded the already-package options.config

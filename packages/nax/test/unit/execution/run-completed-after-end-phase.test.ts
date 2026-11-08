@@ -48,7 +48,6 @@ function opts(mode: Mode, over: Partial<RunnerCompletionOptions> = {}): RunnerCo
   runtime.costAggregator.snapshot = mock(() => EMPTY_SNAPSHOT);
   return {
     config: makeNaxConfig({
-      acceptance: { enabled: false },
       execution: { mode },
     }),
     hooks: { hooks: {}, _skipGlobal: false },

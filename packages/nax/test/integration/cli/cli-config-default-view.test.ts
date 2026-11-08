@@ -236,7 +236,9 @@ describe("nax config (default view) - edge cases", () => {
     expect(parsed).toHaveProperty("constitution");
     expect(parsed).toHaveProperty("review");
     expect(parsed).toHaveProperty("plan");
-    expect(parsed).toHaveProperty("acceptance");
+    // US-003: the whole `acceptance` section is gone from the schema (and from
+    // this output) — the config view must not list a key nothing reads.
+    expect(parsed).not.toHaveProperty("acceptance");
     expect(parsed).toHaveProperty("context");
     expect(parsed).toHaveProperty("interaction");
     expect(parsed).toHaveProperty("precheck");

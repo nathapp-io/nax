@@ -1,6 +1,6 @@
 /**
- * Infrastructure schemas for nax configuration: plan, acceptance, routing,
- * agent, plugins, interaction, prompts, precheck, and project profile.
+ * Infrastructure schemas for nax configuration: plan, routing, agent, plugins,
+ * interaction, prompts, precheck, and project profile.
  * Extracted from schemas.ts to stay within the 600-line file limit.
  */
 
@@ -34,41 +34,6 @@ export const PlanConfigSchema = z.object({
    * Ignored for modes other than "refine". Default: false (opt-in for A/B).
    */
   specGuard: z.boolean().default(false),
-});
-
-const AcceptanceFixConfigSchema = z.object({
-  diagnoseModel: ConfiguredModelSchema.default("fast"),
-  fixModel: ConfiguredModelSchema.default("balanced"),
-  strategy: z.enum(["diagnose-first", "implement-only"]).default("diagnose-first"),
-  maxRetries: z.number().int().nonnegative().default(2),
-});
-
-export const AcceptanceConfigSchema = z.object({
-  enabled: z.boolean(),
-  maxRetries: z.number().int().nonnegative(),
-  testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
-  command: z.string().optional(),
-  model: ConfiguredModelSchema.default("fast"),
-  generateModel: ConfiguredModelSchema.optional(),
-  refinement: z.boolean().default(true),
-  refinementConcurrency: z.number().int().min(1).max(10).default(3),
-  redGate: z.boolean().default(true),
-  testStrategy: z.enum(["unit", "component", "cli", "e2e", "snapshot"]).optional(),
-  testFramework: z.string().min(1, "acceptance.testFramework must be non-empty").optional(),
-  timeoutMs: z.number().int().min(30000).max(3600000).default(1800000),
-  fix: AcceptanceFixConfigSchema.optional().default({
-    diagnoseModel: "fast",
-    fixModel: "balanced",
-    strategy: "diagnose-first",
-    maxRetries: 2,
-  }),
-  suggestedTestPath: z.string().min(1).optional(),
-  hardening: z
-    .object({
-      enabled: z.boolean().default(true),
-    })
-    .optional()
-    .default({ enabled: true }),
 });
 
 const LlmRoutingConfigSchema = z.object({

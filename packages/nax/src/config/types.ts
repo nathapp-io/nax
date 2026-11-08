@@ -6,9 +6,6 @@
  */
 
 export type {
-  AcceptanceConfig,
-  AcceptanceFixConfig,
-  AcceptanceTestStrategy,
   AdversarialReviewConfig,
   AgentConfig,
   AutoModeConfig,

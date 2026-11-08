@@ -58,19 +58,6 @@ describe("mergePackageConfig integration", () => {
     expect(root.review.enabled).toBe(true); // root unchanged
   });
 
-  test("package override with acceptance.enabled=false → merged config has acceptance disabled", () => {
-    const root: NaxConfig = {
-      ...makeBaseConfig(),
-      acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true },
-    };
-    const result = mergePackageConfig(root, {
-      acceptance: { enabled: false } as Partial<NaxConfig["acceptance"]>,
-    } as Partial<NaxConfig>);
-
-    expect(result.acceptance.enabled).toBe(false);
-    expect(root.acceptance.enabled).toBe(true); // root unchanged
-  });
-
   test("package override with execution.smartTestRunner=false → merged config has smart-runner disabled", () => {
     const root = makeBaseConfig();
     const result = mergePackageConfig(root, {

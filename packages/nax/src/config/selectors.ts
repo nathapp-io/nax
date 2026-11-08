@@ -78,10 +78,10 @@ export type InteractionConfig = Pick<NaxConfig, "interaction">;
  * read by the command/override checks; `agent` by `checkAgentCLI` (MED-03: it
  * resolves the default agent via `resolveDefaultAgent`).
  *
- * US-1984 (model-resolution precheck) adds `models`, `plan`, `acceptance`,
- * `autoMode`, `tdd` and `routing`: the check walks `models`,
- * `plan.model`, `acceptance.model`, `autoMode.escalation.tierOrder[*]`,
- * `tdd.sessionTiers.*`, and `routing.llm.model` literal pins.
+ * US-1984 (model-resolution precheck) adds `models`, `plan`, `autoMode`, `tdd`
+ * and `routing`: the check walks `models`, `plan.model`,
+ * `autoMode.escalation.tierOrder[*]`, `tdd.sessionTiers.*`, and
+ * `routing.llm.model` literal pins.
  */
 export type PrecheckConfig = Pick<
   NaxConfig,
@@ -94,7 +94,6 @@ export type PrecheckConfig = Pick<
   | "agent"
   | "models"
   | "plan"
-  | "acceptance"
   | "autoMode"
   | "tdd"
   | "routing"

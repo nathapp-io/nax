@@ -2,16 +2,6 @@
  * Execution-config sub-types split out of runtime-types.ts (file-size limit).
  */
 
-/** Worktree dependency preparation strategy (WT-DEPS-001) */
-export interface WorktreeDependenciesConfig {
-  /** How nax should prepare a fresh worktree before story execution */
-  mode: "provision" | "off";
-  /** Explicit provisioning command override (valid only in provision mode) */
-  setupCommand?: string | null;
-  /** Hard deadline (seconds) for the provisioning spawn (BUG-13) */
-  timeoutSeconds: number;
-}
-
 /**
  * One blocking host-side pre-run step (`execution.preRun`, US-003): a shell
  * command the *host* runs once per run, before baseline capture and story

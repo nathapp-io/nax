@@ -155,8 +155,8 @@ export interface ContextRequest {
   packageDir: string;
   /**
    * Story execution root (nax#2134, US-001): the directory the story's agent
-   * actually executes in. Under `execution.storyIsolation: "worktree"` this is
-   * `<repoRoot>/.nax-wt/<storyId>`; otherwise it equals `repoRoot`. Set by
+   * actually executes in. It equals `repoRoot` unless the story is rooted in a
+   * worktree checkout (`<repoRoot>/.nax-wt/<storyId>`). Set by
    * producers that hold a `PipelineContext` via `storyExecRoot(ctx.packageView)`
    * (see `src/runtime/packages.ts:227`); omitted by pull-tool handlers that
    * pass a pre-resolved root as both `repoRoot` and `packageDir`. Consumers
@@ -250,9 +250,9 @@ export interface ContextRequest {
    * rules, config, and command cwd apply (`ruleMatchesPackage`, git-history's
    * package post-filter, scratch-dir ignore patterns) while every path set
    * stays repo-rooted. It must NOT be re-derived as
-   * `packageDirRelative(repoRoot, packageDir)` — under
-   * `execution.storyIsolation: "worktree"`, `packageDir` is
-   * `<root>/.nax-wt/<storyId>/<pkg>` while `repoRoot` is the main checkout,
+   * `packageDirRelative(repoRoot, packageDir)` — for a `packageDir` rooted
+   * inside a nax worktree, it is `<root>/.nax-wt/<storyId>/<pkg>` while
+   * `repoRoot` is the main checkout,
    * so that derivation yields `.nax-wt/<storyId>/<pkg>`, matches nothing, and
    * silently drops every entry (nax#2069, nax path-frame follow-up C1).
    *

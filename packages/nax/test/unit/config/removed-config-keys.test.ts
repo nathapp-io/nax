@@ -14,6 +14,11 @@
 // "Warns" here means the loader warning reaches a logger sink registered with
 // `addSink`, the same way test/unit/config/removed-stage-names.test.ts captures
 // it: `loadConfig` takes no warn parameter.
+//
+// The two worktree-isolation keys (`execution.storyIsolation`,
+// `execution.worktreeDependencies`, US-006) are covered in
+// removed-config-keys-worktree-isolation.test.ts — split out for the 800-line
+// test-file cap.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
@@ -32,6 +37,9 @@ const tempDirs: string[] = [];
 const PROVIDER_HINT = "nothing read this key; the interceptor is always rtk";
 /** US-003 — the hint `execution.verificationTimeoutSeconds` carries. */
 const VERIFICATION_TIMEOUT_HINT = "verification uses execution.regressionGate.timeoutSeconds";
+/** US-006 — the hint both worktree-isolation keys carry. */
+const WORKTREE_ISOLATION_HINT =
+  "stories always run in the project checkout since worktree isolation was removed with pipeline mode";
 
 /** The warning `stripKeysAtPaths` emits for one removed path. */
 function removalWarning(path: string, hint: string): string {
@@ -241,6 +249,143 @@ describe("stripRemovedConfigKeys via loadConfig — execution.regressionGate.mod
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// loadConfig — the removed `acceptance` section (pipeline-acceptance-isolation-delete US-003)
+//
+// `src/acceptance/` was deleted with pipeline mode, so the section configures
+// nothing. It is stripped WHOLE: one warning naming `acceptance`, never one per
+// leaf under it, and no `acceptance` property on the resolved config. The whole
+// section is one entry in `REMOVED_CONFIG_KEYS`, so a leaf such as the retired
+// `acceptance.generateTests` is reported as part of the section, not under its
+// own dotted name.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The two-field fixture the US-003 ACs name verbatim. */
+const ACCEPTANCE_FIXTURE = { enabled: true, model: "fast" };
+
+/** AC-2's message, spelled out rather than derived, so the format is pinned too. */
+const ACCEPTANCE_REMOVAL_WARNING =
+  'Config key "acceptance" has been removed — nothing reads this key since pipeline mode was removed. Remove it from your config.';
+
+describe("stripRemovedConfigKeys via loadConfig — the removed acceptance section", () => {
+  test("US-003 AC-1: resolves when the project config sets acceptance", async () => {
+    const root = await writeProjectConfig({ acceptance: ACCEPTANCE_FIXTURE });
+
+    const config = await loadConfig(root);
+
+    assertDefined(config, "loadConfig result");
+  });
+
+  test("US-003 AC-2: a logger sink receives exactly one warning — the acceptance removal message", async () => {
+    const root = await writeProjectConfig({ acceptance: ACCEPTANCE_FIXTURE });
+
+    const { messages } = await captureWarnings(() => loadConfig(root));
+
+    expect(removedKeyWarnings(messages)).toEqual([ACCEPTANCE_REMOVAL_WARNING]);
+    expect(ACCEPTANCE_REMOVAL_WARNING).toBe(removalWarning("acceptance", PIPELINE_ONLY_KEY_HINT));
+  });
+
+  test("US-003 AC-3: the resolved config has no acceptance property", async () => {
+    const root = await writeProjectConfig({ acceptance: ACCEPTANCE_FIXTURE });
+
+    const config = await loadConfig(root);
+
+    expect(Object.hasOwn(config, "acceptance")).toBe(false);
+  });
+});
+
+describe("stripRemovedConfigKeys via loadConfig — acceptance.generateTests", () => {
+  test("US-003 AC-4: resolves when the project config sets acceptance.generateTests", async () => {
+    const root = await writeProjectConfig({ acceptance: { generateTests: true } });
+
+    const config = await loadConfig(root);
+
+    assertDefined(config, "loadConfig result");
+  });
+
+  test("US-003 AC-5: warns once naming the section, never the generateTests leaf", async () => {
+    const root = await writeProjectConfig({ acceptance: { generateTests: true } });
+
+    const { messages } = await captureWarnings(() => loadConfig(root));
+
+    const removed = removedKeyWarnings(messages);
+    expect(removed).toEqual([removalWarning("acceptance", PIPELINE_ONLY_KEY_HINT)]);
+    expect(removed.filter((msg) => msg.includes("acceptance.generateTests"))).toEqual([]);
+  });
+});
+
+// Every shape a leftover section can take: the section alone, and one fixture
+// per nesting depth a leaf actually sits at. Each must be stripped whole.
+const ACCEPTANCE_LEAF_FIXTURES: Array<[string, object]> = [
+  ["the section set to a single leaf", { acceptance: { enabled: true } }],
+  ["the retired generateTests leaf", { acceptance: { generateTests: true } }],
+  ["a two-level leaf", { acceptance: { fix: { strategy: "implement-only" } } }],
+  ["a two-level hardening leaf", { acceptance: { hardening: { enabled: false } } }],
+];
+
+describe("stripRemovedConfigKeys via loadConfig — any nested acceptance leaf", () => {
+  test.each(ACCEPTANCE_LEAF_FIXTURES)(
+    "US-003 AC-6: setting %s leaves the resolved config without an acceptance property",
+    async (_label, fixture) => {
+      const root = await writeProjectConfig(fixture);
+
+      const config = await loadConfig(root);
+
+      expect(Object.hasOwn(config, "acceptance")).toBe(false);
+    },
+  );
+
+  test.each(ACCEPTANCE_LEAF_FIXTURES)(
+    "US-003 AC-7: setting %s warns exactly once, naming acceptance",
+    async (_label, fixture) => {
+      const root = await writeProjectConfig(fixture);
+
+      const { messages } = await captureWarnings(() => loadConfig(root));
+
+      expect(removedKeyWarnings(messages)).toEqual([removalWarning("acceptance", PIPELINE_ONLY_KEY_HINT)]);
+    },
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadConfig — a default load still warns about nothing (US-003 AC-8)
+//
+// A retention pin. `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`, and the
+// loader warns about a key only when the CONFIG supplies it — so a strip entry
+// whose schema field survived would warn on every load. With no project file
+// and an owned global dir (no ambient `~/.nax/config.json` can decide this),
+// there must be no removal warning at all.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedConfigKeys via loadConfig — a default load (US-003 AC-8)", () => {
+  let previousGlobalDir: string | undefined;
+
+  beforeEach(() => {
+    previousGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    const globalDir = makeTempDir("nax-removed-acceptance-global-");
+    tempDirs.push(globalDir);
+    process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
+  });
+
+  afterEach(() => {
+    if (previousGlobalDir === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = previousGlobalDir;
+    }
+  });
+
+  test("US-003 AC-8: emits no warning containing 'has been removed'", async () => {
+    const root = makeTempDir("nax-removed-acceptance-none-");
+    tempDirs.push(root);
+
+    const { result, messages } = await captureWarnings(() => loadConfig(root));
+
+    assertDefined(result, "loadConfig result");
+    expect(messages.filter((msg) => msg.includes("has been removed"))).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Retention pins (AC-6 … AC-10) — every one of these passes before the removals
 // as well. They are here so a later change cannot take a live regression
 // setting with the dead ones. The global layer is redirected per test for the
@@ -431,9 +576,23 @@ describe("stripKeysAtPaths", () => {
     });
   });
 
-  test("REMOVED_CONFIG_KEYS covers the eleven rectification leaves, two sections, the provider and US-003's two keys", () => {
+  test("US-003: strips the whole acceptance section with one warning, leaving no acceptance property", () => {
+    const captured: string[] = [];
+
+    const result = stripRemovedConfigKeys(
+      { acceptance: { enabled: true, model: "fast", fix: { fixModel: "balanced" } }, tdd: { strategy: "auto" } },
+      (msg) => captured.push(msg),
+    );
+
+    expect(captured).toEqual([removalWarning("acceptance", PIPELINE_ONLY_KEY_HINT)]);
+    expect(Object.hasOwn(result, "acceptance")).toBe(false);
+    expect(result.tdd).toEqual({ strategy: "auto" });
+  });
+
+  test("REMOVED_CONFIG_KEYS covers the rectification leaves, the sections, the provider and US-003/US-006's keys", () => {
     expect(Object.keys(REMOVED_CONFIG_KEYS).sort()).toEqual(
       [
+        "acceptance",
         "execution.commandInterceptor.provider",
         "execution.flakeDetection",
         "execution.mutationCheck",
@@ -449,18 +608,24 @@ describe("stripKeysAtPaths", () => {
         "execution.rectification.storyScopedFixBudget",
         "execution.rectification.urgencyAtAttempt",
         "execution.regressionGate.mode",
+        "execution.storyIsolation",
         "execution.verificationTimeoutSeconds",
+        "execution.worktreeDependencies",
       ].sort(),
     );
   });
 
-  test("the sections carry the pipeline-only hint and the two special keys their own hints", () => {
+  test("the sections carry the pipeline-only hint and the special keys their own hints", () => {
+    expect(REMOVED_CONFIG_KEYS.acceptance).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.flakeDetection"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.mutationCheck"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.rectification.abortOnNoProgress"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.commandInterceptor.provider"]).toBe(PROVIDER_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.regressionGate.mode"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.verificationTimeoutSeconds"]).toBe(VERIFICATION_TIMEOUT_HINT);
+    // US-006: both worktree-isolation keys carry the one isolation hint.
+    expect(REMOVED_CONFIG_KEYS["execution.storyIsolation"]).toBe(WORKTREE_ISOLATION_HINT);
+    expect(REMOVED_CONFIG_KEYS["execution.worktreeDependencies"]).toBe(WORKTREE_ISOLATION_HINT);
   });
 });
 

@@ -110,30 +110,41 @@ describe("resetFailedStoriesToPending()", () => {
     expect(resetFailedStoriesToPending(prd)).toHaveLength(0);
   });
 
-  test("worktree mode: clears storyGitRef for each reset story", () => {
+  test("resetRef=true clears storyGitRef for each reset story", () => {
     const prd = makePrd([
       makeStory("US-001", { status: "failed", storyGitRef: "abc123" }),
       makeStory("US-002", { status: "failed", storyGitRef: "def456" }),
     ]);
-    resetFailedStoriesToPending(prd, { storyIsolation: "worktree" });
+    resetFailedStoriesToPending(prd, { resetRef: true });
     expect(prd.userStories[0].storyGitRef).toBeUndefined();
     expect(prd.userStories[1].storyGitRef).toBeUndefined();
   });
 
-  test("worktree mode: does not clear storyGitRef for non-failed stories", () => {
+  test("resetRef=true does not clear storyGitRef for non-failed stories", () => {
     const prd = makePrd([
       makeStory("US-001", { status: "passed", passes: true, storyGitRef: "abc123" }),
       makeStory("US-002", { status: "failed", storyGitRef: "def456" }),
     ]);
-    resetFailedStoriesToPending(prd, { storyIsolation: "worktree" });
+    resetFailedStoriesToPending(prd, { resetRef: true });
     expect(prd.userStories[0].storyGitRef).toBe("abc123");
     expect(prd.userStories[1].storyGitRef).toBeUndefined();
   });
 
-  test("shared mode: does not clear storyGitRef (legacy behaviour)", () => {
+  test("AC-6: resetRef=false resets a failed story to pending", () => {
     const prd = makePrd([makeStory("US-001", { status: "failed", storyGitRef: "abc123" })]);
-    resetFailedStoriesToPending(prd, { storyIsolation: "shared" });
-    expect(prd.userStories[0].storyGitRef).toBe("abc123");
+
+    const reset = resetFailedStoriesToPending(prd, { resetRef: false });
+
+    expect(reset).toHaveLength(1);
+    expect(reset[0].status).toBe("pending");
+  });
+
+  test("AC-7: resetRef=false keeps storyGitRef on the reset story", () => {
+    const prd = makePrd([makeStory("US-001", { status: "failed", storyGitRef: "abc123" })]);
+
+    const reset = resetFailedStoriesToPending(prd, { resetRef: false });
+
+    expect(reset[0].storyGitRef).toBe("abc123");
   });
 
   test("mixed statuses — only failed stories are reset", () => {
@@ -262,7 +273,7 @@ describe("resetFailedStoriesToPending()", () => {
       expect(prd.userStories[1].storyGitRef).toBeUndefined();
     });
 
-    test("AC4: storyIsolation='worktree' with default resetRef clears repoScopedFixes", () => {
+    test("AC-8/AC-9: resetRef=true clears storyGitRef and repoScopedFixes on a single reset story", () => {
       const prd = makePrd([
         makeStory("US-001", {
           status: "failed",
@@ -271,10 +282,10 @@ describe("resetFailedStoriesToPending()", () => {
         }),
       ]);
 
-      resetFailedStoriesToPending(prd, { storyIsolation: "worktree" });
+      const reset = resetFailedStoriesToPending(prd, { resetRef: true });
 
-      expect(prd.userStories[0].repoScopedFixes).toBeUndefined();
-      expect(prd.userStories[0].storyGitRef).toBeUndefined();
+      expect(reset[0].repoScopedFixes).toBeUndefined();
+      expect(reset[0].storyGitRef).toBeUndefined();
     });
 
     test("AC5: empty opts leaves repoScopedFixes untouched on failed stories", () => {
@@ -292,7 +303,7 @@ describe("resetFailedStoriesToPending()", () => {
       expect(prd.userStories[0].storyGitRef).toBe("abc123");
     });
 
-    test("AC5: shared isolation (legacy default) leaves repoScopedFixes untouched", () => {
+    test("AC5: resetRef=false leaves repoScopedFixes untouched", () => {
       const prd = makePrd([
         makeStory("US-001", {
           status: "failed",
@@ -301,7 +312,7 @@ describe("resetFailedStoriesToPending()", () => {
         }),
       ]);
 
-      resetFailedStoriesToPending(prd, { storyIsolation: "shared" });
+      resetFailedStoriesToPending(prd, { resetRef: false });
 
       expect(prd.userStories[0].repoScopedFixes).toEqual([fix]);
       expect(prd.userStories[0].storyGitRef).toBe("abc123");
@@ -330,7 +341,7 @@ describe("resetFailedStoriesToPending()", () => {
       expect(prd.userStories[1].storyGitRef).toBeUndefined();
     });
 
-    test("worktree isolation leaves repoScopedFixes untouched on passed stories", () => {
+    test("resetRef=true leaves repoScopedFixes untouched on passed stories", () => {
       const prd = makePrd([
         makeStory("US-001", {
           status: "passed",
@@ -345,7 +356,7 @@ describe("resetFailedStoriesToPending()", () => {
         }),
       ]);
 
-      resetFailedStoriesToPending(prd, { storyIsolation: "worktree" });
+      resetFailedStoriesToPending(prd, { resetRef: true });
 
       expect(prd.userStories[0].repoScopedFixes).toEqual([fix]);
       expect(prd.userStories[0].storyGitRef).toBe("abc123");

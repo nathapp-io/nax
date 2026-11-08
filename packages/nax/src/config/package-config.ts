@@ -3,8 +3,8 @@
  *
  * `loadConfigForWorkdir` takes its CLI overrides as an optional trailing argument,
  * so every call site is free to omit the run's `--profile` chain. For a config that
- * only feeds data fields (`acceptance.command`, `project.testFramework`) that is
- * invisible; for one handed to `callOp` as `ctx.config` it is fatal, because the
+ * only feeds data fields (such as `project.testFramework`) that is invisible; for
+ * one handed to `callOp` as `ctx.config` it is fatal, because the
  * model map usually lives in the profile and dispatch then throws MODEL_NOT_FOUND
  * (nax#2126 — the acceptance-setup stage resolved a profile-less group config and
  * every `native` dispatch in it failed at tier `fast`).

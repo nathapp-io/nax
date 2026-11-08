@@ -68,10 +68,9 @@ export class TestCoverageProvider implements IContextProvider {
     try {
       // resolveTestFilePatterns expects a repo-relative package dir, or undefined
       // for single-package repos. Source it from the PRD-declared story workdir,
-      // NOT relative(request.repoRoot, request.packageDir): under
-      // execution.storyIsolation "worktree", request.packageDir is rooted at the
-      // story's worktree checkout while request.repoRoot stays the main checkout,
-      // so that relative() yields ".nax-wt/<storyId>/<pkg>" — matching no real
+      // NOT relative(request.repoRoot, request.packageDir): a packageDir rooted
+      // inside a nax worktree while request.repoRoot stays the main checkout
+      // makes that relative() yield ".nax-wt/<storyId>/<pkg>" — matching no real
       // ".nax/mono/<pkg>/config.json" and silently falling back to root config
       // (nax#2111). storyWorkdir() returns "." for the repo root; map that to
       // undefined to preserve the existing single-package-repo semantics.

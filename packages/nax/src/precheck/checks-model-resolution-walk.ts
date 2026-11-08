@@ -249,7 +249,7 @@ export function collectConfiguredModelPins(config: unknown): {
   const pins: LiteralPin[] = [];
   const defaultAgent = cfg.agent?.default ?? DEFAULT_AGENT_NAME;
 
-  // review.{semantic,adversarial}.model and plan.model and acceptance.model and tdd.sessionTiers.*
+  // review.{semantic,adversarial}.model and plan.model and tdd.sessionTiers.*
   if (cfg.review?.semantic !== undefined) {
     const pin = pinFromConfiguredModel("review.semantic.model", cfg.review.semantic.model, defaultAgent, tierEntries);
     if (pin !== undefined) pins.push(pin);
@@ -271,10 +271,6 @@ export function collectConfiguredModelPins(config: unknown): {
   }
   if (cfg.plan !== undefined) {
     const pin = pinFromConfiguredModel("plan.model", cfg.plan.model, defaultAgent, tierEntries);
-    if (pin !== undefined) pins.push(pin);
-  }
-  if (cfg.acceptance !== undefined) {
-    const pin = pinFromConfiguredModel("acceptance.model", cfg.acceptance.model, defaultAgent, tierEntries);
     if (pin !== undefined) pins.push(pin);
   }
   if (cfg.tdd?.sessionTiers !== undefined) {

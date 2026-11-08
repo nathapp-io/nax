@@ -6,8 +6,8 @@
  * their stubs into the dep slot — 16 casts for one missing helper (#1514 §5.3),
  * two of which had already been downgraded to a ratcheted double cast.
  *
- * Same shape of fix as `makeMergeEngine`: intersect, and
- * keep the one cast here.
+ * Same shape of fix as the other `make*` class helpers: intersect, and keep the
+ * one cast here.
  */
 import { mock } from "bun:test";
 import type { WorktreeManager } from "@/worktree";
@@ -40,7 +40,7 @@ export function makeWorktreeManager(
     ensureGitExcludes: mock(async () => {}),
     ...overrides,
   };
-  // The single type-lie, mirroring makeMergeEngine: a class cannot be satisfied
-  // structurally, so the cast lives here once instead of at all 16 call sites.
+  // The single type-lie: a class cannot be satisfied structurally, so the cast
+  // lives here once instead of at all 16 call sites.
   return manager as unknown as MockWorktreeManager; // test-ratchet-allow: as-unknown-as
 }

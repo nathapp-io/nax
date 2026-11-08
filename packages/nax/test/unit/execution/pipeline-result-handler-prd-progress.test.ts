@@ -1,23 +1,22 @@
 /**
- * `handlePipelineFailure` / `handlePipelineSuccess` — PRD progress commits (#2533).
+ * `handlePipelineFailure` — PRD progress commits (#2533).
  *
  * The result handler is one of the three writers of a story's status, and the
- * only one that runs *after* something went wrong: a story that pauses, fails,
- * or passes its pipeline but never lands on the base branch is exactly when the
- * PRD has to be committed, because the next attempt starts from the tree.
+ * only one that runs *after* something went wrong: a story that pauses or
+ * fails is exactly when the PRD has to be committed, because the next attempt
+ * starts from the tree.
  *
  * Describe-block split of `pipeline-result-handler.test.ts` (752 lines, past
  * the 650 split target): the handler's own behaviour lives there, the seam its
  * status writes commit through lives here.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   cleanupTempDir,
   makeAgentResult,
   makeDispatchContext,
-  makeMergeEngine,
   makePRD,
   makeSpawn,
   makeStory,
@@ -28,7 +27,6 @@ import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
   _resultHandlerDeps,
   handlePipelineFailure,
-  handlePipelineSuccess,
   type PipelineHandlerContext,
 } from "@/execution/pipeline-result-handler";
 import type { PipelineRunResult } from "@/pipeline/runner";
@@ -38,13 +36,7 @@ import type { PRD, UserStory } from "@/prd/types";
 type ProgressCall = [prd: PRD, prdPath: string, storyId: string, label: string];
 
 const ORIG_SAVE_PRD_PROGRESS = _resultHandlerDeps.savePrdProgress;
-const ORIG_MERGE_ENGINE = _resultHandlerDeps.mergeEngine;
 const ORIG_SPAWN = _resultHandlerDeps.spawn;
-
-const WORKTREE_CONFIG = {
-  ...DEFAULT_CONFIG,
-  execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
-};
 
 let workdir: string;
 
@@ -99,7 +91,6 @@ beforeEach(() => {
 
 afterEach(() => {
   _resultHandlerDeps.savePrdProgress = ORIG_SAVE_PRD_PROGRESS;
-  _resultHandlerDeps.mergeEngine = ORIG_MERGE_ENGINE;
   _resultHandlerDeps.spawn = ORIG_SPAWN;
   cleanupTempDir(workdir);
 });
@@ -130,47 +121,6 @@ describe("handlePipelineFailure — PRD progress commits", () => {
     const calls = captureProgressCalls();
 
     await handlePipelineFailure(ctx, result("skip", "Dependency not met"));
-
-    expect(calls).toEqual([]);
-  });
-});
-
-describe("handlePipelineSuccess — PRD progress commits", () => {
-  test("a story whose branch never landed commits its 'failed' status", async () => {
-    // The merge failed for a non-conflict reason, so the handler corrects the
-    // status completionStage already wrote ("passed") back to "failed". That
-    // correction is worthless unless it sticks on disk — which is what the
-    // PRD commit is for.
-    const story = makeStory({ id: "US-001", status: "passed", passes: true, attempts: 1 });
-    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({
-      merge: mock(async () => ({ success: false, failureKind: "error", error: "dirty tree" })),
-    });
-    const calls = captureProgressCalls();
-
-    const outcome = await handlePipelineSuccess(ctx, {
-      success: true,
-      finalAction: "complete",
-      context: makeTestContext({ agentResult: makeAgentResult(), storyMetrics: [] }),
-    });
-
-    expect(outcome.storiesCompletedDelta).toBe(0);
-    expect(calls.map(([, , storyId, label]) => [storyId, label])).toEqual([["US-001", "failed"]]);
-  });
-
-  test("a story that landed commits nothing — completionStage already did", async () => {
-    // The single writer rule: the completion stage commits the "passed" status
-    // on the success path, so a second commit here would be an empty one.
-    const story = makeStory({ id: "US-001", status: "passed", passes: true, attempts: 1 });
-    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mock(async () => ({ success: true })) });
-    const calls = captureProgressCalls();
-
-    await handlePipelineSuccess(ctx, {
-      success: true,
-      finalAction: "complete",
-      context: makeTestContext({ agentResult: makeAgentResult(), storyMetrics: [] }),
-    });
 
     expect(calls).toEqual([]);
   });

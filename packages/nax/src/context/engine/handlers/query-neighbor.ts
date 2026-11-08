@@ -66,8 +66,8 @@ export async function handleQueryNeighbor(
   // execution.ts -> iteration-runner, which joins story.workdir), so this IS
   // package-scoped. Two attempts to "scope" it further were both wrong: joining
   // story.workdir again double-joins in monorepos, and splitting repoRoot from
-  // packageDir redirects the cross-package scan at the main checkout under
-  // storyIsolation: "worktree". Do not "fix" this without a worktree test.
+  // packageDir redirects the cross-package scan away from the tree the story
+  // actually executes in. Do not "fix" this without a test pinning the scan root.
   //
   // Frame (nax#2088): chunks here are returned to the tool runtime, never
   // persisted to manifests, so their scopePaths never reach effectiveness

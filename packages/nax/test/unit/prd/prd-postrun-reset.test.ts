@@ -61,7 +61,7 @@ describe("markStoryFailed - AC5: resetPostRunStatus when story was passed", () =
     const prd = makePRD([story]);
     const sw = makeStatusWriter();
 
-    markStoryFailed(prd, "US-001", undefined, undefined, sw);
+    markStoryFailed(prd, "US-001", undefined, sw);
 
     expect(sw.resetPostRunStatus).toHaveBeenCalledTimes(1);
   });
@@ -71,7 +71,7 @@ describe("markStoryFailed - AC5: resetPostRunStatus when story was passed", () =
     const prd = makePRD([story]);
     const sw = makeStatusWriter();
 
-    markStoryFailed(prd, "US-001", undefined, undefined, sw);
+    markStoryFailed(prd, "US-001", undefined, sw);
 
     expect(prd.userStories[0].status).toBe("failed");
   });
@@ -82,7 +82,7 @@ describe("markStoryFailed - AC5: resetPostRunStatus when story was passed", () =
       const story = makeStory("US-001", status);
       const prd = makePRD([story]);
       const sw = makeStatusWriter();
-      markStoryFailed(prd, "US-001", undefined, undefined, sw);
+      markStoryFailed(prd, "US-001", undefined, sw);
       expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
     },
   );
@@ -100,7 +100,7 @@ describe("markStoryFailed - AC5: resetPostRunStatus when story was passed", () =
     const prd = makePRD([story]);
     const sw = makeStatusWriter();
 
-    markStoryFailed(prd, "US-UNKNOWN", undefined, undefined, sw);
+    markStoryFailed(prd, "US-UNKNOWN", undefined, sw);
 
     expect(sw.resetPostRunStatus).not.toHaveBeenCalled();
   });

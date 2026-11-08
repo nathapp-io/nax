@@ -287,8 +287,8 @@ export class CodeNeighborProvider implements IContextProvider {
   async fetch(request: ContextRequest, signal?: AbortSignal): Promise<ContextProviderResult> {
     const { touchedFiles } = request;
     // nax#2134 (US-001): the story execution root drives every disk
-    // resolution. Under `execution.storyIsolation: "worktree"` this is the
-    // worktree root, not the main checkout. Producers that do not have a
+    // resolution. It is the tree the story executes in, which need not be the
+    // main checkout. Producers that do not have a
     // story (pull-tool handlers) omit execRoot and fall back to repoRoot —
     // today's behaviour. The scanRoot for the reverse-dep glob derives from
     // the SAME root (the spec's literal "scanRoot is derived from the same

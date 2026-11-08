@@ -4,11 +4,9 @@
 
 import { existsSync, statSync } from "node:fs";
 import { NaxError } from "../errors";
-import type { FailureCategory } from "../execution/types";
 import { propagateOutOfScopeToStories } from "./out-of-scope";
 import type { PRD, UserStory } from "./types";
 
-export type { FailureCategory } from "../execution/types";
 export { findAcNumericReferences } from "./ac-references";
 export type { SpecContextFile } from "./context-files-extract";
 export { extractSpecContextFiles, MAX_SPEC_CONTEXT_FILES } from "./context-files-extract";
@@ -307,11 +305,16 @@ export function markStoryPassed(prd: PRD, storyId: string, _statusWriter?: PostR
   }
 }
 
-/** Mark a story as failed */
+/**
+ * Mark a story as failed.
+ *
+ * `failureStage` names the pipeline stage that failed. There is no failure
+ * category argument any more: the single category that existed described
+ * worktree dependency preparation, and both were removed together.
+ */
 export function markStoryFailed(
   prd: PRD,
   storyId: string,
-  failureCategory?: FailureCategory,
   failureStage?: string,
   statusWriter?: PostRunStatusWriter,
 ): void {
@@ -328,9 +331,6 @@ export function markStoryFailed(
     // dependents unblock against work that never reached the base branch.
     story.passes = false;
     story.attempts += 1;
-    if (failureCategory !== undefined) {
-      story.failureCategory = failureCategory;
-    }
     if (failureStage !== undefined) {
       story.failureStage = failureStage;
     }
@@ -347,14 +347,6 @@ export interface ResetFailedOptions {
    * starts clean. Default: false.
    */
   resetRef?: boolean;
-  /**
-   * When `"worktree"`, also clears `storyGitRef` and `repoScopedFixes` for
-   * all reset stories regardless of `resetRef` (each story will get a fresh
-   * ref in its new worktree, and the old worktree's repairs don't follow).
-   * Callers are responsible for deleting the old `nax/<storyId>` branches
-   * after this returns.
-   */
-  storyIsolation?: "shared" | "worktree";
   /**
    * Controls tier/agent restoration on reset (ADR-025 gap #4).
    *
@@ -376,7 +368,7 @@ export interface ResetFailedOptions {
  * @returns the list of stories that were reset (empty = no changes, PRD is clean)
  */
 export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions = {}): UserStory[] {
-  const { resetRef = false, storyIsolation, resetMode = "initial" } = opts;
+  const { resetRef = false, resetMode = "initial" } = opts;
   const reset: UserStory[] = [];
   for (const story of prd.userStories) {
     if (story.status !== "failed") continue;
@@ -395,7 +387,7 @@ export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions =
       story.escalations = [];
     }
 
-    if (resetRef || storyIsolation === "worktree") {
+    if (resetRef) {
       story.storyGitRef = undefined;
       story.repoScopedFixes = undefined;
     }

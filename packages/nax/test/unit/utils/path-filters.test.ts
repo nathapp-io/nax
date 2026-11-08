@@ -165,10 +165,10 @@ describe("path-filters (#542)", () => {
   });
 
   // nax#2111 (path-filters follow-up): resolveNaxIgnorePatterns's packagePrefix
-  // used to be derived as relative(repoRoot, packageDir). Under
-  // execution.storyIsolation: "worktree", packageDir is
-  // <root>/.nax-wt/<storyId>/<pkg> while repoRoot stays the main checkout, so
-  // that derivation yields ".nax-wt/<storyId>/<pkg>" instead of "<pkg>".
+  // used to be derived as relative(repoRoot, packageDir). In a story worktree
+  // checkout packageDir was <root>/.nax-wt/<storyId>/<pkg> while repoRoot
+  // stayed the main checkout, so that derivation yielded
+  // ".nax-wt/<storyId>/<pkg>" instead of "<pkg>".
   //
   // Unlike ruleMatchesPackage (nax#2111 1b), this IS reachable: compileMatcher
   // prepends packagePrefix to the SUBJECT (`${packagePrefix}/${normalized}`)

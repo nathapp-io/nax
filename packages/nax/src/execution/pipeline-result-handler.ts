@@ -27,7 +27,6 @@ import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { storyPackageDir } from "../utils/path-frame";
 import {
   deriveStoryWorktreeId,
-  MergeEngine,
   naxOrphanRefName,
   storyBranchName,
   storyWorktreePath,
@@ -42,15 +41,14 @@ export const _resultHandlerDeps = {
   existsSync,
   savePrdProgress,
   worktreeManager: new WorktreeManager(),
-  mergeEngine: new MergeEngine(new WorktreeManager()),
   handleTierEscalation,
 };
 
 /**
- * MEM-6: parallel-batch dispatch creates a worktree for every story unconditionally,
- * regardless of `storyIsolation` mode — so cleanup must key off whether one actually
- * exists, not off the config mode that creation ignored. Sequential shared-mode runs
- * never create a worktree, so this is false there and behaviour is unchanged.
+ * MEM-6: parallel-batch dispatch creates a worktree for every story unconditionally, so
+ * cleanup must key off whether one actually exists rather than off a config mode that
+ * creation ignored. Runs that never create a worktree leave this false and behaviour is
+ * unchanged.
  */
 function hasWorktree(projectRoot: string, worktreeId: import("../worktree").WorktreeId): boolean {
   return _resultHandlerDeps.existsSync(storyWorktreePath(projectRoot, worktreeId));
@@ -169,48 +167,6 @@ async function recordNaxOrphanOwnership(
   }
 }
 
-/**
- * Record a story whose pipeline passed but whose branch never landed on the base.
- *
- * By the time this runs, `completionStage` has already marked the story passed,
- * written that to disk (`stages/completion.ts`) and emitted `story:completed`.
- * Correcting only the in-memory PRD is therefore not enough on two counts:
- *
- * - The executor answers `prdDirty: true` by **reloading from disk**
- *   (`unified-executor.ts:484-486`), which would restore `passed` and discard
- *   the correction. The `savePrdProgress` here is what makes it stick.
- * - `isComplete(prd)` / `countStories(prd)` read story status, so leaving it
- *   `passed` lets the whole run report complete for code that is not on the branch.
- *
- * Mirrors the `case "fail"` arm of `handlePipelineFailure`, minus the tier
- * escalation: every gate already passed, so there is nothing to retry at a
- * higher tier — the branch simply could not land.
- */
-async function failStoryAfterMerge(ctx: PipelineHandlerContext, prd: PRD, reason: string): Promise<void> {
-  markStoryFailed(prd, ctx.story.id, undefined, undefined, ctx.statusWriter);
-  await _resultHandlerDeps.savePrdProgress(prd, ctx.prdPath, ctx.story.id, "failed");
-
-  if (ctx.featureDir) {
-    await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${reason}`);
-  }
-
-  // `story:completed` is already on the bus for this story. Without this
-  // correction every reporter, hook and the TUI keeps showing a success the
-  // PRD no longer claims.
-  const spend = storySpendUsd(ctx.runtime.costAggregator, ctx.story.id, ctx.totalCost);
-  pipelineEventBus.emit({
-    type: "story:failed",
-    storyId: ctx.story.id,
-    story: { id: ctx.story.id, title: ctx.story.title, status: ctx.story.status, attempts: ctx.story.attempts },
-    reason,
-    countsTowardEscalation: false,
-    feature: ctx.feature,
-    attempts: ctx.story.attempts,
-    cost: spend.cost,
-    ...(spend.errorCostUsd > 0 ? { errorCostUsd: spend.errorCostUsd } : {}),
-  });
-}
-
 /** Filter noise from output files (test files, lock files, nax runtime files) */
 function filterOutputFiles(files: string[]): string[] {
   const NOISE = [
@@ -309,56 +265,6 @@ export async function handlePipelineSuccess(
     }
   }
 
-  // EXEC-002: In worktree mode, merge the story's branch into main after pipeline passes.
-  if (ctx.config.execution.storyIsolation === "worktree") {
-    const story = ctx.story;
-    // US-002: compose the brand via `deriveStoryWorktreeId(feature, story.id)`
-    // so the merge uses the same composed `nax/<worktreeId>` branch the
-    // manager created. The `_resultHandlerDeps.mergeEngine` slot is the
-    // pre-construction mergeEngine at module init; it accepts the brand.
-    const worktreeId = deriveStoryWorktreeId(ctx.feature, story.id);
-    const mergeResult = await _resultHandlerDeps.mergeEngine.merge(ctx.workdir, worktreeId);
-    // Only an explicit "error" takes the non-conflict arm. A failure with no
-    // failureKind keeps the historical reading (assume conflict) so a result
-    // from outside this module cannot silently lose its failure.
-    if (!mergeResult.success && mergeResult.failureKind === "error") {
-      // A non-conflict git failure (dirty tree, missing branch, repository stuck
-      // mid-merge). There is nothing a conflict pass could resolve, so fail
-      // the story with the real cause.
-      const reason = `Merge failed for a non-conflict reason: ${mergeResult.error ?? "unknown error"}`;
-      logger?.error("worktree", "Merge failed for a non-conflict reason — marking story as failed", {
-        storyId: story.id,
-        error: mergeResult.error,
-      });
-      await failStoryAfterMerge(ctx, prd, reason);
-      // Nothing will revisit this worktree — no later pass is coming — so
-      // reclaim the directory. The branch stays for diagnostics, exactly as
-      // the `case "fail"` arm does. US-002: on successful removal, also record
-      // nax ownership so the retry can clean up the branch.
-      const removeSucceeded = await removeWorktreeDirectory(ctx.workdir, worktreeId);
-      if (removeSucceeded) {
-        await recordNaxOrphanOwnership(ctx.workdir, worktreeId);
-      }
-      return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
-    }
-    if (!mergeResult.success) {
-      // Merge conflict after the story passed all checks. The branch could not
-      // land on main and nothing re-runs the story to resolve it, so the story
-      // fails. The worktree is deliberately NOT reclaimed: the unresolved
-      // conflict stays on disk for inspection by hand, as the pre-existing
-      // unrectified path kept it.
-      const files = (mergeResult.conflictFiles ?? []).join(", ");
-      const reason = `Merge conflict${files ? ` (${files})` : ""} — the branch did not land`;
-      logger?.error("worktree", "Merge conflict — marking story as failed", {
-        storyId: story.id,
-        conflictFiles: mergeResult.conflictFiles,
-      });
-      await failStoryAfterMerge(ctx, prd, reason);
-      return { storiesCompletedDelta: 0, costDelta, prd, prdDirty: true };
-    }
-    logger?.info("worktree", "Merged story to main", { storyId: story.id });
-  }
-
   const updatedCounts = countStories(prd);
   logger?.info("progress", "Progress update", {
     totalStories: updatedCounts.total,
@@ -434,7 +340,7 @@ export async function handlePipelineFailure(
       break;
 
     case "fail": {
-      markStoryFailed(prd, ctx.story.id, undefined, pipelineResult.stoppedAtStage, ctx.statusWriter);
+      markStoryFailed(prd, ctx.story.id, pipelineResult.stoppedAtStage, ctx.statusWriter);
       await _resultHandlerDeps.savePrdProgress(prd, ctx.prdPath, ctx.story.id, "failed");
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });

@@ -15,8 +15,7 @@
  * would show up as a repo diff that nax's own auto-commit machinery could
  * sweep into the feature branch as run noise. This module reuses that same
  * method — no re-spelled line-aware matching — against the MAIN checkout at
- * the start of every run, closing the gap for the common case where
- * `execution.storyIsolation` never creates a worktree at all.
+ * the start of every run, which is the only checkout a story runs in.
  *
  * Gated on dryRun for the same reason the adjacent scratchpad wipe is
  * (scratchpad-wipe.ts): a preview must not mutate the tree, even a

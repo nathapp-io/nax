@@ -239,12 +239,7 @@ export async function initializeAfterLock(options: InitializeAfterLockOptions): 
     // Prompt user for each paused story — skip in headless mode
     if (counts.paused > 0 && interactionChain !== null) {
       const { promptForPausedStories } = await import("./paused-story-prompts");
-      const pausedSummary = await promptForPausedStories(
-        prd,
-        interactionChain,
-        feature,
-        config.execution.storyIsolation,
-      );
+      const pausedSummary = await promptForPausedStories(prd, interactionChain, feature);
       if (pausedSummary.resumed.length > 0 || pausedSummary.skipped.length > 0) {
         await savePRD(prd, options.prdPath);
         counts = countStories(prd);

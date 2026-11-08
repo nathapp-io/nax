@@ -18,7 +18,6 @@ import {
   _applyLegacyReviewExecutionShim,
   _applyRemovedAcpTransportShim,
   _applyRemovedRoutingKeysShim,
-  _applyRemovedWorktreeInheritShim,
 } from "@/config/compat-shims";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -82,40 +81,6 @@ describe("_applyRemovedRoutingKeysShim — routing keys removed with ROUTE-001",
 
     expect(captured.length).toBe(0);
     expect(result).toEqual({ execution: {} });
-  });
-});
-
-describe("_applyRemovedWorktreeInheritShim — worktreeDependencies mode removed with #574", () => {
-  test("warns and maps mode=inherit to off", () => {
-    const captured: string[] = [];
-    const result = _applyRemovedWorktreeInheritShim(
-      { execution: { worktreeDependencies: { mode: "inherit", setupCommand: null } } },
-      (msg) => captured.push(msg),
-    );
-
-    expect(captured).toHaveLength(1);
-    expect(captured[0]).toContain("execution.worktreeDependencies.mode");
-    expect(captured[0]).toContain("removed");
-    const execution = result.execution as Record<string, unknown>;
-    expect(execution.worktreeDependencies).toEqual({ mode: "off", setupCommand: null });
-  });
-
-  test("leaves provision and off untouched without warning", () => {
-    for (const mode of ["provision", "off"]) {
-      const captured: string[] = [];
-      const conf = { execution: { worktreeDependencies: { mode } } };
-      const result = _applyRemovedWorktreeInheritShim(conf, (msg) => captured.push(msg));
-
-      expect(captured).toHaveLength(0);
-      expect(result).toBe(conf);
-    }
-  });
-
-  test("does not mutate the input config", () => {
-    const conf = { execution: { worktreeDependencies: { mode: "inherit" } } };
-    _applyRemovedWorktreeInheritShim(conf, () => {});
-
-    expect(conf.execution.worktreeDependencies.mode).toBe("inherit");
   });
 });
 
@@ -559,38 +524,6 @@ describe("loadConfig — legacy key deprecation shim", () => {
     expect(captured.some((m) => m.includes("execution.permissionProfile"))).toBe(false);
   });
 
-  // #574: proves the shim is wired into the chain, not merely callable. Without it
-  // the removed value reaches Zod, whose enum no longer accepts it, and the whole
-  // config load hard-fails instead of migrating.
-  // #574 follow-up from code review: loadConfigForWorkdir merges per-package
-  // overlays and goes straight to safeParse without the compat-shim chain, so
-  // narrowing the enum turned a per-package `inherit` into a hard
-  // PER_PACKAGE_PROFILE_INVALID — on the very path that feeds
-  // prepareWorktreeDependencies for a monorepo story.
-  test("loadConfigForWorkdir maps a removed inherit mode in a per-package overlay instead of throwing", async () => {
-    await writeProjectConfig({ execution: { worktreeDependencies: { mode: "off" } } });
-    const pkgDir = join(tempDir, ".nax", "mono", "packages", "app");
-    mkdirSync(pkgDir, { recursive: true });
-    await Bun.write(
-      join(pkgDir, "config.json"),
-      JSON.stringify({ execution: { worktreeDependencies: { mode: "inherit" } } }),
-    );
-
-    const config = await loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/app");
-
-    expect(config.execution.worktreeDependencies.mode).toBe("off");
-  });
-
-  test("loadConfig maps a removed worktreeDependencies inherit mode to off end-to-end", async () => {
-    await writeProjectConfig({ execution: { worktreeDependencies: { mode: "inherit" } } });
-
-    const captured = await captureLoadWarnings(() => loadConfig(tempDir));
-    expect(captured.filter((m) => m.includes("execution.worktreeDependencies.mode"))).toHaveLength(1);
-
-    const config = await loadConfig(tempDir);
-    expect(config.execution.worktreeDependencies.mode).toBe("off");
-  });
-
   test("S4b-5: a project config pinning agent.acp.transport loads, warns once, and drops the key", async () => {
     await writeProjectConfig({ agent: { acp: { transport: "acpx", promptRetries: 1 } } });
 
@@ -780,17 +713,20 @@ describe("loadConfigForWorkdir — compat-shim chain on per-package overlays (#1
   // resolution, but each got the bare `defaultConfigWarn` sink — so a no-op key
   // in both the overlay and a package profile warned twice, where the root path
   // warns once per resolved config. They now share the per-resolution dedupe.
+  //
+  // The vehicle is `review.gateLLMChecksOnMechanicalPass` — a mergeable
+  // per-package section, so the profile can reintroduce the key after the first strip.
   test("a removed no-op key in both the overlay and a per-package profile warns once, not twice", async () => {
     await writeRootConfig({});
-    await writePackageOverride({ profile: "legacy", acceptance: { generateTests: false } });
+    await writePackageOverride({ profile: "legacy", review: { gateLLMChecksOnMechanicalPass: false } });
     await writePackageProfile("legacy", {
-      acceptance: { generateTests: false },
+      review: { gateLLMChecksOnMechanicalPass: false },
       execution: { costLimit: 7 },
     });
 
     const captured = await captureWorkdirWarnings(loadForPackage);
 
-    expect(captured.filter((m) => m.includes("generateTests"))).toHaveLength(1);
+    expect(captured.filter((m) => m.includes("review.gateLLMChecksOnMechanicalPass"))).toHaveLength(1);
     expect((await loadForPackage()).execution.costLimit).toBe(7);
   });
 });

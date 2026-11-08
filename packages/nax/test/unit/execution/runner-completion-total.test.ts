@@ -64,7 +64,6 @@ function makeOpts(total = 0): RunnerCompletionOptions {
   const runtime = makeMockRuntime();
   runtime.costAggregator.snapshot = mock(() => ({ ...emptySnapshot(), totalCostUsd: total }));
   const config: NaxConfig = makeNaxConfig({
-    acceptance: { enabled: false },
     execution: { regressionGate: { enabled: false } },
   });
   return {
@@ -108,11 +107,7 @@ const origGitSpawn = _gitDeps.spawn;
 
 beforeEach(() => {
   _runnerCompletionDeps.handleRunCompletion = mock(async () => baseCompletionResult);
-  _runnerCompletionDeps.loadConfigForPackage = mock(async () =>
-    makeNaxConfig({
-      acceptance: { enabled: false },
-    }),
-  );
+  _runnerCompletionDeps.loadConfigForPackage = mock(async () => makeNaxConfig());
   // Hermetic: the completion phase auto-commits any dirty nax runtime files at
   // run end via autoCommitIfDirty — stub the git process it would spawn.
   _gitDeps.spawn = makeSpawn().spawn;

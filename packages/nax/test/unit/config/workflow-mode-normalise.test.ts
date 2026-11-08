@@ -10,64 +10,53 @@ import { applyWorkflowMode } from "@/config/workflow-mode";
 
 type Mode = "pipeline" | "workflow";
 
-function configFor(opts: { mode?: Mode; acceptance: boolean; advisor?: boolean }): NaxConfig {
+function configFor(opts: { mode?: Mode; advisor?: boolean }): NaxConfig {
   return makeNaxConfig({
     execution: { mode: opts.mode ?? "pipeline" },
-    acceptance: { enabled: opts.acceptance },
     ...(opts.advisor === undefined ? {} : { advisor: { enabled: opts.advisor } }),
   });
 }
 
 describe("applyWorkflowMode", () => {
-  test("AC-12 normalizes hand-built pipeline configs too", () => {
-    const cfg = makeNaxConfig({
-      execution: { mode: "pipeline", storyIsolation: "worktree" },
-      acceptance: { enabled: true },
-      advisor: { enabled: false },
-    });
-    const out = applyWorkflowMode(cfg, () => {});
-    expect(out.acceptance.enabled).toBe(false);
-    expect(out.execution.storyIsolation).toBe("shared");
+  test("AC-1: an advisor that workflow mode turns on comes back enabled on a new config", () => {
+    const cfg = configFor({ mode: "workflow", advisor: false });
+
+    const out = applyWorkflowMode(cfg);
+
     expect(out.advisor?.enabled).toBe(true);
-    expect(cfg.acceptance.enabled).toBe(true);
+    expect(out).not.toBe(cfg);
   });
 
-  test("workflow mode forces acceptance off and the advisor on, silently when they are the shipped defaults", () => {
-    const cfg = configFor({ mode: "workflow", acceptance: true, advisor: false });
-    const warnings: string[] = [];
-    const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
-    expect(out.acceptance.enabled).toBe(false);
+  test("AC-2: forcing the advisor on does not mutate the input config", () => {
+    const cfg = configFor({ mode: "workflow", advisor: false });
+
+    applyWorkflowMode(cfg);
+
+    expect(cfg.advisor?.enabled).toBe(false);
+  });
+
+  test("AC-3: an advisor that is already enabled is returned as the same object reference", () => {
+    const cfg = configFor({ mode: "workflow", advisor: true });
+
+    expect(applyWorkflowMode(cfg)).toBe(cfg);
+  });
+
+  test("AC-14: a config with no advisor section is returned as the same object reference", () => {
+    const cfg = configFor({ mode: "workflow" });
+    Reflect.deleteProperty(cfg, "advisor");
+
+    expect(cfg.advisor).toBeUndefined();
+    expect(applyWorkflowMode(cfg)).toBe(cfg);
+  });
+
+  test("the shipped default config has its advisor forced on without being mutated", () => {
+    expect(DEFAULT_CONFIG.advisor?.enabled).toBe(false);
+
+    const out = applyWorkflowMode(DEFAULT_CONFIG);
+
+    expect(out).not.toBe(DEFAULT_CONFIG);
     expect(out.advisor?.enabled).toBe(true);
-    expect(cfg.acceptance.enabled).toBe(true); // input not mutated
-    // workflow is the default mode, so overriding untouched defaults is not news on every run
-    expect(warnings).toEqual([]);
-  });
-
-  test("the shipped default config resolves in workflow mode without a warning", () => {
-    const warnings: string[] = [];
-    const out = applyWorkflowMode(DEFAULT_CONFIG, (m) => warnings.push(m));
-    expect(out.acceptance.enabled).toBe(false);
-    expect(warnings).toEqual([]);
-  });
-
-  test("workflow mode forces shared story isolation: the workflow tree sits in the main checkout (nax#2479)", () => {
-    const cfg = makeNaxConfig({
-      execution: { mode: "workflow", storyIsolation: "worktree" },
-      acceptance: { enabled: false },
-      advisor: { enabled: true },
-    });
-    const warnings: string[] = [];
-    const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
-    expect(out.execution.storyIsolation).toBe("shared");
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("execution.storyIsolation=shared");
-  });
-
-  test("workflow mode with keys already at their forced values does not warn", () => {
-    const cfg = configFor({ mode: "workflow", acceptance: false, advisor: true });
-    const warnings: string[] = [];
-    applyWorkflowMode(cfg, (m) => warnings.push(m));
-    expect(warnings).toEqual([]);
+    expect(DEFAULT_CONFIG.advisor?.enabled).toBe(false);
   });
 });
 
@@ -85,36 +74,22 @@ describe("applyWorkflowMode at the per-package loader exit", () => {
     _clearRootConfigCache();
   });
 
-  test("a package override cannot re-enable acceptance in workflow mode", async () => {
-    dir = mkdtempSync(join(tmpdir(), "nax-wf-"));
-    mkdirSync(join(dir, ".nax", "mono", "apps", "api"), { recursive: true });
-    writeFileSync(join(dir, ".nax", "config.json"), JSON.stringify({ execution: { mode: "workflow" } }));
-    writeFileSync(
-      join(dir, ".nax", "mono", "apps", "api", "config.json"),
-      JSON.stringify({ acceptance: { enabled: true } }),
-    );
-    const cfg = await loadConfigForWorkdir(join(dir, ".nax", "config.json"), "apps/api");
-    expect(cfg.acceptance.enabled).toBe(false);
-  });
-
   test("a root config with no execution.mode resolves to workflow mode", async () => {
     dir = mkdtempSync(join(tmpdir(), "nax-wf-"));
     mkdirSync(join(dir, ".nax"), { recursive: true });
-    writeFileSync(join(dir, ".nax", "config.json"), JSON.stringify({ acceptance: { enabled: true } }));
+    writeFileSync(join(dir, ".nax", "config.json"), JSON.stringify({ version: 1 }));
     const cfg = await loadConfigForWorkdir(join(dir, ".nax", "config.json"));
     expect(cfg.execution.mode).toBe("workflow");
-    expect(cfg.acceptance.enabled).toBe(false);
   });
 
-  test("a root config in workflow mode resolves with acceptance off and the advisor on", async () => {
+  test("a root config in workflow mode resolves with the advisor on", async () => {
     dir = mkdtempSync(join(tmpdir(), "nax-wf-"));
     mkdirSync(join(dir, ".nax"), { recursive: true });
     writeFileSync(
       join(dir, ".nax", "config.json"),
-      JSON.stringify({ execution: { mode: "workflow" }, acceptance: { enabled: true } }),
+      JSON.stringify({ execution: { mode: "workflow" }, advisor: { enabled: false } }),
     );
     const cfg = await loadConfigForWorkdir(join(dir, ".nax", "config.json"));
-    expect(cfg.acceptance.enabled).toBe(false);
     expect(cfg.advisor?.enabled).toBe(true);
   });
 });

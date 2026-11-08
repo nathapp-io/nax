@@ -2,14 +2,17 @@
 /**
  * PRD failureCategory Tests
  *
- * Tests for failureCategory field on UserStory and the markStoryFailed()
- * function storing the category.
+ * `failureCategory` is legacy metadata on `UserStory`: no current run writes it
+ * (markStoryFailed records only a failure stage), but a prd.json written by an
+ * older run may carry it and loadPRD keeps the recorded string verbatim.
+ *
+ * Tests for the field, for markStoryFailed's stage-only third parameter, and for
+ * the historical value surviving a load.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import type { FailureCategory } from "@/execution";
 import { loadPRD, markStoryFailed, markStoryPassed, markStoryPaused } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 
@@ -49,7 +52,7 @@ describe("UserStory.failureCategory field", () => {
     expect(story.failureCategory).toBeUndefined();
   });
 
-  test("can be assigned a FailureCategory value", () => {
+  test("holds the plain string an older run recorded", () => {
     const story = makeStory("US-001");
     story.failureCategory = "dependency-prep";
     expect(story.failureCategory).toBe("dependency-prep");
@@ -59,68 +62,72 @@ describe("UserStory.failureCategory field", () => {
 // ── markStoryFailed() ─────────────────────────────────────────────────────────
 
 describe("markStoryFailed()", () => {
-  test("marks story as failed (backward compat — no failureCategory)", () => {
-    const prd = makePrd([makeStory("US-001")]);
-    markStoryFailed(prd, "US-001");
-    expect(prd.userStories[0].status).toBe("failed");
-    expect(prd.userStories[0].failureCategory).toBeUndefined();
-  });
-
-  test("increments attempts when no failureCategory given", () => {
-    const prd = makePrd([makeStory("US-001")]);
-    markStoryFailed(prd, "US-001");
-    expect(prd.userStories[0].attempts).toBe(1);
-  });
-
-  // AC-10 and AC-11: the one category the registry still holds is recorded
-  // together with the stage that produced it.
-  test("AC-10/AC-11: stores failureCategory='dependency-prep' and failureStage='worktree-dependencies'", () => {
-    const prd = makePrd([makeStory("US-001")]);
-    markStoryFailed(prd, "US-001", "dependency-prep", "worktree-dependencies");
-    expect(prd.userStories[0].failureCategory).toBe("dependency-prep");
-    expect(prd.userStories[0].failureStage).toBe("worktree-dependencies");
-    expect(prd.userStories[0].status).toBe("failed");
-  });
-
-  // AC-1 (pipeline-story-ops-delete US-004): FailureCategory's canonical owner
-  // moves to src/execution/types. The retarget must not change
-  // markStoryFailed's transition, so this pins the whole state change —
-  // status, passes, attempts and category — in one place from a pending story
-  // at attempts 0.
-  test("marks a pending story failed with dependency-prep, attempts 1 and passes false", () => {
+  // AC-1 pins the whole stage-only failure transition, not the status line alone:
+  // `status = "failed"` was already true of the prior signature (the third
+  // argument was then read as a failureCategory), so a status-only assertion
+  // cannot fail without this story's change. Asserting the transition the new
+  // contract describes — status failed, the third argument landing in
+  // `failureStage` and NOT in `failureCategory`, `passes` cleared, `attempts`
+  // bumped — does fail against the prior signature.
+  test("AC-1: a stage-only call sets that story's status to failed", () => {
     const prd = makePrd([makeStory("US-001")]);
     expect(prd.userStories[0].status).toBe("pending");
     expect(prd.userStories[0].attempts).toBe(0);
 
-    markStoryFailed(prd, "US-001", "dependency-prep");
+    markStoryFailed(prd, "US-001", "review");
 
-    expect(prd.userStories[0].status).toBe("failed");
-    expect(prd.userStories[0].passes).toBe(false);
-    expect(prd.userStories[0].attempts).toBe(1);
-    expect(prd.userStories[0].failureCategory).toBe("dependency-prep");
+    const story = prd.userStories[0];
+    expect(story.status).toBe("failed");
+    expect(story.failureStage).toBe("review");
+    expect(story.failureCategory).toBeUndefined();
+    expect(story.passes).toBe(false);
+    expect(story.attempts).toBe(1);
   });
 
-  test("increments attempts when failureCategory is given", () => {
+  // AC-2 pins WHERE the third positional argument lands. Before the category
+  // parameter was removed it was stored as failureCategory, which left the
+  // stage unset.
+  test("AC-2: sets that story's failureStage to review", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    markStoryFailed(prd, "US-001", "review");
+    expect(prd.userStories[0].failureStage).toBe("review");
+  });
+
+  // AC-3 pins that the third argument is no longer recorded as a category.
+  test("AC-3: leaves failureCategory undefined on a story with no recorded category", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    markStoryFailed(prd, "US-001", "review");
+    expect(prd.userStories[0].failureCategory).toBeUndefined();
+  });
+
+  // AC-5: the missing-story no-op survives the retarget — a failureStage must
+  // not conjure a story, nor leave any other field touched.
+  test("AC-5: leaves the PRD unchanged when no story has id US-999", () => {
+    const prd = makePrd([makeStory("US-001")]);
+    const before = structuredClone(prd);
+
+    markStoryFailed(prd, "US-999", "review");
+
+    expect(prd).toEqual(before);
+    expect(prd.userStories[0].status).toBe("pending");
+    expect(prd.userStories[0].attempts).toBe(0);
+    expect(prd.userStories[0].failureStage).toBeUndefined();
+  });
+
+  test("increments attempts", () => {
     const prd = makePrd([makeStory("US-001")]);
     prd.userStories[0].attempts = 2;
-    markStoryFailed(prd, "US-001", "dependency-prep");
+    markStoryFailed(prd, "US-001", "review");
     expect(prd.userStories[0].attempts).toBe(3);
   });
 
-  test("does not overwrite failureCategory with undefined when not passed", () => {
+  // The legacy field is not cleared: a failure says nothing about what an older
+  // run recorded, so the recorded string survives.
+  test("leaves a legacy recorded failureCategory untouched", () => {
     const prd = makePrd([makeStory("US-001")]);
-    // Simulate a prior failure that set a category
     prd.userStories[0].failureCategory = "dependency-prep";
-    // Call without a category — should NOT clear the existing value
-    markStoryFailed(prd, "US-001");
+    markStoryFailed(prd, "US-001", "review");
     expect(prd.userStories[0].failureCategory).toBe("dependency-prep");
-  });
-
-  test("does nothing when story not found", () => {
-    const prd = makePrd([makeStory("US-001")]);
-    // Should not throw
-    markStoryFailed(prd, "US-999", "dependency-prep");
-    expect(prd.userStories[0].status).toBe("pending");
   });
 
   // `passes` is a separate field from `status`, and dependency resolution reads
@@ -133,7 +140,7 @@ describe("markStoryFailed()", () => {
     markStoryPassed(prd, "US-001");
     expect(prd.userStories[0].passes).toBe(true);
 
-    markStoryFailed(prd, "US-001", "dependency-prep");
+    markStoryFailed(prd, "US-001", "review");
 
     expect(prd.userStories[0].status).toBe("failed");
     expect(prd.userStories[0].passes).toBe(false);
@@ -141,19 +148,10 @@ describe("markStoryFailed()", () => {
 
   test("does not affect other stories", () => {
     const prd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    markStoryFailed(prd, "US-001", "dependency-prep");
+    markStoryFailed(prd, "US-001", "review");
     expect(prd.userStories[1].status).toBe("pending");
+    expect(prd.userStories[1].failureStage).toBeUndefined();
     expect(prd.userStories[1].failureCategory).toBeUndefined();
-  });
-});
-
-// ── FailureCategory type export from src/execution ───────────────────────────
-
-describe("FailureCategory export from src/execution", () => {
-  test("FailureCategory is exported from src/execution index", () => {
-    // This test verifies the re-export compiles and can be used as a type
-    const cat: FailureCategory = "dependency-prep";
-    expect(cat).toBe("dependency-prep");
   });
 });
 
@@ -197,7 +195,7 @@ describe("markStoryPaused — reason persistence (nax#1582)", () => {
   });
 });
 
-// ── AC-12: a prd.json written by an older run keeps the category it recorded ──
+// ── AC-4: a prd.json written by an older run keeps the category it recorded ──
 
 describe("loadPRD — a historical failureCategory survives the load", () => {
   let tempDir: string;
@@ -210,24 +208,23 @@ describe("loadPRD — a historical failureCategory survives the load", () => {
     cleanupTempDir(tempDir);
   });
 
-  test("AC-12: loads a story whose recorded category is no longer in the registry", async () => {
+  // AC-4: `dependency-prep` is data an older run wrote. No type in src/ names it
+  // any more, and the load must not strip or reject it.
+  test('AC-4: resolves with the story\'s failureCategory equal to "dependency-prep"', async () => {
     const prdPath = join(tempDir, "prd.json");
-    // A prd.json written by an older run: the registry no longer holds this
-    // value, but the artifact keeps it verbatim.
     const historical = {
       project: "test",
       feature: "test-feature",
       branchName: "feature/test",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      userStories: [{ ...makeStory("US-001"), failureCategory: "verifier-rejected" }],
+      userStories: [{ ...makeStory("US-001"), failureCategory: "dependency-prep" }],
     };
     await Bun.write(prdPath, JSON.stringify(historical));
 
     const loaded = await loadPRD(prdPath);
 
     const story = loaded.userStories.find((s) => s.id === "US-001");
-    const category: string | undefined = story?.failureCategory;
-    expect(category).toBe("verifier-rejected");
+    expect(story?.failureCategory).toBe("dependency-prep");
   });
 });

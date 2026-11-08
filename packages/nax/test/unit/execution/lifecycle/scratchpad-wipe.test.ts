@@ -54,10 +54,6 @@ afterEach(async () => {
 /**
  * A temp workdir holding a zero-story PRD, plus the `setupRun` options and
  * dependency stubs that let the flow complete offline.
- *
- * `acceptance.enabled: false` is required: with it on, `initializeRun` treats
- * the run as agent-using and does a real `which <agent-binary>` lookup
- * (nax#2016), which fails on machines without that agent installed.
  */
 async function makeRun(prefix: string): Promise<{ workdir: string; options: RunSetupOptions }> {
   const workdir = makeTempDir(prefix);
@@ -81,7 +77,7 @@ async function makeRun(prefix: string): Promise<{ workdir: string; options: RunS
   const options: RunSetupOptions = {
     prdPath,
     workdir,
-    config: makeNaxConfig({ acceptance: { enabled: false } }),
+    config: makeNaxConfig(),
     hooks: { hooks: {} },
     feature,
     dryRun: false,

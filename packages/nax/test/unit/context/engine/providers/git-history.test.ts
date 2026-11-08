@@ -365,14 +365,14 @@ describe("GitHistoryProvider — US-001 scope attribution", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("GitHistoryProvider — worktree isolation (nax#2088 follow-up)", () => {
-  // Under storyIsolation: "worktree", packageDir is `.nax-wt/<storyId>/<pkg>`
+  // In a story worktree, packageDir is `.nax-wt/<storyId>/<pkg>`
   // while repoRoot stays the main checkout. Deriving the package frame as
   // packageDirRelative(repoRoot, packageDir) yields ".nax-wt/<storyId>/<pkg>",
   // which the historyScope "package" post-filter compares against repo-rooted
   // touchedFiles — matching nothing, so every file is dropped and the
   // provider returns zero chunks, silently. The fix reads request.storyWorkdir
   // (threaded from the story) instead of deriving it from repoRoot/packageDir.
-  test("touchedFiles resolve under storyIsolation: worktree via request.storyWorkdir", async () => {
+  test("touchedFiles resolve under a story worktree via request.storyWorkdir", async () => {
     mockGit(new Map([["packages/app/src/service.ts", { stdout: "abc1234 feat: service impl", exitCode: 0 }]]));
     const p = new GitHistoryProvider({ historyScope: "package" });
 

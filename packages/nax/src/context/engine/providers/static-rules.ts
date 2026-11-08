@@ -212,10 +212,10 @@ export class StaticRulesProvider implements IContextProvider {
       //    package-contained, NOT only when the package has rules of its own
       //    (a no-package-rules package is the common monorepo shape, nax#2113);
       //  - the frame comes from `request.storyWorkdir`, never from
-      //    `relative(repoRoot, packageDir)` — under
-      //    `execution.storyIsolation: "worktree"` that derivation yields
-      //    ".nax-wt/<storyId>/<pkg>", matches no scope file, and silently drops
-      //    the rule (nax#2069 / path-frame C1).
+      //    `relative(repoRoot, packageDir)` — for a packageDir rooted inside a
+      //    nax worktree that derivation yields ".nax-wt/<storyId>/<pkg>",
+      //    matches no scope file, and silently drops the rule
+      //    (nax#2069 / path-frame C1).
 
       // #558: rules exist but none apply to this package context — skip legacy fallback
       if (mergedRules.length === 0 && (ruleSet.repoRulesTotal > 0 || ruleSet.packageRulesCount > 0)) {

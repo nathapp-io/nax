@@ -27,8 +27,6 @@ describe("findUnreferencedAgentModels", () => {
     ["an enabled fallback object rung", { agent: { fallback: { enabled: true, map: { native: [PIN] } } } }],
     ["a review pin", { review: { semantic: { model: PIN } } }],
     ["a finish reviewer pin", { finish: { reviewers: { quality: PIN } } }],
-    ["an acceptance fix pin", { acceptance: { fix: { fixModel: PIN } } }],
-    ["an acceptance generate pin", { acceptance: { generateModel: PIN } }],
     [
       "an escalation rung",
       { autoMode: { escalation: { tierOrder: [{ tier: "powerful", agent: "claude", attempts: 1 }] } } },

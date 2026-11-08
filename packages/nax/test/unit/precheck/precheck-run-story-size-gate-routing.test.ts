@@ -97,7 +97,6 @@ function makeConfig(action: "block" | "warn" | "skip") {
     constitution: { enabled: false, path: "", maxTokens: 2000 },
     review: { enabled: false, checks: [], commands: {} },
     plan: { model: "balanced", outputPath: "" },
-    acceptance: { enabled: false, maxRetries: 0, testPath: "" },
     context: {
       testCoverage: {
         enabled: false,

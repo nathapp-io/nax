@@ -1,19 +1,19 @@
 /**
  * runCompletionPhase — the completion phase runs no acceptance loop (US-006).
  *
- * Workflow mode sets `acceptance.enabled` to false on every loaded config
- * (`config/workflow-mode.ts`), so the completion phase's post-run status block
- * was dead code kept alive only by its own tests. US-006 removes it: no
- * `getPostRunStatus` read, no `setPostRunPhase("acceptance", …)`, no
- * `postrun:phase:started` for acceptance, and no `_runnerCompletionDeps`
- * acceptance member to assign.
+ * The completion phase's post-run status block was dead code kept alive only by
+ * its own tests: no run ever reached it once workflow mode stopped enabling the
+ * acceptance phase. US-006 removes it: no `getPostRunStatus` read, no
+ * `setPostRunPhase("acceptance", …)`, no `postrun:phase:started` for
+ * acceptance, and no `_runnerCompletionDeps` acceptance member to assign.
+ * pipeline-acceptance-isolation-delete US-003 then removed the config section
+ * the phase was gated on, so the block has no input left that could start it.
  *
  * These three tests pin that removal from the outside — through
  * `runCompletionPhase`, with every other dependency hermetic and no acceptance
- * dependency available to stub. The config and PRD are the ones that used to
- * make the acceptance phase start (enabled, complete PRD, not a dry run), so a
- * regression that reintroduces the block would fail here rather than pass
- * silently.
+ * dependency available to stub. The PRD is a complete one and the run is not a
+ * dry run, which is what the block needed to fire, so a regression that
+ * reintroduces it would fail here rather than pass silently.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -42,10 +42,9 @@ import { _gitDeps } from "@/utils/git";
 
 const WORKDIR = `/tmp/nax-test-runner-completion-no-acceptance-${randomUUID()}`;
 
-/** The config shape that used to start the completion acceptance phase. */
-function makeAcceptanceEnabledConfig(): NaxConfig {
+/** The run config these cases execute with. */
+function makeCompletionConfig(): NaxConfig {
   return makeNaxConfig({
-    acceptance: { enabled: true, maxRetries: 3 },
     execution: { mode: "pipeline" },
   });
 }
@@ -95,8 +94,8 @@ interface ObservedCompletion {
 }
 
 /**
- * Run the completion phase with acceptance enabled, a complete PRD and no
- * acceptance dependency assigned anywhere — recording every observation the
+ * Run the completion phase with a complete PRD and no acceptance dependency
+ * assigned anywhere — recording every observation the
  * ACs assert on.
  */
 async function observeCompletion(): Promise<ObservedCompletion> {
@@ -119,7 +118,7 @@ async function observeCompletion(): Promise<ObservedCompletion> {
     getPostRunStatus,
   });
   try {
-    const result = await runCompletionPhase(makeOpts(makeAcceptanceEnabledConfig(), makeCompletePrd(), statusWriter));
+    const result = await runCompletionPhase(makeOpts(makeCompletionConfig(), makeCompletePrd(), statusWriter));
     return {
       setPostRunPhaseCalls,
       postRunPhaseStarted,
@@ -159,7 +158,7 @@ afterEach(() => {
 });
 
 describe("runCompletionPhase — no completion acceptance phase (US-006)", () => {
-  test("AC-1: never calls setPostRunPhase with 'acceptance' when acceptance is enabled and the PRD is complete", async () => {
+  test("AC-1: never calls setPostRunPhase with 'acceptance' on a complete PRD", async () => {
     const observed = await observeCompletion();
 
     const acceptanceCalls = observed.setPostRunPhaseCalls.filter((call) => call.phase === "acceptance");

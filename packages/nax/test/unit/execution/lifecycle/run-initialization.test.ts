@@ -10,10 +10,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeAgentAdapter, makeSpawn, makeTempDir, withWarnSpy } from "@test/helpers";
+import { cleanupTempDir, makeAgentAdapter, makeNaxConfig, makeTempDir, withInfoSpy } from "@test/helpers";
+import { resolveDefaultAgent } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import { _reconcileDeps, initializeRun } from "@/execution/lifecycle/run-initialization";
 import { getLogger, initLogger, resetLogger } from "@/logger";
+import type { AgentGetFn } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import type { ReviewResult } from "@/review/types";
 
@@ -63,9 +65,6 @@ beforeEach(() => {
   tmpDir = makeTempDir("nax-test-reconcile-");
 });
 afterEach(() => cleanupTempDir(tmpDir));
-
-/** The story ID every fixture in this file uses. */
-const US_001 = "US-001";
 
 async function runReconcile(prd: PRD, suffix = ""): Promise<PRD> {
   const prdPath = join(tmpDir, `prd${suffix}.json`);
@@ -223,109 +222,20 @@ describe("reconcileState", () => {
     expect(result.userStories[0].passes).toBe(true);
   });
 
-  test("US-003 AC-12: worktree mode deletes the composed branch nax/story-f-US-001", async () => {
+  test("AC-13: resetRefOnRerun false keeps the story's existing storyGitRef", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
-    const spawnCalls: string[][] = [];
-    _reconcileDeps.spawn = makeSpawn(({ cmd }) => {
-      spawnCalls.push(cmd);
-      return "";
-    }).spawn;
-
-    const prd: PRD = {
-      ...makePrd({ status: "failed", failureStage: "execution", storyGitRef: "abc123" }),
-      feature: "f",
-    };
-    const prdPath = join(tmpDir, "prd-worktree.json");
+    const prd = makePrd({ status: "failed", failureStage: "execution", storyGitRef: "abc123" });
+    const prdPath = join(tmpDir, "prd-keep-ref.json");
     await Bun.write(prdPath, JSON.stringify(prd));
 
-    const worktreeConfig = {
-      ...DEFAULT_CONFIG,
-      execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
-    };
+    const config = makeNaxConfig({ review: { semantic: { resetRefOnRerun: false } } });
 
-    const { prd: result } = await initializeRun({
-      config: worktreeConfig,
-      prdPath,
-      workdir: tmpDir,
-      dryRun: true,
-    });
+    const { prd: result } = await initializeRun({ config, prdPath, workdir: tmpDir, dryRun: true });
 
-    // Story should be reset to pending
     expect(result.userStories[0].status).toBe("pending");
-    // storyGitRef should be cleared in worktree mode
-    expect(result.userStories[0].storyGitRef).toBeUndefined();
-    // US-003 AC-12: the stale branch deleted is the COMPOSED one
-    // (feature "f" + story "US-001"), not the raw `nax/US-001`.
-    const branchDeletes = spawnCalls.filter((a) => a[0] === "git" && a[1] === "branch" && a[2] === "-D");
-    expect(branchDeletes.length).toBe(1);
-    expect(branchDeletes[0]?.[3]).toBe("nax/story-f-US-001");
-    // Closes the "delete the raw branch too" loophole — only the composed
-    // name may appear in the git argv.
-    expect(spawnCalls.some((a) => a.includes(`nax/${US_001}`))).toBe(false);
-  });
-
-  test("US-003 AC-15: the stale-branch cleanup log names the composed branch", async () => {
-    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
-    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
-
-    // Force the unexpected-failure arm of the cleanup block: git refuses for a
-    // reason other than "branch not found", so the warn record (the only one
-    // carrying a `branch` field) is emitted.
-    _reconcileDeps.spawn = makeSpawn(({ cmd }) => {
-      if (cmd[0] === "git" && cmd[1] === "branch" && cmd[2] === "-D") {
-        return { exitCode: 1, stdout: "", stderr: "fatal: could not lock ref" };
-      }
-      return "";
-    }).spawn;
-
-    const prd: PRD = {
-      ...makePrd({ status: "failed", failureStage: "execution", storyGitRef: "abc123" }),
-      feature: "f",
-    };
-    const prdPath = join(tmpDir, "prd-worktree-warn.json");
-    await Bun.write(prdPath, JSON.stringify(prd));
-
-    const worktreeConfig = {
-      ...DEFAULT_CONFIG,
-      execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
-    };
-
-    await withWarnSpy(async (warnSpy) => {
-      await initializeRun({
-        config: worktreeConfig,
-        prdPath,
-        workdir: tmpDir,
-        dryRun: true,
-      });
-
-      const branchWarn = warnSpy.mock.calls.find(
-        (c) => c[0] === "worktree" && c[1] === "Failed to clean up old branch for re-run (non-fatal)",
-      );
-      expect(branchWarn).toBeDefined();
-      const data = branchWarn?.[2] as { branch?: string; storyId?: string } | undefined;
-      expect(data?.branch).toBe("nax/story-f-US-001");
-      // storyId stays raw — it is the log-correlation key.
-      expect(data?.storyId).toBe(US_001);
-    });
-  });
-
-  test("shared mode: does NOT call git branch -D on re-run", async () => {
-    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
-    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
-
-    const spawnCalls: string[][] = [];
-    _reconcileDeps.spawn = makeSpawn(({ cmd }) => {
-      spawnCalls.push(cmd);
-      return "";
-    }).spawn;
-
-    const prd = makePrd({ status: "failed", failureStage: "execution" });
-    await runReconcile(prd, "-shared");
-
-    const branchDeleteCalls = spawnCalls.filter((a) => a.includes("branch") && a.includes("-D"));
-    expect(branchDeleteCalls.length).toBe(0);
+    expect(result.userStories[0].storyGitRef).toBe("abc123");
   });
 
   test("resetMode=initial: escalated story routing is restored to initialModelTier on re-run", async () => {
@@ -435,46 +345,56 @@ describe("agent preflight", () => {
   // check at all. `agentGetFn` stands in for the registry so the assertions are
   // about *whether* the preflight runs, not about the host's PATH.
 
-  async function initWith(prd: PRD, opts: { installed: boolean; acceptance: boolean; suffix: string }) {
-    const prdPath = join(tmpDir, `prd-preflight-${opts.suffix}.json`);
-    await Bun.write(prdPath, JSON.stringify(prd));
-    return initializeRun({
-      config: {
-        ...DEFAULT_CONFIG,
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: opts.acceptance },
-      },
-      prdPath,
-      workdir: tmpDir,
-      dryRun: false,
-      agentGetFn: () => makeAgentAdapter({ binary: "claude", isInstalled: () => Promise.resolve(opts.installed) }),
-    });
+  /** Records every agent lookup the preflight makes, and answers `installed`. */
+  function trackAgentLookup(installed: boolean): { agentGetFn: AgentGetFn; lookedUp: string[] } {
+    const lookedUp: string[] = [];
+    const agentGetFn: AgentGetFn = (name) => {
+      lookedUp.push(name);
+      return makeAgentAdapter({ binary: "claude", isInstalled: () => Promise.resolve(installed) });
+    };
+    return { agentGetFn, lookedUp };
   }
 
-  test("is skipped when every story is passed and acceptance is off", async () => {
+  async function initWith(prd: PRD, agentGetFn: AgentGetFn, suffix: string) {
+    const prdPath = join(tmpDir, `prd-preflight-${suffix}.json`);
+    await Bun.write(prdPath, JSON.stringify(prd));
+    return initializeRun({ config: DEFAULT_CONFIG, prdPath, workdir: tmpDir, dryRun: false, agentGetFn });
+  }
+
+  test("AC-1: does not look the agent up when every story is passed", async () => {
     // The regression: no story dispatches and the completion phase calls no
     // agent, so a missing binary must not fail the run.
+    const { agentGetFn, lookedUp } = trackAgentLookup(false);
     const prd = makePrd({ status: "passed", passes: true });
-    const { prd: result } = await initWith(prd, { installed: false, acceptance: false, suffix: "skip" });
+
+    const { prd: result } = await initWith(prd, agentGetFn, "skip");
+
     expect(result.userStories[0].status).toBe("passed");
+    expect(lookedUp).toEqual([]);
   });
 
-  test("still runs when a story needs work", async () => {
+  test("AC-2: logs the exact skip message when every story is passed", async () => {
+    const { agentGetFn } = trackAgentLookup(false);
+    const prd = makePrd({ status: "passed", passes: true });
+
+    await withInfoSpy(async (infoSpy) => {
+      await initWith(prd, agentGetFn, "skip-log");
+
+      const messages = infoSpy.mock.calls.map((call) => call[1]);
+      expect(messages).toContain("Skipping agent preflight — no story needs work");
+      // The skip reason is story state alone; nothing about acceptance remains.
+      expect(messages.some((message) => message.includes("acceptance"))).toBe(false);
+    });
+  });
+
+  test("AC-3: looks the default agent up when a story needs work", async () => {
     // A pending story dispatches, so the missing binary must be reported up
     // front rather than surfacing later from inside the run.
+    const { agentGetFn, lookedUp } = trackAgentLookup(false);
     const prd = makePrd({ status: "pending", passes: false });
-    await expect(initWith(prd, { installed: false, acceptance: false, suffix: "pending" })).rejects.toThrow(
-      /not installed or not in PATH/,
-    );
-  });
 
-  test("still runs when acceptance is enabled, even with every story passed", async () => {
-    // Nothing dispatches, but the acceptance loop calls agents in the
-    // completion phase — so the preflight must not be skipped on story state
-    // alone.
-    const prd = makePrd({ status: "passed", passes: true });
-    await expect(initWith(prd, { installed: false, acceptance: true, suffix: "acceptance" })).rejects.toThrow(
-      /not installed or not in PATH/,
-    );
+    await expect(initWith(prd, agentGetFn, "pending")).rejects.toThrow(/not installed or not in PATH/);
+    expect(lookedUp).toEqual([resolveDefaultAgent(DEFAULT_CONFIG)]);
   });
 
   test("an installed agent's launch note is logged as a warning (spec §6.8, D3-k)", async () => {
@@ -489,7 +409,7 @@ describe("agent preflight", () => {
         launchNote: () => "Only the npx fallback can launch this ACP agent",
       };
       await initializeRun({
-        config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } },
+        config: DEFAULT_CONFIG,
         prdPath,
         workdir: tmpDir,
         dryRun: false,

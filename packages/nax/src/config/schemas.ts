@@ -36,7 +36,6 @@ import {
   TddConfigSchema,
 } from "./schemas-execution";
 import {
-  AcceptanceConfigSchema,
   AgentConfigSchema,
   CuratorConfigSchema,
   DEFAULT_AGENT_CODEX_ACP_CONFIG,
@@ -71,7 +70,7 @@ export type { AuthConfig } from "./schemas-auth";
 export { AuthConfigSchema } from "./schemas-auth";
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
-export { AcceptanceConfigSchema, PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
+export { PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
 export { McpConfigSchema } from "./schemas-mcp";
 export {
   AdversarialReviewConfigSchema,
@@ -179,12 +178,6 @@ export const NaxConfigSchema = z
       // BUG-20 -- derived, not hand-written (same rationale as `bashApproval`).
       sandbox: DEFAULT_SANDBOX_CONFIG,
       smartTestRunner: true,
-      worktreeDependencies: {
-        mode: "off",
-        setupCommand: null,
-        timeoutSeconds: 300,
-      },
-      storyIsolation: "shared",
       // BUG-20 — derived, not hand-written (same rationale as `rectification`
       // above): a literal here would shadow CommandInterceptorConfigSchema's
       // own defaults and leave `execution.commandInterceptor` missing from
@@ -317,23 +310,6 @@ export const NaxConfigSchema = z
       outputPath: "spec.md",
       timeoutSeconds: 600,
       specGuard: false,
-    }),
-    acceptance: AcceptanceConfigSchema.default({
-      enabled: true,
-      maxRetries: 3,
-      testPath: ".nax-acceptance.test.ts",
-      model: "fast",
-      refinement: true,
-      refinementConcurrency: 3,
-      redGate: true,
-      timeoutMs: 1800000,
-      fix: {
-        diagnoseModel: "fast",
-        fixModel: "balanced",
-        strategy: "diagnose-first",
-        maxRetries: 2,
-      },
-      hardening: { enabled: true },
     }),
     // Derived, not hand-written. Zod does not re-parse a `.default()` value, so a
     // literal here would shadow every inner `.default()` in ContextConfigSchema —

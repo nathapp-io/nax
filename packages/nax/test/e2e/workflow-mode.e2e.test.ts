@@ -63,7 +63,6 @@ test("AC-17/18/19: runner defaults to workflow, completes its story and passes t
   const config = makeNaxConfig({
     outputDir: out,
     workflow: { publish: "none", preflight: false },
-    acceptance: { enabled: false },
     execution: { iterationDelayMs: 0 },
     quality: { commands: {} },
   });

@@ -55,12 +55,8 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeConfig(acceptanceEnabled = true): NaxConfig {
+function makeConfig(): NaxConfig {
   return makeNaxConfig({
-    acceptance: {
-      enabled: acceptanceEnabled,
-      maxRetries: 3,
-    },
     execution: {
       mode: "pipeline",
       regressionGate: {
@@ -179,7 +175,7 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
       { id: "US-001", status: "passed" },
       { id: "US-002", status: "pending" },
     ]);
-    const config = makeConfig(true);
+    const config = makeConfig();
 
     await runCompletionPhase({
       ...makeOpts(config, prd, statusWriter),
@@ -193,7 +189,7 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
   test("falls back to completed/failed classification when exitReason is not cost-limit", async () => {
     const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig(true);
+    const config = makeConfig();
 
     await runCompletionPhase({
       ...makeOpts(config, prd, statusWriter),
@@ -208,7 +204,6 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
     const statusWriter = makeWriter(makePostRunStatus("passed", "passed"));
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
     const config = makeNaxConfig({
-      acceptance: { enabled: true, maxRetries: 3 },
       execution: {
         regressionGate: { enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
       },
@@ -250,7 +245,7 @@ describe("runCompletionPhase - dry run", () => {
     }).spawn;
     try {
       const opts = makeOpts(
-        makeConfig(true),
+        makeConfig(),
         makePRD([{ id: "US-001", status: "passed" }]),
         makeWriter(makePostRunStatus("passed", "passed")),
       );
@@ -279,7 +274,7 @@ describe("runCompletionPhase - dry run", () => {
     }).spawn;
     try {
       const opts = makeOpts(
-        makeConfig(true),
+        makeConfig(),
         makePRD([{ id: "US-001", status: "passed" }]),
         makeWriter(makePostRunStatus("passed", "passed")),
       );
@@ -311,7 +306,7 @@ describe("runCompletionPhase - .nax index flag sweep (#2490)", () => {
     try {
       await runCompletionPhase(
         makeOpts(
-          makeConfig(true),
+          makeConfig(),
           makePRD([{ id: "US-001", status: "passed" }]),
           makeWriter(makePostRunStatus("passed", "passed")),
         ),

@@ -60,7 +60,6 @@ function makeDir(prefix: string): string {
 
 function configFor(mode: "workflow" | "pipeline"): NaxConfig {
   return makeNaxConfig({
-    acceptance: { enabled: false },
     execution: { mode },
   });
 }

@@ -30,7 +30,7 @@ export async function handleNoTierAvailable(ctx: EscalationHandlerContext): Prom
   const logger = getSafeLogger();
 
   const failedPrd = { ...ctx.prd };
-  markStoryFailed(failedPrd, ctx.story.id, undefined, undefined);
+  markStoryFailed(failedPrd, ctx.story.id);
   await _tierOutcomeDeps.savePrdProgress(failedPrd, ctx.prdPath, ctx.story.id, "failed");
 
   logger?.error("execution", "Story failed - execution failed", {
@@ -62,7 +62,7 @@ export async function handleMaxAttemptsReached(ctx: EscalationHandlerContext): P
   const logger = getSafeLogger();
 
   const failedPrd = { ...ctx.prd };
-  markStoryFailed(failedPrd, ctx.story.id, undefined, undefined);
+  markStoryFailed(failedPrd, ctx.story.id);
   await _tierOutcomeDeps.savePrdProgress(failedPrd, ctx.prdPath, ctx.story.id, "failed");
 
   logger?.error("execution", "Story failed - max attempts reached", {

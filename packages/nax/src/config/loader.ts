@@ -273,7 +273,7 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
     });
   }
 
-  return applyWorkflowMode(result.data as NaxConfig, defaultConfigWarn);
+  return applyWorkflowMode(result.data as NaxConfig);
 }
 
 /**
@@ -337,7 +337,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // DEFAULT_CONFIG already carries profile="default" and profileChain=[] (schema
   // defaults), so this fast path stays consistent with the full path's chain fields.
   if (!hasMergedConfigs) {
-    return applyWorkflowMode(structuredClone(DEFAULT_CONFIG), defaultConfigWarn);
+    return applyWorkflowMode(structuredClone(DEFAULT_CONFIG));
   }
 
   return finalizeAndValidateRootConfig(rawConfig);
@@ -511,25 +511,24 @@ export async function loadConfigForWorkdir(
   // root config and is cached per `cacheKey`, so a root-only chained command
   // must not be re-warned here on every `loadConfigForWorkdir` call for every
   // package/story in a run (iteration-runner.ts, parallel-batch.ts,
-  // runner-completion.ts, acceptance-setup.ts each call this once per story).
+  // runner-completion.ts each call this once per story).
   // Running the check on the raw per-layer object rather than the merged
   // config means only a command actually declared (or overridden) at THIS
   // package layer can warn here — an inherited root value cannot, since it is
   // absent from `shimmedPackageFields`.
   warnQualityCommandChains(shimmedPackageFields as Record<string, unknown>, warnDedupe.warn);
-  let merged = mergePackageConfig(rootConfig, shimmedPackageFields);
+  // Strip the removed keys from THIS layer BEFORE the whitelist merge: the merge
+  // carries only its mergeable sections, so a removed key anywhere else
+  // (`acceptance`, a root-only section) is dropped by the whitelist — silently,
+  // and never reaches the post-merge strip, which left an acceptance-only
+  // package config resolving to the root config with no warning.
+  const packageLayer = stripRemovedConfig(shimmedPackageFields as unknown as Record<string, unknown>, warnDedupe.warn);
+  let merged = mergePackageConfig(rootConfig, packageLayer as unknown as Partial<NaxConfig>);
 
-  // Strip the removed no-op keys and the removed stage names from the
-  // per-package overlay result. Runs for BOTH ordinary package overlays and
-  // package profiles (the profile branch re-runs the strip on the
-  // profile-merged result, so this also covers the case where a per-package
-  // overlay introduces a no-op key on a mergeable field like
-  // acceptance.generateTests). Post-merge placement yields one warning per
-  // resolved config regardless of which layer supplied the key.
-  // #1620: the shared per-resolution dedupe, not the bare sink — this strip and
-  // the post-profile one below are two layers of the same resolution, so a key in
-  // both the overlay and a package profile warned twice where the root path warns
-  // once.
+  // Second pass, on the merged result: a package PROFILE reintroduces its own
+  // removed keys after the strip above, so it needs its own pass. #1620: the
+  // shared per-resolution dedupe, not the bare sink — a key in both the overlay
+  // and a profile warns once.
   merged = stripRemovedConfig(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
 
   // Per-package profile: apply the profile chain overlay on top of merged config.
@@ -588,6 +587,6 @@ export async function loadConfigForWorkdir(
       { stage: "config", packageDir, profileChain: packageChain },
     );
   }
-  merged = applyWorkflowMode(result.data as NaxConfig, warnDedupe.warn);
+  merged = applyWorkflowMode(result.data as NaxConfig);
   return packageConfigCache.set(resolvedRootConfigPath, packageDir, profileKey, merged);
 }

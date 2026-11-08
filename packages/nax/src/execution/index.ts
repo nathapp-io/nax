@@ -76,7 +76,6 @@ export {
 } from "./runner-completion";
 export type { WorkflowStatusBlock } from "./status-file";
 export { StatusWriter, type StatusWriterContext } from "./status-writer";
-export type { FailureCategory } from "./types";
 export { headsUpChannel } from "./uncategorised-advice";
 // BUG-2 testability seam: re-export `executeUnified` + its `_deps`
 // shim so test files can mutate `_unifiedExecutorDeps` via the barrel

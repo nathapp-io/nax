@@ -259,48 +259,15 @@ function isStackDetected(stack: ProjectStack): boolean {
   return stack.runtime !== "unknown" || stack.language !== "unknown";
 }
 
-/** Build the acceptance config section from StackInfo, or undefined if not applicable. */
-function buildAcceptanceConfig(stack: StackInfo): { testStrategy: string; testFramework?: string } | undefined {
-  if (stack.uiFramework === "ink") {
-    return { testStrategy: "component", testFramework: "ink-testing-library" };
-  }
-  if (stack.uiFramework === "react") {
-    return { testStrategy: "component", testFramework: "@testing-library/react" };
-  }
-  if (stack.uiFramework === "vue") {
-    return { testStrategy: "component", testFramework: "@testing-library/vue" };
-  }
-  if (stack.uiFramework === "svelte") {
-    return { testStrategy: "component", testFramework: "@testing-library/svelte" };
-  }
-  if (stack.hasBin) {
-    const testFramework = stack.runtime === "bun" ? "bun:test" : "jest";
-    return { testStrategy: "cli", testFramework };
-  }
-  return undefined;
-}
-
 /**
  * Build the full init config object from a detected project stack.
- * Falls back to minimal config when stack is undetected.
+ * Falls back to minimal config when the stack is undetected or yields no commands.
  */
 export function buildInitConfig(stack: ProjectStack | StackInfo): object {
-  const stackInfo = stack as StackInfo;
-  const acceptance = buildAcceptanceConfig(stackInfo);
-
-  if (!isStackDetected(stack)) {
-    return acceptance ? { version: 1, acceptance } : { version: 1 };
-  }
+  if (!isStackDetected(stack)) return { version: 1 };
 
   const commands = buildQualityCommands(stack);
-  const hasCommands = Object.keys(commands).length > 0;
+  if (Object.keys(commands).length === 0) return { version: 1 };
 
-  if (!hasCommands && !acceptance) {
-    return { version: 1 };
-  }
-
-  const config: Record<string, unknown> = { version: 1 };
-  if (hasCommands) config.quality = { commands };
-  if (acceptance) config.acceptance = acceptance;
-  return config;
+  return { version: 1, quality: { commands } };
 }

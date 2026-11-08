@@ -25,7 +25,7 @@ let path: string;
 let writers: StatusWriter[];
 let runtimes: ReturnType<typeof makeMockRuntime>[];
 const originalDeps = { ..._iterationRunnerDeps };
-const config = makeNaxConfig({ execution: { storyIsolation: "shared", iterationDelayMs: 0 } });
+const config = makeNaxConfig({ execution: { iterationDelayMs: 0 } });
 const story = makeStory();
 const prd = makePRD({ userStories: [story] });
 const routing = { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "test" } as const;

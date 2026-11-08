@@ -6,13 +6,12 @@ import { type AdvisorImportDeps, runAdvisorImport } from "@/cli/advisor-import";
 
 const FIXTURES = join(import.meta.dir, "../../fixtures/advisor");
 
-function harness(outDir: string, acceptanceEnabled = true) {
+function harness(outDir: string) {
   const out: string[] = [];
   const err: string[] = [];
   let n = 0;
   const deps: AdvisorImportDeps = {
     resolveOutputDir: async () => outDir,
-    acceptanceEnabled: async () => acceptanceEnabled,
     newId: () => `Q-${++n}`,
     log: (t) => out.push(t),
     logErr: (t) => err.push(t),
@@ -34,6 +33,9 @@ describe("nax advisor import-finish", () => {
       expect(rec.question.kind).toBe("finish-judgment");
       expect(rec.question.askedAtSha).toBe("abc123");
       expect(rec.question.dedupeKey).toBe("quality|commit_reindex can lose data|store/sqlite_vec.py");
+      // `toQuestion` hands `buildMenu` the acceptance-off arm
+      // (`acceptanceEnabledForStory: false`); the harness has no acceptance dep
+      // to consult, and this finding cites no AC, so the menu is fix/waive/hold.
       expect(rec.question.options.map((o) => o.type)).toEqual(["fix", "waive", "hold"]);
       expect(rec.question.findingSeverity).toBe("HIGH");
       expect(rec.result).toEqual({ decision: null, fallbackReason: "imported" });

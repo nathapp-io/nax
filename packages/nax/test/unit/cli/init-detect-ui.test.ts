@@ -5,8 +5,8 @@
  * - StackInfo type shape (uiFramework, hasBin fields)
  * - detectStack() UI framework detection from package.json deps
  * - detectStack() bin field detection
- * - buildInitConfig acceptance section population
- * - initProject integration: acceptance.testStrategy / testFramework in config.json
+ * - buildInitConfig builds only the quality section (AC-4/AC-5)
+ * - initProject integration: the config.json it writes
  *
  * All tests must fail (RED) until the implementation is complete.
  */
@@ -197,48 +197,11 @@ describe("detectStack() — framework priority", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildInitConfig — acceptance section
+// buildInitConfig — the quality section is the only section it builds
 // ---------------------------------------------------------------------------
 
-describe("buildInitConfig — acceptance section for ink", () => {
-  test.each([
-    ["testStrategy", "component"],
-    ["testFramework", "ink-testing-library"],
-  ])("includes acceptance.%s for ink stack", (field, expected) => {
-    const config = buildInitConfig({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-      uiFramework: "ink",
-    }) as Record<string, unknown>;
-    const acceptance = config.acceptance as Record<string, unknown>;
-    expect(acceptance?.[field]).toBe(expected);
-  });
-});
-
-describe("buildInitConfig — acceptance section for react", () => {
-  test.each([
-    ["testStrategy", "component"],
-    ["testFramework", "@testing-library/react"],
-  ])("includes acceptance.%s for react stack", (field, expected) => {
-    const config = buildInitConfig({
-      runtime: "node",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-      uiFramework: "react",
-    }) as Record<string, unknown>;
-    const acceptance = config.acceptance as Record<string, unknown>;
-    expect(acceptance?.[field]).toBe(expected);
-  });
-});
-
-describe("buildInitConfig — acceptance section for bin-only CLI project", () => {
-  test.each([
-    ["testStrategy", "cli"],
-    ["testFramework", "bun:test"],
-  ])("includes acceptance.%s for bin-only project", (field, expected) => {
+describe("buildInitConfig — a detected stack with commands", () => {
+  test("AC-4: a bun + typescript stack with a bin has exactly the version and quality keys", () => {
     const config = buildInitConfig({
       runtime: "bun",
       language: "typescript",
@@ -246,30 +209,33 @@ describe("buildInitConfig — acceptance section for bin-only CLI project", () =
       monorepo: "none",
       hasBin: true,
     }) as Record<string, unknown>;
-    const acceptance = config.acceptance as Record<string, unknown>;
-    expect(acceptance?.[field]).toBe(expected);
+
+    expect(Object.keys(config).sort()).toEqual(["quality", "version"]);
+    expect(config.version).toBe(1);
+    expect(Object.keys(config.quality as Record<string, unknown>)).toEqual(["commands"]);
   });
 });
 
-describe("buildInitConfig — no acceptance section when no UI or bin", () => {
-  test("omits acceptance section when no uiFramework and no bin", () => {
-    const config = buildInitConfig({
-      runtime: "bun",
-      language: "typescript",
-      linter: "unknown",
-      monorepo: "none",
-    }) as Record<string, unknown>;
-    const acceptance = config.acceptance as Record<string, unknown> | undefined;
-    expect(acceptance?.testStrategy).toBeUndefined();
+describe("buildInitConfig — an undetected stack", () => {
+  test("AC-5: an undetected runtime and language with an ink dependency returns only the version", () => {
+    expect(
+      buildInitConfig({
+        runtime: "unknown",
+        language: "unknown",
+        linter: "unknown",
+        monorepo: "none",
+        uiFramework: "ink",
+      }),
+    ).toEqual({ version: 1 });
   });
 });
 
 // ---------------------------------------------------------------------------
-// initProject integration — acceptance config written to config.json
+// initProject integration — the config written to config.json
 // ---------------------------------------------------------------------------
 
-describe("initProject — acceptance.testStrategy for ink project", () => {
-  test("config.json has acceptance.testStrategy: component for ink project", async () => {
+describe("initProject — the written config carries the detected quality commands", () => {
+  test("config.json has version 1 and quality.commands, and no acceptance section", async () => {
     await withTempDir(async (dir) => {
       await Bun.write(join(dir, "bun.lockb"), "");
       await Bun.write(join(dir, "tsconfig.json"), "{}");
@@ -279,57 +245,9 @@ describe("initProject — acceptance.testStrategy for ink project", () => {
 
       const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
-      const acceptance = config.acceptance as Record<string, unknown> | undefined;
-      expect(acceptance?.testStrategy).toBe("component");
-    });
-  });
-
-  test("config.json has acceptance.testFramework: ink-testing-library for ink project", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bun.lockb"), "");
-      await Bun.write(join(dir, "tsconfig.json"), "{}");
-      await writePackageJson(dir, { ink: "^4.0.0" });
-
-      await initProject(dir);
-
-      const configPath = join(dir, ".nax", "config.json");
-      const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
-      const acceptance = config.acceptance as Record<string, unknown> | undefined;
-      expect(acceptance?.testFramework).toBe("ink-testing-library");
-    });
-  });
-});
-
-describe("initProject — acceptance.testStrategy for bin-only project", () => {
-  test("config.json has acceptance.testStrategy: cli for bin-only project", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bun.lockb"), "");
-      await Bun.write(join(dir, "tsconfig.json"), "{}");
-      await writePackageJson(dir, {}, { mycli: "./dist/cli.js" });
-
-      await initProject(dir);
-
-      const configPath = join(dir, ".nax", "config.json");
-      const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
-      const acceptance = config.acceptance as Record<string, unknown> | undefined;
-      expect(acceptance?.testStrategy).toBe("cli");
-    });
-  });
-});
-
-describe("initProject — no acceptance section for plain project", () => {
-  test("config.json omits acceptance.testStrategy for plain bun+ts project", async () => {
-    await withTempDir(async (dir) => {
-      await Bun.write(join(dir, "bun.lockb"), "");
-      await Bun.write(join(dir, "tsconfig.json"), "{}");
-      // No package.json with UI deps or bin
-
-      await initProject(dir);
-
-      const configPath = join(dir, ".nax", "config.json");
-      const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
-      const acceptance = config.acceptance as Record<string, unknown> | undefined;
-      expect(acceptance?.testStrategy).toBeUndefined();
+      expect(config.version).toBe(1);
+      expect(config.quality).toHaveProperty("commands");
+      expect(config).not.toHaveProperty("acceptance");
     });
   });
 });

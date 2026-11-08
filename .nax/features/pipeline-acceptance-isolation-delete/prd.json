@@ -1,0 +1,900 @@
+{
+  "project": "nax-monorepo",
+  "feature": "pipeline-acceptance-isolation-delete",
+  "branchName": "feat/pipeline-acceptance-isolation-delete",
+  "createdAt": "2026-11-08T00:00:00.000Z",
+  "updatedAt": "2026-11-08T14:48:45.520Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Stop reading the acceptance section",
+      "description": "**Goal** — Stop all production reads/writes of the acceptance config section while keeping its schema/default available until US-003.\n\n**Motivation** — `applyWorkflowMode` forces `acceptance.enabled` to `false`, so every remaining reader reads a constant or reads nothing.\n\n**Approach** — Part 1: stop reading `acceptance` (US-001)\n\n| Site | After |\n|:---|:---|\n| `config/workflow-mode.ts` | the acceptance term, its spread and its comment go; `storyIsolation` stays until US-004 |\n| `run-initialization.ts` `runWillUseAgent` and its doc comment | target shape above; the doc comment's acceptance-loop sentence goes |\n| `cli/advisor-import.ts` | target shape above |\n| `cli/init-detect.ts` | target shape above |\n| `config/merge.ts` | the `acceptance` merge block (`:189-196`), the `packageOverride.acceptance != null` term (`:78`) and the doc line (`:59`) go |\n| `precheck/checks-model-resolution-walk.ts` | the `acceptance.model` pin (`:276-279`) and its mention in the `:252` comment go |\n| `config/selectors.ts` | `\"acceptance\"` leaves the `PrecheckConfig` pick list |\n| `config/runtime-types.ts` | `NaxConfig.acceptance` becomes optional |\n\n`test/unit/runtime/packages-workflow.test.ts` (it only asserts acceptance is forced off per package), `test/unit/config/acceptance-fix-config.test.ts` and `test/unit/config/acceptance-test-strategy.test.ts` (they only test the acceptance schemas) are deleted.\n\nTarget integration notes: `runWillUseAgent(prd: PRD): boolean`, true when any story is not `\"passed\"`. The skip log reads `Skipping agent preflight — no story needs work`. `AdvisorImportDeps` has no `acceptanceEnabled`; `toQuestion(r, f, sha, deps)` passes `acceptanceEnabledForStory: false` to `buildMenu`. `buildInitConfig(stack)` returns `{ version: 1 }` when the stack is undetected or has no quality commands, else `{ version: 1, quality: { commands } }`. `buildAcceptanceConfig` is deleted. `NaxConfig.acceptance` is optional after US-001; removed with `AcceptanceConfig`, `AcceptanceFixConfig` and `AcceptanceTestStrategy` in US-003.\n\n**Scope** — In: the Part 1 readers/writer, optional field, mixed-test trimming and fixture changes below. Out: US-002's remaining fixture sweep and refusal messages, US-003's schema/default/type/description deletion and strip entry, and US-004's storyIsolation normalization removal. The advisor's `acceptanceEnabledForStory` parameter and its branch in `advisor/menus.ts`: constant `false` after US-001, but removing it is an advisor-menu change; it is appended to #2823.\n\n**Interface** — `runWillUseAgent(prd: PRD): boolean`; `toQuestion(r, f, sha, deps)`; `buildInitConfig(stack)`; `NaxConfig.acceptance` changes from `acceptance: AcceptanceConfig` to optional. `applyWorkflowMode(config: NaxConfig, warn: (msg: string) => void): NaxConfig` keeps its current signature and storyIsolation behavior in this story. No new exported symbol is introduced.\n\nModifies (all paths relative to packages/nax; deletions count as modifications): src/config/workflow-mode.ts; src/execution/lifecycle/run-initialization.ts; src/cli/advisor-import.ts; src/cli/init-detect.ts; src/config/merge.ts; src/config/selectors.ts; src/precheck/checks-model-resolution-walk.ts; src/config/runtime-types.ts; scripts/baselines/complexity-baseline.json; scripts/baselines/test-escape-hatches-baseline.json; test/unit/cli/advisor-import.test.ts; test/unit/cli/init-detect-ui.test.ts; test/unit/config/defaults.test.ts; test/unit/config/merge.test.ts; test/unit/config/workflow-mode-normalise.test.ts; test/unit/execution/lifecycle/run-initialization.test.ts; test/unit/pipeline/effective-config.test.ts; test/unit/precheck/precheck-config-slice-widening.test.ts; test/unit/runtime/packages-workflow.test.ts (delete); test/unit/config/acceptance-fix-config.test.ts (delete); test/unit/config/acceptance-test-strategy.test.ts (delete); test/unit/config/strip-removed-noop-keys.test.ts; test/integration/execution/execution.test.ts; test/integration/execution/status-file-integration.test.ts; test/unit/execution/unified-executor-state-handoff.test.ts; test/unit/precheck/precheck-model-resolution-checks.test.ts. In advisor-import tests remove the harness dep and assert menus using false. In init-detect-ui keep stack detection and replace acceptance-section describes with AC4/AC5. In defaults stop expecting forced-off acceptance, but keep the schema's section until US-003. In merge delete the acceptance override describe and its root-immutability case; keep all other section cases. In workflow normalization retain advisor and storyIsolation cases until US-004. In run-initialization remove the acceptance-enabled preflight case and initWith acceptance option, drop its fixture section, and pin both preflight outcomes. Delete only the acceptance package override case in effective-config. Remove acceptance from the expected PrecheckConfig keys. Temporarily use `config.acceptance ?? {}` in generateTests no-op tests. Drop acceptance overrides in the two execution integration fixtures and state-handoff fixture. Delete the acceptance.model row in the never-shipped-model precheck table.\n\nVerification — every story runs in order and leaves a tree that compiles and passes the suite. Run these four steps in packages/nax:\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep: for each removed key, `rg -n -w '<leaf>' src bin scripts test`; for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`. This story's sweep names: `buildAcceptanceConfig`, `acceptanceEnabled`, `acceptanceOn`. Also read the hits of `rg -n 'acceptance' src/config/workflow-mode.ts src/config/merge.ts src/execution/lifecycle/run-initialization.ts src/cli/advisor-import.ts src/cli/init-detect.ts src/precheck/checks-model-resolution-walk.ts src/config/selectors.ts`. Expected remaining hits: `acceptanceEnabledForStory` in cli/advisor-import.ts (the literal false) and advisor/ (Out of Scope); `cc-acceptance` in a config/selectors.ts comment, a profile name (different concept); `acceptanceEnabled` as the makeConfig parameter in test/unit/execution/runner-completion-finish.test.ts, runner-completion-postrun.test.ts and runner-completion-skip.test.ts (removed in US-003); none in the other files read above. Expected result: only these remaining hits, else stop. A sweep scoped to files is read only in those files. A hit of the same word naming a different concept (a profile name such as cc-acceptance, the acceptance stage name, finish.timeouts.acceptanceMs, a test-strategy value) is left alone. A hit in code is a missed reference; a hit in a comment is a stale comment and is reworded, in any file, with no Modifies entry needed; a hit naming a different concept is listed, not changed. Locate sites by symbol, not baseline line numbers.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's noUnusedImports reports them. A test that only exercises removed behaviour is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. AC2 (the exact skip text) and AC4/AC5 fail first; AC1 and AC3 are retention pins, already passing before this removal.",
+      "acceptanceCriteria": [
+        "[unit] initializeRun on a PRD whose every story has status \"passed\" does not call the injected agent lookup agentGetFn.",
+        "[unit] initializeRun on a PRD whose every story has status \"passed\" logs an info message exactly equal to \"Skipping agent preflight — no story needs work\".",
+        "[unit] initializeRun on a PRD with one \"pending\" story calls the injected agent lookup agentGetFn for the default agent.",
+        "[unit] buildInitConfig for a stack with runtime: \"bun\", language: \"typescript\" and hasBin: true returns an object whose own keys are exactly version and quality.",
+        "[unit] buildInitConfig for a stack with uiFramework: \"ink\", runtime: \"unknown\" and language: \"unknown\" (no detected runtime or language) returns { version: 1 }."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "cli",
+        "pipeline-removal"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module removal across configuration, initialization, advisor import and precheck, with an optional-field intermediate state and broad mixed-test trimming.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/workflow-mode.ts",
+        "packages/nax/src/execution/lifecycle/run-initialization.ts",
+        "packages/nax/src/cli/advisor-import.ts",
+        "packages/nax/src/cli/init-detect.ts",
+        "packages/nax/src/advisor/menus.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/workflow-mode.ts",
+          "reason": "the acceptance term, its spread and its comment go; `applyWorkflowMode` still forces `storyIsolation` until US-004"
+        },
+        {
+          "path": "packages/nax/src/execution/lifecycle/run-initialization.ts",
+          "reason": "`runWillUseAgent(prd)` reads only story status; its doc comment and the skip log drop acceptance"
+        },
+        {
+          "path": "packages/nax/src/cli/advisor-import.ts",
+          "reason": "`acceptanceEnabled` dep and `toQuestion`'s `acceptanceOn` parameter go; `acceptanceEnabledForStory: false`"
+        },
+        {
+          "path": "packages/nax/src/cli/init-detect.ts",
+          "reason": "`buildAcceptanceConfig` is deleted; `buildInitConfig` writes no `acceptance` section"
+        },
+        {
+          "path": "packages/nax/src/config/merge.ts",
+          "reason": "the `acceptance` merge block, its `hasAnyMergeableField` term and its doc line go"
+        },
+        {
+          "path": "packages/nax/src/config/selectors.ts",
+          "reason": "`\"acceptance\"` leaves the `PrecheckConfig` pick list"
+        },
+        {
+          "path": "packages/nax/src/precheck/checks-model-resolution-walk.ts",
+          "reason": "the `acceptance.model` pin and its comment mention go"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "`NaxConfig.acceptance` becomes optional"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "lowered by step 3 for the trimmed merge and precheck-walk functions"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "lowered by step 3 for the deleted tests"
+        },
+        {
+          "path": "packages/nax/test/unit/cli/advisor-import.test.ts",
+          "reason": "the harness's `acceptanceEnabled` dep goes; the question-menu assertions use `acceptanceEnabledForStory: false`"
+        },
+        {
+          "path": "packages/nax/test/unit/cli/init-detect-ui.test.ts",
+          "reason": "the acceptance-section describes are deleted; the stack-detection tests stay, plus US-001 AC4 and AC5"
+        },
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "the expected default no longer carries a forced-off acceptance"
+        },
+        {
+          "path": "packages/nax/test/unit/config/merge.test.ts",
+          "reason": "the acceptance override describe and its root-immutability case are deleted; the other section cases stay"
+        },
+        {
+          "path": "packages/nax/test/unit/config/workflow-mode-normalise.test.ts",
+          "reason": "the acceptance assertions go; the advisor and storyIsolation assertions stay until US-004"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-initialization.test.ts",
+          "reason": "the \"preflight still runs when acceptance is enabled\" case and the `initWith` acceptance option go, and its fixture drops `acceptance`, plus US-001 AC1 to AC3"
+        },
+        {
+          "path": "packages/nax/test/unit/pipeline/effective-config.test.ts",
+          "reason": "the acceptance package-override case is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/precheck/precheck-config-slice-widening.test.ts",
+          "reason": "`acceptance` leaves the expected `PrecheckConfig` key list"
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/packages-workflow.test.ts",
+          "reason": "deleted: it only asserts acceptance is forced off per package"
+        },
+        {
+          "path": "packages/nax/test/unit/config/acceptance-fix-config.test.ts",
+          "reason": "deleted: it only tests the acceptance fix schema"
+        },
+        {
+          "path": "packages/nax/test/unit/config/acceptance-test-strategy.test.ts",
+          "reason": "deleted: it only tests the acceptance test-strategy schema"
+        },
+        {
+          "path": "packages/nax/test/unit/config/strip-removed-noop-keys.test.ts",
+          "reason": "the `acceptance.generateTests` cases read `config.acceptance ?? {}` now that the field is optional (rewritten again in US-003)"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/execution.test.ts",
+          "reason": "the fixture drops its `acceptance` override"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/status-file-integration.test.ts",
+          "reason": "the fixture drops its `acceptance` override"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-state-handoff.test.ts",
+          "reason": "the fixture drops its `acceptance` override"
+        },
+        {
+          "path": "packages/nax/test/unit/precheck/precheck-model-resolution-checks.test.ts",
+          "reason": "the `acceptance.model` row of the never-shipped-model table goes, since the walk no longer checks that key"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "207be078abdd5f8ce6b4151a9a8cd7419530b803"
+    },
+    {
+      "id": "US-002",
+      "title": "Remove acceptance fixtures and obsolete config-write refusal wording",
+      "description": "**Goal** — Drop acceptance from the designated fixtures and stop naming acceptance.command in nax config-write refusals without changing permission enforcement.\n\n**Motivation** — The other leaves have no reader.\n\n**Approach** — Part 2: drop `acceptance` from fixtures and the refusal text (US-002)\n\n- The 19 test files listed under US-002 in Modifies with the fixture reason drop an `acceptance:` property from a config literal or a written config file.\n- `NAX_CONFIG_WRITE_REFUSAL` (`agents/config-read-gate.ts:14-17`) becomes\n `\"is nax configuration; only Read, Grep and Glob may open it, and no tool may modify it. \" +`\n `\"`quality.commands` run through a shell without passing the permission gate, \" +`\n `\"so editing this file could run an ungated command on the next run.\"`.\n- The config-file reason in `agents/nax-owned-writes.ts:357-362` becomes\n `\"is one of nax's own config files, which every tool is refused regardless of grant -- \" +`\n `\"`quality.commands` are run through a shell WITHOUT passing the \" +`\n `\"permission gate because a human wrote them, so editing this file is a route to running \" +`\n `\"an ungated command on the next run\"`. Its `:119` doc comment drops `acceptance.command` too.\n- The two tests that pin those strings follow.\n\n**Scope** — In: the exact two refusal strings, their pinned expected reasons, and the 19 fixture cleanups below. Out: US-003's removal of acceptance schemas/types/defaults/descriptions and removed-key strip entry. Do not relax owned-path protection, tool allowlists, config read gating, canonicalization, trust checks or permission grants. The dead quality keys belong to B3c-3; quality.commands remains the named shell-execution risk in these messages.\n\n**Interface** — `NAX_CONFIG_WRITE_REFUSAL` and the existing config-file refusal reason remain strings consumed by the existing tool-permission policy. No function signature changes or exported symbols are added. The exact target messages above are authoritative; Write to .nax/config.json must still be refused regardless of grant.\n\nModifies (all paths relative to packages/nax): src/agents/config-read-gate.ts; src/agents/nax-owned-writes.ts; test/unit/agents/coding-tool-support-owned-paths.test.ts (CONFIG_REASON pins the new text); test/unit/agents/nax-owned-writes.test.ts (expected config-file reason pins the new text). Fixture removals: test/unit/verification/smart-runner-config.test.ts; test/e2e/workflow-mode.e2e.test.ts; test/integration/execution/deferred-review-integration.test.ts; test/integration/execution/runner-plugin-integration.test.ts; test/integration/pipeline/pipeline-events.test.ts; test/integration/pipeline/reporter-lifecycle-basic.test.ts; test/integration/pipeline/reporter-lifecycle-resilience.test.ts; test/integration/routing/routing-stage-final-state.test.ts; test/integration/routing/routing-stage-greenfield.test.ts; test/unit/execution/lifecycle/gitignore-reconcile.test.ts; test/unit/execution/lifecycle/run-cleanup.test.ts; test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts; test/unit/execution/lifecycle/run-setup-no-migration.test.ts; test/unit/execution/lifecycle/run-setup-warnings-native-defaults.test.ts; test/unit/execution/lifecycle/run-setup-warnings.test.ts; test/unit/execution/lifecycle/run-setup.test.ts; test/unit/execution/lifecycle/scratchpad-wipe.test.ts; test/unit/config/smart-runner-flag.test.ts (both literals); test/unit/commands/resume-log-filename.test.ts (both written configs drop acceptance: { enabled: false }; remove the explanatory comment because runWillUseAgent no longer reads it). Preserve all unrelated fixture fields and assertions.\n\nVerification — every story runs in order and leaves a tree that compiles and passes the suite. Run these four steps in packages/nax:\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep: for each removed key, `rg -n -w '<leaf>' src bin scripts test`; for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`. This story's sweep is `rg -n 'acceptance\\.command' src scripts test`. Expected remaining hits: the acceptance.command description in cli/config-descriptions.ts, removed in US-003; the doc comments in config/package-config.ts:6, scripts/check-config-profile-threading.ts:8 and test/unit/agents/config-read-gate.test.ts:6, which are reworded to drop acceptance.command (comment edits). Expected result: only the listed remaining description after rewording comments, else stop. A sweep scoped to files is read only in those files. A hit of the same word naming a different concept (a profile name such as cc-acceptance, the acceptance stage name, finish.timeouts.acceptanceMs, a test-strategy value) is left alone. A hit in code is a missed reference; a hit in a comment is a stale comment and is reworded, in any file, with no Modifies entry needed; a hit naming a different concept is listed, not changed. Locate sites by symbol, not baseline line numbers.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's noUnusedImports reports them. A test that only exercises removed behaviour is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key.",
+      "acceptanceCriteria": [
+        "[unit] NAX_CONFIG_WRITE_REFUSAL equals \"is nax configuration; only Read, Grep and Glob may open it, and no tool may modify it. `quality.commands` run through a shell without passing the permission gate, so editing this file could run an ungated command on the next run.\".",
+        "[unit] `naxOwnedPathsPolicy.configRefusal(root, <root>/.nax/config.json)` returns exactly \"is one of nax's own config files, which every tool is refused regardless of grant -- `quality.commands` are run through a shell WITHOUT passing the permission gate because a human wrote them, so editing this file is a route to running an ungated command on the next run\"."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "security",
+        "pipeline-removal"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Only two production constants change and the remaining edits remove fixture fields; the work is mechanically bounded, but strict security isolation is required because those constants belong to the config access-control policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/config-read-gate.ts",
+        "packages/nax/src/agents/nax-owned-writes.ts",
+        "packages/nax/test/unit/agents/coding-tool-support-owned-paths.test.ts",
+        "packages/nax/test/unit/agents/nax-owned-writes.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/agents/config-read-gate.ts",
+          "reason": "`NAX_CONFIG_WRITE_REFUSAL` names only `quality.commands` (exact text in Part 2)"
+        },
+        {
+          "path": "packages/nax/src/agents/nax-owned-writes.ts",
+          "reason": "the config-file reason names only `quality.commands` (exact text in Part 2); the `:119` doc comment follows"
+        },
+        {
+          "path": "packages/nax/test/unit/agents/coding-tool-support-owned-paths.test.ts",
+          "reason": "`CONFIG_REASON` pins the new text"
+        },
+        {
+          "path": "packages/nax/test/unit/agents/nax-owned-writes.test.ts",
+          "reason": "the expected config-file reason pins the new text"
+        },
+        {
+          "path": "packages/nax/test/unit/verification/smart-runner-config.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/e2e/workflow-mode.e2e.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/deferred-review-integration.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/integration/execution/runner-plugin-integration.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/pipeline-events.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/reporter-lifecycle-basic.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/integration/pipeline/reporter-lifecycle-resilience.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/integration/routing/routing-stage-final-state.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/integration/routing/routing-stage-greenfield.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/gitignore-reconcile.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-cleanup.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-no-migration.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-warnings-native-defaults.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup-warnings.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-setup.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/scratchpad-wipe.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/smart-runner-flag.test.ts",
+          "reason": "its two config literals drop `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/commands/resume-log-filename.test.ts",
+          "reason": "the two config files it writes drop `acceptance: { enabled: false }`, which `runWillUseAgent` no longer reads; the comment explaining it goes"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b401ba7876ad38a9026f9314a1061fb955b87eb1"
+    },
+    {
+      "id": "US-003",
+      "title": "Remove acceptance schema and warn-and-strip legacy sections",
+      "description": "**Goal** — Remove the acceptance config surface and migrate historical sections through the shared loader warning/strip mechanism.\n\n**Motivation** — `src/acceptance/` was removed in B2a (#2813).\n\n**Approach** — Part 3: remove the `acceptance` section (US-003)\n\n| Site | After |\n|:---|:---|\n| `config/schemas-infra.ts` `AcceptanceFixConfigSchema`, `AcceptanceConfigSchema` | deleted |\n| `config/schemas.ts` | the `acceptance` default, the import and the re-export go |\n| `config/schema.ts`, `config/types.ts`, `config/index.ts` | their acceptance type and schema re-exports go |\n| `config/runtime-types.ts` | `AcceptanceConfig`, `AcceptanceFixConfig`, `AcceptanceTestStrategy` and `NaxConfig.acceptance` go |\n| `cli/config-descriptions.ts` | the `acceptance` and `acceptance.*` entries go |\n| `config/config-guards.ts` `REMOVED_NO_OP_KEYS` | the `acceptance.generateTests` entry goes: the section entry covers it |\n| `config/removed-config-keys.ts` | gains `\"acceptance\": PIPELINE_ONLY_KEY_HINT` |\n\n`test/unit/cli/acceptance-config-descriptions.test.ts` is deleted. The section's leaves were all pipeline-only: the acceptance phase was removed with pipeline mode, so `PIPELINE_ONLY_KEY_HINT` is accurate.\n\nTiming constraint. `loadConfig` starts from `structuredClone(DEFAULT_CONFIG)` (`config/loader.ts`), and `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. If a key is added to `REMOVED_CONFIG_KEYS` while the schema still defaults it, every load warns. So US-003 and US-006 add each strip entry in the same change that removes that key's schema field and default.\n\nA config sets `acceptance` or any leaf under it: config loads; the section is dropped before `safeParse`; one warning naming `acceptance`. A config sets `acceptance.generateTests` now warns as part of the `acceptance` section, not under its own name. `nax config` and `nax config --explain` no longer list the removed keys. The default config (no project file) loads with no `has been removed` warning.\n\n**Scope** — In: schema/default/types/barrels/descriptions/no-op-map cleanup, acceptance strip entry, remaining fixtures, and loader/CLI regression pins. Out: US-004's worktree branches, US-005's deleted modules/category, and US-006's execution schema keys, shim and strip entries. `finish.timeouts.acceptanceMs`, the `AcceptanceFact` finish type and the `acceptance` context stage name in `stage-config.ts`: different concepts with the same word. `acceptance` as a permission stage in `test/unit/config/inert-bash-stages.test.ts`: it tests the B3b removed-stage strip, a different vocabulary.\n\n**Interface** — `REMOVED_CONFIG_KEYS` gains `\"acceptance\": PIPELINE_ONLY_KEY_HINT`; `PIPELINE_ONLY_KEY_HINT` is `\"nothing reads this key since pipeline mode was removed\"`. The exact warning is `Config key \"acceptance\" has been removed — nothing reads this key since pipeline mode was removed. Remove it from your config.` `loadConfig` takes no warn parameter: in the ACs, warns means the loader's warning reaches a logger sink registered with addSink, as test/unit/config/removed-stage-names.test.ts captures it. Reuse stripRemovedConfig at all three existing loader strip sites before NaxConfigSchema.safeParse. A section entry strips the whole section with one warning. No new exported symbol is introduced.\n\nModifies (all paths relative to packages/nax): src/config/schemas-infra.ts; src/config/schemas.ts; src/config/schema.ts; src/config/types.ts; src/config/index.ts; src/config/runtime-types.ts; src/cli/config-descriptions.ts; src/config/config-guards.ts; src/config/removed-config-keys.ts (also update map doc comment to name the section); test/unit/config/removed-config-keys.test.ts (expected key set plus loader ACs); test/unit/config/strip-removed-noop-keys.test.ts (no-op key count 4 to 3, delete generateTests leaf and AC-22 leaf-read cases, end-to-end case expects section warning instead); test/unit/config/loader-legacy-shim.test.ts (dedupe case switches to review.gateLLMChecksOnMechanicalPass, retaining one-warning invariant); test/unit/config/schemas.test.ts (delete acceptance.model object-form case); test/unit/config/defaults.test.ts (remove acceptance from expected top-level keys); test/unit/cli/acceptance-config-descriptions.test.ts (delete); test/integration/cli/cli-config-default-view.test.ts (remove old acceptance assertion and pin absence); test/unit/precheck/precheck-run-story-size-gate-routing.test.ts (drop fixture section); test/unit/config/unreferenced-agent-models.test.ts (drop acceptance.fix.fixModel and acceptance.generateModel rows); test/unit/execution/run-completed-after-end-phase.test.ts; test/unit/execution/runner-completion-auth-relogin.test.ts; test/unit/execution/runner-completion-finish.test.ts; test/unit/execution/runner-completion-no-acceptance.test.ts; test/unit/execution/runner-completion-postrun.test.ts; test/unit/execution/runner-completion-skip.test.ts; test/unit/execution/runner-completion-total.test.ts; test/unit/execution/runner-completion-workflow-duration.test.ts; test/unit/execution/runner-completion-workflow-status.test.ts; test/unit/execution/runner-execution-dispatch.test.ts; test/unit/execution/runner-execution-pre-run.test.ts; test/unit/execution/unified-executor-bound.test.ts; test/unit/execution/unified-executor-no-acceptance.test.ts; test/unit/execution/unified-executor-preflight.test.ts. All listed execution fixtures drop acceptance. Drop unused makeConfig(acceptanceEnabled) parameters in runner-completion-finish, postrun, skip and total tests. Preserve all unrelated completion/dispatch assertions.\n\nVerification — every story runs in order and leaves a tree that compiles and passes the suite. Run these four steps in packages/nax:\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep: for each removed key, `rg -n -w '<leaf>' src bin scripts test`; for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`. This story's sweep names: `AcceptanceConfigSchema`, `AcceptanceFixConfigSchema`, `AcceptanceConfig`, `AcceptanceFixConfig`, `AcceptanceTestStrategy`, `generateTests`. Also read the hits of `rg -n -w 'acceptance' src/config src/cli test/unit/config`. Expected remaining hits: acceptance in REMOVED_CONFIG_KEYS and its tests; acceptance as a removed stage name in config/removed-stage-names.ts and its tests; generateTests only in the strip-removed-noop-keys test asserting the section warning replaces it; acceptanceMs in schemas.ts (finish.timeouts), a different concept. Expected result: only the listed remaining hits or explicitly identified same-word different concepts, else stop. A sweep scoped to files is read only in those files. A hit of the same word naming a different concept (a profile name such as cc-acceptance, the acceptance stage name, finish.timeouts.acceptanceMs, a test-strategy value) is left alone. A hit in code is a missed reference; a hit in a comment is a stale comment and is reworded, in any file, with no Modifies entry needed; a hit naming a different concept is listed, not changed. Locate sites by symbol, not baseline line numbers.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's noUnusedImports reports them. A test that only exercises removed behaviour is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. The strip ACs enter at loadConfig, assert warning text and property absence, and fail first because the schema currently keeps acceptance. The generateTests case currently warns under the leaf name, so asserting the section name fails first. Clean-default no-warning behavior is a retention pin.",
+      "acceptanceCriteria": [
+        "[unit] loadConfig resolves when a project's .nax/config.json sets acceptance: { enabled: true, model: \"fast\" }.",
+        "[unit] When loadConfig reads acceptance: { enabled: true, model: \"fast\" }, a logger sink registered with addSink receives exactly one warning containing has been removed, equal to `Config key \"acceptance\" has been removed — nothing reads this key since pipeline mode was removed. Remove it from your config.`.",
+        "[unit] loadConfig returns a config with no acceptance property when the project's config sets acceptance: { enabled: true, model: \"fast\" }.",
+        "[unit] loadConfig resolves when a project's config sets acceptance: { generateTests: true }.",
+        "[unit] When loadConfig reads acceptance: { generateTests: true }, a logger sink registered with addSink receives exactly one warning containing has been removed that names \"acceptance\", not \"acceptance.generateTests\".",
+        "[unit] When the project's config sets acceptance or any nested leaf under it, loadConfig returns a config without an acceptance property.",
+        "[unit] When the project's config sets acceptance or any nested leaf under it, a logger sink registered with addSink receives exactly one removal warning naming \"acceptance\".",
+        "[unit] loadConfig with no project config file emits no warning containing has been removed.",
+        "[cli] When nax config runs with no project config, it prints the default view with no top-level acceptance key."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "compatibility",
+        "pipeline-removal"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinated schema, defaults, public types, exports, CLI and loader compatibility removal with warning-order and default-pollution risks.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/removed-config-keys.ts",
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/config-guards.ts",
+        "packages/nax/test/unit/config/removed-config-keys.test.ts",
+        "packages/nax/test/unit/config/removed-stage-names.test.ts"
+      ],
+      "suggestedCriteria": [
+        "[cli] When nax config --explain runs with no project config, its output lists no acceptance section or acceptance.* key."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas-infra.ts",
+          "reason": "`AcceptanceFixConfigSchema` and `AcceptanceConfigSchema` are deleted"
+        },
+        {
+          "path": "packages/nax/src/config/schemas.ts",
+          "reason": "the `acceptance` default, its import and its re-export go"
+        },
+        {
+          "path": "packages/nax/src/config/schema.ts",
+          "reason": "the acceptance schema re-exports go"
+        },
+        {
+          "path": "packages/nax/src/config/types.ts",
+          "reason": "the acceptance type re-exports go"
+        },
+        {
+          "path": "packages/nax/src/config/index.ts",
+          "reason": "the acceptance type and schema exports go"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "`AcceptanceConfig`, `AcceptanceFixConfig`, `AcceptanceTestStrategy` and `NaxConfig.acceptance` go"
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "the `acceptance` and `acceptance.*` entries go"
+        },
+        {
+          "path": "packages/nax/src/config/config-guards.ts",
+          "reason": "the `acceptance.generateTests` entry leaves `REMOVED_NO_OP_KEYS`"
+        },
+        {
+          "path": "packages/nax/src/config/removed-config-keys.ts",
+          "reason": "gains `\"acceptance\": PIPELINE_ONLY_KEY_HINT`; the map's doc comment names the section"
+        },
+        {
+          "path": "packages/nax/test/unit/config/removed-config-keys.test.ts",
+          "reason": "the expected key set adds `acceptance`, plus US-003 AC1 to AC8"
+        },
+        {
+          "path": "packages/nax/test/unit/config/strip-removed-noop-keys.test.ts",
+          "reason": "`acceptance.generateTests` leaves `REMOVED_NO_OP_KEYS`, so the key-count case drops from 4 to 3, the generateTests strip case and the AC-22 case that read the leaf are deleted, and the end-to-end case asserts the `acceptance` section warning replaces the per-key one"
+        },
+        {
+          "path": "packages/nax/test/unit/config/loader-legacy-shim.test.ts",
+          "reason": "the warning-dedupe case switches from `acceptance.generateTests` to `review.gateLLMChecksOnMechanicalPass`, keeping the one-warning invariant"
+        },
+        {
+          "path": "packages/nax/test/unit/config/schemas.test.ts",
+          "reason": "the `acceptance.model` object-form test is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "`acceptance` leaves the expected top-level key list"
+        },
+        {
+          "path": "packages/nax/test/unit/cli/acceptance-config-descriptions.test.ts",
+          "reason": "deleted: it only tests the removed descriptions"
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-config-default-view.test.ts",
+          "reason": "the `acceptance` key assertion goes, plus US-003 AC9"
+        },
+        {
+          "path": "packages/nax/test/unit/precheck/precheck-run-story-size-gate-routing.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/config/unreferenced-agent-models.test.ts",
+          "reason": "the two acceptance pin rows (`acceptance.fix.fixModel`, `acceptance.generateModel`) go, since the section no longer exists"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/run-completed-after-end-phase.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-auth-relogin.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-finish.test.ts",
+          "reason": "the config literal drops `acceptance`; the unused `makeConfig(acceptanceEnabled)` parameter goes"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-no-acceptance.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-postrun.test.ts",
+          "reason": "the config literal drops `acceptance`; the unused `makeConfig(acceptanceEnabled)` parameter goes"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-skip.test.ts",
+          "reason": "the config literal drops `acceptance`; the unused `makeConfig(acceptanceEnabled)` parameter goes"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-total.test.ts",
+          "reason": "the config literal drops `acceptance`; the unused `makeConfig(acceptanceEnabled)` parameter goes"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-workflow-duration.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-completion-workflow-status.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-execution-dispatch.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/runner-execution-pre-run.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-bound.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-no-acceptance.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/unified-executor-preflight.test.ts",
+          "reason": "the config literal drops `acceptance`"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4214bfe00b97e01f14f643cbf8980dd5efa62b9f"
+    },
+    {
+      "id": "US-004",
+      "title": "Remove story worktree isolation execution paths",
+      "description": "**Goal** — Remove unreachable story-isolation creation, provisioning, merge and re-run cleanup paths while preserving today's shared-checkout behavior.\n\n**Motivation** — Forced to `\"shared\"`, so these are never reached.\n\n**Approach** — Part 4: remove the worktree-isolation code paths (US-004)\n\n| Site | After |\n|:---|:---|\n| `config/workflow-mode.ts` | target shape above: forces only `advisor.enabled`; the `storyIsolation` term and warning go; the header comment says so |\n| `config/loader.ts` (`:276`, `:340`, `:591`), `runtime/packages.ts:227` | `applyWorkflowMode(config)` with no warn argument |\n| `execution/iteration-runner.ts` | the two `storyIsolation === \"worktree\"` blocks and the isolation-root ternary go (target shape above), with the `existsSync`, `markStoryFailed`, `deriveStoryWorktreeId`, `storyWorktreePath`, `prepareWorktreeDependencies` and `WorktreeManager` imports and deps only they used |\n| `execution/pipeline-result-handler.ts` | the merge block in `handlePipelineSuccess`, `failStoryAfterMerge`, the `MergeEngine` import and `_resultHandlerDeps.mergeEngine` go |\n| `execution/lifecycle/run-initialization.ts` | the isolation-mode log, the `storyIsolation` read and the branch-cleanup loop go; `resetFailedStoriesToPending(prd, { resetRef, resetMode })`; `_reconcileDeps.spawn` and the `gitSpawnEnv`, `spawn`, `deriveStoryWorktreeId` and `storyBranchName` imports go |\n| `prd/index.ts` `resetFailedStoriesToPending` | target shape above |\n| `execution/lifecycle/paused-story-prompts.ts`, `run-setup-init.ts` (its caller) | target shape above |\n\n`test/unit/execution/iteration-runner-dependency-prep.test.ts` and `test/unit/execution/pipeline-result-handler-merge-conflict.test.ts` are deleted: they only test the removed branches.\n\nTarget integration notes: `applyWorkflowMode(config: NaxConfig): NaxConfig` forces only `advisor.enabled: true`, and returns `config` itself when `advisor` is absent or already enabled. Its four callers (`config/loader.ts:276`, `:340`, `:591`, `runtime/packages.ts:227`) drop the `warn` argument. `runIteration`: `effectiveWorkdir` is `ctx.workdir`; `resolvedWorkdir` is `storyAbsWorkdir(ctx.workdir, story)`. `_iterationRunnerDeps` loses `prepareWorktreeDependencies`, `existsSync` and `worktreeManager`. `resetFailedStoriesToPending(prd, opts)`: no `storyIsolation` option; `storyGitRef` and `repoScopedFixes` are cleared only when `resetRef` is true. That is today's shared-mode behaviour. `promptForPausedStories(prd, chain, featureName)`: three parameters; resume sets the status to `\"pending\"` and keeps `storyGitRef`.\n\n**Scope** — In: Part 4 paths, caller signatures, dependency seams/import cleanup, stale isolation comments and retention pins below. Out: US-005 deletes worktree/merge.ts, worktree/dependencies.ts, their exports/types/helper and FailureCategory; US-006 removes storyIsolation/worktreeDependencies schemas/defaults/types/descriptions and adds strip entries. These schema keys stay in this story, but no execution reader remains. `WorktreeManager`, `worktree-id.ts`, `nax-orphan-ref.ts`, `gitignore-reconcile.ts` and the bakeoff worktrees: still used outside the isolation path. Keep their live cleanup callers, including result-handler cleanup outside the merge block.\n\n**Interface** — `applyWorkflowMode(config: NaxConfig): NaxConfig`; `resetFailedStoriesToPending(prd, opts)` without a storyIsolation option; `promptForPausedStories(prd, chain, featureName)` with three parameters. Read-only integration: `storyAbsWorkdir(base, story)` returns base for a root story and base/<story.workdir> for a package story. No new exported symbol is introduced.\n\nModifies (all paths relative to packages/nax): src/config/workflow-mode.ts; src/config/loader.ts; src/runtime/packages.ts; src/execution/iteration-runner.ts; src/execution/pipeline-result-handler.ts; src/execution/lifecycle/run-initialization.ts; src/execution/lifecycle/paused-story-prompts.ts; src/execution/lifecycle/run-setup-init.ts; src/prd/index.ts; scripts/baselines/complexity-baseline.json; scripts/baselines/test-escape-hatches-baseline.json; test/unit/config/workflow-mode-normalise.test.ts (one-argument API, remove isolation forcing/warnings, retain advisor reference/immutability checks); test/unit/execution/iteration-runner.test.ts (remove two worktree describes, two worktree packageView cases and removed-dep save/restore; retain root/package cwd cases); test/unit/execution/iteration-runner-dependency-prep.test.ts (delete); test/unit/execution/pipeline-result-handler.test.ts (remove merge describes/setup, retain success cases); test/unit/execution/pipeline-result-handler-merge-conflict.test.ts (delete); test/unit/execution/pipeline-result-handler-prd-progress.test.ts (delete merge-only describe); test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts (remove AC-11 merge case, retain AC-13 cleanup); test/unit/execution/lifecycle/paused-story-prompts.test.ts (three-argument calls and resume ref retention); test/unit/execution/lifecycle/run-initialization.test.ts (remove branch-cleanup cases and spawn stubs); test/unit/prd/prd-reset-failed.test.ts (remove isolation cases or convert them to resetRef cases). Preserve package config/profile/root-only pinning, git-ref reuse, resetMode and all other live orchestration semantics. The merge block includes both conflict and non-conflict failure arms; both go with failStoryAfterMerge.\n\nVerification — every story runs in order and leaves a tree that compiles and passes the suite. Run these four steps in packages/nax:\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep: for each removed key, `rg -n -w '<leaf>' src bin scripts test`; for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`. This story's sweep names: `failStoryAfterMerge`, `mergeEngine`, `forceShared`. Also read the hits of `rg -n -w 'storyIsolation' src` and `rg -n 'prepareWorktreeDependencies|isolationRoot|dependencyContext' src`. Expected remaining hits: storyIsolation in config/schemas-execution.ts, config/schemas.ts, config/runtime-types.ts, cli/config-descriptions.ts (US-006) and doc comments (reworded where the sweep finds them); prepareWorktreeDependencies in worktree/dependencies.ts and worktree/index.ts (US-005). Expected result: only the listed remaining hits, else stop. A sweep scoped to files is read only in those files. A hit of the same word naming a different concept (a profile name such as cc-acceptance, the acceptance stage name, finish.timeouts.acceptanceMs, a test-strategy value) is left alone. A hit in code is a missed reference; a hit in a comment is a stale comment and is reworded, in any file, with no Modifies entry needed; a hit naming a different concept is listed, not changed. Locate sites by symbol, not baseline line numbers. Reword storyIsolation worktree doc comments encountered in context/engine/handlers/query-neighbor.ts, context/engine/providers/code-neighbor.ts, git-history.ts, static-rules.ts, test-coverage.ts, context/engine/scope-path-match/index.ts, context/engine/types.ts, pipeline/stages/context.ts, utils/path-filters.ts, agents/types.ts, agents/coding-tool-support-resolve.ts, runtime/packages.ts, execution/lifecycle/gitignore-reconcile.ts and execution/pipeline-result-handler.ts; their unrelated code stays unchanged.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's noUnusedImports reports them. A test that only exercises removed behaviour is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. All five spec ACs here are retention pins: shared mode is already forced. Do not invent new behavior just to make these tests fail first.",
+      "acceptanceCriteria": [
+        "[unit] applyWorkflowMode(config) with advisor.enabled: false returns a new config whose advisor.enabled is true.",
+        "[unit] applyWorkflowMode(config) with advisor.enabled: false leaves the input's advisor.enabled false.",
+        "[unit] applyWorkflowMode(config) with advisor.enabled: true returns the same object reference.",
+        "[unit] runIteration for a story with workdir: \"packages/app\" runs the story pipeline with a context whose workdir is <ctx.workdir>/packages/app.",
+        "[unit] runIteration for a root story runs the story pipeline with a context whose workdir is ctx.workdir itself.",
+        "[unit] resetFailedStoriesToPending(prd, { resetRef: false }) on a PRD with one failed story carrying storyGitRef: \"abc123\" returns that reset story with status pending.",
+        "[unit] resetFailedStoriesToPending(prd, { resetRef: false }) on a PRD with one failed story carrying storyGitRef: \"abc123\" keeps storyGitRef equal to \"abc123\" on the returned reset story.",
+        "[unit] resetFailedStoriesToPending(prd, { resetRef: true }) on a failed story carrying storyGitRef and repoScopedFixes returns that reset story with storyGitRef undefined.",
+        "[unit] resetFailedStoriesToPending(prd, { resetRef: true }) on a failed story carrying storyGitRef and repoScopedFixes returns that reset story with repoScopedFixes undefined.",
+        "[unit] promptForPausedStories(prd, chain, \"feat\") with a chain answering resume for a paused story carrying storyGitRef: \"abc123\" sets its status to pending.",
+        "[unit] promptForPausedStories(prd, chain, \"feat\") with a chain answering resume for a paused story carrying storyGitRef: \"abc123\" keeps storyGitRef equal to \"abc123\".",
+        "[unit] promptForPausedStories(prd, chain, \"feat\") with a chain answering resume for a paused story lists its id in summary.resumed.",
+        "[unit] When initializeRun resets a failed story for a re-run with review.semantic.resetRefOnRerun false, the story's existing storyGitRef is kept.",
+        "[unit] applyWorkflowMode(config) returns the same object reference when advisor is absent."
+      ],
+      "tags": [
+        "refactor",
+        "execution",
+        "worktree",
+        "pipeline-removal"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinated removal across runner, result handler, lifecycle, reset APIs and four normalization callers; root/package cwd, retained cleanup and durable refs are regression-sensitive.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/iteration-runner.ts",
+        "packages/nax/src/execution/pipeline-result-handler.ts",
+        "packages/nax/src/prd/index.ts",
+        "packages/nax/src/utils/path-frame.ts",
+        "packages/nax/src/config/workflow-mode.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/workflow-mode.ts",
+          "reason": "`applyWorkflowMode(config)` forces only `advisor.enabled`; the `storyIsolation` term, its warning and the `warn` parameter go"
+        },
+        {
+          "path": "packages/nax/src/config/loader.ts",
+          "reason": "the three `applyWorkflowMode` calls drop the warn argument"
+        },
+        {
+          "path": "packages/nax/src/runtime/packages.ts",
+          "reason": "the `applyWorkflowMode` call drops the warn argument"
+        },
+        {
+          "path": "packages/nax/src/execution/iteration-runner.ts",
+          "reason": "the worktree branches, the dependency-prep block and their deps and imports go; `effectiveWorkdir` is `ctx.workdir` and `resolvedWorkdir` is `storyAbsWorkdir(ctx.workdir, story)`"
+        },
+        {
+          "path": "packages/nax/src/execution/pipeline-result-handler.ts",
+          "reason": "the merge block, `failStoryAfterMerge`, the `MergeEngine` import and `_resultHandlerDeps.mergeEngine` go"
+        },
+        {
+          "path": "packages/nax/src/execution/lifecycle/run-initialization.ts",
+          "reason": "the isolation-mode log, the `storyIsolation` read, the branch-cleanup loop and `_reconcileDeps.spawn` go; the reset call passes `{ resetRef, resetMode }`"
+        },
+        {
+          "path": "packages/nax/src/execution/lifecycle/paused-story-prompts.ts",
+          "reason": "the `storyIsolation` parameter and its resume branch go"
+        },
+        {
+          "path": "packages/nax/src/execution/lifecycle/run-setup-init.ts",
+          "reason": "the `promptForPausedStories` call drops its `storyIsolation` argument"
+        },
+        {
+          "path": "packages/nax/src/prd/index.ts",
+          "reason": "`ResetFailedOptions.storyIsolation` goes; the reset clears `storyGitRef` and `repoScopedFixes` only when `resetRef` is true"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "lowered by step 3 for the trimmed functions"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/test-escape-hatches-baseline.json",
+          "reason": "the entry for the deleted merge-conflict handler test goes (step 3)"
+        },
+        {
+          "path": "packages/nax/test/unit/config/workflow-mode-normalise.test.ts",
+          "reason": "rewritten around the one-argument `applyWorkflowMode`: the storyIsolation forcing and warning cases go, plus US-004 AC1 to AC3 and AC14"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/iteration-runner.test.ts",
+          "reason": "the two worktree describes and the two worktree `packageView` cases go; the dep save and restore of the removed deps go, plus US-004 AC4 and AC5"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/iteration-runner-dependency-prep.test.ts",
+          "reason": "deleted: it only tests the removed dependency-prep block"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pipeline-result-handler.test.ts",
+          "reason": "the merge describes and the `mergeEngine` setup go; the success-path cases stay"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pipeline-result-handler-merge-conflict.test.ts",
+          "reason": "deleted: it only tests the removed merge block"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pipeline-result-handler-prd-progress.test.ts",
+          "reason": "the merge-only describe is deleted"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts",
+          "reason": "the AC-11 merge case goes; the AC-13 cleanup case stays"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/paused-story-prompts.test.ts",
+          "reason": "rewritten around the three-parameter call: resume keeps `storyGitRef`, plus US-004 AC10 to AC12"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/run-initialization.test.ts",
+          "reason": "the branch-cleanup tests and the `_reconcileDeps.spawn` stubs go, plus US-004 AC13"
+        },
+        {
+          "path": "packages/nax/test/unit/prd/prd-reset-failed.test.ts",
+          "reason": "the `storyIsolation` cases are deleted or converted to `resetRef` cases, plus US-004 AC6 to AC9"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7ec5baf95e6b465d1ac81decf2801d005b8e83c8"
+    },
+    {
+      "id": "US-005",
+      "title": "Delete dead merge and dependency modules and retire FailureCategory",
+      "description": "**Goal** — Delete unreferenced isolation modules and simplify failure recording while preserving legacy PRD category strings.\n\n**Motivation** — After the dependency-prep call goes, no code passes a category to `markStoryFailed`.\n\n**Approach** — Part 5: delete the worktree modules and `FailureCategory` (US-005)\n\n| Site | After |\n|:---|:---|\n| `worktree/merge.ts` | deleted (`MergeEngine`, `MergeResult`, `MergeFailureKind`, `StoryDependencies`) |\n| `worktree/dependencies.ts` | deleted (`prepareWorktreeDependencies`) |\n| `worktree/types.ts` | `WorktreeDependencyContext`, `PrepareWorktreeDependenciesOptions` and `WorktreeDependencyPreparationError` go |\n| `worktree/index.ts` | the exports of the removed symbols go |\n| `execution/types.ts` | deleted: it holds only `FailureCategory` |\n| `execution/index.ts:79`, `prd/index.ts` | the `FailureCategory` re-exports and import go |\n| `prd/index.ts` `markStoryFailed` | target shape above |\n| `prd/types.ts` `UserStory.failureCategory` | target shape above |\n| `execution/escalation/tier-escalation.ts`, `execution/escalation/tier-outcome.ts` | `markStoryFailed(prd, id)` without the `undefined, undefined` arguments |\n| `execution/pipeline-result-handler.ts` | its `markStoryFailed` calls drop only the category argument and keep the stage and status-writer arguments |\n| `test/helpers/merge-engine.ts` | deleted, with its export in `test/helpers/index.ts` |\n\nTarget integration notes: `markStoryFailed(prd, storyId, failureStage?: string, statusWriter?)`. Callers in escalation/tier-escalation.ts, escalation/tier-outcome.ts and pipeline-result-handler.ts drop the undefined category argument. `UserStory.failureCategory` becomes `failureCategory?: string`, with a doc comment: no current run writes it; an older prd.json may carry it, and it is kept verbatim. A prd.json written by an older run carries failureCategory: it loads; the string is kept as recorded.\n\n**Scope** — In: module/type/export/helper deletions, category argument/assignment removal, stage/statusWriter caller retargeting, retained legacy metadata, and associated test deletion/trimming below. Out: US-006 removes execution.storyIsolation/execution.worktreeDependencies config surfaces and the inherit shim; keep them until then. `WorktreeManager`, `worktree-id.ts`, `nax-orphan-ref.ts`, `gitignore-reconcile.ts` and the bakeoff worktrees: still used outside the isolation path. `failureCategory` in `context/engine/` (the manifest rebuild field): a separate `AdapterFailure` vocabulary. Its forwarding in operations/build-hop-callback-hop.ts is the same distinct vocabulary and stays.\n\n**Interface** — `markStoryFailed(prd, storyId, failureStage?: string, statusWriter?)`; `failureCategory?: string`. No new exported symbol is introduced. Preserve markStoryFailed's status/passes/attempts updates, failureStage semantics and statusWriter reset behavior; removing the category parameter must not accidentally shift stage/statusWriter arguments. Preserve the existing missing-story no-op: markStoryFailed with an unknown storyId leaves the PRD unchanged, including when a failureStage is supplied. Remove the category assignment, not legacy field loading. The source deletion includes dependencies.ts's trust-gated setup-command execution: do not relocate or recreate provisioning in another ungated path.\n\nModifies (all paths relative to packages/nax): src/worktree/merge.ts (delete); src/worktree/dependencies.ts (delete); src/worktree/types.ts; src/worktree/index.ts; src/execution/types.ts (delete); src/execution/index.ts; src/prd/index.ts; src/prd/types.ts; src/execution/escalation/tier-escalation.ts (markStoryFailed(failedPrd, story.id)); src/execution/escalation/tier-outcome.ts (both calls lose undefined, undefined); src/execution/pipeline-result-handler.ts (drop category argument, retain stage/statusWriter); scripts/baselines/complexity-baseline.json; test/helpers/merge-engine.ts (delete); test/helpers/index.ts; test/integration/worktree/worktree-merge.test.ts (delete); test/unit/execution/merge.test.ts (delete); test/unit/execution/merge-worktree-id.test.ts (delete); test/unit/worktree/dependencies.test.ts (delete); test/unit/prd/prd-failure-category.test.ts (rewrite category-producing cases to stage-only calls, remove type-export test, keep legacy-load and unrelated retained cases); test/unit/prd/prd-postrun-reset.test.ts (four calls drop the undefined category argument). Preserve WorktreeInfo and all live worktree manager/identity/orphan exports.\n\nVerification — every story runs in order and leaves a tree that compiles and passes the suite. Run these four steps in packages/nax:\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep: for each removed key, `rg -n -w '<leaf>' src bin scripts test`; for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`. This story's sweep names: `MergeEngine`, `MergeResult`, `MergeFailureKind`, `StoryDependencies`, `prepareWorktreeDependencies`, `WorktreeDependencyContext`, `PrepareWorktreeDependenciesOptions`, `WorktreeDependencyPreparationError`, `FailureCategory`, `makeMergeEngine`. Also read the hits of `rg -n '\"dependency-prep\"|\"worktree-dependencies\"' src test`. Expected remaining hits: failureCategory in prd/types.ts, prd-failure-category.test.ts's legacy-load test, and context/engine/ (a different vocabulary, Out of Scope); dependency-prep as a recorded string in prd-failure-category.test.ts fixtures and AC4 (data an older run wrote, not the removed type). The manifest field forwarding in `operations/build-hop-callback-hop.ts:165` and the legacy-reset clear `story.failureCategory = undefined` in `prd/index.ts:434` are not new isolation writers and must not be broadened into this deletion. Expected result for removed symbols: no remaining hits, else stop. A sweep scoped to files is read only in those files. A hit of the same word naming a different concept (a profile name such as cc-acceptance, the acceptance stage name, finish.timeouts.acceptanceMs, a test-strategy value) is left alone. A hit in code naming a removed API is a missed reference; a hit in a comment is a stale comment and is reworded, in any file, with no Modifies entry needed; a hit naming a different concept is listed, not changed. Locate sites by symbol, not baseline line numbers.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's noUnusedImports reports them. A test that only exercises removed behaviour is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. AC4 and AC5 already pass before removal and remain retention pins.",
+      "acceptanceCriteria": [
+        "[unit] markStoryFailed(prd, \"US-001\", \"review\") sets that story's status to failed.",
+        "[unit] markStoryFailed(prd, \"US-001\", \"review\") sets that story's failureStage to review.",
+        "[unit] markStoryFailed(prd, \"US-001\", \"review\") leaves failureCategory undefined on a story with no recorded category.",
+        "[unit] loadPRD on a prd.json whose story carries \"failureCategory\": \"dependency-prep\" resolves with that story's failureCategory equal to \"dependency-prep\".",
+        "[unit] markStoryFailed(prd, \"US-999\", \"review\") leaves the PRD unchanged when no story has id \"US-999\", preserving the existing missing-story no-op behavior."
+      ],
+      "tags": [
+        "refactor",
+        "worktree",
+        "prd",
+        "security",
+        "pipeline-removal"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module API/type deletion requires positional-call migration and legacy metadata compatibility; removing trust-gated unsandboxed provisioning warrants the security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/worktree/index.ts",
+        "packages/nax/src/worktree/types.ts",
+        "packages/nax/src/prd/index.ts",
+        "packages/nax/src/prd/types.ts",
+        "packages/nax/src/worktree/dependencies.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/worktree/merge.ts",
+          "reason": "deleted: `MergeEngine`, `MergeResult`, `MergeFailureKind` and `StoryDependencies` have no importer after US-004"
+        },
+        {
+          "path": "packages/nax/src/worktree/dependencies.ts",
+          "reason": "deleted: `prepareWorktreeDependencies` has no caller after US-004"
+        },
+        {
+          "path": "packages/nax/src/worktree/types.ts",
+          "reason": "`WorktreeDependencyContext`, `PrepareWorktreeDependenciesOptions` and `WorktreeDependencyPreparationError` go"
+        },
+        {
+          "path": "packages/nax/src/worktree/index.ts",
+          "reason": "the exports of the removed symbols go"
+        },
+        {
+          "path": "packages/nax/src/execution/types.ts",
+          "reason": "deleted: it holds only `FailureCategory`"
+        },
+        {
+          "path": "packages/nax/src/execution/index.ts",
+          "reason": "the `FailureCategory` re-export goes"
+        },
+        {
+          "path": "packages/nax/src/prd/index.ts",
+          "reason": "the `FailureCategory` import and re-export go; `markStoryFailed` loses its `failureCategory` parameter"
+        },
+        {
+          "path": "packages/nax/src/prd/types.ts",
+          "reason": "`UserStory.failureCategory` becomes `string` with the legacy doc comment"
+        },
+        {
+          "path": "packages/nax/src/execution/escalation/tier-escalation.ts",
+          "reason": "`markStoryFailed(failedPrd, story.id)`"
+        },
+        {
+          "path": "packages/nax/src/execution/escalation/tier-outcome.ts",
+          "reason": "both `markStoryFailed` calls drop the `undefined, undefined` arguments"
+        },
+        {
+          "path": "packages/nax/src/execution/pipeline-result-handler.ts",
+          "reason": "`markStoryFailed` calls drop the category argument"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "lowered by step 3 for the deleted modules"
+        },
+        {
+          "path": "packages/nax/test/helpers/merge-engine.ts",
+          "reason": "deleted: it only builds `MergeEngine` doubles"
+        },
+        {
+          "path": "packages/nax/test/helpers/index.ts",
+          "reason": "the merge-engine helper export goes"
+        },
+        {
+          "path": "packages/nax/test/integration/worktree/worktree-merge.test.ts",
+          "reason": "deleted: it only tests `MergeEngine`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/merge.test.ts",
+          "reason": "deleted: it only tests `MergeEngine`"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/merge-worktree-id.test.ts",
+          "reason": "deleted: it only tests `MergeEngine`'s worktree ids"
+        },
+        {
+          "path": "packages/nax/test/unit/worktree/dependencies.test.ts",
+          "reason": "deleted: it only tests `prepareWorktreeDependencies`"
+        },
+        {
+          "path": "packages/nax/test/unit/prd/prd-failure-category.test.ts",
+          "reason": "rewritten to stage-only `markStoryFailed` calls; the legacy-category load test stays, plus US-005 AC1 to AC5"
+        },
+        {
+          "path": "packages/nax/test/unit/prd/prd-postrun-reset.test.ts",
+          "reason": "four `markStoryFailed` calls drop the `undefined` category argument"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c0797e279547ab5871148a6218c8ca34c64a4617"
+    },
+    {
+      "id": "US-006",
+      "title": "Remove isolation config keys and replace inherit shim with section warnings",
+      "description": "**Goal** — Delete storyIsolation and worktreeDependencies config surfaces and warn-and-strip their historical values through the existing loader seam.\n\n**Motivation** — Read only by `prepareWorktreeDependencies` (`worktree/dependencies.ts`) and `_applyRemovedWorktreeInheritShim` (`config/compat-shims.ts:197-226`).\n\n**Approach** — Part 6: remove the worktree-isolation config keys (US-006)\n\n| Site | After |\n|:---|:---|\n| `config/schemas-execution.ts` | `WorktreeDependenciesConfigSchema`, `worktreeDependencies` and `storyIsolation` go |\n| `config/schemas.ts` | their defaults go |\n| `config/runtime-types-execution.ts`, `config/runtime-types.ts` | `WorktreeDependenciesConfig`, its re-export and the two `ExecutionConfig` fields go |\n| `config/merge.ts` | the `worktreeDependencies` merge block (`:122-128`) and its doc line go |\n| `config/compat-shims.ts` | `_applyRemovedWorktreeInheritShim` and its call go |\n| `cli/config-descriptions.ts` | the `execution.storyIsolation` and `execution.worktreeDependencies*` entries go |\n| `config/removed-config-keys.ts` | gains `\"execution.storyIsolation\"` and `\"execution.worktreeDependencies\"`, both mapped to a new `STORY_ISOLATION_HINT` constant, `\"stories always run in the project checkout since worktree isolation was removed with pipeline mode\"` |\n\nThe doc comments that describe `storyIsolation: \"worktree\"` in `context/engine/handlers/query-neighbor.ts`, `context/engine/providers/code-neighbor.ts`, `context/engine/providers/git-history.ts`, `context/engine/providers/static-rules.ts`, `context/engine/providers/test-coverage.ts`, `context/engine/scope-path-match/index.ts`, `context/engine/types.ts`, `pipeline/stages/context.ts`, `utils/path-filters.ts`, `agents/types.ts`, `agents/coding-tool-support-resolve.ts`, `runtime/packages.ts`, `execution/lifecycle/gitignore-reconcile.ts` and `execution/pipeline-result-handler.ts` are reworded in the story whose sweep finds them. Their code is unchanged.\n\nTiming constraint. `loadConfig` starts from `structuredClone(DEFAULT_CONFIG)` (`config/loader.ts`), and `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. If a key is added to `REMOVED_CONFIG_KEYS` while the schema still defaults it, every load warns. So US-003 and US-006 add each strip entry in the same change that removes that key's schema field and default.\n\nA config sets `execution.storyIsolation: \"worktree\"`: config loads; the key is dropped; one warning naming `execution.storyIsolation`. A config sets `execution.worktreeDependencies` (any `mode`, including the removed `\"inherit\"`): config loads; the section is dropped; one warning naming `execution.worktreeDependencies` and no inherit-shim warning. The default config (no project file) loads with no `has been removed` warning. `nax config` and `nax config --explain` no longer list the removed keys.\n\n**Scope** — In: Part 6 schemas/defaults/types/merge/descriptions/shim deletion, CLI config/config --explain output cleanup, module-private hint plus strip entries, validation fixture repair and loader regression pins. Out: US-004/US-005 execution and module deletions are already complete; do not restore them or introduce provisioning replacements. `WorktreeManager`, `worktree-id.ts`, `nax-orphan-ref.ts`, `gitignore-reconcile.ts` and the bakeoff worktrees: still used outside the isolation path. `execution.mode`: `\"workflow\"` stays accepted (B1 ruling). Other dead config keys and docs are subsequent waves; the repository's own .nax config is read-only during implementation.\n\n**Interface** — `REMOVED_CONFIG_KEYS` gains `\"execution.storyIsolation\"` and `\"execution.worktreeDependencies\"`, mapped to module-private `STORY_ISOLATION_HINT = \"stories always run in the project checkout since worktree isolation was removed with pipeline mode\"`. The exact storyIsolation warning is `Config key \"execution.storyIsolation\" has been removed — stories always run in the project checkout since worktree isolation was removed with pipeline mode. Remove it from your config.` The worktreeDependencies warning uses the same template and hint with its section path. `loadConfig` takes no warn parameter: warnings must reach a logger sink registered with addSink. The shared strip already runs at all three loader strip sites before NaxConfigSchema.safeParse; no new traversal, rejection guard or exported symbol is needed.\n\nModifies (all paths relative to packages/nax): src/config/schemas-execution.ts; src/config/schemas.ts; src/config/runtime-types-execution.ts; src/config/runtime-types.ts; src/config/merge.ts; src/config/compat-shims.ts; src/cli/config-descriptions.ts; src/config/removed-config-keys.ts; scripts/baselines/complexity-baseline.json; test/unit/config/removed-config-keys.test.ts (expected key set plus loader ACs); test/unit/config/loader-legacy-shim.test.ts (delete the three-test _applyRemovedWorktreeInheritShim describe and the two loader inherit-mode cases reading config.execution.worktreeDependencies.mode, retain other shim tests); test/unit/config/story-isolation-schema.test.ts (delete); test/unit/config/worktree-dependencies-schema.test.ts (delete); test/unit/cli/features-resolve-profile.test.ts; test/integration/cli/cli-features-resolve-profile.test.ts; test/unit/execution/iteration-runner.test.ts; test/unit/execution/status-writer-live-phase.test.ts; test/integration/worktree/manager.test.ts; test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts; test/unit/execution/pipeline-result-handler-bug12.test.ts. In features-resolve-profile unit fixtures, the invalid project config uses `execution: { costLimit: \"bogus\" }`, every repairing fix profile uses `execution: { costLimit: 30 }`, and the second invalid other profile uses `execution: { costLimit: \"also-bogus\" }`, keeping each case's assertion. The CLI integration invalid project uses `execution: { costLimit: \"bogus\" }` and repairing fix profile uses `execution: { costLimit: 30 }`; its header comment follows and assertions stay. Remove fixture storyIsolation properties from iteration-runner and status-writer-live-phase; remove worktree values from manager, both cleanup fixtures and bug12, retaining WorktreeManager/cleanup/bug assertions.\n\nVerification — every story runs in order and leaves a tree that compiles and passes the suite. Run these four steps in packages/nax:\n1. `bun run typecheck`. A removed key, field, parameter or export that is still referenced fails here, including in test fixtures that build a `NaxConfig` literal.\n2. A string sweep: for each removed key, `rg -n -w '<leaf>' src bin scripts test`; for each removed function, constant, type and file, `rg -n -w '<name>' src bin scripts test`. This story's sweep names: `storyIsolation`, `worktreeDependencies`, `WorktreeDependenciesConfigSchema`, `WorktreeDependenciesConfig`, `_applyRemovedWorktreeInheritShim`. Expected remaining hits: the two strip entries in config/removed-config-keys.ts and their tests; removed-config-keys.test.ts cases that set the keys on purpose to assert the warning. Expected result: only the listed remaining hits, else stop. A sweep scoped to files is read only in those files. A hit of the same word naming a different concept (a profile name such as cc-acceptance, the acceptance stage name, finish.timeouts.acceptanceMs, a test-strategy value) is left alone. A hit in code is a missed reference; a hit in a comment is a stale comment and is reworded, in any file, with no Modifies entry needed; a hit naming a different concept is listed, not changed. Locate sites by symbol, not baseline line numbers.\n3. `bun run check:complexity:update`, and `bun run check:file-sizes -- --update-baseline` when that check reports a lowerable entry. After `check:all` is green, `bun run check:test-escape-hatches:update` lowers the escape-hatch totals the deleted tests carried.\n4. `bun run check:all` and `bun run test`.\nA trimmed source file also drops the imports only its removed code used; biome's noUnusedImports reports them. A test that only exercises removed behaviour is deleted. A test that mixes removed and kept behaviour is trimmed, so the kept assertions stay. A fixture that sets a removed key drops that key. Strip ACs enter at loadConfig and assert warning text plus property absence: before this story the schema keeps these keys and no warning names the removed section. The clean-default no-warning case is a retention pin.",
+      "acceptanceCriteria": [
+        "[unit] loadConfig resolves when a project's config sets execution.storyIsolation: \"worktree\".",
+        "[unit] When loadConfig reads execution.storyIsolation: \"worktree\", a logger sink registered with addSink receives exactly one warning equal to `Config key \"execution.storyIsolation\" has been removed — stories always run in the project checkout since worktree isolation was removed with pipeline mode. Remove it from your config.`.",
+        "[unit] loadConfig returns execution with no storyIsolation property when the project's config sets execution.storyIsolation: \"worktree\".",
+        "[unit] loadConfig resolves when a project's config sets execution.worktreeDependencies: { mode: \"inherit\" }.",
+        "[unit] When loadConfig reads execution.worktreeDependencies: { mode: \"inherit\" }, a logger sink registered with addSink receives exactly one warning naming execution.worktreeDependencies.",
+        "[unit] When loadConfig reads execution.worktreeDependencies: { mode: \"inherit\" }, the logger sink receives no warning containing inherit.",
+        "[unit] loadConfig returns execution with no worktreeDependencies property when the project's config sets execution.worktreeDependencies: { mode: \"inherit\" }.",
+        "[unit] When the project's config sets execution.worktreeDependencies with any mode, loadConfig returns execution without a worktreeDependencies property.",
+        "[unit] When the project's config sets execution.worktreeDependencies with any mode, a logger sink registered with addSink receives exactly one warning equal to `Config key \"execution.worktreeDependencies\" has been removed — stories always run in the project checkout since worktree isolation was removed with pipeline mode. Remove it from your config.`.",
+        "[unit] loadConfig with no project config file emits no warning containing has been removed."
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "worktree",
+        "compatibility",
+        "pipeline-removal"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinated removal of schema/default/type/merge/CLI/shim surfaces with exact migration warnings and profile-fixture repairs; must avoid default and inherit warning duplication.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/removed-config-keys.ts",
+        "packages/nax/src/config/schemas-execution.ts",
+        "packages/nax/src/config/compat-shims.ts",
+        "packages/nax/test/unit/config/removed-config-keys.test.ts",
+        "packages/nax/src/config/merge.ts"
+      ],
+      "suggestedCriteria": [
+        "[cli] When nax config runs with no project config, its default view lists neither execution.storyIsolation nor execution.worktreeDependencies.",
+        "[cli] When nax config --explain runs with no project config, its output lists neither execution.storyIsolation nor execution.worktreeDependencies nor their leaves."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/config/schemas-execution.ts",
+          "reason": "`WorktreeDependenciesConfigSchema`, `worktreeDependencies` and `storyIsolation` go"
+        },
+        {
+          "path": "packages/nax/src/config/schemas.ts",
+          "reason": "the two defaults go"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types-execution.ts",
+          "reason": "`WorktreeDependenciesConfig` goes"
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "the re-export and the two `ExecutionConfig` fields go"
+        },
+        {
+          "path": "packages/nax/src/config/merge.ts",
+          "reason": "the `worktreeDependencies` merge block and its doc line go"
+        },
+        {
+          "path": "packages/nax/src/config/compat-shims.ts",
+          "reason": "`_applyRemovedWorktreeInheritShim` and its call go"
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "the `execution.storyIsolation` and `execution.worktreeDependencies*` entries go"
+        },
+        {
+          "path": "packages/nax/src/config/removed-config-keys.ts",
+          "reason": "gains `STORY_ISOLATION_HINT` and the two entries"
+        },
+        {
+          "path": "packages/nax/scripts/baselines/complexity-baseline.json",
+          "reason": "lowered by step 3 for the trimmed merge and compat-shim functions"
+        },
+        {
+          "path": "packages/nax/test/unit/config/removed-config-keys.test.ts",
+          "reason": "the expected key set adds the two keys, plus US-006 AC1 to AC10"
+        },
+        {
+          "path": "packages/nax/test/unit/config/loader-legacy-shim.test.ts",
+          "reason": "the `_applyRemovedWorktreeInheritShim` describe (three tests) and the two loader-level inherit-mode tests that read `config.execution.worktreeDependencies.mode` are deleted; the file's other shim tests stay"
+        },
+        {
+          "path": "packages/nax/test/unit/config/story-isolation-schema.test.ts",
+          "reason": "deleted: it only tests the removed schema field"
+        },
+        {
+          "path": "packages/nax/test/unit/config/worktree-dependencies-schema.test.ts",
+          "reason": "deleted: it only tests the removed schema section"
+        },
+        {
+          "path": "packages/nax/test/unit/cli/features-resolve-profile.test.ts",
+          "reason": "`storyIsolation` is stripped now, so the fixtures switch to a validated key: the invalid project config uses `execution: { costLimit: \"bogus\" }`, every repairing `fix` profile uses `execution: { costLimit: 30 }`, and the second invalid `other` profile uses `execution: { costLimit: \"also-bogus\" }`, keeping each case's assertion"
+        },
+        {
+          "path": "packages/nax/test/integration/cli/cli-features-resolve-profile.test.ts",
+          "reason": "`storyIsolation` is stripped now, so the invalid project config uses `execution: { costLimit: \"bogus\" }` and the repairing `fix` profile uses `execution: { costLimit: 30 }` (its header comment follows), keeping the assertions"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/iteration-runner.test.ts",
+          "reason": "fixture `storyIsolation` properties go"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/status-writer-live-phase.test.ts",
+          "reason": "the fixture `storyIsolation` property goes"
+        },
+        {
+          "path": "packages/nax/test/integration/worktree/manager.test.ts",
+          "reason": "the fixture `storyIsolation: \"worktree\"` property goes; the `WorktreeManager` assertions stay"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pipeline-result-handler-worktree-cleanup.test.ts",
+          "reason": "the two fixture `storyIsolation: \"worktree\"` properties go; the cleanup assertions stay"
+        },
+        {
+          "path": "packages/nax/test/unit/execution/pipeline-result-handler-bug12.test.ts",
+          "reason": "the fixture `storyIsolation: \"worktree\"` property goes; the assertions stay"
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c78490cc505685026fe81efba6da5b70ef8ee0d0"
+    }
+  ],
+  "analysis": "This is C1 wave B3c-2, a removal-only refactor confined to packages/nax, following B3c-1's shared removed-config strip. Exactly six sequential stories implement the supplied decomposition; none creates a file. All contextFiles paths are repository-rooted, while implementation and validation commands run in packages/nax. Codebase-memory MCP was unavailable, so findings were established through direct Read/Grep navigation. No implementation or validation commands were executed while drafting this PRD. Architecture guidance was read at docs/architecture/ARCHITECTURE.md:9-45 and :125-171: preserve Bun-native conventions, injectable external dependencies, public package boundaries, permission resolution and shared test helpers. Other workspace packages need no changes.\n\nConfirmed config architecture and migration seam: packages/nax/src/config/defaults.ts:11 derives DEFAULT_CONFIG from NaxConfigSchema.parse({}); packages/nax/src/config/loader.ts:290 clones those defaults before applying file/profile/CLI layers. finalizeAndValidateRootConfig strips at :256 before safeParse at :264; the package paths also strip at :533 and :569. Workflow normalization is applied at loader.ts:276, :340, :591 and runtime/packages.ts:227. packages/nax/src/config/removed-config-keys.ts:24 provides PIPELINE_ONLY_KEY_HINT; :54-71 contains REMOVED_CONFIG_KEYS; :74-76 produces the exact migration warning; :123-150 immutably strips dotted paths and tolerates missing or non-object intermediates. packages/nax/src/config/removed-stage-names.ts:173-180 composes no-op strip, removed-key strip and removed-stage strip in that order. Therefore removing acceptance.generateTests from the earlier no-op map in US-003 is essential to emit just the acceptance section warning. Likewise the inherit shim currently runs before the shared strip and must leave in US-006 or it would emit a second warning. Never add a removed-key entry while the corresponding schema/default still exists: otherwise cloning defaults makes ordinary loads warn. Add acceptance's entry only in US-003 and both execution entries only in US-006, atomically with schema/default removal. Reuse the shared strip rather than adding rejects or a second traversal. The compatibility policy is warn-and-strip, not schema rejection, including invalid historical values inside removed sections.\n\nAcceptance impact: packages/nax/src/config/workflow-mode.ts:8-23 currently reads config.acceptance.enabled, forces it false and forces worktree isolation to shared. packages/nax/src/execution/lifecycle/run-initialization.ts:128-140 ORs acceptance into runWillUseAgent, then :215-220 chooses agent preflight and logs the old acceptance-specific skip text. US-001 reduces this private predicate to story status only, preserving canonical default-agent lookup and dry-run behavior. packages/nax/src/cli/advisor-import.ts:21-38 defines the acceptanceEnabled dependency; :75-95 threads acceptanceOn through to buildMenu, and :137-139 loads the value again. Remove that dependency and parameter, always pass acceptanceEnabledForStory: false, but do not change the advisor menu interface. The current dependency returns true if loadConfig fails; the specified target is still unconditional false. packages/nax/src/cli/init-detect.ts:261-280 builds the acceptance UI/CLI defaults and :287-305 attaches them even for an undetected Ink stack; delete that builder and preserve only version plus detected quality commands. packages/nax/src/config/merge.ts:59, :78 and :189-197 document, detect and merge acceptance; all leave in US-001. packages/nax/src/precheck/checks-model-resolution-walk.ts:252 and :276-279 checks acceptance.model, which no runtime uses. Remove this model pin and remove acceptance from the PrecheckConfig pick. NaxConfig.acceptance at config/runtime-types.ts:503 becomes optional in US-001 so fixture cleanup can precede type deletion. Schema objects are at config/schemas-infra.ts:39-72, schema import/re-export/default at config/schemas.ts:39, :74, :321; remove their compatibility barrels in schema.ts, types.ts and index.ts only in US-003. CLI descriptions at cli/config-descriptions.ts:265-277 expose the section and leaves; deleting those and the schema/default removes the advertised surface from config and config --explain. No acceptance implementation directory should be recreated.\n\nSecurity messaging: packages/nax/src/agents/config-read-gate.ts:14-17 and agents/nax-owned-writes.ts:355-361 are the two refusal constants; the surrounding config-read-gate policy at :44-65 distinguishes permitted read tools from forbidden writes. US-002 changes only the explanation, not access-control behavior, path canonicalization, case folding, allowed tools, grant handling or config-write protection. Preserve byte-exact quality.commands-only text in both constants and their existing permission tests. This touches access-control code and uses three-session-tdd. The remaining fixture edits in US-002 remove acceptance properties rather than weakening assertions or casting away the optional-field transition.\n\nIsolation impact: packages/nax/src/execution/iteration-runner.ts:87-110 creates/reuses per-story worktrees, :150-176 invokes dependency preparation and writes the only dependency-prep category, and :182-184 selects the dependency/isolation cwd. Preserve all package configuration loading, root-only pins, profile chains, git-ref persistence, packageView resolution, metrics, dry-run behavior and retained failure cleanup. effectiveWorkdir becomes ctx.workdir; pipeline workdir becomes storyAbsWorkdir(ctx.workdir, story). The existing leaf helper at utils/path-frame.ts:145-148 already resolves package and root stories; do not reimplement it. packages/nax/src/execution/pipeline-result-handler.ts:45 constructs the only MergeEngine; :189-214 is failStoryAfterMerge, and :313-360 contains both its callers, including conflict and non-conflict failure arms. Remove the whole guarded merge block, not just one arm. Preserve worktree directory/orphan ownership cleanup that has other live callers, output/diff capture, success accounting and PRD progress. packages/nax/src/execution/lifecycle/run-initialization.ts:202-205 logs isolation, :237-240 passes isolation into reset, and :246-276 deletes old story branches with _reconcileDeps.spawn. Remove those branches and only imports/deps used by them. packages/nax/src/prd/index.ts:345-398 defines reset options and clears storyGitRef/repoScopedFixes on resetRef OR worktree; target clears only on resetRef and retains resetMode semantics. This API returns UserStory[], so ACs refer to entries in the returned reset list, not a replacement PRD. packages/nax/src/execution/lifecycle/paused-story-prompts.ts:31-35 has the fourth parameter and :75-81 clears refs on resume; remove that parameter and its caller argument in run-setup-init.ts, leaving resume status and summary behavior intact. applyWorkflowMode's final one-argument interface forces only advisor.enabled, preserving input immutability and same-reference returns when absent/already enabled.\n\nModule and failure metadata deletion: packages/nax/src/worktree/merge.ts:21-38 owns MergeFailureKind, MergeResult, StoryDependencies and MergeEngine; worktree/dependencies.ts:26-36 is the sole implementation of prepareWorktreeDependencies. worktree/types.ts:8-33 owns its options/context/error types; worktree/index.ts:1-13 exports both deleted and retained APIs. Delete only the dead modules/exports and keep WorktreeManager, WorktreeInfo, worktree-id helpers, naxOrphanRefName, gitignore reconciliation and bakeoff worktrees. worktree/dependencies.ts:64-70 contains an unsandboxed setup-command trust check; deletion must not move or recreate provisioning without that boundary. US-005 therefore also uses strict three-session-tdd. execution/types.ts:10-12 contains only FailureCategory = dependency-prep. execution/index.ts:79 and prd/index.ts:7, :11 re-export/import it; prd/types.ts:8, :255 types legacy story metadata with it. prd/index.ts:311-338 currently records both optional category and stage: remove the category parameter and assignment, preserve status/passes/attempt increments, status-writer reset behavior and stage semantics. Update pipeline-result-handler's positional stage/statusWriter calls and escalation calls together or stages silently shift. The remaining resetStoryForRetry clear at prd/index.ts:434 operates on legacy metadata and is not a new-category producer. UserStory.failureCategory becomes optional string; loadPRD must preserve arbitrary historical recorded strings. A text search additionally finds the distinct AdapterFailure manifest vocabulary in context/engine/rebuild.ts:165, manifest-store.ts:127, manifest-types.ts:269 and its forwarding in operations/build-hop-callback-hop.ts:165. These are the same out-of-scope context-manifest concept, not missed isolation dependencies; leave them intact.\n\nFinal config deletion: config/schemas-execution.ts:108-123 declares WorktreeDependenciesConfigSchema with off/provision and setup-command validation; :249 and :272 default dependency preparation and story isolation. config/schemas.ts:182-187 duplicates execution defaults. runtime-types-execution.ts:6 owns WorktreeDependenciesConfig; runtime-types.ts:19, :71, :128, :141 imports/re-exports/types these fields. merge.ts:122-128 deep-merges worktreeDependencies. compat-shims.ts:197-226 exports _applyRemovedWorktreeInheritShim, mapping inherit to off with its own warning; remove this function AND its invocation. cli/config-descriptions.ts:136-145 advertises both keys. US-006 adds a module-private STORY_ISOLATION_HINT with the exact specified text and section entries in the shared map. Features-resolve-profile fixtures deliberately use invalid storyIsolation today; once stripped that ceases to be invalid, so move their bad/repaired values to execution.costLimit exactly as specified to retain validation regression coverage.\n\nTest architecture and risk controls: Existing logger-backed loader harnesses are in test/unit/config/removed-config-keys.test.ts:39-82 and removed-stage-names.test.ts:27-49; loadConfig has no warn argument. Use initLogger/addSink/removeSink/resetLogger and temp config files rather than testing only the raw strip helper or intercepting console. Clear root config caches and isolate global/project/profile state so default-no-warning pins really exercise clean defaults. Existing tests cover init stack detection, advisor import, preflight, package merge, model-resolution walk, workflow normalization, iteration paths, result-handler progress/cleanup, paused-story prompts, PRD reset, failure metadata and CLI config. Delete tests exclusively for removed behavior; trim mixed suites and preserve retained assertions. In particular keep stack detection, shared execution, root/package cwd, success-path progress, AC-13 cleanup, resetMode, legacy PRD load and WorktreeManager integration assertions. test/unit/prd/prd-failure-category.test.ts:60-157 contains category-producing cases and a type-export test to replace/delete, while :196 onward already pins historical-load compatibility. Full fixture inventories and per-story deletions are in each description. No files are created; no new exported seam crosses stories. New warning cases and init/skip-log changes are fail-first; several shared-mode and legacy-load cases are explicit retention pins already passing before deletion.\n\nMigration/risk summary: Old user configs keep loading with one exact migration warning per removed key/section, keys absent from resolved objects, and no per-generateTests or inherit mapping warning. Clean defaults must never acquire removal warnings. Init must not generate immediately deprecated config. Read callers first, optionalize acceptance, clean fixtures/refusal text, then remove acceptance schema; next remove isolation paths, then their modules/category type, then isolation config. This order keeps every intermediate story compiling. String sweeps must inspect comments as well as executable references, distinguish profile names/stage names/finish acceptance/AdapterFailure concepts, and stop on unexplained code hits. Reword stale isolation comments where encountered without changing unrelated behavior. Lower complexity/file-size/test-escape baselines rather than increasing allowances. Run the four verification steps embedded in every story, in packages/nax, respecting the host's pipeline execution and sandbox test-coverage rules. Do not edit the repository's .nax config/rules or documentation/context files as implementation; this planning run writes only the explicitly requested PRD artifact. Maintainers remove any dead keys from this repository's own config after merge. No release/version bumps, broad menu cleanup, subsequent-wave key deletions or changes to execution.mode workflow compatibility belong here.\n\nRefine-pass audit against spec.md: all 20 numbered spec criteria are preserved in their original stories, split only into observable assertions. Numbering below is 1-based within each story's acceptanceCriteria. US-001: spec AC1 (all passed means no lookup and exact info skip message) maps to PRD AC1-2; spec AC2 (pending story looks up default agent) to AC3; spec AC3 (Bun/TypeScript/bin init keys exactly version/quality) to AC4; spec AC4 (Ink with no detected runtime/language returns version-only) to AC5, using the existing unknown sentinel rather than undefined fields. US-002: spec AC1 (exact NAX_CONFIG_WRITE_REFUSAL) maps to AC1; spec AC2 (Write refusal's exact suffix) to AC2. US-003: spec AC1 (legacy enabled/model section resolves, exact addSink warning once, absent section) maps to AC1-3; spec AC2 (generateTests resolves with one section-not-leaf warning) to AC4-5; spec AC3 (clean default has no removal warning) to AC8; spec AC4 (CLI default lacks top-level acceptance) to AC9. US-004: spec AC1 (new advisor-enabled config without mutating input) maps to AC1-2; spec AC2 (enabled advisor keeps identity) to AC3; spec AC3 (package/root pipeline cwd) to AC4-5; spec AC4 (failed-to-pending reset keeps abc123 when resetRef false and clears both ref/repairs when true) to AC6-9; spec AC5 (three-argument resume sets pending, keeps abc123, reports resumed id) to AC10-12. US-005: spec AC1 (stage-only failure call sets failed/review and no category) maps to AC1-3; spec AC2 (legacy dependency-prep string survives load) to AC4. US-006: spec AC1 (worktree isolation config resolves, exact single warning, absent key) maps to AC1-3; spec AC2 (inherit section resolves, single section warning, no inherit warning, absent section) to AC4-7; spec AC3 (clean default no removal warning) to AC10. Conditions and qualifying retention details were kept with each split assertion; there were no deprecated file-check tags requiring behavioral translation.\n\nAll six Failure Handling rows are also represented: acceptance/any leaf in US-003 AC6-7; worktree isolation in US-006 AC1-3; any dependency mode, including inherit, in US-006 AC4-9; clean defaults in US-003 AC8 and US-006 AC10; historical category loading in US-005 AC4; resetRefOnRerun false in US-004 AC13. General strip criteria now assert resolved-object properties and sink output instead of requiring observation of an internal before-safeParse event; ordering remains an implementation constraint in the descriptions. Every story has a negative-path pin: US-001 no-work/no-detected-stack paths; US-002 refused config Write; US-003 obsolete config inputs; US-004 failed-story reruns and absent-advisor identity (AC14, promoted from suggestion); US-005 unknown-story no-op (AC5, added as requested by the refine pass and already supported by prd/index.ts:318-338 and prd-failure-category.test.ts:119-124); US-006 obsolete/inherit config inputs. These are behavioral assertions, not quality gates. Existing backward compatibility is pinned through default-agent lookup, write refusal, clean defaults, shared cwd/durable refs, unknown-id no-op and legacy PRD loading. All spec-recommended context files are included within the five-file limit, no created file is listed as context, and no story creates a file. All ten feature-level exclusions remain verbatim, with near-boundary echoes in story scopes; there are no story-local exclusions hoisted globally. The binding US-001 through US-006 dependency chain and workdirs remain unchanged. US-002 is reduced to medium complexity because it changes two message constants plus mechanical fixture fields, retaining strict three-session-tdd for the access-control code. The remaining cross-module deletions retain complex routing; strict security isolation remains on US-005 because the deleted provisioning implementation contains assertTrustedSync. No behavioral AC contradicts its story description, and no additional helper, source module or call site is invented.",
+  "outOfScope": [
+    "The advisor's `acceptanceEnabledForStory` parameter and its branch in `advisor/menus.ts`: constant `false` after US-001, but removing it is an advisor-menu change; it is appended to #2823.",
+    "`finish.timeouts.acceptanceMs`, the `AcceptanceFact` finish type and the `acceptance` context stage name in `stage-config.ts`: different concepts with the same word.",
+    "`acceptance` as a permission stage in `test/unit/config/inert-bash-stages.test.ts`: it tests the B3b removed-stage strip, a different vocabulary.",
+    "`WorktreeManager`, `worktree-id.ts`, `nax-orphan-ref.ts`, `gitignore-reconcile.ts` and the bakeoff worktrees: still used outside the isolation path.",
+    "`failureCategory` in `context/engine/` (the manifest rebuild field): a separate `AdapterFailure` vocabulary.",
+    "The dead `tdd`, `autoMode` and `quality` keys, `optimizer`, `prompts.overrides`, `plan.outputPath`, `routing.llm.timeoutMs`, `routing.llm.batchMode`, `routing.agents.strategy` and the `hooks` section: wave B3c-3.",
+    "The keys kept by user ruling and tracked in #2832: `quality.testing.*`, `prompts.behavioralGuardrails`, `review.nonBlockingFix.*`, and the review keys listed there.",
+    "`execution.mode`: `\"workflow\"` stays accepted (B1 ruling).",
+    "`docs/`, release notes and the package context files: wave B4.",
+    "Editing the repository's own `.nax/config.json`, `.nax/rules/` or any file under `.nax/`: read-only to the run. If the repo config sets a removed key, a run of this repo warns about it after this feature, and the maintainer removes it after merge."
+  ],
+  "routingProfile": "native-codex-ds"
+}

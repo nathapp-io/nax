@@ -256,7 +256,6 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
         const result = await loadConfig(tempProjectDir);
         expect(result).toEqual({
           ...DEFAULT_CONFIG,
-          acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
           ...(DEFAULT_CONFIG.advisor ? { advisor: { ...DEFAULT_CONFIG.advisor, enabled: true } } : {}),
         });
       } finally {
@@ -287,7 +286,6 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "constitution",
   "review",
   "plan",
-  "acceptance",
   "context",
   "optimizer",
   "plugins",

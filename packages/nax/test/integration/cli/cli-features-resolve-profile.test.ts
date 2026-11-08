@@ -37,7 +37,7 @@ afterEach(() => {
 
 /**
  * A nax repo whose project config fails schema validation on its own and is
- * valid only under `.nax/profiles/fix.json` (`storyIsolation: "shared"`).
+ * valid only under `.nax/profiles/fix.json` (`costLimit: 30`).
  */
 function writeProject(): void {
   const naxDir = join(tempDir, ".nax");
@@ -45,7 +45,7 @@ function writeProject(): void {
   mkdirSync(featureDir, { recursive: true });
   writeFileSync(
     join(naxDir, "config.json"),
-    JSON.stringify({ name: "test-project", execution: { storyIsolation: "bogus" } }),
+    JSON.stringify({ name: "test-project", execution: { costLimit: "bogus" } }),
   );
   writeFileSync(
     join(featureDir, "prd.json"),
@@ -72,7 +72,7 @@ function writeProject(): void {
     }),
   );
   mkdirSync(join(naxDir, "profiles"), { recursive: true });
-  writeFileSync(join(naxDir, "profiles", "fix.json"), JSON.stringify({ execution: { storyIsolation: "shared" } }));
+  writeFileSync(join(naxDir, "profiles", "fix.json"), JSON.stringify({ execution: { costLimit: 30 } }));
 }
 
 async function runResolve(args: string[]): Promise<CliResult> {
