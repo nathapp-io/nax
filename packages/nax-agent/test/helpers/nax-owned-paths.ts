@@ -117,7 +117,7 @@ export function isNaxConfigSegments(segments: readonly string[], foldCase = fals
  *
  * `.nax/config.json`, and `.nax/mono/<package>/config.json` in a monorepo.
  *
- * Why these at all: `quality.commands` and `acceptance.command` are run by key
+ * Why these at all: `quality.commands` are run by key
  * through a shell and never pass the permission gate -- they are trusted
  * because a HUMAN wrote them. That trust rests entirely on a model being
  * unable to write them. An agent holding `Write` under the default
@@ -357,7 +357,7 @@ export const NAX_CONFIG_REFUSAL =
   // The base policy refuses reads too; config-read-gate.ts conditionally opens
   // read-only tools after a clean secret scan. This text describes the base rule.
   "is one of nax's own config files, which every tool is refused regardless of grant -- " +
-  "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the " +
+  "`quality.commands` are run through a shell WITHOUT passing the " +
   "permission gate because a human wrote them, so editing this file is a route to running " +
   "an ungated command on the next run";
 

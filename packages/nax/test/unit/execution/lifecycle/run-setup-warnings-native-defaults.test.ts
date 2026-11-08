@@ -122,7 +122,7 @@ describe("setupRun — native-default guards", () => {
   test("refuses to start when the default native map's provider has no credential", async () => {
     const { workdir, prdPath } = installHarness();
     _nativeCredentialDeps.providersWithoutCredentials = mock(async () => ["anthropic"]);
-    const config = makeNaxConfig({ acceptance: { enabled: false } });
+    const config = makeNaxConfig();
 
     const error = await setupRun(makeOptions(workdir, prdPath, config)).catch((caught: unknown) => caught);
 
@@ -136,7 +136,7 @@ describe("setupRun — native-default guards", () => {
     const { workdir, prdPath } = installHarness();
     const probe = mock(async () => ["anthropic"]);
     _nativeCredentialDeps.providersWithoutCredentials = probe;
-    const config = makeNaxConfig({ acceptance: { enabled: false } });
+    const config = makeNaxConfig();
 
     const error = await setupRun(makeOptions(workdir, prdPath, config, true)).catch((caught: unknown) => caught);
 
@@ -146,7 +146,7 @@ describe("setupRun — native-default guards", () => {
 
   test("emits the unreferenced-model warning at run start", async () => {
     const { workdir, prdPath } = installHarness();
-    const config = makeNaxConfig({ models: { claude: CLAUDE_MAP }, acceptance: { enabled: false } });
+    const config = makeNaxConfig({ models: { claude: CLAUDE_MAP } });
 
     await withWarnSpy(async (warnSpy) => {
       await setupRun(makeOptions(workdir, prdPath, config)).catch(() => {});

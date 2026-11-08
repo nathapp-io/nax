@@ -51,7 +51,6 @@ function makeBaseConfig(): Omit<NaxConfig, "plugins"> {
       advanced: { model: "claude-3-opus-20240229", apiKeyEnvVar: "ANTHROPIC_API_KEY" },
     },
     quality: { commands: {} },
-    acceptance: { enabled: false, maxRetries: 3 },
   });
   return base;
 }

@@ -129,9 +129,7 @@ function installSealHarness(prdPathOverride?: string): SealHarness {
     options: {
       prdPath: prdPathOverride ?? prdPath,
       workdir,
-      // Acceptance enabled would make the run reach for the default agent
-      // binary (`which`), which is unrelated to this story and flaky.
-      config: makeNaxConfig({ acceptance: { enabled: false } }),
+      config: makeNaxConfig(),
       hooks: { hooks: {} },
       feature: "seal-feature",
       dryRun: false,

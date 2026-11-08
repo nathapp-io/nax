@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-08T12:37:47.416Z",
+  "updatedAt": "2026-11-08T12:58:57.119Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },

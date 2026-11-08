@@ -133,7 +133,7 @@ describe("setupRun — main-checkout gitignore reconcile wiring", () => {
     const options: RunSetupOptions = {
       prdPath,
       workdir,
-      config: makeNaxConfig({ acceptance: { enabled: false } }),
+      config: makeNaxConfig(),
       hooks: { hooks: {} },
       feature,
       dryRun: false,

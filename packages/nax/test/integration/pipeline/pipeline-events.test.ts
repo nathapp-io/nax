@@ -69,11 +69,6 @@ const mockConfig: NaxConfig = makeNaxConfig({
     model: "balanced",
     outputPath: "plan.md",
   },
-  acceptance: {
-    enabled: false,
-    maxRetries: 2,
-    testPath: "acceptance.test.ts",
-  },
 });
 
 const mockStory: UserStory = {

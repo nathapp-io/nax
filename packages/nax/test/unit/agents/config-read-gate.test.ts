@@ -3,7 +3,7 @@
  *
  * `isNaxConfigFile` refuses nax's own config files to EVERY tool, reads
  * included, through `resolveWithin`. The concern behind that refusal is a
- * WRITE concern (`quality.commands` / `acceptance.command` run through a shell
+ * WRITE concern (`quality.commands` run through a shell
  * without passing the permission gate), so a clean scan may open the reads
  * while every write refusal stays exactly as it is.
  *
@@ -78,6 +78,17 @@ function configCandidate(dir: string): OwnedBashCandidate {
 function queueCandidate(dir: string): OwnedBashCandidate {
   return { lexical: join(dir, ".queue.txt"), rel: ".queue.txt" };
 }
+
+describe("US-002 NAX_CONFIG_WRITE_REFUSAL", () => {
+  test("US-002 AC1: the write refusal names quality.commands as the shell-execution risk, and no removed acceptance key", async () => {
+    const { NAX_CONFIG_WRITE_REFUSAL } = await gateModule();
+    expect(NAX_CONFIG_WRITE_REFUSAL).toBe(
+      "is nax configuration; only Read, Grep and Glob may open it, and no tool may modify it. " +
+        "`quality.commands` run through a shell without passing the permission gate, " +
+        "so editing this file could run an ungated command on the next run.",
+    );
+  });
+});
 
 describe("US-003 createConfigReadGatePolicy — configRefusal", () => {
   test("US-003 AC1: an open gate admits the root config file", async () => {

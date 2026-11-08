@@ -86,7 +86,6 @@ describe("execution.smartTestRunner config flag", () => {
       analyze: { llmEnhanced: false, model: "balanced", fallbackToKeywords: true, maxCodebaseSummaryTokens: 100 },
       review: { enabled: false, checks: [], commands: {} },
       plan: { model: "balanced", outputPath: "spec.md" },
-      acceptance: { enabled: false, maxRetries: 0, testPath: "acceptance.test.ts" },
       context: {
         testCoverage: {
           enabled: false,
@@ -227,7 +226,6 @@ function buildMinimalConfig() {
     analyze: { llmEnhanced: false, model: "balanced", fallbackToKeywords: true, maxCodebaseSummaryTokens: 100 },
     review: { enabled: false, checks: [] as Array<"typecheck" | "lint" | "test">, commands: {} },
     plan: { model: "balanced", outputPath: "spec.md" },
-    acceptance: { enabled: false, maxRetries: 0, testPath: "acceptance.test.ts" },
     context: {
       testCoverage: {
         enabled: false,

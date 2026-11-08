@@ -254,11 +254,8 @@ describe("setupRun — US-003 AC14/AC15: inert-Bash warning at run start", () =>
 
   test("AC14: setupRun warns with stage permissions for the inert run stage", async () => {
     const { workdir, prdPath } = installHarness();
-    // acceptance.enabled=false keeps initializeRun's agent-install check (a real
-    // PATH lookup) out of the run; it is unrelated to what this test asserts.
     const config = makeNaxConfig({
       execution: { bashApproval: "escalate" },
-      acceptance: { enabled: false },
     });
 
     await withWarnSpy(async (warnSpy) => {
@@ -274,7 +271,6 @@ describe("setupRun — US-003 AC14/AC15: inert-Bash warning at run start", () =>
     const { workdir, prdPath } = installHarness();
     const config = makeNaxConfig({
       execution: { bashApproval: "raw" },
-      acceptance: { enabled: false },
     });
 
     await withWarnSpy(async (warnSpy) => {

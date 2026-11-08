@@ -210,7 +210,7 @@ describe("compileToolPolicy — .git/ is excluded at the resolveWithin seam", ()
 /**
  * nax's own CONFIG files are refused to every path-bearing tool.
  *
- * `quality.commands` and `acceptance.command` are run by key through a shell
+ * `quality.commands` are run by key through a shell
  * and never pass the permission gate (spec R8) -- they are trusted because a
  * human wrote them. That trust rests entirely on a model being unable to write
  * them: an agent that can edit `.nax/config.json` can add a quality command and

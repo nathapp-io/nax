@@ -104,7 +104,7 @@ async function okContent(tool: string, input: Record<string, unknown>): Promise<
 
 const CONFIG_REASON =
   'path ".nax/config.json" is one of nax\'s own config files, which every tool is refused regardless of grant -- ' +
-  "`quality.commands` and `acceptance.command` are run through a shell WITHOUT passing the permission gate " +
+  "`quality.commands` are run through a shell WITHOUT passing the permission gate " +
   "because a human wrote them, so editing this file is a route to running an ungated command on the next run";
 
 describe("nax owned paths through resolveCodingToolSupport (S3-2 byte-identity pin)", () => {

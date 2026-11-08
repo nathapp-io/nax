@@ -81,8 +81,6 @@ function makeConfig(pluginMode?: NaxConfig["review"]["pluginMode"]): NaxConfig {
     // The whole `tdd` block the cast used to carry was fictional — TddConfig has
     // none of `mode`, `testStrategy`, or `testCommand` (it has `strategy`, with
     // different values). Nothing read it, so it is gone rather than translated.
-    // AcceptanceConfig likewise has no `testCommand` (it has `command`).
-    acceptance: { enabled: false, maxRetries: 0 },
     review: { enabled: false, checks: [], commands: {}, ...(pluginMode ? { pluginMode } : {}) },
   });
 }

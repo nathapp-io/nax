@@ -61,7 +61,6 @@ async function createMinimalPRD(workdir: string, feature: string): Promise<strin
 async function createMinimalConfig(): Promise<NaxConfig> {
   return makeNaxConfig({
     execution: { costLimit: 100, iterationDelayMs: 0, maxStoriesPerFeature: 100 },
-    acceptance: { enabled: false },
   });
 }
 

@@ -13,7 +13,7 @@ export const NAX_CONFIG_READ_TOOLS: ReadonlySet<string> = new Set([
 
 export const NAX_CONFIG_WRITE_REFUSAL =
   "is nax configuration; only Read, Grep and Glob may open it, and no tool may modify it. " +
-  "`quality.commands` and `acceptance.command` run through a shell without passing the permission gate, " +
+  "`quality.commands` run through a shell without passing the permission gate, " +
   "so editing this file could run an ungated command on the next run.";
 
 export const NAX_CONFIG_READ_DISABLED_SUFFIX =

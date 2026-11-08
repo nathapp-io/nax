@@ -657,7 +657,7 @@ describe("runner-completion.ts — does not invoke post-run actions", () => {
 
     try {
       await runCompletionPhase({
-        config: makeNaxConfig({ acceptance: { enabled: false } }),
+        config: makeNaxConfig(),
         hooks: { hooks: [] } as import("@/hooks").LoadedHooksConfig,
         feature: "test-feat",
         workdir: "/tmp/test",
