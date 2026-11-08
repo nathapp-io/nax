@@ -340,7 +340,7 @@ export async function handlePipelineFailure(
       break;
 
     case "fail": {
-      markStoryFailed(prd, ctx.story.id, undefined, pipelineResult.stoppedAtStage, ctx.statusWriter);
+      markStoryFailed(prd, ctx.story.id, pipelineResult.stoppedAtStage, ctx.statusWriter);
       await _resultHandlerDeps.savePrdProgress(prd, ctx.prdPath, ctx.story.id, "failed");
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-08T13:40:36.307Z",
+  "updatedAt": "2026-11-08T13:55:03.550Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -112,13 +112,11 @@
     "src/verification/executor.ts": { "appendFlag": 28 },
     "src/verification/smart-runner.ts": { "buildTestCandidates": 25 },
     "src/worktree/manager.ts": { "create": 34 },
-    "src/worktree/merge.ts": { "mergeAll": 21 },
     "test/helpers/fake-agent-manager.ts": { "=>": 30 },
     "test/integration/cli/adapter-boundary.test.ts": { "=>": 37 },
     "test/unit/cli/config-profile.test.ts": { "=>": 29 },
     "test/unit/context/engine/effectiveness-eval.test.ts": { "=>": 24, "=>#2": 24 },
     "test/unit/context/engine/packing.test.ts": { "=>": 41 },
-    "test/unit/execution/merge.test.ts": { "=>": 24 },
     "test/unit/execution/pid-registry.test.ts": { "=>": 22 },
     "test/unit/interaction/plugins/telegram.test.ts": { "=>": 21 },
     "test/unit/runtime/spin-breaker.test.ts": { "=>": 27 }

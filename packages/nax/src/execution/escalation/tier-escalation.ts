@@ -231,7 +231,7 @@ export async function preIterationTierCheck(
   // branch above builds `updatedPrd`. Callers read the returned PRD, so nothing
   // depended on the caller's copy being mutated.
   const failedPrd: PRD = { ...prd, userStories: prd.userStories.map((s) => ({ ...s })) };
-  markStoryFailed(failedPrd, story.id, undefined, undefined);
+  markStoryFailed(failedPrd, story.id);
   await _tierEscalationDeps.savePrdProgress(failedPrd, prdPath, story.id, "failed");
 
   if (featureDir) {

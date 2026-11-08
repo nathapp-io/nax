@@ -4,11 +4,9 @@
 
 import { existsSync, statSync } from "node:fs";
 import { NaxError } from "../errors";
-import type { FailureCategory } from "../execution/types";
 import { propagateOutOfScopeToStories } from "./out-of-scope";
 import type { PRD, UserStory } from "./types";
 
-export type { FailureCategory } from "../execution/types";
 export { findAcNumericReferences } from "./ac-references";
 export type { SpecContextFile } from "./context-files-extract";
 export { extractSpecContextFiles, MAX_SPEC_CONTEXT_FILES } from "./context-files-extract";
@@ -307,11 +305,16 @@ export function markStoryPassed(prd: PRD, storyId: string, _statusWriter?: PostR
   }
 }
 
-/** Mark a story as failed */
+/**
+ * Mark a story as failed.
+ *
+ * `failureStage` names the pipeline stage that failed. There is no failure
+ * category argument any more: the single category that existed described
+ * worktree dependency preparation, and both were removed together.
+ */
 export function markStoryFailed(
   prd: PRD,
   storyId: string,
-  failureCategory?: FailureCategory,
   failureStage?: string,
   statusWriter?: PostRunStatusWriter,
 ): void {
@@ -328,9 +331,6 @@ export function markStoryFailed(
     // dependents unblock against work that never reached the base branch.
     story.passes = false;
     story.attempts += 1;
-    if (failureCategory !== undefined) {
-      story.failureCategory = failureCategory;
-    }
     if (failureStage !== undefined) {
       story.failureStage = failureStage;
     }

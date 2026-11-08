@@ -5,7 +5,6 @@
  */
 
 import type { Complexity, ModelTier, TestStrategy } from "../config";
-import type { FailureCategory } from "../execution/types";
 
 /** A contextFiles entry — may be a plain path string or an object carrying citation metadata */
 export interface ContextFileEntry {
@@ -251,8 +250,16 @@ export interface UserStory {
   priorFailures?: StructuredFailure[];
   /** Custom context strings */
   customContext?: string[];
-  /** Category of the last failure (set when story is marked failed) */
-  failureCategory?: FailureCategory;
+  /**
+   * Category of the last failure, as recorded by a run that predates this
+   * field's retirement.
+   *
+   * No current run writes it — `markStoryFailed` records only a `failureStage`.
+   * A `prd.json` written by an older run may carry it, and it is kept verbatim
+   * rather than dropped or narrowed to a union: the vocabulary it came from is
+   * gone, so any string a historical artifact holds is legitimate data.
+   */
+  failureCategory?: string;
   /** Pipeline stage where this story last failed (set by markStoryFailed) */
   failureStage?: string;
   /** Worktree path for parallel execution (set when --parallel is used) */

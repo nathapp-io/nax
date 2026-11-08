@@ -565,8 +565,8 @@ describe("loadConfig — legacy key deprecation shim", () => {
   // #574 follow-up from code review: loadConfigForWorkdir merges per-package
   // overlays and goes straight to safeParse without the compat-shim chain, so
   // narrowing the enum turned a per-package `inherit` into a hard
-  // PER_PACKAGE_PROFILE_INVALID — on the very path that feeds
-  // prepareWorktreeDependencies for a monorepo story.
+  // PER_PACKAGE_PROFILE_INVALID — on the very path that used to feed worktree
+  // dependency preparation for a monorepo story.
   test("loadConfigForWorkdir maps a removed inherit mode in a per-package overlay instead of throwing", async () => {
     await writeProjectConfig({ execution: { worktreeDependencies: { mode: "off" } } });
     const pkgDir = join(tempDir, ".nax", "mono", "packages", "app");

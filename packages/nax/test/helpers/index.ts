@@ -165,7 +165,6 @@ export {
   writtenConfig,
   writtenConfigText,
 } from "./memory-admin-link";
-export { type MockMergeEngine, makeMergeEngine } from "./merge-engine";
 export { makeAgentAdapter } from "./mock-agent-adapter";
 export { createMockAgentManager, makeMockAgentManager } from "./mock-agent-manager";
 export { mockFetch } from "./mock-fetch";
