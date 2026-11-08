@@ -80,24 +80,6 @@ describe("mergePackageConfig integration", () => {
     expect(result.execution.smartTestRunner).toBe(false);
   });
 
-  test("package override with regressionGate.mode=per-story → mode changed", () => {
-    const root: NaxConfig = {
-      ...makeBaseConfig(),
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 120, acceptOnTimeout: true },
-      },
-    };
-    const result = mergePackageConfig(root, {
-      execution: {
-        regressionGate: { mode: "per-story" },
-      } as Partial<NaxConfig["execution"]>,
-    } as Partial<NaxConfig>);
-
-    expect(result.execution.regressionGate.mode).toBe("per-story");
-    expect(result.execution.regressionGate.enabled).toBe(true); // preserved
-  });
-
   test("package override with quality.commands.test → command changed", () => {
     const root = makeBaseConfig();
     const result = mergePackageConfig(root, {

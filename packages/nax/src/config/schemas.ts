@@ -28,7 +28,6 @@ import {
   AutoRouteConfigSchema,
   CommandInterceptorConfigSchema,
   ConstitutionConfigSchema,
-  DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
   ExecutionConfigSchema,
   InstallConfigSchema,
   QualityConfigSchema,
@@ -161,9 +160,6 @@ export const NaxConfigSchema = z
       iterationDelayMs: 2000,
       costLimit: 30.0,
       sessionTimeoutSeconds: 3600,
-      // BUG-20 — derived from the field's own default, not hand-written; see
-      // DEFAULT_VERIFICATION_TIMEOUT_SECONDS in schemas-execution.ts.
-      verificationTimeoutSeconds: DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
       maxStoriesPerFeature: 500,
       // BUG-20 — derived, not hand-written (same rationale as `context` below):
       // a literal here would drift from RectificationConfigSchema's own

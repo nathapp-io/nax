@@ -239,9 +239,9 @@ describe("runCompletionPhase — dry run (nax#1809)", () => {
           maxIterations: 1,
           costLimit: 100,
           iterationDelayMs: 0,
-          // Per-story mode + a real test command is the default nax-setup'd repo:
+          // Enabled with a real test command is the default nax-setup'd repo:
           // without the dry-run gate the regression branch would spawn the suite.
-          regressionGate: { enabled: true, mode: "per-story", timeoutSeconds: 30, acceptOnTimeout: true },
+          regressionGate: { enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
         },
         quality: { commands: { test: "bun test" } },
       });

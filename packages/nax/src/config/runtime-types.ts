@@ -66,14 +66,6 @@ export interface RegressionGateConfig {
   timeoutSeconds: number;
   /** Accept timeout as pass instead of failing (BUG-026, default: true) */
   acceptOnTimeout?: boolean;
-  /**
-   * Mode of regression gate (default: 'deferred'):
-   * - 'deferred': run the full-suite regression once after all stories complete.
-   * - 'per-story': run the full-suite gate after each story AND the deferred
-   *   regression once after all stories complete (per-story is a superset of deferred).
-   * - 'disabled': run neither.
-   */
-  mode?: "deferred" | "per-story" | "disabled";
 }
 
 export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtime-types-execution";
@@ -94,8 +86,6 @@ export interface ExecutionConfig {
   sessionErrorMaxRetries: number;
   /** Max retries for retryable session errors (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). Default: 3. */
   sessionErrorRetryableMaxRetries: number;
-  /** Verification subprocess timeout in seconds (ADR-003 Decision 4) */
-  verificationTimeoutSeconds: number;
   /** Max stories per feature (prevents memory exhaustion) */
   maxStoriesPerFeature: number;
   /** Rectification loop settings (v0.11) */

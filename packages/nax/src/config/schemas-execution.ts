@@ -71,7 +71,6 @@ export const RegressionGateConfigSchema = z.object({
   enabled: z.boolean().default(true),
   timeoutSeconds: z.number().int().min(10).max(3600).default(600),
   acceptOnTimeout: z.boolean().default(true),
-  mode: z.enum(["deferred", "per-story", "disabled"]).default("deferred"),
 });
 
 const SmartTestRunnerConfigSchema = z.object({
@@ -193,7 +192,6 @@ export const ExecutionConfigSchema = z.object({
   sessionErrorMaxRetries: z.number().int().min(0).max(5).default(1),
   /** Max retries when the agent signals a retryable session error (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). */
   sessionErrorRetryableMaxRetries: z.number().int().min(0).max(10).default(3),
-  verificationTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
   maxStoriesPerFeature: z.number().int().positive(),
   rectification: RectificationConfigSchema,
   regressionGate: RegressionGateConfigSchema,
@@ -279,18 +277,6 @@ export const ExecutionConfigSchema = z.object({
     bash: { enabled: false },
   }),
 });
-
-/**
- * BUG-20 — derived, not hand-written. The outer `NaxConfigSchema`'s
- * `execution: ExecutionConfigSchema.default({...})` literal (schemas.ts) must
- * not hardcode this number a second time: zod does not re-parse a
- * `.default()` value, so a hand-written literal there previously drifted
- * (600s) from this field's own default (300s) — `parse({})` yielded one
- * value, a config that merely supplies a partial `execution` object yielded
- * the other.
- */
-export const DEFAULT_VERIFICATION_TIMEOUT_SECONDS =
-  ExecutionConfigSchema.shape.verificationTimeoutSeconds.parse(undefined);
 
 /**
  * A declared quality command: one shell string, or a list that all runs with

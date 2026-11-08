@@ -97,7 +97,6 @@ describe("handleRunCompletion — AC8: review completed event details.findingCou
 
     const prd = makePRD(["US-001"]);
     const config = makeNaxConfig({
-      execution: { regressionGate: { mode: "disabled" } },
       review: { pluginMode: "observational" },
     });
 
@@ -127,7 +126,6 @@ describe("handleRunCompletion — AC8: review completed event details.findingCou
 
     const prd = makePRD(["US-001"]);
     const config = makeNaxConfig({
-      execution: { regressionGate: { mode: "disabled" } },
       review: { pluginMode: "observational" },
     });
 
@@ -154,7 +152,6 @@ describe("handleRunCompletion — AC8: review completed event details.findingCou
 
     const prd = makePRD(["US-001"]);
     const config = makeNaxConfig({
-      execution: { regressionGate: { mode: "disabled" } },
       review: { pluginMode: "observational" },
     });
 
@@ -197,7 +194,6 @@ describe("handleRunCompletion — AC9: durationMs in completed events", () => {
 
     const prd = makePRD(["US-001"]);
     const config = makeNaxConfig({
-      execution: { regressionGate: { mode: "disabled" } },
       review: { pluginMode: "observational" },
     });
 

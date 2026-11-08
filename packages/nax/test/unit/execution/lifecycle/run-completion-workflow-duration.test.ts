@@ -49,7 +49,7 @@ function opts(over: Partial<RunCompletionOptions> = {}): RunCompletionOptions {
     startTime: Date.now() - 50,
     workdir: WORKDIR,
     statusWriter: makeStatusWriter(),
-    config: makeNaxConfig({ execution: { regressionGate: { mode: "disabled" } } }),
+    config: makeNaxConfig({}),
     runtime: makeMockRuntime(),
     agentManager: makeMockAgentManager(),
     sessionManager: makeSessionManager(),

@@ -121,7 +121,6 @@ export type { CommandSafetyConfig } from "./schemas-command-safety";
 export { CommandSafetyConfigSchema } from "./schemas-command-safety";
 export {
   AutoRouteConfigSchema,
-  DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
   ExecutionConfigSchema,
   RectificationConfigSchema,
   RegressionGateConfigSchema,

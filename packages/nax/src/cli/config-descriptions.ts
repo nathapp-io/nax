@@ -123,7 +123,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.iterationDelayMs": "Delay between iterations in milliseconds",
   "execution.costLimit": "Max cost in USD before pausing execution (override per run with `nax run --max-cost`)",
   "execution.sessionTimeoutSeconds": "Timeout per agent coding session in seconds",
-  "execution.verificationTimeoutSeconds": "Verification subprocess timeout in seconds",
   "execution.maxStoriesPerFeature": "Max stories per feature (prevents memory exhaustion)",
   "execution.contextProviderTokenBudget": "Token budget for plugin context providers",
   "execution.lintCommand": "Lint command override (null=disabled, undefined=auto-detect)",

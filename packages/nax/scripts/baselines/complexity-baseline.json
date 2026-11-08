@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-08T08:06:32.796Z",
+  "updatedAt": "2026-11-08T09:12:43.805Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -35,7 +35,7 @@
     "src/commands/runs.ts": { "runsCommand": 21 },
     "src/commands/unlock.ts": { "unlockCommand": 58 },
     "src/config/config-guards.ts": { "validatePermissionsBlock": 41 },
-    "src/config/merge.ts": { "mergePackageConfig": 36 },
+    "src/config/merge.ts": { "mergePackageConfig": 35 },
     "src/config/schemas.ts": { "=>": 21 },
     "src/context/builder.ts": { "addFileElements": 23 },
     "src/context/elements.ts": { "formatPriorFailures": 39 },

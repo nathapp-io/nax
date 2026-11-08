@@ -27,8 +27,8 @@ import { countStories, type PRD } from "@/prd";
 
 const WORKDIR = `/tmp/nax-test-run-completed-deferred-${randomUUID()}`;
 
-const PIPELINE = makeNaxConfig({ execution: { mode: "pipeline", regressionGate: { mode: "disabled" } } });
-const WORKFLOW = makeNaxConfig({ execution: { mode: "workflow", regressionGate: { mode: "disabled" } } });
+const PIPELINE = makeNaxConfig({ execution: { mode: "pipeline" } });
+const WORKFLOW = makeNaxConfig({ execution: { mode: "workflow" } });
 
 /** One story of each status countStories distinguishes, so the event's counts are all different. */
 function runPRD(): PRD {

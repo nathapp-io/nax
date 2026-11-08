@@ -65,7 +65,6 @@ function makeConfig(acceptanceEnabled = true): NaxConfig {
       mode: "pipeline",
       regressionGate: {
         enabled: true,
-        mode: "deferred",
         timeoutSeconds: 30,
         acceptOnTimeout: true,
       },
@@ -211,7 +210,7 @@ describe("runCompletionPhase - cost-limit exitReason surfaces distinctly", () =>
     const config = makeNaxConfig({
       acceptance: { enabled: true, maxRetries: 3 },
       execution: {
-        regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 30, acceptOnTimeout: true },
+        regressionGate: { enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
       },
       quality: { commands: { test: "bun test" } },
       review: { pluginMode: "gating" },

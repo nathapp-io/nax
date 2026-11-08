@@ -18,7 +18,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
 import {
   PIPELINE_ONLY_KEY_HINT,
@@ -30,6 +30,8 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 
 const tempDirs: string[] = [];
 const PROVIDER_HINT = "nothing read this key; the interceptor is always rtk";
+/** US-003 — the hint `execution.verificationTimeoutSeconds` carries. */
+const VERIFICATION_TIMEOUT_HINT = "verification uses execution.regressionGate.timeoutSeconds";
 
 /** The warning `stripKeysAtPaths` emits for one removed path. */
 function removalWarning(path: string, hint: string): string {
@@ -178,6 +180,123 @@ describe("stripRemovedConfigKeys via loadConfig — removed execution sections",
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// loadConfig — the removed verification timeout (US-003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedConfigKeys via loadConfig — execution.verificationTimeoutSeconds", () => {
+  test("AC-1: resolves without a verificationTimeoutSeconds property on execution", async () => {
+    const root = await writeProjectConfig({ execution: { verificationTimeoutSeconds: 120 } });
+
+    const config = await loadConfig(root);
+
+    expect(Object.hasOwn(config.execution, "verificationTimeoutSeconds")).toBe(false);
+  });
+
+  test("AC-2: a logger sink receives exactly the removed-key warning for verificationTimeoutSeconds", async () => {
+    const root = await writeProjectConfig({ execution: { verificationTimeoutSeconds: 120 } });
+
+    const { messages } = await captureWarnings(() => loadConfig(root));
+
+    expect(warningsFor(messages, "execution.verificationTimeoutSeconds")).toEqual([
+      removalWarning("execution.verificationTimeoutSeconds", VERIFICATION_TIMEOUT_HINT),
+    ]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadConfig — the dead regression-gate mode beside a live timeout (US-003)
+//
+// The fixture carries a live key on purpose: the strip must remove `mode` and
+// leave `timeoutSeconds` alone, so the two are asserted from one load.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REGRESSION_GATE_FIXTURE = { mode: "per-story", timeoutSeconds: 90 };
+
+describe("stripRemovedConfigKeys via loadConfig — execution.regressionGate.mode", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await writeProjectConfig({ execution: { regressionGate: REGRESSION_GATE_FIXTURE } });
+  });
+
+  test("AC-3: retains the live execution.regressionGate.timeoutSeconds", async () => {
+    const config = await loadConfig(root);
+
+    expect(config.execution.regressionGate.timeoutSeconds).toBe(90);
+  });
+
+  test("AC-4: a logger sink receives exactly the removed-key warning for regressionGate.mode", async () => {
+    const { messages } = await captureWarnings(() => loadConfig(root));
+
+    expect(warningsFor(messages, "execution.regressionGate.mode")).toEqual([
+      removalWarning("execution.regressionGate.mode", PIPELINE_ONLY_KEY_HINT),
+    ]);
+  });
+
+  test("AC-5: the resolved regressionGate has no mode property", async () => {
+    const config = await loadConfig(root);
+
+    expect(Object.hasOwn(config.execution.regressionGate, "mode")).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Retention pins (AC-6 … AC-10) — every one of these passes before the removals
+// as well. They are here so a later change cannot take a live regression
+// setting with the dead ones. The global layer is redirected per test for the
+// same reason the AC-9 block above redirects it: an ambient
+// `~/.nax/config.json` must neither make them pass nor make them fail.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadConfig — the retained regression settings after the removals", () => {
+  let previousGlobalDir: string | undefined;
+
+  beforeEach(() => {
+    previousGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    const globalDir = makeTempDir("nax-removed-retained-global-");
+    tempDirs.push(globalDir);
+    process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
+  });
+
+  afterEach(() => {
+    if (previousGlobalDir === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = previousGlobalDir;
+    }
+  });
+
+  /** A project root that holds no `.nax/config.json` at all. */
+  function makeBareRoot(): string {
+    const root = makeTempDir("nax-removed-retained-");
+    tempDirs.push(root);
+    return root;
+  }
+
+  test("AC-6: a default load resolves execution.regressionGate.enabled === true", async () => {
+    const config = await loadConfig(makeBareRoot());
+
+    expect(config.execution.regressionGate.enabled).toBe(true);
+  });
+
+  test("AC-7: a default load resolves execution.regressionGate.acceptOnTimeout === true", async () => {
+    const config = await loadConfig(makeBareRoot());
+
+    expect(config.execution.regressionGate.acceptOnTimeout).toBe(true);
+  });
+
+  test("AC-10: an out-of-range timeoutSeconds still rejects with CONFIG_SCHEMA_INVALID naming the path", async () => {
+    const root = await writeProjectConfig({ execution: { regressionGate: { timeoutSeconds: 0 } } });
+
+    const err = await loadConfig(root).catch((e: unknown) => e);
+
+    assertNaxError(err, "loadConfig rejection on an out-of-range regression timeout");
+    expect(err.code).toBe("CONFIG_SCHEMA_INVALID");
+    expect(err.message).toContain("execution.regressionGate.timeoutSeconds");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // loadConfig — the default config warns about nothing
 //
 // AC-9 is about a load with NO config at ANY layer, so the test must own the
@@ -312,7 +431,7 @@ describe("stripKeysAtPaths", () => {
     });
   });
 
-  test("REMOVED_CONFIG_KEYS covers the eleven rectification leaves, two sections and the provider", () => {
+  test("REMOVED_CONFIG_KEYS covers the eleven rectification leaves, two sections, the provider and US-003's two keys", () => {
     expect(Object.keys(REMOVED_CONFIG_KEYS).sort()).toEqual(
       [
         "execution.commandInterceptor.provider",
@@ -329,15 +448,19 @@ describe("stripKeysAtPaths", () => {
         "execution.rectification.rethinkAtAttempt",
         "execution.rectification.storyScopedFixBudget",
         "execution.rectification.urgencyAtAttempt",
+        "execution.regressionGate.mode",
+        "execution.verificationTimeoutSeconds",
       ].sort(),
     );
   });
 
-  test("the sections carry the pipeline-only hint and the provider its own hint", () => {
+  test("the sections carry the pipeline-only hint and the two special keys their own hints", () => {
     expect(REMOVED_CONFIG_KEYS["execution.flakeDetection"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.mutationCheck"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.rectification.abortOnNoProgress"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.commandInterceptor.provider"]).toBe(PROVIDER_HINT);
+    expect(REMOVED_CONFIG_KEYS["execution.regressionGate.mode"]).toBe(PIPELINE_ONLY_KEY_HINT);
+    expect(REMOVED_CONFIG_KEYS["execution.verificationTimeoutSeconds"]).toBe(VERIFICATION_TIMEOUT_HINT);
   });
 });
 
@@ -381,5 +504,38 @@ describe("stripRemovedConfigKeys via loadConfigForWorkdir — per-package overla
     const { messages } = await captureWarnings(() => loadConfigForWorkdir(configPath, "packages/api"));
 
     expect(warningsFor(messages, "execution.rectification.abortOnNoProgress")).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadConfigForWorkdir — the retained regression timeout (US-003 AC-8)
+//
+// A separate fixture from the block above so the assertion is about the live
+// per-package overlay path, not about the rectification strip happening to
+// leave the rest of `execution` intact.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadConfigForWorkdir — retained per-package execution.regressionGate.timeoutSeconds", () => {
+  let configPath: string;
+
+  beforeEach(async () => {
+    const root = makeTempDir("nax-removed-keys-mono-rt-");
+    tempDirs.push(root);
+    const naxDir = join(root, ".nax");
+    await mkdir(naxDir, { recursive: true });
+    configPath = join(naxDir, "config.json");
+    await Bun.write(configPath, JSON.stringify({}));
+    const monoDir = join(naxDir, "mono", "packages", "api");
+    await mkdir(monoDir, { recursive: true });
+    await Bun.write(
+      join(monoDir, "config.json"),
+      JSON.stringify({ execution: { regressionGate: { timeoutSeconds: 45 } } }),
+    );
+  });
+
+  test("AC-8: resolves the package's own execution.regressionGate.timeoutSeconds", async () => {
+    const config = await loadConfigForWorkdir(configPath, "packages/api");
+
+    expect(config.execution.regressionGate.timeoutSeconds).toBe(45);
   });
 });

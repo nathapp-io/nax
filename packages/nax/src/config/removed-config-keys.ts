@@ -31,6 +31,13 @@ export const PIPELINE_ONLY_KEY_HINT = "nothing reads this key since pipeline mod
 const COMMAND_INTERCEPTOR_PROVIDER_HINT = "nothing read this key; the interceptor is always rtk";
 
 /**
+ * Hint for `execution.verificationTimeoutSeconds`. The verify timeout it
+ * configured is now `execution.regressionGate.timeoutSeconds` — the value
+ * `operations/verify-scoped.ts` has always read.
+ */
+const VERIFICATION_TIMEOUT_HINT = "verification uses execution.regressionGate.timeoutSeconds";
+
+/**
  * Config keys removed in C1, each mapped to the hint its warning appends.
  *
  * Map value is a migration hint telling the user what the behaviour they thought
@@ -39,7 +46,9 @@ const COMMAND_INTERCEPTOR_PROVIDER_HINT = "nothing read this key; the intercepto
  * rectification section, so the eleven leaves below are all inert; the two whole
  * sections (flakeDetection, mutationCheck) were declared, defaulted, merged and
  * documented but read at no code site; the interceptor's `provider` was never
- * read even in pipeline mode.
+ * read even in pipeline mode; `regressionGate.mode` was declared, defaulted,
+ * merged and documented but read at no code site; and the verification timeout
+ * is `regressionGate.timeoutSeconds`, not a key of its own.
  *
  * A section entry strips the WHOLE section — one warning for the section, not one
  * per leaf under it.
@@ -59,6 +68,8 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
   "execution.flakeDetection": PIPELINE_ONLY_KEY_HINT,
   "execution.mutationCheck": PIPELINE_ONLY_KEY_HINT,
   "execution.commandInterceptor.provider": COMMAND_INTERCEPTOR_PROVIDER_HINT,
+  "execution.verificationTimeoutSeconds": VERIFICATION_TIMEOUT_HINT,
+  "execution.regressionGate.mode": PIPELINE_ONLY_KEY_HINT,
 };
 
 /** The warning one removed path emits. */

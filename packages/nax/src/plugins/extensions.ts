@@ -6,7 +6,6 @@
 
 import type { ExternalHandlerOf, LoopEvent } from "@nathapp/nax-agent/internal";
 import type { TestStrategy } from "../config";
-import type { RegressionGateConfig } from "../config/runtime-types";
 import type { FindingSeverity, FixTarget } from "../findings/types";
 import type { UserStory } from "../prd/types";
 import type { PluginLogger } from "./types";
@@ -398,7 +397,7 @@ export type PhaseDetails =
 export type RunPhaseDetails =
   | { totalCriteria: number; testableCount: number; redFailCount: number; regenerated: boolean }
   | { retries: number; failedACCount: number; fixStoriesCreated: number }
-  | { mode: RegressionGateConfig["mode"]; failedTests: number }
+  | { mode: "deferred" | "per-story" | "disabled"; failedTests: number }
   | { findingCount: number; anyFailed: boolean };
 
 export interface PhaseStartEvent extends PhaseEventBase {

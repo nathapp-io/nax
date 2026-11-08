@@ -84,7 +84,7 @@ function makeMockAggregator(overrides: Partial<ICostAggregator> = {}): ICostAggr
 
 const DISABLED_REGRESSION_CONFIG: NaxConfig = makeNaxConfig({
   execution: {
-    regressionGate: { enabled: false, mode: "disabled" },
+    regressionGate: { enabled: false },
   },
 });
 

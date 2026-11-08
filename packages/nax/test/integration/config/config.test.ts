@@ -158,26 +158,6 @@ describe("Config Validation", () => {
     expect(result.success).toBe(true);
   });
 
-  test("validates verificationTimeoutSeconds bounds", () => {
-    const tooLow = {
-      ...DEFAULT_CONFIG,
-      execution: { ...DEFAULT_CONFIG.execution, verificationTimeoutSeconds: 0 },
-    };
-    expect(NaxConfigSchema.safeParse(tooLow).success).toBe(false);
-
-    const tooHigh = {
-      ...DEFAULT_CONFIG,
-      execution: { ...DEFAULT_CONFIG.execution, verificationTimeoutSeconds: 7200 },
-    };
-    expect(NaxConfigSchema.safeParse(tooHigh).success).toBe(false);
-
-    const valid = {
-      ...DEFAULT_CONFIG,
-      execution: { ...DEFAULT_CONFIG.execution, verificationTimeoutSeconds: 120 },
-    };
-    expect(NaxConfigSchema.safeParse(valid).success).toBe(true);
-  });
-
   test("validates quality config extensions", () => {
     const config = {
       ...DEFAULT_CONFIG,

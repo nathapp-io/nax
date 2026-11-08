@@ -192,35 +192,21 @@ describe("mergePackageConfig", () => {
   });
 
   describe("execution.regressionGate deep merge", () => {
-    test.each<[string, Partial<NaxConfig["execution"]["regressionGate"]>, (r: NaxConfig) => unknown, unknown]>([
-      ["mode", { mode: "per-story" }, (r) => r.execution.regressionGate.mode, "per-story"],
-      ["timeoutSeconds", { timeoutSeconds: 600 }, (r) => r.execution.regressionGate.timeoutSeconds, 600],
-    ])("overrides regressionGate.%s per package", (_field, override, getField, expected) => {
+    test("overrides regressionGate.timeoutSeconds per package and preserves the other live fields", () => {
       const root: NaxConfig = {
         ...makeRoot(),
         execution: {
           ...DEFAULT_CONFIG.execution,
-          regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 120, acceptOnTimeout: true },
+          regressionGate: { enabled: true, timeoutSeconds: 120, acceptOnTimeout: true },
         },
       };
       const result = mergePackageConfig(root, {
-        execution: { regressionGate: override } as Partial<NaxConfig["execution"]>,
-      } as Partial<NaxConfig>);
-      expect(getField(result)).toBe(expected);
-    });
-  });
-
-  describe("execution.verificationTimeoutSeconds override", () => {
-    test("overrides verificationTimeoutSeconds per package", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        execution: { ...DEFAULT_CONFIG.execution, verificationTimeoutSeconds: 300 },
-      };
-      const result = mergePackageConfig(root, {
-        execution: { verificationTimeoutSeconds: 60 } as Partial<NaxConfig["execution"]>,
+        execution: { regressionGate: { timeoutSeconds: 600 } } as Partial<NaxConfig["execution"]>,
       } as Partial<NaxConfig>);
 
-      expect(result.execution.verificationTimeoutSeconds).toBe(60);
+      expect(result.execution.regressionGate.timeoutSeconds).toBe(600);
+      expect(result.execution.regressionGate.enabled).toBe(true);
+      expect(result.execution.regressionGate.acceptOnTimeout).toBe(true);
     });
   });
 
@@ -441,8 +427,8 @@ describe("mergePackageConfig", () => {
     test.each([
       [
         "root.execution",
-        (r: NaxConfig) => r.execution.verificationTimeoutSeconds,
-        (_r: NaxConfig) => makeNaxConfig({ execution: { verificationTimeoutSeconds: 999 } }),
+        (r: NaxConfig) => r.execution.sessionTimeoutSeconds,
+        (_r: NaxConfig) => makeNaxConfig({ execution: { sessionTimeoutSeconds: 999 } }),
       ],
       [
         "root.review",

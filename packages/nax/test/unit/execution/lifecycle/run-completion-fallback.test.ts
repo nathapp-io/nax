@@ -9,7 +9,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { makeDispatchContext, makeStatusWriter } from "@test/helpers";
-import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import {
   _runCompletionDeps,
@@ -72,13 +71,6 @@ function makeStoryMetrics(storyId: string, success: boolean, hops: AgentFallback
 const WORKDIR = `/tmp/nax-test-pr2-fallback-${randomUUID()}`;
 
 function makeOpts(prd: PRD, allStoryMetrics: StoryMetrics[]): RunCompletionOptions {
-  const config: NaxConfig = {
-    ...DEFAULT_CONFIG,
-    execution: {
-      ...DEFAULT_CONFIG.execution,
-      regressionGate: { ...DEFAULT_CONFIG.execution.regressionGate, mode: "disabled" },
-    },
-  };
   return {
     runId: "run-001",
     feature: "test-feature",
@@ -91,7 +83,7 @@ function makeOpts(prd: PRD, allStoryMetrics: StoryMetrics[]): RunCompletionOptio
     startTime: Date.now() - 1000,
     workdir: WORKDIR,
     statusWriter: makeStatusWriter(),
-    config,
+    config: DEFAULT_CONFIG,
     isSequential: true,
     ...makeDispatchContext(),
   };

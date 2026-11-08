@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 975
+    "looseCast": 971
   },
-  "updatedAt": "2026-11-08T08:35:15.890Z",
+  "updatedAt": "2026-11-08T09:13:23.648Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -503,7 +503,7 @@
       "looseCast": 1
     },
     "test/unit/config/merge.test.ts": {
-      "looseCast": 47
+      "looseCast": 45
     },
     "test/unit/config/schemas-model.test.ts": {
       "looseCast": 1
@@ -660,7 +660,7 @@
       "looseCast": 6
     },
     "test/unit/pipeline/effective-config.test.ts": {
-      "looseCast": 15
+      "looseCast": 13
     },
     "test/unit/pipeline/runner-throw-logging.test.ts": {
       "looseCast": 1

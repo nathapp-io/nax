@@ -49,7 +49,7 @@ function opts(mode: Mode, over: Partial<RunnerCompletionOptions> = {}): RunnerCo
   return {
     config: makeNaxConfig({
       acceptance: { enabled: false },
-      execution: { mode, regressionGate: { mode: "disabled" } },
+      execution: { mode },
     }),
     hooks: { hooks: {}, _skipGlobal: false },
     feature: "f",
