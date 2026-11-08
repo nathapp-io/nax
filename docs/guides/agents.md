@@ -128,7 +128,7 @@ fallback chain and invokes the per-hop callback (`buildHopCallback`, ADR-019
 
 ### Session handoff and the SessionManager
 
-Every story's internal sessions (plan → test-writer → implementer → verifier → reviewer → rectifier) carry a stable `sess-<uuid>` owned by `SessionManager` (ADR-011 + ADR-019). The adapter exposes 4 protocol primitives (`openSession`, `sendTurn`, `closeSession`, `complete`); SessionManager owns naming, turn count, resume detection, and the multi-prompt outer loop.
+Every story's internal sessions (plan, implementer, story reviewer, fix rounds) carry a stable `sess-<uuid>` owned by `SessionManager` (ADR-011 + ADR-019). The adapter exposes 4 protocol primitives (`openSession`, `sendTurn`, `closeSession`, `complete`); SessionManager owns naming, turn count, resume detection, and the multi-prompt outer loop.
 
 Why this matters for agent configuration:
 

@@ -31,9 +31,8 @@ requirement from `tsconfig.json` instead and the story passed.
 An `Exec` call runs only when **both** hold:
 
 1. **The operation declares it.** `Exec` is a capability marker in an op's `tools` list.
-   The ops that declare it are the ones that write code: `implement`, `workflow-implement`,
-   `write-test`, `rectify`, `autofix-implementer`, `autofix-test-writer`,
-   `full-suite-rectify-op`, `finish-fix`, and the two acceptance-fix ops (source and test). A review, verification or
+   The ops that declare it are the ones that write code: `workflow-implement`, `workflow-branch-fix`
+   and `workflow-repair` (via `WORKFLOW_WRITE_TOOLS`). A review, verification or
    planning op cannot install anything, whatever config says.
 2. **The policy grants it.** Either the built-in list below, or an `Exec(...)` expression
    you write.
@@ -172,7 +171,7 @@ Defaults to `false`. This is config a human writes; the model cannot reach it.
 
 Both are inside the containment root. Since
 [ADR-032](../adr/ADR-032-single-frame-repo-rooted-paths.md) the agent is rooted at the story's
-execution root (the repo, or the story's worktree), so a workspace install's root manifest and
+execution root (the repo), so a workspace install's root manifest and
 lockfile are in-root by construction. The earlier carve-out that let `Exec` write outside the
 root, and let `GitCommit` stage the paths a same-hop install touched, is retired — `target` is
 only a cwd choice.

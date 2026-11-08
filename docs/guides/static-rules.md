@@ -264,8 +264,8 @@ Steps:
 ## Delivery in workflow mode
 
 Everything above describes how the context engine **pushes** rule bodies into a prompt. That is
-still how pipeline mode works. Workflow mode delivers rules lazily by default
-(`context.rules.delivery: "index"`):
+the push delivery (`context.rules.delivery: "push"`). Workflow mode delivers rules lazily by
+default (`context.rules.delivery: "index"`):
 
 | Where | What it gets |
 |:---|:---|
@@ -336,8 +336,7 @@ any story runs: a missing override directory fails with `RULES_OVERRIDE_DIR_NOT_
 missing or oversized project-context file with `PROJECT_CONTEXT_FILE_NOT_FOUND` or
 `PROJECT_CONTEXT_FILE_TOO_LARGE`. Override rules pass the same neutrality lint as repo rules.
 
-The rules override directory also reaches pipeline mode, through the static-rules provider. The
-project-context file reaches only workflow briefs and the branch review package.
+The project-context file reaches only workflow briefs and the branch review package.
 
 ## Debugging
 

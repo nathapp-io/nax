@@ -5,7 +5,7 @@ description: Auto-detect project language, type, test framework, and lint tool
 
 ## Language & Project-Type Awareness
 
-nax auto-detects your project's language, type, test framework, and lint tool from manifest files. This allows nax to adapt its behavior — review commands, acceptance test generation, TDD conventions, and hermetic test guidance — without manual configuration.
+nax auto-detects your project's language, type, test framework, and lint tool from manifest files. This allows nax to adapt its behavior — review commands — without manual configuration.
 
 **Status:** Built-in (v0.54.0) — no plugin or config required.
 
@@ -84,49 +84,6 @@ For TypeScript / JavaScript the `bun run <check>` fallback applies only when `pa
 
 ---
 
-## Acceptance Test Filename
-
-The acceptance test filename comes from `acceptance.testPath` (default `.nax-acceptance.test.ts`); a per-package `.nax/mono/<package>/config.json` value takes precedence over the root one. `acceptanceTestFilename()` (`src/acceptance/test-path.ts`) holds language-appropriate names, but they are used only when no `testPath` reaches the resolver — and because the config schema always fills in the `.nax-acceptance.test.ts` default, a normal run uses that default even for Go/Python/Rust packages:
-
-| Language | Filename |
-|:---------|:---------|
-| TypeScript / JavaScript | `.nax-acceptance.test.ts` |
-| Go | `.nax-acceptance_test.go` |
-| Python | `_nax_acceptance_test.py` |
-| Rust | `.nax-acceptance.rs` |
-
-Stories are grouped by `workdir`, and one file is generated per package at `<package>/.nax/features/<feature>/<filename>`. The per-package language detection only affects the fallback name above. For non-TypeScript projects (or non-TS packages in a polyglot monorepo), set `acceptance.testPath` explicitly — in the root config or the package's `.nax/mono/<package>/config.json` — so the file name suits your test runner.
-
----
-
-## TDD Conventions
-
-The test-writer prompt adds a language-specific file-convention section (`src/prompts/sections/tdd-conventions.ts`):
-
-| Language | Convention |
-|:---------|:-----------|
-| Go | `<filename>_test.go` in the same package directory as the source |
-| Rust | Inline `#[cfg(test)]` module, or `tests/<filename>.rs` for integration tests |
-| Python | `tests/test_<source_filename>.py` |
-
-TypeScript / JavaScript get no extra section — the agent follows the project's existing test layout.
-
----
-
-## Hermetic Test Guidance
-
-When `quality.testing.hermetic: true` (default), nax injects a hermetic-test requirement into code-writing prompts, plus language-specific mocking guidance (`src/prompts/sections/hermetic.ts`):
-
-| Language | Mocking guidance |
-|:---------|:-----------------|
-| Go | Interfaces for external deps, constructor injection, interface mocks |
-| Rust | Trait objects / generics, the `mockall` crate, `#[cfg(test)]` modules |
-| Python | Dependency injection or `unittest.mock.patch`, `pytest-mock` fixtures |
-
-TypeScript / JavaScript get the generic requirement only. If you set `quality.testing.mockGuidance` explicitly, it replaces the language-derived guidance. See [Hermetic Test Enforcement](hermetic-tests.md).
-
----
-
 ## Checking What Was Detected
 
 The run setup logs detected values at the start of each run:
@@ -151,11 +108,7 @@ Look for these `project` stage lines in the run log (`nax logs`).
     "lintTool": "biome"              // optional — auto-detected if omitted
   },
   "quality": {
-    "commands": {},                  // optional — language/manifest defaults used if empty
-    "testing": {
-      "hermetic": true,              // inject language-aware mocking guidance
-      "mockGuidance": "..."          // optional — overrides auto-detection
-    }
+    "commands": {}                   // optional — language/manifest defaults used if empty
   }
 }
 ```

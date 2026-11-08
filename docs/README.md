@@ -27,18 +27,13 @@ description: User guides, architecture references, and specs for nax
 | [Spec Writing](guides/spec-writing.md) | Pointer to the `spec-writing` skill for authoring `SPEC-*.md` files |
 | [Story Decomposition](guides/decomposition.md) | Breaking oversized stories into manageable sub-stories |
 | [Test Strategies](guides/test-strategies.md) | Choosing a test strategy and how `auto` routes stories |
-| [TDD Strategies](guides/tdd/strategies.md) | Side-by-side comparison of the TDD modes |
-| [Three-Session TDD](guides/three-session-tdd.md) | Strict role separation for complex stories |
-| [Acceptance & Review Flow](guides/acceptance-review-flow.md) | How acceptance testing, semantic review, and diagnose/fix connect |
 | [Semantic Review](guides/semantic-review.md) | LLM-based behavioral review against story acceptance criteria |
 | [Regression Gate](guides/regression-gate.md) | Full-suite regression testing after stories complete |
-| [Parallel Execution](guides/parallel-execution.md) | Running stories concurrently with git worktrees |
 | [Monorepo Support](guides/monorepo.md) | Multi-package projects with per-package configuration |
 | [Language Awareness](guides/language-awareness.md) | Auto-detected language, project type, test framework, and lint tool |
 | [Hooks](guides/hooks.md) | Lifecycle hooks for notifications and CI triggers |
 | [Loop Handlers](guides/loop-handlers.md) | Plugin-contributed handlers inside the native agent's turn loop — events, patches, ordering, failure semantics and timeout |
 | [Interaction Triggers](guides/triggers.md) | Interactive pause-and-prompt configuration |
-| [Prompt Customization](guides/prompt-customization.md) | Customizing agent prompts per feature |
 | [Troubleshooting](guides/troubleshooting.md) | Common issues and resolutions |
 
 ### Context
@@ -70,7 +65,7 @@ description: User guides, architecture references, and specs for nax
 |:------|:------------|
 | [Testing Conventions](guides/testing-conventions.md) | Running and writing tests for nax itself |
 | [Testing Rules](guides/testing-rules.md) | Single source of truth for test-writing rules |
-| [Hermetic Tests](guides/hermetic-tests.md) | Writing tests that don't depend on external systems |
+| [Hermetic Tests](guides/hermetic-tests.md) | Status of the `quality.testing` keys (accepted, currently no effect) |
 | [Retry Strategy](guides/retry-strategy.md) | API reference for the sanctioned retry mechanisms (`src/agents/retry/`) |
 | [Memory Leak Investigation](guides/memory-leak-investigation.md) | Diagnosing a hanging, memory-bloated test run |
 
@@ -85,7 +80,6 @@ description: User guides, architecture references, and specs for nax
 | [Agent Adapters](architecture/agent-adapters.md) | Permission resolution, test-strategy resolution, adapter conventions, trust boundary |
 | [nax-ai Surface](architecture/nax-ai-surface.md) | The `@nathapp/nax-ai` surface the native adapter consumes |
 | [Subsystems](architecture/subsystems.md) | Deep reference for each subsystem (§17–§57) |
-| [Story Orchestrator Flow](architecture/story-orchestrator-flow.md) | Per-story control flow inside `executionStage` |
 | [Spec → PRD Pipeline](architecture/spec-to-prd-pipeline.md) | Brainstorming → spec → spec-review → `nax plan` workflow contract |
 
 ## ADRs

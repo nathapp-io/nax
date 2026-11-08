@@ -223,7 +223,7 @@ Tests must never reach real external systems. Mock all I/O boundaries:
 | Claude / agent CLIs | Guard with `process.env.CI ? test.skip : test` |
 | Database / cache | Use in-memory mock (e.g. `ioredis-mock`) |
 
-Project-level hermetic config lives in `.nax/config.json`:
+Project-level hermetic config lives in `.nax/config.json`. These keys are accepted but currently have no effect (see [Hermetic Test Enforcement](hermetic-tests.md)):
 
 ```json
 {

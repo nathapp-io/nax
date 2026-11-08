@@ -38,14 +38,13 @@ a grant is told the session already holds `Glob` rather than simply refused.
 ## Turning it on
 
 **1. The operation must declare it** (every mode) — a code-owned ceiling, not config. The
-operations that declare `Bash` are the code-writing ones: `implement`, `workflow-implement`,
-`write-test`, `rectify`, `full-suite-rectify-op`, `autofix-implementer`, `autofix-test-writer`,
-`acceptance-fix` (x2) and `finish-fix`. The reviewers (`adversarial-review`, `semantic-review`,
-`finish-branch-review`, `finish-spec-review`, `workflow-story-review`) declare it too, but their
-command tools are withheld unless the dispatch sandbox is usable (`reviewer-command-withhold.ts`).
-The verifier (`verify.ts`) does not declare `Bash` or `Exec`, so it cannot install packages while
-judging the implementer's work, and a `Bash(...)` rule covering an install command would hand that
-back by another route.
+operations that declare `Bash` are the workflow write operations (`workflow-implement`,
+`workflow-branch-fix`, `workflow-repair`, which share `WORKFLOW_WRITE_TOOLS`). The workflow
+reviewers (`workflow-story-review`, `workflow-re-review`, `workflow-branch-review`) declare it too,
+but their command tools are withheld unless the dispatch sandbox is usable
+(`src/agents/reviewer-command-withhold.ts`). The scoped verifier (`verify-scoped.ts`) does not
+declare `Bash` or `Exec`, so it cannot install packages while judging the implementer's work, and
+a `Bash(...)` rule covering an install command would hand that back by another route.
 
 **2. Under `raw` (the default), that is all.** The op receives a synthetic `Bash(*)` grant, and
 every call runs inside the OS sandbox. If the sandbox is enabled but unavailable on the host
@@ -61,7 +60,7 @@ every call runs inside the OS sandbox. If the sandbox is enabled but unavailable
     "bashApproval": "gated",
     "permissions": {
       "run": { "allow": ["Bash(bun test *, bun x tsc *)"] },
-      "rectification": { "inherit": "run" }
+      "review": { "inherit": "run" }
     }
   }
 }
@@ -206,7 +205,7 @@ content (network is open by default). Without it (disabled, or unavailable under
 Under `gated`, grant accordingly: name the command forms you want, rather than writing
 `Bash(*)` and relying on deny rules to claw scope back.
 
-**Not the only way a command runs.** `quality.commands` and `acceptance.command` are run by key
+**Not the only way a command runs.** `quality.commands` entries are run by key
 through a shell and never pass this gate at all (spec R8) — they are trusted because a human
 wrote them in config. So a `Bash(...)` deny rule does not constrain them, and a construct this
 gate refuses by name still runs there.

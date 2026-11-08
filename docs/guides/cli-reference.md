@@ -109,8 +109,6 @@ Flags: `--json` (machine-readable output), `-d, --dir <path>`, `--profile <name>
 
 The config is loaded under the same profile chain `nax run` would use: `--profile` > `NAX_PROFILE` > the PRD's `routingProfile`. A project whose config only validates under the profile its PRD was planned with therefore resolves cleanly.
 
-The `acceptance` block reports `status`: `ok`, `disabled`, `no-prd` (no `.nax/` dir, or no `prd.json` for the feature), or `error`. `error` means the config failed to load or the PRD could not be read or grouped; it carries `error: { code, message }` (for example `CONFIG_SCHEMA_INVALID`). An acceptance `error` does not change the exit code, which the top-level `status` still decides.
-
 ---
 
 ### `nax plan -f <name> --from <spec>`
@@ -161,7 +159,6 @@ nax run -f my-feature
 | `--force` | Overwrite existing `prd.json` when using `--plan` |
 | `--schedule <when>` | Defer the run start until `<when>` (`30m`, `1h30m`, `17:00`, `2026-07-02T02:00`) |
 | `--fresh` / `--no-resume` | Ignore any existing `checkpoint.jsonl` and re-run every incomplete story from scratch (default: auto-resume) |
-| `--parallel <n>` | Max parallel sessions (omit = sequential) |
 | `--dry-run` | Preview story routing without running agents |
 | `--headless` | Non-interactive output (structured logs, no TUI) |
 | `--verbose` | Debug-level logging |
@@ -170,10 +167,10 @@ nax run -f my-feature
 | `--json` | Raw JSONL output to stdout (for scripting) |
 | `--skip-precheck` | Skip precheck validations (advanced users only) |
 | `--no-context` | Disable context builder (skip file context in prompts) |
-| `--no-batch` | Execute all stories individually (disable batching) |
-| `-m, --max-iterations <n>` | Max iterations. When the flag is omitted, `execution.maxIterations` applies (default `20`) |
 | `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Working directory |
+
+Removed with pipeline mode: `nax run -m/--max-iterations` ("workflow mode bounds a run by its stories"), `--parallel` and `--no-batch` ("workflow mode runs stories one at a time"). Each now prints a "was removed" message and exits `1`.
 
 **Examples:**
 
@@ -183,9 +180,6 @@ nax run -f user-auth --dry-run
 
 # Plan from spec then run — one command
 nax run -f user-auth --plan --from spec.md
-
-# Run with up to 3 parallel worktree sessions
-nax run -f user-auth --parallel 3
 
 # Force a specific agent
 nax run -f user-auth --agent opencode
@@ -215,25 +209,7 @@ nax resume -f my-feature
 
 Flags: `-f, --feature <name>` (required), `-d, --dir <path>`.
 
----
-
-### `nax accept`
-
-Override a failed acceptance criterion; the override and reason are stored in `prd.json`.
-
-```bash
-nax accept -f my-feature --override AC-2 -r "intentional: lazy expiry"
-```
-
-In a monorepo each package numbers its criteria from AC-1, so scope the override to one package with `<package>::AC-N`, the package path relative to the repo root (`.` for the root package):
-
-```bash
-nax accept -f my-feature --override apps/api::AC-2 -r "intentional: lazy expiry"
-```
-
-A bare `AC-N` still works in a single-package project. In a multi-package run it applies only when exactly one package has an AC with that number; otherwise it is ignored and the run logs a warning.
-
-All three flags are required: `-f, --feature <name>`, `--override <ac-id>`, `-r, --reason <reason>`.
+Removed with pipeline mode: `nax accept` ("workflow mode does not run acceptance tests") and `nax prompts` ("workflow mode does not read prompt templates"). Both remain as stubs that print a "was removed" message and exit `1`.
 
 ---
 
@@ -727,30 +703,6 @@ nax generate --all-packages
 ```
 
 Each package can have its own context file at `.nax/mono/<package>/context.md` for package-specific agent instructions (created via `nax init --package <package>`).
-
----
-
-### `nax prompts -f <name>`
-
-Assemble and display the prompt that would be sent to the agent for each story role.
-
-```bash
-nax prompts -f my-feature
-```
-
-**Flags:**
-
-| Flag | Description |
-|:-----|:------------|
-| `-f, --feature <name>` | Feature name (required unless using `--init` or `--export`) |
-| `--init` | Initialize default prompt templates for customization |
-| `--export <role>` | Export the default prompt for a role to stdout (or `--out` file) |
-| `--story <id>` | Filter to a single story ID (e.g., `US-003`) |
-| `--out <path>` | Output file for `--export`, or directory for regular prompts (default: stdout) |
-| `--force` | Overwrite existing template files |
-| `-d, --dir <path>` | Project directory |
-
-After running `--init`, edit the templates and nax will use them automatically via `prompts.overrides` config.
 
 ---
 
@@ -1250,7 +1202,7 @@ Rewrites only the configured rollup JSONL file, keeping rows for the most recent
 
 Inspect and edit the per-folder trust store. nax runs repository-controlled
 code — project plugins, context plugin providers, hooks, MCP servers and the
-quality / test / acceptance / setup commands — unsandboxed on this host, so a
+quality / test / setup commands — unsandboxed on this host, so a
 folder must be trusted before a gated command will act on it. The store lives
 at `<global config dir>/trust.json` (the global config dir is `~/.nax`, or
 `$NAX_GLOBAL_CONFIG_DIR` when set), is machine-global rather than per project,
