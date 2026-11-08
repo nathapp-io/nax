@@ -49,6 +49,7 @@ describe("config --explain: prompts section", () => {
     const output = consoleOutput.join("\n");
     expect(output).not.toContain("prompts.overrides");
     expect(output).not.toContain(".nax/prompts/test-writer.md");
+    expect(output).not.toContain("Prompt template overrides");
   });
 
   test("explain output shows the kept prompts.behavioralGuardrails", async () => {

@@ -285,7 +285,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "precheck.storySizeGate.maxReplanAttempts": "Max replan attempts before escalating (default: 3)",
 
   // Prompts
-  prompts: "Prompt template overrides (PB-003: PromptBuilder)",
+  prompts: "Prompt settings",
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",

@@ -402,7 +402,7 @@ export interface NaxConfig {
   interaction?: InteractionConfig;
   /** Precheck settings (v0.16.0) */
   precheck?: PrecheckConfig;
-  /** Prompt override settings (PB-003) */
+  /** Prompt settings */
   prompts: PromptsConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
