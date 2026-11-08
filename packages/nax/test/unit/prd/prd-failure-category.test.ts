@@ -62,10 +62,26 @@ describe("UserStory.failureCategory field", () => {
 // ── markStoryFailed() ─────────────────────────────────────────────────────────
 
 describe("markStoryFailed()", () => {
-  test("AC-1: sets that story's status to failed", () => {
+  // AC-1 pins the whole stage-only failure transition, not the status line alone:
+  // `status = "failed"` was already true of the prior signature (the third
+  // argument was then read as a failureCategory), so a status-only assertion
+  // cannot fail without this story's change. Asserting the transition the new
+  // contract describes — status failed, the third argument landing in
+  // `failureStage` and NOT in `failureCategory`, `passes` cleared, `attempts`
+  // bumped — does fail against the prior signature.
+  test("AC-1: a stage-only call sets that story's status to failed", () => {
     const prd = makePrd([makeStory("US-001")]);
+    expect(prd.userStories[0].status).toBe("pending");
+    expect(prd.userStories[0].attempts).toBe(0);
+
     markStoryFailed(prd, "US-001", "review");
-    expect(prd.userStories[0].status).toBe("failed");
+
+    const story = prd.userStories[0];
+    expect(story.status).toBe("failed");
+    expect(story.failureStage).toBe("review");
+    expect(story.failureCategory).toBeUndefined();
+    expect(story.passes).toBe(false);
+    expect(story.attempts).toBe(1);
   });
 
   // AC-2 pins WHERE the third positional argument lands. Before the category
