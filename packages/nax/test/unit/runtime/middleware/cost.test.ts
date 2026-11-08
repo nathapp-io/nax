@@ -358,11 +358,11 @@ describe("attachCostSubscriber", () => {
     attachCostSubscriber(bus, agg, "r-001");
 
     // `stage` collapses 23 session roles into 6 buckets; without the role,
-    // "how much of rectification is test-writing?" has no answer.
-    bus.emitDispatch(makeSessionTurnEvent({ stage: "rectification", sessionRole: "test-writer" }));
+    // "how much of rectification is implementation?" has no answer.
+    bus.emitDispatch(makeSessionTurnEvent({ stage: "rectification", sessionRole: "implementer" }));
 
     expect(recorded[0].stage).toBe("rectification");
-    expect(recorded[0].sessionRole).toBe("test-writer");
+    expect(recorded[0].sessionRole).toBe("implementer");
   });
 
   test("#1433: carries featureName when the dispatch has one", () => {

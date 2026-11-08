@@ -233,13 +233,13 @@ describe("AgentManager.runAsSession failed SessionTurnError (AC14)", () => {
     bus.onDispatchError((event) => receivedErrors.push(event));
 
     await expect(
-      manager.runAsSession("claude", makeHandle({ role: "verifier" }), "do the thing", {
+      manager.runAsSession("claude", makeHandle({ role: "implementer" }), "do the thing", {
         pipelineStage: "run",
       }),
     ).rejects.toBe(sessionTurnError);
 
     expect(receivedErrors).toHaveLength(1);
-    expect(receivedErrors[0]?.sessionRole).toBe("verifier");
+    expect(receivedErrors[0]?.sessionRole).toBe("implementer");
   });
 
   test("AC14: sendPrompt throwing a SessionTurnError emits a DispatchErrorEvent carrying that tokenUsage and exactCostUsd, then rethrows", async () => {

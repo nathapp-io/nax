@@ -610,7 +610,7 @@ describe("SessionManager lifecycle — resume() and closeStory()", () => {
 
     test("returns null when role doesn't match", () => {
       const mgr = new SessionManager();
-      mgr.create({ role: "test-writer", agent: "claude", workdir: "/p", storyId: "US-001" });
+      mgr.create({ role: "plan", agent: "claude", workdir: "/p", storyId: "US-001" });
       expect(mgr.resume("US-001", "implementer")).toBeNull();
     });
 
@@ -710,7 +710,7 @@ describe("SessionManager lifecycle — resume() and closeStory()", () => {
 
     test("transitions multiple sessions for the same story", () => {
       const mgr = new SessionManager();
-      mgr.create({ role: "test-writer", agent: "claude", workdir: "/p", storyId: "US-001" });
+      mgr.create({ role: "plan", agent: "claude", workdir: "/p", storyId: "US-001" });
       mgr.create({ role: "implementer", agent: "claude", workdir: "/p", storyId: "US-001" });
       const closed = mgr.closeStory("US-001");
       expect(closed).toHaveLength(2);

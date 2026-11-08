@@ -205,14 +205,14 @@ describe("createPhaseMetricsAggregator", () => {
 
   test("AC13: recording fix iterations for a rectification phase exports a strategy-tagged counter", () => {
     const agg = createPhaseMetricsAggregator();
-    agg.recordFixIterations("rectification", "source-fix", 2);
+    agg.recordFixIterations("rectification", "implementer", 2);
     const payload: OtlpMetricsPayload = agg.buildMetricsPayload({
       serviceName: "nax",
       runId: "r1",
       timeUnixNano: "1000",
     });
     const point = counterPoint(payload, "nax.fix.iterations");
-    expect(point.attributes).toContainEqual(attr("strategy", "source-fix"));
+    expect(point.attributes).toContainEqual(attr("strategy", "implementer"));
     expect(point.asInt).toBe("2");
   });
 

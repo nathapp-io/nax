@@ -62,7 +62,7 @@ export interface PipelineBusState {
   runErrored: boolean;
   /** Log of escalation events (story:escalated) */
   escalationLog: EscalationEntry[];
-  /** Current orchestrator step per story (e.g. "test-writer", "implementer", "verifier") */
+  /** Current orchestrator step per story (e.g. "implementer", "story-review", "branch-review") */
   storySteps: Record<string, string>;
   /** Post-run phase status (review) */
   postRunPhases: {

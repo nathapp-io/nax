@@ -14,8 +14,6 @@ import { type RepoSnapshot, restoreRepoSnapshot, takeRepoSnapshot } from "./snap
 export const REVIEWER_SESSION_ROLES: ReadonlySet<string> = new Set([
   "reviewer-semantic",
   "reviewer-adversarial",
-  "finish-review-spec",
-  "finish-review-quality",
   "wf-story-review",
   "wf-rereview",
   "wf-branch-review",

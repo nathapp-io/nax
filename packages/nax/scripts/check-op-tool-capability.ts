@@ -7,8 +7,8 @@
  * (`src/operations/types.ts`), so omitting the field yields a read-only set
  * rather than an error. On ACP that is inert -- the ACP agent brings its own
  * tools -- so the omission never surfaces there. On the native transport it
- * silently disables the op: a test-writer that cannot write, a verifier that
- * cannot run its own tests.
+ * silently disables the op: an implementer that cannot write its files, a
+ * planner that cannot write the one file its prompt asks for.
  *
  * Capability stays declared per op rather than derived from the role. Deriving
  * would trade a silent under-grant for a silent over-grant -- a new op picking
@@ -38,30 +38,11 @@ const BASELINE_FILE = join(import.meta.dir, "baselines", "op-tool-capability-bas
 
 /**
  * Minimum tools a session role's work requires.
- *
- * `verifier` never edits an existing file (no Edit requirement): a verifier
- * that can repair what it is judging is not a verifier, and the isolation
- * check it performs assumes it changed nothing but the verdict.
  */
 export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
   implementer: ["Write", "Edit"],
-  "test-writer": ["Write", "Edit"],
-  // #1936: a fix role edits the code it broke and must be able to re-run it —
-  // the same requirement this table already puts on the verifier below.
-  "source-fix": ["Write", "Edit", "RunCommand"],
-  "test-fix": ["Write", "Edit", "RunCommand"],
-  "repo-scoped-test-fix": ["Write", "Edit"],
-  "fix-gen": ["Write", "Edit"],
-  "finish-fix": ["Write", "Edit"],
   /**
-   * The verifier runs the story's scoped tests AND writes one fresh output
-   * file — the same `fileOutput`-style contract as the three roles below. It
-   * was omitted from that group, so the prompt's mandatory verdict-file write
-   * had no tool behind it and `recover`'s disk fallback was dead (nax#2013).
-   */
-  verifier: ["RunCommand", "Write"],
-  /**
-   * These three roles never edit an existing file (no Edit requirement) — each
+   * These roles never edit an existing file (no Edit requirement) — each
    * writes ONE fresh output file via a `fileOutput`-style contract ("write JSON
    * to this path, then reply with a brief confirmation") rather than replying
    * with the content inline. See docs/superpowers/specs/
@@ -69,7 +50,6 @@ export const REQUIRED_TOOLS_BY_ROLE: Record<string, readonly string[]> = {
    */
   plan: ["Write"],
   "plan-refine": ["Write"],
-  "acceptance-gen": ["Write"],
 };
 
 export interface OpRow {

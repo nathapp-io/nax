@@ -101,7 +101,7 @@ function makeResidual(overrides: Partial<InFlightResidual> = {}): InFlightResidu
     streamCallId: "c1",
     agentName: "native",
     model: "m1",
-    sessionName: "feat-US-001-acceptance-gen",
+    sessionName: "feat-US-001-wf-implementer",
     tokens: { input: 100, output: 20, cacheRead: 5, cacheWrite: 2 },
     costUsd: 0.42,
     roundTrips: 3,
@@ -534,7 +534,7 @@ describe("toPartialCostEvent (US-003 AC17-18)", () => {
     expect(row.projectKey).toBe("proj");
     expect(row.agentName).toBe("native");
     expect(row.model).toBe("m1");
-    expect(row.sessionRole).toBe("acceptance-gen");
+    expect(row.sessionRole).toBe("wf-implementer");
     expect(row.callId).toBe("c1");
     expect(row.tokens).toEqual({ input: 100, output: 20, cacheRead: 5, cacheWrite: 2 });
     expect(row.roundTrips).toBe(3);
@@ -582,7 +582,7 @@ describe("cost-row schema v8 (US-006 AC19)", () => {
 
     bus.emitDispatch(
       makeSessionTurn({
-        sessionName: "feat-US-003-acceptance-gen",
+        sessionName: "feat-US-003-wf-implementer",
         tokenUsage: { inputTokens: 100, outputTokens: 50 },
       }),
     );

@@ -20,7 +20,7 @@ export interface LiveActivityPanelProps {
   focused?: boolean;
   /** Active agent call states from stream events */
   activeCalls?: Map<string, ActiveCallState>;
-  /** Current orchestrator step per storyId (e.g. "test-writer", "implementer") */
+  /** Current orchestrator step per storyId (e.g. "implementer", "story-review") */
   storySteps?: Record<string, string>;
   /** Run completion summary, set when run:completed fires */
   runSummary?: RunSummary;

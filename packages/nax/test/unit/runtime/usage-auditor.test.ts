@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { getLogger, initLogger, resetLogger } from "@/logger";
-import { _usageAuditorDeps, createNoOpUsageAuditor, type UsageAuditEntry, UsageAuditor } from "@/runtime/usage-auditor";
+import {
+  _usageAuditorDeps,
+  createNoOpUsageAuditor,
+  deriveSessionRole,
+  type UsageAuditEntry,
+  UsageAuditor,
+} from "@/runtime/usage-auditor";
 
 const RUN_ID = "r-001";
 
@@ -143,10 +149,11 @@ describe("UsageAuditor", () => {
 
   test.each([
     ["US-001-implementer", "implementer"],
-    ["US-001-repo-scoped-test-fix", "repo-scoped-test-fix"],
+    ["US-001-wf-implementer", "wf-implementer"],
+    ["US-001-wf-branch-fix", "wf-branch-fix"],
+    ["US-001-wf-repair", "wf-repair"],
     ["US-001-reviewer-semantic", "reviewer-semantic"],
     ["US-001-reviewer-adversarial", "reviewer-adversarial"],
-    ["US-001-finish-review-quality", "finish-review-quality"],
     ["main", "main"],
   ] as const)("derives sessionRole from %s as longest trailing match %s", async (sessionName, expected) => {
     await withTempDir(async (dir) => {
@@ -209,5 +216,15 @@ describe("UsageAuditor", () => {
     aud.record(makeEntry());
     await aud.flush();
     expect(files.size).toBe(0);
+  });
+});
+
+describe("deriveSessionRole", () => {
+  test("US-003 AC-6: a session name ending in a removed role derives no role", () => {
+    expect(deriveSessionRole("nax-1a2b-feat-us-001-repo-scoped-test-fix")).toBeUndefined();
+  });
+
+  test("US-003 AC-7: a session name ending in a live multi-segment role derives that role", () => {
+    expect(deriveSessionRole("nax-1a2b-feat-wf-branch-fix")).toBe("wf-branch-fix");
   });
 });

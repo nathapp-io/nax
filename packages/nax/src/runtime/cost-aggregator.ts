@@ -40,7 +40,7 @@ export interface CostEvent {
   readonly profile?: string;
   readonly stage?: string;
   /**
-   * Session role (`test-writer`, `implementer`, `acceptance-gen`, …). The
+   * Session role (`implementer`, `wf-implementer`, `plan`, …). The
    * sub-stage attribution key — `stage` alone collapses 23 roles into 6 buckets.
    */
   readonly sessionRole?: string;

@@ -3,9 +3,8 @@
  *
  * Asserts that SessionTurnDispatchEvents emitted with TDD session roles produce
  * audit files named with the correct per-role suffix:
- *   *-test-writer-run-t01.txt
  *   *-implementer-run-t01.txt
- *   *-verifier-run-t01.txt
+ *   *-wf-implementer-run-t01.txt
  *
  * Before ADR-020 Wave 1, the dispatch path wrote sessionHint into runOptions and
  * the audit middleware read it back. After Wave 1, the emitter produces a typed
@@ -52,7 +51,7 @@ function makeTddTurnEvent(role: SessionRole, roundTrips = 1): SessionTurnDispatc
 }
 
 describe("TDD per-role audit file naming (ADR-020 Wave 1 regression)", () => {
-  const tddRoles: SessionRole[] = ["test-writer", "implementer", "verifier"];
+  const tddRoles: SessionRole[] = ["implementer", "wf-implementer"];
 
   for (const role of tddRoles) {
     test(`${role} dispatch event produces *-${role}-run-t01.txt audit file`, async () => {
@@ -102,7 +101,7 @@ describe("TDD per-role audit file naming (ADR-020 Wave 1 regression)", () => {
       const badFiles = files.filter((f) => f.includes("run-run-"));
       expect(badFiles).toHaveLength(0);
 
-      // All three roles must be represented.
+      // Every role must be represented.
       for (const role of tddRoles) {
         const hasRole = files.some((f) => f.includes(`-${role}-`));
         expect(hasRole).toBe(true);
