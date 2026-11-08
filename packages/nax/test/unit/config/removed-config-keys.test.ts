@@ -1,0 +1,335 @@
+// test/unit/config/removed-config-keys.test.ts
+//
+// C1 B3c-2 (US-002) — the shared warn-and-strip traversal for the config keys
+// the pipeline-mode removal retired.
+//
+// `stripKeysAtPaths` is the generic mechanism: it walks a dotted path, warns
+// once per path present, and rebuilds the objects above the change instead of
+// mutating its input. `stripRemovedConfigKeys` binds it to
+// `REMOVED_CONFIG_KEYS`, and `stripRemovedConfig` (removed-stage-names.ts) runs
+// it between the no-op-key strip and the removed-stage-name strip with one sink,
+// at every loader strip site — before `NaxConfigSchema.safeParse`, so a key
+// under a `.strict()` schema is gone before the schema sees it.
+//
+// "Warns" here means the loader warning reaches a logger sink registered with
+// `addSink`, the same way test/unit/config/removed-stage-names.test.ts captures
+// it: `loadConfig` takes no warn parameter.
+
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
+import {
+  PIPELINE_ONLY_KEY_HINT,
+  REMOVED_CONFIG_KEYS,
+  stripKeysAtPaths,
+  stripRemovedConfigKeys,
+} from "@/config/removed-config-keys";
+import { addSink, initLogger, resetLogger } from "@/logger";
+
+const tempDirs: string[] = [];
+const PROVIDER_HINT = "nothing read this key; the interceptor is always rtk";
+
+/** The warning `stripKeysAtPaths` emits for one removed path. */
+function removalWarning(path: string, hint: string): string {
+  return `Config key "${path}" has been removed — ${hint}. Remove it from your config.`;
+}
+
+/** Write a project `.nax/config.json` and return the project root. */
+async function writeProjectConfig(contents: object): Promise<string> {
+  const root = makeTempDir("nax-removed-keys-");
+  tempDirs.push(root);
+  const naxDir = join(root, ".nax");
+  await mkdir(naxDir, { recursive: true });
+  await Bun.write(join(naxDir, "config.json"), JSON.stringify(contents, null, 2));
+  return root;
+}
+
+/** Run `fn` with a logger sink capturing every warning message it emits. */
+async function captureWarnings<T>(fn: () => Promise<T>): Promise<{ result: T; messages: string[] }> {
+  const messages: string[] = [];
+  resetLogger();
+  initLogger({ level: "warn" });
+  const removeSink = addSink((entry) => messages.push(entry.message));
+  try {
+    const result = await fn();
+    return { result, messages };
+  } finally {
+    removeSink();
+    resetLogger();
+  }
+}
+
+/** The removed-key warnings in a captured message list. */
+function removedKeyWarnings(messages: string[]): string[] {
+  return messages.filter((msg) => msg.includes("has been removed") && msg.startsWith("Config key "));
+}
+
+/** The warnings naming one dotted path. */
+function warningsFor(messages: string[], path: string): string[] {
+  return messages.filter((msg) => msg.includes(`"${path}"`));
+}
+
+beforeEach(() => {
+  _clearRootConfigCache();
+});
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    cleanupTempDir(dir);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadConfig — one removed rectification leaf
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedConfigKeys via loadConfig — execution.rectification leaves", () => {
+  test("AC-1: resolves without the removed abortOnNoProgress property", async () => {
+    const root = await writeProjectConfig({ execution: { rectification: { abortOnNoProgress: false } } });
+
+    const config = await loadConfig(root);
+
+    expect(Object.hasOwn(config.execution.rectification, "abortOnNoProgress")).toBe(false);
+  });
+
+  test("AC-2: a logger sink receives exactly the removed-key warning for abortOnNoProgress", async () => {
+    const root = await writeProjectConfig({ execution: { rectification: { abortOnNoProgress: false } } });
+
+    const { messages } = await captureWarnings(() => loadConfig(root));
+
+    expect(warningsFor(messages, "execution.rectification.abortOnNoProgress")).toEqual([
+      removalWarning("execution.rectification.abortOnNoProgress", PIPELINE_ONLY_KEY_HINT),
+    ]);
+  });
+
+  test("AC-10: retains execution.rectification.maxAttemptsTotal", async () => {
+    const root = await writeProjectConfig({ execution: { rectification: { maxAttemptsTotal: 7 } } });
+
+    const config = await loadConfig(root);
+
+    expect(config.execution.rectification.maxAttemptsTotal).toBe(7);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadConfig — the two removed execution sections and the interceptor provider
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EXECUTION_FIXTURE = {
+  mutationCheck: { enabled: true },
+  flakeDetection: { enabled: false },
+  commandInterceptor: { enabled: true, provider: "rtk" },
+};
+
+describe("stripRemovedConfigKeys via loadConfig — removed execution sections", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await writeProjectConfig({ execution: EXECUTION_FIXTURE });
+  });
+
+  test("AC-3: resolves rather than rejecting the removed keys", async () => {
+    const config = await loadConfig(root);
+
+    expect(config.execution).toBeDefined();
+  });
+
+  test("AC-4: warns exactly once per removed key, with the section and provider hints", async () => {
+    const { messages } = await captureWarnings(() => loadConfig(root));
+
+    const removed = removedKeyWarnings(messages);
+    expect(removed).toHaveLength(3);
+    expect(warningsFor(removed, "execution.mutationCheck")).toEqual([
+      removalWarning("execution.mutationCheck", PIPELINE_ONLY_KEY_HINT),
+    ]);
+    expect(warningsFor(removed, "execution.flakeDetection")).toEqual([
+      removalWarning("execution.flakeDetection", PIPELINE_ONLY_KEY_HINT),
+    ]);
+    expect(warningsFor(removed, "execution.commandInterceptor.provider")).toEqual([
+      removalWarning("execution.commandInterceptor.provider", PROVIDER_HINT),
+    ]);
+  });
+
+  test("AC-5: the resolved execution has no mutationCheck property", async () => {
+    const config = await loadConfig(root);
+
+    expect(Object.hasOwn(config.execution, "mutationCheck")).toBe(false);
+  });
+
+  test("AC-6: the resolved execution has no flakeDetection property", async () => {
+    const config = await loadConfig(root);
+
+    expect(Object.hasOwn(config.execution, "flakeDetection")).toBe(false);
+  });
+
+  test("AC-7: retains execution.commandInterceptor.enabled", async () => {
+    const config = await loadConfig(root);
+
+    expect(config.execution.commandInterceptor.enabled).toBe(true);
+  });
+
+  test("AC-8: the resolved commandInterceptor has no provider property", async () => {
+    const config = await loadConfig(root);
+
+    expect(Object.hasOwn(config.execution.commandInterceptor, "provider")).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadConfig — the default config warns about nothing
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedConfigKeys via loadConfig — no project config", () => {
+  test("AC-9: a logger sink receives no 'has been removed' warning", async () => {
+    const root = makeTempDir("nax-removed-none-");
+    tempDirs.push(root);
+
+    const { result, messages } = await captureWarnings(() => loadConfig(root));
+
+    assertDefined(result, "loadConfig result");
+    expect(messages.filter((msg) => msg.includes("has been removed"))).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// stripKeysAtPaths — direct unit tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripKeysAtPaths", () => {
+  test("AC-16: strips a nested leaf and keeps its siblings", () => {
+    const result = stripKeysAtPaths({ a: { b: 1, c: 2 } }, { "a.b": "h" }, () => {});
+
+    expect(result).toEqual({ a: { c: 2 } });
+  });
+
+  test("AC-17: warns once with the removed-key message", () => {
+    const captured: string[] = [];
+
+    stripKeysAtPaths({ a: { b: 1, c: 2 } }, { "a.b": "h" }, (msg) => captured.push(msg));
+
+    expect(captured).toEqual(['Config key "a.b" has been removed — h. Remove it from your config.']);
+  });
+
+  test("AC-18: never mutates its input", () => {
+    const input = { a: { b: 1, c: 2 } };
+
+    stripKeysAtPaths(input, { "a.b": "h" }, () => {});
+
+    expect(input.a.b).toBe(1);
+  });
+
+  test("AC-19: tolerates a non-object intermediate and returns the config unchanged", () => {
+    const result = stripKeysAtPaths({ a: 42 }, { "a.b": "h" }, () => {});
+
+    expect(result).toEqual({ a: 42 });
+  });
+
+  test("AC-20: does not warn when the walk cannot reach the leaf", () => {
+    const captured: string[] = [];
+
+    stripKeysAtPaths({ a: 42 }, { "a.b": "h" }, (msg) => captured.push(msg));
+
+    expect(captured).toEqual([]);
+  });
+
+  test("returns a new top-level object even when no key matched", () => {
+    const input = { a: { c: 2 } };
+
+    const result = stripKeysAtPaths(input, { "a.b": "h" }, () => {});
+
+    expect(result).toEqual(input);
+    expect(result).not.toBe(input);
+  });
+
+  test("stripRemovedConfigKeys strips every removed key it is given, warning once each", () => {
+    const conf: Record<string, unknown> = {
+      execution: {
+        rectification: { enabled: true, maxAttemptsTotal: 9 },
+        mutationCheck: { enabled: true },
+        flakeDetection: { enabled: true },
+        commandInterceptor: { enabled: true, provider: "rtk" },
+      },
+    };
+
+    const captured: string[] = [];
+    const result = stripRemovedConfigKeys(conf, (msg) => captured.push(msg));
+
+    expect(captured).toHaveLength(4);
+    expect(result).toEqual({
+      execution: { rectification: { maxAttemptsTotal: 9 }, commandInterceptor: { enabled: true } },
+    });
+  });
+
+  test("REMOVED_CONFIG_KEYS covers the eleven rectification leaves, two sections and the provider", () => {
+    expect(Object.keys(REMOVED_CONFIG_KEYS).sort()).toEqual(
+      [
+        "execution.commandInterceptor.provider",
+        "execution.flakeDetection",
+        "execution.mutationCheck",
+        "execution.rectification.abortOnIncreasingFailures",
+        "execution.rectification.abortOnNoProgress",
+        "execution.rectification.consecutiveIncreasesToBail",
+        "execution.rectification.consecutiveNoProgressToBail",
+        "execution.rectification.enabled",
+        "execution.rectification.maxAttemptsPerStrategy",
+        "execution.rectification.maxFailureSummaryChars",
+        "execution.rectification.repoScopedFallback",
+        "execution.rectification.rethinkAtAttempt",
+        "execution.rectification.storyScopedFixBudget",
+        "execution.rectification.urgencyAtAttempt",
+      ].sort(),
+    );
+  });
+
+  test("the sections carry the pipeline-only hint and the provider its own hint", () => {
+    expect(REMOVED_CONFIG_KEYS["execution.flakeDetection"]).toBe(PIPELINE_ONLY_KEY_HINT);
+    expect(REMOVED_CONFIG_KEYS["execution.mutationCheck"]).toBe(PIPELINE_ONLY_KEY_HINT);
+    expect(REMOVED_CONFIG_KEYS["execution.rectification.abortOnNoProgress"]).toBe(PIPELINE_ONLY_KEY_HINT);
+    expect(REMOVED_CONFIG_KEYS["execution.commandInterceptor.provider"]).toBe(PROVIDER_HINT);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// loadConfigForWorkdir — the per-package overlay path
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedConfigKeys via loadConfigForWorkdir — per-package overlay", () => {
+  let configPath: string;
+
+  beforeEach(async () => {
+    const root = makeTempDir("nax-removed-keys-mono-");
+    tempDirs.push(root);
+    const naxDir = join(root, ".nax");
+    await mkdir(naxDir, { recursive: true });
+    configPath = join(naxDir, "config.json");
+    await Bun.write(configPath, JSON.stringify({}));
+    const monoDir = join(naxDir, "mono", "packages", "api");
+    await mkdir(monoDir, { recursive: true });
+    await Bun.write(
+      join(monoDir, "config.json"),
+      JSON.stringify({
+        execution: { rectification: { abortOnNoProgress: false, maxAttemptsTotal: 5 } },
+      }),
+    );
+  });
+
+  test("AC-27: resolves with the retained execution.rectification.maxAttemptsTotal", async () => {
+    const config = await loadConfigForWorkdir(configPath, "packages/api");
+
+    expect(config.execution.rectification.maxAttemptsTotal).toBe(5);
+  });
+
+  test("AC-28: the resolved rectification has no abortOnNoProgress property", async () => {
+    const config = await loadConfigForWorkdir(configPath, "packages/api");
+
+    expect(Object.hasOwn(config.execution.rectification, "abortOnNoProgress")).toBe(false);
+  });
+
+  test("AC-29: a logger sink records one warning naming execution.rectification.abortOnNoProgress", async () => {
+    const { messages } = await captureWarnings(() => loadConfigForWorkdir(configPath, "packages/api"));
+
+    expect(warningsFor(messages, "execution.rectification.abortOnNoProgress")).toHaveLength(1);
+  });
+});

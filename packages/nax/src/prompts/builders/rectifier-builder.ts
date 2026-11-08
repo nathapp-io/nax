@@ -9,18 +9,15 @@
  *
  * NOTE: This class is being deprecated in favor of static factory methods.
  * The old `for(trigger)` builder pattern is removed in ADR-018 / Issue #737 PR 2.
- * Remaining: static methods for review, autofix, and escalation prompts.
+ * Remaining: static methods for review and autofix prompts.
  */
 
-import type { RectificationConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { Finding } from "@/findings/types";
 import type { UserStory } from "@/prd";
 import type { ReviewCheckName, ReviewCheckResult } from "@/review";
 import { isBlockingSeverity } from "@/review";
-import { formatFailureSummary } from "@/test-runners";
 import { storyPackageDir } from "@/utils/path-frame";
-import type { TestFailure } from "@/verification";
 import type { FailureRecord } from "../core";
 import { priorFailuresSection, universalConstitutionSection, universalContextSection } from "../core";
 import type { GuardrailLevel } from "../sections";
@@ -214,48 +211,6 @@ export class RectifierPromptBuilder {
     parts.push(
       `\nFix in priority order. After fixing each priority, re-run the failing check(s) at that level to verify they pass before moving on. ${testDirective} Commit your changes when all checks pass.`,
     );
-    parts.push(story ? escapeHatchFor(story) : CONTRADICTION_ESCAPE_HATCH);
-
-    const guardrails = buildBehavioralGuardrailsSection("implementer", guardrailLevel ?? "lite");
-    if (guardrails) {
-      parts.push(`\n\n${guardrails}`);
-    }
-
-    return parts.join("\n");
-  }
-
-  /**
-   * Builds a delta-only continuation prompt for autofix retry attempts (PROMPT-001).
-   *
-   * Sent on attempt 2+ when the implementer session is confirmed open.
-   * Contains ONLY new error output + escalation preamble — NOT the full prompt.
-   * This keeps retry tokens ~70% lower than re-sending the full rectification prompt.
-   */
-  static continuation(
-    failedChecks: ReviewCheckResult[],
-    attempt: number,
-    rethinkAtAttempt: number,
-    urgencyAtAttempt: number,
-    guardrailLevel?: GuardrailLevel,
-    story?: UserStory,
-  ): string {
-    const parts: string[] = [];
-
-    parts.push("Your previous fix attempt did not resolve all issues. Here are the remaining failures:\n");
-
-    parts.push(renderPrioritizedFailures(failedChecks));
-
-    if (attempt >= rethinkAtAttempt) {
-      parts.push(
-        "\n**Rethink your approach.** The same strategy has failed multiple times. Consider a fundamentally different fix.\n",
-      );
-    }
-    if (attempt >= urgencyAtAttempt) {
-      parts.push(
-        "\n**URGENT: This is your final attempt.** If you cannot fix all issues, emit `UNRESOLVED: <reason>` to escalate.\n",
-      );
-    }
-
     parts.push(story ? escapeHatchFor(story) : CONTRADICTION_ESCAPE_HATCH);
 
     const guardrails = buildBehavioralGuardrailsSection("implementer", guardrailLevel ?? "lite");
@@ -493,111 +448,6 @@ Commit your fixes when done.${scopeConstraint}`;
 
     parts.push(story ? escapeHatchFor(story) : CONTRADICTION_ESCAPE_HATCH);
     return parts.join("");
-  }
-
-  /**
-   * Prompt for escalation to a higher-tier model after exhausting retries.
-   *
-   * Migrated from the escalated-rectification builder in the deleted verification module.
-   */
-  static escalated(
-    failures: TestFailure[],
-    story: UserStory,
-    priorAttempts: number,
-    originalTier: string,
-    targetTier: string,
-    config?: RectificationConfig,
-    testCommand?: string,
-    testScopedTemplate?: string,
-  ): string {
-    const maxChars = config?.maxFailureSummaryChars ?? 2000;
-    const failureSummary = formatFailureSummary(failures, maxChars);
-
-    // #543: do not invent a `bun test` command for Go / Python / Rust packages.
-    // If no testCommand is configured, surface the file without a command so the
-    // agent uses its project's native test runner rather than a wrong default.
-    const cmd = testCommand ?? "";
-
-    const failingFiles = Array.from(new Set(failures.map((f) => f.file)));
-    const testCommands = failingFiles
-      .map((file) => {
-        const scopedCmd = testScopedTemplate
-          ? testScopedTemplate.replaceAll("{{files}}", () => file)
-          : cmd
-            ? `${cmd} ${file}`
-            : file;
-        return `  ${scopedCmd}`;
-      })
-      .join("\n");
-
-    const failingTestNames = failures.map((f) => f.testName);
-    let failingTestsSection: string;
-    if (failingTestNames.length <= 10) {
-      failingTestsSection = failingTestNames.map((name) => `- ${name}`).join("\n");
-    } else {
-      const first10 = failingTestNames
-        .slice(0, 10)
-        .map((name) => `- ${name}`)
-        .join("\n");
-      const remaining = failingTestNames.length - 10;
-      failingTestsSection = `${first10}\n- and ${remaining} more`;
-    }
-
-    return `# Escalated Rectification Required
-
-This is an escalated attempt after exhausting standard retries. The previous model tier was unable to fix the issues, so a more powerful model is attempting the fix.
-
-## Previous Rectification Attempts
-
-- **Prior Attempts:** ${priorAttempts}
-- **Original Model Tier:** ${originalTier}
-- **Escalated to:** ${targetTier} (escalated from ${originalTier} to ${targetTier})
-
-### Still Failing Tests
-
-${failingTestsSection}
-
----
-
-## Story Context
-
-**Title:** ${story.title}
-
-**Description:**
-${story.description}
-
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
-
----
-
-## Test Failures
-
-${failureSummary}
-
----
-
-## Instructions for Escalated Attempt
-
-1. Review the failure context above and note the previous tier's attempts.
-2. The ${originalTier} model could not resolve these issues — try a fundamentally different approach.
-3. Consider:
-   - Are there architectural issues or design flaws causing multiple failures?
-   - Could the implementation be incomplete or missing core functionality?
-   - Are there concurrency, state management, or ordering issues?
-4. Fix the implementation WITHOUT loosening test assertions.
-5. Run the failing tests to verify your fixes:
-
-${testCommands}
-
-6. Ensure ALL tests pass before completing.
-
-**IMPORTANT:**
-- ${testEditHeadline(story, `Do NOT modify test files — see the ${exceptionCountWord(story)} narrow exceptions appended below if you believe a test has a lint error, a PRD-contract mismatch, or belongs to a sibling story.`)}
-- Do NOT loosen assertions to mask implementation bugs.
-- Focus on fixing the source code to meet the test requirements.
-- When running tests, run ONLY the failing test files shown above${cmd ? ` — NEVER run \`${cmd}\` without a file filter` : " — never run the full test suite without a file filter"}.
-${escapeHatchFor(story)}`;
   }
 
   /**

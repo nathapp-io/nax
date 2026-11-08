@@ -190,10 +190,6 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
     test("DEFAULT_CONFIG.execution.rectification.maxAttemptsTotal === 12", () => {
       expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsTotal).toBe(12);
     });
-
-    test("DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy === 3", () => {
-      expect(DEFAULT_CONFIG.execution.rectification.maxAttemptsPerStrategy).toBe(3);
-    });
   });
 
   describe("NaxConfigSchema.parse({}) produces DEFAULT_CONFIG", () => {

@@ -2,7 +2,9 @@
 //
 // Regression guard for the rectification-config consolidation: loading a
 // pre-migration config with any of the five legacy keys must throw with a
-// clear migration message.
+// clear migration message. Two of the five (`rethinkAtAttempt`,
+// `urgencyAtAttempt`) were removed rather than moved in C1 B3c-2, so their hint
+// says to delete the key; the other three still migrate.
 //
 // Without this guard, Zod's default .strip() mode silently drops the unknown
 // keys and the run continues with the new defaults — re-introducing the exact
@@ -13,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { rejectLegacyRectificationKeys } from "@/config/config-guards";
 import { _clearRootConfigCache, loadConfig } from "@/config/loader";
 
 const tempDirs: string[] = [];
@@ -53,7 +56,11 @@ describe("rectification-config consolidation — legacy key guard", () => {
     }
   });
 
-  test("rejects quality.autofix.rethinkAtAttempt with migration pointer", async () => {
+  // AC-21: the config-load rejection survives for the two keys that were
+  // REMOVED rather than moved — the hint now tells the user to delete the key,
+  // because `execution.rectification.rethinkAtAttempt` / `.urgencyAtAttempt` do
+  // not exist any more (C1 B3c-2).
+  test("rejects quality.autofix.rethinkAtAttempt with a removal hint", async () => {
     const root = await writeProjectConfig({
       quality: { autofix: { rethinkAtAttempt: 2 } },
     });
@@ -63,12 +70,14 @@ describe("rectification-config consolidation — legacy key guard", () => {
     } catch (err) {
       assertNaxError(err);
       expect(err.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
-      expect(err.message).toContain("quality.autofix.rethinkAtAttempt");
-      expect(err.message).toContain("execution.rectification.rethinkAtAttempt");
+      // AC-23: the removal hint names the offending key after the word Remove.
+      expect(err.message).toMatch(/Remove `quality\.autofix\.rethinkAtAttempt`/);
+      // AC-24: the hint never points at a key that no longer exists.
+      expect(err.message).not.toContain("execution.rectification.rethinkAtAttempt");
     }
   });
 
-  test("rejects quality.autofix.urgencyAtAttempt with migration pointer", async () => {
+  test("rejects quality.autofix.urgencyAtAttempt with a removal hint", async () => {
     const root = await writeProjectConfig({
       quality: { autofix: { urgencyAtAttempt: 3 } },
     });
@@ -78,8 +87,8 @@ describe("rectification-config consolidation — legacy key guard", () => {
     } catch (err) {
       assertNaxError(err);
       expect(err.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
-      expect(err.message).toContain("quality.autofix.urgencyAtAttempt");
-      expect(err.message).toContain("execution.rectification.urgencyAtAttempt");
+      expect(err.message).toMatch(/Remove `quality\.autofix\.urgencyAtAttempt`/);
+      expect(err.message).not.toContain("execution.rectification.urgencyAtAttempt");
     }
   });
 
@@ -139,14 +148,31 @@ describe("rectification-config consolidation — legacy key guard", () => {
     }
   });
 
-  test("accepts canonical config — execution.rectification.{maxAttemptsTotal,maxAttemptsPerStrategy}", async () => {
+  test("accepts canonical config — execution.rectification.maxAttemptsTotal", async () => {
     const root = await writeProjectConfig({
       execution: {
-        rectification: { maxAttemptsTotal: 12, maxAttemptsPerStrategy: 3 },
+        rectification: { maxAttemptsTotal: 12 },
       },
     });
     const config = await loadConfig(root);
     expect(config.execution.rectification.maxAttemptsTotal).toBe(12);
-    expect(config.execution.rectification.maxAttemptsPerStrategy).toBe(3);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002 — the guard itself, on the two keys that are now removed not moved
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("rejectLegacyRectificationKeys — rethinkAtAttempt is removed, not moved (US-002)", () => {
+  test("AC-22: throws a NaxError with CONFIG_LEGACY_RECTIFICATION_KEYS", () => {
+    let thrown: unknown;
+    try {
+      rejectLegacyRectificationKeys({ quality: { autofix: { rethinkAtAttempt: 2 } } });
+    } catch (err) {
+      thrown = err;
+    }
+
+    assertNaxError(thrown);
+    expect(thrown.code).toBe("CONFIG_LEGACY_RECTIFICATION_KEYS");
   });
 });

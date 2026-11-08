@@ -60,48 +60,11 @@ export const AutoRouteConfigSchema = z.object({
 });
 
 export const RectificationConfigSchema = z.object({
-  enabled: z.boolean().default(true),
   /** Total iteration cap for the unified fix cycle (shared by story-orchestrator
    * + regression cycles). Per-strategy caps are the granular bound; this is the
    * loose ceiling. */
   maxAttemptsTotal: z.number().int().min(1).max(50).default(12),
-  /** Default per-strategy cap for LLM-driven strategies (autofix-implementer,
-   * autofix-test-writer, full-suite-rectify). Mechanical strategies stay at 1. */
-  maxAttemptsPerStrategy: z.number().int().min(1).max(20).default(3),
   fullSuiteTimeoutSeconds: z.number().int().min(10).max(3600).default(600),
-  maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
-  abortOnIncreasingFailures: z.boolean().default(true),
-  /** Number of consecutive iterations whose finding count must increase
-   * (findingsAfter > findingsBefore) before `abortOnIncreasingFailures` bails.
-   * 1 = bail on the first regressing iteration (legacy behaviour); higher
-   * values tolerate transient regressions (e.g. a tightened test temporarily
-   * surfacing more verifier failures before the implementer fixes the source). */
-  consecutiveIncreasesToBail: z.number().int().min(1).max(10).default(2),
-  /** Abort rectification when no progress is made for several consecutive iterations
-   * (US-1496). Predicate wiring lives in US-002; this field is the resolved config
-   * knob. (default: true) */
-  abortOnNoProgress: z.boolean().default(true),
-  /** Number of consecutive no-progress iterations required before `abortOnNoProgress`
-   * bails. One higher than the count bail's default of 2 because the no-progress
-   * predicate fires on a much wider shape — the true coverage between 179 and 695
-   * iterations cannot be measured until post-#1496 telemetry accrues. (default: 3) */
-  consecutiveNoProgressToBail: z.number().int().min(1).max(10).default(3),
-  /** Bound the rectification budget to one (story, tier) pair so a tier escalation
-   * yields a fresh budget — a more capable model gets real attempts instead of
-   * inheriting the prior tier's exhausted state. (default: true) */
-  storyScopedFixBudget: z.boolean().default(true),
-  // Per-strategy attempt counters — reset when a new strategy runs.
-  // Under maxAttemptsPerStrategy=3: rethink on attempt 2, urgency on attempt 3 (final).
-  rethinkAtAttempt: z.number().int().min(1).default(2),
-  urgencyAtAttempt: z.number().int().min(1).default(3),
-  /** Register the repo-scoped `repo-scoped-test-fix` strategy as a fallthrough claimant
-   * for failing tests the story-scoped rectifier declines as out-of-scope (#1654).
-   * Without it, a test that is red for reasons outside the story deadlocks every
-   * story in the package: the rectifier is asked to fix a test it is forbidden to
-   * touch, answers UNRESOLVED, and the story burns the escalation ladder. The
-   * fallthrough gets a single attempt under its own session role. Turn off to
-   * restore the exit-on-give-up behaviour. (default: true) */
-  repoScopedFallback: z.boolean().default(true),
 });
 
 export const RegressionGateConfigSchema = z.object({
@@ -160,34 +123,6 @@ const WorktreeDependenciesConfigSchema = z
     }
   });
 
-/**
- * Flake-detection probe config. Controls the isolation re-run mechanic that
- * distinguishes deterministic failures from transient flakes before
- * attributing them to a story.
- */
-const FlakeDetectionConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  /** Number of isolation re-runs per probe. Default 2 (one fail + one pass = flaky). */
-  probeRuns: z.number().int().min(1).max(20).default(2),
-  /** Upper bound on probes accumulated per gate (budget cap across stories). */
-  maxProbesPerGate: z.number().int().min(1).max(100).default(5),
-  /** Per-probe subprocess timeout in seconds. */
-  probeTimeoutSeconds: z.number().int().min(5).max(600).default(60),
-});
-
-/**
- * Mutation-check config (US-001). Opt-in mutation-testing spot-check that runs
- * after GREEN passes to verify the test suite actually catches real defects.
- * `enabled` defaults to `false` so existing runs are unaffected.
- */
-const MutationCheckConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  /** Max mutants per story (budget cap for the spot-check). */
-  maxMutants: z.number().int().min(1).max(50).default(3),
-  /** Per-mutant subprocess timeout in seconds. */
-  timeoutSeconds: z.number().int().min(5).max(600).default(60),
-});
-
 const PermissionBlockSchema = z
   .object({
     // Declares the vocabulary the SSOT resolver reads; decides nothing.
@@ -225,7 +160,6 @@ export const PermissionsBlockSchema = z.record(z.string(), PermissionBlockSchema
  */
 export const CommandInterceptorConfigSchema = z
   .object({
-    provider: z.string().min(1).default("rtk"),
     enabled: z.boolean().default(false),
     git: z.object({ verbs: z.array(z.string().min(1)).default(["log", "diff"]) }).default({ verbs: ["log", "diff"] }),
     /**
@@ -339,19 +273,7 @@ export const ExecutionConfigSchema = z.object({
     )
     .default([]),
   storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
-  flakeDetection: FlakeDetectionConfigSchema.default({
-    enabled: true,
-    probeRuns: 2,
-    maxProbesPerGate: 5,
-    probeTimeoutSeconds: 60,
-  }),
-  mutationCheck: MutationCheckConfigSchema.default({
-    enabled: false,
-    maxMutants: 3,
-    timeoutSeconds: 60,
-  }),
   commandInterceptor: CommandInterceptorConfigSchema.default({
-    provider: "rtk",
     enabled: false,
     git: { verbs: ["log", "diff"] },
     bash: { enabled: false },
@@ -439,11 +361,11 @@ export const QualityConfigSchema = z.object({
   autofix: z
     .object({
       /** Whether autofix-implementer + autofix-test-writer strategies participate
-       * in the rectification cycle. Cycle-level caps live under
-       * execution.rectification.{maxAttemptsTotal,maxAttemptsPerStrategy}. */
+       * in the rectification cycle. The cycle-level cap lives under
+       * execution.rectification.maxAttemptsTotal. */
       enabled: z.boolean().default(true),
       /** Prompt-text display only: "X attempts available before escalation".
-       * Not enforced — the real cap is execution.rectification.maxAttemptsPerStrategy. */
+       * Not enforced — the real cap is execution.rectification.maxAttemptsTotal. */
       maxAttempts: z.number().int().min(1).default(3),
     })
     .default({

@@ -43,11 +43,8 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}, rawProfile?
       sessionTimeoutSeconds: 300,
       maxStoriesPerFeature: 10,
       rectification: {
-        enabled: false,
         maxAttemptsTotal: 0,
         fullSuiteTimeoutSeconds: 60,
-        maxFailureSummaryChars: 500,
-        abortOnIncreasingFailures: false,
       },
       regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true, mode: "disabled" },
       contextProviderTokenBudget: 2000,

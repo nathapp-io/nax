@@ -23,11 +23,8 @@ const createMockConfig = (_cwd: string, overrides: Partial<ExecutionConfig> = {}
       typecheckCommand: "echo 'typecheck'",
       contextProviderTokenBudget: 2000,
       rectification: {
-        enabled: true,
         maxAttemptsTotal: 2,
         fullSuiteTimeoutSeconds: 120,
-        maxFailureSummaryChars: 2000,
-        abortOnIncreasingFailures: true,
       },
       ...overrides,
     },

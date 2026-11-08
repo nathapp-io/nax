@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 1002
+    "looseCast": 975
   },
-  "updatedAt": "2026-11-08T08:07:24.227Z",
+  "updatedAt": "2026-11-08T08:35:15.890Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -317,7 +317,7 @@
       "looseCast": 19
     },
     "test/unit/operations/call.test.ts": {
-      "looseCast": 20
+      "looseCast": 17
     },
     "test/unit/operations/build-hop-callback-stale-retry.test.ts": {
       "looseCast": 3
@@ -491,7 +491,7 @@
       "looseCast": 5
     },
     "test/unit/config/schemas.test.ts": {
-      "looseCast": 48
+      "looseCast": 34
     },
     "test/unit/config/schemas-context-fragments.test.ts": {
       "looseCast": 10
@@ -504,9 +504,6 @@
     },
     "test/unit/config/merge.test.ts": {
       "looseCast": 47
-    },
-    "test/unit/config/mutation-check-schema.test.ts": {
-      "looseCast": 6
     },
     "test/unit/config/schemas-model.test.ts": {
       "looseCast": 1
@@ -538,9 +535,6 @@
     "test/unit/config/merge-agent-models-routing.test.ts": {
       "ratchetAllow": 2,
       "looseCast": 11
-    },
-    "test/unit/config/story-scoped-fix-budget.test.ts": {
-      "looseCast": 4
     },
     "test/unit/config/test-strategy.test.ts": {
       "looseCast": 2

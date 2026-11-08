@@ -16,6 +16,7 @@ import { MCP_RULE_TOOL, RESERVED_TOOL_NAMES } from "@nathapp/nax-agent";
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { collectCommandChainWarnings } from "./config-warnings";
+import { stripKeysAtPaths } from "./removed-config-keys";
 import { MCP_SERVER_ID_RE } from "./schemas-mcp";
 
 /**
@@ -73,8 +74,8 @@ export function rejectLegacyAgentKeys(conf: Record<string, unknown>): void {
  *
  * Migration map:
  *   quality.autofix.maxTotalAttempts           → execution.rectification.maxAttemptsTotal
- *   quality.autofix.rethinkAtAttempt           → execution.rectification.rethinkAtAttempt
- *   quality.autofix.urgencyAtAttempt           → execution.rectification.urgencyAtAttempt
+ *   quality.autofix.rethinkAtAttempt           → removed: nothing reads it since pipeline mode was removed
+ *   quality.autofix.urgencyAtAttempt           → removed: nothing reads it since pipeline mode was removed
  *   execution.rectification.maxRetries         → execution.rectification.maxAttemptsTotal
  *   execution.regressionGate.maxRectificationAttempts → execution.rectification.maxAttemptsTotal
  */
@@ -91,11 +92,11 @@ export function rejectLegacyRectificationKeys(conf: Record<string, unknown>): vo
     }
     if ("rethinkAtAttempt" in autofix) {
       legacyKeys.push("quality.autofix.rethinkAtAttempt");
-      migrationHints.push("- Move `quality.autofix.rethinkAtAttempt` → `execution.rectification.rethinkAtAttempt`");
+      migrationHints.push("- Remove `quality.autofix.rethinkAtAttempt`");
     }
     if ("urgencyAtAttempt" in autofix) {
       legacyKeys.push("quality.autofix.urgencyAtAttempt");
-      migrationHints.push("- Move `quality.autofix.urgencyAtAttempt` → `execution.rectification.urgencyAtAttempt`");
+      migrationHints.push("- Remove `quality.autofix.urgencyAtAttempt`");
     }
   }
 
@@ -119,8 +120,9 @@ export function rejectLegacyRectificationKeys(conf: Record<string, unknown>): vo
 
   const message = [
     `Invalid configuration — legacy rectification-cap keys detected: ${legacyKeys.join(", ")}.`,
-    "These were consolidated under `execution.rectification.*` so one config controls the unified",
-    "fix cycle (semantic + adversarial + mechanical + regression). Migrate as follows:",
+    "Attempt-cap keys are consolidated under `execution.rectification.*` so one config controls the",
+    "unified fix cycle (semantic + adversarial + mechanical + regression); the rest are removed, not",
+    "moved. Migrate as follows:",
     ...migrationHints,
   ].join("\n");
   throw new NaxError(message, "CONFIG_LEGACY_RECTIFICATION_KEYS", { stage: "config", legacyKeys });
@@ -320,61 +322,9 @@ export function stripRemovedNoOpKeys(
   conf: Record<string, unknown>,
   warn?: (msg: string) => void,
 ): Record<string, unknown> {
-  let result = conf;
-
-  for (const [path, hint] of Object.entries(REMOVED_NO_OP_KEYS)) {
-    const segments = path.split(".");
-    // A single-segment key (e.g. `debate`) targets the top level: the walk
-    // below simply never descends, so `parent` stays the root object.
-
-    // Walk into result following `segments`. Tolerate missing intermediates
-    // (AC-7: no `tdd` at all) and non-object intermediates (AC-8: `tdd: 42`).
-    let parent: Record<string, unknown> | undefined = result;
-    for (let i = 0; i < segments.length - 1; i++) {
-      const seg = segments[i];
-      const next = parent?.[seg];
-      if (next === null || typeof next !== "object") {
-        parent = undefined;
-        break;
-      }
-      parent = next as Record<string, unknown>;
-    }
-    if (!parent) continue;
-
-    const leaf = segments[segments.length - 1];
-    if (!(leaf in parent)) continue;
-
-    warn?.(`Config key "${path}" has been removed — ${hint}. Remove it from your config.`);
-    const { [leaf]: _removed, ...rest } = parent;
-    // Re-attach the stripped parent at its path under `result`. Re-walking
-    // from the root keeps the chain immutable — we never mutate the original
-    // `conf`, only rebuild new objects above it.
-    const newParent = rest;
-    if (segments.length === 1) {
-      result = newParent;
-    } else {
-      result = rebuildAtPath(result, segments.slice(0, -1), newParent);
-    }
-  }
-
-  // Return a new top-level object even when no key matched (AC-3) so callers
-  // can treat the result as owned.
-  return result === conf ? { ...conf } : result;
-}
-
-/**
- * Build a new object whose path (a sequence of segment keys) ends at
- * `value`. Each ancestor is reconstructed as a fresh shallow copy so the
- * original is not mutated.
- */
-function rebuildAtPath(
-  root: Record<string, unknown>,
-  path: string[],
-  value: Record<string, unknown>,
-): Record<string, unknown> {
-  if (path.length === 0) return value;
-  const [head, ...tail] = path;
-  return { ...root, [head]: rebuildAtPath((root[head] as Record<string, unknown>) ?? {}, tail, value) };
+  // The path walk, the message and the immutable rebuild live in one place for
+  // both key maps — see `removed-config-keys.ts`.
+  return stripKeysAtPaths(conf, REMOVED_NO_OP_KEYS, warn);
 }
 
 /**

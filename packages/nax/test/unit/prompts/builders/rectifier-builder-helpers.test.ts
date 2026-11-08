@@ -340,16 +340,6 @@ describe("rectification prompts — single-session permits test edits (US-003 re
     expect(result).not.toContain("Do NOT change test files or test behavior except via those exceptions");
   });
 
-  test("escalated for tdd-simple: permits edits; three-session still forbids", () => {
-    const permitted = RectifierPromptBuilder.escalated([], TDD_SIMPLE_STORY, 2, "fast", "powerful");
-    expect(permitted).toContain("MAY edit test files");
-    expect(permitted).not.toContain("Do NOT modify test files");
-
-    const forbidden = RectifierPromptBuilder.escalated([], TDD_STORY, 2, "fast", "powerful");
-    expect(forbidden).toContain("Do NOT modify test files");
-    expect(forbidden).not.toContain("MAY edit test files");
-  });
-
   test("dialogueAwareRectification for tdd-simple: permits edits; three-session still forbids", () => {
     const opts = { findingReasoning: new Map<string, string>(), history: [] };
     const permitted = RectifierPromptBuilder.dialogueAwareRectification(
@@ -615,21 +605,5 @@ describe("failingTestRectification — per-file scoped commands", () => {
       testScopedTemplate: "bun test {{files}} && echo {{files}}",
     });
     expect(prompt).toContain("bun test test/unit/a$$b.test.ts && echo test/unit/a$$b.test.ts");
-  });
-});
-
-describe("RectifierPromptBuilder.escalated — per-file scoped commands", () => {
-  test("substitutes {{files}} with the path verbatim", () => {
-    const prompt = RectifierPromptBuilder.escalated(
-      [{ file: "test/unit/a$$b.test.ts", testName: "works", error: "AssertionError" }],
-      TDD_STORY,
-      2,
-      "fast",
-      "powerful",
-      undefined,
-      "bun test",
-      "bun test {{files}}",
-    );
-    expect(prompt).toContain("bun test test/unit/a$$b.test.ts");
   });
 });

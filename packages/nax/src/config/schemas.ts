@@ -190,17 +190,6 @@ export const NaxConfigSchema = z
         timeoutSeconds: 300,
       },
       storyIsolation: "shared",
-      flakeDetection: {
-        enabled: true,
-        probeRuns: 2,
-        maxProbesPerGate: 5,
-        probeTimeoutSeconds: 60,
-      },
-      mutationCheck: {
-        enabled: false,
-        maxMutants: 3,
-        timeoutSeconds: 60,
-      },
       // BUG-20 — derived, not hand-written (same rationale as `rectification`
       // above): a literal here would shadow CommandInterceptorConfigSchema's
       // own defaults and leave `execution.commandInterceptor` missing from

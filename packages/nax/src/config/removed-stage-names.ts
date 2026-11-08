@@ -28,6 +28,7 @@
  */
 
 import { stripRemovedNoOpKeys } from "./config-guards";
+import { stripRemovedConfigKeys } from "./removed-config-keys";
 
 /** Stage names no operation runs in since pipeline mode was removed. */
 export const REMOVED_STAGE_NAMES: readonly string[] = ["rectification", "regression", "acceptance"];
@@ -160,15 +161,20 @@ export function stripRemovedStageNames(
 }
 
 /**
- * `stripRemovedNoOpKeys`, then `stripRemovedStageNames`, with one sink.
+ * `stripRemovedNoOpKeys`, then `stripRemovedConfigKeys`, then
+ * `stripRemovedStageNames`, with one sink.
  *
  * The loader calls this at every site that used to strip the removed no-op
- * keys alone, so a config that names BOTH a retired no-op key and a removed
- * stage is reported once per item, in one pass.
+ * keys alone, so a config that names a retired no-op key, a key C1 removed, and
+ * a removed stage is reported once per item, in one pass — and every removed
+ * key is gone before `NaxConfigSchema.safeParse` sees it, including keys under a
+ * `.strict()` schema such as `CommandInterceptorConfigSchema`.
  */
 export function stripRemovedConfig(
   conf: Record<string, unknown>,
   warn?: (msg: string) => void,
 ): Record<string, unknown> {
-  return stripRemovedStageNames(stripRemovedNoOpKeys(conf, warn), warn);
+  const withoutNoOpKeys = stripRemovedNoOpKeys(conf, warn);
+  const withoutRemovedKeys = stripRemovedConfigKeys(withoutNoOpKeys, warn);
+  return stripRemovedStageNames(withoutRemovedKeys, warn);
 }

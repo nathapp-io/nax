@@ -77,7 +77,7 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
     const input = {
       tdd: { maxRetries: 3 },
       acceptance: { enabled: true },
-      execution: { rectification: { abortOnNoProgress: true } },
+      execution: { rectification: { maxAttemptsTotal: 12 } },
     };
     const result = stripRemovedNoOpKeys(input, (msg) => captured.push(msg));
 
@@ -105,13 +105,13 @@ describe("stripRemovedNoOpKeys — direct unit", () => {
 
   test("AC-6: retains other execution.rectification fields when stripping execution.rectification.escalateOnExhaustion", () => {
     const result = stripRemovedNoOpKeys(
-      { execution: { rectification: { escalateOnExhaustion: false, abortOnNoProgress: true } } },
+      { execution: { rectification: { escalateOnExhaustion: false, maxAttemptsTotal: 9 } } },
       () => {},
     );
 
     const rectification =
       ((result.execution as Record<string, unknown>).rectification as Record<string, unknown>) ?? {};
-    expect(rectification.abortOnNoProgress).toBe(true);
+    expect(rectification.maxAttemptsTotal).toBe(9);
     expect(rectification.escalateOnExhaustion).toBeUndefined();
   });
 
@@ -570,5 +570,57 @@ describe("stripRemovedNoOpKeys — prompts.overrides.single-session (US-004)", (
 
     const relevant = captured.filter((msg) => msg.includes("prompts.overrides.single-session"));
     expect(relevant).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002 — the shared traversal must keep this function's contract
+//
+// `stripRemovedNoOpKeys` now delegates its path walk to
+// `stripKeysAtPaths` (removed-config-keys.ts) so both key maps walk and rebuild
+// one way. These pin the contract the delegation must preserve: the same
+// stripped result, the same one-warning message, and a NEW top-level object
+// even when nothing matched (so callers can treat the result as owned).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("stripRemovedNoOpKeys — contract preserved by the shared traversal (US-002)", () => {
+  test("AC-11: strips tdd.autoVerifyIsolation and keeps the sibling tdd.strategy", () => {
+    const result = stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: true, strategy: "auto" } }, () => {});
+
+    expect(result).toEqual({ tdd: { strategy: "auto" } });
+  });
+
+  test("AC-12: warns exactly once with the unchanged message", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ tdd: { autoVerifyIsolation: true, strategy: "auto" } }, (msg) => captured.push(msg));
+
+    expect(captured).toEqual([
+      'Config key "tdd.autoVerifyIsolation" has been removed — this key had no effect — isolation verification is currently unconditional. Remove it from your config.',
+    ]);
+  });
+
+  test("AC-13: returns a new top-level object when no key matched", () => {
+    const input = { quality: {} };
+
+    const result = stripRemovedNoOpKeys(input, () => {});
+
+    expect(result).not.toBe(input);
+  });
+
+  test("AC-14: that object is deep-equal to the input", () => {
+    const input = { quality: {} };
+
+    const result = stripRemovedNoOpKeys(input, () => {});
+
+    expect(result).toEqual(input);
+  });
+
+  test("AC-15: does not warn when no key matched", () => {
+    const captured: string[] = [];
+
+    stripRemovedNoOpKeys({ quality: {} }, (msg) => captured.push(msg));
+
+    expect(captured).toEqual([]);
   });
 });

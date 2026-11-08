@@ -72,18 +72,13 @@ function makeConfig(action: "block" | "warn" | "skip") {
     },
     routing: { strategy: "keyword" },
     execution: {
-      maxIterations: 10,
       iterationDelayMs: 1000,
       costLimit: 10,
       sessionTimeoutSeconds: 600,
-      verificationTimeoutSeconds: 300,
       maxStoriesPerFeature: 100,
       rectification: {
-        enabled: false,
         maxAttemptsTotal: 0,
         fullSuiteTimeoutSeconds: 120,
-        maxFailureSummaryChars: 2000,
-        abortOnIncreasingFailures: false,
       },
       regressionGate: { enabled: false, timeoutSeconds: 120 },
       contextProviderTokenBudget: 2000,

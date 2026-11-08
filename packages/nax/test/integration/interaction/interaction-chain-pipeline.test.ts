@@ -60,8 +60,7 @@ const baseConfig: DeepPartial<NaxConfig> = {
     iterationDelayMs: 0,
     sessionTimeoutSeconds: 60,
     maxStoriesPerFeature: 50,
-    rectification: { enabled: true, maxAttemptsTotal: 2, fullSuiteTimeoutSeconds: 30, maxFailureSummaryChars: 500 },
-    verificationTimeoutSeconds: 60,
+    rectification: { maxAttemptsTotal: 2, fullSuiteTimeoutSeconds: 30 },
   },
   interaction: {
     plugin: "cli",

@@ -16,7 +16,6 @@ describe("execution.commandInterceptor", () => {
   test("defaults to disabled with the measured verbs", () => {
     const parsed = ExecutionConfigSchema.parse(base);
     expect(parsed.commandInterceptor.enabled).toBe(false);
-    expect(parsed.commandInterceptor.provider).toBe("rtk");
     expect(parsed.commandInterceptor.git.verbs).toEqual(["log", "diff"]);
   });
 
