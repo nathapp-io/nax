@@ -10,6 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Removed
+
+- **Pipeline mode (C1).** Workflow mode is the only execution mode. Removed with pipeline mode: the eight-stage
+  story pipeline and its acceptance, TDD-session, autofix, mutation-check and prompt-optimizer stages; story
+  worktree isolation; `nax accept` and `nax prompts`; the `IPromptOptimizer` plugin extension point (a plugin
+  that still provides an optimizer fails to load with a named error). `execution.mode: "workflow"` stays
+  accepted.
+- **What a config or command that still asks for it gets:**
+  - `execution.mode: "pipeline"` or `execution.maxIterations` fails config load with
+    `CONFIG_PIPELINE_MODE_REMOVED` (`Invalid configuration in <source> — pipeline mode was removed: <keys>.`),
+    naming each key and the fix.
+  - `nax run -m/--max-iterations`, `--parallel` and `--no-batch`, `nax accept` and `nax prompts` exit with an
+    error saying they were removed.
+  - A key that only configured pipeline mode, or that nothing read, still loads: it is dropped before
+    validation with one warning per key or section,
+    `Config key "<path>" has been removed — <hint>. Remove it from your config.` The keys are listed in
+    `docs/guides/configuration.md` (Removed keys) and include the `acceptance` and `optimizer` sections,
+    `prompts.overrides`, `hooks` (lifecycle hooks are read from `.nax/hooks.json`), `execution.storyIsolation`,
+    `execution.worktreeDependencies`, `execution.flakeDetection`, `execution.mutationCheck`, most
+    `execution.rectification.*` leaves, `tdd.sessionTiers` and the other TDD-session keys, `quality.autofix`,
+    `quality.typecheckOutput` and the `lintFix`/`formatFix` commands.
+  - An old cost ledger, prompt audit or `prd.json` that names a removed role, stage or failure category still
+    loads; the value is shown as recorded.
+
 ### Fixed
 
 - **Run log, review round 2 (nax#2491).** The repeated-tool-error line releases its per-run ledger of reported
