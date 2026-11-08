@@ -1,16 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { makeNaxConfig } from "@test/helpers";
 import {
   agentManagerConfigSelector,
-  contextToolRuntimeConfigSelector,
   DEFAULT_CONFIG,
-  interactionConfigSelector,
   planConfigSelector,
-  precheckConfigSelector,
-  promptLoaderConfigSelector,
   qualityConfigSelector,
-  reviewConfigSelector,
   routingConfigSelector,
-  testPatternConfigSelector,
+  workflowConfigSelector,
 } from "@/config";
 
 describe("ConfigSelector — Phase 1 selectors", () => {
@@ -31,61 +27,9 @@ describe("ConfigSelector — Phase 1 selectors", () => {
 
     test.each([
       [agentManagerConfigSelector, "agent-manager"],
-      [interactionConfigSelector, "interaction"],
-      [precheckConfigSelector, "precheck"],
       [qualityConfigSelector, "quality"],
-      [testPatternConfigSelector, "test-pattern"],
-      [contextToolRuntimeConfigSelector, "context-tool-runtime"],
-      [promptLoaderConfigSelector, "prompt-loader"],
     ] as const)("%s selector has correct name", (selector, name) => {
       expect(selector.name).toBe(name);
-    });
-
-    test("interactionConfigSelector picks interaction", () => {
-      const slice = interactionConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice).toHaveProperty("interaction");
-      expect(Object.keys(slice)).toEqual(["interaction"]);
-    });
-
-    test("interactionConfigSelector preserves values", () => {
-      const slice = interactionConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice.interaction).toEqual(DEFAULT_CONFIG.interaction);
-    });
-
-    test("precheckConfigSelector picks all keys precheck/* uses", () => {
-      const slice = precheckConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice).toMatchObject({
-        precheck: expect.any(Object),
-        quality: expect.any(Object),
-        execution: expect.any(Object),
-        // MED-03: checkAgentCLI resolves the agent via resolveDefaultAgent(config),
-        // which reads config.agent.default — precheck's slice must include it.
-        agent: expect.any(Object),
-        // US-1984 (model-resolution precheck): the check walks `models`,
-        // `plan.model`, `acceptance.model`, `autoMode.escalation.tierOrder[*]`,
-        // `tdd.sessionTiers.*`, and `routing.llm.model`.
-        models: expect.any(Object),
-        plan: expect.any(Object),
-        acceptance: expect.any(Object),
-        autoMode: expect.any(Object),
-        tdd: expect.any(Object),
-        routing: expect.any(Object),
-      });
-      expect(Object.keys(slice).sort()).toEqual([
-        "acceptance",
-        "agent",
-        "autoMode",
-        "execution",
-        "models",
-        "plan",
-        "precheck",
-        "project",
-        "prompts",
-        "quality",
-        "review",
-        "routing",
-        "tdd",
-      ]);
     });
 
     test("qualityConfigSelector picks quality and execution", () => {
@@ -96,45 +40,10 @@ describe("ConfigSelector — Phase 1 selectors", () => {
     });
   });
 
-  describe("widened selectors", () => {
-    test("reviewConfigSelector now includes models, execution, project, quality, agent", () => {
-      const slice = reviewConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice).toHaveProperty("review");
-      expect(slice).toHaveProperty("models");
-      expect(slice).toHaveProperty("execution");
-      expect(slice).toHaveProperty("project");
-      expect(slice).toHaveProperty("quality");
-      expect(slice).toHaveProperty("agent");
-      expect(Object.keys(slice).sort()).toEqual(["agent", "execution", "models", "project", "quality", "review"]);
-    });
-
-    test("routingConfigSelector now includes autoMode and tdd", () => {
-      const slice = routingConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice).toHaveProperty("routing");
-      expect(slice).toHaveProperty("autoMode");
-      expect(slice).toHaveProperty("tdd");
-      expect(Object.keys(slice).sort()).toEqual(["autoMode", "routing", "tdd"]);
-    });
-  });
-
   describe("round-trip — sliced values match full config", () => {
     test("agentManagerConfigSelector preserves values", () => {
       const slice = agentManagerConfigSelector.select(DEFAULT_CONFIG);
       expect(slice.agent).toEqual(DEFAULT_CONFIG.agent);
-      expect(slice.execution).toEqual(DEFAULT_CONFIG.execution);
-    });
-
-    test("precheckConfigSelector preserves values", () => {
-      const slice = precheckConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice.quality).toEqual(DEFAULT_CONFIG.quality);
-      expect(slice.execution).toEqual(DEFAULT_CONFIG.execution);
-      expect(slice.review).toEqual(DEFAULT_CONFIG.review);
-    });
-
-    test("reviewConfigSelector preserves values", () => {
-      const slice = reviewConfigSelector.select(DEFAULT_CONFIG);
-      expect(slice.review).toEqual(DEFAULT_CONFIG.review);
-      expect(slice.models).toEqual(DEFAULT_CONFIG.models);
       expect(slice.execution).toEqual(DEFAULT_CONFIG.execution);
     });
 
@@ -145,23 +54,6 @@ describe("ConfigSelector — Phase 1 selectors", () => {
       expect(slice.tdd).toEqual(DEFAULT_CONFIG.tdd);
     });
   });
-
-  describe("new selectors from eliminate-naxconfig-silent-fail-casts plan", () => {
-    test("testPatternConfigSelector picks execution, project, quality", () => {
-      const slice = testPatternConfigSelector.select(DEFAULT_CONFIG);
-      expect(Object.keys(slice).sort()).toEqual(["execution", "project", "quality"]);
-    });
-
-    test("contextToolRuntimeConfigSelector picks context, execution, project, quality", () => {
-      const slice = contextToolRuntimeConfigSelector.select(DEFAULT_CONFIG);
-      expect(Object.keys(slice).sort()).toEqual(["context", "execution", "project", "quality"]);
-    });
-
-    test("promptLoaderConfigSelector picks prompts, context, project", () => {
-      const slice = promptLoaderConfigSelector.select(DEFAULT_CONFIG);
-      expect(Object.keys(slice).sort()).toEqual(["context", "project", "prompts"]);
-    });
-  });
 });
 
 describe("planConfigSelector — ADR-025 routing slice", () => {
@@ -169,5 +61,43 @@ describe("planConfigSelector — ADR-025 routing slice", () => {
     const slice = planConfigSelector.select(DEFAULT_CONFIG);
     expect(slice.routing).toBeDefined();
     expect(slice.routing?.agents).toBeDefined();
+  });
+});
+
+// US-001 — the retained selectors' key boundaries. Each assertion compares the
+// selector's own key set, so a dropped or added pick fails here.
+describe("retained selector key boundaries (US-001)", () => {
+  test("AC-1: planConfigSelector picks exactly plan, agent, models, project and routing", () => {
+    const slice = planConfigSelector.select(makeNaxConfig());
+    expect(Object.keys(slice).sort()).toEqual(["agent", "models", "plan", "project", "routing"]);
+  });
+
+  test("AC-2: workflowConfigSelector picks exactly workflow, review, execution, autoMode, quality, agent, models and finish", () => {
+    const slice = workflowConfigSelector.select(makeNaxConfig());
+    expect(Object.keys(slice).sort()).toEqual([
+      "agent",
+      "autoMode",
+      "execution",
+      "finish",
+      "models",
+      "quality",
+      "review",
+      "workflow",
+    ]);
+  });
+
+  test("AC-3: routingConfigSelector picks exactly routing, autoMode and tdd", () => {
+    const slice = routingConfigSelector.select(makeNaxConfig());
+    expect(Object.keys(slice).sort()).toEqual(["autoMode", "routing", "tdd"]);
+  });
+
+  test("AC-4: planConfigSelector omits an execution section the config carries", () => {
+    const config = makeNaxConfig({ execution: { maxIterations: 7 } });
+    // The section is genuinely present on the source config.
+    expect(config.execution.maxIterations).toBe(7);
+
+    const slice = planConfigSelector.select(config);
+    expect(Object.hasOwn(slice, "execution")).toBe(false);
+    expect(slice).not.toHaveProperty("execution");
   });
 });

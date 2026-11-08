@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeNaxConfig, makePRD, makeStory, makeTempDir } from "@test/helpers";
-import { contextToolRuntimeConfigSelector } from "@/config";
+import { pickSelector } from "@/config";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import {
   _featureContextV2Deps,
@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 function fragmentsConfig(): ContextToolRuntimeConfig {
-  return contextToolRuntimeConfigSelector.select(
+  return pickSelector("context-tool-runtime", "context", "execution", "project", "quality").select(
     makeNaxConfig({
       context: {
         v2: {

@@ -1,13 +1,11 @@
 /**
- * ConfigSelector — Named, reusable config-slicing primitives
+ * ConfigSelector — Named, reusable config-slicing primitive
  *
  * A ConfigSelector<C> is a named, type-safe view of NaxConfig.
  * Used by operations (and later by NaxRuntime) to declare config dependencies
  * without duplicating projection logic.
  *
- * Two factories:
- * - pickSelector: select named keys from NaxConfig
- * - reshapeSelector: apply an arbitrary transform function
+ * One factory: pickSelector, which selects named keys from NaxConfig.
  */
 
 import type { NaxConfig } from "./types";
@@ -43,22 +41,4 @@ export function pickSelector<K extends keyof NaxConfig>(
       return result;
     },
   };
-}
-
-/**
- * Create a selector that applies an arbitrary transform function to NaxConfig.
- *
- * @param name — Human-readable name for this selector
- * @param fn — Transform function that projects NaxConfig to some output type C
- * @returns A ConfigSelector with the custom projection
- *
- * @example
- * const sel = reshapeSelector("fast-tier", (config) => ({
- *   models: config.routing?.models,
- *   timeout: config.execution?.timeout,
- * }));
- * const fastTierConfig = sel.select(config);
- */
-export function reshapeSelector<C>(name: string, fn: (config: NaxConfig) => C): ConfigSelector<C> {
-  return { name, select: fn };
 }

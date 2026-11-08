@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
-import { testPatternConfigSelector } from "@/config";
+import { pickSelector } from "@/config";
 import type { TestPatternConfig } from "@/config/selectors";
 import type { DetectionResult } from "@/test-runners/detect";
 import { _resolverDeps, findPackageDir, resolveTestFilePatterns } from "@/test-runners/resolver";
@@ -226,16 +226,12 @@ describe("resolveTestFilePatterns — field consistency", () => {
   });
 
   test("resolveTestFilePatterns accepts a TestPatternConfig slice (no NaxConfig cast)", async () => {
-    const slice: TestPatternConfig = testPatternConfigSelector.select(makeNaxConfig());
+    const slice: TestPatternConfig = pickSelector("test-pattern", "execution", "project", "quality").select(
+      makeNaxConfig(),
+    );
     const result = await resolveTestFilePatterns(slice, "/tmp/nonexistent-resolver-test-dir");
     expect(result.resolution).toBe("fallback");
     expect(result.regex.length).toBeGreaterThan(0);
-  });
-
-  test("testPatternConfigSelector picks only execution, project, and quality", () => {
-    const full = makeNaxConfig();
-    const sliced = testPatternConfigSelector.select(full);
-    expect(Object.keys(sliced).sort()).toEqual(["execution", "project", "quality"]);
   });
 });
 

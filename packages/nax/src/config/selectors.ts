@@ -1,45 +1,27 @@
 /**
  * Named ConfigSelector Registry
  *
- * One ConfigSelector per subsystem. This is the single source of truth
- * for "which config slice does each subsystem depend on?"
+ * One ConfigSelector per subsystem that still declares its config dependency
+ * through one. This is the single source of truth for "which config slice does
+ * each subsystem depend on?"
  *
  * Selectors are used by operations and NaxRuntime to declare config dependencies
  * without duplicating projection logic or creating orphan hardcoded key lists.
+ *
+ * A subsystem whose selector nobody imported keeps its slice type as a
+ * `Pick<NaxConfig, ...>` alias over the same section list (see the
+ * "Config-slice types" block at the bottom), so consumers keep importing a
+ * named type instead of widening to the whole `NaxConfig`.
  */
 
 import type { z } from "zod";
 import type { FixReviewConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
-import { pickSelector, reshapeSelector } from "./selector";
+import { pickSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
-export const reviewConfigSelector = pickSelector(
-  "review",
-  "review",
-  "models",
-  "execution",
-  "project",
-  "quality",
-  "agent",
-);
 export const planConfigSelector = pickSelector("plan", "plan", "agent", "models", "project", "routing");
 export const decomposeConfigSelector = pickSelector("decompose", "plan", "agent", "routing");
-export const rectifyConfigSelector = pickSelector("rectify", "execution");
 export const routingConfigSelector = pickSelector("routing", "routing", "autoMode", "tdd");
-
-export const verifyConfigSelector = reshapeSelector("verify", (c: NaxConfig) => ({
-  timeout: c.execution?.verificationTimeoutSeconds,
-  testCommand: c.quality?.commands?.test,
-}));
-
-// Mutation-check (US-001) — opt-in mutation testing after GREEN. Reshape (not pick)
-// because the selector projects only the nested mutationCheck subtree so callers
-// don't need to know the path; pickSelector("mutation-check", "execution") would
-// return the whole execution object which has the wrong shape.
-export const mutationCheckConfigSelector = reshapeSelector(
-  "mutation-check",
-  (c: NaxConfig) => c.execution?.mutationCheck,
-);
 
 export const rectificationGateConfigSelector = pickSelector(
   "rectification-gate",
@@ -50,8 +32,6 @@ export const rectificationGateConfigSelector = pickSelector(
   "review",
 );
 
-// agent only selectors for resolveDefaultAgent
-export const agentConfigSelector = pickSelector("agent", "agent");
 // "profile" is the resolved profile-chain display string ("cc-acceptance",
 // "a+b", or "default"). AgentManager stamps it onto dispatch events so cost rows
 // record which overlay was active — profiles repoint agent and model per stage
@@ -60,69 +40,7 @@ export const agentConfigSelector = pickSelector("agent", "agent");
 // root-instruction deny list from `context.projectContext`, and it reads it off
 // the `AgentRunOptions.config` this slice fills.
 export const agentManagerConfigSelector = pickSelector("agent-manager", "agent", "execution", "profile", "context");
-export const interactionConfigSelector = pickSelector("interaction", "interaction");
-export const precheckConfigSelector = pickSelector(
-  "precheck",
-  "precheck",
-  "quality",
-  "execution",
-  "prompts",
-  "review",
-  "project",
-  // MED-03: checkAgentCLI resolves the configured default agent via
-  // resolveDefaultAgent(config), which reads config.agent.default —
-  // execution has no `agent` field (that was always reading undefined).
-  "agent",
-  // US-1984 (model-resolution precheck): walks `models`, `plan.model`,
-  // `acceptance.model`, `autoMode.escalation.tierOrder[*]`,
-  // `tdd.sessionTiers.*`, and `routing.llm.model` literal pins
-  // (the latter two already covered partially by other consumers but
-  // listed here so the selector stays the SSOT for what precheck reads).
-  "models",
-  "plan",
-  "acceptance",
-  "autoMode",
-  "tdd",
-  "routing",
-);
 export const qualityConfigSelector = pickSelector("quality", "quality", "execution");
-export const executionGatesConfigSelector = pickSelector("execution-gates", "review", "execution");
-
-// Test-pattern resolver — resolveTestFilePatterns reads execution.smartTestRunner
-// (root config patterns). Co-located so context-tool-runtime, semantic review,
-// and verification all share one shape.
-export const testPatternConfigSelector = pickSelector("test-pattern", "execution", "project", "quality");
-
-export const contextConfigSelector = pickSelector("context", "context");
-
-// Context-engine pull-tool runtime — reads context.v2.pull.* and forwards
-// execution/project/quality to resolveTestFilePatterns. Co-located so callers don't
-// have to compose two selectors.
-export const contextToolRuntimeConfigSelector = pickSelector(
-  "context-tool-runtime",
-  "context",
-  "execution",
-  "project",
-  "quality",
-);
-
-// Prompt builder loader — withLoader / loadOverride / hermetic /
-// tdd-language sections read prompts.overrides, context.featureEngine,
-// project.* only.
-export const promptLoaderConfigSelector = pickSelector("prompt-loader", "prompts", "context", "project");
-
-// LLM routing — classifyWithLlm / routeBatch / callLlm need routing.llm config,
-// models + agent for resolution, tdd for strategy derivation, and
-// execution + precheck for the agentManager.complete() wiring layer.
-export const llmRoutingConfigSelector = pickSelector(
-  "llm-routing",
-  "routing",
-  "models",
-  "agent",
-  "tdd",
-  "execution",
-  "precheck",
-);
 
 // `finish` supplies the branch-review / branch-fix model fallbacks (spec §4, P4-R21).
 export const workflowConfigSelector = pickSelector(
@@ -138,28 +56,70 @@ export const workflowConfigSelector = pickSelector(
 );
 export const advisorConfigSelector = pickSelector("advisor", "advisor", "execution");
 
-// Derived config-slice types — co-located with each selector so consumers
-// import the type instead of re-deriving `ReturnType<typeof xSelector.select>`
-// in every operation file.
-export type ReviewConfig = ReturnType<typeof reviewConfigSelector.select>;
+// Config-slice types — co-located with each selector so consumers import the
+// type instead of re-deriving `ReturnType<typeof xSelector.select>` in every
+// operation file. The `Pick` aliases below name the same section lists their
+// former selector picked, for subsystems whose selector had no importer.
 export type PlanConfig = ReturnType<typeof planConfigSelector.select>;
 export type DecomposeConfig = ReturnType<typeof decomposeConfigSelector.select>;
-export type RectifyConfig = ReturnType<typeof rectifyConfigSelector.select>;
 export type RoutingConfig = ReturnType<typeof routingConfigSelector.select>;
-export type VerifyConfig = ReturnType<typeof verifyConfigSelector.select>;
-export type RectificationGateConfig = ReturnType<typeof rectificationGateConfigSelector.select>;
-export type AgentConfig = ReturnType<typeof agentConfigSelector.select>;
 export type AgentManagerConfig = ReturnType<typeof agentManagerConfigSelector.select>;
-export type InteractionConfig = ReturnType<typeof interactionConfigSelector.select>;
-export type PrecheckConfig = ReturnType<typeof precheckConfigSelector.select>;
 export type QualityConfig = ReturnType<typeof qualityConfigSelector.select>;
-export type TestPatternConfig = ReturnType<typeof testPatternConfigSelector.select>;
-export type ContextConfig = ReturnType<typeof contextConfigSelector.select>;
-export type ContextToolRuntimeConfig = ReturnType<typeof contextToolRuntimeConfigSelector.select>;
-export type PromptLoaderConfig = ReturnType<typeof promptLoaderConfigSelector.select>;
-export type LlmRoutingConfig = ReturnType<typeof llmRoutingConfigSelector.select>;
-export type MutationCheckConfig = ReturnType<typeof mutationCheckConfigSelector.select>;
-export type ExecutionGatesConfig = ReturnType<typeof executionGatesConfigSelector.select>;
+export type WorkflowOpConfig = ReturnType<typeof workflowConfigSelector.select>;
+export type AdvisorConfigSlice = ReturnType<typeof advisorConfigSelector.select>;
+
+/** `review/*` — review, model resolution, gates and test commands. */
+export type ReviewConfig = Pick<NaxConfig, "review" | "models" | "execution" | "project" | "quality" | "agent">;
+/** `resolveDefaultAgent` reads `agent.default` only. */
+export type AgentConfig = Pick<NaxConfig, "agent">;
+export type InteractionConfig = Pick<NaxConfig, "interaction">;
+/**
+ * `precheck/*` — `quality`, `execution`, `prompts`, `review` and `project` are
+ * read by the command/override checks; `agent` by `checkAgentCLI` (MED-03: it
+ * resolves the default agent via `resolveDefaultAgent`).
+ *
+ * US-1984 (model-resolution precheck) adds `models`, `plan`, `acceptance`,
+ * `autoMode`, `tdd` and `routing`: the check walks `models`,
+ * `plan.model`, `acceptance.model`, `autoMode.escalation.tierOrder[*]`,
+ * `tdd.sessionTiers.*`, and `routing.llm.model` literal pins.
+ */
+export type PrecheckConfig = Pick<
+  NaxConfig,
+  | "precheck"
+  | "quality"
+  | "execution"
+  | "prompts"
+  | "review"
+  | "project"
+  | "agent"
+  | "models"
+  | "plan"
+  | "acceptance"
+  | "autoMode"
+  | "tdd"
+  | "routing"
+>;
+/**
+ * Test-pattern resolver — `resolveTestFilePatterns` reads
+ * `execution.smartTestRunner` (root config patterns), `project` for language
+ * and `quality`. One shape, shared by context-tool-runtime, semantic review and
+ * verification.
+ */
+export type TestPatternConfig = Pick<NaxConfig, "execution" | "project" | "quality">;
+export type ContextConfig = Pick<NaxConfig, "context">;
+/**
+ * Context-engine pull-tool runtime — reads `context.v2.pull.*` and forwards
+ * `execution`/`project`/`quality` to `resolveTestFilePatterns`; one slice so
+ * callers don't have to compose two.
+ */
+export type ContextToolRuntimeConfig = Pick<NaxConfig, "context" | "execution" | "project" | "quality">;
+/**
+ * LLM routing — `classifyWithLlm` / `routeBatch` / `callLlm` need `routing.llm`,
+ * `models` + `agent` for resolution, `tdd` for strategy derivation, and
+ * `execution` + `precheck` for the `agentManager.complete()` wiring layer.
+ */
+export type LlmRoutingConfig = Pick<NaxConfig, "routing" | "models" | "agent" | "tdd" | "execution" | "precheck">;
+
 export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
 /** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`.
  *
@@ -172,6 +132,3 @@ export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
  * parse, so the required-field type is sound.
  */
 export type FixReviewConfig = z.infer<typeof FixReviewConfigSchema>;
-
-export type WorkflowOpConfig = ReturnType<typeof workflowConfigSelector.select>;
-export type AdvisorConfigSlice = ReturnType<typeof advisorConfigSelector.select>;

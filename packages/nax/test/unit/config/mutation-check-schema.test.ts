@@ -1,17 +1,11 @@
 /**
- * US-001 (mutation-check): execution.mutationCheck schema defaults, per-package
- * merge, and `mutation-check` selector coverage (AC1–AC6).
+ * US-001 (mutation-check): execution.mutationCheck schema defaults and
+ * per-package merge coverage (AC1–AC5). The `mutation-check` selector these
+ * cases once exercised was removed with the rest of the dead config selectors.
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  DEFAULT_CONFIG,
-  type MutationCheckConfig,
-  mergePackageConfig,
-  mutationCheckConfigSelector,
-  type NaxConfig,
-  NaxConfigSchema,
-} from "@/config";
+import { DEFAULT_CONFIG, mergePackageConfig, type NaxConfig, NaxConfigSchema } from "@/config";
 
 describe("execution.mutationCheck schema defaults (AC1–AC3)", () => {
   test("DEFAULT_CONFIG.execution.mutationCheck.enabled is false", () => {
@@ -107,23 +101,5 @@ describe("mergePackageConfig — execution.mutationCheck (AC5)", () => {
     expect(result.execution.mutationCheck.maxMutants).toBe(9);
     expect(result.execution.mutationCheck.enabled).toBe(false);
     expect(result.execution.mutationCheck.timeoutSeconds).toBe(90);
-  });
-});
-
-describe("mutation-check selector (AC6)", () => {
-  test("returns an object with enabled, maxMutants, timeoutSeconds", () => {
-    const slice: MutationCheckConfig = mutationCheckConfigSelector.select(DEFAULT_CONFIG);
-    expect(slice).toHaveProperty("enabled");
-    expect(slice).toHaveProperty("maxMutants");
-    expect(slice).toHaveProperty("timeoutSeconds");
-  });
-
-  test("selector name is 'mutation-check'", () => {
-    expect(mutationCheckConfigSelector.name).toBe("mutation-check");
-  });
-
-  test("default slice matches DEFAULT_CONFIG.execution.mutationCheck", () => {
-    const slice = mutationCheckConfigSelector.select(DEFAULT_CONFIG);
-    expect(slice).toEqual(DEFAULT_CONFIG.execution.mutationCheck);
   });
 });
