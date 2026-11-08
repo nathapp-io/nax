@@ -14,7 +14,7 @@
 writes fail-first, then makes pass in the project's test framework (`bun:test`,
 `pytest`, `go test`, …). `nax plan` turns each AC in `spec.md` into a `prd.json`
 `acceptanceCriteria` entry that drives an agent implementation session, so an AC
-that is **not** an executable test is meaningless in that pipeline.
+that is **not** an executable test is meaningless in that session.
 
 Therefore:
 

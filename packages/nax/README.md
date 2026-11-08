@@ -59,9 +59,9 @@ See the [documentation index](https://github.com/nathapp-io/nax/blob/main/docs/R
 
 ## How It Works
 
-nax has two execution modes. **Workflow mode** is the default (`execution.mode: "workflow"`). The **pipeline** mode (`execution.mode: "pipeline"`) is deprecated: it still runs, warns at config load, and will be removed in a future release.
+nax has one execution mode, **workflow** (`execution.mode: "workflow"`). `execution.mode: "pipeline"` is rejected at config load.
 
-### Workflow mode (default)
+### Workflow mode
 
 ```
 story: implement → gates → full suite → story review → fix rounds → residual ruling
@@ -77,13 +77,9 @@ feature: repo gates → branch review → branch fix → re-review → adjudicat
 7. **Feature workflow** — after the last story: repo gates, one whole-branch review, up to `workflow.maxBranchFixRounds` (default 2) fix rounds each with a scoped re-review, adjudication, final gates, and up to `workflow.finalGateRepairRounds` (default 1) repair passes
 8. **Publish** — `workflow.publish` (`pr` by default) commits the ledger, pushes, opens or finds a draft PR, waits for CI, and promotes the draft when the deterministic readiness checks pass
 
-Stories run one at a time. `--parallel` and story batching are ignored in workflow mode.
+Stories run one at a time. `--parallel` and `-m/--max-iterations` fail with a removed message.
 
 See [Workflow Mode](https://github.com/nathapp-io/nax/blob/main/docs/guides/workflow-mode.md) for the full loop, end states, publishing modes and config reference, and [ADR-034](https://github.com/nathapp-io/nax/blob/main/docs/adr/ADR-034-workflow-execution-mode.md) for the design.
-
-### Pipeline mode (deprecated)
-
-Selected with `execution.mode: "pipeline"`. Each story runs through a staged pipeline: acceptance setup, routing, context, execution, verify, review (semantic and adversarial), escalation, and a regression gate after all stories pass. Pipeline mode is frozen; no new features are added to it.
 
 ---
 
@@ -105,11 +101,9 @@ Selected with `execution.mode: "pipeline"`. Each story runs through a staged pip
 | [`nax logs`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-logs) | Stream or query run logs |
 | [`nax runs`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-runs) | List recorded run metadata (`nax runs show <run-id>`) |
 | `nax replay` | Reconstruct a post-mortem timeline for a previous run |
-| `nax accept` | Override failed acceptance criteria (pipeline mode; workflow mode does not run acceptance tests) |
 | [`nax unlock`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-unlock) | Release a stale lock from a crashed nax process |
 | [`nax doctor`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md) | Diagnose the nax installation and environment |
 | [`nax generate`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-generate) | Generate agent context files (`CLAUDE.md`, `AGENTS.md`, …) from `.nax/context.md` |
-| [`nax prompts`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-prompts--f-name) | Assemble or initialize prompts |
 | `nax context` | Inspect context-engine artifacts and feature fragments |
 | `nax rules` | Lint, export, or migrate the canonical rules store (`.nax/rules/`) |
 | `nax detect` | Detect test-file patterns and optionally persist them |
@@ -138,19 +132,16 @@ For full flag details, see the [CLI Reference](https://github.com/nathapp-io/nax
 ```json
 {
   "execution": {
-    "mode": "workflow",                    // "workflow" (default) | "pipeline" (deprecated)
-    "maxIterations": 20,                   // Note: `nax run -m <n>` overrides this only when the flag is passed
+    "mode": "workflow",                    // only "workflow" is accepted; "pipeline" is rejected
     "costLimit": 30,                       // USD; past it, the run stops its loops and publishes a draft
     "permissionProfile": "unrestricted",   // "unrestricted" | "safe" | "scoped"
-    "storyIsolation": "shared",            // "shared" | "worktree" (workflow mode forces "shared")
     "bashApproval": "raw",                 // "raw" | "gated" | "escalate" — how agent Bash commands are adjudicated
     "sandbox": {
       "enabled": true,                     // OS sandbox around agent-authored Bash / Exec commands (on by default)
       "network": { "allowedDomains": ["registry.npmjs.org"] }  // Omit for unrestricted, [] for no network
     },
     "commandInterceptor": {
-      "provider": "rtk",                   // Token-reducing proxy for the Git tool
-      "enabled": true,                     // Off by default — opt in per project
+      "enabled": true,                     // Token-reducing proxy (rtk) for the Git tool; off by default — opt in per project
       "git": { "verbs": ["log", "diff"] }  // Only these subcommands are rewritten
     }
   },
@@ -191,11 +182,11 @@ For full flag details, see the [CLI Reference](https://github.com/nathapp-io/nax
 }
 ```
 
-The `execution.mode` default is `"workflow"`. Setting `"pipeline"` loads with a deprecation warning. In workflow mode the `workflow` block governs the loops; the pipeline-only keys (`acceptance`, `tdd`, `execution.regressionGate`) are not read by the workflow story loop. See [Workflow Mode](https://github.com/nathapp-io/nax/blob/main/docs/guides/workflow-mode.md) for the complete `workflow` reference.
+The `execution.mode` default is `"workflow"`; setting `"pipeline"` is rejected at load. The `workflow` block governs the loops. Keys that belonged to pipeline mode are warned about and stripped at load. See [Workflow Mode](https://github.com/nathapp-io/nax/blob/main/docs/guides/workflow-mode.md) for the complete `workflow` reference.
 
 `mcp` attaches external Model Context Protocol (MCP) servers as tool providers — nax is a client only, never an MCP server. The server id is the tool-name namespace: the `codebase-memory` server advertises its tools as `codebase-memory__search_graph`, `codebase-memory__trace_path`, and so on. Before any of those tools are grantable, run `nax mcp lock` at the project root: it connects every enabled server once, pins the advertised tool surface (name + input-schema hash) to `.nax/mcp-lock.json`, and that lockfile is committed like `bun.lock`. `stages` is the attachment control — a server's tools attach only to the listed pipeline stages, and an empty list attaches nowhere. MCP tool reach follows the permission profile: `unrestricted` advertises every attached server's tools, `scoped` only what the stage's `Mcp(...)` rules admit, and `safe` none at all. `allowedTools` narrows which locked tools are grantable; omitted means every locked tool is.
 
-`execution.commandInterceptor` rewrites the `Git` tool's argv through `rtk` so `log` and `diff` output reaches the model compressed. It is confined to the Git site: user-authored `quality.commands` and `acceptance.command` are never wrapped. It fails open — if the `rtk` binary is missing the call runs as plain git.
+`execution.commandInterceptor` rewrites the `Git` tool's argv through `rtk` so `log` and `diff` output reaches the model compressed. It is confined to the Git site: user-authored `quality.commands` are never wrapped. It fails open — if the `rtk` binary is missing the call runs as plain git.
 
 **Both features are native-agent only.** An ACP agent (`claude`, `codex`, `opencode`, `gemini`, `pi`) brings its own tools, so nax's `Git` tool is never invoked and no MCP tool is advertised. A project on `"protocol": "acp"` can hold a complete, valid config for both and get zero effect, with no error. The built-in defaults (`agent.protocol: "hybrid"`, `agent.default: "native"`) let both take effect once configured (the interceptor itself is off by default); a config that switches to an ACP agent does not.
 
@@ -215,7 +206,7 @@ See [Sandbox & Command Safety](https://github.com/nathapp-io/nax/blob/main/docs/
 
 ### Project trust
 
-nax runs repository-controlled code — project plugins, context plugin providers, hooks, MCP servers and the quality / test / acceptance / setup commands — unsandboxed on the host. Before a gated command (`nax run`, `nax plan`, `nax mcp lock`, …) acts on a project, that project's folder must be trusted, and a refusal exits 2 with `run: nax trust add <root>`.
+nax runs repository-controlled code — project plugins, context plugin providers, hooks, MCP servers and the quality / test / setup commands — unsandboxed on the host. Before a gated command (`nax run`, `nax plan`, `nax mcp lock`, …) acts on a project, that project's folder must be trusted, and a refusal exits 2 with `run: nax trust add <root>`.
 
 ```bash
 nax trust add "$PWD"          # trust this checkout (asks for confirmation)
@@ -227,19 +218,19 @@ Trust is hierarchical and stored once per machine (`~/.nax/trust.json`): an entr
 
 See [`nax trust`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-trust) for the full surface.
 
-### Test Strategies (pipeline mode)
+### Test Strategies
 
-In pipeline mode, each story gets a test strategy. `tdd.strategy` (default `"auto"`) selects how strategies are chosen: `auto` picks per story based on complexity and content — security-critical stories always get `three-session-tdd` regardless of complexity. The strategy values are:
+Each story in `prd.json` carries a `testStrategy` label assigned at plan time. `tdd.strategy` (default `"auto"`) selects how strategies are chosen: `auto` picks per story based on complexity and content, and security-critical stories always get `three-session-tdd` regardless of complexity. The strategy values are:
 
-| Strategy | Sessions | When to use |
-|:---------|:---------|:------------|
-| `three-session-tdd` | 3 | Expert stories and security-critical code (auth, tokens, RBAC) — strict isolation: test-writer cannot touch `src/`, implementer cannot touch tests |
-| `three-session-tdd-lite` | 3 | Complex stories — relaxed isolation: test-writer may add minimal `src/` stubs |
-| `tdd-simple` | 1 | Simple and medium stories — single session, TDD discipline (red → green → refactor) |
-| `test-after` | 1 | Exploratory / prototyping — implement first, add tests after |
-| `no-test` | 0 | Config-only, docs, CI, dependency bumps — requires `noTestJustification` |
+| Strategy | When to use |
+|:---------|:------------|
+| `three-session-tdd` | Expert stories and security-critical code (auth, tokens, RBAC) |
+| `three-session-tdd-lite` | Complex stories |
+| `tdd-simple` | Simple and medium stories |
+| `test-after` | Exploratory / prototyping — implement first, add tests after |
+| `no-test` | Config-only, docs, CI, dependency bumps — requires `noTestJustification` |
 
-Workflow mode does not read these strategies: the implementer writes its own tests in one session, and the gates decide the result. See [Test Strategies Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/test-strategies.md) for the pipeline routing decision tree and security override rules.
+Workflow mode does not read these strategies: the implementer writes its own tests in one session, and the gates decide the result. See [Test Strategies Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/test-strategies.md) for the routing decision tree and security override rules.
 
 ### Story Decomposition
 
@@ -247,21 +238,11 @@ An oversized story is split into smaller sub-stories with `nax plan -f <feature>
 
 See [Story Decomposition Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/decomposition.md).
 
-### Regression Gate (pipeline mode)
+### Regression Gate
 
-In pipeline mode, after all stories pass, nax runs the full test suite once. If it fails, nax maps each failing test file back to the story that introduced it and runs a targeted rectification cycle for that story. A suite timeout is accepted as a pass by default (`execution.regressionGate.acceptOnTimeout`). If failures remain, the affected stories are marked `regression-failed`, the run status becomes `failed`, and the `on-final-regression-fail` hook fires.
-
-In workflow mode the equivalent checks are the `full-suite` gate in each story and the `final-gates` step of the feature workflow.
+In workflow mode the full-suite checks are the `full-suite` gate in each story and the `final-gates` step of the feature workflow. `execution.regressionGate.timeoutSeconds` bounds the full-suite run. `acceptOnTimeout` only changes the status label (`passed-on-timeout` instead of `timeout`); either way a timed-out suite is a red gate in workflow mode.
 
 See [Regression Gate Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/regression-gate.md).
-
-### Parallel & Isolated Execution
-
-Parallel execution is a pipeline-mode feature. With `--parallel <n>` in pipeline mode, nax runs up to `n` stories whose dependencies are already satisfied at the same time, each in its own git worktree (`0` = auto, based on CPU cores). Both modes run the regression gate once at the end; only sequential runs attribute a regression to a story and rectify it — in parallel mode it is reported for a human. Workflow mode ignores `--parallel` and runs stories one at a time.
-
-Even in sequential pipeline mode, stories can be isolated in per-story git worktrees (`execution.storyIsolation: "worktree"`) to prevent cross-story state leakage. Workflow mode forces `storyIsolation` to `shared`.
-
-See [Parallel Execution Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/parallel-execution.md).
 
 ### Monorepo Support
 
@@ -271,13 +252,13 @@ See [Monorepo Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/mon
 
 ### Hooks
 
-Lifecycle hooks, defined in `.nax/hooks.json` (project) and `~/.nax/hooks.json` (global) — not in `config.json` — fire at key points (`on-start`, `on-story-complete`, `on-all-stories-complete`, `on-workflow-start`, `on-workflow-step`, `on-workflow-publish`, `on-complete`, `on-final-regression-fail`, and more). Use them to trigger deployments, send notifications, or integrate with external systems.
+Lifecycle hooks, defined in `.nax/hooks.json` (project) and `~/.nax/hooks.json` (global) — not in `config.json` — fire at key points (`on-start`, `on-story-complete`, `on-all-stories-complete`, `on-workflow-start`, `on-workflow-step`, `on-workflow-publish`, `on-complete`, and more). Use them to trigger deployments, send notifications, or integrate with external systems.
 
 See [Hooks Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/hooks.md).
 
 ### Plugins
 
-Extensible plugin architecture for prompt optimization, custom routing, code review, and reporting. Plugins live in `.nax/plugins/` (project) or `~/.nax/plugins/` (global). Post-run action plugins (e.g. auto-PR creation) can implement `IPostRunAction` for results-aware post-completion workflows.
+Extensible plugin architecture for custom routing, code review, and reporting. Plugins live in `.nax/plugins/` (project) or `~/.nax/plugins/` (global). Post-run action plugins (e.g. auto-PR creation) can implement `IPostRunAction` for results-aware post-completion workflows.
 
 See [Plugin System](https://github.com/nathapp-io/nax/blob/main/docs/architecture/subsystems.md#23-plugin-system).
 
@@ -309,7 +290,6 @@ See [Agents Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/agent
 | HOME env warning | Set HOME to an absolute path — nax warns if it contains `~` |
 | Monorepo packages misclassified | Ensure `.nax/mono/packages/<pkg>/config.json` is set up per package |
 | Agent Bash refused because the sandbox is unavailable | The OS sandbox is on by default and `raw` Bash requires it. Run `nax sandbox probe` to see why it cannot enforce on this machine, then fix the environment, set the stage's `bashApproval` to `gated`/`escalate`, or set `execution.sandbox.enabled: false` |
-| Acceptance tests regenerating every run (pipeline mode) | Check `acceptance-meta.json` — stale fingerprints indicate outdated story context. Workflow mode does not run acceptance tests |
 
 See the [Troubleshooting Guide](https://github.com/nathapp-io/nax/blob/main/docs/guides/troubleshooting.md) for more.
 

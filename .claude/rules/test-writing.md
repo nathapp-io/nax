@@ -20,13 +20,5 @@ Use these instead of mutating `Bun.spawn` globally (see `docs/architecture/conve
 
 | Module | Deps export | Covers |
 |:---|:---|:---|
-| `src/tdd/isolation.ts` | `_isolationDeps.spawn` | `git diff` in `getChangedFiles` |
-| `src/tdd/cleanup.ts` | `_cleanupDeps.spawn/sleep/kill` | `ps`, `Bun.sleep`, `process.kill` in `cleanupProcessTree` |
-| `src/tdd/rollback.ts` | `_rollbackDeps.spawn` | `git reset`/`clean` in `rollbackToRef` |
 | `src/utils/git.ts` | `_gitDeps.spawn` | All git commands |
 | `src/verification/executor.ts` | `_executorDeps.spawn` | Shell test command execution |
-
-For orchestrator/multi-module tests, use the shared helper:
-```typescript
-import { saveDeps, restoreDeps, mockGitSpawn, mockAllSpawn } from "./_tdd-test-helpers";
-```

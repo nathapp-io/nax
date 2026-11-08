@@ -7,7 +7,7 @@
 
 ## Where retries and fix rounds happen
 
-Three separate mechanisms bound retries. Which ones apply depends on `execution.mode`.
+Several separate mechanisms bound retries.
 
 | Mechanism | Scope | Default | Config |
 |:----------|:------|:--------|:-------|
@@ -16,13 +16,11 @@ Three separate mechanisms bound retries. Which ones apply depends on `execution.
 | Workflow story fix rounds | One story (workflow mode) | `workflow.maxFixRounds: 5` | `workflow.maxFixRounds` |
 | Workflow branch fix rounds | Feature branch (workflow mode) | `workflow.maxBranchFixRounds: 2` | `workflow.maxBranchFixRounds` |
 | Workflow final-gate repair | Feature branch (workflow mode) | `workflow.finalGateRepairRounds: 1` | `workflow.finalGateRepairRounds` |
-| Rectification | Pipeline mode only (deprecated) | `execution.rectification.maxAttemptsTotal: 12` | `execution.rectification` |
+| Story attempt bound | One story | `execution.rectification.maxAttemptsTotal: 12` | `execution.rectification.maxAttemptsTotal` |
 
 **Workflow story fix rounds** (`src/workflow/story-loop.ts`): the story loop runs at most `workflow.maxFixRounds` fix rounds. Rounds 1 to `min(3, maxFixRounds)` reuse the warm implementer session. Later rounds start a fresh session and climb one model tier per round past the warm cap (`src/workflow/fix-round.ts`). When the cap is reached with findings still open, the residual items go to the advisor for an adjudication ruling instead of stopping the run.
 
 **Workflow branch and final-gate rounds** (`src/workflow/branch-fix-rounds.ts`, `src/workflow/feature-machine.ts`): after the branch review, a branch fix runs and is re-reviewed, up to `workflow.maxBranchFixRounds` times. A follow-up round runs only while a blocking finding stays open and the previous round made progress. If the branch fix turns the final gates red after the first green pass, up to `workflow.finalGateRepairRounds` repair passes run. Setting a value to `0` disables that stage.
-
-**Pipeline mode** (deprecated): the story retry and escalation ladder, the rectification budget, and worktree isolation apply instead. See [Parallel Execution](parallel-execution.md) for the pipeline-only story paths.
 
 The API surface below describes operation-level retries (`op.retry`, `callOp`). It is independent of the workflow round limits above.
 

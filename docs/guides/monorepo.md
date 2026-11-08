@@ -37,7 +37,7 @@ repo-root/
 │               └── context.md        # agent context for apps/api
 ```
 
-**Overridable fields per package:** `agent`, `models`, `routing`, `execution`, `review`, `acceptance`, `quality`, `context`, `project` (merged by `mergePackageConfig` in `src/config/merge.ts`). Root-only sections such as `autoMode`, `generate`, `tdd`, `decompose`, `plan`, `constitution`, `interaction`, `auth`, `advisor` and `workflow` are never overridden per-package.
+**Overridable fields per package:** `agent`, `models`, `routing`, `execution`, `review`, `quality`, `context`, `project` (merged by `mergePackageConfig` in `src/config/merge.ts`). Root-only sections such as `autoMode`, `generate`, `tdd`, `decompose`, `plan`, `constitution`, `interaction`, `auth`, `advisor` and `workflow` are never overridden per-package.
 
 **Root-scoped keys (ADR-031):** `execution.bashApproval`, `execution.approvalTimeout`, `execution.sandbox`, `execution.commandSafety` and `execution.mode` are pinned to the root config. A package config (or package profile) that sets one is warned about and ignored. `execution.permissions` and `execution.permissionProfile` stay per-package — a package's `permissions` map replaces the root's (per-stage `bashApproval` included).
 

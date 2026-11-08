@@ -11,7 +11,6 @@
 
 ```
 packages/nax/src/                       # @nathapp/nax: CLI orchestrator
-├── acceptance/       # Acceptance test generation, refinement, fix diagnosis, hardening (pipeline mode; forced off in workflow mode)
 ├── advisor/          # Advisor: judgment-call rulings, decision ledger, audit, batching, menus (§59)
 ├── agent-runtime/    # nax's Bun runtime for nax-agent, installed as a side effect (§64)
 ├── agents/           # Transport-neutral agent layer and the two adapters
@@ -27,7 +26,7 @@ packages/nax/src/                       # @nathapp/nax: CLI orchestrator
 │   └── types.ts      # AgentAdapter interface, AgentResult, AgentRunOptions
 ├── analyze/          # Codebase scanning used by nax plan (there is no `nax analyze` command)
 ├── bakeoff/          # Multi-contestant runs, ranking and reporting (library module)
-├── cli/              # CLI command handlers (init, setup, plan, accept, runs, config, approvals, auth, mcp, advisor, trust, rules, etc.)
+├── cli/              # CLI command handlers (init, setup, plan, runs, config, approvals, auth, mcp, advisor, trust, rules, etc.)
 ├── commands/         # Subcommand wrappers (curator, detect, doctor, logs, migrate, precheck, replay, resume, runs, unlock)
 ├── config/           # Configuration loading, schemas (schemas-*.ts), defaults, permissions resolver, workflow and advisor schemas, root-only keys
 ├── constitution/     # Project governance document generation
@@ -35,39 +34,37 @@ packages/nax/src/                       # @nathapp/nax: CLI orchestrator
 ├── context/          # Context generation for agent prompts
 │   ├── engine/       # Context engine v2 (orchestrator, providers, packing, manifests)
 │   └── generators/   # Per-agent context generators (aider, claude, codex, cursor, gemini, opencode, windsurf)
-├── execution/        # Run orchestration (runner, unified executor, parallel batch, crash recovery, pipeline result handling, end phase)
+├── execution/        # Run orchestration (runner, unified executor, crash recovery, pipeline result handling, end phase)
 │   ├── escalation/   # Tier escalation on repeated failures (fast → balanced → powerful)
-│   ├── lifecycle/    # Run lifecycle phases (setup, initialization, completion, cleanup, acceptance-loop, paused-story-prompts)
-│   └── story-orchestrator/ # Per-story phase orchestration and rectification (pipeline mode; see story-orchestrator-flow.md)
-├── findings/         # Finding model and fix cycle (runFixCycle), retirement, iteration log, per-story fix history
-├── finish/           # Finish end phase (pipeline mode) and the PR and gate helpers shared with workflow (§60)
+│   └── lifecycle/    # Run lifecycle phases (setup, initialization, completion, cleanup, paused-story-prompts)
+├── findings/         # Finding model and per-producer adapters
+├── finish/           # PR and gate helpers shared with the workflow publish path (§60)
 ├── forge/            # Git-forge integration: provider detection, PR open, PR templates (§61)
-├── hooks/            # Lifecycle hook system (script-based, 12 event types)
+├── hooks/            # Lifecycle hook system (script-based, 15 event types)
 ├── interaction/      # Human-in-the-loop (chain, triggers, ask dispatch)
 │   └── plugins/      # Interaction plugins (cli, telegram, webhook)
 ├── log-format/       # Human-facing formatting of log records and run summaries
 ├── logger/           # Structured JSONL logger (logger, sinks, formatters, redaction)
 ├── mcp/              # External MCP servers: provider, pool, lock, rollup (§57)
 ├── metrics/          # Story metrics collection and run-level aggregation
-├── operations/       # Typed LLM operations dispatched through callOp (plan, decompose, routing, acceptance, reviews, fix strategies, finish, advisor)
-├── optimizer/        # Prompt optimization seam (no-op built-in, plugin-provided)
-├── pipeline/         # Pipeline engine (deprecated mode): stages, subscribers; workflow mode builds its own stage list here
-│   ├── stages/       # Pipeline stages: 8 default, pre-run acceptance-setup, post-run acceptance; workflowStage in workflow mode
+├── operations/       # Typed LLM operations dispatched through callOp (plan, decompose, routing, workflow story and branch review, gates, advisor, bot)
+├── pipeline/         # Stage engine: event bus, stages and subscribers; the workflow story pipe is built here
+│   ├── stages/       # Stages: queue-check, routing, constitution, context, completion (the workflow stage lives in src/workflow)
 │   └── subscribers/  # Event subscribers (reporters, hooks, interaction, events-writer)
 ├── plan/             # `nax plan`: single and refine strategies, spec lint gate, PRD persist and write
 ├── plugins/          # Plugin system (loader, registry, types, built-in plugins such as curator)
 ├── precheck/         # Pre-run validation (agents, CLI, config, git, system, native credentials, story-size gate)
 ├── prd/              # PRD schema and parsing, story fields, out-of-scope, spec lint and drift
 ├── project/          # Auto-detect project type, language, frameworks
-├── prompts/          # Prompt building (domain builders, loader, core engine)
-│   ├── builders/     # Domain-specific prompt builders (tdd, review, adversarial-review, acceptance, rectifier, one-shot, plan, decompose, setup, workflow, advisor, finish)
+├── prompts/          # Prompt building (domain builders, core engine)
+│   ├── builders/     # Domain-specific prompt builders (rectifier, one-shot, plan, decompose, setup, workflow, advisor, bot)
 │   ├── core/         # Shared prompt engine (SectionAccumulator, universal sections, wrappers, types)
 │   │   └── sections/ # Pure section functions (findings, instructions, json-schema, prior-failures, routing-candidates)
 │   └── sections/     # Reusable prompt sections (conventions, hermetic, isolation, role-task, story, out-of-scope, verdict, …)
 ├── quality/          # Quality command runner (lint, typecheck, build) and the test command resolver (SSOT)
 ├── queue/            # Mid-run queue control (PAUSE, ABORT, SKIP, RETRY, PRIORITY, INJECT)
 ├── replay/           # `nax replay`: reconstruct a past run from its artifacts (§63)
-├── review/           # Review runner, semantic and adversarial helpers, reviewer guard, review audit, diff utilities
+├── review/           # Review runner, reviewer guard, review audit, diff utilities
 ├── routing/          # Complexity classification and model-tier routing
 │   ├── calibrate/    # `nax routing calibrate`
 │   └── strategies/   # LLM-based routing strategy (llm.ts, llm-cache.ts, llm-parsing.ts)
@@ -75,15 +72,14 @@ packages/nax/src/                       # @nathapp/nax: CLI orchestrator
 ├── runtime/          # Run-scoped NaxRuntime (createRuntime), dispatch events, agent middleware, cost aggregation, run-turn hooks
 ├── schedule/         # Schedule parsing and waiting for deferred runs (library module)
 ├── session/          # Agent session lifecycle (SessionManager, naming, model selection, scratch dirs, sweep)
-├── tdd/              # TDD helpers (isolation, verdict, cleanup); the three TDD sessions are operations
 ├── test-runners/     # Test framework detection and output parsing (SSOT for test parsing)
 ├── trust/            # Per-folder trust gate and trust store (§62)
 ├── tui/              # React/Ink terminal UI
 │   ├── components/   # TUI React components
 │   └── hooks/        # TUI React hooks (useKeyboard, useLayout, usePipelineEvents, usePipelineBusEvents, useAgentStreamEvents)
 ├── utils/            # Shared utilities (git, paths, path-frame, file locks, JSON/JSONL, queue writer)
-├── verification/     # Test execution, smart/scoped runner, flake triage, mutation testing, rectification
-├── worktree/         # Git worktree management (manager, WorktreeId, merge, dependencies)
+├── verification/     # Test execution, smart/scoped runner, test baselines
+├── worktree/         # Git worktree management (manager, WorktreeId)
 ├── workflow/         # Workflow execution mode, the default since v0.88.0: story loop, feature machine, publishing (§58)
 ├── errors.ts         # NaxError base class and derived error classes
 └── version.ts        # Version management
@@ -199,13 +195,13 @@ test("handles missing binary", async () => {
 ```typescript
 // WRONG — contaminates other test files
 Bun.spawn = mock((cmd) => fakeResult);
-mock.module("../src/isolation", () => ({ getChangedFiles: mock(...) }));
+mock.module("../src/verification/executor", () => ({ executeWithTimeout: mock(...) }));
 
 // CORRECT — scoped to the module's _deps object
-import { _isolationDeps } from "../../../src/tdd/isolation";
-let orig = _isolationDeps.spawn;
-beforeEach(() => { _isolationDeps.spawn = mock(...); });
-afterEach(() => { _isolationDeps.spawn = orig; });
+import { _executorDeps } from "../../../src/verification/executor";
+let orig = _executorDeps.spawn;
+beforeEach(() => { _executorDeps.spawn = mock(...); });
+afterEach(() => { _executorDeps.spawn = orig; });
 ```
 
 This was the root cause of 38 test failures (March 2026) — fixed in commit `a110d6a`.
@@ -216,37 +212,26 @@ The `_deps` pattern is used extensively (200+ modules). Key examples by subsyste
 
 | Subsystem | Module | Export | Covers |
 |:---|:---|:---|:---|
-| **TDD** | `src/tdd/isolation.ts` | `_isolationDeps` | `git diff` → `getChangedFiles` |
-| | `src/tdd/cleanup.ts` | `_cleanupDeps` | `ps`, `Bun.sleep`, `process.kill` |
 | **Verification** | `src/verification/executor.ts` | `_executorDeps` | Shell test command execution |
 | | `src/verification/smart-runner.ts` | `_smartRunnerDeps` | Smart test file selection |
 | **Agents** | `src/agents/acp/session.ts` | `_acpDeps` | ACP backend launch, rate card, cwd probe, launcher lookup |
 | | `packages/nax-agent/src/native/client.ts` | `_clientDeps` | Native (nax-ai) client |
 | **Pipeline** | `src/pipeline/stages/routing.ts` | `_routingDeps` | Routing stage |
-| | `src/pipeline/stages/execution.ts` | `_executionDeps` | Execution stage |
 | | `src/pipeline/stages/completion.ts` | `_completionDeps` | Completion stage |
-| | `src/pipeline/stages/acceptance-setup.ts` | `_acceptanceSetupDeps` | Acceptance setup |
 | **Execution** | `src/execution/runner.ts` | `_runnerDeps` | Main run orchestrator |
 | | `src/execution/unified-executor.ts` | `_unifiedExecutorDeps` | Unified story executor |
-| | `src/execution/parallel-batch.ts` | `_parallelBatchDeps` | Parallel batch execution |
 | | `src/execution/escalation/tier-escalation.ts` | `_tierEscalationDeps` | Tier escalation logic |
 | | `src/execution/lifecycle/run-setup.ts` | `_runSetupDeps` | Run setup phase |
 | **Context** | `src/context/engine/orchestrator.ts` | `_orchestratorDeps` | Context-engine orchestrator |
 | **Review** | `src/review/runner/index.ts` | `_reviewRunnerDeps`, `_reviewGitDeps`, `_reviewLintDeps` | Review runner |
-| | `src/review/semantic-evidence.ts` | `_evidenceDeps` | Semantic-review evidence |
 | **Sandbox / tools** | `packages/nax-agent/src/sandbox/srt-backend.ts` | `_srtBackendDeps` | OS-sandbox backend |
 | | `packages/nax-agent/src/tools/bash.ts` | `_bashToolDeps` | Native `Bash` tool execution |
 | | `packages/nax-agent/src/command-safety/shadow.ts` | `_commandShadowDeps` | Command-safety shadow classifier |
 | **Other** | `packages/nax-agent/src/internal/git-exec.ts` (re-exported by `src/utils/git.ts`) | `_gitDeps` | All git commands |
 | | `src/routing/router.ts` | `_tryLlmBatchRouteDeps` | LLM batch routing |
 | | `src/worktree/manager.ts` | `_worktreeManagerDeps` | Worktree management |
-| | `src/execution/merge-conflict-rectify.ts` | `_mergeRectifyDeps` | Parallel merge-conflict rectification |
 | | `src/project/detector.ts` | `_detectorDeps` | Project detection |
 | | `src/quality/runner.ts` | `_qualityRunnerDeps` | Quality command execution |
-
-### Reference Files
-
-- `test/integration/tdd/_tdd-test-helpers.ts` — shared helper for TDD orchestrator tests
 
 ---
 

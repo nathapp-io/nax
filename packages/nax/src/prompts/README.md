@@ -5,7 +5,7 @@ agent/session surfaces is built here.
 
 ## Layout
 
-- `core/section-accumulator.ts` — shared engine. Owns join, separator, override loading.
+- `core/section-accumulator.ts` — shared engine. Owns join and separator.
 - `core/sections/` — pure section functions. One file per section type. Returns `PromptSection`.
 - `core/universal-sections.ts` — null-guarded constructors for sections every builder uses.
 - `core/wrappers.ts` — user-supplied data wrappers, separator constants.
@@ -16,9 +16,10 @@ agent/session surfaces is built here.
 
 | Builder | Domains |
 |---|---|
-| `TddPromptBuilder` | implementer, test-writer, verifier, no-test, tdd-simple, batch |
-| `RectifierPromptBuilder` | tdd-test-failure, tdd-suite-failure, verify-failure, review-findings |
-| `OneShotPromptBuilder` | router, decomposer, auto-approver |
+| `RectifierPromptBuilder` | static prompt factories (failing-test, review-findings, regression-failure and handoff prompts) |
+| `OneShotPromptBuilder` | router, decomposer |
+| `PlanPromptBuilder` | spec-to-PRD planning |
+| `SetupPromptBuilder` | project setup generation |
 
 ## Invariants
 

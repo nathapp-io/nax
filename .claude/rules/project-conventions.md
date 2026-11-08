@@ -137,24 +137,24 @@ Every `logger.info/debug/warn/error` call inside a pipeline stage **must** inclu
 
 ```typescript
 // Correct
-logger.info("acceptance", "Running acceptance tests", { storyId: ctx.story.id });
-logger.warn("verify", "No test command configured", { storyId: ctx.story.id });
+logger.info("completion", "Story passed", { storyId: ctx.story.id });
+logger.warn("routing", "Falling back to default tier", { storyId: ctx.story.id });
 
-// Wrong — missing storyId (breaks parallel log correlation)
-logger.info("acceptance", "Running acceptance tests");
-logger.warn("verify", "No test command configured", { command });
+// Wrong — missing storyId (breaks log correlation)
+logger.info("completion", "Story passed");
+logger.warn("routing", "Falling back to default tier", { tier });
 ```
 
-**Why:** In parallel mode, multiple stories emit log entries to the same JSONL file concurrently. Without `storyId` on every line, it is impossible to attribute a log entry to a specific story.
+**Why:** Interleaved sessions (story runs, chat and bot jobs) emit log entries to the same JSONL file. Without `storyId` on every line, it is impossible to attribute a log entry to a specific story.
 
 **Rule:** `storyId` must be the **first key** in the data object. Other fields follow after it.
 
 ```typescript
 // storyId first
-logger.error("acceptance", "Tests failed", { storyId: ctx.story.id, failedACs, packageDir });
+logger.error("completion", "Review gate failed", { storyId: ctx.story.id, failedChecks, packageDir });
 
 // storyId buried
-logger.error("acceptance", "Tests failed", { failedACs, packageDir, storyId: ctx.story.id });
+logger.error("completion", "Review gate failed", { failedChecks, packageDir, storyId: ctx.story.id });
 ```
 
 **Scope:** Applies to `src/pipeline/stages/` and `src/review/`. Utility modules (`src/quality/runner.ts`, `src/verification/`) use `storyId` when it is passed in via options — no requirement to thread it independently.

@@ -15,11 +15,11 @@ nax is primarily functional (~90% exported functions, ~10% classes). Use pattern
 |:---------|:----|:--------|
 | Stateless transformation or computation | **Plain function** | `estimateTokens()`, `coerceVerdict()`, `buildStorySection()` |
 | Single-use utility with no variants | **Plain function** | `loadConstitution()`, `runReview()`, `autoCommitIfDirty()` |
-| Domain-specific prompt construction (composable) | **Prompt Builder** | `TddPromptBuilder`, `ReviewPromptBuilder`, `AcceptancePromptBuilder`, etc. |
-| Multi-step construction with optional config | **Builder** | `TddPromptBuilder.for(role)`, `OneShotPromptBuilder.for(role)` |
+| Domain-specific prompt construction (composable) | **Prompt Builder** | `OneShotPromptBuilder`, `RectifierPromptBuilder`, `PlanPromptBuilder`, etc. |
+| Multi-step construction with optional config | **Builder** | `OneShotPromptBuilder.for(role)` |
 | Multiple backends sharing a contract | **Adapter** | `AgentAdapter` → `AcpAgentAdapter` (claude, codex, …), `NativeAgentAdapter`; `SandboxBackend` → srt |
 | Collection with typed lookup/lifecycle | **Registry** | `PluginRegistry`, agent registry |
-| Interchangeable algorithms for same task | **Strategy** | Routing strategies, fix strategies (`FixStrategy`) |
+| Interchangeable algorithms for same task | **Strategy** | Routing strategies |
 | Ordered handler dispatch with fallback | **Chain** | `InteractionChain`, ask-resolver chain (`chainAskLinks`) |
 | Global service with init-once semantics | **Singleton** | Logger |
 | Stateful object managing resources (PIDs, connections) | **Class** | `PidRegistry` (`src/execution/pid-registry.ts`), `StatusWriter` (`src/execution/status-writer.ts`) |
@@ -32,12 +32,6 @@ Domain-specific prompt construction using composable section functions. Replaces
 
 ```typescript
 // Each domain has its own builder — composed from reusable sections
-const prompt = await TddPromptBuilder.for("implementer", options)
-  .story(story)
-  .constitution(constitution)
-  .context(contextMd)
-  .build();
-
 // One-shot prompts for routing, decomposition
 const oneShot = OneShotPromptBuilder.for("router")
   .instructions(routingInstruction)
@@ -45,24 +39,20 @@ const oneShot = OneShotPromptBuilder.for("router")
   .build();
 ```
 
-**8 domain-specific builder classes** (`src/prompts/builders/`):
+**Domain-specific builder classes** (`src/prompts/builders/`):
 
 | Builder | Roles | Purpose |
 |:--------|:------|:--------|
-| `TddPromptBuilder` | implementer, test-writer, verifier, tdd-simple, batch, no-test | TDD execution pipeline |
-| `ReviewPromptBuilder` | semantic | Semantic review, AC verification, JSON-retry / re-grounding prompts |
-| `AcceptancePromptBuilder` | generator, diagnoser, fix-executor | Acceptance test generation/diagnosis |
-| `RectifierPromptBuilder` | static factories (`firstAttemptDelta`, `continuation`, `escalated`, `reviewRectification`, `testWriterRectification`, `regressionFailure`, …) | Fix prompts with escalation preambles; the old `for(trigger)` builder form was removed (ADR-018) |
+| `RectifierPromptBuilder` | static factories (`firstAttemptDelta`, `reviewRectification`, `regressionFailure`, `failingTestRectification`, `swapHandoff`, …) | Fix and hand-off prompts |
 | `OneShotPromptBuilder` | router, decomposer | Trivial instruction + schema combos |
 | `PlanPromptBuilder` | planner | Planning prompt construction (story decomposition, complexity classification, AC generation) |
-| `AdversarialReviewPromptBuilder` | adversarial | Adversarial heuristics + findings schema |
 | `SetupPromptBuilder` | setup | `nax setup` config generation |
 
-Plain-function builders sit alongside them: `buildDecomposePromptSync` (`decompose-builder.ts`), `buildPriorIterationsBlock`, `buildSourceRootsSection`, `timeoutRetry`.
+Plain-function builders sit alongside them: `buildDecomposePromptSync` (`decompose-builder.ts`), `buildSourceRootsSection`, `timeoutRetry`.
 
 **Core engine** (`src/prompts/core/`):
 
-- `SectionAccumulator` — shared engine for joining sections, separator loading, override resolution
+- `SectionAccumulator` — shared engine for joining sections, separator loading
 - `universal-sections.ts` — null-guarded section constructors used by all builders
 - `core/sections/` — pure section functions (findings, instructions, json-schema, prior-failures, routing-candidates)
 
@@ -70,7 +60,6 @@ Plain-function builders sit alongside them: `buildDecomposePromptSync` (`decompo
 - **Composition only** — builders wrap `SectionAccumulator`, never inherit from each other
 - **Section delegation** — builder methods are one-line delegations to section functions in `core/sections/`
 - **Call-order = section order** — fluent chain in callsite determines prompt structure
-- **Override loading** — disk overrides loaded per-role via `loader.ts`
 - **File size limits** — section files ≤80 lines, builder files ≤200 lines
 
 **Reference:** `src/prompts/builders/`, `src/prompts/core/`, `src/prompts/README.md`
@@ -80,10 +69,10 @@ Plain-function builders sit alongside them: `buildDecomposePromptSync` (`decompo
 For multi-step object construction with optional configuration:
 
 ```typescript
-const prompt = await TddPromptBuilder.for(role, options)
+const prompt = OneShotPromptBuilder.for("router")
   .constitution(constitution)
-  .context(contextMd)
-  .build(); // async for TddPromptBuilder; sync for OneShotPromptBuilder
+  .instructions(routingInstruction)
+  .build(); // sync
 ```
 
 **Rules:**
@@ -92,7 +81,7 @@ const prompt = await TddPromptBuilder.for(role, options)
 - Terminal method (`.build()`) produces the result
 - Setters are optional — builder has sensible defaults
 
-**Reference:** `src/prompts/builders/tdd-builder.ts`, `src/prompts/builders/one-shot-builder.ts`
+**Reference:** `src/prompts/builders/one-shot-builder.ts`
 
 ### Adapter (Interface + Implementations)
 
@@ -130,7 +119,7 @@ nax has two transports, selected by **agent name** (ADR-027): every named CLI ag
 
 `agent.protocol` (`acp` | `native` | `hybrid`, default `hybrid`) is a capability gate deciding which transports are permitted, not a router. `agent.default` defaults to `native` (`src/config/agent-defaults.ts`).
 
-All pipeline stages, routing, TDD, and acceptance generators dispatch through the manager/session/operation layers (never the adapter directly — see `.claude/rules/adapter-wiring.md`). The default agent is read via `resolveDefaultAgent(config)`.
+All pipeline stages, routing, and workflow steps dispatch through the manager/session/operation layers (never the adapter directly — see `.claude/rules/adapter-wiring.md`). The default agent is read via `resolveDefaultAgent(config)`.
 
 #### LLM Fallback Rule
 
@@ -160,7 +149,6 @@ const adapter = {
 **Where this applies:**
 - Pipeline stages needing LLM calls (routing decompose, classification)
 - CLI commands (`nax plan --decompose <storyId>`)
-- Acceptance test generation and refinement
 - Any future feature that needs one-shot LLM completions
 
 ### Registry (Lookup + Discovery)
@@ -172,7 +160,7 @@ For collecting and retrieving instances by name or capability:
 export class PluginRegistry {
   getReviewers(): IReviewPlugin[] { ... }
   getReporters(): IReporter[] { ... }
-  getOptimizers(): IPromptOptimizer[] { ... }
+  getPostRunActions(): IPostRunAction[] { ... }
 }
 
 // Factory-based registry for the agent collection
@@ -210,7 +198,7 @@ export interface RoutingStrategy {
 
 **Reference:** `src/routing/router.ts`, `src/routing/strategies/`
 
-> Verification no longer uses a strategy-class hierarchy — scoped/regression/acceptance verification are now `callOp` Operations (`verifyScopedOp`, `fullSuiteGateOp`, acceptance ops). See §37 and `.claude/rules/adapter-wiring.md`.
+> Verification no longer uses a strategy-class hierarchy — scoped and full-suite verification are `callOp` Operations (`verifyScopedOp`, `fullSuiteGateOp`). See §37 and `.claude/rules/adapter-wiring.md`.
 
 ### Chain (Priority-Ordered Pipeline)
 
@@ -428,7 +416,6 @@ _sessionRunnerDeps.autoCommitIfDirty = async (dir, msg) => {
 _gitDeps.spawn = (cmd) => { /* fragile — depends on every internal code path */ };
 ```
 
-**Applied in:** the TDD session runner (CI-flaky mock → reliable injectable, commit `e41e076`; the module has since been folded into the Operations layer)
 
 ### 13.6 Security & Regression Test Patterns
 

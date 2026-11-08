@@ -40,7 +40,7 @@ Tests **must** mirror the `src/` directory structure:
 ```
 src/routing/strategies/foo.ts    → test/unit/routing/strategies/foo.test.ts
 src/execution/runner.ts          → test/unit/execution/runner.test.ts
-src/pipeline/stages/verify.ts   → test/unit/pipeline/stages/verify.test.ts
+src/pipeline/stages/routing.ts  → test/unit/pipeline/stages/routing.test.ts
 src/verification/smart-runner.ts → test/unit/verification/smart-runner.test.ts
 ```
 

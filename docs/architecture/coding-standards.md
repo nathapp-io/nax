@@ -278,9 +278,9 @@ logger.info("routing", "Task classified", {
 
 ### Rules
 
-- **Stage prefix** is the first param — matches pipeline stage names
+- **Stage prefix** is the first param — matches the module's stage name
 - **`storyId` first** — in `src/pipeline/stages/` and `src/review/`, every call's data object must
-  start with `storyId` (parallel runs share one JSONL file). Ratcheted by `bun run check:logger-storyid`;
+  start with `storyId` (one JSONL file carries every story's records). Ratcheted by `bun run check:logger-storyid`;
   a deliberate exception takes `// nax-lint-allow: no-storyid`
 - **Never `console.log` / `console.error`** in `src/` — and no emojis in log text (`[OK]`, `[WARN]`, `[FAIL]`)
 - **Message** is human-readable, present tense

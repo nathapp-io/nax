@@ -54,8 +54,9 @@ without consulting the grant table, so the table's "Native grants" column does n
 ## Per-stage blocks
 
 `execution.permissions` is a map whose keys are pipeline stages plus the reserved key
-`default`. A stage is one of `plan`, `run`, `setup`, `verify`, `review`, `rectification`,
-`regression`, `acceptance`, `complete`.
+`default`. A stage is one of `plan`, `run`, `setup`, `verify`, `review`, `complete`. The former
+`rectification`, `regression` and `acceptance` stage names are warn-and-stripped
+(`src/config/removed-stage-names.ts`).
 
 Lookup order is **stage block → its `inherit` chain → `default` → nothing**. A stage that has
 no block of its own falls to `default`. A stage that *has* a block uses it, even if empty —
@@ -397,7 +398,7 @@ the prompt, remembered approvals and `nax approvals` are covered in [Approvals](
 
 ## What is NOT in this subsystem, and why
 
-- **`quality.commands` and `acceptance.command`.** These are command templates a human put
+- **`quality.commands`.** These are command templates a human put
   in project config, run by key through a shell. They are trusted by construction and are
   never wrapped, matched or denied by a permission rule (spec R8). A model cannot author
   them, so there is nothing here to gate.

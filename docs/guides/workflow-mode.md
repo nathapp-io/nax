@@ -5,14 +5,12 @@ description: The default execution mode for nax run - the per-story loop, the fe
 
 # Workflow Mode
 
-Workflow mode is the default execution mode for `nax run` (since v0.88.0). It is set with
-`execution.mode` and runs when the key is absent or `"workflow"`. The decision and its trade-offs are in
+Workflow mode is the only execution mode for `nax run`. `execution.mode` accepts only `"workflow"`, which is
+also the default when the key is absent. The decision and its trade-offs are in
 [ADR-034](../adr/ADR-034-workflow-execution-mode.md). The code lives in `packages/nax/src/workflow/`.
 
-`execution.mode: "pipeline"` is deprecated. nax warns once at config load and the mode is frozen; it will be
-removed in a future release. The pipeline-era guides (acceptance tests, test strategies, the regression gate,
-parallel execution) describe pipeline behaviour that workflow mode does not run; see
-[What workflow mode changes](#what-workflow-mode-changes).
+`execution.mode: "pipeline"` and `execution.maxIterations` are rejected at config load
+(`CONFIG_PIPELINE_MODE_REMOVED`).
 
 ```json
 {
@@ -131,19 +129,15 @@ A timeout with no checks reads as `no-checks`. Slow CI reads as `pending`. Neith
 
 ## What workflow mode changes
 
-Workflow mode forces some settings whatever the config says (`applyWorkflowMode` in `src/config/workflow-mode.ts`):
+`applyWorkflowMode` (`src/config/workflow-mode.ts`) forces `advisor.enabled` on whatever the config says.
 
-| Setting | Effect in workflow mode |
-|:--------|:------------------------|
-| `acceptance.enabled` | Forced off. The acceptance-test pipeline does not run |
-| `execution.storyIsolation` | Forced to `shared`. A `worktree` setting produces a warning |
-| `advisor.enabled` | Forced on |
-| `nax run --parallel <n>` | Ignored (the run is sequential) |
-| Story batching | Disabled. Each story runs alone |
+`acceptance.*`, `execution.storyIsolation` and `execution.worktreeDependencies` are removed keys: they are
+dropped with a warning at config load. `nax run --parallel`, `-m/--max-iterations` and `--no-batch` exit with a
+removal message; stories always run one at a time in the project checkout.
 
-The per-story test strategy (`testStrategy` in `prd.json`) and `tdd.strategy` are not read by the workflow
-story loop. The regression gate of the pipeline is replaced by the `full-suite` gate at story level and the
-`final-gates` step at feature level.
+`routing.testStrategy` is still computed and stored (`tdd.strategy` feeds routing), but it selects no session
+layout; the workflow story loop runs one implementer session. The story gate is the `full-suite` gate at story
+level, and the `final-gates` step at feature level.
 
 Rules are delivered lazily: the brief carries a rules index instead of the rule bodies, and native sessions
 receive a rule's text when they first read or write a file it governs. Set `context.rules.delivery: "push"`
@@ -182,8 +176,8 @@ All keys live under the top-level `workflow` block unless noted.
 
 | Key | Default | Notes |
 |:----|:--------|:------|
-| `execution.mode` | `"workflow"` | `"pipeline"` is deprecated |
-| `execution.costLimit` | `30` | USD. Shared with the pipeline; see [Configuration](configuration.md) |
+| `execution.mode` | `"workflow"` | `"workflow"` is the only accepted value |
+| `execution.costLimit` | `30` | USD. See [Configuration](configuration.md) |
 | `workflow.maxFixRounds` | `5` | Minimum 1. Per-story fix rounds |
 | `workflow.maxBranchFixRounds` | `2` | Minimum 0. Feature-level branch fix rounds |
 | `workflow.finalGateRepairRounds` | `1` | Minimum 0 |

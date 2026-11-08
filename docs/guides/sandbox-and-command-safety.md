@@ -35,11 +35,10 @@ ACP agents bring their own tools and are not affected by either layer.
 ### What it wraps
 
 Exactly two spawn sites: the `Bash` tool and `RunCommand`'s argv branch (`Exec`). nax's own
-declared commands — `quality.commands`, `acceptance.command`, worktree dependency installs, the
-per-story gates — are never wrapped. The launcher is only handed to the two agent-authored
+declared commands — `quality.commands` and the per-story gates — are never wrapped. The launcher is only handed to the two agent-authored
 sites, so this holds by construction.
 
-The sandbox is set up per session only when the operation declares `Bash` or `Exec`. Operations that declare `Bash` include the implementers and rectifiers, and the reviewers: semantic review, adversarial review, the workflow story review, and the finish branch and spec reviews. Those reviewers get their read tools plus `Bash`, which runs inside the sandbox whenever the sandbox is enabled and available (see the posture table).
+The sandbox is set up per session only when the operation declares `Bash` or `Exec`. Operations that declare `Bash` include the workflow write operations (`workflow-implement`, `workflow-branch-fix`, `workflow-repair`) and the workflow reviewers (story review, re-review, branch review). Those reviewers get their read tools plus `Bash`, which runs inside the sandbox whenever the sandbox is enabled and available (see the posture table).
 
 ### Posture by bash approval mode
 
@@ -67,7 +66,7 @@ and every path in it is literal and realpath-resolved.
 
 | | Paths |
 |:--|:--|
-| **Writable** | the story root (repo or worktree); this run's temp root under `/tmp/nax/` (or `/tmp/nax-<uid>` when the shared parent is unusable), which is also where `$TMPDIR` points; the system temp dir and `/tmp` only with `filesystem.allowSharedTmp`; package-manager caches under `$HOME` (`.bun/install/cache`, `.npm`, `.cache`, `.cargo/registry`, `.cargo/git`, `go/pkg/mod`, `.gradle/caches`, `.m2/repository`, `.pnpm-store`; plus `Library/Caches` on macOS, and `/tmp/claude` on macOS unless this command carries its own `$TMPDIR` override); `filesystem.allowWrite` |
+| **Writable** | the story root (the repo checkout); this run's temp root under `/tmp/nax/` (or `/tmp/nax-<uid>` when the shared parent is unusable), which is also where `$TMPDIR` points; the system temp dir and `/tmp` only with `filesystem.allowSharedTmp`; package-manager caches under `$HOME` (`.bun/install/cache`, `.npm`, `.cache`, `.cargo/registry`, `.cargo/git`, `go/pkg/mod`, `.gradle/caches`, `.m2/repository`, `.pnpm-store`; plus `Library/Caches` on macOS, and `/tmp/claude` on macOS unless this command carries its own `$TMPDIR` override); `filesystem.allowWrite` |
 | **Write-denied inside those** | every top-level `.nax/` entry except `.nax/scratchpad/` (whole: `features/`, `rules/`, `cache/`, ...), plus the entries nax loads as input even when absent (`config.json`, `mono/`, `rules/`, `context.md`, `hooks.json`, `plugins/`, `templates/`, `prompts/`); the root queue files (`.queue.txt`, `.queue.txt.processing`), the approvals file, and the git guards below |
 | **Write-denied on macOS, when confined** | `/tmp/claude` and `/private/tmp/claude`. srt always allows that directory, so the deny is the only thing that takes the write back; a confined session does not need it, because `$TMPDIR` already points inside the run's own root. Not denied when `filesystem.allowSharedTmp` is `true`. |
 | **Unreadable** | `~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/.config/gh`, nax's own `credentials*` files; `filesystem.denyRead` |
@@ -79,13 +78,7 @@ running inside a nax session sandbox, so a test that needs what the sandbox with
 sandbox launch, the shared `/tmp/nax` parent) can skip instead of failing; nax's own suites read
 it through `isConfinedTestRun()`. It is advisory, not a security boundary: any command can set it.
 
-The file tools (Write, Edit, Delete, GitCommit) apply the same `.nax/` rule in-process, with
-one addition the sandbox cannot express: a test file directly inside a feature directory (the
-acceptance and suggested tests, or a custom `acceptance.testPath`) stays writable, because
-acceptance generation and test-fix write them. The feature's `context.md`, spec, state files
-and subdirectories (`stories/`, `sessions/`, ...) do not. A test runner that writes next to
-the acceptance test from Bash, such as a first snapshot into `__snapshots__/`, is refused;
-Python's `__pycache__` write fails silently and is harmless.
+The file tools (Write, Edit, Delete, GitCommit) apply the same `.nax/` rule in-process.
 
 The agent is told all of this in the tool description, and a wrapped command whose stderr
 looks like a sandbox denial (`Operation not permitted`, `Read-only file system`) gets a note
@@ -187,7 +180,7 @@ proof; `argv` is the wrapper argv that actually ran, beside the logical `execute
 ### What it does
 
 For every agent-authored `Bash` and `Exec` command dispatched with the ask wiring (the execution
-stage, the workflow steps, the acceptance-fix loop, the deferred regression gate and `nax finish`), the shadow:
+stage and the workflow steps), the shadow:
 
 1. scores the command with a deterministic **rule scorer** (regex families; `RULE_SET_VERSION`
    2), and

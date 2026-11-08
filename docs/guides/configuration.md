@@ -14,7 +14,7 @@ Config is layered — project overrides global:
 | `.nax/config.json` | Project-level override |
 | `.nax/mono/<package>/config.json` | Per-package override (monorepos) |
 
-The authoritative source is the Zod schema (`packages/nax/src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Most keys have a schema default. A few are unset until you add them (`project`, `curator`, `plugins`, `disabledPlugins`, `optimizer`, `generate`). Run `nax config --explain` to see the merged result with field descriptions.
+The authoritative source is the Zod schema (`packages/nax/src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Most keys have a schema default. A few are unset until you add them (`project`, `curator`, `plugins`, `disabledPlugins`, `generate`). Run `nax config --explain` to see the merged result with field descriptions.
 
 **Sharing `~/.nax` across machines.** If `~/.nax` is a synced repo, put per-machine settings (an `auth.exec.command` with absolute paths, local cost limits) in `~/.nax/config.local.json` and keep that file out of version control. The global dir is never treated as a project: running nax from a directory under `$HOME` with no nearer `.nax/config.json` loads `~/.nax` once, as the global layer.
 
@@ -28,7 +28,6 @@ Some blocks are restricted by layer:
 ```json
 {
   "execution": {
-    "maxIterations": 20,
     "costLimit": 30
   },
   "tdd": {
@@ -42,9 +41,7 @@ Some blocks are restricted by layer:
       "test": "bun test test/ --timeout=60000",
       "testScoped": "bun test --timeout=60000 {{files}}",
       "lint": "bun run lint",
-      "typecheck": "bun x tsc --noEmit",
-      "lintFix": "bun x biome check --fix src/",
-      "formatFix": "bun x biome format --write src/"
+      "typecheck": "bun x tsc --noEmit"
     }
   }
 }
@@ -60,20 +57,19 @@ Some blocks are restricted by layer:
 | `autoMode` | `complexityRouting`: simple→fast, medium→balanced, complex/expert→powerful; `escalation.enabled: true`, 2 attempts per tier | Tier routing and escalation (fast → balanced → powerful) |
 | `autoRoute` | `enabled: false`, `minSamples: 8` | Adjust complexity→tier mapping from run history (see `nax routing calibrate`) |
 | `routing` | `strategy: "keyword"` | Story classification — [below](#routing) |
-| `execution` | `mode: "workflow"`, `maxIterations: 20`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `storyIsolation: "shared"`, `permissionProfile: "unrestricted"` | Run loop, rectification, regression gate, permissions, sandbox. `mode` selects the run loop — [below](#execution-mode) |
+| `execution` | `mode: "workflow"`, `costLimit: 30`, `sessionTimeoutSeconds: 3600`, `permissionProfile: "unrestricted"` | Run cost limit, regression gate, permissions, sandbox. `mode` accepts only `workflow` — [below](#execution-mode) |
 | `auth` | unset | Global-only credential source for the `native` agent (`source`: `file`/`exec`, `onChange`: `warn`/`refuse`). See [CLI reference](cli-reference.md) (`nax auth`) |
 | `advisor` | `enabled: false`, every caller off, `model: "powerful"`, `memory: "stateless"` | Advisor rules on judgment calls instead of stopping the run — [below](#advisor) |
 | `workflow` | `publish: "pr"`, `maxFixRounds: 5`, `maxBranchFixRounds: 2`, `finalGateRepairRounds: 1`, `preflight: true`, `interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 }` | Workflow-mode loop, fix rounds, step-limit continues, publish and CI wait — [below](#workflow) |
-| `quality` | `commands: {}`, `autofix.enabled: true`, `shell: "/bin/sh"`, `testing.hermetic: true` | Project lint/typecheck/test commands and gates |
-| `tdd` | `strategy: "auto"`, `sessionTiers` fast/fast | TDD strategy — [options](#tdd-strategy-options) |
+| `quality` | `commands: {}`, `shell: "/bin/sh"`, `testing.hermetic: true` | Project lint/typecheck/test commands and gates |
+| `tdd` | `strategy: "auto"` | Stored test strategy used by routing — [options](#tdd-strategy-options) |
 | `review` | `enabled: true`, `checks: ["typecheck", "lint"]`, `pluginMode: "observational"` | Review checks (`typecheck`, `lint`, `test`, `build`, `semantic`, `adversarial`) |
 | `plan` | `model: "balanced"`, `mode` unset (→ `single`), `timeoutSeconds: 600` | `nax plan` — `mode` is `single` or `refine`; the retired `debate`/`pipeline` modes are rejected at load |
-| `acceptance` | `enabled: true`, `maxRetries: 3`, `model: "fast"`, `redGate: true` | Acceptance test generation, refinement and fix |
 | `context` | `v2.enabled: false`, `fileInjection: "disabled"` | Context engine — see [Context engine](context-engine.md) |
 | `constitution` | `enabled: true`, `path: "constitution.md"`, `maxTokens: 2000` | Constitution injected into prompts |
 | `interaction` | `plugin: "cli"`, `defaults.timeout: 600000` | Interaction triggers/plugins — see [Triggers](triggers.md) |
 | `precheck` | `storySizeGate.enabled: true`, `action: "block"` | Pre-run checks and the story-size gate |
-| `prompts` | `behavioralGuardrails: "lite"` | Prompt overrides and guardrail level (`off`/`lite`/`strict`) |
+| `prompts` | `behavioralGuardrails: "lite"` | Accepted, but nothing reads it: prompts always use the `lite` guardrails (#2832) |
 | `autoPr` | `enabled: false`, `draft: true` | Open a (draft) PR after a run |
 | `finish` | `enabled: false` | Autonomous finish — [below](#autonomous-finish-finish) |
 | `mcp` | `servers: {}` | MCP servers the native agent may call — [below](#mcp-servers) |
@@ -81,7 +77,7 @@ Some blocks are restricted by layer:
 | `install` | `allowScripts: false` | Dependency-install script policy |
 | `project` | unset (auto-detected) | Language/type overrides — [below](#project-language--type) |
 | `curator` | unset (`enabled: true` when present) | Curator thresholds, rollup path, retention — see [Curator](curator.md) |
-| `plugins` / `disabledPlugins` / `optimizer` / `generate` | unset | Plugin entries, prompt optimizer, `nax generate` agent list. Lifecycle hooks are **not** read from `config.json` — they load from `.nax/hooks.json` / `~/.nax/hooks.json` (see [Hooks](hooks.md)) |
+| `plugins` / `disabledPlugins` / `generate` | unset | Plugin entries, `nax generate` agent list. Lifecycle hooks are **not** read from `config.json` — they load from `.nax/hooks.json` / `~/.nax/hooks.json` (see [Hooks](hooks.md)) |
 | `profile` | `"default"` | Active config profile |
 
 ---
@@ -99,9 +95,8 @@ Some blocks are restricted by layer:
 | Value | Behaviour |
 |:------|:----------|
 | `"workflow"` | **Default** (since 0.88.0). Runs the workflow loop: a story loop with advisor rulings, a branch review, final gates with a repair round, configurable branch-fix rounds, a draft PR that is promoted to ready, and a CI wait. Issues to close are taken from `Closes: #n` lines in the spec. |
-| `"pipeline"` | **Deprecated.** Runs the older story pipeline. Config load logs a deprecation warning (`execution.mode "pipeline" is deprecated and will be removed in a future release`). New work goes to workflow mode. |
 
-`execution.mode` is root-only. Omitting it means `"workflow"`. Set `"pipeline"` explicitly only while you migrate. See [Workflow mode](workflow-mode.md) for how the loop works.
+`execution.mode` is root-only and `"workflow"` is the only accepted value (and the default). `"pipeline"` is rejected at config load (`CONFIG_PIPELINE_MODE_REMOVED`), as is `execution.maxIterations`. See [Workflow mode](workflow-mode.md) for how the loop works.
 
 ---
 
@@ -526,7 +521,7 @@ nax still runs such a chain, but logs a one-line warning at config load naming t
 
 ### List Form — Multiple Commands per Gate
 
-Every entry under `quality.commands` (`test`, `typecheck`, `lint`, `lintScoped`, `build`, `coverage`, `testScoped`, `lintFix`, `lintFixScoped`, `formatFix`, `formatFixScoped`, `setup`, `e2e`, `e2eSetup`) accepts **either shape**:
+Every entry under `quality.commands` (`test`, `typecheck`, `lint`, `lintScoped`, `build`, `coverage`, `testScoped`, `setup`, `e2e`, `e2eSetup`) accepts **either shape**:
 
 | Shape | Example | Behavior |
 |:------|:--------|:---------|
@@ -616,6 +611,8 @@ If `testScoped` is not configured, nax falls back to a heuristic that replaces t
 | `simple` | Always use `tdd-simple` (one session writes the tests, then the code). `"tdd-simple"` is accepted as an alias |
 | `off` | No TDD — tests written after implementation (`test-after`) |
 
+In workflow mode these values only set the story's stored `routing.testStrategy`; one implementer session runs regardless ([Workflow mode](workflow-mode.md)).
+
 ---
 
 ### Routing
@@ -686,8 +683,7 @@ The `routing.strategy` config controls how stories are classified when PRD routi
       "model": "fast",
       "fallbackToKeywords": true,
       "cacheDecisions": true,
-      "mode": "hybrid",
-      "timeoutMs": 30000
+      "mode": "hybrid"
     }
   }
 }
@@ -747,7 +743,7 @@ Controls how the production diff is provided to the semantic reviewer:
 | `"ref"` (default) | Reviewer self-serves via git tools. No diff cap. Better for large changes and multi-tier retries. |
 | `"embedded"` | Diff is inlined in the prompt (~50KB cap). Simple, but can lose context in large stories. |
 
-`resetRefOnRerun`: when `true`, clears `storyGitRef` on re-run so it is re-captured fresh. Default: `false`.
+`resetRefOnRerun`: when `true`, clears `storyGitRef` on re-run so it is re-captured fresh. Default: `false`. `diffMode` is not read by the workflow story review; `resetRefOnRerun` is (see [Semantic Review](semantic-review.md)).
 
 ---
 
@@ -781,7 +777,7 @@ LLM-based adversarial code review that asks "Where does this break?" rather than
 | `parallel` | `false` | When `true`, semantic and adversarial reviews run concurrently instead of sequentially |
 | `maxConcurrentSessions` | `2` | Maximum concurrent LLM review sessions when `parallel: true`. Higher values use more LLM quota but complete faster. |
 
-See [Semantic Review — Adversarial Review](semantic-review.md#adversarial-review-review-003) for details.
+The workflow story review does not read these keys; see [Semantic Review](semantic-review.md).
 
 ---
 
@@ -804,27 +800,6 @@ Controls how many times a failed agent session is retried on the same agent (hop
 | `sessionErrorRetryableMaxRetries` | `3` | Retries for retryable errors (queue disconnect) |
 
 See [Retry strategy](retry-strategy.md) for how these interact with fallback and escalation.
-
----
-
-### Story Isolation
-
-Controls whether stories get their own git worktree in sequential mode:
-
-```json
-{
-  "execution": {
-    "storyIsolation": "worktree"
-  }
-}
-```
-
-| Value | Behaviour |
-|:------|:----------|
-| `"shared"` (default) | Stories execute in the main working directory |
-| `"worktree"` | Each story gets an isolated git worktree (EXEC-002) |
-
-See [Parallel Execution — Sequential Worktree Isolation](parallel-execution.md#sequential-worktree-isolation-exec-002) for details.
 
 ---
 
@@ -853,7 +828,7 @@ Behaviour:
 
 - **Fail-closed.** The first step that exits non-zero or times out stops the run with `PRE_RUN_FAILED` (`Pre-run step failed: <command> (exit <code>)` or `(timed out after <n>s)`). Later steps do not run, the run status is `failed`, and no baseline or story runs. There are no retries.
 - **Trust-gated.** The project must be trusted (`nax trust add`); an untrusted project fails with `PROJECT_UNTRUSTED` before the command is spawned. This is the same trust boundary as `quality.commands`.
-- **Both modes, and on resume.** Pipeline and workflow mode both run the steps, and `nax resume` runs them again, so write them to be idempotent (`up -d --wait`, `CREATE ... IF NOT EXISTS`).
+- **Runs on resume.** Workflow mode runs the steps, and `nax resume` runs them again, so write them to be idempotent (`up -d --wait`, `CREATE ... IF NOT EXISTS`).
 - **Skipped on `--dry-run`.**
 - **Logged** at stage `execution` with `storyId: "_run"`: `Pre-run step completed` (info: `command`, `exitCode`, `durationMs`) or `Pre-run step failed` (error: `command`, `timedOut`, `exitCode` or, on a timeout, `timeoutSeconds`, `durationMs`, and `outputTail`, the last 2000 characters of output).
 
@@ -871,8 +846,7 @@ The regression gate runs the full test suite. Its budget is `execution.regressio
     "regressionGate": {
       "enabled": true,
       "timeoutSeconds": 600,
-      "acceptOnTimeout": true,
-      "mode": "deferred"
+      "acceptOnTimeout": true
     }
   }
 }
@@ -882,8 +856,7 @@ The regression gate runs the full test suite. Its budget is `execution.regressio
 |:----|:--------|:------------|
 | `enabled` | `true` | Master switch for the regression gate |
 | `timeoutSeconds` | `600` | Per-run budget for the full suite, 10–3600 |
-| `acceptOnTimeout` | `true` | A gate timeout is reported as `passed-on-timeout` rather than a failure. Pipeline mode only: in workflow mode a timed-out suite is always a red gate |
-| `mode` | `"deferred"` | `deferred`, `per-story` or `disabled`. Applies to pipeline mode; workflow mode does not use it |
+| `acceptOnTimeout` | `true` | Makes the gate op report a timeout as `passed-on-timeout` rather than `timeout`. Workflow mode treats both as a red gate (`src/workflow/gates.ts`), so a suite that hit its timeout is never accepted as a pass |
 
 The same budget is the hard timeout for a suite-running command the agent runs itself (its `RunCommand` tool, for example a full test run). The agent is therefore never held to a shorter limit than the gate that judges its work (nax#2536). See [Regression gate](regression-gate.md).
 
@@ -915,115 +888,45 @@ See [Semantic Review](semantic-review.md) for the behavioral review check.
 
 ---
 
-### Autofix and Rectification Budget
+### Rectification Budget
 
-When review or verification fails, the unified fix cycle (`runFixCycle`) runs fix strategies (autofix-implementer, autofix-test-writer, full-suite-rectify, …). Its caps live under `execution.rectification`; `quality.autofix` only decides whether the autofix strategies take part.
+`execution.rectification.maxAttemptsTotal` (default `12`, 1-50) is the per-story retry and stall bound. The story selector and the executor read it to decide when a story has had enough attempts. `execution.rectification.fullSuiteTimeoutSeconds` is read by the gate timeout resolver (`src/quality/gate-timeout.ts`). Every other `execution.rectification.*` key and all of `quality.autofix` are removed (see [Removed Keys](#removed-keys)).
 
 ```json
 {
-  "quality": {
-    "autofix": { "enabled": true }
-  },
   "execution": {
     "rectification": {
-      "maxAttemptsTotal": 12,
-      "maxAttemptsPerStrategy": 3
+      "maxAttemptsTotal": 12
     }
   }
 }
 ```
 
-| Field | Default | Description |
-|:------|:--------|:------------|
-| `quality.autofix.enabled` | `true` | Whether the autofix strategies participate in the fix cycle |
-| `quality.autofix.maxAttempts` | `3` | Prompt display only ("X attempts available") — not enforced |
-| `execution.rectification.maxAttemptsTotal` | `12` | Loose ceiling on fix-cycle iterations per story (1–50) |
-| `execution.rectification.maxAttemptsPerStrategy` | `3` | Per-strategy cap for LLM-driven strategies (1–20); mechanical strategies run once |
-| `execution.rectification.abortOnIncreasingFailures` / `consecutiveIncreasesToBail` | `true` / `2` | Bail when the finding count keeps rising |
-| `execution.rectification.abortOnNoProgress` / `consecutiveNoProgressToBail` | `true` / `3` | Bail when iterations stop making progress |
-
-After the cycle is exhausted the story escalates to the next tier per `autoMode.escalation`. The legacy keys `quality.autofix.maxTotalAttempts`, `quality.autofix.rethinkAtAttempt`, `quality.autofix.urgencyAtAttempt`, `execution.rectification.maxRetries` and `execution.regressionGate.maxRectificationAttempts` are rejected at load with a migration hint; `execution.rectification.escalateOnExhaustion` was removed (tier escalation is unconditional) and is stripped with a warning.
-
 ---
 
-### Mutation Spot-Check
+### Removed Keys
 
-Green tests prove the code passes the suite; they do not prove the suite would notice if the code were wrong. The mutation spot-check injects a small number of deliberate defects into the story's changed source files, re-runs the scoped tests against each one, and reports any mutant the suite failed to catch.
+<a name="removed-keys"></a>
 
-It is **opt-in and advisory** — it runs after `full-suite-gate` and can never fail a story. Every mutation is reverted in a `finally`, so the worktree is restored even if a test run throws.
+Keys that only configured pipeline mode (or were never read) are removed. A config that still sets one loads, drops the key and warns `Config key "<path>" has been removed — <hint>. Remove it from your config.` `execution.mode: "pipeline"`, `execution.maxIterations` and the legacy rectification keys (`quality.autofix.maxTotalAttempts`, `quality.autofix.rethinkAtAttempt`, `quality.autofix.urgencyAtAttempt`, `execution.rectification.maxRetries`, `execution.regressionGate.maxRectificationAttempts`) still fail config load.
 
-```json
-{
-  "execution": {
-    "mutationCheck": {
-      "enabled": true,
-      "maxMutants": 3,
-      "timeoutSeconds": 60
-    }
-  }
-}
-```
+| Section | Removed keys |
+|:--------|:-------------|
+| `acceptance` | the whole section |
+| `autoMode` | `enabled` |
+| `tdd` | `maxRetries`, `sessionTiers`, `verifierTimeoutSeconds`, `testWriterAllowedPaths`, `testWriterCommitHooks`, `rollbackOnFailure` |
+| `quality` | `commands.lintFix`, `commands.lintFixScoped`, `commands.formatFix`, `commands.formatFixScoped`, `typecheckOutput`, `autofix` |
+| `review` | `commands.lintFix`, `commands.lintFixScoped`, `commands.formatFix`, `commands.formatFixScoped` |
+| `optimizer` | the whole section |
+| `prompts` | `overrides` |
+| `plan` | `outputPath` |
+| `routing` | `llm.timeoutMs`, `agents.strategy` |
+| `hooks` | the whole section (lifecycle hooks load from `.nax/hooks.json`) |
+| `execution` | `rectification.enabled`, `rectification.maxAttemptsPerStrategy`, `rectification.maxFailureSummaryChars`, `rectification.abortOnIncreasingFailures`, `rectification.consecutiveIncreasesToBail`, `rectification.abortOnNoProgress`, `rectification.consecutiveNoProgressToBail`, `rectification.storyScopedFixBudget`, `rectification.rethinkAtAttempt`, `rectification.urgencyAtAttempt`, `rectification.repoScopedFallback`, `flakeDetection`, `mutationCheck`, `commandInterceptor.provider`, `verificationTimeoutSeconds` (use `regressionGate.timeoutSeconds`), `regressionGate.mode`, `storyIsolation`, `worktreeDependencies` |
 
-| Field | Default | Description |
-|:------|:--------|:------------|
-| `enabled` | `false` | Master switch. When `false` the phase is not even scheduled. |
-| `maxMutants` | `3` | Mutants tested per story (1–50). Candidates are gathered across **all** changed files, then sampled evenly across that list — so raising this widens coverage rather than digging deeper into the first file. |
-| `timeoutSeconds` | `60` | Per-mutant scoped test-run timeout (5–600). |
-
-**Cost:** one scoped test run per mutant, serially. Worst case adds `maxMutants × timeoutSeconds` to a story — 3 minutes at the defaults.
-
-**Operators** are regex-based and language-scoped, four per language: comparison flips (`==`↔`!=`, `>=`↔`<=`, and whitespace-delimited `>`/`<`), boolean-literal flips, and whitespace-delimited arithmetic flips (`+`↔`-`, `*`↔`/`). Supported languages: `typescript`, `javascript`, `python`, `go`, `rust`. Any other language yields no operators and the check is a no-op. The whitespace gating is deliberate — it keeps the mutator away from module specifiers (`"../config"`), URLs, generics (`Array<string>`), and arrow functions, all of which would otherwise produce mutants that merely fail to compile.
-
-**Outcomes** are counted per story as `killed` / `survived` / `errored`:
-
-| Outcome | Meaning |
-|:--------|:--------|
-| `killed` | Tests ran and failed — the suite caught the defect. Requires evidence the tests actually executed (a non-zero pass/fail tally), so a mutant that fails to build is never miscounted as a kill. |
-| `survived` | Tests ran and passed with the defect in place — **a gap in the suite.** |
-| `errored` | The mutant never produced a real test result (build failure, unresolvable module, unparseable runner output, timeout). Discarded, not a signal about test quality. |
-
-Survivors are logged per story, and in headless mode (non-`json`) a `SURVIVING MUTANTS` block is printed at run end listing `storyId  file:line  operatorId`:
-
-```
-SURVIVING MUTANTS
-  US-002  src/config/merge.ts:88  ts:cmp-flip
-```
-
-Treat each line as "this line's behaviour is not pinned by a test" and decide whether it deserves one.
-
-**Restoring the worktree.** A `finally` covers a thrown error but not process death, so each mutation is also journalled to `.nax/mutation-journal/<storyId>.json` *before* it is written to disk, and the entry is removed only once the revert is confirmed. If a run is interrupted — Ctrl+C, SIGKILL, a crash, a lost machine — the next run sweeps the journal and undoes anything left behind, whether or not the check is still enabled.
-
-The journal is anchored to the **working tree** (the git root of `workdir`), not the project root, so in parallel mode each git worktree keeps its own and concurrent stories cannot restore each other's in-flight mutations. A sweep also skips any entry naming a file outside its own tree. `nax init` adds `.nax/mutation-journal/` to `.gitignore` and it is written to `.git/info/exclude` for every worktree — nax auto-commits with `git add -A`, so an un-ignored journal would land in the feature branch.
-
-Reverting is verified, never positional: the line must still hold the exact mutant that was written. If something else rewrote it in the meantime (a formatter, codegen, the agent), nax writes nothing — restoring a stale line over content it cannot account for is the one outcome nothing downstream can undo. It logs the file, line, and what it actually found, stops mutating that story, and prints a final block:
-
-```
-WORKTREE NOT RESTORED — a mutation may still be applied; check the log for file and line
-  US-002
-```
-
-That block means **check your working tree**. It is the only mutation-check output that is about your files rather than your tests.
+Also stripped with a warning: `execution.rectification.escalateOnExhaustion`, `tdd.autoVerifyIsolation`, `tdd.autoApproveVerifier`, `review.gateLLMChecksOnMechanicalPass`, `debate`, `plan.citationThreshold` and `plan.criticModel`.
 
 ---
-
-### Monorepo Acceptance Test Exclusion
-
-nax generates per-package acceptance test files at `<package-root>/.nax-acceptance.test.ts`. These files are meant to be run by nax only — **not** by your regular test suite.
-
-**Commit them.** The acceptance test is the feature's executable spec and pairs with the committed `acceptance-meta.json` fingerprint. Earlier nax versions added `**/.nax-acceptance*` and `**/_nax_acceptance_test.py` to `.gitignore`; remove those lines. The precheck warns while either is still active, and nax drops them from `.git/info/exclude` on its own.
-
-**Exclude from jest/vitest per-package config:**
-
-For monorepo projects using jest or vitest, add to each package's test config to prevent `.nax-acceptance.test.ts` from running during `npm test` / `npx turbo test`:
-
-```js
-// jest.config.js or vitest.config.ts
-testPathIgnorePatterns: [".nax-acceptance"]
-// or for vitest:
-exclude: ["**/.nax-acceptance*"]
-```
-
-**Why this matters:** the acceptance test files import production code with relative paths (e.g. `./src/utils/detect-provider.ts`). They run correctly from their package directory under nax control, but should be excluded from the normal test pipeline to avoid unexpected failures or duplicate runs.
 
 ### Autonomous Finish (`finish`)
 
@@ -1174,7 +1077,7 @@ flag are both on.
 
 <a name="workflow"></a>
 
-The `workflow` block configures workflow mode (`execution.mode: "workflow"`, the default). It is root-only.
+The `workflow` block configures workflow mode, the only execution mode. It is root-only.
 
 ```json
 {
@@ -1298,7 +1201,7 @@ The `mcp` block declares external MCP servers whose tools the `native` agent may
 | `servers.<id>` | — | Server id: lowercase `[a-z0-9][a-z0-9_-]*`, no `__` (it namespaces tool names) |
 | `command` / `args` / `env` | — / `[]` / `{}` | How to launch the server |
 | `instructions` | unset | Text given to the agent about this server, appended after any instructions the server reports itself. `{workdir}` is replaced with the working directory |
-| `stages` | `[]` | Pipeline stages it attaches to (`plan`, `run`, `setup`, `verify`, `review`, `rectification`, `regression`, `acceptance`, `complete`, or `"*"`). Exact, not inherited: a server is visible only in the stages listed, so `run` does not reach review/verify/rectification sessions |
+| `stages` | `[]` | Pipeline stages it attaches to (`plan`, `run`, `setup`, `verify`, `review`, `complete`, or `"*"`). Exact, not inherited: a server is visible only in the stages listed, so `run` does not reach review/verify sessions |
 | `allowedTools` | unset | Unset = every locked tool is grantable |
 | `timeoutMs` | `60000` | Per-call ceiling |
 | `enabled` | `true` | Kill switch that does not invalidate the lock |

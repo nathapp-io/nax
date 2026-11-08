@@ -1,72 +1,55 @@
 # Subsystems — nax
 
-> §17–§64: Pipeline (deprecated mode), execution, TDD, acceptance, verification, routing, plugins,
+> §17–§64: Pipeline (the workflow stage list), execution, verification, routing, plugins,
 > runtime, managers, operations, post-run curator, config, logger, log-format,
-> CLI, commands, optimizer, plan, precheck, project, findings, prompts, analyze, utils,
+> CLI, commands, plan, precheck, project, findings, prompts, analyze, utils,
 > native agent loop, coding tools, permissions & approvals, OS sandbox,
-> command-safety shadow, MCP, workflow mode (the default execution mode), advisor,
+> command-safety shadow, MCP, workflow mode (the only execution mode), advisor,
 > finish, forge, trust, replay, and other modules.
+> Sections 19, 20 and 44 were removed with pipeline mode (C1); the other numbers are unchanged.
 > Part of the [Architecture Documentation](ARCHITECTURE.md).
 >
-> _Last updated: 2026-10-16 (v0.88.0)._
+> _Last updated: 2026-11-09._
 
 ---
 
 ## §17 Pipeline Architecture
 
-> **Pipeline mode is deprecated (v0.88.0).** `execution.mode` now defaults to `"workflow"`
-> (ADR-034, §58). Everything in §17–§22 describes `execution.mode: "pipeline"`: the per-story stage
-> pipeline, the story orchestrator, the three-session TDD flow, acceptance tests, the regression gate
-> and parallel execution. Pipeline mode is frozen and will be removed. Workflow mode builds a different
-> stage list (`buildWorkflowPipeline()` in `src/pipeline/stages/index.ts`) in which `workflowStage`
-> replaces `executionStage`.
+> Pipeline mode was removed (C1); `execution.mode: "pipeline"` is rejected at config load. This
+> section describes the stage engine that workflow mode (ADR-034, §58) still uses for each story.
 
 ### Execution Flow
 
 ```
 Runner.run()  [src/execution/runner.ts — thin orchestrator]
-  → runSetupPhase()     [lifecycle/run-setup.ts]
+  → runSetupPhase()     [runner-setup.ts → lifecycle/run-setup.ts]
     → loadPlugins(), initLogger(), crash handlers
   → runExecutionPhase() [runner-execution.ts]
-    → for each story (sequential or parallel):
-      → UnifiedExecutor.execute()  [unified-executor.ts]
-        → Pipeline stages 1–8 (defaultPipeline)
-        → executionStage delegates per-story work to
-          StoryOrchestratorBuilder.CANONICAL_ORDER (story-orchestrator/)
+    → UnifiedExecutor.execute()  [unified-executor.ts]
+      → for each story, one at a time: runIteration()  [iteration-runner.ts]
+        → workflow stage list (buildWorkflowPipeline): queueCheck, routing,
+          constitution, context, workflow, completion
+        → the workflow stage runs the per-story loop (src/workflow/story-loop.ts, §58)
         → Escalation on failure (fast → balanced → powerful)
-  → runCompletionPhase() [lifecycle/run-completion.ts]
-    → postRunPipeline (acceptance)
-    → hooks, metrics, cleanup
+  → runCompletionPhase() [runner-completion.ts]
+    → deferred plugin review, hooks, metrics, cleanup
+    → runEndPhase() [end-phase.ts] → runWorkflowEnd: the feature workflow (§58)
 ```
 
-### Pipeline Stages (8 default + 1 pre-run + 1 post-run = 10 total)
+### Pipeline Stages (6 stages, per-story)
 
-**Default pipeline** (8 stages, per-story — `src/pipeline/stages/index.ts` `defaultPipeline`; ADR-023 / issue #1116 removed the standalone verify/rectify/review/autofix/regression stages — those now run inside `executionStage`):
+`buildWorkflowPipeline()` in `src/pipeline/stages/index.ts` (returned by `getWorkflowPipeline()`):
 
 | # | Stage | File | Purpose |
 |:--|:------|:-----|:--------|
 | 1 | `queueCheck` | `queue-check.ts` | Detect queue commands (PAUSE/ABORT/SKIP) |
 | 2 | `routing` | `routing.ts` | Classify complexity → model tier (keyword/LLM/plugin) |
 | 3 | `constitution` | `constitution.ts` | Load project coding standards/governance doc |
-| 4 | `context` | `context.ts` | Auto-detect + gather relevant code/docs within token budget |
-| 5 | `prompt` | `prompt.ts` | Assemble story + context + constitution into prompt |
-| 6 | `optimizer` | `optimizer.ts` | Reduce token usage while preserving semantics |
-| 7 | `execution` | `execution.ts` | Run the per-story orchestrator: test-writer → greenfield-gate → implementer → test-presence-gate → full-suite-gate → mutation-check → verifier → verify-scoped → lint-check → typecheck-check → semantic-review → adversarial-review, plus `runFixCycle` fix strategies. See §19 / story-orchestrator `CANONICAL_ORDER`. |
-| 8 | `completion` | `completion.ts` | Mark complete, fire hooks, save metrics |
+| 4 | `context` | `workflow-context.ts` | Gather the feature context; delegates to `context.ts` when `context.rules.delivery` is `"push"` or the v2 engine is disabled |
+| 5 | `workflow` | `src/workflow/stage.ts` | Run the per-story loop (implement, review, fix rounds, gates); loaded through a dynamic import |
+| 6 | `completion` | `completion.ts` | Mark complete, fire hooks, save metrics |
 
-> **Per-story phases live in `src/execution/story-orchestrator/` (`CANONICAL_ORDER` in `types.ts`, builder in `builder.ts`), not in standalone pipeline stages.** `executionStage` builds a `StoryOrchestratorBuilder` whose `CANONICAL_ORDER` sequences the phases above; see [story-orchestrator-flow.md](story-orchestrator-flow.md). Verification flows via Operations (`verifyScopedOp` / `fullSuiteGateOp`); fixes flow via `runFixCycle` (`src/findings/`). Formatting is reactive (the `mechanical-formatfix` fix strategy), not a dedicated stage.
-
-**Pre-run pipeline** (before story loop):
-
-| Stage | File | Purpose |
-|:------|:-----|:--------|
-| `acceptanceSetup` | `acceptance-setup.ts` | Generate acceptance tests, run RED gate |
-
-**Post-run pipeline** (after all stories):
-
-| Stage | File | Purpose |
-|:------|:-----|:--------|
-| `acceptance` | `acceptance.ts` | Run feature-level acceptance tests |
+> The per-story steps live in `src/workflow/` (`story-loop.ts`, `story-steps.ts`), not in standalone pipeline stages. Verification flows via Operations (`verifyScopedOp` / `fullSuiteGateOp`) invoked by the workflow gates (`src/workflow/gates.ts`).
 
 ### Stage Contract
 
@@ -88,7 +71,6 @@ interface PipelineStage {
 | `fail` | Story failed — stop pipeline |
 | `escalate` | Escalate to higher model tier |
 | `pause` | Pause execution (human-in-the-loop) |
-| `retry` | Retry current stage |
 
 ### PipelineContext
 
@@ -98,8 +80,8 @@ The shared mutable state passed through all stages (`src/pipeline/types.ts`; ext
 
 | Field | Description |
 |:------|:------------|
-| `projectDir` | Absolute path to repo root where `.nax/` lives. Stable across worktree and monorepo mode. Used as the prompt audit base dir (fast path — no parent-dir walk). |
-| `workdir` | Agent-spawn working directory. Equals `projectDir` for single-package repos; `join(projectDir, story.workdir)` when the story targets a monorepo sub-package. In worktree mode the base is `.nax-wt/<worktreeId>/`. Code that needs the repo root must use `projectDir` — never re-join `story.workdir` onto this value. |
+| `projectDir` | Absolute path to repo root where `.nax/` lives. Stable across monorepo mode. Used as the prompt audit base dir (fast path — no parent-dir walk). |
+| `workdir` | Agent-spawn working directory. Equals `projectDir` for single-package repos; `join(projectDir, story.workdir)` when the story targets a monorepo sub-package. Code that needs the repo root must use `projectDir` — never re-join `story.workdir` onto this value. |
 
 **Config fields:**
 
@@ -110,58 +92,26 @@ The shared mutable state passed through all stages (`src/pipeline/types.ts`; ext
 
 **Stage inputs:** `prd`, `story`, `stories`, `routing`, `hooks`, `plugins`
 
-**Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`, `acceptanceFailures`, `tddFailureCategory`, `fullSuiteGatePassed`, `reviewFindings` (canonical `Finding[]` — there is no `verifyResult` / `reviewResult` field)
+**Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`
 
-For three-session TDD, the full-suite gate runs after implementer and before verifier. If rectification exhausts for attributable failures, the orchestrator stops before verifier and sets `tddFailureCategory: "full-suite-gate-exhausted"` with `fullSuiteGatePassed: false`.
-
-**Autofix state:** `retrySkipChecks` — set of check names (e.g. `"lint"`, `"semantic"`) that passed during a prior autofix cycle and should be skipped on the next review retry. Accumulated across partial-progress cycles; cleared implicitly when the story completes.
-
-**Metadata:** `storyStartTime`, `rectifyAttempt`, `storyGitRef`, `accumulatedAttemptCost`, `reviewFindings`
+**Metadata:** `storyStartTime`, `storyGitRef`
 
 ---
 
-## §18 Execution Modes & Batching
+## §18 Execution
 
-> Parallel execution and story batching are pipeline-mode features. Workflow mode runs stories one at
-> a time: `--parallel` is ignored, batching is disabled and `execution.storyIsolation` is forced to
-> `shared` (`applyWorkflowMode`, `src/config/workflow-mode.ts`).
+> Stories run one at a time. `--parallel` fails with a removed message. Batching code is retained
+> but ignored: every run is unbatched (`runner-execution.ts`).
 
 ### Execution Strategies
 
 | Strategy | Description | Key file |
 |:---------|:-----------|:---------|
-| Sequential | One story at a time, optional per-story worktree isolation (EXEC-002) | `iteration-runner.ts`, `pipeline-result-handler.ts` |
-| Parallel | Independent stories run concurrently, each in its own git worktree | `parallel-batch.ts`, `parallel-worker.ts` |
-| Batching | Consecutive simple-complexity stories grouped into one agent session | `batching.ts` |
-
-### Sequential Worktree Isolation (EXEC-002)
-
-When `execution.storyIsolation === "worktree"`, each story in sequential mode gets its own git worktree:
-
-```
-Per-story worktree lifecycle (worktreeId = deriveStoryWorktreeId(feature, storyId), see §30):
-1. Create .nax-wt/<worktreeId> via git worktree add (at story start)
-2. Execute story in isolated worktree (no cross-story state leakage)
-3. Merge to main (if successful)
-4. Remove worktree directory via git worktree remove (reclaim disk)
-5. Keep branch nax/<worktreeId> for diagnostics and re-run cleanup
-```
+| Sequential | One story at a time | `iteration-runner.ts`, `pipeline-result-handler.ts` |
 
 `src/execution/pipeline-result-handler.ts`:
-- `handlePipelineSuccess()` — marks story passed, captures diff summary, records metrics, removes worktree
-- `handlePipelineFailure()` — manages escalation, merging, pausing; records a `refs/nax/orphan/<worktreeId>` ref after a non-conflict merge failure
-- `removeWorktreeDirectory()` (internal) — removes `.nax-wt/<worktreeId>` from git worktree tracking (preserves branch)
-
-### Parallel Execution Flow
-
-```
-UnifiedExecutor → runParallelBatch()        [parallel-batch.ts]
-  → creates WorktreeManager (git worktrees)
-  → executeParallelBatch() / executeStoryInWorktree()  [parallel-worker.ts]
-      → each story runs the pipeline in its own worktree
-  → MergeEngine merges changes back in dependency order
-  → rectification pass for merge conflicts (merge-conflict-rectify.ts)
-```
+- `handlePipelineSuccess()` — marks story passed, captures diff summary, records metrics
+- `handlePipelineFailure()` — manages escalation and pausing
 
 ### Escalation
 
@@ -188,95 +138,21 @@ UnifiedExecutor → runParallelBatch()        [parallel-batch.ts]
 |:------|:-----|:--------|
 | Setup | `run-setup.ts` | Load PRD, init loggers, crash handlers |
 | Init | `run-initialization.ts` | Reconcile story state, resume from crash, review re-run for reconciled stories |
-| Completion | `run-completion.ts` | Final metrics, hooks, cleanup |
-| Cleanup | `run-cleanup.ts` | Remove temp files, worktrees |
-| Regression | `run-regression.ts` | Full-suite regression after all stories |
-| Acceptance | `acceptance-loop.ts` | Feature-level acceptance test loop |
+| Completion | `run-completion.ts`, `run-completion-phases.ts` | Final metrics, hooks, cleanup |
+| Cleanup | `run-cleanup.ts` | Remove temp files |
 | Paused prompts | `paused-story-prompts.ts` | Interactive re-run prompts for paused stories (resume, skip, keep paused) |
 
 ---
 
-## §19 TDD Orchestration
+## §19
 
-> Pipeline mode only. Workflow mode has no separate test-writer or verifier session: one implementer
-> session writes the tests and the code, and the story review and the deterministic gates check them
-> (ADR-034).
-
-### Three-Session TDD Workflow
-
-The three TDD sessions are typed Operations (`testWriterOp`, `implementerOp`,
-`verifierOp` in `src/operations/`; `writeTddTestOp` / `implementTddOp` /
-`verifyTddOp` are aliases), sequenced by the per-story orchestrator
-(`src/execution/story-orchestrator/` — `CANONICAL_ORDER`). There is no
-`src/tdd/orchestrator.ts`; `src/tdd/` holds isolation, verdict, rollback, and
-cleanup helpers only (and re-exports the three ops).
-
-```
-Session 1: test-writer  → writes tests only (no src/ changes)
-Session 2: implementer  → implements code (no test changes)
-Session 3: verifier     → runs full suite, confirms pass
-```
-
-### Session Roles & Isolation
-
-| Role | Allowed changes | ACP session naming |
-|:-----|:---------------|:-------------------|
-| `test-writer` | Test files only | `nax-<hash>-<feature>-<story>-test-writer` |
-| `implementer` | Source files only | `nax-<hash>-<feature>-<story>-implementer` |
-| `verifier` | All files (read + verify) | `nax-<hash>-<feature>-<story>-verifier` |
-
-Isolation is checked via `src/tdd/isolation.ts` (`verifyTestWriterIsolation` /
-`verifyImplementerIsolation`, `git diff` between sessions). The mechanical checks are
-**advisory** — they detect which files changed but cannot judge legitimacy (a `src/`
-stub may be required); the verifier's verdict is what rejects test tampering.
-
-### TDD Lite Mode
-
-Skips strict file isolation for performance. Test-writer may add src/ stubs; implementer may expand test coverage.
-
-### Failure Categories
-
-| Category | Meaning |
-|:---------|:--------|
-| `isolation-violation` | Test-writer violated isolation / created no tests. Routed and rolled back, but no producer currently emits it (the mechanical checks are advisory) |
-| `session-failure` | Agent session crashed or timed out |
-| `tests-failing` | Tests still fail after all sessions |
-| `test-incorrect` | Verifier found test assertions that conflict with otherwise-met acceptance criteria |
-| `full-suite-gate-exhausted` | Full-suite gate failed for attributable failures and rectification exhausted before verifier |
-| `verifier-rejected` | Verifier explicitly rejected the implementation |
-| `greenfield-no-tests` | Greenfield project with no test files — TDD not applicable (BUG-010) |
-| `no-tests-authored` | Single-session implementer authored no test files — re-runs implementer with a test directive |
-| `review-incomplete` | A configured review phase (semantic / adversarial) never ran before the verdict |
-| `dependency-prep` | Worktree dependency preparation failed before pipeline execution |
-| `runtime-crash` | Unrecoverable runtime error |
-
-`FailureCategory` is owned by `src/execution/types.ts` and re-exported from `src/tdd/types.ts`.
-
-### Verdict System
-
-`src/tdd/verdict.ts` + `verdict-reader.ts`:
-- The verifier writes a structured `VerifierVerdict` (`approved`, `tests`, `testModifications`, optional `testFailureDiagnosis`, …) to `.nax-verifier-verdict.json` (`VERDICT_FILE`); `readVerdict` / `isValidVerdict` load it
-- `coerceVerdict()` maps free-form agent output (`verdict: "PASS"` / `"APPROVED"` / `"VERIFIED…"`) onto the schema; `allPassing` is only ever set from real test evidence
-- `categorizeVerdict(verdict, testsPass)` turns the verdict into a `FailureCategory`
+Removed with pipeline mode (C1).
 
 ---
 
-## §20 Acceptance Test System
+## §20
 
-> Pipeline mode only. Workflow mode forces `acceptance.enabled` to `false`.
-
-### Overview
-
-`src/acceptance/` holds the deterministic helpers; every LLM call is an Operation in `src/operations/` (§37):
-- **Generator** (`generator.ts` + `generator-helpers.ts`): Parse AC → generate test skeleton (unit, component, e2e, CLI, snapshot); LLM generation via `acceptanceGenerateOp`
-- **Refinement** (`refinement.ts`): parses the `acceptanceRefineOp` response that rewrites AC text into testable assertions
-- **Fix diagnosis** (`fix-diagnosis.ts`): `loadSourceFilesForDiagnosis()` feeds `acceptanceDiagnoseOp`
-- **Fix execution** (`acceptanceFixSourceOp` / `acceptanceFixTestOp`): driven by `runFixCycle` from the acceptance retry loop (`src/execution/lifecycle/acceptance-loop.ts`), which also regenerates the test file when failures look test-level
-- **Hardening** (`hardening.ts`): non-blocking pass that tests plan-suggested criteria after acceptance passes and promotes the passing ones
-
-### RED Gate
-
-The `acceptanceSetupStage` generates tests and verifies they fail (RED) before implementation. This ensures tests are meaningful — they don't accidentally pass without the feature being implemented.
+Removed with pipeline mode (C1).
 
 ---
 
@@ -287,20 +163,14 @@ The `acceptanceSetupStage` generates tests and verifies they fail (RED) before i
 `src/verification/` is a flat utility module (no `orchestrator.ts`, no
 `strategies/` directory). Per-story verification is now driven by Operations —
 `verifyScopedOp` (`src/operations/verify-scoped.ts`) and `fullSuiteGateOp`
-(`src/operations/full-suite-gate.ts`) — sequenced by the story orchestrator (§17/§19).
+(`src/operations/full-suite-gate.ts`) — invoked by the workflow gates (`src/workflow/gates.ts`, §58).
 
 | File | Purpose |
 |:-----|:--------|
 | `executor.ts` | `executeWithTimeout()`, `buildTestCommand()`, environment normalization |
 | `runners.ts` | Verification gates: `fullSuite()`, `scoped()`, `regression()`, `verifyAssets()` |
 | `smart-runner.ts` | Scoped test selection (`mapSourceToTests`, `buildSmartTestCommand`, changed-file detection) |
-| `rectification.ts` | `shouldRetryRectification()` retry-decision helper |
-| `crash-detector.ts` | `detectRuntimeCrash()` — detect runtime crashes in test output |
-| `failure-records.ts` | `buildFailureRecords()` |
 | `test-baseline.ts` | Run / per-story test baselines (`writeRunBaseline`, `resolveStoryBaseline`, `applyBaselineDispositions`) — separates pre-existing failures from story-attributable ones |
-| `flake-triage.ts` / `flake-probe.ts` | Run-scoped flaky-test quarantine: a failing test is quarantined only when it is outside the story diff **and** an isolated re-run passes; memoised in `runtime.quarantineMemo` |
-| `changed-line-ranges.ts` | `getChangedLineRanges()` for diff-scoped checks |
-| `mutation/` | Mutation testing behind the `mutation-check` phase (`mutationCheckOp`) — operators, selection, apply, classify, journal |
 
 ### Smart Runner
 
@@ -318,33 +188,19 @@ The `acceptanceSetupStage` generates tests and verifies they fail (RED) before i
 | `types.ts` | `TestFailure`, `TestSummary`, `TestOutputAnalysis` types |
 | `detector.ts` | `detectFramework()` — identifies test runner (Bun, Jest, Vitest, etc.); `isTestFile()` |
 | `parser.ts` | `parseTestOutput()`, `parseBunTestOutput()`, `formatFailureSummary()`, `analyzeTestExitCode()` (framework parsers in `parse-bun.ts`, `parse-mocha.ts`, `parse-rust.ts`) |
-| `ac-parser.ts` | `parseTestFailures()` / `parseTestFailuresDetailed()` — AC-ID extraction for the acceptance loop |
 | `resolver.ts` | `resolveTestFilePatterns()` — SSOT for "which files are tests" (ADR-009): per-package config → root `execution.smartTestRunner.testFilePatterns` → detection → defaults |
 | `classifier.ts` | `createTestFileClassifier(resolved)` — sync `(path) => boolean` predicate |
 | `conventions.ts` | `DEFAULT_TEST_FILE_PATTERNS` and glob/regex helpers |
 | `scoped-selection.ts` | `selectScopedTests()`, `buildScopedCommand()` — scoped-test selection incl. monorepo orchestrators |
 | `detect/` | Framework config detection and workspace discovery |
 
-All verification strategies and the rectification loop import from `test-runners` instead of maintaining their own parsing logic.
-
-### Rectification / Fix Cycle
-
-The standalone `rectification-loop.ts` is gone. Auto-fix of failing tests and
-review findings now runs through the three-layer fix cycle (`runFixCycle` in
-`src/findings/cycle.ts`, ADR-021/022), driven by the story orchestrator via
-fix strategies (mechanical lint/format fix, autofix implementer, autofix
-test-writer). Failures are carried as canonical `Finding[]` (see below), not a
-bespoke `VerifyResult`.
-
-`src/verification/rectification.ts` — shared retry helper:
-- `shouldRetryRectification(state, config)` — retry decision logic (attempt count,
-  failure count, spiral detection); re-exports `RectificationState`.
+All verification code imports from `test-runners` instead of maintaining their own parsing logic.
 
 ### Findings (canonical result type)
 
 Verification and review results flow as `Finding[]` from `src/findings/` (there
 is no `VerifyResult` type). Each `Finding` carries a `fixTarget` (`"source"` /
-`"test"`) that tells the fix cycle where the fix should land:
+`"test"`) that tells a fix step where the fix should land:
 
 ```typescript
 // src/findings/types.ts
@@ -373,7 +229,7 @@ export interface Finding {
 | `durationMs` | `durationMs` | Same |
 | `scopeTestFallback` | `scopeTestFallback?: boolean` | New |
 | `failures: StructuredTestFailure[]` | `findings: Finding[]` | Already converted via `testSummaryToFindings` |
-| `countsTowardEscalation` | (in outcome log only) | Story-orchestrator decides escalation |
+| `countsTowardEscalation` | (in outcome log only) | Escalation is decided in `src/execution/escalation/` |
 
 `RegressionStrategy.VerifyResult` → `FullSuiteGateOutput`:
 
@@ -400,6 +256,7 @@ export interface Finding {
    - Inputs: complexity, title, AC, tags, `tddStrategy` config
    - tddStrategy: `"auto"` (default), `"strict"`, `"lite"`, `"simple"`, `"off"`
    - Output: `test-after`, `tdd-simple`, `three-session-tdd`, `three-session-tdd-lite`, `no-test`
+   - The workflow story loop does not branch on the resulting `testStrategy`; it is a plan and routing label
 
 3. **`complexityToModelTier(complexity, config)`** (`router.ts`) — Maps complexity → tier via `autoMode.complexityRouting`
    - Defaults: simple → fast, medium → balanced, complex/expert → powerful
@@ -449,21 +306,24 @@ interface NaxPlugin {
   provides: PluginType[];
   setup?(config: Record<string, unknown>, logger: PluginLogger): Promise<void>;
   teardown?(): Promise<void>;
-  extensions: PluginExtensions;   // optimizer, router, agent, reviewer, contextProvider, reporter, postRunAction
+  extensions: PluginExtensions;   // router, agent, reviewer, contextProvider, reporter, postRunAction, loopHandlers, resources
 }
 ```
 
-### Extension Points (7 types)
+### Extension Points (8 types)
 
 | Type | Interface | Purpose |
 |:-----|:----------|:--------|
-| `optimizer` | `IPromptOptimizer` | Reduce token usage |
 | `router` | `RoutingStrategy` | Custom complexity classification |
 | `agent` | `AgentAdapter` | Custom coding agent |
 | `reviewer` | `IReviewPlugin` | Custom quality checks |
 | `context-provider` | `IContextProvider` | Inject external context |
 | `reporter` | `IReporter` | Dashboard, CI integration |
 | `post-run-action` | `IPostRunAction` | Post-run hooks |
+| `loop-handlers` | `ILoopHandlerProvider` | Native session loop events |
+| `resources` | `IResourceProvider` | Data-only skill, command and agent directories |
+
+A plugin that provides an `optimizer` extension is rejected (`src/plugins/validator.ts`).
 
 ### Plugin Lifecycle
 
@@ -584,110 +444,23 @@ consumed by `StaticRulesProvider`.
 
 ### Review Execution
 
-There is no `src/review/orchestrator.ts`. Semantic and adversarial review run as
-Operations — `semanticReviewOp` (`src/operations/semantic-review.ts`) and
-`adversarialReviewOp` (`src/operations/adversarial-review.ts`) — sequenced by the
-story orchestrator (§17/§19). `src/review/runner/index.ts` (`runReview()`) is the
-shared review entry used outside the per-story op path; `src/review/semantic-helpers.ts`,
-`semantic-evidence.ts`, `adversarial-helpers.ts` and `categorization.ts` hold the
-review logic/helpers.
+There is no `src/review/orchestrator.ts`. LLM review runs as workflow-mode Operations: the story
+review (`workflowStoryReviewOp`, `src/operations/workflow-story-review.ts`, driven by
+`src/workflow/story-review.ts`), the scoped re-review after a fix round (`workflowReReviewOp`,
+`src/workflow/re-review.ts`) and the feature-level branch review (`workflowBranchReviewOp`,
+`src/workflow/branch-review.ts`); see §58. `src/review/runner/index.ts` (`runReview()`) is the
+review-check runner used by run initialization (`src/execution/lifecycle/run-initialization.ts`).
 
 - Mechanical checks (lint, typecheck) run as their own ops (`lintCheckOp`,
   `typecheckCheckOp`); test/build run via the verification gates (§21).
 - Plugin reviewers: deferred end-of-run review (`src/execution/deferred-review.ts`),
   observational by default — set `review.pluginMode: "gating"` to fail the run
   (per-story plugin gating removed, ADR-023 / #1146).
-- Semantic and adversarial review can run concurrently when
-  `review.adversarial.parallel: true` (default `false`), bounded by
-  `review.adversarial.maxConcurrentSessions` (default 2).
-
-### Semantic Review
-
-`semanticReviewOp` (`src/operations/semantic-review.ts`) + `src/review/semantic-*.ts`:
-- LLM-powered behavioral review against story acceptance criteria
-- Configurable diff modes: `"ref"` (default — reviewer self-serves via git tools, no cap) or `"embedded"` (diff inlined in prompt, ~50KB cap)
-- `resetRefOnRerun` (default `false`) clears `storyGitRef` on re-run
-
-### Mechanical vs LLM Check Classification
-
-Checks split into **mechanical** (typecheck, lint, build, format) and **LLM** (semantic, adversarial). When mechanical checks fail but LLM checks pass, `mechanicalFailedOnly: true` is set on the result — the fix cycle uses this to suppress tier escalation for unfixable mechanical issues (e.g., lint errors in test files the implementer cannot modify).
-
-### Adversarial Review (REVIEW-003)
-
-`adversarialReviewOp` (`src/operations/adversarial-review.ts`) + `src/review/adversarial-helpers.ts`:
-- LLM-based adversarial code review, distinct from semantic review
-- Semantic asks: "Does this satisfy the ACs?" / Adversarial asks: "Where does this break? What is missing?"
-- Own ACP session (`reviewer-adversarial`), NOT the implementer session
-- Default diffMode: `"ref"` (reviewer self-serves via git tools)
-- Finding categories: `input`, `error-path`, `abandonment`, `test-gap`, `convention`, `assumption` (`input` / `error-path` / `abandonment` / `assumption` are blocking — `BLOCKING_CATEGORIES` in `src/review/category-fix-target.ts`)
-- Configurable parallel/sequential execution
-- **Scope-aware routing:** adversarial findings carry `fixTarget` (`"test"` / `"source"`); test-targeted findings are routed to the test-writer fix strategy (`src/operations/autofix-test-writer-strategy.ts`), source findings to the implementer fix strategy — never crossing the TDD isolation boundary
-
-### Fix Cycle (ADR-021/022)
-
-The standalone `src/pipeline/stages/autofix.ts` is gone. Fixing review/verify
-findings now runs through `runFixCycle` (`src/findings/cycle.ts`), invoked by the
-story orchestrator. It iterates a set of **fix strategies** against the current
-`Finding[]` until they resolve or a budget/bail condition fires:
-
-| Strategy | File (`src/operations/`) | Targets |
-|:---|:---|:---|
-| Mechanical lint fix | `mechanical-lintfix-strategy.ts` | lint findings via `lintFix` command |
-| Mechanical format fix | `mechanical-formatfix-strategy.ts` | format findings via `formatFix` command |
-| Autofix implementer | `autofix-implementer-strategy.ts` | source-targeted findings (implementer session) |
-| Autofix test-writer | `autofix-test-writer-strategy.ts` | test-targeted findings (test-writer session) |
-
-**Dual budgets** (`FixCycleConfig` in `src/findings/cycle-types.ts`): each strategy
-has a per-strategy `maxAttempts` (from `execution.rectification.maxAttemptsPerStrategy`,
-default 3); the cycle is bounded globally by `maxAttemptsTotal`
-(`execution.rectification.maxAttemptsTotal`, default 12). `classifyOutcome(before, after)`
-(`src/findings/classify-outcome.ts`) compares findings across iterations to detect progress
-(`resolved` / `partial` / `unchanged` / `regressed` / `regressed-different-source` / `rotated`).
-
-**Bail / escalation conditions:**
-- A strategy hits its per-strategy `maxAttempts` cap → drops from the active set
-- Global `maxAttemptsTotal` exhausted → cycle exits, story escalates
-- No active strategy can make progress → cycle exits
-
-### Implementer→test-writer feedback loop
-
-When the implementer encounters a test that contradicts the PRD, it emits a
-`TEST_EDIT_REASON: prd_contract` block in its rectification output. The block is
-parsed into a `TestEditDeclaration` (see `src/operations/test-edit-declaration.ts`)
-and stashed on `ctx.testEditDeclarations` by the implementer strategy's
-`extractApplied`. The cycle's `validate()` hook applies these declarations to
-fresh findings: each declaration whose `PRD_QUOTE` is verbatim-present in the
-story description or AC text causes a finding on the declared file to be
-re-tagged from `fixTarget: "source"` to `"test"`. The test-writer strategy
-claims the re-tagged finding on the next iteration.
-
-The re-tag is gated on `isThreeSession` (`allowTestRetag`). `fixTarget: "test"`
-exists to hand a finding to the test-writer, and `autofix-test-writer` — its only
-claimer — is registered only for three-session strategies. A single-session
-implementer (`tdd-simple` / `test-after` / `no-test`) owns both source and tests,
-so there is no handoff to make: the declaration is informational and the finding
-stays `fixTarget: "source"` for the implementer to claim and edit the test
-itself. Re-tagging there would strand it with no claimer (#1330).
-
-Declarations with fabricated
-PRD quotes do not re-tag, and are reported as a `prd_quote_mismatch`
-`DeclarationDiagnostic` that the `postValidate` caller logs at warn — never as a
-finding. The non-re-tag *is* the enforcement; a diagnostic carries no fix, and
-the findings stream is the cycle's work queue, so every entry in it must be
-claimable by some strategy's `appliesTo`. An unclaimable finding makes
-`selectActiveStrategies` return `[]` and the cycle exit `no-strategy`, failing a
-story whose gates all passed (#1327). The same rule applies to invalid
-`mock_structure` handoffs.
-
-The test-writer strategy's `maxAttempts` follows
-`execution.rectification.maxAttemptsPerStrategy` like every other strategy.
-
-This wiring is internal to the fix cycle (`runFixCycle`, §Fix Cycle above).
 
 ### Review Audit Trail
 
 `src/review/review-audit.ts`:
-- Runtime-owned JSON audit writer for semantic and adversarial reviewer decisions
+- Runtime-owned JSON audit writer for LLM reviewer decisions
 - Directory: `<outputDir>/review-audit/<featureName>/<epochMs>-<sessionName>.json` (falls back to `<projectRoot>/.nax/review-audit/…` when no output dir is known); enabled by `review.audit.enabled` (default `false`)
 - Captures sessionName/sessionId/recordId from reviewer dispatch events
 - Tracks parse success, `looksLikeFail`, fail-open, threshold, and structured result
@@ -695,17 +468,15 @@ This wiring is internal to the fix cycle (`runFixCycle`, §Fix Cycle above).
 
 ### Diff Utilities (SSOT)
 
-`src/review/diff-utils.ts` — shared diff utilities for semantic + adversarial:
-- `collectDiff()` — git diff with configurable `excludePatterns`
-- `collectDiffStat()` — diff --stat summary
-- `computeTestInventory()` — test file audit for adversarial review
-- `truncateDiff()` — 50KB cap for embedded mode
+`src/review/diff-utils.ts` — shared diff utilities for review:
+- `collectDiffFileList()` — repo-rooted list of files changed since a ref, honouring nax ignore patterns
+- `truncateDiff()` — 50KB cap (`DIFF_CAP_BYTES`)
 - `resolveEffectiveRef()` — BUG-114 ref fallback chain (supplied ref → merge-base → undefined)
 
 ### Quality Runner
 
 `src/quality/runner.ts`:
-- `runQualityCommand()` executes lint, typecheck, build, lintFix commands (project-declared, run through a shell)
+- `runQualityCommand()` executes lint, typecheck and build commands (project-declared, run through a shell)
 - Supports command chaining and failure handling
 
 ### Quality Test Command Resolver (SSOT)
@@ -737,7 +508,7 @@ This wiring is internal to the fix cycle (`runFixCycle`, §Fix Cycle above).
 |:--------|:-----------|:-----------------|
 | `security-review` | Critical security issues found | abort |
 | `cost-exceeded` | Cost limit exceeded | abort |
-| `merge-conflict` | Git merge conflict detected | abort |
+| `merge-conflict` | Declared; no code raises it | abort |
 | `cost-warning` | Cost approaching threshold | escalate |
 | `max-retries` | Retry limit reached | skip |
 | `pre-merge` | Before merging to main | escalate |
@@ -788,7 +559,7 @@ root-only.
 | `on-all-stories-complete` | All stories processed |
 | `on-complete` | Run finishes successfully |
 | `on-error` | Unrecoverable run error |
-| `on-final-regression-fail` | Post-run regression fails |
+| `on-final-regression-fail` | Declared and accepted in `hooks.json`, but nothing fires it since pipeline mode was removed |
 | `on-post-run-action` | A registered post-run action settles (success, failure, skip, or error) |
 | `on-workflow-start` | The feature workflow begins (workflow mode) |
 | `on-workflow-step` | A feature-workflow step begins, the starting step included |
@@ -861,8 +632,6 @@ interface StoryMetrics {
   completedAt: string;
   source?: "completion-phase" | "execution-failed";
   runtimeCrashes?: number;
-  reviewsFailedOpen?: number;
-  fullSuiteGatePassed?: boolean;
   tokens?: TokenUsage;
   tokenAttribution?: "direct" | "even-split";
   fallback?: { hops: AgentFallbackHop[] };   // cross-agent swaps (ADR-012)
@@ -906,7 +675,7 @@ interface TokenUsage {
 
 ---
 
-## §30 Worktree & Parallel Support
+## §30 Worktree Support
 
 ### Worktree Identity (`WorktreeId`)
 
@@ -921,31 +690,15 @@ interpolate these strings themselves.
   Sanitized to the story-id alphabet, capped at 64 chars with a stable hash suffix
   when truncation would collide
 - `storyWorktreePath(root, id)` → `<root>/.nax-wt/<id>`; `storyBranchName(id)` → `nax/<id>`
-- `naxOrphanRefName(id)` (`nax-orphan-ref.ts`) → `refs/nax/orphan/<id>`, written after a
-  non-conflict merge failure and read back by `WorktreeManager.create()`
+- `naxOrphanRefName(id)` (`nax-orphan-ref.ts`) → `refs/nax/orphan/<id>`, the ownership record
+  `WorktreeManager` checks (`hasNaxOwnershipRecord`)
 
 ### Worktree Manager
 
 `src/worktree/manager.ts` — `WorktreeManager`:
-- `create(root, id)` / `remove(root, id)` / `list(root)` — git worktrees for per-story
-  and parallel execution
-- `ensureGitExcludes(root)` — writes nax runtime files into `.git/info/exclude` so parallel
-  worktrees never commit them
-
-### Worktree Dependencies
-
-`src/worktree/dependencies.ts` — `prepareWorktreeDependencies()` resolves the cwd a
-story runs from inside its worktree, installing dependencies first when
-`execution.worktreeDependencies.mode` is `"provision"` (default `"off"`;
-`setupCommand`, `timeoutSeconds` default 300). A failure surfaces as the
-`dependency-prep` failure category.
-
-### Worktree Merge
-
-`src/worktree/merge.ts` — `MergeEngine`:
-- `merge(root, id)` / `mergeAll(...)` — merges worktree branches back in dependency order
-- Returns `MergeResult` with `MergeFailureKind` (`"conflict" | "error"`); conflicts go to a
-  rectification pass (`src/execution/merge-conflict-rectify.ts`)
+- `create(root, id)` / `remove(root, id)` / `list(root)` — git worktrees (used by bakeoff and bot checkouts)
+- `ensureGitExcludes(root)` — writes nax runtime files into `.git/info/exclude` so worktrees
+  never commit them
 
 ### Project identity across checkouts
 
@@ -1183,8 +936,8 @@ Neither imports the other. Integration happens at callOp / buildHopCallback.
 
 | Method | Use case | Session involvement |
 |:---|:---|:---|
-| `completeAs(name, prompt, opts)` / `completeAsWithFallback(name, prompt, opts)` | Sessionless one-shot — routing, decompose, acceptance refine (`kind:"complete"` ops go through `completeAsWithFallback`, which also returns agent-swap records) | None — calls `adapter.complete` directly |
-| `runAsSession(agent, handle, prompt, opts)` | Caller-managed session — orchestrators that keep a session open across multiple prompts (TDD multi-prompt) | Caller opens handle via `SessionManager.openSession`; AgentManager wraps `sessionManager.sendPrompt` with the middleware envelope; **no internal fallback** |
+| `completeAs(name, prompt, opts)` / `completeAsWithFallback(name, prompt, opts)` | Sessionless one-shot — routing, decompose (`kind:"complete"` ops go through `completeAsWithFallback`, which also returns agent-swap records) | None — calls `adapter.complete` directly |
+| `runAsSession(agent, handle, prompt, opts)` | Caller-managed session — callers that keep a session open across multiple prompts (`src/session/session-keeper.ts`, the hop callback) | Caller opens handle via `SessionManager.openSession`; AgentManager wraps `sessionManager.sendPrompt` with the middleware envelope; **no internal fallback** |
 | `runWithFallback(request)` | Chain iteration with per-hop callback delegation | Iterates the fallback chain; invokes `request.executeHop(agent, bundle, failure, opts)` per hop. The callback (constructed by `callOp` via `buildHopCallback`, §37) owns rebuild + open + send + close |
 
 Every `completeAs*` and `runAsSession` call runs through the same middleware
@@ -1278,7 +1031,7 @@ export interface NaxRuntime {
   readonly signal: AbortSignal;              // scope-internal AbortController
   readonly dryRun: boolean;
   // …run-scoped stores: quarantineMemo, review iteration histories,
-  //   agentFallbacks, storyFixHistory, routingCache, mutationSummaries, …
+  //   agentFallbacks, ladderSlots, lastAdapterFailure, routingCache, …
   close(): Promise<void>;                    // idempotent
 }
 ```
@@ -1314,9 +1067,9 @@ completion).
 ### Why a runtime container?
 
 Before ADR-018, three different code paths constructed `AgentManager`
-independently (`runner.ts`, `acceptance/generator.ts`, `acceptance/refinement.ts`).
+independently (the runner and several generators).
 A 401 on routing fell into a different fallback chain than execution; cost events
-from rectification proposers landed in unrelated `CostAggregator`
+from those other call sites landed in unrelated `CostAggregator`
 instances. `NaxRuntime` collapses these into one shared lifecycle, with
 middleware sinks wired once.
 
@@ -1390,7 +1143,7 @@ interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
   readonly model?: OperationModel<I, C>;
   readonly session: { role: SessionRole; lifetime: "fresh" | "warm" };
   readonly tools?: readonly CodingToolName[];  // coding tools the op declares (§53)
-  readonly noFallback?: boolean;     // TDD ops opt out of cross-agent fallback
+  readonly noFallback?: boolean;     // op opts out of cross-agent fallback (e.g. setupGenerateOp)
 }
 
 interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
@@ -1400,8 +1153,7 @@ interface CompleteOperation<I, O, C> extends OperationBase<I, O, C> {
 
 `DeterministicOperation` (kind `"deterministic"`) exposes `execute(input, ctx, deps?)`
 and runs a pure function or filesystem call with no agent session — the gate and
-check ops (`verifyScopedOp`, `fullSuiteGateOp`, `greenfieldGateOp`,
-`testPresenceGateOp`, `mutationCheckOp`, `lintCheckOp`, `typecheckCheckOp`) use it.
+check ops (`verifyScopedOp`, `fullSuiteGateOp`, `lintCheckOp`, `typecheckCheckOp`) use it.
 
 ### `callOp` — the dispatcher
 
@@ -1456,8 +1208,8 @@ One descriptor wraps N adapter sessions across the lifetime of one story attempt
   `input`, `candidates`, `json-schema`). Builders expose slot-specific methods;
   no middleware chain.
 - `ConfigSelector<C>` — `src/config/selectors.ts`. Named, memoized config
-  selectors (`reviewConfigSelector`, `planConfigSelector`,
-  `acceptanceConfigSelector`, …). One file lists every subsystem's slice;
+  selectors (`planConfigSelector`, `routingConfigSelector`,
+  `workflowConfigSelector`, …). One file lists every subsystem's slice;
   refactoring `config.*` surfaces every dependent via the compiler.
 
 ### Operation directory
@@ -1469,19 +1221,14 @@ One descriptor wraps N adapter sessions across the lifetime of one story attempt
 | `planInteractiveOp` / `planRefineOp` | run | `nax plan` (`src/operations/plan.ts`, `plan-refine.ts`) |
 | `decomposeOp` | complete | Story decomposition |
 | `classifyRouteOp` / `classifyRouteBatchOp` | complete | Routing stage |
-| `acceptanceGenerateOp` / `acceptanceDiagnoseOp` | run | Acceptance subsystem |
-| `acceptanceRefineOp` | complete | Acceptance AC refinement |
-| `acceptanceFixSourceOp` / `acceptanceFixTestOp` | run | Acceptance fix cycle |
-| `testWriterOp` / `implementerOp` / `verifierOp` (aliases `writeTddTestOp` / `implementTddOp` / `verifyTddOp`) | run | Per-story orchestrator phases |
-| `semanticReviewOp` / `adversarialReviewOp` | run | Review phases |
-| `rectifyOp`, `implementerRectifyOp`, `testWriterRectifyOp`, `fullSuiteRectifyOp` | run | Fix strategies / rectification |
-| `mechanicalLintFixOp` / `mechanicalFormatFixOp` | deterministic | Mechanical fix strategies |
-| `finishSpecReviewOp` / `finishBranchReviewOp` / `finishFixOp` | run | Finish phase at run completion (`src/finish/`): two read-only JSON branch reviews and one shared fix session |
 | `setupGenerateOp` | run | `nax setup` (LLM fill, `src/cli/setup-llm.ts`) |
-| gate / check ops (see above) | deterministic | Per-story orchestrator phases |
+| `workflowImplementOp` / `workflowRepairOp` | run | Workflow implementer and repair sessions (`src/workflow/`) |
+| `workflowStoryReviewOp` / `workflowReReviewOp` / `workflowBranchReviewOp` / `workflowBranchFixOp` | run | Workflow story review, re-review, branch review and branch fix |
+| `adviseOp` / `adviseBatchOp` | run | Advisor (§59) |
+| `botPrReviewOp`, `botPrStaticReviewOp`, `botChecksExtractOp`, `botRulingReadOp` | see `src/operations/bot-*.ts` | `nax bot` |
+| gate / check ops (see above) | deterministic | Workflow gates (`src/workflow/gates.ts`) |
 
-Multi-session sequencing (TDD three-session) lives in the per-story orchestrator
-(`src/execution/story-orchestrator/`), which issues one `callOp` per phase.
+Per-story sequencing lives in `src/workflow/story-loop.ts`, which issues one `callOp` per step.
 There are no `ISessionRunner` implementations — that interface was removed
 in ADR-019 Phase C.
 
@@ -1681,7 +1428,7 @@ Layered configuration system — the single source of truth for all nax settings
 - `loadConfig(workdir)` / `createConfigLoader()` / `ConfigLoader` — entry points; return fully merged, validated config; `ConfigLoader` is the runtime accessor for live-reload awareness
 - `findProjectDir(startDir)`, `globalConfigPath()`, `globalConfigDir()`, `projectConfigDir()` — config filesystem discovery helpers (`getRunsDir` / `getEventsRootDir` live in `src/utils/paths.ts`, not here)
 - `resolvePermissions(config, stage)` / `PipelineStage` / `ResolvedPermissions` — permission SSOT (see §14 in `agent-adapters.md`); lives in `src/config/permissions.ts` and is imported directly by callers, not via the config barrel. It also resolves the stage's bash approval mode (`resolveBashApproval()`, `packages/nax-agent/src/config/bash-approval.ts`); `inert-bash-stages.ts` warns about stages that declare Bash under `gated`/`escalate` but hold no `Bash(...)` allow rule
-- Named selectors (20+): `tddConfigSelector`, `planConfigSelector`, `routingConfigSelector`, … — typed config slices consumed by `callOp` via `packageView.select`
+- Named selectors (`src/config/selectors.ts`): `planConfigSelector`, `decomposeConfigSelector`, `routingConfigSelector`, `workflowConfigSelector`, … — typed config slices consumed by `callOp` via `packageView.select`
 - `resolveTestStrategy()`, `isThreeSessionStrategy()` — test-strategy resolution (ADR-015)
 - `deepMergeConfig()`, `mergePackageConfig()` — merge primitives for the layering order
 - `validateDirectory()`, `isWithinDirectory()` — path-security guards (see §12 in `design-patterns.md`)
@@ -1717,7 +1464,7 @@ Human-facing presentation layer for log entries and run summaries. Consumes `Log
 
 **Key exports:**
 - `formatLogEntry(entry, opts)` / `FormattedEntry` — formats a single `LogEntry` for terminal display
-- `formatRunSummary(summary, opts)` — renders end-of-run statistics (cost, duration, pass/fail counts); `formatAdvisorySummary()`, `formatMutationSummary()`
+- `formatRunSummary(summary, opts)` — renders end-of-run statistics (cost, duration, pass/fail counts); `formatAdvisorySummary()`
 - `formatTimestamp()`, `formatDuration()`, `formatCost()` — display helpers
 - `VerbosityMode` — `"quiet" | "normal" | "verbose" | "json"`
 - `RunSummary`, `StoryStartData`, `StageResultData`, `FormatterOptions` — data types
@@ -1731,13 +1478,12 @@ Human-facing presentation layer for log entries and run summaries. Consumes `Log
 
 ## §42 CLI (`src/cli/`)
 
-High-level CLI command implementations. Each file maps to one user-facing command (`init`, `setup`, `plan`, `accept`, `runs`, `status`, `rules`, `generate`, `config`, `agents`, `auth`, `mcp`, `approvals`, `context`, `spec`, `prompts`, `plugins`, `routing`, `features`). Commands are wired to the Bun binary in `bin/nax.ts`, directly or via `src/commands/` (§43). This is one of two directories permitted to call `process.cwd()` as the bootstrap workdir default.
+High-level CLI command implementations. Each file maps to one user-facing command (`init`, `setup`, `plan`, `runs`, `status`, `rules`, `generate`, `config`, `agents`, `auth`, `mcp`, `approvals`, `context`, `spec`, `prompts`, `plugins`, `routing`, `features`). Commands are wired to the Bun binary in `bin/nax.ts`, directly or via `src/commands/` (§43). This is one of two directories permitted to call `process.cwd()` as the bootstrap workdir default.
 
 **Key exports:**
 - `initCommand(opts)` — interactive project initialisation
 - `setupCommand(opts)` / `writeSetupConfig()` — config wizard; `writeSetupConfig` writes config files via `Bun.write` and handles mono package configs (fully implemented in `src/cli/setup-write.ts`)
 - `planCommand(opts)`, `planDecomposeCommand(opts)`, `resolvePlanMode(config)` — planning flow (delegates to `src/plan/`)
-- `acceptCommand(opts)` — acceptance test runner
 - `runsListCommand()`, `runsShowCommand()` — run history viewer
 - `displayCostMetrics()`, `displayFeatureStatus()` — status sub-commands
 - `generateCommand(opts)` — `nax generate` (regenerates CLAUDE.md from context.md)
@@ -1773,20 +1519,9 @@ Thin wrappers and shared resolution utilities that sit between `bin/nax.ts` and 
 
 ---
 
-## §44 Optimizer (`src/optimizer/`)
+## §44
 
-Prompt token-reduction seam, invoked as pipeline stage 6 (`src/pipeline/stages/optimizer.ts`). One built-in implementation: `NoopOptimizer` (pass-through). A plugin can provide a real optimizer via `IPromptOptimizer`. Resolved once per run by `resolveOptimizer(config, pluginRegistry)`.
-
-**Key exports:**
-- `IPromptOptimizer` — interface: `optimize(input) → Promise<PromptOptimizerResult>`
-- `PromptOptimizerInput`, `PromptOptimizerResult` — input/output types
-- `NoopOptimizer` — returns prompt unchanged; used whenever no plugin optimizer is active
-- `resolveOptimizer(config, pluginRegistry?)` — factory: plugin → noop
-- `estimateTokens(text)` — rough character-based token estimator
-
-**Entry point:** `src/optimizer/index.ts`
-
-> **History:** a `RuleBasedOptimizer` built-in shipped in v0.10 (2026-02-23) and was removed on 2026-08-20. No config ever selected it, and its per-rule `optimizer.strategies` block was never in `OptimizerConfigSchema`, so it was unconfigurable even when opted into. The `optimizer.strategy` / `optimizer.strategies` keys are stripped with a warning by `_applyRemovedOptimizerKeysShim`.
+Removed with pipeline mode (C1). A plugin that provides an `optimizer` extension is rejected by `src/plugins/validator.ts`.
 
 ---
 
@@ -1840,26 +1575,24 @@ Auto-detects project language, type, test framework, and lint tool from filesyst
 
 **Entry point:** `src/project/index.ts` (re-exports from `detector.ts` and `package-stack.ts`)
 
-**Called by:** `src/analyze/scanner.ts` (§50), `src/cli/setup-analyze.ts`, `src/execution/lifecycle/run-setup.ts` (`detectProjectProfile`), `src/context/engine/providers/code-neighbor.ts` and `src/quality/self-verification.ts` (`detectLanguage`), `src/acceptance/hardening.ts` (`detectLanguage` via leaf path).
+**Called by:** `src/analyze/scanner.ts` (§50), `src/cli/setup-analyze.ts`, `src/execution/lifecycle/run-setup.ts` (`detectProjectProfile`), `src/context/engine/providers/code-neighbor.ts` and `src/quality/self-verification.ts` (`detectLanguage`).
 
 ---
 
 ## §48 Findings (`src/findings/`)
 
-Unified finding wire format (ADR-021) and fix-cycle orchestration (ADR-022). All subsystems that detect problems (lint, typecheck, semantic review, adversarial review, acceptance, TDD verifier, plugins) convert their outputs to `Finding[]` at their boundary. The fix cycle (`runFixCycle`) iterates up to `FixCycleConfig.maxAttemptsTotal`, applies `FixStrategy` instances (each capped by its own `maxAttempts`), validates results, and classifies outcomes.
+Unified finding wire format (ADR-021) and the iteration record types (ADR-022 phase 1). All subsystems that detect problems (lint, typecheck, test runs) convert their outputs to `Finding[]` at their boundary. The fix-cycle orchestration that once consumed these types (`runFixCycle`, `FixStrategy`, `classifyOutcome`) no longer exists; workflow fix rounds are in `src/workflow/fix-round.ts` (§58).
 
 **Key exports:**
 - `Finding`, `FindingSeverity`, `FindingSource`, `FixTarget` — wire types (ADR-021 SSOT)
-- `SEVERITY_ORDER`, `compareSeverity(a, b)`, `findingKey(f)`, `findingRecurrenceKey(f)` — severity ordering and stable identity keys
-- Per-producer adapters: `lintDiagnosticToFinding()`, `testFailureToFinding()`, `testSummaryToFindings()`, `acFailureToFinding()`, `acSentinelToFinding()`, `acceptanceDiagnoseRawToFinding()`, `pluginToFinding()`, `executionFailureToFinding()`, `genericTypecheckDiagnosticToFinding()` — convert subsystem-specific outputs to `Finding`
-- `FixStrategy`, `FixCycle`, `FixCycleConfig`, `FixCycleContext`, `FixCycleResult`, `FixCycleExitReason`, `Iteration`, `IterationOutcome`, `ValidateResult` — cycle-orchestration types
-- `runFixCycle(cycle, ctx, cycleName, deps?)` — the fix loop (the per-story orchestrator and the acceptance loop are the consumers)
-- `classifyOutcome(before, after)` — per-iteration progress classification (`resolved` / `partial` / `unchanged` / `regressed` / `regressed-different-source` / `rotated`)
-- `StoryFixHistory` (`story-fix-history.ts`), `createDeclineLedger()`, retirement stamps — cross-attempt fix state and finding retirement
+- Per-producer adapters (`src/findings/adapters/`): `lintDiagnosticToFinding()`, `testFailureToFinding()`, `testSummaryToFindings()`, `executionFailureToFinding()`, `genericTypecheckDiagnosticToFinding()` — convert subsystem-specific outputs to `Finding`
+- `FixApplied`, `Iteration`, `IterationOutcome` — iteration record types (`cycle-types.ts`)
+- `rebaseToWorkdir()` (`path-utils.ts`) — rebases a finding path onto a workdir
+- `ReviewCheckResult` — re-exported from `src/review/types`
 
 **Entry point:** `src/findings/index.ts`
 
-**Called by:** `src/execution/story-orchestrator/` (primary consumer of `runFixCycle`) and `src/execution/lifecycle/acceptance-loop.ts`. All review/lint/test subsystems call the adapter converters at their output boundaries.
+**Called by:** lint, typecheck and test-runner code calls the adapter converters at its output boundary.
 
 ---
 
@@ -1870,27 +1603,22 @@ Single home for all LLM prompt construction. No prompt template literals are per
 **Builder classes:**
 | Builder | Handles |
 |:---|:---|
-| `TddPromptBuilder` | Implementer, test-writer, verifier, no-test, tdd-simple, batch roles |
-| `RectifierPromptBuilder` | TDD-test-failure, TDD-suite-failure, verify-failure, review-findings rectification |
-| `ReviewPromptBuilder` | Semantic review dialogue |
-| `AdversarialReviewPromptBuilder` | Adversarial review dialogue |
-| `AcceptancePromptBuilder` | Acceptance generator, diagnoser, fix-executor |
-| `OneShotPromptBuilder` | Short single-turn prompts (router, decomposer, auto-approver) |
+| `RectifierPromptBuilder` | Static prompt factories (failing-test, review-findings, regression-failure and hand-off prompts) |
+| `OneShotPromptBuilder` | Short single-turn prompts (router, decomposer) |
 | `PlanPromptBuilder` | `nax plan` decomposition prompts |
 | `SetupPromptBuilder` | `nax setup` LLM fill |
 
-Function-style builders sit alongside: `buildDecomposePromptSync()` (decompose), `buildPriorIterationsBlock()`, `timeoutRetry()`. Workflow mode and the advisor add their own builders (`workflow-*-builder.ts`, `advisor-builder.ts`, `advisor-batch-builder.ts`, `finish-review-builder.ts`, `fix-review-builder.ts`, `nbf-worth-check-builder.ts`).
+Function-style builders sit alongside: `buildDecomposePromptSync()` (decompose), `timeoutRetry()`. Workflow mode, the advisor and `nax bot` add their own builders (`workflow-*-builder.ts`, `advisor-builder.ts`, `advisor-batch-builder.ts`, `bot-*-builder.ts`).
 
 **Key infrastructure exports:**
 - `composeSections(sections)` → assembled prompt string — used by `callOp` (§37)
 - `PromptSection` — `{ id, content, overridable, slot? }` — unit of composition; `SLOT_ORDER` fixes slot order
-- `loadOverride(role, workdir, config)` (`src/prompts/loader.ts`) — disk-based prompt override for TDD roles, loaded by `TddPromptBuilder`
 - `buildSourceRootsSection(roots)` — formats `SourceRoot[]` for plan prompts
 - `SectionAccumulator` — internal builder engine (exported from `src/prompts/core/`, not the top-level barrel)
 
 **Entry point:** `src/prompts/index.ts` (barrel). No subsystem imports from `src/prompts/builders/` directly — always via the barrel.
 
-**Called by:** all `Operation` implementations in `src/operations/` (§37) via `composeSections`, and `src/pipeline/stages/prompt.ts` (stage 5).
+**Called by:** all `Operation` implementations in `src/operations/` (§37) via `composeSections`.
 
 ---
 
@@ -2215,24 +1943,24 @@ External MCP servers whose tools the native agent may call, surfaced as
 
 ## §58 Workflow Mode (`src/workflow/`)
 
-The default execution mode since v0.88.0 (`execution.mode: "workflow"`). Decision: ADR-034.
+The only execution mode (`execution.mode: "workflow"`). Decision: ADR-034.
 User guide: [workflow-mode.md](../guides/workflow-mode.md). Gates stay deterministic. The
 advisor (§59) rules on judgment calls, and nothing in the workflow merges a pull request.
 
 **Config.** `execution.mode` (`ExecutionModeSchema` in `src/config/schemas-workflow.ts`).
-Absent or `"workflow"` runs workflow mode; `"pipeline"` runs the deprecated §17–§22 pipeline.
+Absent or `"workflow"` runs workflow mode; `"pipeline"` is rejected at config load
+(`rejectPipelineModeKeys`, `src/config/config-guards.ts`).
 The root-only `workflow` block (`WorkflowConfigObjectSchema`) sets `maxFixRounds` (5),
 `maxBranchFixRounds` (2), `finalGateRepairRounds` (1), `preflight` (true), `publish` (`"pr"`),
-`models.*` and `timeouts.*`. `isWorkflowMode()` and `resolveWorkflowConfig()` read it. The
-`applyWorkflowMode` helper (`src/config/workflow-mode.ts`) runs on every merged config layer and
-forces `acceptance.enabled` off, `execution.storyIsolation` to `shared`, and the advisor on when
-an `advisor` block is present.
+`models.*` and `timeouts.*`. `resolveWorkflowConfig()` reads it. The `applyWorkflowMode`
+helper (`src/config/workflow-mode.ts`) runs on every merged config layer and forces the advisor on
+when an `advisor` block is present.
 
 **Dispatch.** `buildWorkflowPipeline()` (`src/pipeline/stages/index.ts`) is
-`queueCheck → routing → constitution → context → workflow → completion`. The `workflow` stage
-loads `workflowStage` (`src/workflow/stage.ts`) through a dynamic import. `iteration-runner.ts`
-picks this pipeline when `isWorkflowMode()` is true. `end-phase.ts` runs the feature workflow
-(`runWorkflowEnd`) where pipeline mode runs finish (§60).
+`queueCheck → routing → constitution → context → workflow → completion`, where the `context` slot
+is `workflowContextStage`. The `workflow` stage loads `workflowStage` (`src/workflow/stage.ts`)
+through a dynamic import. `iteration-runner.ts` runs this pipeline for every story.
+`end-phase.ts` runs the feature workflow (`runWorkflowEnd`).
 
 **Per-story loop.** `story-loop.ts` is a pure state machine over injected steps; it always returns
 an end state and never fails or pauses a story. Its steps are `implement.ts` (one implementer
@@ -2268,10 +1996,6 @@ tree is inside the repo so agents' file tools can read it.
 workflow to the advisor service (§59). Workflow prompts come from the `workflow-*-builder.ts` files in
 `src/prompts/builders/`.
 
-**Not used in workflow mode.** The test-writer and verifier sessions, the semantic and adversarial
-review pair, the NBF and worth-check stage, the acceptance stage, parallel dispatch and per-story
-worktrees (ADR-034 §4).
-
 ---
 
 ## §59 Advisor (`src/advisor/`)
@@ -2284,15 +2008,15 @@ and the caller does what it did before the advisor existed.
 
 - **Question kinds** (`AdviceQuestionKind`, `src/advisor/types.ts`): `finish-judgment`,
   `fix-cycle-give-up`, `uncategorised-failure`, `finish-approval`, `preflight`,
-  `implementer-question`, `residual`. The first four are the pipeline and finish call sites, and
-  each one runs only when `advisor.enabled` and its `advisor.callers.*` flag are both on
-  (`isAdvisorCallerEnabled`). Workflow mode uses `preflight`, `implementer-question`, `residual` and
-  `finish-approval` (ADR-034).
+  `implementer-question`, `residual`. Workflow mode raises `preflight`, `implementer-question`,
+  `residual` and `finish-approval` (ADR-034). `finish-judgment` is raised only by
+  `nax advisor import-finish` (`src/cli/advisor-import.ts`); no code outside the menu table raises
+  `fix-cycle-give-up` or `uncategorised-failure`.
 - **Actions** (`AdviceAction`): `fix`, `waive`, `supersede`, `retry`, `retarget`, `retry-as-lite`,
   `escalate-tier`, `defer`, `approve`, `re-review`, `hold`.
 - **Config** (`advisor` block, `src/config/schemas-advisor.ts`): `enabled` (false), `model`
   (`"powerful"`), `fallbackModels`, `memory` (`"stateless"` or `"warm"`, default `"stateless"`),
-  `callers.{finishJudgment, fixCycleGiveUp, uncategorisedFailure, finishApproval}` (all false),
+  `callers.{finishJudgment, fixCycleGiveUp, uncategorisedFailure, finishApproval}` (all false; declared in the schema, no code reads them),
   `maxRulingsPerStory` (2), `notify.headsUp` (true), `timeoutMs`.
 - **Ledger.** `ledgerPath()` is `decisions.jsonl` in the feature directory; `readTrustedDecisions()`
   and `findReusable()` read it, and `appendDecision()` writes it. Audit artifacts go to
@@ -2311,34 +2035,25 @@ and the caller does what it did before the advisor existed.
 
 ## §60 Finish (`src/finish/`)
 
-The pipeline-mode end phase (`runFinishPhase()` in `phase.ts`, called from `end-phase.ts` when
-`isWorkflowMode()` is false). The feature workflow (§58) replaces it in workflow mode, but the
-helpers it exports are shared with the workflow. Config: `finish` (`src/config/schemas.ts`);
-`finish.enabled` defaults to `false`.
+The PR and gate helpers shared by the workflow publish path (§58) and `nax bot`. Config: `finish`
+(`src/config/schemas.ts`); `finish.enabled` defaults to `false`.
 
-- **Machine.** `runFinishMachine()` (`machine.ts`) runs the branch review, one shared fix loop
-  (`review-loop.ts`, `review-round.ts`, `fix-step.ts`, `fix/`), the gates (`gates-loop.ts`,
-  `gates/`), the acceptance loop (`acceptance-loop.ts`), the optional advisor (`advise.ts`), the
-  commit (`commit.ts`, `commit-message.ts`) and the PR (`pr/`). It always ends in a ready or draft
-  PR. A `failed` result is used only when the run was cancelled or the forge failed (`machine.ts`
-  header).
-- **Fail-open.** `runFinishPhase()` treats a throw during setup as a failed phase and does not fail
-  a run whose stories all passed.
+- **Modules.** `commit.ts` (`commitAndPush`, `commitFixes`), `gates/` (`runQualityGates`,
+  `resolveGateCommands`), `pr/` (`openOrPromotePr`, `openDraftFinishPr`, `updatePrBody`,
+  `buildAdvisorSection`), `pr-title.ts` (`sanitizeTitle`), `safe-path.ts` and `ledger.ts`
+  (`LedgerEntry`, `LedgerState`).
 - **PR body.** `finish.prBody.template` (`merge` default, `strict`, `ignore`) controls how the
   repository's own PR template is used (`merge` keeps headings the body can fill, and appends the
   rest under nax's own).
 - **Shared helpers** (exported from `src/finish/index.ts`): `openOrPromotePr`, `openDraftFinishPr`,
   `commitAndPush`, `runQualityGates`, `resolveGateCommands`, `escapeInline`, `sanitizeTitle`,
   `buildAdvisorSection`.
-- **Operations.** `finishSpecReviewOp`, `finishBranchReviewOp` and `finishFixOp` (§37).
-- **State.** `state.ts`, `ledger.ts`, `audit.ts`, `checkpoint.ts`, `set-aside*.ts` and
-  `untracked-snapshot.ts` record progress and snapshot the working tree.
 
 ---
 
 ## §61 Forge (`src/forge/`)
 
-Git-forge integration shared by finish and workflow. Public entry: `src/forge/index.ts`.
+Git-forge integration shared by the finish helpers and workflow. Public entry: `src/forge/index.ts`.
 
 - **Detection** (`detect.ts`): `detectForge()` classifies the remote by its parsed host, not by a
   substring of the URL (`forgeFromRemoteUrl`, `remoteHost`). The kind is `"github"` or `"gitlab"`
@@ -2361,15 +2076,15 @@ repository it is pointed at) is in [agent-adapters.md §17](agent-adapters.md#17
   root and the home directory are protected (`isProtectedFolder()`): a prompt cannot grant them, and
   only `nax trust add <root> --force` can.
 - **Surfaces** (`TrustSurface`): `plugins`, `context-plugin-providers`, `hooks`, `mcp`,
-  `quality-command`, `test-command`, `acceptance-command`, `package-setup`, `worktree-setup`.
+  `quality-command`, `test-command`, `package-setup`. The type also declares `agent-hooks`, `pre-run`, `acceptance-command` and `worktree-setup`; no caller of `assertTrusted()` passes `acceptance-command` or `worktree-setup`.
 - **Gate.** `ensureProjectTrusted()` (`gate.ts`) asks `promptTrustChoice()` (`yes`, `parent` or
   `no`) when the invocation is interactive, persists the answer and records it in the process
   registry (`markTrusted()`). The CLI wrapper `runTrustGate()` (`src/cli/trust-gate.ts`) is used by
   `nax doctor`, `nax resume` and `nax advisor replay`.
 - **Backstops.** Execution sites call `assertTrusted()` (or `assertTrustedSync()`) before running
   repository-controlled code: `quality/runner.ts`, `hooks/runner.ts`, `plugins/loader.ts`, the
-  context plugin-provider loader, `mcp/pool.ts`, `verification/executor.ts`,
-  `acceptance/hardening.ts`, `worktree/dependencies.ts` and `execution/new-package-setup.ts`.
+  context plugin-provider loader, `mcp/pool.ts`, `verification/executor.ts`
+  and `execution/new-package-setup.ts`.
 - **CLI.** `nax trust list`, `add [path]`, `rm <path>` and `check [path]` (`src/cli/trust.ts`).
 
 ---

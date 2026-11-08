@@ -553,6 +553,8 @@ export async function loadConfigForWorkdir(
   }
   rawMerged = pinRootOnlyKeysRaw(rawMerged, rootConfig, packageDir, warnDedupe.warn);
 
+  // Every site (root chain, overlay layer, profile-overlaid result below) runs:
+  // reject the legacy keys that must fail loudly, THEN strip warn-only keys, THEN safeParse.
   // BUG-05: guards + safeParse must cover EVERY per-package overlay, not just
   // ones that also apply a package-level profile — an overlay with no profile
   // previously returned `merged` here unvalidated, letting a legacy key sail

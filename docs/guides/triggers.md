@@ -30,9 +30,9 @@ nax can pause execution and prompt you for decisions at critical points. Configu
 }
 ```
 
-> **Pipeline mode.** The story and run triggers below fire only in the pipeline (`execution.mode: "pipeline"`, deprecated). Workflow mode (the default since 0.88.0) has no trigger call sites for them. The interaction plugin still serves the Bash approval prompts (see below) and the other workflow asks. Run triggers that fire in the pipeline are `cost-warning`, `cost-exceeded` and `merge-conflict` (run-level), and `max-retries`, `human-review`, `pre-merge` and `review-gate` (story-level). `security-review` and `story-oversized` have no runtime caller in 0.88.0, so enabling them has no effect yet.
+> **Call sites.** `cost-warning` (`src/execution/cost-warning.ts`), `cost-exceeded` (`src/execution/cost-guard.ts`) and `pre-merge` (`src/execution/unified-executor.ts`) fire at run level. `max-retries` and `human-review` fire from the interaction subscriber (`src/pipeline/subscribers/interaction.ts`), and `review-gate` from the completion stage (`src/pipeline/stages/completion.ts`). `security-review`, `merge-conflict` and `story-oversized` have no runtime caller, so enabling them has no effect. The interaction plugin also serves the Bash approval prompts (see below) and the other workflow asks.
 
-Out of the box (no `interaction` block), nax uses the `cli` plugin with a 600000 ms (10 min) timeout, and only `security-review` and `cost-warning` are enabled. Of those two, only `cost-warning` fires (pipeline only); see the note above. A trigger absent from `triggers` is disabled. Each trigger takes either `true`/`false` or an object with a per-trigger override:
+Out of the box (no `interaction` block), nax uses the `cli` plugin with a 600000 ms (10 min) timeout, and only `security-review` and `cost-warning` are enabled. Of those two, only `cost-warning` fires; see the note above. A trigger absent from `triggers` is disabled. Each trigger takes either `true`/`false` or an object with a per-trigger override:
 
 ```json
 "triggers": {

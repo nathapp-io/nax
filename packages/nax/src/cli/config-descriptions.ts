@@ -123,10 +123,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.contextProviderTokenBudget": "Token budget for plugin context providers",
   "execution.lintCommand": "Lint command override (null=disabled, undefined=auto-detect)",
   "execution.typecheckCommand": "Typecheck command override (null=disabled, undefined=auto-detect)",
-  "execution.rectification":
-    "Unified fix-cycle settings — shared by story-orchestrator (semantic + adversarial + mechanical) and post-run regression cycles",
+  "execution.rectification": "Attempt limits — only maxAttemptsTotal and fullSuiteTimeoutSeconds are read",
   "execution.rectification.maxAttemptsTotal":
-    "Total iteration cap for the unified fix cycle (default: 12). Per-strategy caps are the granular bound.",
+    "Total attempt cap per story before human review is requested (default: 12)",
   "execution.rectification.fullSuiteTimeoutSeconds": "Timeout for full test suite run in seconds",
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
@@ -285,7 +284,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "precheck.storySizeGate.maxReplanAttempts": "Max replan attempts before escalating (default: 3)",
 
   // Prompts
-  prompts: "Prompt settings",
+  prompts: "Prompt settings (behavioralGuardrails is accepted but not read; #2832)",
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",
@@ -349,11 +348,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.spinBreaker.stopAfterNoProgressSeconds":
     "Seconds with no new call key after which a repeat run ends the turn so a slow spin stops as fail-spin before the tool-call-only idle watchdog cancels it as fail-stale (default: half agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds, 900 when that watchdog is off; 0 disables) (nax#2017)",
   // quality.testing (ENH-010) — per-package overridable
-  "quality.testing": "Hermetic test enforcement — per-package overridable (ENH-010)",
-  "quality.testing.hermetic":
-    "Inject hermetic test requirement into prompts — never call real external services in tests (default: true)",
+  "quality.testing": "Hermetic test settings — accepted but not read since pipeline mode was removed (#2832)",
+  "quality.testing.hermetic": "Hermetic test requirement for prompts — currently not read (#2832) (default: true)",
   "quality.testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'gh', 'redis'])",
-  "quality.testing.mockGuidance": "Project-specific mocking guidance injected verbatim into the prompt",
+  "quality.testing.mockGuidance": "Project-specific mocking guidance — currently not read (#2832)",
 
   // MCP
   mcp: "External MCP servers the native agent may call tools on (client only; nax is not an MCP server)",

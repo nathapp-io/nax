@@ -29,7 +29,6 @@
     }
   },
   "autoMode": {
-    "enabled": true,
     "complexityRouting": {
       "simple": "fast",
       "medium": "balanced",
@@ -100,8 +99,7 @@
       "model": "fast",
       "fallbackToKeywords": true,
       "cacheDecisions": true,
-      "mode": "hybrid",
-      "timeoutMs": 60000
+      "mode": "hybrid"
     }
   },
   "execution": {
@@ -114,7 +112,6 @@
       }
     },
     "commandInterceptor": {
-      "provider": "rtk",
       "enabled": true,
       "git": {
         "verbs": [
@@ -122,11 +119,6 @@
           "diff"
         ]
       }
-    },
-    "mutationCheck": {
-      "enabled": true,
-      "maxMutants": 3,
-      "timeoutSeconds": 60
     },
     "smartTestRunner": {
       "testFilePatterns": [
@@ -184,9 +176,6 @@
     "model": "balanced",
     "timeoutSeconds": 1200,
     "mode": "refine"
-  },
-  "acceptance": {
-    "model": "fast"
   },
   "curator": {
     "enabled": true

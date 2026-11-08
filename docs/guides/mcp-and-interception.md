@@ -141,12 +141,11 @@ to tell which file needs re-locking.
 ### Choose `stages` deliberately
 
 `stages` is narrower than it looks. With `stages: ["run"]` on a two-story feature, only
-the implementer and test-writer sessions ever see the tools — the reviewer, verifier and
-acceptance sessions do not, even though they do plenty of exploration. Measured on the
-`native-full-run` fixture: **3 of 18 sessions** had the tools available.
+the implementer sessions ever see the tools — the review and verify sessions do not, even
+though they do plenty of exploration.
 
-Stage coverage is exact, not inherited: `run` does **not** cover `review`, `verify` or
-`rectification` — a server must list every stage that should see its tools (or `["*"]`).
+Stage coverage is exact, not inherited: `run` does **not** cover `review` or
+`verify` — a server must list every stage that should see its tools (or `["*"]`).
 A stage-mismatched skip is visible in two places: a once-per-session debug line
 (`mcp [provider] <id> not attached`, with the session's stage and the server's stages)
 and the session's `toolSurface.skippedProviders` block in the tool-audit ledger.
@@ -280,7 +279,7 @@ nax intercepts exactly two things, and neither is a string you wrote:
   supplied (never a shell string);
 - the `Bash` tool's **command string**, which the model authored.
 
-nax does **not** wrap user-authored command strings — `quality.commands`, `acceptance.command`
+nax does **not** wrap user-authored command strings — `quality.commands`
 and every other config-supplied command are never intercepted. That is a standing ruling
 (spec R10), not an oversight: there is no saving on the success path, and the failure path is
 shape-dependent (a Bun stack trace compresses ~58%, Biome diagnostics 0%). Wrapping them
@@ -431,7 +430,7 @@ them by `runId` or timestamp before comparing.
 | Tools never grantable | No lockfile, or tool absent from it | Run `nax mcp lock`, commit the result (or `nax mcp lock --global` for a global server). `lockSource` on the withheld line names the lock that decided it |
 | Global lock ignored in one project | That project has its own `.nax/mcp-lock.json`, which overrides the global lock wholesale | Re-run `nax mcp lock` in the project, or delete its lock to fall back to the global one |
 | Provider tools silently absent | `safe` profile, or `scoped` with no `Mcp(...)` rule naming them | Set `execution.permissionProfile: "unrestricted"`, or add the stage's `Mcp(...)` rule under `scoped` |
-| Server attaches to nothing | `stages: []`, or `stage:` typo | Set `stages` to real stage names or `["*"]` — and remember `run` ≠ `review`/`verify`/`rectification` |
+| Server attaches to nothing | `stages: []`, or `stage:` typo | Set `stages` to real stage names or `["*"]` — and remember `run` ≠ `review`/`verify` |
 | `rtk interceptor state` shows `version: null` | Binary not found or probe failed | `which rtk`; confirm `rtk gain` works (name collision) |
 | No state line at all | Config block missing | Add `execution.commandInterceptor` |
 | `executed` is always `null` | Verb not in `git.verbs` | Add the verb, or accept that only `log`/`diff` are eligible |
