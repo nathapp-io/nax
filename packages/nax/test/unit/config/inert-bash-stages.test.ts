@@ -72,7 +72,11 @@ function sorted(stages: readonly PipelineStage[]): string[] {
   return [...stages].sort((a, b) => a.localeCompare(b));
 }
 
-const OTHER_THREE: PipelineStage[] = ["acceptance", "rectification", "review"];
+/**
+ * The declaring stage other than `run` — what a Bash rule on `run` leaves
+ * inert.
+ */
+const OTHER_DECLARING_STAGES: PipelineStage[] = ["review"];
 
 /**
  * The seven operations that still declare the Bash tool AND have a live
@@ -139,7 +143,7 @@ describe("findInertBashStages — US-003 AC2: a Bash allow rule un-inerts its st
 
     const inert = findInertBashStages(config);
     expect(inert).not.toContain("run");
-    expect(sorted(inert)).toEqual(sorted(OTHER_THREE));
+    expect(sorted(inert)).toEqual(sorted(OTHER_DECLARING_STAGES));
   });
 
   test("AC2 boundary: an Exec(...) rule on run is not a Bash grant, so run stays inert", () => {
@@ -220,7 +224,7 @@ describe("findInertBashStages — US-003 AC6: the result is confined to declarin
     const inert = findInertBashStages(configWith({ bashApproval: "gated" }));
 
     expect(sorted(inert)).toEqual(sorted(BASH_DECLARING_STAGES));
-    for (const stage of ["plan", "verify", "setup", "regression", "complete"] as const) {
+    for (const stage of ["plan", "verify", "setup", "complete"] as const) {
       expect(inert).not.toContain(stage);
     }
   });
@@ -298,18 +302,15 @@ describe("BASH_DECLARING_STAGES — US-003 AC9: mirrors the Bash-declaring opera
     },
   );
 
-  // `BASH_DECLARING_STAGES` is a name registry (src/config/inert-bash-stages.ts).
-  // Neither "acceptance" nor "rectification" has a live dispatcher any more:
+  // `BASH_DECLARING_STAGES` is a name registry (src/config/inert-bash-stages.ts)
+  // and it names exactly the stages the seven Bash-declaring operations
+  // dispatch on. Neither "acceptance" nor "rectification" is in it any more:
   // the acceptance fix ops went with the completion acceptance loop
-  // (pipeline-post-run-delete US-006) and the four fix-strategy ops with the
-  // story orchestrator (pipeline-story-ops-delete US-001). Emptying the registry
-  // is wave B3's job (spec Out of Scope), so both strings stay for now.
-  const RETAINED_REGISTRY_STAGES: PipelineStage[] = ["acceptance", "rectification"];
-
+  // (pipeline-post-run-delete US-006), the four fix-strategy ops with the
+  // story orchestrator (pipeline-story-ops-delete US-001), and US-006 removed
+  // both names from the registry itself.
   test("AC9 boundary: BASH_DECLARING_STAGES names exactly the stages those seven operations use", () => {
-    const opStages = [...new Set([...BASH_DECLARING_OPS.map(([, op]) => op.stage), ...RETAINED_REGISTRY_STAGES])].sort(
-      (a, b) => a.localeCompare(b),
-    );
+    const opStages = [...new Set(BASH_DECLARING_OPS.map(([, op]) => op.stage))].sort((a, b) => a.localeCompare(b));
 
     expect([...BASH_DECLARING_STAGES].sort((a, b) => a.localeCompare(b))).toEqual(opStages);
   });
@@ -336,5 +337,33 @@ describe("BASH_DECLARING_STAGES — US-001 AC1: no Bash-declaring operation esca
 
     const escaped = rows.filter((row) => !BASH_DECLARING_STAGES.includes(row.stage));
     expect(escaped).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-006 AC3 / AC4 — the registry names the two stages that dispatch Bash
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BASH_DECLARING_STAGES — US-006 AC3/AC4: only run and review declare Bash", () => {
+  test("AC4: the constant equals [run, review]", () => {
+    expect([...BASH_DECLARING_STAGES]).toEqual(["run", "review"]);
+  });
+
+  test("AC3: gated blocks on run/review/rectification/acceptance leave exactly run and review inert", () => {
+    // The removed stage names are RAW permission-block keys here, not
+    // PipelineStage arguments: `PermissionsBlockSchema` accepts arbitrary
+    // string keys, and a config written before US-006 still carries them.
+    // The resolver is never asked to resolve a removed stage.
+    const config = configWithPermissions(
+      {},
+      {
+        run: { bashApproval: "gated" },
+        review: { bashApproval: "gated" },
+        rectification: { bashApproval: "gated" },
+        acceptance: { bashApproval: "gated" },
+      },
+    );
+
+    expect(findInertBashStages(config)).toEqual(["run", "review"]);
   });
 });

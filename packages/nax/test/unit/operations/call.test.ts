@@ -75,7 +75,7 @@ const warmImplementerOp: RunOperation<
 const warmAutofixOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
   ...runEchoOp,
   name: "autofix-implementer",
-  stage: "rectification",
+  stage: "review",
   session: { role: "implementer", lifetime: "warm" },
 };
 

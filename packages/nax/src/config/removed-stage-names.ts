@@ -2,9 +2,9 @@
  * Removed stage names — warn-and-strip compatibility for the stages no
  * operation runs in since pipeline mode was removed.
  *
- * `rectification`, `regression` and `acceptance` are still registry members
- * here (US-006 contracts the enums); this module is the compatibility layer
- * that keeps an existing config loading while its author migrates. Two
+ * `rectification`, `regression` and `acceptance` are no longer registry
+ * members (US-006 contracted the enums); this module is the compatibility
+ * layer that keeps an existing config loading while its author migrates. Two
  * surfaces carry those names:
  *
  *   - `mcp.servers.<id>.stages` — the stages an MCP server attaches to. A

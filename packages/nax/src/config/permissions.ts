@@ -18,22 +18,13 @@ export type { ResolvedPermissions };
 
 export type PermissionProfile = "unrestricted" | "safe" | "scoped";
 
-export type PipelineStage =
-  | "plan"
-  | "run"
-  | "setup"
-  | "verify"
-  | "review"
-  | "rectification"
-  | "regression"
-  | "acceptance"
-  | "complete";
+export type PipelineStage = "plan" | "run" | "setup" | "verify" | "review" | "complete";
 
 /**
  * Every PipelineStage, as an exhaustive record so a new stage cannot be
  * forgotten here.
  *
- * `McpStageSchema` (`src/config/schemas-mcp.ts`) hand-spells the same nine
+ * `McpStageSchema` (`src/config/schemas-mcp.ts`) hand-spells the same six
  * labels plus `"*"`. That copy is deliberately NOT derived — an unknown stage
  * must be a schema error at load, not a server that silently attaches to
  * nothing — but it is a second site to update, and unlike this one nothing in
@@ -45,9 +36,6 @@ const PIPELINE_STAGES: Record<PipelineStage, true> = {
   setup: true,
   verify: true,
   review: true,
-  rectification: true,
-  regression: true,
-  acceptance: true,
   complete: true,
 };
 

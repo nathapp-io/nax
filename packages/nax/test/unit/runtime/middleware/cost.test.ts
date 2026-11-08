@@ -359,9 +359,9 @@ describe("attachCostSubscriber", () => {
 
     // `stage` collapses 23 session roles into 6 buckets; without the role,
     // "how much of rectification is implementation?" has no answer.
-    bus.emitDispatch(makeSessionTurnEvent({ stage: "rectification", sessionRole: "implementer" }));
+    bus.emitDispatch(makeSessionTurnEvent({ stage: "review", sessionRole: "implementer" }));
 
-    expect(recorded[0].stage).toBe("rectification");
+    expect(recorded[0].stage).toBe("review");
     expect(recorded[0].sessionRole).toBe("implementer");
   });
 

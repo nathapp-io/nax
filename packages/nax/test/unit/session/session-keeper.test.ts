@@ -21,7 +21,7 @@ function makeOpts(overrides: Partial<SessionKeeperOptions> = {}): SessionKeeperO
     sessionName: "nax-test-session",
     defaultAgent: "claude",
     role: "implementer",
-    pipelineStage: "rectification",
+    pipelineStage: "run",
     storyId: "US-001",
     featureName: "test-feature",
     workdir: "/tmp/test",

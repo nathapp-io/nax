@@ -76,23 +76,21 @@ function configWithEveryStageGranted(bashApproval: "gated" | "escalate"): NaxCon
     {
       run: { allow: ["Bash(ls *)"] },
       review: { allow: ["Bash(git status*)"] },
-      rectification: { allow: ["Bash(bun test*)"] },
-      acceptance: { allow: ["Bash(bun run*)"] },
     },
   );
 }
 
-const INERT_STAGES = ["acceptance", "rectification", "review"] as const;
+const INERT_STAGES = ["review"] as const;
 
 describe("warnInertBashStages — US-003 AC10: one warning per inert stage", () => {
-  test("AC10: warns exactly three times, stage permissions, for review/rectification/acceptance", () => {
+  test("AC10: warns once, stage permissions, for review", () => {
     const logger = makeLogger();
 
     warnInertBashStages(escalateWithRunGranted(), logger);
 
     const warns = logger.calls.filter((call) => call.level === "warn");
-    expect(warns).toHaveLength(3);
-    expect(warns.map((call) => call.stage)).toEqual(["permissions", "permissions", "permissions"]);
+    expect(warns).toHaveLength(1);
+    expect(warns.map((call) => call.stage)).toEqual(["permissions"]);
     const warnedStages = warns.map((call) => String(call.data?.stage)).sort((a, b) => a.localeCompare(b));
     expect(warnedStages).toEqual([...INERT_STAGES]);
   });
@@ -125,7 +123,7 @@ describe("warnInertBashStages — US-003 AC11: warning data shape", () => {
     warnInertBashStages(escalateWithRunGranted(), logger);
 
     const warns = logger.calls.filter((call) => call.level === "warn");
-    expect(warns).toHaveLength(3);
+    expect(warns).toHaveLength(1);
     for (const call of warns) {
       expect(Object.keys(call.data ?? {})[0]).toBe("storyId");
     }
@@ -139,7 +137,7 @@ describe("warnInertBashStages — US-003 AC12: the message names the fix", () =>
     warnInertBashStages(escalateWithRunGranted(), logger);
 
     const warns = logger.calls.filter((call) => call.level === "warn");
-    expect(warns).toHaveLength(3);
+    expect(warns).toHaveLength(1);
     for (const call of warns) {
       expect(call.message).toContain("Bash(");
     }

@@ -40,17 +40,8 @@ import type { NaxConfig } from "./runtime-types";
  * still have a live dispatcher: `workflowImplementOp` / `workflowBranchFixOp` /
  * `workflowRepairOp` (run); `workflowStoryReviewOp` / `workflowReReviewOp` /
  * `workflowBranchReviewOp` / `botPrReviewOp` (review).
- *
- * Neither "rectification" nor "acceptance" has a live dispatcher any more. The
- * four fix-strategy ops that put "rectification" here (`rectifyOp`,
- * `fullSuiteRectifyOp`, `implementerRectifyOp`, `testWriterRectifyOp`) were
- * deleted by pipeline-story-ops-delete US-001, and the two acceptance fix ops
- * that put "acceptance" here (`acceptanceFixSourceOp` / `acceptanceFixTestOp`)
- * by pipeline-post-run-delete US-006. Both strings stay as registry members:
- * emptying a name registry is wave B3's job (spec Out of Scope), and a reader
- * of a recorded artifact still has to accept the old string.
  */
-export const BASH_DECLARING_STAGES: readonly PipelineStage[] = ["run", "review", "rectification", "acceptance"];
+export const BASH_DECLARING_STAGES: readonly PipelineStage[] = ["run", "review"];
 
 /**
  * Stages whose resolved `bashApproval` is `gated`/`escalate` AND whose resolved

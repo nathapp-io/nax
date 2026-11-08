@@ -4,17 +4,7 @@
  * Split out of `runtime-types.ts`, which is at its file-size limit.
  */
 
-export type McpStage =
-  | "plan"
-  | "run"
-  | "setup"
-  | "verify"
-  | "review"
-  | "rectification"
-  | "regression"
-  | "acceptance"
-  | "complete"
-  | "*";
+export type McpStage = "plan" | "run" | "setup" | "verify" | "review" | "complete" | "*";
 
 export interface McpServerConfig {
   /** Executable spawned over stdio. Exactly one of `command` and `url` is set. */
