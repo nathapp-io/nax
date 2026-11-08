@@ -1,19 +1,41 @@
+/**
+ * .nax/ artifact immutability guard — the implementer role's section.
+ *
+ * US-004 narrowed `GuardrailRole` to `"implementer"`, so the section renders
+ * for that role only. The text is unchanged.
+ */
 import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
 import type { GuardrailRole } from "@/prompts/sections";
 import { buildNaxArtifactsSection } from "@/prompts/sections";
 
-// AC-1: buildNaxArtifactsSection for test-writer mentions .nax/ immutability
-// AC-2: returns non-null for test-writer
-// AC-3: returns non-null for implementer
-// AC-4: returns non-null for verifier
+/**
+ * Compile-time pin (US-004): the retired roles are out of the shared
+ * `GuardrailRole` type this section takes. While one of them is still in the
+ * union the assertion below does not typecheck — `bun run typecheck` is the
+ * gate that enforces it.
+ */
+type AssertTrue<T extends true> = T;
+type AssertOnlyTheImplementerRoleRemains = AssertTrue<"test-writer" extends GuardrailRole ? false : true>;
+
+const _onlyTheImplementerRoleRemains: AssertOnlyTheImplementerRoleRemains = true;
+
+// AC-1: buildNaxArtifactsSection mentions .nax/ immutability
+// AC-2: returns non-null for the implementer role
 // AC-5: a test under .nax/ is not a reason to skip writing source-tree tests
 // AC-6: a source-tree test is not a reason to remove a test under .nax/
 
 describe("buildNaxArtifactsSection", () => {
-  describe("test-writer role", () => {
+  describe("implementer role", () => {
+    // AC-6 (US-004)
+    test("returns text that starts with '# .nax/ artifact immutability'", () => {
+      const result = buildNaxArtifactsSection("implementer");
+      assertDefined(result, "result");
+      expect(result.startsWith("# .nax/ artifact immutability")).toBe(true);
+    });
+
     test("returns non-null string", () => {
-      const result = buildNaxArtifactsSection("test-writer");
+      const result = buildNaxArtifactsSection("implementer");
       expect(result).not.toBeNull();
       assertDefined(result, "result");
       expect(typeof result).toBe("string");
@@ -21,7 +43,8 @@ describe("buildNaxArtifactsSection", () => {
     });
 
     test("mentions .nax/ files must never be moved, renamed, or deleted", () => {
-      const result = buildNaxArtifactsSection("test-writer") as string;
+      const result = buildNaxArtifactsSection("implementer");
+      assertDefined(result, "result");
       // The exact phrasing per AC-1: "files under `.nax/` must never be moved, renamed, or deleted".
       expect(result).toContain(".nax/");
       expect(result.toLowerCase()).toContain("moved");
@@ -30,66 +53,18 @@ describe("buildNaxArtifactsSection", () => {
     });
 
     test("states that a .nax/ test is not a reason to skip source-tree tests", () => {
-      const result = buildNaxArtifactsSection("test-writer") as string;
+      const result = buildNaxArtifactsSection("implementer");
+      assertDefined(result, "result");
       // AC-5
       expect(result.toLowerCase()).toContain(".nax/");
       expect(result.toLowerCase()).toMatch(/not.+reason.+skip.+source/);
     });
 
     test("states that a source-tree test is not a reason to remove a .nax/ test", () => {
-      const result = buildNaxArtifactsSection("test-writer") as string;
+      const result = buildNaxArtifactsSection("implementer");
+      assertDefined(result, "result");
       // AC-6
       expect(result.toLowerCase()).toMatch(/source.+test.+not.+reason.+remove.+\.nax\//);
-    });
-  });
-
-  describe("implementer role", () => {
-    test("returns non-null string", () => {
-      const result = buildNaxArtifactsSection("implementer");
-      expect(result).not.toBeNull();
-      assertDefined(result, "result");
-      expect(typeof result).toBe("string");
-      expect(result.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe("verifier role", () => {
-    test("returns non-null string", () => {
-      const result = buildNaxArtifactsSection("verifier");
-      expect(result).not.toBeNull();
-      assertDefined(result, "result");
-      expect(typeof result).toBe("string");
-      expect(result.length).toBeGreaterThan(0);
-    });
-
-    test("verifier also sees the immutability text (AC-4 / story deviation)", () => {
-      const result = buildNaxArtifactsSection("verifier") as string;
-      expect(result).toContain(".nax/");
-      expect(result.toLowerCase()).toMatch(/never.+moved.+renamed.+deleted|moved.+renamed.+or.+deleted/);
-    });
-  });
-
-  describe("shared content across all roles", () => {
-    const roles: GuardrailRole[] = ["test-writer", "implementer", "verifier"];
-
-    test.each(roles)('role="%s": states a .nax/ test is not a reason to skip source-tree tests', (role) => {
-      const result = buildNaxArtifactsSection(role) as string;
-      expect(result.toLowerCase()).toMatch(/not.+reason.+skip/);
-    });
-
-    test.each(roles)('role="%s": states a source-tree test is not a reason to remove a .nax/ test', (role) => {
-      const result = buildNaxArtifactsSection(role) as string;
-      expect(result.toLowerCase()).toMatch(/not.+reason.+remove/);
-    });
-
-    test.each(roles)('role="%s": mentions immutability of .nax/ artifacts', (role) => {
-      const result = buildNaxArtifactsSection(role) as string;
-      // Per AC-1: a sentence about files under .nax/ never being moved/renamed/deleted.
-      const lower = result.toLowerCase();
-      const hasMoved = lower.includes("moved");
-      const hasRenamed = lower.includes("renamed");
-      const hasDeleted = lower.includes("deleted");
-      expect(hasMoved && hasRenamed && hasDeleted).toBe(true);
     });
   });
 
@@ -98,26 +73,27 @@ describe("buildNaxArtifactsSection", () => {
   describe("US-005 — scratchpad exception", () => {
     // AC-1: names `.nax/scratchpad/` as an exception
     test("implementer: names .nax/scratchpad/ as an exception", () => {
-      const result = buildNaxArtifactsSection("implementer") as string;
+      const result = buildNaxArtifactsSection("implementer");
+      assertDefined(result, "result");
       expect(result).toContain(".nax/scratchpad/");
       expect(result.toLowerCase()).toContain("exception");
     });
 
     // AC-1: still states files under `.nax/` must never be moved, renamed, or deleted
     test("implementer: still states files under .nax/ must never be moved, renamed, or deleted", () => {
-      const result = buildNaxArtifactsSection("implementer") as string;
+      const result = buildNaxArtifactsSection("implementer");
+      assertDefined(result, "result");
       expect(result.toLowerCase()).toContain("must never be moved, renamed, or deleted");
     });
 
     // AC-2: standard and lite variants return identical text
-    test("standard and lite variants return identical text for every role", () => {
-      const roles: GuardrailRole[] = ["test-writer", "implementer", "verifier"];
-      for (const role of roles) {
-        expect(buildNaxArtifactsSection(role, "lite", "lite")).toEqual(
-          buildNaxArtifactsSection(role, "standard", "strict"),
-        );
-        expect(buildNaxArtifactsSection(role, "standard")).toEqual(buildNaxArtifactsSection(role, "lite"));
-      }
+    test("standard and lite variants return identical text", () => {
+      expect(buildNaxArtifactsSection("implementer", "lite", "lite")).toEqual(
+        buildNaxArtifactsSection("implementer", "standard", "strict"),
+      );
+      expect(buildNaxArtifactsSection("implementer", "standard")).toEqual(
+        buildNaxArtifactsSection("implementer", "lite"),
+      );
     });
   });
 
@@ -202,21 +178,9 @@ describe("buildNaxArtifactsSection", () => {
   });
 
   describe("purity", () => {
-    test("returns same output for same inputs (test-writer)", () => {
-      const a = buildNaxArtifactsSection("test-writer");
-      const b = buildNaxArtifactsSection("test-writer");
-      expect(a).toEqual(b);
-    });
-
     test("returns same output for same inputs (implementer)", () => {
       const a = buildNaxArtifactsSection("implementer");
       const b = buildNaxArtifactsSection("implementer");
-      expect(a).toEqual(b);
-    });
-
-    test("returns same output for same inputs (verifier)", () => {
-      const a = buildNaxArtifactsSection("verifier");
-      const b = buildNaxArtifactsSection("verifier");
       expect(a).toEqual(b);
     });
   });

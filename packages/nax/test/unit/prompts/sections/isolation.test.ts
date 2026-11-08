@@ -1,85 +1,36 @@
+/**
+ * Isolation Rules — only the no-test and implementer roles render a section.
+ *
+ * US-004 narrowed the role argument to `"no-test" | "implementer"`: the
+ * test-writer, verifier and tdd-simple arms and the old `"strict"` / `"lite"`
+ * first-argument call form had no caller. The implementer's text is unchanged,
+ * and the retired arms are pinned as gone.
+ */
 import { describe, expect, test } from "bun:test";
 import { buildIsolationSection } from "@/prompts/sections/isolation";
 
-describe("buildIsolationSection — test-writer role", () => {
-  test("strict mode forbids src/ modification", () => {
-    const result = buildIsolationSection("test-writer", "strict");
-    expect(result).toContain("Do NOT modify");
-    expect(result).toContain("src/");
-    expect(result).not.toContain("MAY read src/");
-  });
+type IsolationRole = Parameters<typeof buildIsolationSection>[0];
 
-  test("lite mode allows reading src/; lite mode mentions stubs", () => {
-    const result = buildIsolationSection("test-writer", "lite");
-    expect(result).toContain("MAY read src/");
-    expect(result).toContain("stub");
-  });
+/**
+ * Compile-time pin (US-004): the retired roles and the old `"strict"` /
+ * `"lite"` call form are out of the role argument. While one of them is still
+ * in the union the assertions below do not typecheck — `bun run typecheck` is
+ * the gate that enforces it. It is also what keeps the retired arms
+ * unreachable: an arm for a role the union no longer admits has no caller.
+ */
+type AssertTrue<T extends true> = T;
+type AssertOnlyTheLiveRolesRemain = AssertTrue<"test-writer" extends IsolationRole ? false : true>;
+type AssertTheOldApiFormIsGone = AssertTrue<"strict" extends IsolationRole ? false : true>;
+type AssertTheNoTestRoleRemains = AssertTrue<"no-test" extends IsolationRole ? true : false>;
+type AssertTheImplementerRoleRemains = AssertTrue<"implementer" extends IsolationRole ? true : false>;
 
-  test("both modes include test filtering rule with configured command", () => {
-    const strictResult = buildIsolationSection("test-writer", "strict", "bun test");
-    const liteResult = buildIsolationSection("test-writer", "lite", "bun test");
-    expect(strictResult).toContain("bun test");
-    expect(liteResult).toContain("bun test");
-  });
-
-  test("omits command example when no test command configured (#543)", () => {
-    const result = buildIsolationSection("test-writer", "strict");
-    expect(result).toContain("scope each run to the files you changed");
-    expect(result).not.toContain("bun test");
-  });
-
-  test("defaults to strict mode when no mode provided", () => {
-    const defaultResult = buildIsolationSection("test-writer");
-    const strictResult = buildIsolationSection("test-writer", "strict");
-    expect(defaultResult).toEqual(strictResult);
-  });
-});
-
-describe("buildIsolationSection — implementer role", () => {
-  test("allows modification of src/ files", () => {
-    const result = buildIsolationSection("implementer");
-    expect(result).toContain("src/");
-    expect(result).not.toContain("Do NOT modify");
-  });
-
-  test("forbids modification of test files", () => {
-    const result = buildIsolationSection("implementer");
-    expect(result.toLowerCase()).toMatch(/do not modify.*test|test.*do not modify/i);
-  });
-
-  test("includes test filtering rule when command configured", () => {
-    const result = buildIsolationSection("implementer", undefined, "bun test");
-    expect(result).toContain("bun test");
-  });
-
-  test("lite mode allows adding tests for uncovered ACs instead of forbidding all test edits", () => {
-    const result = buildIsolationSection("implementer", "lite");
-    // Session 2 of three-session-tdd-lite fills coverage gaps; a blanket
-    // "do not modify test files" would contradict the role-task section.
-    expect(result).toContain("MAY add tests");
-    expect(result).not.toMatch(/do not modify test files/i);
-    expect(result.toLowerCase()).toMatch(/do not weaken/i);
-  });
-
-  test("explicit strict mode keeps the standard no-test-edits rule", () => {
-    const result = buildIsolationSection("implementer", "strict");
-    expect(result.toLowerCase()).toMatch(/do not modify.*test|test.*do not modify/i);
-  });
-});
-
-describe("buildIsolationSection — verifier role", () => {
-  test("allows reading all files", () => {
-    const result = buildIsolationSection("verifier");
-    expect(result.toLowerCase()).toMatch(/read|inspect|review/);
-  });
-
-  test("includes test filtering rule when command configured", () => {
-    const result = buildIsolationSection("verifier", undefined, "bun test");
-    expect(result).toContain("bun test");
-  });
-});
+const _onlyTheLiveRolesRemain: AssertOnlyTheLiveRolesRemain = true;
+const _theOldApiFormIsGone: AssertTheOldApiFormIsGone = true;
+const _theNoTestRoleRemains: AssertTheNoTestRoleRemains = true;
+const _theImplementerRoleRemains: AssertTheImplementerRoleRemains = true;
 
 describe("buildIsolationSection — no-test role", () => {
+  // AC-3
   test("returns empty string for no-test prompts", () => {
     const result = buildIsolationSection("no-test");
     expect(result).toBe("");
@@ -92,51 +43,55 @@ describe("buildIsolationSection — no-test role", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// TS-002: tdd-simple isolation tests (RED phase — will fail until implemented)
-// ---------------------------------------------------------------------------
-
-describe("buildIsolationSection — tdd-simple role", () => {
-  test("does NOT forbid modification of src/ files", () => {
-    const result = buildIsolationSection("tdd-simple");
-    expect(result).not.toMatch(/Do NOT modify.*src|Only.*test\//i);
+describe("buildIsolationSection — implementer role", () => {
+  test("allows modification of src/ files", () => {
+    const result = buildIsolationSection("implementer");
+    expect(result).toContain("src/");
+    expect(result).not.toContain("Do NOT modify");
   });
 
-  test("does NOT forbid modification of test/ files", () => {
-    const result = buildIsolationSection("tdd-simple");
-    expect(result).not.toMatch(/Do NOT modify.*test|Only.*src\//i);
+  // AC-5
+  test("forbids modification of test files", () => {
+    const result = buildIsolationSection("implementer", undefined, "bun test");
+    expect(result).toContain("Do not modify test files.");
   });
 
-  test("allows agent to modify both src/ and test/ directories", () => {
-    const result = buildIsolationSection("tdd-simple");
-    // Either empty (no restrictions) or explicitly states both are allowed
-    const lower = result.toLowerCase();
-    const isEmpty = result.trim() === "";
-    const allowsBoth =
-      (lower.includes("src/") && lower.includes("test/")) ||
-      lower.includes("both") ||
-      lower.includes("may modify both");
-    expect(isEmpty || allowsBoth).toBe(true);
+  test("includes test filtering rule when command configured", () => {
+    const result = buildIsolationSection("implementer", undefined, "bun test");
+    expect(result).toContain("bun test");
   });
 
-  test("returns empty string or only a permissive note (no restriction block)", () => {
-    // The tdd-simple role should have NO isolation restrictions —
-    // agent writes tests and implements in the same session
-    const result = buildIsolationSection("tdd-simple");
-    // Must NOT contain the strict isolation header text
+  // AC-4
+  test("lite mode allows adding tests for uncovered ACs instead of forbidding all test edits", () => {
+    const result = buildIsolationSection("implementer", "lite", "bun test");
+    // Session 2 of three-session-tdd-lite fills coverage gaps; a blanket
+    // "do not modify test files" would contradict the role-task section.
+    expect(result).toContain("You MAY add tests for acceptance criteria that have no coverage yet");
+    expect(result).not.toMatch(/do not modify test files/i);
+    expect(result.toLowerCase()).toMatch(/do not weaken/i);
+  });
+
+  test("explicit strict mode keeps the standard no-test-edits rule", () => {
+    const result = buildIsolationSection("implementer", "strict");
+    expect(result.toLowerCase()).toMatch(/do not modify.*test|test.*do not modify/i);
+  });
+
+  test("omits command example when no test command configured (#543)", () => {
+    const result = buildIsolationSection("implementer", "strict");
+    expect(result).toContain("scope each run to the files you changed");
+    expect(result).not.toContain("bun test");
+  });
+
+  // US-004 — the retired arms had their own isolation scopes; the implementer
+  // section carries none of them.
+  test("contains none of the retired isolation arms", () => {
+    const result = buildIsolationSection("implementer");
+    // The retired test-writer arms.
     expect(result).not.toContain("Only create or modify files in the test/ directory");
-    expect(result).not.toContain("Do not modify test files");
-  });
-
-  test("is distinct from test-writer strict isolation", () => {
-    const tddSimple = buildIsolationSection("tdd-simple");
-    const testWriterStrict = buildIsolationSection("test-writer", "strict");
-    expect(tddSimple).not.toEqual(testWriterStrict);
-  });
-
-  test("is distinct from implementer isolation", () => {
-    const tddSimple = buildIsolationSection("tdd-simple");
-    const implementer = buildIsolationSection("implementer");
-    expect(tddSimple).not.toEqual(implementer);
+    expect(result).not.toContain("MAY read src/");
+    // The retired verifier arm.
+    expect(result).not.toContain("Read-only TDD integrity inspection");
+    // The retired tdd-simple arm.
+    expect(result).not.toContain("You may modify both src/ and test/ files");
   });
 });
