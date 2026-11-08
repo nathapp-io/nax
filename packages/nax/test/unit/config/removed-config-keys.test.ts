@@ -629,6 +629,8 @@ describe("stripKeysAtPaths", () => {
         "review.commands.lintFixScoped",
         "review.commands.formatFix",
         "review.commands.formatFixScoped",
+        "optimizer",
+        "prompts.overrides",
       ].sort(),
     );
   });

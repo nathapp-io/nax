@@ -44,7 +44,6 @@ import {
   GenerateConfigSchema,
   HooksConfigSchema,
   InteractionConfigSchema,
-  OptimizerConfigSchema,
   PlanConfigSchema,
   PluginConfigEntrySchema,
   PrecheckConfigSchema,
@@ -302,7 +301,6 @@ export const NaxConfigSchema = z
     // resolving correctly when the operator supplies the parent partially. That
     // asymmetry is invisible to a green suite. Re-parsing keeps one source of truth.
     context: ContextConfigSchema.default(() => ContextConfigSchema.parse({})),
-    optimizer: OptimizerConfigSchema.optional(),
     plugins: z.array(PluginConfigEntrySchema).optional(),
     disabledPlugins: z.array(z.string()).optional(),
     hooks: HooksConfigSchema.optional(),

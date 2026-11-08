@@ -259,10 +259,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Markdown file delivered as project context: absolute or ~/-prefixed, at most 32768 bytes. Validated at run start",
   "context.projectContext.mode": 'How the file combines with the run\'s context: "append" (default) or "replace"',
 
-  // Optimizer
-  optimizer: "Prompt optimizer configuration",
-  "optimizer.enabled": "Enable prompt optimizer (pass-through unless a plugin provides one)",
-
   // Plugins
   plugins: "Plugin configurations",
 
@@ -296,10 +292,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Prompts
   prompts: "Prompt template overrides (PB-003: PromptBuilder)",
-  "prompts.overrides": "Custom prompt template files for specific roles",
-  "prompts.overrides.test-writer": 'Path to custom test-writer prompt (e.g., ".nax/prompts/test-writer.md")',
-  "prompts.overrides.implementer": 'Path to custom implementer prompt (e.g., ".nax/prompts/implementer.md")',
-  "prompts.overrides.verifier": 'Path to custom verifier prompt (e.g., ".nax/prompts/verifier.md")',
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",

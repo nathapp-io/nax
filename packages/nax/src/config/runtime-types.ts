@@ -214,14 +214,6 @@ export interface PlanConfig {
   specGuard?: boolean;
 }
 
-/** Optimizer config (v0.10) */
-export interface OptimizerConfig {
-  /** Enable prompt optimizer. No longer read: the optimizer stage is gone and
-   * the plugin `optimizer` extension is rejected, so nothing consumes this flag.
-   * The key itself is retained until a later change removes it. */
-  enabled: boolean;
-}
-
 export interface PluginConfigEntry {
   module: string;
   config?: Record<string, unknown>;
@@ -341,9 +333,8 @@ export interface RoutingConfig {
   router?: StoryRouterConfig;
 }
 
-/** Prompt overrides config (PB-003) */
+/** Prompt config */
 export interface PromptsConfig {
-  overrides?: Partial<Record<"no-test" | "test-writer" | "implementer" | "verifier" | "tdd-simple" | "batch", string>>;
   behavioralGuardrails: "off" | "lite" | "strict";
 }
 
@@ -401,8 +392,6 @@ export interface NaxConfig {
   plan: PlanConfig;
   /** Context injection settings */
   context: ContextConfig;
-  /** Optimizer settings (v0.10) */
-  optimizer?: OptimizerConfig;
   /** Plugin configurations (v0.10) */
   plugins?: PluginConfigEntry[];
   /** Disabled plugin names (v0.38.2) */

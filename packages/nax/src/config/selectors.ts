@@ -74,8 +74,8 @@ export type ReviewConfig = Pick<NaxConfig, "review" | "models" | "execution" | "
 export type AgentConfig = Pick<NaxConfig, "agent">;
 export type InteractionConfig = Pick<NaxConfig, "interaction">;
 /**
- * `precheck/*` — `quality`, `execution`, `prompts`, `review` and `project` are
- * read by the command/override checks; `agent` by `checkAgentCLI` (MED-03: it
+ * `precheck/*` — `quality`, `execution`, `review` and `project` are read by
+ * the command checks; `agent` by `checkAgentCLI` (MED-03: it
  * resolves the default agent via `resolveDefaultAgent`).
  *
  * US-1984 (model-resolution precheck) adds `models`, `plan`, `autoMode` and
@@ -84,17 +84,7 @@ export type InteractionConfig = Pick<NaxConfig, "interaction">;
  */
 export type PrecheckConfig = Pick<
   NaxConfig,
-  | "precheck"
-  | "quality"
-  | "execution"
-  | "prompts"
-  | "review"
-  | "project"
-  | "agent"
-  | "models"
-  | "plan"
-  | "autoMode"
-  | "routing"
+  "precheck" | "quality" | "execution" | "review" | "project" | "agent" | "models" | "plan" | "autoMode" | "routing"
 >;
 /**
  * Test-pattern resolver — `resolveTestFilePatterns` reads

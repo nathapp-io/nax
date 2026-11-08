@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-08T16:16:21.275Z",
+  "updatedAt": "2026-11-08T16:29:00.242Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -21,7 +21,6 @@
     "src/agents/run-interaction-handler.ts": { "onInteraction": 52 },
     "src/agents/shared/decompose.ts": { "=>": 32 },
     "src/cli/approvals.ts": { "approvalsRmCommand": 39 },
-    "src/cli/config-display.ts": { "displayConfigWithDescriptions": 46 },
     "src/cli/context-fragments.ts": { "listDependentStoryIds": 22 },
     "src/cli/context.ts": { "formatContextInspect": 35 },
     "src/cli/init-context.ts": { "generateContextTemplate": 25 },

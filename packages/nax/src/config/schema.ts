@@ -52,7 +52,6 @@ export type {
   ModelsConfig,
   ModelTier,
   NaxConfig,
-  OptimizerConfig,
   PlanConfig,
   PluginConfigEntry,
   PrecheckConfig,

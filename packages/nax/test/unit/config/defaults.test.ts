@@ -287,7 +287,6 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "review",
   "plan",
   "context",
-  "optimizer",
   "plugins",
   "disabledPlugins",
   "hooks",

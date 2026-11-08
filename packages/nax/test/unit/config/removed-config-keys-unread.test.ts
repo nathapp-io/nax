@@ -175,3 +175,46 @@ describe("removed tdd, autoMode and quality keys", () => {
     expect(getAtPath(result, "quality.commands.lintFix")).toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// optimizer and prompt overrides (Task 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("removed optimizer section and prompt overrides", () => {
+  test.each([
+    ["optimizer.enabled", { optimizer: { enabled: true } }],
+    ["optimizer.strategy", { optimizer: { strategy: "noop" } }],
+    ["optimizer.strategies", { optimizer: { strategies: {} } }],
+  ])("a config setting %s warns once, for the optimizer section", async (_label, raw) => {
+    const root = await writeProjectConfig(raw);
+    const { result, messages } = await captureWarnings(() => loadConfig(root));
+    expect(removedKeyWarnings(messages)).toEqual([removalWarning("optimizer", PIPELINE_ONLY_HINT)]);
+    expect(messages.filter((msg) => msg.startsWith("optimizer."))).toEqual([]);
+    expect(getAtPath(result, "optimizer")).toBeUndefined();
+  });
+
+  test("prompts.overrides loads, warns once and is dropped", async () => {
+    await expectStripped("prompts.overrides", { prompts: { overrides: { implementer: "p.md" } } }, PIPELINE_ONLY_HINT);
+  });
+
+  test("prompts.overrides.single-session alone warns once, for prompts.overrides", async () => {
+    const root = await writeProjectConfig({ prompts: { overrides: { "single-session": "a.md" } } });
+    const { messages } = await captureWarnings(() => loadConfig(root));
+    expect(removedKeyWarnings(messages)).toEqual([removalWarning("prompts.overrides", PIPELINE_ONLY_HINT)]);
+  });
+
+  test("prompts.behavioralGuardrails survives", async () => {
+    const root = await writeProjectConfig({
+      prompts: { behavioralGuardrails: "strict", overrides: { implementer: "p.md" } },
+    });
+    const { result, messages } = await captureWarnings(() => loadConfig(root));
+    expect(result.prompts.behavioralGuardrails).toBe("strict");
+    expect(warningsFor(messages, "prompts.behavioralGuardrails")).toEqual([]);
+  });
+
+  test("an unknown override role no longer fails validation", async () => {
+    const root = await writeProjectConfig({ prompts: { overrides: { bogus: "p.md" } } });
+    const { messages } = await captureWarnings(() => loadConfig(root));
+    expect(removedKeyWarnings(messages)).toEqual([removalWarning("prompts.overrides", PIPELINE_ONLY_HINT)]);
+  });
+});

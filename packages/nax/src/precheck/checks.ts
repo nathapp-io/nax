@@ -51,6 +51,5 @@ export {
   checkLanguageTools,
   checkOptionalCommands,
   checkPendingStories,
-  checkPromptOverrideFiles,
   parseDiskSpaceOutput,
 } from "./checks-warnings";

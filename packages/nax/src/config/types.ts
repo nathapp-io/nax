@@ -26,7 +26,6 @@ export type {
   McpServerConfig,
   McpStage,
   NaxConfig,
-  OptimizerConfig,
   PlanConfig,
   PluginConfigEntry,
   PrecheckConfig,

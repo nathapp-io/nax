@@ -71,7 +71,9 @@ const STORY_ISOLATION_HINT =
  * The tdd, autoMode and quality entries configured pipeline sessions and
  * strategies (the TDD test-writer and verifier sessions, the autofix strategy,
  * the lint and format fix commands) that no workflow run has, so they take
- * `PIPELINE_ONLY_KEY_HINT` too.
+ * `PIPELINE_ONLY_KEY_HINT` too. So do the `optimizer` section (the prompt
+ * optimizer seam went with the pipeline prompt stage) and `prompts.overrides`
+ * (no prompt loader reads override files any more).
  *
  * A section entry strips the WHOLE section — one warning for the section, not one
  * per leaf under it.
@@ -91,6 +93,8 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
   "quality.commands.formatFixScoped": PIPELINE_ONLY_KEY_HINT,
   "quality.typecheckOutput": PIPELINE_ONLY_KEY_HINT,
   "quality.autofix": PIPELINE_ONLY_KEY_HINT,
+  optimizer: PIPELINE_ONLY_KEY_HINT,
+  "prompts.overrides": PIPELINE_ONLY_KEY_HINT,
   "review.commands.lintFix": PIPELINE_ONLY_KEY_HINT,
   "review.commands.lintFixScoped": PIPELINE_ONLY_KEY_HINT,
   "review.commands.formatFix": PIPELINE_ONLY_KEY_HINT,

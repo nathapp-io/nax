@@ -10,7 +10,6 @@ agent/session surfaces is built here.
 - `core/universal-sections.ts` — null-guarded constructors for sections every builder uses.
 - `core/wrappers.ts` — user-supplied data wrappers, separator constants.
 - `builders/` — one builder per domain. Each wraps `SectionAccumulator` via composition.
-- `loader.ts` — disk-based prompt override loader (TDD roles only).
 - `index.ts` — public barrel. Other subsystems import from here.
 
 ## Builders
