@@ -15,7 +15,6 @@ const models: ModelsConfig = {
 
 const routing: AgentRoutingConfig = {
   enabled: true,
-  strategy: "off",
   default: "opencode-structural",
   profiles: [
     { id: "opencode-structural", target: { agent: "opencode", model: "fast" }, strengths: ["mechanical"] },
@@ -71,7 +70,6 @@ describe("resolveAgentAssignment", () => {
   test("tier target sets profileModelTier, no pin (spec §4)", () => {
     const pinRouting: AgentRoutingConfig = {
       enabled: true,
-      strategy: "off",
       default: undefined,
       profiles: [{ id: "p1", target: { agent: "native", model: "cheap" }, strengths: ["speed"] }],
     };
@@ -82,7 +80,6 @@ describe("resolveAgentAssignment", () => {
   test("a shorthand target is a model pin, not a tier (nax#2571)", () => {
     const shorthandRouting: AgentRoutingConfig = {
       enabled: true,
-      strategy: "off",
       default: undefined,
       profiles: [{ id: "p1", target: { agent: "claude", model: "sonnet" }, strengths: ["quality"] }],
     };
@@ -97,7 +94,6 @@ describe("resolveAgentAssignment", () => {
   test("literal target sets profileModelPin, no tier (spec §4)", () => {
     const pinRouting: AgentRoutingConfig = {
       enabled: true,
-      strategy: "off",
       default: undefined,
       profiles: [{ id: "p1", target: { agent: "claude", model: "claude-opus-5-1" }, strengths: ["quality"] }],
     };
@@ -113,7 +109,6 @@ describe("resolveAgentAssignment: shorthand names and effort suffixes (nax#2571)
   };
   const routingTo = (target: { agent: string; model: string }): AgentRoutingConfig => ({
     enabled: true,
-    strategy: "off",
     default: "p",
     profiles: [{ id: "p", target, strengths: ["impl"] }],
   });

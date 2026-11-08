@@ -25,7 +25,6 @@ function setup(route: RoutingStrategy["route"] = () => decision) {
   const config = structuredClone(DEFAULT_CONFIG);
   config.routing.agents = {
     enabled: true,
-    strategy: "off",
     default: "native-luna",
     profiles: [{ id: "native-luna", strengths: [], target: { agent: "native", model: "balanced" } }],
   };

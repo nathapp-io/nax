@@ -80,7 +80,6 @@ const CONFIG = makeNaxConfig({
     strategy: "keyword",
     agents: {
       enabled: true,
-      strategy: "off",
       default: "claude-final",
       profiles: [
         {

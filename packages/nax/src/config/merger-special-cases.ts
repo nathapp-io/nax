@@ -43,64 +43,6 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 type MergeDeep = (base: Record<string, unknown>, override: Record<string, unknown>) => Record<string, unknown>;
 
 /**
- * Merge the nested hooks object: for each hook event, flatten both sides
- * (either may already be an array from a prior merge pass) then concatenate
- * into a single flat array.
- */
-function mergeHookDefs(
-  baseHookDefs: Record<string, unknown>,
-  overrideHookDefs: Record<string, unknown>,
-): Record<string, unknown> {
-  const mergedHookDefs: Record<string, unknown> = {};
-
-  // Collect all hook event names
-  const allHookNames = new Set([...Object.keys(baseHookDefs), ...Object.keys(overrideHookDefs)]);
-
-  for (const hookName of allHookNames) {
-    const baseHook = baseHookDefs[hookName];
-    const overrideHook = overrideHookDefs[hookName];
-
-    const baseItems: unknown[] = Array.isArray(baseHook) ? baseHook : baseHook ? [baseHook] : [];
-    const overrideItems: unknown[] = Array.isArray(overrideHook) ? overrideHook : overrideHook ? [overrideHook] : [];
-    const combined = [...baseItems, ...overrideItems];
-    mergedHookDefs[hookName] = combined.length === 1 ? combined[0] : combined;
-  }
-
-  return mergedHookDefs;
-}
-
-/**
- * Special case: hooks concatenation. Both sides are plain objects (checked by
- * the dispatcher); the merged value concatenates hook definitions and carries
- * the override's other hook config fields (e.g., skipGlobal).
- */
-export function mergeHooks(
-  baseHooks: Record<string, unknown>,
-  overrideHooks: Record<string, unknown>,
-): Record<string, unknown> {
-  const merged: Record<string, unknown> = { ...baseHooks };
-
-  // Merge the nested hooks object
-  if (isPlainObject(baseHooks.hooks) && isPlainObject(overrideHooks.hooks)) {
-    const baseHookDefs = baseHooks.hooks as Record<string, unknown>;
-    const overrideHookDefs = overrideHooks.hooks as Record<string, unknown>;
-    merged.hooks = mergeHookDefs(baseHookDefs, overrideHookDefs);
-  } else if (isPlainObject(overrideHooks.hooks)) {
-    // Guard: only assign if it's a plain object (not an array or primitive)
-    merged.hooks = overrideHooks.hooks;
-  }
-
-  // Handle other hook config fields (e.g., skipGlobal)
-  for (const hookKey of Object.keys(overrideHooks)) {
-    if (hookKey !== "hooks" && !DANGEROUS_MERGE_KEYS.has(hookKey)) {
-      merged[hookKey] = overrideHooks[hookKey];
-    }
-  }
-
-  return merged;
-}
-
-/**
  * Special case: constitution content concatenation. Both sides are plain
  * objects (checked by the dispatcher); other fields deep-merge through the
  * recursive merger passed in by the dispatcher.

@@ -57,7 +57,6 @@ export type {
   PrecheckConfig,
   ProjectProfile,
   QualityConfig,
-  RawHooksConfig,
   RectificationConfig,
   RegressionGateConfig,
   ResolvedConfiguredModel,

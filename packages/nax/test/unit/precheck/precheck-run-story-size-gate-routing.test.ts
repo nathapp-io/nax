@@ -95,7 +95,7 @@ function makeConfig(action: "block" | "warn" | "skip") {
     tdd: { strategy: "off" },
     constitution: { enabled: false, path: "", maxTokens: 2000 },
     review: { enabled: false, checks: [], commands: {} },
-    plan: { model: "balanced", outputPath: "" },
+    plan: { model: "balanced" },
     context: {
       testCoverage: {
         enabled: false,

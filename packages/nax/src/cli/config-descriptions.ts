@@ -60,7 +60,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "routing.llm.fallbackToKeywords": "Fall back to keyword routing on LLM failure",
   "routing.llm.cacheDecisions": "Cache routing decisions per story ID",
   "routing.llm.mode": "Routing mode: one-shot | per-story | hybrid",
-  "routing.llm.timeoutMs": "Timeout for LLM routing call in milliseconds",
 
   // Bot
   bot: "Pull request bot review and fix settings",
@@ -230,7 +229,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   plan: "Planning phase configuration",
   "plan.model":
     'Model selector for planning. Accepts a tier string or an explicit object like { agent: "codex", model: "gpt-5.4" }.',
-  "plan.outputPath": "Output path for generated spec (relative to nax/)",
 
   // Context
   context: "Context injection configuration",
@@ -261,10 +259,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Plugins
   plugins: "Plugin configurations",
-
-  // Hooks
-  hooks: "Hooks configuration",
-  "hooks.skipGlobal": "Skip loading global hooks",
 
   // Interaction
   interaction: "Interaction plugin configuration",

@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 940
+    "looseCast": 939
   },
-  "updatedAt": "2026-11-08T16:36:01.010Z",
+  "updatedAt": "2026-11-08T16:44:42.940Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -158,7 +158,7 @@
       "looseCast": 6
     },
     "test/unit/routing/routing-stability.test.ts": {
-      "looseCast": 2
+      "looseCast": 1
     },
     "test/unit/routing/calibrate/propose.test.ts": {
       "looseCast": 3

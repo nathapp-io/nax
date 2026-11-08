@@ -64,7 +64,6 @@ const mockConfig: NaxConfig = makeNaxConfig({
   },
   plan: {
     model: "balanced",
-    outputPath: "plan.md",
   },
 });
 

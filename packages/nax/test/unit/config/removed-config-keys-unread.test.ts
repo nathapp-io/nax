@@ -218,3 +218,56 @@ describe("removed optimizer section and prompt overrides", () => {
     expect(removedKeyWarnings(messages)).toEqual([removalWarning("prompts.overrides", PIPELINE_ONLY_HINT)]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// keys unread before C1 (Task 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NEVER_READ_HINT = "nothing reads this key";
+const HOOKS_SECTION_HINT = "nothing reads this key; lifecycle hooks are read from .nax/hooks.json";
+
+describe("removed keys unread before C1", () => {
+  test.each([
+    ["plan.outputPath", "out/prd.json"],
+    ["routing.llm.timeoutMs", 5000],
+    ["routing.agents.strategy", "llm"],
+  ] as const)("%s loads, warns once and is dropped", async (path, value) => {
+    await expectStripped(path, rawAtPath(path, value), NEVER_READ_HINT);
+  });
+
+  test("hooks loads, warns once and is dropped", async () => {
+    await expectStripped("hooks", { hooks: { skipGlobal: true, hooks: {} } }, HOOKS_SECTION_HINT);
+  });
+
+  test("routing.agents.strategy llm with no profiles no longer fails validation", async () => {
+    const root = await writeProjectConfig({ routing: { agents: { strategy: "llm", profiles: [] } } });
+    const config = await loadConfig(root);
+    expect(config.routing.agents?.profiles).toEqual([]);
+  });
+
+  test("routing.llm.batchMode still maps to mode with its deprecation warning", async () => {
+    const root = await writeProjectConfig({ routing: { llm: { batchMode: true } } });
+    const { result, messages } = await captureWarnings(() => loadConfig(root));
+    const llm = result.routing.llm ?? {};
+    expect(llm.mode).toBe("one-shot");
+    expect("batchMode" in llm).toBe(false);
+    expect(messages.filter((msg) => msg.includes("routing.llm.batchMode is deprecated"))).toHaveLength(1);
+    expect(removedKeyWarnings(messages)).toEqual([]);
+  });
+
+  test("batchMode beside mode is dropped silently", async () => {
+    const root = await writeProjectConfig({ routing: { llm: { batchMode: true, mode: "per-story" } } });
+    const { result, messages } = await captureWarnings(() => loadConfig(root));
+    const llm = result.routing.llm ?? {};
+    expect(llm.mode).toBe("per-story");
+    expect("batchMode" in llm).toBe(false);
+    expect(messages.filter((msg) => msg.includes("batchMode"))).toEqual([]);
+  });
+
+  test("routing.llm.mode and routing.strategy survive", async () => {
+    const root = await writeProjectConfig({ routing: { strategy: "llm", llm: { mode: "hybrid", timeoutMs: 10 } } });
+    const config = await loadConfig(root);
+    expect(config.routing.strategy).toBe("llm");
+    expect(config.routing.llm?.mode).toBe("hybrid");
+  });
+});

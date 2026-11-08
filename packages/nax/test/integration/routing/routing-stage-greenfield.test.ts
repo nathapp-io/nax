@@ -137,7 +137,6 @@ function createTestContext(
     },
     plan: {
       model: "balanced",
-      outputPath: "features",
     },
     context: {
       testCoverage: {

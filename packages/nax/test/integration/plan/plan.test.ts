@@ -64,19 +64,16 @@ describe("planCommand", () => {
     const config: NaxConfig = makeNaxConfig({
       plan: {
         model: "balanced",
-        outputPath: "spec.md",
       },
     });
 
     expect(config.plan.model).toBe("balanced");
-    expect(config.plan.outputPath).toBe("spec.md");
   });
 
   test("resolves model tier from config", () => {
     const config: NaxConfig = makeNaxConfig({
       plan: {
         model: "powerful",
-        outputPath: "spec.md",
       },
     });
 
@@ -84,33 +81,8 @@ describe("planCommand", () => {
     expect(config.models[config.agent?.default ?? "claude"]?.powerful).toBeDefined();
   });
 
-  test("builds codebase context from scanner", async () => {
-    // This test would require mocking the agent adapter
-    // For now, we just verify the structure is set up correctly
-    const config: NaxConfig = makeNaxConfig({
-      plan: {
-        model: "balanced",
-        outputPath: "custom-spec.md",
-      },
-    });
-
-    expect(config.plan.outputPath).toBe("custom-spec.md");
-  });
-
   test("uses default plan config values", () => {
     expect(DEFAULT_CONFIG.plan.model).toBe("balanced");
-    expect(DEFAULT_CONFIG.plan.outputPath).toBe("spec.md");
-  });
-
-  test("supports custom output path", () => {
-    const config: NaxConfig = makeNaxConfig({
-      plan: {
-        model: "balanced",
-        outputPath: "features/planning.md",
-      },
-    });
-
-    expect(config.plan.outputPath).toBe("features/planning.md");
   });
 
   test("validates model tier options", () => {
@@ -120,7 +92,6 @@ describe("planCommand", () => {
       const config: NaxConfig = makeNaxConfig({
         plan: {
           model: tier,
-          outputPath: "spec.md",
         },
       });
 

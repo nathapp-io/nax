@@ -21,6 +21,12 @@
  * the schema sees it.
  */
 
+/** Hint for a key no code read even before pipeline mode was removed. */
+const NEVER_READ_KEY_HINT = "nothing reads this key";
+
+/** Hint for the `hooks` section: lifecycle hooks have always loaded from their own file. */
+const HOOKS_SECTION_HINT = "nothing reads this key; lifecycle hooks are read from .nax/hooks.json";
+
 /** Hint for a key that only configured the removed pipeline mode. */
 export const PIPELINE_ONLY_KEY_HINT = "nothing reads this key since pipeline mode was removed";
 
@@ -75,6 +81,10 @@ const STORY_ISOLATION_HINT =
  * optimizer seam went with the pipeline prompt stage) and `prompts.overrides`
  * (no prompt loader reads override files any more).
  *
+ * `plan.outputPath`, `routing.llm.timeoutMs`, `routing.agents.strategy` and the
+ * `hooks` section were never read even before C1 (`plan` writes to its input's
+ * path; lifecycle hooks load from `.nax/hooks.json`), so they take their own hints.
+ *
  * A section entry strips the WHOLE section — one warning for the section, not one
  * per leaf under it.
  */
@@ -95,6 +105,10 @@ export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
   "quality.autofix": PIPELINE_ONLY_KEY_HINT,
   optimizer: PIPELINE_ONLY_KEY_HINT,
   "prompts.overrides": PIPELINE_ONLY_KEY_HINT,
+  "plan.outputPath": NEVER_READ_KEY_HINT,
+  "routing.llm.timeoutMs": NEVER_READ_KEY_HINT,
+  "routing.agents.strategy": NEVER_READ_KEY_HINT,
+  hooks: HOOKS_SECTION_HINT,
   "review.commands.lintFix": PIPELINE_ONLY_KEY_HINT,
   "review.commands.lintFixScoped": PIPELINE_ONLY_KEY_HINT,
   "review.commands.formatFix": PIPELINE_ONLY_KEY_HINT,

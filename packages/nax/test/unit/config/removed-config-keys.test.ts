@@ -631,6 +631,10 @@ describe("stripKeysAtPaths", () => {
         "review.commands.formatFixScoped",
         "optimizer",
         "prompts.overrides",
+        "plan.outputPath",
+        "routing.llm.timeoutMs",
+        "routing.agents.strategy",
+        "hooks",
       ].sort(),
     );
   });

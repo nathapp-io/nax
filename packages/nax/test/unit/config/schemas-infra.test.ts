@@ -51,10 +51,9 @@ describe("AgentRoutingProfileSchema", () => {
 });
 
 describe("AgentRoutingConfigSchema", () => {
-  test("defaults to enabled=true, strategy=off, empty profiles", () => {
+  test("defaults to enabled=true, empty profiles", () => {
     const result = AgentRoutingConfigSchema.parse({});
     expect(result.enabled).toBe(true);
-    expect(result.strategy).toBe("off");
     expect(result.profiles).toEqual([]);
   });
 
@@ -87,17 +86,8 @@ describe("AgentRoutingConfigSchema", () => {
     ).toThrow(/default/i);
   });
 
-  test('strategy "llm" with zero profiles is rejected', () => {
-    const result = AgentRoutingConfigSchema.safeParse({ enabled: true, strategy: "llm", profiles: [] });
-    expect(result.success).toBe(false);
-    if (result.success) return;
-    expect(
-      result.error.issues.some((i: { message: string }) => i.message.includes("requires at least one profile")),
-    ).toBe(true);
-  });
-
-  test('strategy "off" with zero profiles still parses (v1 default)', () => {
-    const result = AgentRoutingConfigSchema.safeParse({ enabled: true, strategy: "off", profiles: [] });
+  test("zero profiles parses (v1 default)", () => {
+    const result = AgentRoutingConfigSchema.safeParse({ enabled: true, profiles: [] });
     expect(result.success).toBe(true);
   });
 });

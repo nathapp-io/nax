@@ -199,8 +199,6 @@ export type { AdversarialReviewConfig, ReviewConfig } from "@/review/types";
 export interface PlanConfig {
   /** Model selector for planning (tier string or explicit { agent, model }) */
   model: ConfiguredModel;
-  /** Output path for generated spec (relative to nax/ directory) */
-  outputPath: string;
   /** Timeout for plan sessions in seconds (default: 600) */
   timeoutSeconds?: number;
   /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
@@ -218,12 +216,6 @@ export interface PluginConfigEntry {
   module: string;
   config?: Record<string, unknown>;
   enabled?: boolean;
-}
-
-/** Raw hooks config as stored in the config file (unvalidated). Use HooksConfig from hooks/types for typed hook definitions. */
-export interface RawHooksConfig {
-  skipGlobal?: boolean;
-  hooks: Record<string, unknown>;
 }
 
 /** Interaction config (v0.15.0) */
@@ -311,10 +303,6 @@ export interface LlmRoutingConfig {
    * - "hybrid": batch-route upfront, re-route individually on retry/failure (best quality + cost balance)
    */
   mode?: LlmRoutingMode;
-  /** @deprecated Use mode instead. Will be removed in v1.0 */
-  batchMode?: boolean;
-  /** Timeout for LLM call in milliseconds (default: 30000) */
-  timeoutMs?: number;
   /** Number of retries on LLM timeout or transient failure (default: 1) */
   retries?: number;
   /** Delay between retries in milliseconds (default: 1000) */
@@ -410,8 +398,6 @@ export interface NaxConfig {
   memory?: import("./runtime-types-memory").MemoryConfig;
   /** Resource discovery and skills delivery settings; absent means schema defaults. */
   resources?: import("./schemas-resources").ResourcesConfig;
-  /** Hooks configuration (v0.10) */
-  hooks?: RawHooksConfig;
   /** Interaction settings (v0.15.0) */
   interaction?: InteractionConfig;
   /** Precheck settings (v0.16.0) */

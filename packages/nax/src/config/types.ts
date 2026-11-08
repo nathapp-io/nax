@@ -32,7 +32,6 @@ export type {
   ProjectProfile,
   PromptsConfig,
   QualityConfig,
-  RawHooksConfig,
   RectificationConfig,
   RegressionGateConfig,
   ReviewConfig,

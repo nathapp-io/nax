@@ -46,7 +46,6 @@ function makeCtx(overrides: {
       routing: {
         agents: {
           enabled: true,
-          strategy: "off",
           default: "opencode-structural",
           profiles: [
             { id: "opencode-structural", target: { agent: "opencode", model: "fast" }, strengths: ["mechanical"] },

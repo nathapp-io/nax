@@ -289,7 +289,6 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "context",
   "plugins",
   "disabledPlugins",
-  "hooks",
   "interaction",
   "precheck",
   "prompts",

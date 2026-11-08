@@ -42,7 +42,6 @@ import {
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   GenerateConfigSchema,
-  HooksConfigSchema,
   InteractionConfigSchema,
   PlanConfigSchema,
   PluginConfigEntrySchema,
@@ -146,9 +145,8 @@ export const NaxConfigSchema = z
         fallbackToKeywords: true,
         cacheDecisions: true,
         mode: "hybrid",
-        timeoutMs: 30000,
       },
-      agents: { enabled: true, strategy: "off", profiles: [] },
+      agents: { enabled: true, profiles: [] },
       router: { mode: "off", precedence: "router", timeoutMs: 5_000 },
     }),
     execution: ExecutionConfigSchema.default({
@@ -290,7 +288,6 @@ export const NaxConfigSchema = z
     }),
     plan: PlanConfigSchema.default({
       model: "balanced",
-      outputPath: "spec.md",
       timeoutSeconds: 600,
       specGuard: false,
     }),
@@ -303,7 +300,6 @@ export const NaxConfigSchema = z
     context: ContextConfigSchema.default(() => ContextConfigSchema.parse({})),
     plugins: z.array(PluginConfigEntrySchema).optional(),
     disabledPlugins: z.array(z.string()).optional(),
-    hooks: HooksConfigSchema.optional(),
     interaction: InteractionConfigSchema.optional().default({
       plugin: "cli",
       config: {},
