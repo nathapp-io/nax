@@ -165,7 +165,7 @@ describe("TestCoverageProvider", () => {
       expect(receivedPackageDir).toBeUndefined();
     });
 
-    // nax#2111: under execution.storyIsolation "worktree", request.packageDir is
+    // nax#2111: in a story worktree, request.packageDir is
     // rooted at the story's worktree checkout (e.g. "/repo/.nax-wt/story-001/packages/api")
     // while request.repoRoot stays the MAIN checkout ("/repo"). relative(repoRoot, packageDir)
     // then yields ".nax-wt/story-001/packages/api", which matches no real

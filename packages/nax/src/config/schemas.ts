@@ -178,12 +178,6 @@ export const NaxConfigSchema = z
       // BUG-20 -- derived, not hand-written (same rationale as `bashApproval`).
       sandbox: DEFAULT_SANDBOX_CONFIG,
       smartTestRunner: true,
-      worktreeDependencies: {
-        mode: "off",
-        setupCommand: null,
-        timeoutSeconds: 300,
-      },
-      storyIsolation: "shared",
       // BUG-20 — derived, not hand-written (same rationale as `rectification`
       // above): a literal here would shadow CommandInterceptorConfigSchema's
       // own defaults and leave `execution.commandInterceptor` missing from

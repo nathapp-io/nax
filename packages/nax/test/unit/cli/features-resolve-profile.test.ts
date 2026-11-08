@@ -38,7 +38,7 @@ function initInvalidRepo(): string {
   mkdirSync(join(naxDir, "features"), { recursive: true });
   writeFileSync(
     join(naxDir, "config.json"),
-    JSON.stringify({ name: "test-project", execution: { storyIsolation: "bogus" } }),
+    JSON.stringify({ name: "test-project", execution: { costLimit: "bogus" } }),
   );
   return naxDir;
 }
@@ -87,7 +87,7 @@ describe("resolveFeatureSpec profile chain", () => {
   test("adopts the PRD routingProfile that makes the config valid (AC-8)", async () => {
     const naxDir = initInvalidRepo();
     writePRD(naxDir, "feat", "fix");
-    writeProfile(naxDir, "fix", { execution: { storyIsolation: "shared" } });
+    writeProfile(naxDir, "fix", { execution: { costLimit: 30 } });
 
     const result = await resolveFeatureSpec("feat", tempDir);
 
@@ -99,7 +99,7 @@ describe("resolveFeatureSpec profile chain", () => {
   test("adopts the CLI profile when the PRD has no routingProfile (AC-9)", async () => {
     const naxDir = initInvalidRepo();
     writePRD(naxDir, "feat");
-    writeProfile(naxDir, "fix", { execution: { storyIsolation: "shared" } });
+    writeProfile(naxDir, "fix", { execution: { costLimit: 30 } });
 
     const result = await resolveFeatureSpec("feat", tempDir, { profile: ["fix"] });
 
@@ -113,8 +113,8 @@ describe("resolveFeatureSpec profile chain", () => {
   test("does not adopt the PRD routingProfile when NAX_PROFILE is set (AC-10)", async () => {
     const naxDir = initInvalidRepo();
     writePRD(naxDir, "feat", "fix");
-    writeProfile(naxDir, "fix", { execution: { storyIsolation: "shared" } });
-    writeProfile(naxDir, "other", { execution: { storyIsolation: "also-bogus" } });
+    writeProfile(naxDir, "fix", { execution: { costLimit: 30 } });
+    writeProfile(naxDir, "other", { execution: { costLimit: "also-bogus" } });
     process.env.NAX_PROFILE = "other";
 
     const result = await resolveFeatureSpec("feat", tempDir);
@@ -127,7 +127,7 @@ describe("resolveFeatureSpec profile chain", () => {
   test("resolves testPatterns under the profile chain (AC-11)", async () => {
     const naxDir = initInvalidRepo();
     writePRD(naxDir, "feat", "fix");
-    writeProfile(naxDir, "fix", { execution: { storyIsolation: "shared" } });
+    writeProfile(naxDir, "fix", { execution: { costLimit: 30 } });
 
     const result = await resolveFeatureSpec("feat", tempDir);
 
@@ -139,7 +139,7 @@ describe("resolveFeatureSpec profile chain", () => {
   test("adopts the PRD routingProfile for an auto-discovered feature", async () => {
     const naxDir = initInvalidRepo();
     writePRD(naxDir, "solo", "fix");
-    writeProfile(naxDir, "fix", { execution: { storyIsolation: "shared" } });
+    writeProfile(naxDir, "fix", { execution: { costLimit: 30 } });
 
     const result = await resolveFeatureSpec(undefined, tempDir);
 

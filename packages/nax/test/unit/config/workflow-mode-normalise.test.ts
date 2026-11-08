@@ -58,18 +58,6 @@ describe("applyWorkflowMode", () => {
     expect(out.advisor?.enabled).toBe(true);
     expect(DEFAULT_CONFIG.advisor?.enabled).toBe(false);
   });
-
-  test("workflow mode no longer rewrites execution.storyIsolation", () => {
-    // The isolation term is gone with the worktree execution path (US-004):
-    // workflow mode forces only the advisor now.
-    const cfg = makeNaxConfig({
-      execution: { mode: "workflow", storyIsolation: "worktree" },
-      advisor: { enabled: true },
-    });
-
-    expect(applyWorkflowMode(cfg)).toBe(cfg);
-    expect(cfg.execution.storyIsolation).toBe("worktree");
-  });
 });
 
 describe("workflow is the default execution mode", () => {

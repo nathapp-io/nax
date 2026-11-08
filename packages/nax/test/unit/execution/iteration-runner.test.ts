@@ -48,7 +48,7 @@ function makeCtx(tempDir: string, overrides: Record<string, unknown> = {}): Sequ
   return {
     prdPath: join(tempDir, "prd.json"),
     workdir: tempDir,
-    config: makeNaxConfig({ execution: { storyIsolation: "shared" } }),
+    config: makeNaxConfig(),
     hooks: EMPTY_HOOKS,
     feature: "test-feature",
     dryRun: false,
@@ -121,12 +121,12 @@ describe("runIteration", () => {
     });
     const selection = { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false };
     const workflowCtx = makeCtx(tempDir, {
-      config: makeNaxConfig({ execution: { storyIsolation: "shared" } }),
+      config: makeNaxConfig(),
     });
     Reflect.deleteProperty(workflowCtx.config.execution, "mode");
     await runIteration(workflowCtx, prd, selection, 1, 0, []);
     const pipelineCtx = makeCtx(tempDir, {
-      config: makeNaxConfig({ execution: { storyIsolation: "shared", mode: "pipeline" } }),
+      config: makeNaxConfig({ execution: { mode: "pipeline" } }),
     });
     await runIteration(pipelineCtx, prd, selection, 1, 0, []);
 
@@ -167,7 +167,6 @@ describe("runIteration", () => {
   test("package story: run-level root-only keys (--rules-dir / --context-file) survive the per-package reload", async () => {
     const ctx = makeCtx(tempDir, {
       config: makeNaxConfig({
-        execution: { storyIsolation: "shared" },
         context: { rules: { overrideDir: "/run/rules" }, projectContext: { file: "/run/context.md" } },
       }),
     });
@@ -378,7 +377,7 @@ describe("runIteration — per-story workdir and packageView", () => {
     const capture = capturePipelineContext();
 
     const ctx = makeCtx(tempDir, {
-      config: makeNaxConfig({ execution: { storyIsolation: "shared" } }),
+      config: makeNaxConfig(),
     });
 
     await runIteration(

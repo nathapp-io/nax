@@ -4,10 +4,10 @@
  * Split out of pipeline-result-handler.test.ts to stay under the 800-line test
  * file cap (.claude/rules/project-conventions.md).
  *
- * MEM-6: cleanup now keys off real worktree *existence* (checked via
- * `_resultHandlerDeps.existsSync`) rather than `storyIsolation` config mode —
- * parallel-batch dispatch creates a worktree per story unconditionally, so
- * the config-gated check used to leak worktrees for shared-mode failures.
+ * MEM-6: cleanup keys off real worktree *existence* (checked via
+ * `_resultHandlerDeps.existsSync`), not a config switch — batch dispatch created
+ * a worktree per story unconditionally, so a config-gated check used to leak
+ * worktrees for stories that never asked for one.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -67,11 +67,6 @@ function mockSpawnCapturingCalls(calls: string[][]) {
   }).spawn;
 }
 
-const WORKTREE_CONFIG = {
-  ...DEFAULT_CONFIG,
-  execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
-};
-
 // The fixture's workdir/prdPath: a real dir under `$TMPDIR`, because the
 // handler persists the PRD there (`savePRD` writes `<path>.tmp-<uuid>`), and a
 // confined run may not write a literal `/tmp/...`.
@@ -101,10 +96,10 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
     const story = makeStory({ id: "US-001", status: "pending", passes: false, attempts: 2 });
     const ctx = makeCtx(story, {
       config: {
-        ...WORKTREE_CONFIG,
+        ...DEFAULT_CONFIG,
         execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });
@@ -151,7 +146,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
 
   test("calls git worktree remove on 'pause' finalAction when a worktree exists", async () => {
     const story = makeStory({ id: "US-001", status: "in-progress" });
-    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
+    const ctx = makeCtx(story, { config: DEFAULT_CONFIG });
     _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
 
     const spawnCalls: string[][] = [];
@@ -198,7 +193,7 @@ describe("handlePipelineFailure — worktree mode (EXEC-002)", () => {
   // successful `git worktree remove` so only the fail path writes it.
   test("does NOT call git update-ref on 'pause' finalAction (orphan ref is a fail-path artifact only)", async () => {
     const story = makeStory({ id: "US-001", status: "in-progress" });
-    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
+    const ctx = makeCtx(story, { config: DEFAULT_CONFIG });
     _resultHandlerDeps.existsSync = (() => true) as typeof _resultHandlerDeps.existsSync;
 
     const spawnCalls: string[][] = [];
@@ -240,10 +235,10 @@ describe("US-002 handlePipelineFailure — record nax ownership of orphan branch
     });
     const ctx = makeCtx(story, {
       config: {
-        ...WORKTREE_CONFIG,
+        ...DEFAULT_CONFIG,
         execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });
@@ -292,10 +287,10 @@ describe("US-002 handlePipelineFailure — record nax ownership of orphan branch
     });
     const ctx = makeCtx(story, {
       config: {
-        ...WORKTREE_CONFIG,
+        ...DEFAULT_CONFIG,
         execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });
@@ -356,10 +351,10 @@ describe("US-002 handlePipelineFailure — preserves the surviving branch", () =
     });
     const ctx = makeCtx(story, {
       config: {
-        ...WORKTREE_CONFIG,
+        ...DEFAULT_CONFIG,
         execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });
@@ -432,18 +427,17 @@ const COMPOSED_BRANCH = "nax/story-f-US-001";
 const COMPOSED_ORPHAN_REF = "refs/nax/orphan/story-f-US-001";
 const COMPOSED_SOURCE_REF = `refs/heads/${COMPOSED_BRANCH}`;
 
-/** Worktree mode with the retry budget already spent, so `fail` reaches cleanup. */
-const US003_WORKTREE_CONFIG = {
+/** The retry budget already spent, so `fail` reaches cleanup. */
+const RETRY_EXHAUSTED_CONFIG = {
   ...DEFAULT_CONFIG,
   execution: {
     ...DEFAULT_CONFIG.execution,
-    storyIsolation: "worktree" as const,
     rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
   },
 };
 
 function makeIdentityCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = {}): PipelineHandlerContext {
-  return makeCtx(story, { feature: "f", config: US003_WORKTREE_CONFIG, ...overrides });
+  return makeCtx(story, { feature: "f", config: RETRY_EXHAUSTED_CONFIG, ...overrides });
 }
 
 describe("US-003 handlePipelineFailure — cleanup keys off the composed identity", () => {

@@ -14,6 +14,11 @@
 // "Warns" here means the loader warning reaches a logger sink registered with
 // `addSink`, the same way test/unit/config/removed-stage-names.test.ts captures
 // it: `loadConfig` takes no warn parameter.
+//
+// The two worktree-isolation keys (`execution.storyIsolation`,
+// `execution.worktreeDependencies`, US-006) are covered in
+// removed-config-keys-worktree-isolation.test.ts — split out for the 800-line
+// test-file cap.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
@@ -32,6 +37,9 @@ const tempDirs: string[] = [];
 const PROVIDER_HINT = "nothing read this key; the interceptor is always rtk";
 /** US-003 — the hint `execution.verificationTimeoutSeconds` carries. */
 const VERIFICATION_TIMEOUT_HINT = "verification uses execution.regressionGate.timeoutSeconds";
+/** US-006 — the hint both worktree-isolation keys carry. */
+const WORKTREE_ISOLATION_HINT =
+  "stories always run in the project checkout since worktree isolation was removed with pipeline mode";
 
 /** The warning `stripKeysAtPaths` emits for one removed path. */
 function removalWarning(path: string, hint: string): string {
@@ -581,7 +589,7 @@ describe("stripKeysAtPaths", () => {
     expect(result.tdd).toEqual({ strategy: "auto" });
   });
 
-  test("REMOVED_CONFIG_KEYS covers eleven rectification leaves, three sections, the provider and US-003's two keys", () => {
+  test("REMOVED_CONFIG_KEYS covers the rectification leaves, the sections, the provider and US-003/US-006's keys", () => {
     expect(Object.keys(REMOVED_CONFIG_KEYS).sort()).toEqual(
       [
         "acceptance",
@@ -600,12 +608,14 @@ describe("stripKeysAtPaths", () => {
         "execution.rectification.storyScopedFixBudget",
         "execution.rectification.urgencyAtAttempt",
         "execution.regressionGate.mode",
+        "execution.storyIsolation",
         "execution.verificationTimeoutSeconds",
+        "execution.worktreeDependencies",
       ].sort(),
     );
   });
 
-  test("the sections carry the pipeline-only hint and the two special keys their own hints", () => {
+  test("the sections carry the pipeline-only hint and the special keys their own hints", () => {
     expect(REMOVED_CONFIG_KEYS.acceptance).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.flakeDetection"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.mutationCheck"]).toBe(PIPELINE_ONLY_KEY_HINT);
@@ -613,6 +623,9 @@ describe("stripKeysAtPaths", () => {
     expect(REMOVED_CONFIG_KEYS["execution.commandInterceptor.provider"]).toBe(PROVIDER_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.regressionGate.mode"]).toBe(PIPELINE_ONLY_KEY_HINT);
     expect(REMOVED_CONFIG_KEYS["execution.verificationTimeoutSeconds"]).toBe(VERIFICATION_TIMEOUT_HINT);
+    // US-006: both worktree-isolation keys carry the one isolation hint.
+    expect(REMOVED_CONFIG_KEYS["execution.storyIsolation"]).toBe(WORKTREE_ISOLATION_HINT);
+    expect(REMOVED_CONFIG_KEYS["execution.worktreeDependencies"]).toBe(WORKTREE_ISOLATION_HINT);
   });
 });
 

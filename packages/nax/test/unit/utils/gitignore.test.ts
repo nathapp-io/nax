@@ -115,10 +115,10 @@ describe("NAX_GITIGNORE_ENTRIES", () => {
       }
 
       // Derived caches. nax#2137: `.nax/cache/test-patterns.json` is written per
-      // workdir by src/test-runners/detect/cache.ts. Under storyIsolation
-      // "worktree" an unignored copy lands untracked in the main checkout and
-      // committed inside the story worktree, so the merge back aborts on an
-      // untracked overwrite and strands nax/<storyId> (nax#2136).
+      // workdir by src/test-runners/detect/cache.ts. In a story worktree an
+      // unignored copy landed untracked in the main checkout and was committed
+      // inside the worktree, so the merge back aborted on an untracked overwrite
+      // and stranded nax/<storyId> (nax#2136).
       expectIgnored(".nax/cache/test-patterns.json", true);
 
       // The scratchpad (US-004): throwaway files the agent writes during a

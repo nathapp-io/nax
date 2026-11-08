@@ -2,8 +2,8 @@
  * Run-start main-checkout gitignore reconcile (Fix 1(a)).
  *
  * `WorktreeManager.ensureGitExcludes()` already reconciles `NAX_GITIGNORE_ENTRIES`
- * into `.git/info/exclude`, but only ever gets called for a story worktree
- * (src/execution/iteration-runner.ts, gated on `storyIsolation === "worktree"`).
+ * into `.git/info/exclude`, but the story worktree that used to call it per run
+ * went with worktree isolation.
  * An already-initialised MAIN checkout — the common case — never receives an
  * entry added to the list after its `nax init` ran. This module closes that
  * gap by reusing the same method against the main checkout at run start.

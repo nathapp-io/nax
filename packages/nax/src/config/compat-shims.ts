@@ -194,38 +194,6 @@ export function _applyRemovedCrossPackageDepthShim(
 }
 
 /**
- * @internal Map the removed `execution.worktreeDependencies.mode: "inherit"` to `"off"`.
- *
- * `inherit` never inherited anything: it returned the same cwd as `off`, and threw
- * outright when the worktree carried a dependency manifest — so it failed on exactly
- * the repos it named. It is redundant besides. Worktrees live at
- * `<projectRoot>/.nax-wt/<storyId>/`, inside the project root, so Node/Bun resolution
- * already walks up to the root `node_modules`; `off` is what `inherit` promised.
- *
- * Mapped rather than rejected so an existing config keeps loading (issue #574).
- * Returns a new object (immutable -- does not mutate the input).
- */
-export function _applyRemovedWorktreeInheritShim(
-  conf: Record<string, unknown>,
-  warn: (msg: string) => void = defaultConfigWarn,
-): Record<string, unknown> {
-  const execution = conf.execution as Record<string, unknown> | undefined;
-  const worktreeDependencies = execution?.worktreeDependencies as Record<string, unknown> | undefined;
-  if (worktreeDependencies?.mode !== "inherit") return conf;
-
-  warn(
-    'execution.worktreeDependencies.mode="inherit" was removed (issue #574) and is mapped to "off". ' +
-      "For JS/TS repos that is the same behaviour. If this repo needs its own install (a Python venv, bundler, composer), " +
-      'set mode "provision" with a setupCommand: "inherit" used to fail the run outright in that case, and "off" will now ' +
-      "proceed without installing.",
-  );
-  return {
-    ...conf,
-    execution: { ...execution, worktreeDependencies: { ...worktreeDependencies, mode: "off" } },
-  };
-}
-
-/**
  * @internal S4b-5: `agent.acp.transport` was removed with the acpx transport.
  * ACP agents always run through @nathapp/nax-agent-acp. The key is dropped,
  * whatever its value, so a pinned "acpx" is reported rather than silently
@@ -570,7 +538,6 @@ export function applyConfigCompatShims(
   out = applyRoutingRetryDeprecationWarning(out, warn);
   out = _applyRemovedRoutingKeysShim(out, warn);
   out = _applyLegacyReviewExecutionShim(out, warn);
-  out = _applyRemovedWorktreeInheritShim(out, warn);
   out = _applyRemovedAcpTransportShim(out, warn);
   out = _applyFinishAutoFlowShim(out, warn);
   out = _applyFinishStepTimeoutShim(out, warn);

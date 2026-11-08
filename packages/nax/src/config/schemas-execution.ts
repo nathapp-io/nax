@@ -105,23 +105,6 @@ const smartTestRunnerFieldSchema = z
   }, SmartTestRunnerConfigSchema)
   .default(SMART_TEST_RUNNER_DEFAULT);
 
-const WorktreeDependenciesConfigSchema = z
-  .object({
-    mode: z.enum(["provision", "off"]).default("off"),
-    setupCommand: z.string().nullable().default(null),
-    /** Hard deadline (BUG-13) for the provisioning spawn — a hung install (registry/NFS stall) must not block the story forever. */
-    timeoutSeconds: z.number().int().min(1).max(3600).default(300),
-  })
-  .superRefine((value, ctx) => {
-    if (value.mode !== "provision" && value.setupCommand !== null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["setupCommand"],
-        message: "execution.worktreeDependencies.setupCommand requires mode 'provision'",
-      });
-    }
-  });
-
 const PermissionBlockSchema = z
   .object({
     // Declares the vocabulary the SSOT resolver reads; decides nothing.
@@ -246,11 +229,6 @@ export const ExecutionConfigSchema = z.object({
    */
   denyPaths: z.array(z.string()).optional(),
   smartTestRunner: smartTestRunnerFieldSchema,
-  worktreeDependencies: WorktreeDependenciesConfigSchema.default({
-    mode: "off",
-    setupCommand: null,
-    timeoutSeconds: 300,
-  }),
   /**
    * Blocking host-side setup steps (US-003): each runs once per run, before the
    * run-start baseline and before any story is dispatched, from the run workdir
@@ -269,7 +247,6 @@ export const ExecutionConfigSchema = z.object({
       }),
     )
     .default([]),
-  storyIsolation: z.enum(["shared", "worktree"]).default("shared"),
   commandInterceptor: CommandInterceptorConfigSchema.default({
     enabled: false,
     git: { verbs: ["log", "diff"] },

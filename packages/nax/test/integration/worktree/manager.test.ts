@@ -534,7 +534,6 @@ describe("US-002 WorktreeManager — retryable failed worktrees (AC-1 integratio
         ...DEFAULT_CONFIG,
         execution: {
           ...DEFAULT_CONFIG.execution,
-          storyIsolation: "worktree" as const,
           rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },

@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 944
+    "looseCast": 943
   },
-  "updatedAt": "2026-11-08T13:40:57.546Z",
+  "updatedAt": "2026-11-08T14:30:53.640Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -515,7 +515,7 @@
       "looseCast": 1
     },
     "test/unit/config/loader-legacy-shim.test.ts": {
-      "looseCast": 20
+      "looseCast": 19
     },
     "test/unit/config/smart-runner-flag.test.ts": {
       "looseCast": 1

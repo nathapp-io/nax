@@ -68,11 +68,6 @@ function makeCtx(story: UserStory, overrides: Partial<PipelineHandlerContext> = 
   };
 }
 
-const WORKTREE_CONFIG = {
-  ...DEFAULT_CONFIG,
-  execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
-};
-
 const failResult: PipelineRunResult = {
   success: false,
   finalAction: "fail",
@@ -114,10 +109,10 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
     const story = makeStory({ id: "US-bug12", status: "pending", passes: false, attempts: 2 });
     const ctx = makeCtx(story, {
       config: {
-        ...WORKTREE_CONFIG,
+        ...DEFAULT_CONFIG,
         execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });
@@ -182,10 +177,10 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
     const story = makeStory({ id: "US-bug12", status: "pending", passes: false, attempts: 2 });
     const ctx = makeCtx(story, {
       config: {
-        ...WORKTREE_CONFIG,
+        ...DEFAULT_CONFIG,
         execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });
@@ -213,10 +208,10 @@ describe("handlePipelineFailure — worktree removal drains streams (BUG-12)", (
     const story = makeStory({ id: "US-bug3", status: "pending", passes: false, attempts: 2 });
     const ctx = makeCtx(story, {
       config: {
-        ...WORKTREE_CONFIG,
+        ...DEFAULT_CONFIG,
         execution: {
-          ...WORKTREE_CONFIG.execution,
-          rectification: { ...WORKTREE_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
+          ...DEFAULT_CONFIG.execution,
+          rectification: { ...DEFAULT_CONFIG.execution.rectification, maxAttemptsTotal: 1 },
         },
       },
     });

@@ -189,10 +189,9 @@ describe("SessionScratchProvider", () => {
     expect(result.chunks[0].content).not.toContain("coverage/lcov.info");
   });
 
-  // nax#2111 (path-filters follow-up): under execution.storyIsolation
-  // "worktree", request.packageDir is rooted at the story's worktree checkout
-  // (context.ts:175 sets packageDir: ctx.workdir,
-  // documented as pointing at .nax-wt/<id>/ in worktree mode) while
+  // nax#2111 (path-filters follow-up): in a story worktree,
+  // request.packageDir is rooted at the story's worktree checkout
+  // (context.ts sets packageDir: ctx.workdir) while
   // request.repoRoot stays the main checkout. Without storyWorkdir threaded
   // through, resolveNaxIgnorePatterns's packagePrefix falls back to
   // relative(repoRoot, packageDir) = ".nax-wt/US-001/packages/api", and a root
