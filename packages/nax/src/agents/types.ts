@@ -198,7 +198,7 @@ export interface AgentRunOptions {
    *
    * Independent of `codingToolRoot`: `resolveCodingToolSupport` uses it with
    * `projectDir` to resolve the story's `.nax/mono/<pkg>/config.json` and
-   * declared commands' cwd. Under storyIsolation "worktree" it carries the
+   * declared commands' cwd. A dir rooted inside a nax worktree carries the
    * `.nax-wt/<storyId>/` prefix; normalize it via `packageOverrideKey` before
    * using it as an override key, but keep it RAW as a command cwd.
    *

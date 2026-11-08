@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 945
+    "looseCast": 944
   },
-  "updatedAt": "2026-11-08T13:20:06.780Z",
+  "updatedAt": "2026-11-08T13:40:57.546Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -236,9 +236,6 @@
       "looseCast": 1
     },
     "test/unit/execution/helpers.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/execution/pipeline-result-handler-merge-conflict.test.ts": {
       "looseCast": 1
     },
     "test/unit/execution/deferred-review.test.ts": {

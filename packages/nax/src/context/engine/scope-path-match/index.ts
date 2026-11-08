@@ -191,9 +191,9 @@ export function ruleMatchesScopeFiles(appliesTo: string[] | undefined, scopeFile
  * Single-package repos (packageDir === repoRoot) always match regardless of paths.
  *
  * The package-relative frame comes from `storyWorkdir` (request.storyWorkdir,
- * PRD-declared), NOT `relative(repoRoot, packageDir)`: under
- * `execution.storyIsolation: "worktree"`, `repoRoot` is the main checkout while
- * `packageDir` is `<root>/.nax-wt/<storyId>/<pkg>`, so that derivation yields
+ * PRD-declared), NOT `relative(repoRoot, packageDir)`: for a `packageDir` rooted
+ * inside a nax worktree, `repoRoot` is the main checkout while `packageDir` is
+ * `<root>/.nax-wt/<storyId>/<pkg>`, so that derivation yields
  * `.nax-wt/<storyId>/<pkg>` instead of `<pkg>` (nax#2111, same defect class as
  * H8 / nax#2069). `storyWorkdir` is immune to which checkout `packageDir`
  * happens to be rooted at.

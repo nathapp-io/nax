@@ -174,8 +174,8 @@ function normalizeAbsolutePath(path: string): string {
  * `packageWorkdir`, when supplied, is the PRD-declared story workdir
  * (`request.storyWorkdir` / `storyWorkdir(story)` from `@/utils/path-frame`)
  * and takes precedence over deriving `packagePrefix` as
- * `relative(repoRoot, packageDir)`. That derivation is a genuine defect under
- * `execution.storyIsolation: "worktree"`, where `repoRoot` is the main
+ * `relative(repoRoot, packageDir)`. That derivation is a genuine defect for a
+ * `packageDir` rooted inside a nax worktree, where `repoRoot` is the main
  * checkout but `packageDir` is `<root>/.nax-wt/<storyId>/<pkg>`: unlike
  * `ruleMatchesPackage` (nax#2111 1b, which compares a pattern against the
  * derived prefix and is immune to the extra segment because its regex is

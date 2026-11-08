@@ -9,7 +9,6 @@ import {
   cleanupTempDir,
   makeAgentResult,
   makeDispatchContext,
-  makeMergeEngine,
   makeSpawn,
   makeTempDir,
   makeTestContext,
@@ -24,10 +23,8 @@ import {
 } from "@/execution/pipeline-result-handler";
 import type { PipelineRunResult } from "@/pipeline/runner";
 import { PluginRegistry } from "@/plugins/registry";
-import { loadPRD, savePRD } from "@/prd";
 import type { PRD, UserStory } from "@/prd/types";
 import { _gitDeps } from "@/utils/git";
-import { deriveStoryWorktreeId } from "@/worktree";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,11 +101,6 @@ function mockSpawnReturning(output: string) {
 // Tests
 // ---------------------------------------------------------------------------
 
-const WORKTREE_CONFIG = {
-  ...DEFAULT_CONFIG,
-  execution: { ...DEFAULT_CONFIG.execution, storyIsolation: "worktree" as const },
-};
-
 // The fixture's workdir/prdPath: a real dir under `$TMPDIR`, because the
 // handler persists the PRD there (`savePRD` writes `<path>.tmp-<uuid>`), and a
 // confined run may not write a literal `/tmp/...`.
@@ -116,7 +108,6 @@ let ctxWorkdir: string;
 
 let origSpawn: typeof _gitDeps.spawn;
 let origResultSpawn: typeof _resultHandlerDeps.spawn;
-let origMergeEngine: typeof _resultHandlerDeps.mergeEngine;
 let origSavePrd: typeof _tierEscalationDeps.savePrdProgress;
 let origExistsSync: typeof _resultHandlerDeps.existsSync;
 
@@ -124,7 +115,6 @@ beforeEach(() => {
   ctxWorkdir = makeTempDir("nax-result-handler-");
   origSpawn = _gitDeps.spawn;
   origResultSpawn = _resultHandlerDeps.spawn;
-  origMergeEngine = _resultHandlerDeps.mergeEngine;
   origSavePrd = _tierEscalationDeps.savePrdProgress;
   origExistsSync = _resultHandlerDeps.existsSync;
   // MEM-6: cleanup now keys off real worktree existence rather than config
@@ -138,7 +128,6 @@ beforeEach(() => {
 afterEach(() => {
   _gitDeps.spawn = origSpawn;
   _resultHandlerDeps.spawn = origResultSpawn;
-  _resultHandlerDeps.mergeEngine = origMergeEngine;
   _tierEscalationDeps.savePrdProgress = origSavePrd;
   _resultHandlerDeps.existsSync = origExistsSync;
   cleanupTempDir(ctxWorkdir);
@@ -263,48 +252,6 @@ describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// EXEC-002: worktree merge on success
-// ---------------------------------------------------------------------------
-
-describe("handlePipelineSuccess — worktree mode (EXEC-002)", () => {
-  test("calls mergeEngine.merge() when storyIsolation === 'worktree'", async () => {
-    const story = makeStory("US-001");
-    const ctx = makeCtx(story, { config: WORKTREE_CONFIG });
-
-    const mergeMock = mock(async () => ({ success: true as const }));
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mergeMock });
-    // Silence git spawn (no storyGitRef)
-    _gitDeps.spawn = mockSpawnReturning("");
-
-    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
-
-    // US-002: the production code composes the WorktreeId from
-    // `(ctx.feature, ctx.story.id)` before calling mergeEngine.merge.
-    // The fixture's `feature: "test-feature"` derives
-    // `story-test-feature-US-001` — assert on the composed form.
-    expect(mergeMock).toHaveBeenCalledWith(ctxWorkdir, deriveStoryWorktreeId("test-feature", "US-001"));
-    expect(result.prdDirty).toBe(true);
-  });
-
-  test("does NOT call mergeEngine.merge() in shared mode", async () => {
-    const story = makeStory("US-001");
-    const ctx = makeCtx(story); // DEFAULT_CONFIG has storyIsolation: "shared"
-
-    const mergeMock = mock(async () => ({ success: true as const }));
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mergeMock });
-    _gitDeps.spawn = mockSpawnReturning("");
-
-    await handlePipelineSuccess(ctx, makeMinimalResult());
-
-    expect(mergeMock).not.toHaveBeenCalled();
-  });
-
-  // A worktree merge conflict no longer attempts rectification — it fails the
-  // story outright. See pipeline-result-handler-merge-conflict.test.ts (split
-  // out for the 800-line cap).
-});
-
-// ---------------------------------------------------------------------------
 // EXEC-002: worktree cleanup on failure
 // ---------------------------------------------------------------------------
 
@@ -394,112 +341,6 @@ describe("handlePipelineFailure — story:skipped event", () => {
     await handlePipelineFailure(ctx, failResult);
 
     expect(capturedSkipped).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// A story whose branch never landed must not be recorded as passed
-// ---------------------------------------------------------------------------
-
-/**
- * These assert the **on-disk** prd.json, not `ctx.prd`.
- *
- * That is the whole point. `completionStage` runs before this handler and has
- * already written `status: "passed"` to disk, and the executor answers
- * `prdDirty: true` by *reloading* from disk (`unified-executor.ts:484-486`) —
- * it never saves on the handler's behalf. So a handler that mutates `ctx.prd`
- * and sets `prdDirty` without calling `savePRD` has its correction silently
- * discarded on the next reload. An in-memory assertion passes against exactly
- * that bug; only reading the file back catches it.
- */
-describe("handlePipelineSuccess — a failed worktree merge is not a passed story", () => {
-  let tempDir: string;
-  let prdPath: string;
-
-  beforeEach(() => {
-    tempDir = makeTempDir("nax-merge-fail-");
-    prdPath = join(tempDir, "prd.json");
-  });
-
-  afterEach(() => {
-    cleanupTempDir(tempDir);
-  });
-
-  /** Mirrors the state completionStage leaves behind: passed, in memory and on disk. */
-  async function seedPassedStory(): Promise<{ story: UserStory; ctx: PipelineHandlerContext }> {
-    const story = makeStory("US-001");
-    const ctx = makeCtx(story, {
-      config: WORKTREE_CONFIG,
-      prdPath,
-      workdir: tempDir,
-      storyGitRef: undefined,
-    });
-    await savePRD(ctx.prd, prdPath);
-    expect((await loadPRD(prdPath)).userStories[0]?.status).toBe("passed");
-    return { story, ctx };
-  }
-
-  function stubSpawn(): string[][] {
-    const calls: string[][] = [];
-    _resultHandlerDeps.spawn = makeSpawn(({ cmd }) => {
-      calls.push(cmd);
-      return "";
-    }).spawn;
-    return calls;
-  }
-
-  test("a non-conflict merge failure marks the story failed on disk", async () => {
-    const { ctx } = await seedPassedStory();
-    stubSpawn();
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({
-      merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
-    });
-
-    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
-
-    expect((await loadPRD(prdPath)).userStories[0]?.status).toBe("failed");
-    expect(result.storiesCompletedDelta).toBe(0);
-    expect(result.prdDirty).toBe(true);
-  });
-
-  test("the reported failure survives the executor's reload-from-disk", async () => {
-    const { ctx } = await seedPassedStory();
-    stubSpawn();
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({
-      merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "missing branch" })),
-    });
-
-    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
-
-    // Exactly what unified-executor does when prdDirty is true. A handler that
-    // only mutated ctx.prd would come back "passed" here.
-    const reloaded = result.prdDirty ? await loadPRD(ctx.prdPath) : result.prd;
-    expect(reloaded.userStories[0]?.status).toBe("failed");
-  });
-
-  test("a non-conflict merge failure reclaims the worktree directory", async () => {
-    const { ctx } = await seedPassedStory();
-    const calls = stubSpawn();
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({
-      merge: mock(async () => ({ success: false as const, failureKind: "error" as const, error: "dirty tree" })),
-    });
-
-    await handlePipelineSuccess(ctx, makeMinimalResult());
-
-    expect(calls.some((a) => a.includes("worktree") && a.includes("remove"))).toBe(true);
-  });
-
-  test("a clean merge still reports the story as passed", async () => {
-    const { ctx } = await seedPassedStory();
-    stubSpawn();
-    _resultHandlerDeps.mergeEngine = makeMergeEngine({
-      merge: mock(async () => ({ success: true as const })),
-    });
-
-    const result = await handlePipelineSuccess(ctx, makeMinimalResult());
-
-    expect((await loadPRD(prdPath)).userStories[0]?.status).toBe("passed");
-    expect(result.storiesCompletedDelta).toBe(1);
   });
 });
 

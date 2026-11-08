@@ -155,8 +155,8 @@ async function runV2Path(ctx: PipelineContext): Promise<void> {
   // The spec requires execRoot be set from `storyExecRoot(ctx.packageView)`
   // and OMITTED when packageView is undefined (AC10 / pull-tool handlers).
   // Production wiring of `ctx.packageView` is iteration-runner.ts's job
-  // (out of scope for this story); when that wiring is in place, execRoot
-  // carries the worktree root under storyIsolation: "worktree".
+  // (out of scope for this story); execRoot carries the root of the tree the
+  // story executes in.
   const execRoot = ctx.packageView ? storyExecRoot(ctx.packageView) : undefined;
 
   // Honour the per-stage v2 config for this stage. Without this,

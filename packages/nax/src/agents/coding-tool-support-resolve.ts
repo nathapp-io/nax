@@ -150,11 +150,12 @@ export async function loadPackageEffectiveConfig(
   try {
     return await deps.loadConfigForPackage(
       projectDir,
-      // Under storyIsolation "worktree" the package dir is prefixed with
-      // `.nax-wt/<storyId>/`, which never matches the plain `<pkg>` keys the
-      // per-package override lookup stored — normalize for the LOOKUP ONLY.
-      // commandCwd below keeps the RAW dir so the command runs in the story's
-      // worktree (see packageOverrideKey in src/runtime/packages.ts).
+      // A package dir rooted inside a nax worktree carries the
+      // `.nax-wt/<storyId>/` prefix, which never matches the plain `<pkg>` keys
+      // the per-package override lookup stored — normalize for the LOOKUP ONLY.
+      // commandCwd below keeps the RAW dir, because a command must run in
+      // whatever tree the story resolved to (see packageOverrideKey in
+      // src/runtime/packages.ts).
       packageOverrideKey(packageDir),
       // RULING F2 (WidenedDispatchConfig, ./dispatch-config-fields): options.config's declared type is
       // a Pick, but at runtime both hops source it from the full NaxConfig.

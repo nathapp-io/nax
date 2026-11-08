@@ -10,8 +10,8 @@
  *
  * Scope: repo-scoped (anchor `repoRoot`). touchedFiles is REPO-ROOTED and git
  * runs at `request.execRoot ?? request.repoRoot` — the story execution root,
- * which under `storyIsolation: "worktree"` is the worktree rather than the main
- * checkout (nax#2134) — against those repo-rooted paths. `historyScope` is a
+ * which need not be the main checkout (nax#2134) — against those repo-rooted
+ * paths. `historyScope` is a
  * post-filter over those entries, not a workdir switch. Chunk headings are
  * rendered repo-rooted verbatim and `scopePaths` share that same spelling.
  *
@@ -221,9 +221,9 @@ export class GitHistoryProvider implements IContextProvider {
     // request.storyWorkdir is the PRD-declared story workdir (repo-relative),
     // threaded onto the request by the caller that builds it from a story
     // (pipeline/stages/context.ts). It must NOT be derived
-    // as packageDirRelative(repoRoot, packageDir): under storyIsolation:
-    // "worktree", packageDir is `<root>/.nax-wt/<storyId>/<pkg>` while repoRoot
-    // is the main checkout, so that derivation yields `.nax-wt/<storyId>/<pkg>`,
+    // as packageDirRelative(repoRoot, packageDir): a packageDir rooted inside a
+    // nax worktree is `<root>/.nax-wt/<storyId>/<pkg>` while repoRoot is the
+    // main checkout, so that derivation yields `.nax-wt/<storyId>/<pkg>`,
     // matches nothing in repo-rooted touchedFiles, and silently drops every
     // entry. Same trap as nax#2069; see the ContextRequest.storyWorkdir
     // docblock in src/context/engine/types.ts.

@@ -1,13 +1,12 @@
 /**
  * runIteration — the single-story orchestration function in iteration-runner.ts.
  *
- * `iteration-runner-worktree.test.ts` and `iteration-runner-memory.test.ts` only
- * exercise `_iterationRunnerDeps` in isolation or inline the same conditional
- * logic without calling `runIteration` — the function itself was 0% covered.
- * These tests call `runIteration` directly (storyIsolation: "shared", the
- * default, so the worktree branch is skipped) with `_iterationRunnerDeps.runPipeline`
+ * These tests call `runIteration` directly with `_iterationRunnerDeps.runPipeline`
  * mocked to control the pipeline outcome, exercising the dry-run short-circuit,
- * the success path, and the fail/pause failure paths.
+ * the success path, the fail/pause failure paths, and the per-story workdir
+ * resolution. Every story runs in the shared checkout (US-004 removed the
+ * worktree isolation paths), so the workdir is always the run's own tree
+ * narrowed to the story's package.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -26,10 +25,8 @@ import {
   makeStory,
   makeTempDir,
   makeTestContext,
-  makeWorktreeManager,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
-import { DEFAULT_CONFIG } from "@/config/defaults";
 import type { SequentialExecutionContext } from "@/execution/executor-types";
 import { _iterationRunnerDeps, releaseHeavyPipelineContext, runIteration } from "@/execution/iteration-runner";
 import type { LoadedHooksConfig } from "@/hooks";
@@ -37,7 +34,6 @@ import type { PipelineRunResult } from "@/pipeline/runner";
 import type { PipelineContext, PipelineStage, RoutingResult } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd/types";
 import { storyExecRoot } from "@/runtime";
-import { WorktreeManager } from "@/worktree/manager";
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
@@ -297,99 +293,61 @@ describe("runIteration", () => {
   });
 });
 
-describe("runIteration — US-001 stamps packageView for the context producers", () => {
+describe("runIteration — per-story workdir and packageView", () => {
   let tempDir: string;
   let origRunPipeline: typeof _iterationRunnerDeps.runPipeline;
-  let origExistsSync: typeof _iterationRunnerDeps.existsSync;
-  let origPrepareDeps: typeof _iterationRunnerDeps.prepareWorktreeDependencies;
-  let origWorktreeManager: typeof _iterationRunnerDeps.worktreeManager;
+  let origLoadConfig: typeof _iterationRunnerDeps.loadConfigForWorkdir;
   let story: UserStory;
   let prd: PRD;
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-iteration-runner-execroot-");
     origRunPipeline = _iterationRunnerDeps.runPipeline;
-    origExistsSync = _iterationRunnerDeps.existsSync;
-    origPrepareDeps = _iterationRunnerDeps.prepareWorktreeDependencies;
-    origWorktreeManager = _iterationRunnerDeps.worktreeManager;
+    origLoadConfig = _iterationRunnerDeps.loadConfigForWorkdir;
     story = makeStory({ id: "US-001", title: "Story one" });
     prd = makePRD({ userStories: [story] });
   });
 
   afterEach(() => {
     _iterationRunnerDeps.runPipeline = origRunPipeline;
-    _iterationRunnerDeps.existsSync = origExistsSync;
-    _iterationRunnerDeps.prepareWorktreeDependencies = origPrepareDeps;
-    _iterationRunnerDeps.worktreeManager = origWorktreeManager;
+    _iterationRunnerDeps.loadConfigForWorkdir = origLoadConfig;
     cleanupTempDir(tempDir);
   });
 
   /** Capture the PipelineContext handed to runPipeline. */
-  function capturePipelineContext(): { captured: PipelineContext | null } {
+  function capturePipelineContext(pipelinePrd: PRD = prd): { captured: PipelineContext | null } {
     const ref: { captured: PipelineContext | null } = { captured: null };
     _iterationRunnerDeps.runPipeline = mock(async (_stages: PipelineStage[], ctx: PipelineContext) => {
       ref.captured = ctx;
-      return makePipelineResult({ success: true, finalAction: "complete" }, { prd });
+      return makePipelineResult({ success: true, finalAction: "complete" }, { prd: pipelinePrd });
     });
     return ref;
   }
 
-  test("US-003 AC-5: with no worktree yet, WorktreeManager.create receives story-f-US-001 — not the raw story ID", async () => {
-    // First attempt for this story: the worktree does not exist yet, so the
-    // runner takes the create() branch.
-    const manager = makeWorktreeManager();
-    _iterationRunnerDeps.worktreeManager = manager;
-    _iterationRunnerDeps.existsSync = () => false;
-    // The pipeline result is a failure so the run's post-pipeline handlers stay
-    // off the real merge path — this test is about the identity passed to
-    // create(), and nothing downstream should need git.
-    let capturedStoryId: string | undefined;
-    _iterationRunnerDeps.runPipeline = mock(async (_stages: PipelineStage[], ctx: PipelineContext) => {
-      capturedStoryId = ctx.story.id;
-      return makePipelineResult({ success: false, finalAction: "fail", reason: "boom" }, { prd, workdir: ctx.workdir });
-    });
+  test("AC-4: a package story runs the pipeline with a context rooted at <ctx.workdir>/packages/app", async () => {
+    const pkgStory = makeStory({ id: "US-002", title: "Package story", workdir: "packages/app" });
+    const pkgPrd = makePRD({ userStories: [pkgStory] });
+    const capture = capturePipelineContext(pkgPrd);
+    // The per-package config reload reads the disk; stub it so the assertion is
+    // about the resolved workdir, not the fixture's filesystem.
+    _iterationRunnerDeps.loadConfigForWorkdir = mock(async () => makeNaxConfig());
 
-    const ctx = makeCtx(tempDir, {
-      feature: "f",
-      config: makeNaxConfig({ execution: { storyIsolation: "worktree" } }),
-    });
-
+    const ctx = makeCtx(tempDir);
     await runIteration(
       ctx,
-      prd,
-      { story, storiesToExecute: [story], routing: ROUTING, isBatchExecution: false },
+      pkgPrd,
+      { story: pkgStory, storiesToExecute: [pkgStory], routing: ROUTING, isBatchExecution: false },
       1,
       0,
       [],
     );
 
-    const createArgs = manager.create.mock.calls[0];
-    assertDefined(createArgs, "worktreeManager.create call");
-    expect(createArgs[0]).toBe(tempDir);
-    // feature "f" + story "US-001" → the composed identity, spelled literally
-    // so the assertion does not mirror the producer it is checking.
-    expect(String(createArgs[1])).toBe("story-f-US-001");
-    expect(String(createArgs[1])).not.toBe(story.id);
-    // AC-13: the story the pipeline (and therefore metrics, costs and status)
-    // sees keeps its raw ID — the composed identity is a worktree name only.
-    expect(capturedStoryId).toBe(story.id);
+    expect(capture.captured?.workdir).toBe(join(tempDir, "packages/app"));
   });
 
-  test("under worktree isolation the pipeline context carries a packageView rooted at the story's composed worktree", async () => {
+  test("AC-5: a root story runs the pipeline with a context rooted at ctx.workdir itself", async () => {
     const capture = capturePipelineContext();
-    // Worktree already exists → reuse it (skip create()).
-    _iterationRunnerDeps.existsSync = () => true;
-    // US-003: the runner composes effectiveWorkdir from (feature, storyId) and
-    // routes it through the worktree-id producers. prepareWorktreeDependencies
-    // is left at its real implementation (mode "off" returns cwd =
-    // worktreeRoot unchanged), so the runner is exercised end to end instead
-    // of short-circuiting through a mock.
-    const composedWorktreePath = join(tempDir, ".nax-wt", "story-f-US-001");
-
-    const ctx = makeCtx(tempDir, {
-      feature: "f",
-      config: makeNaxConfig({ execution: { storyIsolation: "worktree" } }),
-    });
+    const ctx = makeCtx(tempDir);
 
     await runIteration(
       ctx,
@@ -400,21 +358,23 @@ describe("runIteration — US-001 stamps packageView for the context producers",
       [],
     );
 
-    // US-001 Motivation: the context producers derive ContextRequest.execRoot
-    // from ctx.packageView. If this producer omits the field, execRoot is
-    // ALWAYS undefined in production and both providers silently resolve
-    // against the MAIN checkout — the stale-or-absent-context defect.
-    const packageView = capture.captured?.packageView;
-    assertDefined(packageView, "pipelineContext.packageView");
-    // storyExecRoot(packageView) must land on the COMPOSED worktree root
-    // (US-003 AC-6): .nax-wt/story-f-US-001, not the raw .nax-wt/US-001 the
-    // pre-US-003 spelling used.
-    expect(storyExecRoot(packageView)).toBe(composedWorktreePath);
-    expect(storyExecRoot(packageView).endsWith(join(".nax-wt", "story-f-US-001"))).toBe(true);
-    expect(storyExecRoot(packageView).endsWith(join(".nax-wt", story.id))).toBe(false);
+    expect(capture.captured?.workdir).toBe(tempDir);
   });
 
-  test("under shared isolation the packageView resolves to the main checkout", async () => {
+  test("the runner's dependency seam carries no worktree deps", () => {
+    // The worktree isolation paths are gone, so the seam that let tests fake
+    // them is gone with them — only the loader and the pipeline runner remain.
+    expect(Object.keys(_iterationRunnerDeps).sort()).toEqual([
+      "loadConfigForWorkdir",
+      "runPipeline",
+      "savePrdProgress",
+    ]);
+  });
+
+  test("the pipeline context packageView resolves to the main checkout", async () => {
+    // US-001: the context producers derive ContextRequest.execRoot from
+    // ctx.packageView. Omitting the field leaves execRoot undefined in
+    // production, so both providers silently resolve against the wrong tree.
     const capture = capturePipelineContext();
 
     const ctx = makeCtx(tempDir, {
@@ -512,101 +472,10 @@ describe("releaseHeavyPipelineContext", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Worktree lifecycle (EXEC-002 / US-002) and #410 reviewerSession cleanup.
-//
-// The deps save/restore hook pair is scoped to this wrapping describe so it
-// does not leak into the receiver's own `runIteration` tests (§1.6).
+// #410 reviewerSession cleanup on escalation.
 // ---------------------------------------------------------------------------
 
-describe("iteration-runner — worktree lifecycle (EXEC-002 / US-002)", () => {
-  let origExistsSync: typeof _iterationRunnerDeps.existsSync;
-  let origWorktreeManager: typeof _iterationRunnerDeps.worktreeManager;
-
-  beforeEach(() => {
-    origExistsSync = _iterationRunnerDeps.existsSync;
-    origWorktreeManager = _iterationRunnerDeps.worktreeManager;
-  });
-
-  afterEach(() => {
-    _iterationRunnerDeps.existsSync = origExistsSync;
-    _iterationRunnerDeps.worktreeManager = origWorktreeManager;
-  });
-
-  describe("_iterationRunnerDeps.worktreeManager (EXEC-002)", () => {
-    test("worktreeManager is a WorktreeManager instance", () => {
-      expect(_iterationRunnerDeps.worktreeManager).toBeInstanceOf(WorktreeManager);
-    });
-
-    test("existsSync is the node:fs existsSync", () => {
-      // It should be a function (the real existsSync from node:fs)
-      expect(typeof _iterationRunnerDeps.existsSync).toBe("function");
-    });
-
-    test("iteration runner exposes dependency-prep and runPipeline deps", () => {
-      expect(typeof _iterationRunnerDeps.prepareWorktreeDependencies).toBe("function");
-      expect(typeof _iterationRunnerDeps.runPipeline).toBe("function");
-    });
-  });
-
-  describe("worktree creation gating (EXEC-002)", () => {
-    test("source calls prepareWorktreeDependencies before runPipeline", async () => {
-      const src = await Bun.file("src/execution/iteration-runner.ts").text();
-      const prepIndex = src.indexOf("prepareWorktreeDependencies");
-      const runPipelineIndex = src.indexOf("runPipeline(pipeline");
-
-      expect(prepIndex).toBeGreaterThan(-1);
-      expect(runPipelineIndex).toBeGreaterThan(-1);
-      expect(prepIndex).toBeLessThan(runPipelineIndex);
-    });
-
-    test("worktreeManager.create is NOT called when storyIsolation is 'shared'", async () => {
-      // When storyIsolation === "shared", no worktree operations should occur.
-      // We verify by checking that create() is never called on the manager.
-      const createMock = mock(async () => {});
-      const manager = new WorktreeManager();
-      manager.create = createMock;
-      manager.ensureGitExcludes = mock(async () => {});
-      _iterationRunnerDeps.worktreeManager = manager;
-
-      // In "shared" mode, the worktree code path is gated by:
-      //   if (ctx.config.execution.storyIsolation === "worktree") { ... }
-      // So create() should never be called. We can verify with the DEFAULT_CONFIG
-      // (storyIsolation defaults to "shared" per EXEC-002 spec).
-      // The schema default guarantees "shared" as the default value
-      const isolation: unknown = DEFAULT_CONFIG.execution.storyIsolation;
-      expect(isolation).toBe("shared");
-      // The gating ensures create() is skipped for "shared" mode.
-      expect(createMock).not.toHaveBeenCalled();
-    });
-
-    test("existsSync returning true means worktree is reused (create NOT called)", () => {
-      // When the worktree directory already exists (escalation path),
-      // existsSync returns true → create() should be skipped.
-      const createMock = mock(async () => {});
-      _iterationRunnerDeps.existsSync = mock(() => true);
-      const manager = new WorktreeManager();
-      manager.create = createMock;
-      manager.ensureGitExcludes = mock(async () => {});
-      _iterationRunnerDeps.worktreeManager = manager;
-
-      // The gating logic: if (!worktreeExists) { create() }
-      // Since existsSync returns true, create() must not be called.
-      // This mirrors the runtime escalation reuse path.
-      expect(_iterationRunnerDeps.existsSync("/any/path")).toBe(true);
-      expect(createMock).not.toHaveBeenCalled();
-    });
-
-    test("existsSync returning false means worktree is created (first attempt)", () => {
-      // When the worktree directory does NOT exist (first attempt),
-      // existsSync returns false → create() should be called.
-      _iterationRunnerDeps.existsSync = mock(() => false);
-
-      expect(_iterationRunnerDeps.existsSync("/any/path")).toBe(false);
-      // The caller (runIteration) would proceed to call create().
-      // We validate the dep's mock returns the correct value.
-    });
-  });
-
+describe("iteration-runner — escalation session cleanup", () => {
   // #410: reviewerSession cleanup on escalation
   describe("reviewerSession cleanup on escalation", () => {
     test("destroys reviewerSession when pipeline returns escalate action", async () => {

@@ -2,9 +2,9 @@
  * A `MergeEngine` the tests can assert against.
  *
  * `MergeEngine` is a class with a `private worktreeManager` parameter property,
- * so a bare `{ merge }` stub can never satisfy it structurally. Sites in
- * `pipeline-result-handler.test.ts` therefore cast their stubs into the dep
- * slot — 7 casts for one missing helper (#1514 §3c-ii, Decision 1).
+ * so a bare `{ merge }` stub can never satisfy it structurally. Call sites
+ * therefore cast their stub into the consuming slot — 7 casts for one missing
+ * helper (#1514 §3c-ii, Decision 1).
  *
  * Same shape of fix as `makeLogger` / `makeStatusWriter`:
  * intersect, and keep the one cast here.
@@ -24,11 +24,11 @@ export type MockMergeEngine = MergeEngine & {
  *
  * ```ts
  * const mergeMock = mock(async () => ({ success: false, failureKind: "error" }));
- * _resultHandlerDeps.mergeEngine = makeMergeEngine({ merge: mergeMock });
+ * const engine = makeMergeEngine({ merge: mergeMock });
  * ```
  *
- * The dep slot is a `MergeEngine` instance, and `MockMergeEngine` intersects the
- * class, so the result needs no cast at the call site.
+ * The consuming slot is typed as `MergeEngine`, and `MockMergeEngine` intersects
+ * the class, so the result needs no cast at the call site.
  */
 export function makeMergeEngine(overrides: Partial<Record<keyof MergeEngine, unknown>> = {}): MockMergeEngine {
   return Object.assign(

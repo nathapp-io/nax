@@ -1,10 +1,10 @@
 /**
- * Unit tests for paused-story-prompts.ts (EXEC-002 / US-004)
+ * Unit tests for paused-story-prompts.ts.
  *
- * Covers:
- * - In "worktree" mode, resumed stories have storyGitRef cleared
- * - In "shared" mode, storyGitRef is NOT cleared
- * - Skipped and kept stories are not affected
+ * On re-run each paused story is offered resume / skip / keep. A resume puts
+ * the story back in the queue and keeps its `storyGitRef`: every story runs in
+ * the same shared checkout (US-004 removed the worktree isolation paths), so
+ * the ref captured at the start of the story is still the right diff base.
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -55,60 +55,57 @@ function makeChain(action: string): InteractionChain {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("promptForPausedStories — worktree mode storyGitRef cleanup (EXEC-002)", () => {
-  test("worktree mode: clears storyGitRef when story is resumed", async () => {
+describe("promptForPausedStories — resume", () => {
+  test("AC-10: a resumed story is set back to pending", async () => {
     const story = makeStory("US-001", { storyGitRef: "abc123" });
     const prd = makePrd([story]);
-    const chain = makeChain("resume");
 
-    await promptForPausedStories(prd, chain, "test-feature", "worktree");
+    await promptForPausedStories(prd, makeChain("resume"), "feat");
 
     expect(story.status).toBe("pending");
-    expect(story.storyGitRef).toBeUndefined();
   });
 
-  test("shared mode: does NOT clear storyGitRef when story is resumed", async () => {
+  test("AC-11: a resumed story keeps its storyGitRef", async () => {
     const story = makeStory("US-001", { storyGitRef: "abc123" });
     const prd = makePrd([story]);
-    const chain = makeChain("resume");
 
-    await promptForPausedStories(prd, chain, "test-feature", "shared");
+    await promptForPausedStories(prd, makeChain("resume"), "feat");
 
-    expect(story.status).toBe("pending");
     expect(story.storyGitRef).toBe("abc123");
   });
 
-  test("storyGitRef not cleared when story is skipped (even in worktree mode)", async () => {
+  test("AC-12: a resumed story is listed in summary.resumed", async () => {
     const story = makeStory("US-001", { storyGitRef: "abc123" });
     const prd = makePrd([story]);
-    const chain = makeChain("skip");
 
-    await promptForPausedStories(prd, chain, "test-feature", "worktree");
+    const summary = await promptForPausedStories(prd, makeChain("resume"), "feat");
+
+    expect(summary.resumed).toEqual(["US-001"]);
+    expect(summary.skipped).toEqual([]);
+    expect(summary.kept).toEqual([]);
+  });
+});
+
+describe("promptForPausedStories — skip and keep", () => {
+  test("a skipped story is marked skipped and keeps its storyGitRef", async () => {
+    const story = makeStory("US-001", { storyGitRef: "abc123" });
+    const prd = makePrd([story]);
+
+    const summary = await promptForPausedStories(prd, makeChain("skip"), "feat");
 
     expect(story.status).toBe("skipped");
     expect(story.storyGitRef).toBe("abc123");
+    expect(summary.skipped).toEqual(["US-001"]);
   });
 
-  test("storyGitRef not cleared when story is kept paused (even in worktree mode)", async () => {
+  test("a kept story stays paused and keeps its storyGitRef", async () => {
     const story = makeStory("US-001", { storyGitRef: "abc123" });
     const prd = makePrd([story]);
-    // "keep" action → story stays paused
-    const chain = makeChain("keep");
 
-    await promptForPausedStories(prd, chain, "test-feature", "worktree");
+    const summary = await promptForPausedStories(prd, makeChain("keep"), "feat");
 
     expect(story.status).toBe("paused");
     expect(story.storyGitRef).toBe("abc123");
-  });
-
-  test("no storyIsolation param: storyGitRef is NOT cleared (backward compat)", async () => {
-    const story = makeStory("US-001", { storyGitRef: "abc123" });
-    const prd = makePrd([story]);
-    const chain = makeChain("resume");
-
-    await promptForPausedStories(prd, chain, "test-feature");
-
-    expect(story.status).toBe("pending");
-    expect(story.storyGitRef).toBe("abc123");
+    expect(summary.kept).toEqual(["US-001"]);
   });
 });

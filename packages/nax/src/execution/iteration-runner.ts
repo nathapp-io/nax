@@ -5,7 +5,6 @@
  * Extracted from sequential-executor.ts to slim it below 120 lines.
  */
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { pinRootOnlyKeys, profileOverrideFromConfig } from "../config";
@@ -14,13 +13,10 @@ import { getLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
 import type { PipelineContext, PipelineStage } from "../pipeline/types";
-import { markStoryFailed, savePRD, savePrdProgress } from "../prd";
+import { savePRD, savePrdProgress } from "../prd";
 import type { PRD } from "../prd/types";
 import { captureGitRef, isGitRefValid } from "../utils/git";
 import { storyAbsWorkdir, storyPackageDir } from "../utils/path-frame";
-import { deriveStoryWorktreeId, storyWorktreePath } from "../worktree";
-import { prepareWorktreeDependencies } from "../worktree/dependencies";
-import { WorktreeManager } from "../worktree/manager";
 import { handleDryRun } from "./dry-run";
 import type { SequentialExecutionContext } from "./executor-types";
 import { handlePipelineFailure, handlePipelineSuccess } from "./pipeline-result-handler";
@@ -85,34 +81,15 @@ export async function runIteration(
 
   const storyStartTime = Date.now();
 
-  // EXEC-002: Resolve the effective workdir for this story.
-  // In "worktree" mode, each story runs in its own git worktree at
-  // .nax-wt/<worktreeId>/ (US-003: `story-<feature>-<storyId>`).
-  // In "shared" mode (default), use the project root as-is.
-  let effectiveWorkdir = ctx.workdir;
-  if (ctx.config.execution.storyIsolation === "worktree") {
-    // US-003: the identity is composed from this run's feature and the story's
-    // raw id, so the probe, the create() and the working directory all name the
-    // same `.nax-wt/story-<feature>-<storyId>` path — a composed worktree beside
-    // a raw path would send every story into a directory that does not exist.
-    const worktreeId = deriveStoryWorktreeId(ctx.feature, story.id);
-    const worktreePath = storyWorktreePath(ctx.workdir, worktreeId);
-    const worktreeExists = _iterationRunnerDeps.existsSync(worktreePath);
-    if (!worktreeExists) {
-      // First attempt for this story — create a fresh worktree.
-      await _iterationRunnerDeps.worktreeManager.ensureGitExcludes(ctx.workdir);
-      await _iterationRunnerDeps.worktreeManager.create(ctx.workdir, worktreeId);
-    }
-    // Escalation reuse: if the worktree already exists (story retried in same worktree),
-    // skip creation and continue in the existing worktree directory.
-    effectiveWorkdir = worktreePath;
-  }
+  // Every story runs in the run's own checkout: nax#2479 put the workflow tree and
+  // its git reads in the main checkout, so there is no per-story isolation to
+  // resolve here (US-004 removed the worktree execution paths).
+  const effectiveWorkdir = ctx.workdir;
 
   // @design: BUG-114: Persist storyGitRef in prd.json so it survives crashes and restarts.
   // On the first attempt we capture HEAD and save it. On resume we reuse the stored
   // ref (after validating it still exists in git history), so semantic review always
   // diffs from the true start of this story regardless of how many times nax restarted.
-  // EXEC-002: In worktree mode, capture/validate the ref inside the worktree (effectiveWorkdir).
   let storyGitRef: string | undefined;
   if (story.storyGitRef && (await isGitRefValid(effectiveWorkdir, story.storyGitRef))) {
     storyGitRef = story.storyGitRef;
@@ -146,42 +123,7 @@ export async function runIteration(
       )
     : ctx.config;
 
-  let dependencyContext: import("../worktree/types").WorktreeDependencyContext | undefined;
-  if (ctx.config.execution.storyIsolation === "worktree") {
-    try {
-      dependencyContext = await _iterationRunnerDeps.prepareWorktreeDependencies({
-        projectRoot: ctx.workdir,
-        worktreeRoot: effectiveWorkdir,
-        storyId: story.id,
-        storyWorkdir: storyPkg,
-        config: effectiveConfig,
-      });
-    } catch (error) {
-      markStoryFailed(prd, story.id, "dependency-prep", "worktree-dependencies", ctx.statusWriter);
-      await _iterationRunnerDeps.savePrdProgress(prd, ctx.prdPath, story.id, "failed");
-      try {
-        // US-003: same composed identity create() used, so the cleanup removes
-        // the worktree that was actually built.
-        await _iterationRunnerDeps.worktreeManager.remove(ctx.workdir, deriveStoryWorktreeId(ctx.feature, story.id));
-      } catch {
-        // best-effort cleanup
-      }
-      return {
-        prd,
-        storiesCompletedDelta: 0,
-        costDelta: 0,
-        prdDirty: true,
-        finalAction: "fail",
-        reason: errorMessage(error),
-      };
-    }
-  }
-
-  // EXEC-002: in worktree mode effectiveWorkdir is the worktree root, so a
-  // monorepo subpackage resolves beneath it rather than beneath the main
-  // checkout. storyAbsWorkdir returns the base unchanged for a root story.
-  const isolationRoot = ctx.config.execution.storyIsolation === "worktree" ? effectiveWorkdir : ctx.workdir;
-  const resolvedWorkdir = dependencyContext?.cwd ?? storyAbsWorkdir(isolationRoot, story);
+  const resolvedWorkdir = storyAbsWorkdir(ctx.workdir, story);
 
   const pipelineContext: PipelineContext = {
     reportPhase: (phase) => ctx.statusWriter.setPhase(phase),
@@ -212,14 +154,12 @@ export async function runIteration(
     // `storyExecRoot(ctx.packageView)` — the documented producer of that field
     // is HERE (`pipeline/types.ts`: "Set once per story in iteration-runner.ts").
     // Omitting it left the whole execRoot thread dead in production: every
-    // stage-assembly silently omitted execRoot, so under storyIsolation
-    // "worktree" both context providers resolved against the MAIN checkout —
-    // the stale-or-absent-context defect US-001 exists to fix.
+    // stage-assembly silently omitted execRoot, so both context providers
+    // resolved against the wrong tree.
     //
-    // `resolvedWorkdir` is the dial to turn: under worktree isolation it is
-    // inside `.nax-wt/<worktreeId>/`, so the registry key it resolves to carries
-    // that prefix and `storyExecRoot` returns the worktree root; under shared
-    // isolation it resolves to the repo root. Both spellings come from the
+    // `resolvedWorkdir` is the dial to turn: it is the story's package under the
+    // run's checkout, and the registry key it resolves to carries that frame, so
+    // `storyExecRoot` returns that same root. The spelling comes from the
     // runtime's own registry — no path is re-derived here (nax#2069).
     packageView: ctx.runtime.packages.resolve(resolvedWorkdir),
   };
@@ -332,9 +272,6 @@ export async function runIteration(
  */
 export const _iterationRunnerDeps = {
   loadConfigForWorkdir,
-  prepareWorktreeDependencies,
   runPipeline,
-  existsSync,
   savePrdProgress,
-  worktreeManager: new WorktreeManager(),
 };

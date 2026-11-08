@@ -18,49 +18,57 @@ function configFor(opts: { mode?: Mode; advisor?: boolean }): NaxConfig {
 }
 
 describe("applyWorkflowMode", () => {
-  test("AC-12 normalizes hand-built pipeline configs too", () => {
-    const cfg = makeNaxConfig({
-      execution: { mode: "pipeline", storyIsolation: "worktree" },
-      advisor: { enabled: false },
-    });
-    const out = applyWorkflowMode(cfg, () => {});
-    expect(out.execution.storyIsolation).toBe("shared");
-    expect(out.advisor?.enabled).toBe(true);
-  });
-
-  test("workflow mode forces the advisor on, silently when it is the shipped default", () => {
+  test("AC-1: an advisor that workflow mode turns on comes back enabled on a new config", () => {
     const cfg = configFor({ mode: "workflow", advisor: false });
-    const warnings: string[] = [];
-    const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
+
+    const out = applyWorkflowMode(cfg);
+
     expect(out.advisor?.enabled).toBe(true);
-    expect(cfg.advisor?.enabled).toBe(false); // input not mutated
-    // workflow is the default mode, so overriding untouched defaults is not news on every run
-    expect(warnings).toEqual([]);
+    expect(out).not.toBe(cfg);
   });
 
-  test("the shipped default config resolves in workflow mode without a warning", () => {
-    const warnings: string[] = [];
-    applyWorkflowMode(DEFAULT_CONFIG, (m) => warnings.push(m));
-    expect(warnings).toEqual([]);
+  test("AC-2: forcing the advisor on does not mutate the input config", () => {
+    const cfg = configFor({ mode: "workflow", advisor: false });
+
+    applyWorkflowMode(cfg);
+
+    expect(cfg.advisor?.enabled).toBe(false);
   });
 
-  test("workflow mode forces shared story isolation: the workflow tree sits in the main checkout (nax#2479)", () => {
+  test("AC-3: an advisor that is already enabled is returned as the same object reference", () => {
+    const cfg = configFor({ mode: "workflow", advisor: true });
+
+    expect(applyWorkflowMode(cfg)).toBe(cfg);
+  });
+
+  test("AC-14: a config with no advisor section is returned as the same object reference", () => {
+    const cfg = configFor({ mode: "workflow" });
+    Reflect.deleteProperty(cfg, "advisor");
+
+    expect(cfg.advisor).toBeUndefined();
+    expect(applyWorkflowMode(cfg)).toBe(cfg);
+  });
+
+  test("the shipped default config has its advisor forced on without being mutated", () => {
+    expect(DEFAULT_CONFIG.advisor?.enabled).toBe(false);
+
+    const out = applyWorkflowMode(DEFAULT_CONFIG);
+
+    expect(out).not.toBe(DEFAULT_CONFIG);
+    expect(out.advisor?.enabled).toBe(true);
+    expect(DEFAULT_CONFIG.advisor?.enabled).toBe(false);
+  });
+
+  test("workflow mode no longer rewrites execution.storyIsolation", () => {
+    // The isolation term is gone with the worktree execution path (US-004):
+    // workflow mode forces only the advisor now.
     const cfg = makeNaxConfig({
       execution: { mode: "workflow", storyIsolation: "worktree" },
       advisor: { enabled: true },
     });
-    const warnings: string[] = [];
-    const out = applyWorkflowMode(cfg, (m) => warnings.push(m));
-    expect(out.execution.storyIsolation).toBe("shared");
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("execution.storyIsolation=shared");
-  });
 
-  test("workflow mode with keys already at their forced values does not warn", () => {
-    const cfg = configFor({ mode: "workflow", advisor: true });
-    const warnings: string[] = [];
-    applyWorkflowMode(cfg, (m) => warnings.push(m));
-    expect(warnings).toEqual([]);
+    expect(applyWorkflowMode(cfg)).toBe(cfg);
+    expect(cfg.execution.storyIsolation).toBe("worktree");
   });
 });
 
@@ -76,18 +84,6 @@ describe("applyWorkflowMode at the per-package loader exit", () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
     dir = "";
     _clearRootConfigCache();
-  });
-
-  test("a package override cannot re-enable worktree isolation in workflow mode", async () => {
-    dir = mkdtempSync(join(tmpdir(), "nax-wf-"));
-    mkdirSync(join(dir, ".nax", "mono", "apps", "api"), { recursive: true });
-    writeFileSync(join(dir, ".nax", "config.json"), JSON.stringify({ execution: { mode: "workflow" } }));
-    writeFileSync(
-      join(dir, ".nax", "mono", "apps", "api", "config.json"),
-      JSON.stringify({ execution: { storyIsolation: "worktree" } }),
-    );
-    const cfg = await loadConfigForWorkdir(join(dir, ".nax", "config.json"), "apps/api");
-    expect(cfg.execution.storyIsolation).toBe("shared");
   });
 
   test("a root config with no execution.mode resolves to workflow mode", async () => {

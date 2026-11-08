@@ -348,14 +348,6 @@ export interface ResetFailedOptions {
    */
   resetRef?: boolean;
   /**
-   * When `"worktree"`, also clears `storyGitRef` and `repoScopedFixes` for
-   * all reset stories regardless of `resetRef` (each story will get a fresh
-   * ref in its new worktree, and the old worktree's repairs don't follow).
-   * Callers are responsible for deleting the old `nax/<storyId>` branches
-   * after this returns.
-   */
-  storyIsolation?: "shared" | "worktree";
-  /**
    * Controls tier/agent restoration on reset (ADR-025 gap #4).
    *
    * - `"initial"` (default): restore `modelTier`/`agent` to the origin rung
@@ -376,7 +368,7 @@ export interface ResetFailedOptions {
  * @returns the list of stories that were reset (empty = no changes, PRD is clean)
  */
 export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions = {}): UserStory[] {
-  const { resetRef = false, storyIsolation, resetMode = "initial" } = opts;
+  const { resetRef = false, resetMode = "initial" } = opts;
   const reset: UserStory[] = [];
   for (const story of prd.userStories) {
     if (story.status !== "failed") continue;
@@ -395,7 +387,7 @@ export function resetFailedStoriesToPending(prd: PRD, opts: ResetFailedOptions =
       story.escalations = [];
     }
 
-    if (resetRef || storyIsolation === "worktree") {
+    if (resetRef) {
       story.storyGitRef = undefined;
       story.repoScopedFixes = undefined;
     }

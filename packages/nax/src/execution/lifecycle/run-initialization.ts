@@ -8,7 +8,6 @@
  * 4. Initial PRD analysis
  */
 
-import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
 import { resolveDefaultAgent } from "@/agents";
 import type { AgentAdapter } from "@/agents/types";
 import type { NaxConfig } from "@/config";
@@ -23,10 +22,8 @@ import type { PRD } from "@/prd/types";
 // nested barrel, so this reaches it without loading `src/review/index.ts`.
 import { runReview } from "@/review/runner";
 import type { ReviewConfig } from "@/review/types";
-import { spawn } from "@/utils/bun-deps";
 import { hasCommitsForStory } from "@/utils/git";
 import { storyAbsWorkdir } from "@/utils/path-frame";
-import { deriveStoryWorktreeId, storyBranchName } from "@/worktree";
 
 /**
  * Injectable dependencies for reconcileState — allows tests to mock
@@ -37,7 +34,6 @@ export const _reconcileDeps = {
   hasCommitsForStory: (workdir: string, storyId: string) => hasCommitsForStory(workdir, storyId),
   runReview: (reviewConfig: ReviewConfig, workdir: string, executionConfig: NaxConfig["execution"]) =>
     runReview({ config: reviewConfig, workdir, executionConfig }),
-  spawn,
 };
 
 export interface InitializationContext {
@@ -200,11 +196,6 @@ export function logActiveProtocol(_config: NaxConfig): void {
 export async function initializeRun(ctx: InitializationContext): Promise<InitializationResult> {
   const logger = getSafeLogger();
 
-  // EXEC-002: Log the story isolation mode for observability
-  logger?.info("execution", "Story isolation mode", {
-    storyIsolation: ctx.config.execution.storyIsolation,
-  });
-
   // Load the PRD before the agent preflight so the check can be conditional.
   // The preflight used to run first, unconditionally, which made an installed
   // agent a prerequisite for runs that never call one — re-running a feature
@@ -230,50 +221,12 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   // reconcileState runs first to promote failed→passed for git-committed stories;
   // remaining failed stories (incomplete work) are reset here so they re-enter the queue.
   const resetRef = ctx.config.review?.semantic?.resetRefOnRerun ?? false;
-  const storyIsolation = ctx.config.execution.storyIsolation;
   const resetMode = ctx.config.autoMode.escalation.resetMode;
-  const resetStories = resetFailedStoriesToPending(prd, { resetRef, storyIsolation, resetMode });
+  const resetStories = resetFailedStoriesToPending(prd, { resetRef, resetMode });
   if (resetStories.length > 0) {
-    const resetIds = resetStories.map((s) => s.id);
-    logger?.info("run-initialization", "Reset failed stories to pending for re-run", { storyIds: resetIds });
-
-    // EXEC-002: In worktree mode, delete old nax/<worktreeId> branches so worktreeManager.create()
-    // starts from a clean slate (fresh branch from current main HEAD). US-003:
-    // the branch is the COMPOSED one (`nax/story-<feature>-<storyId>`) — the
-    // name create() actually made; deleting a raw `nax/<storyId>` would leave
-    // the composed branch in place and crash the next create().
-    if (storyIsolation === "worktree") {
-      for (const story of resetStories) {
-        const branch = storyBranchName(deriveStoryWorktreeId(prd.feature, story.id));
-        try {
-          const proc = _reconcileDeps.spawn(["git", "branch", "-D", branch], {
-            cwd: ctx.workdir,
-            env: gitSpawnEnv(),
-            stdout: "pipe",
-            stderr: "pipe",
-          });
-          const exitCode = await proc.exited;
-          if (exitCode === 0) {
-            logger?.info("worktree", "Cleaned up old branch for re-run", { storyId: story.id });
-          } else {
-            const stderr = await new Response(proc.stderr).text();
-            if (!stderr.includes("not found")) {
-              // Unexpected failure — warn but continue. If branch still exists, worktreeManager.create()
-              // will crash on the next run with "branch already exists".
-              logger?.warn("worktree", "Failed to clean up old branch for re-run (non-fatal)", {
-                storyId: story.id,
-                branch,
-                stderr: stderr.trim(),
-              });
-            }
-            // "not found" → branch never existed (story failed before worktree creation) — silently skip
-          }
-        } catch {
-          // Spawn failure — non-fatal, log nothing (branch may not exist)
-        }
-      }
-    }
-
+    logger?.info("run-initialization", "Reset failed stories to pending for re-run", {
+      storyIds: resetStories.map((s) => s.id),
+    });
     await savePRD(prd, ctx.prdPath);
   }
 

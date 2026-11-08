@@ -15,7 +15,6 @@ import { join } from "node:path";
 import {
   cleanupTempDir,
   makeAgentResult,
-  makeMergeEngine,
   makeMockRuntime,
   makePRD,
   makeSpawn,
@@ -540,40 +539,20 @@ describe("US-003 handlePipelineFailure — cleanup keys off the composed identit
   });
 });
 
-describe("US-003 handlePipelineSuccess — the merge takes the composed identity", () => {
+describe("US-003 handlePipelineSuccess — metrics keep the raw story ID", () => {
   let origUkSpawn: typeof _resultHandlerDeps.spawn;
   let origUkExistsSync: typeof _resultHandlerDeps.existsSync;
-  let origUkMergeEngine: typeof _resultHandlerDeps.mergeEngine;
 
   beforeEach(() => {
     origUkSpawn = _resultHandlerDeps.spawn;
     origUkExistsSync = _resultHandlerDeps.existsSync;
-    origUkMergeEngine = _resultHandlerDeps.mergeEngine;
     _resultHandlerDeps.existsSync = () => false;
   });
 
   afterEach(() => {
     _resultHandlerDeps.spawn = origUkSpawn;
     _resultHandlerDeps.existsSync = origUkExistsSync;
-    _resultHandlerDeps.mergeEngine = origUkMergeEngine;
     mock.restore();
-  });
-
-  test("AC-11: MergeEngine.merge receives the WorktreeId story-f-US-001", async () => {
-    const mergeEngine = makeMergeEngine();
-    _resultHandlerDeps.mergeEngine = mergeEngine;
-
-    const story = makeStory({ id: US003_STORY_ID, status: "pending", passes: false });
-    // storyGitRef is cleared so no diff capture (real git) runs.
-    const ctx = makeIdentityCtx(story, { storyGitRef: undefined });
-
-    await handlePipelineSuccess(ctx, successResultFor());
-
-    const mergeArgs = mergeEngine.merge.mock.calls[0];
-    expect(mergeArgs).toBeDefined();
-    expect(mergeArgs?.[0]).toBe(ctx.workdir);
-    expect(String(mergeArgs?.[1])).toBe("story-f-US-001");
-    expect(String(mergeArgs?.[1])).not.toBe(US003_STORY_ID);
   });
 
   test("AC-13: recorded story metrics keep the raw story ID, never the composed identity", async () => {
@@ -593,8 +572,7 @@ describe("US-003 handlePipelineSuccess — the merge takes the composed identity
       completedAt: "2026-01-01T00:00:00.100Z",
     };
     const allStoryMetrics: StoryMetrics[] = [];
-    // Shared isolation: metrics are recorded on the same path either way, and
-    // this keeps the test off the worktree merge.
+    // storyGitRef is cleared so no diff capture (real git) runs.
     const ctx = makeCtx(story, {
       storyGitRef: undefined,
       allStoryMetrics,

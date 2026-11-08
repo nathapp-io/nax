@@ -273,7 +273,7 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
     });
   }
 
-  return applyWorkflowMode(result.data as NaxConfig, defaultConfigWarn);
+  return applyWorkflowMode(result.data as NaxConfig);
 }
 
 /**
@@ -337,7 +337,7 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // DEFAULT_CONFIG already carries profile="default" and profileChain=[] (schema
   // defaults), so this fast path stays consistent with the full path's chain fields.
   if (!hasMergedConfigs) {
-    return applyWorkflowMode(structuredClone(DEFAULT_CONFIG), defaultConfigWarn);
+    return applyWorkflowMode(structuredClone(DEFAULT_CONFIG));
   }
 
   return finalizeAndValidateRootConfig(rawConfig);
@@ -588,6 +588,6 @@ export async function loadConfigForWorkdir(
       { stage: "config", packageDir, profileChain: packageChain },
     );
   }
-  merged = applyWorkflowMode(result.data as NaxConfig, warnDedupe.warn);
+  merged = applyWorkflowMode(result.data as NaxConfig);
   return packageConfigCache.set(resolvedRootConfigPath, packageDir, profileKey, merged);
 }
