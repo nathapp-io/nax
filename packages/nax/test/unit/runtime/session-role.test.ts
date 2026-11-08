@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isSessionRole, KNOWN_SESSION_ROLES, knownSessionRole } from "@/runtime/session-role";
 
 /**
@@ -149,7 +150,7 @@ const SESSION_ROLE_MENTION = /session[ _-]?role/i;
 const REMOVED_ROLE_QUOTED = new RegExp(`"(${REMOVED_ROLES.join("|")})"`);
 
 /** The package root, derived from this file's location (test/unit/runtime/). */
-const PACKAGE_ROOT = new URL("../../../", import.meta.url).pathname;
+const PACKAGE_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 function* sourceFiles(dir: string): Generator<string> {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
