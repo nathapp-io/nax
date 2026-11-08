@@ -188,34 +188,6 @@ function displayConfigWithDescriptions(
   // Handle objects
   const entries = Object.entries(obj as Record<string, unknown>);
 
-  // Special handling for prompts section: always show overrides documentation
-  const objAsRecord = obj as Record<string, unknown>;
-  const isPromptsSection = path.join(".") === "prompts";
-  if (isPromptsSection && !objAsRecord.overrides) {
-    // Add prompts.overrides documentation even if not in config
-    const description = FIELD_DESCRIPTIONS["prompts.overrides"];
-    if (description) {
-      console.log(`${indentStr}# prompts.overrides: ${description}`);
-    }
-
-    // Show role examples
-    const roles = ["test-writer", "implementer", "verifier"];
-    console.log(`${indentStr}overrides:`);
-    for (const role of roles) {
-      const roleDesc = FIELD_DESCRIPTIONS[`prompts.overrides.${role}`];
-      if (roleDesc) {
-        console.log(`${indentStr}  # ${roleDesc}`);
-        // Extract the example path from description
-        const match = roleDesc.match(/e\.g\., "([^"]+)"/);
-        if (match) {
-          console.log(`${indentStr}  # ${role}: "${match[1]}"`);
-        }
-      }
-    }
-    console.log();
-    return;
-  }
-
   for (let i = 0; i < entries.length; i++) {
     const [key, value] = entries[i];
     const currentPath = [...path, key];
@@ -227,7 +199,7 @@ function displayConfigWithDescriptions(
       // Include path for direct subsections of key configuration sections
       // (to improve clarity of important configs like multi-agent setup)
       const pathParts = currentPathStr.split(".");
-      // Only show path for 2-level paths (e.g., "autoMode.enabled", "models.fast")
+      // Only show path for 2-level paths (e.g., "autoMode.escalation", "models.fast")
       // to keep deeply nested descriptions concise
       const isDirectSubsection = pathParts.length === 2;
       const isKeySection = ["prompts", "autoMode", "models", "routing", "agent"].includes(pathParts[0]);
@@ -250,29 +222,6 @@ function displayConfigWithDescriptions(
         console.log();
       }
     }
-  }
-
-  // At top level, show prompts.overrides documentation even if prompts is not in config
-  // (prompts is optional with no default, so NaxConfigSchema.parse({}).prompts is undefined)
-  if (indent === 0 && !entries.find(([k]) => k === "prompts")) {
-    console.log("# prompts: Prompt template overrides (PB-003: PromptBuilder)");
-    const description = FIELD_DESCRIPTIONS["prompts.overrides"];
-    if (description) {
-      console.log(`# prompts.overrides: ${description}`);
-    }
-    const roles = ["test-writer", "implementer", "verifier"];
-    console.log("overrides:");
-    for (const role of roles) {
-      const roleDesc = FIELD_DESCRIPTIONS[`prompts.overrides.${role}`];
-      if (roleDesc) {
-        console.log(`  # ${roleDesc}`);
-        const match = roleDesc.match(/e\.g\., "([^"]+)"/);
-        if (match) {
-          console.log(`  # ${role}: "${match[1]}"`);
-        }
-      }
-    }
-    console.log();
   }
 }
 

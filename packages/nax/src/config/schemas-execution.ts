@@ -11,7 +11,7 @@ import {
 } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { CommandSafetyConfigSchema } from "./schemas-command-safety";
-import { ConfiguredModelSchema, ModelTierSchema, TierConfigSchema } from "./schemas-model";
+import { ModelTierSchema, TierConfigSchema } from "./schemas-model";
 import { ExecutionModeSchema } from "./schemas-workflow";
 
 const ComplexityRungSchema = z.union([
@@ -20,7 +20,6 @@ const ComplexityRungSchema = z.union([
 ]);
 
 const AutoModeConfigSchema = z.object({
-  enabled: z.boolean(),
   complexityRouting: z.object({
     simple: ComplexityRungSchema,
     medium: ComplexityRungSchema,
@@ -272,10 +271,6 @@ export const QualityConfigSchema = z.object({
       lintScoped: QualityCommandSpecSchema.optional(),
       test: QualityCommandSpecSchema.optional(),
       testScoped: QualityCommandSpecSchema.optional(),
-      lintFix: QualityCommandSpecSchema.optional(),
-      lintFixScoped: QualityCommandSpecSchema.optional(),
-      formatFix: QualityCommandSpecSchema.optional(),
-      formatFixScoped: QualityCommandSpecSchema.optional(),
       build: QualityCommandSpecSchema.optional(),
       /**
        * Host-side end-to-end journey gate (#2530). Runs as the last repo gate,
@@ -315,25 +310,6 @@ export const QualityConfigSchema = z.object({
       format: z.enum(["auto", "eslint-json", "biome-json", "text", "none"]).default("auto"),
     })
     .default({ format: "auto" }),
-  typecheckOutput: z
-    .object({
-      format: z.enum(["auto", "tsc", "text", "none"]).default("auto"),
-    })
-    .default({ format: "auto" }),
-  autofix: z
-    .object({
-      /** Whether autofix-implementer + autofix-test-writer strategies participate
-       * in the rectification cycle. The cycle-level cap lives under
-       * execution.rectification.maxAttemptsTotal. */
-      enabled: z.boolean().default(true),
-      /** Prompt-text display only: "X attempts available before escalation".
-       * Not enforced — the real cap is execution.rectification.maxAttemptsTotal. */
-      maxAttempts: z.number().int().min(1).default(3),
-    })
-    .default({
-      enabled: true,
-      maxAttempts: 3,
-    }),
   forceExit: z.boolean().default(false),
   detectOpenHandles: z.boolean().default(true),
   detectOpenHandlesRetries: z.number().int().min(0).max(5).default(1),
@@ -409,41 +385,7 @@ export const QualityConfigSchema = z.object({
 });
 
 export const TddConfigSchema = z.object({
-  maxRetries: z.number().int().nonnegative(),
   strategy: z.enum(["auto", "strict", "lite", "simple", "off"]).default("auto"),
-  sessionTiers: z
-    .object({
-      // ConfiguredModel = tier string ("fast") OR { agent, model } cross-agent pin.
-      testWriter: ConfiguredModelSchema.default("fast"),
-      verifier: ConfiguredModelSchema.default("fast"),
-      // implementer is routing-driven (story.routing.modelTier + escalation); this
-      // field is intentionally NOT consumed. Kept optional so legacy configs parse.
-      implementer: ConfiguredModelSchema.optional(),
-    })
-    // Explicit default avoids Zod v4 behavior where .default({}) bypasses inner defaults.
-    .default({ testWriter: "fast", verifier: "fast" }),
-  /**
-   * Wall-clock budget for one verifier turn, in seconds.
-   *
-   * Its own knob rather than `execution.sessionTimeoutSeconds` because the
-   * verifier is a scoped, read-only task: it runs the story's own tests and
-   * emits a verdict. Inheriting the session default gave it 7200s and a spin
-   * roughly 2,000 iterations of runway before anything fired (nax#2013). The
-   * review ops have had their own budget all along (`review.*.timeoutMs`).
-   */
-  verifierTimeoutSeconds: z.number().int().min(60).max(7200).default(1800),
-  testWriterAllowedPaths: z.array(z.string()).optional(),
-
-  /**
-   * Whether the RED commit nax makes after a successful test-writer phase runs
-   * the repository's git hooks. "skip" (default, resolved at the consumer)
-   * commits with --no-verify: a RED suite may not typecheck until the
-   * implementer adds the symbols its tests reference. "run" restores the
-   * hooks (e.g. a secret-scanning hook that must see every commit); a hook
-   * that rejects leaves the files uncommitted and the run continues.
-   */
-  testWriterCommitHooks: z.enum(["skip", "run"]).optional(),
-  rollbackOnFailure: z.boolean().optional(),
   greenfieldDetection: z.boolean().optional(),
 });
 

@@ -286,14 +286,6 @@ export interface ReviewConfig {
     lintScoped?: QualityCommandSpec;
     test?: QualityCommandSpec;
     build?: QualityCommandSpec;
-    /** Auto-fix lint errors — used by autofix stage when lint fails */
-    lintFix?: QualityCommandSpec;
-    /** Scoped auto-fix lint command template with {{files}} placeholder */
-    lintFixScoped?: QualityCommandSpec;
-    /** Auto-fix formatting — used by autofix stage when lint fails */
-    formatFix?: QualityCommandSpec;
-    /** Scoped auto-format command template with {{files}} placeholder */
-    formatFixScoped?: QualityCommandSpec;
   };
   /** Review audit configuration — saves parsed reviewer JSON to .nax/review-audit/ */
   audit?: { enabled: boolean };

@@ -190,7 +190,7 @@ describe("Config Command --diff", () => {
       const projectConfig = {
         routing: {
           llm: {
-            timeoutMs: 60000, // Different from default (30000)
+            retries: 3, // Not set by default
           },
         },
       };
@@ -204,9 +204,8 @@ describe("Config Command --diff", () => {
       const output = consoleOutput.join("\n");
 
       // Should show nested path
-      expect(output).toContain("routing.llm.timeoutMs");
-      expect(output).toContain("60000");
-      expect(output).toContain("30000");
+      expect(output).toContain("routing.llm.retries");
+      expect(output).toContain("3");
     });
 
     test("shows field descriptions when available", async () => {
@@ -283,7 +282,7 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         quality: {
-          autofix: { enabled: false }, // Different from default/global (true)
+          forceExit: true, // Different from default/global (false)
         },
       };
       writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
@@ -295,7 +294,7 @@ describe("Config Command --diff", () => {
 
       const output = consoleOutput.join("\n");
 
-      expect(output).toContain("quality.autofix.enabled");
+      expect(output).toContain("quality.forceExit");
       expect(output).toContain("false");
       expect(output).toContain("true");
     });

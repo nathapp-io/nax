@@ -333,7 +333,6 @@ describe("planDecomposeCommand — writes through the plan-write seam (nax#2080)
       routing: {
         agents: {
           enabled: true,
-          strategy: "off",
           default: "claude-default",
           profiles: [{ id: "claude-default", target: { agent: "claude", model: "balanced" }, strengths: ["design"] }],
         },

@@ -230,7 +230,7 @@ describe("LLM Routing Mode Config", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.routing.llm?.mode).toBe("one-shot");
-      expect(result.data.routing.llm?.batchMode).toBe(true);
+      expect("batchMode" in (result.data.routing.llm ?? {})).toBe(false);
     }
   });
 });
@@ -342,7 +342,7 @@ describe("Config Loader - Backward Compatibility", () => {
     // applyBatchModeCompat runs on raw projConf before deepMerge with defaults,
     // so batchMode:true correctly maps to mode:"one-shot" overriding DEFAULT_CONFIG's "hybrid"
     expect(config.routing.llm?.mode).toBe("one-shot");
-    expect(config.routing.llm?.batchMode).toBe(true);
+    expect("batchMode" in (config.routing.llm ?? {})).toBe(false);
   });
 
   test("explicit mode takes precedence over batchMode", async () => {
@@ -362,10 +362,10 @@ describe("Config Loader - Backward Compatibility", () => {
 
     // Explicit mode is used, batchMode is ignored
     expect(config.routing.llm?.mode).toBe("per-story");
-    expect(config.routing.llm?.batchMode).toBe(true);
+    expect("batchMode" in (config.routing.llm ?? {})).toBe(false);
   });
 
-  test("rejects invalid batchMode value", async () => {
+  test("a non-boolean batchMode is dropped without mapping", async () => {
     const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       routing: {
@@ -377,8 +377,11 @@ describe("Config Loader - Backward Compatibility", () => {
     };
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
-    // Should throw validation error because Zod expects boolean
-    await expect(loadConfig(join(tempDir, ".nax"))).rejects.toThrow("Invalid configuration");
+    // The shim maps booleans only; the schema no longer declares batchMode, so
+    // a non-boolean value is dropped and the default mode stands.
+    const config = await loadConfig(join(tempDir, ".nax"));
+    expect(config.routing.llm?.mode).toBe("hybrid");
+    expect("batchMode" in (config.routing.llm ?? {})).toBe(false);
   });
 
   test("uses DEFAULT_CONFIG mode when user config has no routing.llm", async () => {

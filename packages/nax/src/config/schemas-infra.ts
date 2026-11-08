@@ -21,7 +21,6 @@ import { StoryRouterConfigSchema } from "./schemas-router";
 
 export const PlanConfigSchema = z.object({
   model: ConfiguredModelSchema,
-  outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
   timeoutSeconds: z.number().int().positive().default(600),
   /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
   decomposeTimeoutSeconds: z.number().int().min(30).max(1_800).optional(),
@@ -41,8 +40,6 @@ const LlmRoutingConfigSchema = z.object({
   fallbackToKeywords: z.boolean().optional(),
   cacheDecisions: z.boolean().optional(),
   mode: z.enum(["one-shot", "per-story", "hybrid"]).optional(),
-  batchMode: z.boolean().optional(), // deprecated, for backward compat
-  timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
   retries: z.number().int().min(0, { message: "llm.retries must be >= 0" }).optional(),
   retryDelayMs: z.number().int().min(0, { message: "llm.retryDelayMs must be >= 0" }).optional(),
 });
@@ -70,8 +67,6 @@ export const AgentRoutingConfigSchema = z
   .object({
     /** Explicit toggle — set false to disable plan-time agent selection without removing profiles */
     enabled: z.boolean().default(true),
-    /** "off" = plan-time only (v1 default). "llm" = run-time routing (Part A, deferred). */
-    strategy: z.enum(["off", "llm"]).default("off"),
     /** Default profile id used when the plan agent emits an unknown or missing agentProfileId */
     default: z.string().optional(),
     profiles: z.array(AgentRoutingProfileSchema).default([]),
@@ -96,13 +91,6 @@ export const AgentRoutingConfigSchema = z
         message: `Default profile "${cfg.default}" is not in the profiles list`,
       });
     }
-    if (cfg.strategy === "llm" && cfg.profiles.length === 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["strategy"],
-        message: 'strategy "llm" requires at least one profile in routing.agents.profiles',
-      });
-    }
   });
 
 export type AgentRoutingConfig = z.infer<typeof AgentRoutingConfigSchema>;
@@ -111,22 +99,13 @@ export const RoutingConfigSchema = z.object({
   strategy: z.enum(["keyword", "llm"]),
   llm: LlmRoutingConfigSchema.optional(),
   router: StoryRouterConfigSchema.prefault({}),
-  agents: AgentRoutingConfigSchema.default({ enabled: true, strategy: "off", profiles: [] }),
-});
-
-export const OptimizerConfigSchema = z.object({
-  enabled: z.boolean(),
+  agents: AgentRoutingConfigSchema.default({ enabled: true, profiles: [] }),
 });
 
 export const PluginConfigEntrySchema = z.object({
   module: z.string().min(1, "plugin.module must be non-empty"),
   config: z.record(z.string(), z.unknown()).optional(),
   enabled: z.boolean().default(true),
-});
-
-export const HooksConfigSchema = z.object({
-  skipGlobal: z.boolean().optional(),
-  hooks: z.record(z.string(), z.unknown()),
 });
 
 export const InteractionConfigSchema = z.object({
@@ -469,31 +448,7 @@ export const PrecheckConfigSchema = z.object({
   storySizeGate: StorySizeGateConfigSchema,
 });
 
-/** Prompt override roles that nax currently renders. `single-session` is
- *  deliberately absent: it stopped being a prompt role at fb3cfad3e, so naming
- *  it is rejected here (and stripped with a warning pre-parse by
- *  `stripRemovedNoOpKeys`, which keeps an existing config loading). */
-const PROMPT_OVERRIDE_ROLES = ["no-test", "test-writer", "implementer", "verifier", "tdd-simple"] as const;
-
 export const PromptsConfigSchema = z.object({
-  overrides: z
-    .record(z.string(), z.string().min(1, "Override path must be non-empty"))
-    // Validated on the parsed record rather than as a `z.record` key schema:
-    // Zod v4 collapses a failing key into "Invalid key in record" and drops the
-    // inner message, which names the surviving roles and is the whole point of
-    // the error. `superRefine` surfaces it verbatim.
-    .superRefine((overrides, ctx) => {
-      for (const key of Object.keys(overrides)) {
-        if (!(PROMPT_OVERRIDE_ROLES as readonly string[]).includes(key)) {
-          ctx.addIssue({
-            code: "custom",
-            message: `Role must be one of: ${PROMPT_OVERRIDE_ROLES.join(", ")}`,
-            path: [key],
-          });
-        }
-      }
-    })
-    .optional(),
   behavioralGuardrails: z.enum(["off", "lite", "strict"]).default("lite"),
 });
 

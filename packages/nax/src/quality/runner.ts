@@ -2,7 +2,7 @@
  * Quality Command Runner
  *
  * Shared utility for spawning quality check processes (lint, typecheck, build,
- * lintFix, formatFix) with a hard timeout, concurrent stdout/stderr draining,
+ * test) with a hard timeout, concurrent stdout/stderr draining,
  * and structured logging.
  *
  * All callers that previously spawned quality processes inline should use
@@ -38,7 +38,7 @@ const STREAM_DRAIN_TIMEOUT_MS = 2_000;
 export const TIMEOUT_OUTPUT_TAIL_CHARS = 4_000;
 
 export interface QualityCommandOptions {
-  /** Short name used in logs (e.g. "lint", "typecheck", "lintFix"). */
+  /** Short name used in logs (e.g. "lint", "typecheck", "build"). */
   commandName: string;
   /**
    * The command to run. A string is one shell command. A list runs every

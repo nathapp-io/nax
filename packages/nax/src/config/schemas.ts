@@ -42,9 +42,7 @@ import {
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
   GenerateConfigSchema,
-  HooksConfigSchema,
   InteractionConfigSchema,
-  OptimizerConfigSchema,
   PlanConfigSchema,
   PluginConfigEntrySchema,
   PrecheckConfigSchema,
@@ -117,7 +115,6 @@ export const NaxConfigSchema = z
     version: z.number().default(1),
     models: ModelMapSchema.default(structuredClone(DEFAULT_MODEL_MAPS)),
     autoMode: AutoModeConfigSchema.default({
-      enabled: true,
       complexityRouting: {
         simple: "fast",
         medium: "balanced",
@@ -148,9 +145,8 @@ export const NaxConfigSchema = z
         fallbackToKeywords: true,
         cacheDecisions: true,
         mode: "hybrid",
-        timeoutMs: 30000,
       },
-      agents: { enabled: true, strategy: "off", profiles: [] },
+      agents: { enabled: true, profiles: [] },
       router: { mode: "off", precedence: "router", timeoutMs: 5_000 },
     }),
     execution: ExecutionConfigSchema.default({
@@ -195,13 +191,6 @@ export const NaxConfigSchema = z
       lintOutput: {
         format: "auto",
       },
-      typecheckOutput: {
-        format: "auto",
-      },
-      autofix: {
-        enabled: true,
-        maxAttempts: 3,
-      },
       forceExit: false,
       detectOpenHandles: true,
       detectOpenHandlesRetries: 1,
@@ -244,15 +233,7 @@ export const NaxConfigSchema = z
       },
     }),
     tdd: TddConfigSchema.default({
-      maxRetries: 2,
       strategy: "auto",
-      sessionTiers: {
-        testWriter: "fast",
-        verifier: "fast",
-      },
-      verifierTimeoutSeconds: 1800,
-      testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
-      rollbackOnFailure: true,
       greenfieldDetection: true,
     }),
     constitution: ConstitutionConfigSchema.default({
@@ -307,7 +288,6 @@ export const NaxConfigSchema = z
     }),
     plan: PlanConfigSchema.default({
       model: "balanced",
-      outputPath: "spec.md",
       timeoutSeconds: 600,
       specGuard: false,
     }),
@@ -318,10 +298,8 @@ export const NaxConfigSchema = z
     // resolving correctly when the operator supplies the parent partially. That
     // asymmetry is invisible to a green suite. Re-parsing keeps one source of truth.
     context: ContextConfigSchema.default(() => ContextConfigSchema.parse({})),
-    optimizer: OptimizerConfigSchema.optional(),
     plugins: z.array(PluginConfigEntrySchema).optional(),
     disabledPlugins: z.array(z.string()).optional(),
-    hooks: HooksConfigSchema.optional(),
     interaction: InteractionConfigSchema.optional().default({
       plugin: "cli",
       config: {},

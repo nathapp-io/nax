@@ -12,7 +12,7 @@
  * sequences the per-key decision chain.
  */
 
-import { DANGEROUS_MERGE_KEYS, isPlainObject, mergeConstitution, mergeHooks } from "./merger-special-cases";
+import { DANGEROUS_MERGE_KEYS, isPlainObject, mergeConstitution } from "./merger-special-cases";
 import type { NaxConfig } from "./schema";
 
 export { DANGEROUS_MERGE_KEYS };
@@ -42,12 +42,6 @@ function applyOverrideKey(result: Record<string, unknown>, key: string, override
   }
 
   const baseValue = result[key];
-
-  // Special case: hooks concatenation
-  if (key === "hooks" && isPlainObject(baseValue) && isPlainObject(overrideValue)) {
-    result[key] = mergeHooks(baseValue, overrideValue);
-    return;
-  }
 
   // Special case: constitution content concatenation
   if (key === "constitution" && isPlainObject(baseValue) && isPlainObject(overrideValue)) {

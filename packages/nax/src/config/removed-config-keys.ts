@@ -21,6 +21,12 @@
  * the schema sees it.
  */
 
+/** Hint for a key no code read even before pipeline mode was removed. */
+const NEVER_READ_KEY_HINT = "nothing reads this key";
+
+/** Hint for the `hooks` section: lifecycle hooks have always loaded from their own file. */
+const HOOKS_SECTION_HINT = "nothing reads this key; lifecycle hooks are read from .nax/hooks.json";
+
 /** Hint for a key that only configured the removed pipeline mode. */
 export const PIPELINE_ONLY_KEY_HINT = "nothing reads this key since pipeline mode was removed";
 
@@ -68,11 +74,45 @@ const STORY_ISOLATION_HINT =
  * story-worktree execution path, which was deleted with pipeline mode too; both
  * take `STORY_ISOLATION_HINT`, which names what stories do now instead.
  *
+ * The tdd, autoMode and quality entries configured pipeline sessions and
+ * strategies (the TDD test-writer and verifier sessions, the autofix strategy,
+ * the lint and format fix commands) that no workflow run has, so they take
+ * `PIPELINE_ONLY_KEY_HINT` too. So do the `optimizer` section (the prompt
+ * optimizer seam went with the pipeline prompt stage) and `prompts.overrides`
+ * (no prompt loader reads override files any more).
+ *
+ * `plan.outputPath`, `routing.llm.timeoutMs`, `routing.agents.strategy` and the
+ * `hooks` section were never read even before C1 (`plan` writes to its input's
+ * path; lifecycle hooks load from `.nax/hooks.json`), so they take their own hints.
+ *
  * A section entry strips the WHOLE section — one warning for the section, not one
  * per leaf under it.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
   acceptance: PIPELINE_ONLY_KEY_HINT,
+  "autoMode.enabled": PIPELINE_ONLY_KEY_HINT,
+  "tdd.maxRetries": PIPELINE_ONLY_KEY_HINT,
+  "tdd.sessionTiers": PIPELINE_ONLY_KEY_HINT,
+  "tdd.verifierTimeoutSeconds": PIPELINE_ONLY_KEY_HINT,
+  "tdd.testWriterAllowedPaths": PIPELINE_ONLY_KEY_HINT,
+  "tdd.testWriterCommitHooks": PIPELINE_ONLY_KEY_HINT,
+  "tdd.rollbackOnFailure": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.lintFix": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.lintFixScoped": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.formatFix": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.formatFixScoped": PIPELINE_ONLY_KEY_HINT,
+  "quality.typecheckOutput": PIPELINE_ONLY_KEY_HINT,
+  "quality.autofix": PIPELINE_ONLY_KEY_HINT,
+  optimizer: PIPELINE_ONLY_KEY_HINT,
+  "prompts.overrides": PIPELINE_ONLY_KEY_HINT,
+  "plan.outputPath": NEVER_READ_KEY_HINT,
+  "routing.llm.timeoutMs": NEVER_READ_KEY_HINT,
+  "routing.agents.strategy": NEVER_READ_KEY_HINT,
+  hooks: HOOKS_SECTION_HINT,
+  "review.commands.lintFix": PIPELINE_ONLY_KEY_HINT,
+  "review.commands.lintFixScoped": PIPELINE_ONLY_KEY_HINT,
+  "review.commands.formatFix": PIPELINE_ONLY_KEY_HINT,
+  "review.commands.formatFixScoped": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.enabled": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxAttemptsPerStrategy": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxFailureSummaryChars": PIPELINE_ONLY_KEY_HINT,

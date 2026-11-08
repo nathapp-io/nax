@@ -28,7 +28,6 @@ function fixture(planned = true) {
       router: { mode: "shadow", precedence: "router", timeoutMs: 5000 },
       agents: {
         enabled: true,
-        strategy: "off",
         default: "native-deepseek",
         profiles: [
           { id: "native-deepseek", strengths: [], target: { agent: "native", model: "balanced" } },

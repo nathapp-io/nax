@@ -292,7 +292,6 @@ describe("finalizeAndWritePrd — scoped write (nax#2080)", () => {
    */
   const ROUTING: AgentRoutingConfig = {
     enabled: true,
-    strategy: "off",
     default: "claude-default",
     profiles: [{ id: "claude-default", target: { agent: "claude", model: "balanced" }, strengths: ["design"] }],
   };

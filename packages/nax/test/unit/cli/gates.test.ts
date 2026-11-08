@@ -569,8 +569,7 @@ describe("nax gates run (real resolver and runner)", () => {
       await Bun.write(join(dir, ".nax", "config.json"), "{}\n");
 
       const spawned: Pick<QualityCommandOptions, "commandName" | "command">[] = [];
-      _qualityGateDeps.loadConfig = async () =>
-        configWithCommands({ lint: "biome check .", formatFix: "biome format --write ." });
+      _qualityGateDeps.loadConfig = async () => configWithCommands({ lint: "biome check ." });
       _qualityGateDeps.run = async (opts): Promise<QualityCommandResult> => {
         spawned.push({ commandName: opts.commandName, command: opts.command });
         return {

@@ -9,7 +9,7 @@ const PROFILES: AgentRoutingProfile[] = [
   { id: "a", target: { agent: "claude", model: "balanced" }, strengths: ["implementation"], costTier: "low" },
   { id: "b", target: { agent: "claude", model: "balanced" }, strengths: ["implementation"], costTier: "medium" },
 ];
-const ROUTING: AgentRoutingConfig = { enabled: true, strategy: "off", profiles: PROFILES };
+const ROUTING: AgentRoutingConfig = { enabled: true, profiles: PROFILES };
 const MESSAGE = "agent profile assignment";
 const originalDeps = { ..._persistPrdDeps };
 let info: Mock<ReturnType<typeof getLogger>["info"]>;

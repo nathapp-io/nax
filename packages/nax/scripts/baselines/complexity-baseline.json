@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-08T14:29:29.321Z",
+  "updatedAt": "2026-11-08T16:29:00.242Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -21,7 +21,6 @@
     "src/agents/run-interaction-handler.ts": { "onInteraction": 52 },
     "src/agents/shared/decompose.ts": { "=>": 32 },
     "src/cli/approvals.ts": { "approvalsRmCommand": 39 },
-    "src/cli/config-display.ts": { "displayConfigWithDescriptions": 46 },
     "src/cli/context-fragments.ts": { "listDependentStoryIds": 22 },
     "src/cli/context.ts": { "formatContextInspect": 35 },
     "src/cli/init-context.ts": { "generateContextTemplate": 25 },
@@ -35,7 +34,7 @@
     "src/commands/runs.ts": { "runsCommand": 21 },
     "src/commands/unlock.ts": { "unlockCommand": 58 },
     "src/config/config-guards.ts": { "validatePermissionsBlock": 41 },
-    "src/config/merge.ts": { "mergePackageConfig": 33 },
+    "src/config/merge.ts": { "mergePackageConfig": 28 },
     "src/config/schemas.ts": { "=>": 21 },
     "src/context/builder.ts": { "addFileElements": 23 },
     "src/context/elements.ts": { "formatPriorFailures": 39 },
@@ -85,7 +84,7 @@
     "src/prd/spec-lint.ts": { "readModifiesDeclaration": 26, "checkAcceptanceCriteria": 23 },
     "src/prd/spec-structure-grammar.ts": { "collectStoryDeclarations": 33 },
     "src/precheck/checks-config.ts": { "checkPRDValid": 27 },
-    "src/precheck/checks-model-resolution-walk.ts": { "collectConfiguredModelPins": 42 },
+    "src/precheck/checks-model-resolution-walk.ts": { "collectConfiguredModelPins": 36 },
     "src/precheck/checks-model-resolution.ts": { "checkModelResolution": 28 },
     "src/precheck/checks-warnings.ts": { "checkLanguageTools": 27 },
     "src/precheck/index.ts": { "runPrecheck": 45, "runEnvironmentPrecheck": 35 },

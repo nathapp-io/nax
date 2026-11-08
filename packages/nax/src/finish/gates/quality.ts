@@ -32,8 +32,8 @@ export const _qualityGateDeps = {
 
 /**
  * build -> typecheck -> lint -> test -> e2e. No `format`: nax's
- * `quality.commands` has no such key — only `formatFix` / `formatFixScoped`,
- * which mutate files and must never be run as a gate. Porting the flow's
+ * `quality.commands` has no such key, and a format command mutates files, so it
+ * must never be run as a gate. Porting the flow's
  * `format` entry would have been porting a typo.
  *
  * `e2e` is last and runs on the host (#2530): a browser journey cannot launch

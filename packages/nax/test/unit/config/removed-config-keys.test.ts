@@ -589,7 +589,7 @@ describe("stripKeysAtPaths", () => {
     expect(result.tdd).toEqual({ strategy: "auto" });
   });
 
-  test("REMOVED_CONFIG_KEYS covers the rectification leaves, the sections, the provider and US-003/US-006's keys", () => {
+  test("REMOVED_CONFIG_KEYS is exactly the closed set of keys C1 removed", () => {
     expect(Object.keys(REMOVED_CONFIG_KEYS).sort()).toEqual(
       [
         "acceptance",
@@ -611,6 +611,30 @@ describe("stripKeysAtPaths", () => {
         "execution.storyIsolation",
         "execution.verificationTimeoutSeconds",
         "execution.worktreeDependencies",
+        // B3c-3: the dead tdd, autoMode and quality keys
+        "autoMode.enabled",
+        "tdd.maxRetries",
+        "tdd.sessionTiers",
+        "tdd.verifierTimeoutSeconds",
+        "tdd.testWriterAllowedPaths",
+        "tdd.testWriterCommitHooks",
+        "tdd.rollbackOnFailure",
+        "quality.commands.lintFix",
+        "quality.commands.lintFixScoped",
+        "quality.commands.formatFix",
+        "quality.commands.formatFixScoped",
+        "quality.typecheckOutput",
+        "quality.autofix",
+        "review.commands.lintFix",
+        "review.commands.lintFixScoped",
+        "review.commands.formatFix",
+        "review.commands.formatFixScoped",
+        "optimizer",
+        "prompts.overrides",
+        "plan.outputPath",
+        "routing.llm.timeoutMs",
+        "routing.agents.strategy",
+        "hooks",
       ].sort(),
     );
   });

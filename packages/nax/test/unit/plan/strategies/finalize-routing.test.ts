@@ -15,7 +15,6 @@ const models: ModelsConfig = {
 
 const agentRouting: AgentRoutingConfig = {
   enabled: true,
-  strategy: "off",
   default: "opencode-structural",
   profiles: [
     { id: "opencode-structural", target: { agent: "opencode", model: "fast" }, strengths: ["mechanical"] },
@@ -97,7 +96,6 @@ describe("finalizePrdRouting", () => {
   test("a pinned profile persists profileModelPin, never a fake tier (spec §4)", () => {
     const pinned: AgentRoutingConfig = {
       enabled: true,
-      strategy: "off",
       default: undefined,
       profiles: [{ id: "p1", target: { agent: "claude", model: "claude-opus-5-1" }, strengths: ["quality"] }],
     };

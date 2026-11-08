@@ -26,7 +26,6 @@ function makeRoot(): NaxConfig {
         fallbackToKeywords: true,
         cacheDecisions: true,
         mode: "hybrid",
-        timeoutMs: 30000,
       },
     },
   };
@@ -205,10 +204,10 @@ describe("mergePackageConfig — routing section", () => {
   test("deep-merges routing.llm fields", () => {
     const root = makeRoot();
     const result = mergePackageConfig(root, {
-      routing: { llm: { model: "balanced", timeoutMs: 60000 } },
+      routing: { llm: { model: "balanced", retries: 3 } },
     } as Partial<NaxConfig>);
     expect(result.routing?.llm?.model).toBe("balanced");
-    expect(result.routing?.llm?.timeoutMs).toBe(60000);
+    expect(result.routing?.llm?.retries).toBe(3);
     expect(result.routing?.llm?.fallbackToKeywords).toBe(true); // root preserved
     expect(result.routing?.strategy).toBe("keyword"); // root preserved
   });

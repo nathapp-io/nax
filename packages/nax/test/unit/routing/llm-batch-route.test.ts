@@ -28,7 +28,7 @@ describe("tryLlmBatchRoute", () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
-        llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
+        llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid" },
       },
     });
     const story = makeStory();
@@ -48,7 +48,7 @@ describe("tryLlmBatchRoute", () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
-        llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
+        llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid" },
       },
     });
     const story = makeStory();
@@ -66,7 +66,7 @@ describe("tryLlmBatchRoute", () => {
     const config = makeNaxConfig({
       routing: {
         strategy: "llm",
-        llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid", timeoutMs: 5000 },
+        llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: false, mode: "hybrid" },
       },
     });
     const story: UserStory = {
@@ -99,7 +99,7 @@ describe("resolveRouting reads runtime.routingCache, scoped per runtime instance
   const cacheConfig = makeNaxConfig({
     routing: {
       strategy: "llm",
-      llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: true, mode: "hybrid", timeoutMs: 5000 },
+      llm: { model: "fast", fallbackToKeywords: true, cacheDecisions: true, mode: "hybrid" },
     },
   });
 

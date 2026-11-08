@@ -24,7 +24,6 @@ const mockConfig: NaxConfig = makeNaxConfig({
     powerful: { provider: "anthropic", model: "claude-opus-4" },
   },
   autoMode: {
-    enabled: true,
     complexityRouting: {
       simple: "fast",
       medium: "balanced",
@@ -52,9 +51,7 @@ const mockConfig: NaxConfig = makeNaxConfig({
   quality: {
     commands: {},
   },
-  tdd: {
-    maxRetries: 2,
-  },
+  tdd: {},
   constitution: {
     enabled: true,
     path: "constitution.md",
@@ -67,7 +64,6 @@ const mockConfig: NaxConfig = makeNaxConfig({
   },
   plan: {
     model: "balanced",
-    outputPath: "plan.md",
   },
 });
 

@@ -149,26 +149,6 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
     expect(llm.retries).toBeUndefined();
   });
 
-  test("effective timeout defaults to 30000ms (raised from 15000)", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: {
-        ...DEFAULT_CONFIG.routing,
-        llm: {
-          mode: "per-story" as const,
-          fallbackToKeywords: true,
-          cacheDecisions: true,
-        } as NaxConfig["routing"]["llm"],
-      },
-    };
-
-    // When timeoutMs unset, callLlm applies 30000 default (not old 15000)
-    const llm = config.routing.llm;
-    assertDefined(llm, "config.routing.llm");
-    const effectiveTimeout = llm.timeoutMs ?? 30000;
-    expect(effectiveTimeout).toBe(30000);
-  });
-
   test("retries: 0 disables retry (single attempt only)", () => {
     const config = {
       ...DEFAULT_CONFIG,

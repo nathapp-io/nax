@@ -39,7 +39,6 @@ function fixture(precedence: "router" | "plan" = "router", setup: "planned" | "u
         router: { mode: "apply", precedence, timeoutMs: 5000 },
         agents: {
           enabled: true,
-          strategy: "off",
           default: "native-luna",
           profiles: [
             { id: "native-deepseek", strengths: [], target: { agent: "native", model: "balanced" } },

@@ -22,7 +22,6 @@ function fixture(mode: "off" | "shadow" | "apply" = "shadow") {
       router: { mode, precedence: "router", timeoutMs: 5000 },
       agents: {
         enabled: true,
-        strategy: "off",
         default: "native-deepseek",
         profiles: [
           { id: "native-deepseek", strengths: [], target: { agent: "native", model: "balanced" } },
@@ -99,7 +98,6 @@ describe("routing stage story-router guards", () => {
       ctx.config.routing.agents = {
         ...ctx.config.routing.agents,
         enabled: true,
-        strategy: "off",
         default: "",
         profiles: [],
       };

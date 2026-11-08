@@ -11,7 +11,6 @@
 
 import { describe, expect, test } from "bun:test";
 import type { DeepPartial } from "@test/helpers";
-import { assertDefined } from "@test/helpers";
 import { deepMergeConfig } from "@/config/merger";
 import type { NaxConfig } from "@/config/schema";
 
@@ -29,9 +28,6 @@ import type { NaxConfig } from "@/config/schema";
 type RawConstitution = {
   constitution: { enabled?: boolean; path?: string; maxTokens?: number; content?: string };
 };
-
-type RawHookEntry = { command: string; enabled?: boolean };
-type RawHooksConfig = { hooks?: { hooks?: Record<string, RawHookEntry | RawHookEntry[]> } };
 
 describe("config/merger", () => {
   describe("basic object merging", () => {
@@ -129,94 +125,6 @@ describe("config/merger", () => {
     });
   });
 
-  describe("hooks concatenation", () => {
-    test("concatenates hooks from both configs", () => {
-      const base = {
-        hooks: {
-          hooks: {
-            "on-start": { command: "echo base-start", enabled: true },
-            "on-complete": { command: "echo base-complete", enabled: true },
-          },
-        },
-      };
-      const override = {
-        hooks: {
-          hooks: {
-            "on-start": { command: "echo override-start", enabled: true },
-            "on-pause": { command: "echo override-pause", enabled: true },
-          },
-        },
-      };
-      const result = deepMergeConfig(base, override);
-      assertDefined(result.hooks, "merged hooks");
-
-      // When both configs have the same hook event, they are concatenated into an array
-      expect(result.hooks.hooks["on-start"]).toEqual([
-        { command: "echo base-start", enabled: true },
-        { command: "echo override-start", enabled: true },
-      ]);
-      expect(result.hooks.hooks["on-complete"]).toEqual({
-        command: "echo base-complete",
-        enabled: true,
-      });
-      expect(result.hooks.hooks["on-pause"]).toEqual({
-        command: "echo override-pause",
-        enabled: true,
-      });
-    });
-
-    test("preserves all hook properties", () => {
-      const base = {
-        hooks: {
-          hooks: {
-            "on-start": { command: "echo base", timeout: 5000, enabled: true },
-          },
-        },
-      };
-      const override = {
-        hooks: {
-          hooks: {
-            "on-complete": { command: "echo override", timeout: 3000, enabled: false },
-          },
-        },
-      };
-      const result = deepMergeConfig(base, override);
-      assertDefined(result.hooks, "merged hooks");
-
-      expect(result.hooks.hooks["on-start"]).toEqual({
-        command: "echo base",
-        timeout: 5000,
-        enabled: true,
-      });
-      expect(result.hooks.hooks["on-complete"]).toEqual({
-        command: "echo override",
-        timeout: 3000,
-        enabled: false,
-      });
-    });
-
-    test("handles empty hooks object", () => {
-      const base = {
-        hooks: {
-          hooks: {
-            "on-start": { command: "echo base", enabled: true },
-          },
-        },
-      };
-      const override = {
-        hooks: {
-          hooks: {},
-        },
-      };
-      const result = deepMergeConfig(base, override);
-      assertDefined(result.hooks, "merged hooks");
-
-      expect(result.hooks.hooks).toEqual({
-        "on-start": { command: "echo base", enabled: true },
-      });
-    });
-  });
-
   describe("constitution concatenation", () => {
     test("concatenates constitution strings", () => {
       const base = {
@@ -302,7 +210,6 @@ describe("config/merger", () => {
           claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
         },
         autoMode: {
-          enabled: true,
           complexityRouting: {
             simple: "fast",
             medium: "balanced",
@@ -325,8 +232,8 @@ describe("config/merger", () => {
           claude: { fast: "gemini-flash" },
         },
         autoMode: {
-          enabled: false,
           escalation: {
+            enabled: false,
             tierOrder: [{ tier: "fast", attempts: 3 }],
           },
         },
@@ -338,12 +245,12 @@ describe("config/merger", () => {
       expect(result.models?.claude?.fast).toBe("gemini-flash");
       expect(result.models?.claude?.balanced).toBe("sonnet");
       // scalar overridden in a second nested block
-      expect(result.autoMode?.enabled).toBe(false);
+      expect(result.autoMode?.escalation?.enabled).toBe(false);
       // a block the override never mentions survives untouched
       expect(result.autoMode?.complexityRouting?.simple).toBe("fast");
       // arrays are REPLACED, not element-merged — and the sibling key survives
       expect(result.autoMode?.escalation?.tierOrder).toEqual([{ tier: "fast", attempts: 3 }]);
-      expect(result.autoMode?.escalation?.enabled).toBe(true);
+      expect(result.autoMode?.escalation?.resetMode).toBe("initial");
     });
 
     test("handles removal of nested config keys", () => {
@@ -403,35 +310,6 @@ describe("config/merger", () => {
     });
   });
 
-  describe("three-level hook merge (BUG-005 / BUG-010)", () => {
-    test("flattens hooks to a 1D array when the same event appears in all three config levels", () => {
-      const defaults = { hooks: { hooks: { "on-complete": { command: "echo defaults" } } } };
-      const global = { hooks: { hooks: { "on-complete": { command: "echo global" } } } };
-      const project = { hooks: { hooks: { "on-complete": { command: "echo project" } } } };
-
-      const merged1 = deepMergeConfig<RawHooksConfig>(defaults, global);
-      const merged2 = deepMergeConfig<RawHooksConfig>(merged1, project);
-
-      const onComplete = merged2.hooks?.hooks?.["on-complete"];
-      expect(Array.isArray(onComplete)).toBe(true);
-      const flattened = Array.isArray(onComplete) ? onComplete : [];
-      expect(flattened).toHaveLength(3);
-      // No nesting — first element must be a plain object, not an array
-      expect(Array.isArray(flattened[0])).toBe(false);
-    });
-
-    test("does not assign overrideHooks.hooks when it is not a plain object", () => {
-      const base = { hooks: { hooks: { "on-start": { command: "echo base" } } } };
-      const override = { hooks: { hooks: ["not-an-object"] } };
-
-      const result = deepMergeConfig<typeof base>(base, override);
-
-      // The base hooks should be preserved; the invalid override should be ignored
-      const onStart = result.hooks.hooks["on-start"];
-      expect(onStart).toEqual({ command: "echo base" });
-    });
-  });
-
   describe("SEC-07: __proto__/constructor/prototype keys are not merged", () => {
     test("does not tamper with the merged object's prototype via a JSON.parse'd __proto__ key", () => {
       const base = { a: 1 };
@@ -470,57 +348,6 @@ describe("config/merger", () => {
 
       expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
       expect((result as { polluted?: boolean }).polluted).toBeUndefined();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Characterisation for the complexity drain (C1b): branches nothing above
-  // pins. Each is asserted against the unrefactored merger so the extraction
-  // keeps the behaviour verbatim.
-  // -------------------------------------------------------------------------
-
-  describe("hooks special case — sibling fields and non-plain base defs", () => {
-    test("copies non-hooks config fields (e.g. skipGlobal) from the override hooks object", () => {
-      const base = { hooks: { hooks: { "on-start": { command: "echo base" } } } };
-      const override = { hooks: { skipGlobal: true, hooks: { "on-stop": { command: "echo stop" } } } };
-
-      type WithSkipGlobal = { hooks: { skipGlobal?: boolean; hooks?: Record<string, RawHookEntry> } };
-      const result = deepMergeConfig<WithSkipGlobal>(base, override);
-
-      expect(result.hooks.skipGlobal).toBe(true);
-      expect(result.hooks.hooks).toEqual({ "on-start": { command: "echo base" }, "on-stop": { command: "echo stop" } });
-    });
-
-    test("override hooks.hooks wins when the base's hooks.hooks is not a plain object (array)", () => {
-      const base = { hooks: { hooks: ["legacy"] } };
-      const override = { hooks: { hooks: { "on-start": { command: "echo override" } } } };
-
-      type RequiredHooks = { hooks: { hooks?: Record<string, unknown> } };
-      const result = deepMergeConfig<RequiredHooks>(base, override);
-
-      expect(result.hooks.hooks).toEqual({ "on-start": { command: "echo override" } });
-    });
-
-    test("override hooks.hooks wins when the base defines no nested hooks key at all", () => {
-      const base = { hooks: { skipGlobal: true } };
-      const override = { hooks: { hooks: { "on-start": { command: "echo override" } } } };
-
-      type WithSkipGlobal = { hooks: { skipGlobal?: boolean; hooks?: Record<string, RawHookEntry> } };
-      const result = deepMergeConfig<WithSkipGlobal>(base, override);
-
-      expect(result.hooks.hooks).toEqual({ "on-start": { command: "echo override" } });
-      expect(result.hooks.skipGlobal).toBe(true);
-    });
-
-    test("primitive base hooks is replaced wholesale by a plain-object override", () => {
-      const base = { hooks: "legacy" };
-      const override = { hooks: { hooks: { "on-start": { command: "echo override" } } } };
-
-      const result = deepMergeConfig<typeof override>(base, override);
-
-      // The hooks special case requires BOTH sides to be plain objects, so the
-      // default replace arm runs and the merged value IS the override value.
-      expect(result.hooks).toBe(override.hooks);
     });
   });
 

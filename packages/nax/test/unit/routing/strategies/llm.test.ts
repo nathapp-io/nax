@@ -24,7 +24,6 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
       strategy: "llm",
       llm: {
         mode: "per-story",
-        timeoutMs: 50,
         retries: 0,
         retryDelayMs: 0,
         fallbackToKeywords: false,
@@ -111,17 +110,6 @@ describe("LLM routing config shape accepts retry and timeout fields", () => {
       },
     });
     expect(config.routing.llm?.retries).toBeUndefined();
-  });
-
-  test("effective timeout defaults to 30000ms when timeoutMs is unset", () => {
-    const config = makeNaxConfig({
-      routing: {
-        ...makeNaxConfig({}).routing,
-        llm: { mode: "per-story" as const, fallbackToKeywords: true, cacheDecisions: true },
-      },
-    });
-    const effectiveTimeout = config.routing.llm?.timeoutMs ?? 30000;
-    expect(effectiveTimeout).toBe(30000);
   });
 
   test("retries: 0 disables retry (single attempt only)", () => {

@@ -1,7 +1,7 @@
 /**
  * Quality Module
  *
- * Shared utilities for running quality commands (lint, typecheck, build, lintFix, etc.)
+ * Shared utilities for running quality commands (lint, typecheck, build, test, etc.)
  */
 
 export type { QualityCommandSpec } from "@nathapp/nax-agent/internal";

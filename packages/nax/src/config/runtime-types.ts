@@ -38,7 +38,6 @@ export interface EscalationEntry {
 
 /** Auto mode configuration */
 export interface AutoModeConfig {
-  enabled: boolean;
   complexityRouting: Record<Complexity, ComplexityRung>; // Rung per complexity; { tier, agent } names a cross-agent rung
   escalation: {
     enabled: boolean;
@@ -149,13 +148,6 @@ export interface QualityConfig {
     test?: QualityCommandSpec;
     /** Scoped test command template with {{files}} placeholder (e.g., "bun test --timeout=60000 {{files}}") */
     testScoped?: QualityCommandSpec;
-    /** Auto-fix lint errors (e.g., "biome check --fix") */
-    lintFix?: QualityCommandSpec;
-    /** Scoped auto-fix lint command template with {{files}} placeholder */
-    lintFixScoped?: QualityCommandSpec;
-    /** Auto-fix formatting (e.g., "biome format --write") */
-    formatFix?: QualityCommandSpec;
-    formatFixScoped?: QualityCommandSpec;
     build?: QualityCommandSpec;
     /** Host-side e2e journey gate (#2530); last in the gate order. */
     e2e?: QualityCommandSpec;
@@ -170,20 +162,6 @@ export interface QualityConfig {
   lintOutput?: {
     /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
     format?: "auto" | "eslint-json" | "biome-json" | "text" | "none";
-  };
-  /** Typecheck output parsing preferences for scope-aware rectification splitting. */
-  typecheckOutput?: {
-    /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
-    format?: "auto" | "tsc" | "text" | "none";
-  };
-  /** Auto-fix strategy participation. Cycle caps live under execution.rectification.* */
-  autofix?: {
-    /** Whether autofix-implementer + autofix-test-writer participate in the
-     * rectification cycle. (default: true) */
-    enabled?: boolean;
-    /** Prompt-text display only: "X attempts available before escalation".
-     * Real cap is execution.rectification.maxAttemptsTotal. (default: 3) */
-    maxAttempts?: number;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;
@@ -205,25 +183,8 @@ export interface QualityConfig {
 
 /** TDD config */
 export interface TddConfig {
-  /** Max retries for each session before escalating */
-  maxRetries: number;
   /** TDD strategy override (default: 'auto') */
   strategy: TddStrategy;
-  /** Per-session model tier overrides. Defaults: test-writer=fast, implementer=story tier, verifier=fast */
-  sessionTiers?: {
-    /** ConfiguredModel for test-writer session (default: "fast") */
-    testWriter?: ConfiguredModel;
-    /** ConfiguredModel for implementer session (intentionally unused — routing-driven via story.routing.modelTier) */
-    implementer?: ConfiguredModel;
-    /** ConfiguredModel for verifier session (default: "fast") */
-    verifier?: ConfiguredModel;
-  };
-  verifierTimeoutSeconds?: number; // Wall-clock budget for one verifier turn, in seconds (default: 1800)
-  testWriterAllowedPaths?: string[]; // Glob patterns for files test-writer can modify (soft violations, logged as warnings)
-  /** Git hooks on nax's RED commit after the test-writer phase: "skip" (default, --no-verify) | "run". */
-  testWriterCommitHooks?: "skip" | "run";
-  /** Rollback git changes when TDD fails (default: true). Prevents partial commits when TDD fails. */
-  rollbackOnFailure?: boolean;
   /** Enable greenfield detection to force tdd-simple on projects with no test files (default: true, BUG-010) */
   greenfieldDetection?: boolean;
 }
@@ -238,8 +199,6 @@ export type { AdversarialReviewConfig, ReviewConfig } from "@/review/types";
 export interface PlanConfig {
   /** Model selector for planning (tier string or explicit { agent, model }) */
   model: ConfiguredModel;
-  /** Output path for generated spec (relative to nax/ directory) */
-  outputPath: string;
   /** Timeout for plan sessions in seconds (default: 600) */
   timeoutSeconds?: number;
   /** Override timeout for decompose calls in seconds. Defaults to plan.timeoutSeconds. */
@@ -253,24 +212,10 @@ export interface PlanConfig {
   specGuard?: boolean;
 }
 
-/** Optimizer config (v0.10) */
-export interface OptimizerConfig {
-  /** Enable prompt optimizer. No longer read: the optimizer stage is gone and
-   * the plugin `optimizer` extension is rejected, so nothing consumes this flag.
-   * The key itself is retained until a later change removes it. */
-  enabled: boolean;
-}
-
 export interface PluginConfigEntry {
   module: string;
   config?: Record<string, unknown>;
   enabled?: boolean;
-}
-
-/** Raw hooks config as stored in the config file (unvalidated). Use HooksConfig from hooks/types for typed hook definitions. */
-export interface RawHooksConfig {
-  skipGlobal?: boolean;
-  hooks: Record<string, unknown>;
 }
 
 /** Interaction config (v0.15.0) */
@@ -358,10 +303,6 @@ export interface LlmRoutingConfig {
    * - "hybrid": batch-route upfront, re-route individually on retry/failure (best quality + cost balance)
    */
   mode?: LlmRoutingMode;
-  /** @deprecated Use mode instead. Will be removed in v1.0 */
-  batchMode?: boolean;
-  /** Timeout for LLM call in milliseconds (default: 30000) */
-  timeoutMs?: number;
   /** Number of retries on LLM timeout or transient failure (default: 1) */
   retries?: number;
   /** Delay between retries in milliseconds (default: 1000) */
@@ -380,9 +321,8 @@ export interface RoutingConfig {
   router?: StoryRouterConfig;
 }
 
-/** Prompt overrides config (PB-003) */
+/** Prompt config */
 export interface PromptsConfig {
-  overrides?: Partial<Record<"no-test" | "test-writer" | "implementer" | "verifier" | "tdd-simple" | "batch", string>>;
   behavioralGuardrails: "off" | "lite" | "strict";
 }
 
@@ -440,8 +380,6 @@ export interface NaxConfig {
   plan: PlanConfig;
   /** Context injection settings */
   context: ContextConfig;
-  /** Optimizer settings (v0.10) */
-  optimizer?: OptimizerConfig;
   /** Plugin configurations (v0.10) */
   plugins?: PluginConfigEntry[];
   /** Disabled plugin names (v0.38.2) */
@@ -460,13 +398,11 @@ export interface NaxConfig {
   memory?: import("./runtime-types-memory").MemoryConfig;
   /** Resource discovery and skills delivery settings; absent means schema defaults. */
   resources?: import("./schemas-resources").ResourcesConfig;
-  /** Hooks configuration (v0.10) */
-  hooks?: RawHooksConfig;
   /** Interaction settings (v0.15.0) */
   interaction?: InteractionConfig;
   /** Precheck settings (v0.16.0) */
   precheck?: PrecheckConfig;
-  /** Prompt override settings (PB-003) */
+  /** Prompt settings */
   prompts: PromptsConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
