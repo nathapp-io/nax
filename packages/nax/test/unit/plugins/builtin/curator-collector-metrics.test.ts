@@ -68,16 +68,23 @@ function makeContext(opts: { root: string; runId: string; outputDir: string }): 
 }
 
 /** One metrics.json run entry carrying `count` stories. */
-function makeRunEntry(runId: string, feature: string, storyIds: string[]): Record<string, unknown> {
+function makeRunEntry(opts: {
+  runId: string;
+  feature: string;
+  storyIds: string[];
+  /** The `source` the row was recorded with — the vocabulary under test (US-002). */
+  source?: string;
+}): Record<string, unknown> {
+  const source = opts.source ?? "execution";
   return {
-    runId,
-    feature,
-    stories: storyIds.map((storyId) => ({
+    runId: opts.runId,
+    feature: opts.feature,
+    stories: opts.storyIds.map((storyId) => ({
       storyId,
       success: true,
       attempts: 1,
       cost: 0.5,
-      source: "execution",
+      source,
       tokens: { inputTokens: 10, outputTokens: 5 },
     })),
   };
@@ -94,7 +101,9 @@ describe("collectObservations — metrics reader fails closed (US-006)", () => {
       const outputDir = join(dir, "out");
       // The only entry belongs to another run — the old positional fallback
       // would have attributed US-OTHER to this run's observations.
-      await writeMetrics(outputDir, [makeRunEntry("run-other", "feat-other", ["US-OTHER"])]);
+      await writeMetrics(outputDir, [
+        makeRunEntry({ runId: "run-other", feature: "feat-other", storyIds: ["US-OTHER"] }),
+      ]);
 
       const { context } = makeContext({ root: dir, runId: "run-mine", outputDir });
       const observations = await collectObservations(context);
@@ -108,8 +117,8 @@ describe("collectObservations — metrics reader fails closed (US-006)", () => {
     await withTempDir(async (dir) => {
       const outputDir = join(dir, "out");
       await writeMetrics(outputDir, [
-        makeRunEntry("run-other", "feat-other", ["US-OTHER"]),
-        makeRunEntry("run-elsewhere", "feat-elsewhere", ["US-ELSEWHERE"]),
+        makeRunEntry({ runId: "run-other", feature: "feat-other", storyIds: ["US-OTHER"] }),
+        makeRunEntry({ runId: "run-elsewhere", feature: "feat-elsewhere", storyIds: ["US-ELSEWHERE"] }),
       ]);
 
       const { context, warnCalls } = makeContext({ root: dir, runId: "run-mine", outputDir });
@@ -127,7 +136,9 @@ describe("collectObservations — metrics reader fails closed (US-006)", () => {
   test("AC3: returns the matching run's story observations when runId matches", async () => {
     await withTempDir(async (dir) => {
       const outputDir = join(dir, "out");
-      await writeMetrics(outputDir, [makeRunEntry("run-mine", "feat-mine", ["US-001", "US-002"])]);
+      await writeMetrics(outputDir, [
+        makeRunEntry({ runId: "run-mine", feature: "feat-mine", storyIds: ["US-001", "US-002"] }),
+      ]);
 
       const { context, warnCalls } = makeContext({ root: dir, runId: "run-mine", outputDir });
       const observations = await collectObservations(context);
@@ -146,8 +157,8 @@ describe("collectObservations — metrics reader fails closed (US-006)", () => {
       // Chronologically the OTHER run is last — precisely the entry the
       // removed positional fallback would have selected.
       await writeMetrics(outputDir, [
-        makeRunEntry("run-mine", "feat-mine", ["US-001", "US-002"]),
-        makeRunEntry("run-other", "feat-other", ["US-900", "US-901", "US-902"]),
+        makeRunEntry({ runId: "run-mine", feature: "feat-mine", storyIds: ["US-001", "US-002"] }),
+        makeRunEntry({ runId: "run-other", feature: "feat-other", storyIds: ["US-900", "US-901", "US-902"] }),
       ]);
 
       const { context } = makeContext({ root: dir, runId: "run-mine", outputDir });
@@ -185,6 +196,59 @@ describe("collectObservations — metrics reader fails closed (US-006)", () => {
       const verdicts = observations.filter((o) => o.kind === "verdict");
       expect(verdicts).toHaveLength(0);
       expect(observations.some((o) => o.kind === "review-finding" && o.payload.ruleId === "no-n-plus-one")).toBe(true);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC5/AC6: the metrics `source` vocabulary the curator normalizes
+// ---------------------------------------------------------------------------
+
+describe("collectObservations — metrics story source normalization (US-002)", () => {
+  test("AC5: a row recorded with source 'completion-phase' keeps that source", async () => {
+    await withTempDir(async (dir) => {
+      const outputDir = join(dir, "out");
+      await writeMetrics(outputDir, [
+        makeRunEntry({ runId: "run-mine", feature: "feat-mine", storyIds: ["US-001"], source: "completion-phase" }),
+      ]);
+
+      const { context } = makeContext({ root: dir, runId: "run-mine", outputDir });
+      const observations = await collectObservations(context);
+
+      const verdict = observations.find((o) => o.kind === "verdict");
+      expect(verdict?.storyId).toBe("US-001");
+      expect(verdict?.payload.source).toBe("completion-phase");
+    });
+  });
+
+  test("AC6: a historical row recorded with source 'rectification' falls back to 'execution'", async () => {
+    await withTempDir(async (dir) => {
+      const outputDir = join(dir, "out");
+      await writeMetrics(outputDir, [
+        makeRunEntry({ runId: "run-mine", feature: "feat-mine", storyIds: ["US-001"], source: "rectification" }),
+      ]);
+
+      const { context } = makeContext({ root: dir, runId: "run-mine", outputDir });
+      const observations = await collectObservations(context);
+
+      const verdict = observations.find((o) => o.kind === "verdict");
+      expect(verdict?.storyId).toBe("US-001");
+      expect(verdict?.payload.source).toBe("execution");
+    });
+  });
+
+  test("a row recorded with source 'execution-failed' keeps that source", async () => {
+    await withTempDir(async (dir) => {
+      const outputDir = join(dir, "out");
+      await writeMetrics(outputDir, [
+        makeRunEntry({ runId: "run-mine", feature: "feat-mine", storyIds: ["US-001"], source: "execution-failed" }),
+      ]);
+
+      const { context } = makeContext({ root: dir, runId: "run-mine", outputDir });
+      const observations = await collectObservations(context);
+
+      const verdict = observations.find((o) => o.kind === "verdict");
+      expect(verdict?.payload.source).toBe("execution-failed");
     });
   });
 });

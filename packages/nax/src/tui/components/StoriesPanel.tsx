@@ -20,10 +20,8 @@ export interface StoriesPanelProps {
   stories: StoryDisplayState[];
   /** Pre-run phase statuses keyed by stage name (e.g. "acceptance-setup") */
   preRunPhases?: Record<string, PreRunPhaseState>;
-  /** Post-run phase statuses (acceptance, regression, review) */
+  /** Post-run phase status (review) */
   postRunPhases?: {
-    acceptance?: PostRunPhaseState;
-    regression?: PostRunPhaseState;
     review?: PostRunPhaseState;
   };
   /** Panel width (columns) */
@@ -181,16 +179,10 @@ export function StoriesPanel({
       )}
 
       {/* Post-run phases */}
-      {postRunPhases && (postRunPhases.acceptance || postRunPhases.regression || postRunPhases.review) && (
+      {postRunPhases?.review && (
         <Box flexDirection="column" paddingX={1} paddingTop={1}>
           <Text dimColor>Post-Run</Text>
-          {postRunPhases.acceptance && (
-            <PostRunPhaseRow label="acceptance" phase={postRunPhases.acceptance} compact={compact} />
-          )}
-          {postRunPhases.regression && (
-            <PostRunPhaseRow label="regression" phase={postRunPhases.regression} compact={compact} />
-          )}
-          {postRunPhases.review && <PostRunPhaseRow label="review" phase={postRunPhases.review} compact={compact} />}
+          <PostRunPhaseRow label="review" phase={postRunPhases.review} compact={compact} />
         </Box>
       )}
     </Box>

@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-08T03:32:50.979Z",
+  "updatedAt": "2026-11-08T03:46:35.026Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -105,7 +105,6 @@
     "src/test-runners/parse-rust.ts": { "extractRustFailures": 23 },
     "src/test-runners/parser.ts": { "parseJestOutput": 27, "parsePytestOutput": 22 },
     "src/test-runners/resolver.ts": { "resolveTestFilePatterns": 24 },
-    "src/tui/App.tsx": { "App": 21 },
     "src/tui/hooks/useAgentStreamEvents.ts": { "=>": 30 },
     "src/utils/command-argv.ts": { "parseCommandToArgv": 27 },
     "src/utils/llm-json.ts": { "scanContainers": 32, "findBalancedSpanEnd": 22 },

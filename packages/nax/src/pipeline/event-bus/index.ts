@@ -201,7 +201,14 @@ export interface StoryPhaseCompletedEvent {
   details?: PhaseDetails;
 }
 
-export type PostRunPhase = "regression" | "acceptance" | "review" | "acceptance-setup" | "finish";
+/**
+ * The post-run phases the pipeline reports on the bus.
+ *
+ * Only the deferred review still emits these events — the other post-run
+ * phases never reached the bus, so their registry members were dead weight
+ * (US-002).
+ */
+export type PostRunPhase = "review";
 
 export interface PostRunPhaseStartedEvent {
   type: "postrun:phase:started";

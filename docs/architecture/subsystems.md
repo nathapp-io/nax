@@ -859,11 +859,10 @@ interface StoryMetrics {
   firstPassSuccess: boolean;
   startedAt: string;
   completedAt: string;
-  source?: "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed";
+  source?: "completion-phase" | "execution-failed";
   runtimeCrashes?: number;
   reviewsFailedOpen?: number;
   fullSuiteGatePassed?: boolean;
-  rectificationCost?: number;
   tokens?: TokenUsage;
   tokenAttribution?: "direct" | "even-split";
   fallback?: { hops: AgentFallbackHop[] };   // cross-agent swaps (ADR-012)

@@ -28,7 +28,7 @@ export interface LiveActivityPanelProps {
   runErrored?: string;
   /** Log of escalation events from pipeline bus */
   escalationLog?: EscalationEntry[];
-  /** Current phase/stage label for display (e.g. "acceptance-setup", "post-run: acceptance") */
+  /** Current phase/stage label for display (e.g. "acceptance-setup", "post-run: review") */
   currentStage?: string;
 }
 

@@ -25,18 +25,37 @@ describe("StoriesPanel", () => {
           setup: { status: "failed" },
         },
         postRunPhases: {
-          acceptance: { status: "running" },
-          regression: { status: "passed" },
           review: { status: "failed" },
         },
       }),
     );
     expect(lastFrame()).toContain(compact ? "instal" : "install");
     expect(lastFrame()).toContain("Post-Run");
-    expect(lastFrame()).toContain(compact ? "acc" : "acceptance");
-    expect(lastFrame()).toContain(compact ? "reg" : "regression");
     expect(lastFrame()).toContain(compact ? "rev" : "review");
     unmount();
+  });
+  test("AC3: renders the Post-Run heading followed by a single review row (non-compact)", () => {
+    const { lastFrame } = render(
+      React.createElement(StoriesPanel, {
+        stories: [],
+        postRunPhases: { review: { status: "passed" } },
+      }),
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Post-Run");
+    // Exactly one post-run row — the review phase.
+    expect(frame.match(/review/g)).toHaveLength(1);
+    expect(frame).not.toContain("acceptance");
+    expect(frame).not.toContain("regression");
+  });
+  test("AC4: renders no Post-Run heading when no post-run phase is set", () => {
+    const { lastFrame } = render(
+      React.createElement(StoriesPanel, {
+        stories: [],
+        postRunPhases: {},
+      }),
+    );
+    expect(lastFrame()).not.toContain("Post-Run");
   });
   test("renders a story id in non-compact mode", () => {
     const { lastFrame } = render(React.createElement(StoriesPanel, { stories: [makeStory()] }));

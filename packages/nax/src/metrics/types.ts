@@ -166,8 +166,15 @@ export interface StoryMetrics {
   startedAt: string;
   /** Timestamp when completed */
   completedAt: string;
-  /** Execution source — 'parallel' for batch dispatch, 'sequential' for single-story loop, 'rectification' for conflict resolution, 'completion-phase' for the placeholder shape the end-of-run backfill synthesises, 'execution-failed' for stories that failed in the execution stage (pipeline stopped before the completion stage that records metrics) */
-  source?: "parallel" | "sequential" | "rectification" | "completion-phase" | "execution-failed";
+  /**
+   * Execution source — 'completion-phase' for the placeholder shape the end-of-run backfill
+   * synthesises, 'execution-failed' for stories that failed in the execution stage (pipeline
+   * stopped before the completion stage that records metrics).
+   *
+   * A row written by an older run may carry a retired execution mode; a reader must treat any
+   * value outside this union as unknown.
+   */
+  source?: "completion-phase" | "execution-failed";
   /**
    * Test files failing at this story's full-suite gate (post-rectification).
    * Snapshot used by the deferred-regression gate to attribute an end-of-run
@@ -179,8 +186,6 @@ export interface StoryMetrics {
    * failure provider still renders it out of older `metrics.json` rows.
    */
   failingTestFiles?: string[];
-  /** Cost incurred only during rectification (only set when source === 'rectification') */
-  rectificationCost?: number;
   /** Token usage for this story */
   tokens?: StoryTokenUsage;
   /** Whether token usage was measured directly or allocated from a shared batch. */
