@@ -58,19 +58,18 @@ included so it can be re-derived after a version bump.
 
 Deep reference for each subsystem — consult when working on a specific module.
 
-- **§17 Pipeline Architecture** (deprecated pipeline mode) — 8 default stages (+1 pre-run, +1 post-run); per-story phases run inside `executionStage` via `StoryOrchestratorBuilder` `CANONICAL_ORDER`; stage contract, `PipelineContext`, `StageResult` actions
-- **§18 Execution Modes & Batching** (pipeline mode) — Parallel/batch, sequential worktree isolation, escalation, crash recovery, lifecycle phases
-- **§19 TDD Orchestration** (pipeline mode) — Three-session workflow, session roles, isolation, failure categories, verdict
-- **§20 Acceptance Test System** (pipeline mode) — Generator, refinement, fix diagnosis, hardening, RED gate
-- **§21 Verification & Test Runners** — flat verification utilities (executor, runners, smart runner, rectification), mutation testing, test-runners module (framework detection, output parsing SSOT)
+- **§17 Pipeline Architecture** — the six workflow stages, stage contract, `PipelineContext`, `StageResult` actions
+- **§18 Execution** — sequential loop, escalation, crash recovery, lifecycle phases
+- **§19, §20** — removed with pipeline mode (C1)
+- **§21 Verification & Test Runners** — flat verification utilities (executor, runners, smart runner, test baseline), test-runners module (framework detection, output parsing SSOT)
 - **§22 Routing & Classification** — `classifyComplexity()`, `determineTestStrategy()`, pluggable strategies
 - **§23 Plugin System** — Plugin interface, 7 extension points, lifecycle
 - **§24 Context Engine & Constitution** — Context Engine v2 (ADR-010): `ContextOrchestrator`, providers, scoring/dedup/packing, push/pull model, `rebuildForAgent`; legacy v1 builder; per-agent generators; constitution
-- **§25 Review & Quality** — Review orchestrator, semantic review, adversarial review, diff utilities, quality runner, test command resolver
+- **§25 Review & Quality** — Review runner, workflow story and branch review, diff utilities, quality runner, test command resolver
 - **§26 Interaction & Human-in-the-Loop** — Interaction chain, 9 triggers, bridge, plugins
-- **§27 Hooks & Lifecycle** — 12 hook events, `HookDef`, `HookContext`
+- **§27 Hooks & Lifecycle** — 15 hook events, `HookDef`, `HookContext`
 - **§28 Metrics & Cost Tracking** — `StoryMetrics`, aggregator, cost system
-- **§30 Worktree & Parallel** — Worktree manager, merge, dispatcher
+- **§30 Worktree Support** — Worktree manager, `WorktreeId`, project identity
 - **§31 Queue Management** — PAUSE/ABORT/SKIP mid-run control
 - **§32 TUI (Terminal UI)** — React/Ink terminal UI, components, hooks
 - **§33 Error Classes** — `NaxError` + 4 derived error classes in `src/errors.ts`
@@ -82,14 +81,14 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§39 Config** — Layered config system (global → project → per-package); Zod schema + selectors; `resolvePermissions` SSOT; legacy-key guards.
 - **§40 Logger** — Structured JSONL `LogEntry` producer; `initLogger` / `getLogger` / `getSafeLogger` singleton pattern.
 - **§41 Log Format** — Human-facing terminal renderer; consumes `LogEntry` from §40; `VerbosityMode`, `formatRunSummary`. Leaf — never writes log records.
-- **§42 CLI** — High-level command implementations (`initCommand`, `planCommand`, `acceptCommand`, `generateCommand`, …). One of two directories permitted to use `process.cwd()`.
+- **§42 CLI** — High-level command implementations (`initCommand`, `planCommand`, `generateCommand`, …). One of two directories permitted to use `process.cwd()`.
 - **§43 Commands** — Thin CLI wrappers + `resolveProject(opts)` shared entry point; curator, logs, precheck, migrate sub-commands.
-- **§44 Optimizer** — Pipeline stage 6; `NoopOptimizer` / plugin; `resolveOptimizer` factory.
+- **§44** — removed with pipeline mode (C1)
 - **§45 Plan** — Spec → `prd.json` pipeline: two strategies (`single`/`refine`), `finalizePrdRouting`.
 - **§46 Precheck** — Pre-run validation suite; two tiers (environment + project); `EXIT_CODES`; gates every `nax run` via `run-setup.ts`.
 - **§47 Project** — Heuristic language/framework/type detection from manifest files; `detectLanguage`, `detectProjectProfile`. Authoritative detector — do not re-derive manifest lookups elsewhere.
-- **§48 Findings** — ADR-021/022 SSOT: `Finding` wire type, per-producer adapter converters, `runFixCycle` fix-loop orchestration, `classifyOutcome`.
-- **§49 Prompts** — All LLM prompt construction: eight builder classes (`TddPromptBuilder`, `RectifierPromptBuilder`, `ReviewPromptBuilder`, `AdversarialReviewPromptBuilder`, `AcceptancePromptBuilder`, `OneShotPromptBuilder`, `PlanPromptBuilder`, `SetupPromptBuilder`); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
+- **§48 Findings** — ADR-021/022 SSOT: `Finding` wire type, per-producer adapter converters, fix-cycle types.
+- **§49 Prompts** — All LLM prompt construction: builder classes and functions (`RectifierPromptBuilder`, `OneShotPromptBuilder`, `PlanPromptBuilder`, `SetupPromptBuilder`, plus the workflow, advisor and bot builders); `composeSections`; `SectionAccumulator`. No prompt literals outside this module.
 - **§50 Analyze** — Codebase scanner used by `nax plan` (there is no `nax analyze` command); `scanCodebase` → `CodebaseScan` / `SourceRoot[]`; delegates to workspace discovery (§21) and language detection (§47).
 - **§51 Utils** — Single-purpose leaf utilities (no barrel): `parseLLMJson` (LLM JSON SSOT), `git.ts`, `path-filters.ts`, `path-security.ts`, `json-file.ts`, `errorMessage` (re-exported from `@nathapp/nax-agent/internal`), `bun-deps.ts`, `writeQueueCommand`.
 
@@ -109,15 +108,11 @@ The native agent's tool loop and the controls around the commands it runs are §
 
 - **§58 Workflow mode** — the default execution mode since v0.88.0 (`src/workflow/`): one implementer session per story, a story review and bounded fix rounds, then a feature workflow (branch review, branch fix, adjudication, final gates, publish). ADR-034; guide: [workflow-mode.md](../guides/workflow-mode.md).
 - **§59 Advisor** (`src/advisor/`) — rules on judgment calls instead of stopping the run; ledger, audit, batching and the `nax advisor` CLI.
-- **§60 Finish** (`src/finish/`) — the pipeline-mode end phase, and the PR and gate helpers that workflow mode reuses.
+- **§60 Finish** (`src/finish/`) — the PR and gate helpers shared with the workflow publish path.
 - **§61 Forge** (`src/forge/`) — GitHub and GitLab detection, PR or MR creation, and PR template merging.
 - **§62 Trust** (`src/trust/`) — per-folder trust for repository-controlled code (`nax trust`).
 - **§63 Replay** (`src/replay/`) — `nax replay`, which reconstructs a past run from its artifacts.
 - **§64 Other modules** — `prd/`, `runstate/`, `schedule/`, `bakeoff/` and `agent-runtime/`.
-
-### [story-orchestrator-flow.md](story-orchestrator-flow.md) — Per-Story Control Flow (pipeline mode)
-
-How a single story executes inside `executionStage`: the `CANONICAL_ORDER` phase list, three-session vs single-session mode selection (`routing.testStrategy`), the phase taxonomy (agent sessions / gates / mechanical checks / LLM reviews), and the review → fix → revalidation cycle (`STRATEGY_TO_REVALIDATION_PHASES`). Includes the `mechanical-lintfix` soundness note — why `full-suite-gate` is not re-run after a lint-fix, and why Biome safe-fix mode keeps that sound.
 
 ### [spec-to-prd-pipeline.md](spec-to-prd-pipeline.md) — Spec → PRD → Execution Workflow
 
@@ -125,9 +120,9 @@ The four-stage workflow contract: brainstorming → spec-writing → spec-review
 
 ---
 
-## Execution Modes
+## Execution Mode
 
-`execution.mode` selects how `nax run` executes stories. The default since v0.88.0 is `"workflow"`: one implementer session per story, a bounded story review and fix loop, then one feature-level branch review and publishing (ADR-034, §58, [workflow-mode guide](../guides/workflow-mode.md)). `"pipeline"` runs the stage pipeline and the story orchestrator described in §17–§22 and [story-orchestrator-flow.md](story-orchestrator-flow.md). Pipeline mode is deprecated and frozen, and will be removed in a future release. Docs that describe only pipeline mode say so at the top.
+nax has one execution mode, `workflow` (ADR-034, §58, [workflow-mode guide](../guides/workflow-mode.md)): one implementer session per story, a bounded story review and fix loop, then one feature-level branch review and publishing. `execution.mode: pipeline` is rejected at config load; `workflow` is still accepted.
 
 ## Packages
 
@@ -167,7 +162,7 @@ Dependency graph, from the package manifests: `nax-ai` ← `nax-agent` (depends 
 
 | Pattern | When to use | Entry point |
 |:--------|:-----------|:------------|
-| Prompt Builder | Domain-specific prompt construction (composition) | `TddPromptBuilder`, `ReviewPromptBuilder`, etc. |
+| Prompt Builder | Domain-specific prompt construction (composition) | `OneShotPromptBuilder`, `RectifierPromptBuilder`, etc. |
 | Builder | Multi-step object construction | `static for()` → chain → `.build()` |
 | Adapter | Multiple backends, one contract | Interface in `types.ts`, class per backend |
 | Registry | Lookup by name/capability | Class (lifecycle) or function (pure lookup) |

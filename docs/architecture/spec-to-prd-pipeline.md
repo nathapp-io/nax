@@ -9,8 +9,7 @@
 
 ## The four-stage workflow
 
-> Workflow mode (the default, ADR-034) and pipeline mode both consume `prd.json` and the file roles below.
-> The parallel-mode notes in this document apply to pipeline mode only: workflow mode runs stories one at a time.
+> Workflow mode (ADR-034) consumes `prd.json` and the file roles below. Stories run one at a time.
 
 ```
 brainstorming      → spec-writing          → spec-review         → nax plan
@@ -97,18 +96,8 @@ heuristic mis-classifies it.
 
 The discriminator that matters is **runtime existence relative to dependency
 order**, not plan-time existence. A file produced by an upstream dependency
-**does exist** by the time the consuming story runs, in **both** execution modes:
-
-- **Sequential mode** — stories share one workdir; the producer ran first, so
-  the file is on disk.
-- **Parallel mode** (pipeline only) — `selectIndependentBatch` (`src/execution/story-selector.ts`,
-  called from `src/execution/unified-executor-parallel-dispatch.ts`) only admits a story whose
-  dependencies have all passed, so the consumer lands in a **later batch**;
-  successful stories **merge back to the project root** in topological order
-  (`MergeEngine.mergeAll`, `src/worktree/merge.ts`, called from `src/execution/parallel-batch-phases.ts`) before the batch
-  returns; the consumer's worktree is then created with `git worktree add <path> -b <branch>`
-  **with no commit-ish**, which branches from the current `HEAD` — now containing
-  the producer's file (`src/worktree/manager.ts`).
+**does exist** by the time the consuming story runs: stories share one workdir and
+the producer ran first, so the file is on disk.
 
 So a cross-story produced file listed in the consumer's `contextFiles` is found
 on disk at the consumer's runtime (`src/context/builder.ts`): **no warning, a

@@ -71,19 +71,16 @@ Per-stage `execution.permissions.<stage>` blocks carry `allow`, `deny`, and `ask
 
 ### Pipeline Stages
 
-The stage rides on each `Operation.stage` (or `pipelineStage` on a direct manager call) and is resolved once at the resource opener. `PipelineStage` is: `plan`, `run`, `setup`, `verify`, `review`, `rectification`, `regression`, `acceptance`, `complete`.
+The stage rides on each `Operation.stage` (or `pipelineStage` on a direct manager call) and is resolved once at the resource opener. `PipelineStage` is: `plan`, `run`, `setup`, `verify`, `review`, `complete` (`src/config/permissions.ts`).
 
 | Stage | Carried by |
 |:------|:--------|
 | `plan` | `planInteractiveOp`, `planRefineOp`, `decomposeOp` |
-| `run` | run-kind ops (test-writer, implementer, etc.); the default when none is passed |
+| `run` | run-kind ops (the workflow implementer, etc.); the default when none is passed |
 | `setup` | `nax setup` config generation (`setupGenerateOp`) |
 | `verify` | `verifyScopedOp`, `fullSuiteGateOp` |
-| `rectification` | autofix / full-suite-rectify ops |
 | `complete` | one-shot `complete` ops; the default for a `completeAs` call that passes no stage |
-| `acceptance` | Acceptance generator / fix ops |
-| `regression` | Declared in the union; no op carries it today |
-| `review` | semantic / adversarial review ops, `rectifyOp` |
+| `review` | workflow story, branch and re-review ops, lint and typecheck check ops |
 
 The profile's mode is the same for every stage; per-stage differences come only from `execution.permissions.<stage>` rules and per-stage `bashApproval`.
 
@@ -193,15 +190,15 @@ strategy values, descriptions, and classification rules are defined.
 
 ### Available Strategies
 
-`VALID_TEST_STRATEGIES`, with the default assignment the planning prompt (`TEST_STRATEGY_GUIDE`) gives each complexity:
+Test strategies are plan-time labels: they are validated on the PRD and shown to the planner, and workflow mode does not branch on them (it runs one implementer session per story). `VALID_TEST_STRATEGIES`, with the default assignment the planning prompt (`TEST_STRATEGY_GUIDE`) gives each complexity:
 
 | Strategy | Default for complexity | Description |
 |:---------|:-----------|:------------|
 | `no-test` | — | Zero behavioural change (config, docs, CI, dependency bumps). Requires `noTestJustification` (validated in `src/prd/schema-story.ts`) |
 | `test-after` | — | Implementation first, then tests; exploratory/prototype stories only |
-| `tdd-simple` | simple, medium | Failing tests first, then implement — one session |
-| `three-session-tdd-lite` | complex | 3 sessions: test-writer (lite, may add src/ stubs) → implementer (may replace stubs) → verifier |
-| `three-session-tdd` | expert | 3 sessions: test-writer (strict, no src/ changes) → implementer (no test changes) → verifier |
+| `tdd-simple` | simple, medium | Failing tests first, then implement |
+| `three-session-tdd-lite` | complex | Label for complex stories: lite test-first, stubs allowed |
+| `three-session-tdd` | expert | Label for expert stories: strict test-first, no src/ changes in the test step |
 
 ### Rules
 
@@ -341,7 +338,7 @@ nax has three independent retry layers, each targeting a different failure class
 |:------|:-------|:------------|:----------|
 | Agent-internal retry | `agent.acp.promptRetries` (ACP, default `0`) / `agent.native.transportRetry` (native, default 3 attempts × 2000ms) | A transient provider fault inside one call — a stalled stream, a 502/503 | Re-issues that call, with backoff, before the dispatch layers ever see a failure |
 | Op / manager retry (nax) | `op.retry` per `Operation` + `defaultRetryStrategy` (`src/agents/retry/`) | Parse failures, rate limits, transient adapter errors | `RetryStrategy.shouldRetry()` decides; bounded by `MAX_COMPLETE_RETRY_ATTEMPTS` |
-| Tier escalation (nax) | `autoMode.escalation.*` (`tierOrder`, `escalateEntireBatch`) | Repeated rectification failures | Bumps model tier (fast → balanced → powerful) |
+| Tier escalation (nax) | `autoMode.escalation.*` (`tierOrder`, `escalateEntireBatch`) | Repeated story failures | Bumps model tier (fast → balanced → powerful) |
 
 **The first layer has one meaning and two implementations**, because the two transports put the agent in different places:
 
@@ -399,7 +396,7 @@ not a defect.
 ### Explicitly NOT being built
 
 Out-of-process plugin isolation, sandboxing of repo-declared commands
-(`quality.commands`, hooks, acceptance), prompt-injection delimiter escaping,
+(`quality.commands`, hooks), prompt-injection delimiter escaping,
 first-run per-repo trust prompts. Do not raise these again in reviews — see the
 D-1 ruling from the 2026-08-14 deep code review.
 

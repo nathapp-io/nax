@@ -123,10 +123,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.contextProviderTokenBudget": "Token budget for plugin context providers",
   "execution.lintCommand": "Lint command override (null=disabled, undefined=auto-detect)",
   "execution.typecheckCommand": "Typecheck command override (null=disabled, undefined=auto-detect)",
-  "execution.rectification":
-    "Unified fix-cycle settings — shared by story-orchestrator (semantic + adversarial + mechanical) and post-run regression cycles",
+  "execution.rectification": "Attempt limits — only maxAttemptsTotal and fullSuiteTimeoutSeconds are read",
   "execution.rectification.maxAttemptsTotal":
-    "Total iteration cap for the unified fix cycle (default: 12). Per-strategy caps are the granular bound.",
+    "Total attempt cap per story before human review is requested (default: 12)",
   "execution.rectification.fullSuiteTimeoutSeconds": "Timeout for full test suite run in seconds",
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
@@ -285,7 +284,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "precheck.storySizeGate.maxReplanAttempts": "Max replan attempts before escalating (default: 3)",
 
   // Prompts
-  prompts: "Prompt settings",
+  prompts: "Prompt settings (behavioralGuardrails)",
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",
