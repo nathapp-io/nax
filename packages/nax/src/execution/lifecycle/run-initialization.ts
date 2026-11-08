@@ -128,15 +128,14 @@ async function reconcileState(prd: PRD, prdPath: string, workdir: string, config
 /**
  * Will this run actually reach an agent?
  *
- * Two ways it can. Any story that is not already `passed` will be dispatched —
+ * One way: any story that is not already `passed` will be dispatched —
  * `reconcileState` below only ever promotes `failed` -> `passed`, never the
  * reverse, so a PRD whose stories are all passed stays that way and dispatches
- * nothing. And the completion phase calls agents when acceptance is enabled
- * (acceptance-loop.ts); its other agent references are a name string for
+ * nothing. The completion phase's other agent references are a name string for
  * metrics attribution and session teardown, neither of which needs the binary.
  */
-function runWillUseAgent(prd: PRD, config: NaxConfig): boolean {
-  return prd.userStories.some((story) => story.status !== "passed") || config.acceptance.enabled;
+function runWillUseAgent(prd: PRD): boolean {
+  return prd.userStories.some((story) => story.status !== "passed");
 }
 
 /**
@@ -214,10 +213,10 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   // cannot reach an agent, so doing it first costs nothing.
   let prd = await loadPRD(ctx.prdPath);
 
-  if (runWillUseAgent(prd, ctx.config)) {
+  if (runWillUseAgent(prd)) {
     await checkAgentInstalled(ctx.config, ctx.dryRun, ctx.agentGetFn);
   } else {
-    logger?.info("execution", "Skipping agent preflight — no story needs work and acceptance is disabled", {
+    logger?.info("execution", "Skipping agent preflight — no story needs work", {
       totalStories: prd.userStories.length,
     });
   }

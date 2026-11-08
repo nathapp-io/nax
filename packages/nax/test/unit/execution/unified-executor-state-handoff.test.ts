@@ -60,7 +60,6 @@ function makeCtx(
     workdir: "/tmp/test-workdir",
     config: {
       ...DEFAULT_CONFIG,
-      acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
       execution: {
         ...DEFAULT_CONFIG.execution,
         mode: "pipeline",

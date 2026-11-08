@@ -7,6 +7,9 @@
  * `Pick<NaxConfig, ...>` alias in `src/config/selectors.ts` and the contract is
  * pinned at the type level: `bun run typecheck` compiles `tsconfig.test.json`,
  * so dropping one of these keys from the alias fails the typecheck gate.
+ *
+ * pipeline-acceptance-isolation-delete US-001 dropped `acceptance` from the
+ * slice: the model walk no longer reads `acceptance.model`.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -18,8 +21,8 @@ import type { PrecheckConfig } from "@/config/selectors";
 // asserted property is false.
 type AssertTrue<T extends true> = T;
 
-/** The six keys US-1984 added so the model-resolution check can walk them. */
-const MODEL_RESOLUTION_KEYS = ["models", "plan", "acceptance", "autoMode", "tdd", "routing"] as const;
+/** The five remaining keys US-1984 added so the model-resolution check can walk them. */
+const MODEL_RESOLUTION_KEYS = ["models", "plan", "autoMode", "tdd", "routing"] as const;
 
 type PrecheckConfigCoversModelResolutionKeys = AssertTrue<
   (typeof MODEL_RESOLUTION_KEYS)[number] extends keyof PrecheckConfig ? true : false
@@ -27,7 +30,7 @@ type PrecheckConfigCoversModelResolutionKeys = AssertTrue<
 const precheckConfigCoversModelResolutionKeys: PrecheckConfigCoversModelResolutionKeys = true;
 
 describe("PrecheckConfig (US-1984 AC9)", () => {
-  test("AC9: the slice type defines models, plan, acceptance, autoMode, tdd, and routing", () => {
+  test("AC9: the slice type defines models, plan, autoMode, tdd, and routing", () => {
     // Compiling the line above IS the assertion: the alias is `AssertTrue<…>`,
     // so a dropped key makes this a TS2344 typecheck failure.
     expect(precheckConfigCoversModelResolutionKeys).toBe(true);

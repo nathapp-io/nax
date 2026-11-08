@@ -372,32 +372,6 @@ describe("mergePackageConfig", () => {
     });
   });
 
-  describe("acceptance field overrides", () => {
-    test.each([
-      [
-        "enabled",
-        (a: NaxConfig["acceptance"]) => a.enabled,
-        true,
-        { enabled: false } as Partial<NaxConfig["acceptance"]>,
-        false,
-      ],
-      [
-        "testPath",
-        (a: NaxConfig["acceptance"]) => a.testPath,
-        "acceptance.test.ts",
-        { testPath: "e2e/acceptance.test.ts" } as Partial<NaxConfig["acceptance"]>,
-        "e2e/acceptance.test.ts",
-      ],
-    ] as const)("overrides acceptance.%s per package", (_field, getField, rootVal, override, expected) => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        acceptance: { ...DEFAULT_CONFIG.acceptance, ...override, ...({ [_field]: rootVal } as object) },
-      };
-      const result = mergePackageConfig(root, { acceptance: override } as Partial<NaxConfig>);
-      expect(getField(result.acceptance)).toEqual(expected);
-    });
-  });
-
   describe("context.testCoverage deep merge", () => {
     test("deep merges per package; preserves when not overridden", () => {
       const tcConfig = {
@@ -434,11 +408,6 @@ describe("mergePackageConfig", () => {
         "root.review",
         (r: NaxConfig) => r.review.enabled,
         (r: NaxConfig) => makeNaxConfig({ review: { enabled: !r.review.enabled } }),
-      ],
-      [
-        "root.acceptance",
-        (r: NaxConfig) => r.acceptance.enabled,
-        (r: NaxConfig) => makeNaxConfig({ acceptance: { enabled: !r.acceptance.enabled } }),
       ],
     ])("does not mutate %s", (_label, getOrig, makeOverride) => {
       const root = makeRoot();

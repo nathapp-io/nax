@@ -213,7 +213,6 @@ describe("checkModelResolution (US-1984 AC5) — one failing check per pin site"
       { review: { adversarial: { model: { agent: "claude", model: "never-shipped-acp" } } } },
     ],
     ["plan.model", { plan: { model: { agent: "claude", model: "never-shipped-acp" } } }],
-    ["acceptance.model", { acceptance: { model: { agent: "claude", model: "never-shipped-acp" } } }],
     [
       "tdd.sessionTiers.testWriter",
       { tdd: { sessionTiers: { testWriter: { agent: "claude", model: "never-shipped-acp" } } } },

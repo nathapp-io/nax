@@ -10,10 +10,12 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeAgentAdapter, makeSpawn, makeTempDir, withWarnSpy } from "@test/helpers";
+import { cleanupTempDir, makeAgentAdapter, makeSpawn, makeTempDir, withInfoSpy, withWarnSpy } from "@test/helpers";
+import { resolveDefaultAgent } from "@/agents";
 import { DEFAULT_CONFIG } from "@/config";
 import { _reconcileDeps, initializeRun } from "@/execution/lifecycle/run-initialization";
 import { getLogger, initLogger, resetLogger } from "@/logger";
+import type { AgentGetFn } from "@/pipeline/types";
 import type { PRD } from "@/prd/types";
 import type { ReviewResult } from "@/review/types";
 
@@ -435,46 +437,56 @@ describe("agent preflight", () => {
   // check at all. `agentGetFn` stands in for the registry so the assertions are
   // about *whether* the preflight runs, not about the host's PATH.
 
-  async function initWith(prd: PRD, opts: { installed: boolean; acceptance: boolean; suffix: string }) {
-    const prdPath = join(tmpDir, `prd-preflight-${opts.suffix}.json`);
-    await Bun.write(prdPath, JSON.stringify(prd));
-    return initializeRun({
-      config: {
-        ...DEFAULT_CONFIG,
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: opts.acceptance },
-      },
-      prdPath,
-      workdir: tmpDir,
-      dryRun: false,
-      agentGetFn: () => makeAgentAdapter({ binary: "claude", isInstalled: () => Promise.resolve(opts.installed) }),
-    });
+  /** Records every agent lookup the preflight makes, and answers `installed`. */
+  function trackAgentLookup(installed: boolean): { agentGetFn: AgentGetFn; lookedUp: string[] } {
+    const lookedUp: string[] = [];
+    const agentGetFn: AgentGetFn = (name) => {
+      lookedUp.push(name);
+      return makeAgentAdapter({ binary: "claude", isInstalled: () => Promise.resolve(installed) });
+    };
+    return { agentGetFn, lookedUp };
   }
 
-  test("is skipped when every story is passed and acceptance is off", async () => {
+  async function initWith(prd: PRD, agentGetFn: AgentGetFn, suffix: string) {
+    const prdPath = join(tmpDir, `prd-preflight-${suffix}.json`);
+    await Bun.write(prdPath, JSON.stringify(prd));
+    return initializeRun({ config: DEFAULT_CONFIG, prdPath, workdir: tmpDir, dryRun: false, agentGetFn });
+  }
+
+  test("AC-1: does not look the agent up when every story is passed", async () => {
     // The regression: no story dispatches and the completion phase calls no
     // agent, so a missing binary must not fail the run.
+    const { agentGetFn, lookedUp } = trackAgentLookup(false);
     const prd = makePrd({ status: "passed", passes: true });
-    const { prd: result } = await initWith(prd, { installed: false, acceptance: false, suffix: "skip" });
+
+    const { prd: result } = await initWith(prd, agentGetFn, "skip");
+
     expect(result.userStories[0].status).toBe("passed");
+    expect(lookedUp).toEqual([]);
   });
 
-  test("still runs when a story needs work", async () => {
+  test("AC-2: logs the exact skip message when every story is passed", async () => {
+    const { agentGetFn } = trackAgentLookup(false);
+    const prd = makePrd({ status: "passed", passes: true });
+
+    await withInfoSpy(async (infoSpy) => {
+      await initWith(prd, agentGetFn, "skip-log");
+
+      const messages = infoSpy.mock.calls.map((call) => call[1]);
+      expect(messages).toContain("Skipping agent preflight — no story needs work");
+      // The skip reason is story state alone; nothing about acceptance remains.
+      expect(messages.some((message) => message.includes("acceptance"))).toBe(false);
+    });
+  });
+
+  test("AC-3: looks the default agent up when a story needs work", async () => {
     // A pending story dispatches, so the missing binary must be reported up
     // front rather than surfacing later from inside the run.
+    const { agentGetFn, lookedUp } = trackAgentLookup(false);
     const prd = makePrd({ status: "pending", passes: false });
-    await expect(initWith(prd, { installed: false, acceptance: false, suffix: "pending" })).rejects.toThrow(
-      /not installed or not in PATH/,
-    );
-  });
 
-  test("still runs when acceptance is enabled, even with every story passed", async () => {
-    // Nothing dispatches, but the acceptance loop calls agents in the
-    // completion phase — so the preflight must not be skipped on story state
-    // alone.
-    const prd = makePrd({ status: "passed", passes: true });
-    await expect(initWith(prd, { installed: false, acceptance: true, suffix: "acceptance" })).rejects.toThrow(
-      /not installed or not in PATH/,
-    );
+    await expect(initWith(prd, agentGetFn, "pending")).rejects.toThrow(/not installed or not in PATH/);
+    expect(lookedUp).toEqual([resolveDefaultAgent(DEFAULT_CONFIG)]);
   });
 
   test("an installed agent's launch note is logged as a warning (spec §6.8, D3-k)", async () => {
@@ -489,7 +501,7 @@ describe("agent preflight", () => {
         launchNote: () => "Only the npx fallback can launch this ACP agent",
       };
       await initializeRun({
-        config: { ...DEFAULT_CONFIG, acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false } },
+        config: DEFAULT_CONFIG,
         prdPath,
         workdir: tmpDir,
         dryRun: false,

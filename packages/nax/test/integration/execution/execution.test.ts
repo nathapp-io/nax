@@ -262,9 +262,8 @@ describe("execution runner", () => {
   // accumulate behind it, and neither could be reported while it never ran.
   //
   // The old skip comment blamed the acceptance loop for a non-deterministic
-  // iteration count. That was wrong twice over — this test's own config already
-  // disables the acceptance loop (`acceptance.enabled: false` below), and the
-  // failure was deterministic, not flaky. What it was actually hiding:
+  // iteration count. That was wrong: the failure was deterministic, not flaky.
+  // What it was actually hiding:
   //
   // 1. An assertion that had gone stale. The test (assertion and `.skip`
   //    together) dates to 2026-03-06; the pre-loop short-circuit it now trips
@@ -308,10 +307,8 @@ describe("execution runner", () => {
       statusFile: `${tmpDir}/status.json`,
       config: {
         ...TEST_CONFIG,
-        // Acceptance off keeps this test about the completion path alone —
-        // and it is what makes the run provably agent-free, so the preflight
-        // is skipped and no agent need be installed.
-        acceptance: { ...TEST_CONFIG.acceptance, enabled: false },
+        // The run dispatches nothing, so it is provably agent-free and the
+        // preflight is skipped without a binary installed.
       },
       hooks: { hooks: {} },
       feature: "test-feature",

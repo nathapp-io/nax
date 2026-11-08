@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 971
+    "looseCast": 947
   },
-  "updatedAt": "2026-11-08T10:04:00.148Z",
+  "updatedAt": "2026-11-08T12:38:09.558Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -368,7 +368,7 @@
       "looseCast": 7
     },
     "test/unit/cli/init-detect-ui.test.ts": {
-      "looseCast": 16
+      "looseCast": 3
     },
     "test/unit/cli/init-detect.test.ts": {
       "looseCast": 25
@@ -503,7 +503,7 @@
       "looseCast": 1
     },
     "test/unit/config/merge.test.ts": {
-      "looseCast": 45
+      "looseCast": 42
     },
     "test/unit/config/schemas-model.test.ts": {
       "looseCast": 1
@@ -513,12 +513,6 @@
     },
     "test/unit/config/validate.test.ts": {
       "looseCast": 9
-    },
-    "test/unit/config/acceptance-fix-config.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/config/acceptance-test-strategy.test.ts": {
-      "looseCast": 5
     },
     "test/unit/config/deprecation-cross-package-depth.test.ts": {
       "looseCast": 1
@@ -660,7 +654,7 @@
       "looseCast": 6
     },
     "test/unit/pipeline/effective-config.test.ts": {
-      "looseCast": 13
+      "looseCast": 11
     },
     "test/unit/pipeline/runner-throw-logging.test.ts": {
       "looseCast": 1

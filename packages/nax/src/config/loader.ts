@@ -524,8 +524,8 @@ export async function loadConfigForWorkdir(
   // package profiles (the profile branch re-runs the strip on the
   // profile-merged result, so this also covers the case where a per-package
   // overlay introduces a no-op key on a mergeable field like
-  // acceptance.generateTests). Post-merge placement yields one warning per
-  // resolved config regardless of which layer supplied the key.
+  // quality.autofix.enforceTestWriterIsolation). Post-merge placement yields one
+  // warning per resolved config regardless of which layer supplied the key.
   // #1620: the shared per-resolution dedupe, not the bare sink — this strip and
   // the post-profile one below are two layers of the same resolution, so a key in
   // both the overlay and a package profile warned twice where the root path warns

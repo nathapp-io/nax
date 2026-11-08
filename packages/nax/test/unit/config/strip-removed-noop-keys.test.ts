@@ -265,7 +265,9 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
       const root = makeTempDir("nax-noop-proj-");
       tempDirs.push(root);
       const config = await loadConfig(root);
-      expect("generateTests" in config.acceptance).toBe(false);
+      // `acceptance` became optional on NaxConfig in US-001; the no-op strip still
+      // has to drop `generateTests` whenever the section is present.
+      expect("generateTests" in (config.acceptance ?? {})).toBe(false);
     } finally {
       if (orig === undefined) {
         delete process.env.NAX_GLOBAL_CONFIG_DIR;
@@ -320,7 +322,13 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
   // by mergePackageConfig. The mergeable-field companion test below covers the
   // case where a per-package overlay can actually contribute a no-op key to
   // the merged result, which is when the strip has something to do.
-  test("AC-13b: loadConfigForWorkdir strips acceptance.generateTests from a per-package overlay on a mergeable field", async () => {
+  //
+  // The vehicle is `quality.autofix.enforceTestWriterIsolation`, not
+  // `acceptance.generateTests`: pipeline-acceptance-isolation-delete US-001
+  // stopped merging the `acceptance` section per package, so an overlay setting
+  // it is now dropped before the strip sees it and the assertion would hold
+  // vacuously.
+  test("AC-13b: loadConfigForWorkdir strips quality.autofix.enforceTestWriterIsolation from a per-package overlay on a mergeable field", async () => {
     const root = makeTempDir("nax-noop-mono-mergeable-");
     tempDirs.push(root);
     const naxDir = join(root, ".nax");
@@ -328,10 +336,13 @@ describe("stripRemovedNoOpKeys via loadConfig — end-to-end", () => {
     await Bun.write(join(naxDir, "config.json"), JSON.stringify({}));
     const monoDir = join(naxDir, "mono", "packages", "api");
     await mkdir(monoDir, { recursive: true });
-    await Bun.write(join(monoDir, "config.json"), JSON.stringify({ acceptance: { generateTests: false } }));
+    await Bun.write(
+      join(monoDir, "config.json"),
+      JSON.stringify({ quality: { autofix: { enforceTestWriterIsolation: false } } }),
+    );
 
     const config = await loadConfigForWorkdir(join(naxDir, "config.json"), "packages/api");
-    expect("generateTests" in config.acceptance).toBe(false);
+    expect("enforceTestWriterIsolation" in (config.quality.autofix ?? {})).toBe(false);
   });
 
   test("AC-6: loadConfig warn-and-strips review.gateLLMChecksOnMechanicalPass from a project config", async () => {
@@ -385,7 +396,7 @@ describe("NaxConfigSchema and FIELD_DESCRIPTIONS — removed keys", () => {
 
   test("AC-17: NaxConfigSchema parses {} without an acceptance.generateTests property", () => {
     const parsed = NaxConfigSchema.parse({});
-    const acceptance = parsed.acceptance as Record<string, unknown>;
+    const acceptance = (parsed.acceptance ?? {}) as Record<string, unknown>;
     expect("generateTests" in acceptance).toBe(false);
   });
 

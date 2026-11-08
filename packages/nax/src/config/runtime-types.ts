@@ -499,8 +499,8 @@ export interface NaxConfig {
   review: ReviewConfig;
   /** Plan settings */
   plan: PlanConfig;
-  /** Acceptance validation settings */
-  acceptance: AcceptanceConfig;
+  /** Acceptance validation settings (optional; nothing reads it after pipeline-acceptance-isolation-delete US-001) */
+  acceptance?: AcceptanceConfig;
   /** Context injection settings */
   context: ContextConfig;
   /** Optimizer settings (v0.10) */

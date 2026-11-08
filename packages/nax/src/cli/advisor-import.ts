@@ -20,7 +20,6 @@ export interface AdvisorImportOptions {
 
 export interface AdvisorImportDeps {
   resolveOutputDir: (workdir: string) => Promise<string>;
-  acceptanceEnabled: (workdir: string) => Promise<boolean>;
   newId: () => string;
   log: (text: string) => void;
   logErr: (text: string) => void;
@@ -30,11 +29,6 @@ export const _advisorImportDeps: AdvisorImportDeps = {
   resolveOutputDir: async (workdir) => {
     const config = await loadConfig(workdir).catch(() => null);
     return projectOutputDir(config?.name?.trim() || basename(workdir), config?.outputDir);
-  },
-  // Today's root config, not the config at <sha>: the conservative reading (enabled ⇒ no AC supersede).
-  acceptanceEnabled: async (workdir) => {
-    const config = await loadConfig(workdir).catch(() => null);
-    return config?.acceptance?.enabled !== false;
   },
   newId: () => `Q-${crypto.randomUUID().slice(0, 13)}`,
   log: (text) => {
@@ -72,13 +66,7 @@ function escalatedPhase(r: RecordedResult): string {
   return [...(r.rounds ?? [])].reverse().find((x) => x.outcome === "escalated")?.phase ?? "quality";
 }
 
-function toQuestion(
-  r: RecordedResult,
-  f: RecordedFinding,
-  sha: string,
-  deps: AdvisorImportDeps,
-  acceptanceOn: boolean,
-): AdviceQuestion {
+function toQuestion(r: RecordedResult, f: RecordedFinding, sha: string, deps: AdvisorImportDeps): AdviceQuestion {
   const phase = escalatedPhase(r);
   return {
     id: deps.newId(),
@@ -90,7 +78,9 @@ function toQuestion(
     evidence: [{ source: "finding", text: `${f.problem}${f.fix ? `\nSuggested fix: ${f.fix}` : ""}` }],
     options: buildMenu({
       kind: "finish-judgment",
-      acceptanceEnabledForStory: acceptanceOn,
+      // No run generates acceptance tests any more, so `buildMenu` always takes the
+      // acceptance-off arm: a finding that cites an AC may supersede it.
+      acceptanceEnabledForStory: false,
       ...(/\bspec\b/i.test(f.problem) ? { citesSpecSection: "spec" } : {}),
     }),
     findingSeverity: f.severity,
@@ -136,9 +126,8 @@ export async function runAdvisorImport(
     return 0;
   }
   const outputDir = await deps.resolveOutputDir(opts.dir);
-  const acceptanceOn = await deps.acceptanceEnabled(opts.dir);
   for (const f of picked) {
-    await writeAdviceAudit(outputDir, result.feature, toRecord(toQuestion(result, f, opts.sha, deps, acceptanceOn)));
+    await writeAdviceAudit(outputDir, result.feature, toRecord(toQuestion(result, f, opts.sha, deps)));
   }
   deps.log(`imported ${picked.length} question(s) for ${result.feature}`);
   return 0;

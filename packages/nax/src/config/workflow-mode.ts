@@ -6,18 +6,16 @@
 import type { NaxConfig } from "./types";
 
 export function applyWorkflowMode(config: NaxConfig, warn: (msg: string) => void): NaxConfig {
-  const forceAcceptanceOff = config.acceptance.enabled;
   const forceAdvisorOn = config.advisor !== undefined && !config.advisor.enabled;
   // The workflow tree and its git reads sit in the main checkout (nax#2479), so stories share it.
   const forceShared = config.execution.storyIsolation === "worktree";
-  if (!forceAcceptanceOff && !forceAdvisorOn && !forceShared) return config;
-  // Workflow is the default mode and acceptance-on / advisor-off are the shipped defaults, so
-  // forcing them is silent; warning would fire on every default run. Only worktree isolation,
-  // which is never the default, is named.
+  if (!forceAdvisorOn && !forceShared) return config;
+  // Workflow is the default mode and advisor-off is the shipped default, so forcing it is
+  // silent; warning would fire on every default run. Only worktree isolation, which is never
+  // the default, is named.
   if (forceShared) warn('execution.mode "workflow" overrides: execution.storyIsolation=shared');
   return {
     ...config,
-    acceptance: { ...config.acceptance, enabled: false },
     execution: { ...config.execution, storyIsolation: "shared" },
     ...(config.advisor ? { advisor: { ...config.advisor, enabled: true } } : {}),
   };
