@@ -16,18 +16,14 @@ import { _checkCliDeps } from "@/precheck/checks-cli";
 const createMockConfig = (_cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig =>
   makeNaxConfig({
     execution: {
-      maxIterations: 10,
       iterationDelayMs: 0,
       testCommand: "echo 'test'",
       lintCommand: "echo 'lint'",
       typecheckCommand: "echo 'typecheck'",
       contextProviderTokenBudget: 2000,
       rectification: {
-        enabled: true,
         maxAttemptsTotal: 2,
         fullSuiteTimeoutSeconds: 120,
-        maxFailureSummaryChars: 2000,
-        abortOnIncreasingFailures: true,
       },
       ...overrides,
     },

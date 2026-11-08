@@ -2,18 +2,6 @@
  * Execution-config sub-types split out of runtime-types.ts (file-size limit).
  */
 
-/** Flake-detection probe config — see `FlakeDetectionConfigSchema` in schemas-execution.ts. */
-export interface FlakeDetectionConfig {
-  /** Enable isolation re-runs to distinguish deterministic failures from flakes. */
-  enabled: boolean;
-  /** Number of isolation re-runs per probe. */
-  probeRuns: number;
-  /** Upper bound on probes accumulated per gate. */
-  maxProbesPerGate: number;
-  /** Per-probe subprocess timeout in seconds. */
-  probeTimeoutSeconds: number;
-}
-
 /** Worktree dependency preparation strategy (WT-DEPS-001) */
 export interface WorktreeDependenciesConfig {
   /** How nax should prepare a fresh worktree before story execution */
@@ -36,16 +24,6 @@ export interface PreRunStepConfig {
   readonly command: string;
   /** Hard deadline in seconds. */
   readonly timeoutSeconds: number;
-}
-
-/** Mutation-check config (US-001) — opt-in mutation-testing spot-check. */
-export interface MutationCheckConfig {
-  /** Enable mutation-check spot-check after GREEN. Default false. */
-  enabled: boolean;
-  /** Max mutants generated per story (budget cap). */
-  maxMutants: number;
-  /** Per-mutant subprocess timeout in seconds. */
-  timeoutSeconds: number;
 }
 
 /** Lifecycle-script gate for agent-triggered installs (`install.allowScripts`). */
@@ -82,8 +60,6 @@ export interface SmartTestRunnerConfig {
 
 /** Command interception (rtk git-site) — opt-in; installed into the Git tool seam at run setup. */
 export interface CommandInterceptorConfig {
-  /** Which interceptor to use. Only "rtk" exists today. */
-  provider: string;
   /**
    * Opt-in (R7): interception changes what the agent sees, so it must not
    * switch on merely because the provider binary is installed.

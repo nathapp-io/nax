@@ -10,7 +10,7 @@ import {
   makeTempDir,
   withTempDir,
 } from "@test/helpers";
-import { contextToolRuntimeConfigSelector } from "@/config";
+import { pickSelector } from "@/config";
 import type { ContextToolRuntimeConfig } from "@/config/selectors";
 import type { ContextBundle } from "@/context/engine";
 import { createContextToolRuntime, createSessionToolBudgets } from "@/context/engine";
@@ -18,15 +18,11 @@ import { QUERY_FEATURE_CONTEXT_DESCRIPTOR, QUERY_NEIGHBOR_DESCRIPTOR } from "@/c
 import type { ScratchEntry } from "@/session";
 import { appendScratchEntry, scratchFilePath } from "@/session";
 
-describe("createContextToolRuntime — slice acceptance", () => {
-  test("contextToolRuntimeConfigSelector picks context, execution, project, quality", () => {
-    const full = makeNaxConfig();
-    const sliced = contextToolRuntimeConfigSelector.select(full);
-    expect(Object.keys(sliced).sort()).toEqual(["context", "execution", "project", "quality"]);
-  });
+const contextToolRuntimeSlice = pickSelector("context-tool-runtime", "context", "execution", "project", "quality");
 
+describe("createContextToolRuntime — slice acceptance", () => {
   test("createContextToolRuntime accepts a ContextToolRuntimeConfig slice (no NaxConfig cast)", () => {
-    const config: ContextToolRuntimeConfig = contextToolRuntimeConfigSelector.select(makeNaxConfig());
+    const config: ContextToolRuntimeConfig = contextToolRuntimeSlice.select(makeNaxConfig());
     const emptyBundle: ContextBundle = makeContextBundle({
       pushMarkdown: "",
       pullTools: [],
@@ -66,7 +62,7 @@ function makeBundleWithTool(maxCallsPerSession: number): ContextBundle {
   });
 }
 
-const RUNTIME_CONFIG: ContextToolRuntimeConfig = contextToolRuntimeConfigSelector.select(makeNaxConfig());
+const RUNTIME_CONFIG: ContextToolRuntimeConfig = contextToolRuntimeSlice.select(makeNaxConfig());
 
 describe("createContextToolRuntime — session-scoped pull budget", () => {
   const story = { id: "S-001", workdir: "" } as Parameters<typeof createContextToolRuntime>[0]["story"];

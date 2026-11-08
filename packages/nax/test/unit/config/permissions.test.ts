@@ -37,21 +37,16 @@ import { initLogger, resetLogger } from "@/logger";
 function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}, rawProfile?: string): NaxConfig {
   return {
     execution: {
-      maxIterations: 5,
       iterationDelayMs: 0,
       costLimit: 10,
       sessionTimeoutSeconds: 300,
       maxStoriesPerFeature: 10,
       rectification: {
-        enabled: false,
         maxAttemptsTotal: 0,
         fullSuiteTimeoutSeconds: 60,
-        maxFailureSummaryChars: 500,
-        abortOnIncreasingFailures: false,
       },
-      regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true, mode: "disabled" },
+      regressionGate: { enabled: false, timeoutSeconds: 60, acceptOnTimeout: true },
       contextProviderTokenBudget: 2000,
-      verificationTimeoutSeconds: 300,
       ...overrides,
       ...(rawProfile === undefined ? {} : { permissionProfile: rawProfile }),
     },

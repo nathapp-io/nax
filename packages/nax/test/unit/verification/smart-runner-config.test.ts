@@ -28,17 +28,13 @@ describe("SmartTestRunner config coercion", () => {
       },
       routing: { strategy: "keyword" },
       execution: {
-        maxIterations: 10,
         iterationDelayMs: 0,
         costLimit: 1,
         sessionTimeoutSeconds: 60,
         maxStoriesPerFeature: 10,
         rectification: {
-          enabled: true,
           maxAttemptsTotal: 1,
           fullSuiteTimeoutSeconds: 30,
-          maxFailureSummaryChars: 500,
-          abortOnIncreasingFailures: true,
         },
         regressionGate: { enabled: true, timeoutSeconds: 30 },
         contextProviderTokenBudget: 100,

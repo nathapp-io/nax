@@ -36,7 +36,7 @@ describe("config defaulting (BUG-20)", () => {
     // itself starts from (loader.ts structuredClone(DEFAULT_CONFIG) +
     // deepMergeConfig) and overrides one unrelated key.
     const parsed = NaxConfigSchema.parse({
-      execution: { ...DEFAULT_CONFIG.execution, maxIterations: 3 },
+      execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 3 },
     });
     expect(parsed.execution.bashApproval).toBe("raw");
   });

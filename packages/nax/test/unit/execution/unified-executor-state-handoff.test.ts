@@ -64,7 +64,6 @@ function makeCtx(
       execution: {
         ...DEFAULT_CONFIG.execution,
         mode: "pipeline",
-        maxIterations: 1,
         costLimit: 100,
         iterationDelayMs: 0,
       },
@@ -209,11 +208,11 @@ describe("1.2 — heartbeat cost during the post-iteration tail", () => {
   });
 });
 
-function makeWorkflowCtx(maxIterations: number): SequentialExecutionContext {
+function makeWorkflowCtx(): SequentialExecutionContext {
   const base = makeCtx();
   return {
     ...base,
-    config: { ...base.config, execution: { ...base.config.execution, mode: "workflow", maxIterations } },
+    config: { ...base.config, execution: { ...base.config.execution, mode: "workflow" } },
   };
 }
 
@@ -246,38 +245,9 @@ describe("max-iterations exhaustion (nax#2706)", () => {
 });
 
 describe("workflow mode loop bound (nax#2706)", () => {
-  function settlingRunIteration(prd: PRD) {
-    let current = prd;
-    return mock(async () => {
-      const next = current.userStories.find((s) => s.status === "pending");
-      if (next) {
-        current = {
-          ...current,
-          userStories: current.userStories.map((s) =>
-            s.id === next.id ? { ...s, status: "passed", passes: true } : s,
-          ),
-        };
-      }
-      return { prd: current, storiesCompletedDelta: next ? 1 : 0, costDelta: 0, prdDirty: false };
-    });
-  }
-
   function passThroughPreCheck(prd: PRD) {
     return mock(async (..._args: unknown[]) => ({ shouldSkipIteration: false, prdDirty: false, prd }));
   }
-
-  test("ignores execution.maxIterations: three stories finish under a cap of one", async () => {
-    const prd = makePrd([makePendingStory("US-001"), makePendingStory("US-002"), makePendingStory("US-003")]);
-    const runIteration = settlingRunIteration(prd);
-    _unifiedExecutorDeps.runIteration = runIteration;
-    _unifiedExecutorDeps.preIterationTierCheck = passThroughPreCheck(prd);
-
-    const result = await executeUnified(makeWorkflowCtx(1), prd);
-
-    expect(result.exitReason).toBe("completed");
-    expect(runIteration).toHaveBeenCalledTimes(3);
-    expect(result.storiesCompleted).toBe(3);
-  });
 
   test("stops when an iteration makes no progress at all, and warns with the ids", async () => {
     const prd = makePrd([makePendingStory("US-001"), makePendingStory("US-002")]);
@@ -286,7 +256,7 @@ describe("workflow mode loop bound (nax#2706)", () => {
     _unifiedExecutorDeps.preIterationTierCheck = passThroughPreCheck(prd);
 
     await withWarnSpy(async (warn) => {
-      const result = await executeUnified(makeWorkflowCtx(50), prd);
+      const result = await executeUnified(makeWorkflowCtx(), prd);
 
       expect(result.exitReason).toBe("max-iterations");
       expect(runIteration).toHaveBeenCalledTimes(1);
@@ -326,7 +296,7 @@ describe("workflow mode loop bound (nax#2706)", () => {
     _unifiedExecutorDeps.runIteration = runIteration;
     _unifiedExecutorDeps.preIterationTierCheck = passThroughPreCheck(prd);
 
-    const result = await executeUnified(makeWorkflowCtx(1), prd);
+    const result = await executeUnified(makeWorkflowCtx(), prd);
 
     expect(result.exitReason).toBe("completed");
     expect(runIteration).toHaveBeenCalledTimes(4);
@@ -355,7 +325,7 @@ describe("workflow mode loop bound (nax#2706)", () => {
       return { prd: current, storiesCompletedDelta: 1, costDelta: 0, prdDirty: false };
     });
 
-    const result = await executeUnified(makeWorkflowCtx(1), prd);
+    const result = await executeUnified(makeWorkflowCtx(), prd);
 
     expect(result.exitReason).toBe("completed");
     expect(result.storiesCompleted).toBe(2);

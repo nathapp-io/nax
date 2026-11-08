@@ -48,18 +48,13 @@ function makePRD(stories: Array<{ id: string; status: UserStory["status"] }>): P
   };
 }
 
-function makeConfig(
-  regressionMode?: "deferred" | "per-story" | "disabled",
-  testCommand?: string,
-  extra: DeepPartial<NaxConfig> = {},
-): NaxConfig {
+function makeConfig(testCommand?: string, extra: DeepPartial<NaxConfig> = {}): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: {
         enabled: true,
         timeoutSeconds: 30,
         acceptOnTimeout: true,
-        ...(regressionMode !== undefined ? { mode: regressionMode } : {}),
       },
     },
     quality: {
@@ -123,7 +118,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
       { id: "US-001", status: "passed" },
       { id: "US-002", status: "passed" },
     ]);
-    const config = makeConfig("disabled");
+    const config = makeConfig();
 
     try {
       await handleRunCompletion(makeOpts(config, prd));
@@ -145,7 +140,7 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
   test("run:completed event has correct story counts (not placeholder 0/0/0)", async () => {
     const stories = [makeStory("US-001", "passed"), makeStory("US-002", "passed"), makeStory("US-003", "failed")];
     const prd = makePRD(stories.map((s) => ({ id: s.id, status: s.status })));
-    const config = makeConfig("disabled");
+    const config = makeConfig();
 
     let completionResult: Awaited<ReturnType<typeof handleRunCompletion>>;
     try {
@@ -168,7 +163,7 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
     });
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig("disabled");
+    const config = makeConfig();
     const opts = makeOpts(config, prd);
     opts.runtime.costAggregator.record({
       ts: Date.now(),
@@ -197,7 +192,7 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
 
 describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () => {
   test("sets run status to 'cost-limit' when exitReason is 'cost-limit', regardless of PRD completeness", async () => {
-    const config = makeConfig("deferred", "bun test");
+    const config = makeConfig("bun test");
     const statusWriter = makeStatusWriter();
     const prd = makePRD([
       { id: "US-001", status: "passed" },
@@ -213,7 +208,7 @@ describe("handleRunCompletion - cost-limit exitReason surfaces distinctly", () =
   });
 
   test("does not set 'cost-limit' when exitReason is absent, even with an incomplete PRD", async () => {
-    const config = makeConfig("deferred", "bun test");
+    const config = makeConfig("bun test");
     const statusWriter = makeStatusWriter();
     const prd = makePRD([
       { id: "US-001", status: "passed" },
@@ -258,8 +253,8 @@ describe("US-002: handleRunCompletion — manifest retention sweep", () => {
   }
 
   function makeConfigWithManifest(retentionDays?: number): NaxConfig {
-    if (retentionDays === undefined) return makeConfig("disabled");
-    return makeConfig("disabled", undefined, {
+    if (retentionDays === undefined) return makeConfig();
+    return makeConfig(undefined, {
       context: { v2: { manifest: { retentionDays } } },
     });
   }

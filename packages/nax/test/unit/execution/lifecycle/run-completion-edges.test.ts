@@ -68,18 +68,13 @@ function makePrd(stories: UserStory[]): PRD {
   };
 }
 
-function edgeConfig(
-  regressionMode?: "deferred" | "per-story" | "disabled",
-  testCommand?: string,
-  extra: DeepPartial<NaxConfig> = {},
-): NaxConfig {
+function edgeConfig(testCommand?: string, extra: DeepPartial<NaxConfig> = {}): NaxConfig {
   return makeNaxConfig({
     execution: {
       regressionGate: {
         enabled: true,
         timeoutSeconds: 30,
         acceptOnTimeout: true,
-        ...(regressionMode !== undefined ? { mode: regressionMode } : {}),
       },
     },
     quality: {
@@ -154,7 +149,7 @@ afterEach(() => {
 
 describe("handleRunCompletion — session scratch purge (AC-20)", () => {
   function configWithSession(extra: DeepPartial<NaxConfig>["context"]): NaxConfig {
-    return edgeConfig("disabled", undefined, { context: extra });
+    return edgeConfig(undefined, { context: extra });
   }
 
   test("purges with resolved projectDir and archive=false for an incomplete feature", async () => {
@@ -215,7 +210,7 @@ describe("handleRunCompletion — session scratch purge (AC-20)", () => {
     const purge = spyOn(sessionModule, "purgeStaleScratch").mockResolvedValue(0);
     const prd = makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]);
 
-    await handleRunCompletion(makeOpts(edgeConfig("disabled"), prd));
+    await handleRunCompletion(makeOpts(edgeConfig(), prd));
 
     // Feature is complete, so the archive flag is true even with the default archiveOnFeatureArchive.
     expect(purge).toHaveBeenCalledWith(WORKDIR, "test-feature", 7, true);
@@ -232,7 +227,7 @@ describe("handleRunCompletion — plugin provider cache disposal", () => {
     const disposeAll = spyOn(cache, "disposeAll").mockResolvedValue(undefined);
     const prd = makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]);
 
-    await handleRunCompletion(makeOpts(edgeConfig("disabled"), prd, { pluginProviderCache: cache }));
+    await handleRunCompletion(makeOpts(edgeConfig(), prd, { pluginProviderCache: cache }));
 
     expect(disposeAll).toHaveBeenCalledTimes(1);
   });
@@ -251,7 +246,7 @@ describe("handleRunCompletion — saved run-metrics payload", () => {
       makeStory({ id: "US-002", status: "failed", passes: false }),
     ]);
 
-    await handleRunCompletion(makeOpts(edgeConfig("disabled"), prd, { allStoryMetrics: metrics, storiesCompleted: 1 }));
+    await handleRunCompletion(makeOpts(edgeConfig(), prd, { allStoryMetrics: metrics, storiesCompleted: 1 }));
 
     expect(save).toHaveBeenCalledTimes(1);
     const [outputDir, payload] = save.mock.calls[0];
@@ -283,7 +278,7 @@ describe("handleRunCompletion — final-status arms", () => {
     const statusWriter = makeStatusWriter();
     const prd = makePrd([makeStory({ id: "US-001", status: "passed", passes: true }), makeStory({ id: "US-002" })]);
 
-    await handleRunCompletion(makeOpts(edgeConfig("disabled"), prd, { statusWriter }));
+    await handleRunCompletion(makeOpts(edgeConfig(), prd, { statusWriter }));
 
     expect(statusWriter.setRunStatus).toHaveBeenCalledWith("aborted");
   });
@@ -292,7 +287,7 @@ describe("handleRunCompletion — final-status arms", () => {
     const statusWriter = makeStatusWriter();
     const prd = makePrd([makeStory({ id: "US-001", status: "failed", passes: false, attempts: 13 })]);
 
-    await handleRunCompletion(makeOpts(edgeConfig("disabled"), prd, { statusWriter }));
+    await handleRunCompletion(makeOpts(edgeConfig(), prd, { statusWriter }));
 
     expect(statusWriter.setRunStatus).toHaveBeenCalledWith("stalled");
   });
@@ -312,7 +307,7 @@ describe("handleRunCompletion — completion log context cost (AC-25)", () => {
     ];
     const prd = makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]);
 
-    await handleRunCompletion(makeOpts(edgeConfig("disabled"), prd, { allStoryMetrics: metrics }));
+    await handleRunCompletion(makeOpts(edgeConfig(), prd, { allStoryMetrics: metrics }));
 
     const completion = infoCalls.find(([, msg]) => msg === "Feature execution completed");
     expect(completion).toBeDefined();
@@ -324,7 +319,7 @@ describe("handleRunCompletion — completion log context cost (AC-25)", () => {
     loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(logger);
     const prd = makePrd([makeStory({ id: "US-001", status: "passed", passes: true })]);
 
-    await handleRunCompletion(makeOpts(edgeConfig("disabled"), prd, { allStoryMetrics: [makeStoryMetrics()] }));
+    await handleRunCompletion(makeOpts(edgeConfig(), prd, { allStoryMetrics: [makeStoryMetrics()] }));
 
     const completion = infoCalls.find(([, msg]) => msg === "Feature execution completed");
     expect(completion).toBeDefined();

@@ -4,7 +4,6 @@ import { DEFAULT_CONFIG } from "@/config";
 import { ExecutionConfigSchema } from "@/config/schemas-execution";
 
 const base = {
-  maxIterations: 10,
   iterationDelayMs: 0,
   costLimit: 5,
   maxStoriesPerFeature: 10,
@@ -16,7 +15,6 @@ describe("execution.commandInterceptor", () => {
   test("defaults to disabled with the measured verbs", () => {
     const parsed = ExecutionConfigSchema.parse(base);
     expect(parsed.commandInterceptor.enabled).toBe(false);
-    expect(parsed.commandInterceptor.provider).toBe("rtk");
     expect(parsed.commandInterceptor.git.verbs).toEqual(["log", "diff"]);
   });
 

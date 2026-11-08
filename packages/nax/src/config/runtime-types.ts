@@ -13,9 +13,7 @@ import type { AutoRouteConfig } from "./runtime-types-auto-route";
 import type { ContextConfig } from "./runtime-types-context";
 import type {
   CommandInterceptorConfig,
-  FlakeDetectionConfig,
   InstallConfig,
-  MutationCheckConfig,
   PreRunStepConfig,
   SmartTestRunnerConfig,
   WorktreeDependenciesConfig,
@@ -53,34 +51,11 @@ export interface AutoModeConfig {
 
 /** Rectification config — unified cap for story-orchestrator + regression cycles. */
 export interface RectificationConfig {
-  /** Enable rectification loop. Default: true. */
-  enabled: boolean;
   /** Total iteration cap for the unified fix cycle. Per-strategy caps are the
    * granular bound; this is the loose ceiling. (default: 12) */
   maxAttemptsTotal: number;
-  /** Default per-strategy cap for LLM-driven strategies (autofix-implementer,
-   * autofix-test-writer, full-suite-rectify). Mechanical strategies stay at 1. (default: 3) */
-  maxAttemptsPerStrategy: number;
   /** Timeout for full test suite run in seconds (default: 120) */
   fullSuiteTimeoutSeconds: number;
-  /** Max characters in failure summary sent to agent (default: 2000) */
-  maxFailureSummaryChars: number;
-  /** Abort rectification if failure count increases (default: true) */
-  abortOnIncreasingFailures: boolean;
-  /** Consecutive regressing iterations before abortOnIncreasingFailures bails. (default: 2) */
-  consecutiveIncreasesToBail: number;
-  /** Abort when no progress is made for several consecutive iterations (US-1496). (default: true) */
-  abortOnNoProgress: boolean;
-  /** Consecutive no-progress iterations before abortOnNoProgress bails. (default: 3) */
-  consecutiveNoProgressToBail: number;
-  storyScopedFixBudget: boolean;
-  /** Per-strategy attempt number at which "rethink your approach" language is injected. (default: 2) */
-  rethinkAtAttempt: number;
-  /** Per-strategy attempt number at which "final chance before escalation" urgency is added. (default: 3) */
-  urgencyAtAttempt: number;
-  /** Register the repo-scoped `repo-scoped-test-fix` fallthrough claimant for failing
-   * tests the story-scoped rectifier declines as out-of-scope (#1654). (default: true) */
-  repoScopedFallback: boolean;
 }
 
 /** Regression gate config (BUG-009, BUG-026) */
@@ -91,14 +66,6 @@ export interface RegressionGateConfig {
   timeoutSeconds: number;
   /** Accept timeout as pass instead of failing (BUG-026, default: true) */
   acceptOnTimeout?: boolean;
-  /**
-   * Mode of regression gate (default: 'deferred'):
-   * - 'deferred': run the full-suite regression once after all stories complete.
-   * - 'per-story': run the full-suite gate after each story AND the deferred
-   *   regression once after all stories complete (per-story is a superset of deferred).
-   * - 'disabled': run neither.
-   */
-  mode?: "deferred" | "per-story" | "disabled";
 }
 
 export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtime-types-execution";
@@ -107,8 +74,6 @@ export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtim
 export interface ExecutionConfig {
   /** A5: "workflow" swaps the story pipeline for the workflow loop. */
   mode: import("./runtime-types-workflow").ExecutionMode;
-  /** Pipeline mode only: max iterations per feature run (each story attempt, parallel batch and the final completion pass counts one). Workflow mode ignores it. */
-  maxIterations: number;
   /** Delay between iterations (ms) */
   iterationDelayMs: number;
   /** Max cost (USD) before pausing */
@@ -119,8 +84,6 @@ export interface ExecutionConfig {
   sessionErrorMaxRetries: number;
   /** Max retries for retryable session errors (e.g. QUEUE_DISCONNECTED_BEFORE_COMPLETION). Default: 3. */
   sessionErrorRetryableMaxRetries: number;
-  /** Verification subprocess timeout in seconds (ADR-003 Decision 4) */
-  verificationTimeoutSeconds: number;
   /** Max stories per feature (prevents memory exhaustion) */
   maxStoriesPerFeature: number;
   /** Rectification loop settings (v0.11) */
@@ -176,17 +139,13 @@ export interface ExecutionConfig {
    * Default: "shared"
    */
   storyIsolation: "shared" | "worktree";
-  /** Flake-detection probe config (isolation re-run mechanic). */
-  flakeDetection: FlakeDetectionConfig;
-  /** Mutation-check spot-check config (US-001) — opt-in mutation testing after GREEN. */
-  mutationCheck: MutationCheckConfig;
   /** Command interception (rtk git-site) — opt-in; installed into the Git tool seam at run setup. */
   commandInterceptor: CommandInterceptorConfig;
   /** Glob denylist narrowing Delete beyond tracked/gitignored (nax#1972). */
   denyPaths?: string[];
 }
 
-export type { FlakeDetectionConfig, InstallConfig, MutationCheckConfig } from "./runtime-types-execution";
+export type { InstallConfig } from "./runtime-types-execution";
 
 /** Quality gate config */
 export interface QualityConfig {
@@ -234,7 +193,7 @@ export interface QualityConfig {
      * rectification cycle. (default: true) */
     enabled?: boolean;
     /** Prompt-text display only: "X attempts available before escalation".
-     * Real cap is execution.rectification.maxAttemptsPerStrategy. (default: 3) */
+     * Real cap is execution.rectification.maxAttemptsTotal. (default: 3) */
     maxAttempts?: number;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */

@@ -53,8 +53,7 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  * - agent: protocol, maxInteractionTurns, promptAudit (deep), usageAudit (deep), transcriptAudit (deep)
  * - models: per-agent model tier mappings (deep)
  * - routing: strategy, llm (deep)
- * - execution: smartTestRunner, regressionGate (deep), flakeDetection (deep),
- *   mutationCheck (deep), rectification (deep), verificationTimeoutSeconds,
+ * - execution: smartTestRunner, regressionGate (deep), rectification (deep),
  *   worktreeDependencies (deep)
  * - review: enabled, checks, commands (deep), semantic (deep), adversarial (deep)
  * - acceptance: enabled, testPath, fix (deep)
@@ -131,16 +130,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
       regressionGate: {
         ...root.execution.regressionGate,
         ...packageOverride.execution?.regressionGate,
-      },
-      verificationTimeoutSeconds:
-        packageOverride.execution?.verificationTimeoutSeconds ?? root.execution.verificationTimeoutSeconds,
-      flakeDetection: {
-        ...root.execution.flakeDetection,
-        ...packageOverride.execution?.flakeDetection,
-      },
-      mutationCheck: {
-        ...root.execution.mutationCheck,
-        ...packageOverride.execution?.mutationCheck,
       },
       rectification: {
         ...root.execution.rectification,

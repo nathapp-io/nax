@@ -10,8 +10,8 @@
  *
  * The two halves are coupled. unified-executor.ts answers `prdDirty: true` by
  * reloading the PRD from disk, so dropping the write while still reporting the
- * PRD dirty would discard the in-memory marks and spin the loop to
- * maxIterations. Not writing and not reporting dirty is what lets the run both
+ * PRD dirty would discard the in-memory marks and spin the loop until its
+ * derived bound. Not writing and not reporting dirty is what lets the run both
  * terminate and leave the tree alone.
  *
  * #1808 stopped the PRD persistence and auto-commit, but three lifecycle
@@ -150,7 +150,7 @@ describe("executeUnified — no acceptance artifacts under a dry run (nax#1809)"
       workdir: tempDir,
       featureDir: tempDir,
       config: makeNaxConfig({
-        execution: { maxIterations: 10, costLimit: 100, iterationDelayMs: 0 },
+        execution: { costLimit: 100, iterationDelayMs: 0 },
       }),
       hooks: EMPTY_HOOKS,
       feature: "test-feature",
@@ -236,12 +236,11 @@ describe("runCompletionPhase — dry run (nax#1809)", () => {
       const prd = makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] });
       const config = makeNaxConfig({
         execution: {
-          maxIterations: 1,
           costLimit: 100,
           iterationDelayMs: 0,
-          // Per-story mode + a real test command is the default nax-setup'd repo:
+          // Enabled with a real test command is the default nax-setup'd repo:
           // without the dry-run gate the regression branch would spawn the suite.
-          regressionGate: { enabled: true, mode: "per-story", timeoutSeconds: 30, acceptOnTimeout: true },
+          regressionGate: { enabled: true, timeoutSeconds: 30, acceptOnTimeout: true },
         },
         quality: { commands: { test: "bun test" } },
       });

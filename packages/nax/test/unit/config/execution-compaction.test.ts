@@ -3,7 +3,6 @@ import { ExecutionConfigSchema } from "@/config/schemas-execution";
 
 /** The rest of ExecutionConfig's required fields, so only compaction is under test. */
 const base = {
-  maxIterations: 3,
   iterationDelayMs: 0,
   costLimit: 10,
   maxStoriesPerFeature: 10,

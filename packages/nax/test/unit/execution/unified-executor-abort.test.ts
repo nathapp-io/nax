@@ -61,7 +61,6 @@ function makeCtxWithSignal(signal: AbortSignal, overrides: Record<string, unknow
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
-        maxIterations: 2,
         costLimit: 100,
         iterationDelayMs: 10,
         rectification: {
@@ -175,7 +174,7 @@ describe("executeUnified — BUG-2: abort during iteration delay", () => {
 
     const result = await executeUnified(makeCtxWithSignal(controller.signal), prd);
 
-    // No abort → delay completes normally → loop completes (maxIterations=2,
+    // No abort → delay completes normally → loop completes (derived bound,
     // one iteration done in the mock). Result must NOT be 'aborted'.
     expect(result.exitReason).not.toBe("aborted");
   });

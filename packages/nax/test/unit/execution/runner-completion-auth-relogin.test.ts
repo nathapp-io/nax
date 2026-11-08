@@ -55,7 +55,7 @@ function options(): RunnerCompletionOptions {
   return {
     config: makeNaxConfig({
       acceptance: { enabled: false },
-      execution: { mode: "pipeline", regressionGate: { mode: "disabled" } },
+      execution: { mode: "pipeline" },
     }),
     hooks: { hooks: {}, _skipGlobal: false },
     feature: "f",

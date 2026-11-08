@@ -10,7 +10,7 @@ import {
 import type { AgentRunRequest } from "@/agents/manager-types";
 import type { RetryPreset } from "@/agents/retry";
 import type { CompleteResult, TurnResult } from "@/agents/types";
-import { DEFAULT_CONFIG, pickSelector } from "@/config";
+import { type DEFAULT_CONFIG, pickSelector } from "@/config";
 import { type CompleteOperation, callOp, type RunOperation } from "@/operations";
 import type { NaxRuntime } from "@/runtime";
 
@@ -20,7 +20,6 @@ afterEach(async () => {
 });
 
 const testSel = pickSelector("routing-op-test", "routing");
-const implementerGateSel = pickSelector("routing-op-test-with-gates", "routing", "review", "execution");
 
 const echoOp: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
   kind: "complete",
@@ -57,26 +56,6 @@ const timedRunEchoOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT
   ...runEchoOp,
   name: "timed-run-echo-test",
   timeoutMs: () => 123_000,
-};
-
-const warmImplementerOp: RunOperation<
-  { text: string },
-  string,
-  Pick<typeof DEFAULT_CONFIG, "routing" | "review" | "execution">
-> = {
-  ...runEchoOp,
-  name: "implementer",
-  config: implementerGateSel,
-  session: { role: "implementer", lifetime: "warm" },
-  // Local replacement for the deleted shouldKeepSessionOpen gate.
-  keepOpen: (_input, ctx) => ctx.config.execution.rectification.enabled === true,
-};
-
-const warmAutofixOp: RunOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
-  ...runEchoOp,
-  name: "autofix-implementer",
-  stage: "review",
-  session: { role: "implementer", lifetime: "warm" },
 };
 
 const invalidTimedEchoOp: CompleteOperation<{ text: string }, string, Pick<typeof DEFAULT_CONFIG, "routing">> = {
@@ -252,73 +231,6 @@ describe("callOp — kind:run (ADR-019 §5)", () => {
     };
     expect(reqArg.noFallback).toBe(true);
     expect(result).toBe("single-agent output");
-  });
-
-  test("keepOpen: disabled when review+rectification off; enabled when rectification on; autofix always warm", async () => {
-    const makeManager = () =>
-      makeMockAgentManager({
-        runWithFallbackFn: async (_req) => ({
-          result: {
-            success: true,
-            exitCode: 0,
-            output: "single-agent output",
-            rateLimited: false,
-            durationMs: 1,
-            estimatedCostUsd: 0,
-            agentFallbacks: [],
-          },
-          fallbacks: [],
-        }),
-      });
-    const offConfig = {
-      ...DEFAULT_CONFIG,
-      review: { ...DEFAULT_CONFIG.review, enabled: false },
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
-      },
-    };
-    const onConfig = {
-      ...DEFAULT_CONFIG,
-      execution: {
-        ...DEFAULT_CONFIG.execution,
-        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: true },
-      },
-    };
-
-    const am1 = makeManager();
-    runtime = makeTestRuntime({ agentManager: am1, sessionManager: makeSessionManager(), config: offConfig });
-    await callOp(
-      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
-      warmImplementerOp,
-      { text: "hello" },
-    );
-    const [am1Req] = firstCall(am1.runWithFallback as ReturnType<typeof mock>, "am1.runWithFallback");
-    expect((am1Req as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBeUndefined();
-    await runtime.close();
-    runtime = undefined;
-
-    const am2 = makeManager();
-    runtime = makeTestRuntime({ agentManager: am2, sessionManager: makeSessionManager(), config: onConfig });
-    await callOp(
-      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
-      warmImplementerOp,
-      { text: "hello" },
-    );
-    const [am2Req] = firstCall(am2.runWithFallback as ReturnType<typeof mock>, "am2.runWithFallback");
-    expect((am2Req as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBe(true);
-    await runtime.close();
-    runtime = undefined;
-
-    const am3 = makeManager();
-    runtime = makeTestRuntime({ agentManager: am3, sessionManager: makeSessionManager(), config: offConfig });
-    await callOp(
-      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "US-001" },
-      warmAutofixOp,
-      { text: "hello" },
-    );
-    const [am3Req] = firstCall(am3.runWithFallback as ReturnType<typeof mock>, "am3.runWithFallback");
-    expect((am3Req as { runOptions: { keepOpen?: boolean } }).runOptions.keepOpen).toBe(true);
   });
 
   test("throws CALL_OP_NO_OUTPUT when run returns no output", async () => {

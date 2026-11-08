@@ -492,7 +492,6 @@ describe("validateConfig — model entry content checks", () => {
 
 describe("validateConfig — execution limits", () => {
   test.each([
-    ["maxIterations", 0, "maxIterations must be > 0, got 0"],
     ["costLimit", -1, "costLimit must be > 0, got -1"],
     ["sessionTimeoutSeconds", 0, "sessionTimeoutSeconds must be > 0, got 0"],
   ] as const)("%s <= 0 produces the exact error with the value", (field, value, message) => {
@@ -546,7 +545,7 @@ describe("validateConfig — error order across field groups", () => {
       cfg({
         version: 2,
         models: { claude: { fast: "haiku", balanced: "sonnet" } },
-        execution: { ...cfg({}).execution, maxIterations: 0, costLimit: 0, sessionTimeoutSeconds: 0 },
+        execution: { ...cfg({}).execution, costLimit: 0, sessionTimeoutSeconds: 0 },
         agent: { default: "claude", fallback: { map: { claude: ["codex"] } } },
         autoMode: {
           complexityRouting: { simple: "bogus", expert: { tier: "missing" } },
@@ -564,7 +563,6 @@ describe("validateConfig — error order across field groups", () => {
     expect(result.errors).toEqual([
       "Invalid version: expected 1, got 2",
       "models.claude.powerful is required",
-      "maxIterations must be > 0, got 0",
       "costLimit must be > 0, got 0",
       "sessionTimeoutSeconds must be > 0, got 0",
       'escalation.tierOrder: tier "fast" attempts must be 1-20, got 0',
@@ -582,7 +580,7 @@ describe("validateConfig — error order across field groups", () => {
       cfg({
         version: 2,
         models: { "": { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
-        execution: { ...cfg({}).execution, maxIterations: 0 },
+        execution: { ...cfg({}).execution, costLimit: 0 },
         agent: { default: "" },
         autoMode: { complexityRouting: {}, escalation: { tierOrder: [{ tier: "fast", attempts: 0 }] } },
       }),
@@ -590,7 +588,7 @@ describe("validateConfig — error order across field groups", () => {
 
     expect(result.errors).toEqual([
       "Invalid version: expected 1, got 2",
-      "maxIterations must be > 0, got 0",
+      "costLimit must be > 0, got 0",
       "agent.default must be non-empty",
       'escalation.tierOrder: tier "fast" attempts must be 1-20, got 0',
     ]);

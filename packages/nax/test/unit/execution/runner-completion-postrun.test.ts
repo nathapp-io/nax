@@ -55,7 +55,6 @@ function makeConfig(acceptanceEnabled = true): NaxConfig {
     },
     execution: {
       mode: "pipeline",
-      regressionGate: { mode: "disabled" },
     },
   });
 }

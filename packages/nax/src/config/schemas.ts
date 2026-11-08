@@ -28,7 +28,6 @@ import {
   AutoRouteConfigSchema,
   CommandInterceptorConfigSchema,
   ConstitutionConfigSchema,
-  DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
   ExecutionConfigSchema,
   InstallConfigSchema,
   QualityConfigSchema,
@@ -157,13 +156,9 @@ export const NaxConfigSchema = z
     }),
     execution: ExecutionConfigSchema.default({
       mode: "workflow",
-      maxIterations: 20,
       iterationDelayMs: 2000,
       costLimit: 30.0,
       sessionTimeoutSeconds: 3600,
-      // BUG-20 — derived from the field's own default, not hand-written; see
-      // DEFAULT_VERIFICATION_TIMEOUT_SECONDS in schemas-execution.ts.
-      verificationTimeoutSeconds: DEFAULT_VERIFICATION_TIMEOUT_SECONDS,
       maxStoriesPerFeature: 500,
       // BUG-20 — derived, not hand-written (same rationale as `context` below):
       // a literal here would drift from RectificationConfigSchema's own
@@ -190,17 +185,6 @@ export const NaxConfigSchema = z
         timeoutSeconds: 300,
       },
       storyIsolation: "shared",
-      flakeDetection: {
-        enabled: true,
-        probeRuns: 2,
-        maxProbesPerGate: 5,
-        probeTimeoutSeconds: 60,
-      },
-      mutationCheck: {
-        enabled: false,
-        maxMutants: 3,
-        timeoutSeconds: 60,
-      },
       // BUG-20 — derived, not hand-written (same rationale as `rectification`
       // above): a literal here would shadow CommandInterceptorConfigSchema's
       // own defaults and leave `execution.commandInterceptor` missing from

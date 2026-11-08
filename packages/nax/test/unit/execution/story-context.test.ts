@@ -42,7 +42,7 @@ function makePrd(story: UserStory): PRD {
 
 function makeConfig() {
   return makeNaxConfig({
-    execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
+    execution: { sessionTimeoutSeconds: 30 },
     models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
     quality: { commands: {} },
     context: { testCoverage: { enabled: false } },

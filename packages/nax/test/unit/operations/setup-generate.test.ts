@@ -127,8 +127,8 @@ describe("setupGenerateOp.parse — AC6 ext: mono monoConfigs uses LLM per-packa
       orchestrator: "none",
     };
 
-    const pkg0Config = makeNaxConfig({ execution: { maxIterations: 11 } });
-    const pkg1Config = makeNaxConfig({ execution: { maxIterations: 22 } });
+    const pkg0Config = makeNaxConfig({ execution: { costLimit: 11 } });
+    const pkg1Config = makeNaxConfig({ execution: { costLimit: 22 } });
 
     const output = `\`\`\`json\n${JSON.stringify({
       config: {},
@@ -141,9 +141,9 @@ describe("setupGenerateOp.parse — AC6 ext: mono monoConfigs uses LLM per-packa
     const result = setupGenerateOp.parse(output, analysis, NO_BUILD_CTX);
     expect(result.monoConfigs).toHaveLength(2);
     expect(result.monoConfigs[0].relativeDir).toBe("packages/pkg-0");
-    expect((result.monoConfigs[0].config as NaxConfig).execution.maxIterations).toBe(11);
+    expect((result.monoConfigs[0].config as NaxConfig).execution.costLimit).toBe(11);
     expect(result.monoConfigs[1].relativeDir).toBe("packages/pkg-1");
-    expect((result.monoConfigs[1].config as NaxConfig).execution.maxIterations).toBe(22);
+    expect((result.monoConfigs[1].config as NaxConfig).execution.costLimit).toBe(22);
   });
 });
 

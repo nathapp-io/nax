@@ -85,7 +85,6 @@ function makeCtx(sessionManager: ISessionManager): SequentialExecutionContext {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
-        maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
         rectification: {

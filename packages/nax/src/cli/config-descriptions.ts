@@ -116,48 +116,23 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Execution
   execution: "Execution limits and timeouts",
-  "execution.maxIterations":
-    "Max iterations per feature run (pipeline mode only; each story attempt, parallel batch and the final completion pass counts one). Workflow mode ignores it and bounds the run by the story count; maxStoriesPerFeature is its size limit",
   "execution.mode":
     'Run mode: "workflow" (default) runs the A5 single-implementer review loop configured by `workflow`; "pipeline" (deprecated) runs the per-story pipeline. Root-only',
   "execution.iterationDelayMs": "Delay between iterations in milliseconds",
   "execution.costLimit": "Max cost in USD before pausing execution (override per run with `nax run --max-cost`)",
   "execution.sessionTimeoutSeconds": "Timeout per agent coding session in seconds",
-  "execution.verificationTimeoutSeconds": "Verification subprocess timeout in seconds",
   "execution.maxStoriesPerFeature": "Max stories per feature (prevents memory exhaustion)",
   "execution.contextProviderTokenBudget": "Token budget for plugin context providers",
   "execution.lintCommand": "Lint command override (null=disabled, undefined=auto-detect)",
   "execution.typecheckCommand": "Typecheck command override (null=disabled, undefined=auto-detect)",
   "execution.rectification":
     "Unified fix-cycle settings — shared by story-orchestrator (semantic + adversarial + mechanical) and post-run regression cycles",
-  "execution.rectification.enabled": "Enable rectification loop",
   "execution.rectification.maxAttemptsTotal":
     "Total iteration cap for the unified fix cycle (default: 12). Per-strategy caps are the granular bound.",
-  "execution.rectification.maxAttemptsPerStrategy":
-    "Default per-strategy cap for LLM-driven strategies — autofix-implementer / autofix-test-writer / full-suite-rectify (default: 3). Mechanical strategies stay at 1.",
   "execution.rectification.fullSuiteTimeoutSeconds": "Timeout for full test suite run in seconds",
-  "execution.rectification.maxFailureSummaryChars": "Max characters in failure summary",
-  "execution.rectification.abortOnIncreasingFailures": "Abort if failure count increases",
-  "execution.rectification.consecutiveIncreasesToBail":
-    "Consecutive regressing iterations required before abortOnIncreasingFailures bails (default: 2; 1 = legacy behaviour)",
-  "execution.rectification.abortOnNoProgress":
-    "Abort rectification when no progress is made for several consecutive iterations (default: true)",
-  "execution.rectification.consecutiveNoProgressToBail":
-    "Consecutive no-progress iterations required before abortOnNoProgress bails (default: 3; one higher than the count bail's 2 because the no-progress predicate fires on a wider shape)",
-  "execution.rectification.rethinkAtAttempt":
-    "Attempt number at which 'rethink your approach' language is injected into the prompt (default: 2)",
-  "execution.rectification.urgencyAtAttempt":
-    "Attempt number at which 'final chance before escalation' urgency is added (default: 3)",
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
   "execution.regressionGate.timeoutSeconds": "Timeout for regression run in seconds",
-  "execution.mutationCheck":
-    "Mutation spot-check — an advisory probe that injects a few small defects into the story's changed source files and re-runs the scoped tests to see whether the suite catches them. Never fails a story; surviving mutants are reported at run end.",
-  "execution.mutationCheck.enabled": "Enable the mutation spot-check (default: false — opt-in)",
-  "execution.mutationCheck.maxMutants":
-    "Mutants tested per story (default: 3). Candidates are gathered across all changed files and sampled evenly, so raising this widens coverage at a cost of one scoped test run per mutant.",
-  "execution.mutationCheck.timeoutSeconds":
-    "Per-mutant scoped test-run timeout in seconds (default: 60). Worst-case added wall clock per story is maxMutants x timeoutSeconds.",
   "execution.storyIsolation":
     'Story isolation mode. "shared" (default): all stories run on the main branch. "worktree": each story runs in an isolated git worktree (.nax-wt/<storyId>/); passed stories merge into main, failed commits never reach main.',
 
@@ -174,7 +149,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Route tool commands through an external filter to shrink their output. Off by default.",
   "execution.commandInterceptor.enabled":
     "Master switch for command interception. Off by default: interception changes what the agent sees, so it does not switch on merely because the provider is installed. This is the only switch — there is no CLI flag or env override. Flip it here, run the same story twice, and compare cost-ledger spend to judge whether it earns its place.",
-  "execution.commandInterceptor.provider": "Which interceptor to use. Only 'rtk' exists today.",
   "execution.commandInterceptor.git.verbs":
     "Git subcommands eligible for interception. Measured values: log and diff. status and blame measured no benefit; show is excluded for changing git's exit code.",
   "execution.commandInterceptor.bash.enabled":

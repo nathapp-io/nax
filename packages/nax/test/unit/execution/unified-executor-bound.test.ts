@@ -29,11 +29,11 @@ afterEach(() => {
   pipelineEventBus.clear();
   cleanupTempDir(dir);
 });
-function ctx(maxIterations: number): SequentialExecutionContext {
+function ctx(): SequentialExecutionContext {
   return {
     ...makeDispatchContext({ runtime: makeMockRuntime({ workdir: dir }) }),
     config: makeNaxConfig({
-      execution: { mode: "pipeline", maxIterations, iterationDelayMs: 0 },
+      execution: { mode: "pipeline", iterationDelayMs: 0 },
       acceptance: { enabled: false },
       autoMode: { escalation: { enabled: false } },
     }),
@@ -62,7 +62,7 @@ describe("executeUnified — an already-passed PRD completes without an iteratio
   }
 
   test("US-007 AC-1: returns exit reason completed", async () => {
-    const result = await executeUnified(ctx(3), allPassedPrd());
+    const result = await executeUnified(ctx(), allPassedPrd());
     expect(result.exitReason).toBe("completed");
     expect(result.prd.userStories.every((s) => s.passes)).toBe(true);
   });
@@ -72,7 +72,7 @@ describe("executeUnified — an already-passed PRD completes without an iteratio
       throw new Error("runIteration must not run for an already-passed PRD");
     });
     _unifiedExecutorDeps.runIteration = runIteration;
-    const result = await executeUnified(ctx(3), allPassedPrd());
+    const result = await executeUnified(ctx(), allPassedPrd());
     expect(result.exitReason).toBe("completed");
     expect(runIteration).not.toHaveBeenCalled();
   });
@@ -83,9 +83,9 @@ describe("executeUnified — an already-passed PRD completes without an iteratio
     });
     _unifiedExecutorDeps.runIteration = runIteration;
     const workflowCtx = {
-      ...ctx(3),
+      ...ctx(),
       config: makeNaxConfig({
-        execution: { mode: "workflow", maxIterations: 3, iterationDelayMs: 0 },
+        execution: { mode: "workflow", iterationDelayMs: 0 },
         acceptance: { enabled: false },
         autoMode: { escalation: { enabled: false } },
       }),
@@ -97,7 +97,7 @@ describe("executeUnified — an already-passed PRD completes without an iteratio
 });
 
 describe("executeUnified derived bound", () => {
-  test("pipeline literal ignores maxIterations 1 and completes three pending stories", async () => {
+  test("pipeline literal derives the bound and completes three pending stories", async () => {
     const prd = makePRD({
       userStories: [1, 2, 3].map((n) => makeStory({ id: `US-${n}`, status: "pending", passes: false })),
     });
@@ -114,7 +114,7 @@ describe("executeUnified derived bound", () => {
         prdDirty: false,
       }),
     );
-    const result = await executeUnified(ctx(1), prd);
+    const result = await executeUnified(ctx(), prd);
     expect(result.storiesCompleted).toBe(3);
     expect(result.exitReason).toBe("completed");
     expect(result.prd.userStories.every((s) => s.passes)).toBe(true);
@@ -129,7 +129,7 @@ describe("executeUnified derived bound", () => {
       prdDirty: false,
     }));
     await withWarnSpy(async (warn) => {
-      const result = await executeUnified(ctx(7), prd);
+      const result = await executeUnified(ctx(), prd);
       expect(result.exitReason).toBe("max-iterations");
       expect(warn).toHaveBeenCalledWith(
         "execution",

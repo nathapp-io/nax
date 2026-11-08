@@ -8,7 +8,7 @@
  * Represents a single config field difference.
  */
 export interface ConfigDiff {
-  /** Dot-separated field path (e.g., "execution.maxIterations") */
+  /** Dot-separated field path (e.g., "execution.costLimit") */
   path: string;
   /** Value from global config */
   globalValue: unknown;

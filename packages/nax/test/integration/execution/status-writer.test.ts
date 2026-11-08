@@ -53,7 +53,6 @@ function makeConfig(costLimit = 5.0): NaxConfig {
   return makeNaxConfig({
     execution: {
       costLimit,
-      maxIterations: 10,
       maxStoriesPerFeature: 50,
       iterationDelayMs: 0,
     },

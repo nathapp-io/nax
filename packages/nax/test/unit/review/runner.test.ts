@@ -71,14 +71,12 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
         executionConfig: {
           ...DEFAULT_CONFIG.execution,
           typecheckCommand: null,
-          maxIterations: 5,
           iterationDelayMs: 0,
           costLimit: 10,
           sessionTimeoutSeconds: 300,
-          verificationTimeoutSeconds: 60,
           maxStoriesPerFeature: 20,
           contextProviderTokenBudget: 2000,
-          rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
+          rectification: DEFAULT_CONFIG.execution.rectification,
           regressionGate: { enabled: false, timeoutSeconds: 120 },
         },
       });

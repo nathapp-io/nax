@@ -65,7 +65,7 @@ function makeOpts(total = 0): RunnerCompletionOptions {
   runtime.costAggregator.snapshot = mock(() => ({ ...emptySnapshot(), totalCostUsd: total }));
   const config: NaxConfig = makeNaxConfig({
     acceptance: { enabled: false },
-    execution: { regressionGate: { mode: "disabled" } },
+    execution: { regressionGate: { enabled: false } },
   });
   return {
     config,
@@ -111,7 +111,6 @@ beforeEach(() => {
   _runnerCompletionDeps.loadConfigForPackage = mock(async () =>
     makeNaxConfig({
       acceptance: { enabled: false },
-      execution: { regressionGate: { mode: "disabled" } },
     }),
   );
   // Hermetic: the completion phase auto-commits any dirty nax runtime files at

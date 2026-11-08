@@ -45,7 +45,7 @@ function createTestConfig(): NaxConfig {
   return {
     ...DEFAULT_CONFIG,
     agent: { ...DEFAULT_CONFIG.agent, default: "mock" },
-    execution: { ...DEFAULT_CONFIG.execution, maxIterations: 20, maxStoriesPerFeature: 500, iterationDelayMs: 0 },
+    execution: { ...DEFAULT_CONFIG.execution, maxStoriesPerFeature: 500, iterationDelayMs: 0 },
     review: { ...DEFAULT_CONFIG.review, enabled: false },
     acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
   };

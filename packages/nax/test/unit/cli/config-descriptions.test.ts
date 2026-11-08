@@ -155,25 +155,30 @@ describe("FIELD_DESCRIPTIONS agent.transcriptAudit (#2453)", () => {
   });
 });
 
-describe("FIELD_DESCRIPTIONS.execution.mutationCheck", () => {
-  const KEYS = [
+describe("FIELD_DESCRIPTIONS — keys removed in C1 (US-002)", () => {
+  // `execution.mutationCheck` and `execution.flakeDetection` were declared
+  // sections read at no code site; `execution.rectification.abortOnNoProgress`
+  // (with ten sibling leaves) was pipeline-only. Documenting a key that no
+  // longer exists in the schema sends the user to a config field that is
+  // stripped with a warning.
+  const REMOVED_PREFIXES = [
     "execution.mutationCheck",
-    "execution.mutationCheck.enabled",
-    "execution.mutationCheck.maxMutants",
-    "execution.mutationCheck.timeoutSeconds",
+    "execution.flakeDetection",
+    "execution.rectification.abortOnNoProgress",
   ];
 
-  test.each(KEYS)("%s has a non-empty description", (key) => {
-    expect(typeof FIELD_DESCRIPTIONS[key]).toBe("string");
-    expect(FIELD_DESCRIPTIONS[key].length).toBeGreaterThan(0);
+  test.each(REMOVED_PREFIXES)("AC-25: no description equals or starts with %s", (prefix) => {
+    const documented = Object.keys(FIELD_DESCRIPTIONS).filter((key) => key === prefix || key.startsWith(`${prefix}.`));
+
+    expect(documented).toEqual([]);
   });
 
-  test("the parent description states the check is advisory", () => {
-    expect(FIELD_DESCRIPTIONS["execution.mutationCheck"].toLowerCase()).toContain("advisory");
-  });
+  test("AC-26: the retained execution.rectification.maxAttemptsTotal is still documented", () => {
+    const description = FIELD_DESCRIPTIONS["execution.rectification.maxAttemptsTotal"];
 
-  test("enabled description records the opt-in default", () => {
-    expect(FIELD_DESCRIPTIONS["execution.mutationCheck.enabled"]).toContain("false");
+    expect(typeof description).toBe("string");
+    expect(description.length).toBeGreaterThan(0);
+    expect(description).toContain("12");
   });
 });
 

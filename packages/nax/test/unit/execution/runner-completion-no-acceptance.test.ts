@@ -46,7 +46,7 @@ const WORKDIR = `/tmp/nax-test-runner-completion-no-acceptance-${randomUUID()}`;
 function makeAcceptanceEnabledConfig(): NaxConfig {
   return makeNaxConfig({
     acceptance: { enabled: true, maxRetries: 3 },
-    execution: { mode: "pipeline", regressionGate: { mode: "disabled" } },
+    execution: { mode: "pipeline" },
   });
 }
 

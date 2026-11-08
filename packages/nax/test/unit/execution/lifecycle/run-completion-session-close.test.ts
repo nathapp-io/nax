@@ -38,16 +38,7 @@ describe("handleRunCompletion session teardown", () => {
       startTime: Date.now() - 100,
       workdir: "/tmp/workdir",
       statusWriter: makeStatusWriter(),
-      config: {
-        ...DEFAULT_CONFIG,
-        execution: {
-          ...DEFAULT_CONFIG.execution,
-          regressionGate: {
-            ...DEFAULT_CONFIG.execution.regressionGate,
-            mode: "disabled",
-          },
-        },
-      },
+      config: DEFAULT_CONFIG,
       ...makeDispatchContext({
         sessionManager: makeSessionManager({ closeStory: mock(() => []), listActive: mock(() => []) }),
       }),

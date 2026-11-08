@@ -149,7 +149,7 @@ describe("RectifierPromptBuilder.noOpReprompt", () => {
   });
 });
 
-// ─── firstAttemptDelta / continuation priority-bucket rendering ───────────────
+// ─── firstAttemptDelta priority-bucket rendering ─────────────────────────────
 
 const makeReviewCheck = (
   check: ReviewCheckResult["check"],
@@ -222,72 +222,6 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
     expect(result).toContain("## Priority 4 — Semantic");
     expect(result).toContain("## Priority 5 — Architectural");
     expect(result).toContain("Structured findings:");
-    expect(result).toMatchSnapshot();
-  });
-});
-
-describe("RectifierPromptBuilder.continuation", () => {
-  test("single-category: renders only the matching priority bucket", () => {
-    const result = RectifierPromptBuilder.continuation([makeReviewCheck("lint")], 1, 2, 3);
-
-    expect(result).toContain("Order matters: fix Priority 1 first");
-    expect(result).toContain("## Priority 2 — Lint/style");
-    expect(result).not.toContain("## Priority 1 — Compile/build");
-    expect(result).not.toContain("## Priority 3 — Behavior");
-    expect(result).not.toContain("## Priority 4 — Semantic");
-    expect(result).not.toContain("## Priority 5 — Architectural");
-    expect(result).toMatchSnapshot();
-  });
-
-  test("two-categories: renders in fixed priority order, not input order", () => {
-    const result = RectifierPromptBuilder.continuation(
-      [makeReviewCheck("semantic"), makeReviewCheck("typecheck")],
-      1,
-      2,
-      3,
-    );
-
-    expect(result).toContain("## Priority 1 — Compile/build");
-    expect(result).toContain("## Priority 4 — Semantic");
-    expect(result.indexOf("## Priority 1 — Compile/build")).toBeLessThan(result.indexOf("## Priority 4 — Semantic"));
-    expect(result).toMatchSnapshot();
-  });
-
-  test("all-categories: renders all five buckets with expected grouping", () => {
-    const result = RectifierPromptBuilder.continuation(
-      [
-        makeReviewCheck("adversarial"),
-        makeReviewCheck("build", { exitCode: 2 }),
-        makeReviewCheck("semantic", {
-          findings: [
-            makeFinding({
-              rule: "semantic-ac3",
-              severity: "error",
-              file: "src/foo.ts",
-              line: 42,
-              message: "Implementation does not satisfy AC#3",
-            }),
-          ],
-        }),
-        makeReviewCheck("test"),
-        makeReviewCheck("lint"),
-        makeReviewCheck("typecheck"),
-      ],
-      3,
-      2,
-      3,
-    );
-
-    expect(result).toContain("## Priority 1 — Compile/build");
-    expect(result).toContain("### typecheck (exit 1)");
-    expect(result).toContain("### build (exit 2)");
-    expect(result).toContain("## Priority 2 — Lint/style");
-    expect(result).toContain("## Priority 3 — Behavior");
-    expect(result).toContain("## Priority 4 — Semantic");
-    expect(result).toContain("## Priority 5 — Architectural");
-    expect(result).toContain("Structured findings:");
-    expect(result).toContain("Rethink your approach");
-    expect(result).toContain("URGENT: This is your final attempt");
     expect(result).toMatchSnapshot();
   });
 });

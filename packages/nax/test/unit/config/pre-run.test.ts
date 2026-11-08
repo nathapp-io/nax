@@ -7,7 +7,7 @@
  * `execution.preRun` undefined under `NaxConfigSchema.parse({})`).
  *
  * `NaxConfigSchema` rejects a bare partial `execution` object — the required
- * fields (`maxIterations`, `costLimit`, …) have no field-level defaults — so
+ * fields (`costLimit`, `iterationDelayMs`, …) have no field-level defaults — so
  * the override tests seed the merged base the loader itself starts from, the
  * same way `bash-approval.test.ts` pins its default.
  */

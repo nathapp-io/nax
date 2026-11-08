@@ -247,7 +247,7 @@ describe("nax config (default view) - edge cases", () => {
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),
-      JSON.stringify({ execution: { costLimit: 15, rectification: { enabled: false, maxAttemptsTotal: 5 } } }),
+      JSON.stringify({ execution: { costLimit: 15, rectification: { maxAttemptsTotal: 5 } } }),
     );
 
     process.chdir(tempDir);
@@ -259,7 +259,6 @@ describe("nax config (default view) - edge cases", () => {
     const parsed = JSON.parse(lines.slice(jsonStartIndex).join("\n"));
 
     expect(parsed.execution.costLimit).toBe(15);
-    expect(parsed.execution.rectification.enabled).toBe(false);
     expect(parsed.execution.rectification.maxAttemptsTotal).toBe(5);
     expect(parsed.execution.iterationDelayMs).toBeDefined();
     expect(parsed.execution.rectification.fullSuiteTimeoutSeconds).toBeDefined();

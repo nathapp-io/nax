@@ -64,7 +64,7 @@ test("AC-17/18/19: runner defaults to workflow, completes its story and passes t
     outputDir: out,
     workflow: { publish: "none", preflight: false },
     acceptance: { enabled: false },
-    execution: { iterationDelayMs: 0, regressionGate: { mode: "disabled" } },
+    execution: { iterationDelayMs: 0 },
     quality: { commands: {} },
   });
   // Exercise a direct caller before schema defaults populate this required runtime field.

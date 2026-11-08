@@ -1,14 +1,9 @@
 /**
- * Unit tests for RectifierPromptBuilder.continuation (PROMPT-001).
+ * Unit tests for RectifierPromptBuilder's review/autofix rectification prompts.
  *
- * Tests cover:
- * 1. Continuation prompt contains error output from failedChecks
- * 2. Continuation prompt contains findings when present
- * 3. Rethink preamble appears at rethinkAtAttempt
- * 4. Urgency preamble appears at urgencyAtAttempt
- * 5. CONTRADICTION_ESCAPE_HATCH is present in every continuation prompt
- * 6. Continuation prompt does NOT contain "constitution", "acceptance criteria", "story"
- *    (i.e. it is minimal — not the full prompt)
+ * `continuation` was removed with the rest of the pipeline-only rectification
+ * surface (C1 B3c-2): nothing called it, and the keys its preambles keyed off
+ * (`rethinkAtAttempt`, `urgencyAtAttempt`) no longer exist.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -48,12 +43,6 @@ function makeCheckWithFindings(check: string, output: string): ReviewCheckResult
     ],
   };
 }
-
-const DEFAULTS = {
-  attempt: 1,
-  rethinkAtAttempt: 2,
-  urgencyAtAttempt: 3,
-};
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -116,104 +105,6 @@ describe("RectifierPromptBuilder.firstAttemptDelta", () => {
 
     const withoutFindings = RectifierPromptBuilder.firstAttemptDelta([makeCheck("lint", "some lint error")], 2);
     expect(withoutFindings).not.toContain("Structured findings:");
-  });
-});
-
-describe("RectifierPromptBuilder.continuation", () => {
-  test("contains follow-up signal, error output from all checks, and check name header", () => {
-    const checks = [
-      makeCheck("lint", "error TS2345: Argument of type 'string' is not assignable", 2),
-      makeCheck("typecheck", "src/index.ts(10,3): error TS2304: Cannot find name 'foo'"),
-    ];
-    const prompt = RectifierPromptBuilder.continuation(
-      checks,
-      ...(Object.values(DEFAULTS) as [number, number, number]),
-    );
-    expect(prompt).toContain("Your previous fix attempt did not resolve all issues");
-    expect(prompt).toContain("error TS2345: Argument of type 'string' is not assignable");
-    expect(prompt).toContain("src/index.ts(10,3): error TS2304: Cannot find name 'foo'");
-    expect(prompt).toContain("### lint (exit 2)");
-  });
-
-  test.each<[string, ReviewCheckResult[], boolean]>([
-    ["present", [makeCheckWithFindings("semantic", "Semantic review failed")], true],
-    ["absent", [makeCheck("lint", "some lint error")], false],
-  ])("structured findings when %s", (_label, checks, shouldInclude) => {
-    const prompt = RectifierPromptBuilder.continuation(
-      checks,
-      ...(Object.values(DEFAULTS) as [number, number, number]),
-    );
-    if (shouldInclude) {
-      expect(prompt).toContain("Structured findings:");
-      expect(prompt).toContain("[error] src/foo.ts:42 — Missing implementation for AC-1");
-    } else {
-      expect(prompt).not.toContain("Structured findings:");
-    }
-  });
-
-  test.each<[number, boolean]>([
-    [1, false],
-    [2, true],
-    [3, true],
-  ])("rethink preamble at attempt %i includes=%s", (attempt, shouldInclude) => {
-    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
-    if (shouldInclude) expect(prompt).toContain("Rethink your approach");
-    else expect(prompt).not.toContain("Rethink your approach");
-  });
-
-  test.each<[number, boolean]>([
-    [1, false],
-    [3, true],
-  ])("urgency preamble at attempt %i includes=%s", (attempt, shouldInclude) => {
-    const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
-    if (shouldInclude) expect(prompt).toContain("URGENT");
-    else expect(prompt).not.toContain("URGENT");
-  });
-
-  test("UNRESOLVED present in every continuation, 'final attempt' at urgencyAtAttempt; handles multiple failed checks", () => {
-    for (const attempt of [1, 2, 3]) {
-      const prompt = RectifierPromptBuilder.continuation([makeCheck("lint", "error")], attempt, 2, 3);
-      expect(prompt).toContain("UNRESOLVED:");
-    }
-    expect(RectifierPromptBuilder.continuation([makeCheck("lint", "error")], 3, 2, 3)).toContain("final attempt");
-
-    const multiPrompt = RectifierPromptBuilder.continuation(
-      [
-        makeCheck("lint", "lint error output"),
-        makeCheck("typecheck", "typecheck error output"),
-        makeCheck("semantic", "semantic error output"),
-      ],
-      ...(Object.values(DEFAULTS) as [number, number, number]),
-    );
-    expect(multiPrompt).toContain("### lint");
-    expect(multiPrompt).toContain("### typecheck");
-    expect(multiPrompt).toContain("### semantic");
-  });
-
-  test.each([
-    ["constitution", /constitution/i],
-    ["acceptance criteria header", /### acceptance criteria/i],
-    ["story title block", /^Story:/m],
-  ])("continuation prompt does NOT contain %s", (_label, pattern) => {
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", "error")],
-      ...(Object.values(DEFAULTS) as [number, number, number]),
-    );
-    expect(prompt).not.toMatch(pattern);
-  });
-
-  test("truncates long output to 4000 chars per check", () => {
-    const longOutput = "z".repeat(10_000);
-    const prompt = RectifierPromptBuilder.continuation(
-      [makeCheck("lint", longOutput)],
-      ...(Object.values(DEFAULTS) as [number, number, number]),
-    );
-
-    // The truncated output slice should not contain the full 10000 chars
-    const zCount = (prompt.match(/z/g) ?? []).length;
-    expect(zCount).toBeLessThanOrEqual(4000);
-    // And the original 10000 chars were cut down
-    expect(zCount).toBeLessThan(10_000);
   });
 });
 

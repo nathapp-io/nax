@@ -86,7 +86,7 @@ function makeAggregatorWithStoryCost(byStory: Record<string, number>): ICostAggr
 }
 
 const DISABLED_REGRESSION_CONFIG: NaxConfig = makeNaxConfig({
-  execution: { regressionGate: { enabled: false, mode: "disabled" } },
+  execution: { regressionGate: { enabled: false } },
 });
 
 const SEAM_WORKDIR = `/tmp/nax-test-1709-seam-${randomUUID()}`;

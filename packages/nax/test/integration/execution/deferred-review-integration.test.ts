@@ -77,7 +77,7 @@ function makeRegistry(reviewers: IReviewPlugin[]): PluginRegistry {
 
 function makeConfig(pluginMode?: NaxConfig["review"]["pluginMode"]): NaxConfig {
   return makeNaxConfig({
-    execution: { maxIterations: 5, costLimit: 100, iterationDelayMs: 0, maxStoriesPerFeature: 100 },
+    execution: { costLimit: 100, iterationDelayMs: 0, maxStoriesPerFeature: 100 },
     // The whole `tdd` block the cast used to carry was fictional — TddConfig has
     // none of `mode`, `testStrategy`, or `testCommand` (it has `strategy`, with
     // different values). Nothing read it, so it is gone rather than translated.

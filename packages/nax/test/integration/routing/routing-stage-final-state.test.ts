@@ -72,18 +72,13 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
     },
     routing: { strategy: "keyword" },
     execution: {
-      maxIterations: 100,
       iterationDelayMs: 1000,
       costLimit: 50,
       sessionTimeoutSeconds: 600,
-      verificationTimeoutSeconds: 300,
       maxStoriesPerFeature: 50,
       rectification: {
-        enabled: true,
         maxAttemptsTotal: 2,
         fullSuiteTimeoutSeconds: 120,
-        maxFailureSummaryChars: 2000,
-        abortOnIncreasingFailures: true,
       },
       contextProviderTokenBudget: 2000,
       // Explicit co-located test patterns (resolver tier-2, ADR-009 SSOT) so

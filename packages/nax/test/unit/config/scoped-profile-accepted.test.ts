@@ -8,7 +8,7 @@ import { NaxConfigSchema } from "@/config/schema";
 // a partially-supplied nested object against its own default. `loadConfig`
 // avoids this by deep-merging with DEFAULT_CONFIG before ever calling
 // safeParse; a direct schema test has to supply the same required siblings
-// (maxIterations, costLimit, etc.) itself, so start from DEFAULT_CONFIG.execution.
+// (costLimit, iterationDelayMs, etc.) itself, so start from DEFAULT_CONFIG.execution.
 describe("scoped profile is accepted now that enforcement exists", () => {
   test("the schema accepts a permissions block", () => {
     const parsed = NaxConfigSchema.safeParse({
