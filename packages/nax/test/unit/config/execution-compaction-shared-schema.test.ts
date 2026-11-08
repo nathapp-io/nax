@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { ExecutionConfigSchema } from "@/config/schemas-execution";
 
 const base = {
-  maxIterations: 3,
   iterationDelayMs: 0,
   costLimit: 10,
   maxStoriesPerFeature: 10,

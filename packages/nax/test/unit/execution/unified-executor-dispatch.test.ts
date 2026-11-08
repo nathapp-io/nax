@@ -94,7 +94,6 @@ function makeCtx(overrides: { parallelCount?: number; dryRun?: boolean } = {}): 
       execution: {
         ...DEFAULT_CONFIG.execution,
         mode: "pipeline",
-        maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
       },
@@ -172,13 +171,6 @@ describe("useBatch scheduling refresh", () => {
     const { executeUnified } = await import("@/execution/unified-executor");
     const ctx = {
       ...makeCtx(),
-      config: {
-        ...makeCtx().config,
-        execution: {
-          ...makeCtx().config.execution,
-          maxIterations: 2,
-        },
-      },
       useBatch: true,
       batchPlan: staleBatchPlan,
     };
@@ -241,10 +233,6 @@ describe("useBatch scheduling refresh", () => {
     const baseCtx = makeCtx();
     const ctx = {
       ...baseCtx,
-      config: {
-        ...baseCtx.config,
-        execution: { ...baseCtx.config.execution, maxIterations: 3 },
-      },
       useBatch: true,
       batchPlan: precomputeBatchPlan([us000, us001], 4),
     };
@@ -264,7 +252,7 @@ describe("useBatch scheduling refresh", () => {
     // Without clearing lastStoryId once a story goes terminal, retry-priority
     // would keep re-selecting it every iteration — preIterationTierCheck skips
     // it again every time, dispatching nothing and starving every other story
-    // in the PRD until maxIterations/maxAttemptsTotal is exhausted.
+    // in the PRD until maxAttemptsTotal is exhausted.
     const us000: UserStory = {
       ...makePendingStory("US-000"),
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
@@ -330,10 +318,6 @@ describe("useBatch scheduling refresh", () => {
     const baseCtx = makeCtx();
     const ctx = {
       ...baseCtx,
-      config: {
-        ...baseCtx.config,
-        execution: { ...baseCtx.config.execution, maxIterations: 3 },
-      },
       useBatch: true,
       batchPlan: precomputeBatchPlan([us000, us001], 4),
     };
@@ -342,7 +326,7 @@ describe("useBatch scheduling refresh", () => {
 
     // US-000 dispatched once (fails), retried once more (goes terminal via
     // preIterationTierCheck, never reaching runIteration again) — US-001 must
-    // still get a turn instead of the run spinning on US-000 until maxIterations.
+    // still get a turn instead of the run spinning on US-000.
     expect(selectedStoryIds).toEqual(["US-000", "US-001"]);
   });
 });

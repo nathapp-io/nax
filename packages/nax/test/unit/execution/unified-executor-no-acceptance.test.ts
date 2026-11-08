@@ -64,7 +64,7 @@ let logEntries: LogEntry[];
 /** A config that reaches the removed blocks: acceptance is explicitly ENABLED. */
 function acceptanceConfig(): NaxConfig {
   return makeNaxConfig({
-    execution: { mode: "pipeline", maxIterations: 10, iterationDelayMs: 0 },
+    execution: { mode: "pipeline", iterationDelayMs: 0 },
     acceptance: { enabled: true, refinement: false, redGate: false },
     autoMode: { escalation: { enabled: false } },
   });

@@ -26,7 +26,6 @@ describe("Config Validation", () => {
   });
 
   test.each([
-    ["maxIterations", { maxIterations: 0 }, "maxIterations must be > 0"],
     ["costLimit", { costLimit: -1 }, "costLimit must be > 0"],
     ["sessionTimeoutSeconds", { sessionTimeoutSeconds: 0 }, "sessionTimeoutSeconds must be > 0"],
   ] as const)("rejects %s <= 0", (_field, patch, errMsg) => {
@@ -109,7 +108,6 @@ describe("Config Validation", () => {
       version: 99,
       execution: {
         ...DEFAULT_CONFIG.execution,
-        maxIterations: 0,
         costLimit: -5,
       },
       agent: {
@@ -120,7 +118,7 @@ describe("Config Validation", () => {
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.issues.length).toBeGreaterThanOrEqual(4);
+      expect(result.error.issues.length).toBeGreaterThanOrEqual(3);
     }
   });
 

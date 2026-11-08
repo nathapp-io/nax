@@ -34,7 +34,6 @@ export interface ValidationResult {
  * - version === 1
  * - models mapping: default agent has a map; required tiers present; entry
  *   content (non-empty string ids / provider+model)
- * - execution.maxIterations > 0
  * - execution.costLimit > 0
  * - execution.sessionTimeoutSeconds > 0
  * - agent.default is non-empty

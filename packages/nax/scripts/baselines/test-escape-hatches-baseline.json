@@ -4,7 +4,7 @@
     "ratchetAllow": 13,
     "looseCast": 971
   },
-  "updatedAt": "2026-11-08T09:13:23.648Z",
+  "updatedAt": "2026-11-08T10:04:00.148Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5

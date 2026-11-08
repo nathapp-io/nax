@@ -59,7 +59,6 @@ describe("execution.smartTestRunner config flag", () => {
       },
       routing: { strategy: "keyword" },
       execution: {
-        maxIterations: 10,
         iterationDelayMs: 0,
         costLimit: 1,
         sessionTimeoutSeconds: 60,
@@ -202,7 +201,6 @@ function buildMinimalConfig() {
     },
     routing: { strategy: "keyword" as const },
     execution: {
-      maxIterations: 10,
       iterationDelayMs: 0,
       costLimit: 1,
       sessionTimeoutSeconds: 60,

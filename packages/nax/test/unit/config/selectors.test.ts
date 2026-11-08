@@ -92,9 +92,9 @@ describe("retained selector key boundaries (US-001)", () => {
   });
 
   test("AC-4: planConfigSelector omits an execution section the config carries", () => {
-    const config = makeNaxConfig({ execution: { maxIterations: 7 } });
+    const config = makeNaxConfig({ execution: { costLimit: 7 } });
     // The section is genuinely present on the source config.
-    expect(config.execution.maxIterations).toBe(7);
+    expect(config.execution.costLimit).toBe(7);
 
     const slice = planConfigSelector.select(config);
     expect(Object.hasOwn(slice, "execution")).toBe(false);

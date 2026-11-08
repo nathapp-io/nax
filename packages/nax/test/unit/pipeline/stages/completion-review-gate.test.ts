@@ -53,7 +53,6 @@ function makeConfig(triggers: NonNullable<InteractionConfig["interaction"]>["tri
     execution: {
       sessionTimeoutSeconds: 60,
       costLimit: 10,
-      maxIterations: 10,
       rectification: { maxAttemptsTotal: 3 },
     },
     interaction: {

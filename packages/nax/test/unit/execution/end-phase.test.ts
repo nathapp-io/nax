@@ -211,7 +211,7 @@ describe("runEndPhase (P4-R16)", () => {
 });
 
 describe("runEndPhase iteration cap (nax#2706)", () => {
-  const CAPPED = makeNaxConfig({ execution: { mode: "workflow", maxIterations: 1 } });
+  const CAPPED = makeNaxConfig({ execution: { mode: "workflow" } });
 
   test("exitReason max-iterations hands the pending story ids to the feature workflow", async () => {
     _endPhaseDeps.resolveBranch = async () => "feat/x";

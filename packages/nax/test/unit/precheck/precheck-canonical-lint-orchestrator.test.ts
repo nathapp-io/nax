@@ -16,7 +16,6 @@ import { _checkCliDeps } from "@/precheck/checks-cli";
 const createMockConfig = (_cwd: string, overrides: Partial<ExecutionConfig> = {}): NaxConfig =>
   makeNaxConfig({
     execution: {
-      maxIterations: 10,
       iterationDelayMs: 0,
       testCommand: "echo 'test'",
       lintCommand: "echo 'lint'",

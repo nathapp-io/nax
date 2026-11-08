@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 function configFor(mode: "pipeline" | "workflow") {
-  return makeNaxConfig({ acceptance: { enabled: false }, execution: { mode, maxIterations: 0, iterationDelayMs: 0 } });
+  return makeNaxConfig({ acceptance: { enabled: false }, execution: { mode, iterationDelayMs: 0 } });
 }
 
 async function run(mode: "pipeline" | "workflow", dryRun = false): Promise<WorkflowRunStartInput[]> {
@@ -32,7 +32,7 @@ async function run(mode: "pipeline" | "workflow", dryRun = false): Promise<Workf
   _unifiedExecutorDeps.runWorkflowPreflight = async (input) => {
     seen.push(input);
   };
-  // Workflow mode ignores maxIterations (nax#2706), so its loop runs: settle every story without touching disk.
+  // Workflow mode bounds its loop by the work left (nax#2706), so its loop runs: settle every story without touching disk.
   _unifiedExecutorDeps.runIteration = async (_ctx, prd) => ({
     prd: { ...prd, userStories: prd.userStories.map((s) => ({ ...s, status: "passed", passes: true })) },
     storiesCompletedDelta: prd.userStories.length,

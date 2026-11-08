@@ -1,5 +1,5 @@
 /**
- * nax#2706 — workflow mode bounds its loop by the work left, not execution.maxIterations.
+ * nax#2706 — workflow mode bounds its loop by the work left, not by a configured iteration cap.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -67,17 +67,17 @@ describe("workflowIterationsRemaining", () => {
 describe("loopIterationLimit", () => {
   const stories = Array.from({ length: 28 }, (_, i) => story(`US-${i + 1}`));
 
-  test("workflow mode: iterations done plus the work left, ignoring a maxIterations of 1", () => {
+  test("workflow mode: iterations done plus the work left", () => {
     const config = makeNaxConfig({
-      execution: { mode: "workflow", maxIterations: 1 },
+      execution: { mode: "workflow" },
       autoMode: NO_ESCALATION.autoMode,
     });
 
     expect(loopIterationLimit(makePRD({ userStories: stories }), config, 5, null)).toBe(5 + 29);
   });
 
-  test("pipeline literal: derives the bound instead of execution.maxIterations", () => {
-    const config = makeNaxConfig({ execution: { mode: "pipeline", maxIterations: 7 } });
+  test("pipeline literal: derives the bound from the work left", () => {
+    const config = makeNaxConfig({ execution: { mode: "pipeline" } });
 
     const prd = makePRD({ userStories: stories });
     expect(loopIterationLimit(prd, config, 2, null)).toBe(2 + workflowIterationsRemaining(prd, config, null));

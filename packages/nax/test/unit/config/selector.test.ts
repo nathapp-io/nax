@@ -21,7 +21,7 @@ describe("ConfigSelector", () => {
       const sel = pickSelector("multi", "routing", "execution");
       const cfg = makeNaxConfig({
         routing: { strategy: "keyword" },
-        execution: { maxIterations: 3 },
+        execution: { costLimit: 3 },
       });
       const result = sel.select(cfg);
       expect(result).toHaveProperty("routing");
@@ -30,7 +30,7 @@ describe("ConfigSelector", () => {
 
     test("omits keys it does not pick, even when the config carries them", () => {
       const sel = pickSelector("single", "routing");
-      const cfg = makeNaxConfig({ routing: { strategy: "keyword" }, execution: { maxIterations: 3 } });
+      const cfg = makeNaxConfig({ routing: { strategy: "keyword" }, execution: { costLimit: 3 } });
       expect(Object.keys(sel.select(cfg))).toEqual(["routing"]);
     });
   });

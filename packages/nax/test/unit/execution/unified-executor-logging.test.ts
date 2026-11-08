@@ -119,7 +119,6 @@ function makeCtx(): SequentialExecutionContext {
       execution: {
         ...DEFAULT_CONFIG.execution,
         mode: "pipeline",
-        maxIterations: 1,
         costLimit: 10,
         iterationDelayMs: 0,
       },

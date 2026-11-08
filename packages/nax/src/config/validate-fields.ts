@@ -81,12 +81,9 @@ export function checkModelsMapping(config: NaxConfig): string[] {
   return errors;
 }
 
-/** Execution limit floors: maxIterations, costLimit, sessionTimeoutSeconds. */
+/** Execution limit floors: costLimit and sessionTimeoutSeconds. */
 export function checkExecutionLimits(config: NaxConfig): string[] {
   const errors: string[] = [];
-  if (config.execution.maxIterations !== undefined && config.execution.maxIterations <= 0) {
-    errors.push(`maxIterations must be > 0, got ${config.execution.maxIterations}`);
-  }
   if (config.execution.costLimit <= 0) {
     errors.push(`costLimit must be > 0, got ${config.execution.costLimit}`);
   }

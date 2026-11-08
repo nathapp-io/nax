@@ -60,7 +60,7 @@ export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
   //
   // This is why the returned prdDirty is false: unified-executor answers
   // prdDirty by reloading the PRD from disk, which would drop these marks and
-  // spin the loop to maxIterations.
+  // spin the loop until its derived bound.
   for (const s of ctx.storiesToExecute) {
     markStoryPassed(ctx.prd, s.id);
   }

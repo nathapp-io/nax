@@ -28,7 +28,6 @@ describe("SmartTestRunner config coercion", () => {
       },
       routing: { strategy: "keyword" },
       execution: {
-        maxIterations: 10,
         iterationDelayMs: 0,
         costLimit: 1,
         sessionTimeoutSeconds: 60,

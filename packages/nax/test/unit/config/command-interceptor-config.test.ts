@@ -4,7 +4,6 @@ import { DEFAULT_CONFIG } from "@/config";
 import { ExecutionConfigSchema } from "@/config/schemas-execution";
 
 const base = {
-  maxIterations: 10,
   iterationDelayMs: 0,
   costLimit: 5,
   maxStoriesPerFeature: 10,

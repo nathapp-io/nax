@@ -68,6 +68,7 @@ describe("loadConfig — profile activation (US-002)", () => {
   test.each([
     ["AC-5", { mode: "pipeline" }],
     ["AC-6", { maxIterations: 40 }],
+    ["US-005 AC-1", { maxIterations: 5 }],
   ])("%s rejects project pipeline keys", async (_ac, execution) => {
     writeJson(join(projectDir, ".nax", "config.json"), { execution });
     await expect(loadConfig(projectDir)).rejects.toMatchObject({
@@ -152,18 +153,18 @@ describe("loadConfig — profile activation (US-002)", () => {
     },
   );
 
-  test("AC-7 preserves the default maxIterations without rejecting defaults", async () => {
-    writeJson(join(projectDir, ".nax", "config.json"), {});
-    expect((await loadConfig(projectDir)).execution.maxIterations).toBe(20);
-  });
-
-  test("US-004 AC-1 resolves the default maxIterations of 20 with no project config file", async () => {
-    // AC-1's exact scenario: the project config file is ABSENT, not empty. The
-    // sibling AC-7 test above writes `{}`; both take the same merge path, but
-    // only this one proves the absence itself resolves to the schema default.
+  test("US-005 AC-2 resolves with no maxIterations property on execution", async () => {
+    // The project config file is ABSENT, not empty: loading nothing but
+    // DEFAULT_CONFIG must not carry the removed key, so the assertion is over
+    // property absence (`toHaveProperty` / own keys), not an undefined read of
+    // a still-declared field.
     expect(existsSync(join(projectDir, ".nax", "config.json"))).toBe(false);
 
-    expect((await loadConfig(projectDir)).execution.maxIterations).toBe(20);
+    const loaded = await loadConfig(projectDir);
+
+    expect(loaded.execution).not.toHaveProperty("maxIterations");
+    expect(Object.hasOwn(loaded.execution, "maxIterations")).toBe(false);
+    expect(Object.keys(loaded.execution)).not.toContain("maxIterations");
   });
 
   test("AC-8 rejects a selected project profile", async () => {

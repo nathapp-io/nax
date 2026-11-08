@@ -74,8 +74,6 @@ export type { SmartTestRunnerConfig, WorktreeDependenciesConfig } from "./runtim
 export interface ExecutionConfig {
   /** A5: "workflow" swaps the story pipeline for the workflow loop. */
   mode: import("./runtime-types-workflow").ExecutionMode;
-  /** Pipeline mode only: max iterations per feature run (each story attempt, parallel batch and the final completion pass counts one). Workflow mode ignores it. Optional — the schema default of 20 supplies the value. */
-  maxIterations?: number;
   /** Delay between iterations (ms) */
   iterationDelayMs: number;
   /** Max cost (USD) before pausing */

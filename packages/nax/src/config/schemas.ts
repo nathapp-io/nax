@@ -156,7 +156,6 @@ export const NaxConfigSchema = z
     }),
     execution: ExecutionConfigSchema.default({
       mode: "workflow",
-      maxIterations: 20,
       iterationDelayMs: 2000,
       costLimit: 30.0,
       sessionTimeoutSeconds: 3600,

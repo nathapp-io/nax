@@ -52,7 +52,7 @@ Test problem statement
       join(naxDir, "config.json"),
       JSON.stringify({
         agent: { default: "claude" },
-        execution: { maxIterations: 20, sessionTimeoutSeconds: 600 },
+        execution: { sessionTimeoutSeconds: 600 },
       }),
     );
   });

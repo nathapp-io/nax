@@ -71,7 +71,6 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
         executionConfig: {
           ...DEFAULT_CONFIG.execution,
           typecheckCommand: null,
-          maxIterations: 5,
           iterationDelayMs: 0,
           costLimit: 10,
           sessionTimeoutSeconds: 300,

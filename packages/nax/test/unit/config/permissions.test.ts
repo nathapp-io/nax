@@ -37,7 +37,6 @@ import { initLogger, resetLogger } from "@/logger";
 function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}, rawProfile?: string): NaxConfig {
   return {
     execution: {
-      maxIterations: 5,
       iterationDelayMs: 0,
       costLimit: 10,
       sessionTimeoutSeconds: 300,
