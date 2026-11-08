@@ -46,8 +46,9 @@ const NAX_NEVER_OPT_IN: ReadonlySet<string> = new Set(["config.json", "mono", "f
  * Entries nax loads as human-authored input. The sandbox denies these even
  * when absent, so an agent cannot create one: a new `.nax/rules/x.md` would be
  * injected into every later session's prompt, and `hooks.json` / `plugins/`
- * run unsandboxed on the next `nax run`. `templates/` and `prompts/` are where
- * `prompts.overrides` points. nax creates none of them mid-run (CLI only).
+ * run unsandboxed on the next `nax run`. `templates/` and `prompts/` held
+ * human-authored prompt files (the removed `prompts.overrides` pointed there) and
+ * stay denied so an agent cannot plant one. nax creates none of them mid-run (CLI only).
  */
 export const NAX_ALWAYS_DENIED_ENTRIES: readonly string[] = [
   "config.json",
