@@ -49,8 +49,18 @@ function deepMerge(base: unknown, override: unknown): unknown {
   return out;
 }
 
+/**
+ * `structuredClone` before the merge, not after: `deepMerge` copies only the
+ * keys an override names, so every section the caller did not override stayed
+ * the SAME object instance as `DEFAULT_CONFIG`'s. A test that then mutates its
+ * own config — `Reflect.deleteProperty(cfg.execution, "mode")` for the
+ * "mode absent" case — rewrote the module-level default for every later test
+ * file in the same `bun test` process, which is how
+ * `defaults.test.ts` and `workflow-mode-normalise.test.ts` began failing on a
+ * `DEFAULT_CONFIG` that no test had written to.
+ */
 export function makeNaxConfig(overrides: DeepPartial<NaxConfig> = {}): NaxConfig {
-  return deepMerge(DEFAULT_CONFIG as NaxConfig, overrides);
+  return deepMerge(structuredClone(DEFAULT_CONFIG), overrides);
 }
 
 export function makeSparseNaxConfig(partial: Partial<NaxConfig>): NaxConfig {
