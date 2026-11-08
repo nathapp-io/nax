@@ -391,6 +391,16 @@ describe("loadConfigForWorkdir", () => {
       expect(messages.filter((msg) => msg.includes("has been removed"))).toEqual([ACCEPTANCE_WARNING]);
     });
 
+    test("a package profile's legacy quality.autofix.maxTotalAttempts is still rejected, not stripped", async () => {
+      writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
+      writePackageConfig({ profile: "legacy" });
+      writePackageProfile("legacy", { quality: { autofix: { maxTotalAttempts: 3 } } });
+
+      await expect(loadConfigForWorkdir(join(tempDir, ".nax", "config.json"), "packages/app")).rejects.toThrow(
+        /quality\.autofix\.maxTotalAttempts/,
+      );
+    });
+
     test("a mergeable field in the same overlay still merges after the strip", async () => {
       writeFileSync(join(tempDir, ".nax", "config.json"), JSON.stringify({}));
       writePackageConfig({ acceptance: { enabled: true }, quality: { commands: { test: "bun test:app" } } });
