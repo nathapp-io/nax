@@ -167,7 +167,7 @@ UnifiedExecutor → runParallelBatch()        [parallel-batch.ts]
 
 `src/execution/escalation/tier-escalation.ts`:
 - Retries failed stories at higher tiers: `fast → balanced → powerful`
-- `tier-outcome.ts` / `max-attempts-outcome.ts` decide the next action per tier
+- `tier-outcome.ts` decides the next action per tier — an exhausted tier fails the story
 - Per-tier attempts come from `autoMode.escalation.tierOrder` (default `{ tier, attempts: 2 }` for each of fast / balanced / powerful); `autoMode.escalation.enabled` defaults to `true`
 
 ### Crash Recovery

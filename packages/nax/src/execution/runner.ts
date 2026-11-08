@@ -55,9 +55,6 @@ export const _runnerDeps = {
   },
 };
 
-// Re-export for backward compatibility
-export { resolveMaxAttemptsOutcome } from "./escalation";
-
 /**
  * Guards `run()` against reentrant/concurrent invocation in the same process.
  * `run()` mutates the module-global `_workflowResumeDeps.mode` for its own

@@ -16,42 +16,8 @@ import {
   makePRD,
   makeStory,
 } from "@test/helpers";
-import { resolveMaxAttemptsOutcome } from "@/execution";
 import type { EscalationHandlerContext } from "@/execution/escalation/tier-escalation";
 import { pipelineEventBus } from "@/pipeline";
-
-// ---------------------------------------------------------------------------
-// resolveMaxAttemptsOutcome — runtime-crash category (BUG-070)
-//
-// When all attempts are exhausted for a story that kept crashing at runtime,
-// it should pause (human review) not fail, since crashes are environmental.
-// ---------------------------------------------------------------------------
-
-describe("resolveMaxAttemptsOutcome — runtime-crash category", () => {
-  test("returns pause for runtime-crash failure category", () => {
-    expect(resolveMaxAttemptsOutcome("runtime-crash")).toBe("pause");
-  });
-
-  test("still returns fail for tests-failing (regression guard)", () => {
-    expect(resolveMaxAttemptsOutcome("tests-failing")).toBe("fail");
-  });
-
-  test("returns fail for full-suite-gate-exhausted (regression guard)", () => {
-    expect(resolveMaxAttemptsOutcome("full-suite-gate-exhausted")).toBe("fail");
-  });
-
-  test("still returns pause for verifier-rejected (regression guard)", () => {
-    expect(resolveMaxAttemptsOutcome("verifier-rejected")).toBe("pause");
-  });
-
-  test("returns pause for review-incomplete (US-002: exhausted without review judgment → human review)", () => {
-    expect(resolveMaxAttemptsOutcome("review-incomplete")).toBe("pause");
-  });
-
-  test("returns pause for no-tests-authored (exhausted without any tests authored → human review)", () => {
-    expect(resolveMaxAttemptsOutcome("no-tests-authored")).toBe("pause");
-  });
-});
 
 describe("handleTierEscalation — tier escalation regression guard", () => {
   test("still escalates tier for TEST_FAILURE (regression guard)", async () => {

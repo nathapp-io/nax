@@ -4,7 +4,7 @@
  * Handles model tier escalation when stories fail:
  * - Pre-iteration tier budget checks
  * - Tier escalation with attempt counter reset
- * - Max attempts outcome resolution (pause vs fail)
+ * - The exhausted-tier outcome (the story fails)
  */
 
 import type { NaxConfig } from "@/config";
@@ -62,8 +62,6 @@ function buildEscalationRecord(
     timestamp: new Date().toISOString(),
   };
 }
-
-export { resolveMaxAttemptsOutcome } from "./max-attempts-outcome";
 
 export interface PreIterationCheckResult {
   shouldSkipIteration: boolean;
@@ -310,7 +308,7 @@ export const _tierEscalationDeps = {
 /**
  * Handle tier escalation after pipeline escalation action
  *
- * Escalates to next tier or marks story as paused/failed based on failure category.
+ * Escalates to next tier or marks the story failed.
  */
 export async function handleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult> {
   const logger = _tierEscalationDeps.getSafeLogger();
@@ -330,7 +328,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];
 
   if (!escalationResult || !ctx.config.autoMode.escalation.enabled) {
-    // No next tier or escalation disabled — pause or fail
+    // No next tier or escalation disabled — the story fails
     return await handleNoTierAvailable(ctx);
   }
 
@@ -346,7 +344,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   const canEscalate = storiesToEscalate.every((s) => (s.attempts ?? 0) < maxAttempts);
 
   if (!canEscalate) {
-    // Max attempts reached — pause or fail
+    // Max attempts reached — the story fails
     return await handleMaxAttemptsReached(ctx);
   }
 
