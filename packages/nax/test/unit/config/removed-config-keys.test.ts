@@ -179,10 +179,43 @@ describe("stripRemovedConfigKeys via loadConfig — removed execution sections",
 
 // ─────────────────────────────────────────────────────────────────────────────
 // loadConfig — the default config warns about nothing
+//
+// AC-9 is about a load with NO config at ANY layer, so the test must own the
+// global layer too: an ambient `~/.nax/config.json` (or a global dir a sibling
+// suite left behind) that still names a C1 key decides this test's result
+// otherwise. Each test in this block points NAX_GLOBAL_CONFIG_DIR at its own
+// directory and restores the previous value, so the ambient global layer can
+// neither make it pass nor make it fail.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("stripRemovedConfigKeys via loadConfig — no project config", () => {
+  let previousGlobalDir: string | undefined;
+
+  /** Point the global config layer at a directory this test owns. */
+  async function useGlobalDir(contents?: object): Promise<string> {
+    const dir = makeTempDir("nax-removed-none-global-");
+    tempDirs.push(dir);
+    if (contents !== undefined) {
+      await Bun.write(join(dir, "config.json"), JSON.stringify(contents));
+    }
+    process.env.NAX_GLOBAL_CONFIG_DIR = dir;
+    return dir;
+  }
+
+  beforeEach(() => {
+    previousGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+  });
+
+  afterEach(() => {
+    if (previousGlobalDir === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = previousGlobalDir;
+    }
+  });
+
   test("AC-9: a logger sink receives no 'has been removed' warning", async () => {
+    await useGlobalDir();
     const root = makeTempDir("nax-removed-none-");
     tempDirs.push(root);
 
@@ -190,6 +223,23 @@ describe("stripRemovedConfigKeys via loadConfig — no project config", () => {
 
     assertDefined(result, "loadConfig result");
     expect(messages.filter((msg) => msg.includes("has been removed"))).toEqual([]);
+  });
+
+  test("AC-9 companion: a removed key in the global layer is still stripped with a warning", async () => {
+    // The other half of the isolation: the redirect above must not silence the
+    // global layer — it is a real config source and its retired keys warn like
+    // a project file's do. Without this, dropping the redirect would look safe.
+    await useGlobalDir({ execution: { mutationCheck: { enabled: true } } });
+    const root = makeTempDir("nax-removed-none-proj-");
+    tempDirs.push(root);
+
+    const { result, messages } = await captureWarnings(() => loadConfig(root));
+
+    assertDefined(result, "loadConfig result");
+    expect(Object.hasOwn(result.execution, "mutationCheck")).toBe(false);
+    expect(warningsFor(messages, "execution.mutationCheck")).toEqual([
+      removalWarning("execution.mutationCheck", PIPELINE_ONLY_KEY_HINT),
+    ]);
   });
 });
 
