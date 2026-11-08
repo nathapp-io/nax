@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-08T08:32:55.467Z",
+  "updatedAt": "2026-11-08T09:18:23.147Z",
   "byFile": {
     "src/interaction/plugins/telegram.ts": 602,
     "src/prompts/builders/rectifier-builder.ts": 751,
@@ -8,6 +8,6 @@
     "test/unit/context/engine/providers/static-rules.test.ts": 837,
     "test/unit/execution/escalation/tier-escalation.test.ts": 966,
     "test/unit/interaction/plugins/telegram.test.ts": 869,
-    "test/unit/operations/call.test.ts": 900
+    "test/unit/operations/call.test.ts": 879
   }
 }
