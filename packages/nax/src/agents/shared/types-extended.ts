@@ -101,7 +101,7 @@ export interface DecomposeOptions {
   featureName?: string;
   /** Story ID for ACP session naming (decompose context) */
   storyId?: string;
-  /** Session role for TDD isolation (e.g. "decompose") */
+  /** Session role for this dispatch (e.g. "implementer" | "wf-implementer" | "plan") */
   sessionRole?: string;
   /** Target story to decompose (plan-mode decompose) */
   targetStory?: import("@/prd").UserStory;

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { isSessionRole, KNOWN_SESSION_ROLES, knownSessionRole } from "@/runtime/session-role";
 
 /**
@@ -129,5 +131,52 @@ describe("SessionRole", () => {
       expect(isSessionRole("advisor")).toBe(true);
       expect(KNOWN_SESSION_ROLES).toContain("advisor");
     });
+  });
+});
+
+/**
+ * A removed role must not be offered as a session-role example anywhere in
+ * `src/`. The word "decompose" survives as the decompose operation and as a
+ * stage tag, but the role registry no longer carries it, so a comment that
+ * names it as a session role recommends a role nothing can dispatch under.
+ *
+ * The rule is deliberately narrow: only a line that talks about a session role
+ * AND quotes a removed role counts. Config-key role vocabularies that are out
+ * of this wave's scope (`prompts.overrides`, the scratch kinds) name roles on
+ * lines that never mention a session role, so they stay allowed.
+ */
+const SESSION_ROLE_MENTION = /session[ _-]?role/i;
+const REMOVED_ROLE_QUOTED = new RegExp(`"(${REMOVED_ROLES.join("|")})"`);
+
+/** The package root, derived from this file's location (test/unit/runtime/). */
+const PACKAGE_ROOT = new URL("../../../", import.meta.url).pathname;
+
+function* sourceFiles(dir: string): Generator<string> {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* sourceFiles(full);
+    else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) yield full;
+  }
+}
+
+/** Every `src/` line that offers a removed role as a session-role example. */
+function findSessionRoleExampleViolations(): string[] {
+  const violations: string[] = [];
+  for (const file of sourceFiles(join(PACKAGE_ROOT, "src"))) {
+    const rel = relative(PACKAGE_ROOT, file).split(sep).join("/");
+    readFileSync(file, "utf8")
+      .split("\n")
+      .forEach((line, index) => {
+        if (SESSION_ROLE_MENTION.test(line) && REMOVED_ROLE_QUOTED.test(line)) {
+          violations.push(`${rel}:${index + 1}  ${line.trim()}`);
+        }
+      });
+  }
+  return violations;
+}
+
+describe("removed roles — no session-role example in src/", () => {
+  test("no src/ line offers a removed role as a session role", () => {
+    expect(findSessionRoleExampleViolations()).toEqual([]);
   });
 });
