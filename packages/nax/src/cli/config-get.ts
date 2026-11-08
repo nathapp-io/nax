@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../config/defaults";
 import { globalConfigPath } from "../config/loader";
 import { deepMergeConfig } from "../config/merger";
-import { findProjectDir } from "../config/paths";
+import { findProjectDir, GLOBAL_LOCAL_CONFIG_FILE, globalConfigDir } from "../config/paths";
 
 /**
  * Load and parse a JSON config file.
@@ -29,17 +29,16 @@ export async function loadConfigFile(path: string): Promise<Record<string, unkno
 /**
  * Load global config merged with defaults.
  *
- * @returns Global config object (defaults + global overrides)
+ * @returns Global config object (defaults + config.json + config.local.json)
  */
 export async function loadGlobalConfig(): Promise<Record<string, unknown>> {
-  const globalPath = globalConfigPath();
-  const globalConf = await loadConfigFile(globalPath);
+  const defaults = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
+  const globalConf = await loadConfigFile(globalConfigPath());
+  // #2827: the per-machine half of the global layer merges over the shared file.
+  const localConf = await loadConfigFile(join(globalConfigDir(), GLOBAL_LOCAL_CONFIG_FILE));
 
-  if (!globalConf) {
-    return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
-  }
-
-  return deepMergeConfig(structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>), globalConf);
+  const withGlobal = globalConf ? deepMergeConfig<Record<string, unknown>>(defaults, globalConf) : defaults;
+  return localConf ? deepMergeConfig<Record<string, unknown>>(withGlobal, localConf) : withGlobal;
 }
 
 /**

@@ -103,3 +103,34 @@ describe("determineConfigSources — US-005 AC24: start-directory argument", () 
     }
   });
 });
+
+describe("determineConfigSources — #2827: per-machine global config", () => {
+  let globalDir: string;
+  let savedGlobalEnv: string | undefined;
+
+  beforeEach(() => {
+    globalDir = makeTempDir("nax-config-sources-global-");
+    savedGlobalEnv = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
+  });
+
+  afterEach(() => {
+    cleanupTempDir(globalDir);
+    if (savedGlobalEnv === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = savedGlobalEnv;
+    }
+  });
+
+  test("reports config.local.json when it exists in the global config dir", () => {
+    const local = join(globalDir, "config.local.json");
+    writeFileSync(local, "{}", "utf8");
+
+    expect(determineConfigSources(globalDir).globalLocal).toBe(local);
+  });
+
+  test("reports null for config.local.json when it is absent", () => {
+    expect(determineConfigSources(globalDir).globalLocal).toBeNull();
+  });
+});

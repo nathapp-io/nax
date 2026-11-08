@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, withTempDir } from "@test/helpers";
 import { findNaxProjectRoot } from "@/utils/nax-project-root";
 
 describe("findNaxProjectRoot", () => {
@@ -44,5 +44,34 @@ describe("findNaxProjectRoot", () => {
     const result = await findNaxProjectRoot("/");
 
     expect(result).toBe("/");
+  });
+});
+
+describe("findNaxProjectRoot skips the global config dir (#2827)", () => {
+  let home: string;
+  let savedGlobalEnv: string | undefined;
+
+  beforeEach(() => {
+    home = makeTempDir("nax-2827-root-");
+    savedGlobalEnv = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(home, ".nax");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(home);
+    if (savedGlobalEnv === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = savedGlobalEnv;
+    }
+  });
+
+  test("falls back to startDir instead of returning the global dir's parent", async () => {
+    await mkdir(join(home, ".nax"), { recursive: true });
+    await Bun.write(join(home, ".nax", "config.json"), "{}");
+    const start = join(home, "scratch", "deep");
+    await mkdir(start, { recursive: true });
+
+    expect(await findNaxProjectRoot(start)).toBe(start);
   });
 });

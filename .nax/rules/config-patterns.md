@@ -52,7 +52,7 @@ New default? Add it in the schema first.
 Later overrides earlier:
 
 1. `DEFAULT_CONFIG` (schema-derived)
-2. Global — `~/.nax/config.json`
+2. Global — `~/.nax/config.json`, then the per-machine `~/.nax/config.local.json` over it (#2827)
 3. Project — `<workdir>/.nax/config.json`
 4. CLI overrides
 
