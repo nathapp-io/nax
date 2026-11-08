@@ -38,7 +38,6 @@ export interface EscalationEntry {
 
 /** Auto mode configuration */
 export interface AutoModeConfig {
-  enabled: boolean;
   complexityRouting: Record<Complexity, ComplexityRung>; // Rung per complexity; { tier, agent } names a cross-agent rung
   escalation: {
     enabled: boolean;
@@ -149,13 +148,6 @@ export interface QualityConfig {
     test?: QualityCommandSpec;
     /** Scoped test command template with {{files}} placeholder (e.g., "bun test --timeout=60000 {{files}}") */
     testScoped?: QualityCommandSpec;
-    /** Auto-fix lint errors (e.g., "biome check --fix") */
-    lintFix?: QualityCommandSpec;
-    /** Scoped auto-fix lint command template with {{files}} placeholder */
-    lintFixScoped?: QualityCommandSpec;
-    /** Auto-fix formatting (e.g., "biome format --write") */
-    formatFix?: QualityCommandSpec;
-    formatFixScoped?: QualityCommandSpec;
     build?: QualityCommandSpec;
     /** Host-side e2e journey gate (#2530); last in the gate order. */
     e2e?: QualityCommandSpec;
@@ -170,20 +162,6 @@ export interface QualityConfig {
   lintOutput?: {
     /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
     format?: "auto" | "eslint-json" | "biome-json" | "text" | "none";
-  };
-  /** Typecheck output parsing preferences for scope-aware rectification splitting. */
-  typecheckOutput?: {
-    /** Parsing mode: auto-detect (default), specific parser, or disabled fallback. */
-    format?: "auto" | "tsc" | "text" | "none";
-  };
-  /** Auto-fix strategy participation. Cycle caps live under execution.rectification.* */
-  autofix?: {
-    /** Whether autofix-implementer + autofix-test-writer participate in the
-     * rectification cycle. (default: true) */
-    enabled?: boolean;
-    /** Prompt-text display only: "X attempts available before escalation".
-     * Real cap is execution.rectification.maxAttemptsTotal. (default: 3) */
-    maxAttempts?: number;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;
@@ -205,25 +183,8 @@ export interface QualityConfig {
 
 /** TDD config */
 export interface TddConfig {
-  /** Max retries for each session before escalating */
-  maxRetries: number;
   /** TDD strategy override (default: 'auto') */
   strategy: TddStrategy;
-  /** Per-session model tier overrides. Defaults: test-writer=fast, implementer=story tier, verifier=fast */
-  sessionTiers?: {
-    /** ConfiguredModel for test-writer session (default: "fast") */
-    testWriter?: ConfiguredModel;
-    /** ConfiguredModel for implementer session (intentionally unused — routing-driven via story.routing.modelTier) */
-    implementer?: ConfiguredModel;
-    /** ConfiguredModel for verifier session (default: "fast") */
-    verifier?: ConfiguredModel;
-  };
-  verifierTimeoutSeconds?: number; // Wall-clock budget for one verifier turn, in seconds (default: 1800)
-  testWriterAllowedPaths?: string[]; // Glob patterns for files test-writer can modify (soft violations, logged as warnings)
-  /** Git hooks on nax's RED commit after the test-writer phase: "skip" (default, --no-verify) | "run". */
-  testWriterCommitHooks?: "skip" | "run";
-  /** Rollback git changes when TDD fails (default: true). Prevents partial commits when TDD fails. */
-  rollbackOnFailure?: boolean;
   /** Enable greenfield detection to force tdd-simple on projects with no test files (default: true, BUG-010) */
   greenfieldDetection?: boolean;
 }

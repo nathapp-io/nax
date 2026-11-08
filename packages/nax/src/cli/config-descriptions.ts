@@ -26,7 +26,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Auto mode
   autoMode:
     "Auto mode configuration for agent orchestration. Enables multi-agent routing with model tier selection per task complexity and escalation on failures.",
-  "autoMode.enabled": "Enable automatic agent selection and escalation",
   "agent.default": "Default agent used when no routing override applies (e.g., 'claude', 'codex', 'gemini').",
   "agent.fallback": "Agent fallback configuration — automatic agent swap on primary failure.",
   "agent.fallback.map":
@@ -176,8 +175,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.commands.lint": "Custom lint command",
   "quality.commands.coverage": "Custom coverage command",
   "quality.commands.lintScoped": "Scoped lint command template for story-owned files (supports {{files}})",
-  "quality.commands.lintFixScoped": "Scoped lint fix command template for story-owned files (supports {{files}})",
-  "quality.commands.formatFixScoped": "Scoped format fix command template for story-owned files (supports {{files}})",
   "quality.commands.test": "Custom test command",
   "quality.commands.build": "Custom build command",
   "quality.commands.e2e": "Host-side end-to-end journey gate (runs last, outside the agent sandbox)",
@@ -192,19 +189,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // TDD
   tdd: "Test-driven development configuration",
-  "tdd.maxRetries": "Max retries per TDD session before escalating",
   "tdd.strategy": 'TDD strategy: auto | strict | lite | off | simple ("tdd-simple" is accepted for simple)',
-  "tdd.sessionTiers": "Per-session model tier overrides",
-  "tdd.sessionTiers.testWriter": "Model tier for test-writer session",
-  "tdd.sessionTiers.implementer":
-    "Ignored by design — implementer follows story.routing.modelTier + escalation, not this field. Kept optional so legacy configs still parse.",
-  "tdd.sessionTiers.verifier": "Model tier for verifier session",
-  "tdd.verifierTimeoutSeconds":
-    "Wall-clock budget for one verifier turn in seconds (default: 1800). Its own knob, not execution.sessionTimeoutSeconds",
-  "tdd.testWriterAllowedPaths": "Glob patterns for files test-writer can modify",
-  "tdd.testWriterCommitHooks":
-    'Git hooks on the RED commit nax makes after the test-writer phase: "skip" (default, --no-verify) | "run"',
-  "tdd.rollbackOnFailure": "Rollback git changes when TDD fails",
   "tdd.greenfieldDetection": "Force tdd-simple on projects with no test files",
 
   // Constitution
@@ -222,8 +207,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "review.commands.typecheck": "Custom typecheck command for review",
   "review.commands.lint": "Custom lint command for review",
   "review.commands.lintScoped": "Scoped lint command template for review (supports {{files}})",
-  "review.commands.lintFixScoped": "Scoped lint fix command template for review (supports {{files}})",
-  "review.commands.formatFixScoped": "Scoped format fix command template for review (supports {{files}})",
   "review.commands.test": "Custom test command for review",
   "review.commands.build": "Custom build command for review",
   "review.semantic": "Semantic review configuration (code quality analysis)",

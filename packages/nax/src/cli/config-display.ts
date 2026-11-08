@@ -227,7 +227,7 @@ function displayConfigWithDescriptions(
       // Include path for direct subsections of key configuration sections
       // (to improve clarity of important configs like multi-agent setup)
       const pathParts = currentPathStr.split(".");
-      // Only show path for 2-level paths (e.g., "autoMode.enabled", "models.fast")
+      // Only show path for 2-level paths (e.g., "autoMode.escalation", "models.fast")
       // to keep deeply nested descriptions concise
       const isDirectSubsection = pathParts.length === 2;
       const isKeySection = ["prompts", "autoMode", "models", "routing", "agent"].includes(pathParts[0]);

@@ -522,6 +522,11 @@ export async function loadConfigForWorkdir(
   // (`acceptance`, a root-only section) is dropped by the whitelist — silently,
   // and never reaches the post-merge strip, which left an acceptance-only
   // package config resolving to the root config with no warning.
+  // The legacy guards run on this layer BEFORE the strip, as on the root chain:
+  // `quality.autofix` is a removed section, so the strip would otherwise drop a
+  // legacy `quality.autofix.maxTotalAttempts` with a warning instead of rejecting it.
+  rejectLegacyRectificationKeys(shimmedPackageFields as Record<string, unknown>);
+  rejectDeadQualityFlags(shimmedPackageFields as Record<string, unknown>);
   const packageLayer = stripRemovedConfig(shimmedPackageFields as unknown as Record<string, unknown>, warnDedupe.warn);
   let merged = mergePackageConfig(rootConfig, packageLayer as unknown as Partial<NaxConfig>);
 

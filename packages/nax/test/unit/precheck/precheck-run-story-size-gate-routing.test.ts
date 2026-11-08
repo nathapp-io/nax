@@ -66,7 +66,6 @@ function makeConfig(action: "block" | "warn" | "skip") {
     version: 1,
     models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
     autoMode: {
-      enabled: false,
       complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
       escalation: { enabled: false, tierOrder: [] },
     },
@@ -93,7 +92,7 @@ function makeConfig(action: "block" | "warn" | "skip") {
       shell: "/bin/sh",
       stripEnvVars: [],
     },
-    tdd: { maxRetries: 0, strategy: "off" },
+    tdd: { strategy: "off" },
     constitution: { enabled: false, path: "", maxTokens: 2000 },
     review: { enabled: false, checks: [], commands: {} },
     plan: { model: "balanced", outputPath: "" },

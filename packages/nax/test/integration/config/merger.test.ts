@@ -302,7 +302,6 @@ describe("config/merger", () => {
           claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
         },
         autoMode: {
-          enabled: true,
           complexityRouting: {
             simple: "fast",
             medium: "balanced",
@@ -325,8 +324,8 @@ describe("config/merger", () => {
           claude: { fast: "gemini-flash" },
         },
         autoMode: {
-          enabled: false,
           escalation: {
+            enabled: false,
             tierOrder: [{ tier: "fast", attempts: 3 }],
           },
         },
@@ -338,12 +337,12 @@ describe("config/merger", () => {
       expect(result.models?.claude?.fast).toBe("gemini-flash");
       expect(result.models?.claude?.balanced).toBe("sonnet");
       // scalar overridden in a second nested block
-      expect(result.autoMode?.enabled).toBe(false);
+      expect(result.autoMode?.escalation?.enabled).toBe(false);
       // a block the override never mentions survives untouched
       expect(result.autoMode?.complexityRouting?.simple).toBe("fast");
       // arrays are REPLACED, not element-merged — and the sibling key survives
       expect(result.autoMode?.escalation?.tierOrder).toEqual([{ tier: "fast", attempts: 3 }]);
-      expect(result.autoMode?.escalation?.enabled).toBe(true);
+      expect(result.autoMode?.escalation?.resetMode).toBe("initial");
     });
 
     test("handles removal of nested config keys", () => {

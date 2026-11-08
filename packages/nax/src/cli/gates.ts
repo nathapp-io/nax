@@ -8,7 +8,7 @@
  * this correctly in `runQualityGates`; this module is the missing CLI entry to
  * it, so a finishing tool calls one command instead of reimplementing the rules
  * (one gate per invocation, the command string exactly as configured, 127/126
- * is "did not run", never `formatFix`/`lintFix`).
+ * is "did not run", never a command that rewrites files).
  *
  * Mode-independent: it reads config and runs commands, and touches no workflow
  * or PRD state.

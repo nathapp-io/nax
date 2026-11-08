@@ -28,7 +28,6 @@ const createMockConfig = (_cwd: string, overrides: Partial<ExecutionConfig> = {}
       ...overrides,
     },
     autoMode: {
-      enabled: false,
       complexityRouting: {
         simple: "fast",
         medium: "balanced",

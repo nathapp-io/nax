@@ -55,7 +55,7 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), rectification (deep)
  * - review: enabled, checks, commands (deep), semantic (deep), adversarial (deep)
- * - quality: commands (deep), testing (deep), autofix (deep), lintOutput (deep)
+ * - quality: commands (deep), testing (deep), lintOutput (deep)
  * - context: testCoverage (deep), v2.stages (deep), v2.rules (deep)
  * - project: type, language, frameworks
  *
@@ -142,18 +142,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...(packageOverride.quality?.commands?.lintScoped !== undefined && {
           lintScoped: packageOverride.quality.commands.lintScoped,
         }),
-        ...(packageOverride.quality?.commands?.lintFix !== undefined && {
-          lintFix: packageOverride.quality.commands.lintFix,
-        }),
-        ...(packageOverride.quality?.commands?.lintFixScoped !== undefined && {
-          lintFixScoped: packageOverride.quality.commands.lintFixScoped,
-        }),
-        ...(packageOverride.quality?.commands?.formatFix !== undefined && {
-          formatFix: packageOverride.quality.commands.formatFix,
-        }),
-        ...(packageOverride.quality?.commands?.formatFixScoped !== undefined && {
-          formatFixScoped: packageOverride.quality.commands.formatFixScoped,
-        }),
         ...(packageOverride.quality?.commands?.typecheck !== undefined && {
           typecheck: packageOverride.quality.commands.typecheck,
         }),
@@ -187,10 +175,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         packageOverride.quality?.testing !== undefined
           ? { ...root.quality.testing, ...packageOverride.quality.testing }
           : root.quality.testing,
-      autofix:
-        packageOverride.quality?.autofix !== undefined
-          ? { ...root.quality.autofix, ...packageOverride.quality.autofix }
-          : root.quality.autofix,
       lintOutput:
         packageOverride.quality?.lintOutput !== undefined
           ? { ...root.quality.lintOutput, ...packageOverride.quality.lintOutput }

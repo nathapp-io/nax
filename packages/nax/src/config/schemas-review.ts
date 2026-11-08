@@ -267,10 +267,6 @@ export const ReviewConfigSchema = z.object({
     lintScoped: QualityCommandSpecSchema.optional(),
     test: QualityCommandSpecSchema.optional(),
     build: QualityCommandSpecSchema.optional(),
-    lintFix: QualityCommandSpecSchema.optional(),
-    lintFixScoped: QualityCommandSpecSchema.optional(),
-    formatFix: QualityCommandSpecSchema.optional(),
-    formatFixScoped: QualityCommandSpecSchema.optional(),
   }),
   audit: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   /**

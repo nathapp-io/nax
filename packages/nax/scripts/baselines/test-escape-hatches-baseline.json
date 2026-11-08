@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 943
+    "looseCast": 940
   },
-  "updatedAt": "2026-11-08T14:30:53.640Z",
+  "updatedAt": "2026-11-08T16:24:08.526Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -25,7 +25,7 @@
       "looseCast": 1
     },
     "test/helpers/mock-nax-config.ts": {
-      "looseCast": 6
+      "looseCast": 5
     },
     "test/helpers/call-op.ts": {
       "ratchetAllow": 1
@@ -500,7 +500,7 @@
       "looseCast": 1
     },
     "test/unit/config/merge.test.ts": {
-      "looseCast": 42
+      "looseCast": 41
     },
     "test/unit/config/schemas-model.test.ts": {
       "looseCast": 1
@@ -521,7 +521,7 @@
       "looseCast": 1
     },
     "test/unit/config/quality-commands-schema.test.ts": {
-      "looseCast": 3
+      "looseCast": 2
     },
     "test/unit/config/merge-agent-models-routing.test.ts": {
       "ratchetAllow": 2,

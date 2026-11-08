@@ -53,7 +53,6 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
       },
     },
     autoMode: {
-      enabled: true,
       complexityRouting: {
         simple: "fast",
         medium: "balanced",
@@ -111,10 +110,8 @@ function createTestContext(workdir: string, overrides?: Partial<PipelineContext>
       stripEnvVars: [],
     },
     tdd: {
-      maxRetries: 3,
       strategy: "auto",
       greenfieldDetection: true,
-      rollbackOnFailure: true,
     },
     constitution: { enabled: false, path: "constitution.md", maxTokens: 2000 },
     review: { enabled: true, checks: ["test"], commands: {} },

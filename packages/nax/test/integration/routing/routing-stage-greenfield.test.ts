@@ -63,7 +63,6 @@ function createTestContext(
       },
     },
     autoMode: {
-      enabled: true,
       complexityRouting: {
         simple: "fast",
         medium: "balanced",
@@ -123,10 +122,8 @@ function createTestContext(
       stripEnvVars: [],
     },
     tdd: {
-      maxRetries: 3,
       strategy: "auto",
       greenfieldDetection: greenfieldDetectionEnabled,
-      rollbackOnFailure: true,
     },
     constitution: {
       enabled: false,

@@ -117,7 +117,6 @@ export const NaxConfigSchema = z
     version: z.number().default(1),
     models: ModelMapSchema.default(structuredClone(DEFAULT_MODEL_MAPS)),
     autoMode: AutoModeConfigSchema.default({
-      enabled: true,
       complexityRouting: {
         simple: "fast",
         medium: "balanced",
@@ -195,13 +194,6 @@ export const NaxConfigSchema = z
       lintOutput: {
         format: "auto",
       },
-      typecheckOutput: {
-        format: "auto",
-      },
-      autofix: {
-        enabled: true,
-        maxAttempts: 3,
-      },
       forceExit: false,
       detectOpenHandles: true,
       detectOpenHandlesRetries: 1,
@@ -244,15 +236,7 @@ export const NaxConfigSchema = z
       },
     }),
     tdd: TddConfigSchema.default({
-      maxRetries: 2,
       strategy: "auto",
-      sessionTiers: {
-        testWriter: "fast",
-        verifier: "fast",
-      },
-      verifierTimeoutSeconds: 1800,
-      testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
-      rollbackOnFailure: true,
       greenfieldDetection: true,
     }),
     constitution: ConstitutionConfigSchema.default({

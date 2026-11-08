@@ -188,7 +188,6 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      expect(output).toContain("Enable automatic agent selection and escalation");
       expect(output).toContain("# Max cost in USD before pausing execution");
       expect(output).toContain("# Max acceptance criteria count before flagging");
       expect(output).toContain("# TDD strategy: auto | strict | lite | off");
@@ -201,7 +200,6 @@ describe("Config Command", () => {
       const output = consoleOutput.join("\n");
 
       expect(output).toContain("# Enable tier escalation on failure");
-      expect(output).toContain("# Model tier for test-writer session");
       expect(output).toContain("# Enable test coverage context injection");
     });
   });

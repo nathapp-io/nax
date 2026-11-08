@@ -68,11 +68,33 @@ const STORY_ISOLATION_HINT =
  * story-worktree execution path, which was deleted with pipeline mode too; both
  * take `STORY_ISOLATION_HINT`, which names what stories do now instead.
  *
+ * The tdd, autoMode and quality entries configured pipeline sessions and
+ * strategies (the TDD test-writer and verifier sessions, the autofix strategy,
+ * the lint and format fix commands) that no workflow run has, so they take
+ * `PIPELINE_ONLY_KEY_HINT` too.
+ *
  * A section entry strips the WHOLE section — one warning for the section, not one
  * per leaf under it.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
   acceptance: PIPELINE_ONLY_KEY_HINT,
+  "autoMode.enabled": PIPELINE_ONLY_KEY_HINT,
+  "tdd.maxRetries": PIPELINE_ONLY_KEY_HINT,
+  "tdd.sessionTiers": PIPELINE_ONLY_KEY_HINT,
+  "tdd.verifierTimeoutSeconds": PIPELINE_ONLY_KEY_HINT,
+  "tdd.testWriterAllowedPaths": PIPELINE_ONLY_KEY_HINT,
+  "tdd.testWriterCommitHooks": PIPELINE_ONLY_KEY_HINT,
+  "tdd.rollbackOnFailure": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.lintFix": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.lintFixScoped": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.formatFix": PIPELINE_ONLY_KEY_HINT,
+  "quality.commands.formatFixScoped": PIPELINE_ONLY_KEY_HINT,
+  "quality.typecheckOutput": PIPELINE_ONLY_KEY_HINT,
+  "quality.autofix": PIPELINE_ONLY_KEY_HINT,
+  "review.commands.lintFix": PIPELINE_ONLY_KEY_HINT,
+  "review.commands.lintFixScoped": PIPELINE_ONLY_KEY_HINT,
+  "review.commands.formatFix": PIPELINE_ONLY_KEY_HINT,
+  "review.commands.formatFixScoped": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.enabled": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxAttemptsPerStrategy": PIPELINE_ONLY_KEY_HINT,
   "execution.rectification.maxFailureSummaryChars": PIPELINE_ONLY_KEY_HINT,

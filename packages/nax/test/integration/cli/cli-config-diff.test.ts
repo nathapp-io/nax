@@ -283,7 +283,7 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         quality: {
-          autofix: { enabled: false }, // Different from default/global (true)
+          forceExit: true, // Different from default/global (false)
         },
       };
       writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
@@ -295,7 +295,7 @@ describe("Config Command --diff", () => {
 
       const output = consoleOutput.join("\n");
 
-      expect(output).toContain("quality.autofix.enabled");
+      expect(output).toContain("quality.forceExit");
       expect(output).toContain("false");
       expect(output).toContain("true");
     });
