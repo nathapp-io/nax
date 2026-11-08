@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertCaughtInstanceOf, assertNaxError, cleanupTempDir, makeTempDir } from "@test/helpers";
 import { _clearRootConfigCache, loadConfig, loadConfigForWorkdir } from "@/config/loader";
@@ -154,6 +154,15 @@ describe("loadConfig — profile activation (US-002)", () => {
 
   test("AC-7 preserves the default maxIterations without rejecting defaults", async () => {
     writeJson(join(projectDir, ".nax", "config.json"), {});
+    expect((await loadConfig(projectDir)).execution.maxIterations).toBe(20);
+  });
+
+  test("US-004 AC-1 resolves the default maxIterations of 20 with no project config file", async () => {
+    // AC-1's exact scenario: the project config file is ABSENT, not empty. The
+    // sibling AC-7 test above writes `{}`; both take the same merge path, but
+    // only this one proves the absence itself resolves to the schema default.
+    expect(existsSync(join(projectDir, ".nax", "config.json"))).toBe(false);
+
     expect((await loadConfig(projectDir)).execution.maxIterations).toBe(20);
   });
 
