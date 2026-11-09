@@ -124,6 +124,13 @@ export const WORKFLOW_ARTIFACTS_RULE =
 export const REPAIR_VERIFICATION_RULE =
   'If you cannot run a check here (for example the sandbox blocks its network, or its tool is missing), reply DONE_WITH_CONCERNS and name each such check in "concerns". Never reply DONE for a check you only reasoned about.';
 
+/**
+ * nax#2837: a red gate is fixed in the code or tests it checks. A session that creates a marker file,
+ * edits the gate's command or the quality config turns the gate green without fixing anything.
+ */
+export const GATE_INTEGRITY_RULE =
+  "Make a red gate green only by fixing the code or tests it checks. Never create, delete or edit files only to satisfy a gate's precondition, and never change the gate's command or the quality config to make it pass. If no code defect explains the failure (for example, the gate output says it is turned green outside the code), leave it red and reply BLOCKED with the reason in \"concerns\".";
+
 export const WORKFLOW_REPLY_CONTRACT = `End your reply with exactly one fenced json block:
 
 \`\`\`json

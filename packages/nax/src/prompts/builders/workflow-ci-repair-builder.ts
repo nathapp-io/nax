@@ -8,6 +8,7 @@
  */
 import { memorySectionOf } from "./memory-builder";
 import {
+  GATE_INTEGRITY_RULE,
   REPAIR_VERIFICATION_RULE,
   renderWorkflowFindings,
   WORKFLOW_ARTIFACTS_RULE,
@@ -50,6 +51,7 @@ ${renderWorkflowFindings(input.findings)}
 
 ## How to work
 - ${CI_REPAIR_NO_SHORTCUTS_RULE}
+- ${GATE_INTEGRITY_RULE}
 - ${CI_REPAIR_STEP_REPRODUCTION_RULE}
 - Fix the cause each check reports, then re-run that check's command before you commit.
 - Before you commit, run the full test command of every package you changed, not only the tests you touched: the repository gates run every suite, and a repair that breaks an unrelated test turns the branch red again.

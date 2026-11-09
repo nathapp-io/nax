@@ -126,6 +126,7 @@ export {
   buildWorkflowImplementPrompt,
   buildWorkflowReportPrompt,
   buildWorkflowRestartPrompt,
+  GATE_INTEGRITY_RULE,
   REPAIR_VERIFICATION_RULE,
   WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,

@@ -1,6 +1,7 @@
 /** A5 workflow mode: the whole-branch review, its scoped re-review, and the one branch fix (spec §7 steps 2-4). */
 import { memoryReferenceSectionOf, memorySectionOf } from "./memory-builder";
 import {
+  GATE_INTEGRITY_RULE,
   renderWorkflowFindings,
   WORKFLOW_ARTIFACTS_RULE,
   WORKFLOW_REPLY_CONTRACT,
@@ -215,7 +216,7 @@ ${renderWorkflowFindings(input.findings)}
 
 ## How to work
 - Fix every finding above. Findings marked minor are cheap cleanups the reviewer chose to fix now.
-- For a red repo gate, make that gate green. For a story that ended with a red gate, make its gates green.
+- For a red repo gate, or a story that ended with a red gate: ${GATE_INTEGRITY_RULE}
 - Re-run the tests that cover what you changed, and add a test where a finding names a missing one (TDD: see it fail first).
 - Before you commit, run the full test command of every package you changed, not only the tests you touched: the final repo gates run every suite, and a fix that breaks an unrelated test there turns the branch red.
 - Commit, then append a "Branch fix" section to ${input.reportPath}: what you changed for each finding id, the test evidence, and any Decisions & assumptions.
