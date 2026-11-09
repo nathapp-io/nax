@@ -9,7 +9,7 @@ import {
   type TranscriptStore,
 } from "@nathapp/nax-agent";
 import type { AcpBackendOptions } from "@nathapp/nax-agent-acp/client";
-import { makeNaxConfig } from "@test/helpers";
+import { makeNaxConfig, withEnvVars } from "@test/helpers";
 import type { AcpSubagentProfile } from "@/chat/acp/acp-subagent-profile";
 import {
   _acpSubagentDeps,
@@ -122,20 +122,42 @@ describe("acpSubagentSessionOptions backend", () => {
   test("AC-3: calls acpBackend once with the model, effort and ACP delivery posture", async () => {
     await options({ acp: { agent: "codex", model: "gpt-6.1-terra", effort: "high" } });
     expect(acpBackendMock).toHaveBeenCalledTimes(1);
-    expect(acpBackendMock.mock.calls[0]?.[0]).toEqual({
+    const arg = acpBackendMock.mock.calls[0]?.[0];
+    expect(arg).toMatchObject({
       agent: "codex",
       model: "gpt-6.1-terra",
       effort: "high",
       allowUnsandboxed: true,
-      inheritEnv: true,
+      inheritEnv: false,
     });
+    expect(Object.keys(arg ?? {}).sort()).toEqual([
+      "agent",
+      "allowUnsandboxed",
+      "effort",
+      "env",
+      "inheritEnv",
+      "model",
+    ]);
+    expect(Object.values(arg?.env ?? {}).every((value) => typeof value === "string")).toBe(true);
   });
 
   test("omits model and effort when the ACP model names neither", async () => {
     await options({ acp: { agent: "cursor" } });
     const arg = acpBackendMock.mock.calls[0]?.[0];
-    expect(arg).toEqual({ agent: "cursor", allowUnsandboxed: true, inheritEnv: true });
-    expect(Object.keys(arg ?? {}).sort()).toEqual(["agent", "allowUnsandboxed", "inheritEnv"]);
+    expect(arg).toMatchObject({ agent: "cursor", allowUnsandboxed: true, inheritEnv: false });
+    expect(Object.keys(arg ?? {}).sort()).toEqual(["agent", "allowUnsandboxed", "env", "inheritEnv"]);
+    expect(Object.values(arg?.env ?? {}).every((value) => typeof value === "string")).toBe(true);
+  });
+
+  test("US-002 AC-9: a cursor subagent's env holds neither nax's secret nor another provider's key", async () => {
+    await withEnvVars({ NAX_TELEGRAM_TOKEN: "nax-secret", ANTHROPIC_API_KEY: "anthropic-key" }, () =>
+      options({ acp: { agent: "cursor" } }),
+    );
+    expect(acpBackendMock).toHaveBeenCalledTimes(1);
+    const arg = acpBackendMock.mock.calls[0]?.[0];
+    expect(arg?.inheritEnv).toBe(false);
+    expect(arg?.env).not.toHaveProperty("NAX_TELEGRAM_TOKEN");
+    expect(arg?.env).not.toHaveProperty("ANTHROPIC_API_KEY");
   });
 
   test("returns the backend the factory built", async () => {

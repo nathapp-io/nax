@@ -23,6 +23,7 @@
 
 import type { CreateAgentSessionOptions, EmbedderTool, ToolProvider, TranscriptStore } from "@nathapp/nax-agent";
 import { acpBackend } from "@nathapp/nax-agent-acp/client";
+import { buildAcpChatEnv } from "@/agents/shared";
 import { MEMORY_TOOL_PROVIDER_ID } from "@/memory";
 import { buildAcpSubagentInstructions } from "@/prompts";
 import type { RunSubagentInput } from "../subagent-session";
@@ -104,7 +105,8 @@ export async function acpSubagentSessionOptions(
     backend: _acpSubagentDeps.acpBackend({
       agent: acp.agent,
       allowUnsandboxed: true,
-      inheritEnv: true,
+      inheritEnv: false,
+      env: buildAcpChatEnv(acp.agent),
       ...(acp.model !== undefined ? { model: acp.model } : {}),
       ...(acp.effort !== undefined ? { effort: acp.effort } : {}),
     }),

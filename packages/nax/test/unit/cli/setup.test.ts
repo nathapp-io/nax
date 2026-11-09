@@ -6,9 +6,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import { setupCommand as barrelSetupCommand } from "@/cli";
 import { _setupDeps, setupCommand } from "@/cli/setup";
+import { unreadableManifestWarning } from "@/cli/setup-fill";
 import type { RepoAnalysis } from "@/cli/setup-types";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "@/config";
@@ -51,6 +53,19 @@ const MONO_PLAN: SetupPlan = {
     { relativeDir: "packages/b", config: {} },
   ],
   gaps: [],
+};
+
+/**
+ * Mono + turbo analysis whose only member needing type-check is the root package,
+ * so a real fillScripts touches the root package.json and turbo.json — the two
+ * manifests US-007 has to leave alone when they do not parse.
+ */
+const UNPARSEABLE_MANIFEST_ANALYSIS: RepoAnalysis = {
+  shape: "mono",
+  packages: [{ relativeDir: "", testFramework: "bun", testFilePatterns: [], missingScripts: ["type-check"] }],
+  pmRunPrefix: "bun run",
+  pmDlx: "bunx",
+  orchestrator: "turbo",
 };
 
 // ─── Save / restore deps ──────────────────────────────────────────────────────
@@ -510,6 +525,50 @@ describe("setupCommand — AC13: fillScripts invoked iff --fill-scripts flag set
     await withTempDir(async (dir) => {
       await runSetup({ dir, fillScripts: false });
       expect(fillScriptsCalled).toBe(false);
+    });
+  });
+});
+
+// ─── US-007: unreadable manifests warn on stderr and setup still exits 0 ────
+
+describe("setupCommand — US-007: unreadable manifests warn without failing setup", () => {
+  test("US-007 AC-6: forwards the fillScripts warn callback to stderr and exits 0", async () => {
+    const stderrMessages: string[] = [];
+    _setupDeps.stderr = mock((msg: string) => {
+      stderrMessages.push(msg);
+    });
+    _setupDeps.fillScripts = mock(
+      async (_workdir: string, _analysis: RepoAnalysis, warn?: (message: string) => void) => {
+        warn?.("x");
+      },
+    );
+
+    await withTempDir(async (dir) => {
+      const exitCode = await runSetup({ dir, fillScripts: true });
+      expect(exitCode).toBe(0);
+      expect(stderrMessages).toEqual(["x"]);
+    });
+  });
+
+  test("US-007 AC-8: with the real fillScripts, one stderr warning per unreadable manifest and exit 0", async () => {
+    _setupDeps.analyzeRepo = mock(async () => UNPARSEABLE_MANIFEST_ANALYSIS);
+    _setupDeps.fillScripts = saved.fillScripts; // real implementation, real file I/O
+    const stderrMessages: string[] = [];
+    _setupDeps.stderr = mock((msg: string) => {
+      stderrMessages.push(msg);
+    });
+
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "package.json"), '{ "name": "my-app", "version": "1.2.3", }');
+      await Bun.write(join(dir, "turbo.json"), '{ "pipeline": { "build": {}, }, }');
+
+      const exitCode = await runSetup({ dir, fillScripts: true });
+
+      expect(exitCode).toBe(0);
+      expect(stderrMessages).toEqual([
+        unreadableManifestWarning(join(dir, "package.json")),
+        unreadableManifestWarning(join(dir, "turbo.json")),
+      ]);
     });
   });
 });

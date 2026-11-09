@@ -1,7 +1,7 @@
 // test/unit/agents/acp/complete.test.ts
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { AgentSessionError, isProcessAlive, NaxError } from "@nathapp/nax-agent";
+import { AgentSessionError, isProcessAlive, NaxError, readTurnSpend } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import {
   failTurn,
@@ -77,6 +77,17 @@ describe("AcpAgentAdapter.complete() (spec §6.6)", () => {
     if (!(err instanceof NaxError)) throw err;
     expect(err.code).toBe("AGENT_TIMEOUT");
     expect(script.closeCount()).toBe(1);
+  });
+
+  // US-005 (M10): the timeout error used to carry no spend at all, so a hop that
+  // burned tokens before its deadline recorded nothing in the cost ledger.
+  test("the timeout carries the spend the turn already reported (US-005)", async () => {
+    scripted(hangTurn({ inputTokens: 30, outputTokens: 0, costUsd: 0.003 }));
+    const err = await new AcpAgentAdapter("claude").complete("q", options({ timeoutMs: 50 })).catch((e: unknown) => e);
+    if (!(err instanceof NaxError)) throw err;
+    expect(err.code).toBe("AGENT_TIMEOUT");
+    expect(readTurnSpend(err)?.tokenUsage).toEqual({ inputTokens: 30, outputTokens: 0 });
+    expect(readTurnSpend(err)?.costUsd).toBeGreaterThan(0);
   });
 
   test("a run abort is rethrown fail-aborted, never a cancelled result (D3-a, D2-c)", async () => {

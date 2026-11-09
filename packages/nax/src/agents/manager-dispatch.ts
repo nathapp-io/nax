@@ -23,6 +23,7 @@ import { NaxError } from "../errors";
 import type { CompleteDispatchEvent, DispatchErrorEvent, SessionTurnDispatchEvent } from "../runtime/dispatch-events";
 import { formatSessionName } from "../runtime/session-name";
 import type { SessionRole } from "../runtime/session-role";
+import { completeHopSpend } from "./complete-hop-spend";
 import type { AgentCompleteOutcome, AgentFallbackRecord, LoggerLike, RunAsSessionOpts } from "./manager-types";
 import type { FallbackTarget } from "./swap-decision";
 import type {
@@ -576,6 +577,10 @@ export function buildCompleteOutcome(
  * Extracted from `completeWithFallback`'s call site: `manager.ts` is at its
  * 600-line hard ceiling and cannot hold the counting inline (see
  * `.claude/rules/project-conventions.md` "File Size").
+ *
+ * US-005 (M10): the failure-shaped result keeps the spend the hop already
+ * incurred. `completeHopSpend` reads it off the error (see
+ * `./complete-hop-spend.ts`); before that, a timed-out hop dropped it.
  */
 export async function dispatchCompleteHop(
   call: () => Promise<CompleteResult>,
@@ -585,12 +590,7 @@ export async function dispatchCompleteHop(
     return { result: await call(), dispatched: true };
   } catch (err) {
     return {
-      result: {
-        output: "",
-        tokenUsage: { inputTokens: 0, outputTokens: 0 },
-        estimatedCostUsd: 0,
-        adapterFailure: classifyFailure(err),
-      },
+      result: { output: "", ...completeHopSpend(err), adapterFailure: classifyFailure(err) },
       dispatched: false,
     };
   }

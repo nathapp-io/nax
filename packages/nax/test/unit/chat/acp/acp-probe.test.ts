@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { AgentSession } from "@nathapp/nax-agent";
+import type { AcpBackendOptions } from "@nathapp/nax-agent-acp/client";
+import { withEnvVars } from "@test/helpers";
 import { _acpProbeDeps, ACP_PROBE_TIMEOUT_MS, probeAcpAgent } from "@/chat/acp/acp-probe";
 
 const original = { ..._acpProbeDeps };
@@ -19,7 +21,7 @@ function fixture() {
   };
   const backend = original.acpBackend({ agent: "codex", allowUnsandboxed: true });
   const store = original.createMemoryTranscriptStore();
-  const acpBackend = mock(() => backend);
+  const acpBackend = mock((_options: AcpBackendOptions) => backend);
   const createAgentSession = mock(async (_options: Parameters<typeof original.createAgentSession>[0]) => session);
   const createMemoryTranscriptStore = mock(() => store);
   Object.assign(_acpProbeDeps, { acpBackend, createAgentSession, createMemoryTranscriptStore });
@@ -46,12 +48,21 @@ describe("probeAcpAgent", () => {
     expect(await probeAcpAgent({ agent: "codex", cwd: "/r" })).toBe(f.capabilities);
     expect(ACP_PROBE_TIMEOUT_MS).toBe(20_000);
     expect(f.acpBackend).toHaveBeenCalledTimes(1);
-    expect(f.acpBackend).toHaveBeenCalledWith({
+    const arg = f.acpBackend.mock.calls[0]?.[0];
+    expect(arg).toMatchObject({
       agent: "codex",
       allowUnsandboxed: true,
-      inheritEnv: true,
+      inheritEnv: false,
       initializeTimeoutMs: ACP_PROBE_TIMEOUT_MS,
     });
+    expect(Object.keys(arg ?? {}).sort()).toEqual([
+      "agent",
+      "allowUnsandboxed",
+      "env",
+      "inheritEnv",
+      "initializeTimeoutMs",
+    ]);
+    expect(Object.values(arg?.env ?? {}).every((value) => typeof value === "string")).toBe(true);
     expect(f.createAgentSession).toHaveBeenCalledTimes(1);
     expect(f.createAgentSession).toHaveBeenCalledWith({
       backend: f.backend,
@@ -62,6 +73,14 @@ describe("probeAcpAgent", () => {
     });
     expect(f.createMemoryTranscriptStore).toHaveBeenCalledTimes(1);
     expect(f.close).toHaveBeenCalledTimes(1);
+  });
+  test("US-002 AC-8: the probe's backend gets an explicit env that withholds nax's secrets", async () => {
+    const f = fixture();
+    await withEnvVars({ NAX_TELEGRAM_TOKEN: "nax-secret" }, () => probeAcpAgent({ agent: "codex", cwd: "/r" }));
+    expect(f.acpBackend).toHaveBeenCalledTimes(1);
+    const arg = f.acpBackend.mock.calls[0]?.[0];
+    expect(arg?.inheritEnv).toBe(false);
+    expect(arg?.env).not.toHaveProperty("NAX_TELEGRAM_TOKEN");
   });
   test("AC-4 returns capabilities even when close rejects", async () => {
     const f = fixture();

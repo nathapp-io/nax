@@ -214,7 +214,7 @@ describe("CostAggregator", () => {
     });
   });
 
-  test("snapshot() includes in-flight events during drain", async () => {
+  test("snapshot() counts the events being written and the in-flight ones during drain", async () => {
     await withTempDir(async (dir) => {
       const drainDir = join(dir, "cost");
       const { promise: writePromise, resolve: resolveWrite } = Promise.withResolvers<number>();
@@ -226,9 +226,12 @@ describe("CostAggregator", () => {
       const drainTask = agg.drain();
       agg.record(makeEvent({ ts: 2000, costUsd: 0.02 }));
 
+      // US-004: drain() copies _events instead of splicing them, so the row being
+      // written stays counted. A mid-drain snapshot is what a cost-limit guard
+      // reads, and it must not under-report by exactly the rows already in flight.
       const snap = agg.snapshot();
-      expect(snap.callCount).toBe(1);
-      expect(snap.totalCostUsd).toBeCloseTo(0.02);
+      expect(snap.callCount).toBe(2);
+      expect(snap.totalCostUsd).toBeCloseTo(0.03);
 
       resolveWrite(0);
       await drainTask;

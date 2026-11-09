@@ -1,14 +1,20 @@
 /**
  * Session options for an ACP chat brain.
  *
- * The agent gets the whole environment and none of nax's own sandbox, rules,
- * command shadow, background-command port or loop handlers: the agent's own
- * settings apply. Guarded mode opens ACP profile `ask`, full mode `full`.
+ * The agent gets its own settings and none of nax's sandbox, rules, command
+ * shadow, background-command port or loop handlers. Guarded mode opens ACP
+ * profile `ask`, full mode `full`.
+ *
+ * The environment is explicit rather than inherited: `buildAcpChatEnv` hands the
+ * agent the user's environment — ssh-agent, `GH_TOKEN`, proxies, the editor,
+ * toolchain paths — minus nax's own `NAX_`/`CLAW_`/`TURBO_` secrets (the Telegram
+ * bot token above all) and every other provider's keys (M7).
  */
 
 import { join } from "node:path";
 import type { CreateAgentSessionOptions, ToolProvider } from "@nathapp/nax-agent";
 import { acpBackend } from "@nathapp/nax-agent-acp/client";
+import { buildAcpChatEnv } from "@/agents/shared";
 import { NaxError } from "@/errors";
 import { buildChatAcpInstructions } from "@/prompts";
 import type { ChatMode } from "../chat-mode";
@@ -62,7 +68,8 @@ export async function acpSessionOptions(
     backend: _acpSessionDeps.acpBackend({
       agent: acp.agent,
       allowUnsandboxed: true,
-      inheritEnv: true,
+      inheritEnv: false,
+      env: buildAcpChatEnv(acp.agent),
       ...(acp.model !== undefined ? { model: acp.model } : {}),
       ...(acp.effort !== undefined ? { effort: acp.effort } : {}),
     }),

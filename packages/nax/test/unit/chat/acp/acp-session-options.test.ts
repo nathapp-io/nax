@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AgentSessionError, type EmbedderTool, type SessionBackend, type ToolProvider } from "@nathapp/nax-agent";
 import type { AcpBackendOptions } from "@nathapp/nax-agent-acp/client";
+import { withEnvVars } from "@test/helpers";
 import {
   _acpSessionDeps,
   ACP_FRESH_SESSION_NOTICE,
@@ -75,20 +76,42 @@ describe("acpSessionOptions", () => {
   test("AC-2: opens the backend with model and effort", async () => {
     await acpSessionOptions(input());
     expect(acpBackendMock).toHaveBeenCalledTimes(1);
-    expect(acpBackendMock.mock.calls[0]?.[0]).toEqual({
+    const arg = acpBackendMock.mock.calls[0]?.[0];
+    expect(arg).toMatchObject({
       agent: "codex",
       allowUnsandboxed: true,
-      inheritEnv: true,
+      inheritEnv: false,
       model: "gpt-5.5",
       effort: "high",
     });
+    expect(Object.keys(arg ?? {}).sort()).toEqual([
+      "agent",
+      "allowUnsandboxed",
+      "effort",
+      "env",
+      "inheritEnv",
+      "model",
+    ]);
+    expect(Object.values(arg?.env ?? {}).every((value) => typeof value === "string")).toBe(true);
   });
 
   test("AC-3: omits model and effort keys when absent", async () => {
     await acpSessionOptions(input({ acp: { agent: "claude" } }));
     const arg = acpBackendMock.mock.calls[0]?.[0];
-    expect(arg).toEqual({ agent: "claude", allowUnsandboxed: true, inheritEnv: true });
-    expect(Object.keys(arg ?? {}).sort()).toEqual(["agent", "allowUnsandboxed", "inheritEnv"]);
+    expect(arg).toMatchObject({ agent: "claude", allowUnsandboxed: true, inheritEnv: false });
+    expect(Object.keys(arg ?? {}).sort()).toEqual(["agent", "allowUnsandboxed", "env", "inheritEnv"]);
+    expect(Object.values(arg?.env ?? {}).every((value) => typeof value === "string")).toBe(true);
+  });
+
+  test("US-002 AC-7: the backend gets an explicit env that withholds nax's secrets and keeps the toolchain", async () => {
+    await withEnvVars({ NAX_TELEGRAM_TOKEN: "nax-secret", GH_TOKEN: "gh-token" }, async () => {
+      await acpSessionOptions(input());
+    });
+    expect(acpBackendMock).toHaveBeenCalledTimes(1);
+    const arg = acpBackendMock.mock.calls[0]?.[0];
+    expect(arg?.inheritEnv).toBe(false);
+    expect(arg?.env?.GH_TOKEN).toBe("gh-token");
+    expect(arg?.env).not.toHaveProperty("NAX_TELEGRAM_TOKEN");
   });
 
   test("returns the backend the factory built", async () => {

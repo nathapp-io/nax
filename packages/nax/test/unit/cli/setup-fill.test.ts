@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { assertDefined, withTempDir } from "@test/helpers";
 import { _analyzeRepoDeps, analyzeRepo } from "@/cli/setup-analyze";
-import { _fillScriptsDeps, fillScripts } from "@/cli/setup-fill";
+import { _fillScriptsDeps, fillScripts, unreadableManifestWarning } from "@/cli/setup-fill";
 import type { RepoAnalysis } from "@/cli/setup-types";
 import type { ProjectProfile } from "@/config";
 import type { DetectionResult } from "@/test-runners/detect";
@@ -40,6 +40,7 @@ let savedFill: FillDeps;
 beforeEach(() => {
   savedFill = { ..._fillScriptsDeps };
   _fillScriptsDeps.readJson = mock(async () => null);
+  _fillScriptsDeps.exists = mock(async () => false);
   _fillScriptsDeps.writeFile = mock(async () => {});
 });
 
@@ -271,5 +272,99 @@ describe("fillScripts — AC5: analyzeRepo no longer reports filled scripts as m
     });
 
     Object.assign(_analyzeRepoDeps, savedAnalyze);
+  });
+});
+
+// ─── US-007: an existing-but-unreadable manifest is left unchanged ────────────
+
+/** Capture writeFile calls into a path → content map. */
+function captureWrites(): Map<string, string> {
+  const written = new Map<string, string>();
+  _fillScriptsDeps.writeFile = mock(async (path: string, content: string) => {
+    written.set(path, content);
+  });
+  return written;
+}
+
+describe("fillScripts — US-007: unreadable manifests are left unchanged", () => {
+  test("US-007 AC-1: does not write when readJson returns null and the file exists", async () => {
+    _fillScriptsDeps.exists = mock(async () => true);
+    const written = captureWrites();
+
+    await fillScripts("/work", SINGLE_MISSING_TYPE_CHECK);
+
+    expect(written.size).toBe(0);
+    expect(_fillScriptsDeps.writeFile).not.toHaveBeenCalled();
+  });
+
+  test("US-007 AC-2: reports the unreadable path to the warn callback", async () => {
+    _fillScriptsDeps.exists = mock(async () => true);
+    captureWrites();
+    const warnings: string[] = [];
+
+    await fillScripts("/work", SINGLE_MISSING_TYPE_CHECK, (message) => warnings.push(message));
+
+    expect(warnings).toEqual([unreadableManifestWarning("/work/package.json")]);
+  });
+
+  test("US-007 AC-3: skipped turbo.json blocks the turbo task and the root passthrough only", async () => {
+    _fillScriptsDeps.readJson = mock(async (path: string) => (path.endsWith("turbo.json") ? null : { scripts: {} }));
+    _fillScriptsDeps.exists = mock(async () => true);
+    const written = captureWrites();
+
+    await fillScripts("/work", MONO_TURBO_MISSING);
+
+    const memberPath = "/work/packages/a/package.json";
+    expect(written.has(memberPath)).toBe(true);
+    const rawMember = written.get(memberPath);
+    assertDefined(rawMember, "written member package.json");
+    const member = JSON.parse(rawMember);
+    expect(member.scripts["type-check"]).toBe("tsc --noEmit -p tsconfig.json");
+
+    expect(written.has("/work/turbo.json")).toBe(false);
+    expect(written.has("/work/package.json")).toBe(false);
+  });
+
+  test("US-007 AC-4: an absent package.json is still created with the type-check script", async () => {
+    _fillScriptsDeps.exists = mock(async () => false);
+    const written = captureWrites();
+    const warnings: string[] = [];
+
+    await fillScripts("/work", SINGLE_MISSING_TYPE_CHECK, (message) => warnings.push(message));
+
+    const rawPkg = written.get("/work/package.json");
+    assertDefined(rawPkg, "written package.json");
+    const pkg = JSON.parse(rawPkg);
+    expect(pkg.scripts["type-check"]).toBe("tsc --noEmit -p tsconfig.json");
+    expect(warnings).toEqual([]);
+    // The absent/unreadable distinction is decided by the exists seam.
+    expect(_fillScriptsDeps.exists).toHaveBeenCalledWith("/work/package.json");
+  });
+
+  test("US-007 AC-5: a trailing-comma manifest is left byte-for-byte unchanged on disk", async () => {
+    Object.assign(_fillScriptsDeps, savedFill);
+    const warnings: string[] = [];
+    const original = '{\n  "name": "my-app",\n  "version": "1.2.3",\n}\n';
+
+    await withTempDir(async (dir) => {
+      const pkgPath = join(dir, "package.json");
+      await Bun.write(pkgPath, original);
+
+      await fillScripts(dir, SINGLE_MISSING_TYPE_CHECK, (message) => warnings.push(message));
+
+      expect(await Bun.file(pkgPath).text()).toBe(original);
+      expect(warnings).toEqual([unreadableManifestWarning(pkgPath)]);
+    });
+  });
+
+  test("US-007 AC-7: reports an unreadable turbo.json exactly once", async () => {
+    _fillScriptsDeps.readJson = mock(async (path: string) => (path.endsWith("turbo.json") ? null : { scripts: {} }));
+    _fillScriptsDeps.exists = mock(async () => true);
+    captureWrites();
+    const warnings: string[] = [];
+
+    await fillScripts("/work", MONO_TURBO_MISSING, (message) => warnings.push(message));
+
+    expect(warnings).toEqual([unreadableManifestWarning("/work/turbo.json")]);
   });
 });

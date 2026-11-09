@@ -1,9 +1,10 @@
 /**
  * What an ACP SDK session opens with (S4b spec §6.1 steps 2-3): the backend's
- * BackendOpenContext and its acpBackend options. nax keeps its own env
- * allowlist (agents/shared/env.ts) with inheritEnv false, puts everything in the
- * prompt (no instructions), registers no tools (B5) and enforces the turn
- * deadline itself, so turnTimeoutSeconds is informational. Model and effort
+ * BackendOpenContext and its acpBackend options. nax keeps its own env allowlist
+ * (agents/shared/env.ts) with inheritEnv false — the agent's own provider
+ * variables only (M7) — puts everything in the prompt (no instructions),
+ * registers no tools (B5) and enforces the turn deadline itself, so
+ * turnTimeoutSeconds is informational. Model and effort
  * come from the model spec (§6.7, D2-a); the startup and teardown deadlines
  * become initializeTimeoutMs and cancelGraceMs (§7.2, D3-i). nax's resolved
  * rule lists ride along as the backend's `rules`, and its per-agent policy
@@ -25,7 +26,7 @@ import type { AcpAgentName, AcpBackendOptions, AcpProcessHooks } from "@nathapp/
 import { z } from "zod";
 import { globalConfigDir } from "@/config/paths";
 import { getSafeLogger } from "@/logger";
-import { buildAllowedEnv } from "../shared/env";
+import { buildAcpRunEnv } from "../shared/env";
 import { type AcpProfile, acpProfileFor } from "./profile-map";
 import { finalizeAcpSurface } from "./provider-embedder";
 import type { TurnSlot } from "./turn-slot";
@@ -33,14 +34,14 @@ import type { TurnSlot } from "./turn-slot";
 /** The backend's option schema accepts only these names (nax-agent-acp options.ts). */
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** nax's agent env: the allowlist plus the model's env, minus anything the backend would reject. */
-export function backendEnv(modelEnv?: Readonly<Record<string, string>>): Record<string, string> {
-  const allowed = buildAllowedEnv(modelEnv === undefined ? undefined : { modelEnv: { ...modelEnv } });
+/**
+ * nax's agent env: the run env of the agent's own provider family (M7), plus the
+ * model's env, minus anything the backend would reject.
+ */
+export function backendEnv(agent: AcpAgentName, modelEnv?: Readonly<Record<string, string>>): Record<string, string> {
+  const runEnv = buildAcpRunEnv(agent, modelEnv);
   return Object.fromEntries(
-    Object.entries(allowed).filter(
-      (entry): entry is [string, string] =>
-        typeof entry[1] === "string" && ENV_NAME.test(entry[0]) && !entry[1].includes("\u0000"),
-    ),
+    Object.entries(runEnv).filter(([name, value]) => ENV_NAME.test(name) && !value.includes("\u0000")),
   );
 }
 
@@ -102,8 +103,11 @@ function shellSandboxFromCarrier(value: string | undefined): AcpBackendOptions["
 }
 
 /** The private carrier never reaches an agent process, valid or otherwise. */
-function launchOptions(modelEnv: OpenSessionOpts["modelDef"]["env"]): Pick<AcpBackendOptions, "env" | "shellSandbox"> {
-  const env = backendEnv(modelEnv);
+function launchOptions(
+  agent: AcpAgentName,
+  modelEnv: OpenSessionOpts["modelDef"]["env"],
+): Pick<AcpBackendOptions, "env" | "shellSandbox"> {
+  const env = backendEnv(agent, modelEnv);
   delete env[SHELL_SANDBOX_ENV];
   const shellSandbox = shellSandboxFromCarrier(modelEnv?.[SHELL_SANDBOX_ENV]);
   return { env, ...(shellSandbox === undefined ? {} : { shellSandbox }) };
@@ -120,7 +124,7 @@ export function backendOptions(
     allowUnsandboxed: true,
     ...(model === "" ? {} : { model }),
     ...(effort === undefined ? {} : { effort }),
-    ...launchOptions(opts.modelDef.env),
+    ...launchOptions(agent, opts.modelDef.env),
     inheritEnv: false,
     initializeTimeoutMs: Math.min(
       opts.trackedSpawnStartupDeadlineMs ?? DEFAULT_STARTUP_DEADLINE_MS,
