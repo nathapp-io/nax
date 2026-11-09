@@ -3,7 +3,7 @@
   "feature": "review-agent-sandbox-hardening",
   "branchName": "feat/review-agent-sandbox-hardening",
   "createdAt": "2026-11-09T00:00:00Z",
-  "updatedAt": "2026-11-09T03:22:54.826Z",
+  "updatedAt": "2026-11-09T03:27:29.505Z",
   "userStories": [
     {
       "id": "US-001",
@@ -322,14 +322,17 @@
         "M4"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Four existing source modules change a clear additive state contract and a fixed commit argv; OS execution confinement and unsandboxed hook prevention require strict three-session TDD."
+        "reasoning": "Four existing source modules change a clear additive state contract and a fixed commit argv; OS execution confinement and unsandboxed hook prevention require strict three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts",
@@ -352,7 +355,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0ea39510562e8ad229557b34dcdd250d2b436b73"
     },
     {
       "id": "US-007",
