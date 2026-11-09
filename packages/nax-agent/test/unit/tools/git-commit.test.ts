@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   _gitDeps,
@@ -57,6 +57,13 @@ async function makeRepo(): Promise<string> {
   return repo;
 }
 
+const gitConfig = (repo: string, args: string[]) =>
+  withTimeout(
+    _gitDeps.spawn(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" }).exited,
+    SUBPROCESS_DEADLINE_MS,
+    `git ${args.join(" ")} while building the commit fixture`,
+  );
+
 const toolContext = (root: string) => ({
   root,
   resolvedPaths: [],
@@ -70,13 +77,15 @@ describe("buildCommitArgvs", () => {
     const built = buildCommitArgvs({ message: "feat(US-1): thing", paths: ["src/a.ts"] });
     expect(built).toEqual({
       add: ["add", "--", "src/a.ts"],
-      commit: ["commit", "-m", "feat(US-1): thing"],
+      commit: ["-c", "core.hooksPath=/dev/null", "commit", "-m", "feat(US-1): thing"],
     });
   });
 
   test("supports a multi-line body, which the implementer prompt requires", () => {
     const built = buildCommitArgvs({ message: "feat: x\n\nException (b): contract drift.", paths: ["a.ts"] });
-    expect(built).toMatchObject({ commit: ["commit", "-m", "feat: x\n\nException (b): contract drift."] });
+    expect(built).toMatchObject({
+      commit: ["-c", "core.hooksPath=/dev/null", "commit", "-m", "feat: x\n\nException (b): contract drift."],
+    });
   });
 
   test("refuses a path that would parse as a flag", () => {
@@ -95,20 +104,28 @@ describe("buildCommitArgvs", () => {
     expect(buildCommitArgvs({ message: "m", paths: [] })).toEqual({ error: "paths must name at least one file" });
   });
 
-  test("emits no escape flag in either argv", () => {
+  test("AC-9: the commit argv disables every hooks path", () => {
+    expect(buildCommitArgvs({ message: "feat: x", paths: ["src/a.ts"] })).toMatchObject({
+      commit: ["-c", "core.hooksPath=/dev/null", "commit", "-m", "feat: x"],
+    });
+  });
+
+  test("the add argv has no escape flag; the commit argv has -c exactly once, at index 0, before the hooks override", () => {
     const built = buildCommitArgvs({ message: "-c core.pager=id", paths: ["a.ts"] });
     if ("error" in built) throw new Error("expected success");
-    for (const flag of GIT_ESCAPE_FLAGS) {
-      expect(built.add).not.toContain(flag);
-      expect(built.commit).not.toContain(flag);
-    }
+    for (const flag of GIT_ESCAPE_FLAGS) expect(built.add).not.toContain(flag);
+    expect(built.commit.filter((element) => element === "-c")).toHaveLength(1);
+    expect(built.commit.indexOf("-c")).toBe(0);
+    expect(built.commit[1]).toBe("core.hooksPath=/dev/null");
+    expect(built.commit.slice(2, 4)).toEqual(["commit", "-m"]);
+    expect(built.commit[4]).toBe("-c core.pager=id");
   });
 
   test("a message that looks like a flag is still a message, never an argv element of its own", () => {
     const built = buildCommitArgvs({ message: "--work-tree=/etc", paths: ["a.ts"] });
     if ("error" in built) throw new Error("expected success");
-    expect(built.commit).toEqual(["commit", "-m", "--work-tree=/etc"]);
-    expect(built.commit.indexOf("--work-tree=/etc")).toBe(2);
+    expect(built.commit).toEqual(["-c", "core.hooksPath=/dev/null", "commit", "-m", "--work-tree=/etc"]);
+    expect(built.commit.indexOf("--work-tree=/etc")).toBe(4);
   });
 
   test("registers as a builtin", () => {
@@ -404,12 +421,42 @@ describe("gitCommitTool", () => {
 
   test("returns the git commit failure after a successful stage", async () => {
     const repo = await makeRepo();
-    const hook = join(repo, ".git", "hooks", "pre-commit");
-    writeFileSync(hook, "#!/bin/sh\nexit 1\n");
-    chmodSync(hook, 0o755);
-    const result = await gitCommitTool.run({ message: "feat: rejected by hook", paths: ["a.ts"] }, toolContext(repo));
+    await gitConfig(repo, ["config", "commit.gpgsign", "true"]);
+    await gitConfig(repo, ["config", "gpg.program", "false"]);
+    const result = await gitCommitTool.run({ message: "feat: unsignable", paths: ["a.ts"] }, toolContext(repo));
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("git commit failed:");
+  });
+
+  describe("US-006: no hook runs from any hooks path", () => {
+    const hooksCases = [
+      { ac: "AC-10/11", name: "core.hooksPath=.husky pre-commit", hooksPath: ".husky", hook: "pre-commit" },
+      { ac: "AC-12/13", name: "default commit-msg", hooksPath: "", hook: "commit-msg" },
+      { ac: "AC-14/15", name: "default post-commit", hooksPath: "", hook: "post-commit" },
+    ];
+
+    test.each(hooksCases)("$ac: $name creates the commit and leaves no marker", async ({ hooksPath, hook }) => {
+      const repo = await makeRepo();
+      const hooksDir = hooksPath === "" ? join(repo, ".git", "hooks") : join(repo, hooksPath);
+      if (hooksPath !== "") await gitConfig(repo, ["config", "core.hooksPath", hooksPath]);
+      mkdirSync(hooksDir, { recursive: true });
+      const hookFile = join(hooksDir, hook);
+      writeFileSync(hookFile, `#!/bin/sh\ntouch "${join(repo, "marker")}"\n`);
+      chmodSync(hookFile, 0o755);
+
+      const result = await gitCommitTool.run({ message: "feat: hooked", paths: ["a.ts"] }, toolContext(repo));
+
+      expect(result.isError).toBeUndefined();
+      const log = await withTimeout(
+        new Response(
+          _gitDeps.spawn(["git", "log", "--format=%s"], { cwd: repo, stdout: "pipe", stderr: "pipe" }).stdout,
+        ).text(),
+        SUBPROCESS_DEADLINE_MS,
+        "git log",
+      );
+      expect(log.trim()).toBe("feat: hooked");
+      expect(existsSync(join(repo, "marker"))).toBe(false);
+    });
   });
 });

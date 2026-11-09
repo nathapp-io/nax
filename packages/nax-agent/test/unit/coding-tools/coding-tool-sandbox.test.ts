@@ -14,6 +14,7 @@ import {
   type SandboxConfig,
   type SandboxPolicy,
 } from "@nathapp/nax-agent/internal";
+import { createBashTool } from "#src/tools/index";
 import {
   assertDefined,
   type ConfinedSessionSeam,
@@ -243,7 +244,96 @@ describe("resolveSessionSandbox", () => {
     });
     expect(l.state.kind).toBe("unavailable");
     expect(l.state.kind === "unavailable" ? l.state.reason : "").toContain("re[x]po");
+    expect(l.state.kind === "unavailable" ? l.state.failClosed : undefined).toBe(true);
     expect(rawRefusalFor(l)).toBeDefined();
+  });
+
+  test("US-006 AC-6: a host-capability unavailable state carries no failClosed field", async () => {
+    _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "no bwrap" });
+    const l = await resolveSessionSandbox({
+      config: enabled,
+      root,
+      needsLauncher: true,
+      protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
+    });
+    expect("failClosed" in l.state).toBe(false);
+  });
+
+  test("US-006 AC-7/8: Bash against the re[x]po policy failure is refused naming the path, and spawns nothing", async () => {
+    const globRoot = join(root, "re[x]po");
+    mkdirSync(globRoot);
+    _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
+    _sessionSandboxDeps.probe = async () => ({ available: true });
+    _sessionSandboxDeps.gitLayout = async () => ({ kind: "main", gitDir: `${globRoot}/.git` });
+    _sessionSandboxDeps.gitGuardFiles = async () => [];
+    const spawned: unknown[] = [];
+    _launcherDeps.runArgv = async (o) => {
+      spawned.push(o);
+      return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+    };
+    const launcher = await resolveSessionSandbox({
+      config: enabled,
+      root: globRoot,
+      needsLauncher: true,
+      protectedPaths: testProtectedPaths(),
+      ownedPaths: EMPTY_OWNED_PATHS_POLICY,
+    });
+    const tool = createBashTool({ bashApproval: "gated", patterns: ["echo *"], launcher });
+    const result = await tool.run(
+      { command: "echo hi" },
+      { root: globRoot, resolvedPaths: [], maxBytes: 40_000, maxFileBytes: 2_000_000 },
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("re[x]po");
+    expect(spawned).toHaveLength(0);
+  });
+
+  test("US-006 AC-16: repeated policy-failure resolves warn exactly once, naming re[x]po", async () => {
+    const globRoot = join(root, "re[x]po");
+    mkdirSync(globRoot);
+    _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
+    _sessionSandboxDeps.probe = async () => ({ available: true });
+    _sessionSandboxDeps.gitLayout = async () => ({ kind: "main", gitDir: `${globRoot}/.git` });
+    _sessionSandboxDeps.gitGuardFiles = async () => [];
+    await withWarnSpy(async (warn) => {
+      for (let i = 0; i < 3; i++) {
+        await resolveSessionSandbox({
+          config: enabled,
+          root: globRoot,
+          needsLauncher: true,
+          protectedPaths: testProtectedPaths(),
+          ownedPaths: EMPTY_OWNED_PATHS_POLICY,
+        });
+      }
+      const sandboxWarns = warn.mock.calls.filter(([scope]) => scope === "sandbox");
+      expect(sandboxWarns).toHaveLength(1);
+      const [, message, data] = sandboxWarns[0] ?? [];
+      expect(String(message).startsWith("Sandbox unavailable:")).toBe(true);
+      expect(String(data?.reason)).toContain("re[x]po");
+    });
+  });
+
+  test("US-006 AC-17: repeated host-capability resolves warn exactly once with the probe reason", async () => {
+    _sessionSandboxDeps.backendFor = () => makeFakeSandboxBackend();
+    _sessionSandboxDeps.probe = async () => ({ available: false, reason: "no bwrap" });
+    await withWarnSpy(async (warn) => {
+      for (let i = 0; i < 3; i++) {
+        await resolveSessionSandbox({
+          config: enabled,
+          root,
+          needsLauncher: true,
+          protectedPaths: testProtectedPaths(),
+          ownedPaths: EMPTY_OWNED_PATHS_POLICY,
+        });
+      }
+      const sandboxWarns = warn.mock.calls.filter(([scope]) => scope === "sandbox");
+      expect(sandboxWarns).toHaveLength(1);
+      const [, message, data] = sandboxWarns[0] ?? [];
+      expect(String(message).startsWith("Sandbox unavailable:")).toBe(true);
+      expect(data?.reason).toBe("no bwrap");
+    });
   });
 
   test("#17: a policy error that is not a glob still propagates", async () => {

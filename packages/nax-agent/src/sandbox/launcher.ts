@@ -203,6 +203,13 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
       }
       if (state.kind === "disabled") return runUnwrapped(req, { backend: "none", wrapped: false }, { ...env, tmpDir });
       if (state.kind === "unavailable") {
+        if (state.failClosed === true) {
+          throw new NaxError(
+            `[sandbox] refusing to run the command outside the sandbox: ${state.reason}`,
+            "SANDBOX_POLICY_NOT_LITERAL",
+            { stage: "sandbox", backend: state.backend },
+          );
+        }
         return runUnwrapped(req, { backend: state.backend, wrapped: false, reason: state.reason }, { ...env, tmpDir });
       }
       if (opts.backend === undefined || opts.policyFor === undefined) {
