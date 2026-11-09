@@ -481,3 +481,70 @@ describe("line continuation does not bypass the policy (nax#2551)", () => {
     expect(check(policyFor(["cat *"]), "cat .\\\n./.\\\n./etc/hosts").allowed).toBe(false);
   });
 });
+
+describe("deny and ask rules see wrapped commands (US-004)", () => {
+  const DENY_PUSH = { deny: ["git push*"] };
+
+  test.each([
+    [1, "setsid git push origin main"],
+    [2, "ionice -c3 git push origin main"],
+    [3, "caffeinate git push origin main"],
+    [4, "arch -arm64 git push origin main"],
+    [7, "echo git push"],
+  ] as const)("AC-%i denies %s under deny Bash(git push*)", (_ac, command) => {
+    expect(check(policyFor(["*"], DENY_PUSH), command).allowed).toBe(false);
+  });
+
+  test("AC-5: ask rule asks for setsid git push origin main", () => {
+    const verdict = check(policyFor(["*"], { ask: ["git push*"] }), "setsid git push origin main");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.outcome).toBe("ask");
+  });
+
+  test("AC-6: git status is still allowed under deny Bash(git push*)", () => {
+    expect(check(policyFor(["*"], DENY_PUSH), "git status").allowed).toBe(true);
+  });
+
+  test("AC-8: without a deny or ask rule setsid git push origin main is allowed", () => {
+    expect(check(policyFor(["*"]), "setsid git push origin main").allowed).toBe(true);
+  });
+});
+
+describe("git global config options are refused (US-004)", () => {
+  test("AC-9: git -c is denied and the reason names -c", () => {
+    const verdict = check(policyFor(["git *"]), "git -c core.pager=sh status");
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) {
+      expect(verdict.reason).toContain("-c");
+      expect(verdict.escalatable).toBe(false);
+    }
+  });
+
+  test.each([
+    [10, "git --config-env=core.pager=X status", "git *"],
+    [11, "git --config-env core.pager=X status", "git *"],
+    [12, "git --exec-path=/tmp/x status", "git *"],
+    [13, "env git -c core.fsmonitor=x status", "*"],
+    [14, "setsid git -c core.pager=sh status", "*"],
+    [16, "git -C . -c core.pager=sh status", "git *"],
+    [17, "git --no-pager -C . -c core.pager=sh status", "git *"],
+    [19, "echo git -c x", "*"],
+    [20, "git --no-optional-locks -c core.pager=x log", "git *"],
+    [21, "git --glob-pathspecs -c core.pager=x log", "git *"],
+    [22, "git --attr-source=x -c a=b log", "git *"],
+    [23, "git --attr-source x -c a=b log", "git *"],
+    [24, "git --super-prefix x -c a=b log", "git *"],
+    [25, "git --some-future-flag -c a=b log", "git *"],
+  ] as const)("AC-%i denies %s", (_ac, command, grant) => {
+    const verdict = check(policyFor([grant]), command);
+    expect(verdict.allowed).toBe(false);
+    if (!verdict.allowed) expect(verdict.reason).toContain("git global option");
+  });
+
+  test.each([
+    [15, "git log -c"],
+    [18, "git -C . log -c"],
+  ] as const)("AC-%i allows %s (option after the subcommand)", (_ac, command) => {
+    expect(check(policyFor(["git *"]), command).allowed).toBe(true);
+  });
+});

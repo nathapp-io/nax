@@ -80,7 +80,17 @@ export type SandboxState =
        */
       readonly sharedTmp?: boolean;
     }
-  | { readonly kind: "unavailable"; readonly backend: SandboxBackendName; readonly reason: string };
+  | {
+      readonly kind: "unavailable";
+      readonly backend: SandboxBackendName;
+      readonly reason: string;
+      /**
+       * US-006: set only when the policy could not be built (a nax fault, not a
+       * missing host capability). The launcher then refuses every request that
+       * is not `unwrapped: true`; every other reader still sees "unavailable".
+       */
+      readonly failClosed?: true;
+    };
 
 export interface SandboxRecord {
   readonly backend: SandboxBackendName | "none";

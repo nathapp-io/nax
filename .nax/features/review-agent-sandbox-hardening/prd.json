@@ -1,0 +1,427 @@
+{
+  "project": "nax-monorepo",
+  "feature": "review-agent-sandbox-hardening",
+  "branchName": "feat/review-agent-sandbox-hardening",
+  "createdAt": "2026-11-09T00:00:00Z",
+  "updatedAt": "2026-11-09T03:37:19.740Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Follow dangling symlinks in path containment",
+      "description": "**Goal** — Make realOrRaw resolve dangling-link targets so the existing tool containment gate checks where a write would land.\n\n**Motivation** — A tree containing `hook-link -> .git/hooks/pre-commit` lets the `Write` tool write a git hook; `out -> ../../outside/file` lets it write outside the root.\n\n**Approach** — Verbatim Integration design:\n- `realOrRaw(p: string): string` — `packages/nax-agent/src/internal/realpath.ts:31`.\n  - Baseline: when `realpathSync` throws for a path component, it walks up to the nearest ancestor that resolves and re-attaches the remaining segments lexically, so a dangling symlink among them is never followed.\n  - Target: signature unchanged and it still never throws. A remaining segment that is a symbolic link (by `lstat`) is replaced by its link target (from `readlink`, resolved against the link's own directory) and resolution continues from there, so the result names where a write would actually land. Link-following is bounded (40 hops); on a cycle it stops and returns the lexical form, which no write can follow either.\n- `resolveWithin(root: string, candidate: string, owned: OwnedPathsPolicy): string | null` — `packages/nax-agent/src/tools/policy-paths-branch.ts:105`.\n  - Baseline: correct for every path `realOrRaw` resolves; admits a dangling symlink whose target is outside the root or under `.git/`.\n  - Target: signature unchanged. With the `realOrRaw` change, the containment, `.git/` and `configRefusal` checks run on the link target, so such a candidate returns `null`. An in-root dangling link whose target is also in-root and outside `.git/` is still admitted, resolved to its target.\n\nFailure handling: `realOrRaw` stops after 40 hops and returns the lexical form; it never throws and never hangs. `resolveWithin` returns `null`, and the tool reports the existing refusal reason for an outside-root or .git target.\n\n**Scope** — In: existing resolver, unchanged containment interface, and cases in existing internal/realpath and policy-paths-branch-edges suites, including the compiled Write policy integration. Out: OAuth/import (US-002/US-003), Bash policy (US-004), approval memory (US-005), sandbox/commit behavior (US-006), and ACP decoding (US-007). Do not implement per-tool O_NOFOLLOW, race-free writes or hard-link refusal; those feature exclusions still apply.\n\n**Interface**\n```typescript\nrealOrRaw(p: string): string\nresolveWithin(root: string, candidate: string, owned: OwnedPathsPolicy): string | null\ncompileToolPolicy(grants, root, options?): ToolPolicy\nToolPolicy.check(tool, scope, input): PolicyVerdict\n```\nThe last two are existing read-only integration shapes; writeTool continues to consume already-resolved paths. Use real temporary symlinks and normalize existing temp ancestors in expected paths. Extend existing test files only and demonstrate the new regressions against old code before implementation.",
+      "acceptanceCriteria": [
+        "[unit] realOrRaw(<root>/out) returns <realpath of root's parent>/outside/new.txt when <root>/out is a symlink to ../outside/new.txt and that target does not exist.",
+        "[unit] realOrRaw(<root>/dir-link/new.txt) returns <realpath of root's parent>/outside/missing-dir/new.txt when <root>/dir-link is a symlink to ../outside/missing-dir and that directory does not exist.",
+        "[unit] realOrRaw(<root>/abs-link) returns <realpath of tmp>/elsewhere/missing.txt when <root>/abs-link is a symlink to the absolute path <tmp>/elsewhere/missing.txt and that target does not exist.",
+        "[unit] realOrRaw(<root>/a) returns <realpath of root>/a (the lexical form) without throwing when <root>/a links to b and <root>/b links to a.",
+        "[unit] resolveWithin(root, \"out\", EMPTY_OWNED_PATHS_POLICY) returns null when out is a dangling symlink to ../outside/new.txt.",
+        "[unit] resolveWithin(root, \"hook-link\", EMPTY_OWNED_PATHS_POLICY) returns null when hook-link is a symlink to .git/hooks/pre-commit and that hook does not exist.",
+        "[unit] resolveWithin(root, \"dir-link/new.txt\", EMPTY_OWNED_PATHS_POLICY) returns null when dir-link is a dangling symlink to ../outside/missing-dir.",
+        "[unit] resolveWithin(root, \"inner-link\", EMPTY_OWNED_PATHS_POLICY) returns <realpath of root>/build/missing.txt when inner-link is a symlink to build/missing.txt inside the root and that target does not exist.",
+        "[unit] resolveWithin(root, \"existing-link\", EMPTY_OWNED_PATHS_POLICY) returns <realpath of root>/src/a.ts when existing-link is a symlink to an existing in-root file src/a.ts.",
+        "[integration] Given a Write grant from compileToolPolicy over a temp git repo whose hook-link is a dangling symlink to .git/hooks/pre-commit, policy.check(\"Write\", writeTool.scope, { path: \"hook-link\", content: \"x\" }) returns a deny verdict.",
+        "[integration] Given that same compiled Write policy refusal for hook-link, <root>/.git/hooks/pre-commit does not exist afterwards.",
+        "Given the compiled Write grant and dangling out -> ../outside/new.txt from the preceding cases, policy.check(\"Write\", writeTool.scope, { path: \"out\", content: \"x\" }) returns a deny verdict whose reason contains the existing text \"resolves outside the permitted root\".",
+        "Given the compiled Write grant and dangling hook-link -> .git/hooks/pre-commit from the preceding cases, policy.check(\"Write\", writeTool.scope, { path: \"hook-link\", content: \"x\" }) returns a deny verdict whose reason contains the existing text \"targets git metadata under .git/\"."
+      ],
+      "tags": [
+        "security",
+        "path-containment",
+        "nax-agent",
+        "H1"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Bounded filesystem resolution changes a shared access-control seam and must preserve existing normalization; security override requires isolated failing tests, implementation and verification.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/realpath.ts",
+        "packages/nax-agent/src/tools/policy-paths-branch.ts",
+        "packages/nax-agent/src/tools/write.ts",
+        "packages/nax-agent/test/unit/tools/policy-paths-branch-edges.test.ts",
+        "packages/nax-agent/test/unit/internal/realpath.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "bfbd3e75dabac9b3f30b0deced082d779797e688"
+    },
+    {
+      "id": "US-002",
+      "title": "Hide non-permitted OAuth credentials from pi",
+      "description": "**Goal** — Enforce the existing OAuth allowlist at the pi credential adapter for reads and refresh writes without deleting stored credentials.\n\n**Motivation** — An imported Anthropic subscription token is then sent as the API key on every Anthropic request, which the policy header says must never happen.\n\n**Approach** — Verbatim Integration design:\n- `toPiCredentialStore(store: CredentialStore): PiCredentialStore` — `packages/nax-ai/src/auth/pi-auth.ts:57`.\n  - Baseline: `read` and `modify` pass every stored credential to pi unchanged.\n  - Target: signature unchanged. A stored `kind: \"oauth\"` credential for a provider where `isOAuthFlowPermitted` is false is invisible to pi: `read` returns `undefined`, and `modify` hands its callback `undefined` as the current value. A `modify` callback that returns an OAuth credential for such a provider throws through `assertOAuthFlowPermitted` and leaves the store unchanged. A `modify` callback that returns `undefined` leaves the stored entry unchanged, as today. The stored entry is never deleted by this adapter.\n\nRead-only integration design:\n- `isOAuthFlowPermitted(providerId: ProviderId): boolean` and `assertOAuthFlowPermitted(providerId: ProviderId): void` — `packages/nax-ai/src/auth/oauth-policy.ts:49,59`. Both are exported from the `@nathapp/nax-ai` package root (`packages/nax-ai/src/index.ts:39-40`). `assertOAuthFlowPermitted` throws `OAuthFlowProhibitedError` for a provider in `PROHIBITED_OAUTH_FLOWS` (`anthropic`, `github-copilot`).\n- `createFileCredentialStore(options: FileCredentialStoreOptions): CredentialStore` — `packages/nax-ai/src/credentials/file-store.ts:114`.\n- `createPiAuthResolver(models: MutableModels): AuthResolver` — `packages/nax-ai/src/auth/pi-auth.ts:89`. `packages/nax-ai/src/protocols/pi-client.ts:951` builds the models as `builtinModels({ credentials: toPiCredentialStore(store) })`.\n\nFailure handling: pi sees no credential for that provider; ambient environment auth, if any, is what pi uses. The stored entry is kept. Preserve the underlying store's locked modify operation and pi's undefined=no-op translation; filter the adapter's modify result too so it cannot expose a hidden credential. The design's non-deletion rule concerns policy filtering and no-op refresh, not removal of the existing explicit delete method.\n\n**Scope** — In: adapter read/modify filtering, pre-write policy assertion, and unit plus real-model/file-store integration cases in test/auth/pi-auth.test.ts. Out: import status and CLI labeling (US-003), filesystem and execution-policy stories (US-001/US-004-US-007), editing OAuth policy or stores, and removing or rewriting an Anthropic OAuth credential already in ~/.nax. No new module or public symbol.\n\n**Interface**\n```typescript\ntoPiCredentialStore(store: CredentialStore): PiCredentialStore\nisOAuthFlowPermitted(providerId: ProviderId): boolean\nassertOAuthFlowPermitted(providerId: ProviderId): void\ncreateFileCredentialStore(options: FileCredentialStoreOptions): CredentialStore\ncreatePiAuthResolver(models: MutableModels): AuthResolver\n```\nUse existing memory stores for unit tests and the actual builtinModels/file credential store for the no-apiKey integration, isolating/restoring ambient Anthropic auth. No provider network calls or live credentials are needed. Demonstrate failing regressions before implementing, retaining permitted OAuth/API-key mappings, opaque values and existing explicit deletion behavior.",
+      "acceptanceCriteria": [
+        "[unit] toPiCredentialStore(store).read(\"anthropic\") resolves to undefined when store holds { kind: \"oauth\", access, refresh, expires } for anthropic.",
+        "[unit] toPiCredentialStore(store).read(\"github-copilot\") resolves to undefined when store holds an OAuth credential for github-copilot.",
+        "[unit] After toPiCredentialStore(store).read(\"anthropic\") on a store holding an OAuth credential for anthropic, store.read(\"anthropic\") still resolves to that OAuth credential.",
+        "[unit] toPiCredentialStore(store).read(\"openai-codex\") resolves to { type: \"oauth\", access, refresh, expires } with the stored values when store holds an OAuth credential for openai-codex.",
+        "[unit] toPiCredentialStore(store).read(\"anthropic\") resolves to { type: \"api_key\", key: \"sk-test\" } when store holds { kind: \"api-key\", key: \"sk-test\" } for anthropic.",
+        "[unit] toPiCredentialStore(store).modify(\"anthropic\", fn) calls fn with undefined as the current credential when store holds an OAuth credential for anthropic.",
+        "[unit] With no credential stored for anthropic, toPiCredentialStore(store).modify(\"anthropic\", fn) rejects with OAuthFlowProhibitedError when fn returns { type: \"oauth\", access: \"a\", refresh: \"r\", expires: 1 }.",
+        "[unit] After that prohibited OAuth modify callback rejects, store.read(\"anthropic\") still resolves to undefined.",
+        "[unit] With an OAuth credential stored for anthropic, toPiCredentialStore(store).modify(\"anthropic\", fn) where fn returns undefined leaves store.read(\"anthropic\") returning the original OAuth credential.",
+        "[integration] With a createFileCredentialStore store in a temp directory holding an OAuth credential for anthropic and no Anthropic environment variable set, createPiAuthResolver(builtinModels({ credentials: toPiCredentialStore(store) })).resolve({ provider: \"anthropic\", ... }) resolves to an object with no apiKey.",
+        "[integration] Given a temp file credential store holding anthropic OAuth and ANTHROPIC_API_KEY set to an isolated test API-key with other Anthropic ambient auth cleared, createPiAuthResolver(builtinModels({ credentials: toPiCredentialStore(store) })).resolve for provider anthropic returns apiKey equal to that environment-supplied test API-key rather than the hidden stored OAuth credential."
+      ],
+      "tags": [
+        "security",
+        "oauth",
+        "credentials",
+        "nax-ai",
+        "H2"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Credential filtering must preserve locked refresh semantics and actual pi auth fallback; authentication security requires strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-ai/src/auth/pi-auth.ts",
+        "packages/nax-ai/src/auth/oauth-policy.ts",
+        "packages/nax-ai/src/credentials/file-store.ts",
+        "packages/nax-ai/test/auth/pi-auth.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a prohibited OAuth credential is already stored and a modify callback proposes another prohibited OAuth credential, modify rejects with OAuthFlowProhibitedError and the original stored credential remains unchanged.",
+        "When modify for anthropic returns undefined while its stored OAuth credential is hidden, the adapter's modify result resolves to undefined rather than exposing the preserved stored OAuth credential."
+      ],
+      "workdir": "packages/nax-ai",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "914b7593dcc82f735683fa515d867ea5b3eaef7f"
+    },
+    {
+      "id": "US-003",
+      "title": "Refuse non-permitted OAuth credentials on import",
+      "description": "**Goal** — Refuse imported OAuth credentials outside the existing allowlist and report the new refused status without interrupting other provider imports.\n\n**Motivation** — `importPiCredentials` copies every provider entry from `~/.pi/agent/auth.json` into the nax store with no policy check.\n\n**Approach** — Verbatim Integration design:\n- `importPiCredentials(options?: { from?: string; force?: boolean }): Promise<ImportOutcome[]>` — `packages/nax-agent/src/native/auth.ts:175`; `ImportOutcome.status` — `auth.ts:135`; `authImportOutcomeLabel(status)` — `auth.ts:253`.\n  - Baseline: `status` is `\"imported\" | \"skipped\" | \"unsupported\"`, and every parsed entry is written.\n  - Target: `status` gains `\"refused\"`. An `oauth` entry for a provider where `isOAuthFlowPermitted` is false is not written, with or without `force`, and reports `\"refused\"`. `authImportOutcomeLabel(\"refused\")` returns `\"refused, OAuth login is not permitted for this provider\"`. `nax auth import` (`packages/nax/src/cli/auth.ts:100-115`) already prints the label per outcome and needs no change.\n\nRead-only integration: `isOAuthFlowPermitted(providerId: ProviderId): boolean` and `assertOAuthFlowPermitted(providerId: ProviderId): void` are existing exports from the @nathapp/nax-ai package root. US-002 and US-003 both read the existing `isOAuthFlowPermitted` export and do not depend on each other. Failure handling: Not written; outcome `\"refused\"`; the rest of the import continues.\n\n**Scope** — In: native/auth.ts import policy, additive ImportOutcome status, exact label, and existing auth-store-ops cases. Out: adapter read/refresh filtering (US-002), all path/Bash/approval/sandbox/ACP stories (US-001/US-004-US-007), CLI changes and changes to OAuth policy. Do not delete or rewrite already-stored prohibited OAuth credentials as a cleanup migration.\n\n**Interface**\n```typescript\nimportPiCredentials(options?: { from?: string; force?: boolean }): Promise<ImportOutcome[]>\nauthImportOutcomeLabel(status: ImportOutcome[\"status\"]): string\nisOAuthFlowPermitted(providerId: ProviderId): boolean\n```\nImportOutcome.status becomes `\"imported\" | \"skipped\" | \"unsupported\" | \"refused\"`. Refuse a parsed non-permitted OAuth credential before the existing-entry/force write branch; retain sorted outcomes, unsupported parsing and atomic modify checks for permitted imports. Use NAX_GLOBAL_CONFIG_DIR isolation and existing store-reset helpers in the current test file. Add failing regressions first; no new test or source module.",
+      "acceptanceCriteria": [
+        "[unit] importPiCredentials({ from }) returns [{ providerId: \"anthropic\", status: \"refused\" }] when the auth file holds { \"anthropic\": { \"type\": \"oauth\", \"access\": \"a\", \"refresh\": \"r\", \"expires\": 1 } }.",
+        "[unit] After that refused import, the nax credential store holds no entry for anthropic.",
+        "[unit] importPiCredentials({ from, force: true }) returns status refused for anthropic when the nax store already holds { kind: \"api-key\", key: \"sk-keep\" } for anthropic and the auth file holds an anthropic OAuth entry.",
+        "[unit] After that forced refused import, the stored anthropic API-key is still sk-keep.",
+        "[unit] importPiCredentials({ from }) returns refused for anthropic when the auth file holds both an anthropic OAuth entry and an openai-codex OAuth entry.",
+        "[unit] In that same mixed import, importPiCredentials({ from }) returns imported for openai-codex, continuing after the refused anthropic entry.",
+        "[unit] importPiCredentials({ from }) returns [{ providerId: \"anthropic\", status: \"imported\" }] when the auth file holds { \"anthropic\": { \"type\": \"api_key\", \"key\": \"sk-a\" } }.",
+        "[unit] authImportOutcomeLabel(\"refused\") returns \"refused, OAuth login is not permitted for this provider\"."
+      ],
+      "tags": [
+        "security",
+        "oauth",
+        "credential-import",
+        "nax-agent",
+        "H2"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A localized existing import-loop guard and additive status/label use an existing policy export; credential security overrides the simple scope to strict three-session TDD.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/auth.ts",
+        "packages/nax-ai/src/auth/oauth-policy.ts",
+        "packages/nax-agent/test/unit/native/auth-store-ops.test.ts"
+      ],
+      "suggestedCriteria": [
+        "importPiCredentials({ from }) returns refused without replacing an existing anthropic API-key when force is omitted and the source entry is anthropic OAuth.",
+        "importPiCredentials({ from }) returns refused and writes no credential when the source contains a github-copilot OAuth entry."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "306f0ae1201b1c52203c25dcf744775fae9e6c8f",
+      "failureStage": "workflow"
+    },
+    {
+      "id": "US-004",
+      "title": "Enforce Bash rules through wrappers and refuse git escape options",
+      "description": "**Goal** — Close Bash deny/ask wrapper bypasses and git global configuration escape paths at checkBashCommand without widening grants.\n\n**Motivation** — `canonicalSegments` strips only the wrappers in its `WRAPPERS` table and stops at any other head, so `setsid git push origin main`, `ionice -c3 git push origin main`, `caffeinate git push origin main` and `arch -arm64 git push origin main` are all allowed under `deny: Bash(git push*)`. Under a `Bash(git *)` grant, `git -c core.fsmonitor=\"sh -c '...'\" status` runs arbitrary code.\n\n**Approach** — Verbatim Integration design:\n- `checkBashCommand(args: BashCheckArgs): BashCheck` — `packages/nax-agent/src/tools/policy-bash.ts:314`, with its helpers `ruleSegments` (`:300`) and `checkPayload` (`:162`).\n  - Baseline: deny and ask rules match each lexed segment plus its canonical view; `checkPayload` refuses only `DENIED_FLAGS`.\n  - Target: signature unchanged. Two changes:\n    1. **Rule views.** When `denyEntry` or `askEntry` is set, `ruleSegments` also adds, for every segment, a view of each token suffix starting at index 1 or later. Deny and ask matching see these views; grant and payload checks still see the original tokens only, so a view can never grant anything. This subsumes every unlisted wrapper (`setsid`, `ionice`, `chrt`, `taskset`, `flock`, `caffeinate`, `arch`, `unbuffer`, `script`, `chroot`, `unshare`, `nsenter`, `su`, `runuser`) without an option table per wrapper.\n    2. **Git config flags.** `checkPayload` refuses the git global options `-c`, `--config-env` and `--exec-path`, in both the separate-value and the `=value` spelling, wherever a token whose text is `git` (or ends in `/git`) is followed by one of them before the git subcommand. The scan runs over every token position in the original segment, not only the command word, so a wrapper in front (`env git -c ...`, `setsid git -c ...`) is covered whether or not any deny or ask rule exists. Options after the subcommand are subcommand options and are not checked (`git log -c` stays allowed). The boundary: after the `git` token, skip flag options without a value (`--no-pager`, `-p`, `--paginate`, `--bare`, `--literal-pathspecs`, `--no-replace-objects`) and skip the value of `-C`, `--git-dir`, `--work-tree` and `--namespace` (separate or `=value` spelling); the first token that is neither is the subcommand, and the scan stops there. This is the same option grammar as `GIT_OPTIONS` in `bash-canonical.ts:89-92`. `-C`, `--git-dir` and `--work-tree` keep their current Bash handling. A false positive (`echo git -c x`) is refused, which fails closed.\n\nFailure handling: a rule-view false positive (`echo git push` under `deny: Bash(git push*)`) is denied; deny and ask rules fail closed and the agent can rephrase. A non-command git token followed by an escape flag is refused for the same reason.\n\n**Scope** — In: existing Bash gate helpers, current canonical views, narrowly parsed original-token git globals, and existing policy-bash tests. Out: path resolution (US-001), OAuth (US-002/US-003), approval memory (US-005), launcher and trusted GitCommit argv changes (US-006), ACP decoding (US-007). Do not extend WRAPPERS option tables, refuse all of GIT_ESCAPE_FLAGS indiscriminately, or close environment/config-write injection forms. Rule views are added only when deny or ask exists and never affect grants, payload checks or path containment.\n\n**Interface**\n```typescript\ncheckBashCommand(args: BashCheckArgs): BashCheck\n```\nPreserve existing deny/payload/lexical/grant/ask precedence, non-escalatable payload refusals, cwd tracking, raw-mode behavior and original-token containment. Extend the current policy-bash suite with failing direct gate cases and existing compiled-policy fixtures; no new module or test file. Keep existing canonical-analysis refusals and precedence; the specific -c reason acceptance case is evaluated without deny or ask entries, and does not require a new precedence rule.",
+      "acceptanceCriteria": [
+        "[unit] checkBashCommand with grant Bash(*) and deny rule Bash(git push*) returns kind: deny for setsid git push origin main.",
+        "[unit] checkBashCommand with grant Bash(*) and deny rule Bash(git push*) returns kind: deny for ionice -c3 git push origin main.",
+        "[unit] checkBashCommand with grant Bash(*) and deny rule Bash(git push*) returns kind: deny for caffeinate git push origin main.",
+        "[unit] checkBashCommand with grant Bash(*) and deny rule Bash(git push*) returns kind: deny for arch -arm64 git push origin main.",
+        "[unit] checkBashCommand with grant Bash(*) and ask rule Bash(git push*) returns kind: ask for setsid git push origin main.",
+        "[unit] checkBashCommand with grant Bash(*) and deny rule Bash(git push*) returns kind: allow for git status.",
+        "[unit] checkBashCommand with grant Bash(*) and deny rule Bash(git push*) returns kind: deny for echo git push, deliberately failing closed on the rule-view false positive.",
+        "[unit] checkBashCommand with grant Bash(*) and no deny or ask rule returns kind: allow for setsid git push origin main.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: deny for git -c core.pager=sh status, with a reason naming -c.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: deny for git --config-env=core.pager=X status.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: deny for git --config-env core.pager=X status.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: deny for git --exec-path=/tmp/x status.",
+        "[unit] checkBashCommand with grant Bash(*) returns kind: deny for env git -c core.fsmonitor=x status.",
+        "[unit] checkBashCommand with grant Bash(*) and no deny or ask rule returns kind: deny for setsid git -c core.pager=sh status.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: allow for git log -c.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: deny for git -C . -c core.pager=sh status.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: deny for git --no-pager -C . -c core.pager=sh status.",
+        "[unit] checkBashCommand with grant Bash(git *) returns kind: allow for git -C . log -c.",
+        "[unit] checkBashCommand with grant Bash(*) returns kind: deny for echo git -c x, deliberately failing closed when git is not the command word."
+      ],
+      "tags": [
+        "security",
+        "bash",
+        "permission-policy",
+        "git",
+        "M1",
+        "M2"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two targeted algorithms in an existing gate require careful option boundaries and deny-only views; execution access control requires strict three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/policy-bash.ts",
+        "packages/nax-agent/src/tools/bash-canonical.ts",
+        "packages/nax-agent/src/tools/git-flags/index.ts",
+        "packages/nax-agent/src/tools/exec-guard.ts",
+        "packages/nax-agent/test/unit/tools/policy-bash.test.ts"
+      ],
+      "suggestedCriteria": [
+        "checkBashCommand with grant Bash(*) returns kind: deny for setsid /usr/bin/git -c core.pager=sh status.",
+        "checkBashCommand with grant Bash(git *) returns kind: deny for git --exec-path /tmp/x status.",
+        "checkBashCommand with grant Bash(git *) returns kind: deny for git -c=core.pager=sh status.",
+        "checkBashCommand with grant Bash(git *) and an unrelated ask rule returns kind: deny for setsid git status rather than granting through a suffix view.",
+        "checkBashCommand with grant Bash(*) returns kind: deny for git --git-dir=. --work-tree=. --namespace=foo -c core.pager=sh status."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0c33bb052300134b56fa16a9eeb08f9d9ee9a6de"
+    },
+    {
+      "id": "US-005",
+      "title": "Narrow remembered allows for package-manager subcommands",
+      "description": "**Goal** — Prevent package runners and different package-manager scripts or packages from inheriting an unrelated remembered allow.\n\n**Motivation** — A remembered allow for `npm exec prettier` then auto-allows `npm exec evil-pkg`, and `npm run test` auto-allows `npm run deploy`.\n\n**Approach** — Verbatim Integration design:\n- `approvalMemoryKey(request: ApprovalMemoryRequest): string | undefined` — `packages/nax-agent/src/permissions/approval-memory.ts:68`.\n  - Baseline: a non-wrapper first word plus a plain second word gives a two-word key.\n  - Target: signature unchanged. When the first word is `npm`, `pnpm` or `yarn`:\n    - a second word of `exec`, `x`, `dlx` or `create` gives no key, and so does `init` followed by a third word (`npm init <pkg>` runs `create-<pkg>`); each runs an arbitrary package;\n    - a second word of `run`, `install`, `i` or `add` followed by a plain, non-flag third word gives a three-word key (`Bash:npm run test`, `Bash:npm install lodash`), so a remembered allow names the script or package;\n    - every other request keys as today, including a bare `npm install` (`Bash:npm install`).\n\n**Scope** — In: existing approvalMemoryKey package-manager classification and cases in approval-memory.test.ts. Out: Bash command parsing/grants (US-004), credential/path/sandbox/ACP permission decoding changes (US-001-US-003/US-006/US-007), and changes to approvalMemoryApplies' existing safety checks. The shared consumers inherit the helper change without editing chat or ACP server code.\n\n**Interface**\n```typescript\napprovalMemoryKey(request: ApprovalMemoryRequest): string | undefined\n```\nPreserve basename classification and original key spelling, execute-tool set, wrapper/masking/plain-word eligibility, and the existing rule that a found key alone does not authorize a command. approvalMemoryApplies must still reject npm run test --watch for allow. Use the full Integration Target above, including create/init and install/i/add, rather than only the abbreviated story title. No persistent migration or broad-key fallback; extend existing tests and demonstrate old-code failures first.",
+      "acceptanceCriteria": [
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm exec prettier\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm x prettier\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"pnpm dlx create-app\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"pnpm exec tsc\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"yarn dlx create-app\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"yarn exec tsc\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm create vite\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"pnpm create vite\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"yarn create vite\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm init vite\" }) returns undefined.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm install lodash\" }) returns \"Bash:npm install lodash\", so an allow remembered for it is not found for npm install evil.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm install\" }) returns \"Bash:npm install\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm run test\" }) returns \"Bash:npm run test\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm run deploy\" }) returns \"Bash:npm run deploy\", so an allow remembered under \"Bash:npm run test\" is not found for it.",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"pnpm run build\" }) returns \"Bash:pnpm run build\".",
+        "[unit] approvalMemoryKey({ tool: \"Bash\", command: \"npm test\" }) returns \"Bash:npm test\".",
+        "[unit] approvalMemoryApplies({ tool: \"Bash\", command: \"npm run test --watch\" }, \"allow\") returns false."
+      ],
+      "tags": [
+        "security",
+        "permissions",
+        "approval-memory",
+        "package-runners",
+        "M5"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Localized key derivation in one existing source module with no new dependency, but remembered authorization is security-critical and requires isolated three-session TDD.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/permissions/approval-memory.ts",
+        "packages/nax-agent/test/unit/permissions/approval-memory.test.ts"
+      ],
+      "suggestedCriteria": [
+        "approvalMemoryKey({ tool: \"Bash\", command: \"pnpm add lodash\" }) returns \"Bash:pnpm add lodash\".",
+        "approvalMemoryKey({ tool: \"Bash\", command: \"yarn i lodash\" }) returns \"Bash:yarn i lodash\".",
+        "approvalMemoryKey({ tool: \"Bash\", command: \"npm init\" }) returns \"Bash:npm init\".",
+        "approvalMemoryKey({ tool: \"Bash\", command: \"/usr/bin/npm exec prettier\" }) returns undefined."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b138dbb1d9a544b423345b41ad4e14ddb33a5055"
+    },
+    {
+      "id": "US-006",
+      "title": "Fail closed on invalid sandbox policies and disable GitCommit hooks",
+      "description": "**Goal** — Prevent gated execution after sandbox-policy build failure and prevent GitCommit from executing repository-controlled hooks outside the sandbox.\n\n**Motivation** — A project at `~/work/app[v2]` runs every gated Bash command with no OS confinement. With `core.hooksPath=.husky` the agent writes `.husky/pre-commit` (no `.git` segment, so admitted) and `GitCommit` runs it unsandboxed.\n\n**Approach** — Verbatim Integration design:\n- `SandboxState`'s `unavailable` variant — `packages/nax-agent/src/sandbox/types.ts:83`; `createCommandLauncher(opts)` — `packages/nax-agent/src/sandbox/launcher.ts`; `resolveSessionSandbox(args)` — `packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts:97`.\n  - Baseline: `{ kind: \"unavailable\"; backend; reason }`, and `run` executes every request unwrapped.\n  - Target: the variant gains an optional `readonly failClosed?: true`. `resolveSessionSandbox` sets it only when the policy could not be built (`literalPolicyError` returned a reason). A launcher in that state rejects every request that is not `unwrapped: true` with a `NaxError` coded `SANDBOX_POLICY_NOT_LITERAL` whose message names the path, without spawning. A host-capability `unavailable` state (no `failClosed`) keeps running unwrapped, as today. Every other reader of the `unavailable` variant (`rawRefusalFor`, the Bash tool description, `packages/nax-agent/src/session/session-tool-support.ts:126`, `packages/nax-agent/src/sandbox/session-sandbox.ts:11`) keeps treating it as unavailable.\n- `buildCommitArgvs(input: Record<string, unknown>): { add: string[]; commit: string[] } | { error: string }` — `packages/nax-agent/src/tools/git-commit.ts:21`. The input carries `message` and `paths`.\n  - Baseline: `commit` is `[\"commit\", \"-m\", message]`.\n  - Target: `commit` is `[\"-c\", \"core.hooksPath=/dev/null\", \"commit\", \"-m\", message]`, so no hook (pre-commit, prepare-commit-msg, commit-msg, post-commit) runs from any hooks path. `add` is unchanged; `git add` runs no hooks. The two leading elements mirror `BOT_GIT_HOOKS_OFF` in `packages/nax/src/bot/git.ts:6`; nax-agent cannot import from nax (dependency direction), so the value is repeated, not shared.\n\nFailure handling, verbatim: Every gated command is refused with `SANDBOX_POLICY_NOT_LITERAL` naming the path, unless the call is `unwrapped: true` (the approval-gated `unsandboxed` escape). The one-time warning still logs. This includes a policy path that is a dangling symlink whose target has a glob character, which US-001 now resolves to that target. Host backend failure is unchanged: commands run unwrapped with the existing warning. US-001 and this story have no implementation dependency; the existing resolver and builder compose at runtime after both changes land.\n\nExisting-test modifications, verbatim design notes:\n- `packages/nax-agent/test/unit/tools/git-commit.test.ts` — the cases at lines 73, 79 and 110 assert that the commit argv from buildCommitArgvs is exactly: commit, -m, message, and line 111 asserts the message sits at index 2. The commit argv now starts with the two elements -c and core.hooksPath=/dev/null; the replacement invariant is that the argv is: -c, core.hooksPath=/dev/null, commit, -m, message, with the message as one argv element at index 4, unchanged in content.\n- `packages/nax-agent/test/unit/tools/git-commit.test.ts` — the case \"returns the git commit failure after a successful stage\" (lines 404-412) makes the commit fail with a rejecting pre-commit hook under .git/hooks, which no longer runs. The replacement invariant: the commit is made to fail by a cause other than a hook (for example repo config commit.gpgsign=true with gpg.program=false), and the tool still returns `isError: true` with content containing \"git commit failed:\". The case \"emits no escape flag in either argv\" (lines 98-105) asserts the commit argv contains no GIT_ESCAPE_FLAGS member, and -c is one; the replacement invariant is that the add argv contains no escape flag, the commit argv contains -c exactly once, at index 0, followed by core.hooksPath=/dev/null, and a message that looks like an escape flag (-c core.pager=id) stays a single element after -m.\n\n**Scope** — In: four existing source files (sandbox/types.ts, sandbox/launcher.ts, coding-tools/coding-tool-sandbox.ts, tools/git-commit.ts) and cases in existing launcher.test.ts, coding-tool-sandbox.test.ts and git-commit.test.ts. Out: symlink-resolution implementation (US-001), OAuth (US-002/US-003), Bash deny/payload parsing (US-004), approval memory (US-005), ACP command decoding (US-007). Do not add hook opt-in, glob escaping, capability-failure config, global git hardening, changes to other unavailable readers, or removal of the explicitly approved unwrapped escape.\n\n**Interface**\n```typescript\n// Add only this field to SandboxState's existing unavailable variant:\nreadonly failClosed?: true\nbuildCommitArgvs(input: Record<string, unknown>): { add: string[]; commit: string[] } | { error: string }\n```\ncreateCommandLauncher and resolveSessionSandbox keep their signatures. Honor request.unwrapped before fail-closed refusal. Use existing _launcherDeps.runArgv and _sessionSandboxDeps for no-spawn/capability cases, plus the actual Bash tool and real temporary git repos with executable marker-writing hooks. Do not modify the shared GIT_ESCAPE_FLAGS to accommodate the one trusted commit override. In the test-writing session update the old argv and hook-failure fixtures to the replacement invariants above; the implementation session must not edit tests. No new source or test files.",
+      "acceptanceCriteria": [
+        "[unit] createCommandLauncher({ state: { kind: \"unavailable\", backend: \"srt\", reason: \"glob\", failClosed: true } }).run(request) rejects a shell request without unwrapped with a NaxError whose code is SANDBOX_POLICY_NOT_LITERAL.",
+        "[unit] For that same fail-closed shell request without unwrapped, _launcherDeps.runArgv is never called.",
+        "[unit] The same fail-closed launcher's run(request) with unwrapped: true calls _launcherDeps.runArgv once.",
+        "[unit] createCommandLauncher({ state: { kind: \"unavailable\", backend: \"srt\", reason: \"no bwrap\" } }).run(request) without unwrapped calls _launcherDeps.runArgv once.",
+        "[integration] resolveSessionSandbox with sandboxing enabled, an available backend and a root path containing re[x]po returns a launcher whose state is kind: unavailable with failClosed: true and a reason naming re[x]po.",
+        "[integration] resolveSessionSandbox with sandboxing enabled and a backend whose probe reports unavailable (\"no bwrap\") returns a launcher whose state has no failClosed field.",
+        "[integration] The Bash tool, given the launcher resolveSessionSandbox returns for a re[x]po root and the command echo hi, returns a result with isError: true whose content names re[x]po.",
+        "[integration] For that same Bash call against the re[x]po policy-failure launcher, no process is spawned.",
+        "[unit] buildCommitArgvs({ message: \"feat: x\", paths: [\"src/a.ts\"] }) returns a commit argv equal to [\"-c\", \"core.hooksPath=/dev/null\", \"commit\", \"-m\", \"feat: x\"].",
+        "[integration] In a temp git repo with core.hooksPath=.husky and an executable .husky/pre-commit that writes a marker file, running the GitCommit tool on a staged change creates the commit.",
+        "[integration] After that GitCommit in the repo with core.hooksPath=.husky and the marker-writing .husky/pre-commit, marker does not exist.",
+        "[integration] In a temp git repo with the default hooks path and an executable .git/hooks/commit-msg that writes a marker file, running the GitCommit tool creates the commit.",
+        "[integration] After that GitCommit with the default marker-writing commit-msg hook, marker does not exist.",
+        "[integration] In a temp git repo with an executable .git/hooks/post-commit that writes a marker file, running the GitCommit tool creates the commit.",
+        "[integration] After that GitCommit with the marker-writing post-commit hook, marker does not exist.",
+        "Given a reset sandbox-warning registry and an installed test logger, repeated resolveSessionSandbox calls with an available backend and a re[x]po policy path emit exactly one warn-level log entry in scope \"sandbox\" whose message starts with \"Sandbox unavailable:\" (the existing warnSandboxUnavailableOnce warning, packages/nax-agent/src/sandbox/registry.ts:52-58) whose data.reason names re[x]po.",
+        "Given a reset sandbox-warning registry and an installed test logger, repeated resolveSessionSandbox calls whose backend probe returns unavailable with reason no bwrap emit exactly one warn-level log entry in scope \"sandbox\" whose message starts with \"Sandbox unavailable:\" (the existing warnSandboxUnavailableOnce warning, packages/nax-agent/src/sandbox/registry.ts:52-58) whose data.reason is no bwrap.",
+        "When a fail-closed launcher rejects a gated request for a non-literal policy path, the NaxError message names that policy path."
+      ],
+      "tags": [
+        "security",
+        "sandbox",
+        "fail-closed",
+        "git-hooks",
+        "M3",
+        "M4"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Four existing source modules change a clear additive state contract and a fixed commit argv; OS execution confinement and unsandboxed hook prevention require strict three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/coding-tools/coding-tool-sandbox.ts",
+        "packages/nax-agent/src/sandbox/launcher.ts",
+        "packages/nax-agent/src/sandbox/types.ts",
+        "packages/nax-agent/src/tools/git-commit.ts",
+        "packages/nax-agent/test/unit/coding-tools/coding-tool-sandbox.test.ts"
+      ],
+      "suggestedCriteria": [
+        "A fail-closed unavailable launcher rejects an argv request without unwrapped with SANDBOX_POLICY_NOT_LITERAL without calling runArgv.",
+        "In a temp git repo with an executable marker-writing prepare-commit-msg hook, GitCommit creates the commit without creating the marker."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/tools/git-commit.test.ts",
+          "reason": "the cases at lines 73, 79 and 110 assert that the commit argv from buildCommitArgvs is exactly: commit, -m, message, and line 111 asserts the message sits at index 2. The commit argv now starts with the two elements -c and core.hooksPath=/dev/null; the replacement invariant is that the argv is: -c, core.hooksPath=/dev/null, commit, -m, message, with the message as one argv element at index 4, unchanged in content. Separately, the case \"returns the git commit failure after a successful stage\" (lines 404-412) makes the commit fail with a rejecting pre-commit hook under .git/hooks, which no longer runs. The replacement invariant: the commit is made to fail by a cause other than a hook (for example repo config commit.gpgsign=true with gpg.program=false), and the tool still returns `isError: true` with content containing \"git commit failed:\". The case \"emits no escape flag in either argv\" (lines 98-105) asserts the commit argv contains no GIT_ESCAPE_FLAGS member, and -c is one; the replacement invariant is that the add argv contains no escape flag, the commit argv contains -c exactly once, at index 0, followed by core.hooksPath=/dev/null, and a message that looks like an escape flag (-c core.pager=id) stays a single element after -m."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0ea39510562e8ad229557b34dcdd250d2b436b73"
+    },
+    {
+      "id": "US-007",
+      "title": "Apply shell deny rules to wrapped commands for every ACP agent",
+      "description": "**Goal** — Decode every verified sandbox wrapper before evaluating operator shell deny and ask rules, including opencode and pi.\n\n**Motivation** — For opencode and pi the deny rule is matched against the sandbox wrapper text and never fires.\n\n**Approach** — Verbatim Integration design:\n- `decideSandboxedShell(request, display, offered, auto, ctx): RequestPermissionResponse` — `packages/nax-agent-acp/src/client/permissions.ts:223`.\n  - Baseline: the inner command is decoded only when `wrapped && plan.verify`.\n  - Target: signature unchanged. The inner command is decoded whenever `wrapped` is true, for every agent. `isSandboxWrapped` already guarantees the suffix is one single-quoted word for every agent, so the decode is safe.\n\nRead-only integration design:\n- `isSandboxWrapped(prefix: string, command: string): boolean` — `packages/nax-agent-acp/src/client/shell-sandbox.ts:46`. True only when the suffix after `prefix` is exactly one POSIX single-quoted word, for every agent.\n- `wrapForSandbox(prefix: string, command: string): string` — `shell-sandbox.ts:41`. The wrapping used for every agent.\n\n**Scope** — In: the inner-command decode condition in existing permissions.ts and cases in existing client/permissions.test.ts. Out: native Bash suffix/payload rules (US-004), approval-memory keying (US-005), launcher-state and GitCommit behavior (US-006), paths/OAuth (US-001-US-003). Do not change wrapper construction, verification, shellRuleBlocks semantics, agent plan.verify values or unwrapped permission fallback behavior.\n\n**Interface**\n```typescript\ndecideSandboxedShell(request, display, offered, auto, ctx): RequestPermissionResponse\nisSandboxWrapped(prefix: string, command: string): boolean\nwrapForSandbox(prefix: string, command: string): string\n```\nRetain exact prefix-length slicing and POSIX apostrophe unescaping after isSandboxWrapped succeeds. plan.verify still controls other unwrapped-command behavior; it no longer conditions decoding. Exercise opencode execute/rawInput.command, pi other/confirm gate message, and cursor execute/title request shapes. Use existing permission fixtures and offered allow_once/reject_once options, never a live ACP agent. Existing backend-shell-sandbox tests already pin wrapper verification, quoting and Cursor ask-rule behavior; preserve them. Demonstrate regressions against old code and extend existing test files only.",
+      "acceptanceCriteria": [
+        "[unit] decideSandboxedShell with a shell-sandbox plan for agent opencode (verify: false), rules denying Bash(git push *), and the command wrapForSandbox(plan.prefix, \"git push origin main\") selects the reject option.",
+        "[unit] decideSandboxedShell with a shell-sandbox plan for agent pi (verify: false), rules denying Bash(git push *), and the command wrapForSandbox(plan.prefix, \"git push origin main\") selects the reject option.",
+        "[unit] decideSandboxedShell with an opencode plan, rules denying Bash(git push *), and the command wrapForSandbox(plan.prefix, \"git status\") selects the allow-once option.",
+        "[unit] decideSandboxedShell with an opencode plan, rules denying Bash(rm *), and the command wrapForSandbox(plan.prefix, \"rm -rf 'it'\\''s here'\") selects the reject option.",
+        "[unit] decideSandboxedShell with a cursor plan (verify: true), rules denying Bash(git push *), and the command wrapForSandbox(plan.prefix, \"git push origin main\") selects the reject option."
+      ],
+      "tags": [
+        "security",
+        "acp",
+        "shell-permissions",
+        "sandbox",
+        "M6"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One existing decode condition changes with established quoting helpers; ACP command authorization invokes the security override despite the small code change.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax-agent-acp/src/client/permissions.ts",
+        "packages/nax-agent-acp/src/client/shell-sandbox.ts",
+        "packages/nax-agent-acp/src/client/shell-rules.ts",
+        "packages/nax-agent-acp/test/unit/client/permissions.test.ts",
+        "packages/nax-agent-acp/test/unit/client/backend-shell-sandbox.test.ts"
+      ],
+      "suggestedCriteria": [
+        "decideSandboxedShell with a pi plan (verify: false), an ask rule Bash(git push *), and a wrapped git push origin main selects the reject option.",
+        "decideSandboxedShell with an opencode plan (verify: false) and a wrapped git push origin main blocked by a deny rule records an automatic deny with SHELL_RULE_BLOCKED_REASON."
+      ],
+      "workdir": "packages/nax-agent-acp",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6cb4448eb1bb01c88dd732a313e5db260e2de536"
+    }
+  ],
+  "analysis": "Goal and completion: close review H1, H2 and M1-M6 at their existing enforcement seams, preserving permitted behavior. This is F1 only. Exactly seven independent stories, with the binding package workdirs and empty dependency arrays; no new source modules, config surfaces, exports beyond the specified shape additions, or test files. All new regression cases extend existing suites and must be demonstrated failing against the old implementation. All seven stories affect authentication or execution/access-control boundaries and therefore use three-session-tdd with strict test/implementation isolation. No implementation or test execution was performed while drafting this PRD. Navigation: codebase-memory MCP is unavailable in this session; findings below come from direct reads and targeted text searches, not a verified graph or git revision. Line references describe the current inspected files; 475562fda is the spec's reproduction baseline, not a revision verified in this session.\n\nArchitecture and boundaries: this is a Bun workspace with Node-compatible TypeScript ESM libraries. nax-ai owns provider OAuth policy and the pi adapter; nax-agent owns native credential import, tools, shared approvals and sandbox launch; nax-agent-acp consumes only nax-agent's public entry and owns ACP permission decisions. nax orchestrates and should not need source edits. nax-agent source imports nax-ai only under native/ and the existing cost re-export, so US-003 can import the existing public isOAuthFlowPermitted without changing dependency direction. nax-ai's pi imports stay in its three allowlisted adapter files; pi-auth.ts is already one. Keep explicit .ts relative source imports, #src/ aliases in agent packages, opaque credentials unchanged, and no Bun APIs in shipped source. Spawn only through the runtime slot and existing _*Deps seams. Do not introduce cross-package deep imports or export test seams from the public entry.\n\nUS-001 / H1: packages/nax-agent/src/internal/realpath.ts:31-45 currently attempts realpathSync, walks to an ancestor on failure, and rejoins missing segments lexically; it does not lstat/readlink the missing suffix. isInside at :49-53 calls realOrRaw on both sides. packages/nax-agent/src/tools/policy-paths-branch.ts:105-112 already delegates containment to isInside, then checks the resolved target against .git and owned.configRefusal. Its metadata refusal is segment-based and case-folded (:69-76), and outOfRootReason (:149-164) supplies existing refusal text; keep both semantics. packages/nax-agent/src/tools/write.ts:26-47 trusts ctx.resolvedPaths and uses recursive mkdir plus writeFile, so repair the shared resolver, not per-tool writing. Policy compilation resolves its root at packages/nax-agent/src/tools/policy.ts:104. Other consumers of this shared normalization include sandbox/policy-builder.ts:79, sandbox/git-guards.ts:76, tools/credential-read-deny.ts:23, memory/store.ts:263-269 and memory/mirror-lock.ts:100. These are impact areas, not authorization to expand the story into F2-F5. Existing tests: test/unit/internal/realpath.test.ts:28-62 covers existing links, multiple missing trailing segments, lexical fallback and idempotence; :65-100 covers containment and prefix siblings. test/unit/tools/policy-paths-branch-edges.test.ts:39-218 supplies compileToolPolicy fixtures and verdict assertions. Extend both with temporary real symlinks, normalizing temp parents for macOS /tmp aliases. Risks: link target resolution must be relative to the link's directory, preserve remaining suffixes, support absolute targets, terminate at 40 hops and never throw; cycles must return the lexical path with resolved existing ancestry as specified. The Write file header says no production op declares it (write.ts:4-6), unlike the spec's motivation; runtime code still trusts policy resolution, so this historical comment does not weaken the required containment fix.\n\nUS-002 / resolver half of H2: packages/nax-ai/src/auth/pi-auth.ts:57-87 directly maps reads and modify results to pi. Its modify callback currently maps pi's undefined to the original credential (:64-73), because nax-ai's undefined means removal. Preserve that single locked read-modify-write, including unchanged stored data on a no-op. Hide prohibited OAuth on reads, on callback input and on values returned to pi; validate a callback's proposed OAuth replacement before the underlying write. Do not filter api-key credentials by OAuth policy. packages/nax-ai/src/auth/oauth-policy.ts:26-36 permits openai-codex/openrouter and explicitly prohibits anthropic/github-copilot; :49-67 supplies unchanged isOAuthFlowPermitted and assertOAuthFlowPermitted, with a specific OAuthFlowProhibitedError for prohibited providers and a generic error for unknown flows. These policy exports are already public (src/index.ts:39-40 per integration contract). packages/nax-ai/src/credentials/file-store.ts:119-146 locks modify and releases in finally; :157-174 invokes the callback before writing, so a thrown policy error leaves the credential unchanged. Do not move filtering to this generic store or delete user entries during reads/refreshes; retain existing explicit delete behavior. packages/nax-ai/src/protocols/pi-client.ts:951 constructs builtinModels with toPiCredentialStore and :1013 creates createPiAuthResolver, which calls models.getAuth at auth/pi-auth.ts:89-106. Thus the adapter fix reaches actual request auth without modifying the protocol or resolver signature. Existing test/auth/pi-auth.test.ts:5-79 covers mapping, opaque keys, env, explicit deletion, undefined no-op and refreshed values; :82-107 uses fake models and does not prove provider fallback. Add the specified real builtinModels/file-store integration in this existing test file, clearing/restoring Anthropic ambient variables without making network or billed calls. Risks: store mutation semantics, hidden-value leakage through modify's return, async refresh atomicity and ambient auth fallback. No stored-file migration: prohibited OAuth remains on disk but becomes unusable through pi; users may use permitted API-key or ambient auth.\n\nUS-003 / import half of H2: packages/nax-agent/src/native/auth.ts:133-136 defines the public ImportOutcome union; :175-238 parses/sorts provider entries, preserves unsupported entries as outcomes, and performs the existing-entry/force decision inside store.modify (:224-234). Apply the new OAuth policy refusal after parsing a credential and before any write or force overwrite; one refused entry must not abort other imports. authImportOutcomeLabel at :253-257 needs the exact new label. Existing API-key and permitted OAuth translation, sorted outcomes, unsupported source handling, and import locking remain. test/unit/native/auth-store-ops.test.ts:32-48 already isolates NAX_GLOBAL_CONFIG_DIR and resets the store; :50-118 tests imports, forced writes and malformed sources. Extend that suite and its label coverage rather than creating a file. The union/helper are re-exported through native/index.ts:19-21 and src/index.ts:168-173; nax CLI already calls the helper per outcome (packages/nax/src/cli/auth.ts:108), so it needs no new branch. Only the existing exported type gains refused; do not add a new public symbol.\n\nUS-004 / M1+M2: packages/nax-agent/src/tools/policy-bash.ts:300-312 builds original plus canonical rule views; :333-358 uses them only for deny and ask, while payloads, cwd and grants use original segments. Preserve this isolation and precedence: explicit deny, payload refusal, lexical refusal, grant, then ask. Add token-suffix views only when denyEntry or askEntry exists; existing canonical views still serve known wrappers and nested shell commands. packages/nax-agent/src/tools/bash-canonical.ts:15-88 has the finite WRAPPERS table, :89-92 defines GIT_OPTIONS, and :110-139 parses widths/options. Do not extend wrapper grammars. checkPayload at policy-bash.ts:162-174 currently only uses deniedFlag, whose shared package-source flag list is in tools/exec-guard.ts:100-120 and normalization at :131-148. GIT_ESCAPE_FLAGS at tools/git-flags/index.ts:10 has -C/--git-dir/--work-tree/--exec-path/-c, but not --config-env; blindly applying that entire list would wrongly reject the specified git -C . log -c regression anchor. Instead scan each original token position for git or a /git suffix, then parse only the specified pre-subcommand global grammar and reject -c, --config-env, --exec-path including separate/=value forms. Existing payload containment still screens all original words. Retain existing canonical-analysis refusal precedence; the spec's explicit -c reason acceptance case has no deny or ask entry, so it does not require reordering canonical refusals and payload checks. policy.ts:338 injects resolveWithin into the Bash gate; do not create an import cycle. Existing test/unit/tools/policy-bash.test.ts:25-37 builds compiled policies; :39-92 pins canonical deny, ask, unreadable shell refusal, raw-mode pass-through and no grant widening. :170 and :212 onward cover flags and containment; :269-295 pins ask-after-grant, and later sections pin escalation. Extend this existing file with direct checkBashCommand result assertions where kind is required, plus compiled-policy wiring where useful. Raw mode and other payload/path guards are unchanged. Conservative false positives for echo git push and echo git -c x are deliberate refusals, not bugs to refine away.\n\nUS-005 / M5: packages/nax-agent/src/permissions/approval-memory.ts:68-81 reduces execute-tool keys to the first two words after wrapper/masking/plain-word checks. It normalizes the executable basename for classification but retains original spelling in the key (:74-81); preserve that behavior. Add npm/pnpm/yarn subcommand logic without changing wrapper policy for npx/bunx/pnpx (:45-47) or approvalMemoryApplies (:88-94), which rejects later flags/compound commands for remembered allows. Use the full Integration Target, not the shortened story summary: also refuse create and init with a third word, and key run/install/i/add with a plain non-flag third word. Existing tests in test/unit/permissions/approval-memory.test.ts:10-61 cover key eligibility and :64-107 cover apply semantics, shared execute-tool names, unsafe later arguments and denies. Both nax chat (packages/nax/src/chat/ask-controller.ts:241-243,262,277) and ACP server (packages/nax-agent-acp/src/server/permissions.ts:122-124) consume these public helpers and inherit the fix without source changes. The existing keys are session memory, not a persisted schema requiring migration; future script/package requests must look up the new exact keys, with no fallback to the old broad npm run/install keys.\n\nUS-006 / M3+M4: packages/nax-agent/src/sandbox/types.ts:70-85 defines SandboxState; add only optional readonly failClosed?: true to unavailable, not to SessionSandbox or other variants. coding-tools/coding-tool-sandbox.ts:123-130 already treats probe failure as unavailable with a one-time warning, and must keep this no-flag branch. :185-191 catches a literalPolicyError result and also returns unavailable; only this branch gains failClosed. literalPolicyError (:266-281) converts only NaxError SANDBOX_POLICY_NOT_LITERAL to a reason containing context.path and rethrows other failures. sandbox/policy-builder.ts:78-88 already rejects glob paths after realOrRaw; no escaping or builder redesign is needed. sandbox/launcher.ts:192-207 currently honors explicit unwrapped and otherwise runs unavailable commands unwrapped; add a no-spawn NaxError refusal for flagged unavailable state, keeping explicit unwrapped first. Keep disabled/available behavior, environment forwarding and existing afterWrapped behavior. The Bash tool already returns thrown launcher messages as isError at tools/bash.ts:466-470. Other unavailable readers remain as-is: rawRefusalFor at coding-tool-sandbox.ts:212-214, tool description at tools/bash.ts:248, session/session-tool-support.ts:126-132, and sandbox/session-sandbox.ts:10-11. In particular session-tool-support has its own existing allowUnsandboxed behavior; do not reinterpret it under this story. US-001 and US-006 compose so a dangling-link policy target with a glob is also refused; neither story introduces a symbol or execution dependency on the other.\n\nGitCommit uses gitWithTimeout outside the command sandbox at tools/git-commit.ts:217, and buildCommitArgvs (:21-38) currently emits commit -m message. internal/git-env.ts:38-42 hardens fsmonitor and submodules but not hooks. Add only the explicit trusted -c core.hooksPath=/dev/null pair before commit, repeating the host's bot setting rather than importing nax. Do not change shared Git tool escape-flag rules, global git env or staging/filter behavior (git-commit.ts:177-216). The message remains one argv element, now index 4. Existing tests require intentional replacement: test/unit/tools/git-commit.test.ts:73,79,110 expect the old argv and :111 expects message index 2; :98-105 asserts no escape flags in either argv, incompatible with the one fixed trusted -c; :404-412 uses a rejecting pre-commit hook to test commit failure, which must become a non-hook failure such as commit.gpgsign=true/gpg.program=false. Preserve the git commit failed: error contract and artifact filtering tests. Add real temp-repository hook marker tests in this same file for .husky pre-commit, default commit-msg and post-commit, with executable hooks and actual successful commits. Existing fixture at :44-64 configures identity, protected paths and time bounds. Sandbox tests to extend are test/unit/sandbox/launcher.test.ts (existing _launcherDeps restore and runArgv assertions at :16-60 and disabled/unwrapped behavior at :117-170) and test/unit/coding-tools/coding-tool-sandbox.test.ts:216-247 (backend unavailable and glob-root cases). Use available fake backends and _sessionSandboxDeps/_launcherDeps seams to test policy failure without needing a working OS sandbox. Risks are preserving capability fail-open behavior and the separately approved unwrapped escape, ensuring refusals name the path and spawn nothing, and not accidentally leaving a hook-enabled alternate commit path.\n\nUS-007 / M6: packages/nax-agent-acp/src/client/permissions.ts:223-258 defines decideSandboxedShell. It obtains the raw per-agent shell command, checks isSandboxWrapped, but decodes the inner string only when plan.verify (:243-246). Change that decode condition only; plan.verify must retain its separate role deciding how unwrapped agent commands are treated (:247-257). shell-sandbox.ts:36-48 supplies shared POSIX quoting and exact-one-word verification; :128 deliberately sets verify only for cursor and is read-only for this fix. shell-rules.ts:66-104 reads pi from kind other/rawInput.method=confirm/title=PI_SHELL_GATE_TITLE/message, cursor from execute/title, others from execute/rawInput.command. Use these actual request shapes in tests, not masked display text. shellRuleBlocks (:126-134) already applies deny and ask patterns; no rule engine replacement is needed. test/unit/client/permissions.test.ts:34-79 has request/ask/selection fixtures but no current shellSandbox cases. Extend it with the five required cases. Also preserve existing regression coverage in test/unit/client/backend-shell-sandbox.test.ts:41-66 (quoting, apostrophes, rejected trailing syntax) and :81-137 (agent modes, unwrapped decisions and Cursor ask-rule blocking). No real ACP process should start: local permission tests or existing in-memory launch fakes only.\n\nCompatibility and delivery: signatures remain unchanged except the additive ImportOutcome status member and optional SandboxState flag. Existing public re-exports carry those types; check API snapshots according to package conventions and update the existing snapshot only if the intended surface change requires it, never create a new export. No credential deletion, data migration, version bump or release initiation belongs here. Behavior changes are intentional: prohibited OAuth is no longer used/imported, wrapped denied commands stop, unsafe git globals stop, remembered script/package allows narrow, GitCommit hooks never run, and glob-policy failures no longer silently execute. Existing legitimate API-key auth, permitted OAuth refresh, in-root links, git log -c, git -C . log -c, disabled sandbox, host-capability unavailable warning/fallback, and explicitly approved unwrapped requests stay unchanged. Tests use shared helpers, temp files/repos and existing dependency seams; restore environment and seams after each case. Run targeted existing suites from each workdir; nax-agent and ACP use bun:test and nax-ai uses vitest (package.json scripts: nax-agent:31-38, nax-ai:25-35). Never bare bun test or bun run nax, and do not run billed live-provider suites. Normal build/typecheck/lint/API/boundary validation is pipeline work, not story acceptance criteria. There is no claim that unexecuted tests passed or that a skipped sandbox probe proves confinement.\n\nRefine-pass audit ledger (spec AC ordinal -> acceptanceCriteria ordinal within its binding story): US-001: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10+11. US-002: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7+8, 8->9, 9->10. US-003: 1->1, 2->2, 3->3+4, 4->5+6, 5->7, 6->8. US-004: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17, 18->18, 19->19. US-005: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17. US-006: 1->1+2, 2->3, 3->4, 4->5, 5->6, 6->7+8, 7->9, 8->10+11, 9->12+13, 10->14+15. US-007: 1->1, 2->2, 3->3, 4->4, 5->5. All 76 explicitly numbered spec criteria are retained; multi-result criteria were split without dropping either result or its preconditions. Regression anchors retained include lexical form/without throwing, existing in-root files, stored values and unchanged original credentials, already-stored sk-keep under force, package/script remembered-allow distinctions, host-unavailable fallback, default hooks path and cursor verify:true. No deprecated content-check tags occur.\n\nFailure-table audit: cycle termination is US-001 AC4 with the 40-hop algorithm retained verbatim in its description; outside/.git target refusal is US-001 AC5-7 and AC12-13; hidden stored OAuth plus ambient fallback and retained data is US-002 AC1-3, AC9-11; refused imports continuing is US-003 AC1-6; non-command git tokens and suffix-view false positives are US-004 AC19 and AC7; policy-build refusal/no-spawn/approved escape/path reason/warning is US-006 AC1-3, AC5, AC7-8, AC16 and AC18; host-capability fallback and warning is US-006 AC4, AC6 and AC17. Each story has negative-path assertions and an unchanged permitted-path assertion. The dangling-link/glob interaction described in the table composes US-001 target resolution with US-006's existing literal policy builder; it does not require a new inter-story dependency.\n\nExclusion audit: all 12 feature-level items are retained verbatim in outOfScope, in spec order: wrapper option tables; hook opt-in; O_NOFOLLOW per-tool writes; git environment/config-write injection; hard links; containment/write race; glob escaping; capability-unavailable fail-closed config; existing OAuth deletion/rewriting; F2-F5 findings; US-004 rule-view-only limits; US-006 approved unwrapped escape. No story-local deferral was hoisted. Relevant boundaries are also echoed in each adjacent story's Scope. Context audit: every spec-recommended context file is included, with at most five entries per story; added entries are existing related source/tests, never outputs. Workdirs, all seven ids, and empty dependencies match the binding table exactly. Routing remains simple or medium with security-mandated three-session-tdd, not an unnecessary complexity escalation.\n\nAudit corrections: removed an invented requirement to prioritize git payload refusal over existing canonical-analysis refusals when deny rules exist; the spec's -c reason case supplies no deny/ask rule and does not require such reordering. Made existing path-refusal messages concrete through verdict.reason assertions. Made ambient fallback concrete through the resolved apiKey output. Made one-time warnings observable as a single warn event with scope sandbox and data.reason, preserving the actual registry logger data flow at packages/nax-agent/src/sandbox/registry.ts:52-59 rather than implying the path is interpolated into the warning message. Kept the 40-hop bound in the required resolver design instead of claiming internal hop counts are a return-value assertion. This was a static spec/code audit, not a run of regression tests or a claim of runtime validation.",
+  "outOfScope": [
+    "Extending the `WRAPPERS` option table in `bash-canonical.ts` with per-wrapper option grammars (review M1 second fix). The suffix rule views in US-004 already make deny and ask rules see the wrapped command, and a per-wrapper table can only add precision, not coverage.",
+    "Making git hooks an explicit opt-in for `GitCommit` (review M4 second half). This feature turns hooks off unconditionally; an opt-in is a new config surface needing its own design.",
+    "Writing with `O_NOFOLLOW` in the `Write`, `Edit` and `Delete` tools (review H1 alternative fix). Containment is decided in `resolveWithin`; a second, per-tool check is defence in depth for a later change.",
+    "Git configuration injected through environment variables in a Bash command (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`, `GIT_CONFIG_PARAMETERS`, `GIT_PAGER`, `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`, `GIT_EDITOR`), or written with `git config` before a later git command. These are the same class as review M2, but gated Bash runs inside the OS sandbox, and US-004 only brings the Bash `-c` form to parity with the Git tool's existing refusal. Closing the environment and config-write forms needs its own design.",
+    "Hard links. A hard link to `.git/hooks/pre-commit` inside the root is admitted by `resolveWithin`, because a hard link is an ordinary directory entry. It cannot arrive through repository content (git stores file contents, not links, so a clone never creates one), and creating one needs Bash `ln` against an existing in-root target. Refusing every regular file with a link count above one would also refuse legitimate hard-linked files (for example a package-manager store); that trade-off needs its own decision.",
+    "The window between `resolveWithin` admitting a path and `writeFile` following it (a symlink created in between). US-001 closes the dangling-link case that exists before the call; a race-free write needs `O_NOFOLLOW` per tool, deferred above.",
+    "Escaping glob characters in sandbox policy paths so a glob-named repo can still be sandboxed (review M3 alternative fix). Whether each backend accepts escaped literals is backend-specific and unverified; this feature refuses instead.",
+    "A config option to make a host-capability `unavailable` sandbox fail closed. Only the policy-build failure is a nax fault; a missing backend stays fail-open by the existing design.",
+    "Removing or rewriting an Anthropic OAuth credential that is already in a user's `~/.nax` credential store. US-002 hides it from pi; deleting user data is a separate decision.",
+    "The other review findings (M7-M23, L1-L37). They belong to features F2-F5 of this review.",
+    "US-004 only: rule views are added only when a deny or ask rule exists; they never affect grant matching, payload checks or path containment.",
+    "US-006 only: a request with `unwrapped: true` still runs unwrapped under a fail-closed launcher, because that flag is an explicit, separately approved escape hatch."
+  ],
+  "routingProfile": "native-claude-ds"
+}

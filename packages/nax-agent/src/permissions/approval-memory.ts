@@ -69,7 +69,8 @@ export function approvalMemoryKey(request: ApprovalMemoryRequest): string | unde
   if (!APPROVAL_EXECUTE_TOOLS.has(request.tool)) return request.tool;
   const command = request.command ?? "";
   if (command.includes(MASK_MARKER)) return undefined;
-  const [first = "", second] = command.trim().split(/\s+/);
+  const words = command.trim().split(/\s+/);
+  const [first = "", second, third] = words;
   if (!PLAIN_WORD.test(first)) return undefined;
   const name = first.slice(first.lastIndexOf("/") + 1).toLowerCase();
   if (name === "" || WRAPPERS.has(name)) return undefined;
@@ -77,7 +78,22 @@ export function approvalMemoryKey(request: ApprovalMemoryRequest): string | unde
   // A flag can change what the command does (`rm -f`, `git -C repo`): remembering the bare command would
   // approve every later invocation of it, so a flag second word is never remembered (nax#2553).
   if (second.startsWith("-")) return undefined;
-  return PLAIN_WORD.test(second) ? `${request.tool}:${first} ${second}` : undefined;
+  if (!PLAIN_WORD.test(second)) return undefined;
+
+  // Package managers npm, pnpm, yarn have special rules to narrow allowed subcommands.
+  const isPackageManager = ["npm", "pnpm", "yarn"].includes(name);
+  if (isPackageManager) {
+    // Executors and initialisers run arbitrary packages (`innit` is npm's alias of `init`).
+    if (["exec", "x", "dlx", "create", "innit"].includes(second)) return undefined;
+    if (second === "init" && third !== undefined && PLAIN_WORD.test(third)) return undefined;
+    // npm aliases many subcommands (`run-script`, `rum`, `it`, `explore`, ...), so no list of names can be
+    // complete: key every package-manager call on its full plain-word argv. Flags are dropped from the key;
+    // approvalMemoryApplies refuses to reuse an allow for a command carrying them.
+    const plainWords = words.slice(1).filter((w) => PLAIN_WORD.test(w) && !w.startsWith("-"));
+    return `${request.tool}:${first} ${plainWords.join(" ")}`;
+  }
+
+  return `${request.tool}:${first} ${second}`;
 }
 
 /**

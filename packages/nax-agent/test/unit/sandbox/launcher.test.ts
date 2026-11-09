@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as packageRoot from "#src/index";
 import * as sandboxBarrel from "#src/sandbox/index";
 import { _launcherDeps, createCommandLauncher, DISABLED_SANDBOX_STATE, type SandboxPolicy } from "#src/sandbox/index";
-import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir, withDepsRestore } from "#test/helpers/index";
+import {
+  assertNaxError,
+  cleanupTempDir,
+  makeFakeSandboxBackend,
+  makeTempDir,
+  withDepsRestore,
+} from "#test/helpers/index";
 
 let root: string;
 beforeEach(() => {
@@ -438,5 +444,62 @@ describe("createCommandLauncher", () => {
       signal,
     });
     expect(calls[0]?.signal).toBe(signal);
+  });
+  describe("US-006: fail-closed unavailable state", () => {
+    const request = (extra: { unwrapped?: true } = {}) => ({
+      spec: { kind: "shell", shell: "/bin/sh", command: "echo hi" } as const,
+      root,
+      cwd: root,
+      timeoutMs: 1000,
+      stripEnvVars: [],
+      ...extra,
+    });
+    const failClosed = {
+      kind: "unavailable",
+      backend: "srt",
+      reason: "[sandbox] a path in the sandbox policy contains a glob character: /w/re[x]po",
+      failClosed: true,
+    } as const;
+    const stubRunArgv = (): number[] => {
+      const calls: number[] = [];
+      _launcherDeps.runArgv = async () => {
+        calls.push(1);
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+      };
+      return calls;
+    };
+
+    test("AC-1/18: a gated request rejects with SANDBOX_POLICY_NOT_LITERAL naming the path", async () => {
+      stubRunArgv();
+      const caught = await createCommandLauncher({ state: failClosed })
+        .run(request())
+        .catch((err: unknown) => err);
+      assertNaxError(caught);
+      expect(caught.code).toBe("SANDBOX_POLICY_NOT_LITERAL");
+      expect(caught.message).toContain("/w/re[x]po");
+    });
+
+    test("AC-2: the refused request never reaches runArgv", async () => {
+      const calls = stubRunArgv();
+      await createCommandLauncher({ state: failClosed })
+        .run(request())
+        .catch(() => undefined);
+      expect(calls).toHaveLength(0);
+    });
+
+    test("AC-3: unwrapped:true still runs, once", async () => {
+      const calls = stubRunArgv();
+      const result = await createCommandLauncher({ state: failClosed }).run(request({ unwrapped: true }));
+      expect(calls).toHaveLength(1);
+      expect(result.sandbox.reason).toBe("requested");
+    });
+
+    test("AC-4: a host-capability unavailable state keeps running unwrapped", async () => {
+      const calls = stubRunArgv();
+      await createCommandLauncher({ state: { kind: "unavailable", backend: "srt", reason: "no bwrap" } }).run(
+        request(),
+      );
+      expect(calls).toHaveLength(1);
+    });
   });
 });

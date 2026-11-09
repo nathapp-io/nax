@@ -24,6 +24,24 @@ describe("approvalMemoryKey", () => {
     ["AC-13: masked command", { tool: "Bash", command: "echo [REDACTED:token]" }, undefined],
     ["AC-14: no command", { tool: "Bash" }, undefined],
     ["AC-15: RunCommand", { tool: "RunCommand", command: "npm test" }, "RunCommand:npm test"],
+    // New AC-1 to AC-10: Package managers with exec/x/dlx/create/init
+    ["AC-1: npm exec prettier", { tool: "Bash", command: "npm exec prettier" }, undefined],
+    ["AC-2: npm x prettier", { tool: "Bash", command: "npm x prettier" }, undefined],
+    ["AC-3: pnpm dlx create-app", { tool: "Bash", command: "pnpm dlx create-app" }, undefined],
+    ["AC-4: pnpm exec tsc", { tool: "Bash", command: "pnpm exec tsc" }, undefined],
+    ["AC-5: yarn dlx create-app", { tool: "Bash", command: "yarn dlx create-app" }, undefined],
+    ["AC-6: yarn exec tsc", { tool: "Bash", command: "yarn exec tsc" }, undefined],
+    ["AC-7: npm create vite", { tool: "Bash", command: "npm create vite" }, undefined],
+    ["AC-8: pnpm create vite", { tool: "Bash", command: "pnpm create vite" }, undefined],
+    ["AC-9: yarn create vite", { tool: "Bash", command: "yarn create vite" }, undefined],
+    ["AC-10: npm init vite", { tool: "Bash", command: "npm init vite" }, undefined],
+    // AC-11 to AC-16: Package managers with run/install/i/add + third word
+    ["AC-11: npm install lodash", { tool: "Bash", command: "npm install lodash" }, "Bash:npm install lodash"],
+    ["AC-12: npm install bare", { tool: "Bash", command: "npm install" }, "Bash:npm install"],
+    ["AC-13: npm run test", { tool: "Bash", command: "npm run test" }, "Bash:npm run test"],
+    ["AC-14: npm run deploy", { tool: "Bash", command: "npm run deploy" }, "Bash:npm run deploy"],
+    ["AC-15: pnpm run build", { tool: "Bash", command: "pnpm run build" }, "Bash:pnpm run build"],
+    ["AC-16: npm test", { tool: "Bash", command: "npm test" }, "Bash:npm test"],
   ])("%s", (_name, request, expected) => {
     expect(agent.approvalMemoryKey(request)).toBe(expected);
   });
@@ -103,5 +121,50 @@ describe("approvalMemoryApplies", () => {
     expect(agent.approvalMemoryApplies(request, "allow")).toBe(false);
     expect(agent.approvalMemoryApplies({ tool: "Bash" }, "allow")).toBe(true);
     expect(agent.approvalMemoryKey({ tool: "Bash" })).toBeUndefined();
+  });
+
+  test("AC-17: npm run test --watch is not approved by a bare npm run test allow", () => {
+    expect(agent.approvalMemoryApplies({ tool: "Bash", command: "npm run test --watch" }, "allow")).toBe(false);
+  });
+
+  test("F1: npm install lodash evil-pkg generates a distinct key from npm install lodash", () => {
+    const key1 = agent.approvalMemoryKey({ tool: "Bash", command: "npm install lodash" });
+    const key2 = agent.approvalMemoryKey({ tool: "Bash", command: "npm install lodash evil-pkg" });
+    expect(key1).toBe("Bash:npm install lodash");
+    expect(key2).toBe("Bash:npm install lodash evil-pkg");
+    expect(key1).not.toBe(key2);
+  });
+
+  test("F1: npm run test deploy generates a distinct key from npm run test", () => {
+    const key1 = agent.approvalMemoryKey({ tool: "Bash", command: "npm run test" });
+    const key2 = agent.approvalMemoryKey({ tool: "Bash", command: "npm run test deploy" });
+    expect(key1).toBe("Bash:npm run test");
+    expect(key2).toBe("Bash:npm run test deploy");
+    expect(key1).not.toBe(key2);
+  });
+
+  test.each([
+    ["run-script", "test", "deploy"],
+    ["rum", "test", "deploy"],
+    ["urn", "test", "deploy"],
+    ["it", "lodash", "evil-pkg"],
+    ["install-test", "lodash", "evil-pkg"],
+    ["explore", "foo", "bar"],
+  ])("npm %s aliases key on the full plain-word argv: %s vs %s", (alias, a, b) => {
+    const keyA = agent.approvalMemoryKey({ tool: "Bash", command: `npm ${alias} ${a}` });
+    const keyB = agent.approvalMemoryKey({ tool: "Bash", command: `npm ${alias} ${b}` });
+    expect(keyA).toBe(`Bash:npm ${alias} ${a}`);
+    expect(keyB).toBe(`Bash:npm ${alias} ${b}`);
+    expect(keyA).not.toBe(keyB);
+  });
+
+  test("npm innit and pnpm create are never remembered", () => {
+    expect(agent.approvalMemoryKey({ tool: "Bash", command: "npm innit foo" })).toBeUndefined();
+    expect(agent.approvalMemoryKey({ tool: "Bash", command: "pnpm create foo" })).toBeUndefined();
+  });
+
+  test("F1: npm install lodash --save filters out flags and only includes plain words", () => {
+    const key = agent.approvalMemoryKey({ tool: "Bash", command: "npm install lodash --save" });
+    expect(key).toBe("Bash:npm install lodash");
   });
 });

@@ -12,10 +12,12 @@ import { join } from "node:path";
 import {
   ambientAuthAvailable,
   defaultProviders,
+  isOAuthFlowPermitted,
   type LoginEvent,
   type LoginInteraction,
   type LoginPrompt,
   login,
+  type ProviderId,
 } from "@nathapp/nax-ai";
 import { NaxError } from "#src/infra/index";
 import type { AuthEvent, AuthInteraction, AuthMethod, AuthPrompt, AuthResult } from "./auth-types.ts";
@@ -132,7 +134,7 @@ export const DEFAULT_PI_AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json")
 
 export interface ImportOutcome {
   providerId: string;
-  status: "imported" | "skipped" | "unsupported";
+  status: "imported" | "skipped" | "unsupported" | "refused";
 }
 
 type PiEntry = { type?: string; key?: string; access?: string; refresh?: string; expires?: number };
@@ -218,6 +220,10 @@ export async function importPiCredentials(options?: { from?: string; force?: boo
       outcomes.push({ providerId, status: "unsupported" });
       continue;
     }
+    if (credential.kind === "oauth" && !isOAuthFlowPermitted(providerId as ProviderId)) {
+      outcomes.push({ providerId, status: "refused" });
+      continue;
+    }
     let status: "imported" | "skipped" = "imported";
     await store.modify(providerId, async (existing) => {
       if (existing !== undefined && options?.force !== true) {
@@ -253,6 +259,7 @@ export async function removeStoredProvider(providerId: string): Promise<void> {
 export function authImportOutcomeLabel(status: ImportOutcome["status"]): string {
   if (status === "imported") return "imported";
   if (status === "skipped") return "skipped, already present";
+  if (status === "refused") return "refused, OAuth login is not permitted for this provider";
   return "unsupported credential type";
 }
 

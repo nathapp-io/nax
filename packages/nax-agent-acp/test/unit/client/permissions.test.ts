@@ -17,15 +17,20 @@ import { OUTSIDE_WRITE_ROOTS_REASON } from "#src/client/edit-targets";
 import {
   ASK_REASON,
   decidePermission,
+  decideSandboxedShell,
   FULL_REASON,
   isDenial,
   NO_ALLOW_ONCE_REASON,
   offeredOptions,
+  REVIEW_EXECUTE_REASON,
   REVIEW_NO_SANDBOX_REASON,
   readOnlyReason,
   rejectLocally,
+  SHELL_RULE_BLOCKED_REASON,
   UNSHOWABLE_REASON,
 } from "#src/client/permissions";
+import type { AcpPermissionRules } from "#src/client/rule-policy";
+import { wrapForSandbox } from "#src/client/shell-sandbox";
 
 /** maskForPrompt refuses it: an assignment secret spans shell syntax. */
 const UNMASKABLE = "TOKEN=abc;rm x";
@@ -501,5 +506,212 @@ describe("full: R4 edit path check (nax#2500)", () => {
       fullCtx(port, { sandbox: SANDBOX, cwd: ROOT }),
     );
     expect(res).toEqual(selected("reject_once"));
+  });
+});
+
+describe("decideSandboxedShell (US-007: shell deny rules apply to wrapped commands)", () => {
+  const IDLE = new AbortController().signal;
+
+  function shellPlan(_agent: "opencode" | "pi" | "cursor", verify: boolean) {
+    return {
+      prefix: `/nax/sandbox/sh `,
+      verify,
+      onUnwrapped: "deny" as const,
+    };
+  }
+
+  function denyGitPush(): AcpPermissionRules {
+    return {
+      allow: [{ tool: "Bash", patterns: ["*"] }],
+      deny: [{ tool: "Bash", patterns: ["git push *"] }],
+      ask: [],
+    };
+  }
+
+  function denyRm(): AcpPermissionRules {
+    return {
+      allow: [{ tool: "Bash", patterns: ["*"] }],
+      deny: [{ tool: "Bash", patterns: ["rm *"] }],
+      ask: [],
+    };
+  }
+
+  function shellCtx(
+    profile: AgentSessionProfile,
+    port: SessionAskPort,
+    plan: { prefix: string; verify: boolean; onUnwrapped: "deny" | "rules" },
+    rules: AcpPermissionRules,
+    agentName?: string,
+  ) {
+    return {
+      profile,
+      asks: port,
+      secrets: [],
+      signal: IDLE,
+      shellSandbox: plan,
+      rules,
+      ...(agentName !== undefined ? { agentName } : {}),
+    };
+  }
+
+  test("AC-1: opencode (verify: false), rules denying Bash(git push *), wrapped git push origin main -> reject", async () => {
+    const { port, seen } = asks();
+    const plan = shellPlan("opencode", false);
+    const wrapped = wrapForSandbox(plan.prefix, "git push origin main");
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "git push",
+          reason,
+        },
+        decision,
+      );
+    const res = decideSandboxedShell(
+      request(["allow_once", "reject_once"], {
+        toolCallId: "t-1",
+        kind: "execute",
+        title: "git push",
+        rawInput: { command: wrapped },
+      }),
+      { tool: "execute", summary: "git push", showable: true, callId: "t-1" },
+      { allowOnce: "opt-allow_once", rejectOnce: "opt-reject_once" },
+      auto,
+      shellCtx("review", port, plan, denyGitPush(), "opencode"),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]).toMatchObject({
+      decision: "deny",
+      req: { reason: SHELL_RULE_BLOCKED_REASON },
+    });
+  });
+
+  test("AC-2: pi (verify: false), rules denying Bash(git push *), wrapped git push origin main -> reject", async () => {
+    const { port, seen } = asks();
+    const plan = shellPlan("pi", false);
+    const wrapped = wrapForSandbox(plan.prefix, "git push origin main");
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "other",
+          summary: "shell",
+          reason,
+        },
+        decision,
+      );
+    const res = decideSandboxedShell(
+      request(["allow_once", "reject_once"], {
+        toolCallId: "t-2",
+        kind: "other",
+        title: "nax: run shell command",
+        rawInput: { method: "confirm", title: "nax: run shell command", message: wrapped },
+      }),
+      { tool: "other", summary: "shell", showable: true, callId: "t-2" },
+      { allowOnce: "opt-allow_once", rejectOnce: "opt-reject_once" },
+      auto,
+      shellCtx("review", port, plan, denyGitPush(), "pi"),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]).toMatchObject({
+      decision: "deny",
+      req: { reason: SHELL_RULE_BLOCKED_REASON },
+    });
+  });
+
+  test("AC-3: opencode (verify: false), rules denying Bash(git push *), wrapped git status -> allow-once", async () => {
+    const { port, seen } = asks();
+    const plan = shellPlan("opencode", false);
+    const wrapped = wrapForSandbox(plan.prefix, "git status");
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "git status",
+          reason,
+        },
+        decision,
+      );
+    const res = decideSandboxedShell(
+      request(["allow_once", "reject_once"], {
+        toolCallId: "t-3",
+        kind: "execute",
+        title: "git status",
+        rawInput: { command: wrapped },
+      }),
+      { tool: "execute", summary: "git status", showable: true, callId: "t-3" },
+      { allowOnce: "opt-allow_once", rejectOnce: "opt-reject_once" },
+      auto,
+      shellCtx("review", port, plan, denyGitPush(), "opencode"),
+    );
+    expect(res).toEqual(selected("allow_once"));
+    expect(seen.auto[0]).toMatchObject({
+      decision: "allow",
+      req: { reason: REVIEW_EXECUTE_REASON },
+    });
+  });
+
+  test("AC-4: opencode (verify: false), rules denying Bash(rm *), wrapped rm with escaped quotes -> reject", async () => {
+    const { port, seen } = asks();
+    const plan = shellPlan("opencode", false);
+    // "rm -rf 'it'\''s here'" contains an escaped quote
+    const wrapped = wrapForSandbox(plan.prefix, "rm -rf 'it'\\''s here'");
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "rm",
+          reason,
+        },
+        decision,
+      );
+    const res = decideSandboxedShell(
+      request(["allow_once", "reject_once"], {
+        toolCallId: "t-4",
+        kind: "execute",
+        title: "rm",
+        rawInput: { command: wrapped },
+      }),
+      { tool: "execute", summary: "rm", showable: true, callId: "t-4" },
+      { allowOnce: "opt-allow_once", rejectOnce: "opt-reject_once" },
+      auto,
+      shellCtx("review", port, plan, denyRm(), "opencode"),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]).toMatchObject({
+      decision: "deny",
+      req: { reason: SHELL_RULE_BLOCKED_REASON },
+    });
+  });
+
+  test("AC-5: cursor (verify: true), rules denying Bash(git push *), wrapped git push origin main -> reject", async () => {
+    const { port, seen } = asks();
+    const plan = shellPlan("cursor", true);
+    const wrapped = wrapForSandbox(plan.prefix, "git push origin main");
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "git push",
+          reason,
+        },
+        decision,
+      );
+    const res = decideSandboxedShell(
+      request(["allow_once", "reject_once"], {
+        toolCallId: "t-5",
+        kind: "execute",
+        title: `\`${wrapped}\``,
+        rawInput: { command: wrapped },
+      }),
+      { tool: "execute", summary: "git push", showable: true, callId: "t-5" },
+      { allowOnce: "opt-allow_once", rejectOnce: "opt-reject_once" },
+      auto,
+      shellCtx("review", port, plan, denyGitPush(), "cursor"),
+    );
+    expect(res).toEqual(selected("reject_once"));
+    expect(seen.auto[0]).toMatchObject({
+      decision: "deny",
+      req: { reason: SHELL_RULE_BLOCKED_REASON },
+    });
   });
 });

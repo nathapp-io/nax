@@ -34,7 +34,9 @@ export function buildCommitArgvs(
     if (path.startsWith("-")) return { error: `path "${path}" may not begin with "-"` };
     add.push(path);
   }
-  return { add, commit: ["commit", "-m", message] };
+  // Mirrors BOT_GIT_HOOKS_OFF (packages/nax/src/bot/git.ts); nax-agent cannot import nax.
+  // A repository-controlled hook would otherwise run outside the sandbox.
+  return { add, commit: ["-c", "core.hooksPath=/dev/null", "commit", "-m", message] };
 }
 
 /** One unresolved path, and why `partitionNaxOwnedPaths` could not classify it. */

@@ -188,7 +188,9 @@ export async function resolveSessionSandbox(args: {
   const policyError = await literalPolicyError(policyFor, args.root, confined);
   if (policyError !== undefined) {
     warnSandboxUnavailableOnce(policyError, args.storyId);
-    return createCommandLauncher({ state: { kind: "unavailable", backend: backend.name, reason: policyError } });
+    return createCommandLauncher({
+      state: { kind: "unavailable", backend: backend.name, reason: policyError, failClosed: true },
+    });
   }
   const afterWrapped = await _sessionSandboxDeps.commonDirTripwire(git, args.storyId);
   const network = config.network.allowedDomains ?? "open"; // absent = open (spec S2)
