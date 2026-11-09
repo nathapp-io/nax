@@ -98,6 +98,52 @@ describe("globToRegex — commas and comma-less groups", () => {
   });
 });
 
+describe("globToRegex — a globstar keeps its meaning across a closing brace", () => {
+  test("[B1-1] matches src/x.ts for src/{**,lib}/x.ts (zero directories, like src/**/x.ts)", () => {
+    expect(globToRegex("src/{**,lib}/x.ts").test("src/x.ts")).toBe(true);
+  });
+
+  test("[B1-2] matches src/deep/x.ts for src/{**,lib}/x.ts (nested directories)", () => {
+    expect(globToRegex("src/{**,lib}/x.ts").test("src/deep/x.ts")).toBe(true);
+  });
+
+  test("[B1-3] matches src/lib/x.ts for src/{**,lib}/x.ts (the literal alternative)", () => {
+    expect(globToRegex("src/{**,lib}/x.ts").test("src/lib/x.ts")).toBe(true);
+  });
+
+  test.each([
+    ["src/x.ts"],
+    ["src/deep/x.ts"],
+    ["src/a/b/x.ts"],
+    ["src/lib/x.ts"],
+    ["src/libx.ts"],
+    ["src/x.tsx"],
+    ["src/x.ts.bak"],
+  ])("[B1-4] agrees with the expanded alternatives for %s", (path) => {
+    const expanded = ["src/**/x.ts", "src/lib/x.ts"].map((pattern) => globToRegex(pattern));
+
+    expect(globToRegex("src/{**,lib}/x.ts").test(path)).toBe(expanded.some((regex) => regex.test(path)));
+  });
+
+  test("[B1-5] rule selection admits a rule whose globstar sits inside a brace group", () => {
+    expect(ruleMatchesScopeFiles(["src/{**,lib}/x.ts"], ["src/x.ts"])).toBe(true);
+  });
+
+  test("[B1-6] chunk attribution agrees with rule selection for a globstar in a brace group", () => {
+    const scope = ["src/{**,lib}/x.ts"];
+
+    for (const file of ["src/x.ts", "src/deep/x.ts", "src/lib/x.ts"]) {
+      expect(pathMatchesScope(scope, file)).toBe(true);
+      expect(pathMatchesScope(scope, file)).toBe(ruleMatchesScopeFiles(scope, [file]));
+    }
+  });
+
+  test("[B1-7] a brace group that ends the pattern keeps the plain globstar meaning", () => {
+    expect(globToRegex("src/{**,lib}").test("src/deep/x.ts")).toBe(true);
+    expect(globToRegex("src/{**,lib}").test("src/lib")).toBe(true);
+  });
+});
+
 describe("rule selection and chunk attribution agree on brace globs", () => {
   test("[AC-17] ruleMatchesScopeFiles selects a rule for a brace glob matching packages/app/src/index.tsx", () => {
     expect(ruleMatchesScopeFiles(["src/**/*.{ts,tsx}"], ["packages/app/src/index.tsx"])).toBe(true);
