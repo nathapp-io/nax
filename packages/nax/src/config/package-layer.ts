@@ -176,5 +176,11 @@ export function validatePackageConfig(
       { stage: "config", packageDir, profileChain: [...profileChain] },
     );
   }
+  // The cast narrows ONE field: the schema types `version` as `number`, the
+  // `NaxConfig` interface pins it to the literal `1`, and the schema's own
+  // `.refine((data) => data.version === 1)` guarantees the runtime value is 1 —
+  // a config carrying any other version never reaches this line, because
+  // safeParse failed. The allow-list entry for this file in
+  // `scripts/check-no-silent-naxconfig-cast.sh` records why the cast is safe.
   return result.data as NaxConfig;
 }
