@@ -3,7 +3,7 @@
   "feature": "review-agent-sandbox-hardening",
   "branchName": "feat/review-agent-sandbox-hardening",
   "createdAt": "2026-11-09T00:00:00Z",
-  "updatedAt": "2026-11-09T02:58:11.827Z",
+  "updatedAt": "2026-11-09T02:59:48.998Z",
   "userStories": [
     {
       "id": "US-001",
@@ -82,14 +82,17 @@
         "H2"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Credential filtering must preserve locked refresh semantics and actual pi auth fallback; authentication security requires strict three-session isolation."
+        "reasoning": "Credential filtering must preserve locked refresh semantics and actual pi auth fallback; authentication security requires strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/auth/pi-auth.ts",
@@ -105,7 +108,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "914b7593dcc82f735683fa515d867ea5b3eaef7f"
     },
     {
       "id": "US-003",
