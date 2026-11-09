@@ -18,8 +18,12 @@ import {
   createChatStorage,
   createRecentModelStore,
   createWorkflowProvider,
+  MEMLOG_DIR,
+  MEMLOG_ENV,
+  parseMemlogInterval,
   recentModelsPath,
   resolveChatSessionsDir,
+  startChatMemorySampler,
   tierModels,
 } from "@/chat";
 import { findProjectDir, getProjectKey, globalConfigDir, loadConfig, modelEntryId, type NaxConfig } from "@/config";
@@ -72,6 +76,7 @@ export const _chatCommandDeps = {
   createChatHost,
   createRecentModelStore,
   createMemoryHost,
+  startChatMemorySampler,
   renderChat: (props: ChatAppProps): ChatShell => renderChat(props),
   onSignal: (signal: ChatSignal, handler: () => Promise<void>): (() => void) => {
     process.on(signal, handler);
@@ -332,6 +337,8 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     ? await deps.loadConfig(naxDir ?? undefined, { profile: options.profile })
     : await deps.loadConfig(naxDir ?? undefined);
   const repoRoot = naxDir ? dirname(naxDir) : cwd;
+  // Read first: a bad value fails the command before anything is composed or drawn.
+  const memlogSeconds = parseMemlogInterval(deps.env[MEMLOG_ENV]);
   const models = await discoverModels(config, deps);
   const effortLevels = await chatEffortLevels({
     config,
@@ -388,7 +395,25 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
     throw error;
   }
   acp.warm(cwd);
-  await runShell(host, deps, cwd);
+  const sampler =
+    memlogSeconds === undefined
+      ? undefined
+      : deps.startChatMemorySampler({
+          dir: join(projectOutputDir(getProjectKey(config, repoRoot), config.outputDir), MEMLOG_DIR),
+          pid: process.pid,
+          intervalSeconds: memlogSeconds,
+          now: () => new Date(),
+        });
+  try {
+    await runShell(host, deps, cwd);
+  } finally {
+    // After runShell: the screen is gone, so the path and any queued failure reach the user.
+    if (sampler !== undefined) {
+      const warnings = await sampler.stop();
+      deps.writeOut(`memory log: ${sampler.logPath}`);
+      for (const warning of warnings) deps.writeErr(`[chat] ${warning}`);
+    }
+  }
 }
 
 export async function chatCommand(

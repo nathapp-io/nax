@@ -145,6 +145,75 @@ const EXIT_STATE: ChatHostState = {
 };
 const EXIT_SUMMARY = "✻ nax chat session abc123 · $0.88\n  resume with: nax chat --resume abc123";
 
+describe("chatCommand memory log (#2846)", () => {
+  function stubSampler(warnings: readonly string[] = []) {
+    const stop = mock(async (): Promise<readonly string[]> => warnings);
+    const start = mock((_options: Parameters<typeof import("@/chat").startChatMemorySampler>[0]) => ({
+      logPath: "/out/chat-diagnostics/memory-1.jsonl",
+      idle: async () => {},
+      stop,
+    }));
+    return { start, stop };
+  }
+
+  test("without NAX_CHAT_MEMLOG no sampler starts", async () => {
+    const f = await fixture();
+    const sampler = stubSampler();
+    await f.chatCommand({}, { ...f.deps, startChatMemorySampler: sampler.start });
+    expect(sampler.start).not.toHaveBeenCalled();
+  });
+
+  test("NAX_CHAT_MEMLOG starts one sampler under the project output dir, stops it and prints the path", async () => {
+    const f = await fixture();
+    const sampler = stubSampler();
+    const env = { ...f.deps.env, NAX_CHAT_MEMLOG: "30" };
+    await f.chatCommand({}, { ...f.deps, env, startChatMemorySampler: sampler.start });
+    expect(sampler.start).toHaveBeenCalledTimes(1);
+    const options = sampler.start.mock.calls[0]?.[0];
+    expect(options?.intervalSeconds).toBe(30);
+    expect(options?.dir.endsWith(join("chat-diagnostics"))).toBe(true);
+    expect(sampler.stop).toHaveBeenCalledTimes(1);
+    expect(f.deps.writeOut.mock.calls.map(([message]) => message).at(-1)).toBe(
+      "memory log: /out/chat-diagnostics/memory-1.jsonl",
+    );
+  });
+
+  test("the memory log path follows the exit summary, and queued sampler failures follow it on stderr", async () => {
+    const f = await fixture();
+    f.host.current = () => EXIT_STATE;
+    const sampler = stubSampler(["heap snapshot failed (/out/x): boom"]);
+    const env = { ...f.deps.env, NAX_CHAT_MEMLOG: "on" };
+    await f.chatCommand({}, { ...f.deps, env, startChatMemorySampler: sampler.start });
+    expect(f.deps.writeOut.mock.calls.map(([message]) => message)).toEqual([
+      EXIT_SUMMARY,
+      "memory log: /out/chat-diagnostics/memory-1.jsonl",
+    ]);
+    expect(f.deps.writeErr).toHaveBeenCalledWith("[chat] heap snapshot failed (/out/x): boom");
+  });
+
+  test("the sampler is stopped even when the screen fails", async () => {
+    const f = await fixture();
+    const sampler = stubSampler();
+    const env = { ...f.deps.env, NAX_CHAT_MEMLOG: "on" };
+    const renderChat = mock((_props: Parameters<typeof f.deps.renderChat>[0]): ReturnType<typeof f.deps.renderChat> => {
+      throw new Error("no terminal");
+    });
+    await f.chatCommand({}, { ...f.deps, env, renderChat, startChatMemorySampler: sampler.start });
+    expect(sampler.stop).toHaveBeenCalledTimes(1);
+    expect(f.deps.setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  test("an invalid NAX_CHAT_MEMLOG fails the command before the screen opens", async () => {
+    const f = await fixture();
+    const sampler = stubSampler();
+    const env = { ...f.deps.env, NAX_CHAT_MEMLOG: "2" };
+    await f.chatCommand({}, { ...f.deps, env, startChatMemorySampler: sampler.start });
+    expect(sampler.start).not.toHaveBeenCalled();
+    expect(f.deps.renderChat).not.toHaveBeenCalled();
+    expect(f.deps.setExitCode).toHaveBeenCalledWith(1);
+  });
+});
+
 describe("chatCommand", () => {
   test("probe AC-13 warms once with cwd only after start resolves", async () => {
     const f = await fixture();
