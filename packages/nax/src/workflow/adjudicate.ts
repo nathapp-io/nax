@@ -9,12 +9,14 @@ export async function adjudicateResidual(
   advisor: WorkflowAdvisor,
   req: ResidualRequest,
   ledger: (text: string) => Promise<void>,
+  aborted?: () => boolean,
 ): Promise<readonly WorkflowRuling[]> {
   let answer: ResidualAnswer = { rulings: [], diagnoses: {} };
   if (req.items.length > 0 || req.redGates.length > 0) {
     try {
       answer = await advisor.ruleResidual(req);
     } catch (err) {
+      if (aborted?.()) throw err;
       getLogger().warn("workflow", "Residual advisor call failed — default hold", {
         storyId: req.storyId,
         error: errorMessage(err),

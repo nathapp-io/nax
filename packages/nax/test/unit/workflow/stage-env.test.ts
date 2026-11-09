@@ -33,7 +33,9 @@ function costAggregatorAt(totalCostUsd: number): ICostAggregator {
   return { ...base, snapshot: () => ({ ...base.snapshot(), totalCostUsd }) };
 }
 
-function setup(opts: { costUsd?: number; workflow?: DeepPartial<NaxConfig>["workflow"] } = {}) {
+function setup(
+  opts: { costUsd?: number; workflow?: DeepPartial<NaxConfig>["workflow"]; abortSignal?: AbortSignal } = {},
+) {
   const outputDir = makeTempDir("wf-env-out-");
   const workdir = makeTempDir("wf-env-work-");
   dirs.push(outputDir, workdir);
@@ -51,6 +53,7 @@ function setup(opts: { costUsd?: number; workflow?: DeepPartial<NaxConfig>["work
     workdir,
     storyGitRef: "base123",
     prd: { ...makeTestContext().prd, feature: "feat" },
+    ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
   });
   return { ctx, runtime, outputDir, runDir: workflowRunDir(workdir, "feat", runtime.runId) };
 }
@@ -65,6 +68,17 @@ async function seedPrior(projectDir: string, storyId: string, phase: "implement"
 }
 
 describe("buildStoryEnv", () => {
+  test("AC-12: aborted and live context signals are reflected by env.aborted", async () => {
+    const aborted = new AbortController();
+    aborted.abort();
+    const abortedContext = setup({ abortSignal: aborted.signal });
+    expect((await buildStoryEnv(abortedContext.ctx, makeMockCallContext())).env.aborted?.()).toBe(true);
+
+    const live = new AbortController();
+    const liveContext = setup({ abortSignal: live.signal });
+    expect((await buildStoryEnv(liveContext.ctx, makeMockCallContext())).env.aborted?.()).toBe(false);
+  });
+
   test("a prior record still in the first implement turn does not resume", async () => {
     const { ctx } = setup();
     await seedPrior(ctx.projectDir, ctx.story.id, "implement", 0);

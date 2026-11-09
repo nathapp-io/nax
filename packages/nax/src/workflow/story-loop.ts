@@ -84,6 +84,8 @@ export interface StoryLoopEnv {
   readonly steps: StoryLoopSteps;
   readonly advisor: WorkflowAdvisor;
   readonly sink: StoryLoopSink;
+  /** True when the owning run has been aborted; residual adjudication must not default-hold. */
+  readonly aborted?: () => boolean;
   /** A prior run's unfinished record (spec §10 resume); null for a fresh story. */
   readonly resume: WorkflowStoryRecord | null;
   /**

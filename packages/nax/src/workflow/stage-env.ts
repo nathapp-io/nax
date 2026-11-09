@@ -157,6 +157,7 @@ export async function buildStoryEnv(
       storyId: ctx.story.id,
       dependents: dependentsOf(ctx.prd, ctx.story.id),
     }),
+    aborted: () => ctx.abortSignal?.aborted === true,
     sink: {
       update: async (patch) => {
         reportStoryPhase(ctx, patch);

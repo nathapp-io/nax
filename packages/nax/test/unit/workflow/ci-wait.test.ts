@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ForgeRunResult } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
-import { _ciWaitDeps, CI_ERROR_POLL_LIMIT, ciAllowsReady, readChecksOnce, waitForChecks } from "@/workflow/ci-wait";
+import {
+  _ciWaitDeps,
+  CI_ERROR_POLL_LIMIT,
+  CI_WAIT_HEARTBEAT_MS,
+  ciAllowsReady,
+  readChecksOnce,
+  waitForChecks,
+} from "@/workflow/ci-wait";
 
 const original = { ..._ciWaitDeps };
 afterEach(() => Object.assign(_ciWaitDeps, original));
@@ -33,6 +40,23 @@ function script(replies: (ForgeRunResult | Error)[]): { calls: string[][]; sleep
 
 const gh = (buckets: string[]): ForgeRunResult =>
   r(JSON.stringify(buckets.map((bucket, i) => ({ name: `c${i}`, state: bucket.toUpperCase(), bucket }))), 8);
+
+describe("US-006 abortable CI wait sleep", () => {
+  test("AC-1: the default sleep resolves promptly after abort", async () => {
+    const controller = new AbortController();
+    const startedAt = performance.now();
+    const sleeping = _ciWaitDeps.sleep(60_000, controller.signal);
+    controller.abort();
+    await sleeping;
+    expect(performance.now() - startedAt).toBeLessThan(200);
+  });
+
+  test("AC-2: the default sleep waits when there is no signal", async () => {
+    const startedAt = performance.now();
+    await _ciWaitDeps.sleep(20);
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(15);
+  });
+});
 
 describe("waitForChecks (github)", () => {
   test("every check passes -> green, with the gh argv", async () => {
@@ -403,6 +427,76 @@ describe("US-002 conflict and missing CI", () => {
 });
 
 // US-005 (nax#2526): the wait says what it is doing, so a long CI wait is not a silent gap in the log.
+describe("waitForChecks abort (US-006)", () => {
+  const pending = gh(["pending"]);
+  const replyForPoll = (cmd: string[]) => (cmd[2] === "view" ? r('{"mergeable":"MERGEABLE"}') : pending);
+
+  test("AC-3: every heartbeat sleep receives the provided signal", async () => {
+    const controller = new AbortController();
+    const signals: (AbortSignal | undefined)[] = [];
+    let polls = 0;
+    _ciWaitDeps.now = () => 0;
+    _ciWaitDeps.run = async (cmd) => {
+      if (cmd[2] === "view") return r('{"mergeable":"MERGEABLE"}');
+      polls++;
+      return polls === 1 ? pending : gh(["pass"]);
+    };
+    _ciWaitDeps.sleep = async (_ms, signal) => {
+      signals.push(signal);
+    };
+    const pollMs = 3 * CI_WAIT_HEARTBEAT_MS;
+    const out = await waitForChecks("github", "b", {
+      cwd: "/repo",
+      timeoutMs: 600_000,
+      pollMs,
+      signal: controller.signal,
+    });
+    expect(out.outcome).toBe("green");
+    expect(signals).toEqual([controller.signal, controller.signal, controller.signal]);
+  });
+
+  test("AC-4: abort during a pending sleep returns pending-aborted without a second poll", async () => {
+    const controller = new AbortController();
+    let polls = 0;
+    _ciWaitDeps.now = () => 0;
+    _ciWaitDeps.run = async (cmd) => {
+      if (cmd[2] !== "view") polls++;
+      return replyForPoll(cmd);
+    };
+    _ciWaitDeps.sleep = async () => {
+      controller.abort();
+    };
+    expect(
+      await waitForChecks("github", "b", {
+        cwd: "/repo",
+        timeoutMs: 600_000,
+        pollMs: 30_000,
+        signal: controller.signal,
+      }),
+    ).toEqual({ outcome: "pending", detail: "aborted" });
+    expect(polls).toBe(1);
+  });
+
+  test("AC-5: abort stops heartbeat slicing after the first sleep", async () => {
+    const controller = new AbortController();
+    let sleeps = 0;
+    _ciWaitDeps.now = () => 0;
+    _ciWaitDeps.run = async (cmd) => replyForPoll(cmd);
+    _ciWaitDeps.sleep = async () => {
+      sleeps++;
+      controller.abort();
+    };
+    const pollMs = 3 * CI_WAIT_HEARTBEAT_MS;
+    await waitForChecks("github", "b", {
+      cwd: "/repo",
+      timeoutMs: pollMs * 2,
+      pollMs,
+      signal: controller.signal,
+    });
+    expect(sleeps).toBe(1);
+  });
+});
+
 describe("waitForChecks progress log", () => {
   let logs: LogEntry[];
   const messages = () => logs.filter((e) => e.stage === "workflow").map((e) => e.message);

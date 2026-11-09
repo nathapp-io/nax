@@ -89,7 +89,13 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
       ),
     branchReReview: (findings, fixBase) =>
       toolErrors("branch-rereview", () => runBranchReReview(fc, { ...spec, findings, fixBase })),
-    adjudicate: (items) => adjudicateResidual(live, { storyId: FEATURE_SCOPE, items, redGates: [] }, ledger),
+    adjudicate: (items) =>
+      adjudicateResidual(
+        live,
+        { storyId: FEATURE_SCOPE, items, redGates: [] },
+        ledger,
+        () => fc.runSignal?.aborted === true,
+      ),
     publish: (record) =>
       publish(fc, {
         record,

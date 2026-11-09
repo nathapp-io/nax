@@ -17,6 +17,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { defaultForgeDeps, type ForgeKind, type ForgeRunResult } from "@/forge";
 import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
+import { cancellableDelay } from "@/utils/bun-deps";
 
 export type CiWaitOutcome = "green" | "failed" | "pending" | "conflicting" | "no-checks" | "unavailable";
 
@@ -43,7 +44,7 @@ export const CI_WAIT_HEARTBEAT_MS = 60_000;
 
 export const _ciWaitDeps = {
   run: (cmd: string[], opts: { cwd: string }): Promise<ForgeRunResult> => defaultForgeDeps.run(cmd, opts),
-  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+  sleep: (ms: number, signal?: AbortSignal): Promise<void> => cancellableDelay(ms, signal).catch(() => undefined),
   now: (): number => Date.now(),
   /**
    * The wait's own clock, independent of polling and of any single sleep. It
@@ -281,12 +282,17 @@ function progressLog(onInfo: () => void): ProgressLog {
  * configured polling cadence is unchanged; only the progress reporting gained
  * an upper bound (B3).
  */
-async function waitWithHeartbeat(ms: number, startedAt: number, progress: ProgressLog): Promise<void> {
+async function waitWithHeartbeat(
+  ms: number,
+  startedAt: number,
+  progress: ProgressLog,
+  signal?: AbortSignal,
+): Promise<void> {
   let remaining = ms;
-  while (remaining > 0) {
+  while (remaining > 0 && !signal?.aborted) {
     const untilBeat = Math.max(1, CI_WAIT_HEARTBEAT_MS - progress.sinceLastInfo());
     const slice = Math.min(remaining, untilBeat);
-    await _ciWaitDeps.sleep(slice);
+    await _ciWaitDeps.sleep(slice, signal);
     remaining -= slice;
     // Each `say` resets the last-info clock; `startedAt` is untouched.
     progress.heartbeatIfDue(startedAt);
@@ -426,7 +432,7 @@ export async function waitForChecks(
       // Both sides of the wait: `_ciWaitDeps.now` may move during a slow forge call or during the
       // wait itself, and the heartbeat has to hold either way (each `say` resets the clock).
       progress.heartbeatIfDue(startedAt);
-      await waitWithHeartbeat(opts.pollMs, startedAt, progress);
+      await waitWithHeartbeat(opts.pollMs, startedAt, progress, opts.signal);
       progress.heartbeatIfDue(startedAt);
     }
   } finally {
