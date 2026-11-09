@@ -390,6 +390,11 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
             };
           } finally {
             if (timer !== undefined) _adapterDeps.clearTimeout(timer);
+            // #2846: release the per-call signal. `AbortSignal.any` keeps a combined signal
+            // that has abort listeners alive for as long as a source can still abort, and
+            // `opts.signal` outlives the session, so every round trip's signal stayed
+            // reachable. The call has settled, so aborting it cancels nothing.
+            controller.abort();
           }
         },
       });

@@ -93,6 +93,16 @@ jobs:
       - name: Build
         run: bun run build
 
+      # #2846: React's development build records performance entries on every
+      # chat frame and never clears them. `check:bundle-externals` guards the
+      # build flag; this guards the artifact, whatever produced it.
+      - name: Bundle carries production React
+        run: |
+          if grep -q "react-reconciler.development" dist/nax.js; then
+            echo "dist/nax.js carries React's development build (#2846)"
+            exit 1
+          fi
+
       # Excluded from `bun run test` by design (scripts/run-tests.ts PHASES) — but the
       # scripted-agent e2e suite is the only end-to-end cover for the story orchestrator,
       # so CI runs it explicitly. ~30s.

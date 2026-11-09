@@ -343,4 +343,49 @@ describe("NativeSessionAdapter — turn signal following an in-flight call (US-0
       await turn;
     }
   });
+
+  test("#2846: each settled round trip's signal is released; the caller's signal is not", async () => {
+    // AbortSignal.any keeps a combined signal with abort listeners alive while any source can
+    // still abort. The caller's signal outlives the session, so an unreleased per-call signal
+    // stayed reachable for every round trip of a long chat.
+    const root = makeTestDir("nax-turn-signal-root-");
+    const seen: AbortSignal[] = [];
+    let calls = 0;
+    _clientDeps.build = async () =>
+      fakeClient({
+        complete: async (_m: ResolvedModel, req: { signal?: AbortSignal }) => {
+          if (req.signal !== undefined) seen.push(req.signal);
+          calls += 1;
+          if (calls === 1) {
+            return {
+              text: "",
+              toolCalls: [{ id: "c1", name: "Read", input: { path: "a.ts" } }],
+              usage: { inputTokens: 1, outputTokens: 1 },
+              stopReason: "tool_use" as const,
+            };
+          }
+          return { text: "done", usage: { inputTokens: 1, outputTokens: 1 }, stopReason: "stop" };
+        },
+      });
+    const caller = new AbortController();
+    const adapter = new NativeSessionAdapter();
+    const handle = await openTestSession(adapter, "sess-turn-signal-2846", {
+      agentName: "native",
+      workdir: root,
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 60,
+      transcriptDir: makeTestDir("nax-adapter-turn-signal-"),
+    });
+
+    const result = await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => ({ answer: "contents" }) },
+      signal: caller.signal,
+    });
+
+    expect(result.output).toBe("done");
+    expect(seen).toHaveLength(2);
+    expect(seen.every((signal) => signal.aborted)).toBe(true);
+    expect(caller.signal.aborted).toBe(false);
+  });
 });
