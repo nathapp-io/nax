@@ -3,7 +3,7 @@
   "feature": "secrets-and-ledger",
   "branchName": "feat/secrets-and-ledger",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T07:10:14.568Z",
+  "updatedAt": "2026-11-09T07:23:43.410Z",
   "userStories": [
     {
       "id": "US-001",
@@ -256,14 +256,17 @@
         "M10"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A small pure spend mapper and two existing call-site changes reuse established error and dispatch seams; session timeout/error handling retains the mandatory strict TDD override."
+        "reasoning": "A small pure spend mapper and two existing call-site changes reuse established error and dispatch seams; session timeout/error handling retains the mandatory strict TDD override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/manager-dispatch.ts",
@@ -280,7 +283,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7a5864a2323c0668f8f5742dd15266ffeadd1fe6"
     },
     {
       "id": "US-006",
