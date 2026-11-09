@@ -13,8 +13,69 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { configCommand } from "@/cli";
 import { determineConfigSources } from "@/cli/config-display";
+import { configDisplayAction } from "@/cli/config-display-action";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
+
+describe("configDisplayAction — selected directory (US-011 AC-4/AC-5)", () => {
+  let selectedDir: string;
+  let cwdDir: string;
+  let globalDir: string;
+  let originalCwd: string;
+  let savedGlobalEnv: string | undefined;
+
+  beforeEach(() => {
+    selectedDir = realpathSync(makeTempDir("nax-config-action-selected-"));
+    cwdDir = realpathSync(makeTempDir("nax-config-action-cwd-"));
+    globalDir = makeTempDir("nax-config-action-global-");
+    originalCwd = process.cwd();
+    savedGlobalEnv = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
+    mkdirSync(join(selectedDir, ".nax"), { recursive: true });
+    mkdirSync(join(cwdDir, ".nax"), { recursive: true });
+    writeFileSync(join(globalDir, "config.json"), JSON.stringify({ execution: { costLimit: 2 } }), "utf8");
+    writeFileSync(join(selectedDir, ".nax", "config.json"), JSON.stringify({ execution: { costLimit: 9 } }), "utf8");
+    writeFileSync(join(cwdDir, ".nax", "config.json"), JSON.stringify({ execution: { costLimit: 3 } }), "utf8");
+    process.chdir(cwdDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    cleanupTempDir(selectedDir);
+    cleanupTempDir(cwdDir);
+    cleanupTempDir(globalDir);
+    if (savedGlobalEnv === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    else process.env.NAX_GLOBAL_CONFIG_DIR = savedGlobalEnv;
+  });
+
+  test("AC-4: diff displays overrides from the selected project's config", async () => {
+    const output: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
+    try {
+      await configDisplayAction({ dir: selectedDir, diff: true });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(output.join("\n")).toContain("execution.costLimit");
+    expect(output.join("\n")).toContain("9");
+  });
+
+  test("AC-5: default view names the selected project's config source", async () => {
+    const output: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
+    try {
+      await configDisplayAction({ dir: selectedDir });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(output.join("\n")).toContain(join(selectedDir, ".nax", "config.json"));
+    expect(output.join("\n")).not.toContain(join(cwdDir, ".nax", "config.json"));
+  });
+});
 
 describe("configCommand — SEC-05: default view masks secrets", () => {
   let consoleOutput: string[];

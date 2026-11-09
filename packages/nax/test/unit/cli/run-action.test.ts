@@ -11,6 +11,7 @@ function options(overrides: Partial<RunActionOptions> = {}): RunActionOptions {
 const maxMessage = "nax run -m/--max-iterations was removed: workflow mode bounds a run by its stories";
 const parallelMessage = "nax run --parallel was removed: workflow mode runs stories one at a time";
 const noBatchMessage = "nax run --no-batch was removed: workflow mode runs stories one at a time";
+const noContextMessage = "nax run --no-context was removed: workflow mode builds each prompt's context itself";
 
 describe("parseRunPreconditionFlags", () => {
   const exitError = new Error("exit");
@@ -64,6 +65,18 @@ describe("parseRunPreconditionFlags", () => {
     );
     expect(stderr.mock.calls).toEqual([[`\u001b[31m${maxMessage}\u001b[39m`]]);
     expect(exit.mock.calls).toEqual([[1]]);
+  });
+
+  test("AC-1: rejects removed --no-context with red stderr and exit 1", () => {
+    expect(() => parseRunPreconditionFlags(options({ context: false }))).toThrow(exitError);
+    expect(stderr.mock.calls).toEqual([[`\u001b[31m${noContextMessage}\u001b[39m`]]);
+    expect(exit.mock.calls).toEqual([[1]]);
+  });
+
+  test("AC-2: does not reject --context", () => {
+    expect(parseRunPreconditionFlags(options({ context: true }))).toEqual({ chatAsksDir: undefined });
+    expect(exit).not.toHaveBeenCalled();
+    expect(stderr).not.toHaveBeenCalled();
   });
 
   test("does not reject batch: true (commander's --no-batch default)", () => {

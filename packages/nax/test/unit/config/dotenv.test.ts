@@ -29,6 +29,9 @@ describe("parseDotenv", () => {
 });
 
 describe("resolveEnvVars", () => {
+  const bracedX = "$" + "{X}";
+  const bracedY = "$" + "{Y}";
+
   test("replaces $VAR references recursively in nested objects", () => {
     const config = { a: "$FOO", b: { c: "$BAR" } };
     const env = { FOO: "x", BAR: "y" };
@@ -59,6 +62,22 @@ describe("resolveEnvVars", () => {
 
   test("supports inline substitution within a string (prefix-$VAR-suffix)", () => {
     expect(resolveEnvVars({ a: "prefix-$FOO-suffix" }, { FOO: "mid" })).toEqual({ a: "prefix-mid-suffix" });
+  });
+
+  test("AC-6: does not rescan references introduced by a braced substitution", () => {
+    expect(resolveEnvVars({ a: bracedX }, { X: "$Y", Y: "zzz" })).toEqual({ a: "$Y" });
+  });
+
+  test("AC-7: resolves bare and braced references in one string", () => {
+    expect(resolveEnvVars({ a: "$X-" + bracedY }, { X: "1", Y: "2" })).toEqual({ a: "1-2" });
+  });
+
+  test("AC-8: does not rescan braced references introduced by a bare substitution", () => {
+    expect(resolveEnvVars({ a: "$X" }, { X: bracedY, Y: "zzz" })).toEqual({ a: bracedY });
+  });
+
+  test("AC-9: restores escaped braced references as literals", () => {
+    expect(resolveEnvVars({ a: "$" + bracedX }, { X: "1" })).toEqual({ a: bracedX });
   });
 
   test("US-003 AC3: literal text of the module's double-dollar escape placeholder followed by HOME is preserved verbatim rather than restored to $HOME", () => {

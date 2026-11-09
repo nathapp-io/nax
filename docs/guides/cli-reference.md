@@ -166,7 +166,7 @@ nax run -f my-feature
 | `--silent` | Errors only |
 | `--json` | Raw JSONL output to stdout (for scripting) |
 | `--skip-precheck` | Skip precheck validations (advanced users only) |
-| `--no-context` | Disable context builder (skip file context in prompts) |
+| `--no-context` | Removed: workflow mode builds its own prompt context |
 | `--profile <name>` | Profile(s) to overlay on config (overrides `config.json` profile). Repeatable and comma-separated for a chain — `--profile a,b` or `--profile a --profile b` — where a later profile overrides an earlier one (`b` over `a` over project + global). Accepts the comma form in `NAX_PROFILE` and `config.json` too. |
 | `-d, --dir <path>` | Working directory |
 

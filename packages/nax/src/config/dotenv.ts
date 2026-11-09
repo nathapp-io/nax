@@ -208,7 +208,10 @@ function resolveString(str: string, env: Record<string, string>, path: string[])
   // input, satisfying US-003 AC3).
   return str
     .replace(DOUBLE_DOLLAR_PROTECT_RE, `$$$${DOUBLE_DOLLAR_PLACEHOLDER}$1`)
-    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, varName: string) => resolveOne(varName))
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, varName: string) => resolveOne(varName))
+    .replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+      (_match, bracedName: string | undefined, bareName: string | undefined) =>
+        resolveOne(bracedName ?? bareName ?? ""),
+    )
     .replace(DOUBLE_DOLLAR_RESTORE_RE, (_match, varName: string) => `$${varName}`);
 }
