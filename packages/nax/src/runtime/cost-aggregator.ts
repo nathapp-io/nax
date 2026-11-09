@@ -1,4 +1,7 @@
+import { join } from "node:path";
 import { getSafeLogger } from "../logger";
+import { type DrainRow, drainWritePasses } from "./cost-aggregator-drain";
+import { writeLedgerAtomic } from "./cost-ledger-write";
 
 export interface CostEvent {
   readonly ts: number;
@@ -291,11 +294,6 @@ export interface ICostAggregator {
   drain(): Promise<void>;
 }
 
-/** Safety ceiling on drain()'s write-until-empty loop — a steady trickle of
- *  late-arriving events must not turn shutdown into an unbounded resort/rewrite
- *  loop over the full committed set. */
-const MAX_DRAIN_PASSES = 20;
-
 const EMPTY_SNAPSHOT: CostSnapshot = {
   totalCostUsd: 0,
   totalEstimatedCostUsd: 0,
@@ -348,12 +346,9 @@ export function createNoOpCostAggregator(): ICostAggregator {
   };
 }
 
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
-
 /** Injectable deps — swap in tests to avoid real disk I/O or logger side-effects. */
 export const _costAggDeps = {
-  write: (path: string, data: string): Promise<number> => Bun.write(path, data),
+  write: (path: string, data: string): Promise<number> => writeLedgerAtomic(path, data),
   getSafeLogger: () => getSafeLogger(),
   newCorrelationId: makeCorrelationId,
 };
@@ -410,6 +405,10 @@ export class CostAggregator implements ICostAggregator {
   private readonly _inFlightEvents: CostEvent[] = [];
   private readonly _inFlightErrors: CostErrorEvent[] = [];
   private readonly _openScopes = new Set<string>();
+  /** Settles when the last queued drain does — never rejects, so a failure cannot cancel the queue. */
+  private _drainTail: Promise<void> = Promise.resolve();
+  /** Drains running or waiting on `_drainTail`; zero means a new drain may start immediately. */
+  private _pendingDrains = 0;
 
   constructor(
     private readonly _runId: string,
@@ -539,62 +538,57 @@ export class CostAggregator implements ICostAggregator {
     };
   }
 
-  async drain(): Promise<void> {
+  drain(): Promise<void> {
     const openScopeCount = this._openScopes.size;
     if (openScopeCount > 0) {
       _costAggDeps.getSafeLogger()?.warn("cost-aggregator", "drain called with open scopes", { openScopeCount });
     }
 
+    this._pendingDrains++;
+    // Drains run one at a time. With an idle queue the first write pass starts
+    // synchronously, so an event recorded right after `drain()` lands in the
+    // in-flight buffer rather than a set this drain already copied; with one
+    // pending, the drain queues behind it on `_drainTail`.
+    const next =
+      this._pendingDrains === 1 ? this._drainAllPasses() : this._drainTail.then(() => this._drainAllPasses());
+    // The tail never rejects: a failed drain must not cancel the drains behind it.
+    this._drainTail = next.catch(() => {});
+    return next;
+  }
+
+  private async _drainAllPasses(): Promise<void> {
     this._draining = true;
+    // A copy, not a splice: the rows being written stay in `_events`, so a mid-drain
+    // snapshot counts them and a write that throws leaves them retained.
+    const committed: DrainRow[] = [...this._events, ...this._errors];
     try {
-      // Splice _events/_errors into the accumulating "committed" set up front,
-      // then loop: write it, splice out whatever landed in _inFlightEvents /
-      // _inFlightErrors *during* that write, merge it in, and write again.
-      // Repeat until a write observes nothing new — a single splice-then-write
-      // pass can miss events recorded during the second write itself (BUG-29),
-      // so the loop, not the write, is what guarantees emptiness.
-      let committed = [...this._events.splice(0), ...this._errors.splice(0)];
-      if (committed.length === 0 && this._inFlightEvents.length === 0 && this._inFlightErrors.length === 0) {
-        return;
-      }
-
-      mkdirSync(this._drainDir, { recursive: true });
-      const path = join(this._drainDir, `${this._runId}.jsonl`);
-
-      // Always write at least once so the initial committed batch lands on disk.
-      let first = true;
-      let pass = 0;
-      while (first || this._inFlightEvents.length > 0 || this._inFlightErrors.length > 0) {
-        if (++pass > MAX_DRAIN_PASSES) {
-          _costAggDeps
-            .getSafeLogger()
-            ?.warn("cost-aggregator", "drain exceeded max passes — late events keep arriving", {
-              pass,
-              inFlightEvents: this._inFlightEvents.length,
-              inFlightErrors: this._inFlightErrors.length,
-            });
-          break;
-        }
-        first = false;
-        const late = [...this._inFlightEvents.splice(0), ...this._inFlightErrors.splice(0)];
-        committed = [...committed, ...late].sort((a, b) => a.ts - b.ts);
-        await _costAggDeps.write(path, `${committed.map((e) => JSON.stringify(e)).join("\n")}\n`);
-      }
-
-      // Post-drain, committed is now the full persisted set. Replace _events
-      // so snapshot()/byX() readers see exactly what was flushed to disk —
-      // otherwise a late arrival that raced the final write would be counted
-      // twice (once here, once already merged into `committed`) or a settled
-      // in-memory total would permanently diverge from the audit trail.
-      const committedEvents = committed.filter((e): e is CostEvent => !("kind" in e && e.kind === "error"));
-      const committedErrors = committed.filter((e): e is CostErrorEvent => "kind" in e && e.kind === "error");
-      this._events.length = 0;
-      this._events.push(...committedEvents);
-      this._errors.length = 0;
-      this._errors.push(...committedErrors);
+      if (committed.length === 0 && this._inFlightEvents.length === 0 && this._inFlightErrors.length === 0) return;
+      await drainWritePasses({
+        dir: this._drainDir,
+        path: join(this._drainDir, `${this._runId}.jsonl`),
+        committed,
+        takeInFlight: () => {
+          const late: DrainRow[] = [...this._inFlightEvents, ...this._inFlightErrors];
+          this._retain();
+          return late;
+        },
+        inFlightCount: () => ({ events: this._inFlightEvents.length, errors: this._inFlightErrors.length }),
+        write: _costAggDeps.write,
+        logger: _costAggDeps.getSafeLogger(),
+      });
     } finally {
+      // Anything that arrived after the last pass's copy belongs to the next drain.
+      this._retain();
       this._draining = false;
+      this._pendingDrains--;
       this._openScopes.clear();
     }
+  }
+
+  /** Move the in-flight buffers into the retained arrays — each is already kind-partitioned,
+   *  and doing it as rows arrive is what keeps a mid-drain `snapshot()` from missing them. */
+  private _retain(): void {
+    this._events.push(...this._inFlightEvents.splice(0));
+    this._errors.push(...this._inFlightErrors.splice(0));
   }
 }
