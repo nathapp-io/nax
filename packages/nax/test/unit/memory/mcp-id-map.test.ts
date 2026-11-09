@@ -1,10 +1,12 @@
 /**
  * mcp-id-map.ts — the durable, scope-specific record of the remote ids each
- * save produced, so a later forget can delete them.
+ * save produced, so a later forget can delete them, and the record of the ones
+ * nax hid because the server could not delete them.
  *
- * Covers US-002 AC-16..AC-27, and US-001 AC-1..AC-8 and AC-21..AC-22: a read
+ * Covers US-002 AC-16..AC-27, US-001 AC-1..AC-8 and AC-21..AC-22: a read
  * that fails for any reason but "the file is not there" refuses the mutation
- * instead of writing over a file nax could not read.
+ * instead of writing over a file nax could not read. US-003 AC-1..AC-10: the
+ * `hidden` list, the hide that fills it and the save that empties it again.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -298,5 +300,129 @@ describe("createMcpIdMap", () => {
     ]);
     expect(await map.ids("project", "s1")).toEqual(["a", "b"]);
     expect(await map.ids("project", "s2")).toEqual(["c"]);
+  });
+
+  describe("hiding the remote ids a server could not delete", () => {
+    test("hide resolves the ids it hid, and the slug holds none (AC-1)", async () => {
+      const map = createMcpIdMap({ dirs, server: "om" });
+      await map.add("project", "s1", ["r1", "r2"]);
+
+      expect(await map.hide("project", "s1")).toEqual(["r1", "r2"]);
+      expect(await map.ids("project", "s1")).toEqual([]);
+      const hidden = await map.hiddenIds("project");
+      expect(hidden).toBeInstanceOf(Set);
+      expect([...hidden].sort()).toEqual(["r1", "r2"]);
+    });
+
+    test("the hidden ids are written to the id map file (AC-2)", async () => {
+      const map = createMcpIdMap({ dirs, server: "om" });
+      await map.add("project", "s1", ["r1", "r2"]);
+
+      await map.hide("project", "s1");
+
+      expect(await readJson(projectFile())).toEqual({
+        version: 1,
+        server: "om",
+        notes: {},
+        hidden: ["r1", "r2"],
+      });
+    });
+
+    test("a missing file hides nothing and writes no file (AC-3)", async () => {
+      const map = createMcpIdMap({ dirs, server: "om" });
+
+      expect(await map.hide("project", "s1")).toEqual([]);
+      expect(await Bun.file(projectFile()).exists()).toBe(false);
+    });
+
+    test("a file that is not JSON hides nothing and is left as it is (AC-4)", async () => {
+      mkdirSync(dirs.projectDir, { recursive: true });
+      await Bun.write(projectFile(), "this is not json");
+
+      expect(await createMcpIdMap({ dirs, server: "om" }).hide("project", "s1")).toEqual([]);
+      expect(await Bun.file(projectFile()).text()).toBe("this is not json");
+    });
+
+    test("a slug with no recorded ids hides nothing and writes nothing (AC-5)", async () => {
+      mkdirSync(dirs.projectDir, { recursive: true });
+      await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{"s2":["r5"]}}');
+      const writes: string[] = [];
+      _mcpIdMapDeps.writeText = async (path, text) => {
+        writes.push(path);
+        await Bun.write(path, text);
+      };
+
+      expect(await createMcpIdMap({ dirs, server: "om" }).hide("project", "s1")).toEqual([]);
+      expect(writes).toEqual([]);
+    });
+
+    test("a save answered with a hidden id makes that copy live again (AC-6)", async () => {
+      mkdirSync(dirs.projectDir, { recursive: true });
+      await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{},"hidden":["r1","r2"]}');
+      const map = createMcpIdMap({ dirs, server: "om" });
+
+      await map.add("project", "s1", ["r1"]);
+
+      expect([...(await map.hiddenIds("project"))]).toEqual(["r2"]);
+      expect(await map.ids("project", "s1")).toEqual(["r1"]);
+    });
+
+    test("a save of another slug leaves the hidden ids alone (AC-7)", async () => {
+      mkdirSync(dirs.projectDir, { recursive: true });
+      await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{"s2":["r5"]},"hidden":["r1"]}');
+      const map = createMcpIdMap({ dirs, server: "om" });
+
+      await map.add("project", "s2", ["r6"]);
+
+      expect([...(await map.hiddenIds("project"))]).toEqual(["r1"]);
+      expect(await map.ids("project", "s2")).toEqual(["r5", "r6"]);
+    });
+
+    test("a hidden value that is not an array of strings reads as no hidden ids (AC-8)", async () => {
+      mkdirSync(dirs.projectDir, { recursive: true });
+      await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{"s1":["a"]},"hidden":"r1"}');
+      const map = createMcpIdMap({ dirs, server: "om" });
+
+      expect(await map.ids("project", "s1")).toEqual(["a"]);
+      expect([...(await map.hiddenIds("project"))]).toEqual([]);
+    });
+
+    test("a save writes no hidden key when nothing is hidden (AC-9)", async () => {
+      await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["n"]);
+
+      expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["n"] } });
+      expect(await Bun.file(projectFile()).text()).not.toContain('"hidden"');
+    });
+
+    test("a read that fails refuses both hide and hiddenIds (AC-10)", async () => {
+      _mcpIdMapDeps.readText = async () => {
+        throw fsError("EACCES");
+      };
+      const map = createMcpIdMap({ dirs, server: "om" });
+
+      expect((await rejection(map.hide("project", "s1"))).code).toBe("MEMORY_MCP_ID_MAP_READ_FAILED");
+      expect((await rejection(map.hiddenIds("project"))).code).toBe("MEMORY_MCP_ID_MAP_READ_FAILED");
+    });
+
+    test("a hide waits for the ids an earlier save recorded", async () => {
+      const map = createMcpIdMap({ dirs, server: "om" });
+      const adding = map.add("project", "s1", ["r1"]);
+      const hiding = map.hide("project", "s1");
+
+      await adding;
+
+      expect(await hiding).toEqual(["r1"]);
+      expect([...(await map.hiddenIds("project"))]).toEqual(["r1"]);
+    });
+
+    test("an id hidden in one scope is not hidden in the other", async () => {
+      const map = createMcpIdMap({ dirs, server: "om" });
+      await map.add("user", "s1", ["u1"]);
+
+      await map.hide("user", "s1");
+
+      expect([...(await map.hiddenIds("user"))]).toEqual(["u1"]);
+      expect([...(await map.hiddenIds("project"))]).toEqual([]);
+    });
   });
 });

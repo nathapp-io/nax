@@ -6,6 +6,12 @@
  * forget tool is configured, deletes the remote copies a save recorded in the
  * id map. It never pulls: an MCP memory tool exposes no change cursor.
  *
+ * A server with no delete tool cannot delete a copy it still holds. Such a
+ * forget hides the copy instead: its id moves to the id map's `hidden` list and
+ * the search drops every item whose id is hidden, so nax no longer shows a note
+ * it forgot. The copy itself stays on the server, where every other client of
+ * that server still sees it.
+ *
  * Refusals: a configured tool the connected server does not list is permanent
  * (`MEMORY_PUSH_REJECTED`). A server that lists no tools (not connected) is
  * `MEMORY_MCP_UNAVAILABLE`, and a tool that answers `isError` is
@@ -24,7 +30,7 @@ import type { MemoryMcpConfig } from "@/config";
 import { NaxError } from "@/errors";
 import type { McpPool } from "@/mcp";
 import type { McpIdMap } from "./mcp-id-map";
-import { mcpHitOf, parseMcpMemoryIds, parseMcpMemoryItems } from "./mcp-results";
+import { type McpMemoryItem, mcpHitOf, parseMcpMemoryIds, parseMcpMemoryItems } from "./mcp-results";
 import type { MemoryLogger } from "./paths";
 
 /** The prefix of an MCP provider's id: `mcp:<server>`. */
@@ -41,6 +47,25 @@ type ToolFailureCode = "MEMORY_MCP_CALL_FAILED" | "MEMORY_MCP_FORGET_BAD_RESPONS
 interface ForgetFailure {
   readonly kind: "answered" | "threw";
   readonly text: string;
+}
+
+/** One item of a search answer, with the position it had in that answer. */
+interface PositionedItem {
+  readonly item: McpMemoryItem;
+  readonly index: number;
+}
+
+/**
+ * The items of a search answer nax still shows, each with the position it had in the answer.
+ *
+ * A hidden id is a copy the server still holds after nax forgot the note, so it is dropped
+ * before the limit is cut: the limit counts the hits that are shown. The position is the
+ * item's own, so an item with no id keeps the slug it had in the answer.
+ */
+function visibleItems(items: readonly McpMemoryItem[], hidden: ReadonlySet<string>): readonly PositionedItem[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.id === undefined || !hidden.has(item.id));
 }
 
 export interface CreateMcpMemoryProviderInput {
@@ -174,11 +199,31 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
     return callFailed(tool, text, code);
   }
 
+  /**
+   * The remote ids nax has hidden, in both scopes.
+   *
+   * One MCP server holds the saves of both scopes, and the host asks the provider
+   * for project memories whatever the query's scope, so a copy hidden in either
+   * scope must not come back.
+   */
+  async function hiddenIds(): Promise<ReadonlySet<string>> {
+    const [project, user] = await Promise.all([idMap.hiddenIds("project"), idMap.hiddenIds("user")]);
+    return new Set([...project, ...user]);
+  }
+
   async function forget(request: MemoryWriteRequest): Promise<MemoryPushResult> {
     const deleted: MemoryPushResult = { id: request.clientId, status: "deleted" };
     const tool = mcp.tools.forget;
     if (tool === undefined) {
-      await idMap.drop(request.scope, request.slug);
+      // No delete tool: the server keeps its copy, so nax hides it and drops it from its own search.
+      const hidden = await idMap.hide(request.scope, request.slug);
+      if (hidden.length > 0) {
+        logger.warn(STAGE, "memory mcp forget kept the server copy", {
+          server: serverId,
+          slug: request.slug,
+          ids: hidden.length,
+        });
+      }
       return deleted;
     }
     const ids = await idMap.ids(request.scope, request.slug);
@@ -202,10 +247,13 @@ export function createMcpMemoryProvider(input: CreateMcpMemoryProviderInput): Me
     push: (request) => (request.kind === "save" ? save(request) : forget(request)),
     async search({ scope, text, limit }): Promise<readonly MemoryHit[]> {
       const tool = mcp.tools.search;
+      // The hidden ids are read before the server is asked: a copy nax hid must not be
+      // shown, and an id map that cannot be read is a refusal, not an empty list.
+      const hidden = await hiddenIds();
       const result = await pool.call(serverId, workdir, tool, { [mcp.args.query]: text }, callOpts);
       if (result.isError) throw callFailed(tool, result.content, "MEMORY_MCP_CALL_FAILED");
-      return parseMcpMemoryItems(result.content)
-        .map((item, index) => mcpHitOf(item, index, scope))
+      return visibleItems(parseMcpMemoryItems(result.content), hidden)
+        .map(({ item, index }) => mcpHitOf(item, index, scope))
         .slice(0, Math.max(0, limit));
     },
     async reachable(): Promise<boolean> {

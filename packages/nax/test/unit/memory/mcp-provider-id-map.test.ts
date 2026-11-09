@@ -1,10 +1,12 @@
 /**
- * mcp-provider.ts — a forget whose remote delete failed.
+ * mcp-provider.ts — a forget whose remote delete failed, and a forget on a server
+ * with no delete tool at all.
  *
  * Covers US-002 AC-1..AC-20: a delete the server refused keeps its id recorded, and the
  * push fails as retryable, so the outbox delivers the forget again and the next attempt
  * deletes only what is left. The ids a failed delete left are read back through the real
- * id map, in a temp directory, over a fake pool.
+ * id map, in a temp directory, over a fake pool. US-003 AC-11..AC-15 and AC-20: a server
+ * with no delete tool keeps its copy, so nax hides it and drops it from its own search.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -32,6 +34,13 @@ const FORGET_MCP: MemoryMcpConfig = {
   args: { query: "query", text: "text", id: "memory_id" },
 };
 
+/** The same server with no delete tool: OpenMemory has none, so a forget cannot delete there. */
+const NO_FORGET_MCP: MemoryMcpConfig = {
+  server: "om",
+  tools: { search: "search_memory", add: "add_memories" },
+  args: { query: "query", text: "text" },
+};
+
 function tool(name: string): McpToolDescriptor {
   return { name, description: name, inputSchema: { type: "object" } };
 }
@@ -48,15 +57,20 @@ interface PoolCall {
 interface FakePool {
   readonly pool: Pick<McpPool, "listTools" | "call">;
   readonly calls: PoolCall[];
+  readonly listCalls: Array<{ serverId: string; workdir: string }>;
   respond: (call: PoolCall) => McpCallResult;
 }
 
 function fakePool(): FakePool {
   const fake: FakePool = {
     calls: [],
+    listCalls: [],
     respond: () => answer("ok"),
     pool: {
-      listTools: async () => [tool("add_memories"), tool("search_memory"), tool("delete_memory")],
+      listTools: async (serverId, workdir) => {
+        fake.listCalls.push({ serverId, workdir });
+        return [tool("add_memories"), tool("search_memory"), tool("delete_memory")];
+      },
       call: async (_serverId, _workdir, name, input) => {
         const call = { tool: name, input };
         fake.calls.push(call);
@@ -338,6 +352,84 @@ describe("the MCP provider over the id map", () => {
       await make().push(forgetRequest());
 
       expect(await idMap.ids("project", "s1")).toEqual([]);
+    });
+  });
+
+  describe("a forget on a server with no delete tool", () => {
+    beforeEach(async () => {
+      await idMap.add("project", "s1", ["r1"]);
+    });
+
+    test("the push resolves deleted without asking the server (AC-11)", async () => {
+      const result = await make(NO_FORGET_MCP).push(forgetRequest());
+
+      expect(result).toEqual({ id: "c-forget", status: "deleted" });
+      expect(fake.calls).toEqual([]);
+      expect(fake.listCalls).toEqual([]);
+    });
+
+    test("the id the server still holds is hidden (AC-11)", async () => {
+      await make(NO_FORGET_MCP).push(forgetRequest());
+
+      expect([...(await idMap.hiddenIds("project"))]).toEqual(["r1"]);
+      expect(await idMap.ids("project", "s1")).toEqual([]);
+    });
+
+    test("the copy that stays on the server is warned about once (AC-12)", async () => {
+      await make(NO_FORGET_MCP).push(forgetRequest());
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith("memory", "memory mcp forget kept the server copy", {
+        server: "om",
+        slug: "s1",
+        ids: 1,
+      });
+    });
+  });
+
+  describe("a forget on a server with no delete tool and no recorded id", () => {
+    test("the push resolves deleted and warns nothing (AC-13)", async () => {
+      const result = await make(NO_FORGET_MCP).push(forgetRequest());
+
+      expect(result).toEqual({ id: "c-forget", status: "deleted" });
+      expect(logger.warn).not.toHaveBeenCalled();
+      expect(fake.calls).toEqual([]);
+    });
+  });
+
+  describe("a search over a server that still holds a hidden copy", () => {
+    test("the hidden item is dropped before the limit is cut (AC-14)", async () => {
+      await idMap.add("project", "s1", ["r1"]);
+      await idMap.hide("project", "s1");
+      fake.respond = () =>
+        answer('[{"id":"r1","memory":"budget"},{"id":"r2","memory":"budget"},{"id":"r3","memory":"budget"}]');
+
+      const hits = await make(NO_FORGET_MCP).search?.({ scope: "project", text: "budget", limit: 2 });
+
+      expect(hits?.map((hit) => hit.slug)).toEqual(["mcp-r2", "mcp-r3"]);
+    });
+
+    test("an id hidden in the user scope is dropped too (AC-15)", async () => {
+      await idMap.add("user", "u1", ["u1"]);
+      await idMap.hide("user", "u1");
+      fake.respond = () => answer('[{"id":"u1","memory":"budget"},{"id":"r2","memory":"budget"}]');
+
+      const hits = await make(NO_FORGET_MCP).search?.({ scope: "project", text: "budget", limit: 5 });
+
+      expect(hits?.map((hit) => hit.slug)).toEqual(["mcp-r2"]);
+    });
+
+    test("a hidden-ids read that fails refuses the search (AC-20)", async () => {
+      _mcpIdMapDeps.readText = async () => {
+        throw fsError("EACCES");
+      };
+      fake.respond = () => answer('[{"id":"r2","memory":"budget"}]');
+
+      const error = await rejection(
+        make(NO_FORGET_MCP).search?.({ scope: "project", text: "budget", limit: 5 }) ?? Promise.resolve(),
+      );
+
+      expect(error).toMatchObject({ code: "MEMORY_MCP_ID_MAP_READ_FAILED", context: { retryable: true } });
     });
   });
 });

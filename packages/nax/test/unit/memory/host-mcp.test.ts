@@ -216,7 +216,13 @@ describe("memory host MCP composition", () => {
     });
 
     test("AC-4 the id map is built over the host's own directories for the server", async () => {
-      const idMap = { ids: async () => [] as readonly string[], add: async () => {}, drop: async () => {} };
+      const idMap = {
+        ids: async () => [] as readonly string[],
+        add: async () => {},
+        drop: async () => {},
+        hide: async () => [] as readonly string[],
+        hiddenIds: async () => new Set<string>(),
+      };
       const createMcpIdMap = mock((_input: Parameters<typeof _memoryHostDeps.createMcpIdMap>[0]) => idMap);
       _memoryHostDeps.createMcpIdMap = createMcpIdMap;
       const { createMcpMemoryProvider } = stubFactories(stubProvider());

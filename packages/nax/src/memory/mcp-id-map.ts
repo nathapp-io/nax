@@ -1,5 +1,6 @@
 /**
- * mcp-id-map.ts — the remote ids each save produced, kept for a later forget.
+ * mcp-id-map.ts — the remote ids each save produced, kept for a later forget,
+ * and the remote ids nax hid because the server could not delete them.
  *
  * A forget request carries only a slug, and under `direct` the note is already
  * gone from the mirror when the provider is asked. So the MCP provider records,
@@ -8,6 +9,13 @@
  * One file per scope — `<projectDir>/mcp-ids.json` and `<userDir>/mcp-ids.json`:
  *
  *   { "version": 1, "server": "openmemory", "notes": { "replay-budget": ["a1b2"] } }
+ *
+ * A server with no delete tool cannot delete a copy it still holds. Such a copy
+ * is hidden instead: its id moves to the file's optional `hidden` list, and nax's
+ * own search drops every item whose id is hidden. The list is written only when
+ * it holds something, so a file with nothing hidden is what it always was.
+ *
+ *   { "version": 1, "server": "openmemory", "notes": {}, "hidden": ["a1b2"] }
  *
  * A file that is missing reads as empty. A file that is not JSON, of another
  * version or written for another server also reads as empty, and the next `add`
@@ -60,6 +68,24 @@ export interface McpIdMap {
    * `MEMORY_MCP_ID_MAP_READ_FAILED` and forgets nothing.
    */
   drop(scope: MemoryScope, slug: string, only?: readonly string[]): Promise<void>;
+  /**
+   * Hide the remote ids recorded for a note: the server still holds the copies, so
+   * nax's own search must not return them.
+   *
+   * Resolves the ids it hid. A missing file, a file whose content is not usable and
+   * a slug with no recorded ids resolve `[]` and write nothing.
+   *
+   * A read that failed for any reason but "the file is not there" rejects with
+   * `MEMORY_MCP_ID_MAP_READ_FAILED` and hides nothing.
+   */
+  hide(scope: MemoryScope, slug: string): Promise<readonly string[]>;
+  /**
+   * The remote ids nax has hidden in a scope.
+   *
+   * A read that failed for any reason but "the file is not there" rejects with
+   * `MEMORY_MCP_ID_MAP_READ_FAILED`.
+   */
+  hiddenIds(scope: MemoryScope): Promise<ReadonlySet<string>>;
 }
 
 /** Filesystem seam for tests. */
@@ -92,9 +118,25 @@ function notesOf(parsed: unknown, server: string): Notes | null {
   return notes;
 }
 
+/**
+ * The hidden ids of a parsed file, or `[]` when there are none.
+ *
+ * The list belongs to the file's server and version: a file written for another
+ * server holds ids of that server's copies, which say nothing about this one. A
+ * `hidden` value that is not an array of strings reads as no hidden ids and
+ * leaves the file usable.
+ */
+function hiddenOf(parsed: unknown, server: string): readonly string[] {
+  if (typeof parsed !== "object" || parsed === null) return [];
+  const file = parsed as { version?: unknown; server?: unknown; hidden?: unknown };
+  if (file.version !== MCP_ID_MAP_VERSION || file.server !== server) return [];
+  return isStringArray(file.hidden) ? file.hidden : [];
+}
+
 /** What a read found: usable notes, no file at all, or a file that cannot be used. */
 interface NotesRead {
   readonly notes: Notes;
+  readonly hidden: readonly string[];
   readonly state: "valid" | "missing" | "unusable";
 }
 
@@ -104,7 +146,7 @@ async function readNotes(path: string, server: string): Promise<NotesRead> {
     text = await _mcpIdMapDeps.readText(path);
   } catch (cause) {
     if ((cause as { code?: unknown } | null)?.code === "ENOENT") {
-      return { notes: new Map(), state: "missing" };
+      return { notes: new Map(), hidden: [], state: "missing" };
     }
     // A read that failed is not an empty file: writing over it would drop every id it holds.
     throw new NaxError(
@@ -114,17 +156,27 @@ async function readNotes(path: string, server: string): Promise<NotesRead> {
     );
   }
   try {
-    const notes = notesOf(JSON.parse(text), server);
-    return notes === null ? { notes: new Map(), state: "unusable" } : { notes, state: "valid" };
+    const parsed: unknown = JSON.parse(text);
+    const notes = notesOf(parsed, server);
+    if (notes === null) return { notes: new Map(), hidden: hiddenOf(parsed, server), state: "unusable" };
+    return { notes, hidden: hiddenOf(parsed, server), state: "valid" };
   } catch {
     // Not JSON: reads as an empty record, rewritten by the next add or drop.
-    return { notes: new Map(), state: "unusable" };
+    return { notes: new Map(), hidden: [], state: "unusable" };
   }
 }
 
-async function writeNotes(path: string, server: string, notes: Notes): Promise<void> {
+async function writeNotes(path: string, server: string, notes: Notes, hidden: readonly string[] = []): Promise<void> {
   const tmpPath = `${path}.tmp-${crypto.randomUUID()}`;
-  const text = `${JSON.stringify({ version: MCP_ID_MAP_VERSION, server, notes: Object.fromEntries(notes) }, null, 2)}\n`;
+  // The `hidden` key is written only when it holds something, so a file with nothing
+  // hidden is byte for byte the file this module always wrote.
+  const file: { version: number; server: string; notes: Record<string, readonly string[]>; hidden?: string[] } = {
+    version: MCP_ID_MAP_VERSION,
+    server,
+    notes: Object.fromEntries(notes),
+  };
+  if (hidden.length > 0) file.hidden = [...hidden];
+  const text = `${JSON.stringify(file, null, 2)}\n`;
   try {
     await _mcpIdMapDeps.writeText(tmpPath, text);
     await _mcpIdMapDeps.rename(tmpPath, path);
@@ -165,25 +217,46 @@ export function createMcpIdMap(input: { readonly dirs: MemoryDirs; readonly serv
       await queue;
       return (await readNotes(pathOf(scope), server)).notes.get(slug) ?? [];
     },
+    async hiddenIds(scope) {
+      await queue;
+      return new Set((await readNotes(pathOf(scope), server)).hidden);
+    },
     add(scope, slug, ids) {
       return serialised(async () => {
         const path = pathOf(scope);
-        const { notes } = await readNotes(path, server);
+        const { notes, hidden } = await readNotes(path, server);
         const merged = [...new Set([...(notes.get(slug) ?? []), ...ids])];
-        await writeNotes(path, server, new Map(notes).set(slug, merged));
+        // A server that answers a save with a hidden id has made that copy live again.
+        const kept = hidden.filter((id) => !ids.includes(id));
+        await writeNotes(path, server, new Map(notes).set(slug, merged), kept);
       });
     },
     drop(scope, slug, only) {
       return serialised(async () => {
         const path = pathOf(scope);
-        const { notes, state } = await readNotes(path, server);
+        const { notes, hidden, state } = await readNotes(path, server);
         // Nothing to forget in a missing file or a usable one without the slug; an unusable file is rewritten.
         if (state === "missing" || (state === "valid" && !notes.has(slug))) return;
         const rest = new Map(notes);
         const kept = only === undefined ? [] : (notes.get(slug) ?? []).filter((id) => !only.includes(id));
         if (kept.length > 0) rest.set(slug, kept);
         else rest.delete(slug);
-        await writeNotes(path, server, rest);
+        await writeNotes(path, server, rest, hidden);
+      });
+    },
+    hide(scope, slug) {
+      return serialised(async () => {
+        const path = pathOf(scope);
+        const { notes, hidden, state } = await readNotes(path, server);
+        // A missing file, a file whose content is not usable and a slug with no recorded
+        // ids hold nothing to hide, and nothing is written for them.
+        if (state !== "valid") return [];
+        const recorded = notes.get(slug) ?? [];
+        if (recorded.length === 0) return [];
+        const rest = new Map(notes);
+        rest.delete(slug);
+        await writeNotes(path, server, rest, [...new Set([...hidden, ...recorded])]);
+        return recorded;
       });
     },
   };
