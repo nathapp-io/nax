@@ -86,6 +86,9 @@ type WriteAction = "save" | "forget";
 /** The kind every save sends: koda's own note kind. */
 const KODA_SAVE_KIND = "NOTE";
 
+/** The status every search asks for: only a note that is still active is a hit. */
+const STATUS_ACTIVE = "active";
+
 /** The longest query text koda is asked for: a query is a phrase, not a document. */
 const SEARCH_TEXT_MAX_CHARS = 100;
 
@@ -323,8 +326,9 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
    * Blank text asks nothing: a query of spaces is no query, and koda would answer the whole
    * scope. The text is cut to what the index searches and the page to what it honours, so a
    * caller's `limit` decides how many hits are kept, never how many koda is asked to rank.
-   * A record the mirror could not hold a note for is dropped by `kodaHitOf` before the cut,
-   * so the cut counts hits rather than rows.
+   * Only active rows are asked for, as the lookup asks for them, and a record that is not
+   * one — a retired row koda answered anyway, or a row the mirror could not hold a note for
+   * — is dropped by `kodaHitOf` before the cut, so the cut counts hits rather than rows.
    */
   async function search(input: {
     readonly scope: MemoryScope;
@@ -336,6 +340,7 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
     const answer = await client.get(`projects/${project}/memory`, {
       kind: KODA_SAVE_KIND,
       scope: input.scope,
+      status: STATUS_ACTIVE,
       text,
       size: Math.min(input.limit, SEARCH_SIZE_MAX),
     });

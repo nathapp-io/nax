@@ -1,0 +1,311 @@
+{
+  "project": "nax-monorepo",
+  "feature": "memory-forget-integrity",
+  "branchName": "feat/memory-forget-integrity",
+  "createdAt": "2026-11-09T00:00:00.000Z",
+  "updatedAt": "2026-11-09T09:53:35.420Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Refuse unreadable memory record files without overwriting them",
+      "description": "**Goal** — Refuse mutations after unreadable MCP id-map or koda approvals reads, preserving every existing record.\n\n**Motivation** — A read error other than ENOENT (EACCES, EIO, a directory at the path) reads as \"unusable\", the same as corrupt JSON, and the next `record`, `add` or `drop` writes a file holding only the new state.\n\n**Approach** — A read error is not an empty file. Only ENOENT means \"no records yet\". Non-ENOENT MCP id-map read errors reject every map operation as retryable; non-ENOENT koda approvals read errors reject record and drop as retryable, while list remains the explicit read-only exception and resolves [] with its once-per-instance warn. Nothing is written over a file nax could not read. Successfully read content that the existing parser rejects (not JSON, another version, another MCP server, or an unusable shape) keeps today's empty-record/rewrite behavior. Preserve the existing distinction between MCP notesOf, which skips malformed slug entries, and the strict koda approvals parser, which rejects a file containing a malformed entry.\n\n`src/memory/mcp-id-map.ts`:\n- `readNotes(path, server)`. Baseline: returns `{ notes: new Map(), state: \"unusable\" }` when `_mcpIdMapDeps.readText` throws anything but ENOENT. Target (US-001): throws `NaxError(\"[memory] cannot read MCP id map <path>: <message>\", \"MEMORY_MCP_ID_MAP_READ_FAILED\", { stage: \"memory\", path, retryable: true, cause })`. ENOENT still returns `state: \"missing\"`; text that fails `JSON.parse` or `notesOf` still returns `state: \"unusable\"`.\n\n`src/memory/koda-approvals.ts`:\n- `_kodaApprovalsDeps`. Baseline: `{ write, rename }`; reads call `Bun.file(path).text()` directly. Target: adds `read(path: string): Promise<string>` (default `Bun.file(path).text()`), and `readApprovals` reads through it.\n- `ApprovalsRead.state`. Baseline: `\"valid\" | \"missing\" | \"unusable\"`. Target: `\"valid\" | \"missing\" | \"unusable\" | \"unreadable\"`. `\"unreadable\"` means the read threw something other than ENOENT, and the read carries that error.\n- `record(entry)` and `drop(approvalIds)`. Baseline: write after any read. Target: on an `\"unreadable\"` read, reject with `NaxError(\"[memory] cannot read koda approvals <path>: <message>\", \"MEMORY_KODA_APPROVALS_READ_FAILED\", { stage: \"memory\", path, retryable: true, cause })` and write nothing.\n- `list()` is unchanged in result: an `\"unreadable\"` read resolves `[]` and logs the existing once-per-instance warn `\"koda approvals file is unusable\"`. The instance's `read()` wrapper, which today warns only on `\"unusable\"`, warns on `\"unreadable\"` too, sharing the same once-per-instance flag. `list` writes nothing, so returning `[]` loses no record, and throwing would fail every pull while the file stays unreadable.\n\nPatterns to follow: the `serialised` queue and the temp-plus-rename write already in both record modules; the `NaxError` shape of `MEMORY_MCP_ID_MAP_WRITE_FAILED` and `MEMORY_KODA_APPROVALS_WRITE_FAILED`. Update both modules' doc comments. Replace the old MCP unreadable-as-empty and unreadable-rewrite assertions; keep the other unusable-content cases (not JSON, another version, another server, a non-object `notes`) unchanged. Prove a koda 202 save propagates the new error with isMemoryPushRejected false; this is the existing outbox retry seam, not a permanent refusal.\n\n**Scope** — In: M14 in both record modules, their focused tests and the koda save propagation case. Out: partial remote-delete handling belongs to US-002; hidden state and its new methods belong to US-003; koda search filtering belongs to US-004. L31 (two processes racing on `koda-approvals.json`): no code. Every `record`, `list` and `drop` already runs under the memory mirror's cross-process `sync.lock` files. The remaining gap is a koda save push that outlives `MEMORY_OP_TIMEOUT_MS` and records after the operation released the lock. Backing up a file whose content does not parse before it is replaced. Corrupt content keeps today's rewrite. A duplicate remote memory, or a second koda approval request, from retrying a save whose record write failed after the server accepted it.\n\n**Interface** — `read(path: string): Promise<string>`; `ApprovalsRead.state: \"valid\" | \"missing\" | \"unusable\" | \"unreadable\"`; existing `ids`, `add`, `drop`, `record` and `list` signatures remain unchanged.",
+      "acceptanceCriteria": [
+        "[unit] When _mcpIdMapDeps.readText throws an error with code EACCES, createMcpIdMap({ dirs, server: \"om\" }).ids(\"project\", \"s1\") rejects with a NaxError matching { code: \"MEMORY_MCP_ID_MAP_READ_FAILED\", context: { retryable: true } }.",
+        "[unit] When the project id-map read fails with EACCES, the MEMORY_MCP_ID_MAP_READ_FAILED rejection message contains the path of the project scope's mcp-ids.json.",
+        "[unit] Given project mcp-ids.json holds { version: 1, server: \"om\", notes: { s1: [\"old\"] } } and readText throws an error with code EIO, add(\"project\", \"s1\", [\"n\"]) rejects with MEMORY_MCP_ID_MAP_READ_FAILED.",
+        "[unit] Given that valid project file and EIO read error, add(\"project\", \"s1\", [\"n\"]) never calls _mcpIdMapDeps.writeText.",
+        "[unit] Given that valid project file and EIO read error, drop(\"project\", \"s1\") rejects with MEMORY_MCP_ID_MAP_READ_FAILED.",
+        "[unit] Given that valid project file and EIO read error, drop(\"project\", \"s1\") never calls _mcpIdMapDeps.writeText.",
+        "[unit] When _mcpIdMapDeps.readText throws an error with code ENOENT, add(\"project\", \"s1\", [\"n\"]) resolves.",
+        "[unit] After add(\"project\", \"s1\", [\"n\"]) encounters ENOENT, the project mcp-ids.json holds notes { s1: [\"n\"] }.",
+        "[unit] When _kodaApprovalsDeps.read throws an error with code EACCES, createKodaApprovals({ dir, logger }).record(APR_1) rejects with a NaxError matching { code: \"MEMORY_KODA_APPROVALS_READ_FAILED\", context: { retryable: true } }.",
+        "[unit] When _kodaApprovalsDeps.read throws an error with code EACCES, record(APR_1) never calls _kodaApprovalsDeps.write.",
+        "[unit] When _kodaApprovalsDeps.read throws an error with code EACCES, drop([\"apr_1\"]) rejects with MEMORY_KODA_APPROVALS_READ_FAILED.",
+        "[unit] When _kodaApprovalsDeps.read throws an error with code EACCES, drop([\"apr_1\"]) never calls _kodaApprovalsDeps.write.",
+        "[unit] When _kodaApprovalsDeps.read throws an error with code EACCES, two list() calls on one instance each resolve [].",
+        "[unit] When two list() calls encounter EACCES on one approvals instance, the logger receives exactly one warn with message \"koda approvals file is unusable\".",
+        "[unit] When _kodaApprovalsDeps.read throws an error with code ENOENT, record(APR_1) resolves.",
+        "[unit] After record(APR_1) creates the missing approvals file, a fresh instance reading that file resolves list() to [APR_1].",
+        "[integration] Given a directory exists at <dir>/koda-approvals.json and no seam is overridden, record(APR_1) rejects with MEMORY_KODA_APPROVALS_READ_FAILED.",
+        "[integration] Given a directory exists at <dir>/koda-approvals.json and no seam is overridden, an attempted record(APR_1) leaves <dir>/koda-approvals.json as a directory.",
+        "[unit] Given a koda provider built over createKodaApprovals whose _kodaApprovalsDeps.read throws an error with code EACCES and transport answers a save with 202 and an approval id, provider.push of that save rejects with MEMORY_KODA_APPROVALS_READ_FAILED.",
+        "[unit] Given the koda 202 save fails because the approvals read throws EACCES, isMemoryPushRejected of the rejection returns false, preserving the existing retryable-save path even though koda already accepted it.",
+        "[unit] Given mcp-ids.json contains non-JSON text, another version, another server, or a non-object notes field, ids(\"project\", \"s1\") resolves [], preserving today's unusable-content behavior.",
+        "[unit] Given mcp-ids.json contains any of those unusable-content cases, add(\"project\", \"s1\", [\"n\"]) writes { version: 1, server: \"om\", notes: { s1: [\"n\"] } }, preserving today's rewrite behavior.",
+        "[unit] Given koda-approvals.json contains non-JSON text, another version, a non-array approvals field, or a malformed approval entry, list() resolves [], preserving today's unusable-content behavior.",
+        "[unit] Given koda-approvals.json contains any of those unusable-content cases, record(APR_1) writes { version: 1, approvals: [APR_1] }, preserving today's rewrite behavior."
+      ],
+      "tags": [
+        "memory",
+        "integrity",
+        "filesystem",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing record modules use established error, queue and atomic-write patterns; focused regressions and one existing provider seam prove propagation without new abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/mcp-id-map.ts",
+        "packages/nax/src/memory/koda-approvals.ts",
+        "packages/nax/test/unit/memory/mcp-id-map.test.ts",
+        "packages/nax/test/unit/memory/koda-approvals.test.ts",
+        "packages/nax/test/unit/memory/koda-provider-save.test.ts"
+      ],
+      "suggestedCriteria": [
+        "After an unreadable-file mutation rejects and the read becomes available, a later mutation on the same record instance succeeds while preserving the old readable records.",
+        "When a koda approvals instance first encounters unusable content and later an unreadable file, it emits only one \"koda approvals file is unusable\" warn across both conditions.",
+        "When a record-file read fails, the resulting NaxError context retains the original thrown object as cause."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/memory/mcp-id-map.test.ts",
+          "reason": "\"an unreadable file reads as empty (AC-25)\" (line 121) asserts that `ids` resolves `[]` when `readText` throws `EACCES`, and \"add rewrites the file after an unreadable read (AC-27)\" (line 153) asserts that `add` replaces a valid file holding `s1: [\"old\"]` after `readText` throws `EIO`. Both reads now reject. Replacement invariant: with `readText` throwing `EACCES`, `ids` rejects with `MEMORY_MCP_ID_MAP_READ_FAILED`; with `readText` throwing `EIO`, `add` rejects with that code and the file still holds `s1: [\"old\"]`. The other unusable-content cases (not JSON, another version, another server, a non-object `notes`) keep their assertions."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "444a19eeb438f157135457b8ade1f44f0a2d123c"
+    },
+    {
+      "id": "US-002",
+      "title": "Retain failed MCP delete ids and retry the forget",
+      "description": "**Goal** — Report failed MCP remote deletes as retryable failures and retain only their ids for the next attempt.\n\n**Motivation** — `forgetRemote` only warns when a delete answers `isError` or throws, and `forget` then drops every id it tried and resolves `{ status: \"deleted\" }`.\n\n**Approach** — A forget reports `deleted` only for what it actually removed or hid. A delete that failed stays recorded and makes the push fail as retryable.\n\n`src/memory/mcp-provider.ts`:\n- `forgetRemote(tool, idArg, id)`. Baseline: returns `void`, warns on failure. Target: returns `{ kind: \"answered\" | \"threw\"; text: string }` for a failure (`result.content` for an `isError` answer, which may be the empty string; `errorMessage(error)` for a throw) or `undefined` on success, and keeps its warn `\"memory mcp forget failed\"` with `{ server, id, error }`. A delete succeeded exactly when the result is `undefined`.\n- `forget(request)` with `tools.forget` set. Baseline: deletes each id, drops all of them, resolves `deleted`. Target (US-002): deletes each recorded id in order, drops only the ids whose delete succeeded (`idMap.drop(scope, slug, confirmed)`, skipped when none succeeded), then, if any delete failed, rejects with a retryable `NaxError` whose message is `[memory] MCP memory server \"<server>\" tool \"<tool>\" failed: <first failure text>`:\n  - code `MEMORY_MCP_CALL_FAILED` when any delete threw (a transport failure, the provider's fault);\n  - otherwise code `MEMORY_MCP_FORGET_BAD_RESPONSE` (every failed delete was answered with `isError`).\n\nThe `_BAD_RESPONSE` suffix makes `isMemoryBadResponse` true, so the outbox drain (`sync-drain.ts` `proveAndPark`) counts it against the entry and parks the forget as `rejected` after `MEMORY_PUSH_MAX_BAD_RESPONSES` (3) once a write for another key is answered. A delete the server keeps refusing, for example an id it no longer holds, then stops blocking the outbox. With no failure it resolves `{ id: request.clientId, status: \"deleted\" }`.\n\nRead only (verified, unchanged): `MemoryWriteRequest`, `MemoryPushResult`, `isMemoryPushRejected` (`@nathapp/nax-agent`): a throw that is not `MEMORY_PUSH_REJECTED` is transient; `handOverForget` then queues the forget and returns `delivered: false`, and the drain stops at that entry and retries it on the next sync. `createMemoryHost` (`src/memory/host.ts`) and its `save`, `forget`, `search`, `sync`: the entry points the seam ACs enter at.\n\nUpdate the `mcp-provider.ts` header comment's list of refusals to name the new code. Replace the existing isError cases that await success and the throwing-pool case that calls failure only a warning: the push now rejects, deletes still run r1 then r2, the r1 warn retains exactly `{ server: \"om\", id: \"r1\", error: <the failure text> }`, and the map retains `[\"r1\"]` when r2 succeeded. Keep conditional drop protection for replacement saves recorded while a forget is in flight. Use the fake pool and temp-dir id map patterns in the existing provider/host tests. Create `test/unit/memory/mcp-provider-id-map.test.ts` for new id-map-dependent provider cases and `test/unit/memory/host-mcp-forget.test.ts` for host forget-and-sync cases, keeping the existing 528-line/571-line files below the 650-line target; US-003 extends these new files.\n\n**Scope** — In: M12, save read-error propagation inherited from US-001, partial-delete persistence, provider error classification and actual host forget retry wiring. Out: US-001 owns record read semantics; US-003 owns no-tool hiding and hidden-search filtering; US-004 owns koda search. Do not modify the drain; the parking behavior AC records its existing outbox-state contract, verified through the provider classifier seam and existing drain regressions rather than a new host-to-parked test. Hiding the server copy of a forget that is queued or parked after failed `isError` deletes. Until a delete succeeds, nax search still returns that copy. Parking a forget whose remote delete keeps throwing. A `MEMORY_MCP_CALL_FAILED` forget is treated as an outage: it stays at the head of the outbox and blocks later writes until the server answers, as a failing save is today. Only `isError` answers (`MEMORY_MCP_FORGET_BAD_RESPONSE`) are parked. Telling a delete the server refuses because the id is already gone from any other refusal. Both are `MEMORY_MCP_FORGET_BAD_RESPONSE`; the drain parks the forget after 3, and `nax memory discard` clears it. Changing the code an MCP save's `isError` answer rejects with. A save keeps `MEMORY_MCP_CALL_FAILED`. US-002 only: a `createMemoryHost` test that drives a forget through the drain to `parked`. The parking itself is the existing `proveAndPark` path; US-002 proves the code it keys on.\n\n**Interface** — `forgetRemote(tool, idArg, id)` returns `{ kind: \"answered\" | \"threw\"; text: string }` for a failure or `undefined` on success. `forget(request)` retains the existing push result `{ id: request.clientId, status: \"deleted\" }` only when no delete failed.",
+      "acceptanceCriteria": [
+        "[unit] Given an MCP provider over real createMcpIdMap whose _mcpIdMapDeps.readText throws an error with code EACCES, when the add tool answers {\"results\":[{\"id\":\"r1\",\"event\":\"ADD\"}]}, provider.push of a save rejects with MEMORY_MCP_ID_MAP_READ_FAILED.",
+        "[unit] Given that MCP save was remotely accepted but its id-map read failed, isMemoryPushRejected of the rejection returns false, preserving existing outbox retries even though the server may receive the memory twice.",
+        "[unit] Given tools.forget is delete_memory, args.id is memory_id and s1 records [\"r1\", \"r2\"], when r1 answers isError with content \"no such memory\" and r2 answers \"ok\", provider.push of the forget rejects with a NaxError matching { code: \"MEMORY_MCP_FORGET_BAD_RESPONSE\", context: { retryable: true } }.",
+        "[unit] Given that r1 isError/r2 success rejection, isMemoryBadResponse returns true.",
+        "[unit] Given that r1 isError/r2 success rejection, its message contains tool \"delete_memory\" failed.",
+        "[unit] Given that r1 isError/r2 success rejection, its message contains \"no such memory\".",
+        "[unit] Given that r1 answers isError and r2 answers ok, delete_memory receives memory_id r1 then r2 in that order.",
+        "[unit] After that partial forget failure, idMap.ids(\"project\", \"s1\") resolves [\"r1\"].",
+        "[unit] Given that r1 answers isError with \"no such memory\" and r2 succeeds, the logger receives one warn with message \"memory mcp forget failed\" and data exactly { server: \"om\", id: \"r1\", error: \"no such memory\" }.",
+        "[unit] Given s1 records [\"r1\", \"r2\"], when pool.call throws Error(\"socket closed\") for r1 and r2 answers ok, the forget push rejects with MEMORY_MCP_CALL_FAILED.",
+        "[unit] Given the r1 transport-error/r2 success rejection, isMemoryBadResponse returns false.",
+        "[unit] After r1 throws Error(\"socket closed\") and r2 succeeds, idMap.ids(\"project\", \"s1\") resolves [\"r1\"].",
+        "[unit] Given s1 records [\"r1\", \"r2\"], when r1 throws Error(\"socket closed\") and r2 answers isError, the forget push rejects with MEMORY_MCP_CALL_FAILED.",
+        "[unit] Given s1 records [\"r1\", \"r2\"], when both deletes answer isError, the forget push rejects with MEMORY_MCP_FORGET_BAD_RESPONSE.",
+        "[unit] After both recorded deletes answer isError, idMap.ids(\"project\", \"s1\") resolves [\"r1\", \"r2\"].",
+        "[unit] Given s1 records [\"r1\"], when its delete answers isError with empty content, the forget push rejects with MEMORY_MCP_FORGET_BAD_RESPONSE.",
+        "[unit] After the delete for r1 answers isError with empty content, idMap.ids(\"project\", \"s1\") still resolves [\"r1\"].",
+        "[unit] After a forget rejected because r1 failed while r2 succeeded, when r1 now answers ok, a second forget push for s1 calls delete_memory exactly once with memory_id r1.",
+        "[unit] After that retry successfully deletes r1, the second forget push resolves { id: \"c-forget\", status: \"deleted\" }.",
+        "[unit] After that successful retry, idMap.ids(\"project\", \"s1\") resolves [].",
+        "[integration] Given createMemoryHost over a fake pool listing add_memories, search_memory and delete_memory, tools.forget set to delete_memory, and host.save of s1 answered with r1, when delete_memory answers isError, host.forget({ scope: \"project\", slug: \"s1\", reason: \"outdated\" }) resolves with delivered equal to false.",
+        "[integration] After that undelivered forget, when delete_memory now answers ok, host.sync() makes the pool receive a second delete_memory call with memory_id r1.",
+        "[integration] After that sync delivers the forget, a second host.sync() makes no further delete_memory call."
+      ],
+      "tags": [
+        "memory",
+        "mcp",
+        "retry",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One provider algorithm changes using existing id-map persistence and outbox classification; focused unit and host integration regressions validate the established retry contract.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/mcp-provider.ts",
+        "packages/nax/src/memory/mcp-id-map.ts",
+        "packages/nax/test/unit/memory/mcp-provider.test.ts",
+        "packages/nax/test/unit/memory/host-mcp.test.ts",
+        "packages/nax/src/memory/host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/host-mcp-forget.test.ts",
+        "packages/nax/test/unit/memory/mcp-provider-id-map.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When r1 answers isError with \"first refusal\" and r2 throws Error(\"socket closed\"), the forget rejection has code MEMORY_MCP_CALL_FAILED while its message ends with \"first refusal\".",
+        "When every remote delete fails, the forget makes no idMap.drop call."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/memory/mcp-provider.test.ts",
+          "reason": "under \"when the call for r1 answers isError\", \"still tries r2 (AC-29)\" (line 361) and \"warns with stage, message and server/id/error (AC-30, AC-41)\" (line 366) await a push that now rejects, and \"resolves deleted and drops the entry (AC-31)\" (line 378) asserts status `deleted` and an empty id-map entry; \"a pool that throws for one id is also a warning, not a failure\" (line 466) asserts status `deleted` when `pool.call` throws for r1. Replacement invariant: in all four cases the push rejects, with `MEMORY_MCP_FORGET_BAD_RESPONSE` in the three `isError` cases and `MEMORY_MCP_CALL_FAILED` in the throwing-pool case; deletes are still attempted for r1 then r2; the warn for r1 keeps exactly `{ server: \"om\", id: \"r1\", error: <the failure text> }`; afterwards `idMap.ids(\"project\", \"s1\")` is `[\"r1\"]`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "95aa9d1860f4e9f29299da8ead9837c9fe36ea0f"
+    },
+    {
+      "id": "US-003",
+      "title": "Hide undeletable MCP copies from nax search",
+      "description": "**Goal** — Make forget effective within nax when an MCP server has no delete tool by persisting hidden remote ids and filtering them from search.\n\n**Motivation** — With no `memory.mcp.tools.forget` (optional in `config/schemas-memory.ts`, because OpenMemory has no delete tool), `forget` drops the ids and resolves `deleted`.\n\n**Approach** — A server with no delete tool gets the note hidden from nax's own search instead. Fix review M13 (user ruling 2026-11-09: hide, do not refuse).\n\n`src/memory/mcp-id-map.ts`:\n- `McpIdMap`. Baseline: `ids`, `add`, `drop`. Target (US-003): adds `hide(scope: MemoryScope, slug: string): Promise<readonly string[]>` and `hiddenIds(scope: MemoryScope): Promise<ReadonlySet<string>>`. `hide` runs through the same `serialised` queue as `add` and `drop`, and `hiddenIds` waits for that queue to settle before reading, as `ids` does. `hide` moves the slug's recorded ids into `hidden` and resolves them; on a missing file, a file whose content is not usable, or a slug with no recorded ids it resolves `[]` and writes nothing.\n- File format. Baseline: `{ \"version\": 1, \"server\": \"om\", \"notes\": { \"s1\": [\"r1\"] } }`. Target (US-003): an optional `\"hidden\": [\"r1\", \"r2\"]` array of remote ids, written only when non-empty, so a file with nothing hidden is byte-for-byte what is written today. A `hidden` value that is not an array of strings reads as no hidden ids and leaves the file usable. `drop` carries the `hidden` list through unchanged. `add` removes from `hidden` every id it records: a server that answers a later save with the same remote id (a dedupe or an update) has made that copy live again.\n\n`src/memory/mcp-provider.ts`:\n- `forget(request)` without `tools.forget`. Baseline: `idMap.drop(scope, slug)`, resolves `deleted`. Target (US-003): `const hidden = await idMap.hide(scope, slug)`; when `hidden` is non-empty, warn `\"memory mcp forget kept the server copy\"` with `{ server, slug, ids: hidden.length }`; resolves `deleted`. Still no `pool.call` or `pool.listTools`.\n- `search({ scope, text, limit })`. Baseline: maps every parsed item to a hit, then cuts to `limit`. Target (US-003): reads `idMap.hiddenIds(\"project\")` and `idMap.hiddenIds(\"user\")` and drops every item whose `id` is in either set before the cut, so `limit` counts kept hits. Both scopes, because one MCP server holds both scopes' saves and `host-remote-search.ts` always asks the provider with `scope: \"project\"`. An item keeps the slug it gets today: `mcpHitOf` is still given the item's position in the server's answer.\n\nThe new methods share US-001's read rule: `ids`, `add`, `drop`, `hide` and `hiddenIds` reject with retryable `MEMORY_MCP_ID_MAP_READ_FAILED` for EACCES, EIO or EISDIR and do not overwrite the file. If `hiddenIds` rejects during search, the search rejects; `searchRemote` already turns that into one warn and the local hits only, so no forgotten copy is shown. Keep this host behavior unchanged and prove the provider methods are wired through host.forget and host.search.\n\nExtend the US-002-created `test/unit/memory/mcp-provider-id-map.test.ts` and `test/unit/memory/host-mcp-forget.test.ts`. Update `test/unit/memory/host-mcp.test.ts`'s hand-built id-map stub: it also has `hide` resolving `[]` and `hiddenIds` resolving an empty set; the test still asserts the factory got `{ dirs: host.dirs, server: SERVER }` and the provider got that same stub.\n\n**Scope** — In: M13, hidden persistence and scope-union filtering, scope-local unhide on add, no-tool warnings and host seam regressions. Out: US-001 owns read-error policy; US-002 owns configured remote-delete failures and retries; US-004 owns koda filtering. A server copy hidden by US-003 stays on the MCP server and stays visible to other clients of that server. Without a forget tool, nax cannot delete it. Un-hiding across scopes. `add` un-hides only ids in its own scope's file, while search hides the union of both, so a project-scope save the server answers with an id hidden in the user file stays hidden. Hiding the server copy of a forget that is queued or parked after failed `isError` deletes. Until a delete succeeds, nax search still returns that copy. Purging the `hidden` list, including deleting hidden ids once a forget tool is configured later. The list only grows. Hiding a remote memory that has no id in the search answer, or one whose save answer carried no parseable ids. Neither can be matched to the forgotten note. An older nax rewriting `mcp-ids.json` drops the `hidden` list it does not know about, so hidden copies show again in that older version.\n\n**Interface** — `hide(scope: MemoryScope, slug: string): Promise<readonly string[]>` and `hiddenIds(scope: MemoryScope): Promise<ReadonlySet<string>>`. Optional version-1 `hidden` is an array of remote ids, not slugs; McpIdMap remains internal to src/memory.",
+      "acceptanceCriteria": [
+        "[unit] With the id map holding `s1: [\"r1\", \"r2\"]`, `hide(\"project\", \"s1\")` resolves `[\"r1\", \"r2\"]`, afterwards `ids(\"project\", \"s1\")` resolves `[]`, and `hiddenIds(\"project\")` resolves a set holding exactly `r1` and `r2`.",
+        "[unit] After that `hide`, the project `mcp-ids.json` parses to `{ \"version\": 1, \"server\": \"om\", \"notes\": {}, \"hidden\": [\"r1\", \"r2\"] }`.",
+        "[unit] With a missing `mcp-ids.json`, `hide(\"project\", \"s1\")` resolves `[]` and no file is written.",
+        "[unit] With the project `mcp-ids.json` holding `this is not json`, `hide(\"project\", \"s1\")` resolves `[]` and the file still holds `this is not json`.",
+        "[unit] With a file holding notes `s2: [\"r5\"]` and no entry for `s1`, `hide(\"project\", \"s1\")` resolves `[]` and `_mcpIdMapDeps.writeText` is never called.",
+        "[unit] With a file holding `hidden: [\"r1\", \"r2\"]`, `add(\"project\", \"s1\", [\"r1\"])` leaves `hiddenIds(\"project\")` holding exactly `r2` and `ids(\"project\", \"s1\")` resolving `[\"r1\"]`.",
+        "[unit] With a file holding `hidden: [\"r1\"]` and notes `s2: [\"r5\"]`, `add(\"project\", \"s2\", [\"r6\"])` leaves `hiddenIds(\"project\")` holding exactly `r1` and `ids(\"project\", \"s2\")` resolving `[\"r5\", \"r6\"]`.",
+        "[unit] A file holding `{ \"version\": 1, \"server\": \"om\", \"notes\": { \"s1\": [\"a\"] }, \"hidden\": \"r1\" }` reads with `ids(\"project\", \"s1\")` resolving `[\"a\"]` and `hiddenIds(\"project\")` resolving an empty set.",
+        "[unit] After `add(\"project\", \"s1\", [\"n\"])` on a missing file, the written file parses to exactly `{ \"version\": 1, \"server\": \"om\", \"notes\": { \"s1\": [\"n\"] } }`, with no `hidden` key.",
+        "[unit] With `_mcpIdMapDeps.readText` throwing an error whose `code` is `EACCES`, `hide(\"project\", \"s1\")` rejects with `MEMORY_MCP_ID_MAP_READ_FAILED` and `hiddenIds(\"project\")` rejects with `MEMORY_MCP_ID_MAP_READ_FAILED`.",
+        "[unit] With no `tools.forget` and the id map holding `s1: [\"r1\"]`, `provider.push` of a forget for `s1` resolves `{ id: \"c-forget\", status: \"deleted\" }`, calls neither `pool.call` nor `pool.listTools`, and leaves `hiddenIds(\"project\")` holding `r1`.",
+        "[unit] In that case the logger receives one warn with message `memory mcp forget kept the server copy` and data exactly `{ server: \"om\", slug: \"s1\", ids: 1 }`.",
+        "[unit] With no `tools.forget` and no ids recorded for `s1`, a forget push for `s1` resolves `deleted` and the logger receives no warn.",
+        "[unit] With `hiddenIds(\"project\")` holding `r1` and `search_memory` answering items with ids `r1`, `r2` and `r3`, `provider.search({ scope: \"project\", text: \"budget\", limit: 2 })` resolves two hits whose slugs are `mcp-r2` and `mcp-r3`.",
+        "[unit] With `hiddenIds(\"user\")` holding `u1`, `hiddenIds(\"project\")` empty, and `search_memory` answering items with ids `u1` and `r2`, `provider.search({ scope: \"project\", text: \"budget\", limit: 5 })` resolves one hit, whose slug is `mcp-r2`.",
+        "[integration] With `createMemoryHost` over a fake pool whose server lists only `add_memories` and `search_memory`, `host.save` of note `s1` answered with remote id `r1`, then `host.forget({ scope: \"project\", slug: \"s1\", reason: \"outdated\" })`, then `search_memory` answering one item with id `r1` and text `s1: budget note`, `host.search({ text: \"budget\", limit: 5 })` resolves no hit whose slug is `mcp-r1`.",
+        "[integration] In that same host, with `search_memory` answering items with ids `r1` and `r9`, `host.search({ text: \"budget\", limit: 5 })` resolves a hit whose slug is `mcp-r9`.",
+        "[integration] With the same host and server, `host.save` of a user-scope note `u1` answered with remote id `ru1`, then `host.forget({ scope: \"user\", slug: \"u1\", reason: \"outdated\" })`, then `search_memory` answering one item with id `ru1`, `host.search({ text: \"budget\", limit: 5 })` resolves no hit whose slug is `mcp-ru1`.",
+        "[integration] With that host's `_mcpIdMapDeps.readText` throwing an error whose `code` is `EACCES` after the save, and a local note matching `budget`, `host.search({ text: \"budget\", limit: 5 })` resolves the local hit, no hit whose slug starts with `mcp-`, and the host logger receives one warn with message `memory remote search failed`.",
+        "[unit] When hiddenIds rejects during an MCP provider search, provider.search rejects rather than returning unfiltered remote hits."
+      ],
+      "tags": [
+        "memory",
+        "mcp",
+        "search",
+        "integrity",
+        "bugfix"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing modules gain optional hidden-id state and filtering using their established queue, atomic writer and host fallback; deterministic record/provider/host regressions need no new abstraction or heavier test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/mcp-id-map.ts",
+        "packages/nax/src/memory/mcp-provider.ts",
+        "packages/nax/test/unit/memory/mcp-id-map.test.ts",
+        "packages/nax/test/unit/memory/mcp-provider-id-map.test.ts",
+        "packages/nax/test/unit/memory/host-mcp-forget.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When drop removes recorded ids from a file that contains hidden ids, hiddenIds returns the same hidden set afterward.",
+        "When hidden ids filter an earlier item from an MCP answer, a later id-less item retains the same mcp-index slug it had before filtering.",
+        "When hide is queued behind an unfinished add on the same map, hide resolves the ids recorded by that add.",
+        "When hiddenIds is called after an unfinished hide on the same map, it resolves only after that hide settles and returns the resulting hidden set.",
+        "When add records the last hidden id, the resulting mcp-ids.json omits the hidden key and uses the existing version-1 serialization."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/memory/host-mcp.test.ts",
+          "reason": "\"AC-4 the id map is built over the host's own directories for the server\" (line 218) builds a stub id map with only `ids`, `add` and `drop` and assigns it through `_memoryHostDeps.createMcpIdMap`, which stops type-checking once `McpIdMap` gains `hide` and `hiddenIds`. Replacement invariant: the stub also has `hide` resolving `[]` and `hiddenIds` resolving an empty set; the test still asserts the factory got `{ dirs: host.dirs, server: SERVER }` and the provider got that same stub."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b18672d56e93a8b818a437e97ce56c00bf6366ff"
+    },
+    {
+      "id": "US-004",
+      "title": "Return only active, undeleted koda notes in search",
+      "description": "**Goal** — Exclude retired koda notes from client search hits and request active notes from the server.\n\n**Motivation** — `kodaHitOf` always returns `status: \"active\"` and never reads the row's `status` or `deletedAt`, and the search request (`koda-provider.ts:336-341`) sends no status filter, while the lookup path (`koda-lookup.ts:143`) sends `status: \"active\"`.\n\n**Approach** — `src/memory/koda-mapping.ts` and `src/memory/koda-provider.ts` (US-004):\n- `kodaHitOf(record, index, total)`. Baseline: returns a hit with `status: STATUS_ACTIVE` for any note row. Target: returns `null` when the row's `status` is not `\"active\"` or its `deletedAt` is a string (`readNoteRow`'s `status` and `deleted` fields).\n- `search` in `createKodaMemoryProvider`. Baseline: `client.get(\"projects/<project>/memory\", { kind, scope, text, size })`. Target: `{ kind, scope, status: \"active\", text, size }`, in that order, matching the lookup in `koda-lookup.ts`.\n\nUse existing readNoteRow status/deleted validation and hitsOf's null filtering before its limit cut. Preserve server rank order, original positional scores, subject-derived slug, scope and snippet handling. In `test/unit/memory/koda-provider-forget-search.test.ts`, replace the exact old query assertion `kind=NOTE&scope=project&text=replay+budget&size=5` with `kind=NOTE&scope=project&status=active&text=replay+budget&size=5`.\n\n**Scope** — In: M23's koda hit mapping and search request, with unit regressions through the real client transport seam. Out: US-001 owns record-file errors; US-002 owns MCP delete retries; US-003 owns MCP hidden ids/search filtering. Do not change lookup, pull reconciliation or server behavior. Checking whether koda's server already filters retired rows from search. US-004 filters on the client either way.\n\n**Interface** — `kodaHitOf(record, index, total)` retains its existing MemoryHit-or-null result; the provider uses `{ kind, scope, status: \"active\", text, size }` for its search query.",
+      "acceptanceCriteria": [
+        "[unit] When a note row has status rejected, kodaHitOf returns null.",
+        "[unit] When a note row has status superseded, kodaHitOf returns null.",
+        "[unit] When a note row has status active and deletedAt \"2026-11-01T00:00:00.000Z\", kodaHitOf returns null.",
+        "[unit] When a note row has status active and deletedAt null, kodaHitOf returns a hit whose status is active.",
+        "[unit] When a note row has status active and deletedAt null, kodaHitOf returns a hit whose slug is the row's subject.",
+        "[unit] When provider.search({ scope: \"project\", text: \"replay budget\", limit: 5 }) requests the memory endpoint, its query string is exactly kind=NOTE&scope=project&status=active&text=replay+budget&size=5.",
+        "[unit] Given koda answers three note records in order a (active), b (status rejected), c (active), search({ scope: \"project\", text: \"budget\", limit: 2 }) resolves two hits whose slugs are a and c, in that order."
+      ],
+      "tags": [
+        "memory",
+        "koda",
+        "search",
+        "bugfix"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two small changes reuse existing row lifecycle fields and hit filtering, with deterministic mapper and request-query regressions in the existing search tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-mapping.ts",
+        "packages/nax/src/memory/koda-provider.ts",
+        "packages/nax/src/memory/koda-lookup.ts",
+        "packages/nax/test/unit/memory/koda-provider-forget-search.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When an active note row carries deletedAt as the empty string, kodaHitOf returns null because deletedAt is a string.",
+        "When the first of three returned rows is rejected, the remaining active hits retain their original positional scores rather than being re-ranked."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/memory/koda-provider-forget-search.test.ts",
+          "reason": "\"a query requests kind, scope, text and size in that order (AC-17)\" (line 129) asserts the exact search URL query `kind=NOTE&scope=project&text=replay+budget&size=5`. The search now sends `status=active`. Replacement invariant: the query is exactly `kind=NOTE&scope=project&status=active&text=replay+budget&size=5`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "743951d65fa241fd5308db5673c37b6bedc17bf6"
+    }
+  ],
+  "analysis": "Feature F3 closes review findings M12, M13, M14 and M23 from docs/reviews/20261109-review-nax.md, without reopening the merged F1/F2 work or the deferred F4/F5 findings. Exactly four implementation stories run in packages/nax: US-001 first, US-002 after US-001, US-003 after both, and independent US-004. All production changes stay in the five memory modules named by the spec; packages/nax-agent supplies existing contracts, locks, operations and drain behavior and is read-only for this feature. No new runtime dependencies, public package exports, configuration flags or release version changes are needed. Graph navigation tools are unavailable in this session; findings below were grounded with direct reads and targeted searches.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:15 indexes dependency injection and NaxError conventions; its quick-reference table at :146-147 establishes source/test size limits. Use Bun-native file reads/writes, existing _deps seams, stage-prefixed NaxError messages with cause and structured memory-stage logging. Keep existing serialised mutation queues and same-directory temp-plus-rename writes rather than introducing another record store or lock. Tests use bun:test and @test/helpers fixtures, makeLogger, makeTempDir and cleanupTempDir; restore seams after each case. Regression tests must fail against the old implementation first. Run targeted package-scoped tests, never bare bun test. Pipeline gates are not story acceptance criteria; coverage runs separately only outside NAX_SANDBOXED=1.\n\nUS-001 grounding: packages/nax/src/memory/mcp-id-map.ts:84 currently converts every read exception into missing/unusable and therefore an empty Map. Its :100 writer already supplies the atomic-write and NaxError pattern; :126 creates one serialised queue, :141 waits for it in ids, :145 add reads then writes, and :154 drop may rewrite unusable content. Move non-ENOENT read failures outside content-parse recovery so MEMORY_MCP_ID_MAP_READ_FAILED cannot be swallowed by a broad JSON catch. Preserve path, original cause and retryable:true. ENOENT remains missing; successfully read but unusable content retains existing recovery. The existing Map protects inherited-member slugs such as __proto__, so preserve it. notesOf at :66 currently ignores non-string-array slug entries rather than rejecting the whole file; this feature is about read-error integrity, not redesigning existing content parsing. The koda parser is stricter: packages/nax/src/memory/koda-approvals.ts:132 rejects the entire approvals file when an entry is malformed. Its seam at :88 currently has only write and rename; :148 reads Bun.file directly. Add read to that same seam, distinguish unreadable with its original error from unusable content, warn for either through the same instance flag at :219, and refuse writes in record (:238) and drop (:255) after unreadable reads. list (:234) must keep its [] fallback. Preserve invalid-input refusal, ordering, replacement by scope/slug, atomic writes and queue recovery. Update both header comments, which currently promise unsafe unreadable-as-empty behavior.\n\nUS-001 test impact: packages/nax/test/unit/memory/mcp-id-map.test.ts:121 and :153 explicitly assert the old destructive behavior and must be replaced with retryable rejection/no-write assertions while retaining unusable-content rewrite cases at :133 and :146. Supply Error.code, not merely a message containing EACCES/EIO. packages/nax/test/unit/memory/koda-approvals.test.ts:209 already covers an actual directory as unreadable list input; extend the record path to prove it cannot replace that directory. Existing temp-dir and seam snapshots are at :16-35. packages/nax/test/unit/memory/koda-provider-save.test.ts:159 composes a real client and real approvals record, so use its transport seam for the 202 propagation case. A seam simulating ENOENT must be restored or delegate to real reads before verifying a fresh instance sees the newly written record.\n\nUS-002 grounding: packages/nax/src/memory/mcp-provider.ts:93 saves remotely before idMap.add, so the US-001 read rejection already propagates through provider.push; prove its nonpermanent classification without changing save semantics. At :107 forgetRemote currently only warns; :118 forget unconditionally drops every attempted id. Change that helper to return an explicit failure record or undefined, classify success by undefined (not truthiness of text), continue sequentially after each failure, collect successful ids and first failure text, drop confirmed ids only when nonempty, then reject if any failed. A later thrown failure must determine MEMORY_MCP_CALL_FAILED even if the first failure was an isError response; the message still uses the first failure text. An empty isError content is still failure. All answered failures use MEMORY_MCP_FORGET_BAD_RESPONSE. Preserve the per-id warn exactly, no-id short circuit, missing-tool permanent refusal, call timeout/maxBytes and the existing protection for replacement saves: drop(scope, slug, confirmed), never unconditional removal. Existing late-finishing and timed-out-forget regressions are packages/nax/test/unit/memory/mcp-provider.test.ts:386 and :425. The stale isError assertions at :361, :366 and :378 and throwing-pool assertion at :466 must now await rejection and retain r1 while still trying r2. Update the provider header's refusal taxonomy.\n\nRetry/parking seams are existing, read-only behavior: packages/nax-agent/src/memory/note.ts:150 recognizes only MEMORY_PUSH_REJECTED as permanent; :163 recognizes the _BAD_RESPONSE suffix. packages/nax-agent/src/memory/operations.ts:458 handOverForget queues other rejections and returns delivered:false, removing an entry only after a resolved push. packages/nax-agent/src/memory/sync-drain.ts:84 pushes through the operation timeout; :183 drains queued writes; :228 proveAndPark counts bad responses and, at MEMORY_PUSH_MAX_BAD_RESPONSES=3, requires an answered later write for a different key before parking. Transport failures stop the drain without counting/parking. Do not modify this machinery or add a createMemoryHost-to-parked scenario: provider classification is US-002's required parking seam, with existing drain behavior reused. Prove real retry wiring via host.save, host.forget and successive host.sync calls. Create packages/nax/test/unit/memory/mcp-provider-id-map.test.ts for new id-map-dependent provider scenarios and packages/nax/test/unit/memory/host-mcp-forget.test.ts for host forget/sync scenarios; extend these in US-003, not as newly created outputs there. Existing mcp-provider.test.ts has 528 lines and host-mcp.test.ts has 571; keep additions out of those large files except required stale-assertion/stub edits, respecting the 650-line test target. Reuse established fake-pool and temp-dir patterns rather than global module mocks.\n\nUS-003 grounding: McpIdMap is an internal interface at packages/nax/src/memory/mcp-id-map.ts:36, consumed by mcp-provider.ts:20 and composed by host.ts:281 over the host's exact directories/server. Extend its file read/write state with hidden remote ids, add serialised hide and queue-aware hiddenIds, and preserve hidden during drop. hide must not rewrite missing/unusable/no-id files. add removes only the ids it records from its own scope's hidden set. Optional hidden remains version 1; malformed hidden alone must not invalidate otherwise usable notes. Omit empty hidden so ordinary writes remain byte-for-byte compatible with today's JSON formatting/key order/newline. Existing files require no migration. Older nax versions discard hidden on rewrite, a documented rollback limitation, not a migration to solve.\n\nWith no configured delete tool, mcp-provider.ts:122 currently just drops ids: replace with hide, warn only when ids were actually moved and never contact/list the server. Search at :143 currently maps all items then slices. Read both scope hidden sets because packages/nax/src/memory/host-remote-search.ts:47 always invokes remote search with project scope. Filter ids against their union before slicing while preserving the original parsed-item index passed to mcpHitOf. packages/nax/src/memory/mcp-results.ts:97 derives id-less slugs from index, so reindexing kept rows would be a regression; explicit-id slugs remain folded mcp-remote-id. An unreadable hidden file must reject provider search, not silently expose forgotten copies. host-remote-search.ts:54 already converts that rejection to one memory remote search failed warning and no remote hits; host.ts:439 merges those with local search. mergeRemoteFirst at host-remote-search.ts:63 otherwise puts remote copies first, explaining why provider filtering is necessary. The only hand-built McpIdMap found is packages/nax/test/unit/memory/host-mcp.test.ts:219: add hide resolving [] and hiddenIds resolving an empty Set, preserving factory arguments and instance identity assertions. US-003's five context files include both new upstream US-002 test files, which will exist by execution time.\n\nUS-004 grounding: packages/nax/src/memory/koda-mapping.ts:176 already recognizes deletedAt exactly when it is a string; readNoteRow at :209 exposes both status and deleted. kodaHitOf at :466 currently ignores both and always labels a row active. Return null unless status is active and deleted is false, retaining all other validation, snippet limits, scope mapping and original positional score. packages/nax/src/memory/koda-provider.ts:329 search sends kind/scope/text/size without status; insert status:active between scope and text, matching packages/nax/src/memory/koda-lookup.ts:139. hitsOf at :361 already removes nulls before slicing, so no search algorithm redesign is needed. packages/nax/test/unit/memory/koda-provider-forget-search.test.ts:53 exercises kodaHitOf, :129 asserts the exact old query, and :181 covers rank/limit: extend it for retired rows and active/rejected/active filtering before the cut. This is note-lifecycle filtering, not authentication or access-control implementation.\n\nL31 requires no code and no fifth story: koda-provider.ts:308 is the only production approvals.record caller; koda-pull.ts:388 and :423 call list/drop. packages/nax-agent/src/memory/operations.ts:359 and :411 wrap save/forget in withMirrorLock; sync.ts:152 acquires storeLockTargets before drain/pull (:416 and :424), and mirror-lock.ts:124 includes both scopes. Thus concurrent nax run/chat processes already take the same project/user sync.lock files. A push can outlive MEMORY_OP_TIMEOUT_MS and record after the lock is released; that remaining gap stays deferred, not an excuse to introduce locking changes here.\n\nRisks and rollout: unreadable record files now prevent mutation instead of silently resetting state, intentionally leaving outbox entries retryable. A remote save may already have succeeded before local record persistence fails, so retries can duplicate MCP memories or koda approvals; do not add dedupe/transactions. MCP transport delete failures can continue blocking later writes, while repeated answered refusals become parkable through existing classification. Hidden copies remain on the server, visible to other clients, and only parseable remote ids can be hidden. Unhiding is scope-local while hiding is unioned across scopes. Hidden-state read failures deliberately degrade to local-only search. There is no hidden-list purge, cross-scope reconciliation or later delete-tool cleanup. No data format bump or user migration is required; ship optional hidden state with documented downgrade limitations. Suggested edge assertions are separated from binding spec acceptance criteria. Failure-table rows are covered by unreadable/no-write and unusable-rewrite criteria in US-001, transient save classification and partial-delete/retry/error classification in US-002, the existing parking contract plus classifier seam in US-002, and hide/search-fallback criteria in US-003.\n\nRefine audit: enumerated all 49 explicit spec ACs (US-001:11, US-002:13, US-003:19, US-004:6), preserving every assertion and qualifying clause in its original story. Compound bullets are split into observable outcomes; the no-hidden-key, original-call-order, exact-warning-data and post-sync-no-further-call regression anchors remain. All 15 feature-level exclusions remain verbatim, with nearby boundaries echoed in Scope Out. Every contextFiles list matches the spec, including the two valid upstream US-002 outputs consumed by US-003; all binding dependencies/workdirs remain unchanged. Re-reading mcp-id-map.ts:66 and koda-approvals.ts:132 confirmed the existing content parsers differ, so US-001 now explicitly avoids broadening corruption policy and exempts read-only list from throwing. Ambiguous private-read/rewrite criteria were replaced with public ids/list/record/add results and concrete file shapes. Non-ENOENT failure-table cases retain no-write and once-only warning assertions. The existing parking contract is stated as observable outbox state and is validated through the provider error-classifier seam and existing drain behavior, not a new host-to-parked scenario. The spec Modifies warning/order and host factory/stub-identity invariants are explicit regression ACs. US-003 routing is reduced to medium/tdd-simple because it extends only the existing record and provider with the established queue, atomic writer and fallback rather than adding a new concurrency abstraction. NaxError context is grounded at packages/nax-agent/src/infra/nax-error.ts:10; the new errors remain instances of the shared class consumed by the existing classifiers.",
+  "outOfScope": [
+    "L31 (two processes racing on `koda-approvals.json`): no code. Every `record`, `list` and `drop` already runs under the memory mirror's cross-process `sync.lock` files. The remaining gap is a koda save push that outlives `MEMORY_OP_TIMEOUT_MS` and records after the operation released the lock.",
+    "A server copy hidden by US-003 stays on the MCP server and stays visible to other clients of that server. Without a forget tool, nax cannot delete it.",
+    "Un-hiding across scopes. `add` un-hides only ids in its own scope's file, while search hides the union of both, so a project-scope save the server answers with an id hidden in the user file stays hidden.",
+    "Hiding the server copy of a forget that is queued or parked after failed `isError` deletes. Until a delete succeeds, nax search still returns that copy.",
+    "Purging the `hidden` list, including deleting hidden ids once a forget tool is configured later. The list only grows.",
+    "Hiding a remote memory that has no id in the search answer, or one whose save answer carried no parseable ids. Neither can be matched to the forgotten note.",
+    "An older nax rewriting `mcp-ids.json` drops the `hidden` list it does not know about, so hidden copies show again in that older version.",
+    "Backing up a file whose content does not parse before it is replaced. Corrupt content keeps today's rewrite.",
+    "A duplicate remote memory, or a second koda approval request, from retrying a save whose record write failed after the server accepted it.",
+    "Parking a forget whose remote delete keeps throwing. A `MEMORY_MCP_CALL_FAILED` forget is treated as an outage: it stays at the head of the outbox and blocks later writes until the server answers, as a failing save is today. Only `isError` answers (`MEMORY_MCP_FORGET_BAD_RESPONSE`) are parked.",
+    "Telling a delete the server refuses because the id is already gone from any other refusal. Both are `MEMORY_MCP_FORGET_BAD_RESPONSE`; the drain parks the forget after 3, and `nax memory discard` clears it.",
+    "Changing the code an MCP save's `isError` answer rejects with. A save keeps `MEMORY_MCP_CALL_FAILED`.",
+    "US-002 only: a `createMemoryHost` test that drives a forget through the drain to `parked`. The parking itself is the existing `proveAndPark` path; US-002 proves the code it keys on.",
+    "Checking whether koda's server already filters retired rows from search. US-004 filters on the client either way.",
+    "The other review findings (M1-M11, M15-M23 not listed above, L1-L37 except L31). M1-M11 and M18 shipped in F1 and F2; the rest belong to F4 and F5."
+  ],
+  "routingProfile": "native-ds-m3-flash"
+}

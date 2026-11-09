@@ -2,17 +2,35 @@
  * koda-approvals.ts — the durable record of the saves koda answered with a 202,
  * so a rejected proposal can be reconciled on a later pull.
  *
- * Covers US-004 AC-1..AC-11.
+ * Covers US-004 AC-1..AC-11, and US-001 AC-9..AC-16 and AC-23..AC-24: a read
+ * that fails for any reason but "the file is not there" refuses the mutation
+ * instead of writing over a file nax could not read.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
+import { NaxError } from "@/errors";
 import { _kodaApprovalsDeps, createKodaApprovals, type KodaApproval } from "@/memory/koda-approvals";
 
 const APR_1: KodaApproval = { approvalId: "apr_1", scope: "project", slug: "a", clientId: "c1" };
 const APR_2: KodaApproval = { approvalId: "apr_2", scope: "project", slug: "b", clientId: "c2" };
+
+/** A filesystem failure with the code the module reads. */
+function fsError(code: string): Error {
+  return Object.assign(new Error(`${code}: failure`), { code });
+}
+
+/** The NaxError `promise` rejects with; fails the test when it resolves instead. */
+async function rejection(promise: Promise<unknown>): Promise<NaxError> {
+  const caught: unknown = await promise.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  if (!(caught instanceof NaxError)) throw new Error(`expected a NaxError, got ${String(caught)}`);
+  return caught;
+}
 
 describe("createKodaApprovals", () => {
   let dir: string;
@@ -148,6 +166,63 @@ describe("createKodaApprovals", () => {
     expect(await approvals.list()).toEqual([APR_1]);
   });
 
+  test("a read that fails with EACCES refuses the record and writes nothing (US-001 AC-9, AC-10)", async () => {
+    const writes: string[] = [];
+    _kodaApprovalsDeps.read = async () => {
+      throw fsError("EACCES");
+    };
+    _kodaApprovalsDeps.write = async (path, text) => {
+      writes.push(path);
+      await Bun.write(path, text);
+    };
+
+    const error = await rejection(createKodaApprovals({ dir, logger }).record(APR_1));
+
+    expect(error).toBeInstanceOf(NaxError);
+    expect(error).toMatchObject({ code: "MEMORY_KODA_APPROVALS_READ_FAILED", context: { retryable: true } });
+    expect(writes).toEqual([]);
+  });
+
+  test("a read that fails with EACCES refuses the drop and writes nothing (US-001 AC-11, AC-12)", async () => {
+    const writes: string[] = [];
+    _kodaApprovalsDeps.read = async () => {
+      throw fsError("EACCES");
+    };
+    _kodaApprovalsDeps.write = async (path, text) => {
+      writes.push(path);
+      await Bun.write(path, text);
+    };
+
+    const error = await rejection(createKodaApprovals({ dir, logger }).drop(["apr_1"]));
+
+    expect(error.code).toBe("MEMORY_KODA_APPROVALS_READ_FAILED");
+    expect(writes).toEqual([]);
+  });
+
+  test("two list calls over an unreadable file resolve [] and warn once (US-001 AC-13, AC-14)", async () => {
+    _kodaApprovalsDeps.read = async () => {
+      throw fsError("EACCES");
+    };
+    const approvals = createKodaApprovals({ dir, logger });
+
+    expect(await approvals.list()).toEqual([]);
+    expect(await approvals.list()).toEqual([]);
+    expect(warns()).toHaveLength(1);
+    expect(warns()[0]?.message).toBe("koda approvals file is unusable");
+  });
+
+  test("a file that is not there is read as no approvals, so the record is written (US-001 AC-15, AC-16)", async () => {
+    const realRead = _kodaApprovalsDeps.read;
+    _kodaApprovalsDeps.read = async () => {
+      throw fsError("ENOENT");
+    };
+
+    await createKodaApprovals({ dir, logger }).record(APR_1);
+
+    _kodaApprovalsDeps.read = realRead;
+    expect(await createKodaApprovals({ dir, logger }).list()).toEqual([APR_1]);
+  });
+
   test("a record with an empty approvalId is refused and the file is left alone (AC-2)", async () => {
     const approvals = createKodaApprovals({ dir, logger });
     await approvals.record(APR_1);
@@ -186,13 +261,13 @@ describe("createKodaApprovals", () => {
     expect(await approvals.list()).toEqual([APR_1, APR_2]);
   });
 
-  test("a file holding not json resolves [] and logs one warn (AC-8)", async () => {
+  test("a file holding not json resolves [] and logs one warn (US-001 AC-23)", async () => {
     await Bun.write(approvalsPath(), "not json");
     expect(await createKodaApprovals({ dir, logger }).list()).toEqual([]);
     expect(warns()).toHaveLength(1);
   });
 
-  test("a file of another version resolves [] and logs one warn (AC-9)", async () => {
+  test("a file of another version resolves [] and logs one warn (US-001 AC-23)", async () => {
     await Bun.write(approvalsPath(), JSON.stringify({ version: 2, approvals: [APR_1] }));
     expect(await createKodaApprovals({ dir, logger }).list()).toEqual([]);
     expect(warns()).toHaveLength(1);
@@ -214,7 +289,7 @@ describe("createKodaApprovals", () => {
     expect(warns()).toHaveLength(1);
   });
 
-  test("an unreadable file resolves [] and logs one warn (AC-11)", async () => {
+  test("a path that cannot be read resolves [] and logs one warn (US-001 AC-13)", async () => {
     mkdirSync(approvalsPath(), { recursive: true });
     const approvals = createKodaApprovals({ dir, logger });
 
@@ -231,12 +306,25 @@ describe("createKodaApprovals", () => {
     ["a record has no slug", { version: 1, approvals: [{ ...APR_1, slug: 7 }] }],
     ["a record has an unknown scope", { version: 1, approvals: [{ ...APR_1, scope: "team" }] }],
     ["the file is an array", [APR_1]],
-  ])("a version-1 file whose %s resolves [] and logs one warn (AC-11)", async (_label, content) => {
+  ])("a version-1 file whose %s resolves [] and logs one warn (US-001 AC-23)", async (_label, content) => {
     await Bun.write(approvalsPath(), JSON.stringify(content));
     const approvals = createKodaApprovals({ dir, logger });
 
     expect(await approvals.list()).toEqual([]);
     expect(await approvals.list()).toEqual([]);
     expect(warns()).toHaveLength(1);
+  });
+
+  test.each([
+    ["not json", "not json"],
+    ["another version", JSON.stringify({ version: 2, approvals: [APR_1] })],
+    ["a non-array approvals field", JSON.stringify({ version: 1, approvals: { apr_1: APR_1 } })],
+    ["a malformed approval entry", JSON.stringify({ version: 1, approvals: ["apr_1"] })],
+  ])("a record rewrites a file holding %s (US-001 AC-24)", async (_label, content) => {
+    await Bun.write(approvalsPath(), content);
+
+    await createKodaApprovals({ dir, logger }).record(APR_1);
+
+    expect(await readJson(approvalsPath())).toEqual({ version: 1, approvals: [APR_1] });
   });
 });

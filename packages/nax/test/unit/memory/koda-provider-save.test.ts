@@ -2,11 +2,12 @@
  * koda-provider-save.test.ts — the koda provider's reachability, its memoised
  * project id and its save delivery.
  *
- * Covers US-005 AC-1..AC-22. Every case drives the provider over a real
- * `createKodaClient` whose `fetch` seam is stubbed, and the proposal case over a
- * real `createKodaApprovals` in a temporary directory — so what is asserted is the
- * requests koda would receive and the record a `202` leaves on disk, not the
- * provider's own view of either.
+ * Covers US-005 AC-1..AC-22, and US-001 AC-19..AC-20: a `202` whose approval
+ * cannot be recorded is a retryable failure, not a permanent refusal. Every case
+ * drives the provider over a real `createKodaClient` whose `fetch` seam is
+ * stubbed, and the proposal case over a real `createKodaApprovals` in a
+ * temporary directory — so what is asserted is the requests koda would receive
+ * and the record a `202` leaves on disk, not the provider's own view of either.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -19,7 +20,12 @@ import {
 } from "@nathapp/nax-agent";
 import { assertDefined, cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
-import { createKodaApprovals, type KodaApproval, type KodaApprovals } from "@/memory/koda-approvals";
+import {
+  _kodaApprovalsDeps,
+  createKodaApprovals,
+  type KodaApproval,
+  type KodaApprovals,
+} from "@/memory/koda-approvals";
 import { _kodaClientDeps, createKodaClient, kodaStatusOf } from "@/memory/koda-http";
 import {
   type CreateKodaMemoryProviderInput,
@@ -483,5 +489,22 @@ describe("createKodaMemoryProvider — refusals and transient failures", () => {
 
     expect(error.code).toBe("MEMORY_KODA_BAD_RESPONSE");
     expect(await approvals.list()).toEqual([]);
+  });
+
+  test("a 202 whose approval cannot be recorded is a retryable failure, not a refusal (US-001 AC-19, AC-20)", async () => {
+    stubSave(() => saveAnswer({ id: "apr_1" }, 202));
+    const realRead = _kodaApprovalsDeps.read;
+    _kodaApprovalsDeps.read = async () => {
+      throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    };
+
+    try {
+      const error = await rejection(makeProvider().push(SAVE));
+
+      expect(error.code).toBe("MEMORY_KODA_APPROVALS_READ_FAILED");
+      expect(isMemoryPushRejected(error)).toBe(false);
+    } finally {
+      _kodaApprovalsDeps.read = realRead;
+    }
   });
 });
