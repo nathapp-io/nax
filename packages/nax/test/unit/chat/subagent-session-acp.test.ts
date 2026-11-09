@@ -146,12 +146,9 @@ describe("runSubagent ACP transport", () => {
     expect(deps.createMemoryTranscriptStore).toHaveBeenCalledTimes(1);
     expect(deps.nativeBackend).not.toHaveBeenCalled();
     expect(acpBackendMock).toHaveBeenCalledTimes(1);
-    expect(acpBackendMock.mock.calls[0]?.[0]).toEqual({
-      agent: "codex",
-      model: "gpt-6.1-terra",
-      allowUnsandboxed: true,
-      inheritEnv: true,
-    });
+    const arg = acpBackendMock.mock.calls[0]?.[0];
+    expect(arg).toMatchObject({ agent: "codex", model: "gpt-6.1-terra", allowUnsandboxed: true, inheritEnv: false });
+    expect(Object.values(arg?.env ?? {}).every((value) => typeof value === "string")).toBe(true);
   });
 
   test("consumes the operator's acpSubagents profile override", async () => {
@@ -162,7 +159,9 @@ describe("runSubagent ACP transport", () => {
   test("AC-4: a write tool on a cursor model opens with profile ask", async () => {
     await run({ model: "acp:cursor", agent: agentWith(["Read", "Edit"]) });
     expect(sessionOptions().profile).toBe("ask");
-    expect(acpBackendMock.mock.calls[0]?.[0]).toEqual({ agent: "cursor", allowUnsandboxed: true, inheritEnv: true });
+    const arg = acpBackendMock.mock.calls[0]?.[0];
+    expect(arg).toMatchObject({ agent: "cursor", allowUnsandboxed: true, inheritEnv: false });
+    expect(Object.values(arg?.env ?? {}).every((value) => typeof value === "string")).toBe(true);
   });
 
   // B2 (whole-branch review): an ACP startup that stalls must be cancellable, so the run's

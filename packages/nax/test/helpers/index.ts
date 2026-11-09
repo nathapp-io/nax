@@ -78,6 +78,7 @@ export { type MockContextOrchestrator, makeContextOrchestrator } from "./context
 export { withDepsRestore } from "./deps";
 export { type DispatchContextOptions, makeDispatchContext } from "./dispatch-context";
 export { fullDescribe, fullTest } from "./env";
+export { withEnvVars } from "./env-vars";
 export { makeEscalationContext } from "./escalation-context";
 export type { FakeAgentManagerOptions } from "./fake-agent-manager";
 export { fakeAgentManager } from "./fake-agent-manager";

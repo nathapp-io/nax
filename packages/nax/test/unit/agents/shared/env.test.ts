@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { acpProviderEnvFamily, buildAcpRunEnv, buildAllowedEnv } from "@/agents/shared/env";
+import { acpProviderEnvFamily, buildAcpChatEnv, buildAcpRunEnv, buildAllowedEnv } from "@/agents/shared/env";
 
 /** The provider key vars a multi-provider agent keeps (API_KEY_VARS in env.ts). */
 const MULTI_PROVIDER_KEYS = [
@@ -201,5 +201,84 @@ describe("buildAcpRunEnv (US-001)", () => {
     const env = buildAcpRunEnv("claude");
     expect(env.PATH).toBe("/usr/bin:/bin");
     expect(env).not.toHaveProperty("UNRELATED_VAR");
+  });
+});
+
+describe("buildAcpChatEnv (US-002)", () => {
+  test("AC-1: a chat brain sees none of nax's own secrets, including the Telegram fallback name", () => {
+    setEnv("NAX_TELEGRAM_TOKEN", "nax-secret");
+    setEnv("TELEGRAM_BOT_TOKEN", "bot-secret");
+    setEnv("CLAW_TOKEN", "claw-secret");
+    setEnv("TURBO_TOKEN", "turbo-secret");
+    const env = buildAcpChatEnv("claude");
+    expect(env).not.toHaveProperty("NAX_TELEGRAM_TOKEN");
+    expect(env).not.toHaveProperty("TELEGRAM_BOT_TOKEN");
+    expect(env).not.toHaveProperty("CLAW_TOKEN");
+    expect(env).not.toHaveProperty("TURBO_TOKEN");
+  });
+
+  test("AC-2: the interactive toolchain stays — ssh agent, gh token, proxy and editor", () => {
+    setEnv("SSH_AUTH_SOCK", "/tmp/ssh-agent.sock");
+    setEnv("GH_TOKEN", "gh-token");
+    setEnv("HTTPS_PROXY", "http://proxy.example:3128");
+    setEnv("EDITOR", "vim");
+    const env = buildAcpChatEnv("codex");
+    expect(env.SSH_AUTH_SOCK).toBe("/tmp/ssh-agent.sock");
+    expect(env.GH_TOKEN).toBe("gh-token");
+    expect(env.HTTPS_PROXY).toBe("http://proxy.example:3128");
+    expect(env.EDITOR).toBe("vim");
+  });
+
+  test("AC-3: a codex chat brain keeps its own provider's key and prefix, not claude's", () => {
+    setEnv("OPENAI_API_KEY", "openai-key");
+    setEnv("CODEX_HOME", "/home/user/.codex");
+    setEnv("ANTHROPIC_API_KEY", "anthropic-key");
+    setEnv("CLAUDE_CONFIG_DIR", "/home/user/.claude");
+    const env = buildAcpChatEnv("codex");
+    expect(env.OPENAI_API_KEY).toBe("openai-key");
+    expect(env.CODEX_HOME).toBe("/home/user/.codex");
+    expect(env).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(env).not.toHaveProperty("CLAUDE_CONFIG_DIR");
+  });
+
+  test("AC-4: a claude chat brain keeps its own provider's key and prefix, not codex's", () => {
+    setEnv("ANTHROPIC_API_KEY", "anthropic-key");
+    setEnv("CLAUDE_CONFIG_DIR", "/home/user/.claude");
+    setEnv("OPENAI_API_KEY", "openai-key");
+    const env = buildAcpChatEnv("claude");
+    expect(env.ANTHROPIC_API_KEY).toBe("anthropic-key");
+    expect(env.CLAUDE_CONFIG_DIR).toBe("/home/user/.claude");
+    expect(env).not.toHaveProperty("OPENAI_API_KEY");
+  });
+
+  test("AC-5: a cursor chat brain keeps CURSOR_API_KEY and not another provider's key", () => {
+    setEnv("CURSOR_API_KEY", "cursor-key");
+    setEnv("GEMINI_API_KEY", "gemini-key");
+    const env = buildAcpChatEnv("cursor");
+    expect(env.CURSOR_API_KEY).toBe("cursor-key");
+    expect(env).not.toHaveProperty("GEMINI_API_KEY");
+  });
+
+  test("AC-6: a name the backend rejects and a value carrying NUL are both dropped", () => {
+    setEnv("BAD-NAME", "x");
+    setEnv("GOOD", "before\u0000after");
+    const env = buildAcpChatEnv("claude");
+    expect(env).not.toHaveProperty("BAD-NAME");
+    expect(env).not.toHaveProperty("GOOD");
+  });
+
+  test("a multi-provider agent keeps every provider key, as it does today", () => {
+    setEnv("ANTHROPIC_API_KEY", "anthropic-key");
+    setEnv("OPENAI_API_KEY", "openai-key");
+    setEnv("NAX_TELEGRAM_TOKEN", "nax-secret");
+    const env = buildAcpChatEnv("opencode");
+    expect(env.ANTHROPIC_API_KEY).toBe("anthropic-key");
+    expect(env.OPENAI_API_KEY).toBe("openai-key");
+    expect(env).not.toHaveProperty("NAX_TELEGRAM_TOKEN");
+  });
+
+  test("HOME is not sanitised: chat keeps the user's own value", () => {
+    setEnv("HOME", "/abs/home");
+    expect(buildAcpChatEnv("claude").HOME).toBe("/abs/home");
   });
 });

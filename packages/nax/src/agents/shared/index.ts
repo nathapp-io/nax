@@ -3,6 +3,7 @@ export {
   type AcpProviderEnvFamily,
   acpProviderEnvFamily,
   type BuildAllowedEnvOptions,
+  buildAcpChatEnv,
   buildAcpRunEnv,
   buildAllowedEnv,
 } from "./env";
