@@ -3,7 +3,7 @@
   "feature": "review-agent-sandbox-hardening",
   "branchName": "feat/review-agent-sandbox-hardening",
   "createdAt": "2026-11-09T00:00:00Z",
-  "updatedAt": "2026-11-09T03:11:00.288Z",
+  "updatedAt": "2026-11-09T03:14:29.817Z",
   "userStories": [
     {
       "id": "US-001",
@@ -196,14 +196,17 @@
         "M2"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two targeted algorithms in an existing gate require careful option boundaries and deny-only views; execution access control requires strict three-session TDD."
+        "reasoning": "Two targeted algorithms in an existing gate require careful option boundaries and deny-only views; execution access control requires strict three-session TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/policy-bash.ts",
@@ -223,7 +226,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0c33bb052300134b56fa16a9eeb08f9d9ee9a6de"
     },
     {
       "id": "US-005",
