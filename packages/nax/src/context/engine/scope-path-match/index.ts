@@ -79,22 +79,117 @@ export function _resetGlobRegexCache(): void {
   GLOB_REGEX_CACHE.clear();
 }
 
-export function globToRegex(pattern: string): RegExp {
-  const cached = GLOB_REGEX_CACHE.get(pattern);
-  if (cached !== undefined) return cached;
+/**
+ * Characters that carry regex meaning of their own and must be escaped when
+ * a glob means them literally.
+ */
+const REGEX_META_CHARS = `.+^\${}()|[]\\`;
 
+/**
+ * True when the pattern's braces are balanced: every `{` has a matching `}`
+ * and no `}` is left over.
+ *
+ * An unbalanced pattern keeps every brace literal. Bash and minimatch expand
+ * neither a group that cannot be closed nor a stray `}`, and a half-open
+ * group is far more likely to be a literal `{` in a filename (e.g. a
+ * template directory) than a glob the author meant to expand.
+ */
+function bracesBalanced(pattern: string): boolean {
+  let depth = 0;
+  for (const c of pattern) {
+    if (c === "{") {
+      depth++;
+    } else if (c === "}") {
+      if (depth === 0) return false;
+      depth--;
+    }
+  }
+  return depth === 0;
+}
+
+/**
+ * Index of the `}` that closes the group opened at `start`, or -1 when the
+ * group is never closed. Nested groups are counted, so the group opened by
+ * `{a,b/{c,d}}` closes at its last `}`.
+ */
+function findBraceGroupEnd(text: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === "{") {
+      depth++;
+    } else if (text[i] === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * A group's content split on its top-level commas — the commas that are not
+ * inside a nested group. `{a,b/{c,d}}` has one top-level comma (two
+ * alternatives); `{a{b,c}}` has none.
+ */
+function splitTopLevelAlternatives(content: string): string[] {
+  const alternatives: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const c of content) {
+    if (c === "{") {
+      depth++;
+    } else if (c === "}") {
+      depth--;
+    }
+    if (c === "," && depth === 0) {
+      alternatives.push(current);
+      current = "";
+      continue;
+    }
+    current += c;
+  }
+  alternatives.push(current);
+  return alternatives;
+}
+
+/**
+ * Translate one brace group's content.
+ *
+ * A group with at least one top-level comma becomes a non-capturing
+ * alternation (`{a,b}` → `(?:a|b)`), and an empty alternative is allowed
+ * (`{a,}` → `(?:a|)`). A group with no comma stays literal (`{a}` → `\{a\}`)
+ * — bash and minimatch expand neither `{a}` nor `{}`.
+ *
+ * The alternatives keep the glob meaning of their own content: `*`, `**` and
+ * `?` stay wildcards, every other character stays regex-escaped.
+ */
+function translateBraceGroup(content: string): string {
+  const alternatives = splitTopLevelAlternatives(content);
+  if (alternatives.length < 2) return `\\{${translateGlobText(content, true)}\\}`;
+  return `(?:${alternatives.map((alternative) => translateGlobText(alternative, true)).join("|")})`;
+}
+
+/**
+ * Translate glob text into a regex body.
+ *
+ * `expandBraces` is false for a pattern whose braces are unbalanced: every
+ * `{`, `}` and `,` then stays literal, exactly as before brace support.
+ */
+function translateGlobText(text: string, expandBraces: boolean): string {
   let regex = "";
   let i = 0;
-  while (i < pattern.length) {
-    const c = pattern[i];
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "{" && expandBraces) {
+      const end = findBraceGroupEnd(text, i);
+      if (end !== -1) {
+        regex += translateBraceGroup(text.slice(i + 1, end));
+        i = end + 1;
+        continue;
+      }
+    }
     if (c === "*") {
-      if (pattern[i + 1] === "*") {
-        const beforeSlash = i > 0 && pattern[i - 1] === "/";
-        const afterSlash = pattern[i + 2] === "/";
-        if (beforeSlash && afterSlash) {
-          regex = `${regex}(?:.*\\/)?`;
-          i += 3;
-        } else if (afterSlash) {
+      if (text[i + 1] === "*") {
+        if (text[i + 2] === "/") {
           regex += "(?:.*\\/)?";
           i += 3;
         } else {
@@ -112,14 +207,27 @@ export function globToRegex(pattern: string): RegExp {
       i++;
       continue;
     }
-    if (`.+^\${}()|[]\\`.includes(c)) {
-      regex += `\\${c}`;
-    } else {
-      regex += c;
-    }
+    regex += REGEX_META_CHARS.includes(c) ? `\\${c}` : c;
     i++;
   }
-  const compiled = new RegExp(`(?:^|/)${regex}$`);
+  return regex;
+}
+
+/**
+ * Compile a scope pattern into a regex.
+ *
+ * A balanced brace group expands into an alternation, so
+ * `src/` + `**` + `/*.{ts,tsx}` matches `src/a.ts` and `src/deep/b.tsx`
+ * instead of only the literal text `*.{ts,tsx}` (review finding M16).
+ * Everything else is unchanged: `*`, `**` and `?` keep their meaning, a comma
+ * outside any group stays literal, and an unbalanced pattern keeps every
+ * brace literal.
+ */
+export function globToRegex(pattern: string): RegExp {
+  const cached = GLOB_REGEX_CACHE.get(pattern);
+  if (cached !== undefined) return cached;
+
+  const compiled = new RegExp(`(?:^|/)${translateGlobText(pattern, bracesBalanced(pattern))}$`);
   if (GLOB_REGEX_CACHE.size < MAX_GLOB_REGEX_CACHE_ENTRIES) {
     GLOB_REGEX_CACHE.set(pattern, compiled);
   }

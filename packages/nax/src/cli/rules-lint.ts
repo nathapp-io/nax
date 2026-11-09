@@ -88,15 +88,19 @@ type PatternShape =
  * as a literal path when it has no wildcard segment at all (e.g.
  * `src/config/schemas-review.ts`).
  *
- * Only `*` and `?` are wildcards under this repo's `globToRegex` — every
- * other character (including `[`, `]`, `{`, `}`) is matched literally, so
+ * A segment holding `*`, `?` or `{` ends the prefix. `*` and `?` are the
+ * wildcards this repo's `globToRegex` understands, and `{` opens a brace
+ * group, which `globToRegex` expands into an alternation — so a pattern
+ * carrying a brace group is never a literal path and must never be checked
+ * as one (a direct existence check would report a live brace glob as dead).
+ * Every other character (including `[` and `]`) is matched literally, so
  * those don't end the prefix.
  */
 function classifyPattern(normalizedPattern: string): PatternShape {
   const segments = normalizedPattern.split("/");
   const literal: string[] = [];
   for (const segment of segments) {
-    if (/[*?]/.test(segment)) break;
+    if (/[*?{]/.test(segment)) break;
     literal.push(segment);
   }
   if (literal.length === segments.length) return { kind: "literal-path", path: normalizedPattern };
