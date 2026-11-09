@@ -4,6 +4,7 @@ import { _agentManagerDeps, AgentManager } from "@/agents/manager";
 import { buildDispatchErrorEvent } from "@/agents/manager-dispatch";
 import type { RetryDecision, RetryStrategy } from "@/agents/retry";
 import type { AgentAdapter, CompleteOptions } from "@/agents/types";
+import { SessionTurnError } from "@/agents/types";
 import { DEFAULT_CONFIG } from "@/config";
 import type { ResolvedPermissions } from "@/config/permissions";
 import { resolvePermissions } from "@/config/permissions";
@@ -12,6 +13,7 @@ import { NaxConfigSchema } from "@/config/schemas";
 import { agentManagerConfigSelector } from "@/config/selectors";
 import type { AdapterFailure } from "@/context/engine";
 import { PidRegistry } from "@/execution/pid-registry";
+import { type DispatchEvent, DispatchEventBus } from "@/runtime/dispatch-events";
 
 const availFailure = {
   category: "availability" as const,
@@ -702,3 +704,71 @@ describe("AgentManager — injectable retryStrategy", () => {
     expect(sleepCalls).toEqual(expectedDelays);
   });
 });
+
+// ─── US-005: a failed complete hop keeps its spend (M10) ─────────────────────
+
+describe("AgentManager.completeAs — failed hop spend (US-005 AC-7)", () => {
+  test("AC-7: a SessionTurnError's spend is emitted on the complete dispatch event", async () => {
+    // A non-retriable, non-swappable failure with no fallback configured: the
+    // hop terminates on the primary agent, so the only cost row for the run is
+    // the `complete` dispatch event — the one this test reads.
+    const failure: AdapterFailure = {
+      category: "quality",
+      outcome: "fail-unknown",
+      retriable: false,
+      message: "hop failed",
+    };
+    const turnError = new SessionTurnError(
+      "hop failed",
+      false,
+      false,
+      { inputTokens: 100, outputTokens: 20 },
+      0.05,
+      undefined,
+      undefined,
+      failure,
+    );
+    const registry = makeAgentRegistry({
+      getAgent: () =>
+        makeAgentAdapter({
+          complete: mock(async () => {
+            throw turnError;
+          }),
+        }),
+    });
+    const bus = new DispatchEventBus();
+    const events: DispatchEvent[] = [];
+    bus.onDispatch((event) => {
+      events.push(event);
+    });
+    const manager = new AgentManager(noFallbackConfig(), registry, { dispatchEvents: bus });
+
+    const result = await manager.completeAs("claude", "prompt", {
+      modelDef: { provider: "anthropic", model: "claude-sonnet-4-6", env: {} },
+      workdir: "/tmp/test",
+    });
+
+    // The hop's own result keeps the spend…
+    expect(result.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 20 });
+    expect(result.estimatedCostUsd).toBe(0.05);
+    // …and the dispatch event carries it, which is what the cost ledger writes.
+    expect(events).toHaveLength(1);
+    expect(events[0]?.tokenUsage).toEqual({ inputTokens: 100, outputTokens: 20 });
+    expect(events[0]?.estimatedCostUsd).toBe(0.05);
+  });
+});
+
+function noFallbackConfig() {
+  return makeNaxConfig({
+    agent: {
+      default: "claude",
+      fallback: {
+        enabled: false,
+        map: {},
+        maxHopsPerStory: 2,
+        onQualityFailure: false,
+        rebuildContext: false,
+      },
+    },
+  });
+}

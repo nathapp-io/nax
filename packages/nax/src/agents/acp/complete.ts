@@ -8,7 +8,7 @@
  * cancelled with the burned tokens priced; a run abort and every other failure
  * are thrown pre-classified, open failures as SessionFailureError (D3-a).
  */
-import { NO_OP_INTERACTION_HANDLER, type OpenSessionOpts } from "@nathapp/nax-agent";
+import { attachTurnSpend, NO_OP_INTERACTION_HANDLER, type OpenSessionOpts } from "@nathapp/nax-agent";
 import type { AcpAgentName } from "@nathapp/nax-agent-acp/client";
 import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
@@ -103,7 +103,17 @@ export async function runComplete(
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     if (result.timedOut === true) {
-      throw new NaxError("complete() timed out", "AGENT_TIMEOUT", { stage: "acp", timeoutMs });
+      const err = new NaxError("complete() timed out", "AGENT_TIMEOUT", { stage: "acp", timeoutMs });
+      // US-005 (M10): a deadline expiry is not a throw from the backend — the
+      // loop returns the spend it already summed — so attach it, or the caller
+      // (dispatchCompleteHop) has nothing to lift and the burned tokens are lost.
+      // A reported exact cost is an exact cost, not an estimate.
+      attachTurnSpend(err, {
+        tokenUsage: result.tokenUsage,
+        costUsd: result.exactCostUsd ?? result.estimatedCostUsd,
+        costSource: result.exactCostUsd === undefined ? "computed" : "reported",
+      });
+      throw err;
     }
     return successResult(result, session.handle.protocolIds?.sessionId);
   } catch (err) {
