@@ -239,7 +239,7 @@ export function decideSandboxedShell(
   if (offered.allowOnce === undefined) return denyNoAllowOnce(offered, auto);
   const wrapped = plan !== undefined && isSandboxWrapped(plan.prefix, command);
   // The verifier guarantees one quoted word; decode only its POSIX apostrophe escapes.
-  const inner = wrapped && plan?.verify ? command.slice(plan.prefix.length + 1, -1).replaceAll("'\\''", "'") : command;
+  const inner = wrapped ? command.slice(plan.prefix.length + 1, -1).replaceAll("'\\''", "'") : command;
   if (shellRuleBlocks(inner, ctx.rules ?? NO_RULES)) return deny(SHELL_RULE_BLOCKED_REASON);
   if (plan !== undefined && (!plan.verify || wrapped)) {
     auto(REVIEW_EXECUTE_REASON, "allow");
