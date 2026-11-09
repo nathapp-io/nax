@@ -334,7 +334,11 @@ export class PidRegistry {
       });
       return;
     }
-    if (current.parentPid !== proc.parentPid || current.startedAt !== proc.startedAt) {
+    // Identity is the pid plus its start time — NOT the parent. A descendant
+    // whose parent already exited on SIGTERM is reparented to init (ppid 1),
+    // and that is still the same process: it must receive both signals or it
+    // outlives the run. Only a changed start time means the pid was reused.
+    if (current.startedAt !== proc.startedAt) {
       getSafeLogger()?.warn("pid-registry", `Skipping SIG${signal} for PID ${proc.pid} after identity changed`, {
         pid: proc.pid,
         signal,

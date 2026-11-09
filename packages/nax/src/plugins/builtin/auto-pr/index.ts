@@ -22,6 +22,7 @@ import {
   openPr as _openDraft,
 } from "@/forge";
 import type { IPostRunAction, NaxPlugin, PluginLogger, PostRunActionResult, PostRunContext } from "@/plugins/types";
+import { isPublishableBranch } from "@/utils/git";
 import { buildBody, buildTitle, type PrBodyContext } from "./pr-body";
 import type { AutoPrConfig, AutoPrDeps } from "./types";
 
@@ -30,6 +31,15 @@ const PLUGIN_VERSION = "0.1.0";
 
 // nax-git-env-allow: spawned by defaultRun (below), which hardens every command
 const GIT_REMOTE_CMD: readonly string[] = ["git", "remote", "get-url", "origin"] as const;
+
+// nax-git-env-allow: spawned by defaultRun (below), which hardens every command
+const GIT_DEFAULT_BRANCH_CMD: readonly string[] = [
+  "git",
+  "symbolic-ref",
+  "--quiet",
+  "--short",
+  "refs/remotes/origin/HEAD",
+] as const;
 
 /** Default wall-clock cap for any one subprocess (BUG-8). */
 export const DEFAULT_SUBPROCESS_TIMEOUT_MS = 30_000;
@@ -95,6 +105,24 @@ async function defaultGetRemoteUrl(workdir: string): Promise<string | null> {
 }
 
 /**
+ * Default remote-default-branch resolver — best-effort (US-007). Reads the
+ * remote's `origin/HEAD` and returns the branch it names. An unknown answer
+ * (`undefined`) leaves only the static protections in force, exactly as in the
+ * workflow publisher.
+ */
+async function defaultReadDefaultBranch(workdir: string): Promise<string | undefined> {
+  try {
+    const result = await _autoPrDeps.run([...GIT_DEFAULT_BRANCH_CMD], { cwd: workdir });
+    if (result.exitCode !== 0) return undefined;
+    const branch = result.stdout.trim().replace(/^origin\//, "");
+    return branch.length > 0 ? branch : undefined;
+  } catch {
+    // A lookup that throws leaves the default branch unknown, not the run failed.
+    return undefined;
+  }
+}
+
+/**
  * Module-level deps for testability (`_deps` pattern).
  *
  * Production callers read through these references; tests mutate fields on the
@@ -108,6 +136,7 @@ export const _autoPrDeps: {
   hasOpenPr: typeof _hasOpenPr;
   openDraft: typeof _openDraft;
   findPrTemplate: typeof _findPrTemplate;
+  readDefaultBranch: (workdir: string) => Promise<string | undefined>;
 } = {
   run: defaultRun,
   readText: defaultReadText,
@@ -116,6 +145,7 @@ export const _autoPrDeps: {
   hasOpenPr: _hasOpenPr,
   openDraft: _openDraft,
   findPrTemplate: _findPrTemplate,
+  readDefaultBranch: defaultReadDefaultBranch,
 };
 
 /** Read the loose `autoPr` block from `ctx.config`. Defaults to enabled=false. */
@@ -179,6 +209,16 @@ const autoPrAction: IPostRunAction = {
     if (summary.failed > 0) return false;
     if (summary.paused > 0) return false;
 
+    // US-007: a protected branch is never published from. The check runs before
+    // any remote or forge lookup, so a run on `main` costs one git call.
+    const defaultBranch = await _autoPrDeps.readDefaultBranch(context.workdir);
+    if (!isPublishableBranch(context.branch, defaultBranch)) {
+      context.logger.warn("Skipping auto-PR — the run's branch is protected", {
+        branch: context.branch,
+      });
+      return false;
+    }
+
     const remoteUrl = await _autoPrDeps.getRemoteUrl(context.workdir);
     if (!remoteUrl) return false;
 
@@ -207,6 +247,16 @@ const autoPrAction: IPostRunAction = {
 
   async execute(context: PostRunContext): Promise<PostRunActionResult> {
     try {
+      // US-007: the same guard as shouldRun, first — a protected branch is
+      // never pushed, whatever the rest of the run did.
+      const defaultBranch = await _autoPrDeps.readDefaultBranch(context.workdir);
+      if (!isPublishableBranch(context.branch, defaultBranch)) {
+        return {
+          success: false,
+          message: `Auto-PR skipped: branch "${context.branch || "(empty)"}" is not a feature branch`,
+        };
+      }
+
       const cfg = getAutoPrConfig(context);
       const remoteUrl = await _autoPrDeps.getRemoteUrl(context.workdir);
       if (!remoteUrl) {

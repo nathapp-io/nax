@@ -1,0 +1,437 @@
+{
+  "project": "nax-monorepo",
+  "feature": "gates-and-config",
+  "branchName": "feat/gates-and-config",
+  "createdAt": "2026-11-09T00:00:00.000Z",
+  "updatedAt": "2026-11-09T13:21:04.025Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Vitest detection reads only test.include",
+      "description": "**Goal** — Fix M15 so Vitest and Vite detection never use a nested include as the test-file pattern.\n\n**Motivation** — `parseViteConfig` extracts the `test: {}` block first but then runs the same regex inside it, so `coverage.include` written before `include` in that block wins there too.\n\n**Approach** — `parseVitestConfig(workdir)` and `parseViteConfig(workdir)` (file-local, `framework-configs.ts:45`, `:281`).\nBaseline: vitest matches `include` over the whole file; vite matches the first `include` anywhere inside the `test: {}` block. Target: both extract the `test: {}` block with `extractBalancedBlock` and read only an `include` key at the top level of the slice `extractBalancedBlock` returns (outside every nested `{}` in that slice), through one new file-local helper. `extractBalancedBlock` is unchanged; like it, the helper counts braces without regard to string literals. A vitest config with no `test` block, or with a `test` block that has no top-level `include`, returns the vitest source with `patterns: []` (it still claims the framework, as today).\n\n`extractBalancedBlock(text: string, anchor: RegExp): string | null` — `src/test-runners/detect/framework-configs.ts:344`, file-local.\n`extractStringLiterals` and `normalize(patterns: string[]): string[]` — same file, file-local.\n`detectTestFilePatterns(workdir)` — `src/test-runners/detect/index.ts`; returns `{ patterns, confidence, sources }`. It drops sources with empty `patterns` (`index.ts:148-149`), so a vitest source with `patterns: []` is visible only through `detectFromFrameworkConfigs`.\n`detectFromFrameworkConfigs(workdir): Promise<DetectionSource[]>` — `framework-configs.ts:367`, exported; returns every Tier 1 source, including one with `patterns: []`.\n\n**Scope** — In: the two file-local parsers, one shared depth-aware include helper and new focused tests. Out: shared rule brace matching (US-002), scan caps (US-003), package validation (US-004), reserved names (US-005), process signaling (US-006) and publishing (US-007). Vitest configs whose `test.include` is not a literal string array (a variable, a spread, a function call). They keep returning `patterns: []`. Braces inside string literals in a vitest or vite config (for example `exclude: [\"a/}\"]`). They are counted as structure, as `extractBalancedBlock` counts them today. Vitest `test.projects` / workspace entries and an `alias` or other object holding a `test:` key before the config's own `test` block. Only the first `test: {` block's top-level `include` is read.\n\n**Interface**\n```ts\nextractBalancedBlock(text: string, anchor: RegExp): string | null\nnormalize(patterns: string[]): string[]\ndetectFromFrameworkConfigs(workdir): Promise<DetectionSource[]>\n```\nThese existing helpers/detectors retain their visibility; the new include helper stays file-local. Add `packages/nax/test/unit/test-runners/detect/framework-configs-vitest.test.ts` rather than growing the 612-line detect.test.ts. ACs on detectTestFilePatterns copy its _frameworkDefaultsDeps.readText and _fileScanDeps.spawn stubs and cache isolation (detect.test.ts:94-109).",
+      "acceptanceCriteria": [
+        "[unit] detectFromFrameworkConfigs on a workdir whose vitest.config.ts is defineConfig({ test: { coverage: { include: [\"src/**/*.ts\"] } } }) returns a source with framework: \"vitest\" whose patterns is [].",
+        "[unit] detectTestFilePatterns on a workdir whose vitest.config.ts is defineConfig({ test: { coverage: { include: [\"src/**/*.ts\"] }, include: [\"test/**/*.test.ts\"] } }) returns patterns equal to [\"test/**/*.test.ts\"].",
+        "[unit] detectTestFilePatterns on a workdir whose vitest.config.ts is defineConfig({ test: { include: [\"test/**/*.test.ts\"], coverage: { include: [\"src/**/*.ts\"] } } }) returns patterns equal to [\"test/**/*.test.ts\"].",
+        "[unit] detectFromFrameworkConfigs on a workdir whose vitest.config.ts is defineConfig({ plugins: [], include: [\"src/**/*.ts\"] }) (an include outside any test block) returns a source with framework: \"vitest\" whose patterns is [].",
+        "[unit] detectTestFilePatterns on a workdir whose vite.config.ts is defineConfig({ test: { coverage: { include: [\"src/**/*.ts\"] }, include: [\"test/**/*.test.ts\"] } }) returns patterns equal to [\"test/**/*.test.ts\"].",
+        "[unit] detectFromFrameworkConfigs on a workdir whose vite.config.ts is defineConfig({ test: { coverage: { include: [\"src/**/*.ts\"] } } }) returns a source with framework: \"vitest\" whose patterns is [].",
+        "[unit] detectFromFrameworkConfigs on a workdir whose vitest.config.ts is defineConfig({ test: { include: [\"test/**/*.test.ts\"] (the test block never closes) returns a source with framework: \"vitest\" whose patterns is []."
+      ],
+      "tags": [
+        "bugfix",
+        "gates",
+        "test-detection",
+        "M15"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized heuristic parser correction through a shared file-local helper, with unit and public-detection regressions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/test-runners/detect/framework-configs.ts",
+        "packages/nax/src/test-runners/detect/index.ts",
+        "packages/nax/test/unit/test-runners/detect.test.ts",
+        "packages/nax/test/unit/test-runners/detect/framework-configs-python.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/test-runners/detect/framework-configs-vitest.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e5ef61c38c9b09234730896435430bc71c4ab30c"
+    },
+    {
+      "id": "US-002",
+      "title": "Brace globs match in rule selection, attribution and lint",
+      "description": "**Goal** — Fix M16 by implementing brace alternation in the shared scope matcher and aligning rules lint with runtime.\n\n**Motivation** — `SCOPE_GLOB_META` counts `{` as glob syntax, so `src/**/*.{ts,tsx}` is compiled as a glob that matches only the literal text `*.{ts,tsx}`.\n\n**Approach** — `globToRegex(pattern: string): RegExp` (`scope-path-match/index.ts:82`).\nBaseline: escapes `{`, `}` and `,`. Target: a balanced brace group that contains at least one top-level `,` compiles to a non-capturing alternation — `{` to `(?:`, each top-level `,` inside the group to `|`, `}` to `)` — with nesting; `*`, `**` and `?` inside a group keep their meaning, and every other character inside a group stays regex-escaped as today. An empty alternative is allowed (`{a,}` matches `a` or nothing). A group with no top-level `,` (`{a}`, `{}`) stays literal, as in bash and minimatch. When the pattern's braces are not balanced, every `{` and `}` stays literal (today's escape). A `,` outside any group stays literal. The memo keyed on the raw pattern is unchanged. `globToRegex` is recorded at complexity 22 in `packages/nax/scripts/baselines/complexity-baseline.json` against the strict limit 20 (`packages/repo-tooling/scripts/check-complexity.ts`), and the ratchet fails a function whose score grows: the brace handling goes in new file-local helpers (finding the group extents, translating one group), each scoring 20 or less, so `globToRegex` itself does not grow; when its score drops, lower its baseline entry to the new score.\n\n`classifyPattern(normalizedPattern)` (file-local, `rules-lint.ts:95`). Baseline: a segment is a wildcard segment only if it contains `*` or `?`. Target: a segment containing `{` also ends the literal prefix, so a brace pattern is never checked as a literal path. Update the doc comment above it, which says `{` and `}` are matched literally.\n\n`SCOPE_GLOB_META = /[*?[{]/` — `scope-path-match/index.ts:43`; already treats `{` as glob syntax, unchanged.\n`_rulesLintDeps.globHasMatch(pattern: string, cwd: string): GlobMatchResult` — `src/cli/rules-lint.ts:186` (in `_rulesLintDeps`, `:160`); `GlobMatchResult = \"match\" | \"no-match\" | \"unknown\"`.\n\n**Scope** — In: shared matcher helpers, rules-lint classifier/comment, complexity baseline reduction when applicable and focused regex/runtime/lint tests. Out: Vitest include parsing (US-001), smart-test caps (US-003), config validation (US-004), reserved names (US-005), PID cleanup (US-006) and auto-PR (US-007). Brace expansion in the other glob converters (`src/utils/path-filters.ts`, `src/test-runners/conventions.ts`). They are separate matchers with their own callers. Extglob syntax (`?(x)`, `+(x)`, `@(x)`, `!(x)`) and character ranges in rule `appliesTo`. Only `{a,b}` groups are expanded. A runtime chunk scope path that contains a literal brace group with a comma (for example a file named `{a,b}.ts`). After US-002 it is read as a glob by attribution.\n\n**Interface**\n```ts\nglobToRegex(pattern: string): RegExp\nruleMatchesScopeFiles(appliesTo: string[] | undefined, scopeFiles: string[] | undefined): boolean\npathMatchesScope(scopePaths: string[], filePath: string): boolean\n```\nKeep all existing matcher exports and static-rules re-exports; add no public brace-parser API. Add `packages/nax/test/unit/context/engine/scope-path-match-braces.test.ts` for all brace, attribution and lint cases instead of extending the 783-line rules-lint.test.ts. Verify the complexity ratchet using bun run check:complexity; this is not a behavioral AC.",
+      "acceptanceCriteria": [
+        "[unit] globToRegex(\"src/**/*.{ts,tsx}\") matches src/a.ts.",
+        "[unit] globToRegex(\"src/**/*.{ts,tsx}\") matches src/deep/b.tsx.",
+        "[unit] globToRegex(\"src/**/*.{ts,tsx}\") does not match src/a.js.",
+        "[unit] globToRegex(\"src/{a,b/{c,d}}.ts\") matches src/b/d.ts.",
+        "[unit] globToRegex(\"src/{a,b/{c,d}}.ts\") does not match src/b.ts.",
+        "[unit] globToRegex(\"src/{lib,app}/**/*.ts\") matches src/app/x/y.ts.",
+        "[unit] globToRegex(\"src/{a.ts\") (unbalanced) matches the path src/{a.ts.",
+        "[unit] globToRegex(\"src/{a.ts\") (unbalanced) does not match src/a.ts.",
+        "[unit] globToRegex(\"src/a,b*.ts\") (a comma outside any group) matches src/a,b1.ts.",
+        "[unit] globToRegex(\"src/a,b*.ts\") (a comma outside any group) does not match src/a.ts.",
+        "[unit] globToRegex(\"src/{a}.ts\") (a group with no comma) matches the path src/{a}.ts.",
+        "[unit] globToRegex(\"src/{a}.ts\") (a group with no comma) does not match src/a.ts.",
+        "[unit] globToRegex(\"src/a{,.test}.ts\") (an empty alternative) matches src/a.ts.",
+        "[unit] globToRegex(\"src/a{,.test}.ts\") (an empty alternative) matches src/a.test.ts.",
+        "[unit] globToRegex(\"src/{a.b,c}.ts\") matches src/a.b.ts.",
+        "[unit] globToRegex(\"src/{a.b,c}.ts\") does not match src/aXb.ts (a . inside a group stays literal).",
+        "[integration] ruleMatchesScopeFiles([\"src/**/*.{ts,tsx}\"], [\"packages/app/src/index.tsx\"]) returns true.",
+        "[integration] ruleMatchesScopeFiles([\"src/**/*.{ts,tsx}\"], [\"src/readme.md\"]) returns false.",
+        "[integration] pathMatchesScope([\"src/**/*.{ts,tsx}\"], \"src/index.ts\") returns true, the same answer ruleMatchesScopeFiles gives for that file.",
+        "[integration] _rulesLintDeps.globHasMatch(\"src/{a,b}.ts\", tmp) on a temp directory holding only src/b.ts returns \"match\".",
+        "[integration] _rulesLintDeps.globHasMatch(\"src/{a,b}.ts\", tmp) on a temp directory holding only src/c.ts returns \"no-match\".",
+        "[unit] globToRegex(\"src/{a,b}.ts}\") matches the literal path src/{a,b}.ts}, treating every {, }, and , literally when the pattern's braces are unbalanced, as today."
+      ],
+      "tags": [
+        "bugfix",
+        "context",
+        "glob",
+        "rules",
+        "M16"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing source modules need a bounded brace-parser extension and classifier alignment; the specified recursion, existing matcher seams and complexity baseline make single-session TDD sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/context/engine/scope-path-match/index.ts",
+        "packages/nax/src/context/engine/effectiveness.ts",
+        "packages/nax/src/cli/rules-lint.ts",
+        "packages/nax/test/unit/context/engine/scope-path-match.test.ts",
+        "packages/nax/test/unit/cli/rules-lint.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/context/engine/scope-path-match-braces.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "931beb1e886071b58ff04aecf0cd02fa74ee8586"
+    },
+    {
+      "id": "US-003",
+      "title": "Escalate capped import-grep selection to the full suite",
+      "description": "**Goal** — Fix M17 by refusing partial import-grep results when the scan exceeds its cap.\n\n**Motivation** — Repro: 261 test files that all import `src/a`; the fallback returned 200.\n\n**Approach** — `importGrepFallback(sourceFiles, workdir, testFilePatterns, maxScanFiles = MAX_GREP_TEST_FILES): Promise<string[]>` (`smart-runner.ts:138`). Baseline: stops collecting at `maxScanFiles` files, logs at debug, greps the collected files. Target: when the scan yields a file past `maxScanFiles` (the scan holds more than `maxScanFiles` files), it reads no test file, logs one warn on the `smart-runner` stage naming the cap and that scoped selection escalates to the full suite, and returns `[]`. Exactly `maxScanFiles` files is not over the cap. `smart-runner.ts` is 599 lines, so the change must not grow it past the 600-line source limit (replace the debug block in place).\n\n`selectScopedTests(input): Promise<SelectScopedTestsResult>` — `src/test-runners/scoped-selection.ts:98`; an empty Pass 2 result already returns its `fullSuite()` result.\n\n**Scope** — In: cap overflow behavior/logging and tests proving the real fallback reaches full-suite selection. Out: Vitest parsing (US-001), scope globs (US-002), package validation (US-004), project names (US-005), PID cleanup (US-006) and branch protection (US-007). Raising or removing `execution.smartTestRunner.maxScanFiles`, or scanning test files in a stable order. Deduplicating test files that two `testFilePatterns` both match. Each match counts toward `maxScanFiles`, so overlapping patterns can escalate to the full suite sooner.\n\n**Interface**\n```ts\nimportGrepFallback(sourceFiles, workdir, testFilePatterns, maxScanFiles = MAX_GREP_TEST_FILES): Promise<string[]>\nselectScopedTests(input): Promise<SelectScopedTestsResult>\n```\nKeep the existing return type and fullSuite fallback contract. Add `packages/nax/test/unit/verification/import-grep-fallback-cap.test.ts` for all new cases, including the cross-module seam, without changing existing tests. Stub _bunDeps.glob/file, capture stage-specific warnings, and leave _scopedSelectionDeps.importGrepFallback at its default real implementation for the selection seam. The existing cap tests assert only at most N reads and are regression guards, not sufficient fail-first tests. Verify smart-runner.ts remains <=600 lines with bun run check:file-sizes.",
+      "acceptanceCriteria": [
+        "[unit] importGrepFallback([\"src/x.ts\"], \"/repo\", [\"test/**/*.test.ts\"], 5) with the glob stub yielding 6 files, each of whose text() contains /x, returns [].",
+        "[unit] In the same 6-file case with maxScanFiles 5, the _bunDeps.file stub's text() is called 0 times.",
+        "[unit] In the same 6-file case with maxScanFiles 5, one warn is logged on the smart-runner stage with data { cap: 5 }, naming the cap and that scoped selection escalates to the full suite.",
+        "[unit] importGrepFallback([\"src/x.ts\"], \"/repo\", [\"test/**/*.test.ts\"], 5) with the glob stub yielding exactly 5 files, each containing the text /x, returns all 5 paths.",
+        "[unit] In the exactly-5-files case with maxScanFiles 5, no warn is logged on the smart-runner stage.",
+        "[unit] importGrepFallback with two patterns whose stubbed globs yield 3 files each (each file's text() containing /x) and maxScanFiles 5 returns [] (the cap counts files across patterns).",
+        "[integration] selectScopedTests with smartRunnerConfig { enabled: true, fallback: \"import-grep\", maxScanFiles: 2 }, storyGitRef set, _scopedSelectionDeps.getChangedTestFiles returning [], getChangedNonTestFiles returning [\"src/x.ts\"], mapSourceToTests returning [], and _scopedSelectionDeps.importGrepFallback left at its default (the real importGrepFallback) over a _bunDeps.glob stub yielding 3 test files that each contain /x, returns isFullSuite: true.",
+        "[integration] In the same selectScopedTests real-import-grep overflow case, effectiveCommand equals fallbackFullSuiteCommand."
+      ],
+      "tags": [
+        "bugfix",
+        "gates",
+        "verification",
+        "smart-runner",
+        "M17"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A localized early-return/logging change with an off-by-one boundary and an existing full-suite selection seam.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/verification/smart-runner.ts",
+        "packages/nax/src/test-runners/scoped-selection.ts",
+        "packages/nax/test/unit/verification/import-grep-fallback.test.ts",
+        "packages/nax/test/unit/test-runners/scoped-selection.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/verification/import-grep-fallback-cap.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fdc1586362cfa4798c01e1acd7c28ddbab8d0f44"
+    },
+    {
+      "id": "US-004",
+      "title": "Validate hydrated package configs through shared preparation",
+      "description": "**Goal** — Fix M19 by sharing package-layer preparation/final validation and making registry hydration resilient per package.\n\n**Motivation** — Repro: `.nax/mono/packages/api/config.json` = `{\"execution\":{\"costLimit\":-5}}`; `loadConfigForWorkdir` throws `PER_PACKAGE_PROFILE_INVALID`, `loadPackageOverrideWithConfig` returns `costLimit: -5`.\n\n**Approach** — `loadPackageOverrideWithConfig({ repoRoot, packageDir, rootConfig })` (`loader.ts:390`). Baseline: `mergePackageConfig(rootConfig, data.fields)`, profile layers, `mergePackageConfig` again, no validation. Target: the package fields go through the same per-layer preparation `loadConfigForWorkdir` runs (env resolution, compat shims, `rejectPipelineModeKeys`, `warnQualityCommandChains`, the legacy reject guards, `stripRemovedConfig`), and the merged, profile-overlaid result goes through the same final validation (legacy reject guards, `validatePermissionsBlock`, `stripRemovedConfig`, `NaxConfigSchema.safeParse`), with schema failures throwing `NaxError` code `PER_PACKAGE_PROFILE_INVALID` with the same message shape `loadConfigForWorkdir` uses; guard failures propagate their original error codes, including `CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT`. The returned `overlay` stays the declared package fields plus profile layers as today; the `review.commands` bridge stays and runs on the validated config. Both steps move into a new module `src/config/package-layer.ts` that `loadConfigForWorkdir` also calls, so the two paths cannot drift again; `loader.ts` (599 lines) must end at or under 599 lines.\n\nThe caller creates one `warnDedupe` per package resolution and passes it to both functions and to `loadPackageProfileLayers` (`loadPackageOverrideData` takes it as a parameter instead of creating its own, and returns `{ fields, layers, chain }` so the chain reaches `validatePackageConfig`). `resolveEnvVarsWarnOnFailure` (file-local in `loader.ts:70`, used by the root chain too) moves to `package-layer.ts` and is exported for `loader.ts`, so `package-layer.ts` never imports `loader.ts`. The interim `stripRemovedConfig(merged)` pass in `loadConfigForWorkdir` (`loader.ts:~528`) stays where it is.\n`validatePackageConfig` owns only the guards, `validatePermissionsBlock`, the strip and `safeParse`; it does not call `applyWorkflowMode`. `loadConfigForWorkdir` keeps its own `pinRootOnlyKeysRaw`, `profile`/`profileChain` stamp, `applyWorkflowMode` and cache write around the call. `loadPackageOverrideWithConfig` keeps its second whitelist `mergePackageConfig(rootConfig, resolved)`, then applies `pinRootOnlyKeysRaw(merged, rootConfig, packageDir, warnDedupe.warn)` before `validatePackageConfig` (the same order as `loader.ts:554`, so a package's root-only `execution.*` value is warned about and dropped, never validated), then applies the `review.commands` bridge to the validated config; `hydrate` keeps its own `pinRootOnlyKeys` and `applyWorkflowMode`.\n\n`createPackageRegistry().hydrate(packageDirs, loadOverride?)` (`runtime/packages.ts:210`). Baseline: the loop awaits each package in order, so the first rejection skips every later package and `hydrated` is never set. `run-setup.ts:300-314` catches the rejection and warns `Per-package config hydration failed — using root config`. Target: `hydrate` hydrates every package it can, sets `hydrated = true`, and then rejects with the first package's error when any package failed (later failures are logged at warn on the `packages` stage with their `packageDir`). A failed package is not hydrated and resolves to the root config. `run-setup.ts` is unchanged: it still warns and continues, now with the validation error in its `error` field.\n\nGuard errors retain their original codes, including CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT from validatePermissionsBlock; the PER_PACKAGE_PROFILE_INVALID wrapper applies to schema safeParse failures, as required by AC4. An unset package environment variable uses the existing warn-and-keep behavior. Preserve the exact schema-error message shape: Per-package config <override or profile \"chain\"> produced an invalid config for package \"<packageDir>\": followed by newline-separated dotted-path errors, with stage config, packageDir and profileChain metadata.\n\n**Scope** — In: new shared package-layer module, both package-resolution entry points, one dedupe per resolution, profile-chain plumbing, raw root-only pinning, review-command provenance and partial hydrate failure handling. Out: test parser/glob/cap fixes (US-001–US-003), reserved names (US-005), PID identity (US-006) and auto-PR (US-007). Validating `loadPackageOverride` (`loader.ts:384`), the declared-values reader the finish quality gate uses for command provenance. It keeps returning the declared fields unvalidated. Making an invalid package config fatal at run start. `run-setup` keeps its non-fatal catch, so the failed package runs on the root config after one warn carrying the validation error.\n\n**Interface**\n```ts\n// Per-layer preparation of one package config.json's fields (profile key already removed).\nexport function preparePackageLayer(\n  fields: Record<string, unknown>,\n  packageDir: string,\n  logger: Logger,\n  warnDedupe: ConfigWarnDedupe,\n): Record<string, unknown>; // env resolved, shimmed, legacy-guarded, removed keys stripped\n// Final validation of the merged, profile-overlaid raw config. Returns Zod result.data.\nexport function validatePackageConfig(\n  rawMerged: Record<string, unknown>,\n  packageDir: string,\n  profileChain: readonly string[],\n  warnDedupe: ConfigWarnDedupe,\n): NaxConfig; // throws NaxError PER_PACKAGE_PROFILE_INVALID\n```\n`createPackageRegistry(loader, repoRoot).hydrate(packageDirs, loadOverride?)` — `src/runtime/packages.ts:210`; with no `loadOverride` it calls `loadPackageOverrideWithConfig`.\n\nAdd package-override-validation.test.ts rather than extending the 732-line loader-legacy-shim.test.ts. Drive the new exported validatePackageConfig directly and the consumer seam through real hydrate with no loadOverride against a temp repo. Tests calling loadConfigForWorkdir isolate NAX_GLOBAL_CONFIG_DIR, call _clearRootConfigCache and write root .nax/config.json as integration/runtime/package-profile-registry.test.ts:31-48 does; use initLogger/addSink logging assertions as loader-legacy-shim.test.ts:261-295 does. Exercise env and shim behavior through both entry points. Existing integration/runtime/package-profile-registry.test.ts must stay green without assertion changes. Verify typecheck and loader.ts <=599 lines as implementation gates, not behavioral ACs.",
+      "acceptanceCriteria": [
+        "[unit] loadPackageOverrideWithConfig on a temp repo whose .nax/mono/packages/api/config.json is {\"execution\":{\"costLimit\":-5}} rejects with a NaxError whose code is PER_PACKAGE_PROFILE_INVALID.",
+        "[unit] The costLimit -5 rejection message from loadPackageOverrideWithConfig names package packages/api and path execution.costLimit.",
+        "[unit] loadConfigForWorkdir on the same temp repo and package with execution.costLimit -5 rejects with the same code and the same message as loadPackageOverrideWithConfig.",
+        "[unit] loadPackageOverrideWithConfig on a package config whose execution.permissions.run block carries both allowedTools and allow rejects with a NaxError whose code is CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT (what validatePermissionsBlock throws, as loadConfigForWorkdir does for the same file).",
+        "[unit] loadPackageOverrideWithConfig on a package config {\"quality\":{\"commands\":{\"test\":\"$NAX_F4_TEST_CMD\"}}} with env var NAX_F4_TEST_CMD=bun run test:pkg returns config.quality.commands.test equal to bun run test:pkg.",
+        "[unit] loadPackageOverrideWithConfig on a package config {\"routing\":{\"strategy\":\"manual\"}} resolves with config.routing.strategy equal to keyword (the applyConfigCompatShims migration loadConfigForWorkdir applies), not a schema rejection.",
+        "[unit] In the routing.strategy=manual case, the routing.strategy=\"manual\" was removed warning is emitted once.",
+        "[unit] loadPackageOverrideWithConfig on a valid package config {\"quality\":{\"commands\":{\"test\":\"bun run test:pkg\"}}} returns overlay.quality.commands.test equal to bun run test:pkg and config.quality.commands.test equal to bun run test:pkg.",
+        "[unit] loadPackageOverrideWithConfig on a package config whose profile names a package profile that sets execution.costLimit to -1 rejects with code PER_PACKAGE_PROFILE_INVALID.",
+        "[unit] loadPackageOverrideWithConfig on a valid package config keeps config.review.commands equal to the root config's review.commands merged with only the package-declared review commands (the existing bridge).",
+        "[integration] createPackageRegistry(createConfigLoader(rootConfig), tmp).hydrate([\"packages/api\"]) with no loadOverride, on a temp repo whose .nax/mono/packages/api/config.json is {\"execution\":{\"costLimit\":-5}}, rejects with code PER_PACKAGE_PROFILE_INVALID.",
+        "[integration] After the rejected hydrate for packages/api with execution.costLimit -5, resolve(\"packages/api\").hasOverride is false.",
+        "[unit] loadPackageOverrideWithConfig on a package config {\"quality\":{\"commands\":{\"test\":\"$NAX_F4_UNSET\"}}} with NAX_F4_UNSET unset resolves with config.quality.commands.test equal to $NAX_F4_UNSET.",
+        "[unit] In the unset NAX_F4_UNSET case, one warn is logged whose text names per-package config \"packages/api\".",
+        "[integration] hydrate([\"packages/api\", \"packages/web\"]) with no loadOverride, on a temp repo where packages/api's config is {\"execution\":{\"costLimit\":-5}} and packages/web's is {\"quality\":{\"commands\":{\"test\":\"bun run test:web\"}}}, rejects with code PER_PACKAGE_PROFILE_INVALID.",
+        "[integration] After the rejected hydrate with invalid packages/api and valid packages/web, resolve(\"packages/web\").config.quality.commands.test is bun run test:web and resolve(\"packages/web\").hasOverride is true.",
+        "[integration] hydrate([\"packages/api\"]) with no loadOverride, on a temp repo whose package config is {\"quality\":{\"commands\":{\"test\":\"bun run test:pkg\"}}}, resolves and resolve(\"packages/api\").config.quality.commands.test is bun run test:pkg.",
+        "[unit] validatePackageConfig imported from src/config/package-layer.ts, called with a merged raw config whose execution.costLimit is -5, package packages/api, an empty profile chain and a per-resolution warnDedupe, throws code PER_PACKAGE_PROFILE_INVALID.",
+        "[unit] validatePackageConfig imported from src/config/package-layer.ts, called with a valid merged raw config, package packages/api, an empty profile chain and a per-resolution warnDedupe, returns a NaxConfig whose execution.costLimit equals the input's.",
+        "[unit] loadPackageOverrideWithConfig on a package config {\"execution\":{\"approvalTimeout\":5}} (root-only, below the schema minimum) resolves, with config.execution.approvalTimeout equal to the root config's value.",
+        "[unit] In the approvalTimeout 5 case, one warn is logged whose text names execution.approvalTimeout is root-only and packages/api.",
+        "[integration] In the hydrate([\"packages/api\", \"packages/web\"]) two-failure variant, where packages/api and packages/web each configure execution.costLimit -5, hydrate rejects with the packages/api error.",
+        "[integration] In the same two-failure hydrate variant, one warn is logged on the packages stage whose data carries packageDir: \"packages/web\"."
+      ],
+      "tags": [
+        "bugfix",
+        "config",
+        "runtime",
+        "permissions",
+        "security",
+        "M19"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module extraction and partial-failure state handling affect layer precedence, provenance, caches and access-control/permissions validation; security override requires strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/loader.ts",
+        "packages/nax/src/config/package-profile.ts",
+        "packages/nax/src/runtime/packages.ts",
+        "packages/nax/src/execution/lifecycle/run-setup.ts",
+        "packages/nax/test/integration/runtime/package-profile-registry.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/config/package-layer.ts",
+        "packages/nax/test/unit/config/package-override-validation.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a8cd26fb89fc30ccda8cba9890c7e454889b754a"
+    },
+    {
+      "id": "US-005",
+      "title": "Reserve project names owned by nax global directories",
+      "description": "**Goal** — Fix M20 by making project-name validation reject collisions with nax-owned global subdirectories through one static list.\n\n**Motivation** — `runs`, `profiles`, `acp`, `plugins`, `events` and `memory` all validate, and `nax migrate --reclaim profiles` renames `~/.nax/profiles` into `_archive` with no prompt, taking every named profile with it.\n\n**Approach** — `validateProjectName(name)` (`init.ts:42`) and the `name` refine in `NaxConfigSchema` (`schemas.ts:103`). Baseline: both reserve the inline list `[\"global\", \"_archive\"]`. Target: both read one exported constant `RESERVED_PROJECT_NAMES` in `src/config/paths/index.ts` (next to `globalConfigDir`) = `[\"global\", \"profiles\", \"runs\", \"events\", \"plugins\", \"acp\", \"memory\", \"hooks\", \"_archive\"]` — every directory nax itself creates under `globalConfigDir()` (`runtime/paths.ts:37`, `config/profile.ts:83`, `utils/paths.ts:33`, `utils/paths.ts:40`, `cli/plugins.ts:25`, `agents/acp/open-context.ts:62`, `memory/paths.ts:115`, `cli/init.ts:291`, `commands/migrate.ts:64`). A doc comment on the constant lists these sites. `validateProjectName` keeps its reserved check before the `_` prefix check and returns `name '<name>' is reserved`; the schema refine's message names the rejected value. `migrateCommand` is unchanged: it already validates through `validateProjectName`.\n\n**Scope** — In: the constant, init validation, schema refine and tests through migrate reclaim/merge. Out: package-layer validation (US-004), other gates fixes (US-001–US-003), PID signaling (US-006) and publication guards (US-007). An existing project already named one of the newly reserved names. Its `.nax/config.json` stops validating and must be renamed by hand; no migration is added. A repo with no `name` in its config whose directory is named like a reserved name. `getProjectKey` (`config/project-key.ts:25`) falls back to the directory's basename without `validateProjectName`, so it can still collide. `trust` from the review's M20 repro: nax writes `~/.nax/trust.json`, a file, so no directory collides; it is not reserved. Making nax's own path helpers (`profile.ts`, `utils/paths.ts`, `plugins.ts`, `memory/paths.ts`, `open-context.ts`) read their directory names from `RESERVED_PROJECT_NAMES`. The constant is a list for validation only. Making `nax migrate --reclaim` refuse a `~/.nax/<name>` directory that has no `.identity` file.\n\n**Interface**\n```ts\nexport const RESERVED_PROJECT_NAMES = [\"global\", \"profiles\", \"runs\", \"events\", \"plugins\", \"acp\", \"memory\", \"hooks\", \"_archive\"];\nvalidateProjectName(name)\nglobalConfigDir(): string\nmigrateCommand(options: MigrateOptions)\n```\nThe constant's values and ordering are exact; use the existing ProjectNameValidationResult return contract. Add reserved-project-names.test.ts instead of extending the 733-line init.test.ts. Isolate and restore NAX_GLOBAL_CONFIG_DIR and verify migration never mutates the protected temp directory. Existing configured reserved names deliberately stop schema-validating and require manual rename.",
+      "acceptanceCriteria": [
+        "[unit] RESERVED_PROJECT_NAMES imported from src/config/paths/index.ts equals [\"global\", \"profiles\", \"runs\", \"events\", \"plugins\", \"acp\", \"memory\", \"hooks\", \"_archive\"].",
+        "[unit] validateProjectName(\"profiles\") returns { valid: false, error: \"name 'profiles' is reserved\" }.",
+        "[unit] validateProjectName returns valid: false with an error naming the name and reserved for each of runs, events, plugins, acp, memory and hooks.",
+        "[unit] validateProjectName(\"global\") and validateProjectName(\"_archive\") each return valid: false with an error containing reserved.",
+        "[unit] validateProjectName(\"my-profiles\") returns { valid: true }.",
+        "[unit] NaxConfigSchema.safeParse on a config with name: \"runs\" fails with an issue on path name whose message contains runs and reserved.",
+        "[unit] NaxConfigSchema.safeParse on a config with name: \"my-runs\" succeeds.",
+        "[integration] migrateCommand({ workdir: tmpRepo, reclaim: \"profiles\" }), with NAX_GLOBAL_CONFIG_DIR set to a fresh temp directory holding profiles/a.json (restored after the test), rejects with code MIGRATE_INVALID_NAME.",
+        "[integration] After the rejected reclaim of profiles, profiles/a.json still exists under the temp global directory.",
+        "[integration] After the rejected reclaim of profiles, no _archive directory was created under the temp global directory.",
+        "[integration] migrateCommand({ workdir: tmpRepo, merge: \"events\" }) rejects with code MIGRATE_INVALID_NAME."
+      ],
+      "tags": [
+        "bugfix",
+        "config",
+        "cli",
+        "data-safety",
+        "M20"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One static validation list shared by two existing consumers, with an existing migration entry point and filesystem non-mutation regressions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/paths/index.ts",
+        "packages/nax/src/cli/init.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/commands/migrate.ts",
+        "packages/nax/test/unit/commands/migrate.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/config/reserved-project-names.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3b4dd038d5c0dd574b018c67b90610b776277d32"
+    },
+    {
+      "id": "US-006",
+      "title": "Signal snapshotted descendants after reparenting",
+      "description": "**Goal** — Fix M21 by identifying snapshotted processes by pid and start time rather than parent identity during both tree-kill passes.\n\n**Motivation** — A descendant whose parent exits on SIGTERM is reparented (ppid 1), so its own SIGTERM (sent concurrently) and the SIGKILL pass both skip it and it outlives the run.\n\n**Approach** — `signalIfUnchanged(proc, signal)` (private, `pid-registry.ts:328`). Baseline: skips when `parentPid` or `startedAt` differs from the snapshot. Target: skips only when `startedAt` differs (the PID was reused). A changed `parentPid` alone is signalled, for both `TERM` and `KILL`. The skip warn keeps its fields.\n\n`PidRegistry.killAll()` — `src/execution/pid-registry.ts:153`; calls the private `killPidTree`, which signals TERM to every target concurrently, sleeps `PID_TREE_KILL_GRACE_MS`, then signals KILL.\n\n**Scope** — In: the private identity comparison and focused tests through killAll proving both passes, PID reuse and failed identity lookup behavior. Out: test selection/config/name fixes (US-001–US-005) and publishing (US-007). Killing a reparented descendant that was not in the snapshot `killPidTree` took before the TERM pass. Do not change process-group signaling, traversal, grace timing or existing PID safety guards.\n\n**Interface**\n```ts\nsignalIfUnchanged(proc, signal)\nPidRegistry.killAll()\n```\nKeep signalIfUnchanged private and preserve existing warn data including expectedParentPid, currentParentPid, expectedStartedAt and currentStartedAt. Add pid-registry-reparent.test.ts rather than growing the 640-line pid-registry.test.ts. Stub _pidRegistryDeps.spawn and sleep, never kill real processes. A changed start time still skips with the existing warning; failed per-pid ps lookup still sends no signal.",
+      "acceptanceCriteria": [
+        "[unit] killAll() with a registered root whose ps -eo snapshot lists a descendant D (ppid = the root's child C), where the per-pid ps -o lookup for D returns ppid 1 and the snapshot's start time, sends kill -TERM D.",
+        "[unit] In the same reparented-D case, killAll() also sends kill -KILL D.",
+        "[unit] killAll() where the per-pid lookup for D returns ppid 1 and the snapshot's start time only after the TERM pass (its first lookup returns the snapshot ppid), sends kill -KILL D.",
+        "[unit] killAll() where the per-pid lookup for D returns the snapshot ppid and a different start time does not send kill -TERM D or kill -KILL D.",
+        "[unit] In the changed-start-time case, exactly one of the warns logged on the pid-registry stage has a message starting Skipping SIGTERM for PID, and its data carries expectedStartedAt and currentStartedAt.",
+        "[unit] killAll() where the per-pid lookup for D fails (non-zero exit) sends no signal to D."
+      ],
+      "tags": [
+        "bugfix",
+        "execution",
+        "process-lifecycle",
+        "safety",
+        "M21"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized process-identity correction with concurrent TERM/KILL boundary regressions and preserved PID-reuse/liveness safeguards.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/pid-registry.ts",
+        "packages/nax/test/unit/execution/pid-registry.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/pid-registry-reparent.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a88d5713428c369ff476d679c0ff62374835f7d9"
+    },
+    {
+      "id": "US-007",
+      "title": "Block auto-PR publication from protected branches",
+      "description": "**Goal** — Fix M22 by applying the publisher's static and remote-default branch protection to both auto-PR entry points.\n\n**Motivation** — `autoPrPlugin` (`src/plugins/builtin/auto-pr/index.ts`) runs `git push -u origin <context.branch>` and opens a PR for whatever branch the run was on.\n\n**Approach** — `isPublishableBranch(branch, defaultBranch?)` (`workflow/finalize.ts:75`, with `PROTECTED_BRANCHES`). Target: moves to `src/utils/git.ts` unchanged; `finalize.ts` imports it from there and keeps re-exporting it, so its existing importers (`test/unit/workflow/finalize.test.ts`, `publish-protection.test.ts`) keep working. A plugin must not import from `src/workflow/`.\n\n`_autoPrDeps` and `autoPrPlugin` (`src/plugins/builtin/auto-pr/index.ts`). Target: `_autoPrDeps` gains `readDefaultBranch(workdir: string): Promise<string | undefined>`, whose default runs `git symbolic-ref --quiet --short refs/remotes/origin/HEAD` through `_autoPrDeps.run` (the hardened runner; the literal argv carries the file's `nax-git-env-allow` annotation, as `GIT_REMOTE_CMD` does) and strips `origin/`, returning `undefined` on a non-zero exit, an empty answer or a throw. `shouldRun` returns `false` after the `enabled` and story-summary checks and before any remote or forge lookup when `isPublishableBranch(context.branch, await _autoPrDeps.readDefaultBranch(context.workdir))` is false, logging one warn naming the branch. `execute` makes the same check first and returns `{ success: false, message }` naming the branch without running `git push`.\n\nDefault-branch lookup fails: treated as unknown: only `\"\"`, `main` and `master` are protected.\n\n**Scope** — In: relocate/re-export the shared predicate, add injectable default-branch lookup with hardened runner, protect shouldRun and execute, add focused protected-branch tests, and update dependency snapshots in two existing test files. Out: workflow publish policy redesign, all other fixes (US-001–US-006). US-007 only: a branch protection list configured by the user. Only `\"\"`, `main`, `master` and the remote default branch are protected, as in the workflow publisher. Preserve timeout, draft/forge behavior and the existing post-push duplicate-PR recheck. Do not import workflow/git.ts from the plugin.\n\n**Interface**\n```ts\nisPublishableBranch(branch, defaultBranch?)\nreadDefaultBranch(workdir: string): Promise<string | undefined>\n```\nThe moved predicate retains its existing TypeScript signature `export function isPublishableBranch(branch: string, defaultBranch?: string): boolean`. Its unchanged protected set is [\"\", \"main\", \"master\"], with branch !== defaultBranch as the additional predicate.\n\nAdd auto-pr-protected-branch.test.ts for the new cases. In auto-pr-acceptance.test.ts, its `let saved: typeof _autoPrDeps` snapshot in beforeEach is a seven-field literal; adding the required readDefaultBranch field to _autoPrDeps fails bun run typecheck (tsconfig.test.json). Add `readDefaultBranch: _autoPrDeps.readDefaultBranch` to the snapshot and restore it in afterEach; no assertion changes. In auto-pr-bug8.test.ts, the same seven-field saved snapshot requires the same field and restore; no assertion changes. No other existing test changes. The readDefaultBranch seam's consumers are shouldRun and execute; test both with explicit stubs and exercise the default implementation by stubbing only _autoPrDeps.run.",
+      "acceptanceCriteria": [
+        "[unit] autoPrPlugin's post-run action shouldRun with autoPr.enabled: true, a completed story summary, and context.branch main returns false.",
+        "[unit] In the enabled/completed main-branch shouldRun case, _autoPrDeps.getRemoteUrl and _autoPrDeps.hasOpenPr are not called.",
+        "[unit] In the enabled/completed main-branch shouldRun case, one warn is logged through context.logger.warn whose data carries branch: \"main\".",
+        "[unit] shouldRun returns false for context.branch master and for context.branch \"\".",
+        "[unit] shouldRun with context.branch develop and _autoPrDeps.readDefaultBranch resolving develop returns false.",
+        "[unit] shouldRun with context.branch feat/x, _autoPrDeps.readDefaultBranch resolving main, and the forge stubs on their happy path returns true.",
+        "[unit] execute with context.branch main resolves { success: false } with a message naming main.",
+        "[unit] execute with context.branch main causes _autoPrDeps.run to receive no git push call.",
+        "[unit] execute with context.branch develop and _autoPrDeps.readDefaultBranch resolving develop resolves { success: false }.",
+        "[unit] execute with context.branch develop and _autoPrDeps.readDefaultBranch resolving develop runs no git push.",
+        "[unit] The default _autoPrDeps.readDefaultBranch(\"/repo\"), with _autoPrDeps.run stubbed to answer git symbolic-ref --quiet --short refs/remotes/origin/HEAD with exit 0 and stdout origin/trunk followed by a newline, resolves trunk.",
+        "[unit] The default _autoPrDeps.readDefaultBranch resolves undefined when _autoPrDeps.run answers git symbolic-ref --quiet --short refs/remotes/origin/HEAD with a non-zero exit.",
+        "[unit] The default _autoPrDeps.readDefaultBranch resolves undefined when _autoPrDeps.run throws.",
+        "[unit] shouldRun with autoPr.enabled: true, a completed story summary, context.branch feat/x and _autoPrDeps.readDefaultBranch resolving undefined (lookup failed) calls _autoPrDeps.getRemoteUrl(context.workdir), demonstrating it does not return false for the branch check.",
+        "[unit] isPublishableBranch imported from src/utils/git.ts returns false for each of \"\", main and master.",
+        "[unit] isPublishableBranch imported from src/utils/git.ts returns false for release with default branch release.",
+        "[unit] isPublishableBranch imported from src/utils/git.ts returns true for feat/x with default branch main.",
+        "[unit] When default-branch lookup fails and resolves undefined, shouldRun still returns false for each of \"\", main and master."
+      ],
+      "tags": [
+        "bugfix",
+        "plugins",
+        "git",
+        "publication",
+        "safety",
+        "M22"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three existing source modules reuse an unchanged predicate and established runner injection; this publication-safety check does not alter authentication or permissions, so focused single-session TDD is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/plugins/builtin/auto-pr/index.ts",
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/src/utils/git.ts",
+        "packages/nax/test/unit/plugins/builtin/auto-pr-acceptance.test.ts",
+        "packages/nax/test/unit/workflow/publish-protection.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/plugins/builtin/auto-pr-protected-branch.test.ts"
+      ],
+      "suggestedCriteria": [
+        "The default _autoPrDeps.readDefaultBranch resolves undefined when the symbolic-ref command exits 0 with empty or whitespace-only stdout."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/plugins/builtin/auto-pr-acceptance.test.ts",
+          "reason": "its `let saved: typeof _autoPrDeps` snapshot in `beforeEach` is a seven-field literal; adding the required `readDefaultBranch` field to `_autoPrDeps` fails `bun run typecheck` (tsconfig.test.json). Add `readDefaultBranch: _autoPrDeps.readDefaultBranch` to the snapshot and restore it in `afterEach`; no assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/plugins/builtin/auto-pr-bug8.test.ts",
+          "reason": "same seven-field `saved: typeof _autoPrDeps` snapshot in `beforeEach`; add `readDefaultBranch` to the snapshot and its restore; no assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "206f84dc2ea5a12580bb66bc2cca4426d256f830"
+    }
+  ],
+  "analysis": "Repository and execution context: This is an existing Bun/strict-TypeScript CLI package, not a React UI feature. All seven independent fixes are scoped to packages/nax; no changes to nax-ai, nax-agent, nax-agent-acp, package versions or dependencies are needed. Codebase-memory MCP tools were unavailable, so discovery used direct source reads and targeted text search. Read docs/architecture/ARCHITECTURE.md:17 and :154 for the architecture index, injectable external dependencies, safety conventions and size limits. Apply package rules and bun:test with existing @test/helpers and mutable _deps seams, restoring all mutations, environment variables, log sinks and caches. Each story must retain a fail-first regression test. The new test files avoid growing existing large suites; only US-007 updates existing test fixtures, with no assertion changes. Run targeted tests from packages/nax using explicit paths and --timeout=30000; never run bare bun test or bun run nax. Pipeline gates remain verification, not acceptance criteria. Relevant additional verification: US-002 check:complexity and baseline ratchet, US-003 check:file-sizes (smart-runner.ts <=600), US-004 typecheck and check:file-sizes (loader.ts <=599). Do not run test:coverage inside a sandboxed nax session. No implementation or test execution was performed during PRD drafting.\n\nUS-001 / M15: packages/nax/src/test-runners/detect/framework-configs.ts:45 currently regex-matches include across the whole vitest file; parseViteConfig at :281 narrows to a test block but still finds nested coverage.include first. extractBalancedBlock at :344 returns the slice INSIDE the enclosing braces and counts braces without parsing strings. Add one file-local helper that considers include only at depth zero in that slice; both parsers reuse it and existing extractStringLiterals/normalize. Keep extractBalancedBlock unchanged and retain empty-pattern framework claims. detectFromFrameworkConfigs at :367 exposes those claims; detect/index.ts:145 filters empty-pattern sources before returning meaningful detection results, so empty-result assertions must use the lower-level exported detector. Existing test/unit/test-runners/detect.test.ts:43-109 demonstrates _frameworkConfigDeps, _frameworkDefaultsDeps, _fileScanDeps, directory fallback and cache isolation. Put all new cases in test/unit/test-runners/detect/framework-configs-vitest.test.ts; detect.test.ts is already 612 lines. Risk: accidentally admitting nested include keys, treating Vite without a test block as Vitest, or allowing real lower-tier scans/cache hits to contaminate deterministic assertions. This remains a literal-array heuristic, not config execution or a JavaScript parser.\n\nUS-002 / M16: packages/nax/src/context/engine/scope-path-match/index.ts:43 already classifies '{' as glob syntax, while globToRegex at :82 escapes braces. Its suffix anchoring and special **/ handling must remain intact, including zero intermediate directories, raw-pattern memo keys and the bounded cache at :68. Extract brace helpers rather than growing this already-over-baseline function: scripts/baselines/complexity-baseline.json:53 records globToRegex=22; new helpers must score <=20 and any reduced existing score must lower that entry. Shared consumers include ruleMatchesScopeFiles at scope-path-match/index.ts:171, ruleMatchesPackage at :216, providers/static-rules.ts:133/:260, context/rules/rule-set/index.ts:294 and context/rules/rule-delivery/index.ts:370. effectiveness.ts:18/:372 deliberately imports matching primitives through the static-rules re-export; preserve this cycle-drain arrangement. rules-lint.ts:95 uses only * and ? to end a literal prefix, routing brace patterns to direct literal existence checks; extend the classifier to '{' and update its obsolete comment. Its globHasMatch at :186 already uses the shared regex, so no second matcher is needed. Existing scope-path-match.test.ts:29 exercises memo identity/cap and must remain unchanged. Add scope-path-match-braces.test.ts for regex, selection, attribution and actual temp-tree lint seams. Risk: inconsistent nested-group parsing, expanding non-alternating groups, partially expanding an unbalanced pattern, regex metacharacter injection or changing other glob converters.\n\nUS-003 / M17: packages/nax/src/verification/smart-runner.ts:138 gathers test paths, currently stops at >=maxScanFiles at :160 and then reads the partial set. Replace that debug/truncation block in place with a >cap warning and immediate [] return, before any test-file read. Exactly cap files must be collected and read, and counts span patterns without deduplication. smart-runner.ts is 599 lines. scoped-selection.ts:196-218 already interprets an empty real import-grep result as fullSuite(), with fallbackFullSuiteCommand selected at :105-109; production selection logic should not need a new result type or routing change. Existing import-grep-fallback.test.ts:5/:40 asserts only upper bounds on reads and would pass the broken baseline; leave it unchanged and add test/unit/verification/import-grep-fallback-cap.test.ts containing strict zero-read and real-fallback seam tests. Mirror test/unit/test-runners/scoped-selection.test.ts dependency injection but leave _scopedSelectionDeps.importGrepFallback at its real default for the integration case. Risk: off-by-one cap behavior, warning more than once, applying the cap separately to each glob, or testing only a mocked empty fallback rather than the real scan-to-full-suite wiring.\n\nUS-004 / M19: packages/nax/src/config/loader.ts:361-418 reads declared overrides and profiles and merges them through loadPackageOverrideWithConfig without preparation or validation. runtime/packages.ts:127-140 dynamically imports that path when hydrate has no custom loader. run-setup.ts:300-312 invokes hydrate without an override and already catches errors non-fatally; keep that code unchanged. loader.ts:430-599 has the correct per-package chain, including layer preparation at :494, interim removed-key stripping at :528, profile overlays, profile metadata, root-only raw pinning at :554 and final validation at :564-596. Extract shared preparation and final validation into the NEW config/package-layer.ts with the exact specified exported interfaces. Move resolveEnvVarsWarnOnFailure from loader.ts:70, along with its pipeline-mode precheck dependency as necessary, into the leaf module and export it for root-layer reuse; never import loader.ts from package-layer.ts. ConfigWarnDedupe is already exported by compat-shims.ts:41. One dedupe must flow through declared fields, package-profile.ts:17 and validation. loadPackageOverrideData must accept that dedupe and return chain as well as fields/layers. Keep loadPackageOverride's declared-value/provenance semantics unvalidated. Keep overlay distinct from inherited config: finish command provenance and gate cwd consume it (runtime/packages.ts:24-31 and :146-147). loadPackageOverrideWithConfig must prepare fields before whitelist merge, overlay profiles in order, retain its second whitelist merge, pin root-only raw values BEFORE validation, then apply its existing declared-review-command bridge to the validated result. validatePackageConfig owns guards/permissions/strip/safeParse, not applyWorkflowMode. Native guard error codes remain native (notably CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT); schema failures use exactly the existing PER_PACKAGE_PROFILE_INVALID message and metadata. loadConfigForWorkdir retains stamping, mode application and cache writes. hydrate retains typed pinRootOnlyKeys and applyWorkflowMode but catches failures per package, hydrates later valid packages, sets hydrated=true, and only then rejects the first error; later failures warn with packageDir on stage packages. Cache no override for failed packages. root-only-keys.ts:15/:61 is critical: approvalTimeout=5 must be warned about and discarded before schema validation, whereas costLimit=-5 must reject. The extraction must leave loader.ts <=599 lines. New package-override-validation.test.ts should drive both loaders with an isolated NAX_GLOBAL_CONFIG_DIR, a real root .nax/config.json and _clearRootConfigCache, as integration/runtime/package-profile-registry.test.ts:22-48 demonstrates. That integration suite at :50-166 already pins profile order, smart-runner inheritance, sandbox pinning, review/quality bridging, missing-profile errors and finish provenance and must remain green. Logging assertions can mirror loader-legacy-shim.test.ts:262-263 initLogger/addSink. This is the highest-risk story because merge order, guard order, permissions enforcement, warning deduplication, provenance, caches and partial hydration interact; use strict three-session TDD for the permissions/access-control validation path.\n\nUS-005 / M20: packages/nax/src/config/paths/index.ts:63 is the leaf home of globalConfigDir and the shared RESERVED_PROJECT_NAMES constant. cli/init.ts:42-54 and config/schemas.ts:94-111 each currently duplicate only global/_archive. Both must consume the exact new static list; cli validation must still report reserved before the underscore-prefix rejection, and schema errors must name the actual rejected value. commands/migrate.ts:41-60/:72-80 already validates reclaim/merge before filesystem or identity mutations and needs no production changes. New reserved-project-names.test.ts should verify both consumers and real migration rejection against an isolated global directory, preserving profiles/a.json and never creating _archive. Risk: circular imports if the constant is placed in a high-level module, damaging global profiles during a test, or reporting only the underscore rule for _archive in CLI validation. This intentionally makes explicitly configured existing reserved project names invalid; manual rename is the only migration. Directory-basename fallback in getProjectKey, trust.json, missing-.identity reclaim behavior and path-helper directory literals remain unchanged.\n\nUS-006 / M21: packages/nax/src/execution/pid-registry.ts:233-252 snapshots descendants, concurrently sends TERM, sleeps through injectable _pidRegistryDeps.sleep, then sends KILL to the same target list. signalIfUnchanged at :328 currently rejects both parentPid and startedAt changes at :339. Only startedAt is identity evidence beyond the lookup's fixed pid: remove the parent comparison without changing diagnostics fields or either signal pass. readProcessIdentity at :296 still returns null on nonzero ps/failed identity reads; signalPid at :353 keeps pid<=1 protections, kill -0 liveness checks and single-pid signaling. New pid-registry-reparent.test.ts should stub ps tree snapshots, per-pid identities, kill commands and sleep through _pidRegistryDeps, using existing pid-registry.test.ts:18 for restoration patterns. Never spawn or kill real processes for these unit tests. Existing 640-line suite stays unchanged; its changed-parent-and-start-time identity regression still passes. Risk: dropping the PID-reuse safeguard while fixing reparenting, changing snapshot discovery, or accidentally broadening process-group signaling. No rescan of post-snapshot descendants is introduced.\n\nUS-007 / M22: packages/nax/src/workflow/finalize.ts:73-77 already contains exactly the static branch set and predicate needed; move them unchanged to src/utils/git.ts, import for local publisher use and re-export from finalize.ts for backward compatibility with workflow tests. The utility is 390 lines, leaving room under the hard limit. workflow/git.ts:270-281 documents the origin/HEAD lookup contract but must not be imported by a plugin. auto-pr/index.ts:103-120 has the seven-field typed dependency object; add readDefaultBranch and a default implementation calling _autoPrDeps.run with the literal symbolic-ref argv, hardened by defaultRun at :43-73 and annotated like GIT_REMOTE_CMD at :29-30. shouldRun at :179-207 must insert the branch guard after opt-in/story checks, before remote/forge/open-PR access; execute at :212 must repeat the guard first so direct calls cannot bypass it. Failed lookup remains unknown and retains static main/master/empty protection. Preserve successful branch push, subprocess timeout, concurrent-PR recheck and fail-open post-run semantics. auto-pr-acceptance.test.ts:83-115 and auto-pr-bug8.test.ts:45-76 both snapshot typeof _autoPrDeps via seven-field literals: add/restore only readDefaultBranch there without changing assertions. All other new cases go in auto-pr-protected-branch.test.ts, using stubbed runners/forges and preserving the default lookup implementation for its dedicated tests. The existing nax/auto-pr fixtures remain publishable. Risk: guarding only shouldRun, importing workflow internals into plugins, un-hardened git execution, losing default-branch protection, or breaking the finalize export contract. This is a publication-safety predicate, not an authentication or permissions change; retain medium complexity with tdd-simple using the existing injection seams.\n\nDelivery and migration: Implement the seven story IDs exactly, with workdir packages/nax and no dependencies; shared file edits are local to their respective stories. No public API removals, automatic data migrations, new config flags, release bumps or external dependencies. Keep existing exported/imported surfaces compatible, especially finalize.isPublishableBranch and loadPackageOverride provenance. Observable intentional changes are safer test classification, brace-aware rule matching, full-suite escalation instead of incomplete scoped selection, warning-backed root fallback for invalid hydrated package config, rejection of newly reserved explicit names, signaling snapshotted reparented processes, and auto-PR refusal on protected branches. Feature exclusions are preserved verbatim in outOfScope.\n\nRefine self-audit: Re-read spec.md in full and rechecked the current shared matcher, both loader paths, hydrate, run-setup's non-fatal catch, pid identity comparison and auto-PR/publisher entry points. All 78 numbered spec ACs survive in their original stories; splitting compound assertions does not drop either assertion or its regression qualifier. The following exhaustive mapping is spec AC number -> acceptanceCriteria array position(s), 1-based. US-001: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7. US-002: 1->1, 2->2, 3->3, 4->4/5, 5->6, 6->7/8, 7->9/10, 8->11/12, 9->13/14, 10->15/16, 11->17, 12->18, 13->19, 14->20, 15->21. US-003: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7/8. US-004: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8/9, 9->10, 10->11, 11->12, 12->13, 13->14, 14->15, 15->16, 16->17/18, 17->19, 18->20/21, 19->22, 20->23, 21->24/25. US-005: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9/10, 10->11. US-006: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6. US-007: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7/8, 8->9/10, 9->11, 10->12/13, 11->14, 12->15/16/17. Failure-table supplements remain US-002 position 22 (literal braces/commas with globally unbalanced input), US-004 position 26 (failed-package root fallback), and US-007 position 18 (static protections after lookup failure). Each other failure-table row is already covered by the mapped numbered ACs. Every story has negative-path ACs and pre-existing-behavior regression anchors: US-001 spec AC3; US-002 AC3/6/7/8/12/15; US-003 AC4/5; US-004 AC8/10/13/17; US-005 AC4/5/7; US-006 AC4/5/6; US-007 AC6/11. Qualifiers retained include the same selection/attribution answer, existing review-command bridge, loader shim equivalence, real fallback seam, root-only discard and PID reuse safeguards. No deprecated file-check AC tags were present. All 18 feature-level exclusions are present verbatim, and nearby exclusions are echoed verbatim in the affected story scope. All seven story IDs, workdirs and empty dependency arrays remain binding. Context lists match spec recommendations within five slots; US-004 prioritizes run-setup and the real profile-registry integration suite over the lower-priority overlay unit suite. New outputs appear only in expectedFiles. Routing is reduced to medium/tdd-simple for the bounded US-002 parser extension and medium/tdd-simple for US-007 publication safety; only US-004 retains complex/three-session-tdd because it changes shared permissions validation and partial hydration state. Corrections also make unknown-default lookup observably assert getRemoteUrl invocation, give unbalanced braces a concrete literal-path fixture, and distinguish schema error wrapping from native guard error codes. No source implementation or runtime tests were executed in this audit.",
+  "outOfScope": [
+    "M18, M23 and the other review findings (M1-M14, L1-L37). M1-M14, M18 and M23 shipped in F1-F3; the LOW findings belong to F5.",
+    "An existing project already named one of the newly reserved names. Its `.nax/config.json` stops validating and must be renamed by hand; no migration is added.",
+    "A repo with no `name` in its config whose directory is named like a reserved name. `getProjectKey` (`config/project-key.ts:25`) falls back to the directory's basename without `validateProjectName`, so it can still collide.",
+    "`trust` from the review's M20 repro: nax writes `~/.nax/trust.json`, a file, so no directory collides; it is not reserved.",
+    "Making nax's own path helpers (`profile.ts`, `utils/paths.ts`, `plugins.ts`, `memory/paths.ts`, `open-context.ts`) read their directory names from `RESERVED_PROJECT_NAMES`. The constant is a list for validation only.",
+    "Making `nax migrate --reclaim` refuse a `~/.nax/<name>` directory that has no `.identity` file.",
+    "Validating `loadPackageOverride` (`loader.ts:384`), the declared-values reader the finish quality gate uses for command provenance. It keeps returning the declared fields unvalidated.",
+    "Brace expansion in the other glob converters (`src/utils/path-filters.ts`, `src/test-runners/conventions.ts`). They are separate matchers with their own callers.",
+    "Extglob syntax (`?(x)`, `+(x)`, `@(x)`, `!(x)`) and character ranges in rule `appliesTo`. Only `{a,b}` groups are expanded.",
+    "A runtime chunk scope path that contains a literal brace group with a comma (for example a file named `{a,b}.ts`). After US-002 it is read as a glob by attribution.",
+    "Raising or removing `execution.smartTestRunner.maxScanFiles`, or scanning test files in a stable order.",
+    "Vitest configs whose `test.include` is not a literal string array (a variable, a spread, a function call). They keep returning `patterns: []`.",
+    "Killing a reparented descendant that was not in the snapshot `killPidTree` took before the TERM pass.",
+    "Making an invalid package config fatal at run start. `run-setup` keeps its non-fatal catch, so the failed package runs on the root config after one warn carrying the validation error.",
+    "Deduplicating test files that two `testFilePatterns` both match. Each match counts toward `maxScanFiles`, so overlapping patterns can escalate to the full suite sooner.",
+    "Braces inside string literals in a vitest or vite config (for example `exclude: [\"a/}\"]`). They are counted as structure, as `extractBalancedBlock` counts them today.",
+    "Vitest `test.projects` / workspace entries and an `alias` or other object holding a `test:` key before the config's own `test` block. Only the first `test: {` block's top-level `include` is read.",
+    "US-007 only: a branch protection list configured by the user. Only `\"\"`, `main`, `master` and the remote default branch are protected, as in the workflow publisher."
+  ],
+  "routingProfile": "native-codex-ds"
+}

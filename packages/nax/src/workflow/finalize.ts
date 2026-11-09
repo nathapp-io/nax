@@ -14,6 +14,7 @@ import { NaxError } from "@/errors";
 import { sanitizeTitle } from "@/finish";
 import type { ForgeKind } from "@/forge";
 import { getSafeLogger } from "@/logger";
+import { isPublishableBranch } from "@/utils/git";
 import { askApproval, type ReadinessFacts, readinessReasons } from "./approval";
 import type { CiWaitResult } from "./ci-wait";
 import { parseClosingIssues } from "./closing-issues";
@@ -70,11 +71,12 @@ function ciDetailFields(ci: CiWaitResult): Pick<PublishOutcome, "ciDetail"> {
   return DETAILED_CI_STATES.has(ci.outcome) ? { ciDetail: ci.detail } : {};
 }
 
-const PROTECTED_BRANCHES = new Set(["", "main", "master"]);
-
-export function isPublishableBranch(branch: string, defaultBranch?: string): boolean {
-  return !PROTECTED_BRANCHES.has(branch) && branch !== defaultBranch;
-}
+/**
+ * US-007: the publish guard now lives in `@/utils/git`, so the auto-PR plugin
+ * can share it without importing `src/workflow/`. Re-exported here for the
+ * importers that already read it from this module.
+ */
+export { isPublishableBranch };
 
 export function workflowPrTitle(fc: FeatureContext): string {
   const raw = `feat(${fc.feature}): ${fc.prd.userStories.length} stories (nax workflow)`;

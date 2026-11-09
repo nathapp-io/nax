@@ -67,6 +67,45 @@ export function globalConfigDir(): string {
 }
 
 /**
+ * Project names nax reserves for the directories it owns under
+ * {@link globalConfigDir}.
+ *
+ * A project named after one of these collides with a directory nax itself
+ * creates there: `nax migrate --reclaim profiles` would rename
+ * `~/.nax/profiles/` into `~/.nax/_archive/` and take every named profile with
+ * it. `validateProjectName` (`src/cli/init.ts`) and the `NaxConfigSchema`
+ * `name` refine (`src/config/schemas.ts`) both read this list, so `nax init`,
+ * config validation and `nax migrate --reclaim` / `--merge` refuse the same
+ * names.
+ *
+ * The list covers every directory nax creates under `globalConfigDir()`:
+ *
+ * - `global` — `src/runtime/paths.ts` (`globalOutputDir`)
+ * - `profiles` — `src/config/profile.ts` (`loadProfile`)
+ * - `runs` — `src/utils/paths.ts` (`getRunsDir`)
+ * - `events` — `src/utils/paths.ts` (`getEventsRootDir`)
+ * - `plugins` — `src/cli/plugins.ts`
+ * - `acp` — `src/agents/acp/open-context.ts` (`acpStateDir`)
+ * - `memory` — `src/memory/paths.ts` (`memoryDirs`)
+ * - `hooks` — `src/cli/init.ts` (`initGlobalConfig`)
+ * - `_archive` — `src/commands/migrate.ts` (the reclaim archive)
+ *
+ * Validation only: nax's own path helpers still spell these directory names
+ * inline.
+ */
+export const RESERVED_PROJECT_NAMES: readonly string[] = [
+  "global",
+  "profiles",
+  "runs",
+  "events",
+  "plugins",
+  "acp",
+  "memory",
+  "hooks",
+  "_archive",
+];
+
+/**
  * Hidden project config directory name.
  * Single source of truth — all code uses this constant or projectConfigDir().
  */

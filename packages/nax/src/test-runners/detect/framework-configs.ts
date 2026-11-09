@@ -20,6 +20,9 @@ export { _frameworkConfigDeps } from "./framework-configs-deps";
 /** Directories always excluded from produced globs */
 const EXCLUDE_DIRS = ["node_modules", "dist", "build", ".nax", "coverage", ".git"];
 
+/** Anchor for the `test: {` block of a vitest/vite config */
+const TEST_BLOCK_ANCHOR = /\btest\s*:\s*\{/;
+
 /** Filter out patterns referencing excluded dirs */
 function filterExcluded(patterns: string[]): string[] {
   return patterns.filter((p) => !EXCLUDE_DIRS.some((d) => p.includes(`/${d}/`) || p.startsWith(`${d}/`)));
@@ -37,10 +40,12 @@ function normalize(patterns: string[]): string[] {
 
 /**
  * Try reading a vitest config file (vitest.config.ts/js/mts).
- * Extracts `test.include` array when present.
+ * Extracts the `test.include` array when present.
  *
  * Note: vitest configs are TypeScript/JS — we extract include by regex
  * rather than executing the file. Handles the common literal array form.
+ * Only `test.include` at the top level of the `test: {}` block names test
+ * files; a nested `coverage.include` does not (M15).
  */
 async function parseVitestConfig(workdir: string): Promise<DetectionSource | null> {
   const candidates = ["vitest.config.ts", "vitest.config.mts", "vitest.config.js", "vitest.config.mjs"];
@@ -49,15 +54,12 @@ async function parseVitestConfig(workdir: string): Promise<DetectionSource | nul
     const text = await _frameworkConfigDeps.readText(path);
     if (!text) continue;
 
-    // Extract test.include: ["pattern1", "pattern2"]  (common literal form)
-    const includeMatch = text.match(/include\s*:\s*\[([^\]]+)\]/s);
-    if (includeMatch) {
-      const patterns = extractStringLiterals(includeMatch[1]);
-      if (patterns.length > 0) {
-        return { type: "framework-config", framework: "vitest", path, patterns: normalize(patterns) };
-      }
+    const testBlock = extractBalancedBlock(text, TEST_BLOCK_ANCHOR);
+    const patterns = testBlock ? extractTopLevelInclude(testBlock) : null;
+    if (patterns && patterns.length > 0) {
+      return { type: "framework-config", framework: "vitest", path, patterns: normalize(patterns) };
     }
-    // Found config file but no extractable include → still claim framework to suppress Tier 2 defaults.
+    // Found config file but no extractable test.include → still claim framework to suppress Tier 2 defaults.
     return { type: "framework-config", framework: "vitest", path, patterns: [] };
   }
   return null;
@@ -276,7 +278,8 @@ function extractStringLiterals(body: string): string[] {
  * Vitest reuses Vite's config file, nesting its test config under `test`.
  * We extract the `test: {...}` block first, then pull `include` from inside
  * to avoid matching unrelated `include` keys elsewhere in the file
- * (e.g. `build.rollupOptions.include`).
+ * (e.g. `build.rollupOptions.include`). Only a top-level `include` inside that
+ * block is read — `coverage.include` is not a test-file pattern (M15).
  */
 async function parseViteConfig(workdir: string): Promise<DetectionSource | null> {
   const candidates = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"];
@@ -286,17 +289,12 @@ async function parseViteConfig(workdir: string): Promise<DetectionSource | null>
     if (!text) continue;
 
     // Vite configs without a `test:` section aren't Vitest configs — skip.
-    if (!/\btest\s*:\s*\{/.test(text)) continue;
+    if (!TEST_BLOCK_ANCHOR.test(text)) continue;
 
-    const testBlock = extractBalancedBlock(text, /\btest\s*:\s*\{/);
-    if (testBlock) {
-      const includeMatch = testBlock.match(/include\s*:\s*\[([^\]]+)\]/s);
-      if (includeMatch) {
-        const patterns = extractStringLiterals(includeMatch[1]);
-        if (patterns.length > 0) {
-          return { type: "framework-config", framework: "vitest", path, patterns: normalize(patterns) };
-        }
-      }
+    const testBlock = extractBalancedBlock(text, TEST_BLOCK_ANCHOR);
+    const patterns = testBlock ? extractTopLevelInclude(testBlock) : null;
+    if (patterns && patterns.length > 0) {
+      return { type: "framework-config", framework: "vitest", path, patterns: normalize(patterns) };
     }
     // Vite config with test: block but no extractable include — claim vitest to suppress Tier 2.
     return { type: "framework-config", framework: "vitest", path, patterns: [] };
@@ -356,6 +354,37 @@ function extractBalancedBlock(text: string, anchor: RegExp): string | null {
       depth--;
       if (depth === 0) return text.slice(openIdx + 1, i);
     }
+  }
+  return null;
+}
+
+/**
+ * Read the `include` key at the top level of a `test: {}` block.
+ *
+ * Only a key outside every nested `{}` counts, so `coverage.include` is never
+ * mistaken for the test-file pattern. Braces are counted the way
+ * `extractBalancedBlock` counts them — without regard to string literals.
+ *
+ * Returns the array's string literals, or null when the block has no
+ * top-level `include` array (a variable, a spread or a call is not readable).
+ */
+function extractTopLevelInclude(block: string): string[] | null {
+  const keyRe = /\binclude\b\s*:/g;
+  let depth = 0;
+  let scanned = 0;
+
+  for (const match of block.matchAll(keyRe)) {
+    // Advance the brace depth over the text before this candidate.
+    for (let i = scanned; i < match.index; i++) {
+      if (block[i] === "{") depth++;
+      else if (block[i] === "}") depth--;
+    }
+    scanned = match.index + match[0].length;
+    if (depth !== 0) continue;
+
+    const array = block.slice(match.index + match[0].length).match(/^\s*\[([^\]]*)\]/);
+    if (!array) continue;
+    return extractStringLiterals(array[1]);
   }
   return null;
 }

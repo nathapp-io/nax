@@ -157,6 +157,10 @@ export const EXEMPT_BY_KIND: Exemptions = new Map([
   // on. Counting it here would baseline `tsSuppress` at 1 forever and lose the
   // closed-invariant-at-0 property the anchored pattern just bought.
   ["test/unit/scripts/biome-test-severity.test.ts", ALL_KINDS],
+  // Same again: the silent-fail `as NaxConfig` cast gate's test feeds the gate
+  // source strings, and the cast it must detect IS the shape `looseCast`
+  // counts. Without the fixture the gate has nothing to detect.
+  ["test/unit/scripts/check-no-silent-naxconfig-cast.test.ts", ALL_KINDS],
 ]);
 
 interface Baseline {

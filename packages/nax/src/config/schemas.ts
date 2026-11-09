@@ -12,6 +12,7 @@ import {
 } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import { DEFAULT_AGENT_NAME, DEFAULT_AGENT_PROTOCOL, DEFAULT_MODEL_MAPS } from "./agent-defaults";
+import { RESERVED_PROJECT_NAMES } from "./paths";
 import type { ModelsConfig } from "./schema-types";
 import { classifyModelSelector } from "./schema-types";
 import {
@@ -100,8 +101,10 @@ export const NaxConfigSchema = z
       .refine((v) => v === "" || (!v.startsWith(".") && !v.startsWith("_")), {
         message: "name must not start with '.' or '_'",
       })
-      .refine((v) => !["global", "_archive"].includes(v), {
-        message: "name 'global' and '_archive' are reserved",
+      .superRefine((v, ctx) => {
+        if (RESERVED_PROJECT_NAMES.includes(v)) {
+          ctx.addIssue({ code: "custom", message: `name '${v}' is reserved` });
+        }
       })
       .refine((v) => v === "" || v.length <= 64, {
         message: "name must be at most 64 characters",

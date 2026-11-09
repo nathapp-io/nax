@@ -86,6 +86,7 @@ beforeEach(() => {
     hasOpenPr: _autoPrDeps.hasOpenPr,
     openDraft: _autoPrDeps.openDraft,
     findPrTemplate: _autoPrDeps.findPrTemplate,
+    readDefaultBranch: _autoPrDeps.readDefaultBranch,
   };
   _autoPrDeps.run = makeDeps().run;
   _autoPrDeps.readText = makeDeps().readText;
@@ -104,6 +105,7 @@ afterEach(() => {
   _autoPrDeps.hasOpenPr = saved.hasOpenPr;
   _autoPrDeps.openDraft = saved.openDraft;
   _autoPrDeps.findPrTemplate = saved.findPrTemplate;
+  _autoPrDeps.readDefaultBranch = saved.readDefaultBranch;
 });
 
 // ─── Plugin metadata ────────────────────────────────────────────────────────

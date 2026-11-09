@@ -8,6 +8,14 @@
 #
 #   src/config/defaults.ts          schema-derived (NaxConfigSchema.parse)
 #   src/config/loader.ts            follows the layered safeParse
+#   src/config/package-layer.ts
+#       Owns the per-package config parse (`preparePackageLayer` /
+#       `validatePackageConfig`) that loader.ts used to run inline, so this
+#       cast MOVED here from loader.ts together with the parse it follows. It
+#       is reached only after `NaxConfigSchema.safeParse` SUCCEEDED — the
+#       same guarantee as the loader.ts entry above. The one field the cast
+#       narrows (`version: number` -> `version: 1`) is pinned by the schema's
+#       own `.refine((data) => data.version === 1)`.
 #   src/operations/setup-generate.ts
 #       :123 casts `result.data` straight out of `NaxConfigSchema.safeParse`,
 #            which throws on failure — same guarantee as loader.ts.
@@ -45,6 +53,7 @@ matches=$(grep -RnE 'as (unknown as )?NaxConfig\b' src/ \
   --exclude-dir=node_modules \
   | grep -vE '^src/config/defaults\.ts:' \
   | grep -vE '^src/config/loader\.ts:' \
+  | grep -vE '^src/config/package-layer\.ts:' \
   | grep -vE '^src/operations/setup-generate\.ts:' \
   | grep -vE '^src/cli/routing-calibrate\.ts:' \
   | grep -vE '^src/plugins/builtin/nax-finish/config\.ts:' \

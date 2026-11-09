@@ -128,11 +128,14 @@ function extractSearchTerms(sourceFile: string): string[] {
  * Pass 2 — import-grep fallback.
  *
  * Scans test files matching `testFilePatterns` and returns those that
- * contain an import reference to any of the given `sourceFiles`.
+ * contain an import reference to any of the given `sourceFiles`. A scan
+ * holding more than `maxScanFiles` files is an incomplete view of the suite:
+ * it warns and returns `[]` so the caller escalates to the full suite.
  *
  * @param sourceFiles    - Changed source file paths (e.g. `["src/routing/strategies/llm.ts"]`)
  * @param workdir        - Absolute path to the repository root
  * @param testFilePatterns - Glob patterns to scan for test files
+ * @param maxScanFiles   - Cap on scanned test files (config.execution.smartTestRunner.maxScanFiles)
  * @returns Matching test file paths (absolute)
  */
 export async function importGrepFallback(
@@ -146,18 +149,15 @@ export async function importGrepFallback(
   // Collect search terms from all changed source files
   const searchTerms = sourceFiles.flatMap(extractSearchTerms);
 
-  // Scan all test files matching the configured patterns, capped at maxScanFiles
-  // (config.execution.smartTestRunner.maxScanFiles; defaults to MAX_GREP_TEST_FILES).
+  const cap = maxScanFiles;
   const testFilePaths: string[] = [];
-  outer: for (const pattern of testFilePatterns) {
+  for (const pattern of testFilePatterns) {
     const g = _bunDeps.glob(pattern);
     for await (const file of g.scan({ cwd: workdir, absolute: false })) {
       testFilePaths.push(`${workdir}/${file}`);
-      if (testFilePaths.length >= maxScanFiles) {
-        getSafeLogger()?.debug("smart-runner", "import-grep glob cap reached — results truncated", {
-          cap: maxScanFiles,
-        });
-        break outer;
+      if (testFilePaths.length > cap) {
+        getSafeLogger()?.warn("smart-runner", `import-grep over cap ${cap} — escalating to full suite`, { cap });
+        return [];
       }
     }
   }
