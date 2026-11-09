@@ -8,7 +8,13 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
-import { featuresDir, globalConfigDir, PROJECT_FEATURES_DIR, projectConfigDir } from "../config/paths";
+import {
+  featuresDir,
+  globalConfigDir,
+  PROJECT_FEATURES_DIR,
+  projectConfigDir,
+  RESERVED_PROJECT_NAMES,
+} from "../config/paths";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { isSameProject, readProjectIdentity } from "../runtime";
@@ -47,7 +53,7 @@ export function validateProjectName(name: string): ProjectNameValidationResult {
       valid: false,
       error: "name must contain only lowercase letters, digits, hyphens, and underscores",
     };
-  if (["global", "_archive"].includes(name)) return { valid: false, error: `name '${name}' is reserved` };
+  if (RESERVED_PROJECT_NAMES.includes(name)) return { valid: false, error: `name '${name}' is reserved` };
   if (name.startsWith(".") || name.startsWith("_"))
     return { valid: false, error: "name must not start with '.' or '_'" };
   return { valid: true };

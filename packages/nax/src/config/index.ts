@@ -31,6 +31,7 @@ export {
   PROJECT_FEATURES_DIR,
   PROJECT_NAX_DIR,
   projectConfigDir,
+  RESERVED_PROJECT_NAMES,
 } from "./paths";
 export type { PipelineStage, TuiPermissions } from "./permissions";
 export {
