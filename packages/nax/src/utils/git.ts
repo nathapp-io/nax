@@ -8,6 +8,26 @@ import { restoreDeletedNaxPaths } from "./nax-path-restore";
 export { _gitDeps, GIT_TIMEOUT_MS, getGitRoot, gitWithTimeout } from "@nathapp/nax-agent/internal";
 
 /**
+ * The branches nax never publishes from: the empty branch (a run with no
+ * branch, or a detached HEAD) and the two conventional default-branch names.
+ */
+const PROTECTED_BRANCHES = new Set(["", "main", "master"]);
+
+/**
+ * Whether a branch may be published from — the shared publish guard (US-007).
+ *
+ * A branch is publishable when it is neither one of the static protected names
+ * nor the remote's default branch. The default branch is the remote's answer,
+ * so it may be unknown (`undefined`); the static protections then stand alone.
+ *
+ * It lives here, not in `src/workflow/finalize.ts`, so the auto-PR plugin can
+ * share it without importing `src/workflow/`; `finalize.ts` re-exports it.
+ */
+export function isPublishableBranch(branch: string, defaultBranch?: string): boolean {
+  return !PROTECTED_BRANCHES.has(branch) && branch !== defaultBranch;
+}
+
+/**
  * Timeout for the `git add -A` / `git commit` pair in autoCommitIfDirty.
  * Staging a large monorepo's full working tree routinely exceeds the default
  * GIT_TIMEOUT_MS; a mutating auto-commit call deserves more budget than a

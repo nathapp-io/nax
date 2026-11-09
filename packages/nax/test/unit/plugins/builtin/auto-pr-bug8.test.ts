@@ -53,11 +53,16 @@ beforeEach(() => {
     hasOpenPr: _autoPrDeps.hasOpenPr,
     openDraft: _autoPrDeps.openDraft,
     findPrTemplate: _autoPrDeps.findPrTemplate,
+    readDefaultBranch: _autoPrDeps.readDefaultBranch,
   };
   // Default: pretend this is a github repo so the early-exit guards in execute()
   // don't fire before the hasOpenPr recheck we're testing.
   _autoPrDeps.getRemoteUrl = async () => "https://github.com/owner/repo.git";
   _autoPrDeps.detectForge = (() => "github") as typeof _autoPrDeps.detectForge;
+  // US-007: the protected-branch guard reads the remote's default branch. This
+  // file leaves `_autoPrDeps.run` real, so the seam is stubbed here instead of
+  // letting the lookup spawn git.
+  _autoPrDeps.readDefaultBranch = async () => undefined;
 });
 
 afterEach(() => {
@@ -68,6 +73,7 @@ afterEach(() => {
   _autoPrDeps.hasOpenPr = saved.hasOpenPr;
   _autoPrDeps.openDraft = saved.openDraft;
   _autoPrDeps.findPrTemplate = saved.findPrTemplate;
+  _autoPrDeps.readDefaultBranch = saved.readDefaultBranch;
 });
 
 describe("BUG-8 — defaultRun timeout", () => {
