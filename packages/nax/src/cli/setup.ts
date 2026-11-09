@@ -4,6 +4,7 @@ import { NaxError } from "../errors";
 import type { MonoPackageConfig, SetupPlan } from "../operations/setup-generate";
 import type { CallContext } from "../operations/types";
 import { analyzeRepo } from "./setup-analyze";
+import type { SetupWarn } from "./setup-fill";
 import { fillScripts } from "./setup-fill";
 import { generateSetupPlan as _generateSetupPlan } from "./setup-llm";
 import type { RepoAnalysis } from "./setup-types";
@@ -21,7 +22,7 @@ export interface SetupOptions {
 
 export const _setupDeps = {
   analyzeRepo: analyzeRepo as (workdir: string) => Promise<RepoAnalysis>,
-  fillScripts: fillScripts as (workdir: string, analysis: RepoAnalysis) => Promise<void>,
+  fillScripts: fillScripts as (workdir: string, analysis: RepoAnalysis, warn?: SetupWarn) => Promise<void>,
   buildCallContext: async (
     workdir: string,
     agentName?: string,
@@ -95,7 +96,8 @@ export async function setupCommand(options: SetupOptions = {}): Promise<number> 
     }
 
     if (options.fillScripts) {
-      await _setupDeps.fillScripts(workdir, analysis);
+      // Unreadable manifests are reported, never thrown: setup still exits 0.
+      await _setupDeps.fillScripts(workdir, analysis, _setupDeps.stderr);
     }
 
     await _setupDeps.writeSetupConfig(workdir, plan.config, plan.monoConfigs, { force: options.force });
