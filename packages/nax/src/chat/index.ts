@@ -85,6 +85,15 @@ export {
 } from "./images";
 export type { ChatJob, ChatJobs } from "./jobs";
 export {
+  _chatMemorySamplerDeps,
+  type ChatMemorySampler,
+  type ChatMemorySamplerOptions,
+  MEMLOG_DIR,
+  MEMLOG_ENV,
+  parseMemlogInterval,
+  startChatMemorySampler,
+} from "./memory-sampler";
+export {
   _mentionExpandDeps,
   _mentionFilesDeps,
   createMentionFileIndex,
