@@ -3,7 +3,7 @@
   "feature": "memory-forget-integrity",
   "branchName": "feat/memory-forget-integrity",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T09:07:25.848Z",
+  "updatedAt": "2026-11-09T09:24:24.566Z",
   "userStories": [
     {
       "id": "US-001",
@@ -117,14 +117,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One provider algorithm changes using existing id-map persistence and outbox classification; focused unit and host integration regressions validate the established retry contract."
+        "reasoning": "One provider algorithm changes using existing id-map persistence and outbox classification; focused unit and host integration regressions validate the established retry contract.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/mcp-provider.ts",
@@ -151,7 +154,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "95aa9d1860f4e9f29299da8ead9837c9fe36ea0f"
     },
     {
       "id": "US-003",
