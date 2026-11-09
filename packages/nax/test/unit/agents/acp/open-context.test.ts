@@ -51,19 +51,58 @@ afterEach(() => {
 });
 
 describe("backendEnv (spec §6.1 step 3)", () => {
-  test("is nax's allowlist plus the model env, all strings", () => {
+  test("is the agent's run env plus the model env, all strings", () => {
     setEnv("CLAUDE_TEST_ALLOWED", "yes");
     setEnv("UNRELATED_SECRET", "no");
-    const env = backendEnv({ ANTHROPIC_BASE_URL: "https://proxy.example" });
+    const env = backendEnv("claude", { ANTHROPIC_BASE_URL: "https://proxy.example" });
     expect(env.CLAUDE_TEST_ALLOWED).toBe("yes");
     expect(env.ANTHROPIC_BASE_URL).toBe("https://proxy.example");
     expect(env.UNRELATED_SECRET).toBeUndefined();
     expect(Object.values(env).every((v) => typeof v === "string")).toBe(true);
   });
 
-  test("drops a variable whose name the backend's option schema rejects (Review Focus 5)", () => {
+  test("AC-15: drops a variable whose name the backend's option schema rejects (Review Focus 5)", () => {
     setEnv("CLAUDE_X-Y", "1");
-    expect(backendEnv()).not.toHaveProperty("CLAUDE_X-Y");
+    expect(backendEnv("claude")).not.toHaveProperty("CLAUDE_X-Y");
+  });
+
+  test("AC-13: drops a variable whose value contains NUL", () => {
+    setEnv("CLAUDE_BAD", "before\u0000after");
+    expect(backendEnv("claude")).not.toHaveProperty("CLAUDE_BAD");
+  });
+});
+
+describe("run env per provider (US-001)", () => {
+  /** The shared OPTS carries a model env; these ACs are about an empty one. */
+  const codexOpts: OpenSessionOpts = { ...OPTS, modelDef: { provider: "openai", model: "gpt-5", env: {} } };
+
+  test("AC-10: a codex session is handed neither another provider's key nor a NAX_ secret", () => {
+    setEnv("NAX_TELEGRAM_TOKEN", "nax-secret");
+    setEnv("ANTHROPIC_API_KEY", "anthropic-key");
+    const env = backendOptions("codex", codexOpts).env;
+    expect(env).not.toHaveProperty("NAX_TELEGRAM_TOKEN");
+    expect(env).not.toHaveProperty("ANTHROPIC_API_KEY");
+  });
+
+  test("AC-11: a codex session is handed OPENAI_API_KEY and still never inherits the whole env", () => {
+    setEnv("OPENAI_API_KEY", "openai-key");
+    const options = backendOptions("codex", codexOpts);
+    expect(options.env?.OPENAI_API_KEY).toBe("openai-key");
+    expect(options.inheritEnv).toBe(false);
+  });
+
+  test("AC-12: a claude session lifts the shell sandbox carrier and keeps it out of the env", () => {
+    const controls = {
+      pi: { extensions: "user" },
+      opencode: { projectConfig: "disable" },
+      cursor: { onUnwrapped: "rules" },
+    } as const;
+    const options = backendOptions("claude", {
+      ...OPTS,
+      modelDef: { ...OPTS.modelDef, env: { NAX_ACP_SHELL_SANDBOX: JSON.stringify(controls) } },
+    });
+    expect(options.env).not.toHaveProperty("NAX_ACP_SHELL_SANDBOX");
+    expect(options.shellSandbox).toBeDefined();
   });
 });
 
