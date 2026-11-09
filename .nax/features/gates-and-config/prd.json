@@ -3,7 +3,7 @@
   "feature": "gates-and-config",
   "branchName": "feat/gates-and-config",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T11:53:07.512Z",
+  "updatedAt": "2026-11-09T12:07:34.647Z",
   "userStories": [
     {
       "id": "US-001",
@@ -140,14 +140,17 @@
         "M17"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A localized early-return/logging change with an off-by-one boundary and an existing full-suite selection seam."
+        "reasoning": "A localized early-return/logging change with an off-by-one boundary and an existing full-suite selection seam.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/verification/smart-runner.ts",
@@ -162,7 +165,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fdc1586362cfa4798c01e1acd7c28ddbab8d0f44"
     },
     {
       "id": "US-004",
