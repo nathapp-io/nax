@@ -3,7 +3,7 @@
   "feature": "secrets-and-ledger",
   "branchName": "feat/secrets-and-ledger",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T06:35:45.865Z",
+  "updatedAt": "2026-11-09T06:47:13.745Z",
   "userStories": [
     {
       "id": "US-001",
@@ -154,14 +154,17 @@
         "M8"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Canonical-path confidentiality and fail-closed file attachment checks require strict security TDD and a real-git regression."
+        "reasoning": "Canonical-path confidentiality and fail-closed file attachment checks require strict security TDD and a real-git regression.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/mentions/mention-expand.ts",
@@ -171,7 +174,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "50739d2624d32813d5c533b55a857fcddd52aa04"
     },
     {
       "id": "US-004",
