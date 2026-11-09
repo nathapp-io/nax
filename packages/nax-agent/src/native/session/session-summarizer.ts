@@ -143,6 +143,9 @@ export function createSessionSummarizer(input: SessionSummarizerInput): NonNulla
       };
     } finally {
       if (timer !== undefined) _adapterDeps.clearTimeout(timer);
+      // #2846: release the per-call signal, which the operation's longer-lived signal would
+      // otherwise keep reachable while it carries listeners. The call has settled.
+      controller.abort();
     }
   };
 }
