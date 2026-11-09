@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { OAuthFlowProhibitedError } from "../../src/auth/oauth-policy.ts";
 import { createPiAuthResolver, toPiCredentialStore } from "../../src/auth/pi-auth.ts";
+import { createFileCredentialStore } from "../../src/credentials/file-store.ts";
 import { createMemoryCredentialStore as memoryStore } from "../../src/credentials/memory-store.ts";
 
 describe("toPiCredentialStore", () => {
@@ -103,5 +109,106 @@ describe("createPiAuthResolver", () => {
   it("resolves empty for an unconfigured provider rather than throwing", async () => {
     const resolver = createPiAuthResolver(fakeModels(undefined));
     expect(await resolver.resolve({ provider: "deepseek", model: "deepseek-chat" })).toEqual({});
+  });
+});
+
+describe("toPiCredentialStore OAuth policy", () => {
+  const oauth = { kind: "oauth", access: "acc", refresh: "ref", expires: 99 } as const;
+
+  it("hides an anthropic oauth credential from pi", async () => {
+    expect(await toPiCredentialStore(memoryStore({ anthropic: oauth })).read("anthropic")).toBeUndefined();
+  });
+
+  it("hides a github-copilot oauth credential from pi", async () => {
+    expect(await toPiCredentialStore(memoryStore({ "github-copilot": oauth })).read("github-copilot")).toBeUndefined();
+  });
+
+  it("keeps the hidden credential in the underlying store after a read", async () => {
+    const store = memoryStore({ anthropic: oauth });
+    await toPiCredentialStore(store).read("anthropic");
+    expect(await store.read("anthropic")).toEqual(oauth);
+  });
+
+  it("still presents a permitted oauth credential", async () => {
+    const pi = toPiCredentialStore(memoryStore({ "openai-codex": oauth }));
+    expect(await pi.read("openai-codex")).toEqual({ type: "oauth", access: "acc", refresh: "ref", expires: 99 });
+  });
+
+  it("still presents an anthropic api-key credential", async () => {
+    const pi = toPiCredentialStore(memoryStore({ anthropic: { kind: "api-key", key: "sk-test" } }));
+    expect(await pi.read("anthropic")).toEqual({ type: "api_key", key: "sk-test" });
+  });
+
+  it("hands modify undefined as the current value for a hidden credential", async () => {
+    const seen: unknown[] = [];
+    await toPiCredentialStore(memoryStore({ anthropic: oauth })).modify("anthropic", async (current) => {
+      seen.push(current);
+      return undefined;
+    });
+    expect(seen).toEqual([undefined]);
+  });
+
+  it("rejects a modify that writes an oauth credential for a prohibited provider and leaves the store empty", async () => {
+    const store = memoryStore();
+    const pi = toPiCredentialStore(store);
+    await expect(
+      pi.modify("anthropic", async () => ({ type: "oauth", access: "a", refresh: "r", expires: 1 })),
+    ).rejects.toBeInstanceOf(OAuthFlowProhibitedError);
+    expect(await store.read("anthropic")).toBeUndefined();
+  });
+
+  it("keeps the hidden credential when modify returns undefined", async () => {
+    const store = memoryStore({ anthropic: oauth });
+    await toPiCredentialStore(store).modify("anthropic", async () => undefined);
+    expect(await store.read("anthropic")).toEqual(oauth);
+  });
+
+  it("does not expose a hidden credential through the modify result", async () => {
+    const store = memoryStore({ anthropic: oauth });
+    const result = await toPiCredentialStore(store).modify("anthropic", async () => undefined);
+    expect(result).toBeUndefined();
+  });
+
+  it("still deletes a hidden credential through the explicit delete", async () => {
+    const store = memoryStore({ anthropic: oauth });
+    await toPiCredentialStore(store).delete("anthropic");
+    expect(await store.read("anthropic")).toBeUndefined();
+  });
+});
+
+describe("toPiCredentialStore with the real models and file store", () => {
+  const saved = new Map<string, string | undefined>();
+  let dir: string;
+
+  beforeEach(async () => {
+    for (const name of Object.keys(process.env).filter((key) => key.startsWith("ANTHROPIC_"))) {
+      saved.set(name, process.env[name]);
+      delete process.env[name];
+    }
+    dir = await mkdtemp(join(tmpdir(), "nax-ai-pi-auth-"));
+  });
+
+  afterEach(async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    for (const [name, value] of saved) if (value !== undefined) process.env[name] = value;
+    saved.clear();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function resolverWithHiddenOAuth() {
+    const store = createFileCredentialStore({ path: join(dir, "credentials.json") });
+    await store.modify("anthropic", async () => ({ kind: "oauth", access: "acc", refresh: "ref", expires: 99 }));
+    return createPiAuthResolver(builtinModels({ credentials: toPiCredentialStore(store) }));
+  }
+
+  it("resolves no apiKey when only a hidden anthropic oauth credential exists", async () => {
+    const resolved = await (await resolverWithHiddenOAuth()).resolve({ provider: "anthropic", model: "claude-x" });
+    expect(resolved.apiKey).toBeUndefined();
+  });
+
+  it("resolves the environment api key rather than the hidden oauth credential", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-env-test";
+    const resolved = await (await resolverWithHiddenOAuth()).resolve({ provider: "anthropic", model: "claude-x" });
+    expect(resolved.apiKey).toBe("sk-env-test");
   });
 });

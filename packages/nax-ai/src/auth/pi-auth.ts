@@ -54,23 +54,38 @@ function fromPi(credential: Credential | undefined): StoredCredential | undefine
   };
 }
 
+/**
+ * An OAuth credential for a provider outside the allowlist is invisible to pi.
+ * It stays in the store: this adapter filters, it never deletes.
+ */
+function visibleToPi(providerId: ProviderId, credential: StoredCredential | undefined): StoredCredential | undefined {
+  if (credential?.kind === "oauth" && !isOAuthFlowPermitted(providerId)) return undefined;
+  return credential;
+}
+
 export function toPiCredentialStore(store: CredentialStore): PiCredentialStore {
   return {
-    read: async (providerId) => toPi(await store.read(providerId)),
+    read: async (providerId) => toPi(visibleToPi(providerId, await store.read(providerId))),
 
     // modify stays a single read-modify-write so the underlying store can hold
     // a lock across the whole operation. pi-ai runs OAuth refresh inside it.
     modify: async (providerId, fn) =>
       toPi(
-        await store.modify(providerId, async (current) => {
-          const next = await fn(toPi(current));
-          // pi's modify contract treats an undefined return as "leave the
-          // entry unchanged" — its OAuth refresh returns that when a
-          // concurrent caller already rotated the token. nax-ai's undefined
-          // means "remove", so the no-op is translated to the current
-          // credential, never propagated; removal goes through delete().
-          return next === undefined ? current : fromPi(next);
-        }),
+        visibleToPi(
+          providerId,
+          await store.modify(providerId, async (current) => {
+            const next = await fn(toPi(visibleToPi(providerId, current)));
+            // pi's modify contract treats an undefined return as "leave the
+            // entry unchanged" — its OAuth refresh returns that when a
+            // concurrent caller already rotated the token. nax-ai's undefined
+            // means "remove", so the no-op is translated to the current
+            // credential, never propagated; removal goes through delete().
+            if (next === undefined) return current;
+            // Before the write, so a refused credential leaves the store as is.
+            if (next.type === "oauth") assertOAuthFlowPermitted(providerId);
+            return fromPi(next);
+          }),
+        ),
       ),
 
     delete: async (providerId) => {
