@@ -3,7 +3,7 @@
   "feature": "secrets-and-ledger",
   "branchName": "feat/secrets-and-ledger",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T06:22:28.755Z",
+  "updatedAt": "2026-11-09T06:35:45.865Z",
   "userStories": [
     {
       "id": "US-001",
@@ -90,14 +90,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "One shared filter connects three existing factories; credential and session exposure require isolated security TDD."
+        "reasoning": "One shared filter connects three existing factories; credential and session exposure require isolated security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/agents/shared/env.ts",
@@ -128,7 +131,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8afca1b262291252438563830c978aef62e510a4"
     },
     {
       "id": "US-003",
