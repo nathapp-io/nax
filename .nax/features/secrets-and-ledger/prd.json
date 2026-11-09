@@ -3,7 +3,7 @@
   "feature": "secrets-and-ledger",
   "branchName": "feat/secrets-and-ledger",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T07:23:43.410Z",
+  "updatedAt": "2026-11-09T07:32:56.688Z",
   "userStories": [
     {
       "id": "US-001",
@@ -304,14 +304,17 @@
         "M11"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "A localized parse-order change retains public interfaces and the complete existing repair fallback."
+        "reasoning": "A localized parse-order change retains public interfaces and the complete existing repair fallback.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/prd/schema.ts",
@@ -324,7 +327,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1db0491ecbacea6e230507d747fb5d355c17fac9"
     },
     {
       "id": "US-007",
