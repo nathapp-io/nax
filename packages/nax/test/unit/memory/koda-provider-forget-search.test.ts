@@ -2,10 +2,10 @@
  * koda-provider-forget-search.test.ts — the koda provider's forget and search, and
  * the lookup that finds the row a forget retires.
  *
- * Covers US-006 AC-1..AC-24. Every case drives a real `createKodaClient` whose
- * `fetch` seam is stubbed, so what is asserted is the requests koda would receive
- * and the answer the provider makes of them — never the provider's own view of
- * either.
+ * Covers US-006 AC-1..AC-24, and US-004's koda search AC-1..AC-7. Every case
+ * drives a real `createKodaClient` whose `fetch` seam is stubbed, so what is
+ * asserted is the requests koda would receive and the answer the provider makes of
+ * them — never the provider's own view of either.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -67,6 +67,32 @@ describe("kodaHitOf", () => {
   test("a record whose predicate is decision maps to no hit (AC-24)", () => {
     expect(kodaHitOf(row({ predicate: "decision" }), 0, 1)).toBeNull();
   });
+
+  test("a rejected row maps to no hit (US-004 AC-1)", () => {
+    expect(kodaHitOf(row({ status: "rejected" }), 0, 1)).toBeNull();
+  });
+
+  test("a superseded row maps to no hit (US-004 AC-2)", () => {
+    expect(kodaHitOf(row({ status: "superseded" }), 0, 1)).toBeNull();
+  });
+
+  test("a deleted row maps to no hit, whatever its status (US-004 AC-3)", () => {
+    expect(kodaHitOf(row({ status: "active", deletedAt: "2026-11-01T00:00:00.000Z" }), 0, 1)).toBeNull();
+  });
+
+  test("an active row that is not deleted maps to an active hit (US-004 AC-4)", () => {
+    const hit = kodaHitOf(row({ status: "active", deletedAt: null }), 0, 1);
+
+    assertDefined(hit, "the mapped hit");
+    expect(hit.status).toBe("active");
+  });
+
+  test("the hit's slug is the row's subject (US-004 AC-5)", () => {
+    const hit = kodaHitOf(row({ status: "active", deletedAt: null, subject: "export-window" }), 0, 1);
+
+    assertDefined(hit, "the mapped hit");
+    expect(hit.slug).toBe("export-window");
+  });
 });
 
 describe("createKodaMemoryProvider — search", () => {
@@ -126,12 +152,14 @@ describe("createKodaMemoryProvider — search", () => {
     _kodaClientDeps.fetch = originalFetch;
   });
 
-  test("a query requests kind, scope, text and size in that order (AC-17)", async () => {
+  test("a query requests kind, scope, status, text and size in that order (AC-17, US-004 AC-6)", async () => {
     stubFetch(() => searchAnswer([row()]));
 
     await makeProvider().search?.({ scope: "project", text: "replay budget", limit: 5 });
 
-    expect(onlyUrl()).toBe(`${API}/projects/rs-stock/memory?kind=NOTE&scope=project&text=replay+budget&size=5`);
+    expect(onlyUrl()).toBe(
+      `${API}/projects/rs-stock/memory?kind=NOTE&scope=project&status=active&text=replay+budget&size=5`,
+    );
   });
 
   test("a 150-character text sends its first 100 characters (AC-18)", async () => {
@@ -177,6 +205,22 @@ describe("createKodaMemoryProvider — search", () => {
     assertDefined(hits, "the search hits");
     expect(hits).toHaveLength(2);
     expect(hits[0]?.slug).toBe("replay-budget");
+  });
+
+  test("a retired record is dropped before the cut, so the limit counts kept hits (US-004 AC-7)", async () => {
+    const records = [
+      row({ id: "k7", subject: "a" }),
+      row({ id: "k8", subject: "b", status: "rejected" }),
+      row({ id: "k9", subject: "c" }),
+    ];
+    stubFetch(() => searchAnswer(records));
+
+    const hits = await makeProvider().search?.({ scope: "project", text: "budget", limit: 2 });
+
+    assertDefined(hits, "the search hits");
+    expect(hits.map((hit: MemoryHit) => hit.slug)).toEqual(["a", "c"]);
+    // The kept hits keep the rank koda gave them: a was first of three, c last.
+    expect(hits.map((hit: MemoryHit) => hit.score)).toEqual([3, 1]);
   });
 });
 

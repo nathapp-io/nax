@@ -28,9 +28,10 @@
  *
  * `kodaHitOf` maps one row of a full-text answer to a keyword-search hit, and is
  * held to the same R2 check: a record the mirror could not hold a note for is
- * dropped rather than ranked. Its `score` is positional, because koda answers a
- * query in its own rank order and nax must not re-rank what the search index
- * already ranked.
+ * dropped rather than ranked. It drops a retired row as well — only an `active`
+ * row that carries no `deletedAt` maps to a hit. Its `score` is positional, because
+ * koda answers a query in its own rank order and nax must not re-rank what the
+ * search index already ranked.
  *
  * Internal to `src/memory/`: the pull composes it, the barrel re-exports it.
  */
@@ -459,6 +460,10 @@ function snippetOf(body: string): string {
  * scope comes from the record because a hit is filed where the note lives, and a record
  * naming a scope no mirror has is dropped like any other row the mirror cannot hold.
  *
+ * A retired row is dropped too: only an `active` row that carries no `deletedAt` is a
+ * note a search may offer, so a `rejected` or `superseded` row — or an active one koda
+ * has deleted — maps to no hit at all.
+ *
  * @param record - One record of the search answer
  * @param index - Its position in that answer
  * @param total - How many records the answer carried
@@ -466,6 +471,7 @@ function snippetOf(body: string): string {
 export function kodaHitOf(record: KodaMemoryItem, index: number, total: number): MemoryHit | null {
   const note = readNoteRow(record);
   if (note === undefined || !isMemoryScope(record.scope)) return null;
+  if (note.status !== STATUS_ACTIVE || note.deleted) return null;
   return {
     slug: note.slug,
     scope: record.scope,
