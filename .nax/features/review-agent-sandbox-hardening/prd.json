@@ -3,7 +3,7 @@
   "feature": "review-agent-sandbox-hardening",
   "branchName": "feat/review-agent-sandbox-hardening",
   "createdAt": "2026-11-09T00:00:00Z",
-  "updatedAt": "2026-11-09T02:59:48.998Z",
+  "updatedAt": "2026-11-09T03:00:08.626Z",
   "userStories": [
     {
       "id": "US-001",
@@ -133,14 +133,17 @@
         "H2"
       ],
       "dependencies": [],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
+      "attempts": 1,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A localized existing import-loop guard and additive status/label use an existing policy export; credential security overrides the simple scope to strict three-session TDD."
+        "reasoning": "A localized existing import-loop guard and additive status/label use an existing policy export; credential security overrides the simple scope to strict three-session TDD.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/auth.ts",
@@ -155,7 +158,9 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "306f0ae1201b1c52203c25dcf744775fae9e6c8f",
+      "failureStage": "workflow"
     },
     {
       "id": "US-004",
