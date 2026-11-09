@@ -5,6 +5,7 @@ import type { AgentManagerConfig } from "@/config/selectors";
 import type { AdapterFailure } from "@/context/engine";
 import type { IDispatchEventBus } from "@/runtime/dispatch-events";
 import type { SessionRunHopFn } from "@/runtime/session-run-hop";
+import { authModelOf } from "./auth-cooldown";
 import { resolveStartAgent, type StoryHopBudget } from "./hop-budget";
 import { buildFallbackRecord } from "./manager-dispatch";
 import type { ManagerExhaustionOptions } from "./manager-exhaustion";
@@ -34,10 +35,17 @@ export interface RunFallbackInput {
     failure: AdapterFailure | undefined,
     tier?: string,
     model?: string,
+    authModel?: string,
   ) => Promise<void>;
   readonly getDefault: () => string;
   readonly isUnavailable: (agent: string, tier?: string, model?: string) => boolean;
-  readonly markUnavailable: (agent: string, failure: AdapterFailure, tier?: string, model?: string) => void;
+  readonly markUnavailable: (
+    agent: string,
+    failure: AdapterFailure,
+    tier?: string,
+    model?: string,
+    authModel?: string,
+  ) => void;
   readonly nextCandidate: (
     current: string,
     hops: number,
@@ -113,6 +121,11 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // against. `currentHopKind.model` is a DECLARED literal pin and stays
       // authoritative when present; otherwise the dispatched model id is the truth.
       const dispatchedModel = currentHopKind.model ?? hop.endpoint?.modelDef.model;
+      // The provider that served this hop, for the auth stamp and the re-login notice.
+      // `dispatchedModel` above is a bare model name with no provider, so on a tier-less
+      // first hop a native `fail-auth` could name no provider and parked every native
+      // provider (nax#2839). `complete` already passes the same `provider/model`.
+      const authModel = authModelOf(hop.endpoint?.modelDef);
       const updatedBundle = hop.bundle ?? currentBundle;
       finalPrompt = hop.prompt ?? finalPrompt;
       totalCostUsd += result.estimatedCostUsd ?? 0;
@@ -170,7 +183,13 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
         currentHopKind = retry.kind;
         continue;
       }
-      await input.reportAuthFailure(currentAgent, result.adapterFailure, currentHopKind.tier, dispatchedModel);
+      await input.reportAuthFailure(
+        currentAgent,
+        result.adapterFailure,
+        currentHopKind.tier,
+        dispatchedModel,
+        authModel,
+      );
       if (request.noFallback) {
         finalStatus = "error";
         return {
@@ -250,8 +269,10 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // model)` for the endpoint the NEXT operation would actually dispatch to. The
       // very first, tier-less primary hop still writes a bare-agent key here because
       // there is no tier to name yet; that bare key is exactly what `CooldownStore`
-      // needs for a genuinely agent-wide failure (fail-auth, missing binary, ...) to
-      // blanket every endpoint of the agent — `_live()` treats a bare key as
+      // needs for a genuinely agent-wide failure (ACP fail-auth, missing binary, ...)
+      // to blanket every endpoint of the agent. A NATIVE fail-auth is the exception:
+      // `authModel` names the provider that served the hop, so the stamp keys the
+      // provider slot and other native providers stay live (nax#2839) — `_live()` treats a bare key as
       // blanket-agent only when the failure's own `cooldownScope` is `"agent"` (or
       // `"provider"` with no provider to key on), so a
       // model-scoped failure recorded here (thanks to `dispatchedModel` below, when a
@@ -262,7 +283,7 @@ export async function runWithFallback(input: RunFallbackInput): Promise<AgentRun
       // target DOES carry a tier-less model, and that pin's own identity is what
       // nax#1966 needed — see fallback-model-identity.ts.
       const currentTier = currentHopKind.tier;
-      input.markUnavailable(currentAgent, failure, currentTier, dispatchedModel);
+      input.markUnavailable(currentAgent, failure, currentTier, dispatchedModel, authModel);
       const next = input.nextCandidate(primaryAgent, hopsSoFar, currentAgent, currentTier, dispatchedModel);
       if (!next) {
         const outcome = await input.resolveExhaustion({

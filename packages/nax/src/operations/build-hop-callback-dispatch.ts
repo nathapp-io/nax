@@ -192,8 +192,14 @@ export async function dispatchHopTurn(args: HopDispatchArgs): Promise<HopOutcome
       result: classified.result,
       bundle: tooling.workingBundle,
       prompt: tooling.prompt,
-      // US-001: catch path synthesises a failure from a thrown runAsSession —
-      // no model was reached. `runWithFallback` reads this to count dispatches.
+      // The endpoint this hop targeted: `openFresh` resolved it before the send, so it
+      // is accurate for this hop. A provider fault (a native 401 arrives as a thrown
+      // SessionTurnError) must be recorded against it, or a native `fail-auth` names no
+      // provider and parks every native provider (nax#2839). Undefined only when a
+      // stale-retry reused a warm handle, as on the success path.
+      endpoint,
+      // US-001: catch path synthesises a failure from a thrown runAsSession.
+      // `runWithFallback` reads this to count dispatches.
       dispatched: false,
     };
   } finally {

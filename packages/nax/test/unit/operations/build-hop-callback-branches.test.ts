@@ -127,19 +127,20 @@ describe("buildHopCallback — endpoint + dispatched on the hop result (nax#1965
     expect(hop.endpoint).toEqual({ modelDef: pinnedModelDef });
   });
 
-  test("the catch path reports dispatched: false and no endpoint — no model was reached", async () => {
+  test("the catch path reports dispatched: false and the endpoint it targeted (nax#2839)", async () => {
     const agentManager = makeMockAgentManager({
       runAsSessionFn: mock(async () => {
         throw new Error("session error");
       }),
     });
-    const options = makeBaseOptions();
+    const pinnedModelDef = { provider: "opencode-go", model: "deepseek-v4.1-flash" };
+    const options = makeBaseOptions({ modelDef: pinnedModelDef });
     const cb = buildHopCallback(makeCtx({ agentManager }), SESSION_ID, options);
 
     const hop = await cb("claude", makeContextBundle(), { kind: "primary" } satisfies HopKind, options);
 
     expect(hop.result.success).toBe(false);
-    expect(hop.endpoint).toBeUndefined();
+    expect(hop.endpoint).toEqual({ modelDef: pinnedModelDef });
     expect(hop.dispatched).toBe(false);
   });
 });
