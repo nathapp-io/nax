@@ -88,6 +88,15 @@ describe("realOrRaw — dangling symlinks", () => {
     expect(realOrRaw(join(root, "abs-link"))).toBe(join(tmp, "elsewhere", "missing.txt"));
   });
 
+  test("applies `..` in a link target after following an existing symlinked directory", () => {
+    const { tmp, root } = makeRoot();
+    mkdirSync(join(tmp, "outside", "deep"), { recursive: true });
+    symlinkSync("../outside/deep", join(root, "evil"));
+    symlinkSync("evil/../x", join(root, "lnk"));
+    // The kernel resolves evil first, so `..` lands in outside/, not in root/.
+    expect(realOrRaw(join(root, "lnk"))).toBe(join(tmp, "outside", "x"));
+  });
+
   test("returns the lexical form without throwing on a symlink cycle", () => {
     const { root } = makeRoot();
     symlinkSync("b", join(root, "a"));
