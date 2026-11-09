@@ -3,7 +3,7 @@
   "feature": "review-low-fixes",
   "branchName": "feat/review-low-fixes",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T15:36:54.816Z",
+  "updatedAt": "2026-11-09T15:47:27.188Z",
   "userStories": [
     {
       "id": "US-001",
@@ -286,14 +286,17 @@
         "ci"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cancellation crosses timer slices, advisor fallback and both workflow environment factories; integration must prove ledger and story-close behavior."
+        "reasoning": "Cancellation crosses timer slices, advisor fallback and both workflow environment factories; integration must prove ledger and story-close behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/ci-wait.ts",
@@ -306,7 +309,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9c9c29b36c10d1cb8d6047dda5ac4938b79e9076"
     },
     {
       "id": "US-007",
