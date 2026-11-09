@@ -35,9 +35,14 @@ export const _mentionExpandDeps = {
   realpath(path: string): Promise<string> {
     return realpath(path);
   },
-  async stat(path: string): Promise<{ isDirectory: boolean; size: number }> {
+  async stat(path: string): Promise<{ isDirectory: boolean; size: number; special?: true }> {
     const info = await stat(path);
-    return { isDirectory: info.isDirectory(), size: info.size };
+    const isDirectory = info.isDirectory();
+    return {
+      isDirectory,
+      size: info.size,
+      ...(!info.isFile() && !isDirectory ? { special: true as const } : {}),
+    };
   },
   async readBytes(path: string): Promise<Uint8Array> {
     // Bun.file has no byte-range slice of an unknown length; the whole file is the read.
@@ -109,6 +114,7 @@ const LS_FILES_ARGS: readonly string[] = [
 /** The pathspec that names the cwd itself, whose entries are each listed path's first segment. */
 const ROOT_PATHSPEC = ".";
 const PATH_ONLY_FILE_TOO_LARGE = "path only: file too large";
+const PATH_ONLY_NOT_REGULAR_FILE = "path only: not a regular file";
 const PATH_ONLY_BINARY = "path only: binary";
 const PATH_ONLY_MESSAGE_TOO_LARGE = "path only: message too large";
 /** A mentioned image on a brain that cannot read one: the path travels, as it did before images. */
@@ -213,6 +219,7 @@ async function targetIgnoredRefusal(located: Located, ctx: ExpandContext): Promi
 /** Steps 5-9: a folder listing, or a file body bounded by size, image, binary, cut and the total cap. */
 async function contentRecord(located: Located, ctx: ExpandContext): Promise<MentionRecord> {
   const info = await _mentionExpandDeps.stat(located.realPath);
+  if (info.special) return pathOnly(located.path, PATH_ONLY_NOT_REGULAR_FILE);
   if (info.isDirectory) return folderRecord(located, ctx);
   if (info.size > MENTION_READ_MAX_BYTES) return pathOnly(located.path, PATH_ONLY_FILE_TOO_LARGE);
   const bytes = await _mentionExpandDeps.readBytes(located.realPath);

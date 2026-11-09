@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { BackgroundCommandEnd, BackgroundCommandHandle } from "@nathapp/nax-agent";
 import { makeLogger, withTempDir } from "@test/helpers";
 
@@ -11,6 +13,13 @@ const PATH = `/o/chat-tasks/${ID}.log`;
 const NOW = "2026-10-29T00:00:00.000Z";
 const encoder = new TextEncoder();
 const LIMIT_LINE = "[nax] log limit reached; further output dropped";
+const LOG_TAIL_BYTES = 2 * 1024 * 1024;
+const NUMBERED_LINE_BYTES = 128;
+const NUMBERED_LINE_SUFFIX = "x".repeat(NUMBERED_LINE_BYTES - 10);
+
+function numberedLine(index: number): string {
+  return `${String(index).padStart(8, "0")}:${NUMBERED_LINE_SUFFIX}\n`;
+}
 
 beforeEach(async () => {
   registry = await import("@/chat/background");
@@ -180,6 +189,12 @@ describe("createBackgroundTasks", () => {
     await f.tasks.output(ID);
     expect(f.tasks.get(ID)?.state).toBe("running");
   });
+  test("AC-10 output of 500 lines selects lines 101 through 600", async () => {
+    const f = fixture();
+    const lines = Array.from({ length: 600 }, (_, i) => String(i + 1));
+    f.append(`${lines.join("\n")}\n`);
+    expect(await f.tasks.output(ID, 500)).toBe(lines.slice(100).join("\n"));
+  });
   test("output clamps to 500 lines and handles unusable counts safely", async () => {
     const f = fixture();
     f.append(`${Array.from({ length: 600 }, (_, i) => i).join("\n")}\n`);
@@ -262,6 +277,76 @@ describe("createBackgroundTasks", () => {
     expect(f.tasks.get(ID)?.command).toBe("bun test");
     expect(f.tasks.list()).toHaveLength(1);
   });
+  test("AC-5 default log reader bounds a 10 MiB file and retains its last line", async () => {
+    await withTempDir(async (root) => {
+      const file = join(root, "large.log");
+      const count = (10 * 1024 * 1024) / NUMBERED_LINE_BYTES;
+      const content = Array.from({ length: count }, (_, index) => numberedLine(index)).join("");
+      await Bun.write(file, content);
+      const text = await original.readLog(file);
+      expect(encoder.encode(text).byteLength).toBeLessThanOrEqual(LOG_TAIL_BYTES);
+      expect(text.endsWith(numberedLine(count - 1))).toBe(true);
+    });
+  });
+
+  test("AC-6 bounded default read begins at a complete line", async () => {
+    await withTempDir(async (root) => {
+      const file = join(root, "lines.log");
+      const content = `header\n${Array.from({ length: 30_000 }, (_, index) => `${String(index).padStart(5, "0")}:${"y".repeat(95)}\n`).join("")}`;
+      const start = encoder.encode(content).byteLength - LOG_TAIL_BYTES;
+      expect(content.charCodeAt(start - 1)).not.toBe(10);
+      await Bun.write(file, content);
+      const text = await original.readLog(file);
+      const expectedFirstLine = content.slice(content.indexOf("\n", start) + 1).split("\n")[0];
+      expect(text.split("\n")[0]).toBe(expectedFirstLine);
+      expect(text).not.toContain("header");
+    });
+  });
+
+  test("AC-7 default log reader returns a small file whole", async () => {
+    await withTempDir(async (root) => {
+      const file = join(root, "small.log");
+      const content = "x".repeat(1024);
+      await Bun.write(file, content);
+      expect(await original.readLog(file)).toBe(content);
+    });
+  });
+
+  test("AC-8 exports a 2 MiB log tail limit", () => {
+    expect(registry.TASK_LOG_TAIL_BYTES).toBe(LOG_TAIL_BYTES);
+  });
+
+  test("AC-9 output through createBackgroundTasks returns the last 40 real log lines", async () => {
+    await withTempDir(async (outputDir) => {
+      registry._backgroundTaskDeps.readLog = original.readLog;
+      const count = (10 * 1024 * 1024) / NUMBERED_LINE_BYTES;
+      const content = Array.from({ length: count }, (_, index) => numberedLine(index)).join("");
+      const tasks = registry.createBackgroundTasks({ outputDir, now: () => new Date(NOW), logger });
+      const sink = tasks.adopt({
+        command: "producer",
+        origin: "agent",
+        ended: new Promise(() => {}),
+        stop() {},
+      });
+      const logPath = tasks.get(sink.id)?.logPath;
+      expect(logPath).toBeDefined();
+      await mkdir(join(outputDir, "chat-tasks"), { recursive: true });
+      await Bun.write(logPath ?? "", content);
+      expect(await tasks.output(sink.id, 40)).toBe(
+        Array.from({ length: 40 }, (_, offset) => numberedLine(count - 40 + offset).slice(0, -1)).join("\n"),
+      );
+    });
+  });
+
+  test("AC-11 returns an oversized no-newline tail exactly", async () => {
+    await withTempDir(async (root) => {
+      const file = join(root, "unterminated.log");
+      const content = `prefix\n${"z".repeat(LOG_TAIL_BYTES + 10)}`;
+      await Bun.write(file, content);
+      expect(await original.readLog(file)).toBe("z".repeat(LOG_TAIL_BYTES));
+    });
+  });
+
   test("a timed-out zero exit fails", async () => {
     const f = fixture();
     await f.finish({ timedOut: true });

@@ -20,6 +20,7 @@ import {
 } from "./task-types";
 
 export const TASK_LOG_MAX_BYTES = 50 * 1024 * 1024;
+export const TASK_LOG_TAIL_BYTES = 2 * 1024 * 1024;
 export const TASK_OUTPUT_MAX_LINES = 500;
 const TASK_OUTPUT_DEFAULT_LINES = 40;
 const RANDOM_HEX_LENGTH = 8;
@@ -27,6 +28,19 @@ const ID_ATTEMPTS = 16;
 const LOG_LIMIT_LINE = "[nax] log limit reached; further output dropped";
 const encoder = new TextEncoder();
 const NEWLINE_BYTE = 10;
+
+async function readLogTail(path: string): Promise<string> {
+  const file = Bun.file(path);
+  if (file.size <= TASK_LOG_TAIL_BYTES) return file.text();
+  const start = file.size - TASK_LOG_TAIL_BYTES;
+  const previous = new Uint8Array(await file.slice(start - 1, start).arrayBuffer());
+  let tail = new Uint8Array(await file.slice(start).arrayBuffer());
+  if (previous[0] !== NEWLINE_BYTE) {
+    const newline = tail.indexOf(NEWLINE_BYTE);
+    if (newline !== -1) tail = tail.slice(newline + 1);
+  }
+  return new TextDecoder().decode(tail);
+}
 
 export const _backgroundTaskDeps = {
   randomHex: (): string => crypto.randomUUID().slice(0, RANDOM_HEX_LENGTH),
@@ -38,7 +52,7 @@ export const _backgroundTaskDeps = {
   appendLog: async (path: string, chunk: Uint8Array): Promise<void> => {
     appendFileSync(path, chunk);
   },
-  readLog: (path: string): Promise<string> => Bun.file(path).text(),
+  readLog: readLogTail,
 };
 
 interface TaskEntry {
