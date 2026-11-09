@@ -3,7 +3,7 @@
   "feature": "review-low-fixes",
   "branchName": "feat/review-low-fixes",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T15:47:27.188Z",
+  "updatedAt": "2026-11-09T16:00:02.059Z",
   "userStories": [
     {
       "id": "US-001",
@@ -337,14 +337,17 @@
         "git"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized return-shape and branch changes use existing ForgeDeps and spawn seams without new abstractions or public consumer migrations."
+        "reasoning": "Localized return-shape and branch changes use existing ForgeDeps and spawn seams without new abstractions or public consumer migrations.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/pr/open.ts",
@@ -363,7 +366,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "92d028f9a59b5b303efc9ff09c5720f286800100"
     },
     {
       "id": "US-008",
