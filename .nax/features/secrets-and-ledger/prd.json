@@ -3,7 +3,7 @@
   "feature": "secrets-and-ledger",
   "branchName": "feat/secrets-and-ledger",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T06:47:13.745Z",
+  "updatedAt": "2026-11-09T07:10:14.568Z",
   "userStories": [
     {
       "id": "US-001",
@@ -201,14 +201,17 @@
         "M9"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Multiple modules coordinate synchronous queue entry, rejection recovery, retained late events and atomic replacement under strict file-size limits."
+        "reasoning": "Multiple modules coordinate synchronous queue entry, rejection recovery, retained late events and atomic replacement under strict file-size limits.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/runtime/cost-aggregator.ts",
@@ -229,7 +232,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "295a6e64149ff9e36a5f712183b3d85526271f15"
     },
     {
       "id": "US-005",
