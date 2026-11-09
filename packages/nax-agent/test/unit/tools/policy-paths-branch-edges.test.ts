@@ -12,10 +12,11 @@ import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolScope } from "#src/tools/index";
-import { compileToolPolicy } from "#src/tools/index";
+import { compileToolPolicy, resolveWithin, writeTool } from "#src/tools/index";
+import { EMPTY_OWNED_PATHS_POLICY } from "#src/tools/owned-paths";
 
 const tempDirs: string[] = [];
 
@@ -214,5 +215,58 @@ describe("pathsBranch — resolvedPaths accumulation", () => {
         join(policy.root, "src", "d.ts"),
       ]);
     }
+  });
+});
+
+describe("resolveWithin — dangling symlinks", () => {
+  let tmp: string;
+  let repo: string;
+
+  beforeAll(() => {
+    tmp = realpathSync(makeTestDir("nax-policy-dangling-"));
+    repo = join(tmp, "repo");
+    mkdirSync(join(repo, ".git", "hooks"), { recursive: true });
+    mkdirSync(join(repo, "src"), { recursive: true });
+    writeFileSync(join(repo, "src", "a.ts"), "export {};\n");
+    symlinkSync("../outside/new.txt", join(repo, "out"));
+    symlinkSync(".git/hooks/pre-commit", join(repo, "hook-link"));
+    symlinkSync("../outside/missing-dir", join(repo, "dir-link"));
+    symlinkSync("build/missing.txt", join(repo, "inner-link"));
+    symlinkSync("src/a.ts", join(repo, "existing-link"));
+  });
+
+  test("refuses a dangling link whose target is outside the root", () => {
+    expect(resolveWithin(repo, "out", EMPTY_OWNED_PATHS_POLICY)).toBeNull();
+  });
+
+  test("refuses a dangling link whose target is under .git/", () => {
+    expect(resolveWithin(repo, "hook-link", EMPTY_OWNED_PATHS_POLICY)).toBeNull();
+  });
+
+  test("refuses a path under a dangling directory link that leaves the root", () => {
+    expect(resolveWithin(repo, "dir-link/new.txt", EMPTY_OWNED_PATHS_POLICY)).toBeNull();
+  });
+
+  test("admits an in-root dangling link, resolved to its target", () => {
+    expect(resolveWithin(repo, "inner-link", EMPTY_OWNED_PATHS_POLICY)).toBe(join(repo, "build", "missing.txt"));
+  });
+
+  test("admits a link to an existing in-root file, resolved to that file", () => {
+    expect(resolveWithin(repo, "existing-link", EMPTY_OWNED_PATHS_POLICY)).toBe(join(repo, "src", "a.ts"));
+  });
+
+  test("the compiled Write policy denies the .git/ link and writes nothing", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], repo);
+    const verdict = policy.check("Write", writeTool.scope, { path: "hook-link", content: "x" });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed === false) expect(verdict.reason).toContain("targets git metadata under .git/");
+    expect(existsSync(join(repo, ".git", "hooks", "pre-commit"))).toBe(false);
+  });
+
+  test("the compiled Write policy denies the outside-root link with the containment reason", () => {
+    const policy = compileToolPolicy([{ tool: "Write", patterns: ["*"] }], repo);
+    const verdict = policy.check("Write", writeTool.scope, { path: "out", content: "x" });
+    expect(verdict.allowed).toBe(false);
+    if (verdict.allowed === false) expect(verdict.reason).toContain("resolves outside the permitted root");
   });
 });

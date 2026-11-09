@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync } from "node:fs";
+import { mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isInside, realOrRaw } from "#src/internal/realpath";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
@@ -59,6 +59,40 @@ describe("realOrRaw", () => {
     const dir = makeDir();
     const once = realOrRaw(dir);
     expect(realOrRaw(once)).toBe(once);
+  });
+});
+
+describe("realOrRaw — dangling symlinks", () => {
+  function makeRoot(): { tmp: string; root: string } {
+    const tmp = realpathSync(makeDir());
+    const root = join(tmp, "root");
+    mkdirSync(root);
+    return { tmp, root };
+  }
+
+  test("follows a relative dangling link to where a write would land", () => {
+    const { tmp, root } = makeRoot();
+    symlinkSync("../outside/new.txt", join(root, "out"));
+    expect(realOrRaw(join(root, "out"))).toBe(join(tmp, "outside", "new.txt"));
+  });
+
+  test("follows a dangling directory link and re-attaches the trailing segment", () => {
+    const { tmp, root } = makeRoot();
+    symlinkSync("../outside/missing-dir", join(root, "dir-link"));
+    expect(realOrRaw(join(root, "dir-link", "new.txt"))).toBe(join(tmp, "outside", "missing-dir", "new.txt"));
+  });
+
+  test("follows an absolute dangling link", () => {
+    const { tmp, root } = makeRoot();
+    symlinkSync(join(tmp, "elsewhere", "missing.txt"), join(root, "abs-link"));
+    expect(realOrRaw(join(root, "abs-link"))).toBe(join(tmp, "elsewhere", "missing.txt"));
+  });
+
+  test("returns the lexical form without throwing on a symlink cycle", () => {
+    const { root } = makeRoot();
+    symlinkSync("b", join(root, "a"));
+    symlinkSync("a", join(root, "b"));
+    expect(realOrRaw(join(root, "a"))).toBe(join(root, "a"));
   });
 });
 

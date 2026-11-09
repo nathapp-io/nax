@@ -12,8 +12,21 @@
  * Pure apart from the `realpathSync` probe, and never throws.
  */
 
-import { realpathSync } from "node:fs";
+import { lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
+
+/** Most symlinks followed while resolving one path; a longer chain is treated as a cycle. */
+const MAX_LINK_HOPS = 40;
+
+/** Link target of `path` resolved against the link's own directory, or null when `path` is not a symlink. */
+function danglingLinkTarget(path: string): string | null {
+  try {
+    if (!lstatSync(path).isSymbolicLink()) return null;
+    return resolve(dirname(path), readlinkSync(path));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Absolute, symlink-resolved form of `p`.
@@ -26,22 +39,51 @@ import { basename, dirname, join, resolve, sep } from "node:path";
  * compares unequal to a fully-resolved root, turning every containment check
  * into a silent false negative.
  *
+ * A re-attached segment that is itself a symlink is a dangling link (its
+ * target is missing, which is why `realpathSync` failed): a write through it
+ * creates the target, so the segment is replaced by the link target and
+ * resolution continues from there. Otherwise a containment check would judge
+ * the link's own lexical location, not where the write lands. Following stops
+ * after `MAX_LINK_HOPS`; a cycle returns the lexical form, which no write can
+ * follow either.
+ *
  * Falls back to the lexical absolute form when no ancestor resolves.
  */
 export function realOrRaw(p: string): string {
   const abs = resolve(p);
-  const trailing: string[] = [];
-  let current = abs;
+  let hops = 0;
+  let pending = abs;
   for (;;) {
-    try {
-      return trailing.length === 0 ? realpathSync(current) : join(realpathSync(current), ...trailing);
-    } catch {
-      const parent = dirname(current);
-      // `dirname` is a fixed point at the filesystem root — nothing resolved.
-      if (parent === current) return abs;
-      trailing.unshift(basename(current));
-      current = parent;
+    const trailing: string[] = [];
+    let current = pending;
+    let resolved: string | null = null;
+    while (resolved === null) {
+      try {
+        resolved = realpathSync(current);
+      } catch {
+        const parent = dirname(current);
+        // `dirname` is a fixed point at the filesystem root — nothing resolved.
+        if (parent === current) return abs;
+        trailing.unshift(basename(current));
+        current = parent;
+      }
     }
+    // Walk the unresolved tail; the first dangling link restarts resolution at its target.
+    let base = resolved;
+    for (let i = 0; i < trailing.length; i++) {
+      const next = join(base, trailing[i] as string);
+      const target = danglingLinkTarget(next);
+      if (target === null) {
+        base = next;
+        continue;
+      }
+      hops += 1;
+      if (hops > MAX_LINK_HOPS) return abs;
+      pending = join(target, ...trailing.slice(i + 1));
+      base = "";
+      break;
+    }
+    if (base !== "") return base;
   }
 }
 
