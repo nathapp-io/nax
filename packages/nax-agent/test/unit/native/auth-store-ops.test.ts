@@ -5,6 +5,7 @@ import {
   _authDeps,
   _resetCredentialStore,
   ambientShadows,
+  authImportOutcomeLabel,
   credentialFilePath,
   importPiCredentials,
   listStoredProviders,
@@ -98,6 +99,44 @@ describe("importPiCredentials", () => {
       });
     },
   );
+
+  test("refuses prohibited OAuth and does not store it", async () => {
+    writeFileSync(piPath, JSON.stringify({ anthropic: { type: "oauth", access: "a", refresh: "r", expires: 1 } }));
+    expect(await importPiCredentials({ from: piPath })).toEqual([{ providerId: "anthropic", status: "refused" }]);
+    expect(await naxCredentialStore().read("anthropic")).toBeUndefined();
+  });
+
+  test("refuses prohibited OAuth even when forced and preserves the existing credential", async () => {
+    await naxCredentialStore().modify("anthropic", async () => ({ kind: "api-key", key: "sk-keep" }));
+    writeFileSync(piPath, JSON.stringify({ anthropic: { type: "oauth", access: "a", refresh: "r", expires: 1 } }));
+    expect(await importPiCredentials({ from: piPath, force: true })).toEqual([
+      { providerId: "anthropic", status: "refused" },
+    ]);
+    expect(await naxCredentialStore().read("anthropic")).toEqual({ kind: "api-key", key: "sk-keep" });
+  });
+
+  test("continues importing permitted OAuth after refusing prohibited OAuth", async () => {
+    writeFileSync(
+      piPath,
+      JSON.stringify({
+        anthropic: { type: "oauth", access: "a", refresh: "r", expires: 1 },
+        "openai-codex": { type: "oauth", access: "b", refresh: "s", expires: 2 },
+      }),
+    );
+    expect(await importPiCredentials({ from: piPath })).toEqual([
+      { providerId: "anthropic", status: "refused" },
+      { providerId: "openai-codex", status: "imported" },
+    ]);
+  });
+
+  test("imports Anthropic API keys", async () => {
+    writeFileSync(piPath, JSON.stringify({ anthropic: { type: "api_key", key: "sk-a" } }));
+    expect(await importPiCredentials({ from: piPath })).toEqual([{ providerId: "anthropic", status: "imported" }]);
+  });
+
+  test("labels refused OAuth imports", async () => {
+    expect(authImportOutcomeLabel("refused")).toBe("refused, OAuth login is not permitted for this provider");
+  });
 
   test("a null provider entry is unsupported, not a crash", async () => {
     writeFileSync(piPath, JSON.stringify({ broken: null, "opencode-go": { type: "api_key", key: "sk-1" } }));
