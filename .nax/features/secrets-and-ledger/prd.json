@@ -1,0 +1,377 @@
+{
+  "project": "nax-monorepo",
+  "feature": "secrets-and-ledger",
+  "branchName": "feat/secrets-and-ledger",
+  "createdAt": "2026-11-09T00:00:00.000Z",
+  "updatedAt": "2026-11-09T06:22:28.755Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "ACP run sessions get only their own provider's variables",
+      "description": "**Goal** — Fix M7 for run sessions by selecting provider-specific environment variables at the ACP launch boundary.\n\n**Motivation** — `buildAllowedEnv` admits every variable with the prefix `NAX_`, `CLAW_` or `TURBO_` and every provider's API key, so a codex agent gets `ANTHROPIC_API_KEY` and every agent gets `NAX_TELEGRAM_TOKEN` (`packages/nax/src/interaction/plugins/telegram.ts:81`).\n\n**Approach** — Every fix stays in `packages/nax`, at the function that already owns the check or the write.\n\nNew: `acpProviderEnvFamily(agent: string): { readonly keys: readonly string[]; readonly prefixes: readonly string[] }` in `packages/nax/src/agents/shared/env.ts` (US-001). The provider variables an ACP agent may see:\n\n| agent | keys | prefixes |\n|:---|:---|:---|\n| `claude` | `ANTHROPIC_API_KEY`, `CLAUDE_API_KEY` | `CLAUDE_`, `ANTHROPIC_` |\n| `codex` | `OPENAI_API_KEY` | `CODEX_` |\n| `gemini` | `GEMINI_API_KEY`, `GOOGLE_API_KEY` | `GEMINI_` |\n| `cursor` | none | `CURSOR_` |\n| `opencode`, `pi`, any other name | every entry of `API_KEY_VARS` | `CLAUDE_`, `ANTHROPIC_`, `CODEX_`, `GEMINI_`, `OPENCODE_`, `MINIMAX_`, `CURSOR_` |\n\nopencode, pi and custom agents are multi-provider, so they keep every provider key (user ruling 2026-11-09).\n\nNew: `buildAcpRunEnv(agent: string, modelEnv?: Readonly<Record<string, string>>): Record<string, string>` in `packages/nax/src/agents/shared/env.ts` (US-001). It returns the `ESSENTIAL_VARS` present in `process.env`, the sanitised `HOME` (same rule as `buildAllowedEnv`), every `process.env` variable whose name is in the agent's family `keys` or starts with one of its `prefixes`, then `modelEnv` on top. Nothing else: no `NAX_`, `CLAW_` or `TURBO_` variable unless `modelEnv` names it.\n\n`backendEnv` at `packages/nax/src/agents/acp/open-context.ts:37` (US-001).\n- Baseline: `backendEnv(modelEnv?: Readonly<Record<string, string>>): Record<string, string>` over `buildAllowedEnv`.\n- Target: `backendEnv(agent: AcpAgentName, modelEnv?: Readonly<Record<string, string>>): Record<string, string>` over `buildAcpRunEnv(agent, modelEnv)`, with the existing name and NUL filter. `launchOptions` passes the agent through from `backendOptions(agent, ...)`. The `NAX_ACP_SHELL_SANDBOX` carrier is still deleted from the result.\n\nRead only (unchanged):\n- `buildAllowedEnv(options?: BuildAllowedEnvOptions): Record<string, string | undefined>` at `packages/nax/src/agents/shared/env.ts:57`. Its callers outside ACP (`hooks/runner.ts:271`, `hooks/agent/run-hook.ts:298`, `utils/command-argv.ts:4`, `agents/acp/adapter.ts:84`) keep today's behaviour.\n- `buildAgentEnv(input: AgentEnvInput)` at `packages/nax-agent-acp/src/client/env.ts:22`. With `inheritEnv: false` it picks `PATH HOME USER SHELL TMPDIR LANG TERM`, `LC_*` and the registry entry's `authEnv` from `process.env`, then applies `extra` (nax's `env` option) on top. Registry `authEnv` (`packages/nax-agent-acp/src/client/registry.ts`): claude `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`; codex `OPENAI_API_KEY`; cursor `CURSOR_API_KEY`; gemini `GEMINI_API_KEY`; opencode and pi none.\n- The backend option schema (`packages/nax-agent-acp/src/client/options.ts:140`) rejects an `env` name that does not match `^[A-Za-z_][A-Za-z0-9_]*$` and a value that contains NUL.\n\nFailure handling: A `process.env` value contains NUL or its name fails the backend's name pattern: Dropped from both the run env and the chat env, as `backendEnv` does today. `modelEnv` names a variable the family would withhold (for example `NAX_FOO`): Kept: per-model env is operator configuration and wins.\n\nMigrate the two backendEnv tests in `packages/nax/test/unit/agents/acp/open-context.test.ts:54` and `:64` to pass `claude`. Preserve CLAUDE_TEST_ALLOWED, model ANTHROPIC_BASE_URL, absence of UNRELATED_SECRET, all-string values and rejection of CLAUDE_X-Y.\n\nSeams: `acpProviderEnvFamily` (created by US-001, exported from `agents/shared/env.ts`) is called by `buildAcpChatEnv` (US-002). `buildAcpRunEnv` (US-001) is reached from `backendOptions`, which `agents/acp/session.ts:140` calls to open every ACP run session; US-001's `backendOptions` ACs enter there.\n\n**Scope** — In: family/run env builders, agent plumbing, carrier preservation and regression tests. Out: chat filtering/factories (US-002), mentions (US-003), drains (US-004), failed-hop spend (US-005), PRD parsing (US-006), setup (US-007).\n- The `nax-agent-acp` backend's own env merge (`buildAgentEnv` applies `extra` after the `authEnv` allowlist). nax stops passing secrets through `extra`; changing the backend's contract for other embedders is a separate decision.\n- `buildAllowedEnv`'s other callers (hooks, `command-argv`, the ACP adapter's `buildAllowedEnv` method). They keep today's prefix allowlist.\n\n**Interface**\n```typescript\nacpProviderEnvFamily(agent: string): { readonly keys: readonly string[]; readonly prefixes: readonly string[] }\nbuildAcpRunEnv(agent: string, modelEnv?: Readonly<Record<string, string>>): Record<string, string>\nbackendEnv(agent: AcpAgentName, modelEnv?: Readonly<Record<string, string>>): Record<string, string>\n```",
+      "acceptanceCriteria": [
+        "[unit] acpProviderEnvFamily(\"codex\") returns keys [\"OPENAI_API_KEY\"] and prefixes [\"CODEX_\"].",
+        "[unit] acpProviderEnvFamily(\"pi\") returns every entry of API_KEY_VARS as keys and CLAUDE_, ANTHROPIC_, CODEX_, GEMINI_, OPENCODE_, MINIMAX_, CURSOR_ as prefixes.",
+        "[unit] acpProviderEnvFamily(\"my-custom-agent\") returns the same keys and prefixes as acpProviderEnvFamily(\"pi\").",
+        "[unit] With process.env holding NAX_TELEGRAM_TOKEN, CLAW_TOKEN, TURBO_TOKEN, ANTHROPIC_API_KEY, OPENAI_API_KEY and CODEX_HOME, buildAcpRunEnv(\"codex\") contains OPENAI_API_KEY and CODEX_HOME and none of NAX_TELEGRAM_TOKEN, CLAW_TOKEN, TURBO_TOKEN or ANTHROPIC_API_KEY.",
+        "[unit] With process.env holding ANTHROPIC_API_KEY, OPENAI_API_KEY and NAX_TELEGRAM_TOKEN, buildAcpRunEnv(\"opencode\") contains ANTHROPIC_API_KEY and OPENAI_API_KEY and not NAX_TELEGRAM_TOKEN.",
+        "[unit] buildAcpRunEnv(\"claude\", { NAX_FOO: \"1\" }) contains NAX_FOO equal to \"1\".",
+        "[unit] With process.env.HOME set to /abs/home, buildAcpRunEnv(\"claude\").HOME equals /abs/home.",
+        "[unit] With process.env.HOME deleted, buildAcpRunEnv(\"claude\").HOME is a defined absolute path.",
+        "[unit] With process.env holding PATH and UNRELATED_VAR, buildAcpRunEnv(\"claude\") contains PATH and not UNRELATED_VAR.",
+        "[unit] With process.env holding NAX_TELEGRAM_TOKEN and ANTHROPIC_API_KEY, backendOptions(\"codex\", opts).env contains neither, where opts is an OpenSessionOpts whose modelDef.env is empty.",
+        "[unit] With process.env holding OPENAI_API_KEY, backendOptions(\"codex\", opts).env contains OPENAI_API_KEY and backendOptions(\"codex\", opts).inheritEnv is false.",
+        "[unit] backendOptions(\"claude\", opts) where opts.modelDef.env holds NAX_ACP_SHELL_SANDBOX set to a valid carrier returns an env without NAX_ACP_SHELL_SANDBOX and a defined shellSandbox.",
+        "[unit] With process.env holding CLAUDE_BAD set to a value containing NUL, backendEnv(\"claude\") has no CLAUDE_BAD key.",
+        "[integration] With _acpDeps.acpBackend stubbed to capture its options (as test/unit/agents/acp/complete.test.ts does) and process.env holding NAX_TELEGRAM_TOKEN, a complete() call on the ACP adapter for agent codex passes the stub options whose env has no NAX_TELEGRAM_TOKEN.",
+        "[unit] With process.env containing CLAUDE_X-Y, backendEnv(\"claude\") has no CLAUDE_X-Y key."
+      ],
+      "tags": [
+        "security",
+        "acp",
+        "environment",
+        "M7"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Provider selection and launch wiring are localized, but credential isolation mandates the strict security strategy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/shared/env.ts",
+        "packages/nax/src/agents/acp/open-context.ts",
+        "packages/nax-agent-acp/src/client/env.ts",
+        "packages/nax/test/unit/agents/shared/env.test.ts",
+        "packages/nax/test/unit/agents/acp/open-context.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/agents/acp/open-context.test.ts",
+          "reason": "the cases \"is nax's allowlist plus the model env, all strings\" (line 54) and \"drops a variable whose name the backend's option schema rejects\" (line 64) call backendEnv with no agent argument, and the first asserts that CLAUDE_TEST_ALLOWED passes through for an unnamed agent. backendEnv now takes the agent first. Replacement invariant: both cases pass \"claude\" as the agent; CLAUDE_TEST_ALLOWED still passes through for claude, ANTHROPIC_BASE_URL from the model env still arrives, UNRELATED_SECRET is still absent, every value is a string, and the invalid-name variable CLAUDE_X-Y is still dropped."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fc9dea80b60cdddd4adbd865a61e2ca5c4952326"
+    },
+    {
+      "id": "US-002",
+      "title": "Chat ACP sessions withhold nax secrets and other providers' keys",
+      "description": "**Goal** — Fix M7 for chat by explicitly filtering all three ACP launch environments without breaking interactive tools.\n\n**Motivation** — `acpSessionOptions`, `probeAcpAgent` and `acpSubagentSessionOptions` open the backend with `inheritEnv: true`, which hands the whole `process.env`, Telegram token and all, to the chat brain.\n\n**Approach** — New: `buildAcpChatEnv(agent: string): Record<string, string>` in `packages/nax/src/agents/shared/env.ts` (US-002). It returns every `process.env` variable with a string value, a name matching `^[A-Za-z_][A-Za-z0-9_]*$` and no NUL in the value, except:\n- names starting with `NAX_`, `CLAW_` or `TURBO_`, and `TELEGRAM_BOT_TOKEN` (the bot token's fallback name, `packages/nax/src/interaction/plugins/telegram.ts:81`);\n- provider variables outside the agent's own family: a name in `API_KEY_VARS`, or starting with `CLAUDE_`, `ANTHROPIC_`, `CODEX_`, `GEMINI_`, `OPENCODE_`, `MINIMAX_` or `CURSOR_`, that is not in `acpProviderEnvFamily(agent).keys` and does not start with one of its `prefixes`.\n\nEverything else stays: `SSH_AUTH_SOCK`, `GH_TOKEN`, `HTTPS_PROXY`, `EDITOR`, toolchain paths. The chat brain is an interactive coding agent and must keep `gh`, `git push` over ssh-agent and proxies working (user ruling 2026-11-09). Chat does not sanitise `HOME`, as today.\n\n`acpSessionOptions`, `probeAcpAgent` and `acpSubagentSessionOptions` (US-002).\n- Baseline: each calls `acpBackend({ agent, allowUnsandboxed: true, inheritEnv: true, ... })`.\n- Target: each calls `acpBackend({ agent, allowUnsandboxed: true, inheritEnv: false, env: buildAcpChatEnv(agent), ... })`, other keys unchanged. The header comment of `acp-session-options.ts` (\"The agent gets the whole environment\") is corrected to say which variables are withheld.\n\nFailure handling: A `process.env` value contains NUL or its name fails the backend's name pattern: Dropped from both the run env and the chat env, as `backendEnv` does today.\n\nExisting exact-option tests must migrate without weakening other assertions: `packages/nax/test/unit/chat/acp/acp-session-options.test.ts:75,87` retain exact agent, allowUnsandboxed, model and effort; inheritEnv becomes false, env is a string-valued record, and the omitted-model sorted key list becomes agent, allowUnsandboxed, env, inheritEnv. `acp-probe.test.ts:49` retains the same agent, allowUnsandboxed and initializeTimeoutMs, with inheritEnv false and a string-valued env. `acp-subagent-session.test.ts:122,134` retains exact agent/model/effort/allowUnsandboxed and uses the same new omitted-model key list. `packages/nax/test/unit/chat/subagent-session-acp.test.ts:141,162` retains codex/model gpt-6.1-terra or cursor and allowUnsandboxed, adding the explicit string-valued env and inheritEnv false.\n\nSeams: `acpProviderEnvFamily` (created by US-001, exported from `agents/shared/env.ts`) is called by `buildAcpChatEnv` (US-002). US-002's codex and claude chat-env ACs prove the family decides which provider variables a chat brain keeps. `buildAcpChatEnv` (US-002) is reached from `acpSessionOptions`, `probeAcpAgent` and `acpSubagentSessionOptions`; US-002's ACs enter at each of the three with the `acpBackend` factory stubbed.\n\n**Scope** — In: chat filtering, the three factories, header correction and exact-option test migration. Out: run builder/family creation (US-001), mentions (US-003), drains (US-004), spend (US-005), parsing (US-006), setup (US-007).\n- The `nax-agent-acp` backend's own env merge (`buildAgentEnv` applies `extra` after the `authEnv` allowlist). nax stops passing secrets through `extra`; changing the backend's contract for other embedders is a separate decision.\n- Secrets a chat brain can still read from the inherited environment that are not `NAX_*`, `CLAW_*`, `TURBO_*`, `TELEGRAM_BOT_TOKEN` or another provider's key (for example an `AWS_SECRET_ACCESS_KEY` the user exported). Chat keeps the user's environment on purpose (user ruling 2026-11-09); only the listed classes are withheld.\n- `NAX_*` configuration variables a user may want a chat brain to see when it runs `nax` itself (for example `NAX_GLOBAL_CONFIG_DIR`). They are withheld with the rest of `NAX_*`; an opt-in passthrough is a new config surface.\n\n**Interface**\n```typescript\nbuildAcpChatEnv(agent: string): Record<string, string>\nacpProviderEnvFamily(agent: string): { readonly keys: readonly string[]; readonly prefixes: readonly string[] }\n```\nThe family helper is consumed from US-001, not recreated.",
+      "acceptanceCriteria": [
+        "[unit] With process.env holding NAX_TELEGRAM_TOKEN, TELEGRAM_BOT_TOKEN, CLAW_TOKEN and TURBO_TOKEN, buildAcpChatEnv(\"claude\") contains none of them.",
+        "[unit] With process.env holding SSH_AUTH_SOCK, GH_TOKEN, HTTPS_PROXY and EDITOR, buildAcpChatEnv(\"codex\") contains all four with their process.env values.",
+        "[unit] With process.env holding OPENAI_API_KEY, CODEX_HOME, ANTHROPIC_API_KEY and CLAUDE_CONFIG_DIR, buildAcpChatEnv(\"codex\") contains OPENAI_API_KEY and CODEX_HOME and neither ANTHROPIC_API_KEY nor CLAUDE_CONFIG_DIR.",
+        "[unit] With process.env holding ANTHROPIC_API_KEY, CLAUDE_CONFIG_DIR and OPENAI_API_KEY, buildAcpChatEnv(\"claude\") contains ANTHROPIC_API_KEY and CLAUDE_CONFIG_DIR and not OPENAI_API_KEY.",
+        "[unit] With process.env holding CURSOR_API_KEY and GEMINI_API_KEY, buildAcpChatEnv(\"cursor\") contains CURSOR_API_KEY and not GEMINI_API_KEY.",
+        "[unit] With process.env holding a variable named BAD-NAME and a variable GOOD whose value contains NUL, buildAcpChatEnv(\"claude\") contains neither.",
+        "[unit] With the acpBackend factory stubbed and process.env holding NAX_TELEGRAM_TOKEN and GH_TOKEN, acpSessionOptions for agent codex calls the factory once with inheritEnv: false and an env that contains GH_TOKEN and not NAX_TELEGRAM_TOKEN.",
+        "[unit] With the acpBackend factory stubbed and process.env holding NAX_TELEGRAM_TOKEN, probeAcpAgent({ agent: \"codex\", cwd }) calls the factory with inheritEnv: false and an env without NAX_TELEGRAM_TOKEN.",
+        "[unit] With the acpBackend factory stubbed and process.env holding NAX_TELEGRAM_TOKEN and ANTHROPIC_API_KEY, acpSubagentSessionOptions for agent cursor calls the factory with inheritEnv: false and an env containing neither."
+      ],
+      "tags": [
+        "security",
+        "acp",
+        "chat",
+        "environment",
+        "M7"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One shared filter connects three existing factories; credential and session exposure require isolated security TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/shared/env.ts",
+        "packages/nax/src/chat/acp/acp-session-options.ts",
+        "packages/nax/src/chat/acp/acp-probe.ts",
+        "packages/nax/src/chat/acp/acp-subagent-session.ts",
+        "packages/nax/test/unit/chat/acp/acp-session-options.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-session-options.test.ts",
+          "reason": "\"AC-2: opens the backend with model and effort\" (line 75) and \"AC-3: omits model and effort keys when absent\" (line 87) assert the exact acpBackend argument with inheritEnv true, and AC-3 asserts its sorted key list is agent, allowUnsandboxed, inheritEnv. The argument now has inheritEnv false and an env record. Replacement invariant: agent, allowUnsandboxed, model and effort are asserted exactly as before, inheritEnv is false, env is a record of string values, and the sorted key list is agent, allowUnsandboxed, env, inheritEnv when model and effort are absent."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-probe.test.ts",
+          "reason": "the probe case (line 49) asserts acpBackend was called with exactly agent codex, allowUnsandboxed true, inheritEnv true and initializeTimeoutMs. Replacement invariant: the same agent, allowUnsandboxed and initializeTimeoutMs, inheritEnv false, and an env record of string values."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-subagent-session.test.ts",
+          "reason": "the model-and-effort case (line 122) and \"omits model and effort when the ACP model names neither\" (line 134) assert the exact acpBackend argument with inheritEnv true and the sorted key list agent, allowUnsandboxed, inheritEnv. Replacement invariant: agent, model, effort and allowUnsandboxed asserted exactly as before, inheritEnv false, env a record of string values, and the sorted key list agent, allowUnsandboxed, env, inheritEnv when model and effort are absent."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/subagent-session-acp.test.ts",
+          "reason": "the cases at lines 141 and 162 assert the exact acpBackend argument with inheritEnv true (agent codex with model gpt-6.1-terra; agent cursor). Replacement invariant: the same agent, model and allowUnsandboxed values, inheritEnv false, and an env record of string values."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Refuse mentions whose symlink targets are git-ignored",
+      "description": "**Goal** — Fix M8 by applying the git-ignore check to canonical mention targets before content is attached.\n\n**Motivation** — With `.env` ignored and a committed symlink `docs/notes.txt -> ../.env`, `@docs/notes.txt` attaches the secret.\n\n**Approach** — `expandToken` at `packages/nax/src/chat/mentions/mention-expand.ts:153` (US-003).\n- Baseline: after the boundary check, `ignoredRefusal(located.path, ctx.cwd)`.\n- Target: the typed-path check runs first, unchanged. When it does not refuse and `relative(ctx.realRoot, located.realPath)` is not empty, `ignoredRefusal(<that relative path>, ctx.realRoot)` runs as a second check and its refusal is returned: ignored refuses with `not attached: ignored by git`, a timeout or an exit code other than 0 and 1 refuses with the existing notes. The second check runs for every mention, symlinked or not; one extra git call per mention is accepted.\n\nFailure handling: `git check-ignore` on the real path times out or exits with a code other than 0 or 1: Refused, with the same notes the existing typed-path check gives (fail closed).\n\nKeep realpath containment, .git refusal, typed record paths, deduplication, content caps and error isolation unchanged. Reuse the existing `_mentionExpandDeps` filesystem/git seams and add the real temp git regression without invoking an agent.\n\n**Scope** — In: canonical target ignore checks, refusal propagation, unit regressions and the real-git symlink regression. Out: environment selection (US-001/US-002), ledger drains (US-004), failed-hop spend (US-005), parsing (US-006), setup (US-007).\n\n**Interface** — Existing `expandChatMentions(text: string, where: MentionWhere): Promise<ExpandedMentions>` and `ignoredRefusal(path: string, cwd: string): Promise<string | undefined>` stay unchanged. The added check is `ignoredRefusal(<that relative path>, ctx.realRoot)`.",
+      "acceptanceCriteria": [
+        "[unit] With .env git-ignored, /repo/docs/notes.txt resolving to the real path /repo/.env, and the git fake reporting ignored only for the argument .env, expandChatMentions(\"@docs/notes.txt\", ...) returns one record with path docs/notes.txt, status refused, note not attached: ignored by git and body equal to the empty string (no attached content).",
+        "[unit] For that refused mention, the second git call is check-ignore -q -- .env with cwd equal to the real repo root.",
+        "[unit] When the typed path is itself reported ignored, expandChatMentions refuses it and makes exactly one git call.",
+        "[unit] For a non-symlinked tracked file src/a.ts that git does not ignore, expandChatMentions(\"@src/a.ts\", ...) returns status attached.",
+        "[unit] When the git fake reports not ignored for the typed path and exit code 128 for the real-path check, expandChatMentions(\"@docs/notes.txt\", ...) returns status refused with note not attached: git check-ignore failed (exit 128).",
+        "[integration] In a real temp git repo with .gitignore containing .env, a file .env holding SECRET_TOKEN=test, and a committed symlink docs/notes.txt pointing to ../.env, expandChatMentions(\"@docs/notes.txt\", ...) returns status refused and no record carries the text SECRET_TOKEN.",
+        "[unit] When the typed-path check reports not ignored and the real-path check times out, expandChatMentions(\"@docs/notes.txt\", ...) returns status refused with note not attached: git timed out, matching the existing typed-path timeout note."
+      ],
+      "tags": [
+        "security",
+        "chat",
+        "mentions",
+        "M8"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Canonical-path confidentiality and fail-closed file attachment checks require strict security TDD and a real-git regression."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/mentions/mention-expand.ts",
+        "packages/nax/test/unit/chat/mentions/mention-expand.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Preserve all events across failed and overlapping ledger drains",
+      "description": "**Goal** — Fix M9 by preserving ledger state on write errors, serializing drains and atomically replacing the ledger.\n\n**Motivation** — When the write throws, nothing restores them, and the next successful drain rewrites `<runId>.jsonl` with the later events only.\n\n**Approach** — `CostAggregator.drain` at `packages/nax/src/runtime/cost-aggregator.ts:542` (US-004).\n- Baseline: splice, write, restore on success only; concurrent drains interleave.\n- Target: `drain(): Promise<void>` keeps its signature. Drains run one at a time: a drain called while another is running starts after it settles (fulfilled or rejected), through a private promise chain. A drain called while no drain is pending starts its first write pass synchronously, before `drain()` returns, so an event recorded right after the call lands in the in-flight arrays as today. A drain copies `_events` and `_errors` instead of splicing them. After the write loop, whether the last write resolved or threw, `_events` and `_errors` hold every event recorded before the drain ended, split by `kind` as today, so a later drain writes them, including late events a later write pass had already taken from the in-flight arrays. A write error still rejects the drain with that error. `_openScopes.clear()` still runs in `finally`. While a drain is pending, `snapshot()` counts the events being written as well as those recorded since, because they stay in `_events`.\n- `cost-aggregator.ts` is at its 600-line limit (`packages/repo-tooling/scripts/check-file-sizes.ts:31`), so the drain's write-pass loop moves into the new `packages/nax/src/runtime/cost-aggregator-drain.ts` and the file does not grow. That module takes the `write` function and the logger as parameters; it does not import `_costAggDeps` from `cost-aggregator.ts`, which would add an import cycle (`check:import-cycles`).\n\n`_costAggDeps.write` default at `packages/nax/src/runtime/cost-aggregator.ts:356` (US-004).\n- Baseline: `Bun.write(path, data)`.\n- Target: same signature. Writes `data` to a sibling temp file in the same directory, then renames it over `path`; on a failure it removes the temp file (best effort) and rethrows. Tests that override `write` are unaffected. The writer lives in the new `packages/nax/src/runtime/cost-ledger-write.ts` as `writeLedgerAtomic(path: string, data: string): Promise<number>`, resolving to the byte count written, and the default `write` (type `(path: string, data: string) => Promise<number>`, unchanged) delegates to it. The temp file is named `<path>.tmp-<pid>-<counter>`, so it never matches the `cost/*.jsonl` glob `cost-ledger-query.ts` reads.\n\nFailure handling: The cost-ledger write throws (ENOSPC, EACCES): The drain rejects with that error; every event stays in memory and the next drain writes it. The process dies during a ledger write: The previous `<runId>.jsonl` is intact; at most a temp sibling is left behind. Per the explicit exclusion, the crash row is covered by the write's design, not by a fault-injection AC.\n\nMigrate `packages/nax/test/unit/runtime/cost-aggregator.test.ts:217`: the event being written now stays counted, so the pending snapshot after costs 0.01 and 0.02 has callCount 2 and totalCostUsd 0.03 rather than 1 and 0.02. Create `packages/nax/test/unit/runtime/cost-aggregator-drain-failure.test.ts` — the drain failure, overlap and default-write cases; `cost-aggregator.test.ts` is at 613 lines. Preserve timestamp ordering, the existing pass bound and warnings, and kind partitioning; use deterministic write gates rather than sleeps.\n\n**Scope** — In: queueing, retained/late state, loop extraction, atomic default writer and regression updates. Out: env selection (US-001/US-002), mentions (US-003), failed-hop spend (US-005), parsing (US-006), setup (US-007).\n- Callers that do not catch a drain rejection (`chat/chat-ledger.ts:60`, `chat/turn-runner.ts:93`, `chat/host-steer-compact.ts:132`). A ledger write failure still fails the chat turn as today.\n- Removing stale temp files a crashed ledger write left behind.\n- US-004 only: a fault-injection test that the temp-and-rename write leaves the old ledger intact on a crash; the Failure Handling row is covered by the write's design, not by an AC.\n\n**Interface**\n```typescript\ndrain(): Promise<void>\nwriteLedgerAtomic(path: string, data: string): Promise<number>\n```\nThe unchanged write seam type is `(path: string, data: string) => Promise<number>`.",
+      "acceptanceCriteria": [
+        "[unit] With _costAggDeps.write overridden to throw on its second call only: record event turn1, drain; record turn2, drain (it rejects with the write's error); record turn3, drain. The text of the last write contains the rows turn1, turn2 and turn3.",
+        "[unit] After a drain whose write throws, snapshot() still counts every event recorded before that drain.",
+        "[unit] An event recorded while a drain's write is pending, where that write then throws, is contained in the text the next successful drain writes.",
+        "[unit] An error event recorded with recordError before a drain whose write throws is contained, as a row with kind \"error\", in the text the next successful drain writes.",
+        "[unit] With _costAggDeps.write overridden to wait on a gate: calling drain() twice without awaiting makes the second drain's first write start only after the first drain's write has resolved, and both calls resolve.",
+        "[unit] Two overlapping drains, with an event recorded between the two calls, end with the last write's text containing every recorded event.",
+        "[unit] After the first of two overlapping drains rejects, the second still runs its write and resolves.",
+        "[unit] With one event recorded and _costAggDeps.write waiting on a gate, calling drain() and then recording a second event before releasing the gate makes the drain perform two writes, the first containing only the first event and the second containing both.",
+        "[unit] With an event at cost 0.01 recorded, a drain whose write is pending, and a second event at cost 0.02 recorded, snapshot() reports callCount 2 and totalCostUsd 0.03.",
+        "[unit] With _costAggDeps.write overridden so the first pass's write waits on a gate and the second pass's write throws: an event recorded while the first write is pending is contained in the text the next successful drain writes.",
+        "[integration] The default _costAggDeps.write(path, data) into a temp directory where path already holds old text leaves path holding exactly data and no other file in that directory."
+      ],
+      "tags": [
+        "ledger",
+        "concurrency",
+        "durability",
+        "M9"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple modules coordinate synchronous queue entry, rejection recovery, retained late events and atomic replacement under strict file-size limits."
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/cost-aggregator.ts",
+        "packages/nax/test/unit/runtime/cost-aggregator.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/runtime/cost-aggregator-drain.ts",
+        "packages/nax/src/runtime/cost-ledger-write.ts",
+        "packages/nax/test/unit/runtime/cost-aggregator-drain-failure.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/runtime/cost-aggregator.test.ts",
+          "reason": "\"snapshot() includes in-flight events during drain\" (line 217) records an event at cost 0.01, starts a drain whose write is pending, records a second event at 0.02, and asserts the snapshot's callCount is 1 and totalCostUsd 0.02. That held only because the drain spliced the first event out of memory. The drain now copies, so the event being written stays counted. Replacement invariant: the snapshot taken while the write is pending has callCount 2 and totalCostUsd 0.03."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-005",
+      "title": "Preserve spend on failed or timed-out complete hops",
+      "description": "**Goal** — Fix M10 by preserving failed complete-call usage and cost through timeout errors, failure results and dispatch events.\n\n**Motivation** — `dispatchCompleteHop` turns any throw into a result with zero `tokenUsage` and `estimatedCostUsd: 0`.\n\n**Approach** — Read only (unchanged):\n- `readTurnSpend(err: unknown): FailedTurnSpend | undefined` and `attachTurnSpend(err: object, spend: FailedTurnSpend): void`, both exported from `@nathapp/nax-agent` (`packages/nax-agent/src/index.ts:455`). `FailedTurnSpend` is `{ tokenUsage: TokenUsage; costUsd: number; costSource?: CostSource }` and `CostSource` is `\"computed\" | \"reported\" | \"unpriced\"`.\n- `buildDispatchErrorEvent` (`packages/nax/src/agents/manager-dispatch.ts:318-327`) is the precedent for M10: it lifts `tokenUsage`, `estimatedCostUsd` and `exactCostUsd` off a `SessionTurnError`.\n- `spendOfError` (`packages/nax/src/agents/acp/pricing.ts:31`) is the precedent for reading a `FailedTurnSpend`: a `costSource` of `\"reported\"` makes `costUsd` an exact cost.\n\n`runComplete` at `packages/nax/src/agents/acp/complete.ts:86` (US-005).\n- Baseline: on `result.timedOut === true`, throws `NaxError(\"complete() timed out\", \"AGENT_TIMEOUT\", ...)`.\n- Target: the same `NaxError`, code and context, with `attachTurnSpend(err, { tokenUsage: result.tokenUsage, costUsd: result.exactCostUsd ?? result.estimatedCostUsd, costSource: result.exactCostUsd === undefined ? \"computed\" : \"reported\" })` called on it before the throw.\n\n`dispatchCompleteHop` at `packages/nax/src/agents/manager-dispatch.ts:580` (US-005).\n- Baseline: the catch returns zero `tokenUsage` and `estimatedCostUsd: 0`.\n- Target: signature unchanged; `dispatched` stays `false`. The catch fills the result's spend from the error: a `SessionTurnError` whose `tokenUsage` is defined gives `tokenUsage`, `estimatedCostUsd` (0 when undefined) and `exactCostUsd` (when defined); otherwise `readTurnSpend(err)`, when defined, gives `tokenUsage`, `estimatedCostUsd = costUsd`, and `exactCostUsd = costUsd` when `costSource` is `\"reported\"`; otherwise zero, as today. `manager-dispatch.ts` has 3 lines of headroom under the 600-line limit, so the lift is a new function `completeHopSpend(err: unknown): Pick<CompleteResult, \"tokenUsage\" | \"estimatedCostUsd\" | \"exactCostUsd\">` in the new `packages/nax/src/agents/complete-hop-spend.ts`, and the catch spreads its result. On the timeout path the attached `costUsd` is the exact cost when one was reported, so that hop's estimate equals its exact cost.\n\nFailure handling: A `complete()` hop throws an error that carries no spend: Zero spend, as today.\n\nCreate `packages/nax/test/unit/agents/manager-dispatch-complete-hop.test.ts` — `dispatchCompleteHop` has no direct test file. Extend ACP complete tests for timeout attachment and manager-complete tests for the no-fallback emitDispatch seam. Preserve error identity, shutdown, watchdog behavior, injected classification and dispatched false.\n\n**Scope** — In: timeout spend attachment, complete-hop-spend helper extraction, failed-hop results, dispatch propagation and their regression tests. Out: env selection (US-001/US-002), mentions (US-003), drains (US-004), parsing (US-006), setup (US-007).\n- The spend of a failed `complete()` hop that a later fallback hop replaces. US-005 makes the failed hop's result carry its spend; how the fallback records and the final outcome report it is unchanged.\n\n**Interface**\n```typescript\ncompleteHopSpend(err: unknown): Pick<CompleteResult, \"tokenUsage\" | \"estimatedCostUsd\" | \"exactCostUsd\">\nreadTurnSpend(err: unknown): FailedTurnSpend | undefined\nattachTurnSpend(err: object, spend: FailedTurnSpend): void\n```",
+      "acceptanceCriteria": [
+        "[unit] dispatchCompleteHop with a call that throws a SessionTurnError carrying tokenUsage { inputTokens: 100, outputTokens: 20 } and estimatedCostUsd 0.05 returns dispatched: false and a result with that tokenUsage and estimatedCostUsd 0.05.",
+        "[unit] dispatchCompleteHop with a call that throws a SessionTurnError carrying tokenUsage { inputTokens: 10, outputTokens: 1 } and exactCostUsd 0.07 returns a result whose exactCostUsd is 0.07.",
+        "[unit] dispatchCompleteHop with a call that throws a NaxError to which attachTurnSpend attached { tokenUsage: { inputTokens: 50, outputTokens: 5 }, costUsd: 0.02, costSource: \"computed\" } returns a result with that tokenUsage, estimatedCostUsd 0.02 and no exactCostUsd.",
+        "[unit] dispatchCompleteHop with a call that throws a NaxError to which attachTurnSpend attached { tokenUsage: { inputTokens: 50, outputTokens: 5 }, costUsd: 0.02, costSource: \"reported\" } returns a result with that tokenUsage, estimatedCostUsd 0.02 and exactCostUsd 0.02.",
+        "[unit] dispatchCompleteHop with a call that throws a plain Error returns zero tokenUsage, estimatedCostUsd 0 and an adapterFailure from the injected classifier.",
+        "[unit] runComplete over a fake backend whose turn times out after reporting tokenUsage { inputTokens: 30, outputTokens: 0 } throws a NaxError with code AGENT_TIMEOUT, and readTurnSpend of that error returns that tokenUsage.",
+        "[unit] AgentManager.completeAs(\"claude\", prompt, options) with a single registered adapter whose complete() throws a SessionTurnError carrying tokenUsage { inputTokens: 100, outputTokens: 20 }, estimatedCostUsd 0.05 and a non-retriable adapterFailure, and no fallback configured, emits one dispatch event (through emitDispatch) whose tokenUsage is { inputTokens: 100, outputTokens: 20 } and estimatedCostUsd is 0.05."
+      ],
+      "tags": [
+        "acp",
+        "sessions",
+        "cost",
+        "dispatch",
+        "M10"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A small pure spend mapper and two existing call-site changes reuse established error and dispatch seams; session timeout/error handling retains the mandatory strict TDD override."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/manager-dispatch.ts",
+        "packages/nax/src/agents/acp/complete.ts",
+        "packages/nax-agent/src/session/turn-spend.ts",
+        "packages/nax/test/unit/agents/acp/complete.test.ts",
+        "packages/nax/test/unit/agents/manager-complete.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/agents/complete-hop-spend.ts",
+        "packages/nax/test/unit/agents/manager-dispatch-complete-hop.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-006",
+      "title": "Parse valid PRD JSON without rewriting escapes",
+      "description": "**Goal** — Fix M11 by attempting an ordinary parse before invalid-escape repair can alter valid JSON.\n\n**Motivation** — `parseRawString` runs `sanitizeInvalidEscapes` before every `JSON.parse`, including on valid JSON, and its `\\x` and `\\u` rules match the second backslash of an escaped `\\\\`.\n\n**Approach** — `parseRawString` at `packages/nax/src/prd/schema.ts:64` (US-006).\n- Baseline: `JSON.parse(sanitizeInvalidEscapes(cleaned))`, then the control-character repair.\n- Target: `JSON.parse(cleaned)` first; its result is returned when it succeeds. Only when it throws does the existing chain run unchanged: sanitize, parse, control-character repair, then `SCHEMA_VALIDATION_FAILED` carrying the sanitized-parse error.\n\nFailure handling: PRD text is invalid JSON: The existing sanitize and repair chain runs, unchanged.\n\nCreate `packages/nax/test/unit/prd/schema-valid-escapes.test.ts` — the valid-JSON escape cases; `schema.test.ts` is at 791 lines, near the 800-line limit. Enter through validatePlanOutput using otherwise-valid PRDs. Keep JSON fixture escaping distinct from source-language escaping. Preserve extraction, trailing-comma cleanup and schema normalization.\n\n**Scope** — In: cleaned-text parse fast path and valid/invalid JSON regressions. Out: env selection (US-001/US-002), mentions (US-003), drains (US-004), spend (US-005), setup (US-007); redesigning sanitizer semantics is excluded.\n- Recovering a model's raw invalid backslash in PRD text (for example a single-backslash `C:\\users`, which the fallback still turns into `C:sers`). US-006 only stops rewriting valid JSON (user ruling 2026-11-09).\n\n**Interface** — Existing `parseRawString(text: string): unknown` and `validatePlanOutput(raw: unknown, feature: string, branch: string): PRD` remain unchanged. The target operation is `JSON.parse(cleaned)`.",
+      "acceptanceCriteria": [
+        "[unit] validatePlanOutput on valid JSON PRD text whose first story description is the JSON string \"Path C:\\\\users and \\\\xampp\" returns that description as Path C:\\users and \\xampp.",
+        "[unit] validatePlanOutput on valid JSON PRD text whose description is the JSON string \"\\\\x41 and \\\\u0041\" returns \\x41 and \\u0041.",
+        "[unit] validatePlanOutput on PRD text whose description contains the invalid JSON escape \\x41 returns A in its place.",
+        "[unit] validatePlanOutput on PRD text that is valid apart from a literal newline inside a string still parses, with the newline kept in that string.",
+        "[unit] validatePlanOutput on text that is not JSON throws NaxError with code SCHEMA_VALIDATION_FAILED."
+      ],
+      "tags": [
+        "prd",
+        "parsing",
+        "data-integrity",
+        "M11"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A localized parse-order change retains public interfaces and the complete existing repair fallback."
+      },
+      "contextFiles": [
+        "packages/nax/src/prd/schema.ts",
+        "packages/nax/test/unit/prd/schema.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/prd/schema-valid-escapes.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-007",
+      "title": "Leave unparseable setup manifests unchanged",
+      "description": "**Goal** — Fix M18 by refusing fill-scripts writes to unreadable existing manifests and warning without failing setup.\n\n**Motivation** — A `package.json` with a trailing comma loses its name, version, dependencies and workspaces.\n\n**Approach** — `_fillScriptsDeps` and `fillScripts` at `packages/nax/src/cli/setup-fill.ts` (US-007).\n- Baseline: `readJson` returns `null` for absent and for unparseable; both become `{}` and are written. `fillScripts(workdir: string, analysis: RepoAnalysis): Promise<void>`.\n- Target: `readJson` is unchanged. New dep `exists: (path: string) => Promise<boolean>` (default `Bun.file(path).exists()`). When `readJson` returns `null` and `exists` returns `true`, `addScriptToPackageJson` and `addTurboTask` do not write and report the path through the new optional third parameter of `fillScripts(workdir: string, analysis: RepoAnalysis, warn?: (message: string) => void): Promise<void>`, with the message `[setup] <path> could not be read as JSON; left unchanged`. When `turbo.json` is skipped, the root `package.json` does not get the `turbo run type-check` passthrough either. `setupCommand` (`packages/nax/src/cli/setup.ts:98`) passes `_setupDeps.stderr` as `warn`, and the `_setupDeps.fillScripts` type at `setup.ts:24` gains the optional parameter. An absent file is still created as today.\n\nFailure handling: `package.json` or `turbo.json` exists but does not parse: Not written; one warning line on stderr per path; setup still exits 0.\n\nExisting setup tests that mock fillScripts with fewer parameters keep passing. Preserve valid-member writes when turbo is skipped, existing scripts, idempotence and pipeline/tasks selection. Extend setup-fill.test.ts with the exists seam and a real trailing-comma manifest fixture; extend setup.test.ts for stderr forwarding without changing unrelated setup exits.\n\n**Scope** — In: null-result existence checks, warning callback, turbo/root conditional writes, setup wiring, unit regressions and real-file byte-preservation verification. Out: env selection (US-001/US-002), mentions (US-003), drains (US-004), spend (US-005), PRD parsing (US-006).\n- `setup-analyze.ts`'s identical `readJson`, which reads an unparseable `package.json` as having no scripts. With US-007 nothing is written for that file, so the misreading only adds gap lines.\n\n**Interface**\n```typescript\nexists: (path: string) => Promise<boolean>\nfillScripts(workdir: string, analysis: RepoAnalysis, warn?: (message: string) => void): Promise<void>\n```",
+      "acceptanceCriteria": [
+        "[unit] fillScripts for a single-package analysis missing type-check, where readJson returns null and exists returns true for the root package.json, never calls writeFile.",
+        "[unit] In that case fillScripts calls warn once with [setup] <workdir>/package.json could not be read as JSON; left unchanged.",
+        "[unit] fillScripts for a turbo monorepo analysis where turbo.json exists but readJson returns null for it does not write turbo.json, does not write the root package.json passthrough script turbo run type-check, and still writes each member package.json that parsed.",
+        "[unit] fillScripts where readJson returns null and exists returns false for the root package.json writes a package.json whose scripts.type-check is tsc --noEmit -p tsconfig.json.",
+        "[integration] fillScripts on a temp directory whose package.json holds { \"name\": \"my-app\", \"version\": \"1.2.3\", } (a trailing comma) leaves that file byte-for-byte unchanged.",
+        "[unit] setupCommand with fillScripts: true, _setupDeps.stderr captured and _setupDeps.fillScripts stubbed to call its third argument with \"x\", writes x to the captured stderr and returns exit code 0.",
+        "[unit] When turbo.json exists but cannot be parsed, fillScripts calls warn exactly once with [setup] <workdir>/turbo.json could not be read as JSON; left unchanged.",
+        "[unit] With _setupDeps.fillScripts left as the real fillScripts, an existing unparseable package.json and an existing unparseable turbo.json, and writeSetupConfig and runGate stubbed to succeed, setupCommand with fillScripts: true writes one \"[setup] <path> could not be read as JSON; left unchanged\" line to the captured stderr for each of the two paths and returns 0."
+      ],
+      "tags": [
+        "cli",
+        "setup",
+        "data-integrity",
+        "M18"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two production modules add an existence seam, optional warning callback and conditional turbo passthrough using established dependency injection."
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/setup-fill.ts",
+        "packages/nax/src/cli/setup.ts",
+        "packages/nax/test/unit/cli/setup-fill.test.ts",
+        "packages/nax/test/unit/cli/setup.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/cli/setup.ts",
+          "reason": "`setupCommand` passes `_setupDeps.stderr` as the third argument of `_setupDeps.fillScripts`, and the `_setupDeps.fillScripts` type gains the optional warn parameter. Existing setup tests that mock fillScripts with fewer parameters keep passing."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "This existing-code hardening feature closes M7, M8, M9, M10, M11 and M18 from docs/reviews/20261109-review-nax.md. The binding specification is .nax/features/secrets-and-ledger/spec.md. Implement exactly seven stories in packages/nax; only US-002 depends on US-001. No changes to nax-agent, nax-agent-acp, nax-ai, their versions or their published interfaces are required. Codebase-memory MCP was unavailable, so discovery used direct source/test reads and text searches. No code or tests were executed during PRD drafting.\n\nConventions: docs/architecture/ARCHITECTURE.md:15 links the dependency-injection conventions and :161 onward documents source/test hard limits of 600/800 lines, small functions, error context, and package boundaries. Keep external effects behind injectable seams and use existing Bun test helpers. Tests must demonstrate regressions against the old code before implementation. Run targeted bun:test commands with explicit paths from packages/nax, not bare bun test. Pipeline validation handles lint/typecheck/tests; do not run coverage inside a NAX_SANDBOXED=1 session. Generated instructions must not be edited. nax imports ACP only through @nathapp/nax-agent-acp/client and reuses public @nathapp/nax-agent spend helpers.\n\nUS-001: packages/nax/src/agents/shared/env.ts:15 defines ESSENTIAL_VARS, :21 defines API_KEY_VARS, :27 defines broad legacy prefixes, and :57 implements buildAllowedEnv. HOME is normalized at :65. Add independent ACP run selection without changing that legacy function: hooks/runner.ts:271, hooks/agent/run-hook.ts:298, utils/command-argv.ts:4 and agents/acp/adapter.ts:84 retain their existing behavior. packages/nax/src/agents/acp/open-context.ts:37 currently filters the broad allowlist by backend-safe name/value constraints; :105 builds launchOptions and removes the private sandbox carrier; :112 builds backendOptions with inheritEnv false. agents/acp/session.ts:140 calls backendOptions for every run backend. The actual leak is the extra env merge in packages/nax-agent-acp/src/client/env.ts:22-27; that backend remains read-only. Add provider families including CURSOR_ and multi-provider opencode/pi/custom, sanitize the run HOME, apply operator modelEnv last, and reject invalid names/NUL values. Preserve sandbox carrier extraction/removal. packages/nax/test/unit/agents/shared/env.test.ts:16 saves/restores process.env and pins legacy behavior. In agents/acp/open-context.test.ts:54 and :64, migrate backendEnv calls to pass claude and retain the positive CLAUDE_TEST_ALLOWED/model ANTHROPIC_BASE_URL assertions, unrelated-secret rejection, string values and invalid-name rejection. agents/acp/complete.test.ts:30 and :39 provide the _acpDeps/scriptedOpened fake-backend pattern for the complete adapter-entry regression.\n\nUS-002: packages/nax/src/chat/acp/acp-session-options.ts:4 documents whole-env inheritance and :65 passes inheritEnv true; acp-probe.ts:15 and acp-subagent-session.ts:104 do the same. Change all three factories to filtered explicit env plus inheritEnv false while preserving every other option, profile, tool, timeout, signal and lifecycle behavior. Their consumers are chat/open-chat-session.ts:249, chat/acp/acp-catalog.ts:163 and chat/subagent-session.ts:229. Chat intentionally retains SSH_AUTH_SOCK, GH_TOKEN, proxies, editors, toolchain paths, unrelated user secrets and its existing HOME. Reuse US-001's provider family; do not duplicate it. Update exact factory argument expectations in test/unit/chat/acp/acp-session-options.test.ts:75 and :87, acp-probe.test.ts:49, acp-subagent-session.test.ts:122 and :134, and test/unit/chat/subagent-session-acp.test.ts:141 and :162. The omitted-model key list becomes agent, allowUnsandboxed, env, inheritEnv; keep exact model/effort, agent, allowUnsandboxed and initializeTimeoutMs assertions. Existing seams permit factory capture without real ACP agents; restore process.env after tests.\n\nUS-003: packages/nax/src/chat/mentions/mention-expand.ts:135 resolves realRoot and deduplicates canonical paths; expandToken at :153 checks canonical containment at :158 but asks git only about the typed path at :160. ignoredRefusal at :190 already centralizes ignore/timeout/nonzero failure notes. Add the canonical target relative to realRoot as a second check after the unchanged typed-path check. Skip the second check only for an empty relative path, not merely because a mention is not a symlink. Keep repo/.git containment, record paths, deduplication, size/image/folder handling and failure isolation. Correct the typed-path-only comment at :189. test/unit/chat/mentions/mention-expand.test.ts:46 provides realpath/stat/readBytes/git seams and captures argv/cwd; :189 covers ignored and failed checks. Add fake-target tests and a real temp git repo with a committed symlink to ignored .env. One extra git invocation per ordinary mention is intentional.\n\nUS-004: packages/nax/src/runtime/cost-aggregator.ts:356 contains the injectable writer; :406 stores base/in-flight arrays; :417 and :425 route arrivals; :437 snapshots both. drain at :542 sets a shared flag, splices base rows at :556, repeatedly consumes late rows and writes at :581, and restores only after success. This loses batches on failure and permits overlapping drains to reset each other's state. Use a rejection-recovering private promise chain but start an idle drain synchronously; a generic Promise.resolve().then(...) start would break the immediate-arrival/two-write requirement. Copy base arrays, retain every consumed late batch through errors, partition by kind on finalization and clear open scopes in finally. Preserve ordering, max-pass/open-scope warnings and MAX_DRAIN_PASSES=20 at :297. Avoid duplicates in snapshot/byX readers and restore late events even if a second write fails. Extract the loop to cost-aggregator-drain.ts, passing write/logger rather than importing _costAggDeps to avoid cycles. The source is exactly 600 lines and cannot grow. Extract the atomic writer to cost-ledger-write.ts with same-directory <path>.tmp-<pid>-<counter>, byte-count return, rename replacement and best-effort failure cleanup preserving the original error. The query is actually packages/nax/src/cli/cost-ledger-query.ts:137; it selects cost/*.jsonl, excluding the prescribed temp names. test/unit/runtime/cost-aggregator.test.ts:217 must change its pending-drain snapshot from 1/0.02 to 2/0.03; preserve post-drain totals at :238 and error/late-pass behavior at :183. Put new failure/overlap/default-writer cases in the specified new suite, since the existing suite is 613 lines. Use deterministic promise gates rather than sleeps. chat/chat-ledger.ts:60, turn-runner.ts:93 and host-steer-compact.ts:132 still propagate drain rejection. The crash row is explicitly covered by design, not a fault-injection AC; stale-temp removal is excluded.\n\nUS-005: packages/nax/src/agents/acp/complete.ts:86 owns one-shot sessions; :105 discards known priced turn usage on timeout. Attach spend to that same AGENT_TIMEOUT NaxError while preserving code/context, existing cancellation behavior and shutdown finally. packages/nax-agent/src/session/turn-spend.ts:17 and :25 store/read spend by error identity in a WeakMap, so do not wrap the attached error. These public helpers remain unchanged. agents/acp/pricing.ts:31 demonstrates reported cost as exact; agents/manager-dispatch.ts:318 demonstrates SessionTurnError lifting. dispatchCompleteHop at :580 currently returns zero spend on all throws. Extract completeHopSpend to a new module because manager-dispatch.ts has 597 lines. Prioritize SessionTurnError with defined usage, otherwise attached spend, otherwise zero; preserve dispatched false and the injected classifier. agents/types.ts:29 re-exports the same SessionTurnError identity. agents/manager.ts:290 calls the hop helper and :303 sums estimates; agents/manager-complete-as.ts:48-64 forwards final result spend into emitDispatch. Verify direct helper behavior and one non-retriable adapter through completeAs with no fallback. Do not redesign fallback aggregation or dispatch counters. Existing tests are agents/acp/complete.test.ts:10 and :72 for fake backends/timeouts and agents/manager-complete.test.ts:1-55 for manager/registry fixtures. Add manager-dispatch-complete-hop.test.ts. US-001 and US-005 both extend complete.test.ts without a dependency; keep their test additions localized when integrating.\n\nUS-006: packages/nax/src/prd/schema.ts:37 has regex repairs that can match the second slash in valid escaped text. parseRawString at :64 extracts JSON and :77 cleans trailing commas, then currently sanitizes before parsing. Add a cleaned-text JSON.parse fast path, retaining the entire existing sanitized parse/control-character repair/error chain. validatePlanOutput at :118 still owns normalization. Consumers include plan/strategies/write-prd.ts:13, :23 and :56 and single.ts:47. schema.test.ts:13 provides minimal-story fixtures but is already 791 lines, so put the new regressions in schema-valid-escapes.test.ts. Distinguish TypeScript source escaping from JSON fixture escaping; invalid escapes need raw fixtures. No schema/data migration is needed; raw invalid single backslashes remain outside scope.\n\nUS-007: packages/nax/src/cli/setup-fill.ts:9 conflates absent and unreadable JSON into null; :23 and :31 convert both to {} and overwrite. Add exists only to disambiguate null results and an optional warning callback; retain readJson itself, existing scripts, idempotence and pipeline/tasks selection at :33. The member loop at :48 remains independent of turbo/root writes at :57: a skipped turbo file suppresses the root passthrough but not valid member updates. setup.ts:24 casts the seam to two arguments and :98 invokes it; extend both to forward stderr, whose :55 implementation adds a newline. Existing fewer-parameter mocks remain compatible. test/unit/cli/setup-fill.test.ts:38 saves deps and :43 defaults readJson to null; explicitly stub the new exists seam for hermetic tests rather than probing the host. setup.test.ts:458 covers flag/order behavior and :551 covers newline output. Add callback forwarding and a real trailing-comma manifest fixture proving byte preservation. Do not modify setup-analyze's readJson or gap inference.\n\nDelivery and risks: These changes need no new dependencies, configuration surface, version bump, public package API update or persisted-data migration. The deliberate compatibility changes are ACP environment restriction, backendEnv's agent parameter and accurate pending-drain snapshots. Operator model env overrides and chat tooling preservation prevent broader breakage. The highest risk is asynchronous ledger state, requiring late-second-pass failure and queue rejection recovery checks, not only successful-write tests. Keep helper imports acyclic and respect file-size limits. Done means all seven scoped runtime fixes and their listed failure behavior hold, while legacy env callers, fallback accounting and invalid-JSON repair remain unchanged.\n\nRefine self-audit: Enumerated and matched all 58 original spec ACs in their owning stories: US-001 14, US-002 9, US-003 6, US-004 11, US-005 7, US-006 5 and US-007 6. Retained the empty-modelDef.env precondition, fake-backend test precedent, literal-newline preservation, write-error identity, parsed-member preservation and no-fallback dispatch qualifiers. The reported-spend case now spells out the inherited usage/estimate expectations rather than relying on the spec's phrase 'The same'. Mention refusal now explicitly asserts the existing empty-string body representation at packages/nax/src/chat/mentions/mention-expand.ts:335-336, not absence of the body field. All seven stories already include negative paths and backward-compatibility anchors; no speculative ACs were added. Additional failure-table criteria retain invalid-env rejection, real-path timeout and per-path setup warnings; the crash row remains design-only under the explicit exclusion. All 11 feature exclusions remain verbatim and relevant boundaries are echoed in story scopes. contextFiles retain every spec-recommended file within the five-file limit, expectedFiles remain exactly the specified outputs, and workdirs/dependencies remain exactly the binding table. US-005 is medium rather than complex because it uses a small pure mapper and two existing call sites; its session-handling strict TDD override remains. Other routing remains justified by the security boundary or ledger concurrency. This audit re-read the affected source and factory data flows; it did not execute runtime tests.",
+  "outOfScope": [
+    "Recovering a model's raw invalid backslash in PRD text (for example a single-backslash `C:\\users`, which the fallback still turns into `C:sers`). US-006 only stops rewriting valid JSON (user ruling 2026-11-09).",
+    "The `nax-agent-acp` backend's own env merge (`buildAgentEnv` applies `extra` after the `authEnv` allowlist). nax stops passing secrets through `extra`; changing the backend's contract for other embedders is a separate decision.",
+    "Secrets a chat brain can still read from the inherited environment that are not `NAX_*`, `CLAW_*`, `TURBO_*`, `TELEGRAM_BOT_TOKEN` or another provider's key (for example an `AWS_SECRET_ACCESS_KEY` the user exported). Chat keeps the user's environment on purpose (user ruling 2026-11-09); only the listed classes are withheld.",
+    "`NAX_*` configuration variables a user may want a chat brain to see when it runs `nax` itself (for example `NAX_GLOBAL_CONFIG_DIR`). They are withheld with the rest of `NAX_*`; an opt-in passthrough is a new config surface.",
+    "`buildAllowedEnv`'s other callers (hooks, `command-argv`, the ACP adapter's `buildAllowedEnv` method). They keep today's prefix allowlist.",
+    "Callers that do not catch a drain rejection (`chat/chat-ledger.ts:60`, `chat/turn-runner.ts:93`, `chat/host-steer-compact.ts:132`). A ledger write failure still fails the chat turn as today.",
+    "Removing stale temp files a crashed ledger write left behind.",
+    "The spend of a failed `complete()` hop that a later fallback hop replaces. US-005 makes the failed hop's result carry its spend; how the fallback records and the final outcome report it is unchanged.",
+    "`setup-analyze.ts`'s identical `readJson`, which reads an unparseable `package.json` as having no scripts. With US-007 nothing is written for that file, so the misreading only adds gap lines.",
+    "The other review findings (M1-M6, M12-M23, L1-L37). M1-M6 shipped in F1; the rest belong to F3-F5.",
+    "US-004 only: a fault-injection test that the temp-and-rename write leaves the old ledger intact on a crash; the Failure Handling row is covered by the write's design, not by an AC."
+  ],
+  "routingProfile": "native-codex-ds"
+}
