@@ -3,7 +3,7 @@
   "feature": "review-low-fixes",
   "branchName": "feat/review-low-fixes",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T15:15:29.941Z",
+  "updatedAt": "2026-11-09T15:27:34.347Z",
   "userStories": [
     {
       "id": "US-001",
@@ -185,14 +185,17 @@
         "worktrees"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Cross-module fatal teardown and acquisition-timed ownership forwarding require integration checks for destructive lock release, plus independent worktree behavior."
+        "reasoning": "Cross-module fatal teardown and acquisition-timed ownership forwarding require integration checks for destructive lock release, plus independent worktree behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/crash-signals.ts",
@@ -208,7 +211,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fc9adaa5e7706b10f99adcb6446d5f7b26a53d90"
     },
     {
       "id": "US-005",
