@@ -234,7 +234,8 @@ export class AgentManager implements IAgentManager {
       reportAuthFailure: this.reportAuthFailure.bind(this),
       getDefault: () => this.getDefault(),
       isUnavailable: (agent, tier, model) => this.isUnavailable(agent, tier, model),
-      markUnavailable: (agent, failure, tier, model) => this.markUnavailable(agent, failure, tier, model),
+      markUnavailable: (agent, failure, tier, model, authModel) =>
+        this.markUnavailable(agent, failure, tier, model, authModel),
       nextCandidate: (cur, hops, exclude, tier, model) => this.nextCandidate(cur, hops, exclude, tier, model),
       resolveExhaustion: (options) => this._resolveExhaustion(options),
       emitSwapAttempt: (fallback) => this._emitter.emit("onSwapAttempt", fallback),
