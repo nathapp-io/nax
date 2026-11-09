@@ -99,17 +99,54 @@ jobs:
       - name: Test (e2e)
         run: bun run test:e2e
 
+  # Split out of `nax` (2026-11-09): the serial coverage run was ~224s of that
+  # job's ~316s and depends on none of its steps, so it now runs alongside them
+  # and the CI run takes as long as the slower of the two jobs.
+  nax-coverage:
+    name: "nax: coverage"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/nax
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.3"
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      # The live sandbox suite runs here too (NAX_SANDBOX_REQUIRED below), so it
+      # needs the same working bubblewrap as the `nax` job.
+      - name: Enable the OS sandbox (bubblewrap)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap socat ripgrep
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
       # Enforces the documented 80% floor over `src/`, aggregate and per file. Bun's
       # own coverageThreshold only exits non-zero with the `text` reporter enabled,
       # and has no per-file ratchet, so packages/repo-tooling/scripts/check-coverage.ts parses lcov instead.
       # Runs unit + integration + ui in ONE invocation — Bun writes a single
       # merged report per invocation and cannot merge across them. It is also
-      # the job's only unconfined run of those suites: the gate
-      # exits 1 when any test fails, so separate `bun test test/unit/` /
-      # `test/integration/` / `test/ui/` steps only ran the same tests a second
-      # time (~130s). NAX_SANDBOX_REQUIRED moved here with them, so the live
-      # sandbox suite still cannot pass by skipping. nax-agent gates its own
-      # sources in its own job.
+      # the only unconfined run of those suites, and the only run of test/ui/:
+      # the gate exits 1 when any test fails. NAX_SANDBOX_REQUIRED is set here,
+      # so the live sandbox suite cannot pass by skipping. `--skip-source-free-tests`
+      # (in `test:coverage`) leaves out unit/integration files that never reference
+      # src/: they record no coverage (mostly CLI-spawning tests), and the confined
+      # step in `nax` still runs them. nax-agent gates its own sources in its own job.
       - name: Coverage floor
         run: bun run test:coverage
         env:
