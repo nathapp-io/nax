@@ -333,6 +333,8 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // US-002: the end-of-run approvals seal lands here once the PRD is loaded.
   // The crash handlers below close over it; undefined = nothing to seal yet.
   let sealApprovals: (() => Promise<void>) | undefined;
+  // Assigned only once both run locks are ours; fatal teardown before then is a no-op.
+  let releaseRunLocks: (() => Promise<void>) | undefined;
   try {
     // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
     cleanupCrashHandlers = _runSetupDeps.installCrashHandlers({
@@ -357,6 +359,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       // (a fatal signal that early has no dispatch scope to seal).
       sealApprovals: async () => {
         await sealApprovals?.();
+      },
+      releaseLocks: async () => {
+        await releaseRunLocks?.();
       },
       onShutdown: async (abortSignal?: AbortSignal) => {
         // force=true: signal-driven shutdown must hard-terminate agent processes
@@ -506,6 +511,12 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
         holderWorkdir: featureLock.holder.workdir,
       });
     }
+
+    // This forwarder becomes owned only after both acquisitions succeed.
+    releaseRunLocks = async () => {
+      await releaseFeatureLock({ outputDir: runtime.outputDir, feature, runId });
+      await releaseLock(workdir);
+    };
 
     // Delegate post-lock initialization. `initializeAfterLock` owns its own
     // try/catch that releases both locks in reverse on failure (FIX-H16),

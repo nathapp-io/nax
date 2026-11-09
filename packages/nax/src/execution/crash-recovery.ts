@@ -61,6 +61,8 @@ export interface CrashRecoveryContext {
    * target is assigned once `buildApprovalsSeal` resolves.
    */
   sealApprovals?: () => Promise<void>;
+  /** Releases locks owned by this run during fatal teardown. */
+  releaseLocks?: () => Promise<void>;
   /** Repo working directory; teardown clears hidden `.nax/` index flags there (#2490). */
   workdir?: string;
 }
