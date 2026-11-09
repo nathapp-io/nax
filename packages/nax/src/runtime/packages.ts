@@ -1,4 +1,5 @@
 import { isAbsolute, join, relative } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfigLoader, ConfigSelector, NaxConfig } from "../config";
 import { mergePackageConfig, pinRootOnlyKeys } from "../config";
 import { applyWorkflowMode } from "../config/workflow-mode";
@@ -207,7 +208,30 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     return view;
   }
 
+  /** Resolve and register one package's override. Throws when its config is invalid. */
+  async function hydratePackage(dir: string, loadOverride?: PackageOverrideLoader): Promise<void> {
+    const rootConfig = loader.current();
+    const resolved = await resolvePackageOverride({ repoRoot, packageDir: dir, rootConfig, loadOverride });
+    if (resolved === null) return;
+    overlays.set(dir, resolved.overlay);
+    // Workflow mode must hold per package: an overlay cannot re-enable what it turns off.
+    const merged = pinRootOnlyKeys(resolved.config, rootConfig);
+    mergedConfigs.set(dir, applyWorkflowMode(merged));
+    // A pre-hydration resolve can have cached the same package through a
+    // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
+    // key that maps to this override, while preserving unrelated views.
+    for (const key of cache.keys()) {
+      if (toOverrideKey(key) === dir) cache.delete(key);
+    }
+  }
+
   async function hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void> {
+    // US-004: a package whose config fails validation must not take the rest of
+    // the workspace down with it. Every package is hydrated on its own; the
+    // first failure is re-thrown once the loop has done what it could, and the
+    // later ones are logged with their package dir so a run operator can see
+    // which packages fell back to the root config.
+    let firstError: unknown = null;
     for (const dir of packageDirs) {
       if (!dir) {
         continue;
@@ -216,22 +240,21 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       if (mergedConfigs.has(dir)) {
         continue;
       }
-      const rootConfig = loader.current();
-      const resolved = await resolvePackageOverride({ repoRoot, packageDir: dir, rootConfig, loadOverride });
-      if (resolved !== null) {
-        overlays.set(dir, resolved.overlay);
-        // Workflow mode must hold per package: an overlay cannot re-enable what it turns off.
-        const merged = pinRootOnlyKeys(resolved.config, rootConfig);
-        mergedConfigs.set(dir, applyWorkflowMode(merged));
-        // A pre-hydration resolve can have cached the same package through a
-        // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
-        // key that maps to this override, while preserving unrelated views.
-        for (const key of cache.keys()) {
-          if (toOverrideKey(key) === dir) cache.delete(key);
+      try {
+        await hydratePackage(dir, loadOverride);
+      } catch (err) {
+        if (firstError === null) {
+          firstError = err;
+          continue;
         }
+        _packagesDeps.getSafeLogger()?.warn("packages", "Per-package config hydration failed — using root config", {
+          packageDir: dir,
+          error: errorMessage(err),
+        });
       }
     }
     hydrated = true;
+    if (firstError !== null) throw firstError;
   }
 
   return {

@@ -10,6 +10,7 @@ import { getLogger } from "../logger";
 import { loadJsonFileStrict } from "../utils/json-file";
 import {
   applyConfigCompatShims,
+  type ConfigWarnDedupe,
   createConfigWarnDedupe,
   defaultConfigWarn,
   warnSecuritySensitiveOverrides,
@@ -23,69 +24,19 @@ import {
   validatePermissionsBlock,
   warnQualityCommandChains,
 } from "./config-guards";
-import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
 import { loadGlobalConfigRaw } from "./global-files";
 import { rejectGlobalOnlyKeys } from "./global-only-keys";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { packageConfigCache } from "./package-config-cache";
+import { preparePackageLayer, resolveEnvVarsWarnOnFailure, validatePackageConfig } from "./package-layer";
 import { loadPackageProfileLayers } from "./package-profile";
 import { findProjectDir, globalConfigDir, PROJECT_NAX_DIR } from "./paths";
-import {
-  loadProfile,
-  parseProfileList,
-  resolveProfileEnvVars,
-  resolveProfileNames,
-  sensitiveFilteredProcessEnv,
-} from "./profile";
+import { loadProfile, parseProfileList, resolveProfileEnvVars, resolveProfileNames } from "./profile";
 import { stripRemovedConfig } from "./removed-stage-names";
 import { pinRootOnlyKeysRaw } from "./root-only-keys";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 import { applyWorkflowMode } from "./workflow-mode";
-
-/** Validate mode alone so unrelated undefined variables cannot hide a removed mode. */
-function rejectResolvedPipelineMode(config: Record<string, unknown>, source: string): void {
-  const execution = config.execution;
-  if (!execution || typeof execution !== "object" || Array.isArray(execution)) return;
-  let mode: unknown;
-  try {
-    mode = resolveEnvVars((execution as Record<string, unknown>).mode, sensitiveFilteredProcessEnv());
-  } catch (err) {
-    if (err instanceof UnresolvedEnvVarError) return;
-    throw err;
-  }
-  rejectPipelineModeKeys({ execution: { ...execution, mode } }, source);
-}
-
-/**
- * CFG-2/CFG-3: resolve `$VAR`/`${VAR}` references in a config layer that has
- * no companion `.env` file of its own (global/project config, per-package
- * profile overlays) against the ambient, secret-key-filtered process.env.
- * Unlike the profile chain (which fail-fasts via loadProfile's own
- * resolveEnvVars call — an intentional, reviewed profile.json), this warns
- * and leaves the layer unresolved rather than throwing: these layers are
- * loaded implicitly on every run, and a literal "$" that was never meant as
- * a var reference must not hard-fail config load.
- */
-function resolveEnvVarsWarnOnFailure(
-  config: Record<string, unknown>,
-  logger: ReturnType<typeof getLogger> | null,
-  layerName: string,
-): Record<string, unknown> {
-  rejectResolvedPipelineMode(config, layerName);
-  try {
-    return resolveEnvVars(config, sensitiveFilteredProcessEnv()) as Record<string, unknown>;
-  } catch (err) {
-    if (err instanceof UnresolvedEnvVarError) {
-      logger?.warn("config", `${layerName} references undefined environment variable — left unresolved`, {
-        varName: err.varName,
-        path: err.path.join(".") || "(root)",
-      });
-      return config;
-    }
-    throw err;
-  }
-}
 
 /** Global config path */
 export function globalConfigPath(): string {
@@ -358,19 +309,19 @@ export function _clearRootConfigCache(): void {
 }
 
 /** Read package-declared fields and profile layers without flattening their merge order. */
-async function loadPackageOverrideData(repoRoot: string, packageDir: string) {
+async function loadPackageOverrideData(repoRoot: string, packageDir: string, warnDedupe: ConfigWarnDedupe) {
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
   const override = await loadJsonFileStrict<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
   if (!override) return null;
   const { profile, ...fields } = rejectGlobalOnlyKeys(override, `package:${packageDir}`);
-  const { layers } = await loadPackageProfileLayers({
+  const { chain, layers } = await loadPackageProfileLayers({
     profile,
     repoRoot,
     packageDir,
     logger: getLogger(),
-    warnDedupe: createConfigWarnDedupe(),
+    warnDedupe,
   });
-  return { fields, layers };
+  return { fields, layers, chain };
 }
 
 function applyPackageProfileLayers(base: Record<string, unknown>, layers: Record<string, unknown>[]) {
@@ -382,7 +333,9 @@ function applyPackageProfileLayers(base: Record<string, unknown>, layers: Record
 
 /** Package-declared values only, including profile commands, for command provenance. */
 export async function loadPackageOverride(repoRoot: string, packageDir: string): Promise<Partial<NaxConfig> | null> {
-  const data = await loadPackageOverrideData(repoRoot, packageDir);
+  // The declared-values reader stays unvalidated and unprepared: the finish
+  // quality gate reads it for command provenance, not to resolve a config.
+  const data = await loadPackageOverrideData(repoRoot, packageDir, createConfigWarnDedupe());
   return data ? (applyPackageProfileLayers(data.fields, data.layers) as Partial<NaxConfig>) : null;
 }
 
@@ -393,13 +346,32 @@ export async function loadPackageOverrideWithConfig(options: {
   rootConfig: NaxConfig;
 }): Promise<{ overlay: Partial<NaxConfig>; config: NaxConfig } | null> {
   const { repoRoot, packageDir, rootConfig } = options;
-  const data = await loadPackageOverrideData(repoRoot, packageDir);
+  // #1620: one dedupe per package resolution — the package's own layer and its
+  // package profiles run the same chain, so a legacy key present in both would
+  // otherwise warn once per layer.
+  const warnDedupe = createConfigWarnDedupe();
+  const logger = getLogger();
+  const data = await loadPackageOverrideData(repoRoot, packageDir, warnDedupe);
   if (!data) return null;
-  const overlay = applyPackageProfileLayers(data.fields, data.layers) as Partial<NaxConfig>;
-  const base = mergePackageConfig(rootConfig, data.fields);
+  // The package's own fields go through the SAME per-layer preparation the
+  // loader path runs (env resolution, compat shims, the legacy guards, the
+  // removed-key strip) — otherwise a legacy value the root config migrates
+  // with a warning hard-fails here instead.
+  const prepared = preparePackageLayer(data.fields as Record<string, unknown>, packageDir, logger, warnDedupe);
+  const overlay = applyPackageProfileLayers(prepared, data.layers) as Partial<NaxConfig>;
+  const base = mergePackageConfig(rootConfig, prepared as unknown as Partial<NaxConfig>);
   const resolved = applyPackageProfileLayers(base as unknown as Record<string, unknown>, data.layers);
   // Retain the registry's package-mergeable whitelist. Root-only pinning happens in hydrate.
-  const config = mergePackageConfig(rootConfig, resolved as Partial<NaxConfig>);
+  const merged = mergePackageConfig(rootConfig, resolved as Partial<NaxConfig>);
+  // Pin the root-only keys BEFORE the validation: a package's root-only
+  // `execution.*` value is warned about and dropped, never validated.
+  const pinned = pinRootOnlyKeysRaw(
+    merged as unknown as Record<string, unknown>,
+    rootConfig,
+    packageDir,
+    warnDedupe.warn,
+  );
+  const config = validatePackageConfig(pinned, packageDir, data.chain, warnDedupe);
   // Bridge only package-declared commands: resolved includes inherited review commands,
   // which must not masquerade as explicit overrides of profile quality commands.
   config.review.commands = mergePackageConfig(rootConfig, overlay).review.commands;
@@ -490,44 +462,10 @@ export async function loadConfigForWorkdir(
   // (e.g. `routing.strategy: "manual"`), and the mapping/warning shims that do not
   // hard-fail lost their migration or their warning silently.
   //
-  // Applied per LAYER (pre-merge), not to the merged result, because several shims
-  // only fire when the canonical key is absent — and the merged result always
-  // carries the root's resolved value for it. `routing.llm.batchMode` -> `mode` and
-  // `context.testCoverage.testPattern` -> `execution.smartTestRunner.testFilePatterns`
-  // would both silently no-op if the chain ran post-merge.
-  const envResolvedPackageFields = resolveEnvVarsWarnOnFailure(
-    packageFields as Record<string, unknown>,
-    logger,
-    `per-package config "${packageDir}"`,
-  );
-  const shimmedPackageFields = applyConfigCompatShims(
-    envResolvedPackageFields,
-    logger,
-    warnDedupe,
-  ) as Partial<NaxConfig>;
-  rejectPipelineModeKeys(shimmedPackageFields as Record<string, unknown>, `per-package config "${packageDir}"`);
-  // nax#1990 — scoped to THIS layer's own `quality.commands`, not the merged
-  // result below. `loadConfig` (root chain) already warns once per resolved
-  // root config and is cached per `cacheKey`, so a root-only chained command
-  // must not be re-warned here on every `loadConfigForWorkdir` call for every
-  // package/story in a run (iteration-runner.ts, parallel-batch.ts,
-  // runner-completion.ts each call this once per story).
-  // Running the check on the raw per-layer object rather than the merged
-  // config means only a command actually declared (or overridden) at THIS
-  // package layer can warn here — an inherited root value cannot, since it is
-  // absent from `shimmedPackageFields`.
-  warnQualityCommandChains(shimmedPackageFields as Record<string, unknown>, warnDedupe.warn);
-  // Strip the removed keys from THIS layer BEFORE the whitelist merge: the merge
-  // carries only its mergeable sections, so a removed key anywhere else
-  // (`acceptance`, a root-only section) is dropped by the whitelist — silently,
-  // and never reaches the post-merge strip, which left an acceptance-only
-  // package config resolving to the root config with no warning.
-  // The legacy guards run on this layer BEFORE the strip, as on the root chain:
-  // `quality.autofix` is a removed section, so the strip would otherwise drop a
-  // legacy `quality.autofix.maxTotalAttempts` with a warning instead of rejecting it.
-  rejectLegacyRectificationKeys(shimmedPackageFields as Record<string, unknown>);
-  rejectDeadQualityFlags(shimmedPackageFields as Record<string, unknown>);
-  const packageLayer = stripRemovedConfig(shimmedPackageFields as unknown as Record<string, unknown>, warnDedupe.warn);
+  // The chain itself lives in `package-layer.ts`, shared with the runtime
+  // registry's `loadPackageOverrideWithConfig` — the two package-resolution
+  // entry points must not drift.
+  const packageLayer = preparePackageLayer(packageFields as Record<string, unknown>, packageDir, logger, warnDedupe);
   let merged = mergePackageConfig(rootConfig, packageLayer as unknown as Partial<NaxConfig>);
 
   // Second pass, on the merged result: a package PROFILE reintroduces its own
@@ -554,46 +492,17 @@ export async function loadConfigForWorkdir(
   rawMerged = pinRootOnlyKeysRaw(rawMerged, rootConfig, packageDir, warnDedupe.warn);
 
   // Every site (root chain, overlay layer, profile-overlaid result below) runs:
-  // reject the legacy keys that must fail loudly, THEN strip warn-only keys, THEN safeParse.
-  // BUG-05: guards + safeParse must cover EVERY per-package overlay, not just
-  // ones that also apply a package-level profile — an overlay with no profile
-  // previously returned `merged` here unvalidated, letting a legacy key sail
-  // through unchecked. ADR-012 Phase 6 — legacy-key guard applies to
-  // per-package overlays too.
-  rejectLegacyAgentKeys(rawMerged);
-  rejectLegacyRectificationKeys(rawMerged);
-  rejectDeadQualityFlags(rawMerged);
-  rejectRemovedPlanModes(rawMerged);
-  // CFG-1: same validation as the root chain — a per-package
-  // `execution.permissions` block is now enforced, so validate it here too.
-  validatePermissionsBlock(rawMerged);
-  // Strip the removed no-op keys and the removed stage names again
-  // post-profile-overlay (a package profile can reintroduce one). Runs after
-  // the reject guards and before safeParse, mirroring the root chain.
-  // Post-merge placement yields one warning per resolved config regardless of
-  // which layer supplied the key.
-  rawMerged = stripRemovedConfig(rawMerged, warnDedupe.warn);
-  // nax#1990's warnQualityCommandChains check runs per-layer, above (on
-  // shimmedPackageFields and each shimmedProfileData) — not here on the
+  // reject the legacy keys that must fail loudly, THEN strip warn-only keys, THEN
+  // safeParse. BUG-05: guards + safeParse must cover EVERY per-package overlay,
+  // not just ones that also apply a package-level profile. The chain itself
+  // lives in `package-layer.ts`, shared with the runtime registry's
+  // `loadPackageOverrideWithConfig`, so the two entry points cannot drift.
+  //
+  // nax#1990's warnQualityCommandChains check runs per-layer, inside
+  // `preparePackageLayer` (and on each shimmed profile layer) — not here on the
   // merged result, which would re-warn every root-inherited chained command
-  // on every package/story resolution in a run. See the comments at those
-  // call sites.
-  const result = NaxConfigSchema.safeParse(rawMerged);
-  if (!result.success) {
-    // Fail-fast — consistent with root-chain resolution (a missing profile file
-    // throws in loadProfile). Silently dropping the overlay would run the package
-    // with a config the user did not ask for, which is hard to debug.
-    const errors = result.error.issues.map((err) => {
-      const path = String(err.path.join("."));
-      return path ? `${path}: ${err.message}` : err.message;
-    });
-    const label = packageChain.length > 0 ? `profile "${packageChain.join("+")}"` : "override";
-    throw new NaxError(
-      `Per-package config ${label} produced an invalid config for package "${packageDir}":\n${errors.join("\n")}`,
-      "PER_PACKAGE_PROFILE_INVALID",
-      { stage: "config", packageDir, profileChain: packageChain },
-    );
-  }
-  merged = applyWorkflowMode(result.data as NaxConfig);
+  // on every package/story resolution in a run.
+  const validated = validatePackageConfig(rawMerged, packageDir, packageChain, warnDedupe);
+  merged = applyWorkflowMode(validated);
   return packageConfigCache.set(resolvedRootConfigPath, packageDir, profileKey, merged);
 }
