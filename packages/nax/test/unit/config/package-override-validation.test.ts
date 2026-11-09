@@ -15,7 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makeTempDir, withEnvVars } from "@test/helpers";
 import { createConfigLoader, loadConfigForWorkdir, loadPackageOverrideWithConfig } from "@/config";
 import { createConfigWarnDedupe } from "@/config/compat-shims";
 import { _clearRootConfigCache } from "@/config/loader";
@@ -131,16 +131,13 @@ describe("per-package config validation (US-004)", () => {
   });
 
   test("AC-5: an env-var reference in a package command resolves", async () => {
-    process.env.NAX_F4_TEST_CMD = "bun run test:pkg";
-    try {
+    await withEnvVars({ NAX_F4_TEST_CMD: "bun run test:pkg" }, async () => {
       await writePackageConfig("packages/api", { quality: { commands: { test: "$NAX_F4_TEST_CMD" } } });
 
       const result = await loadOverride();
 
       expect(result?.config.quality.commands.test).toBe("bun run test:pkg");
-    } finally {
-      delete process.env.NAX_F4_TEST_CMD;
-    }
+    });
   });
 
   test("AC-6: a removed routing strategy is migrated, not rejected", async () => {
@@ -152,8 +149,7 @@ describe("per-package config validation (US-004)", () => {
   });
 
   test("both entry points resolve an env reference and apply the same shim", async () => {
-    process.env.NAX_F4_TEST_CMD = "bun run test:pkg";
-    try {
+    await withEnvVars({ NAX_F4_TEST_CMD: "bun run test:pkg" }, async () => {
       await writePackageConfig("packages/api", {
         quality: { commands: { test: "$NAX_F4_TEST_CMD" } },
         routing: { strategy: "manual" },
@@ -166,9 +162,7 @@ describe("per-package config validation (US-004)", () => {
       expect(fromWorkdir.routing.strategy).toBe("keyword");
       expect(fromOverride?.config.quality.commands.test).toBe("bun run test:pkg");
       expect(fromOverride?.config.routing.strategy).toBe("keyword");
-    } finally {
-      delete process.env.NAX_F4_TEST_CMD;
-    }
+    });
   });
 
   test("AC-7: the removed-strategy warning is emitted once", async () => {
@@ -227,22 +221,24 @@ describe("per-package config validation (US-004)", () => {
   });
 
   test("AC-13: an unset env var is left unresolved", async () => {
-    delete process.env.NAX_F4_UNSET;
-    await writePackageConfig("packages/api", { quality: { commands: { test: "$NAX_F4_UNSET" } } });
+    await withEnvVars({ NAX_F4_UNSET: undefined }, async () => {
+      await writePackageConfig("packages/api", { quality: { commands: { test: "$NAX_F4_UNSET" } } });
 
-    const result = await loadOverride();
+      const result = await loadOverride();
 
-    expect(result?.config.quality.commands.test).toBe("$NAX_F4_UNSET");
+      expect(result?.config.quality.commands.test).toBe("$NAX_F4_UNSET");
+    });
   });
 
   test("AC-14: the unset env var warns once, naming the package", async () => {
-    delete process.env.NAX_F4_UNSET;
-    await writePackageConfig("packages/api", { quality: { commands: { test: "$NAX_F4_UNSET" } } });
+    await withEnvVars({ NAX_F4_UNSET: undefined }, async () => {
+      await writePackageConfig("packages/api", { quality: { commands: { test: "$NAX_F4_UNSET" } } });
 
-    const warnings = await captureWarnings(() => loadOverride());
+      const warnings = await captureWarnings(() => loadOverride());
 
-    const matching = warnings.filter((w) => w.message.includes('per-package config "packages/api"'));
-    expect(matching).toHaveLength(1);
+      const matching = warnings.filter((w) => w.message.includes('per-package config "packages/api"'));
+      expect(matching).toHaveLength(1);
+    });
   });
 
   test("AC-15/16: hydrate hydrates the healthy package and rejects with the first error", async () => {
