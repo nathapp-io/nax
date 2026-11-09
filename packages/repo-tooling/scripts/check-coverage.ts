@@ -58,6 +58,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type CoverageEnvironment, finishCoverage } from "#scripts/coverage-gate-mode";
+import { coverageTestPaths } from "#scripts/coverage-test-selection";
 import { gateBaselinePath, gatePackageRoot } from "#scripts/lib/package-root";
 
 const ROOT = gatePackageRoot();
@@ -114,8 +115,11 @@ export function gatedSuites(root: string, exists: (path: string) => boolean = ex
   return CANDIDATE_SUITES.filter((suite) => exists(join(root, suite)));
 }
 
-/** Wall-clock cap for the coverage run, in ms. A full merged run takes about 55s. */
-const RUN_TIMEOUT_MS = 300_000;
+/**
+ * Wall-clock cap for the coverage run, in ms. nax's merged run took ~224s in CI on
+ * 2026-11-09 (about 55s when the old 300s cap was set), so the cap was raised to 480s.
+ */
+const RUN_TIMEOUT_MS = 480_000;
 
 export interface Totals {
   linesFound: number;
@@ -170,11 +174,19 @@ async function runCoverage(): Promise<number> {
     console.error(`[coverage] no test/unit, test/integration or test/ui directory under ${ROOT}`);
     return 1;
   }
+  // Opt-in (nax): drop unit/integration files that never reference src/ (coverage-test-selection.ts).
+  const selection = process.argv.includes("--skip-source-free-tests")
+    ? coverageTestPaths(ROOT, suites)
+    : { paths: suites, skipped: [] };
+  if (selection.skipped.length > 0)
+    console.log(
+      `[coverage] skipping ${selection.skipped.length} test file(s) that never reference src/ (they record no coverage; CI's confined step still runs them)`,
+    );
   const child = Bun.spawn(
     [
       "bun",
       "test",
-      ...suites,
+      ...selection.paths,
       "--coverage",
       "--coverage-reporter=lcov",
       // Same per-test budget as the CI suite steps (`bun test <dir>
