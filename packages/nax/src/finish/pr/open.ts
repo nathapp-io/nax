@@ -24,25 +24,27 @@ export const _openDeps = {
 };
 
 /**
- * Parse `gh pr view --json isDraft,url` / `glab mr view --output json` stdout.
- *
- * GitHub's schema is well-defined: `{ isDraft, url }`. GitLab's `glab mr view --output json`
- * schema is not guaranteed to expose an equivalent boolean under a stable name across
- * versions, so this is best-effort: it checks a few plausible field names for draft status
- * and falls back to treating any successfully-parsed MR as ready (not draft) when none are
- * found — per the task brief, "treat any successful view as already-ready unless you find
- * clear evidence otherwise."
+ * Parse `gh pr view --json isDraft,url,state` / `glab mr view --output json` stdout.
+ * Closed or merged records must not be reused as the branch's active PR/MR.
  */
-export function parseView(stdout: string, forge: ForgeKind): { isDraft: boolean; url?: string } {
+export function parseView(stdout: string, forge: ForgeKind): { isDraft: boolean; url?: string; closed: boolean } {
   try {
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
+    const closed =
+      forge === "github"
+        ? parsed.state === "CLOSED" || parsed.state === "MERGED"
+        : parsed.state === "closed" || parsed.state === "merged";
     if (forge === "github") {
-      return { isDraft: parsed.isDraft === true, url: typeof parsed.url === "string" ? parsed.url : undefined };
+      return {
+        isDraft: parsed.isDraft === true,
+        url: typeof parsed.url === "string" ? parsed.url : undefined,
+        closed,
+      };
     }
     const isDraft = parsed.isDraft === true || parsed.draft === true || parsed.work_in_progress === true;
-    return { isDraft, url: extractUrl(stdout) };
+    return { isDraft, url: extractUrl(stdout), closed };
   } catch {
-    return { isDraft: false, url: extractUrl(stdout) };
+    return { isDraft: false, url: extractUrl(stdout), closed: false };
   }
 }
 
@@ -64,23 +66,7 @@ export interface OpenOrPromoteArgs {
  * A PR a human already marked ready is not demoted; `already-ready` is
  * reported so the result does not claim a draft that does not exist.
  */
-async function keepDraftPr(
-  args: OpenOrPromoteArgs,
-  view: { exitCode: number; stdout: string },
-  deps: ForgeDeps,
-): Promise<{ status: "draft" | "already-ready"; url?: string }> {
-  if (view.exitCode === 0) {
-    const before = parseView(view.stdout, args.forge);
-    // `updatePrBody` swallows failures by design (the PR exists, so a failed
-    // metadata write must not discard that state): a failed update here still
-    // reports `draft`, and the stale body is only warned about.
-    await updatePrBody({ ...args, keepDraft: before.isDraft }, deps);
-    // nax#2609: report the state the forge holds after the write, so the result never
-    // records a draft that is not there. A failed re-view falls back to the first view.
-    const reView = await deps.run(viewArgv(args.forge, args.branch, "isDraft,url"), { cwd: args.workdir });
-    const after = reView.exitCode === 0 ? parseView(reView.stdout, args.forge) : before;
-    return { status: after.isDraft ? "draft" : "already-ready", url: after.url ?? before.url };
-  }
+async function createDraftPr(args: OpenOrPromoteArgs, deps: ForgeDeps): Promise<{ status: "draft"; url?: string }> {
   const created = await openPr(
     args.forge,
     { title: args.title, body: args.body, branch: args.branch, draft: true },
@@ -95,6 +81,27 @@ async function keepDraftPr(
     );
   }
   return { status: "draft", url: created.url };
+}
+
+async function keepDraftPr(
+  args: OpenOrPromoteArgs,
+  view: { exitCode: number; stdout: string },
+  deps: ForgeDeps,
+): Promise<{ status: "draft" | "already-ready"; url?: string }> {
+  if (view.exitCode === 0) {
+    const before = parseView(view.stdout, args.forge);
+    if (!before.closed) {
+      // The existing PR's metadata is best-effort, but the forge's post-write state
+      // determines whether the result can still refer to it.
+      await updatePrBody({ ...args, keepDraft: before.isDraft }, deps);
+      const reView = await deps.run(viewArgv(args.forge, args.branch, "isDraft,url,state"), { cwd: args.workdir });
+      const after = reView.exitCode === 0 ? parseView(reView.stdout, args.forge) : before;
+      if (!after.closed) {
+        return { status: after.isDraft ? "draft" : "already-ready", url: after.url ?? before.url };
+      }
+    }
+  }
+  return createDraftPr(args, deps);
 }
 
 /**
@@ -127,10 +134,11 @@ export async function openOrPromotePr(
   args: OpenOrPromoteArgs,
   deps: ForgeDeps,
 ): Promise<{ status: "opened" | "promoted" | "already-ready" | "draft"; url?: string }> {
-  const view = await deps.run(viewArgv(args.forge, args.branch, "isDraft,url"), { cwd: args.workdir });
+  const view = await deps.run(viewArgv(args.forge, args.branch, "isDraft,url,state"), { cwd: args.workdir });
   if (args.keepDraft) return keepDraftPr(args, view, deps);
 
-  if (view.exitCode !== 0) {
+  const parsedView = view.exitCode === 0 ? parseView(view.stdout, args.forge) : undefined;
+  if (!parsedView || parsedView.closed) {
     const createCmd =
       args.forge === "github"
         ? ["gh", "pr", "create", "--title", args.title, "--body", args.body, "--head", args.branch]
@@ -146,7 +154,7 @@ export async function openOrPromotePr(
     return { status: "opened", url: extractUrl(create.stdout) };
   }
 
-  const { isDraft, url } = parseView(view.stdout, args.forge);
+  const { isDraft, url } = parsedView;
   if (isDraft) {
     const readyCmd =
       args.forge === "github" ? ["gh", "pr", "ready", args.branch] : ["glab", "mr", "update", args.branch, "--ready"];

@@ -28,8 +28,8 @@ function makeSpawnForRef(ref: string) {
   return makeSpawn(() => `${ref}\n`).spawn;
 }
 
-function makeSpawnForDiff(files: string[]) {
-  return makeSpawn(() => files.join("\n")).spawn;
+function makeSpawnForDiff(files: string[], exitCode = 0) {
+  return makeSpawn(() => ({ stdout: files.join("\n"), exitCode })).spawn;
 }
 
 function makeReviewer(name: string, passed = true): IReviewPlugin {
@@ -105,6 +105,12 @@ describe("captureRunStartRef — captures HEAD git ref before stories run", () =
 
     expect(ref).toBe("");
   });
+
+  test("returns empty string when rev-parse exits non-zero despite stdout", async () => {
+    _deferredReviewDeps.spawn = makeSpawn(() => ({ stdout: "HEAD\n", exitCode: 128 })).spawn;
+
+    await expect(captureRunStartRef("/tmp/workdir")).resolves.toBe("");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,6 +144,43 @@ describe("runDeferredReview — skips when conditions are not met", () => {
 describe("runDeferredReview — runs reviewers with full diff when deferred", () => {
   beforeEach(() => {
     _deferredReviewDeps.spawn = makeSpawnForDiff(["src/foo.ts", "src/bar.ts"]);
+  });
+
+  test("returns a failed result without calling reviewers when git diff exits 128", async () => {
+    _deferredReviewDeps.spawn = makeSpawnForDiff(["src/misleading.ts"], 128);
+    const reviewers = [makeReviewer("first"), makeReviewer("second")];
+    const registry = makeRegistry(reviewers);
+
+    const result = await runDeferredReview("/tmp/workdir", makeReviewConfig(), registry, FAKE_REF);
+
+    assertDefined(result, "runDeferredReview result");
+    for (const reviewer of reviewers) expect(reviewer.check).not.toHaveBeenCalled();
+    expect(result.changedFiles).toEqual([]);
+    expect(result.anyFailed).toBe(true);
+    expect(result.reviewerResults).toEqual([
+      { name: "first", passed: false, output: "", error: expect.stringContaining("git diff") },
+      { name: "second", passed: false, output: "", error: expect.stringContaining("git diff") },
+    ]);
+    for (const reviewResult of result.reviewerResults) expect(reviewResult.error).toContain("128");
+  });
+
+  test("AC-11 calls every reviewer with an empty list for a successful empty diff", async () => {
+    _deferredReviewDeps.spawn = makeSpawnForDiff([]);
+    const reviewers = [makeReviewer("first"), makeReviewer("second")];
+
+    await runDeferredReview("/tmp/workdir", makeReviewConfig(), makeRegistry(reviewers), FAKE_REF);
+
+    for (const reviewer of reviewers) expect(reviewer.check).toHaveBeenCalledWith("/tmp/workdir", []);
+  });
+
+  test("AC-12 calls every reviewer with exact changed files from a successful diff", async () => {
+    _deferredReviewDeps.spawn = makeSpawnForDiff(["src/a.ts", "src/b.ts"]);
+    const reviewers = [makeReviewer("first"), makeReviewer("second")];
+
+    await runDeferredReview("/tmp/workdir", makeReviewConfig(), makeRegistry(reviewers), FAKE_REF);
+
+    for (const reviewer of reviewers)
+      expect(reviewer.check).toHaveBeenCalledWith("/tmp/workdir", ["src/a.ts", "src/b.ts"]);
   });
 
   test("calls each registered reviewer exactly once", async () => {

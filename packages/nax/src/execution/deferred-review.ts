@@ -5,7 +5,7 @@
  * all stories complete, using the full diff from run-start to HEAD.
  */
 
-import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
+import { errorMessage, gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
 import { spawn } from "bun";
 import type { PluginRegistry } from "../plugins";
 import type { ReviewConfig } from "../review/types";
@@ -37,7 +37,10 @@ export interface DeferredReviewResult {
  * delegating to utils/git's gitWithTimeout, which uses a separate `_gitDeps`)
  * so existing tests mocking `_deferredReviewDeps.spawn` are unaffected.
  */
-async function spawnGitWithDeadline(args: string[], workdir: string): Promise<string> {
+async function spawnGitWithDeadline(
+  args: string[],
+  workdir: string,
+): Promise<{ stdout: string; exitCode: number; timedOut: boolean }> {
   const proc = _deferredReviewDeps.spawn({
     cmd: hardenedGitArgv(["git", ...args]),
     cwd: workdir,
@@ -57,29 +60,40 @@ async function spawnGitWithDeadline(args: string[], workdir: string): Promise<st
   }, GIT_TIMEOUT_MS);
 
   const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
-  await proc.exited;
-  clearTimeout(timerId);
-
-  if (timedOut) return "";
-  return stdoutPromise;
+  const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+  try {
+    const exitCode = await proc.exited;
+    clearTimeout(timerId);
+    const [stdout] = await Promise.all([stdoutPromise, stderrPromise]);
+    return { stdout, exitCode, timedOut };
+  } finally {
+    clearTimeout(timerId);
+  }
 }
 
 /** Capture the current HEAD git ref. Returns "" on failure. */
 export async function captureRunStartRef(workdir: string): Promise<string> {
   try {
-    const stdout = await spawnGitWithDeadline(["rev-parse", "HEAD"], workdir);
-    return stdout.trim();
+    const result = await spawnGitWithDeadline(["rev-parse", "HEAD"], workdir);
+    return result.exitCode === 0 && !result.timedOut ? result.stdout.trim() : "";
   } catch {
     return "";
   }
 }
 
-async function getChangedFilesForDeferred(workdir: string, baseRef: string): Promise<string[]> {
+async function getChangedFilesForDeferred(
+  workdir: string,
+  baseRef: string,
+): Promise<{ ok: true; files: string[] } | { ok: false; error: string }> {
   try {
-    const stdout = await spawnGitWithDeadline(["diff", "--name-only", `${baseRef}...HEAD`], workdir);
-    return stdout.trim().split("\n").filter(Boolean);
-  } catch {
-    return [];
+    const result = await spawnGitWithDeadline(["diff", "--name-only", `${baseRef}...HEAD`], workdir);
+    if (result.timedOut) return { ok: false, error: "[deferred-review] git diff timed out" };
+    if (result.exitCode !== 0) {
+      return { ok: false, error: `[deferred-review] git diff exited with code ${result.exitCode}` };
+    }
+    return { ok: true, files: result.stdout.trim().split("\n").filter(Boolean) };
+  } catch (error) {
+    return { ok: false, error: `[deferred-review] git diff failed: ${errorMessage(error)}` };
   }
 }
 
@@ -96,9 +110,23 @@ export async function runDeferredReview(
     return undefined;
   }
 
-  const changedFilesRaw = await getChangedFilesForDeferred(workdir, runStartRef);
+  const changedFilesResult = await getChangedFilesForDeferred(workdir, runStartRef);
+  if (!changedFilesResult.ok) {
+    return {
+      runStartRef,
+      changedFiles: [],
+      reviewerResults: reviewers.map((reviewer) => ({
+        name: reviewer.name,
+        passed: false,
+        output: "",
+        error: changedFilesResult.error,
+      })),
+      anyFailed: true,
+    };
+  }
+
   const ignoreMatchers = naxIgnoreIndex?.getMatchers() ?? (await resolveNaxIgnorePatterns(workdir));
-  const changedFiles = filterNaxInternalPaths(changedFilesRaw, ignoreMatchers);
+  const changedFiles = filterNaxInternalPaths(changedFilesResult.files, ignoreMatchers);
 
   const reviewerResults: DeferredReviewResult["reviewerResults"] = [];
   let anyFailed = false;
