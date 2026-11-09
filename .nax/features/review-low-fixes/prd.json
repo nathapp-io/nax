@@ -3,7 +3,7 @@
   "feature": "review-low-fixes",
   "branchName": "feat/review-low-fixes",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T15:11:46.035Z",
+  "updatedAt": "2026-11-09T15:15:29.941Z",
   "userStories": [
     {
       "id": "US-001",
@@ -128,14 +128,17 @@
         "nax-ai"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One existing protocol generator gains a remembered-error drain state with fully specified terminal branches; scripted PiDeps fixtures support focused fail-first tests without a new abstraction or integration."
+        "reasoning": "One existing protocol generator gains a remembered-error drain state with fully specified terminal branches; scripted PiDeps fixtures support focused fail-first tests without a new abstraction or integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-ai/src/protocols/pi-client.ts",
@@ -153,7 +156,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8eaa70d4a80d64d618f19474aab015c57f712b99"
     },
     {
       "id": "US-004",
