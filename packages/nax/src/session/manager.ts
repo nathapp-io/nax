@@ -425,9 +425,9 @@ export class SessionManager implements ISessionManager {
     const reuse = decideReuse(liveHandle, this._findByName(name), opts);
     if (liveHandle && reuse === "reuse") return liveHandle;
     // RACE-37: keep openSession's single-flight marker held across the close's await.
-    if (liveHandle && reuse === "close-then-reopen") await this.closeSession(liveHandle, true);
+    if (liveHandle && (reuse !== "reopen" || this._cancelledSessions.has(name)))
+      await this.closeSession(liveHandle, true);
     else if (liveHandle) this._liveHandles.delete(name);
-
     const adapter = this._getAdapter(opts.agentName);
     if (!adapter) {
       throw new NaxError(

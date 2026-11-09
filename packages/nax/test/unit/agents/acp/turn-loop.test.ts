@@ -165,6 +165,56 @@ describe("runTurnLoop: success paths (spec §6.2)", () => {
     expect(script.prompts).toHaveLength(2);
     expect(result.internalRoundTrips).toBe(2);
   });
+
+  test("does not ask a question after the final allowed turn", async () => {
+    const question = "Should I proceed?";
+    const script = scriptedOpened([replyTurn(question)]);
+    const handler = answering("yes");
+    const { session } = build(script.opened);
+
+    const result = await runTurnLoop(session, "go", { interactionHandler: handler, maxInteractions: 1 });
+
+    expect(handler.asked).toHaveLength(0);
+    expect(result.output).toBe(question);
+  });
+
+  test("with a two-turn budget asks only after the first question", async () => {
+    const script = scriptedOpened([replyTurn("Question one?"), replyTurn("Question two?")]);
+    const handler = answering("a", "b");
+    const { session } = build(script.opened);
+
+    await runTurnLoop(session, "go", { interactionHandler: handler, maxInteractions: 2 });
+
+    expect(handler.asked).toHaveLength(1);
+    expect(script.prompts).toEqual(["go", "a"]);
+  });
+
+  test("with a three-turn budget asks after the first two questions only", async () => {
+    const script = scriptedOpened([
+      replyTurn("Question one?"),
+      replyTurn("Question two?"),
+      replyTurn("Question three?"),
+    ]);
+    const handler = answering("a", "b", "c");
+    const { session } = build(script.opened);
+
+    await runTurnLoop(session, "go", { interactionHandler: handler, maxInteractions: 3 });
+
+    expect(handler.asked).toHaveLength(2);
+    expect(script.prompts).toEqual(["go", "a", "b"]);
+  });
+
+  test("does not request context tools after the final allowed turn", async () => {
+    const call = '<nax_tool_call name="query_rag">{"q":"x"}</nax_tool_call>';
+    const script = scriptedOpened([replyTurn(call)]);
+    const handler = answering("<nax_tool_result>found</nax_tool_result>");
+    const { session } = build(script.opened);
+
+    const result = await runTurnLoop(session, "go", { interactionHandler: handler, maxInteractions: 1 });
+
+    expect(handler.asked).toHaveLength(0);
+    expect(result.output).toBe(call);
+  });
 });
 
 describe("runTurnLoop: deadline, cancel and abort (spec §6.2, §7.1)", () => {
