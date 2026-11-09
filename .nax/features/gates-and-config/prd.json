@@ -3,7 +3,7 @@
   "feature": "gates-and-config",
   "branchName": "feat/gates-and-config",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T12:39:25.976Z",
+  "updatedAt": "2026-11-09T12:53:47.744Z",
   "userStories": [
     {
       "id": "US-001",
@@ -261,14 +261,17 @@
         "M20"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One static validation list shared by two existing consumers, with an existing migration entry point and filesystem non-mutation regressions."
+        "reasoning": "One static validation list shared by two existing consumers, with an existing migration entry point and filesystem non-mutation regressions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/paths/index.ts",
@@ -284,7 +287,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "3b4dd038d5c0dd574b018c67b90610b776277d32"
     },
     {
       "id": "US-006",
