@@ -6,6 +6,8 @@
  * line per interval carrying `process.memoryUsage()` and the JSC heap's own numbers
  * (`bun:jsc` `heapStats()`), so a reader can tell the two apart: `rss` climbing while
  * `jsc.heapSize` stays flat is native or allocator memory; both climbing is a JS retention.
+ * `performanceEntries` is the length of the performance timeline, which Bun keeps outside
+ * the JS heap: a count that climbs with rss names it.
  *
  * While it runs, SIGUSR2 writes a V8-format heap snapshot beside the log for Chrome
  * DevTools, so two snapshots taken apart can name what is retained. Generating one is
@@ -53,6 +55,11 @@ export const _chatMemorySamplerDeps = {
   memoryUsage: (): NodeJS.MemoryUsage => process.memoryUsage(),
   heapStats: (): ReturnType<typeof heapStats> => heapStats(),
   uptime: (): number => process.uptime(),
+  // #2846: React's development build left ~80 `performance.measure` entries per frame on the
+  // timeline. Under Bun they sit outside the JS heap, so only this count names them. There is
+  // no counting API: `getEntries()` copies the list, which is cheap at the sampling interval
+  // and costs in proportion to the very growth it reports.
+  performanceEntryCount: (): number => performance.getEntries().length,
   heapSnapshot: (): string => Bun.generateHeapSnapshot("v8"),
   // node:fs, not Bun.write: one small line must land in order, synchronously, from a timer
   // callback or a signal handler, and Bun has no append primitive.
@@ -141,6 +148,7 @@ function sampleRecord(kind: SampleKind, options: ChatMemorySamplerOptions): Reco
     heapTotal: memory.heapTotal,
     external: memory.external,
     arrayBuffers: memory.arrayBuffers,
+    performanceEntries: _chatMemorySamplerDeps.performanceEntryCount(),
     jsc: {
       heapSize: heap.heapSize,
       heapCapacity: heap.heapCapacity,

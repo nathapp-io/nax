@@ -49,6 +49,7 @@ beforeEach(() => {
   _chatMemorySamplerDeps.memoryUsage = () => ({ ...MEMORY });
   _chatMemorySamplerDeps.heapStats = () => ({ ...HEAP, objectTypeCounts: { ...HEAP.objectTypeCounts } });
   _chatMemorySamplerDeps.uptime = () => 12.5;
+  _chatMemorySamplerDeps.performanceEntryCount = () => 7;
   _chatMemorySamplerDeps.heapSnapshot = () => '{"snapshot":{}}';
   _chatMemorySamplerDeps.setTimeout = (callback, ms) => {
     const timer = { callback, ms, cleared: false };
@@ -128,6 +129,7 @@ describe("startChatMemorySampler", () => {
       heapTotal: 2000,
       external: 300,
       arrayBuffers: 50,
+      performanceEntries: 7,
       jsc: { heapSize: 900, heapCapacity: 1800, extraMemorySize: 70, objectCount: 42, protectedObjectCount: 3 },
     });
   });
@@ -144,6 +146,26 @@ describe("startChatMemorySampler", () => {
         ],
       },
     });
+  });
+
+  test("each sample reads the performance timeline afresh, so its growth shows (#2846)", () => {
+    let entries = 0;
+    _chatMemorySamplerDeps.performanceEntryCount = () => entries;
+    const sampler = start();
+    entries = 160;
+    timers[0]?.callback();
+    expect(lines(sampler.logPath).map((line) => line.performanceEntries)).toEqual([0, 160]);
+  });
+
+  test("the default count reads the real timeline", () => {
+    const name = "memory-sampler-test-mark";
+    const before = original.performanceEntryCount();
+    performance.mark(name);
+    try {
+      expect(original.performanceEntryCount()).toBe(before + 1);
+    } finally {
+      performance.clearMarks(name);
+    }
   });
 
   test("samples on each interval and re-arms the timer", () => {
