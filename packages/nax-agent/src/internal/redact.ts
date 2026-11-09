@@ -49,6 +49,9 @@ export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
   { kind: "github-pat", re: /github_pat_[A-Za-z0-9_]{20,}/g },
   { kind: "npm", re: /npm_[A-Za-z0-9]{8,}/g },
   { kind: "aws", re: /AKIA[0-9A-Z]{16}/g },
+  { kind: "gitlab", re: /glpat-[A-Za-z0-9_-]{20,}/g },
+  { kind: "google", re: /AIza[0-9A-Za-z_-]{35}/g },
+  { kind: "stripe", re: /\b[sr]k_live_[0-9A-Za-z]{16,}/g },
   { kind: "slack", re: /xox[baprs]-[A-Za-z0-9-]{10,}/g },
   // LOG-1: Telegram bot tokens ("<bot-id>:<35-char secret>").
   { kind: "telegram", re: /\b\d{6,}:[A-Za-z0-9_-]{30,}\b/g },

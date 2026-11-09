@@ -172,7 +172,7 @@ export function createSessionStorage(deps: SessionStorageDeps): SessionStorage {
       const tempDir = await mkdtemp(`${path}.${deps.pid}.`);
       try {
         const temp = join(tempDir, "metadata.tmp");
-        await writeFile(temp, `${JSON.stringify(meta, null, 2)}\n`);
+        await writeFile(temp, `${JSON.stringify(meta, null, 2)}\n`, { mode: 0o600 });
         await rename(temp, path);
       } finally {
         await rm(tempDir, { recursive: true, force: true });

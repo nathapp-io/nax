@@ -1,7 +1,40 @@
 import { describe, expect, test } from "bun:test";
-import { redactEntry, redactSecrets } from "#src/internal/redact";
+import { redactEntry, redactSecrets, SECRET_VALUE_PATTERNS } from "#src/internal/redact";
 
 describe("redactSecrets", () => {
+  describe("US-002 vendor secret values", () => {
+    test("AC-1: redacts a GitLab personal access token", () => {
+      expect(redactSecrets("push failed: glpat-ABCDEFGHIJKLMNOPqrst12")).toBe("push failed: [REDACTED]");
+    });
+
+    test("AC-2: redacts a Google API key", () => {
+      const key = "AIzaSyA1234567890abcdefghijklmnopqrstuv";
+      const redacted = redactSecrets(`key=${key}`);
+      expect(redacted).toContain("[REDACTED]");
+      expect(redacted).not.toContain(key);
+    });
+
+    test.each(["sk_live_51ABCDEFGHijklmnopQRSTuv", "rk_live_51ABCDEFGHijklmnopQRSTuv"])(
+      "AC-3/4: redacts live Stripe key %s",
+      (key) => {
+        const prefix = key.startsWith("sk_") ? "charge with " : "restricted ";
+        expect(redactSecrets(`${prefix}${key}`)).toBe(`${prefix}[REDACTED]`);
+      },
+    );
+
+    test("AC-5: declares GitLab, Google and Stripe pattern kinds", () => {
+      const kinds = SECRET_VALUE_PATTERNS.map(({ kind }) => kind);
+      expect(kinds).toContain("gitlab");
+      expect(kinds).toContain("google");
+      expect(kinds).toContain("stripe");
+    });
+
+    test("AC-6: leaves short vendor-like strings unchanged", () => {
+      const input = "see glpat-short and AIzaShort and ask_live_x";
+      expect(redactSecrets(input)).toBe(input);
+    });
+  });
+
   test("masks values of known secret keys", () => {
     const out = redactSecrets({ AWS_SECRET_ACCESS_KEY: "AKIAabc123", note: "ok" });
     expect(out.AWS_SECRET_ACCESS_KEY).toBe("[REDACTED]");
