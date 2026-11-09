@@ -29,8 +29,8 @@ import {
   SHELL_RULE_BLOCKED_REASON,
   UNSHOWABLE_REASON,
 } from "#src/client/permissions";
-import { wrapForSandbox } from "#src/client/shell-sandbox";
 import type { AcpPermissionRules } from "#src/client/rule-policy";
+import { wrapForSandbox } from "#src/client/shell-sandbox";
 
 /** maskForPrompt refuses it: an assignment secret spans shell syntax. */
 const UNMASKABLE = "TOKEN=abc;rm x";
@@ -558,11 +558,15 @@ describe("decideSandboxedShell (US-007: shell deny rules apply to wrapped comman
     const { port, seen } = asks();
     const plan = shellPlan("opencode", false);
     const wrapped = wrapForSandbox(plan.prefix, "git push origin main");
-    const auto = (reason: string, decision: "allow" | "deny") => port.recordAutoDecision({
-      tool: "execute",
-      summary: "git push",
-      reason,
-    }, decision);
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "git push",
+          reason,
+        },
+        decision,
+      );
     const res = decideSandboxedShell(
       request(["allow_once", "reject_once"], {
         toolCallId: "t-1",
@@ -586,11 +590,15 @@ describe("decideSandboxedShell (US-007: shell deny rules apply to wrapped comman
     const { port, seen } = asks();
     const plan = shellPlan("pi", false);
     const wrapped = wrapForSandbox(plan.prefix, "git push origin main");
-    const auto = (reason: string, decision: "allow" | "deny") => port.recordAutoDecision({
-      tool: "other",
-      summary: "shell",
-      reason,
-    }, decision);
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "other",
+          summary: "shell",
+          reason,
+        },
+        decision,
+      );
     const res = decideSandboxedShell(
       request(["allow_once", "reject_once"], {
         toolCallId: "t-2",
@@ -614,11 +622,15 @@ describe("decideSandboxedShell (US-007: shell deny rules apply to wrapped comman
     const { port, seen } = asks();
     const plan = shellPlan("opencode", false);
     const wrapped = wrapForSandbox(plan.prefix, "git status");
-    const auto = (reason: string, decision: "allow" | "deny") => port.recordAutoDecision({
-      tool: "execute",
-      summary: "git status",
-      reason,
-    }, decision);
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "git status",
+          reason,
+        },
+        decision,
+      );
     const res = decideSandboxedShell(
       request(["allow_once", "reject_once"], {
         toolCallId: "t-3",
@@ -643,11 +655,15 @@ describe("decideSandboxedShell (US-007: shell deny rules apply to wrapped comman
     const plan = shellPlan("opencode", false);
     // "rm -rf 'it'\''s here'" contains an escaped quote
     const wrapped = wrapForSandbox(plan.prefix, "rm -rf 'it'\\''s here'");
-    const auto = (reason: string, decision: "allow" | "deny") => port.recordAutoDecision({
-      tool: "execute",
-      summary: "rm",
-      reason,
-    }, decision);
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "rm",
+          reason,
+        },
+        decision,
+      );
     const res = decideSandboxedShell(
       request(["allow_once", "reject_once"], {
         toolCallId: "t-4",
@@ -671,11 +687,15 @@ describe("decideSandboxedShell (US-007: shell deny rules apply to wrapped comman
     const { port, seen } = asks();
     const plan = shellPlan("cursor", true);
     const wrapped = wrapForSandbox(plan.prefix, "git push origin main");
-    const auto = (reason: string, decision: "allow" | "deny") => port.recordAutoDecision({
-      tool: "execute",
-      summary: "git push",
-      reason,
-    }, decision);
+    const auto = (reason: string, decision: "allow" | "deny") =>
+      port.recordAutoDecision(
+        {
+          tool: "execute",
+          summary: "git push",
+          reason,
+        },
+        decision,
+      );
     const res = decideSandboxedShell(
       request(["allow_once", "reject_once"], {
         toolCallId: "t-5",
