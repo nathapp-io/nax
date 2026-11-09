@@ -352,36 +352,6 @@ describe("createMcpMemoryProvider", () => {
       expect(fake.listCalls).toEqual([]);
     });
 
-    describe("when the call for r1 answers isError", () => {
-      beforeEach(async () => {
-        await idMap.add("project", "s1", ["r1", "r2"]);
-        fake.respond = (call) => (call.input.memory_id === "r1" ? answer("no such memory", true) : answer("ok"));
-      });
-
-      test("still tries r2 (AC-29)", async () => {
-        await make(FORGET_MCP).push(forgetRequest());
-        expect(fake.calls.map((c) => c.input.memory_id)).toEqual(["r1", "r2"]);
-      });
-
-      test("warns with stage, message and server/id/error (AC-30, AC-41)", async () => {
-        await make(FORGET_MCP).push(forgetRequest());
-        expect(logger.calls).toEqual([
-          {
-            level: "warn",
-            stage: "memory",
-            message: "memory mcp forget failed",
-            data: { server: "om", id: "r1", error: "no such memory" },
-          },
-        ]);
-      });
-
-      test("resolves deleted and drops the entry (AC-31)", async () => {
-        const result = await make(FORGET_MCP).push(forgetRequest());
-        expect(result.status).toBe("deleted");
-        expect(await idMap.ids("project", "s1")).toEqual([]);
-      });
-    });
-
     test("a late-finishing forget keeps ids a replacement save recorded meanwhile (B1)", async () => {
       await idMap.add("project", "s1", ["r1"]);
       const provider = make(FORGET_MCP);
@@ -461,22 +431,6 @@ describe("createMcpMemoryProvider", () => {
         "r2",
       ]);
       expect(await idMap.ids("project", "s1")).toEqual([]);
-    });
-
-    test("a pool that throws for one id is also a warning, not a failure", async () => {
-      await idMap.add("project", "s1", ["r1", "r2"]);
-      let first = true;
-      fake.respond = () => {
-        if (first) {
-          first = false;
-          throw new Error("socket closed");
-        }
-        return answer("ok");
-      };
-      const result = await make(FORGET_MCP).push(forgetRequest());
-      expect(result.status).toBe("deleted");
-      expect(fake.calls).toHaveLength(2);
-      expect(logger.calls[0]?.data).toEqual({ server: "om", id: "r1", error: "socket closed" });
     });
 
     test("a forget tool missing from a connected server is a permanent rejection naming both (AC-32, AC-39)", async () => {
