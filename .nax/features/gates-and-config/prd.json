@@ -3,7 +3,7 @@
   "feature": "gates-and-config",
   "branchName": "feat/gates-and-config",
   "createdAt": "2026-11-09T00:00:00.000Z",
-  "updatedAt": "2026-11-09T11:10:30.864Z",
+  "updatedAt": "2026-11-09T11:40:37.131Z",
   "userStories": [
     {
       "id": "US-001",
@@ -25,14 +25,17 @@
         "M15"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized heuristic parser correction through a shared file-local helper, with unit and public-detection regressions."
+        "reasoning": "Localized heuristic parser correction through a shared file-local helper, with unit and public-detection regressions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/test-runners/detect/framework-configs.ts",
@@ -44,7 +47,11 @@
         "packages/nax/test/unit/test-runners/detect/framework-configs-vitest.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e5ef61c38c9b09234730896435430bc71c4ab30c"
     },
     {
       "id": "US-002",
@@ -102,7 +109,10 @@
         "packages/nax/test/unit/context/engine/scope-path-match-braces.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -145,7 +155,10 @@
         "packages/nax/test/unit/verification/import-grep-fallback-cap.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -206,7 +219,10 @@
         "packages/nax/test/unit/config/package-override-validation.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -253,7 +269,10 @@
         "packages/nax/test/unit/config/reserved-project-names.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -292,7 +311,10 @@
         "packages/nax/test/unit/execution/pid-registry-reparent.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -360,7 +382,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Repository and execution context: This is an existing Bun/strict-TypeScript CLI package, not a React UI feature. All seven independent fixes are scoped to packages/nax; no changes to nax-ai, nax-agent, nax-agent-acp, package versions or dependencies are needed. Codebase-memory MCP tools were unavailable, so discovery used direct source reads and targeted text search. Read docs/architecture/ARCHITECTURE.md:17 and :154 for the architecture index, injectable external dependencies, safety conventions and size limits. Apply package rules and bun:test with existing @test/helpers and mutable _deps seams, restoring all mutations, environment variables, log sinks and caches. Each story must retain a fail-first regression test. The new test files avoid growing existing large suites; only US-007 updates existing test fixtures, with no assertion changes. Run targeted tests from packages/nax using explicit paths and --timeout=30000; never run bare bun test or bun run nax. Pipeline gates remain verification, not acceptance criteria. Relevant additional verification: US-002 check:complexity and baseline ratchet, US-003 check:file-sizes (smart-runner.ts <=600), US-004 typecheck and check:file-sizes (loader.ts <=599). Do not run test:coverage inside a sandboxed nax session. No implementation or test execution was performed during PRD drafting.\n\nUS-001 / M15: packages/nax/src/test-runners/detect/framework-configs.ts:45 currently regex-matches include across the whole vitest file; parseViteConfig at :281 narrows to a test block but still finds nested coverage.include first. extractBalancedBlock at :344 returns the slice INSIDE the enclosing braces and counts braces without parsing strings. Add one file-local helper that considers include only at depth zero in that slice; both parsers reuse it and existing extractStringLiterals/normalize. Keep extractBalancedBlock unchanged and retain empty-pattern framework claims. detectFromFrameworkConfigs at :367 exposes those claims; detect/index.ts:145 filters empty-pattern sources before returning meaningful detection results, so empty-result assertions must use the lower-level exported detector. Existing test/unit/test-runners/detect.test.ts:43-109 demonstrates _frameworkConfigDeps, _frameworkDefaultsDeps, _fileScanDeps, directory fallback and cache isolation. Put all new cases in test/unit/test-runners/detect/framework-configs-vitest.test.ts; detect.test.ts is already 612 lines. Risk: accidentally admitting nested include keys, treating Vite without a test block as Vitest, or allowing real lower-tier scans/cache hits to contaminate deterministic assertions. This remains a literal-array heuristic, not config execution or a JavaScript parser.\n\nUS-002 / M16: packages/nax/src/context/engine/scope-path-match/index.ts:43 already classifies '{' as glob syntax, while globToRegex at :82 escapes braces. Its suffix anchoring and special **/ handling must remain intact, including zero intermediate directories, raw-pattern memo keys and the bounded cache at :68. Extract brace helpers rather than growing this already-over-baseline function: scripts/baselines/complexity-baseline.json:53 records globToRegex=22; new helpers must score <=20 and any reduced existing score must lower that entry. Shared consumers include ruleMatchesScopeFiles at scope-path-match/index.ts:171, ruleMatchesPackage at :216, providers/static-rules.ts:133/:260, context/rules/rule-set/index.ts:294 and context/rules/rule-delivery/index.ts:370. effectiveness.ts:18/:372 deliberately imports matching primitives through the static-rules re-export; preserve this cycle-drain arrangement. rules-lint.ts:95 uses only * and ? to end a literal prefix, routing brace patterns to direct literal existence checks; extend the classifier to '{' and update its obsolete comment. Its globHasMatch at :186 already uses the shared regex, so no second matcher is needed. Existing scope-path-match.test.ts:29 exercises memo identity/cap and must remain unchanged. Add scope-path-match-braces.test.ts for regex, selection, attribution and actual temp-tree lint seams. Risk: inconsistent nested-group parsing, expanding non-alternating groups, partially expanding an unbalanced pattern, regex metacharacter injection or changing other glob converters.\n\nUS-003 / M17: packages/nax/src/verification/smart-runner.ts:138 gathers test paths, currently stops at >=maxScanFiles at :160 and then reads the partial set. Replace that debug/truncation block in place with a >cap warning and immediate [] return, before any test-file read. Exactly cap files must be collected and read, and counts span patterns without deduplication. smart-runner.ts is 599 lines. scoped-selection.ts:196-218 already interprets an empty real import-grep result as fullSuite(), with fallbackFullSuiteCommand selected at :105-109; production selection logic should not need a new result type or routing change. Existing import-grep-fallback.test.ts:5/:40 asserts only upper bounds on reads and would pass the broken baseline; leave it unchanged and add test/unit/verification/import-grep-fallback-cap.test.ts containing strict zero-read and real-fallback seam tests. Mirror test/unit/test-runners/scoped-selection.test.ts dependency injection but leave _scopedSelectionDeps.importGrepFallback at its real default for the integration case. Risk: off-by-one cap behavior, warning more than once, applying the cap separately to each glob, or testing only a mocked empty fallback rather than the real scan-to-full-suite wiring.\n\nUS-004 / M19: packages/nax/src/config/loader.ts:361-418 reads declared overrides and profiles and merges them through loadPackageOverrideWithConfig without preparation or validation. runtime/packages.ts:127-140 dynamically imports that path when hydrate has no custom loader. run-setup.ts:300-312 invokes hydrate without an override and already catches errors non-fatally; keep that code unchanged. loader.ts:430-599 has the correct per-package chain, including layer preparation at :494, interim removed-key stripping at :528, profile overlays, profile metadata, root-only raw pinning at :554 and final validation at :564-596. Extract shared preparation and final validation into the NEW config/package-layer.ts with the exact specified exported interfaces. Move resolveEnvVarsWarnOnFailure from loader.ts:70, along with its pipeline-mode precheck dependency as necessary, into the leaf module and export it for root-layer reuse; never import loader.ts from package-layer.ts. ConfigWarnDedupe is already exported by compat-shims.ts:41. One dedupe must flow through declared fields, package-profile.ts:17 and validation. loadPackageOverrideData must accept that dedupe and return chain as well as fields/layers. Keep loadPackageOverride's declared-value/provenance semantics unvalidated. Keep overlay distinct from inherited config: finish command provenance and gate cwd consume it (runtime/packages.ts:24-31 and :146-147). loadPackageOverrideWithConfig must prepare fields before whitelist merge, overlay profiles in order, retain its second whitelist merge, pin root-only raw values BEFORE validation, then apply its existing declared-review-command bridge to the validated result. validatePackageConfig owns guards/permissions/strip/safeParse, not applyWorkflowMode. Native guard error codes remain native (notably CONFIG_PERMISSIONS_ALLOW_ALIAS_CONFLICT); schema failures use exactly the existing PER_PACKAGE_PROFILE_INVALID message and metadata. loadConfigForWorkdir retains stamping, mode application and cache writes. hydrate retains typed pinRootOnlyKeys and applyWorkflowMode but catches failures per package, hydrates later valid packages, sets hydrated=true, and only then rejects the first error; later failures warn with packageDir on stage packages. Cache no override for failed packages. root-only-keys.ts:15/:61 is critical: approvalTimeout=5 must be warned about and discarded before schema validation, whereas costLimit=-5 must reject. The extraction must leave loader.ts <=599 lines. New package-override-validation.test.ts should drive both loaders with an isolated NAX_GLOBAL_CONFIG_DIR, a real root .nax/config.json and _clearRootConfigCache, as integration/runtime/package-profile-registry.test.ts:22-48 demonstrates. That integration suite at :50-166 already pins profile order, smart-runner inheritance, sandbox pinning, review/quality bridging, missing-profile errors and finish provenance and must remain green. Logging assertions can mirror loader-legacy-shim.test.ts:262-263 initLogger/addSink. This is the highest-risk story because merge order, guard order, permissions enforcement, warning deduplication, provenance, caches and partial hydration interact; use strict three-session TDD for the permissions/access-control validation path.\n\nUS-005 / M20: packages/nax/src/config/paths/index.ts:63 is the leaf home of globalConfigDir and the shared RESERVED_PROJECT_NAMES constant. cli/init.ts:42-54 and config/schemas.ts:94-111 each currently duplicate only global/_archive. Both must consume the exact new static list; cli validation must still report reserved before the underscore-prefix rejection, and schema errors must name the actual rejected value. commands/migrate.ts:41-60/:72-80 already validates reclaim/merge before filesystem or identity mutations and needs no production changes. New reserved-project-names.test.ts should verify both consumers and real migration rejection against an isolated global directory, preserving profiles/a.json and never creating _archive. Risk: circular imports if the constant is placed in a high-level module, damaging global profiles during a test, or reporting only the underscore rule for _archive in CLI validation. This intentionally makes explicitly configured existing reserved project names invalid; manual rename is the only migration. Directory-basename fallback in getProjectKey, trust.json, missing-.identity reclaim behavior and path-helper directory literals remain unchanged.\n\nUS-006 / M21: packages/nax/src/execution/pid-registry.ts:233-252 snapshots descendants, concurrently sends TERM, sleeps through injectable _pidRegistryDeps.sleep, then sends KILL to the same target list. signalIfUnchanged at :328 currently rejects both parentPid and startedAt changes at :339. Only startedAt is identity evidence beyond the lookup's fixed pid: remove the parent comparison without changing diagnostics fields or either signal pass. readProcessIdentity at :296 still returns null on nonzero ps/failed identity reads; signalPid at :353 keeps pid<=1 protections, kill -0 liveness checks and single-pid signaling. New pid-registry-reparent.test.ts should stub ps tree snapshots, per-pid identities, kill commands and sleep through _pidRegistryDeps, using existing pid-registry.test.ts:18 for restoration patterns. Never spawn or kill real processes for these unit tests. Existing 640-line suite stays unchanged; its changed-parent-and-start-time identity regression still passes. Risk: dropping the PID-reuse safeguard while fixing reparenting, changing snapshot discovery, or accidentally broadening process-group signaling. No rescan of post-snapshot descendants is introduced.\n\nUS-007 / M22: packages/nax/src/workflow/finalize.ts:73-77 already contains exactly the static branch set and predicate needed; move them unchanged to src/utils/git.ts, import for local publisher use and re-export from finalize.ts for backward compatibility with workflow tests. The utility is 390 lines, leaving room under the hard limit. workflow/git.ts:270-281 documents the origin/HEAD lookup contract but must not be imported by a plugin. auto-pr/index.ts:103-120 has the seven-field typed dependency object; add readDefaultBranch and a default implementation calling _autoPrDeps.run with the literal symbolic-ref argv, hardened by defaultRun at :43-73 and annotated like GIT_REMOTE_CMD at :29-30. shouldRun at :179-207 must insert the branch guard after opt-in/story checks, before remote/forge/open-PR access; execute at :212 must repeat the guard first so direct calls cannot bypass it. Failed lookup remains unknown and retains static main/master/empty protection. Preserve successful branch push, subprocess timeout, concurrent-PR recheck and fail-open post-run semantics. auto-pr-acceptance.test.ts:83-115 and auto-pr-bug8.test.ts:45-76 both snapshot typeof _autoPrDeps via seven-field literals: add/restore only readDefaultBranch there without changing assertions. All other new cases go in auto-pr-protected-branch.test.ts, using stubbed runners/forges and preserving the default lookup implementation for its dedicated tests. The existing nax/auto-pr fixtures remain publishable. Risk: guarding only shouldRun, importing workflow internals into plugins, un-hardened git execution, losing default-branch protection, or breaking the finalize export contract. This is a publication-safety predicate, not an authentication or permissions change; retain medium complexity with tdd-simple using the existing injection seams.\n\nDelivery and migration: Implement the seven story IDs exactly, with workdir packages/nax and no dependencies; shared file edits are local to their respective stories. No public API removals, automatic data migrations, new config flags, release bumps or external dependencies. Keep existing exported/imported surfaces compatible, especially finalize.isPublishableBranch and loadPackageOverride provenance. Observable intentional changes are safer test classification, brace-aware rule matching, full-suite escalation instead of incomplete scoped selection, warning-backed root fallback for invalid hydrated package config, rejection of newly reserved explicit names, signaling snapshotted reparented processes, and auto-PR refusal on protected branches. Feature exclusions are preserved verbatim in outOfScope.\n\nRefine self-audit: Re-read spec.md in full and rechecked the current shared matcher, both loader paths, hydrate, run-setup's non-fatal catch, pid identity comparison and auto-PR/publisher entry points. All 78 numbered spec ACs survive in their original stories; splitting compound assertions does not drop either assertion or its regression qualifier. The following exhaustive mapping is spec AC number -> acceptanceCriteria array position(s), 1-based. US-001: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7. US-002: 1->1, 2->2, 3->3, 4->4/5, 5->6, 6->7/8, 7->9/10, 8->11/12, 9->13/14, 10->15/16, 11->17, 12->18, 13->19, 14->20, 15->21. US-003: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7/8. US-004: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8/9, 9->10, 10->11, 11->12, 12->13, 13->14, 14->15, 15->16, 16->17/18, 17->19, 18->20/21, 19->22, 20->23, 21->24/25. US-005: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9/10, 10->11. US-006: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6. US-007: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7/8, 8->9/10, 9->11, 10->12/13, 11->14, 12->15/16/17. Failure-table supplements remain US-002 position 22 (literal braces/commas with globally unbalanced input), US-004 position 26 (failed-package root fallback), and US-007 position 18 (static protections after lookup failure). Each other failure-table row is already covered by the mapped numbered ACs. Every story has negative-path ACs and pre-existing-behavior regression anchors: US-001 spec AC3; US-002 AC3/6/7/8/12/15; US-003 AC4/5; US-004 AC8/10/13/17; US-005 AC4/5/7; US-006 AC4/5/6; US-007 AC6/11. Qualifiers retained include the same selection/attribution answer, existing review-command bridge, loader shim equivalence, real fallback seam, root-only discard and PID reuse safeguards. No deprecated file-check AC tags were present. All 18 feature-level exclusions are present verbatim, and nearby exclusions are echoed verbatim in the affected story scope. All seven story IDs, workdirs and empty dependency arrays remain binding. Context lists match spec recommendations within five slots; US-004 prioritizes run-setup and the real profile-registry integration suite over the lower-priority overlay unit suite. New outputs appear only in expectedFiles. Routing is reduced to medium/tdd-simple for the bounded US-002 parser extension and medium/tdd-simple for US-007 publication safety; only US-004 retains complex/three-session-tdd because it changes shared permissions validation and partial hydration state. Corrections also make unknown-default lookup observably assert getRemoteUrl invocation, give unbalanced braces a concrete literal-path fixture, and distinguish schema error wrapping from native guard error codes. No source implementation or runtime tests were executed in this audit.",
