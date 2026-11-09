@@ -3,7 +3,7 @@
   "feature": "review-agent-sandbox-hardening",
   "branchName": "feat/review-agent-sandbox-hardening",
   "createdAt": "2026-11-09T00:00:00Z",
-  "updatedAt": "2026-11-09T03:14:29.817Z",
+  "updatedAt": "2026-11-09T03:22:54.826Z",
   "userStories": [
     {
       "id": "US-001",
@@ -260,14 +260,17 @@
         "M5"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Localized key derivation in one existing source module with no new dependency, but remembered authorization is security-critical and requires isolated three-session TDD."
+        "reasoning": "Localized key derivation in one existing source module with no new dependency, but remembered authorization is security-critical and requires isolated three-session TDD.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax-agent/src/permissions/approval-memory.ts",
@@ -283,7 +286,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b138dbb1d9a544b423345b41ad4e14ddb33a5055"
     },
     {
       "id": "US-006",
