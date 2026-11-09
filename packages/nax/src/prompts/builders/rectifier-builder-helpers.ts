@@ -251,9 +251,12 @@ const MAX_STRUCTURED_FINDINGS = 10;
 const RAW_WITH_FINDINGS_LIMIT = 1_000;
 const RAW_FALLBACK_LIMIT = 4_000;
 
-function capText(value: string, maxChars: number): string {
+export function capTail(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars)}\n... (truncated — ${value.length} chars total)`;
+  let kept = value.slice(Math.max(0, value.length - Math.max(0, maxChars)));
+  const newline = kept.indexOf("\n");
+  if (newline >= 0 && newline < kept.length - 1) kept = kept.slice(newline + 1);
+  return `... (truncated — ${value.length} chars total; showing the last ${kept.length})\n${kept}`;
 }
 
 function formatFindingLine(finding: NonNullable<ReviewCheckResult["findings"]>[number]): string {
@@ -278,13 +281,13 @@ function formatCheckError(check: ReviewCheckResult, opts?: CheckErrorFormatOptio
     lines.push("");
     lines.push("Raw output excerpt:");
     lines.push("```");
-    lines.push(capText(check.output, RAW_WITH_FINDINGS_LIMIT));
+    lines.push(capTail(check.output, RAW_WITH_FINDINGS_LIMIT));
     lines.push("```");
     return lines.join("\n");
   }
 
   lines.push("```");
-  lines.push(capText(check.output, RAW_FALLBACK_LIMIT));
+  lines.push(capTail(check.output, RAW_FALLBACK_LIMIT));
   lines.push("```");
   return lines.join("\n");
 }

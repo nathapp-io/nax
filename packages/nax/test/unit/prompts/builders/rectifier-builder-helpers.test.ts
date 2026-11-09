@@ -12,6 +12,7 @@ import type { Finding } from "@/findings";
 import { RectifierPromptBuilder } from "@/prompts";
 import {
   buildEscapeHatch,
+  capTail,
   escapeHatchFor,
   exceptionCountWord,
   formatBaselineDispositionTag,
@@ -60,6 +61,35 @@ const TEST_AFTER_STORY = makeStory({
   description: "A story where the implementer writes tests after implementation.",
   acceptanceCriteria: ["AC1"],
   routing: { testStrategy: "test-after", complexity: "simple", reasoning: "test" },
+});
+
+// ─── capTail ──────────────────────────────────────────────────────────────────
+
+describe("capTail", () => {
+  test("AC-7: keeps the failure summary at the end of oversized output", () => {
+    const result = capTail(`${"A".repeat(3000)}\nSUMMARY: 2 errors`, 1000);
+    expect(result.endsWith("SUMMARY: 2 errors")).toBe(true);
+    expect(result).toContain("truncated");
+    expect(result).toContain("3018 chars total");
+  });
+
+  test("AC-8: returns output at or below the limit unchanged", () => {
+    expect(capTail("short", 1000)).toBe("short");
+  });
+
+  test("does not retain source text when the cap is zero", () => {
+    expect(capTail("short", 0).split("\n").at(-1)).toBe("");
+  });
+
+  test("AC-9: drops a partial leading line from the retained tail", () => {
+    const result = capTail("aaaa\nbbbb\ncccc", 7);
+    expect(result.slice(result.indexOf("\n") + 1)).toBe("cccc");
+  });
+
+  test("AC-13: preserves a trailing newline without dropping the retained Q tail", () => {
+    const result = capTail(`${"Q".repeat(5000)}\n`, 1000);
+    expect(result.slice(result.indexOf("\n") + 1)).toBe(`${"Q".repeat(999)}\n`);
+  });
 });
 
 // ─── buildEscapeHatch ─────────────────────────────────────────────────────────
