@@ -28,6 +28,7 @@ import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { readHeadGateNames } from "./head-gates";
 import { waitForPrHead } from "./pr-head-wait";
 import { safeText } from "./render";
 import { rulingModelReader } from "./ruling-reader";
@@ -51,6 +52,7 @@ export const _fixReportDeps = {
   listReviewThreads,
   listPrComments,
   recordPrRulings,
+  readHeadGateNames,
 };
 
 async function replyAgreedThreads(env: BotFixEnv, state: BotFixState): Promise<number> {
@@ -246,6 +248,27 @@ async function readyHeadHold(env: BotFixEnv, state: BotFixState): Promise<string
   }
 }
 
+/**
+ * nax#2838: the bot runs only the checks resolved from the trusted base, so a gate the PR head added
+ * (a quality command the base lacks) never ran. Ready is held until the bot has run every gate the
+ * head configures; an unreadable head config holds too (fail closed).
+ */
+async function headGateHold(env: BotFixEnv): Promise<string | undefined> {
+  try {
+    const head = await _fixReportDeps.readHeadGateNames(env.checkout.worktree);
+    const ran = new Set(env.checks.gates.map((gate) => gate.name));
+    const missing = head.filter((name) => !ran.has(name));
+    if (missing.length === 0) return undefined;
+    return `PR head configures gate(s) ${missing.join(", ")} that nax bot fix did not run; run them before marking ready`;
+  } catch (error) {
+    getLogger()?.warn("bot-fix", "Could not read the PR head gates", {
+      pr: env.ref.number,
+      error: errorMessage(error),
+    });
+    return "PR head gates could not be read, so nax bot fix cannot tell whether it ran them all";
+  }
+}
+
 /** Only durable workflow rulings and exact-head green CI can release a workflow draft. */
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (
@@ -257,6 +280,8 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
       exit: "report",
     };
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
+  const headGates = await headGateHold(env);
+  if (headGates) return { patch: { markedReady: false, readyHeld: headGates }, exit: "report" };
   if (hasNaxWorkflowMarker(env.info.body)) {
     const readyHeld = await workflowReadyHold(env, state);
     if (readyHeld) return { patch: { markedReady: false, readyHeld }, exit: "report" };
