@@ -7,6 +7,9 @@ import { expandChatMentions, formatMentionMessage, parseMentionMessage } from "@
 
 const REPO = "/repo";
 const NOT_IGNORED: GitResult = { stdout: "", exitCode: 1, timedOut: false };
+const IGNORED: GitResult = { stdout: "", exitCode: 0, timedOut: false };
+/** The ignored file a fixture symlink points at. */
+const IGNORED_TARGET = ".env";
 
 interface GitResult {
   readonly stdout: string;
@@ -41,6 +44,11 @@ function expand(text: string): Promise<{ message: string; records: readonly chat
 
 function notesOf(records: readonly chat.MentionRecord[]): string[] {
   return records.map((record) => record.note);
+}
+
+/** A git fake that reports the ignored verdict for the symlink's target and ignores nothing else. */
+function gitOnlyIgnoringEnv(ignoredVerdict: GitResult = IGNORED): GitFake {
+  return async (args) => (args.at(-1) === IGNORED_TARGET ? ignoredVerdict : NOT_IGNORED);
 }
 
 beforeEach(() => {
@@ -219,6 +227,73 @@ describe("expandChatMentions — git-ignored paths", () => {
     gitFake = async () => ({ stdout: "", exitCode: 128, timedOut: false });
     const result = await expand("@a.ts");
     expect(notesOf(result.records)).toEqual(["not attached: git check-ignore failed (exit 128)"]);
+  });
+});
+
+/**
+ * M8: the ignore check used to run against the typed path alone, so a symlink named anything
+ * other than the ignored file attached the file it points at. These pin the canonical check.
+ */
+describe("expandChatMentions — a symlink must not smuggle in an ignored target", () => {
+  test("AC-1 refuses a mention whose target is git-ignored, attaching no content", async () => {
+    addFile("/repo/docs/notes.txt", "/repo/.env", "SECRET_TOKEN=test\n");
+    gitFake = gitOnlyIgnoringEnv();
+    const result = await expand("@docs/notes.txt");
+    expect(result.records).toEqual([
+      { path: "docs/notes.txt", status: "refused", note: "not attached: ignored by git", body: "" },
+    ]);
+  });
+
+  test("AC-2 asks git about the real target, relative to the real repo root", async () => {
+    addFile("/repo/docs/notes.txt", "/repo/.env", "SECRET_TOKEN=test\n");
+    gitFake = gitOnlyIgnoringEnv();
+    await expand("@docs/notes.txt");
+    expect(gitCalls).toEqual([
+      { args: ["check-ignore", "-q", "--", "docs/notes.txt"], cwd: REPO },
+      { args: ["check-ignore", "-q", "--", ".env"], cwd: REPO },
+    ]);
+  });
+
+  test("AC-3 stops after the typed path's refusal, making one git call", async () => {
+    addFile("/repo/.env", "/repo/.env", "SECRET_TOKEN=test\n");
+    gitFake = gitOnlyIgnoringEnv();
+    const result = await expand("@.env");
+    expect(result.records).toEqual([
+      { path: ".env", status: "refused", note: "not attached: ignored by git", body: "" },
+    ]);
+    expect(gitCalls).toHaveLength(1);
+  });
+
+  test("AC-4 attaches a tracked file that neither check refuses", async () => {
+    addFile("/repo/src/a.ts", "/repo/src/a.ts", "x\n");
+    const result = await expand("@src/a.ts");
+    expect(result.records).toEqual([{ path: "src/a.ts", status: "attached", note: "1 lines", body: "x\n" }]);
+    expect(gitCalls).toHaveLength(2);
+  });
+
+  test("attaches a symlink whose target git does not ignore", async () => {
+    addFile("/repo/docs/link.md", "/repo/src/a.ts", "x\n");
+    const result = await expand("@docs/link.md");
+    expect(result.records).toEqual([{ path: "docs/link.md", status: "attached", note: "1 lines", body: "x\n" }]);
+    expect(gitCalls.map((call) => call.args.at(-1))).toEqual(["docs/link.md", "src/a.ts"]);
+  });
+
+  test("AC-5 refuses when the real-path check fails", async () => {
+    addFile("/repo/docs/notes.txt", "/repo/.env", "SECRET_TOKEN=test\n");
+    gitFake = gitOnlyIgnoringEnv({ stdout: "", exitCode: 128, timedOut: false });
+    const result = await expand("@docs/notes.txt");
+    expect(result.records).toEqual([
+      { path: "docs/notes.txt", status: "refused", note: "not attached: git check-ignore failed (exit 128)", body: "" },
+    ]);
+  });
+
+  test("AC-7 refuses when the real-path check times out", async () => {
+    addFile("/repo/docs/notes.txt", "/repo/.env", "SECRET_TOKEN=test\n");
+    gitFake = gitOnlyIgnoringEnv({ stdout: "", exitCode: 1, timedOut: true });
+    const result = await expand("@docs/notes.txt");
+    expect(result.records).toEqual([
+      { path: "docs/notes.txt", status: "refused", note: "not attached: git timed out", body: "" },
+    ]);
   });
 });
 

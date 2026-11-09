@@ -157,7 +157,7 @@ async function expandToken(token: MentionToken, ctx: ExpandContext): Promise<Men
   try {
     const refusal = boundaryRefusal(located.realPath, ctx.realRoot);
     if (refusal !== undefined) return refused(located.path, refusal);
-    const ignored = await ignoredRefusal(located.path, ctx.cwd);
+    const ignored = await targetIgnoredRefusal(located, ctx);
     if (ignored !== undefined) return refused(located.path, ignored);
     return await contentRecord(located, ctx);
   } catch (err) {
@@ -186,12 +186,28 @@ function boundaryRefusal(realPath: string, realRoot: string | undefined): string
   return segments.some((segment) => segment.toLowerCase() === GIT_DIR_SEGMENT) ? INSIDE_GIT_DIR : undefined;
 }
 
-/** Step 4: ask git about the path as typed — never the real path, which git would not recognise. */
+/**
+ * Step 4: ask git about one path, in `cwd`. An ignored path or a failure to get a verdict
+ * refuses; only exit code 1 ("not ignored") lets the mention through.
+ */
 async function ignoredRefusal(path: string, cwd: string): Promise<string | undefined> {
   const result = await _mentionExpandDeps.git([...CHECK_IGNORE_ARGS, path], cwd);
   if (result.timedOut) return GIT_TIMED_OUT;
   if (result.exitCode === 0) return IGNORED_BY_GIT;
   return result.exitCode === 1 ? undefined : `git check-ignore failed (exit ${result.exitCode})`;
+}
+
+/**
+ * Step 4 for both of a mention's names, since they can differ: the path as typed — which git
+ * matches literally, and which a symlink can carry under any name — and, when the real path
+ * sits below the real repo root, that canonical path relative to it. Without the second ask, a
+ * committed `notes.txt -> ../.env` attaches the ignored `.env` git refuses directly.
+ */
+async function targetIgnoredRefusal(located: Located, ctx: ExpandContext): Promise<string | undefined> {
+  const typed = await ignoredRefusal(located.path, ctx.cwd);
+  if (typed !== undefined || ctx.realRoot === undefined) return typed;
+  const realRelative = relative(ctx.realRoot, located.realPath).split(sep).join(PATH_SEPARATOR);
+  return realRelative === "" ? undefined : ignoredRefusal(realRelative, ctx.realRoot);
 }
 
 /** Steps 5-9: a folder listing, or a file body bounded by size, image, binary, cut and the total cap. */
