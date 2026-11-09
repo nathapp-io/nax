@@ -28,9 +28,15 @@
  * Writes go to a temporary file in the same directory and are renamed into
  * place, so a reader sees the old file or the new one (the `mcp-id-map.ts`
  * pattern). A file that is missing reads as no approvals without a word; one
- * that is unreadable, not JSON, of another version, or not a version-1 approvals
- * array reads as no approvals and is logged at warn once per instance — the
- * provider asks on every pull, and the user needs to hear about it once.
+ * that is not JSON, of another version, or not a version-1 approvals array reads
+ * as no approvals and is logged at warn once per instance — the provider asks on
+ * every pull, and the user needs to hear about it once. A read that fails for
+ * any other reason — a permission error, an I/O error, a directory at the path —
+ * is not an empty file: `record` and `drop` refuse with
+ * `MEMORY_KODA_APPROVALS_READ_FAILED` and write nothing, because a file nax
+ * could not read may hold records a write would drop. `list` still resolves no
+ * approvals: it writes nothing, so it loses no record, and throwing would fail
+ * every pull while the file stays unreadable.
  *
  * Not recovered (documented limits): a temporary file left behind by a failed
  * write — the seam has no `unlink` — and approvals lost between the `202`
@@ -71,23 +77,41 @@ export interface KodaApproval {
 
 /** The record of proposals koda has not answered yet. */
 export interface KodaApprovals {
-  /** Every recorded proposal, oldest first; `[]` when the file is missing or unusable. */
+  /**
+   * Every recorded proposal, oldest first; `[]` when the file is missing, unusable
+   * or could not be read.
+   */
   list(): Promise<readonly KodaApproval[]>;
-  /** Record a proposal, replacing the record of the same scope and slug; refuses an unreadable entry. */
+  /**
+   * Record a proposal, replacing the record of the same scope and slug; refuses an
+   * unreadable entry.
+   *
+   * A file that could not be read rejects with `MEMORY_KODA_APPROVALS_READ_FAILED`
+   * and is left as it was.
+   */
   record(entry: KodaApproval): Promise<void>;
-  /** Forget the named proposals, keeping every other record. */
+  /**
+   * Forget the named proposals, keeping every other record.
+   *
+   * A file that could not be read rejects with `MEMORY_KODA_APPROVALS_READ_FAILED`
+   * and is left as it was.
+   */
   drop(approvalIds: readonly string[]): Promise<void>;
 }
 
 /**
- * Filesystem seam for tests: the two calls of the atomic write. Reading is
- * `Bun.file(...).text()` — a test drives the unusable paths by writing the file
- * it wants read.
+ * Filesystem seam for tests: the read and the two calls of the atomic write.
+ *
+ * The read defaults to `Bun.file(...).text()` — a test drives the unusable paths
+ * by writing the file it wants read, and the unreadable ones by making the read
+ * fail.
  */
 export const _kodaApprovalsDeps: {
+  read(path: string): Promise<string>;
   write(path: string, text: string): Promise<void>;
   rename(from: string, to: string): Promise<void>;
 } = {
+  read: (path: string): Promise<string> => Bun.file(path).text(),
   write: async (path: string, text: string): Promise<void> => {
     await Bun.write(path, text);
   },
@@ -118,9 +142,11 @@ function approvalOf(value: unknown): KodaApproval | undefined {
 /** What a read found: usable records, no file at all, or a file that cannot be used. */
 interface ApprovalsRead {
   readonly approvals: readonly KodaApproval[];
-  readonly state: "valid" | "missing" | "unusable";
-  /** Why an unusable file was not used, for the one warn it earns. */
+  readonly state: "valid" | "missing" | "unusable" | "unreadable";
+  /** Why an unusable or unreadable file was not used, for the one warn it earns. */
   readonly reason?: string;
+  /** The failure an unreadable file's read threw, for the refusal that names it. */
+  readonly error?: unknown;
 }
 
 /**
@@ -148,10 +174,12 @@ function approvalsOf(parsed: unknown): { readonly approvals: readonly KodaApprov
 async function readApprovals(path: string): Promise<ApprovalsRead> {
   let text: string;
   try {
-    text = await Bun.file(path).text();
+    text = await _kodaApprovalsDeps.read(path);
   } catch (cause) {
     const missing = (cause as { code?: unknown } | null)?.code === "ENOENT";
-    return { approvals: [], state: missing ? "missing" : "unusable", reason: errorMessage(cause) };
+    return missing
+      ? { approvals: [], state: "missing", reason: errorMessage(cause) }
+      : { approvals: [], state: "unreadable", reason: errorMessage(cause), error: cause };
   }
   let parsed: unknown;
   try {
@@ -186,6 +214,20 @@ function proposalKey(scope: MemoryScope, slug: string): string {
   return `${scope}\u0000${slug}`;
 }
 
+/**
+ * The refusal an unreadable file earns: the mutation writes nothing over a file
+ * nax could not read, so the caller retries rather than losing the records the
+ * file holds.
+ */
+function unreadableFile(path: string, read: ApprovalsRead): NaxError {
+  const cause = read.error;
+  return new NaxError(
+    `[memory] cannot read koda approvals ${path}: ${errorMessage(cause)}`,
+    "MEMORY_KODA_APPROVALS_READ_FAILED",
+    { stage: STAGE, path, retryable: true, cause },
+  );
+}
+
 /** `entry` replacing the record of the same scope and slug, kept in record order. */
 function withRecorded(approvals: readonly KodaApproval[], entry: KodaApproval): readonly KodaApproval[] {
   const key = proposalKey(entry.scope, entry.slug);
@@ -212,11 +254,13 @@ export function createKodaApprovals(input: { readonly dir: string; readonly logg
    *
    * The caller asks on every pull and every save, so the same rejected file is
    * met again and again; the user wants to hear about it once. A missing file is
-   * the ordinary first-run state and is not warned about.
+   * the ordinary first-run state and is not warned about. A file that could not
+   * be read earns the same warn: it is the same fact for the user — the file
+   * holds nothing nax can use.
    */
   async function read(): Promise<ApprovalsRead> {
     const read = await readApprovals(path);
-    if (read.state === "unusable" && !warnedUnusable) {
+    if ((read.state === "unusable" || read.state === "unreadable") && !warnedUnusable) {
       warnedUnusable = true;
       logger.warn(STAGE, "koda approvals file is unusable", { path, reason: read.reason });
     }
@@ -250,13 +294,18 @@ export function createKodaApprovals(input: { readonly dir: string; readonly logg
           });
           return;
         }
-        const { approvals } = await read();
-        await writeApprovals(path, withRecorded(approvals, readable));
+        const file = await read();
+        // A file that could not be read is not an empty file: writing over it would drop
+        // every record it holds, so the record is refused and the caller retries.
+        if (file.state === "unreadable") throw unreadableFile(path, file);
+        await writeApprovals(path, withRecorded(file.approvals, readable));
       });
     },
     drop(approvalIds) {
       return serialised(async () => {
-        const { approvals, state } = await read();
+        const file = await read();
+        if (file.state === "unreadable") throw unreadableFile(path, file);
+        const { approvals, state } = file;
         // Nothing to forget in a missing file; an unusable one is rewritten for the records this drop keeps.
         if (state === "missing") return;
         const dropped = new Set(approvalIds);

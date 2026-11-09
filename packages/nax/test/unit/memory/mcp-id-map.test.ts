@@ -2,7 +2,9 @@
  * mcp-id-map.ts — the durable, scope-specific record of the remote ids each
  * save produced, so a later forget can delete them.
  *
- * Covers US-002 AC-16..AC-27.
+ * Covers US-002 AC-16..AC-27, and US-001 AC-1..AC-8 and AC-21..AC-22: a read
+ * that fails for any reason but "the file is not there" refuses the mutation
+ * instead of writing over a file nax could not read.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -10,8 +12,24 @@ import { mkdirSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { NaxError } from "@/errors";
 import { _mcpIdMapDeps, createMcpIdMap } from "@/memory/mcp-id-map";
 import type { MemoryDirs } from "@/memory/paths";
+
+/** A filesystem failure with the code the module reads. */
+function fsError(code: string): Error {
+  return Object.assign(new Error(`${code}: failure`), { code });
+}
+
+/** The NaxError `promise` rejects with; fails the test when it resolves instead. */
+async function rejection(promise: Promise<unknown>): Promise<NaxError> {
+  const caught: unknown = await promise.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  if (!(caught instanceof NaxError)) throw new Error(`expected a NaxError, got ${String(caught)}`);
+  return caught;
+}
 
 describe("createMcpIdMap", () => {
   let base: string;
@@ -92,24 +110,30 @@ describe("createMcpIdMap", () => {
     expect(await map.ids("user", "s1")).toEqual(["u1"]);
   });
 
-  test("a file of another version reads as empty (AC-21)", async () => {
+  test("a file of another version reads as empty (US-001 AC-21)", async () => {
     mkdirSync(dirs.projectDir, { recursive: true });
     await Bun.write(projectFile(), '{"version":2,"server":"om","notes":{"s1":["a"]}}');
     expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual([]);
   });
 
-  test("a file written for another server reads as empty (AC-22)", async () => {
+  test("a file written for another server reads as empty (US-001 AC-21)", async () => {
     await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["a"]);
     expect(await createMcpIdMap({ dirs, server: "other" }).ids("project", "s1")).toEqual([]);
   });
 
-  test("a file that is not JSON reads as empty (AC-23)", async () => {
+  test("a file that is not JSON reads as empty (US-001 AC-21)", async () => {
     mkdirSync(dirs.projectDir, { recursive: true });
     await Bun.write(projectFile(), "this is not json");
     expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual([]);
   });
 
-  test("add after reading a non-JSON file records the new id (AC-24)", async () => {
+  test("a file whose notes field is not an object reads as empty (US-001 AC-21)", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), '{"version":1,"server":"om","notes":[]}');
+    expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual([]);
+  });
+
+  test("add after reading a non-JSON file records the new id (US-001 AC-22)", async () => {
     mkdirSync(dirs.projectDir, { recursive: true });
     await Bun.write(projectFile(), "this is not json");
     const map = createMcpIdMap({ dirs, server: "om" });
@@ -118,11 +142,25 @@ describe("createMcpIdMap", () => {
     expect(await map.ids("project", "s1")).toEqual(["z"]);
   });
 
-  test("an unreadable file reads as empty (AC-25)", async () => {
+  test("a read that fails with EACCES refuses the read with a retryable error (US-001 AC-1)", async () => {
     _mcpIdMapDeps.readText = async () => {
-      throw new Error("EACCES: permission denied");
+      throw fsError("EACCES");
     };
-    expect(await createMcpIdMap({ dirs, server: "om" }).ids("project", "s1")).toEqual([]);
+
+    const error = await rejection(createMcpIdMap({ dirs, server: "om" }).ids("project", "s1"));
+
+    expect(error).toBeInstanceOf(NaxError);
+    expect(error).toMatchObject({ code: "MEMORY_MCP_ID_MAP_READ_FAILED", context: { retryable: true } });
+  });
+
+  test("the refusal names the file it could not read (US-001 AC-2)", async () => {
+    _mcpIdMapDeps.readText = async () => {
+      throw fsError("EACCES");
+    };
+
+    const error = await rejection(createMcpIdMap({ dirs, server: "om" }).ids("project", "s1"));
+
+    expect(error.message).toContain(projectFile());
   });
 
   test("a missing file reads as empty (AC-26)", async () => {
@@ -136,27 +174,65 @@ describe("createMcpIdMap", () => {
     ["another version", '{"version":2,"server":"om","notes":{"s1":["old"]}}'],
     ["another server", '{"version":1,"server":"other","notes":{"s1":["old"]}}'],
     ["a non-object notes field", '{"version":1,"server":"om","notes":[]}'],
-  ])("add rewrites a version-1 file for the configured server over %s (AC-27)", async (_label, content) => {
+  ])("add rewrites a version-1 file for the configured server over %s (US-001 AC-22)", async (_label, content) => {
     mkdirSync(dirs.projectDir, { recursive: true });
     await Bun.write(projectFile(), content);
     await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["n"]);
     expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["n"] } });
   });
 
-  test("drop rewrites an unusable file for the configured server (AC-27)", async () => {
+  test("drop rewrites an unusable file for the configured server (US-001 AC-22)", async () => {
     mkdirSync(dirs.projectDir, { recursive: true });
     await Bun.write(projectFile(), '{"version":1,"server":"other","notes":{"s1":["old"]}}');
     await createMcpIdMap({ dirs, server: "om" }).drop("project", "s1");
     expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: {} });
   });
 
-  test("add rewrites the file after an unreadable read (AC-27)", async () => {
+  test("add refuses to write over a file it could not read (US-001 AC-3, AC-4)", async () => {
     mkdirSync(dirs.projectDir, { recursive: true });
     await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{"s1":["old"]}}');
-    _mcpIdMapDeps.readText = async () => {
-      throw new Error("EIO");
+    const writes: string[] = [];
+    _mcpIdMapDeps.writeText = async (path, text) => {
+      writes.push(path);
+      await Bun.write(path, text);
     };
+    _mcpIdMapDeps.readText = async () => {
+      throw fsError("EIO");
+    };
+
+    const error = await rejection(createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["n"]));
+
+    expect(error.code).toBe("MEMORY_MCP_ID_MAP_READ_FAILED");
+    expect(writes).toEqual([]);
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["old"] } });
+  });
+
+  test("drop refuses to write over a file it could not read (US-001 AC-5, AC-6)", async () => {
+    mkdirSync(dirs.projectDir, { recursive: true });
+    await Bun.write(projectFile(), '{"version":1,"server":"om","notes":{"s1":["old"]}}');
+    const writes: string[] = [];
+    _mcpIdMapDeps.writeText = async (path, text) => {
+      writes.push(path);
+      await Bun.write(path, text);
+    };
+    _mcpIdMapDeps.readText = async () => {
+      throw fsError("EIO");
+    };
+
+    const error = await rejection(createMcpIdMap({ dirs, server: "om" }).drop("project", "s1"));
+
+    expect(error.code).toBe("MEMORY_MCP_ID_MAP_READ_FAILED");
+    expect(writes).toEqual([]);
+    expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["old"] } });
+  });
+
+  test("a file that is not there is read as no records, so add writes the new one (US-001 AC-7, AC-8)", async () => {
+    _mcpIdMapDeps.readText = async () => {
+      throw fsError("ENOENT");
+    };
+
     await createMcpIdMap({ dirs, server: "om" }).add("project", "s1", ["n"]);
+
     expect(await readJson(projectFile())).toEqual({ version: 1, server: "om", notes: { s1: ["n"] } });
   });
 

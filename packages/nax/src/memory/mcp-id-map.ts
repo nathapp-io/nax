@@ -9,10 +9,14 @@
  *
  *   { "version": 1, "server": "openmemory", "notes": { "replay-budget": ["a1b2"] } }
  *
- * A file that is missing, unreadable, not JSON, of another version or written
- * for another server reads as empty; the next `add` or `drop` rewrites it for
- * the configured server. Writes go to a temporary file in the same directory and
- * are renamed into place, so a reader sees the old file or the new one.
+ * A file that is missing reads as empty. A file that is not JSON, of another
+ * version or written for another server also reads as empty, and the next `add`
+ * or `drop` rewrites it for the configured server. A read that fails for any
+ * other reason — a permission error, an I/O error, a directory at the path — is
+ * not an empty file: the operation refuses with `MEMORY_MCP_ID_MAP_READ_FAILED`
+ * and writes nothing, because a file nax could not read may hold ids a write
+ * would drop. Writes go to a temporary file in the same directory and are
+ * renamed into place, so a reader sees the old file or the new one.
  *
  * Not recovered (documented limits): ids lost between the add call and the
  * write, and two processes writing one user-scope file at the same time.
@@ -34,13 +38,26 @@ const MCP_ID_MAP_VERSION = 1;
 
 /** The per-scope record of remote ids, keyed by note slug. */
 export interface McpIdMap {
-  /** The remote ids recorded for a note; `[]` when none (or the file is unusable). */
+  /**
+   * The remote ids recorded for a note; `[]` when none (or the file is unusable).
+   *
+   * A read that failed for any reason but "the file is not there" rejects with
+   * `MEMORY_MCP_ID_MAP_READ_FAILED`.
+   */
   ids(scope: MemoryScope, slug: string): Promise<readonly string[]>;
-  /** Record ids for a note, keeping any already recorded. */
+  /**
+   * Record ids for a note, keeping any already recorded.
+   *
+   * A read that failed for any reason but "the file is not there" rejects with
+   * `MEMORY_MCP_ID_MAP_READ_FAILED` and records nothing.
+   */
   add(scope: MemoryScope, slug: string, ids: readonly string[]): Promise<void>;
   /**
    * Forget what is recorded for a note: everything, or — when `only` is given — just those ids,
    * so ids a later save recorded in the meantime survive.
+   *
+   * A read that failed for any reason but "the file is not there" rejects with
+   * `MEMORY_MCP_ID_MAP_READ_FAILED` and forgets nothing.
    */
   drop(scope: MemoryScope, slug: string, only?: readonly string[]): Promise<void>;
 }
@@ -86,8 +103,15 @@ async function readNotes(path: string, server: string): Promise<NotesRead> {
   try {
     text = await _mcpIdMapDeps.readText(path);
   } catch (cause) {
-    const missing = (cause as { code?: unknown } | null)?.code === "ENOENT";
-    return { notes: new Map(), state: missing ? "missing" : "unusable" };
+    if ((cause as { code?: unknown } | null)?.code === "ENOENT") {
+      return { notes: new Map(), state: "missing" };
+    }
+    // A read that failed is not an empty file: writing over it would drop every id it holds.
+    throw new NaxError(
+      `[memory] cannot read MCP id map ${path}: ${errorMessage(cause)}`,
+      "MEMORY_MCP_ID_MAP_READ_FAILED",
+      { stage: "memory", path, retryable: true, cause },
+    );
   }
   try {
     const notes = notesOf(JSON.parse(text), server);
