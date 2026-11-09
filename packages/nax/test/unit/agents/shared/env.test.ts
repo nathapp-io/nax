@@ -281,4 +281,23 @@ describe("buildAcpChatEnv (US-002)", () => {
     setEnv("HOME", "/abs/home");
     expect(buildAcpChatEnv("claude").HOME).toBe("/abs/home");
   });
+
+  test("M1: a name that also exists on Object.prototype is kept as the record's own key", () => {
+    // `__proto__` is a valid environment name — it matches the backend's name
+    // pattern — but it is also an Object.prototype accessor, so a plain
+    // `env[name] = value` reaches the setter and loses the variable. The real
+    // process.env refuses an own `__proto__` key, so this test hands the module
+    // a replacement for the synchronous length of its own body.
+    const realEnv = process.env;
+    const fakeEnv = JSON.parse('{"__proto__":"proto-value","GOOD":"kept"}');
+    try {
+      process.env = fakeEnv;
+      const env = buildAcpChatEnv("claude");
+      expect(Object.getOwnPropertyDescriptor(env, "__proto__")?.value).toBe("proto-value");
+      expect(env.GOOD).toBe("kept");
+      expect(Object.getPrototypeOf(env)).toBe(Object.prototype);
+    } finally {
+      process.env = realEnv;
+    }
+  });
 });

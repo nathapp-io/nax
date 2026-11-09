@@ -156,16 +156,21 @@ function withholdsChatVar(name: string, family: AcpProviderEnvFamily): boolean {
  * `NAX_`/`CLAW_`/`TURBO_` secrets (the Telegram bot token above all) and every
  * other provider's key. A name the ACP backend would reject, or a value carrying
  * NUL, is dropped rather than handed to a launch that would then fail.
+ *
+ * Every admitted name becomes an own property of the result, built through
+ * `Object.fromEntries` rather than by assignment: `__proto__` passes the name
+ * pattern, and `env["__proto__"] = value` would reach the inherited setter and
+ * silently lose the variable instead of preserving it.
  */
 export function buildAcpChatEnv(agent: string): Record<string, string> {
   const family = acpProviderEnvFamily(agent);
-  const env: Record<string, string> = {};
+  const entries: [string, string][] = [];
   for (const [name, value] of Object.entries(process.env)) {
     if (value === undefined || !ENV_NAME_PATTERN.test(name) || value.includes("\u0000")) continue;
     if (withholdsChatVar(name, family)) continue;
-    env[name] = value;
+    entries.push([name, value]);
   }
-  return env;
+  return Object.fromEntries(entries);
 }
 
 /**
