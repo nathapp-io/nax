@@ -529,6 +529,12 @@ describe("git global config options are refused (US-004)", () => {
     [16, "git -C . -c core.pager=sh status", "git *"],
     [17, "git --no-pager -C . -c core.pager=sh status", "git *"],
     [19, "echo git -c x", "*"],
+    [20, "git --no-optional-locks -c core.pager=x log", "git *"],
+    [21, "git --glob-pathspecs -c core.pager=x log", "git *"],
+    [22, "git --attr-source=x -c a=b log", "git *"],
+    [23, "git --attr-source x -c a=b log", "git *"],
+    [24, "git --super-prefix x -c a=b log", "git *"],
+    [25, "git --some-future-flag -c a=b log", "git *"],
   ] as const)("AC-%i denies %s", (_ac, command, grant) => {
     const verdict = check(policyFor([grant]), command);
     expect(verdict.allowed).toBe(false);

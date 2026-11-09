@@ -167,13 +167,34 @@ const GIT_FLAG_OPTIONS = new Set([
   "--bare",
   "--literal-pathspecs",
   "--no-replace-objects",
+  "-P",
+  "--no-lazy-fetch",
+  "--no-optional-locks",
+  "--no-advice",
+  "--glob-pathspecs",
+  "--noglob-pathspecs",
+  "--icase-pathspecs",
 ]);
-const GIT_VALUE_OPTIONS = new Set(["-C", "--git-dir", "--work-tree", "--namespace"]);
-const GIT_VALUE_PREFIXES = ["--git-dir=", "--work-tree=", "--namespace="];
+const GIT_VALUE_OPTIONS = new Set(["-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source"]);
 const GIT_ESCAPE_OPTIONS = ["-c", "--config-env", "--exec-path"];
 
 function escapeOptionName(word: string): string | undefined {
   return GIT_ESCAPE_OPTIONS.find((option) => word === option || word.startsWith(`${option}=`));
+}
+
+/**
+ * How many words the git global option at `j` spans, or 0 when `words[j]` is the subcommand.
+ * An option this file does not list is skipped with its possible value: `--key=value` is one
+ * word, else a following non-option word may be its value. Skipping keeps a later `-c`
+ * visible, so an option the list lacks cannot hide it.
+ */
+function globalOptionSpan(words: readonly string[], j: number): number {
+  const next = words[j] as string;
+  if (GIT_FLAG_OPTIONS.has(next)) return 1;
+  if (GIT_VALUE_OPTIONS.has(next)) return 2;
+  if (!next.startsWith("-")) return 0;
+  const value = words[j + 1];
+  return next.includes("=") || value === undefined || value.startsWith("-") ? 1 : 2;
 }
 
 /**
@@ -186,12 +207,11 @@ function gitConfigOption(words: readonly string[]): string | undefined {
     const word = words[i] as string;
     if (word !== "git" && !word.endsWith("/git")) continue;
     for (let j = i + 1; j < words.length; ) {
-      const next = words[j] as string;
-      const escapeOption = escapeOptionName(next);
+      const escapeOption = escapeOptionName(words[j] as string);
       if (escapeOption !== undefined) return escapeOption;
-      if (GIT_FLAG_OPTIONS.has(next) || GIT_VALUE_PREFIXES.some((prefix) => next.startsWith(prefix))) j += 1;
-      else if (GIT_VALUE_OPTIONS.has(next)) j += 2;
-      else break;
+      const span = globalOptionSpan(words, j);
+      if (span === 0) break;
+      j += span;
     }
   }
   return undefined;

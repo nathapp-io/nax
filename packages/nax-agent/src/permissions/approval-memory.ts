@@ -83,24 +83,14 @@ export function approvalMemoryKey(request: ApprovalMemoryRequest): string | unde
   // Package managers npm, pnpm, yarn have special rules to narrow allowed subcommands.
   const isPackageManager = ["npm", "pnpm", "yarn"].includes(name);
   if (isPackageManager) {
-    const executors = ["exec", "x", "dlx"];
-    if (executors.includes(second)) {
-      return undefined;
-    }
-    if (second === "create") {
-      return undefined;
-    }
-    if (second === "init" && third !== undefined && PLAIN_WORD.test(third)) {
-      return undefined;
-    }
-    const threeWordOps = ["run", "install", "i", "add"];
-    if (threeWordOps.includes(second) && third !== undefined && PLAIN_WORD.test(third)) {
-      // Include all remaining plain words (excluding flags) in the key, so npm install lodash
-      // and npm install lodash evil-pkg generate different keys. Flags (starting with -)
-      // are automatically filtered out.
-      const plainWords = words.slice(2).filter((w) => PLAIN_WORD.test(w) && !w.startsWith("-"));
-      return `${request.tool}:${first} ${second} ${plainWords.join(" ")}`;
-    }
+    // Executors and initialisers run arbitrary packages (`innit` is npm's alias of `init`).
+    if (["exec", "x", "dlx", "create", "innit"].includes(second)) return undefined;
+    if (second === "init" && third !== undefined && PLAIN_WORD.test(third)) return undefined;
+    // npm aliases many subcommands (`run-script`, `rum`, `it`, `explore`, ...), so no list of names can be
+    // complete: key every package-manager call on its full plain-word argv. Flags are dropped from the key;
+    // approvalMemoryApplies refuses to reuse an allow for a command carrying them.
+    const plainWords = words.slice(1).filter((w) => PLAIN_WORD.test(w) && !w.startsWith("-"));
+    return `${request.tool}:${first} ${plainWords.join(" ")}`;
   }
 
   return `${request.tool}:${first} ${second}`;

@@ -143,6 +143,26 @@ describe("approvalMemoryApplies", () => {
     expect(key1).not.toBe(key2);
   });
 
+  test.each([
+    ["run-script", "test", "deploy"],
+    ["rum", "test", "deploy"],
+    ["urn", "test", "deploy"],
+    ["it", "lodash", "evil-pkg"],
+    ["install-test", "lodash", "evil-pkg"],
+    ["explore", "foo", "bar"],
+  ])("npm %s aliases key on the full plain-word argv: %s vs %s", (alias, a, b) => {
+    const keyA = agent.approvalMemoryKey({ tool: "Bash", command: `npm ${alias} ${a}` });
+    const keyB = agent.approvalMemoryKey({ tool: "Bash", command: `npm ${alias} ${b}` });
+    expect(keyA).toBe(`Bash:npm ${alias} ${a}`);
+    expect(keyB).toBe(`Bash:npm ${alias} ${b}`);
+    expect(keyA).not.toBe(keyB);
+  });
+
+  test("npm innit and pnpm create are never remembered", () => {
+    expect(agent.approvalMemoryKey({ tool: "Bash", command: "npm innit foo" })).toBeUndefined();
+    expect(agent.approvalMemoryKey({ tool: "Bash", command: "pnpm create foo" })).toBeUndefined();
+  });
+
   test("F1: npm install lodash --save filters out flags and only includes plain words", () => {
     const key = agent.approvalMemoryKey({ tool: "Bash", command: "npm install lodash --save" });
     expect(key).toBe("Bash:npm install lodash");
