@@ -1,6 +1,7 @@
 /** PR-specific fix, repair and checkout preparation instructions. */
 import { markdownFence } from "@/utils/markdown-fence";
 import {
+  GATE_INTEGRITY_RULE,
   REPAIR_VERIFICATION_RULE,
   renderWorkflowFindings,
   WORKFLOW_ARTIFACTS_RULE,
@@ -32,11 +33,13 @@ function instructions(input: BotPrFixPromptInput): string {
   switch (input.mode) {
     case "fix":
       return `- Fix every item; add a test where an item names a missing one (TDD: see it fail first).
+- ${GATE_INTEGRITY_RULE}
 - Before you commit, run every command in The bar; if one fails for missing setup, prepare the checkout first, then re-run the commands.
 - Commit, then append a "Fix" section to ${input.reportPath}: items changed, commands run, results.`;
     case "repair":
       return `- The items are the gates that were red after the fix.
 - Make every command in The bar pass, changing code where the fix broke it.
+- ${GATE_INTEGRITY_RULE}
 - Commit your changes.
 - ${REPAIR_VERIFICATION_RULE}`;
     case "prepare":
