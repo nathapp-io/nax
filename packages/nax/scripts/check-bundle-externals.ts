@@ -60,11 +60,22 @@
  *    the chat renders incrementally, so an unpatched ink draws every frame one
  *    row low. Widening the pin to a range drops the patch without an error.
  *
+ * 6. The build must define `process.env.NODE_ENV` as "production" (#2846).
+ *
+ *    React picks its development or production build from that expression,
+ *    and a bundle without the define gets the development one. React 19.2's
+ *    development reconciler records `performance.measure` entries on every
+ *    commit (its performance tracks), about 80 per frame of a 40-row Ink
+ *    screen, and nothing clears them. A long `nax chat` session redraws for
+ *    hours, so the timeline grows without bound (a session reached 16 GB RSS
+ *    in five hours). Under Bun the entries live outside the JS heap, so heap
+ *    stats and snapshots do not show them.
+ *
  * Usage:
  *   bun scripts/check-bundle-externals.ts
  *
  * Exit codes:
- *   0 -- all five invariants hold
+ *   0 -- all six invariants hold
  *   1 -- one of them is broken
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -73,6 +84,7 @@ import { checkAcpBundling, checkAgentBundling } from "./lib/agent-bundling";
 
 const REQUIRED_EXTERNAL = '--external "@nathapp/nax-ai"';
 const REQUIRED_SANDBOX_EXTERNAL = '--external "@anthropic-ai/sandbox-runtime"';
+const REQUIRED_PRODUCTION_DEFINE = '--define "process.env.NODE_ENV=\\"production\\""';
 const STUB_SPECIFIER = "file:./stubs/react-devtools-core";
 const STUB_ENTRY = "stubs/react-devtools-core/index.js";
 const INK_VERSION = "6.7.0";
@@ -104,6 +116,14 @@ if (build !== undefined && !build.includes(REQUIRED_SANDBOX_EXTERNAL)) {
     `the build script must pass ${REQUIRED_SANDBOX_EXTERNAL}.\n` +
       "srt locates its vendored sandbox binaries relative to its own files; bundled,\n" +
       "they are not beside dist/nax.js and every sandboxed command fails.",
+  );
+}
+
+if (build !== undefined && !build.includes(REQUIRED_PRODUCTION_DEFINE)) {
+  failures.push(
+    `the build script must pass ${REQUIRED_PRODUCTION_DEFINE}.\n` +
+      "Without it the bundle carries React's development build, whose performance\n" +
+      "entries grow on every chat frame and are never cleared (#2846).",
   );
 }
 
@@ -155,5 +175,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub; nax-agent and nax-agent-acp are bundled; ink is pinned and patched",
+  "check-bundle-externals: nax-ai and sandbox-runtime stay external; react-devtools-core resolves to the stub; nax-agent and nax-agent-acp are bundled; ink is pinned and patched; React builds for production",
 );
