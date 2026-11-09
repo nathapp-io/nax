@@ -112,6 +112,8 @@ runs:
         esac
 
     # The previous job published the dependency seconds ago; the registry can lag.
+    # 32 tries x 15s (~8 min): the lag reached ~4-5 min on v0.89.0 and v0.91.8-canary.5,
+    # which beat the old 8-try (~2 min) wait and failed the release.
     - name: Dependencies are on npm
       if: steps.published.outputs.skip != 'true'
       shell: bash
@@ -136,7 +138,7 @@ runs:
             exit 0
             ;;
         esac
-        for _ in 1 2 3 4 5 6 7 8; do
+        for _ in $(seq 1 32); do
           if [ -n "$(npm view "$DEP" version 2>/dev/null || true)" ]; then
             echo "$DEP is on npm"
             exit 0

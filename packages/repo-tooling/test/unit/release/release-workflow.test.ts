@@ -207,7 +207,7 @@ describe("publish-package action", () => {
     withShell((shell) => {
       const result = shell.run("Dependencies are on npm", { NPM_VIEW_EMPTY: "1", RETRY_DELAY: "0" });
       expect(result.status).not.toBe(0);
-      expect(result.calls).toHaveLength(8);
+      expect(result.calls).toHaveLength(32);
     }));
 
   test.each(["@nathapp/nax-agent", "@nathapp/nax-agent-acp"])(

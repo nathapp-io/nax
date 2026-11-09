@@ -39,7 +39,8 @@ bun run release tag
 1. `resolve`: validates the tag and runs `check-lockstep.ts --expect=<version>`.
 2. One job per package, in dependency order: nax-ai, nax-agent, nax-agent-acp, nax.
    Each runs the package's gates, waits until the packages it depends on are
-   visible on npm, and publishes with provenance. A version already on npm is
+   visible on npm (up to ~8 minutes; registry lag has reached ~5), and publishes
+   with provenance. A version already on npm is
    skipped, so a failed run is resumed by re-running it (or by dispatching the
    workflow with the tag).
 3. `github-release`: one GitHub Release for the tag. Its body is the nax-agent and
