@@ -12,12 +12,29 @@
  * more", without a second stat or read.
  */
 
-import { open } from "node:fs/promises";
+import { constants } from "node:fs";
+import { type FileHandle, open, stat } from "node:fs/promises";
+import { NaxError } from "#src/infra/index";
+
+function notRegularFileError(path: string): NaxError {
+  return new NaxError(`"${path}" is not a regular file`, "READ_NOT_REGULAR_FILE", { stage: "read", path });
+}
 
 /** Read at most `maxBytes + 1` bytes of a UTF-8 file, never the whole file. */
 export async function readPrefix(path: string, maxBytes: number): Promise<string> {
-  const handle = await open(path, "r");
+  let handle: FileHandle;
   try {
+    handle = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  } catch (error) {
+    const pathIsNonRegular = await stat(path).then(
+      (info) => !info.isFile(),
+      () => false,
+    );
+    if (pathIsNonRegular) throw notRegularFileError(path);
+    throw error;
+  }
+  try {
+    if (!(await handle.stat()).isFile()) throw notRegularFileError(path);
     const buffer = Buffer.alloc(maxBytes + 1);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     return buffer.subarray(0, bytesRead).toString("utf8");

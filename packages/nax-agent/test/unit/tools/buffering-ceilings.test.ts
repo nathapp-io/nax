@@ -14,11 +14,14 @@
  * all.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { drainBounded, readPrefix } from "#src/internal/bounded-io";
-import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES } from "#src/tools/index";
+import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, readTool } from "#src/tools/index";
+import { assertNaxError } from "#test/helpers/index";
 
 let root: string;
 
@@ -28,6 +31,15 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
+
+function readContext(path: string) {
+  return {
+    root,
+    resolvedPaths: [path],
+    maxBytes: 100,
+    maxFileBytes: DEFAULT_TOOL_MAX_FILE_BYTES,
+  };
+}
 
 function runtime(maxFileBytes?: number) {
   return createCodingToolRuntime({
@@ -44,7 +56,90 @@ function runtime(maxFileBytes?: number) {
   });
 }
 
+async function rejectedRead(path: string) {
+  let caught: unknown;
+  try {
+    await readPrefix(path, 100);
+  } catch (error) {
+    caught = error;
+  }
+  assertNaxError(caught);
+  return caught;
+}
+
+const hasMkfifo = Bun.which("mkfifo") !== null;
+
 describe("readPrefix — reads no more than the ceiling", () => {
+  test.skipIf(!hasMkfifo)(
+    "rejects a FIFO without a writer within two seconds",
+    async () => {
+      const path = join(root, "pipe");
+      execFileSync("mkfifo", [path]);
+
+      const error = await rejectedRead(path);
+
+      expect(error.code).toBe("READ_NOT_REGULAR_FILE");
+      expect(error.message).toContain(path);
+    },
+    2_000,
+  );
+
+  test("rejects a directory as a non-regular file", async () => {
+    const error = await rejectedRead(root);
+
+    expect(error.code).toBe("READ_NOT_REGULAR_FILE");
+    expect(error.context).toEqual({ stage: "read", path: root });
+  });
+
+  test.skipIf(!hasMkfifo)(
+    "Read reports a FIFO error promptly",
+    async () => {
+      const path = join(root, "read-pipe");
+      execFileSync("mkfifo", [path]);
+
+      const result = await readTool.run({ path: "read-pipe" }, readContext(path));
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("is not a regular file");
+    },
+    2_000,
+  );
+
+  test("reads the first 101 bytes from a regular 500-byte file", async () => {
+    const path = join(root, "five-hundred.txt");
+    const contents = "x".repeat(500);
+    writeFileSync(path, contents);
+
+    expect(await readPrefix(path, 100)).toBe(contents.slice(0, 101));
+  });
+
+  test("follows a symlink to a regular file", async () => {
+    const target = join(root, "target.txt");
+    const link = join(root, "link.txt");
+    writeFileSync(target, "symlink target contents");
+    symlinkSync(target, link);
+
+    expect(await readPrefix(link, 100)).toBe("symlink target contents");
+  });
+
+  test.skipIf(process.platform === "win32")("rejects a Unix socket as a non-regular file", async () => {
+    const path = join(root, "socket");
+    const server = createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(path, resolve);
+    });
+
+    try {
+      const error = await rejectedRead(path);
+      expect(error.code).toBe("READ_NOT_REGULAR_FILE");
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
   test("stops at the ceiling instead of loading the whole file", async () => {
     const path = join(root, "big.txt");
     writeFileSync(path, "x".repeat(50_000));
