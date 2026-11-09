@@ -126,4 +126,25 @@ describe("approvalMemoryApplies", () => {
   test("AC-17: npm run test --watch is not approved by a bare npm run test allow", () => {
     expect(agent.approvalMemoryApplies({ tool: "Bash", command: "npm run test --watch" }, "allow")).toBe(false);
   });
+
+  test("F1: npm install lodash evil-pkg generates a distinct key from npm install lodash", () => {
+    const key1 = agent.approvalMemoryKey({ tool: "Bash", command: "npm install lodash" });
+    const key2 = agent.approvalMemoryKey({ tool: "Bash", command: "npm install lodash evil-pkg" });
+    expect(key1).toBe("Bash:npm install lodash");
+    expect(key2).toBe("Bash:npm install lodash evil-pkg");
+    expect(key1).not.toBe(key2);
+  });
+
+  test("F1: npm run test deploy generates a distinct key from npm run test", () => {
+    const key1 = agent.approvalMemoryKey({ tool: "Bash", command: "npm run test" });
+    const key2 = agent.approvalMemoryKey({ tool: "Bash", command: "npm run test deploy" });
+    expect(key1).toBe("Bash:npm run test");
+    expect(key2).toBe("Bash:npm run test deploy");
+    expect(key1).not.toBe(key2);
+  });
+
+  test("F1: npm install lodash --save filters out flags and only includes plain words", () => {
+    const key = agent.approvalMemoryKey({ tool: "Bash", command: "npm install lodash --save" });
+    expect(key).toBe("Bash:npm install lodash");
+  });
 });

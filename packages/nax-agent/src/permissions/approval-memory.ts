@@ -95,7 +95,11 @@ export function approvalMemoryKey(request: ApprovalMemoryRequest): string | unde
     }
     const threeWordOps = ["run", "install", "i", "add"];
     if (threeWordOps.includes(second) && third !== undefined && PLAIN_WORD.test(third)) {
-      return `${request.tool}:${first} ${second} ${third}`;
+      // Include all remaining plain words (excluding flags) in the key, so npm install lodash
+      // and npm install lodash evil-pkg generate different keys. Flags (starting with -)
+      // are automatically filtered out.
+      const plainWords = words.slice(2).filter((w) => PLAIN_WORD.test(w) && !w.startsWith("-"));
+      return `${request.tool}:${first} ${second} ${plainWords.join(" ")}`;
     }
   }
 
