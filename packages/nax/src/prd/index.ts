@@ -84,6 +84,18 @@ export {
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
 
+function assertObjectStories(stories: UserStory[], path: string): void {
+  for (const [index, story] of stories.entries()) {
+    if (story === null || typeof story !== "object" || Array.isArray(story)) {
+      throw new NaxError(`PRD file has a non-object story at userStories[${index}]: ${path}`, "PRD_INVALID", {
+        stage: "prd",
+        path,
+        index,
+      });
+    }
+  }
+}
+
 /** Load PRD from file */
 export async function loadPRD(path: string): Promise<PRD> {
   if (!existsSync(path)) {
@@ -119,6 +131,8 @@ export async function loadPRD(path: string): Promise<PRD> {
       path,
     });
   }
+
+  assertObjectStories(prd.userStories, path);
 
   // @design: BUG-21: Normalize story fields to prevent null/undefined arithmetic issues
   // @design: BUG-004: Auto-default optional PRD fields in-memory (tags, status, acceptanceCriteria, storyPoints)
