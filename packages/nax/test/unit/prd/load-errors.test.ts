@@ -99,4 +99,55 @@ describe("loadPRD — loader failure standardization (US-004)", () => {
     expect(err.code).toBe("PRD_INVALID");
     expect(err.context?.path).toBe(prdPath);
   });
+
+  const validStory = {
+    id: "US-001",
+    title: "Example story",
+    description: "Valid story shape",
+    acceptanceCriteria: [],
+    dependencies: [],
+    tags: [],
+    status: "pending",
+    passes: false,
+  };
+
+  async function writeStories(userStories: unknown[]): Promise<void> {
+    await Bun.write(prdPath, JSON.stringify({ userStories }));
+  }
+
+  test("AC-4: rejects null user story with PRD_INVALID and its index", async () => {
+    await writeStories([null]);
+
+    const err = await loadPRD(prdPath).catch((e: unknown) => e);
+    assertNaxError(err, "loadPRD rejection on null story");
+    expect(err.code).toBe("PRD_INVALID");
+    expect(err.context?.index).toBe(0);
+    expect(err.message).toBe(`PRD file has a non-object story at userStories[0]: ${prdPath}`);
+  });
+
+  test("AC-5: rejects the first non-object story after a valid story with its index", async () => {
+    await writeStories([validStory, 42]);
+
+    const err = await loadPRD(prdPath).catch((e: unknown) => e);
+    assertNaxError(err, "loadPRD rejection on number story");
+    expect(err.code).toBe("PRD_INVALID");
+    expect(err.context?.index).toBe(1);
+  });
+
+  test("AC-6: accepts and defaults a valid story attempts count to zero", async () => {
+    await writeStories([validStory]);
+
+    const prd = await loadPRD(prdPath);
+    expect(prd.userStories).toHaveLength(1);
+    expect(prd.userStories[0]?.id).toBe("US-001");
+    expect(prd.userStories[0]?.attempts).toBe(0);
+  });
+
+  test("AC-7: rejects array user story with PRD_INVALID", async () => {
+    await writeStories([[]]);
+
+    const err = await loadPRD(prdPath).catch((e: unknown) => e);
+    assertNaxError(err, "loadPRD rejection on array story");
+    expect(err.code).toBe("PRD_INVALID");
+  });
 });

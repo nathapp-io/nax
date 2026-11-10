@@ -308,9 +308,29 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
         observed = response;
       });
       const toolArgs = createToolArgAccumulator();
+      let malformedToolArgs: Extract<ProtocolEvent, { type: "error" }> | undefined;
 
       try {
         for await (const event of events) {
+          // Once a tool call is malformed, keep consuming pi's stream so the
+          // terminal event can still report usage, but do not expose anything
+          // after the malformed call except its final usage and one error.
+          if (malformedToolArgs !== undefined) {
+            if (event.type === "done") {
+              yield { type: "usage", usage: toTokenUsage(event.message.usage) };
+              yield malformedToolArgs;
+              return;
+            }
+            if (event.type === "error") {
+              const usage = toTokenUsage(event.error.usage);
+              if (totalTokens(usage) > 0) yield { type: "usage", usage };
+              if (req.signal?.aborted) throw req.signal.reason ?? new DOMException("Aborted", "AbortError");
+              yield malformedToolArgs;
+              return;
+            }
+            continue;
+          }
+
           switch (event.type) {
             case "text_delta":
               yield { type: "text-delta", text: event.delta };
@@ -352,9 +372,9 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               try {
                 input = parseToolArgs(pending?.raw ?? "");
               } catch (cause) {
-                // An error event, not a throw: text and usage already yielded
-                // must survive.
-                yield {
+                // Keep the same bad-request details, but drain pi's stream so
+                // terminal token usage is not discarded with the malformed call.
+                malformedToolArgs = {
                   type: "error",
                   error: {
                     kind: "bad-request",
@@ -362,7 +382,7 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
                     cause,
                   },
                 };
-                return;
+                break;
               }
               yield { type: "tool-call", call: { id: event.toolCall.id, name: event.toolCall.name, input } };
               break;
@@ -429,6 +449,7 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
               break;
           }
         }
+        if (malformedToolArgs !== undefined) yield malformedToolArgs;
       } catch (cause) {
         // A stream failure with no HTTP response (connection reset, DNS
         // failure, an immediate socket error) propagates as a raw throw
@@ -438,7 +459,8 @@ export function createPiProtocol(name: string, deps: PiDeps): Protocol {
         // relabelled as a transport fault: retryTransportFaults, and any
         // consumer-level abort handling, both need to see abort as abort.
         if (req.signal?.aborted) throw cause;
-        yield { type: "error", error: classifyThrown(cause) };
+        if (malformedToolArgs !== undefined) yield malformedToolArgs;
+        else yield { type: "error", error: classifyThrown(cause) };
       }
     },
   };

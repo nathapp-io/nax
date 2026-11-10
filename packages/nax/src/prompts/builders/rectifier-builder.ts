@@ -30,6 +30,7 @@ import {
 import {
   adversarialRectification,
   CONTRADICTION_ESCAPE_HATCH,
+  capTail,
   combinedLlmRectification,
   escapeHatchFor,
   exceptionCountWord,
@@ -132,10 +133,7 @@ function assertNever(value: never): never {
 
 function renderCheckBlock(check: ReviewCheckResult, opts?: RectifierRenderOpts): string {
   const parts: string[] = [];
-  const truncated = check.output.length > 4000;
-  const output = truncated
-    ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
-    : check.output;
+  const output = capTail(check.output, 4_000);
   parts.push(`### ${check.check} (exit ${check.exitCode})\n`, `\`\`\`\n${output}\n\`\`\`\n`);
 
   // Defensive filter — only blocking-severity findings drive the fix prompt,
@@ -431,10 +429,7 @@ Commit your fixes when done.${scopeConstraint}`;
     const threshold = opts?.blockingThreshold ?? "error";
     for (const check of failedChecks) {
       parts.push(`### ${check.check} (exit ${check.exitCode})\n`);
-      const truncated = check.output.length > 4000;
-      const output = truncated
-        ? `${check.output.slice(0, 4000)}\n... (truncated — ${check.output.length} chars total)`
-        : check.output;
+      const output = capTail(check.output, 4_000);
       parts.push(`\`\`\`\n${output}\n\`\`\`\n\n`);
       const blocking = (check.findings ?? []).filter((f) => isBlockingSeverity(f.severity, threshold));
       if (blocking.length > 0) {

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { _grepDeps, buildGrepArgv, DEFAULT_TOOL_MAX_FILE_BYTES, grepTool } from "#src/tools/index";
@@ -40,14 +41,23 @@ describe("buildGrepArgv", () => {
     expect(argv[0]).toBe("rg");
     expect(argv).toContain("--fixed-strings");
     expect(argv).toContain("--line-number");
+    expect(argv).not.toContain("--exclude-dir=.git");
     expect(argv).toContain("needle");
   });
 
-  test("grep fallback uses recursive line-numbered fixed-string flags", () => {
+  test("grep fallback uses recursive line-numbered fixed-string flags and excludes .git", () => {
     const argv = buildGrepArgv("grep", "needle", undefined, "literal");
     expect(argv.slice(0, 2)).toEqual(["grep", "-r"]);
     expect(argv).toContain("-n");
     expect(argv).toContain("-F");
+    expect(argv.indexOf("--exclude-dir=.git")).toBeGreaterThanOrEqual(0);
+    expect(argv.indexOf("--exclude-dir=.git")).toBeLessThan(argv.indexOf("--"));
+  });
+
+  test("grep fallback regex mode excludes .git before the pattern terminator", () => {
+    const argv = buildGrepArgv("grep", "fo+|bar", undefined, "regex");
+    expect(argv.indexOf("--exclude-dir=.git")).toBeGreaterThanOrEqual(0);
+    expect(argv.indexOf("--exclude-dir=.git")).toBeLessThan(argv.indexOf("--"));
   });
 
   test("the pattern is passed after a '--' terminator so it is never read as a flag", () => {
@@ -91,6 +101,32 @@ describe("grepTool", () => {
     _grepDeps.which = (name: string) => (name === "rg" ? null : realWhich(name));
     const res = await grepTool.run({ pattern: "needle" }, ctx());
     expect(res.content).toContain("a.ts");
+  });
+
+  test("fallback search returns matches from the repository but never from .git", async () => {
+    const repo = makeTestDir("nax-grep-git-");
+    mkdirSync(join(repo, "src"), { recursive: true });
+    execFileSync("git", ["init"], { cwd: repo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repo, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repo, stdio: "ignore" });
+    // A token-bearing remote URL, the review's repro. Set through git so .git/config stays valid and keeps
+    // the identity above: overwriting the file wiped it, and git commit then failed wherever no global identity exists.
+    execFileSync("git", ["config", "remote.origin.url", "https://secret-marker-123@example.invalid/repo.git"], {
+      cwd: repo,
+      stdio: "ignore",
+    });
+    writeFileSync(join(repo, "src", "a.txt"), "secret-marker-123\n");
+    execFileSync("git", ["add", "src/a.txt"], { cwd: repo, stdio: "ignore" });
+    execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-m", "fixture"], {
+      cwd: repo,
+      stdio: "ignore",
+    });
+    _grepDeps.which = (name: string) => (name === "rg" ? null : realWhich(name));
+
+    const res = await grepTool.run({ pattern: "secret-marker-123" }, { ...ctx(), root: repo });
+
+    expect(res.content).toContain("src/a.txt:1:secret-marker-123");
+    expect(res.content.split("\n").some((line) => line.includes(".git/"))).toBe(false);
   });
 
   test("no match is an empty result, not an error", async () => {

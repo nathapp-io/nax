@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
@@ -345,6 +345,55 @@ describe("_mentionExpandDeps", () => {
       expect(entries).toContainEqual({ name: "a.ts", isDirectory: false });
       expect(entries).toContainEqual({ name: "sub", isDirectory: true });
     });
+  });
+
+  const mkfifo = Bun.which("mkfifo");
+  const mkfifoCommand = mkfifo ?? "mkfifo";
+  const fifoTest = mkfifo === null ? test.skip : test;
+
+  fifoTest(
+    "AC-1 mentions a FIFO as path-only without blocking",
+    async () => {
+      await withTempDir(async (root) => {
+        const init = await originalDeps.git(["-c", "init.templateDir=", "init", "-q"], root);
+        expect(init.exitCode).toBe(0);
+        const pipePath = join(root, "pipe");
+        const created = Bun.spawn([mkfifoCommand, pipePath], { stdout: "ignore", stderr: "pipe" });
+        expect(await created.exited).toBe(0);
+        Object.assign(chat._mentionExpandDeps, originalDeps);
+        const result = await expandChatMentions("see @pipe", { cwd: root, repoRoot: root });
+        expect(result.records).toEqual([
+          { path: "pipe", status: "path-only", note: "path only: not a regular file", body: "" },
+        ]);
+      });
+    },
+    2_000,
+  );
+
+  fifoTest("AC-2 default stat marks a FIFO special", async () => {
+    await withTempDir(async (root) => {
+      const pipePath = join(root, "pipe");
+      const created = Bun.spawn([mkfifoCommand, pipePath], { stdout: "ignore", stderr: "pipe" });
+      expect(await created.exited).toBe(0);
+      expect(await originalDeps.stat(pipePath)).toEqual({ isDirectory: false, size: 0, special: true });
+    });
+  });
+
+  test("AC-3 a special-file stat prevents reading its bytes", async () => {
+    addFile("/repo/pipe", "/repo/pipe", "data");
+    const specialStat: Awaited<ReturnType<typeof chat._mentionExpandDeps.stat>> = {
+      isDirectory: false,
+      size: 4,
+      special: true,
+    };
+    chat._mentionExpandDeps.stat = async () => specialStat;
+    const readBytes = mock(async () => new Uint8Array());
+    chat._mentionExpandDeps.readBytes = readBytes;
+    const result = await expand("see @pipe");
+    expect(result.records).toEqual([
+      { path: "pipe", status: "path-only", note: "path only: not a regular file", body: "" },
+    ]);
+    expect(readBytes).not.toHaveBeenCalled();
   });
 });
 

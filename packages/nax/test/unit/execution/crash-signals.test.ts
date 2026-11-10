@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeStatusWriter } from "@test/helpers";
+import { makeStatusWriter, withWarnSpy } from "@test/helpers";
 import type { SignalHandlerContext } from "@/execution/crash-signals";
 import {
   _crashSignalsDeps,
@@ -466,6 +466,143 @@ describe("performTeardown — US-002 approvals seal", () => {
 
     expect(sealApprovals).toHaveBeenCalledTimes(1);
     expect(killAll).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("fatal-handler lock release — US-004", () => {
+  let originalExit: (typeof _crashSignalsDeps)["exit"];
+  let originalArmDeadline: (typeof _crashSignalsDeps)["armDeadline"];
+  let originalStderrWrite: typeof process.stderr.write;
+
+  beforeEach(() => {
+    originalExit = _crashSignalsDeps.exit;
+    originalArmDeadline = _crashSignalsDeps.armDeadline;
+    originalStderrWrite = process.stderr.write;
+    _crashSignalsDeps.armDeadline = () => () => {};
+    _crashSignalsDeps.exit = () => {};
+    process.stderr.write = (() => true) as typeof process.stderr.write;
+  });
+
+  afterEach(() => {
+    _crashSignalsDeps.exit = originalExit;
+    _crashSignalsDeps.armDeadline = originalArmDeadline;
+    process.stderr.write = originalStderrWrite;
+  });
+
+  async function invokeNewListener(
+    event: "SIGTERM" | "uncaughtException" | "unhandledRejection",
+    ctx: SignalHandlerContext,
+  ): Promise<void> {
+    const previousCount = process.listeners(event).length;
+    const remove = installSignalHandlers(ctx);
+    try {
+      const listener = process.listeners(event)[previousCount] as (...args: unknown[]) => Promise<void>;
+      if (event === "SIGTERM") await listener("SIGTERM");
+      else if (event === "uncaughtException") await listener(new Error("fatal"), "uncaughtException");
+      else await listener(new Error("fatal"), Promise.resolve());
+    } finally {
+      remove();
+    }
+  }
+
+  test("AC-1: SIGTERM releases once before exit 143", async () => {
+    const order: string[] = [];
+    const ctx = {
+      ...minimalCtx,
+      releaseLocks: async () => {
+        order.push("release");
+      },
+    };
+    _crashSignalsDeps.exit = (code) => {
+      order.push(`exit:${code}`);
+    };
+    await invokeNewListener("SIGTERM", ctx);
+    expect(order).toEqual(["release", "exit:143"]);
+  });
+
+  test("AC-2: uncaught exception releases once before exit 1", async () => {
+    const order: string[] = [];
+    const ctx = {
+      ...minimalCtx,
+      releaseLocks: async () => {
+        order.push("release");
+      },
+    };
+    _crashSignalsDeps.exit = (code) => {
+      order.push(`exit:${code}`);
+    };
+    await invokeNewListener("uncaughtException", ctx);
+    expect(order).toEqual(["release", "exit:1"]);
+  });
+
+  test("AC-3: unhandled rejection releases once before exit 1", async () => {
+    const order: string[] = [];
+    const ctx = {
+      ...minimalCtx,
+      releaseLocks: async () => {
+        order.push("release");
+      },
+    };
+    _crashSignalsDeps.exit = (code) => {
+      order.push(`exit:${code}`);
+    };
+    await invokeNewListener("unhandledRejection", ctx);
+    expect(order).toEqual(["release", "exit:1"]);
+  });
+
+  test("AC-4 and AC-13: a rejected release is warned and preserves SIGTERM exit 143", async () => {
+    const exited: number[] = [];
+    _crashSignalsDeps.exit = (code) => {
+      exited.push(code);
+    };
+    await withWarnSpy(async (warnSpy) => {
+      await invokeNewListener("SIGTERM", {
+        ...minimalCtx,
+        releaseLocks: async () => {
+          throw new Error("release failed");
+        },
+      });
+      expect(exited).toEqual([143]);
+      expect(
+        warnSpy.mock.calls.some(
+          (call) => call[1].includes("release") && JSON.stringify(call).includes("release failed"),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  test("AC-5: absent releaseLocks preserves SIGTERM exit 143", async () => {
+    const exited: number[] = [];
+    _crashSignalsDeps.exit = (code) => {
+      exited.push(code);
+    };
+    await invokeNewListener("SIGTERM", minimalCtx);
+    expect(exited).toEqual([143]);
+  });
+
+  test("AC-6: releases locks after the crashed status has been recorded", async () => {
+    const order: string[] = [];
+    const statusWriter = makeStatusWriter({
+      setRunStatus: () => {
+        order.push("status");
+      },
+      update: async () => {
+        order.push("update");
+      },
+    });
+    const exited: number[] = [];
+    _crashSignalsDeps.exit = (code) => {
+      exited.push(code);
+    };
+    await invokeNewListener("SIGTERM", {
+      ...minimalCtx,
+      statusWriter,
+      releaseLocks: async () => {
+        order.push("release");
+      },
+    });
+    expect(order).toEqual(["status", "update", "release"]);
+    expect(exited).toEqual([143]);
   });
 });
 

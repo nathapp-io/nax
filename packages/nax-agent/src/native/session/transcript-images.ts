@@ -54,7 +54,7 @@ async function publishImageOnce(path: string, bytes: Uint8Array): Promise<void> 
   const staged = `${path}.${randomUUID()}.tmp`;
   try {
     // Keep atomic staging (and its rename seam), but never rename over the final name.
-    await _transcriptImagesDeps.writeFileAtomic(staged, bytes);
+    await _transcriptImagesDeps.writeFileAtomic(staged, bytes, { mode: 0o600 });
     try {
       await _transcriptImagesDeps.link(staged, path);
     } catch (error) {

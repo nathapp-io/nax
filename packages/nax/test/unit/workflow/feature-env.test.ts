@@ -31,10 +31,13 @@ const noDecisions: Advisor = {
   adviseBatch: async () => ({ kind: "residual", items: [], diagnoses: {} }),
 };
 
-function setup(over: (runDir: string) => Parameters<typeof makeFeatureContext>[0] = () => ({})) {
+function setup(
+  over: (runDir: string) => Parameters<typeof makeFeatureContext>[0] = () => ({}),
+  advisor: Advisor = noDecisions,
+) {
   const runDir = makeTempDir("wf-env-");
   dirs.push(runDir);
-  _workflowDeps.createAdvisor = () => noDecisions;
+  _workflowDeps.createAdvisor = () => advisor;
   const fc = makeFeatureContext({ runDir, ...over(runDir) });
   const blocks: unknown[] = [];
   const env = buildFeatureEnv(
@@ -131,6 +134,21 @@ describe("buildFeatureEnv", () => {
     expect(blocks).toEqual([
       { step: "publish", stories: { "US-001": { state: "complete", round: 2 } }, outcome: "draft", url: "u" },
     ]);
+  });
+
+  test("AC-11: an aborted feature's adjudicator rethrows the advisor error", async () => {
+    const error = new Error("advisor interrupted");
+    const controller = new AbortController();
+    controller.abort();
+    const { env } = setup((runDir) => ({ runDir, runSignal: controller.signal }), {
+      ...noDecisions,
+      adviseBatch: async () => {
+        throw error;
+      },
+    });
+    await expect(
+      env.steps.adjudicate([{ id: "B1", kind: "quality", severity: "important", issue: "drift" }]),
+    ).rejects.toBe(error);
   });
 
   test("adjudicate is feature-scoped: default holds land as _run ledger lines (P4-R18)", async () => {

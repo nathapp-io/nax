@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { NaxError } from "#src/infra/nax-error";
@@ -14,6 +14,7 @@ import {
   type SessionStorageDeps,
 } from "#src/session-store/session-lock";
 import { SessionLockGuardBusy, withSessionLockGuard } from "#src/session-store/session-lock-guard";
+import { createSessionStorage } from "#src/session-store/storage";
 import { makeLogger } from "#test/helpers/agent-logger";
 
 const dirs: string[] = [];
@@ -361,6 +362,24 @@ test("AC-15..17: guard contention remains distinguishable and neutral", () => {
     expect(() => s.acquire()).toThrow(SessionLockGuardBusy);
     expect(() => s.acquire()).toThrow("session in use by another process");
   });
+});
+
+test("AC-10: session metadata is written owner-only", async () => {
+  const s = setup();
+  const store = createSessionStorage(s.deps);
+  await store.writeMeta({
+    schemaVersion: 1,
+    sessionId: "private-session",
+    cwd: "/work",
+    mode: "ask",
+    model: "anthropic/claude-sonnet-5-5",
+    bashApproval: "gated",
+    title: null,
+    createdAt: "2026-10-09T00:00:00.000Z",
+    updatedAt: null,
+  });
+  const info = await stat(join(s.deps.dir, "private-session.session.json"));
+  expect(info.mode & 0o777).toBe(0o600);
 });
 
 test.each([

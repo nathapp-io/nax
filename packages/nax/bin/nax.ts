@@ -47,6 +47,7 @@ import {
   authListCommand,
   authLoginCommand,
   authRmCommand,
+  configDisplayAction,
   contextInspectCommand,
   effectivenessEvalCommand,
   fragmentsInspectCommand,
@@ -76,7 +77,7 @@ import {
   sandboxProbeCommand,
   specLintCommand,
 } from "../src/cli";
-import { configCommand, configJsonCommand } from "../src/cli/config";
+import { configJsonCommand } from "../src/cli/config";
 import {
   profileCreateCommand,
   profileCurrentCommand,
@@ -232,7 +233,7 @@ program
   .option("-m, --max-iterations <n>", "Removed: workflow mode sets its own limits")
   .option("--max-cost <usd>", "Override cost limit (USD) for this run — aborts execution when exceeded")
   .option("--dry-run", "Show plan without executing", false)
-  .option("--no-context", "Disable context builder (skip file context in prompts)")
+  .option("--no-context", "Removed: workflow mode builds its own prompt context")
   // US-002: the project-context override flag is --context-file, not --context,
   // because --no-context above already defines `options.context` as a boolean.
   .option("--rules-dir <path>", "Override rules directory (absolute, ~/… , or relative to the workdir)")
@@ -867,9 +868,8 @@ const configCmd = program
       return;
     }
     try {
-      const projectDir = findProjectDir(workdir);
-      const config = await loadConfig(projectDir ?? workdir, { profile: options.profile });
-      await configCommand(config, {
+      await configDisplayAction({
+        dir: workdir,
         explain: options.explain,
         diff: options.diff,
         profile: options.profile,

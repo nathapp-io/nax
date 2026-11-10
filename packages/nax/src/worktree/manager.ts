@@ -1,4 +1,4 @@
-import { existsSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, type Stats, symlinkSync } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -12,13 +12,15 @@ import type { WorktreeId } from "./worktree-id";
 import { storyBranchName, storyWorktreePath } from "./worktree-id";
 
 /**
- * Injectable git subprocess seam. Tests stub `gitWithTimeout` to drive
- * `create()` and `remove()` end to end without spawning real git.
+ * Injectable seams. Tests stub `gitWithTimeout` to drive `create()` and
+ * `remove()` end to end without spawning real git, and `lstatSync` to reach
+ * the worktree `.env` inspection failure that no real filesystem state produces.
  *
  * @internal
  */
 export const _worktreeManagerDeps = {
   gitWithTimeout,
+  lstatSync: (path: string): Stats => lstatSync(path),
 };
 
 /**
@@ -58,6 +60,50 @@ async function resolveGitInfoDir(projectRoot: string): Promise<string> {
 }
 
 const NAX_EXCLUDE_HEADER = "# nax — generated files (auto-added by nax parallel)";
+
+interface PreserveEnvOptions {
+  projectRoot: string;
+  worktreePath: string;
+  worktreeId: WorktreeId;
+  removeWorktree: () => Promise<void>;
+}
+
+/** Keep a checked-out .env or link the project .env when the worktree has no copy. */
+async function preserveWorktreeEnv(options: PreserveEnvOptions): Promise<void> {
+  const envSource = join(options.projectRoot, ".env");
+  if (!existsSync(envSource)) return;
+
+  const envTarget = join(options.worktreePath, ".env");
+  try {
+    _worktreeManagerDeps.lstatSync(envTarget);
+    getSafeLogger()?.debug("worktree", ".env is tracked; the worktree keeps the checked-out copy", {
+      worktreeId: options.worktreeId,
+    });
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      await options.removeWorktree();
+      throw new NaxError(`Failed to inspect worktree .env: ${errorMessage(error)}`, "WORKTREE_ERROR", {
+        stage: "worktree",
+        worktreeId: options.worktreeId,
+        envTarget,
+        cause: error,
+      });
+    }
+  }
+
+  try {
+    symlinkSync(envSource, envTarget, "file");
+  } catch (error) {
+    await options.removeWorktree();
+    throw new NaxError(`Failed to symlink .env: ${errorMessage(error)}`, "WORKTREE_ERROR", {
+      stage: "worktree",
+      worktreeId: options.worktreeId,
+      envSource,
+      envTarget,
+    });
+  }
+}
 
 /**
  * Drop retired entries line-exactly, keeping every other line (the user's own
@@ -375,24 +421,13 @@ export class WorktreeManager {
       });
     }
 
-    // Symlink .env if it exists. worktreePath is the producer-derived
-    // `<root>/.nax-wt/<worktreeId>`; we don't re-spell it inline.
-    const envSource = `${projectRoot}/.env`;
-    if (existsSync(envSource)) {
-      const envTarget = `${worktreePath}/.env`;
-      try {
-        symlinkSync(envSource, envTarget, "file");
-      } catch (error) {
-        // Clean up worktree if symlinking fails
-        await this.remove(projectRoot, worktreeId);
-        throw new NaxError(`Failed to symlink .env: ${errorMessage(error)}`, "WORKTREE_ERROR", {
-          stage: "worktree",
-          worktreeId,
-          envSource,
-          envTarget,
-        });
-      }
-    }
+    // Keep a checked-out .env or mirror an ignored one into the new worktree.
+    await preserveWorktreeEnv({
+      projectRoot,
+      worktreePath,
+      worktreeId,
+      removeWorktree: () => this.remove(projectRoot, worktreeId),
+    });
   }
 
   /**

@@ -27,7 +27,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 
 /** Grace period between SIGTERM and SIGKILL on timeout. */
 const SIGKILL_GRACE_PERIOD_MS = 5_000;
-const STREAM_DRAIN_TIMEOUT_MS = 2_000;
+export const STREAM_DRAIN_TIMEOUT_MS = 2_000;
 
 /**
  * How much of a timed-out agent-tool command's output is kept: the tail, so the
@@ -97,19 +97,56 @@ export const _qualityRunnerDeps = {
   ) => void,
 };
 
-function createDrainDeadline(deadlineMs: number): { promise: Promise<string>; cancel: () => void } {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const promise = new Promise<string>((resolve) => {
-    timeoutId = setTimeout(() => resolve(""), deadlineMs);
-  });
-  return {
-    promise,
-    cancel: () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
+interface StreamCollector {
+  done: Promise<void>;
+  text: () => string;
+  cancel: () => Promise<void>;
+}
+
+function collectStream(stream: ReadableStream<Uint8Array>): StreamCollector {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let output = "";
+  const done = (async () => {
+    try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        output += decoder.decode(next.value, { stream: true });
       }
-    },
-  };
+      output += decoder.decode();
+    } catch {
+      // A stream that fails still returns every chunk read before the failure.
+    }
+  })();
+  return { done, text: () => output, cancel: () => reader.cancel() };
+}
+
+async function drainStream(collector: StreamCollector): Promise<{ output: string; timedOut: boolean }> {
+  let timeoutId: unknown;
+  const deadline = new Promise<boolean>((resolve) => {
+    timeoutId = _qualityRunnerDeps.setTimeout(() => resolve(true), STREAM_DRAIN_TIMEOUT_MS);
+  });
+  const timedOut = await Promise.race([collector.done.then(() => false), deadline]);
+  if (timeoutId !== undefined) _qualityRunnerDeps.clearTimeout(timeoutId);
+  if (timedOut) {
+    // Cancellation is best-effort; it must not extend the drain deadline.
+    void collector.cancel().catch(() => {});
+  }
+  return { output: collector.text(), timedOut };
+}
+
+async function drainOutputStreams(opts: {
+  stdout: StreamCollector;
+  stderr: StreamCollector;
+  pid: number;
+  timedOut: boolean;
+}): Promise<[string, string]> {
+  const [stdout, stderr] = await Promise.all([drainStream(opts.stdout), drainStream(opts.stderr)]);
+  if (!opts.timedOut && (stdout.timedOut || stderr.timedOut)) {
+    _qualityRunnerDeps.killProcessGroup(opts.pid, "SIGTERM", { singleProcessFallback: false });
+  }
+  return [stdout.output, stderr.output];
 }
 
 /**
@@ -232,28 +269,21 @@ async function runSingleCommand(
       });
     }, timeoutMs);
 
-    // Drain stdout and stderr concurrently with proc.exited to avoid deadlock
-    // when process output exceeds the OS pipe buffer (~64 KB).
-    const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
-    const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+    // Start both readers before awaiting the leader to avoid pipe-buffer deadlocks.
+    const stdoutCollector = collectStream(proc.stdout);
+    const stderrCollector = collectStream(proc.stderr);
     const exitCode = await proc.exited;
-    const [stdout, stderr] = timedOut
-      ? await (async () => {
-          const stdoutDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
-          const stderrDrain = createDrainDeadline(STREAM_DRAIN_TIMEOUT_MS);
-          try {
-            return await Promise.all([
-              Promise.race([stdoutPromise, stdoutDrain.promise]),
-              Promise.race([stderrPromise, stderrDrain.promise]),
-            ]);
-          } finally {
-            stdoutDrain.cancel();
-            stderrDrain.cancel();
-          }
-        })()
-      : await Promise.all([stdoutPromise, stderrPromise]);
+    leaderExited = true;
+    if (!timedOut) _qualityRunnerDeps.clearTimeout(killTimer);
 
-    _qualityRunnerDeps.clearTimeout(killTimer);
+    const [stdout, stderr] = await drainOutputStreams({
+      stdout: stdoutCollector,
+      stderr: stderrCollector,
+      pid: proc.pid,
+      timedOut,
+    });
+
+    if (timedOut) _qualityRunnerDeps.clearTimeout(killTimer);
     // A pending SIGKILL is awaited while the group still has a member (signal 0
     // probes without delivering anything) and cancelled once it is empty, so no
     // timer outlives the call.

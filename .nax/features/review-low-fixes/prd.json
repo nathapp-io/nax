@@ -1,0 +1,604 @@
+{
+  "project": "nax-monorepo",
+  "feature": "review-low-fixes",
+  "branchName": "feat/review-low-fixes",
+  "createdAt": "2026-11-09T00:00:00.000Z",
+  "updatedAt": "2026-11-09T16:44:45.161Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Read-side tools never search .git or hang on special files",
+      "description": "**Goal** — Fix L14's grep half and L37a by excluding .git from fallback searches and refusing special-file reads without blocking.\n\n**Motivation** — It searches `.git/`; the review's agent repro returned a token-bearing remote URL from `.git/config`.\n\n**Approach** — `buildGrepArgv(binary, pattern, path, patternType?)` — Target: the `\"grep\"` branch returns `[\"grep\", \"-r\", \"-n\", \"--exclude-dir=.git\", modeFlag, \"--\", pattern, target]`; the `\"rg\"` branch is unchanged.\n\n`readPrefix(path: string, maxBytes: number): Promise<string>` — Target: same signature; opens with `constants.O_RDONLY | (constants.O_NONBLOCK ?? 0)` from `node:fs`, checks the opened handle's `stat().isFile()`, and when false closes the handle and throws `NaxError` code `READ_NOT_REGULAR_FILE`, message `\"<path>\" is not a regular file`, context `{ stage: \"read\", path }`. A regular file reads as today. nax-agent ships Node-compatible source, so this stays on `node:fs/promises`.\n\nFailure handling: `readPrefix` on a FIFO, socket, directory or device rejects `READ_NOT_REGULAR_FILE` without blocking; `Read` returns `isError: true` with that message (its existing catch). Read `resolveWithin` and `getAgentRuntime().globSync` for context only; do not change them.\n\n**Scope** — In: grep fallback argv and readPrefix, including real tool-level regression cases. Out: US-002 redaction/storage changes and US-008 chat-mention special-file handling. US-001 only: review L37b (`ScratchpadList` checks a glob hit against the repo root instead of the scratchpad) is dropped by evidence: both runtimes' `globSync` never return a symlink for a `**/*` pattern (Bun scans with `onlyFiles` and `followSymlinks: false`; `node-glob.ts` keeps a symlink only for a literal pattern), so no symlinked entry reaches the check. US-001 only: Bash writes to `.claude/settings.local.json` outside the OS sandbox (review L14's second half): the sandboxed path is already denied by `policy-builder.ts:212`. US-001 only: `readPrefix` on Windows: `O_NONBLOCK` is absent there and treated as `0`; FIFO behaviour on Windows is not tested. US-001 only: `readFileSlice` (`tools/read-file.ts:70`, behind `ScratchpadRead`) has the same open-without-type-check shape, but it only reads inside the agent's own scratchpad, so a FIFO there is one the agent made itself.\n\n**Interface** — `buildGrepArgv(binary, pattern, path, patternType?)`; `readPrefix(path: string, maxBytes: number): Promise<string>`.\n\nTesting: add cases to `packages/nax-agent/test/unit/tools/grep.test.ts` and `packages/nax-agent/test/unit/tools/buffering-ceilings.test.ts`, preserving existing assertions. Show a new fail-first case against old code; AC3, AC7 and AC9 are already-green regression guards.",
+      "acceptanceCriteria": [
+        "[unit] buildGrepArgv(\"grep\", \"needle\", undefined, \"literal\") returns an argv in which \"--exclude-dir=.git\" appears at an index lower than the index of \"--\".",
+        "[unit] buildGrepArgv(\"grep\", \"fo+|bar\", undefined, \"regex\") returns an argv in which \"--exclude-dir=.git\" appears at an index lower than the index of \"--\".",
+        "[unit] buildGrepArgv(\"rg\", \"needle\", undefined, \"literal\") returns an argv that omits \"--exclude-dir=.git\".",
+        "[unit] With _grepDeps.which returning null for \"rg\" (the grep fallback), grepTool.run with pattern \"secret-marker-123\" and no path, in a temp git repo whose .git/config and src/a.txt both hold \"secret-marker-123\", returns content with a row for src/a.txt and no row whose path includes the segment .git/.",
+        "[unit] readPrefix on a named pipe (FIFO) with no writer rejects within 2 seconds with a NaxError whose code is \"READ_NOT_REGULAR_FILE\" and whose message names the pipe's path; the test skips when the mkfifo utility is unavailable.",
+        "[unit] readPrefix on a directory rejects with a NaxError whose code is \"READ_NOT_REGULAR_FILE\".",
+        "[unit] readPrefix(path, 100) on a regular 500-byte file returns its first 101 bytes as UTF-8.",
+        "[unit] readTool.run({ path: \"pipe\" }, ctx), where pipe is a FIFO inside the tool root with no writer, resolves within 2 seconds to a result with isError: true whose content includes \"is not a regular file\".",
+        "[unit] readPrefix on a symlink whose target is a regular file returns the target file's content.",
+        "When readPrefix is given a FIFO, socket, directory or device, it rejects without blocking with READ_NOT_REGULAR_FILE rather than attempting to read its contents."
+      ],
+      "tags": [
+        "bugfix",
+        "security",
+        "tools",
+        "filesystem"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Small tool/helper changes, but preventing disclosure of credential-bearing git configuration is security-sensitive; FIFO rejection also needs real nonblocking filesystem tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/grep.ts",
+        "packages/nax-agent/src/internal/bounded-io.ts",
+        "packages/nax-agent/src/tools/read.ts",
+        "packages/nax-agent/test/unit/tools/grep.test.ts",
+        "packages/nax-agent/test/unit/tools/buffering-ceilings.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "72f429475fedf84ac442d08c9fba1815cbf60531"
+    },
+    {
+      "id": "US-002",
+      "title": "Mask retained vendor secrets and write owner-only session files",
+      "description": "**Goal** — Fix L21 and L37c with the three specified secret patterns and 0600 session-content writes.\n\n**Motivation** — `SECRET_VALUE_PATTERNS` (`packages/nax-agent/src/internal/redact.ts:43-122`) has no GitLab (`glpat-`), Google (`AIza`) or Stripe live (`sk_live_`, `rk_live_`) pattern; all pass `redactSecrets` unmasked.\n\n**Approach** — `SECRET_VALUE_PATTERNS` — Target: three more entries after `aws`: `{ kind: \"gitlab\", re: /glpat-[A-Za-z0-9_-]{20,}/g }`, `{ kind: \"google\", re: /AIza[0-9A-Za-z_-]{35}/g }`, `{ kind: \"stripe\", re: /\\b[sr]k_live_[0-9A-Za-z]{16,}/g }`.\n\nsession file writers — Target: `writeTranscriptDoc`, `publishImageOnce` (through `_transcriptImagesDeps.writeFileAtomic`) and `archiveTranscript` pass `{ mode: 0o600 }` to `writeFileAtomic`; `writeMeta` passes `{ mode: 0o600 }` to `writeFile`. Directory modes are unchanged.\n\n**Scope** — In: central redactor patterns and transcript/image/archive/metadata writer options, plus focused mode and redaction regression cases. Out: US-001 tool search/read behavior and US-005 orchestrator session reopen behavior. US-002 only: existing transcript, image, archive and session metadata files already on disk keep their mode until next written; directory modes are unchanged. US-002 only: Stripe test keys (`sk_test_`, `rk_test_`) and vendor key formats beyond `glpat-`, `AIza`, `sk_live_` and `rk_live_` are not added to the redactor.\n\n**Interface** — Existing interfaces are read, not changed: `redactSecrets<T>(input: T): T`; `saveTranscript(dir, sessionName, messages, identity?)`, `transcriptPath(dir, sessionName)`, `transcriptImagesPath(path)`, `archiveTranscript(...)`, `createSessionStorage(deps).writeMeta(meta)`; `writeFileAtomic(path, content, { mode? })`.\n\nTesting: create `packages/nax-agent/test/unit/native/transcript-store-modes.test.ts` for transcript, image and archive modes; append metadata coverage to `packages/nax-agent/test/unit/session-store/storage-hardening.test.ts` and redaction cases to the existing redaction suite. Assert real permission bits, including replacing an existing 0644 transcript. No existing assertion changes are needed. AC6 is an already-green guard; demonstrate at least one new failure on old code.",
+      "acceptanceCriteria": [
+        "[unit] redactSecrets(\"push failed: glpat-ABCDEFGHIJKLMNOPqrst12\") returns \"push failed: [REDACTED]\".",
+        "[unit] redactSecrets(\"key=AIzaSyA1234567890abcdefghijklmnopqrstuv\") returns a string that includes \"[REDACTED]\" and omits \"AIzaSyA1234567890abcdefghijklmnopqrstuv\".",
+        "[unit] redactSecrets(\"charge with sk_live_51ABCDEFGHijklmnopQRSTuv\") returns \"charge with [REDACTED]\".",
+        "[unit] redactSecrets(\"restricted rk_live_51ABCDEFGHijklmnopQRSTuv\") returns \"restricted [REDACTED]\".",
+        "[unit] SECRET_VALUE_PATTERNS holds entries whose kind values include \"gitlab\", \"google\" and \"stripe\".",
+        "[unit] redactSecrets(\"see glpat-short and AIzaShort and ask_live_x\") returns the input unchanged.",
+        "[unit] After saveTranscript(dir, \"s1\", messages) with a text-only message list, the file at transcriptPath(dir, \"s1\") has permission bits 0o600.",
+        "[unit] After saveTranscript(dir, \"s2\", messages) where one message carries a base64 image part, every file under transcriptImagesPath(transcriptPath(dir, \"s2\")) has permission bits 0o600.",
+        "[unit] After archiveTranscript archives a stored transcript, the archived <sessionId>.transcript.<stamp>.json file has permission bits 0o600.",
+        "[unit] After createSessionStorage(deps).writeMeta(meta), the session metadata file it writes has permission bits 0o600.",
+        "[unit] When a file already exists at transcriptPath(dir, \"s3\") with mode 0o644, a later saveTranscript(dir, \"s3\", messages) leaves the file at that path with permission bits 0o600."
+      ],
+      "tags": [
+        "bugfix",
+        "security",
+        "credentials",
+        "sessions"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Five existing production files need only regex-table entries and mode options on established writers; credential masking and private session storage still mandate strict three-session security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/redact.ts",
+        "packages/nax-agent/src/native/session/transcript-store.ts",
+        "packages/nax-agent/src/native/session/transcript-images.ts",
+        "packages/nax-agent/src/native/session/transcript-archive.ts",
+        "packages/nax-agent/src/session-store/storage.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/native/transcript-store-modes.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8a602cc0bb724fb47bc266243308018a9d5c8820"
+    },
+    {
+      "id": "US-003",
+      "title": "Preserve pi-stream usage after unparseable tool arguments",
+      "description": "**Goal** — Fix L28 by draining a malformed-tool stream to its terminal usage before emitting one bad-request error.\n\n**Motivation** — In `createPiProtocol` (`packages/nax-ai/src/protocols/pi-client.ts:349-368`) a `toolcall_end` whose arguments fail to parse yields a `bad-request` error and returns before the terminal event's usage, so the hop's tokens are lost.\n\n**Approach** — `createPiProtocol(...).stream`, `toolcall_end` case — Target: when `parseToolArgs` throws, remember the `bad-request` error (same message and cause as today) instead of yielding it and enter a draining state. While draining, every event other than `done` and `error` is ignored. On `done`: yield `{ type: \"usage\", usage: toTokenUsage(event.message.usage) }`, then the remembered error, then return (no `done`). On upstream `error`: as today, yield the upstream usage when `totalTokens(usage) > 0`, then run the existing abort check (an aborted request signal still throws its abort), then yield the remembered error instead of the upstream one, then return. If the upstream iterator ends while draining, yield the remembered error after the loop. If the upstream iterator throws while draining, the existing catch rethrows an abort as today; otherwise it yields the remembered error instead of the classified throw. A stream never yields more than one `error` event. The drain is bounded by the request's own timeout and abort signal, as the rest of the stream already is.\n\n**Scope** — In: pi protocol's parse-failure stream state and scripted event regression cases. Out: US-002 credential redaction and storage, US-005 ACP session/turn budgets, and consumer-level cost or retry changes.\n\n**Interface** — `createPiProtocol(...).stream`; existing `toTokenUsage`, `totalTokens` are read, not changed. Error message remains `Tool \"read\" returned unparseable arguments.` for tool read.\n\nTesting: create `packages/nax-ai/test/protocols/pi-client-tool-args.test.ts` — the US-003 cases; `pi-client.test.ts` is already 984 lines. Copy its `drain`, `message`, `fakePi`, `BASE` and `MODEL` helpers. Do not modify the existing unparseable-arguments assertion: its first text delta and final bad-request remain valid. AC2, AC3, AC5, AC6 and AC8 are already-green guards; AC1/AC4/AC7 provide fail-first behavior. Scripted events prove mapping, not actual provider behavior.",
+      "acceptanceCriteria": [
+        "[unit] A pi stream of text_delta, toolcall_delta with delta '{\"path\"', toolcall_end, then done whose message usage reports 100 input and 20 output tokens yields a usage event with inputTokens: 100 and outputTokens: 20, and its final event is an error with kind: \"bad-request\" that comes after that usage event.",
+        "[unit] The stream in AC1 yields no tool-call event and no done event.",
+        "[unit] A pi stream of toolcall_delta with delta '{\"path\"', toolcall_end, a second text_delta, then done yields no text-delta event for the second delta.",
+        "[unit] A pi stream of toolcall_delta with delta '{\"path\"', toolcall_end, then an upstream error event whose usage reports 50 input tokens yields a usage event with inputTokens: 50, then exactly one error event, with kind: \"bad-request\" and the message Tool \"read\" returned unparseable arguments.",
+        "[unit] A pi stream of toolcall_delta with delta '{\"path\"' and toolcall_end, after which the upstream iterator ends with no done or error event, yields as its final event an error with kind: \"bad-request\" and yields no usage event.",
+        "[unit] A pi stream whose tool arguments parse yields the tool-call event, then usage, then done.",
+        "[unit] A pi stream of toolcall_delta with delta '{\"path\"', toolcall_end, then an upstream error event, read with a request signal that is already aborted, rejects with the signal's abort reason.",
+        "[unit] A pi stream of toolcall_delta with delta '{\"path\"' and toolcall_end, after which the upstream iterator throws a non-abort Error(\"socket reset\"), yields exactly one error event, with kind: \"bad-request\"."
+      ],
+      "tags": [
+        "bugfix",
+        "streaming",
+        "usage",
+        "nax-ai"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One existing protocol generator gains a remembered-error drain state with fully specified terminal branches; scripted PiDeps fixtures support focused fail-first tests without a new abstraction or integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-ai/src/protocols/pi-client.ts",
+        "packages/nax-ai/src/protocols/types.ts",
+        "packages/nax-ai/src/usage.ts",
+        "packages/nax-ai/test/protocols/pi-client.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-ai/test/protocols/pi-client-tool-args.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the upstream iterator throws while draining and the request signal is aborted, consuming createPiProtocol(...).stream rejects with that abort rather than emitting a bad-request error."
+      ],
+      "workdir": "packages/nax-ai",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8eaa70d4a80d64d618f19474aab015c57f712b99"
+    },
+    {
+      "id": "US-004",
+      "title": "Release crashed-run locks and preserve tracked .env worktree files",
+      "description": "**Goal** — Fix L1 and L2 by releasing owned locks on fatal teardown and retaining checked-out .env files in new worktrees.\n\n**Motivation** — A holder with the same PID counts as alive, so a restart that reuses the PID (a container's PID 1) is refused.\n\n**Approach** — `CrashRecoveryContext` / `SignalHandlerContext` — Target: new optional field `releaseLocks?: () => Promise<void>`. Each of the three fatal handlers (signal, uncaught exception, unhandled rejection) awaits `ctx.releaseLocks?.()` after `clearHiddenNaxIndexFlags(ctx)` and before `cancelDeadline()` and `_crashSignalsDeps.exit(...)`, so the teardown deadline still bounds it; a rejection is caught and logged at warn, and the exit code is unchanged.\n\n`setupRun` (`execution/lifecycle/run-setup.ts`) — Target: passes `releaseLocks: async () => { await releaseRunLocks?.(); }` to `installCrashHandlers`, a forwarder over a local `releaseRunLocks` that stays `undefined` until BOTH the checkout lock and the feature lock are acquired, and is then set to release the feature lock (`releaseFeatureLock({ outputDir: runtime.outputDir, feature, runId })`) and then `releaseLock(workdir)`. The same pattern as the existing `sealApprovals` forwarder. `run-setup.ts` is 582 lines against the 600-line limit; if the change would cross it, move the lock-acquisition block into a helper module.\n\n`WorktreeManager.create(projectRoot, worktreeId)` — Target: when `<worktreePath>/.env` already exists (checked with `lstat`), skip the symlink and log at debug `\".env is tracked; the worktree keeps the checked-out copy\"`; otherwise symlink as today.\n\n**Scope** — In: fatal context forwarding/consumption, lock ownership timing and worktree .env destination handling. Out: US-005 session reopen/turn-loop changes and US-006 workflow abort propagation. US-004 only: a run killed by `SIGKILL` or the OOM killer still leaves its locks; only the catchable fatal paths release them. US-004 only: a fatal signal that arrives after normal cleanup released the locks but before the crash handlers are removed may release again; `releaseFeatureLock` checks the runId and the checkout-lock unlink tolerates a missing file. Review L3 (feature-lock reclaim has no `.reclaim` mutex) is dropped by ruling: it needs three nax runs racing for one feature lock.\n\n**Interface** — `releaseLocks?: () => Promise<void>` on both context interfaces; `setupRun`; `WorktreeManager.create(projectRoot, worktreeId)`. Read, do not change: `releaseLock(workdir)` (unconditional unlink) and `releaseFeatureLock({ outputDir, feature, runId })` (leaves a different runId's lock).\n\nTesting: drive the installed signal/exception/rejection handlers, and create `packages/nax/test/unit/execution/lifecycle/run-setup-crash-locks.test.ts` by mirroring the approvals-seal capture-context pattern. Integration AC7-AC9 must call the setupRun-produced captured forwarder, including before either/both acquisitions succeed; AC10-AC12 use real temporary git worktrees. AC4, AC5, AC11 and AC12 already pass before the fix and remain guards. No existing assertion changes are needed.",
+      "acceptanceCriteria": [
+        "[unit] The SIGTERM handler installed by installSignalHandlers(ctx) calls ctx.releaseLocks exactly once, and before _crashSignalsDeps.exit is called with 143.",
+        "[unit] The uncaught-exception handler installed by installSignalHandlers(ctx) calls ctx.releaseLocks exactly once, before _crashSignalsDeps.exit(1).",
+        "[unit] The unhandled-rejection handler installed by installSignalHandlers(ctx) calls ctx.releaseLocks exactly once, before _crashSignalsDeps.exit(1).",
+        "[unit] When ctx.releaseLocks rejects, the SIGTERM handler still calls _crashSignalsDeps.exit(143).",
+        "[unit] With no ctx.releaseLocks, the SIGTERM handler calls _crashSignalsDeps.exit(143).",
+        "[unit] The SIGTERM handler calls ctx.releaseLocks after ctx.statusWriter has recorded the crashed status.",
+        "[integration] setupRun in a temp workdir with real checkout and feature locks, where _runSetupDeps.installCrashHandlers is stubbed to capture its context and the run setup completes, then calling the captured releaseLocks() removes nax.lock from the workdir, and a following acquireFeatureLock for the same feature with a different runId returns acquired: true.",
+        "[integration] setupRun where _runSetupDeps.acquireLock returns { acquired: false, holder } (setup throws LockAcquisitionError), then a nax.lock written by another holder, then calling the captured releaseLocks(), leaves that nax.lock in place.",
+        "[integration] setupRun where _runSetupDeps.acquireFeatureLock returns { acquired: false, holder } (setup throws), then a nax.lock written by another holder, then calling the captured releaseLocks(), leaves that nax.lock in place.",
+        "[integration] WorktreeManager.create(projectRoot, id) in a temp git repo whose committed, tracked .env holds A=1 succeeds, and <worktree>/.env is a regular file (not a symlink) holding A=1.",
+        "[integration] WorktreeManager.create(projectRoot, id) in a temp git repo with an untracked, git-ignored .env makes <worktree>/.env a symlink to <projectRoot>/.env.",
+        "[integration] WorktreeManager.create(projectRoot, id) in a temp git repo with no .env creates no <worktree>/.env.",
+        "When ctx.releaseLocks rejects in a fatal handler, that handler logs the rejection at warn before exiting with its unchanged fatal exit code."
+      ],
+      "tags": [
+        "bugfix",
+        "lifecycle",
+        "locks",
+        "worktrees"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module fatal teardown and acquisition-timed ownership forwarding require integration checks for destructive lock release, plus independent worktree behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/crash-signals.ts",
+        "packages/nax/src/execution/crash-recovery.ts",
+        "packages/nax/src/execution/lifecycle/run-setup.ts",
+        "packages/nax/src/worktree/manager.ts",
+        "packages/nax/test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/execution/lifecycle/run-setup-crash-locks.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fc9adaa5e7706b10f99adcb6446d5f7b26a53d90"
+    },
+    {
+      "id": "US-005",
+      "title": "Close aborted sessions on reopen and stop interactions at the turn cap",
+      "description": "**Goal** — Fix L4 and L5 by closing cancelled live handles before reopening and never asking for another prompt after the last allowed turn.\n\n**Motivation** — A `keepOpen` turn aborted mid-flight leaves the descriptor `FAILED` (`:598-602`) with the adapter session still open, so the old agent process runs until the end-of-run sweep.\n\n**Approach** — `SessionManager.openSessionImpl` — Target: when a live handle exists and its name is in `_cancelledSessions` (the turn was aborted), the reopen closes it with `this.closeSession(liveHandle, true)` instead of only dropping it. A terminal descriptor that was not cancelled keeps today's drop (its adapter session is already closed). `session/manager.ts` is grandfathered at 650 lines and may not grow: fold the condition into the existing `close-then-reopen` branch.\n\n`runLoop` — Target: after `state.output = outcome.output`, `if (used(state) >= loop.max) break;` before `nextPrompt`, so no human question or context-tool request is issued after the last allowed turn.\n\n**Scope** — In: SessionManager cancelled-handle cleanup and ACP turn-loop interaction timing. Out: US-002 session file permissions, US-003 pi stream draining, US-004 run-lock fatal cleanup and US-006 workflow-level abort adjudication. Do not redesign endpoint identity or normal terminal-descriptor reuse policy. Review L37d (session-lock same-PID takeover and the ACP registry `session/load` race) is dropped by ruling: it needs a reused PID or two concurrent loads of one session.\n\n**Interface** — `SessionManager.openSessionImpl`; `runLoop`; existing callers `SessionManager.openSession(name, opts)`, `sendPrompt`, `closeSession(handle, true)` and `runTurnLoop(session, prompt, opts)` retain their signatures.\n\nTesting: use existing session manager/endpoint fixtures and `packages/nax/test/unit/agents/acp/turn-loop.test.ts` helpers `scriptedOpened`, `replyTurn` and `answering`. Check adapter close-before-open call order, cancelled-marker reset, close failure tolerance and question/context-tool exhaustion. Preserve existing assertions; AC2, AC3 and AC4 are already-green guards and a new case must fail against old code.",
+      "acceptanceCriteria": [
+        "[unit] SessionManager.openSession(name, opts), then sendPrompt whose adapter sendTurn rejects with an AbortError while the signal is aborted, then openSession(name, opts) again, calls the adapter's closeSession exactly once with the first handle, before the adapter's second openSession call.",
+        "[unit] SessionManager.openSession(name, opts), a successful sendPrompt, closeSession(handle, true), then openSession(name, opts) again calls the adapter's closeSession exactly once in total.",
+        "[unit] After the abort-then-reopen sequence of AC1, sendPrompt on the new handle resolves with the adapter's turn result instead of throwing SESSION_CANCELLED.",
+        "[unit] After the abort-then-reopen sequence of AC1 with an adapter whose closeSession rejects, the second openSession still resolves to a new handle.",
+        "[unit] runTurnLoop(session, \"go\", { interactionHandler, maxInteractions: 1 }) where the agent's reply is the question \"Should I proceed?\" calls interactionHandler.onInteraction zero times and returns output equal to \"Should I proceed?\".",
+        "[unit] runTurnLoop with maxInteractions: 2, a handler answering \"a\" and \"b\", and an agent whose every reply is a question calls onInteraction exactly once and sends exactly two prompts.",
+        "[unit] runTurnLoop with maxInteractions: 3, a handler answering \"a\", \"b\" and \"c\", and an agent whose every reply is a question calls onInteraction exactly twice.",
+        "[unit] runTurnLoop with maxInteractions: 1 where the agent's reply is a context-tool call calls onInteraction zero times."
+      ],
+      "tags": [
+        "bugfix",
+        "sessions",
+        "acp",
+        "interaction"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two localized lifecycle fixes use existing abstractions, but cancelled-session ownership and reopening trigger the mandatory sessions security override.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/session/manager.ts",
+        "packages/nax/src/session/endpoint-identity.ts",
+        "packages/nax/src/agents/acp/turn-loop.ts",
+        "packages/nax/test/unit/agents/acp/turn-loop.test.ts",
+        "packages/nax/test/unit/session/reopen-handoff.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8547eff6f2e1e8a75acffc2b318873ca9cbd2dc5"
+    },
+    {
+      "id": "US-006",
+      "title": "Honor workflow abort during CI waits and residual adjudication",
+      "description": "**Goal** — Fix L6 and L10 by waking CI waits promptly on abort and propagating aborted advisor failures without default-hold ledger writes.\n\n**Motivation** — `adjudicateResidual` (`workflow/adjudicate.ts:8-36`) catches every advisor error, including an abort, writes default-hold rulings to the ledger and returns, so an aborted story is closed as if adjudicated.\n\n**Approach** — `_ciWaitDeps.sleep` — Baseline: `(ms: number) => Promise<void>` over `Bun.sleep`. Target: `(ms: number, signal?: AbortSignal) => Promise<void>` that resolves when `ms` elapses or as soon as `signal` aborts (built on `cancellableDelay`, with the abort rejection turned into a resolve). `waitWithHeartbeat` takes `opts.signal`, passes it to every `_ciWaitDeps.sleep` call and stops slicing once it is aborted; the loop's existing top-of-loop check then returns `end(\"pending\", \"aborted\")`.\n\n`adjudicateResidual(advisor, req, ledger, aborted?: () => boolean)` — Target: in the catch, when `aborted?.()` is true, rethrow the advisor's error before any default hold or ledger write. `StoryLoopEnv` gains `readonly aborted?: () => boolean`; `buildStoryEnv` (`workflow/stage-env.ts:49`) sets it to `() => ctx.abortSignal?.aborted === true`; `residualStep` passes `env.aborted`; `buildFeatureEnv`'s `adjudicate` passes `() => fc.runSignal?.aborted === true`.\n\n**Scope** — In: CI sleep/heartbeat signal propagation and residual-adjudication abort predicate across story/feature environments. Out: US-004 fatal teardown and lock cleanup and US-005 adapter session cleanup. Review L7 (`workflow promote` binds the CI wait to local HEAD) is dropped by ruling: it fails closed as `unavailable`. Review L13 (a failed CI poll from an older head SHA is terminal) is dropped by ruling: a GitLab timing edge, rated plausible.\n\n**Interface** — `(ms: number, signal?: AbortSignal) => Promise<void>`; `adjudicateResidual(advisor, req, ledger, aborted?: () => boolean)`; `StoryLoopEnv` gains `readonly aborted?: () => boolean`. Existing `cancellableDelay(ms, signal?)` is read, not changed, and rejects on abort. Optional additions preserve existing builders and one-argument sleep stubs.\n\nTesting: add behavior cases to existing workflow suites, proving both producers and consumers: default sleep, waitForChecks, direct adjudication, residualStep, runStoryLoop, buildStoryEnv and buildFeatureEnv. The runStoryLoop case must reach residual adjudication after maxFixRounds and assert no closed update, not only a helper rejection. Preserve existing assertions; AC2, AC4, AC7 and AC8 are already-green guards, and at least one new AC must fail against old code.",
+      "acceptanceCriteria": [
+        "[unit] The default _ciWaitDeps.sleep(60_000, signal) resolves (does not reject) within 200 ms after signal's controller aborts.",
+        "[unit] The default _ciWaitDeps.sleep(20) with no signal resolves after at least 15 ms.",
+        "[unit] waitForChecks(forge, pr, { cwd, timeoutMs, pollMs, signal }) with a pending first poll passes signal as the second argument of every _ciWaitDeps.sleep call.",
+        "[unit] waitForChecks with a pending first poll and a _ciWaitDeps.sleep stub that aborts the signal's controller and resolves returns { outcome: \"pending\", detail: \"aborted\" } and runs no second poll command.",
+        "[unit] waitForChecks with pollMs three times CI_WAIT_HEARTBEAT_MS and a _ciWaitDeps.sleep stub that aborts on its first call calls _ciWaitDeps.sleep exactly once.",
+        "[unit] adjudicateResidual(advisor, req, ledger, () => true) where advisor.ruleResidual rejects with error E and req has two items rejects with E and calls ledger zero times.",
+        "[unit] adjudicateResidual(advisor, req, ledger, () => false) with the same rejecting advisor resolves to two default-hold rulings and calls ledger with two ruling lines.",
+        "[unit] adjudicateResidual(advisor, req, ledger) with no aborted argument and the same rejecting advisor resolves to two default-hold rulings.",
+        "[unit] residualStep(env, state) with env.aborted returning true, one open finding, and an advisor whose ruleResidual rejects rejects, and env.sink.ledger receives no ruling line.",
+        "[integration] runStoryLoop(env) with env.aborted returning true, steps that leave a finding open past maxFixRounds, and an advisor whose ruleResidual rejects rejects, and env.sink.update never receives phase: \"closed\".",
+        "[unit] The adjudicate function of buildFeatureEnv(fc, input, ctx) with fc.runSignal aborted and an advisor whose ruleResidual rejects rejects with that error.",
+        "[unit] buildStoryEnv with a context whose abortSignal is aborted returns an env whose aborted() returns true, and with a non-aborted signal returns false."
+      ],
+      "tags": [
+        "bugfix",
+        "workflow",
+        "abort",
+        "ci"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cancellation crosses timer slices, advisor fallback and both workflow environment factories; integration must prove ledger and story-close behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-wait.ts",
+        "packages/nax/src/workflow/adjudicate.ts",
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/workflow/feature-env.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9c9c29b36c10d1cb8d6047dda5ac4938b79e9076"
+    },
+    {
+      "id": "US-007",
+      "title": "Create new PRs for closed branches and fail deferred review on diff errors",
+      "description": "**Goal** — Fix L12 and L29 so closed/merged PRs are not reused and failed git diffs cannot masquerade as no changes.\n\n**Motivation** — `gh pr view <branch>` also returns a CLOSED or MERGED PR, which is then reported `already-ready` with a dead URL; the function's own doc says a closed PR should lead to a new one.\n\n**Approach** — `parseView(stdout, forge)` — Baseline: returns `{ isDraft: boolean; url?: string }`. Target: returns `{ isDraft: boolean; url?: string; closed: boolean }`, `closed` true when GitHub's `state` is `\"CLOSED\"` or `\"MERGED\"`, or GitLab's `state` is `\"closed\"` or `\"merged\"`; false when `state` is absent or anything else. `openOrPromotePr` (both view calls) requests GitHub fields `\"isDraft,url,state\"`. A view that succeeds with `closed: true` is handled exactly like a failed view: the non-`keepDraft` path creates the PR (`opened`), the `keepDraft` path creates a draft (`draft`).\n\n`spawnGitWithDeadline` — Target: returns `{ stdout: string; exitCode: number; timedOut: boolean }`. `captureRunStartRef` returns `\"\"` unless `exitCode === 0` and not timed out. `getChangedFilesForDeferred` returns `{ ok: true; files: string[] } | { ok: false; error: string }`, the error naming `git diff` and the exit code (or `timed out`). On `ok: false`, `runDeferredReview` calls no reviewer and returns `changedFiles: []`, `anyFailed: true` and one `reviewerResults` entry per reviewer with `passed: false`, `output: \"\"` and `error` set to that message.\n\n**Scope** — In: forge-state parsing/creation and deferred-review git failure results. Out: US-004 worktree creation, US-006 abort-aware workflow waits and US-009 quality-command drains. Review L11 (an unreviewed story does not block PR readiness) is dropped by ruling: it is a policy call and today's behaviour stays. US-007 only: the `git diff` timeout branch shares the non-zero-exit handling but has no AC of its own (it needs the 30s `GIT_TIMEOUT_MS` to elapse).\n\n**Interface** — `parseView(stdout, forge)` returns `{ isDraft: boolean; url?: string; closed: boolean }`; `spawnGitWithDeadline` returns `{ stdout: string; exitCode: number; timedOut: boolean }`; `getChangedFilesForDeferred` returns `{ ok: true; files: string[] } | { ok: false; error: string }`. Existing `viewArgv(forge, branch, githubFields)` is read, not changed.\n\nTesting: extend `packages/nax/test/unit/finish/pr-open.test.ts` and `packages/nax/test/unit/execution/deferred-review.test.ts` (reuse makeSpawnForDiff). The two `parseView` cases in `describe(\"parseView\")` at :48-52 and :55-57 assert `toEqual({ isDraft, url })`; add `closed: false` to both expected objects (neither reply carries a closed state); no other assertion changes. AC11 and AC12 are already-green guards; prove a new fail-first case. Successful empty diffs still reach every reviewer.",
+      "acceptanceCriteria": [
+        "[unit] parseView('{\"isDraft\":false,\"url\":\"u1\",\"state\":\"CLOSED\"}', \"github\") returns closed: true.",
+        "[unit] parseView('{\"isDraft\":false,\"url\":\"u1\",\"state\":\"MERGED\"}', \"github\") returns closed: true, and parseView('{\"state\":\"merged\"}', \"gitlab\") returns closed: true.",
+        "[unit] parseView('{\"isDraft\":false,\"url\":\"u1\",\"state\":\"OPEN\"}', \"github\") returns closed: false.",
+        "[unit] parseView('{\"isDraft\":false,\"url\":\"u1\"}', \"github\") returns closed: false.",
+        "[unit] openOrPromotePr on GitHub requests the PR view with the JSON field list \"isDraft,url,state\".",
+        "[unit] openOrPromotePr on GitHub whose view returns {\"isDraft\":false,\"url\":\"u1\",\"state\":\"CLOSED\"} runs gh pr create and returns status: \"opened\" with the created PR's URL.",
+        "[unit] openOrPromotePr on GitLab whose view returns {\"state\":\"closed\",\"web_url\":\"u1\"} runs glab mr create and returns status: \"opened\".",
+        "[unit] openOrPromotePr with keepDraft: true on GitHub whose view returns {\"isDraft\":false,\"url\":\"u1\",\"state\":\"MERGED\"} creates a draft PR and returns status: \"draft\".",
+        "[unit] runDeferredReview(workdir, reviewConfig, plugins, \"abc123\") with a _deferredReviewDeps.spawn stub whose git diff exits 128 calls no reviewer's check, returns anyFailed: true, changedFiles: [], and one reviewerResults entry per reviewer with passed: false, output: \"\" and an error that includes git diff and 128.",
+        "[unit] captureRunStartRef(workdir) with a git rev-parse stub that exits 128 with stdout \"HEAD\\n\" returns \"\".",
+        "[unit] runDeferredReview with a git diff stub that exits 0 with empty stdout calls each reviewer's check with [].",
+        "[unit] runDeferredReview with a git diff stub that exits 0 with stdout \"src/a.ts\\nsrc/b.ts\\n\" calls each reviewer's check with [\"src/a.ts\", \"src/b.ts\"]."
+      ],
+      "tags": [
+        "bugfix",
+        "forge",
+        "review",
+        "git"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized return-shape and branch changes use existing ForgeDeps and spawn seams without new abstractions or public consumer migrations.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/finish/pr/open.ts",
+        "packages/nax/src/forge/pr.ts",
+        "packages/nax/src/execution/deferred-review.ts",
+        "packages/nax/test/unit/finish/pr-open.test.ts",
+        "packages/nax/test/unit/execution/deferred-review.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/finish/pr-open.test.ts",
+          "reason": "the two `parseView` cases in `describe(\"parseView\")` (`:48-52` and `:55-57`) assert `toEqual({ isDraft, url })`; `parseView` now also returns `closed`. Add `closed: false` to both expected objects (neither reply carries a closed state); no other assertion changes."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "92d028f9a59b5b303efc9ff09c5720f286800100"
+    },
+    {
+      "id": "US-008",
+      "title": "Refuse special-file chat mentions and bound background log reads",
+      "description": "**Goal** — Fix L17 and L18 by avoiding special-file content reads and reading only a bounded background-log tail.\n\n**Motivation** — `BackgroundTaskRegistry.output` (`chat/background/task-registry.ts:254-267`) reads the whole log (up to `TASK_LOG_MAX_BYTES`, 50 MiB) through `_backgroundTaskDeps.readLog` to return at most 500 lines.\n\n**Approach** — `_mentionExpandDeps.stat` — Baseline: returns `{ isDirectory: boolean; size: number }`. Target: returns `{ isDirectory: boolean; size: number; special?: true }`; the default sets `special: true` only when the path is neither a regular file nor a directory (FIFO, socket, device) and omits the key otherwise, so existing test stubs that return `{ isDirectory, size }` keep modelling regular files. `contentRecord` returns `pathOnly(located.path, \"path only: not a regular file\")` for a special path, before any read.\n\n`_backgroundTaskDeps.readLog` — Target: same signature `(path: string) => Promise<string>`; the default reads at most the last `TASK_LOG_TAIL_BYTES` (new exported constant, 2 MiB) through `Bun.file(path).slice(start)`, and when it started mid-file and the byte before the slice is not a newline, drops everything up to and including the first newline of the slice, so the result starts on a line boundary; a slice with no newline is returned as is. A file at or under the cap is read whole. `output()` is unchanged.\n\n**Scope** — In: mention stat classification/content refusal and the default background-log reader. Out: US-001 agent Read/grep changes, US-002 redaction/storage permissions and US-009 subprocess drains. Preserve mention path-security/ignore policy, TASK_LOG_MAX_BYTES write ceiling and output() line selection/notice behavior.\n\n**Interface** — `_mentionExpandDeps.stat` returns `{ isDirectory: boolean; size: number; special?: true }`; `_backgroundTaskDeps.readLog`: `(path: string) => Promise<string>`; exported `TASK_LOG_TAIL_BYTES` equals `2 * 1024 * 1024`. Its consumer is the default readLog reached through `createBackgroundTasks(options).output`.\n\nTesting: append cases to `packages/nax/test/unit/chat/mentions/mention-expand.test.ts` and `packages/nax/test/unit/chat/background/task-registry.test.ts`. Use the real default stat/readLog seams and real task logs where specified, including AC9 through createBackgroundTasks.output and a no-newline tail; retain stubs for nondelivery/read-call assertions. FIFO tests skip when mkfifo is unavailable. AC4, AC6, AC7, AC9 and AC10 are already-green regression guards; prove a new fail-first case without changing old assertions.",
+      "acceptanceCriteria": [
+        "[unit] expandChatMentions(\"see @pipe\", { cwd: root, repoRoot: root }), where root is a temp git work tree and pipe is a FIFO with no writer that git does not ignore, resolves within 2 seconds with a record for pipe whose status is \"path-only\", note is \"path only: not a regular file\" and body is \"\"; the test skips when mkfifo is unavailable.",
+        "[unit] The default _mentionExpandDeps.stat on a FIFO returns an object with special: true.",
+        "[unit] expandChatMentions with a _mentionExpandDeps.stat stub returning { isDirectory: false, size: 4, special: true } for the mentioned path calls _mentionExpandDeps.readBytes zero times.",
+        "[unit] The default _mentionExpandDeps.stat on a one-byte regular file returns an object equal to { isDirectory: false, size: 1 }.",
+        "[unit] The default _backgroundTaskDeps.readLog on a 10 MiB log file returns a string of at most TASK_LOG_TAIL_BYTES bytes that ends with the file's last line.",
+        "[unit] The default _backgroundTaskDeps.readLog on a log file larger than TASK_LOG_TAIL_BYTES returns a string whose first line is a complete line of the file.",
+        "[unit] The default _backgroundTaskDeps.readLog on a 1 KiB log file returns the whole file.",
+        "[unit] TASK_LOG_TAIL_BYTES equals 2 * 1024 * 1024.",
+        "[integration] createBackgroundTasks(options).output(id, 40) for a task whose real log is 10 MiB of numbered lines returns exactly the file's last 40 lines.",
+        "[unit] createBackgroundTasks(options).output(id, 500) for a task whose real log has 600 lines returns lines 101 to 600.",
+        "[unit] The default _backgroundTaskDeps.readLog on a log file larger than TASK_LOG_TAIL_BYTES whose last TASK_LOG_TAIL_BYTES + 10 bytes hold no newline returns exactly its last TASK_LOG_TAIL_BYTES bytes."
+      ],
+      "tags": [
+        "bugfix",
+        "chat",
+        "filesystem",
+        "bounded-io"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing injectable I/O seams gain bounded behavior without new abstractions; main risks are compatibility of stat stubs and exact byte/line tail boundaries.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/mentions/mention-expand.ts",
+        "packages/nax/test/unit/chat/mentions/mention-expand.test.ts",
+        "packages/nax/src/chat/background/task-registry.ts",
+        "packages/nax/test/unit/chat/background/task-registry.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2c31d7244c4c64b8edb415c0e1ef0fd47f21b1ea"
+    },
+    {
+      "id": "US-009",
+      "title": "Bound post-exit quality drains and keep rectifier output tails",
+      "description": "**Goal** — Fix L16 and L34 by separating leader exit from bounded pipe draining and retaining failure summaries in rectifier prompts.\n\n**Motivation** — A background child that keeps the pipe open (`sleep 20 & echo lint-clean`) holds the drain until the kill timer fires, turning a passing command into `timedOut: true`.\n\n**Approach** — `runSingleCommand` stream collection — Target: `STREAM_DRAIN_TIMEOUT_MS` (2 000) is exported, and the drain deadlines are armed and cleared through `_qualityRunnerDeps.setTimeout` / `_qualityRunnerDeps.clearTimeout` so tests can fire them. On the non-timeout path the kill timer is cleared as soon as the leader exits, before the drain, so it cannot fire during the drain window. stdout and stderr are collected chunk by chunk, so the text read so far is available at any moment. After the leader exits, on both the timeout and the non-timeout path, each stream gets `STREAM_DRAIN_TIMEOUT_MS` to finish; at the deadline the text read so far is used. On the non-timeout path, when a stream missed the deadline, the process group is sent `SIGTERM` through `_qualityRunnerDeps.killProcessGroup(proc.pid, \"SIGTERM\", { singleProcessFallback: false })` so the pipe-holding child does not outlive the call. `success`, `exitCode` and `timedOut: false` come from the leader's exit as today.\n\n`capText` — Target: replaced by exported `capTail(value: string, maxChars: number): string` in `rectifier-builder-helpers.ts`. At or under `maxChars` it returns `value`. Over it, it keeps the last `maxChars` characters, drops a leading partial line when the kept text has a newline before its last character, and prefixes `... (truncated — ${value.length} chars total; showing the last ${kept.length})\\n`. `formatCheckError`, `renderCheckBlock` and the `noOpReprompt` loop use `capTail` with their existing limits (1 000 / 4 000). `rectifier-builder.ts` is grandfathered at 751 lines and may not grow; the two inline cuts collapse to calls.\n\n**Scope** — In: quality command stream lifecycle/timers and shared rectifier tail formatting. Out: US-003 pi usage draining, US-007 deferred-review git failures and US-008 background log-tail reading. Preserve existing real command timeout escalation, trust checking and leader-derived exit result.\n\n**Interface** — Export `STREAM_DRAIN_TIMEOUT_MS` (2 000) from `quality/runner.ts`; export `capTail(value: string, maxChars: number): string` from `rectifier-builder-helpers.ts`. The latter's consumers are `RectifierPromptBuilder.firstAttemptDelta`, `noOpReprompt` and `reviewRectification`; AC10-AC12 exercise those connections.\n\nTesting: create `packages/nax/test/unit/quality/runner-drain.test.ts` — the US-009 runner cases; `runner.test.ts` is 695 lines. Use injectable timers for immediate drain-deadline tests and real shell commands for the integration cases, retaining partial output and preventing orphaned pipe-holding children. Append builder cases to `packages/nax/test/unit/prompts/builders/rectifier-builder.test.ts` and helper cases to the existing helper suite without changing existing assertions. AC3, AC4, AC6 and AC8 are already-green guards; demonstrate at least one new fail-first AC.",
+      "acceptanceCriteria": [
+        "[integration] runQualityCommand with command sleep 20 & echo lint-clean, a trusted workdir and timeoutMs: 60_000 resolves within 10 seconds with success: true, exitCode: 0, timedOut: false and output including \"lint-clean\".",
+        "[unit] runQualityCommand with a _qualityRunnerDeps.spawn stub whose leader exits 0 while its stdout stays open, and a _qualityRunnerDeps.setTimeout stub that fires timers armed with STREAM_DRAIN_TIMEOUT_MS at once, calls _qualityRunnerDeps.killProcessGroup with the process pid, \"SIGTERM\" and { singleProcessFallback: false }, and resolves with timedOut: false.",
+        "[integration] runQualityCommand with command echo ok resolves with output equal to \"ok\\n\" and calls _qualityRunnerDeps.killProcessGroup zero times.",
+        "[integration] runQualityCommand with a command that prints 200 000 bytes and exits 0 resolves with output of 200 000 bytes plus at most a trailing newline.",
+        "[unit] runQualityCommand with the AC2 stubs where the leader exits 3, after writing \"partial\\n\" to stdout, while its stdout stays open, resolves with output including \"partial\", with success: false, exitCode: 3 and timedOut: false.",
+        "[integration] runQualityCommand with command sleep 30 and timeoutMs: 200 resolves with timedOut: true.",
+        "[unit] capTail(\"A\".repeat(3000) + \"\\nSUMMARY: 2 errors\", 1000) returns a string that ends with \"SUMMARY: 2 errors\" and includes \"truncated\" and \"3018 chars total\".",
+        "[unit] capTail(\"short\", 1000) returns \"short\".",
+        "[unit] capTail(\"aaaa\\nbbbb\\ncccc\", 7) returns a string whose text after the truncation line is \"cccc\".",
+        "[unit] RectifierPromptBuilder.firstAttemptDelta with one check whose output is 10 000 Q characters followed by \"\\nFAIL tail-marker\" returns a prompt that includes \"FAIL tail-marker\" and holds at most 4 010 Q characters.",
+        "[unit] RectifierPromptBuilder.noOpReprompt with one failed check whose output is 10 000 Q characters followed by \"\\nFAIL tail-marker\" returns a prompt that includes \"FAIL tail-marker\".",
+        "[unit] RectifierPromptBuilder.reviewRectification with a check that has one blocking finding and an output of 10 000 x characters followed by \"\\nTAIL-LINE\" returns a prompt that includes \"TAIL-LINE\".",
+        "[unit] capTail(\"Q\".repeat(5000) + \"\\n\", 1000) returns a string whose text after the truncation line is 999 Q characters followed by a newline."
+      ],
+      "tags": [
+        "bugfix",
+        "quality",
+        "process-lifecycle",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Concurrent incremental drains, process-group cleanup and timer ordering create lifecycle risks; prompt-tail consumers add cross-module integration under file-size constraints.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/quality/runner.ts",
+        "packages/nax/test/unit/quality/runner.test.ts",
+        "packages/nax/src/prompts/builders/rectifier-builder-helpers.ts",
+        "packages/nax/src/prompts/builders/rectifier-builder.ts",
+        "packages/nax/test/unit/prompts/builders/rectifier-builder.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/quality/runner-drain.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ec33dafe70241efc4ba4a0e4ce3798da1640145f"
+    },
+    {
+      "id": "US-010",
+      "title": "Bind webhook bodies to URL request IDs and reject malformed stories",
+      "description": "**Goal** — Fix L20 and L22 by rejecting cross-request webhook replies and reporting nonobject PRD stories as indexed PRD_INVALID errors.\n\n**Motivation** — `handleRequest` (`interaction/plugins/webhook.ts:492-570`) delivers a signed body to the `requestId` taken from the URL without comparing it to `body.requestId`, so a valid body can be delivered to another pending request.\n\n**Approach** — `handleRequest` — Target: after `InteractionResponseSchema.parse`, when `response.requestId !== requestId` return `new Response(\"Bad Request: requestId mismatch\", { status: 400 })` without delivering. `webhook.ts` is 597 lines; keep it at or under 600.\n\n`loadPRD` — Target: after the top-level guard, the first `userStories[i]` that is `null`, an array or not an object throws `NaxError` `PRD_INVALID`, message `PRD file has a non-object story at userStories[${i}]: ${path}`, context `{ stage: \"prd\", path, index: i }`.\n\n**Scope** — In: callback URL/body request identity comparison and indexed PRD story-shape guarding before normalization. Out: US-001 read-side file guards and US-011 CLI/config corrections. US-010 only: the webhook callback gains no nonce or timestamp and its HMAC still covers only the body; replay of a delivered reply is already refused because delivery clears the pending request id, and the URL/body `requestId` check closes the cross-request case.\n\n**Interface** — `handleRequest`; `loadPRD`. Existing InteractionResponseSchema, signed-body verification, pending receive lifecycle and valid-story normalization retain their interfaces.\n\nTesting: append signed-callback cases (`X-Nax-Signature`) to `packages/nax/test/unit/interaction/interaction-plugins.test.ts` and malformed-story cases to `packages/nax/test/unit/prd/load-errors.test.ts`. Drive real HTTP callbacks and both pending receives for mismatch nondelivery, including no-secret mode; cancel/clean up pending work so timeouts do not fake a passing assertion. Preserve existing assertions. AC3 and AC6 are already-green guards; show a new failure against old code.",
+      "acceptanceCriteria": [
+        "[integration] A webhook plugin with a secret, receiving a correctly signed POST /nax/interact/req-1 whose body's requestId is \"req-2\", responds 400.",
+        "[integration] In AC1's setup, with both req-1 and req-2 pending through receive, neither pending receive resolves after the mismatched request: after that POST has returned 400 and queued delivery callbacks have run, both receive promises remain unsettled.",
+        "[integration] A webhook plugin with a secret, receiving a correctly signed POST /nax/interact/req-1 whose body's requestId is \"req-1\", responds 200 and resolves the pending receive for req-1 with that response.",
+        "[unit] loadPRD on a PRD file whose userStories is [null] rejects with a NaxError whose code is \"PRD_INVALID\" and whose context.index is 0.",
+        "[unit] loadPRD on a PRD file whose userStories is [<valid story>, 42] rejects with code \"PRD_INVALID\" and context.index 1.",
+        "[unit] loadPRD on a PRD file whose userStories is [<valid story>] resolves with that story and attempts defaulted to 0.",
+        "[unit] loadPRD on a PRD file whose userStories is [[]] rejects with code \"PRD_INVALID\".",
+        "[integration] A webhook plugin with no secret configured, receiving POST /nax/interact/req-1 whose body's requestId is \"req-2\", responds 400."
+      ],
+      "tags": [
+        "bugfix",
+        "security",
+        "webhook",
+        "prd"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two bounded validation fixes, but signed callback identity binding is authentication-sensitive and requires strict security test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/interaction/plugins/webhook.ts",
+        "packages/nax/test/unit/interaction/interaction-plugins.test.ts",
+        "packages/nax/src/prd/index.ts",
+        "packages/nax/test/unit/prd/load-errors.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3f1e7dc7e2a9e274e79833141efd869e632f7019"
+    },
+    {
+      "id": "US-011",
+      "title": "Reject removed context flag, honor config directory and expand env once",
+      "description": "**Goal** — Fix L24, L25 and L27 by rejecting the removed flag, carrying the selected directory into config display, and substituting environment references in one pass.\n\n**Motivation** — `nax config -d <dir>` resolves the config from `<dir>` (`bin/nax.ts:861-871`), but `configCommand`'s `--diff` and source listing read the project of the current directory (`cli/config-display.ts:52`, `:56`; `cli/config-get.ts:49-55`).\n\n**Approach** — `parseRunPreconditionFlags(options)` (`bin/run-action.ts:131`) — Target: `RunActionOptions` gains `context?: boolean`; after the `--no-batch` check, `options.context === false` prints `nax run --no-context was removed: workflow mode builds each prompt's context itself` and exits 1. The `--no-context` help text in `bin/nax.ts` becomes `Removed: workflow mode builds its own prompt context`, and the row in `docs/guides/cli-reference.md:169` says the flag was removed.\n\n`loadProjectConfig(startDir?: string)` — Target: resolves `findProjectDir(startDir ?? process.cwd())`. `ConfigCommandOptions` gains `dir?: string`; `configCommand` passes it to `determineConfigSources` and `loadProjectConfig`. The non-JSON `config` action body in `bin/nax.ts` (after `validateDirectory`) moves into a new exported `configDisplayAction(options: { dir: string; explain?: boolean; diff?: boolean; profile?: string[] }): Promise<void>` in `src/cli/config-display-action.ts`, which resolves `findProjectDir(dir)`, loads the config with the profile, and calls `configCommand(config, { explain, diff, profile, dir })`; the bin action calls it with `dir: workdir`.\n\n`resolveString` — Target: one combined pass `/\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}|\\$([A-Za-z_][A-Za-z0-9_]*)/g` replaces both forms, so a substituted value is never rescanned. The `$$` protect and restore steps are unchanged.\n\n**Scope** — In: removed-flag precondition, bin help and `docs/guides/cli-reference.md` removal wording, config directory propagation/non-JSON action extraction, single-pass dotenv substitution and their regression cases. Out: US-006 workflow prompt/advisor behavior and US-010 PRD/webhook validation. US-011 only: the `nax config --json` path is unchanged; it already takes `dir`. US-011 only: the `--no-context` help text in `bin/nax.ts` and the row in `docs/guides/cli-reference.md` are prose updates with no AC of their own. Preserve existing profile masking, conflicts, directory validation and error-display behavior; do not implement a new context-disable mode.\n\n**Interface** — `RunActionOptions` gains `context?: boolean`; `ConfigCommandOptions` gains `dir?: string`; `loadProjectConfig(startDir?: string)`; `configDisplayAction(options: { dir: string; explain?: boolean; diff?: boolean; profile?: string[] }): Promise<void>`. Existing `findProjectDir(startDir)`, `determineConfigSources(startDir?)` are read, not changed. The config command action in bin/nax.ts consumes the new exported action; AC4 and AC5 drive it directly.\n\nTesting: add removed-flag cases to `packages/nax/test/unit/cli/run-action.test.ts`, using its `options(overrides)` factory to supply the required RunActionOptions fields and preserving its existing colored-stderr/exit mocking conventions; append selected-directory cases to existing config-get/config-display suites, driving configDisplayAction while cwd belongs to a different project, and append expansion cases to the existing dotenv suite. Do not change existing assertions. AC2, AC7, AC8 and AC9 are already-green guards; prove a new fail-first AC. The root CLI-reference row is an ancillary prose update; retain the binding packages/nax workdir.",
+      "acceptanceCriteria": [
+        "[unit] parseRunPreconditionFlags({ context: false }) prints nax run --no-context was removed: workflow mode builds each prompt's context itself to stderr and exits with code 1.",
+        "[unit] parseRunPreconditionFlags({ context: true }) returns without exiting.",
+        "[unit] loadProjectConfig(dir) where dir holds .nax/config.json {\"name\":\"proj-a\"} returns an object whose name is \"proj-a\", while the process's current directory belongs to a different project.",
+        "[integration] configDisplayAction({ dir, diff: true }) where dir's .nax/config.json overrides a global field prints that field in its diff output, while the process's current directory belongs to a different project.",
+        "[integration] configDisplayAction({ dir }) with neither diff nor explain prints dir's .nax/config.json path as the project config source, while the process's current directory belongs to a different project.",
+        "[unit] resolveEnvVars({ a: \"${X}\" }, { X: \"$Y\", Y: \"zzz\" }) returns { a: \"$Y\" }.",
+        "[unit] resolveEnvVars({ a: \"$X-${Y}\" }, { X: \"1\", Y: \"2\" }) returns { a: \"1-2\" }.",
+        "[unit] resolveEnvVars({ a: \"$X\" }, { X: \"${Y}\", Y: \"zzz\" }) returns { a: \"${Y}\" }.",
+        "[unit] resolveEnvVars({ a: \"$${X}\" }, { X: \"1\" }) returns { a: \"${X}\" }."
+      ],
+      "tags": [
+        "bugfix",
+        "cli",
+        "config",
+        "dotenv"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The CLI extraction moves an existing action body, directory propagation uses existing optional-argument patterns, and dotenv needs one combined replacement; existing temp-project and removed-flag fixtures make single-session TDD sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/bin/run-action.ts",
+        "packages/nax/test/unit/cli/run-action.test.ts",
+        "packages/nax/bin/nax.ts",
+        "packages/nax/src/cli/config-display.ts",
+        "packages/nax/src/config/dotenv.ts",
+        "packages/nax/src/cli/config-get.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/cli/config-display-action.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "380f686e3936d724d554b33c3ed61f341794c4cb"
+    }
+  ],
+  "analysis": "This is a bounded maintenance sweep, not a new subsystem: implement the 22 retained LOW findings from the 2026-11-09 review in exactly eleven independently executable stories. The spec reports re-verification at 5cc26cfbb; direct inspection in this worktree confirms the relevant baseline implementations. Codebase-memory MCP tools were unavailable, so navigation used direct reads, Glob and text search; no graph-derived caller claims or executed test results are asserted here. All story dependencies are empty, and package workdirs are binding. No package version bump, release, schema migration or new dependency is needed.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:17 documents injectable _deps seams; :122 describes the workflow/advisor boundary; :131 describes the package graph. nax-ai is the Node-compatible provider seam, nax-agent is the Node-compatible native-agent library, and nax is the Bun orchestrator. Preserve dependency direction and published entry surfaces: do not export new test seams from nax-agent's public root or introduce cross-package deep imports. Node-compatible agent source uses node:fs/promises and node:fs constants for US-001, with #src aliases and explicit .ts relative imports. nax source remains Bun-oriented. nax-ai uses explicit .ts imports and exactOptionalPropertyTypes. All external-call stubbing should use existing _deps objects, restored after tests, rather than monkey-patched globals. No real provider calls are needed; scripted pi events demonstrate adapter mapping, not live-provider conformance.\n\nUS-001: packages/nax-agent/src/tools/grep.ts:93-117 builds argv without a shell and already terminates options with --; only the grep branch gains --exclude-dir=.git before modeFlag and --. Keep rg behavior, pattern semantics, resolveWithin and runtime glob behavior unchanged. packages/nax-agent/src/internal/bounded-io.ts:18-27 opens with r, reads maxBytes+1, and closes in finally. Open nonblocking first, then fstat the opened handle, to avoid blocking on a FIFO and to preserve symlinks to regular files; a pathname-only precheck would not implement the specified handle-based check. The new NaxError flows through the existing Read catch: packages/nax-agent/src/tools/read.ts:125 and :152 are its two readPrefix consumers. There is an additional consumer at packages/nax-agent/src/native/session/repository-instructions.ts:149, so preserve regular-file and maxBytes+1 semantics. Existing tests: packages/nax-agent/test/unit/tools/grep.test.ts and buffering-ceilings.test.ts:48. Add FIFO/directory/symlink cases to the latter, using the runtime spawn seam to probe/run mkfifo and skipping only when unavailable; make deadlines safe so failing FIFO tests cannot wedge the suite.\n\nUS-002: packages/nax-agent/src/internal/redact.ts:43-122 is the central secret-pattern table; redactString resets regex lastIndex for each scan at :130-139 and redactSecrets recursively walks values at :150. Insert only the three specified patterns after aws, preserving assignment/header structured-redaction behavior and negative short-token anchors. File permission changes belong at the callers, not the atomic writer's global default. Transcript writer sites are packages/nax-agent/src/native/session/transcript-store.ts:76, transcript-images.ts:57 and transcript-archive.ts:46. packages/nax-agent/src/internal/atomic-write.ts:124-160 already accepts mode, creates a fresh staged payload and renames it; its default is 0666 at :55. Passing 0600 therefore also hardens an existing 0644 transcript when replaced. packages/nax-agent/src/session-store/storage.ts:167-178 writes metadata to a fresh temp directory and renames it, so add mode to that writeFile without changing directory modes. New transcript-store-modes.test.ts covers real permission bits; append metadata coverage to existing test/unit/session-store/storage-hardening.test.ts. There is no bulk chmod migration: old data is untouched until rewritten. Credential redaction and private conversation/session storage require strict three-session-tdd.\n\nUS-003: packages/nax-ai/src/protocols/pi-client.ts:309-444 owns the stream state machine. The toolcall_end parse catch at :353-368 currently yields an error and returns before usage. done usage is emitted at :375; upstream error usage and abort precedence are at :405-414; the outer catch rethrows aborts at :440. Remember the first parse error and drain to done/error/end/throw, suppressing subsequent nonterminal content and producing at most one error. Use existing toTokenUsage/totalTokens rather than calculating cost or altering client retry policy. Emitting usage continues to prevent transport retry after billed work, and aborted signals must still throw. The existing 984-line packages/nax-ai/test/protocols/pi-client.test.ts:1-62 supplies MODEL, fakePi and BASE, plus its drain/message helpers and unparseable-arguments case; copy the named helpers into the specified new focused test file rather than growing the old file or changing its assertions. Existing valid-tool-call sequencing stays intact.\n\nUS-004: packages/nax/src/execution/crash-signals.ts:191-221, :230-269 and :278-318 share an idempotent shutdown flag and each clears hidden index flags immediately before cancelling the teardown deadline and exiting. Add optional releaseLocks to both context interfaces, forward it through crash-recovery.ts and await it at that position on all three paths, warning but preserving exit on rejection. packages/nax/src/execution/lifecycle/run-setup.ts:338-359 already uses the sealApprovals forwarder pattern; checkout acquisition is at :456, feature acquisition at :482, and existing setup-failure releases are at :494, :500 and :549-550. releaseLock is unconditional, so arming the closure before BOTH acquisitions succeed would risk unlinking another run's lock; captured early callbacks must remain harmless even after setup failure. Release feature lock before checkout lock. Keep the file at or under 600 lines (baseline 582); extract acquisition only if necessary and then include that helper among actual new outputs. Mirror the capture-context fixture in test/unit/execution/lifecycle/run-setup-approvals-seal.test.ts:77-110 in new run-setup-crash-locks.test.ts; drive setup with real locks for the integration cases, not only mocked release calls. packages/nax/src/worktree/manager.ts:378-395 symlinks .env and destroys the worktree on EEXIST. lstat the worktree destination and keep its checked-out entry, preserving untracked ignored .env symlinks and absent-.env behavior; test through WorktreeManager.create in a real temporary git repository.\n\nUS-005: packages/nax/src/session/manager.ts:399-429 has a single-flight open marker, endpoint-based reuse and a close-then-reopen branch. Fold cancelled live handles into that existing close branch, keeping the marker held across close and keeping noncancelled terminal descriptors on today's drop path. Preserve close-error tolerance and clearing of the cancellation marker for the new handle. The manager is already at its grandfathered 650-line ceiling and may not grow. packages/nax/src/session/endpoint-identity.ts defines reuse decisions and should be read for context rather than indiscriminately changing them. packages/nax/src/agents/acp/turn-loop.ts:252-271 currently calls nextPrompt after saving output even when used(state) has exhausted loop.max; insert the specified budget break before any question/context-tool request. Test actual adapter call order and cancellation reset in the session fixtures, and use scriptedOpened/replyTurn/answering in test/unit/agents/acp/turn-loop.test.ts for prompt counts. Session lifecycle is security-sensitive, requiring three-session-tdd.\n\nUS-006: packages/nax/src/workflow/ci-wait.ts:284-296 slices waits for heartbeats without a signal, and :415 checks abort only at the top of each poll. Preserve heartbeat cadence and existing terminal outcomes while adding signal-aware sleep that resolves on abort; stop further slices so the top-of-loop abort path returns pending/aborted with no extra forge poll. Reuse cancellableDelay in src/utils/bun-deps.ts rather than adding an uncancellable sleep. packages/nax/src/workflow/adjudicate.ts:8-36 catches every advisor rejection and then writes default holds. Add an optional aborted predicate and rethrow before fallback or ledger writes. Propagate through StoryLoopEnv at workflow/story-loop.ts:81, buildStoryEnv at stage-env.ts:141, residualStep at story-steps.ts:393-403 and feature-env.ts:92. The feature machine already has a separate abort predicate at feature-env.ts:138; the missing link is the residual adjudication call, not a redesign of machine cancellation. Existing absent/false predicates retain default holds. Cover direct calls plus runStoryLoop and both environment producers with workflow fixtures, including update never reaching phase closed after rejection.\n\nUS-007: packages/nax/src/finish/pr/open.ts:36-46 parses draft/url only; :80 and :129 are the two viewArgv calls; :72 and :132 choose existing versus creation paths. Extend parseView with closed for the exact forge-specific states and request isDraft,url,state at both GitHub view sites. Preserve existing open/draft promotion, human-ready metadata-write policy and absent-state compatibility. The two exact-object expectations at test/unit/finish/pr-open.test.ts:48-57 alone require updating existing assertions with closed:false; add new cases without rewriting other expectations. packages/nax/src/execution/deferred-review.ts:40-63 discards proc.exited's exit code; :77-83 swallows diff failures into []; :99-129 then calls all reviewers. Return explicit process status and a discriminated diff result; a failed diff must produce failed reviewer records without invoking plugins. captureRunStartRef remains string-returning for its consumers at execution/unified-executor.ts:112 and lifecycle/test-baseline-capture.ts:110. Successful empty diffs must still call reviewers with [], not be treated as errors. Existing test/unit/execution/deferred-review.test.ts provides makeSpawnForDiff. The timeout uses the same failure contract without a separate 30-second timeout AC, as explicitly excluded by the spec.\n\nUS-008: packages/nax/src/chat/mentions/mention-expand.ts:33-47 has stat/readBytes seams, and :215-223 reads every non-directory. Add special?:true only for nonregular, nondirectory paths; existing {isDirectory,size} stubs intentionally continue modelling regular files, so do not add special:false to regular entries. Reject special content before any read while retaining folder and ignore/realpath policy. packages/nax/src/chat/background/task-registry.ts:22 sets the 50 MiB write cap, :41 reads the whole log and :254-267 selects at most 500 lines afterward. Keep output() and write limits unchanged, bound only default readLog to the last 2 MiB, check the byte before the slice before dropping a partial first line, and preserve a no-newline tail unchanged. Exercise both the default seam with real logs and createBackgroundTasks.output rather than only stubbing readLog. Existing mention-expand.test.ts and task-registry.test.ts are the fixture sources.\n\nUS-009: packages/nax/src/quality/runner.ts:29 already defines but does not export the 2000 ms drain constant. _qualityRunnerDeps at :90-100 exposes timers, while createDrainDeadline at :103-117 bypasses them. runSingleCommand at :236-259 drains Response.text() concurrently but only bounds the timed-out path and clears killTimer after draining; a background pipe holder can convert a clean leader exit into timeout. Collect chunks eagerly while the leader runs, retain incremental decoded output, clear the leader kill timer immediately on nontimeout leader exit, then bound both streams through injectable drain timers and terminate only lingering groups with singleProcessFallback:false. Preserve existing timeout SIGTERM/SIGKILL behavior, harness timeout output policy, large-output concurrency and leader-derived result fields. Add runner-drain.test.ts rather than enlarging the existing 695-line runner.test.ts; compare against runner-timeout-kill.test.ts for escalation regressions. packages/nax/src/prompts/builders/rectifier-builder-helpers.ts:254-257 keeps the head, consumed at :281 and :287; rectifier-builder.ts:133-138 and :433-436 duplicate head cuts. Export capTail, preserve full output below the limit and final-newline-only tail semantics, and route all three builder consumers through it. The builder's grandfathered 751-line ceiling may not grow. Existing test/unit/prompts/builders/rectifier-builder.test.ts covers the consumers.\n\nUS-010: packages/nax/src/interaction/plugins/webhook.ts:492-570 validates the signed body but delivers it using the URL id at :557-559. Compare parsed response.requestId before delivery regardless of whether a secret is configured; HMAC, rate limits and pending-delivery lifecycle stay unchanged. Keep the 597-line file at or below 600. Existing signed-callback cases are in test/unit/interaction/interaction-plugins.test.ts. Test both pending receives without allowing their normal timeouts to masquerade as nondelivery. packages/nax/src/prd/index.ts:116-134 validates only the outer array and then dereferences each story. Add an indexed non-null, nonarray object guard before normalization; preserve defaults such as attempts:0 and coded error propagation through all PRD consumers. test/unit/prd/load-errors.test.ts is the existing fixture home. Webhook request binding is authentication-sensitive and requires three-session-tdd.\n\nUS-011: packages/nax/bin/run-action.ts:47-80 defines options; :131-158 checks removed flags before any UI/config work. Add optional context and reject false immediately after --no-batch, preserving true/absent behavior. packages/nax/src/cli/config-display.ts:52 and :56 resolve sources and project diff using cwd despite determineConfigSources(startDir?) already accepting a directory at :129-144. packages/nax/src/cli/config-get.ts:49-55 likewise hardcodes cwd; add startDir and forward options.dir. packages/nax/bin/nax.ts:837-880 loads effective config from the selected workdir but drops dir at configCommand; extract only the validated non-JSON action body to config-display-action.ts, preserving profile application and error reporting, and have the bin call the exported function. Use existing config-display/config-get and run-action test files for new assertions; do not change the JSON path. The bin help and repository-root docs/guides/cli-reference.md row get only the specified removal wording; the binding workdir remains packages/nax. packages/nax/src/config/dotenv.ts:193-213 currently replaces braced then bare references; a combined pass must not rescan substituted values, while protection/restoration of $$ stays byte-for-byte in behavior. Existing config/dotenv tests should retain escape/undefined-variable semantics.\n\nValidation and delivery: add tests before implementation and demonstrate at least one specified fail-first AC per story against old code; the spec explicitly lists already-green regression anchors, which must not be presented as evidence of a new fix. Preserve all existing assertions except the two specified parseView expected-object additions; adding cases to existing suites is allowed. Security override applies to US-001 (credential-bearing search exclusion), US-002 (credentials and session storage), US-005 (sessions), and US-010 (signed webhook callbacks). Other cross-module asynchronous stories use three-session-tdd-lite, while straightforward medium changes use tdd-simple. Use package-scoped bun run test/typecheck/check:all through the pipeline, targeted bun test paths for nax/nax-agent, and vitest via nax-ai scripts; never bare bun test or bun run nax. Coverage is a separate gate and must not be manually run inside NAX_SANDBOXED=1. Tests requiring real FIFOs should skip only when mkfifo is unavailable; Windows FIFO behavior is excluded. No commands or tests were executed during PRD drafting. No migration is required: optional context/env/options fields retain builder compatibility, unchanged root contracts avoid consumer migration, file modes harden on rewrite, and the only deliberate CLI behavior change is explicit rejection of the already-ineffective --no-context flag.\n\nRefine-pass audit (manual source/spec comparison; no tests or JSON-parser command executed): every numbered criterion in .nax/features/review-low-fixes/spec.md:467-609 was enumerated and matched in the same story and original order. The preserved numbered inventory is US-001 AC1-AC9 (9), US-002 AC1-AC11 (11), US-003 AC1-AC8 (8), US-004 AC1-AC12 (12), US-005 AC1-AC8 (8), US-006 AC1-AC12 (12), US-007 AC1-AC12 (12), US-008 AC1-AC11 (11), US-009 AC1-AC13 (13), US-010 AC1-AC8 (8), and US-011 AC1-AC9 (9): 113 original ACs total, with no omitted assertions or trailing qualifications. The additional US-001 AC10 and US-004 AC13 express explicit failure-table promises (nonregular-file rejection and warn logging on release failure), not invented feature scope. All 28 feature-level out-of-scope items remain verbatim in the top-level array; relevant boundaries are also echoed verbatim beside the affected story scopes. No story-local post-AC exclusions exist in the spec to hoist or relocate.\n\nPer-story criterion ledger: US-001 AC1 literal grep exclusion; AC2 regex grep exclusion; AC3 rg unchanged; AC4 tool-level fallback filters .git but returns src/a.txt; AC5 FIFO error within 2s with mkfifo skip; AC6 directory coded error; AC7 101-byte prefix; AC8 tool-level FIFO isError; AC9 regular-target symlink. US-002 AC1 GitLab mask; AC2 Google mask; AC3 Stripe standard-live mask; AC4 Stripe restricted-live mask; AC5 pattern kinds; AC6 near-miss input unchanged; AC7 transcript 0600; AC8 images 0600; AC9 archive 0600; AC10 metadata 0600; AC11 replacement transcript hardens 0644 to 0600. US-003 AC1 done usage before parse error; AC2 no tool-call/done; AC3 post-failure text suppressed; AC4 upstream error usage before exactly one remembered error; AC5 premature iterator end error/no usage; AC6 valid-call ordering; AC7 aborted-signal rejection; AC8 iterator throw yields one remembered error. US-004 AC1 SIGTERM release-before-143; AC2 exception release-before-1; AC3 rejection release-before-1; AC4 release failure still exits; AC5 absent callback still exits; AC6 crashed status precedes release; AC7 setup-produced callback releases real locks; AC8 checkout refusal leaves another holder's lock; AC9 feature refusal leaves another holder's lock; AC10 tracked .env remains regular; AC11 ignored .env remains symlink; AC12 absent .env stays absent. US-005 AC1 cancelled handle close-before-reopen; AC2 normal close not duplicated; AC3 new handle usable; AC4 close rejection tolerated; AC5 one-turn question not asked; AC6 two turns/one interaction; AC7 three turns/two interactions; AC8 no final-turn context-tool interaction. US-006 AC1 abort wakes default sleep; AC2 unsignalled sleep duration; AC3 signal reaches every slice; AC4 no post-abort poll; AC5 no second heartbeat slice; AC6 aborted advisor failure propagates without ledger writes; AC7 nonaborted failure keeps holds/ledger; AC8 absent predicate keeps holds; AC9 residualStep forwards predicate; AC10 runStoryLoop does not close after rejection; AC11 feature env forwards run abort; AC12 story env exposes signal state. US-007 AC1 GitHub CLOSED; AC2 GitHub MERGED and GitLab merged; AC3 OPEN; AC4 absent state; AC5 requested view fields; AC6 closed GitHub PR recreated; AC7 closed GitLab MR recreated; AC8 merged branch recreated as draft; AC9 failed diff fails every reviewer without calling check; AC10 failed rev-parse returns empty; AC11 successful empty diff still reviewed; AC12 successful named diff still reviewed. US-008 AC1 special mention path-only within 2s with mkfifo skip; AC2 default FIFO special flag; AC3 no special-file read; AC4 regular stat shape unchanged; AC5 bounded 10MiB log tail; AC6 whole first retained line; AC7 small file whole; AC8 2MiB constant; AC9 real task output last 40; AC10 last 500 of 600; AC11 no-newline tail unchanged. US-009 AC1 real pipe-holder command follows successful leader; AC2 drain deadline kills lingering group safely; AC3 simple output/no kill; AC4 large output intact; AC5 partial output and failed leader status; AC6 genuine timeout; AC7 error summary tail/count; AC8 short output unchanged; AC9 partial leading line dropped; AC10 firstAttemptDelta tail; AC11 noOpReprompt tail; AC12 reviewRectification tail; AC13 final-newline tail retained. US-010 AC1 signed mismatch 400; AC2 neither pending receive delivered; AC3 matching signed delivery; AC4 null indexed PRD_INVALID; AC5 later primitive indexed PRD_INVALID; AC6 valid story/default attempts; AC7 array PRD_INVALID; AC8 unsigned mismatch 400. US-011 AC1 removed context flag stderr/exit; AC2 context true unchanged; AC3 selected project raw config despite different cwd; AC4 selected project diff despite different cwd; AC5 selected project source despite different cwd; AC6 inserted bare reference not rescanned; AC7 mixed original forms expand; AC8 inserted braced reference not rescanned; AC9 double-dollar escape preserved.\n\nNegative-path/compatibility audit: every story already has a negative case, including US-002 AC6's deliberately nonmatching secret shapes; no speculative failure AC was needed. Backward-compatibility anchors remain US-001 AC3/7/9, US-002 AC6, US-003 AC6, US-004 AC5/11/12, US-005 AC2/3/4, US-006 AC2/7/8, US-007 AC4/11/12, US-008 AC4/7/9/10/11, US-009 AC3/4/6/8/13, US-010 AC3/6 and US-011 AC2/7/8/9. US-010 AC2 was clarified to observe both still-pending promises after the mismatched HTTP request and queued delivery callbacks complete, rather than requiring an unbounded wait. US-007 AC9 no longer adds a timeout-test clause: the timeout implementation shares the explicit failure result in the description, while the spec excludes a separate elapsed-time timeout AC.\n\nCodebase-fit/routing corrections: US-002 is medium because its five production edits are pattern entries and existing mode parameters, while security still mandates three-session-tdd. US-003 is medium/tdd-simple because the change is one existing generator and scripted PiDeps, despite its multiple terminal cases. US-011 is medium/tdd-simple because extraction moves existing code and the other changes are optional-directory propagation and one replacement pass, not a new config architecture. US-004, US-006 and US-009 retain complex/three-session-tdd-lite due to destructive teardown ownership, cross-environment abort propagation and concurrent stream/process/timer lifecycles respectively. Security overrides for US-001, US-002, US-005 and US-010 remain unchanged. US-011 contextFiles now includes the explicitly recommended removed-flag test fixture; the small config-get.ts resolver remains an implementation input named in the description and analysis but is omitted from the five-file context shortlist. Its options(overrides) factory at test/unit/cli/run-action.test.ts:8 supplies required fields; the spec's shorthand context-only calls do not imply widening parseRunPreconditionFlags to a partial options API. Existing config-display/config-get tests supply temporary project/global fixtures, and test/unit/config/dotenv.test.ts exists. All eleven dependency arrays remain empty, all binding workdirs remain exact, no created file appears in contextFiles, and the five specified new outputs remain expectedFiles.\n\nRemaining implementation caution from the failure table: readPrefix's socket/device rejection contract is retained even though some platforms can fail open before handle.stat is reached; FIFO coverage alone does not establish that broader failure contract. Preserve the spec's opened-handle regular-file check and nonblocking flags rather than substituting an unsafe pathname-only precheck. The actual background-task class is BackgroundTasks in chat/background/task-registry.ts, exposed through createBackgroundTasks; BackgroundTaskRegistry.output in the review's motivation is a descriptive label, not a new class to create.",
+  "outOfScope": [
+    "US-001 only: review L37b (`ScratchpadList` checks a glob hit against the repo root instead of the scratchpad) is dropped by evidence: both runtimes' `globSync` never return a symlink for a `**/*` pattern (Bun scans with `onlyFiles` and `followSymlinks: false`; `node-glob.ts` keeps a symlink only for a literal pattern), so no symlinked entry reaches the check.",
+    "US-001 only: Bash writes to `.claude/settings.local.json` outside the OS sandbox (review L14's second half): the sandboxed path is already denied by `policy-builder.ts:212`.",
+    "US-002 only: existing transcript, image, archive and session metadata files already on disk keep their mode until next written; directory modes are unchanged.",
+    "US-002 only: Stripe test keys (`sk_test_`, `rk_test_`) and vendor key formats beyond `glpat-`, `AIza`, `sk_live_` and `rk_live_` are not added to the redactor.",
+    "US-001 only: `readPrefix` on Windows: `O_NONBLOCK` is absent there and treated as `0`; FIFO behaviour on Windows is not tested.",
+    "US-004 only: a run killed by `SIGKILL` or the OOM killer still leaves its locks; only the catchable fatal paths release them.",
+    "US-007 only: the `git diff` timeout branch shares the non-zero-exit handling but has no AC of its own (it needs the 30s `GIT_TIMEOUT_MS` to elapse).",
+    "US-011 only: the `nax config --json` path is unchanged; it already takes `dir`.",
+    "US-011 only: the `--no-context` help text in `bin/nax.ts` and the row in `docs/guides/cli-reference.md` are prose updates with no AC of their own.",
+    "US-001 only: `readFileSlice` (`tools/read-file.ts:70`, behind `ScratchpadRead`) has the same open-without-type-check shape, but it only reads inside the agent's own scratchpad, so a FIFO there is one the agent made itself.",
+    "US-004 only: a fatal signal that arrives after normal cleanup released the locks but before the crash handlers are removed may release again; `releaseFeatureLock` checks the runId and the checkout-lock unlink tolerates a missing file.",
+    "US-010 only: the webhook callback gains no nonce or timestamp and its HMAC still covers only the body; replay of a delivered reply is already refused because delivery clears the pending request id, and the URL/body `requestId` check closes the cross-request case.",
+    "Review L7 (`workflow promote` binds the CI wait to local HEAD) is dropped by ruling: it fails closed as `unavailable`.",
+    "Review L8 (`listUncommitted` hides every `.nax/` path) is dropped by ruling: it is a policy choice about which `.nax/` files nax owns.",
+    "Review L9 (the approval advisor has no cost check when `plan.base` is empty) is dropped by ruling: one extra advisor call at most.",
+    "Review L11 (an unreviewed story does not block PR readiness) is dropped by ruling: it is a policy call and today's behaviour stays.",
+    "Review L13 (a failed CI poll from an older head SHA is terminal) is dropped by ruling: a GitLab timing edge, rated plausible.",
+    "Review L15 (scoped lint's degraded branch fails open on absolute paths) is dropped by ruling: it is unreachable today.",
+    "Review L3 (feature-lock reclaim has no `.reclaim` mutex) and L19 (a queued TUI mode or model switch is lost while the close confirmation is open) are dropped by ruling: L3 needs three nax runs racing for one feature lock, and L19 is a narrow UI edge rated plausible.",
+    "Review L23 (`release tag` does not compare local HEAD with `origin/main`) is dropped by ruling: it needs a maintainer to tag the wrong commit.",
+    "Review L26 (the nax-ai credential lock wait is about 3.6s against a 10s stale window) is dropped by ruling: it bites only while another holder keeps the lock past 3.6s.",
+    "Review L30 (a stalled loop is reported as `max-iterations`) is dropped by ruling: message only.",
+    "Review L31 (koda approvals read-modify-write is per-process only) stays out of scope per the F3 ruling.",
+    "Review L32 and L33 (backtracking regexes in lint/typecheck text parsing and scope globs) are dropped by ruling: the inputs are tool output or repo-authored patterns and need extreme depth.",
+    "Review L35, L36 and L37d are dropped by ruling: L35 (nax-agent-acp tool events capped silently at 512 per turn) needs more than 512 tool calls in one turn; L36 (`retryAfter` above about 24.8 days overflows `setTimeout`) needs a value no real server sends; L37d (session-lock same-PID takeover and the ACP registry `session/load` race) needs a reused PID or two concurrent loads of one session."
+  ],
+  "routingProfile": "native-haiku-luna"
+}

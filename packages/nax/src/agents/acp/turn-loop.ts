@@ -265,6 +265,7 @@ async function runLoop(loop: Loop): Promise<TurnResult> {
       break;
     }
     state.output = outcome.output;
+    if (used(state) >= loop.max) break;
     const next = await nextPrompt(loop, outcome.output);
     if (next === undefined) break;
     state.currentPrompt = next;

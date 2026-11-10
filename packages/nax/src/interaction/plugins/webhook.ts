@@ -556,6 +556,9 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     try {
       const parsed = JSON.parse(body);
       const response = InteractionResponseSchema.parse(parsed);
+      if (response.requestId !== requestId) {
+        return new Response("Bad Request: requestId mismatch", { status: 400 });
+      }
       deliveryResult = this.deliverResponse(requestId, response);
     } catch {
       // Sanitize error - do not leak parse/validation details

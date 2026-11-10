@@ -113,7 +113,7 @@ export function buildGrepArgv(
   // nearest equivalent to rg's regex syntax is -E (POSIX ERE, e.g. `a+`, `a|b`
   // with no backslash), not grep's default BRE.
   const modeFlag = patternType === "literal" ? "-F" : "-E";
-  return ["grep", "-r", "-n", modeFlag, "--", pattern, target];
+  return ["grep", "-r", "-n", "--exclude-dir=.git", modeFlag, "--", pattern, target];
 }
 
 export const grepTool: CodingTool = {

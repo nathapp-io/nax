@@ -601,6 +601,56 @@ describe("SessionManager endpoint-aware reuse (nax#1965)", () => {
     return { adapter, opened, closed };
   }
 
+  test("reopening an aborted handle closes it before opening and clears cancellation despite close failure", async () => {
+    const calls: string[] = [];
+    const controller = new AbortController();
+    let openCount = 0;
+    let sendCount = 0;
+    const adapter = makeAgentAdapter({
+      openSession: mock(async (name: string, opts: OpenSessionOpts): Promise<SessionHandle> => {
+        calls.push(`open:${++openCount}`);
+        return { id: name, agentName: opts.agentName, modelDef: opts.modelDef };
+      }),
+      sendTurn: mock(async () => {
+        if (++sendCount === 1) {
+          controller.abort();
+          throw new DOMException("The operation was aborted.", "AbortError");
+        }
+        return {
+          output: "recovered",
+          tokenUsage: { inputTokens: 1, outputTokens: 1 },
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+        };
+      }),
+      closeSession: mock(async (handle: SessionHandle) => {
+        calls.push(`close:${handle.id}`);
+        throw new Error("close failed");
+      }),
+    });
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const first = await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+
+    await expect(sm.sendPrompt(first, "abort", { signal: controller.signal })).rejects.toThrow();
+    const reopened = await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+
+    expect(calls).toEqual(["open:1", `close:${NAME}`, "open:2"]);
+    expect(sm.isCancelled(NAME)).toBe(false);
+    await expect(sm.sendPrompt(reopened, "retry")).resolves.toMatchObject({ output: "recovered" });
+  });
+
+  test("closeSession(handle, true) does not close the same handle again when reopening", async () => {
+    const { adapter, closed } = tracked();
+    const sm = new SessionManager({ getAdapter: () => adapter });
+    const first = await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+
+    await sm.sendPrompt(first, "complete");
+    await sm.closeSession(first, true);
+    await sm.openSession(NAME, request("minimax/MiniMax-M3"));
+
+    expect(closed).toHaveLength(1);
+  });
+
   test("a same-agent re-open with a different model dispatches the new model", async () => {
     const { adapter, opened } = tracked();
     const sm = new SessionManager({ getAdapter: () => adapter });

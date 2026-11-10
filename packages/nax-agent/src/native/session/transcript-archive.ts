@@ -46,6 +46,7 @@ export async function archiveTranscript(
     await writeFileAtomic(
       join(archive.dir, `${sessionId}.transcript.${stamp}.json`),
       JSON.stringify(redactSecrets(doc), null, 2),
+      { mode: 0o600 },
     );
     await pruneRetainedTranscripts(archive.dir, archive.maxRetained);
   } catch (err) {

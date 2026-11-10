@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-09T11:43:35.802Z",
+  "updatedAt": "2026-11-09T15:20:26.326Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -109,7 +109,7 @@
     "src/utils/porcelain.ts": { "unquotePorcelainPath": 39 },
     "src/verification/executor.ts": { "appendFlag": 28 },
     "src/verification/smart-runner.ts": { "buildTestCandidates": 25 },
-    "src/worktree/manager.ts": { "create": 34 },
+    "src/worktree/manager.ts": { "create": 31 },
     "test/helpers/fake-agent-manager.ts": { "=>": 30 },
     "test/integration/cli/adapter-boundary.test.ts": { "=>": 37 },
     "test/unit/cli/config-profile.test.ts": { "=>": 29 },

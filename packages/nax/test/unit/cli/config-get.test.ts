@@ -4,10 +4,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
-import { loadGlobalConfig } from "@/cli/config-get";
+import { loadGlobalConfig, loadProjectConfig } from "@/cli/config-get";
 
 let globalDir: string;
 let savedGlobalEnv: string | undefined;
@@ -31,6 +31,27 @@ function costLimitOf(config: Record<string, unknown>): unknown {
   const execution = config.execution;
   return typeof execution === "object" && execution !== null ? Reflect.get(execution, "costLimit") : undefined;
 }
+
+describe("loadProjectConfig — AC-3: start directory", () => {
+  test("loads the project config beneath the supplied directory, not cwd", async () => {
+    const selectedRoot = realpathSync(makeTempDir("nax-config-selected-"));
+    const cwdRoot = realpathSync(makeTempDir("nax-config-cwd-"));
+    const originalCwd = process.cwd();
+    try {
+      mkdirSync(join(selectedRoot, ".nax"), { recursive: true });
+      mkdirSync(join(cwdRoot, ".nax"), { recursive: true });
+      writeFileSync(join(selectedRoot, ".nax", "config.json"), JSON.stringify({ name: "proj-a" }), "utf8");
+      writeFileSync(join(cwdRoot, ".nax", "config.json"), JSON.stringify({ name: "proj-b" }), "utf8");
+      process.chdir(cwdRoot);
+
+      expect(await loadProjectConfig(selectedRoot)).toEqual({ name: "proj-a" });
+    } finally {
+      process.chdir(originalCwd);
+      cleanupTempDir(selectedRoot);
+      cleanupTempDir(cwdRoot);
+    }
+  });
+});
 
 describe("loadGlobalConfig", () => {
   test("merges config.local.json over config.json", async () => {

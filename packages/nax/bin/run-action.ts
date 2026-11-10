@@ -51,6 +51,8 @@ export interface RunActionOptions {
   maxCost?: string;
   dryRun: boolean;
   batch?: boolean;
+  /** Commander exposes `--no-context` as `false`; retained to report removal clearly. */
+  context?: boolean;
   parallel?: string;
   plan?: boolean;
   from?: string;
@@ -123,10 +125,9 @@ export function resolveRunWorkdir(options: RunActionOptions): string {
 }
 
 /**
- * Validate `-m/--max-iterations`, `--parallel` and `--no-batch` before any
- * config load, bake-off check or TUI mount — every removal error must print
- * before any TUI exists. The checks run in that order, so the earliest removed
- * flag names itself.
+ * Validate removed run flags before any config load, bake-off check or TUI
+ * mount — every removal error must print before any TUI exists. Checks run in
+ * order so the earliest removed flag names itself.
  */
 export function parseRunPreconditionFlags(options: RunActionOptions): {
   chatAsksDir: string | undefined;
@@ -141,6 +142,10 @@ export function parseRunPreconditionFlags(options: RunActionOptions): {
   }
   if (options.batch === false) {
     console.error(chalk.red("nax run --no-batch was removed: workflow mode runs stories one at a time"));
+    process.exit(1);
+  }
+  if (options.context === false) {
+    console.error(chalk.red("nax run --no-context was removed: workflow mode builds each prompt's context itself"));
     process.exit(1);
   }
   const chatAsksFlag = parseChatAsksFlag(options.chatAsks);

@@ -73,7 +73,7 @@ async function writeTranscriptDoc(dir: string, sessionName: string, doc: Transcr
   const stored = await splitTranscriptImages(path, doc);
   await mkdir(dir, { recursive: true });
   // Publish JSON only after all image files have been published successfully.
-  await writeFileAtomic(path, JSON.stringify(stored, null, 2));
+  await writeFileAtomic(path, JSON.stringify(stored, null, 2), { mode: 0o600 });
 }
 
 /**

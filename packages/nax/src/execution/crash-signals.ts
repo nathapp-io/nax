@@ -49,6 +49,8 @@ export interface SignalHandlerContext extends RunCompleteContext {
    * early has no dispatch scope to seal.
    */
   sealApprovals?: () => Promise<void>;
+  /** Releases locks owned by this run after fatal status is recorded. */
+  releaseLocks?: () => Promise<void>;
   /**
    * Repo working directory (#2490). When set, teardown clears any
    * skip-worktree/assume-unchanged flag an agent left on `.nax/` run state.
@@ -170,6 +172,17 @@ export async function clearHiddenNaxIndexFlags(ctx: SignalHandlerContext): Promi
   }
 }
 
+/** Release owned locks without allowing a failed filesystem operation to change the fatal exit code. */
+async function releaseOwnedLocks(ctx: SignalHandlerContext): Promise<void> {
+  try {
+    await ctx.releaseLocks?.();
+  } catch (error) {
+    getSafeLogger()?.warn("crash-recovery", "Failed to release run locks during fatal teardown", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /**
  * Get numeric signal number for exit code
  */
@@ -214,6 +227,7 @@ function createSignalHandler(
     await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal, ctx.featureDir);
 
     await clearHiddenNaxIndexFlags(ctx);
+    await releaseOwnedLocks(ctx);
 
     cancelDeadline();
     _crashSignalsDeps.exit(128 + getSignalNumber(signal));
@@ -260,6 +274,7 @@ function createUncaughtExceptionHandler(
     );
 
     await clearHiddenNaxIndexFlags(ctx);
+    await releaseOwnedLocks(ctx);
 
     cancelDeadline();
     _crashSignalsDeps.exit(1);
@@ -306,6 +321,7 @@ function createUnhandledRejectionHandler(
     );
 
     await clearHiddenNaxIndexFlags(ctx);
+    await releaseOwnedLocks(ctx);
 
     cancelDeadline();
     _crashSignalsDeps.exit(1);

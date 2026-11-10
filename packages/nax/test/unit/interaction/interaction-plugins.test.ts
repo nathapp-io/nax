@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { assertDefined } from "@test/helpers";
+import { assertDefined, waitForCondition, webhookInternals } from "@test/helpers";
 import type { InteractionRequest } from "@/interaction";
 import { _webhookPluginDeps, WebhookInteractionPlugin } from "@/interaction/plugins/webhook";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -496,6 +496,84 @@ describe("WebhookInteractionPlugin - rate limiting (SEC-8)", () => {
       expect(statuses).toEqual([200, 200, 429]);
     } finally {
       await plugin.destroy();
+    }
+  });
+});
+
+describe("WebhookInteractionPlugin - callback request identity (US-010)", () => {
+  const secret = "us010-secret";
+
+  function makePayload(requestId: string): string {
+    return JSON.stringify({ requestId, action: "approve", respondedAt: Date.now() });
+  }
+
+  function signature(payload: string): string {
+    return createHmac("sha256", secret).update(payload).digest("hex");
+  }
+
+  async function postSigned(port: number, urlRequestId: string, bodyRequestId: string): Promise<Response> {
+    const payload = makePayload(bodyRequestId);
+    return fetch(`http://127.0.0.1:${port}/nax/interact/${urlRequestId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Nax-Signature": signature(payload) },
+      body: payload,
+    });
+  }
+
+  test("AC-1/2: rejects a signed mismatched callback without settling either pending receive", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "http://localhost/unused", secret, callbackPort: 0 });
+
+    const firstReceive = plugin.receive("req-1", 10_000);
+    const secondReceive = plugin.receive("req-2", 10_000);
+    let firstSettled = false;
+    let secondSettled = false;
+    void firstReceive.then(() => {
+      firstSettled = true;
+    });
+    void secondReceive.then(() => {
+      secondSettled = true;
+    });
+
+    try {
+      await waitForCondition(() => webhookInternals(plugin).receiveCallbacks.size === 2, 1_000);
+      const port = plugin.callbackServerPort;
+      assertDefined(port, "plugin.callbackServerPort");
+
+      const response = await postSigned(port, "req-1", "req-2");
+      await Promise.resolve();
+      expect(firstSettled).toBe(false);
+      expect(secondSettled).toBe(false);
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Bad Request: requestId mismatch");
+    } finally {
+      await plugin.destroy();
+      await Promise.all([firstReceive, secondReceive]);
+    }
+  });
+
+  test("AC-8: rejects an unsigned mismatched callback when no secret is configured", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "http://localhost/unused", requireSecret: false, callbackPort: 0 });
+
+    const firstReceive = plugin.receive("req-1", 10_000);
+    const secondReceive = plugin.receive("req-2", 10_000);
+
+    try {
+      await waitForCondition(() => webhookInternals(plugin).receiveCallbacks.size === 2, 1_000);
+      const port = plugin.callbackServerPort;
+      assertDefined(port, "plugin.callbackServerPort");
+      const payload = makePayload("req-2");
+      const response = await fetch(`http://127.0.0.1:${port}/nax/interact/req-1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Bad Request: requestId mismatch");
+    } finally {
+      await plugin.destroy();
+      await Promise.all([firstReceive, secondReceive]);
     }
   });
 });

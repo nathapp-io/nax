@@ -616,6 +616,37 @@ describe("RectifierPromptBuilder — scope-constraint frame post-root-move", () 
   });
 });
 
+describe("RectifierPromptBuilder output tails (US-009)", () => {
+  test("AC-10: firstAttemptDelta retains the failure marker without an oversized Q prefix", () => {
+    const prompt = RectifierPromptBuilder.firstAttemptDelta(
+      [makeCheck("lint", `${"Q".repeat(10_000)}\nFAIL tail-marker`)],
+      1,
+    );
+
+    expect(prompt).toContain("FAIL tail-marker");
+    expect([...prompt.matchAll(/Q/g)].length).toBeLessThanOrEqual(4_010);
+  });
+
+  test("AC-11: noOpReprompt retains the failure marker from oversized output", () => {
+    const prompt = RectifierPromptBuilder.noOpReprompt(
+      [makeCheck("lint", `${"Q".repeat(10_000)}\nFAIL tail-marker`)],
+      0,
+      1,
+    );
+
+    expect(prompt).toContain("FAIL tail-marker");
+  });
+
+  test("AC-12: reviewRectification retains the output tail beside blocking findings", () => {
+    const prompt = RectifierPromptBuilder.reviewRectification(
+      [makeCheckWithFindings("lint", `${"x".repeat(10_000)}\nTAIL-LINE`)],
+      makeBaseStory({ workdir: "." }),
+    );
+
+    expect(prompt).toContain("TAIL-LINE");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // US-003 — baseline disposition tags in the prioritized-failure render
 // ---------------------------------------------------------------------------

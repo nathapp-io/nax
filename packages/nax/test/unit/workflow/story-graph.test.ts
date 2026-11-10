@@ -228,6 +228,16 @@ describe("residualStep", () => {
     expect(result.patch.suite).toBe(storyLoopFixtures.SUITE_GREEN);
   });
 
+  test("AC-9: propagates an aborted advisor failure without writing a ruling", async () => {
+    const error = new Error("advisor interrupted");
+    const { h, state } = residualHarness();
+    h.env.advisor.ruleResidual = async () => {
+      throw error;
+    };
+    await expect(residualStep({ ...h.env, aborted: () => true }, state)).rejects.toBe(error);
+    expect(h.ledger).toEqual([]);
+  });
+
   test("AC-44/AC-47: asks the advisor to rule, and patches the rulings it returned", async () => {
     const { h, state, ruleResidual } = residualHarness();
     const result = await residualStep(h.env, state);

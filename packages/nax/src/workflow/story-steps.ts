@@ -399,6 +399,7 @@ export async function residualStep(env: StoryLoopEnv, state: StoryLoopState): Pr
     env.advisor,
     { storyId: env.storyId, items, redGates: redGateNames(s) },
     env.sink.ledger,
+    env.aborted,
   );
   return { patch: { suite: s.suite, rulings } };
 }

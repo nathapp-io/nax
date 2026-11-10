@@ -57,6 +57,7 @@ export {
   configJsonCommand,
 } from "./config";
 export { FIELD_DESCRIPTIONS } from "./config-descriptions";
+export { type ConfigDisplayActionOptions, configDisplayAction } from "./config-display-action";
 export { _confirmDeps, type ConfirmStdin, promptForConfirmation } from "./confirm";
 export {
   _effectivenessEvalDeps,

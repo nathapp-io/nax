@@ -44,10 +44,11 @@ export async function loadGlobalConfig(): Promise<Record<string, unknown>> {
 /**
  * Load project config (raw, without defaults or global).
  *
+ * @param startDir - Directory used to locate the project config (defaults to cwd)
  * @returns Project config object or null if not found
  */
-export async function loadProjectConfig(): Promise<Record<string, unknown> | null> {
-  const projectDir = findProjectDir(process.cwd());
+export async function loadProjectConfig(startDir?: string): Promise<Record<string, unknown> | null> {
+  const projectDir = findProjectDir(startDir ?? process.cwd());
   if (!projectDir) return null;
 
   const projectPath = join(projectDir, "config.json");

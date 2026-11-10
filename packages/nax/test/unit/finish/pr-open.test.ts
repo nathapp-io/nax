@@ -49,12 +49,29 @@ describe("parseView", () => {
     expect(parseView('{"isDraft":true,"url":"https://x/1"}', "github")).toEqual({
       isDraft: true,
       url: "https://x/1",
+      closed: false,
     });
   });
 
   test("treats an unparseable reply as ready, not draft", () => {
-    expect(parseView("not json https://x/2", "github")).toEqual({ isDraft: false, url: "https://x/2" });
+    expect(parseView("not json https://x/2", "github")).toEqual({ isDraft: false, url: "https://x/2", closed: false });
   });
+
+  test.each([
+    ['{"isDraft":false,"url":"u1","state":"CLOSED"}', "github"],
+    ['{"isDraft":false,"url":"u1","state":"MERGED"}', "github"],
+    ['{"state":"merged"}', "gitlab"],
+    ['{"state":"closed"}', "gitlab"],
+  ] as const)("marks closed state from %s (%s)", (stdout, forge) => {
+    expect(parseView(stdout, forge).closed).toBe(true);
+  });
+
+  test.each(['{"isDraft":false,"url":"u1","state":"OPEN"}', '{"isDraft":false,"url":"u1"}'])(
+    "does not mark open or absent state as closed: %s",
+    (stdout) => {
+      expect(parseView(stdout, "github").closed).toBe(false);
+    },
+  );
 
   test("accepts any of GitLab's draft field spellings", () => {
     expect(parseView('{"work_in_progress":true,"web_url":"https://x/3"}', "gitlab").isDraft).toBe(true);
@@ -134,6 +151,46 @@ describe("openDraftFinishPr", () => {
 });
 
 describe("openOrPromotePr", () => {
+  test("requests GitHub state alongside draft and URL fields", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"isDraft":false,"url":"u1","state":"OPEN"}' } : { exitCode: 0 },
+    );
+    await openOrPromotePr(args, deps);
+    expect(calls[0]).toEqual(["gh", "pr", "view", "feat/demo", "--json", "isDraft,url,state"]);
+  });
+
+  test("creates a new GitHub PR when the branch view is closed", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view")
+        ? { exitCode: 0, stdout: '{"isDraft":false,"url":"u1","state":"CLOSED"}' }
+        : { exitCode: 0, stdout: "https://x/new-pr" },
+    );
+    await expect(openOrPromotePr(args, deps)).resolves.toEqual({ status: "opened", url: "https://x/new-pr" });
+    expect(calls.some((cmd) => cmd.includes("create"))).toBe(true);
+  });
+
+  test("creates a new GitLab MR when the branch view is closed", async () => {
+    const gitlabArgs = { ...args, forge: "gitlab" as const };
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view") ? { exitCode: 0, stdout: '{"state":"closed","web_url":"u1"}' } : { exitCode: 0 },
+    );
+    await expect(openOrPromotePr(gitlabArgs, deps)).resolves.toMatchObject({ status: "opened" });
+    expect(calls.some((cmd) => cmd.slice(0, 3).join(" ") === "glab mr create")).toBe(true);
+  });
+
+  test("creates a draft when keepDraft view finds a merged GitHub PR", async () => {
+    const { deps, calls } = depsFor((cmd) =>
+      cmd.includes("view")
+        ? { exitCode: 0, stdout: '{"isDraft":false,"url":"u1","state":"MERGED"}' }
+        : { exitCode: 0, stdout: "https://x/new-draft" },
+    );
+    await expect(openOrPromotePr({ ...args, keepDraft: true }, deps)).resolves.toEqual({
+      status: "draft",
+      url: "https://x/new-draft",
+    });
+    expect(calls.some((cmd) => cmd.includes("create") && cmd.includes("--draft"))).toBe(true);
+  });
+
   test("creates the PR when view fails, and reports opened", async () => {
     const { deps, calls } = depsFor((cmd) =>
       cmd.includes("view") ? { exitCode: 1 } : { exitCode: 0, stdout: "https://x/10" },
@@ -311,15 +368,16 @@ describe("openOrPromotePr keepDraft (A4)", () => {
 
   test("the status comes from the PR's state after the update", async () => {
     let views = 0;
-    const { deps } = depsFor((cmd) => {
+    const { deps, calls } = depsFor((cmd) => {
       if (!cmd.includes("view")) return { exitCode: 0 };
       views += 1;
       const draft = views === 1;
-      return { exitCode: 0, stdout: `{"draft":${draft},"web_url":"https://x/mr/9"}` };
+      return { exitCode: 0, stdout: `{"isDraft":${draft},"url":"https://x/pr/9","state":"OPEN"}` };
     });
-    const out = await openOrPromotePr(keepArgs("gitlab"), deps);
+    const out = await openOrPromotePr(keepArgs("github"), deps);
     expect(views).toBe(2);
-    expect(out).toEqual({ status: "already-ready", url: "https://x/mr/9" });
+    expect(calls.filter((cmd) => cmd.includes("view")).every((cmd) => cmd.at(-1) === "isDraft,url,state")).toBe(true);
+    expect(out).toEqual({ status: "already-ready", url: "https://x/pr/9" });
   });
 
   test("a failed re-view falls back to the state seen before the update", async () => {

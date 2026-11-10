@@ -61,6 +61,65 @@ describe("adjudicateResidual", () => {
     ).toEqual(["hold"]);
   });
 
+  test("AC-6: an aborted advisor failure is rethrown without ledger writes", async () => {
+    const error = new Error("advisor interrupted");
+    const advisor: WorkflowAdvisor = {
+      answerQuestion: async () => null,
+      ruleResidual: async () => {
+        throw error;
+      },
+    };
+    const lines: string[] = [];
+    const ledger = async (line: string) => {
+      lines.push(line);
+    };
+    await expect(
+      adjudicateResidual(advisor, { storyId: "US-001", items: [f("F1"), f("F2")], redGates: [] }, ledger, () => true),
+    ).rejects.toBe(error);
+    expect(lines).toEqual([]);
+  });
+
+  test("AC-7: a non-aborted advisor failure still writes default holds", async () => {
+    const advisor: WorkflowAdvisor = {
+      answerQuestion: async () => null,
+      ruleResidual: async () => {
+        throw new Error("quota");
+      },
+    };
+    const lines: string[] = [];
+    const ledger = async (line: string) => {
+      lines.push(line);
+    };
+    const rulings = await adjudicateResidual(
+      advisor,
+      { storyId: "US-001", items: [f("F1"), f("F2")], redGates: [] },
+      ledger,
+      () => false,
+    );
+    expect(rulings.map((ruling) => [ruling.findingId, ruling.action])).toEqual([
+      ["F1", "hold"],
+      ["F2", "hold"],
+    ]);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("Ruling: hold F1");
+    expect(lines[1]).toContain("Ruling: hold F2");
+  });
+
+  test("AC-8: omitting the abort predicate preserves default holds on advisor failure", async () => {
+    const advisor: WorkflowAdvisor = {
+      answerQuestion: async () => null,
+      ruleResidual: async () => {
+        throw new Error("quota");
+      },
+    };
+    const rulings = await adjudicateResidual(
+      advisor,
+      { storyId: "US-001", items: [f("F1"), f("F2")], redGates: [] },
+      async () => {},
+    );
+    expect(rulings.map((ruling) => ruling.action)).toEqual(["hold", "hold"]);
+  });
+
   test("stub never answers questions", async () => {
     expect(
       await defaultWorkflowAdvisor.answerQuestion({ storyId: "US-001", status: "BLOCKED", concerns: "x" }),

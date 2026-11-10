@@ -24,6 +24,8 @@ export interface ConfigCommandOptions {
   diff?: boolean;
   /** Profile chain, used only to reject `--diff` (the caller overlays it before calling) */
   profile?: string[];
+  /** Directory used to resolve the project's config and displayed source path. */
+  dir?: string;
 }
 
 /**
@@ -49,11 +51,11 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     process.exit(1);
   }
   // Determine sources
-  const sources = determineConfigSources();
+  const sources = determineConfigSources(options.dir);
 
   if (diff) {
     // Diff mode: show only fields where project overrides global
-    const projectConf = await loadProjectConfig();
+    const projectConf = await loadProjectConfig(options.dir);
 
     if (!projectConf) {
       console.log("No project config found — using global defaults");

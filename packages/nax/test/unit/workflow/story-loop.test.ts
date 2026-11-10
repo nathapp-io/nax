@@ -148,6 +148,31 @@ describe("runStoryLoop", () => {
     expect(h.record().state).toBe("complete");
   });
 
+  test("AC-10: residual advisor abort rejects before the story is closed", async () => {
+    const error = new Error("advisor interrupted");
+    const updates: Partial<WorkflowStoryRecord>[] = [];
+    const h = harness(
+      { review: [failing()], reReviewAllAddressed: [false] },
+      {
+        maxFixRounds: 1,
+        aborted: () => true,
+        advisor: {
+          ...defaultWorkflowAdvisor,
+          ruleResidual: async () => {
+            throw error;
+          },
+        },
+      },
+    );
+    const update = h.env.sink.update;
+    h.env.sink.update = async (patch) => {
+      updates.push(patch);
+      await update(patch);
+    };
+    await expect(runStoryLoop(h.env)).rejects.toBe(error);
+    expect(updates.some((patch) => patch.phase === "closed")).toBe(false);
+  });
+
   test("red gate goes to a fix round with no review spent", async () => {
     let reviews = 0;
     const h = harness({ gates: [RED_LINT, GREEN] });
