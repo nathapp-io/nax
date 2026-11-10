@@ -1,7 +1,7 @@
 {
   "quality": {
     "commands": {
-      "test": "bun run --cwd ../nax-ai build && bun run test",
+      "test": ["bun run --cwd ../nax-ai build", "bun run test"],
       "typecheck": ["bun run --cwd ../nax-ai build", "bun run typecheck"],
       "lint": "AGENT=1 bun run check:all",
       "build": "bun run typecheck",

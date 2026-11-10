@@ -26,6 +26,11 @@ Nothing enforces this automatically — it is on you to wrap every scoped run. A
 | Coverage gate (enforces 80% floor; CI-only, never inside a nax session) | `bun run test:coverage` |
 | Coverage report (no gate) | `bun run test:coverage:report` |
 
+`bun run test` runs the unit and integration phases over 4 workers with `--no-isolate`, so files
+share one process per worker. When a test passes alone but fails in the full run, rerun with
+`NAX_TEST_PARALLEL_WORKERS=1 bun run test` to tell a leak between files (a mocked module, an env
+var or a cwd left behind) from a real failure, then fix the leak in the test that left it.
+
 ## Coverage
 
 `bun run test:coverage` runs `test/unit/`, `test/integration/` and `test/ui/` with coverage
