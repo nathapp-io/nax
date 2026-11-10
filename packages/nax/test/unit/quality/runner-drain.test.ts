@@ -85,5 +85,6 @@ describe("quality runner stream drains", () => {
     });
 
     expect(result.timedOut).toBe(true);
-  });
+    // Above the 5s SIGKILL grace: under the confined sandbox a killed group member can linger until it fires.
+  }, 15_000);
 });

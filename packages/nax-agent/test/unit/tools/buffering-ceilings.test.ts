@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { drainBounded, readPrefix } from "#src/internal/bounded-io";
 import { compileToolPolicy, createCodingToolRuntime, DEFAULT_TOOL_MAX_FILE_BYTES, readTool } from "#src/tools/index";
-import { assertNaxError } from "#test/helpers/index";
+import { assertNaxError, isConfinedTestRun } from "#test/helpers/index";
 
 let root: string;
 
@@ -122,23 +122,27 @@ describe("readPrefix — reads no more than the ceiling", () => {
     expect(await readPrefix(link, 100)).toBe("symlink target contents");
   });
 
-  test.skipIf(process.platform === "win32")("rejects a Unix socket as a non-regular file", async () => {
-    const path = join(root, "socket");
-    const server = createServer();
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(path, resolve);
-    });
-
-    try {
-      const error = await rejectedRead(path);
-      expect(error.code).toBe("READ_NOT_REGULAR_FILE");
-    } finally {
+  // The confined sandbox denies listen() on a Unix socket (EPERM); the unconfined run covers this case.
+  test.skipIf(process.platform === "win32" || isConfinedTestRun())(
+    "rejects a Unix socket as a non-regular file",
+    async () => {
+      const path = join(root, "socket");
+      const server = createServer();
       await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
+        server.once("error", reject);
+        server.listen(path, resolve);
       });
-    }
-  });
+
+      try {
+        const error = await rejectedRead(path);
+        expect(error.code).toBe("READ_NOT_REGULAR_FILE");
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
+    },
+  );
 
   test("stops at the ceiling instead of loading the whole file", async () => {
     const path = join(root, "big.txt");

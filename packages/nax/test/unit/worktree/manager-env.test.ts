@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { lstatSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir, withDebugSpy } from "@test/helpers";
 import { gitWithTimeout } from "@/utils/git";
 import { deriveStoryWorktreeId, storyWorktreePath, WorktreeManager } from "@/worktree";
+import { _worktreeManagerDeps } from "@/worktree/manager";
 
 const tempDirs: string[] = [];
+const SAVED_LSTAT = _worktreeManagerDeps.lstatSync;
 afterEach(() => {
+  _worktreeManagerDeps.lstatSync = SAVED_LSTAT;
   for (const dir of tempDirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -61,5 +64,26 @@ describe("WorktreeManager.create .env handling — US-004", () => {
     const id = deriveStoryWorktreeId("env-feature", "US-012");
     await new WorktreeManager().create(projectRoot, id);
     expect(await Bun.file(join(storyWorktreePath(projectRoot, id), ".env")).exists()).toBe(false);
+  });
+
+  test("an unreadable worktree .env removes the new worktree and fails with WORKTREE_ERROR", async () => {
+    const projectRoot = await makeCommittedRepo({ ignoredEnv: true });
+    const id = deriveStoryWorktreeId("env-feature", "US-013");
+    const worktreePath = storyWorktreePath(projectRoot, id);
+    _worktreeManagerDeps.lstatSync = (path) => {
+      if (path === join(worktreePath, ".env")) {
+        throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+      }
+      return SAVED_LSTAT(path);
+    };
+
+    const error = await new WorktreeManager().create(projectRoot, id).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toMatchObject({ code: "WORKTREE_ERROR" });
+    expect(String(error)).toContain("Failed to inspect worktree .env");
+    expect(existsSync(worktreePath)).toBe(false);
   });
 });

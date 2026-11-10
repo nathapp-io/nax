@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, type Stats, symlinkSync } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -12,13 +12,15 @@ import type { WorktreeId } from "./worktree-id";
 import { storyBranchName, storyWorktreePath } from "./worktree-id";
 
 /**
- * Injectable git subprocess seam. Tests stub `gitWithTimeout` to drive
- * `create()` and `remove()` end to end without spawning real git.
+ * Injectable seams. Tests stub `gitWithTimeout` to drive `create()` and
+ * `remove()` end to end without spawning real git, and `lstatSync` to reach
+ * the worktree `.env` inspection failure that no real filesystem state produces.
  *
  * @internal
  */
 export const _worktreeManagerDeps = {
   gitWithTimeout,
+  lstatSync: (path: string): Stats => lstatSync(path),
 };
 
 /**
@@ -73,7 +75,7 @@ async function preserveWorktreeEnv(options: PreserveEnvOptions): Promise<void> {
 
   const envTarget = join(options.worktreePath, ".env");
   try {
-    lstatSync(envTarget);
+    _worktreeManagerDeps.lstatSync(envTarget);
     getSafeLogger()?.debug("worktree", ".env is tracked; the worktree keeps the checked-out copy", {
       worktreeId: options.worktreeId,
     });
