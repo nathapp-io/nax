@@ -27,13 +27,16 @@
  *
  * Usage: `bun run scripts/run-tests.ts [--bail] [--e2e]`
  *   `--e2e` runs only `test/e2e/` (the `test:e2e` script).
+ *   The unit and integration phases run over 4 workers with `--no-isolate`
+ *   (`SUITE_PARALLEL_WORKERS`); `NAX_TEST_PARALLEL_WORKERS=1` runs them serially.
  */
 
 import { createTestOutputController } from "./run-tests-output";
-import { type Phase, selectPhases } from "./run-tests-phases";
+import { type Phase, phaseArgs, selectPhases, suiteParallelWorkers } from "./run-tests-phases";
 
 const BAIL = process.argv.includes("--bail");
 const PHASES = selectPhases(process.argv);
+const WORKERS = suiteParallelWorkers(process.env);
 const OUTPUT_CONTROLLER = createTestOutputController({
   agentMode: process.env.AGENT === "1",
   stdout: process.stdout,
@@ -93,8 +96,7 @@ function groupHasSurvivors(pgid: number): boolean {
 }
 
 async function runPhase(phase: Phase): Promise<number> {
-  const args = ["test", phase.dir, `--timeout=${phase.testTimeoutMs}`];
-  if (BAIL) args.push("--bail");
+  const args = phaseArgs(phase, { bail: BAIL, workers: WORKERS });
 
   const startedAt = Date.now();
   process.stdout.write(`\n── ${phase.name} (${phase.dir}, cap ${phase.phaseTimeoutMs / 1000}s) ──\n`);
