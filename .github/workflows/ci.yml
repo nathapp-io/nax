@@ -228,8 +228,9 @@ jobs:
       - name: API snapshot
         run: bun run check:api
 
+      # --parallel=4 --no-isolate, the pair the confined step and the coverage floor use.
       - name: Test (unit)
-        run: bun test ./test/unit/ --timeout=60000 --bail
+        run: bun test ./test/unit/ --timeout=60000 --bail --parallel=4 --no-isolate
 
       - name: Test (integration)
         run: bun test ./test/integration/ --timeout=60000 --bail
@@ -238,6 +239,7 @@ jobs:
       # overall, 80% per src/ file against scripts/baselines/coverage-per-file-baseline.json,
       # and every src/ file with executable code must appear in the report
       # (--require-all-files). The baseline must be empty before the first publish.
+      # `--parallel=4` (in `test:coverage`) runs 4 workers with `--no-isolate`.
       - name: Coverage floor
         run: bun run test:coverage
 
