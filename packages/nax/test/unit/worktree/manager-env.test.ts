@@ -86,4 +86,27 @@ describe("WorktreeManager.create .env handling — US-004", () => {
     expect(String(error)).toContain("Failed to inspect worktree .env");
     expect(existsSync(worktreePath)).toBe(false);
   });
+
+  test("a .env symlink that cannot be created removes the new worktree and fails with WORKTREE_ERROR", async () => {
+    // A tracked .env is checked out, but lstat reports it absent, so the link
+    // is attempted over an existing file and symlinkSync fails with EEXIST.
+    const projectRoot = await makeCommittedRepo({ trackedEnv: true });
+    const id = deriveStoryWorktreeId("env-feature", "US-014");
+    const worktreePath = storyWorktreePath(projectRoot, id);
+    _worktreeManagerDeps.lstatSync = (path) => {
+      if (path === join(worktreePath, ".env")) {
+        throw Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+      }
+      return SAVED_LSTAT(path);
+    };
+
+    const error = await new WorktreeManager().create(projectRoot, id).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toMatchObject({ code: "WORKTREE_ERROR" });
+    expect(String(error)).toContain("Failed to symlink .env");
+    expect(existsSync(worktreePath)).toBe(false);
+  });
 });

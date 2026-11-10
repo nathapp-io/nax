@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { getSafeLogger, setAgentLogger } from "#src/infra/index";
 import {
   _approvalsTaintDeps,
   appendApproval,
@@ -10,7 +11,7 @@ import {
   readApprovalsFile,
   taintApprovals,
 } from "#src/permissions/index";
-import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
+import { cleanupTempDir, type MockLogger, makeLogger, makeTempDir } from "#test/helpers/index";
 
 const OWN_PID = 1000;
 const OTHER_PID = 2000;
@@ -151,6 +152,18 @@ describe("clearApprovalsTaint", () => {
 });
 
 describe("prepareApprovalsStore", () => {
+  let logger: MockLogger;
+  const previousLogger = getSafeLogger();
+  beforeEach(() => {
+    logger = makeLogger();
+    setAgentLogger(logger);
+  });
+  afterEach(() => {
+    setAgentLogger(previousLogger);
+  });
+  const logged = (level: string) =>
+    logger.calls.filter((call) => call.level === level).map((call) => ({ message: call.message, data: call.data }));
+
   const opts = (approvalsFile: string, forgeCapable: boolean) => ({
     approvalsFile,
     runId: "run-b",
@@ -176,6 +189,12 @@ describe("prepareApprovalsStore", () => {
     stubProcess(false);
     await prepareApprovalsStore(opts(file, false));
     expect((await readApprovalsFile(file)).taint).toBeUndefined();
+    expect(logged("info")).toEqual([
+      {
+        message: "[approvals] discarded entries written under a forge-capable run",
+        data: { storyId: "US-001", approvalsFile: file },
+      },
+    ]);
     cleanupTempDir(dir);
   });
 
@@ -188,6 +207,12 @@ describe("prepareApprovalsStore", () => {
     const store = await readApprovalsFile(file);
     expect(store.taint?.runId).toBe("run-a");
     expect(store.taint?.pid).toBe(OTHER_PID);
+    expect(logged("warn")).toEqual([
+      {
+        message: "[approvals] store tainted by a forge-capable run still in progress; cache stays off",
+        data: { storyId: "US-001", approvalsFile: file },
+      },
+    ]);
     cleanupTempDir(dir);
   });
 
@@ -197,6 +222,10 @@ describe("prepareApprovalsStore", () => {
     const file = join(dir, "approvals.json");
     await appendApproval(join(file, "nested.json"), entry("x"));
     await expect(prepareApprovalsStore(opts(file, true))).resolves.toBeUndefined();
+    const [failure] = logged("warn");
+    expect(failure?.message).toBe("[approvals] could not update the store's taint marker");
+    expect(failure?.data).toMatchObject({ storyId: "US-001", approvalsFile: file, forgeCapable: true });
+    expect(failure?.data?.error).toBeInstanceOf(Error);
     cleanupTempDir(dir);
   });
 });
