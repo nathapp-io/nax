@@ -80,6 +80,7 @@ async function preserveWorktreeEnv(options: PreserveEnvOptions): Promise<void> {
     return;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      await options.removeWorktree();
       throw new NaxError(`Failed to inspect worktree .env: ${errorMessage(error)}`, "WORKTREE_ERROR", {
         stage: "worktree",
         worktreeId: options.worktreeId,
