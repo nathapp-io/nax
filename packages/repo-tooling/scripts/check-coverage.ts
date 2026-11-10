@@ -147,12 +147,15 @@ async function readStream(stream: ReadableStream<Uint8Array> | number | undefine
 /**
  * The `bun test` arguments for the coverage run.
  *
- * `--parallel` / `--parallel=N` in this script's argv is forwarded to `bun test`.
- * Under `--parallel`, Bun still writes ONE merged coverage/lcov.info: probed on Bun
- * 1.4.4 against the nax suite, serial and parallel runs reported the same 1,589
- * src/ files and line totals within 13 of 92,869 lines. The small loss comes from
- * `--parallel` implying `--isolate`: a few lines that serial runs reach only through
- * module state left by another test file go uncovered.
+ * `--parallel` / `--parallel=N` in this script's argv is forwarded to `bun test`
+ * together with `--no-isolate`, the same pair the confined step uses
+ * (nax-agent/scripts/lib/confined-run.ts). `--parallel` alone implies `--isolate`,
+ * which re-imports every module per file: on CI's 4-core runner that made the nax
+ * coverage run slower than serial (331s vs ~187s) and dropped a file below the
+ * per-file floor. With `--no-isolate`, Bun still writes ONE merged
+ * coverage/lcov.info; probed on Bun 1.4.4 against the nax suite, `--parallel=4
+ * --no-isolate` reported the same 1,589 src/ files and line totals within 1 of a
+ * serial run, in 54s against 162-176s.
  */
 export function coverageTestArgs(paths: readonly string[], argv: readonly string[]): string[] {
   const parallel = argv.filter((arg) => arg === "--parallel" || arg.startsWith("--parallel="));
@@ -167,7 +170,7 @@ export function coverageTestArgs(paths: readonly string[], argv: readonly string
     ...paths,
     "--coverage",
     "--coverage-reporter=lcov",
-    ...parallel.slice(-1),
+    ...(parallel.length > 0 ? [parallel[parallel.length - 1], "--no-isolate"] : []),
     // Same per-test budget as the CI suite steps (`bun test <dir>
     // --timeout=60000`). Coverage instrumentation adds enough overhead that
     // the 5s default fails process-timing tests that pass uninstrumented —

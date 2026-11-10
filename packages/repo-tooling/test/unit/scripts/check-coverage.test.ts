@@ -358,10 +358,16 @@ describe("coverageTestArgs", () => {
     ]);
   });
 
-  test.each([["--parallel"], ["--parallel=4"]])("forwards %s to bun test", (flag) => {
+  test.each([["--parallel"], ["--parallel=4"]])("forwards %s to bun test with --no-isolate", (flag) => {
     const args = coverageTestArgs(paths, ["--require-all-files", flag]);
-    expect(args).toContain(flag);
-    expect(args.filter((arg) => arg.startsWith("--parallel"))).toEqual([flag]);
+    expect(args.filter((arg) => arg.startsWith("--parallel") || arg.endsWith("isolate"))).toEqual([
+      flag,
+      "--no-isolate",
+    ]);
+  });
+
+  test("adds no --no-isolate to a serial run", () => {
+    expect(coverageTestArgs(paths, [])).not.toContain("--no-isolate");
   });
 
   test.each([["--parallel=0"], ["--parallel=-2"], ["--parallel=abc"], ["--parallel="]])(
