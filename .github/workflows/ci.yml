@@ -157,6 +157,8 @@ jobs:
       # (in `test:coverage`) leaves out unit/integration files that never reference
       # src/: they record no coverage (mostly CLI-spawning tests), and the confined
       # step in `nax` still runs them. nax-agent gates its own sources in its own job.
+      # `--parallel` (in `test:coverage`) spreads the files over one worker per core;
+      # Bun still writes one merged lcov report.
       - name: Coverage floor
         run: bun run test:coverage
         env:
