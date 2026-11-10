@@ -12,6 +12,7 @@ import {
   _coverageDeps,
   aggregateFailures,
   buildUpdatedBaseline,
+  coverageTestArgs,
   evaluateCoverageGate,
   extractTestSummary,
   findMissingBaselined,
@@ -341,4 +342,38 @@ describe("evaluateCoverageGate", () => {
       details.mockRestore();
     }
   });
+});
+
+describe("coverageTestArgs", () => {
+  const paths = ["test/unit/", "test/integration/"];
+
+  test("runs the given paths serially with lcov coverage and the CI per-test budget", () => {
+    expect(coverageTestArgs(paths, [])).toEqual([
+      "test",
+      "test/unit/",
+      "test/integration/",
+      "--coverage",
+      "--coverage-reporter=lcov",
+      "--timeout=60000",
+    ]);
+  });
+
+  test.each([["--parallel"], ["--parallel=4"]])("forwards %s to bun test with --no-isolate", (flag) => {
+    const args = coverageTestArgs(paths, ["--require-all-files", flag]);
+    expect(args.filter((arg) => arg.startsWith("--parallel") || arg.endsWith("isolate"))).toEqual([
+      flag,
+      "--no-isolate",
+    ]);
+  });
+
+  test("adds no --no-isolate to a serial run", () => {
+    expect(coverageTestArgs(paths, [])).not.toContain("--no-isolate");
+  });
+
+  test.each([["--parallel=0"], ["--parallel=-2"], ["--parallel=abc"], ["--parallel="]])(
+    "rejects an invalid worker count in %s",
+    (flag) => {
+      expect(() => coverageTestArgs(paths, [flag])).toThrow("positive integer");
+    },
+  );
 });

@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@nathapp/nax?style=flat-square)](https://npmjs.com/@nathapp/nax)
 [![CI](https://img.shields.io/github/actions/workflow/status/nathapp-io/nax/ci.yml?style=flat-square)](https://github.com/nathapp-io/nax/actions)
-[![Bun](https://img.shields.io/badge/Bun-1.4.3-eeffff?style=flat-square)](https://bun.sh)
+[![Bun](https://img.shields.io/badge/Bun-1.4.4-eeffff?style=flat-square)](https://bun.sh)
 [![License](https://img.shields.io/npm/l/@nathapp/nax?style=flat-square)](LICENSE)
 
 **AI Coding Agent Orchestrator** — loops until done.
@@ -33,7 +33,7 @@ npm install -g @nathapp/nax
 bun install -g @nathapp/nax
 ```
 
-Requires the Bun runtime (nax runs on Bun even when installed through npm; CI pins Bun 1.4.3). Git must be initialized.
+Requires the Bun runtime (nax runs on Bun even when installed through npm; CI pins Bun 1.4.4). Git must be initialized.
 
 The default `native` agent needs provider credentials — run `nax auth login <provider>` or, for CI, set the provider's environment variable (a stored credential takes precedence).
 

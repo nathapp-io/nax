@@ -145,6 +145,44 @@ async function readStream(stream: ReadableStream<Uint8Array> | number | undefine
 }
 
 /**
+ * The `bun test` arguments for the coverage run.
+ *
+ * `--parallel` / `--parallel=N` in this script's argv is forwarded to `bun test`
+ * together with `--no-isolate`, the same pair the confined step uses
+ * (nax-agent/scripts/lib/confined-run.ts). `--parallel` alone implies `--isolate`,
+ * which re-imports every module per file: on CI's 4-core runner that made the nax
+ * coverage run slower than serial (331s vs ~187s) and dropped a file below the
+ * per-file floor. With `--no-isolate`, Bun still writes ONE merged
+ * coverage/lcov.info; probed on Bun 1.4.4 against the nax suite, `--parallel=4
+ * --no-isolate` reported the same 1,589 src/ files and line totals within 1 of a
+ * serial run, in 54s against 162-176s. Bun 1.4.3 merges parallel coverage wrongly
+ * (src/execution/batching.ts came out 35/107 lines against 65/65 serial), so this
+ * needs Bun 1.4.4 or later.
+ */
+export function coverageTestArgs(paths: readonly string[], argv: readonly string[]): string[] {
+  const parallel = argv.filter((arg) => arg === "--parallel" || arg.startsWith("--parallel="));
+  for (const flag of parallel) {
+    const value = flag.slice("--parallel=".length);
+    if (flag !== "--parallel" && !/^[1-9]\d*$/.test(value)) {
+      throw new Error(`[coverage] ${flag}: the worker count must be a positive integer`);
+    }
+  }
+  return [
+    "test",
+    ...paths,
+    "--coverage",
+    "--coverage-reporter=lcov",
+    ...(parallel.length > 0 ? [parallel[parallel.length - 1], "--no-isolate"] : []),
+    // Same per-test budget as the CI suite steps (`bun test <dir>
+    // --timeout=60000`). Coverage instrumentation adds enough overhead that
+    // the 5s default fails process-timing tests that pass uninstrumented —
+    // e.g. "runArgv > kills an overrunning process" took 5000.95ms in CI.
+    // The whole run is still bounded by RUN_TIMEOUT_MS.
+    "--timeout=60000",
+  ];
+}
+
+/**
  * Run the gated suites with coverage in a detached process group so a hang or
  * SIGABRT is reaped along with any descendants (mirrors scripts/run-tests.ts).
  *
@@ -182,29 +220,14 @@ async function runCoverage(): Promise<number> {
     console.log(
       `[coverage] skipping ${selection.skipped.length} test file(s) that never reference src/ (they record no coverage; CI's confined step still runs them)`,
     );
-  const child = Bun.spawn(
-    [
-      "bun",
-      "test",
-      ...selection.paths,
-      "--coverage",
-      "--coverage-reporter=lcov",
-      // Same per-test budget as the CI suite steps (`bun test <dir>
-      // --timeout=60000`). Coverage instrumentation adds enough overhead that
-      // the 5s default fails process-timing tests that pass uninstrumented —
-      // e.g. "runArgv > kills an overrunning process" took 5000.95ms in CI.
-      // The whole run is still bounded by RUN_TIMEOUT_MS.
-      "--timeout=60000",
-    ],
-    {
-      cwd: ROOT,
-      env: { ...process.env, AGENT: "1" },
-      stdout: quiet ? "pipe" : "inherit",
-      stderr: quiet ? "pipe" : "inherit",
-      // Leader of its own process group so the timeout kill reaches descendants.
-      detached: true,
-    },
-  );
+  const child = Bun.spawn(["bun", ...coverageTestArgs(selection.paths, process.argv)], {
+    cwd: ROOT,
+    env: { ...process.env, AGENT: "1" },
+    stdout: quiet ? "pipe" : "inherit",
+    stderr: quiet ? "pipe" : "inherit",
+    // Leader of its own process group so the timeout kill reaches descendants.
+    detached: true,
+  });
 
   const pgid = child.pid;
   let timedOut = false;

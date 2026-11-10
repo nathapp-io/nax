@@ -37,3 +37,33 @@ describe("RunCommand — declared-command runner port", () => {
     });
   });
 });
+
+describe("RunCommand — input shape refusals", () => {
+  const neverRun = async (): Promise<never> => {
+    throw new Error("the runner must not be reached");
+  };
+
+  test("refuses a call that supplies both command and argv", async () => {
+    await withTempDir(async (root) => {
+      const tool = createRunCommandTool(new Map([["lint", "bun lint"]]), {
+        commandCwd: root,
+        runDeclaredCommand: neverRun,
+      });
+      const result = await tool.run({ command: "lint", argv: ["bun", "lint"] }, ctx(root));
+      expect(result).toEqual({ content: "supply exactly one of command or argv, not both", isError: true });
+    });
+  });
+
+  test("refuses values sent as a string, naming the type it got", async () => {
+    await withTempDir(async (root) => {
+      const tool = createRunCommandTool(new Map([["test", "bun test {{files}}"]]), {
+        commandCwd: root,
+        runDeclaredCommand: neverRun,
+      });
+      const result = await tool.run({ command: "test", values: "a.test.ts" }, ctx(root));
+      expect(result.isError).toBe(true);
+      expect(result.content).toStartWith('"values" must be an object mapping placeholder names to values');
+      expect(result.content).toContain("got a string instead");
+    });
+  });
+});
