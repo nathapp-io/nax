@@ -14,6 +14,8 @@ describe("redactSecrets", () => {
       expect(redacted).not.toContain(key);
     });
 
+    // Fake fixtures, not real credentials: alphabet-sequence values shaped like Stripe live keys so
+    // the Stripe pattern has something to match. GitHub push protection flags them; bypassed as used_in_tests.
     test.each(["sk_live_51ABCDEFGHijklmnopQRSTuv", "rk_live_51ABCDEFGHijklmnopQRSTuv"])(
       "AC-3/4: redacts live Stripe key %s",
       (key) => {
