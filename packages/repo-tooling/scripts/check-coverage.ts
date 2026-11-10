@@ -155,7 +155,9 @@ async function readStream(stream: ReadableStream<Uint8Array> | number | undefine
  * per-file floor. With `--no-isolate`, Bun still writes ONE merged
  * coverage/lcov.info; probed on Bun 1.4.4 against the nax suite, `--parallel=4
  * --no-isolate` reported the same 1,589 src/ files and line totals within 1 of a
- * serial run, in 54s against 162-176s.
+ * serial run, in 54s against 162-176s. Bun 1.4.3 merges parallel coverage wrongly
+ * (src/execution/batching.ts came out 35/107 lines against 65/65 serial), so this
+ * needs Bun 1.4.4 or later.
  */
 export function coverageTestArgs(paths: readonly string[], argv: readonly string[]): string[] {
   const parallel = argv.filter((arg) => arg === "--parallel" || arg.startsWith("--parallel="));

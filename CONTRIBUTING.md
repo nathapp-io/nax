@@ -8,7 +8,7 @@ Thanks for your interest in contributing to nax! This guide will help you get st
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) 1.4.3 (the version CI pins)
+- [Bun](https://bun.sh/) 1.4.4 (the version CI pins)
 - Git
 - Optional: provider API keys for the opt-in live tests (`packages/nax-ai` `test:live`) and the e2e suite (`packages/nax` `test:e2e`)
 

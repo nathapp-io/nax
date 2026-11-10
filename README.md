@@ -1,6 +1,6 @@
 # nax monorepo
 
-Bun-workspaces monorepo for **nax**, an AI coding-agent orchestrator, and the packages it is built from. Requires Bun (CI pins 1.4.3).
+Bun-workspaces monorepo for **nax**, an AI coding-agent orchestrator, and the packages it is built from. Requires Bun (CI pins 1.4.4).
 
 | Package | Path | npm | Published | Purpose |
 |---|---|---|---|---|
