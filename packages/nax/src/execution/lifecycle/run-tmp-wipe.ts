@@ -88,7 +88,8 @@ export async function removeRunTmpTree(path: string): Promise<void> {
     return;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException | null)?.code;
-    if (code !== "EACCES" && code !== "EPERM") throw err;
+    // Bun's recursive rm can report a read-only tree as ENOTEMPTY.
+    if (code !== "EACCES" && code !== "EPERM" && code !== "ENOTEMPTY") throw err;
   }
   await makeDirectoriesWritable(path);
   await _runTmpWipeDeps.remove(path);

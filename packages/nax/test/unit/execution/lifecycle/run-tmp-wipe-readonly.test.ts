@@ -76,6 +76,34 @@ describe("removeRunTmpTree read-only recovery", () => {
     }
   });
 
+  test("AC-3 and AC-4: real removal preserves an external read-only symlink target", async () => {
+    const outside = join(dir, "outside");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "file"), "safe");
+    chmodSync(outside, 0o500);
+    symlinkSync(outside, join(root, "link"));
+    try {
+      await removeRunTmpTree(root);
+      expect(existsSync(root)).toBe(false);
+      expect(statSync(outside).mode & 0o777).toBe(0o500);
+      expect(existsSync(join(outside, "file"))).toBe(true);
+    } finally {
+      chmodSync(outside, 0o700);
+    }
+  });
+
+  test("ENOTEMPTY triggers a permission walk and one retry", async () => {
+    const remove = mock(async () => {
+      if (remove.mock.calls.length === 1) throw denied("ENOTEMPTY");
+    });
+    const chmod = mock(async (_path: string, _mode: number) => {});
+    _runTmpWipeDeps.remove = remove;
+    _runTmpWipeDeps.chmod = chmod;
+    await removeRunTmpTree(root);
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(chmod.mock.calls.map(([path]) => path)).toContain(nested);
+  });
+
   test("AC-5: retries EACCES exactly once", async () => {
     const remove = failFirst();
     _runTmpWipeDeps.remove = remove;
