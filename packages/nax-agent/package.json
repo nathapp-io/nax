@@ -36,7 +36,7 @@
     "test:coverage:list": "bun ../repo-tooling/scripts/check-coverage.ts --require-all-files --parallel=4 --list"
   },
   "dependencies": {
-    "@anthropic-ai/sandbox-runtime": "0.0.77",
+    "@anthropic-ai/sandbox-runtime": "0.0.82",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@nathapp/nax-ai": "0.91.8",
     "zod": "^4.6.6"
