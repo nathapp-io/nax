@@ -27,7 +27,7 @@ async function sweepEntry(path: string, opts: SweepOptions): Promise<void> {
     const childStats = await _runTmpSweepDeps.lstat(join(path, child));
     newest = Math.max(newest, childStats.mtimeMs);
   }
-  // The 48-hour age rule is the only liveness signal; it does not coordinate with live runs.
+  // Age is the only liveness signal: a run idle over 48 hours without a new session can lose its root.
   if (opts.now - newest > opts.maxAgeMs) await _runTmpSweepDeps.remove(path);
 }
 
