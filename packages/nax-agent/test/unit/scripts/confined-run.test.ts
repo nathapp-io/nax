@@ -303,8 +303,25 @@ describe("runConfinedTests", () => {
 
     expect(code).toBe(SANDBOX_UNAVAILABLE_EXIT);
     expect(record.spawned.length).toBe(0);
-    expect(record.events).toEqual([]);
     expect(record.stderrChunks.join("")).toBe("sandbox unavailable: no bwrap\n");
+  });
+
+  test("releases the probed backend when the sandbox is unavailable (#2863)", async () => {
+    // On Linux, srt's network bridge processes keep the CLI alive until reset
+    // releases them: without it the run hangs instead of exiting 3.
+    const record = installSeam({ probe: unavailable });
+    expect(await runConfinedTests({ packageDir, paths: ["./test/unit/"] })).toBe(SANDBOX_UNAVAILABLE_EXIT);
+    expect(record.events).toEqual(["reset"]);
+  });
+
+  test("releases the probed backend when probing rejects (#2863)", async () => {
+    const record = installSeam({
+      probe: async () => {
+        throw new Error("probe failed");
+      },
+    });
+    await expect(runConfinedTests({ packageDir, paths: ["./test/unit/"] })).rejects.toThrow("probe failed");
+    expect(record.events).toEqual(["reset"]);
   });
 
   test("AC-10: the wrapped run's own exit code is returned", async () => {

@@ -232,8 +232,17 @@ async function removeRunRoot(runTmpRoot: string): Promise<void> {
 export async function runConfinedTests(input: ConfinedRunInput): Promise<number> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS;
   const backend = _confinedRunDeps.backend(DEFAULT_SANDBOX_CONFIG.network);
-  const probe = await _confinedRunDeps.probe(backend);
+  let probe: ProbeResult;
+  try {
+    probe = await _confinedRunDeps.probe(backend);
+  } catch (error) {
+    await backend.reset();
+    throw error;
+  }
   if (!probe.available) {
+    // The probe already started srt's Linux network bridge; until reset releases
+    // it the process cannot exit, so the run would hang instead of exiting 3 (#2863).
+    await backend.reset();
     _confinedRunDeps.stderr.write(`sandbox unavailable: ${probe.reason}\n`);
     return SANDBOX_UNAVAILABLE_EXIT;
   }
