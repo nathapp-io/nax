@@ -3,7 +3,7 @@
   "feature": "branch-review-coverage",
   "branchName": "feat/branch-review-coverage",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T06:48:07.294Z",
+  "updatedAt": "2026-11-11T07:12:25.044Z",
   "userStories": [
     {
       "id": "US-001",
@@ -561,14 +561,17 @@
         "wire-format"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive metadata and a small existing Markdown wire-format extension, with exact round-trip and legacy-output regression checks."
+        "reasoning": "Additive metadata and a small existing Markdown wire-format extension, with exact round-trip and legacy-output regression checks.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/open-items.ts",
@@ -585,7 +588,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d92965e3fccb38c219c5382fa84cfc1a38da982d"
     },
     {
       "id": "US-011",
