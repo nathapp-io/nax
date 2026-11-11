@@ -10,8 +10,15 @@
 import { isAbsolute, relative } from "node:path";
 import type { BranchReviewVerdict } from "./workflow-types";
 
-/** Absolute entries are anchored to this repository, never matched by suffix. */
-function normalize(entry: string, repoRoot: string): string | undefined {
+/**
+ * One inspected-or-observed entry as a repo-relative path, or `undefined` when it cannot name a
+ * file in this repository.
+ *
+ * Absolute entries are anchored to this repository, never matched by suffix. Exported (US-005) so
+ * tool-observed read paths are normalised exactly the way a reviewer's self-reported
+ * `inspectedFiles` entry is — one implementation, not a second copy that could drift.
+ */
+export function normalizeReviewPath(entry: string, repoRoot: string): string | undefined {
   const path = isAbsolute(entry) ? relative(repoRoot, entry) : entry;
   if (path === ".." || path.startsWith("../") || isAbsolute(path)) return undefined;
   return path.startsWith("./") ? path.slice(2) : path;
@@ -27,7 +34,7 @@ function covers(entry: string | undefined, path: string): boolean {
  * `required` are reported as many times as they appear.
  */
 export function unreadFiles(required: readonly string[], inspected: readonly string[], repoRoot: string): string[] {
-  const entries = inspected.map((entry) => normalize(entry, repoRoot));
+  const entries = inspected.map((entry) => normalizeReviewPath(entry, repoRoot));
   return required.filter((path) => !entries.some((entry) => covers(entry, path)));
 }
 
