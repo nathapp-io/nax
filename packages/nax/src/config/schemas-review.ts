@@ -162,10 +162,7 @@ export const AdversarialReviewConfigSchema = z.object({
       maxRequotes: z.number().int().min(0).default(5),
     })
     .optional(),
-  // nonBlockingFix moved to ReviewConfigSchema.nonBlockingFix (US-001) so semantic
-  // and adversarial findings can both seed the fix pass via the per-reviewer
-  // `sources` list. Legacy `review.adversarial.nonBlockingFix` is migrated to
-  // `review.nonBlockingFix` by `migrateLegacyNonBlockingFix` in the config loader.
+  // Both nonBlockingFix paths are retired and stripped by the config loader.
 });
 
 export const NbfWorthCheckConfigSchema = z.object({

@@ -238,8 +238,9 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
  *   - **Omitted / undefined**: falls back to `findProjectDir(process.cwd())`.
  */
 export async function loadConfig(startDir?: string, cliOverrides?: Record<string, unknown>): Promise<NaxConfig> {
-  // Start with defaults as a plain object
-  let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
+  // Schema defaults still include retired fields until their cleanup. Strip them
+  // silently before merging user layers so only explicitly supplied keys warn.
+  let rawConfig = stripRemovedConfig(structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>));
 
   // One dedupe for this load: every layer below runs the same shim chain, so a
   // legacy key set in more than one layer would otherwise warn once per layer.
@@ -331,6 +332,16 @@ function applyPackageProfileLayers(base: Record<string, unknown>, layers: Record
   return resolvedFields;
 }
 
+/** The package merger may synthesize an undefined testing property from a stripped root. */
+function omitUndefinedTesting(raw: Record<string, unknown>): Record<string, unknown> {
+  const quality = raw.quality;
+  if (!quality || typeof quality !== "object" || Array.isArray(quality)) return raw;
+  const fields = quality as Record<string, unknown>;
+  if (fields.testing !== undefined) return raw;
+  const { testing: _testing, ...rest } = fields;
+  return { ...raw, quality: rest };
+}
+
 /** Package-declared values only, including profile commands, for command provenance. */
 export async function loadPackageOverride(repoRoot: string, packageDir: string): Promise<Partial<NaxConfig> | null> {
   // The declared-values reader stays unvalidated and unprepared: the finish
@@ -359,14 +370,19 @@ export async function loadPackageOverrideWithConfig(options: {
   // with a warning hard-fails here instead.
   const prepared = preparePackageLayer(data.fields as Record<string, unknown>, packageDir, logger, warnDedupe);
   const overlay = applyPackageProfileLayers(prepared, data.layers) as Partial<NaxConfig>;
-  const base = mergePackageConfig(rootConfig, prepared as unknown as Partial<NaxConfig>);
-  const resolved = applyPackageProfileLayers(base as unknown as Record<string, unknown>, data.layers);
+  // The parsed root includes schema-synthesized retired defaults, not user keys.
+  const cleanRoot = stripRemovedConfig(rootConfig as unknown as Record<string, unknown>) as unknown as NaxConfig;
+  const base = mergePackageConfig(cleanRoot, prepared as unknown as Partial<NaxConfig>);
+  const resolved = applyPackageProfileLayers(
+    stripRemovedConfig(base as unknown as Record<string, unknown>),
+    data.layers,
+  );
   // Retain the registry's package-mergeable whitelist. Root-only pinning happens in hydrate.
-  const merged = mergePackageConfig(rootConfig, resolved as Partial<NaxConfig>);
+  const merged = mergePackageConfig(cleanRoot, resolved as Partial<NaxConfig>);
   // Pin the root-only keys BEFORE the validation: a package's root-only
   // `execution.*` value is warned about and dropped, never validated.
   const pinned = pinRootOnlyKeysRaw(
-    merged as unknown as Record<string, unknown>,
+    omitUndefinedTesting(merged as unknown as Record<string, unknown>),
     rootConfig,
     packageDir,
     warnDedupe.warn,
@@ -468,11 +484,9 @@ export async function loadConfigForWorkdir(
   const packageLayer = preparePackageLayer(packageFields as Record<string, unknown>, packageDir, logger, warnDedupe);
   let merged = mergePackageConfig(rootConfig, packageLayer as unknown as Partial<NaxConfig>);
 
-  // Second pass, on the merged result: a package PROFILE reintroduces its own
-  // removed keys after the strip above, so it needs its own pass. #1620: the
-  // shared per-resolution dedupe, not the bare sink — a key in both the overlay
-  // and a profile warns once.
-  merged = stripRemovedConfig(merged as unknown as Record<string, unknown>, warnDedupe.warn) as unknown as NaxConfig;
+  // The prepared package layer already warned; remaining removed keys here are
+  // synthesized root defaults. Profiles are applied and checked separately below.
+  merged = stripRemovedConfig(merged as unknown as Record<string, unknown>) as unknown as NaxConfig;
 
   // Per-package profile: apply the profile chain overlay on top of merged config.
   // Accepts the comma form; profiles overlay left-to-right (later overrides earlier).

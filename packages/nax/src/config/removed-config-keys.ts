@@ -30,6 +30,12 @@ const HOOKS_SECTION_HINT = "nothing reads this key; lifecycle hooks are read fro
 /** Hint for a key that only configured the removed pipeline mode. */
 export const PIPELINE_ONLY_KEY_HINT = "nothing reads this key since pipeline mode was removed";
 
+/** Hints for the retired curator and testing policy settings. */
+export const CURATOR_REMOVED_HINT =
+  "the curator feature was removed; nax no longer writes ~/.nax/global/curator, which is safe to delete";
+export const TESTING_POLICY_HINT =
+  "nothing reads this key since pipeline mode was removed; state test and mocking policy in a .nax/rules file";
+
 /**
  * Hint for `execution.commandInterceptor.provider`, which was never read at any
  * site — not even in pipeline mode: the interceptor has always been rtk.
@@ -89,6 +95,21 @@ const STORY_ISOLATION_HINT =
  * per leaf under it.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
+  curator: CURATOR_REMOVED_HINT,
+  "quality.testing": TESTING_POLICY_HINT,
+  "prompts.behavioralGuardrails": PIPELINE_ONLY_KEY_HINT,
+  "review.nonBlockingFix": PIPELINE_ONLY_KEY_HINT,
+  "review.adversarial.nonBlockingFix": PIPELINE_ONLY_KEY_HINT,
+  "review.parseRetryMaxAttempts": PIPELINE_ONLY_KEY_HINT,
+  "review.conflictDetection": PIPELINE_ONLY_KEY_HINT,
+  "review.semantic.demandInspectionTrail": PIPELINE_ONLY_KEY_HINT,
+  "review.semantic.acRegroundOnDrop": PIPELINE_ONLY_KEY_HINT,
+  "review.semantic.recurrenceDemotion": PIPELINE_ONLY_KEY_HINT,
+  "review.adversarial.demandInspectionTrail": PIPELINE_ONLY_KEY_HINT,
+  "review.adversarial.acRegroundOnDrop": PIPELINE_ONLY_KEY_HINT,
+  "review.adversarial.recurrenceDemotion": PIPELINE_ONLY_KEY_HINT,
+  "review.adversarial.parallel": PIPELINE_ONLY_KEY_HINT,
+  "review.adversarial.maxConcurrentSessions": PIPELINE_ONLY_KEY_HINT,
   acceptance: PIPELINE_ONLY_KEY_HINT,
   "autoMode.enabled": PIPELINE_ONLY_KEY_HINT,
   "tdd.maxRetries": PIPELINE_ONLY_KEY_HINT,
