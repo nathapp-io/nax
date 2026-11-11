@@ -3,46 +3,12 @@
  *
  * US-003 removed the table-backed `MODEL_PRICING` lookup. Every price
  * estimate now flows through `estimateCostUsd` (./estimate) with a
- * rate card resolved by `./rate-card.ts`. The helpers that remain here
- * are pure, allocator-free utilities shared across the cost subsystem:
- * `formatCostWithConfidence` and `resolvePricingSource`. The shared usage
- * arithmetic is re-exported from `./usage-math`.
+ * rate card resolved by `./rate-card.ts`. The only helper that remains here
+ * is the pure, allocator-free `resolvePricingSource`. The shared usage
+ * arithmetic is re-exported from `@nathapp/nax-agent`.
  */
-
-import type { CostEstimate } from "./types";
 
 export { addTokenUsage, inputClassTokens } from "@nathapp/nax-agent";
-
-/**
- * Format cost estimate with confidence indicator for display.
- *
- * @param estimate - Cost estimate with confidence level
- * @returns Formatted cost string with confidence indicator
- *
- * @example
- * ```ts
- * formatCostWithConfidence({ cost: 0.12, confidence: 'exact' });
- * // "$0.12"
- *
- * formatCostWithConfidence({ cost: 0.15, confidence: 'estimated' });
- * // "~$0.15"
- *
- * formatCostWithConfidence({ cost: 0.05, confidence: 'fallback' });
- * // "~$0.05 (duration-based)"
- * ```
- */
-export function formatCostWithConfidence(estimate: CostEstimate): string {
-  const formattedCost = `$${estimate.cost.toFixed(2)}`;
-
-  switch (estimate.confidence) {
-    case "exact":
-      return formattedCost;
-    case "estimated":
-      return `~${formattedCost}`;
-    case "fallback":
-      return `~${formattedCost} (duration-based)`;
-  }
-}
 
 /**
  * Which rate card the caller would use for `model`.

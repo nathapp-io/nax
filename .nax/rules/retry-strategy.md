@@ -8,7 +8,6 @@ appliesTo:
   - "packages/nax/src/agents/**/*.ts"
   - "packages/nax/src/operations/**/*.ts"
   - "packages/nax/src/config/schemas-review.ts"
-  - "packages/nax/src/session/session-keeper.ts"
   - "packages/nax-agent/src/native/**/*.ts"
 stages:
   - "execution"

@@ -2,9 +2,9 @@
   "counts": {
     "tsSuppress": 0,
     "ratchetAllow": 13,
-    "looseCast": 939
+    "looseCast": 908
   },
-  "updatedAt": "2026-11-08T16:44:42.940Z",
+  "updatedAt": "2026-11-11T14:40:39.926Z",
   "byFile": {
     "test/helpers/mock-session-manager.ts": {
       "looseCast": 5
@@ -123,9 +123,6 @@
     },
     "test/unit/session/manager-phase-b-session.test.ts": {
       "looseCast": 7
-    },
-    "test/unit/session/session-keeper.test.ts": {
-      "looseCast": 1
     },
     "test/unit/session/manager-phase-b-prompt.test.ts": {
       "looseCast": 20
@@ -388,9 +385,6 @@
     "test/unit/agents/manager-iface-run.test.ts": {
       "looseCast": 1
     },
-    "test/unit/agents/model-resolution.test.ts": {
-      "looseCast": 2
-    },
     "test/unit/agents/manager-dispatch-error-event.test.ts": {
       "looseCast": 1
     },
@@ -416,7 +410,7 @@
       "looseCast": 1
     },
     "test/unit/runtime/dispatch-context.test.ts": {
-      "looseCast": 6
+      "looseCast": 5
     },
     "test/unit/runtime/cost-aggregator.test.ts": {
       "looseCast": 1
@@ -492,9 +486,6 @@
     },
     "test/unit/config/defaults.test.ts": {
       "looseCast": 2
-    },
-    "test/unit/config/validate.test.ts": {
-      "looseCast": 9
     },
     "test/unit/config/deprecation-cross-package-depth.test.ts": {
       "looseCast": 1

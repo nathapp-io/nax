@@ -1,4 +1,3 @@
-export { composeRetry } from "./compose";
 export type { CoverageRetryOpts } from "./coverage-retry";
 export { makeCoverageRetryStrategy } from "./coverage-retry";
 export { defaultRetryStrategy } from "./default-strategy";
