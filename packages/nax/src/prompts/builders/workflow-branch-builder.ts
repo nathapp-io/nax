@@ -20,6 +20,8 @@ export interface BranchReviewPromptInput {
   readonly packagePath: string;
   /** `<seed>..HEAD`: the commit range every changed file is read through (US-001). */
   readonly range: string;
+  readonly requiredFiles?: readonly string[];
+  readonly slice?: { readonly index: number; readonly count: number; readonly otherFiles: number };
   readonly stories: readonly {
     readonly id: string;
     readonly state: string;
@@ -100,7 +102,17 @@ function storyReportsBlock(reports: BranchReviewPromptInput["storyReports"]): st
  */
 export function buildBranchPackageReadingNote(range: string): string {
   return `## How to read the diff
-No diff is inlined. For each changed file run \`git diff ${range} -- <path>\`, or Read a file the branch added. Start with production source, then migrations and schema, then tests.`;
+This package holds no diff, only the commit list, the --stat summary and the changed-file names. For each changed file run \`git diff ${range} -- <path>\`, or Read a file the branch added. Start with production source, then migrations and schema, then tests.`;
+}
+
+function requiredFilesBlock(input: BranchReviewPromptInput): string {
+  const files = input.requiredFiles;
+  if (!files || files.length === 0) return "";
+  const fileLines = files.map((file) => `- ${file}`).join("\n");
+  const sliceLine = input.slice
+    ? `This is review slice ${input.slice.index} of ${input.slice.count}. Other slices review the other ${input.slice.otherFiles} changed file(s); read any of them only to check a contract with your files.\n`
+    : "";
+  return `\n## Files you must review (${files.length})\n${fileLines}\n${sliceLine}nax compares your inspectedFiles with this list. A file on it that you do not read or diff is reported unread, and an unread file keeps the PR a draft. Repo gates passing is not a review of a file, and neither is a story review: read each one.\n`;
 }
 
 const REVIEW_JSON =
@@ -116,7 +128,7 @@ export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput):
 - the branch review package (commits, --stat, changed files; no diff is inlined): ${input.packagePath}
 
 ${buildBranchPackageReadingNote(input.range)}
-
+${requiredFilesBlock(input)}
 ## Stories
 ${storyLines(input)}
 ${storyReportsBlock(input.storyReports)}
