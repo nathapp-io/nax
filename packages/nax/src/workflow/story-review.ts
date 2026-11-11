@@ -23,12 +23,8 @@ export async function underReviewLimit<V>(
   writePackage: () => Promise<void>,
   run: (signal: AbortSignal | undefined) => Promise<V | null>,
 ): Promise<ReviewOutcome<V>> {
-  try {
-    await writePackage();
-  } catch (err) {
-    if (sc.runSignal?.aborted) throw err;
-    return { ran: false, why: `review package failed: ${errorMessage(err)}` };
-  }
+  const failed = await reviewPackageFailure(sc, writePackage);
+  if (failed !== null) return { ran: false, why: failed };
   const { signal, limit } = stepSignal(sc.runSignal, sc.workflow.timeouts.reviewMs);
   const stoppedHere = (): boolean => limit?.aborted === true && sc.runSignal?.aborted !== true;
   try {
@@ -38,6 +34,26 @@ export async function underReviewLimit<V>(
   } catch (err) {
     if (sc.runSignal?.aborted) throw err;
     return { ran: false, why: stoppedHere() ? "timeout" : errorMessage(err) };
+  }
+}
+
+/**
+ * The package half of `underReviewLimit`, on its own: build the review package and turn its throw
+ * into the skipped-review reason. `null` means the package is on disk.
+ *
+ * Shared with `runBranchReview` (US-008), which builds its package and required set **once** before
+ * its slices and must give that step the same failure semantics — so it cannot be a copy of them.
+ */
+export async function reviewPackageFailure(
+  sc: Pick<StepContext, "runSignal" | "workflow">,
+  writePackage: () => Promise<void>,
+): Promise<string | null> {
+  try {
+    await writePackage();
+    return null;
+  } catch (err) {
+    if (sc.runSignal?.aborted) throw err;
+    return `review package failed: ${errorMessage(err)}`;
   }
 }
 

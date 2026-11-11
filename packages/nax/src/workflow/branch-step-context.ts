@@ -17,6 +17,12 @@ export interface BranchStepContext {
   readonly reportPath: string;
   /** Absent outside a run: the change has no PRD. */
   readonly prdPath?: string;
+  /**
+   * US-008: this run's id and output dir, so a step can find the artifacts the run wrote. `FeatureContext`
+   * carries both; `buildPrStepContext` leaves them absent (a PR review has no run of its own).
+   */
+  readonly runId?: string;
+  readonly outputDir?: string;
   /** Repo-relative package dirs for the repo gates; empty = root gates only. */
   readonly packageDirs: readonly string[];
   readonly runSignal?: AbortSignal;
