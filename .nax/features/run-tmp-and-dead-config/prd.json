@@ -3,7 +3,7 @@
   "feature": "run-tmp-and-dead-config",
   "branchName": "feat/run-tmp-and-dead-config",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T12:50:44.432Z",
+  "updatedAt": "2026-11-11T13:04:29.453Z",
   "userStories": [
     {
       "id": "US-001",
@@ -501,14 +501,17 @@
         "US-004",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Deletion-only terminal cleanup verified by typecheck, lint and five default/cleanup assertions; no new abstractions, so one tdd-simple session suffices."
+        "reasoning": "Deletion-only terminal cleanup verified by typecheck, lint and five default/cleanup assertions; no new abstractions, so one tdd-simple session suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-review.ts",
@@ -601,7 +604,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "868061f43ce5cb05c9b1a7016552ac34b7295a7f"
     }
   ],
   "analysis": "Four cleanups shipped together (closes #2860, #2861, #2832, #2830). All stories are scoped to packages/nax.\n\nKey files: execution/lifecycle/run-tmp-wipe.ts (wipeRunTmp, _runTmpWipeDeps {remove, exists}); runtime/index.ts (createRuntime / closeRuntime finally, ~line 419; close() is memoised via teardown; already imports ../execution/pid-registry by file path); packages/nax-agent/src/sandbox/session-tmp.ts:89 (runTmpRoot, exported from @nathapp/nax-agent, sanitises the runId and applies trust checks); execution/lifecycle/run-cleanup.ts:381-394 (second wipe, removed in US-006); config/removed-config-keys.ts:91 (REMOVED_CONFIG_KEYS, stripKeysAtPaths, PIPELINE_ONLY_KEY_HINT; strip runs before NaxConfigSchema.safeParse at three loader sites); config/migrations.ts + config/compat-shims.ts:499 (migrateLegacyNonBlockingFix); context/engine/providers/static-rules.ts:139 (ruleMatchesStage), :248-253 (stage filter), :267 (warnOnAppliesToStageContradiction call); context/rules/rules-frontmatter.ts:228 (extractStages, KNOWN_VALID_STAGES, EXTRA_KNOWN_STAGES, STAGE_CONTEXT_MAP import); cli/rules-lint.ts:324-330 (re-emits rule.warnings, needs no change); plugins/loader.ts:139 (built-in registration); bin/nax.ts (curator command registration); runtime/paths.ts (curatorRollupPath); plugins/extensions.ts (run-end context).\n\nDependency order: US-001 -> US-002; US-003 -> US-005; US-004 independent; US-006 is terminal and depends on US-002..US-005 (deletion only: schema/types/defaults for #2832 keys, stages fields, second wipe in cleanupRun, runtimeRunId option).\n\nRisks: (1) removeRunTmpTree must never chmod symlinks or paths outside the root (use lstat, never follow). (2) test/preload.ts must stub _runTmpCloseDeps.sweepStaleRunTmpRoots to a no-op or tests closing a real runtime would sweep the developer's real temp parent. (3) runtime/index.ts must import the lifecycle modules by file path, never via the lifecycle barrel (cycle risk; package-boundary checks). (4) Until US-006, both wipes run; the second sees an absent root and logs at debug. (5) US-005 and US-006 are wide deletions; typecheck and lint in packages/nax are the removal checks, and scripts/check-worktree-id-ssot.ts plus the complexity and test-escape-hatches baselines must be edited by hand (never re-baseline coverage or run --update-baseline). (6) The disabledPlugins list naming curator stays harmless. (7) The existing test 'REMOVED_CONFIG_KEYS is exactly the closed set of keys C1 removed' pins the list and must be extended. (8) extractStages still validates shape (list of non-empty strings, else RulesFrontmatterError) and stages stays in KNOWN_FRONTMATTER_KEYS. (9) STAGE_CONTEXT_MAP and context.v2.stages stay. (10) Repo .nax/ is read-only to the run: do not edit .nax/rules or .nax/config.json.\n\nNotable tests: test/unit/execution/lifecycle/run-tmp-wipe.test.ts, test/integration/execution/lifecycle/run-tmp-wipe.test.ts (listed by name in the confined integration-hygiene suite; keep path), test/unit/runtime/runtime-close-partial.test.ts, test/unit/config/removed-config-keys*.test.ts, test/unit/cli/rules-lint.test.ts, static-rules-*.test.ts, rules-frontmatter.test.ts. Existing code uses injectable _deps objects; follow that idiom. User style: immutability, no emojis, small files.",
