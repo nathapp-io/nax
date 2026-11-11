@@ -155,7 +155,64 @@ sandbox  Sandbox unavailable: raw bash is refused; gated/escalate commands run u
 | Linux | `bwrap` (bubblewrap), `socat`, `rg` |
 | Linux container | the above, plus `--security-opt systempaths=unconfined` |
 | Ubuntu 24.04 | the above, plus `kernel.apparmor_restrict_unprivileged_userns=0` |
+| Ubuntu 24.10 and later (incl. 26.04) | the above, plus the `bwrap-userns-restrict` AppArmor profile disabled — see [Ubuntu 24.10 and later](#ubuntu-2410-and-later-incl-2604) |
 | Windows | not supported — the probe reports unavailable |
+
+### Ubuntu 24.10 and later (incl. 26.04)
+
+From 24.10, Ubuntu ships an AppArmor profile, `bwrap-userns-restrict`, that attaches to
+`/usr/bin/bwrap`. Its child profile `unpriv_bwrap` strips the capabilities the sandbox's seccomp
+helper needs inside its nested user namespace, so every probe fails with:
+
+```
+sandbox could not run a command: apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied
+```
+
+The 24.04 sysctl alone does not fix this, and neither does upgrading
+`@anthropic-ai/sandbox-runtime` (0.0.82 fails the same way). Apply **both** settings, as root:
+
+```bash
+# 1. Install the requirements.
+sudo apt-get install -y bubblewrap socat ripgrep
+
+# 2. Let unprivileged user namespaces keep their capabilities (persists across reboots).
+echo 'kernel.apparmor_restrict_unprivileged_userns=0' | sudo tee /etc/sysctl.d/60-nax-sandbox-userns.conf
+sudo sysctl --system
+
+# 3. Disable the profile that confines /usr/bin/bwrap (persists across reboots), then unload it now.
+sudo ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/
+sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+```
+
+Do not do step 3 without step 2: with the profile gone and the sysctl at its default, bwrap's
+user namespaces come up without capabilities and every bwrap user on the machine (Flatpak apps,
+for example) can break, not only nax.
+
+**Verify.** On the next `nax run`, the `Sandbox probe` log line reads `"available": true`, and
+`Bash` / `Exec` rows in the tool-audit ledger carry `sandbox.wrapped: true`
+(see [Verifying and troubleshooting](#verifying-and-troubleshooting)).
+
+**Undo.**
+
+```bash
+sudo rm /etc/apparmor.d/disable/bwrap-userns-restrict
+sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+sudo rm /etc/sysctl.d/60-nax-sandbox-userns.conf
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+```
+
+**Trade-off.** Both settings are machine-wide: together they undo a hardening Ubuntu turned on to
+reduce the kernel attack surface reachable through unprivileged user namespaces, for every program,
+not only nax. Ubuntu's preferred alternative is a scoped AppArmor profile that grants `userns` only
+to the binaries the sandbox runs; nax does not ship one yet (tracked in #2866). If the trade-off is
+not acceptable on a machine, set the stage's `bashApproval` to `gated` / `escalate`, or
+`execution.sandbox.enabled: false`, instead (see [Approvals](approvals.md)).
+
+**Verification status.** This recipe has been verified on GitHub's `ubuntu-26.04` runner image
+(nax CI, #2867 / #2868), where the full confined suites and the live sandbox suite pass. CI only
+unloads the profile for the job; the persistent `sysctl.d` file and the `disable/` link are the
+standard Ubuntu mechanisms for the same two settings, and have not yet been exercised on a
+physical or desktop 26.04 install. Report results on #2866.
 
 ### Verifying and troubleshooting
 
@@ -168,6 +225,7 @@ proof; `argv` is the wrapper argv that actually ran, beside the logical `execute
 | Every Bash call refused with `sandbox unavailable (...)` | `raw` + probe failed | Install the platform requirements; or set the stage's `bashApproval` to `gated` / `escalate`; or `execution.sandbox.enabled: false` |
 | Probe reason `platform ... is not supported` | Windows, or an unsupported platform | As above |
 | Probe reason `sandbox could not run a command` inside Docker | bwrap present but blocked | Run the container with `--security-opt systempaths=unconfined` |
+| Probe reason `apply-seccomp: write /proc/self/setgroups ... Permission denied` on Ubuntu 24.10+ / 26.04 | AppArmor `bwrap-userns-restrict` confines bwrap | [Ubuntu 24.10 and later](#ubuntu-2410-and-later-incl-2604) |
 | Probe reason `did not enforce a write deny` | A sandbox that runs but does not confine | Treated as absent by design; fix the host |
 | A command fails with `Operation not permitted` / `Read-only file system` | It wrote outside the writable roots | Add the path to `filesystem.allowWrite` if it is legitimate (e.g. a tool's own cache) |
 | Installs or fetches fail with network errors | `network.allowedDomains` excludes the host | Add the domain, or unset the list |
