@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  renameSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { runTmpRoot } from "@nathapp/nax-agent";
 import { cleanupTempDir, makeTempDir, withDepsRestore, withWarnSpy } from "@test/helpers";
@@ -102,6 +111,50 @@ describe("removeRunTmpTree read-only recovery", () => {
     await removeRunTmpTree(root);
     expect(remove).toHaveBeenCalledTimes(2);
     expect(chmod.mock.calls.map(([path]) => path)).toContain(nested);
+  });
+
+  test("F1: replacing a stated directory with an external symlink never changes the target", async () => {
+    const outside = join(dir, "outside");
+    const saved = join(dir, "saved");
+    mkdirSync(outside);
+    chmodSync(outside, 0o500);
+    chmodSync(nested, 0o700);
+    let replaced = false;
+    let replacementError: unknown;
+    const visited: string[] = [];
+    const lstat = _runTmpWipeDeps.lstat;
+    _runTmpWipeDeps.lstat = async (path) => {
+      visited.push(path);
+      const stats = await lstat(path);
+      if (path === nested) {
+        try {
+          renameSync(nested, saved);
+          symlinkSync(outside, nested);
+          replaced = true;
+        } catch (err) {
+          replacementError = err;
+          throw err;
+        }
+      }
+      return stats;
+    };
+    let calls = 0;
+    _runTmpWipeDeps.remove = async () => {
+      if (++calls === 1) throw denied();
+    };
+    try {
+      await removeRunTmpTree(root);
+      expect(visited).toContain(nested);
+      expect(replacementError).toBeUndefined();
+      expect(replaced).toBe(true);
+      expect(statSync(outside).mode & 0o777).toBe(0o500);
+    } finally {
+      if (replaced) {
+        unlinkSync(nested);
+        renameSync(saved, nested);
+      }
+      chmodSync(outside, 0o700);
+    }
   });
 
   test("AC-5: retries EACCES exactly once", async () => {
