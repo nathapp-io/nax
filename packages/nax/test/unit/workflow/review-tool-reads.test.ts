@@ -14,7 +14,7 @@ const AT = "2026-01-01T00:00:00.000Z";
 
 /** A successful, whole-result call of `tool` with `input`. */
 function call(tool: string, input: Record<string, unknown>, overrides?: Partial<ToolCallRecord>): ToolCallRecord {
-  return { tool, outcome: "ok", input, resultBytes: 120, at: AT, ...overrides };
+  return { tool, outcome: "ok", input, resultBytes: 120, at: AT, truncated: false, ...overrides };
 }
 
 function read(path: string, overrides?: Partial<ToolCallRecord>): ToolCallRecord {
@@ -143,6 +143,21 @@ describe("toolReadPaths — dedupe and result size", () => {
     // half saw. `truncated` is the signal that says so.
     expect(toolReadPaths([call(tool, input, { resultBytes: 900, truncated: true })], "/repo")).toEqual([]);
   });
+
+  test.each([
+    ["Read", { path: "src/a.ts" }],
+    ["Git", { subcommand: "diff", paths: ["src/a.ts"] }],
+    ["Bash", { command: "git diff s..HEAD -- src/a.ts" }],
+  ] as const)(
+    "a %s record with no truncation signal credits nothing — completeness is unknown (F1 round 2)",
+    (tool, input) => {
+      // A row written before the field existed, or one an ACP session produced:
+      // nax never shaped the result, so nothing here says the model saw it whole.
+      // Only an explicit `truncated: false` is evidence of completeness.
+      const unknown: ToolCallRecord = { tool, outcome: "ok", input, resultBytes: 900, at: AT };
+      expect(toolReadPaths([unknown], "/repo")).toEqual([]);
+    },
+  );
 });
 
 describe("normalizeReviewPath (AC-15)", () => {

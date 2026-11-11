@@ -59,11 +59,11 @@ describe("ToolCallRecord.truncated", () => {
     expect(calls[0]?.truncated).toBe(true);
   });
 
-  test("is absent when the policy left the result whole", async () => {
+  test("records false when the policy left the result whole — the row states completeness, it does not imply it", async () => {
     const { runtime, calls } = runtimeWith({ content: "short" });
     runtime.advertised(["probe__t"]);
     await runtime.callTool("probe__t", {});
-    expect(calls[0]).not.toHaveProperty("truncated");
+    expect(calls[0]?.truncated).toBe(false);
   });
 
   test("is recorded on the deferred path, where the caller shapes the result", async () => {
@@ -77,12 +77,12 @@ describe("ToolCallRecord.truncated", () => {
     expect(calls[0]?.truncated).toBe(true);
   });
 
-  test("is absent on the deferred path when the delivered content is the tool's own", async () => {
+  test("records false on the deferred path when the delivered content is the tool's own", async () => {
     const { runtime, calls } = runtimeWith({ content: "short" });
     runtime.advertised(["probe__t"]);
     const outcome = await runtime.callTool("probe__t", {}, { deferModelTruncation: true });
     if (outcome.kind === "denied") throw new Error("unexpected denial");
     outcome.finalizeAudit?.("short");
-    expect(calls[0]).not.toHaveProperty("truncated");
+    expect(calls[0]?.truncated).toBe(false);
   });
 });

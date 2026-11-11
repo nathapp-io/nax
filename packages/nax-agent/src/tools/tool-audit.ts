@@ -83,19 +83,25 @@ export interface ToolCallRecord {
    */
   readonly resultBytesPreTruncation?: number;
   /**
-   * `true` when the shared model-facing truncation policy cut this result before
+   * Whether the shared model-facing truncation policy cut this result before
    * the model saw it — by ANY of its stages, not only the byte ceiling.
    *
    * `resultBytes` alone cannot answer "did the model see the whole result?":
    * the policy also caps line length (`MODEL_MAX_LINE_CHARS`) and line count
    * (`MODEL_MAX_LINES`), so a body cut from 2 000 short lines down to 1 000 is
-   * well under `MODEL_MAX_BYTES` yet half of it never reached the model. A
-   * reader that credits a file for having been read must gate on this, not on
-   * size alone.
+   * well under `MODEL_MAX_BYTES` yet half of it never reached the model.
    *
-   * Absent when nothing was cut, on rows written before this field existed, and
-   * on ACP rows nax does not shape. Additive and optional, so
-   * `TOOL_AUDIT_SCHEMA_VERSION` stays 1 (as `sandbox` and `exitCode` did).
+   * `false` means the policy ran on this result and changed nothing: the row
+   * STATES completeness rather than leaving it to be inferred from size. It is
+   * recorded on every row the coding-tool runtime writes.
+   *
+   * ABSENT means unknown, not complete — a row written before this field
+   * existed, or one an ACP session produced, where nax never shaped the result
+   * at all. A reader that credits a file for having been read must require an
+   * explicit `false`; absent and `true` both credit nothing.
+   *
+   * Additive and optional, so `TOOL_AUDIT_SCHEMA_VERSION` stays 1 (as
+   * `sandbox` and `exitCode` did).
    */
   readonly truncated?: boolean;
   /**

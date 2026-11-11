@@ -312,7 +312,7 @@ export function createCodingToolRuntime(opts: {
       ...(audit?.approval !== undefined ? { approval: audit.approval } : {}),
       ...(audit?.sandbox !== undefined ? { sandbox: audit.sandbox } : {}),
       ...(audit?.exitCode !== undefined ? { exitCode: audit.exitCode } : {}),
-      ...(audit?.truncated === true ? { truncated: true } : {}),
+      ...(audit?.truncated !== undefined ? { truncated: audit.truncated } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
       ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
@@ -471,7 +471,8 @@ export function createCodingToolRuntime(opts: {
           // stage cut it, so an identity check is the one signal that covers
           // every stage — and it works for the deferred path too, where the
           // policy runs in the native `after_tool` handler and `record` is
-          // handed the final content instead.
+          // handed the final content instead. Recorded either way, because the
+          // row states completeness rather than leaving it to be inferred.
           const record = (finalContent: string) =>
             logCall(
               policyIdentity,
@@ -485,7 +486,7 @@ export function createCodingToolRuntime(opts: {
               {
                 ...result.audit,
                 ...(approval ? { approval } : {}),
-                ...(finalContent === result.content ? {} : { truncated: true }),
+                truncated: finalContent !== result.content,
               },
               result.resultBytesPreTruncation,
             );
@@ -507,7 +508,7 @@ export function createCodingToolRuntime(opts: {
               target.routineErrors,
               {
                 ...(approval ? { approval } : {}),
-                ...(finalContent === rawContent ? {} : { truncated: true }),
+                truncated: finalContent !== rawContent,
               },
             );
           if (context?.deferModelTruncation === true) {

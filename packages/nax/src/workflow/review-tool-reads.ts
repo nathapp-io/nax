@@ -125,15 +125,22 @@ function bashPaths(input: Record<string, unknown>): string[] {
 /**
  * The paths a tool call credits, before normalisation.
  *
- * Two independent gates, because neither is sufficient alone:
- * - `truncated` — the model-facing policy cut the result, by any of its stages.
- *   A body cut from 2 000 short lines to 1 000 stays well under the byte
- *   ceiling, so size cannot reveal it.
- * - `resultBytes > TOOL_READ_CREDIT_MAX_BYTES` — a belt for rows written before
- *   `truncated` existed, and for a transport that shapes results itself.
+ * Three gates, because none of them is sufficient alone:
+ * - `truncated === false` — the model-facing policy ran on this result and
+ *   changed nothing. It is the only POSITIVE evidence of completeness: the
+ *   policy also cuts by line length and line count, so a body reduced from
+ *   2 000 short lines to 1 000 stays well under the byte ceiling. An absent
+ *   value means unknown — a row written before the field existed, or one an
+ *   ACP session produced, where nax never shaped the result at all — and
+ *   unknown credits nothing, because the whole point of this module is to
+ *   trust evidence rather than a plausible-looking size.
+ * - `truncated === true` is therefore refused by the same test, explicitly.
+ * - `resultBytes > TOOL_READ_CREDIT_MAX_BYTES` is the belt for a transport that
+ *   shapes results itself and states completeness anyway.
  */
 function creditedPaths(call: ToolCallRecord): string[] {
-  if (call.outcome !== "ok" || call.truncated === true || call.resultBytes > TOOL_READ_CREDIT_MAX_BYTES) return [];
+  if (call.outcome !== "ok" || call.truncated !== false) return [];
+  if (call.resultBytes > TOOL_READ_CREDIT_MAX_BYTES) return [];
   if (call.tool === "Read") return readPaths(call.input);
   if (call.tool === "Git") return gitPaths(call.input);
   if (call.tool === "Bash") return bashPaths(call.input);
