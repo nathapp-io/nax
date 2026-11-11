@@ -25,7 +25,7 @@ on:
 jobs:
   nax:
     name: nax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
     # 25, not 10: this job absorbed the `typecheck` + `check:all` matrix (#1534),
     # which used to run in parallel under its own 5-minute budget, and then the
     # "Test (confined sandbox)" step (nax#2523) re-ran the unit and integration
@@ -114,7 +114,7 @@ jobs:
   # and the CI run takes as long as the slower of the two jobs.
   nax-coverage:
     name: "nax: coverage"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
     timeout-minutes: 15
     defaults:
       run:
@@ -166,7 +166,7 @@ jobs:
 
   nax-agent:
     name: nax-agent
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
     # 20, not 10: the "Test (confined sandbox)" step (nax#2523) runs the unit
     # and integration suites a second time, inside the sandbox, on top of the
     # ordinary two runs and the coverage re-run.
@@ -267,7 +267,7 @@ jobs:
   # covered by nax-agent-glob-floor.
   nax-agent-node:
     name: "nax-agent: node ${{ matrix.node }}"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
     timeout-minutes: 15
     strategy:
       fail-fast: false
