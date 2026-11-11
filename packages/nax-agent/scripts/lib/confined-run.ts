@@ -220,6 +220,20 @@ async function removeRunRoot(runTmpRoot: string): Promise<void> {
 }
 
 /**
+ * Run `step` on a backend that has been probed; if it fails, reset the backend
+ * before rethrowing. Once the probe has run, srt's Linux network bridge may be
+ * live, and until reset releases it the process cannot exit (#2863).
+ */
+async function resetOnFailure<T>(backend: SandboxBackend, step: () => Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch (error) {
+    await backend.reset();
+    throw error;
+  }
+}
+
+/**
  * Run `bun test <paths>` for `packageDir` inside the confined sandbox and
  * return the run's exit code.
  *
@@ -232,17 +246,22 @@ async function removeRunRoot(runTmpRoot: string): Promise<void> {
 export async function runConfinedTests(input: ConfinedRunInput): Promise<number> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS;
   const backend = _confinedRunDeps.backend(DEFAULT_SANDBOX_CONFIG.network);
-  const probe = await _confinedRunDeps.probe(backend);
+  const probe = await resetOnFailure(backend, () => _confinedRunDeps.probe(backend));
   if (!probe.available) {
+    // Say why first, so a reset that fails can only add to the report.
     _confinedRunDeps.stderr.write(`sandbox unavailable: ${probe.reason}\n`);
+    await backend.reset();
     return SANDBOX_UNAVAILABLE_EXIT;
   }
-  // A package outside a git work tree is still runnable: the policy is then
-  // built on the package directory itself.
-  const repoRoot = (await _confinedRunDeps.gitRoot(input.packageDir)) ?? input.packageDir;
   const { runTmpRoot, commandId } = newRunIds();
   const tmpDir = `${runTmpRoot}/s`;
-  await _confinedRunDeps.mkdir(tmpDir);
+  const repoRoot = await resetOnFailure(backend, async () => {
+    // A package outside a git work tree is still runnable: the policy is then
+    // built on the package directory itself.
+    const root = (await _confinedRunDeps.gitRoot(input.packageDir)) ?? input.packageDir;
+    await _confinedRunDeps.mkdir(tmpDir);
+    return root;
+  });
   try {
     const policy = await confinedTestPolicy({
       repoRoot,
