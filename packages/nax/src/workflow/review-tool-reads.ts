@@ -5,8 +5,10 @@
  * whose result reached the model uncut, is the same evidence — observed instead of claimed — and it
  * is what stops "listed the files, read three of them, approved" from passing as a review.
  *
- * Pure: no I/O, no config, no ordering surprises. The audit-file loader that feeds it arrives in
- * US-006; this module only turns a list of already-recorded calls into repo-relative paths.
+ * `toolReadPaths` is pure: no I/O, no config, no ordering surprises — it turns a list of
+ * already-recorded calls into repo-relative paths. `readSessionToolCalls` is the loader that
+ * supplies that list (US-006), reading the same directory and ledger session name the dispatch
+ * writes, so a caller never re-spells either.
  *
  * Only `Read`, `Git` and `Bash` are read, and only when the whole result reached the model. A call
  * whose result was truncated above `TOOL_READ_CREDIT_MAX_BYTES` credits nothing, because the model
@@ -14,8 +16,10 @@
  * agents that use their own tools leave no `ToolCallRecord` here at all, so they simply earn no
  * credit.
  */
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { ToolCallRecord } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
+import { getSafeLogger, type Logger } from "@/logger";
 import { normalizeReviewPath } from "@/operations";
 
 /**
@@ -161,4 +165,107 @@ export function toolReadPaths(calls: readonly ToolCallRecord[], repoRoot: string
     }
   }
   return [...credited];
+}
+
+/**
+ * Injectable file and logger seams — the `_deps` pattern. `glob` takes the directory explicitly
+ * so no scan can fall back to `process.cwd()`.
+ */
+export const _reviewToolReadsDeps: {
+  glob: (pattern: string, cwd: string) => Promise<string[]>;
+  readText: (path: string) => Promise<string>;
+  logger: () => Logger | null;
+} = {
+  glob: async (pattern, cwd) => Array.fromAsync(new Bun.Glob(pattern).scan({ cwd, absolute: false, onlyFiles: true })),
+  readText: (path) => Bun.file(path).text(),
+  logger: getSafeLogger,
+};
+
+/** A matching audit file, with the millisecond stamp its name carries. */
+interface SessionFile {
+  readonly name: string;
+  readonly stamp: number;
+}
+
+/** The scope one load covers: this run's ledger session, from `sinceMs` on. */
+export interface SessionToolCallQuery {
+  readonly auditDir: string;
+  readonly runId: string;
+  readonly ledgerSessionName: string;
+  readonly sinceMs: number;
+}
+
+/**
+ * The stamp in `<runId>-<digits>-<ledgerSessionName>.json`, or `undefined` when the name belongs
+ * to another run or another session. Both ends are matched EXACTLY and only the digits between
+ * them are parsed: the ledger session name is a human label that itself contains hyphens
+ * (`<feature>-wf-branch-review`), so splitting the name on `-` would cross-match.
+ */
+function fileStamp(name: string, runId: string, ledgerSessionName: string): number | undefined {
+  const prefix = `${runId}-`;
+  const suffix = `-${ledgerSessionName}.json`;
+  if (!name.startsWith(prefix) || !name.endsWith(suffix)) return undefined;
+  const digits = name.slice(prefix.length, name.length - suffix.length);
+  return /^\d+$/.test(digits) ? Number(digits) : undefined;
+}
+
+/** This session's files in `auditDir`, lowest stamp first; a directory that is not there is empty. */
+async function sessionFiles(input: SessionToolCallQuery): Promise<SessionFile[]> {
+  let names: string[];
+  try {
+    names = await _reviewToolReadsDeps.glob("*.json", input.auditDir);
+  } catch {
+    // No audit tree yet: this session wrote nothing to read.
+    return [];
+  }
+  return names
+    .map((name) => ({ name, stamp: fileStamp(name, input.runId, input.ledgerSessionName) }))
+    .filter((file): file is SessionFile => file.stamp !== undefined && file.stamp >= input.sinceMs)
+    .sort((a, b) => a.stamp - b.stamp || a.name.localeCompare(b.name));
+}
+
+/** The `calls` array of a parsed audit body, or `undefined` when the body holds none. */
+function callsOf(body: unknown): ToolCallRecord[] | undefined {
+  if (typeof body !== "object" || body === null || !("calls" in body)) return undefined;
+  return Array.isArray(body.calls) ? body.calls : undefined;
+}
+
+/**
+ * One audit file's `calls`. A file that does not parse, or holds no `calls` array, is skipped with
+ * a warn: one damaged ledger must never hide the sessions that did write theirs.
+ */
+async function callsInFile(input: { auditDir: string; name: string }): Promise<ToolCallRecord[] | undefined> {
+  let body: unknown;
+  try {
+    body = JSON.parse(await _reviewToolReadsDeps.readText(join(input.auditDir, input.name)));
+  } catch (err) {
+    _reviewToolReadsDeps.logger()?.warn("workflow", "Tool-audit file skipped — it could not be read or parsed", {
+      file: input.name,
+      error: errorMessage(err),
+    });
+    return undefined;
+  }
+  const calls = callsOf(body);
+  if (calls === undefined) {
+    _reviewToolReadsDeps.logger()?.warn("workflow", "Tool-audit file skipped — it holds no calls array", {
+      file: input.name,
+    });
+  }
+  return calls;
+}
+
+/**
+ * Every tool call this run's review session recorded from `sinceMs` on, files in stamp order and
+ * each file's calls in the order they were made.
+ *
+ * `auditDir` and `ledgerSessionName` are the caller's own (`toolAuditDir` and
+ * `buildLedgerSessionName`) rather than re-derived here: they are the same two values the dispatch
+ * wrote under, and a second derivation is how a reader ends up scanning a directory the writer
+ * never used. Best-effort throughout — a missing directory or an unreadable file yields the calls
+ * that could be read, never a throw.
+ */
+export async function readSessionToolCalls(input: SessionToolCallQuery): Promise<ToolCallRecord[]> {
+  const files = await sessionFiles(input);
+  const bodies = await Promise.all(files.map((file) => callsInFile({ auditDir: input.auditDir, name: file.name })));
+  return bodies.flatMap((calls) => calls ?? []);
 }
