@@ -39,7 +39,7 @@ describe("config --explain: prompts section", () => {
     await configCommand(config, { explain: true });
 
     const output = consoleOutput.join("\n");
-    expect(output).toContain("prompts");
+    expect(output).not.toContain("behavioralGuardrails");
   });
 
   test("explain output no longer documents the removed prompts.overrides", async () => {
@@ -50,14 +50,6 @@ describe("config --explain: prompts section", () => {
     expect(output).not.toContain("prompts.overrides");
     expect(output).not.toContain(".nax/prompts/test-writer.md");
     expect(output).not.toContain("Prompt template overrides");
-  });
-
-  test("explain output shows the kept prompts.behavioralGuardrails", async () => {
-    const config = await loadConfig(tempDir);
-    await configCommand(config, { explain: true });
-
-    const output = consoleOutput.join("\n");
-    expect(output).toContain("behavioralGuardrails");
   });
 });
 

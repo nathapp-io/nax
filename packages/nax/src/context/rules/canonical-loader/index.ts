@@ -530,7 +530,6 @@ export async function loadCanonicalRulesFromDir(
       priority: parsed.priority,
       ...(parsed.paths && { paths: parsed.paths }),
       ...(parsed.appliesTo && { appliesTo: parsed.appliesTo }),
-      ...(parsed.stages && { stages: parsed.stages }),
       ...(parsed.description && { description: parsed.description }),
       ...(parsed.warnings.length > 0 && { warnings: parsed.warnings }),
     });

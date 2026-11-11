@@ -251,10 +251,10 @@ describe("PostRunActionResult interface", () => {
 });
 
 /**
- * Post-Run Context Extension Tests — Curator Fields
+ * Post-Run Context Extension Tests — Plugin Fields
  */
 
-describe("PostRunContext curator extensions", () => {
+describe("PostRunContext extensions", () => {
   test("should support outputDir field", () => {
     const context: PostRunContext = {
       runId: "run-123",
@@ -315,26 +315,6 @@ describe("PostRunContext curator extensions", () => {
     expect(context.projectKey).toBe("my-project");
   });
 
-  test("should support curatorRollupPath field", () => {
-    const context: PostRunContext = {
-      runId: "run-101",
-      feature: "test-feature",
-      workdir: "/tmp/test",
-      prdPath: "/tmp/test/prd.json",
-      branch: "main",
-      totalDurationMs: 1000,
-      totalCost: 10,
-      storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
-      stories: [],
-      version: "0.1.0",
-      pluginConfig: {},
-      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-      curatorRollupPath: "/home/user/.nax/global/curator/rollup.jsonl",
-    };
-
-    expect(context.curatorRollupPath).toBe("/home/user/.nax/global/curator/rollup.jsonl");
-  });
-
   test("should support logFilePath field", () => {
     const context: PostRunContext = {
       runId: "run-202",
@@ -357,7 +337,6 @@ describe("PostRunContext curator extensions", () => {
 
   test("should support config field", () => {
     const config = {
-      curator: { enabled: true },
       review: { audit: { enabled: true } },
     };
 
@@ -380,7 +359,7 @@ describe("PostRunContext curator extensions", () => {
     expect(context.config).toEqual(config);
   });
 
-  test("should support all curator fields together", () => {
+  test("should support all plugin fields together", () => {
     const context: PostRunContext = {
       runId: "run-404",
       feature: "test-feature",
@@ -397,20 +376,18 @@ describe("PostRunContext curator extensions", () => {
       outputDir: "/home/user/.nax/project",
       globalDir: "/home/user/.nax/global",
       projectKey: "my-project",
-      curatorRollupPath: "/home/user/.nax/global/curator/rollup.jsonl",
       logFilePath: "/tmp/run.jsonl",
-      config: { curator: { enabled: true } },
+      config: { sample: true },
     };
 
     expect(context.outputDir).toBe("/home/user/.nax/project");
     expect(context.globalDir).toBe("/home/user/.nax/global");
     expect(context.projectKey).toBe("my-project");
-    expect(context.curatorRollupPath).toBe("/home/user/.nax/global/curator/rollup.jsonl");
     expect(context.logFilePath).toBe("/tmp/run.jsonl");
     expect(context.config).toBeDefined();
   });
 
-  test("should be backward compatible without curator fields", () => {
+  test("should be backward compatible without plugin fields", () => {
     const context: PostRunContext = {
       runId: "run-505",
       feature: "test-feature",
@@ -426,7 +403,7 @@ describe("PostRunContext curator extensions", () => {
       logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     };
 
-    // Should still be valid without curator fields
+    // Should still be valid without plugin fields
     expect(context.runId).toBe("run-505");
     expect(context.outputDir).toBeUndefined();
     expect(context.globalDir).toBeUndefined();

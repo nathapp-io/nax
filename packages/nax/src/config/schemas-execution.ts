@@ -358,30 +358,6 @@ export const QualityConfigSchema = z.object({
       "GH_ENTERPRISE_TOKEN",
       "GITHUB_ENTERPRISE_TOKEN",
     ]),
-
-  testing: z
-    .object({
-      /**
-       * When true (default), nax injects a hermetic test requirement into all code-writing prompts.
-       * Instructs the AI to mock all I/O boundaries (HTTP, CLI spawning, databases, etc.)
-       * and never invoke real external processes or services during test execution.
-       * Set to false only if your project requires real integration calls in tests.
-       */
-      hermetic: z.boolean().default(true),
-      /**
-       * Project-specific external boundaries the AI should watch for and mock.
-       * E.g. ["claude", "gh", "redis", "grpc"] — any CLI tools, clients, or services
-       * the project uses that should never be called from tests.
-       */
-      externalBoundaries: z.array(z.string()).optional(),
-      /**
-       * Project-specific guidance on how to mock external dependencies.
-       * Injected verbatim into the hermetic requirement section of the prompt.
-       * E.g. "Use injectable deps for CLI spawning, ioredis-mock for Redis"
-       */
-      mockGuidance: z.string().optional(),
-    })
-    .optional(),
 });
 
 export const TddConfigSchema = z.object({

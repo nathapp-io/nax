@@ -31,7 +31,7 @@ import { normalizePath, ruleMatchesScopeFiles } from "../scope-path-match";
 import type { ContextProviderResult, ContextRequest, IContextProvider, RawChunk } from "../types";
 import { memoizedLoadCanonicalRules } from "./canonical-rules-cache";
 import { buildBudgetNoticeChunk, buildSectionBudgetPressure } from "./static-rules-budget-notice";
-import { ruleTargetsAuthoredTests, warnOnAppliesToStageContradiction } from "./static-rules-scoping";
+import { ruleTargetsAuthoredTests } from "./static-rules-scoping";
 
 export { _resetCanonicalRulesCache } from "./canonical-rules-cache";
 
@@ -132,15 +132,6 @@ function contentHash8(content: string): string {
 // selection/attribution agreement it guarantees is tested through this path.
 export { globToRegex, normalizePath, ruleMatchesScopeFiles } from "../scope-path-match";
 
-/**
- * Returns true when the rule's `stages:` frontmatter includes request.stage.
- * Fail-open: a rule with no `stages:` key applies to every stage.
- */
-function ruleMatchesStage(stages: string[] | undefined, stage: string): boolean {
-  if (!stages || stages.length === 0) return true;
-  return stages.includes(stage);
-}
-
 // `ruleMatchesPackage` moved to `../scope-path-match` (file-size gate — this
 // file was at 624/600 lines after nax#2113's hoist); the rule-set resolver
 // imports it from there too.
@@ -235,7 +226,6 @@ export class StaticRulesProvider implements IContextProvider {
           chunks: [],
           pullTools: [],
           scopingReport: {
-            stageFilteredIds: [],
             appliesToFilteredIds: [],
             appliesToInertCount: 0,
             scopeFileCount: request.scopeFiles?.length ?? 0,
@@ -245,29 +235,20 @@ export class StaticRulesProvider implements IContextProvider {
       }
 
       if (mergedRules.length > 0) {
-        const stageFilteredIds: string[] = [];
-        const stageMatchedRules = mergedRules.filter((rule) => {
-          if (ruleMatchesStage(rule.stages, request.stage)) return true;
-          stageFilteredIds.push(canonicalRuleId(rule));
-          return false;
-        });
-
         const appliesToFilteredIds: string[] = [];
         let appliesToInertCount = 0;
         const scopeIsEmpty = !request.scopeFiles || request.scopeFiles.length === 0;
         // nax#2060: authoring stages also admit an appliesTo that itself denotes test output.
         const admits = (appliesTo?: string[]) =>
           ruleMatchesScopeFiles(appliesTo, request.scopeFiles) || ruleTargetsAuthoredTests(appliesTo, request);
-        const scopedRules = stageMatchedRules.filter((rule) => {
+        const scopedRules = mergedRules.filter((rule) => {
           if (rule.appliesTo && rule.appliesTo.length > 0 && scopeIsEmpty) appliesToInertCount++;
           if (admits(rule.appliesTo)) return true;
           appliesToFilteredIds.push(canonicalRuleId(rule));
           return false;
         });
-        warnOnAppliesToStageContradiction(logger, request, stageMatchedRules, appliesToFilteredIds, canonicalRuleId);
 
         const scopingReport: ProviderScopingReport = {
-          stageFilteredIds,
           appliesToFilteredIds,
           appliesToInertCount,
           scopeFileCount: request.scopeFiles?.length ?? 0,
@@ -344,12 +325,11 @@ export class StaticRulesProvider implements IContextProvider {
         if (effectiveSections.length === 0) {
           // Two different causes reach zero sections, and conflating them sends
           // an operator to tune a budget that was never the problem: either the
-          // stage / appliesTo filters rejected every rule, or sections existed
+          // appliesTo filter rejected every rule, or sections existed
           // and none fit. `allSections.length` tells them apart.
           if (allSections.length === 0) {
-            logger.warn("static-rules", "Every canonical rule was filtered out by stage/appliesTo scoping", {
+            logger.warn("static-rules", "Every canonical rule was filtered out by appliesTo scoping", {
               storyId: request.storyId,
-              stageFilteredCount: stageFilteredIds.length,
               appliesToFilteredCount: appliesToFilteredIds.length,
               stage: request.stage,
               scopeFileCount: request.scopeFiles?.length ?? 0,

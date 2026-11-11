@@ -30,7 +30,7 @@ export interface ChunkEffectiveness {
  * Emitted on `ContextProviderResult.budgetPressure` by providers that have
  * a token budget and can lose information when they exceed it. Omitted
  * (undefined) when the provider fits inside its budget — no pressure to
- * report. Used by the manifest/curator to surface silent loss that
+ * report. Used by the manifest to surface silent loss that
  * would otherwise be invisible.
  */
 export interface ProviderBudgetPressure {
@@ -61,17 +61,14 @@ export interface ProviderBudgetPressure {
 
 /**
  * A provider's rule-scoping report — records which canonical rules were
- * dropped by the stage/appliesTo filters and whether an appliesTo
+ * dropped by appliesTo scoping and whether an appliesTo
  * declaration had no effect (US — rule-scoping).
  *
- * Emitted on `ContextProviderResult.scopingReport`. Both filters are
- * fail-open: a rule with no `stages:` applies to every stage, and
- * `appliesTo:` still loads when the scope set is empty (reported via
+ * Emitted on `ContextProviderResult.scopingReport`. `appliesTo:` still
+ * loads when the scope set is empty (reported via
  * `appliesToInertCount`, not enforced).
  */
 export interface ProviderScopingReport {
-  /** Stable ids of rules dropped because request.stage was not in their `stages:` list. */
-  stageFilteredIds: string[];
   /** Stable ids of rules dropped because no scope file matched their `appliesTo:` globs. */
   appliesToFilteredIds: string[];
   /**
@@ -81,7 +78,7 @@ export interface ProviderScopingReport {
   appliesToInertCount: number;
   /** Size of the scope set the filters ran against. The list itself is not persisted. */
   scopeFileCount: number;
-  /** Number of rule sections remaining after stage + appliesTo filtering (US-004). */
+  /** Number of rule sections remaining after appliesTo filtering (US-004). */
   sectionCount: number;
 }
 
@@ -187,7 +184,7 @@ export interface ContextManifest {
    * packing — `includedChunks` and `excludedChunks` alike (Finding 5, #2061).
    * Absent when no chunk with a known cost was seen.
    *
-   * Written so downstream consumers (curator `chunk-included` observations)
+   * Written so downstream consumers
    * can report a real token cost per chunk instead of a placeholder, and so
    * "the budget evicted X tokens of context" is answerable from the manifest.
    * Without it the context budget cannot be tuned against measured data — see

@@ -23,6 +23,15 @@ import { loadConfig } from "@/config/loader";
 import { NaxConfigSchema } from "@/config/schemas";
 import type { NaxConfig } from "@/config/types";
 
+describe("DEFAULT_CONFIG removed keys", () => {
+  test("does not expose retired settings", () => {
+    expect(Object.hasOwn(DEFAULT_CONFIG, "prompts")).toBe(false);
+    expect(Object.hasOwn(DEFAULT_CONFIG.quality, "testing")).toBe(false);
+    expect(Object.hasOwn(DEFAULT_CONFIG.review, "parseRetryMaxAttempts")).toBe(false);
+    expect(Object.hasOwn(DEFAULT_CONFIG.review, "conflictDetection")).toBe(false);
+  });
+});
+
 describe("DEFAULT_CONFIG review.checks", () => {
   test("default review.checks is ['typecheck', 'lint'] without 'test'", () => {
     expect(DEFAULT_CONFIG.review.checks).toEqual(["typecheck", "lint"]);
@@ -234,12 +243,6 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
       // substantiation is schema-optional (no `.default()`), spread in explicitly to keep the shape.
       expect(substantiation).toEqual({ requote: true, maxRequotes: 5 });
     });
-
-    test("new schema defaults flow into DEFAULT_CONFIG automatically (recurrenceDemotion, not a hand-copied literal)", () => {
-      expect(DEFAULT_CONFIG.review?.adversarial?.recurrenceDemotion).toEqual(
-        AdversarialReviewConfigSchema.parse({}).recurrenceDemotion,
-      );
-    });
   });
 
   describe("loadConfig() with no config files", () => {
@@ -291,11 +294,9 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "disabledPlugins",
   "interaction",
   "precheck",
-  "prompts",
   "agent",
   "generate",
   "project",
-  "curator",
   "autoPr",
   "finish",
   "advisor",

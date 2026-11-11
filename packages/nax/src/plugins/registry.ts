@@ -130,7 +130,7 @@ export class PluginRegistry {
    * that contribute side-channel actions without appearing in `plugins`.
    *
    * Built-in plugins opt into one of two layouts:
-   *  - Full plugin in `plugins` (curator): participates in name collisions,
+   *  - Full plugin in `plugins`: participates in name collisions,
    *    setup/teardown, and source tracking.
    *  - Side-channel action only (auto-pr): registered here so callers using
    *    `getPostRunActions()` see it, but `plugins.length` and source-collision

@@ -75,7 +75,6 @@ export { createPackageRegistry, storyExecRoot } from "./packages";
 export type { ProjectIdentity } from "./paths";
 export {
   claimProjectIdentity,
-  curatorRollupPath,
   globalOutputDir,
   identityPath,
   projectInputDir,
@@ -137,9 +136,10 @@ import {
 } from "./middleware";
 import type { PackageRegistry } from "./packages";
 import { createPackageRegistry } from "./packages";
-import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
+import { globalOutputDir, projectOutputDir } from "./paths";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
+import { closeRunTmp } from "./run-tmp-close";
 import { withRunMemory, withRunSkills } from "./run-tool-providers";
 import { createRunTurnHooks } from "./run-turn-hooks";
 import type { CreateRuntimeOptions } from "./runtime-options";
@@ -154,7 +154,6 @@ export interface NaxRuntime {
   readonly projectDir: string;
   readonly outputDir: string;
   readonly globalDir: string;
-  readonly curatorRollupPath: string; // ~/.nax/global/curator/rollup.jsonl or config override
   readonly projectKey: string;
   readonly agentManager: IAgentManager;
   readonly sessionManager: ISessionManager;
@@ -254,6 +253,8 @@ export const _runtimeRunStateDeps = { repairRunState };
 /** Lazy resource discovery for opted-in run dispatches. */
 export const _runtimeResourceDeps = { loadResourceCatalog };
 
+export const _runtimeTmpDeps = { closeRunTmp };
+
 function warnMissingPromptAuditIdentity(auditEnabled: boolean, workdir: string): void {
   if (!auditEnabled) return;
   _runtimeLoggerDeps
@@ -283,7 +284,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
   const projectKey = config.name?.trim() || basename(workdir);
   const outputDir = projectOutputDir(projectKey, config.outputDir);
   const globalDir = globalOutputDir();
-  const curatorRollupPathValue = curatorRollupPath(globalDir, config.curator?.rollupPath);
 
   const costDir = join(outputDir, "cost");
   const costAggregator = opts?.costAggregator ?? new CostAggregator(runId, costDir);
@@ -468,7 +468,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
         }
       }
     } finally {
-      await opts?.memory?.close();
+      try {
+        await opts?.memory?.close();
+      } finally {
+        await _runtimeTmpDeps.closeRunTmp({ runId, dryRun: opts?.dryRun ?? false });
+      }
     }
   };
 
@@ -479,7 +483,6 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
     projectDir: workdir, // Wave 1: equal to workdir; Wave 3 will separate worktree paths
     outputDir,
     globalDir,
-    curatorRollupPath: curatorRollupPathValue,
     projectKey,
     agentManager,
     sessionManager,

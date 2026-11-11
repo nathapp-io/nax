@@ -321,7 +321,7 @@ function lintRulesForRoot(
 ): number {
   let warningCount = 0;
   for (const rule of rules) {
-    // Re-emit parser/loader warnings (unrecognised stages, displaced frontmatter)
+    // Re-emit parser/loader warnings (ignored stages, displaced frontmatter)
     // through the lint command's own logger so `nax rules lint` is observable
     // as a standalone CLI invocation, independent of the loader's runtime logger.
     for (const warning of rule.warnings ?? []) {

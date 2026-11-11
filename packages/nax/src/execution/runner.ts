@@ -406,7 +406,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
         // `runtime.runId` is the `crypto.randomUUID()` that
         // `resolveDispatchLauncher` passed to `runTmpRoot`, and wiping under
         // `runId` removed a path that was never created.
-        runtimeRunId: runtime.runId,
         startTime,
         totalCost,
         storiesCompleted,
@@ -427,7 +426,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
         outputDir: runtime.outputDir,
         globalDir: runtime.globalDir,
         projectKey: runtime.projectKey,
-        curatorRollupPath: runtime.curatorRollupPath,
         logFilePath,
         config,
         // US-002: the seal built at setup. cleanupRun awaits it after the

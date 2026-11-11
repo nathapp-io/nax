@@ -210,8 +210,7 @@ describe("calculateAggregateMetrics — modelEfficiency.avgCost", () => {
 });
 
 // ---------------------------------------------------------------------------
-// US-006 AC5: getLastRun keeps its deliberate latest-run semantics — the
-// curator's fail-closed metrics reader must not change this reader.
+// US-006 AC5: getLastRun keeps its deliberate latest-run semantics.
 // ---------------------------------------------------------------------------
 
 describe("getLastRun — US-006 AC5", () => {

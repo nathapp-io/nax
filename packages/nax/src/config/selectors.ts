@@ -15,7 +15,7 @@
  */
 
 import type { z } from "zod";
-import type { FixReviewConfigSchema, NonBlockingFixConfigSchema } from "./schemas-review";
+import type { FixReviewConfigSchema } from "./schemas-review";
 import { pickSelector } from "./selector";
 import type { NaxConfig } from "./types";
 
@@ -107,8 +107,7 @@ export type ContextToolRuntimeConfig = Pick<NaxConfig, "context" | "execution" |
  */
 export type LlmRoutingConfig = Pick<NaxConfig, "routing" | "models" | "agent" | "tdd" | "execution" | "precheck">;
 
-export type NonBlockingFixConfig = z.infer<typeof NonBlockingFixConfigSchema>;
-/** US-001 (fix-review) — `review.fixReview` slice, beside `NonBlockingFixConfig`.
+/** US-001 (fix-review) — `review.fixReview` slice.
  *
  * Uses `z.infer` (the parsed shape, not the input shape) so `enabled` and
  * `timeoutMs` carry their schema defaults as required fields. Every parsed

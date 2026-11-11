@@ -5,7 +5,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { findRepoRoot } from "@scripts/lib/repo-root";
 import { assertCaughtInstanceOf, makeLogger } from "@test/helpers";
 import { _canonicalLoaderDeps, loadCanonicalRules } from "@/context/rules/canonical-loader";
 import {
@@ -162,60 +161,6 @@ describe("RulesFrontmatterError", () => {
 // AC1: parseFrontmatter() returns stages ["execution", "review"] for YAML list
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("parseFrontmatter — AC1 stages list parsing", () => {
-  test("[AC1] returns stages ['execution', 'review'] from a YAML list", () => {
-    const content = ["---", "stages:", '  - "execution"', '  - "review"', "---", "", "Body."].join("\n");
-    const result = parseFrontmatter(content, "/project/.nax/rules/multi.md");
-    expect(result.stages).toEqual(["execution", "review"]);
-  });
-
-  test("[AC1] returns stages as a string[] (not e.g. object/Set)", () => {
-    const content = ["---", "stages:", '  - "plan"', "---", "", "Body."].join("\n");
-    const result = parseFrontmatter(content, "/project/.nax/rules/plan.md");
-    expect(Array.isArray(result.stages)).toBe(true);
-    expect(result.stages?.[0]).toBe("plan");
-  });
-
-  test("[AC1] a single-element stages list round-trips", () => {
-    const content = ["---", "stages:", '  - "execution"', "---", "", "Body."].join("\n");
-    const result = parseFrontmatter(content, "/project/.nax/rules/exec.md");
-    expect(result.stages).toEqual(["execution"]);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC2: stages undefined when stages key absent
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("parseFrontmatter — AC2 stages absent", () => {
-  test("[AC2] returns stages undefined when the stages key is absent", () => {
-    const content = ["---", "priority: 50", "---", "", "Body."].join("\n");
-    const result = parseFrontmatter(content, "/project/.nax/rules/no-stages.md");
-    expect(result.stages).toBeUndefined();
-  });
-
-  test("[AC2] returns stages undefined when there is no frontmatter at all", () => {
-    const result = parseFrontmatter("Just body content, no frontmatter.", "/project/.nax/rules/plain.md");
-    expect(result.stages).toBeUndefined();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC3: stages undefined when stages is empty list
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("parseFrontmatter — AC3 stages empty list", () => {
-  test("[AC3] returns stages undefined when stages is an empty YAML list", () => {
-    const content = ["---", "stages: []", "---", "", "Body."].join("\n");
-    const result = parseFrontmatter(content, "/project/.nax/rules/empty-stages.md");
-    expect(result.stages).toBeUndefined();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AC4: throws RulesFrontmatterError when stages contains a non-string entry
-// ─────────────────────────────────────────────────────────────────────────────
-
 describe("parseFrontmatter — AC4 stages type validation", () => {
   test("[AC4] throws RulesFrontmatterError when stages contains a non-string entry", () => {
     const content = ["---", "stages:", '  - "execution"', "  - 7", "---", "", "Body."].join("\n");
@@ -278,8 +223,9 @@ describe("parseFrontmatter — AC8 unknown stage warning", () => {
   test("[AC8] returns a warning naming 'not-a-real-stage' and retains stages ['not-a-real-stage']", () => {
     const content = ["---", "stages:", '  - "not-a-real-stage"', "---", "", "Body."].join("\n");
     const result = parseFrontmatter(content, "/project/.nax/rules/unknown-stage.md");
-    expect(result.stages).toEqual(["not-a-real-stage"]);
-    expect(result.warnings.some((w) => w.includes("not-a-real-stage"))).toBe(true);
+    expect(result.warnings).toEqual([
+      'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
+    ]);
   });
 });
 
@@ -287,17 +233,21 @@ describe("parseFrontmatter — AC8 unknown stage warning", () => {
 // AC9: empty warnings list for known stage
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("parseFrontmatter — AC9 known stage no warning", () => {
-  test("[AC9] returns an empty warnings list for stages: ['acceptance-setup']", () => {
+describe("parseFrontmatter — AC9 known stage ignored warning", () => {
+  test("[AC9] returns an ignored-key warning for stages: ['acceptance-setup']", () => {
     const content = ["---", "stages:", '  - "acceptance-setup"', "---", "", "Body."].join("\n");
     const result = parseFrontmatter(content, "/project/.nax/rules/known-stage.md");
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
+    ]);
   });
 
-  test("[AC9] returns an empty warnings list for stages: ['decompose'], a real pipeline stage (decomposeOp.name)", () => {
+  test("[AC9] returns an ignored-key warning for stages: ['decompose'], a real pipeline stage (decomposeOp.name)", () => {
     const content = ["---", "stages:", '  - "decompose"', "---", "", "Body."].join("\n");
     const result = parseFrontmatter(content, "/project/.nax/rules/decompose-stage.md");
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
+    ]);
   });
 });
 
@@ -382,7 +332,7 @@ describe("loadCanonicalRules — AC7 stages propagation", () => {
 
     const rules = await loadCanonicalRules("/project");
     expect(rules).toHaveLength(1);
-    expect(rules[0]?.stages).toEqual(["plan"]);
+    expect(rules[0]?.content).toBe("Plan-stage body.");
   });
 });
 
@@ -592,74 +542,5 @@ describe("loadCanonicalRules — HTML-comment displaced-frontmatter warning prop
     expect(rules).toHaveLength(1);
     expect(rules[0]?.warnings).toBeDefined();
     expect(rules[0]?.warnings?.some((w) => /displaced|comment/i.test(w))).toBe(true);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// US-006: stage scoping for canonical rules in the real .nax/rules store.
-// The four test-authoring rules (test-writing.md, test-architecture.md,
-// test-helpers.md, testing-commands.md) declare a `stages:` list that excludes
-// plan, acceptance, and route. Rules that genuinely apply everywhere
-// (forbidden-patterns-source.md, forbidden-patterns-tests.md,
-// project-conventions.md) declare no `stages:` key.
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", () => {
-  test("[US-006 AC 1] returns test-writing.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
-    const rule = rules.find((r) => r.path === "test-writing.md" || r.fileName === "test-writing.md");
-    expect(rule).toBeDefined();
-    expect(rule?.stages).toBeDefined();
-    expect(rule?.stages).not.toContain("plan");
-  });
-
-  test("[US-006 AC 1] returns test-architecture.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
-    const rule = rules.find((r) => r.path === "test-architecture.md" || r.fileName === "test-architecture.md");
-    expect(rule).toBeDefined();
-    expect(rule?.stages).toBeDefined();
-    expect(rule?.stages).not.toContain("plan");
-  });
-
-  test("[US-006 AC 1] returns test-helpers.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
-    const rule = rules.find((r) => r.path === "test-helpers.md" || r.fileName === "test-helpers.md");
-    expect(rule).toBeDefined();
-    expect(rule?.stages).toBeDefined();
-    expect(rule?.stages).not.toContain("plan");
-  });
-
-  test("[US-006 AC 1] returns testing-commands.md with stages that exclude plan", async () => {
-    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
-    const rule = rules.find((r) => r.path === "testing-commands.md" || r.fileName === "testing-commands.md");
-    expect(rule).toBeDefined();
-    expect(rule?.stages).toBeDefined();
-    expect(rule?.stages).not.toContain("plan");
-  });
-
-  // forbidden-patterns.md was split into -source/-tests by SPEC-bounded-rules-floor
-  // US-005. Both halves, and project-conventions.md, originally declared no
-  // `stages:` key and so loaded at every stage. #1612 gave each an explicit stage
-  // list to keep them out of plan/route/verify, where they were 6749
-  // tokens of freight per prompt. They must still be declared, still exclude
-  // plan, and still cover execution — an empty list would exclude plan while
-  // reaching no agent at all.
-  for (const fileName of ["forbidden-patterns-source.md", "forbidden-patterns-tests.md", "project-conventions.md"]) {
-    test(`[US-006 AC 2] returns ${fileName} with stages that exclude plan`, async () => {
-      const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
-      const rule = rules.find((r) => r.path === fileName || r.fileName === fileName);
-      expect(rule).toBeDefined();
-      expect(rule?.stages).toBeDefined();
-      expect(rule?.stages).not.toContain("plan");
-      expect(rule?.stages).toContain("execution");
-    });
-  }
-
-  test("[US-006 AC 6] every CanonicalRule has an empty warnings list under the real .nax/rules store", async () => {
-    const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
-    expect(rules.length).toBeGreaterThan(0);
-    for (const rule of rules) {
-      expect(rule.warnings ?? []).toEqual([]);
-    }
   });
 });

@@ -214,8 +214,7 @@ export interface PostRunContext {
 
   /**
    * Epoch ms at which this run started. Lets post-run actions scope themselves
-   * to artifacts this run produced — the curator's counts were previously
-   * cumulative over a project's entire history and could only ever grow (#1422).
+   * to artifacts this run produced.
    * Optional so out-of-tree post-run actions built against the older shape keep
    * compiling; consumers must treat absence as "no scoping".
    */
@@ -244,22 +243,19 @@ export interface PostRunContext {
   /** Write-only logger scoped to this plugin */
   logger: PluginLogger;
 
-  /** Project output directory (for curator and other plugins) — optional for backward compatibility */
+  /** Project output directory (for plugins) — optional for backward compatibility */
   outputDir?: string;
 
-  /** Global output directory (for curator and other plugins) — optional for backward compatibility */
+  /** Global output directory (for plugins) — optional for backward compatibility */
   globalDir?: string;
 
-  /** Project key (for curator and other plugins) — optional for backward compatibility */
+  /** Project key (for plugins) — optional for backward compatibility */
   projectKey?: string;
 
-  /** Path to curator rollup file (for curator plugin) — optional for backward compatibility */
-  curatorRollupPath?: string;
-
-  /** Path to active run JSONL (for curator and other plugins) — optional for backward compatibility */
+  /** Path to active run JSONL (for plugins) — optional for backward compatibility */
   logFilePath?: string;
 
-  /** Full nax config (for curator and other plugins) — optional for backward compatibility */
+  /** Full nax config (for plugins) — optional for backward compatibility */
   config?: unknown;
 }
 

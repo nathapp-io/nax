@@ -3,13 +3,10 @@
  *
  * The escalation layer's side effects and its log shape: a dry run never
  * persists an escalation, and the escalation log line carries the source tier
- * and the next tier so curator's collectObservations turns it into exactly
- * one escalation observation.
+ * and the next tier.
  */
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import {
   cleanupTempDir,
   makeEscalationContext,
@@ -21,9 +18,7 @@ import {
   makeStory,
   makeTempDir,
 } from "@test/helpers";
-import { _tierEscalationDeps, handleTierEscalation, preIterationTierCheck } from "@/execution/escalation";
-import type { CuratorPostRunContext } from "@/plugins/builtin/curator";
-import { collectObservations } from "@/plugins/builtin/curator";
+import { _tierEscalationDeps, handleTierEscalation } from "@/execution/escalation";
 
 // The runtime-crash pause path persists the PRD, so that fixture path must be
 // a real dir under `$TMPDIR`: a confined run may not write a literal `/tmp/...`.
@@ -120,15 +115,11 @@ describe("preIterationTierCheck — dry run never persists escalation (nax#1809)
  * US-001: Record escalation source tiers in telemetry
  *
  * Acceptance criteria for handleTierEscalation's logger routing and the
- * escalation log fields consumed by curator's collectObservations:
+ * escalation log fields:
  *
  *  - AC-1: handleTierEscalation obtains the logger via _tierEscalationDeps.getSafeLogger
  *  - AC-2: data.fromTier === currentTier (e.g. "fast")
  *  - AC-3: data.nextTier === nextTier (e.g. "balanced")
- *  - AC-6: an escalation log entry from handleTierEscalation yields exactly one
- *          escalation observation when collectObservations reads the JSONL log
- *  - AC-7: an escalation log entry from preIterationTierCheck yields exactly one
- *          escalation observation when collectObservations reads the JSONL log
  */
 
 type TierEscalationDeps = typeof _tierEscalationDeps;
@@ -170,30 +161,6 @@ function makeUs001Story() {
       reasoning: "source-tier escalation fixture",
     },
   });
-}
-
-/** Minimal context pointing the collector at a temp root. */
-function makeCollectorContext(root: string, workdir: string, logFilePath: string): CuratorPostRunContext {
-  return {
-    runId: "run-us001",
-    feature: "feat-us001",
-    workdir,
-    prdPath: join(workdir, ".nax", "features", "feat-us001", "prd.json"),
-    branch: "main",
-    totalDurationMs: 1000,
-    totalCost: 10,
-    storySummary: { completed: 1, failed: 0, skipped: 0, paused: 0 },
-    stories: [],
-    version: "0.1.0",
-    pluginConfig: {},
-    logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-    config: makeNaxConfig(),
-    outputDir: join(root, "out"),
-    globalDir: join(root, "global"),
-    projectKey: "test-project-us001",
-    curatorRollupPath: join(root, "rollup.jsonl"),
-    logFilePath,
-  };
 }
 
 /** Overrides the deps object with the provided hooks; returns restore closures. */
@@ -294,134 +261,5 @@ describe("US-001: handleTierEscalation logs fromTier and nextTier (AC-2, AC-3)",
     // At least one of those calls must record the fast → balanced jump.
     const fastToBalanced = escalationLogs.find((c) => c.data?.fromTier === "fast" && c.data?.nextTier === "balanced");
     expect(fastToBalanced).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AC-6: handleTierEscalation log entry → exactly one escalation observation
-// AC-7: preIterationTierCheck log entry → exactly one escalation observation
-// ---------------------------------------------------------------------------
-
-describe("US-001: escalation log entries from both emitters round-trip to collectObservations (AC-6, AC-7)", () => {
-  let origSavePRD: TierEscalationDeps["savePrdProgress"];
-  let origGetSafeLogger: TierEscalationDeps["getSafeLogger"];
-
-  afterEach(() => {
-    _tierEscalationDeps.savePrdProgress = origSavePRD;
-    _tierEscalationDeps.getSafeLogger = origGetSafeLogger;
-  });
-
-  test("AC-6: handleTierEscalation's log line yields exactly one escalation observation", async () => {
-    origSavePRD = _tierEscalationDeps.savePrdProgress;
-    origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
-
-    const mockLogger = makeLogger();
-    installDeps({
-      getSafeLogger: () => mockLogger,
-    });
-
-    const story = makeUs001Story();
-    const ctx = makeEscalationContext({
-      story,
-      storiesToExecute: [story],
-      config: makeEscalationConfig(),
-      prd: makeUs001Prd(story),
-      prdPath: "/tmp/test-prd-us001.json",
-      feature: "f",
-    });
-    const result = await handleTierEscalation(ctx);
-    expect(result.outcome).toBe("escalated");
-
-    const escalationCalls = mockLogger.calls.filter(
-      (c) => c.stage === "escalation" && c.message.includes("Escalating"),
-    );
-    expect(escalationCalls.length).toBeGreaterThan(0);
-
-    // Reconstruct JSONL lines identical to what the real logger would write,
-    // then feed them to collectObservations to verify the round-trip.
-    const root = join(fixtureDir, "us001-handle");
-    await mkdir(root);
-    const logFilePath = join(root, "run.jsonl");
-    const lines = escalationCalls.map((c) =>
-      JSON.stringify({
-        timestamp: "2026-05-04T00:00:00.000Z",
-        level: c.level,
-        stage: c.stage,
-        message: c.message,
-        storyId: c.data?.storyId,
-        data: c.data,
-      }),
-    );
-    await writeFile(logFilePath, `${lines.join("\n")}\n`);
-
-    const observations = await collectObservations(makeCollectorContext(root, root, logFilePath));
-    const escalationObs = observations.filter((o) => o.kind === "escalation");
-    expect(escalationObs).toHaveLength(1);
-  });
-
-  test("AC-7: preIterationTierCheck's log line yields exactly one escalation observation", async () => {
-    origSavePRD = _tierEscalationDeps.savePrdProgress;
-    origGetSafeLogger = _tierEscalationDeps.getSafeLogger;
-
-    const mockLogger = makeLogger();
-    installDeps({
-      getSafeLogger: () => mockLogger,
-    });
-
-    const story = {
-      ...makeUs001Story(),
-      attempts: 1, // >= tierCfg.attempts → triggers escalation
-    };
-    const prd = makeUs001Prd(story);
-
-    const result = await preIterationTierCheck(
-      story,
-      { complexity: "medium", modelTier: "fast", testStrategy: "test-after", reasoning: "test" },
-      makeNaxConfig({
-        autoMode: {
-          escalation: {
-            enabled: true,
-            tierOrder: [
-              { tier: "fast", attempts: 1 },
-              { tier: "balanced", attempts: 2 },
-            ],
-          },
-        },
-        routing: { llm: { mode: "per-story" }, strategy: "keyword" },
-      }),
-      prd,
-      "/tmp/test-prd-us001-pre.json",
-      undefined,
-      { hooks: {} },
-      "f",
-      0,
-      "/tmp",
-    );
-    expect(result.shouldSkipIteration).toBe(true);
-
-    const escalationCalls = mockLogger.calls.filter(
-      (c) => c.stage === "escalation" && c.message.includes("Escalating"),
-    );
-    expect(escalationCalls.length).toBeGreaterThan(0);
-
-    // Round-trip through the JSONL collector.
-    const root = join(fixtureDir, "us001-pre-iter");
-    await mkdir(root);
-    const logFilePath = join(root, "run.jsonl");
-    const lines = escalationCalls.map((c) =>
-      JSON.stringify({
-        timestamp: "2026-05-04T00:00:00.000Z",
-        level: c.level,
-        stage: c.stage,
-        message: c.message,
-        storyId: c.data?.storyId,
-        data: c.data,
-      }),
-    );
-    await writeFile(logFilePath, `${lines.join("\n")}\n`);
-
-    const observations = await collectObservations(makeCollectorContext(root, root, logFilePath));
-    const escalationObs = observations.filter((o) => o.kind === "escalation");
-    expect(escalationObs).toHaveLength(1);
   });
 });

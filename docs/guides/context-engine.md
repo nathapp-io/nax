@@ -116,6 +116,8 @@ Any `.md` file in that directory is picked up by `StaticRulesProvider` on every 
 
 With `allowLegacyClaudeMd: true`, `StaticRulesProvider` falls back to the legacy files (`CLAUDE.md`, `.cursorrules`, `AGENTS.md`, `.claude/rules/`) when no canonical rules exist. Default is `false` — once you've migrated, drop the flag to avoid drift.
 
+Rule frontmatter `stages:` is ignored in both index and push delivery; remove it. Non-empty lists warn during `nax rules lint`, and malformed values remain errors. This does not change `context.v2.stages` budget configuration.
+
 For authoring conventions — `paths:`, `appliesTo:`, `priority:`, the neutrality linter, and how to split monolithic rule files — see the [Static Rules Guide](./static-rules.md).
 
 ---

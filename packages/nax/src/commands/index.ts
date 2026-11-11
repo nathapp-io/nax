@@ -3,17 +3,6 @@
  */
 
 export { type ResolvedProject, type ResolveProjectOptions, resolveProject, resolveProjectAsync } from "./common";
-export {
-  _curatorCmdDeps,
-  type CuratorCommitOptions,
-  type CuratorDryrunOptions,
-  type CuratorGcOptions,
-  type CuratorStatusOptions,
-  curatorCommit,
-  curatorDryrun,
-  curatorGc,
-  curatorStatus,
-} from "./curator";
 export { _doctorDeps, doctorCommand } from "./doctor";
 export { type LogsOptions, logsCommand } from "./logs";
 export { type FollowLogsDeps, followLogs } from "./logs-formatter";

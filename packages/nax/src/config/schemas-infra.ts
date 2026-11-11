@@ -448,10 +448,6 @@ export const PrecheckConfigSchema = z.object({
   storySizeGate: StorySizeGateConfigSchema,
 });
 
-export const PromptsConfigSchema = z.object({
-  behavioralGuardrails: z.enum(["off", "lite", "strict"]).default("lite"),
-});
-
 export const ProjectProfileSchema = z.object({
   language: z.enum(["typescript", "javascript", "go", "rust", "python", "ruby", "java", "kotlin", "php"]).optional(),
   type: z.string().optional(),
@@ -463,57 +459,6 @@ export const VALID_AGENT_TYPES = ["claude", "codex", "opencode", "cursor", "wind
 
 export const GenerateConfigSchema = z.object({
   agents: z.array(z.enum(VALID_AGENT_TYPES)).optional(),
-});
-
-export const CuratorThresholdsSchema = z.object({
-  repeatedFinding: z.number().int().nonnegative().default(2),
-  emptyKeyword: z.number().int().nonnegative().default(2),
-  rectifyAttempts: z.number().int().nonnegative().default(2),
-  escalationChain: z.number().int().nonnegative().default(2),
-  staleChunkRuns: z.number().int().nonnegative().default(2),
-  unchangedOutcome: z.number().int().nonnegative().default(2),
-});
-
-/**
- * Curator auto-prune retention — US-004.
- *
- * `pruneThresholdBytes` is the rollup byte size above which the post-run hook
- * invokes `pruneRollup`. Below it, the hook is a no-op (reading the file's size
- * is effectively free; full-scanning it before every run is not). `keepRuns`
- * caps the run-id set passed to `pruneRollup` as `keepRunIds`. 64 MiB and 50
- * runs match the description: a measured 219 MB rollup was already mostly
- * beyond the heuristic window, so anything below ~64 MiB is below the live
- * working set and not worth rewriting.
- */
-export const CuratorRetentionConfigSchema = z.object({
-  pruneThresholdBytes: z.number().int().nonnegative().default(67108864),
-  // Positive, not merely non-negative: `keepRuns: 0` would make the automatic,
-  // unattended prune empty this project's entire rollup history on the very
-  // next over-threshold run — unlike `nax curator gc --keep 0`, which is a
-  // deliberate human invocation.
-  keepRuns: z.number().int().positive().default(50),
-});
-
-export const CuratorConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  rollupPath: z
-    .string()
-    .optional()
-    .refine((v) => v === undefined || v.startsWith("/") || v.startsWith("~/"), {
-      message: "rollupPath must be absolute or start with ~/",
-    }),
-  thresholds: CuratorThresholdsSchema.default({
-    repeatedFinding: 2,
-    emptyKeyword: 2,
-    rectifyAttempts: 2,
-    escalationChain: 2,
-    staleChunkRuns: 2,
-    unchangedOutcome: 2,
-  }),
-  retention: CuratorRetentionConfigSchema.default({
-    pruneThresholdBytes: 67108864,
-    keepRuns: 50,
-  }),
 });
 
 // Re-export ModelTierSchema for consumers that currently import it from schemas-infra

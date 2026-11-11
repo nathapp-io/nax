@@ -96,7 +96,7 @@ describe("rebuildForAgent — failure note injection", () => {
   test("rebuild recomputes chunkTokens so the injected failure note is not counted as 0 (#1421)", async () => {
     // The rebuild adds a synthetic failure-note chunk. Inheriting the prior
     // manifest's chunkTokens would leave that chunk with no entry, and the
-    // curator would record tokens:0 for it — the placeholder #1421 removed.
+    // manifest would omit its token cost.
     const provider = makeProvider("p1", makeChunkResult());
     const orch = new ContextOrchestrator([provider]);
     const original = await orch.assemble(BASE_REQUEST);

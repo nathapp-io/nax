@@ -446,9 +446,7 @@ describe("formatLogEntry — coding-tool call noise (normal mode)", () => {
     expect(formatLogEntry(other, { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
   });
 
-  test("a pull-tool invocation is untouched — the curator parses those", () => {
-    // src/plugins/builtin/curator/collect.ts reads stage "pull-tool" + message
-    // "invoked" back out of the log.
+  test("a pull-tool invocation is untouched", () => {
     const pull = entry({ level: "info", stage: "pull-tool", message: "invoked", data: { outcome: "ok" } });
     expect(formatLogEntry(pull, { mode: "normal", useColor: false }).shouldDisplay).toBe(true);
   });

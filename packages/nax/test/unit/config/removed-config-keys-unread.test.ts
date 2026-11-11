@@ -203,13 +203,14 @@ describe("removed optimizer section and prompt overrides", () => {
     expect(removedKeyWarnings(messages)).toEqual([removalWarning("prompts.overrides", PIPELINE_ONLY_HINT)]);
   });
 
-  test("prompts.behavioralGuardrails survives", async () => {
+  test("prompts.behavioralGuardrails warns independently of overrides", async () => {
     const root = await writeProjectConfig({
       prompts: { behavioralGuardrails: "strict", overrides: { implementer: "p.md" } },
     });
-    const { result, messages } = await captureWarnings(() => loadConfig(root));
-    expect(result.prompts.behavioralGuardrails).toBe("strict");
-    expect(warningsFor(messages, "prompts.behavioralGuardrails")).toEqual([]);
+    const { messages } = await captureWarnings(() => loadConfig(root));
+    expect(warningsFor(messages, "prompts.behavioralGuardrails")).toEqual([
+      removalWarning("prompts.behavioralGuardrails", PIPELINE_ONLY_HINT),
+    ]);
   });
 
   test("an unknown override role no longer fails validation", async () => {

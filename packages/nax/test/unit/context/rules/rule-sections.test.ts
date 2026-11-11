@@ -153,14 +153,12 @@ describe("splitRuleIntoSections — appliesTo / stages inheritance", () => {
   test("AC7: appliesTo ['src/**'] and stages ['execution'] are carried by every section", () => {
     const rule = makeRule({
       appliesTo: ["src/**"],
-      stages: ["execution"],
       content: ["## Alpha", "alpha", "## Beta", "beta"].join("\n"),
     });
     const sections = splitRuleIntoSections(rule);
     expect(sections).toHaveLength(2);
     for (const section of sections) {
       expect(section.appliesTo).toEqual(["src/**"]);
-      expect(section.stages).toEqual(["execution"]);
     }
   });
 });

@@ -169,12 +169,6 @@
     "test/unit/precheck/precheck-canonical-lint-orchestrator.test.ts": {
       "looseCast": 2
     },
-    "test/unit/commands/curator-gc.test.ts": {
-      "looseCast": 7
-    },
-    "test/unit/commands/curator.test.ts": {
-      "looseCast": 5
-    },
     "test/unit/commands/replay.test.ts": {
       "looseCast": 20
     },
@@ -463,17 +457,8 @@
     "test/unit/plan/strategies/single.test.ts": {
       "looseCast": 4
     },
-    "test/unit/plugins/builtin/curator-render.test.ts": {
-      "looseCast": 1
-    },
     "test/unit/plugins/builtin/auto-pr-forge.test.ts": {
       "looseCast": 1
-    },
-    "test/unit/plugins/builtin/curator-heuristics.test.ts": {
-      "looseCast": 1
-    },
-    "test/unit/plugins/builtin/curator-rollup.test.ts": {
-      "looseCast": 4
     },
     "test/unit/plugins/builtin/auto-pr-bug8.test.ts": {
       "looseCast": 3

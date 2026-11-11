@@ -77,12 +77,11 @@ Deep reference for each subsystem — consult when working on a specific module.
 - **§35 Agent Manager** (ADR-012 + ADR-019) — `AgentManager` is a peer of `SessionManager`. Three entry points: `completeAs` (sessionless), `runAsSession` (caller-managed handle), `runWithFallback` (chain iteration via `executeHop` callback)
 - **§36 NaxRuntime** (ADR-018) — Single lifecycle container per run: `agentManager`, `sessionManager`, `configLoader`, `costAggregator`, `promptAuditor`, `usageAuditor`, `reviewAuditor`, `dispatchEvents`, `packages`, `pidRegistry`, `logger`, `signal`. The middleware chain holds only cancellation; audit, cost, usage and logging attach as subscribers to the typed dispatch-event bus (ADR-020).
 - **§37 Operations & `callOp`** (ADR-018) — `Operation<I, O, C>` typed spec under `src/operations/`. `callOp(ctx, op, input)` slices config via `packageView.select`, composes prompts via `composeSections`, dispatches `kind:"complete"` to `completeAs` and `kind:"run"` to `runWithFallback` with `buildHopCallback`.
-- **§38 Post-Run Curator** — Post-run heuristic observer: collects observations from run artifacts, generates proposals (H1–H6 heuristics), writes `curator-proposals.md`. `nax curator commit` stages accepted proposals. See [curator.md guide](../guides/curator.md).
 - **§39 Config** — Layered config system (global → project → per-package); Zod schema + selectors; `resolvePermissions` SSOT; legacy-key guards.
 - **§40 Logger** — Structured JSONL `LogEntry` producer; `initLogger` / `getLogger` / `getSafeLogger` singleton pattern.
 - **§41 Log Format** — Human-facing terminal renderer; consumes `LogEntry` from §40; `VerbosityMode`, `formatRunSummary`. Leaf — never writes log records.
 - **§42 CLI** — High-level command implementations (`initCommand`, `planCommand`, `generateCommand`, …). One of two directories permitted to use `process.cwd()`.
-- **§43 Commands** — Thin CLI wrappers + `resolveProject(opts)` shared entry point; curator, logs, precheck, migrate sub-commands.
+- **§43 Commands** — Thin CLI wrappers and shared project resolution; logs, precheck, and migrate sub-commands.
 - **§44** — removed with pipeline mode (C1)
 - **§45 Plan** — Spec → `prd.json` pipeline: two strategies (`single`/`refine`), `finalizePrdRouting`.
 - **§46 Precheck** — Pre-run validation suite; two tiers (environment + project); `EXIT_CODES`; gates every `nax run` via `run-setup.ts`.

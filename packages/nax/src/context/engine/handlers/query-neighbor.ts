@@ -6,7 +6,7 @@
  * the response to maxTokensPerCall * 4 characters.
  *
  * Calls budget.consume() before executing — propagates the NaxError if exhausted.
- * Emits logger.info with pull-tool invocation metrics for curator ingestion.
+ * Emits logger.info with pull-tool invocation metrics for observability.
  *
  * See: docs/specs/SPEC-context-engine-v2.md §Pull tools
  */

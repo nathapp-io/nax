@@ -86,7 +86,6 @@ function sectionOf(
     priority: rule.priority,
     paths: rule.paths,
     appliesTo: rule.appliesTo,
-    stages: rule.stages,
     ordinal: partial.ordinal ?? 0,
     heading: partial.heading,
     slug: partial.slug,
@@ -388,11 +387,11 @@ describe("StaticRulesProvider — US-004 AC7/AC8: section-level budget pressure"
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("StaticRulesProvider — US-004 AC9: scopingReport.sectionCount", () => {
-  test("AC9: scopingReport.sectionCount equals the number of sections remaining after stage + appliesTo filtering", async () => {
-    // Two rules: one matches the stage and scope; another is filtered by stage.
+  test("AC9: scopingReport.sectionCount equals the number of sections remaining after appliesTo filtering", async () => {
+    // Both rules reach sectioning regardless of stages.
     setupCanonical([
       { fileName: "kept.md", id: "kept", content: "## A\nbody" },
-      { fileName: "filtered.md", id: "filtered", content: "## B\nbody", stages: ["other"] },
+      { fileName: "filtered.md", id: "filtered", content: "## B\nbody" },
     ]);
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
@@ -411,21 +410,21 @@ describe("StaticRulesProvider — US-004 AC9: scopingReport.sectionCount", () =>
 
     const provider = new StaticRulesProvider();
     const result = await provider.fetch(BASE_REQUEST);
-    // Only the "kept" rule passes the stage filter, and it has one section.
+    // Both rules contribute a section.
     expect(result.scopingReport).toBeDefined();
-    expect(result.scopingReport?.sectionCount).toBe(1);
+    expect(result.scopingReport?.sectionCount).toBe(2);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC10 / AC11: stage filter removes the rule and its sections entirely
+// AC10 / AC11: stage declarations do not remove rule sections
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("StaticRulesProvider — US-004 AC10/AC11: stage filter removes rule sections", () => {
-  test("AC10: returns no chunk originating from a rule whose stages list excludes request.stage", async () => {
+describe("StaticRulesProvider — US-004 AC10/AC11: stages do not filter rule sections", () => {
+  test("AC10: returns a chunk originating from a rule whose stages list excludes request.stage", async () => {
     setupCanonical([
       { fileName: "kept.md", id: "kept", content: "## A\nbody" },
-      { fileName: "filtered.md", id: "filtered", content: "## B\nbody", stages: ["other-stage"] },
+      { fileName: "filtered.md", id: "filtered", content: "## B\nbody" },
     ]);
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
@@ -445,13 +444,13 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stage filter removes rule se
     const provider = new StaticRulesProvider();
     const result = await provider.fetch({ ...BASE_REQUEST, stage: "execution" });
     const ids = result.chunks.map((c) => c.id);
-    expect(ids.some((id) => id.includes("filtered"))).toBe(false);
+    expect(ids.some((id) => id.includes("filtered"))).toBe(true);
   });
 
-  test("AC11: when request.stage excludes a rule, applySectionBudget receives no section from that rule", async () => {
+  test("AC11: when request.stage excludes a rule, applySectionBudget receives a section from that rule", async () => {
     setupCanonical([
       { fileName: "kept.md", id: "kept", content: "## A\nbody" },
-      { fileName: "filtered.md", id: "filtered", content: "## B\nbody", stages: ["other-stage"] },
+      { fileName: "filtered.md", id: "filtered", content: "## B\nbody" },
     ]);
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
@@ -475,7 +474,7 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stage filter removes rule se
     const provider = new StaticRulesProvider();
     await provider.fetch({ ...BASE_REQUEST, stage: "execution" });
     expect(receivedOwners).toContain("kept");
-    expect(receivedOwners).not.toContain("filtered");
+    expect(receivedOwners).toContain("filtered");
   });
 });
 

@@ -123,20 +123,3 @@ export async function claimProjectIdentity(
     lastSeen: now,
   });
 }
-
-export function curatorRollupPath(globalDir: string, rollupPathOverride: string | undefined): string {
-  if (!rollupPathOverride) {
-    return path.join(globalDir, "curator", "rollup.jsonl");
-  }
-  if (rollupPathOverride.startsWith("~/")) {
-    return path.join(os.homedir(), rollupPathOverride.slice(2));
-  }
-  if (path.isAbsolute(rollupPathOverride)) {
-    return rollupPathOverride;
-  }
-  throw new NaxError("curator.rollupPath must be absolute or start with ~/", "CONFIG_INVALID", {
-    stage: "runtime",
-    field: "curator.rollupPath",
-    value: rollupPathOverride,
-  });
-}

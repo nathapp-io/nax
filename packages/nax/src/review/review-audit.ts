@@ -95,7 +95,7 @@ export interface ReviewAuditEntry {
    * Prior findings the reviewer resolved or withdrew this round (#1423).
    * Deliberately NOT part of `result.findings`: an acknowledgement is
    * bookkeeping, not a defect, and counting it as a finding inflated finding
-   * telemetry and became the evidence quoted in curator rule proposals.
+   * telemetry.
    */
   acks?: ReviewAck[];
   /**

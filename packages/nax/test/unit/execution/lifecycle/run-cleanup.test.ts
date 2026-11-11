@@ -20,6 +20,7 @@ import {
 } from "@test/helpers";
 import { _runCleanupDeps, cleanupRun } from "@/execution";
 import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
+import { _runTmpWipeDeps } from "@/execution/lifecycle/run-tmp-wipe";
 import type { HookContext } from "@/hooks";
 import * as loggerModule from "@/logger";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
@@ -60,7 +61,6 @@ function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[]
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
   return {
     runId: "run-001",
-    runtimeRunId: "run-001",
     startTime: Date.now() - 1000,
     totalCost: 0.05,
     storiesCompleted: 1,
@@ -86,6 +86,18 @@ function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunClea
 // ============================================================================
 
 describe("RunCleanupOptions", () => {
+  test("does not invoke the run temp wipe", async () => {
+    const original = { ..._runTmpWipeDeps };
+    const remove = mock(async (_path: string) => {});
+    _runTmpWipeDeps.exists = () => true;
+    _runTmpWipeDeps.remove = remove;
+    try {
+      await cleanupRun(makeCleanupOptions());
+      expect(remove).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(_runTmpWipeDeps, original);
+    }
+  });
   test("accepts feature, prdPath, branch, and version fields", () => {
     expect(makeCleanupOptions({ feature: "some-feature" }).feature).toBe("some-feature");
     expect(makeCleanupOptions({ prdPath: "/path/to/prd.json" }).prdPath).toBe("/path/to/prd.json");
@@ -133,11 +145,26 @@ describe("buildPostRunContext", () => {
     expect(ctx.pluginConfig).toEqual({});
   });
 
+  test("forwards the external plugin context without a rollup path", async () => {
+    const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
+    const config = { example: true };
+    const opts = makeCleanupOptions({
+      outputDir: "/out",
+      globalDir: "/global",
+      projectKey: "p",
+      logFilePath: "/run.jsonl",
+      config,
+    });
+    const ctx = buildPostRunContext(opts, 1, makePluginLogger());
+    expect(ctx.outputDir).toBe("/out");
+    expect(ctx.globalDir).toBe("/global");
+    expect(ctx.projectKey).toBe("p");
+    expect(ctx.logFilePath).toBe("/run.jsonl");
+    expect(ctx.config).toBe(config);
+    expect(Object.hasOwn(ctx, "curatorRollupPath")).toBe(false);
+  });
+
   test("populates runStartedAt from the run's startTime (#1422)", async () => {
-    // The curator scopes its observations with this value. If the producer stops
-    // setting it, every collector silently falls back to "no scoping" and the
-    // cumulative-count defect returns — with the consumer-side tests still green,
-    // because they inject runStartedAt directly.
     const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
     const startTime = Date.parse("2026-08-01T12:00:00.000Z");
     const ctx = buildPostRunContext(makeCleanupOptions({ startTime }), 5000, makePluginLogger());
@@ -592,7 +619,6 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
     // Build a full RunCleanupOptions — TypeScript will reject this if fields are missing
     const opts: RunCleanupOptions = {
       runId: "run-test",
-      runtimeRunId: "run-test",
       startTime: Date.now(),
       totalCost: 0,
       storiesCompleted: 0,

@@ -33,7 +33,6 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: "balanced",
       diffMode: "embedded",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
@@ -48,7 +47,6 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: { agent: "codex", model: "gpt-5.4" },
       diffMode: "embedded",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
@@ -62,7 +60,6 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       model: "balanced",
       diffMode: "embedded",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: ["rule1", "rule2"],
       timeoutMs: 600_000,
@@ -80,7 +77,6 @@ describe("SemanticReviewConfig", () => {
       const config: SemanticReviewConfig = {
         model: tier,
         diffMode: "embedded",
-        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
@@ -110,12 +106,9 @@ describe("ReviewConfig semantic field", () => {
       expect(result.data.review.semantic).toEqual({
         model: "balanced",
         diffMode: "ref",
-        recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
         resetRefOnRerun: false,
         rules: [],
         timeoutMs: 600_000,
-        demandInspectionTrail: true,
-        acRegroundOnDrop: true,
         substantiation: { requote: true, maxRequotes: 5 },
         // excludePatterns is now optional (ADR-009): undefined means resolver will derive at runtime
       });
@@ -226,12 +219,9 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
       model: "balanced",
       diffMode: "ref",
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 2, maxAdvisoryRounds: 2 },
       resetRefOnRerun: false,
       rules: [],
       timeoutMs: 600_000,
-      demandInspectionTrail: true,
-      acRegroundOnDrop: true,
       substantiation: { requote: true, maxRequotes: 5 },
       excludePatterns: [
         ":!test/",
@@ -266,31 +256,4 @@ describe("Semantic check in review.checks with semantic config", () => {
       expect(result.data.review.semantic?.rules).toEqual([]);
     }
   });
-});
-
-describe("demandInspectionTrail (#3A) — configurable on both reviewers", () => {
-  test("defaults to true on the DEFAULT_CONFIG for both reviewers", () => {
-    expect(DEFAULT_CONFIG.review?.semantic?.demandInspectionTrail).toBe(true);
-    expect(DEFAULT_CONFIG.review?.adversarial?.demandInspectionTrail).toBe(true);
-  });
-
-  test("defaults to true after parsing when omitted (not schema-stripped)", () => {
-    const parsed = NaxConfigSchema.parse({});
-    expect(parsed.review.semantic?.demandInspectionTrail).toBe(true);
-    expect(parsed.review.adversarial?.demandInspectionTrail).toBe(true);
-  });
-
-  test.each([["semantic" as const], ["adversarial" as const]])(
-    "an explicit false survives parse on the %s reviewer",
-    (reviewer) => {
-      const result = NaxConfigSchema.safeParse({
-        ...DEFAULT_CONFIG,
-        review: { ...DEFAULT_CONFIG.review, [reviewer]: { demandInspectionTrail: false } },
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.review[reviewer]?.demandInspectionTrail).toBe(false);
-      }
-    },
-  );
 });

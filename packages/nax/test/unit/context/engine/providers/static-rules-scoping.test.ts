@@ -2,7 +2,7 @@
  * StaticRulesProvider — rule scoping tests (US: rule-scoping).
  *
  * Covers two NEW filter passes applied after the existing paths:/appliesTo:
- * filters: stage filtering (request.stage vs rule.stages) and appliesTo
+ * filters: ignored stages and appliesTo
  * filtering keyed on request.scopeFiles (not touchedFiles), plus the
  * ProviderScopingReport persisted alongside budgetPressure.
  *
@@ -60,19 +60,19 @@ function setupCanonical(rules: CanonicalRule[]) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AC1-3: stages: frontmatter filter
+// AC1-3: stages: ignored
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("StaticRulesProvider — stages: frontmatter filter", () => {
-  test("AC1: returns no chunk for a rule with stages ['plan'] when request.stage is execution", async () => {
-    setupCanonical([{ fileName: "stage-only.md", content: "Plan-only rule.", stages: ["plan"] }]);
+describe("StaticRulesProvider — stages: ignored", () => {
+  test("AC1: returns a chunk for a rule with stages ['plan'] when request.stage is execution", async () => {
+    setupCanonical([{ fileName: "stage-only.md", content: "Plan-only rule." }]);
     const provider = new StaticRulesProvider();
     const result = await provider.fetch({ ...BASE_REQUEST, stage: "execution" });
-    expect(result.chunks).toHaveLength(0);
+    expect(result.chunks).toHaveLength(1);
   });
 
   test("AC2: returns a chunk for a rule with stages ['plan'] when request.stage is plan", async () => {
-    setupCanonical([{ fileName: "stage-only.md", content: "Plan-only rule.", stages: ["plan"] }]);
+    setupCanonical([{ fileName: "stage-only.md", content: "Plan-only rule." }]);
     const provider = new StaticRulesProvider();
     const result = await provider.fetch({ ...BASE_REQUEST, stage: "plan" });
     expect(result.chunks).toHaveLength(1);
@@ -141,13 +141,6 @@ describe("StaticRulesProvider — scopingReport", () => {
     expect(result.scopingReport?.appliesToInertCount).toBe(0);
   });
 
-  test("AC9: returns a scopingReport.stageFilteredIds containing the ID of a stage-filtered rule", async () => {
-    setupCanonical([{ fileName: "stage-only.md", content: "Plan-only rule.", stages: ["plan"] }]);
-    const provider = new StaticRulesProvider();
-    const result = await provider.fetch({ ...BASE_REQUEST, stage: "execution" });
-    expect(result.scopingReport?.stageFilteredIds).toContain("stage-only");
-  });
-
   test("AC10: returns a scopingReport.appliesToFilteredIds containing the ID of an appliesTo-filtered rule", async () => {
     setupCanonical([{ fileName: "test-rule.md", content: "Test-only rule.", appliesTo: ["test/**/*.test.ts"] }]);
     const provider = new StaticRulesProvider();
@@ -169,13 +162,11 @@ describe("StaticRulesProvider — scopingReport", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("StaticRulesProvider — budgetPressure unaffected by scoping filters", () => {
-  test("AC12: returns budgetPressure unaffected by rules removed by either scoping filter", async () => {
-    // Only a stage-filtered rule exists; it never reaches budget accounting,
-    // so there is nothing for the budget to report pressure about.
-    setupCanonical([{ fileName: "stage-only.md", content: "Plan-only rule.", stages: ["plan"] }]);
+  test("AC12: admits rules into budget accounting", async () => {
+    setupCanonical([{ fileName: "stage-only.md", content: "Plan-only rule." }]);
     const provider = new StaticRulesProvider();
     const result = await provider.fetch({ ...BASE_REQUEST, stage: "execution" });
-    expect(result.chunks).toHaveLength(0);
+    expect(result.chunks).toHaveLength(1);
     expect(result.budgetPressure).toBeUndefined();
   });
 });
@@ -231,20 +222,17 @@ describe("StaticRulesProvider — zero-rule exits", () => {
     expect(result.scopingReport?.scopeFileCount).toBe(1);
   });
 
-  test("stage filtering to empty reports the stage cause, not a budget cause", async () => {
-    // Conflating the two sends an operator to tune a budget that was never the
-    // problem.
-    setupCanonical([{ id: "review-only", fileName: "review-only.md", content: "## R\nbody", stages: ["review"] }]);
+  test("admitted rule contributes to scoping report", async () => {
+    setupCanonical([{ id: "review-only", fileName: "review-only.md", content: "## R\nbody" }]);
 
     const result = await new StaticRulesProvider({ enforceBudget: true }).fetch({
       ...BASE_REQUEST,
       stage: "execution",
     });
 
-    expect(result.chunks).toEqual([]);
-    expect(result.scopingReport?.stageFilteredIds).toEqual(["review-only"]);
-    expect(result.scopingReport?.sectionCount).toBe(0);
-    // Nothing was dropped by the budget — there was nothing to drop.
+    expect(result.chunks).toHaveLength(1);
+    expect(result.scopingReport?.sectionCount).toBe(1);
+    // The admitted section fits the budget.
     expect(result.budgetPressure).toBeUndefined();
   });
 });

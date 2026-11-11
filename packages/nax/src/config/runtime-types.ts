@@ -177,8 +177,6 @@ export interface QualityConfig {
   shell: string;
   /** Environment variables to strip during verification (prevents AI-optimized output) */
   stripEnvVars: string[];
-  /** Hermetic test enforcement settings (ENH-010). Supports per-package override. */
-  testing?: TestingConfig;
 }
 
 /** TDD config */
@@ -321,29 +319,6 @@ export interface RoutingConfig {
   router?: StoryRouterConfig;
 }
 
-/** Prompt config */
-export interface PromptsConfig {
-  behavioralGuardrails: "off" | "lite" | "strict";
-}
-
-/** Hermetic test enforcement configuration (ENH-010) */
-export interface TestingConfig {
-  /**
-   * When true (default), nax injects a hermetic test requirement into all code-writing prompts.
-   * Instructs the AI to mock all I/O boundaries and never call real external services in tests.
-   */
-  hermetic: boolean;
-  /**
-   * Project-specific external boundaries to mock (e.g. ["claude", "gh", "redis", "grpc"]).
-   * Injected into the hermetic requirement section so the AI knows which project tools to mock.
-   */
-  externalBoundaries?: string[];
-  /**
-   * Project-specific mocking guidance injected verbatim into the prompt.
-   * E.g. "Use injectable deps for CLI spawning, ioredis-mock for Redis"
-   */
-  mockGuidance?: string;
-}
 export type { FinishConfig, FinishTimeoutsConfig } from "./runtime-types-finish";
 export type { McpConfig, McpServerConfig, McpStage } from "./runtime-types-mcp";
 export type { ProjectProfile } from "./runtime-types-project";
@@ -403,15 +378,12 @@ export interface NaxConfig {
   /** Precheck settings (v0.16.0) */
   precheck?: PrecheckConfig;
   /** Prompt settings */
-  prompts: PromptsConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
   /** Generate settings */
   generate?: GenerateConfig;
   /** Project profile — language and tooling metadata (US-001) */
   project?: import("./runtime-types-project").ProjectProfile;
-  /** Curator configuration */
-  curator?: import("./runtime-types-curator").CuratorConfig;
   autoPr: import("./runtime-types-autopr").AutoPrConfig;
   /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;
@@ -429,4 +401,3 @@ export type {
   TranscriptAuditConfig,
   UsageAuditConfig,
 } from "./runtime-types-agent";
-export type { CuratorConfig, CuratorRetentionConfig, CuratorThresholds } from "./runtime-types-curator";

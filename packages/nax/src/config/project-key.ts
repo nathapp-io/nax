@@ -1,9 +1,7 @@
 /**
  * Stable per-project identity for artifacts that can outlive their directory.
  *
- * Both the curator rollup and the cost ledger stamp this. They must agree: the
- * two are cross-referenced when attributing spend and findings to the same
- * project, and `runId` / `storyId` are project-local names that collide freely
+ * The cost ledger stamps this because `runId` / `storyId` are project-local names that collide freely
  * across repos (#1429, #1433).
  */
 
