@@ -209,13 +209,32 @@ function fileStamp(name: string, runId: string, ledgerSessionName: string): numb
   return /^\d+$/.test(digits) ? Number(digits) : undefined;
 }
 
+/**
+ * The errno code a failure carries, when it carries one: a filesystem error's `ENOENT` is what
+ * tells an absent directory apart from an unreadable one.
+ */
+function errnoCode(err: unknown): string | undefined {
+  return typeof err === "object" && err !== null && "code" in err && typeof err.code === "string"
+    ? err.code
+    : undefined;
+}
+
 /** This session's files in `auditDir`, lowest stamp first; a directory that is not there is empty. */
 async function sessionFiles(input: SessionToolCallQuery): Promise<SessionFile[]> {
   let names: string[];
   try {
     names = await _reviewToolReadsDeps.glob("*.json", input.auditDir);
-  } catch {
-    // No audit tree yet: this session wrote nothing to read.
+  } catch (err) {
+    // A run that has written no ledger yet is the expected case: nothing was recorded, and an
+    // empty answer is correct. Any OTHER scan failure (permissions, I/O) means the tree may hold
+    // calls that could not be read, and silence would make that indistinguishable from "this
+    // session read nothing" — so it is warned about, by name.
+    if (errnoCode(err) !== "ENOENT") {
+      _reviewToolReadsDeps.logger()?.warn("workflow", "Tool-audit directory could not be read — no calls loaded", {
+        auditDir: input.auditDir,
+        error: errorMessage(err),
+      });
+    }
     return [];
   }
   return names

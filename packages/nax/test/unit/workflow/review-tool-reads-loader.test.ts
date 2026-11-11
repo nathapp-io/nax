@@ -22,17 +22,20 @@ const SESSION = "f-wf-branch-review";
 
 const logger = makeLogger();
 let savedLogger: typeof _reviewToolReadsDeps.logger;
+let savedGlob: typeof _reviewToolReadsDeps.glob;
 let dir: string;
 
 beforeEach(() => {
   dir = makeTempDir("nax-review-tool-reads-");
   logger.reset();
   savedLogger = _reviewToolReadsDeps.logger;
+  savedGlob = _reviewToolReadsDeps.glob;
   _reviewToolReadsDeps.logger = () => logger;
 });
 
 afterEach(() => {
   _reviewToolReadsDeps.logger = savedLogger;
+  _reviewToolReadsDeps.glob = savedGlob;
   cleanupTempDir(dir);
 });
 
@@ -94,6 +97,19 @@ describe("readSessionToolCalls", () => {
 
   test("returns [] for a directory that does not exist (AC-4)", async () => {
     expect(await load({ auditDir: join(dir, "missing") })).toEqual([]);
+    // A run that wrote no ledger yet is the expected case, not a warning.
+    expect(warns()).toHaveLength(0);
+  });
+
+  test("warns when the directory is there but cannot be read — unavailable is not empty (F1)", async () => {
+    const denied = Object.assign(new Error("EACCES: permission denied, scandir '" + dir + "'"), { code: "EACCES" });
+    _reviewToolReadsDeps.glob = async () => {
+      throw denied;
+    };
+
+    expect(await load()).toEqual([]);
+    expect(warns()).toHaveLength(1);
+    expect(warns()[0]?.data?.auditDir).toBe(dir);
   });
 
   test("skips a file holding not-json, keeps the others, and warns once (AC-5)", async () => {
