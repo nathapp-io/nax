@@ -25,7 +25,7 @@ on:
 jobs:
   nax:
     name: nax
-    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
+    runs-on: ubuntu-latest # PROBE #2866: do not merge
     # 25, not 10: this job absorbed the `typecheck` + `check:all` matrix (#1534),
     # which used to run in parallel under its own 5-minute budget, and then the
     # "Test (confined sandbox)" step (nax#2523) re-ran the unit and integration
@@ -65,6 +65,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap socat ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          # PROBE #2866: unload Ubuntu's bwrap-userns-restrict profile
+          . /etc/os-release && echo "os: $VERSION_ID"
+          ls -l /etc/apparmor.d/ | grep -i bwrap || echo "no bwrap profile file"
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "aa-status: no bwrap profiles loaded"
+          if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict; fi
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "after: no bwrap profiles loaded"
 
       # nax#2523: the unit and integration suites again, this time inside the
       # sandbox a confined agent session gets
@@ -114,7 +120,7 @@ jobs:
   # and the CI run takes as long as the slower of the two jobs.
   nax-coverage:
     name: "nax: coverage"
-    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
+    runs-on: ubuntu-latest # PROBE #2866: do not merge
     timeout-minutes: 15
     defaults:
       run:
@@ -145,6 +151,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap socat ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          # PROBE #2866: unload Ubuntu's bwrap-userns-restrict profile
+          . /etc/os-release && echo "os: $VERSION_ID"
+          ls -l /etc/apparmor.d/ | grep -i bwrap || echo "no bwrap profile file"
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "aa-status: no bwrap profiles loaded"
+          if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict; fi
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "after: no bwrap profiles loaded"
 
       # Enforces the documented 80% floor over `src/`, aggregate and per file. Bun's
       # own coverageThreshold only exits non-zero with the `text` reporter enabled,
@@ -166,7 +178,7 @@ jobs:
 
   nax-agent:
     name: nax-agent
-    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
+    runs-on: ubuntu-latest # PROBE #2866: do not merge
     # 20, not 10: the "Test (confined sandbox)" step (nax#2523) runs the unit
     # and integration suites a second time, inside the sandbox, on top of the
     # ordinary two runs and the coverage re-run.
@@ -201,6 +213,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap socat ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          # PROBE #2866: unload Ubuntu's bwrap-userns-restrict profile
+          . /etc/os-release && echo "os: $VERSION_ID"
+          ls -l /etc/apparmor.d/ | grep -i bwrap || echo "no bwrap profile file"
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "aa-status: no bwrap profiles loaded"
+          if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict; fi
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "after: no bwrap profiles loaded"
 
       # nax#2523: the unit and integration suites again, this time inside the
       # sandbox a confined agent session gets (scripts/run-confined-tests.ts).
@@ -267,7 +285,7 @@ jobs:
   # covered by nax-agent-glob-floor.
   nax-agent-node:
     name: "nax-agent: node ${{ matrix.node }}"
-    runs-on: ubuntu-24.04 # bwrap: 26.04 denies nested userns setgroups, sysctl cannot lift it
+    runs-on: ubuntu-latest # PROBE #2866: do not merge
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -306,6 +324,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap socat ripgrep
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          # PROBE #2866: unload Ubuntu's bwrap-userns-restrict profile
+          . /etc/os-release && echo "os: $VERSION_ID"
+          ls -l /etc/apparmor.d/ | grep -i bwrap || echo "no bwrap profile file"
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "aa-status: no bwrap profiles loaded"
+          if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict; fi
+          sudo aa-status 2>/dev/null | grep -i bwrap || echo "after: no bwrap profiles loaded"
 
       - run: node --version
 
