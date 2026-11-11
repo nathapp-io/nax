@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { ConfiguredModel } from "@/config";
+import { WORKFLOW_REVIEW_DEFAULTS } from "@/config";
 import type { LinkedIssue, PrComment, PrInfo, PrThread } from "@/forge";
 import { getSafeLogger } from "@/logger";
 import { botPrReviewOp, botPrStaticReviewOp, type PrReviewVerdict, unreadFiles } from "@/operations";
@@ -113,6 +114,8 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
           earlierIds: (input.earlier ?? []).slice(0, MAX_EARLIER_THREADS).map((thread) => thread.id),
           decisionIds: (input.decisions ?? []).map((decision) => decision.id),
           timeoutMs: ctx.workflow.timeouts.reviewMs,
+          // US-003: coverage has its own budget; the op falls back to the same default when absent.
+          coverageRetries: (ctx.workflow.review ?? WORKFLOW_REVIEW_DEFAULTS).coverageRetries,
           ...(input.model !== undefined && { model: input.model }),
         },
       ),

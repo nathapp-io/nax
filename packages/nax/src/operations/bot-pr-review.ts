@@ -1,6 +1,6 @@
-import { makeParseRetryStrategy } from "@/agents/retry";
+import { makeCoverageRetryStrategy, makeParseRetryStrategy } from "@/agents/retry";
 import type { ConfiguredModel } from "@/config";
-import { workflowConfigSelector } from "@/config";
+import { WORKFLOW_REVIEW_DEFAULTS, workflowConfigSelector } from "@/config";
 import type { WorkflowOpConfig } from "@/config/selectors";
 import { NaxError } from "@/errors";
 import {
@@ -27,6 +27,11 @@ export interface BotPrReviewInput {
   readonly commentIds: readonly string[];
   readonly earlierIds?: readonly string[];
   readonly decisionIds?: readonly string[];
+  /**
+   * US-003: coverage re-prompts this call may send. Absent reads as
+   * `WORKFLOW_REVIEW_DEFAULTS.coverageRetries` (`workflow.review.coverageRetries`).
+   */
+  readonly coverageRetries?: number;
   readonly model?: ConfiguredModel;
 }
 
@@ -41,18 +46,32 @@ function coverageContext(input: BotPrReviewInput): { repoRoot: string; range: st
   return { repoRoot: input.repoRoot, range: input.range };
 }
 
+/** `CoverageRetryOpts.missing` receives whatever the op's parser returned, typed `unknown`. */
+function isVerdict(parsed: unknown): parsed is PrReviewVerdict {
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+}
+
+/**
+ * The bot review's retry, in two layers (US-003, nax#2858).
+ *
+ * The inner strategy is the triage retry: every listed thread and comment id must be answered.
+ * The outer one owns file coverage, on its own budget, so a reviewer that approved without reading
+ * the changed files is asked again instead of spending the triage retry. Triage always comes first,
+ * coverage never retries past an exhausted triage budget, and an incomplete verdict — triage or
+ * coverage — is kept through `exhaustedFallback`, findings included (nax#2532).
+ */
 function reviewRetry(input: BotPrReviewInput, staticMode = false) {
   const coverage = coverageContext(input);
   const parse = (output: string) => parsePrReviewReply(output, input.threadIds, input.commentIds, input);
-  const missingFiles = (verdict: PrReviewVerdict) =>
-    coverage ? unreadFiles(input.requiredFiles ?? [], verdict.inspectedFiles, coverage.repoRoot) : [];
-  return makeParseRetryStrategy({
+  const missingFiles = (parsed: unknown): readonly string[] =>
+    coverage && isVerdict(parsed)
+      ? unreadFiles(input.requiredFiles ?? [], parsed.inspectedFiles, coverage.repoRoot)
+      : [];
+  const triageRetry = makeParseRetryStrategy({
     parse,
-    // Ruled exception (nax#2532): triage and file coverage ask again, but never discard a usable partial verdict.
     validate: (parsed) =>
       parsed != null &&
-      missingTriage(parsed as PrReviewVerdict, input.threadIds, input.commentIds, input.earlierIds).length === 0 &&
-      missingFiles(parsed as PrReviewVerdict).length === 0,
+      missingTriage(parsed as PrReviewVerdict, input.threadIds, input.commentIds, input.earlierIds).length === 0,
     maxAttempts: 2,
     reviewerKind: "bot-pr-review",
     prompts: {
@@ -60,15 +79,22 @@ function reviewRetry(input: BotPrReviewInput, staticMode = false) {
         const verdict = parse(output);
         const missing = verdict ? missingTriage(verdict, input.threadIds, input.commentIds) : [];
         const earlierMissing = verdict ? missingTriage(verdict, [], [], input.earlierIds) : [];
-        if (missing.length > 0 || earlierMissing.length > 0) return buildBotTriageRetry(missing, earlierMissing);
-        const files = verdict ? missingFiles(verdict) : [];
-        return files.length > 0
-          ? buildWorkflowBranchCoverageRetry(coverage?.range ?? "", files, staticMode)
+        return missing.length > 0 || earlierMissing.length > 0
+          ? buildBotTriageRetry(missing, earlierMissing)
           : buildWorkflowReviewJsonRetry();
       },
       truncated: buildWorkflowReviewJsonRetryCondensed,
     },
     exhaustedFallback: parse,
+  });
+  return makeCoverageRetryStrategy({
+    inner: triageRetry,
+    parse,
+    missing: missingFiles,
+    maxCoverageRetries: input.coverageRetries ?? WORKFLOW_REVIEW_DEFAULTS.coverageRetries,
+    prompt: (files, progress) => buildWorkflowBranchCoverageRetry(coverage?.range ?? "", files, staticMode, progress),
+    exhaustedFallback: parse,
+    reviewerKind: "bot-pr-review",
   });
 }
 
