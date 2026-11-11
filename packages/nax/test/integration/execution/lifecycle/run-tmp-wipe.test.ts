@@ -1,31 +1,7 @@
 /**
- * #2300 — the create side and the wipe side must agree on the run id.
- *
- * `resolveDispatchLauncher` builds every session temp dir under
- * `runTmpRoot(options.runId)` and `cleanupRun` wipes `runTmpRoot(<some id>)`.
- * Two unit suites each pinned one half — `run-tmp-wipe.test.ts` the path
- * resolution, `run-cleanup-run-tmp-wipe.test.ts` the id handed to a STUBBED wipe —
- * and nothing asserted that the two ids were the same. They were not: the create
- * side used `crypto.randomUUID()` (via `runtime.runId`) and the wipe side
- * `buildRunId(workdir, …)`, so `rm(…, { force: true })` targeted a path nothing
- * had created and every run's temp root survived its own wipe.
- *
- * This is the test that closes that gap: real `mkdir` on the create side, real
- * `fs.rm` on the wipe side, `_runCleanupDeps.wipeRunTmp` left unstubbed, and the
- * only assertion that matters — the run's own directory is gone afterwards.
- *
- * TWO SEPARATE MKDIR SEAMS EXIST, and the session temp dir on disk is NOT created
- * by the one this suite stubs. `stubSessionSandboxDeps` replaces
- * `_sessionSandboxDeps.mkdir` (coding-tool-sandbox.ts), which only has to succeed
- * for the policy to be granted the confined roots. The directory actually
- * appears because `createCommandLauncher.run()` calls `ensureTmpDir` →
- * `_launcherDeps.mkdir` (sandbox/launcher.ts) — a DIFFERENT seam, left production
- * here. So the session seam needs no "real mkdir" mode: it is not what puts the
- * directory on disk, and adding one would widen a shared helper for nothing.
- *
- * `/tmp/nax` is pinned absent through `_sessionTmpDeps`, so `runTmpRoot(id)` is
- * `<real /tmp>/nax/<id>` on any host. The run id carries the pid and a timestamp,
- * so the directory is unique to this test and a concurrent run is never touched.
+ * A dispatched session and runtime.close must agree on the run temp root.
+ * The shared /tmp/nax parent is unavailable in confined test runs, so these
+ * real-filesystem integration checks run only on an unconfined host.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
@@ -53,6 +29,7 @@ import {
 } from "@test/helpers";
 import { resolveDispatchLauncher } from "@/agents/coding-tool-support-resolve";
 import { cleanupRun, type RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
+import { createRuntime, type NaxRuntime } from "@/runtime";
 
 /** Bash is what makes `resolveDispatchLauncher` ask for a launcher at all. */
 const DECLARED = ["Bash"] as const;
@@ -67,7 +44,7 @@ const SESSION_NAME = "US-2300-implementer";
  * assertion — the run's own temp root lives elsewhere inside the sandbox — so
  * the suite skips rather than asserting a path the sandbox denies.
  */
-describe.skipIf(isConfinedTestRun())("#2300 — the run temp root dispatch creates is the root cleanupRun wipes", () => {
+describe.skipIf(isConfinedTestRun())("#2300 — runtime.close removes the dispatched run temp root", () => {
   withDepsRestore(_sessionSandboxDeps);
   withSessionSandboxSeam(_sessionSandboxDeps);
   withDepsRestore(_sessionTmpDeps);
@@ -75,7 +52,7 @@ describe.skipIf(isConfinedTestRun())("#2300 — the run temp root dispatch creat
 
   let root: string;
   /** The runtime's uuid-shaped id — the one the create side uses. */
-  const runtimeRunId = `2300-${process.pid}-${Date.now()}`;
+  let runtime: NaxRuntime;
   /** The runner's workdir-hashed id — the one the buggy wipe used. */
   const runnerRunId = "run-8a1b05ad-2026-09-29T07-32-15.243";
   let runRoot: string;
@@ -84,24 +61,25 @@ describe.skipIf(isConfinedTestRun())("#2300 — the run temp root dispatch creat
     root = makeTempDir("run-tmp-lifecycle-");
     // US-001: `/tmp/nax` absent, so the run root of any id is `<tmp>/nax/<id>`.
     stubSessionTmpDeps(_sessionTmpDeps, { parent: "ENOENT" });
-    runRoot = runTmpRoot(runtimeRunId);
+    runtime = createRuntime(makeNaxConfig({ outputDir: root }), root);
+    runRoot = runTmpRoot(runtime.runId);
     // The command itself is not the subject; the directory `ensureTmpDir` creates
     // before it is. runArgv is stubbed so nothing is spawned.
     _launcherDeps.runArgv = async () => ({ exitCode: 0, stdout: "", stderr: "", timedOut: false });
     stubSessionSandboxDeps(_sessionSandboxDeps);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await runtime.close();
     cleanupTempDir(root);
     cleanupTempDir(runRoot);
     _resetSandboxRegistryForTests();
   });
 
-  /** The cleanup options, with the two run ids deliberately DIFFERENT values. */
+  /** Complete cleanup options for the run. */
   function cleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
     return {
       runId: runnerRunId,
-      runtimeRunId,
       startTime: Date.now() - 1000,
       totalCost: 0,
       storiesCompleted: 0,
@@ -130,7 +108,7 @@ describe.skipIf(isConfinedTestRun())("#2300 — the run temp root dispatch creat
     const launcher = await resolveDispatchLauncher(
       {
         codingToolRoot: root,
-        runId: runtimeRunId,
+        runId: runtime.runId,
         storyId: "US-2300",
         sessionRole: "implementer",
         config: makeNaxConfig({ execution: { sandbox: { enabled: true } } }),
@@ -150,15 +128,21 @@ describe.skipIf(isConfinedTestRun())("#2300 — the run temp root dispatch creat
     });
   }
 
-  test("#2300: the directory a dispatched session creates is gone after cleanupRun", async () => {
+  test("cleanupRun leaves the run temp root for runtime.close", async () => {
+    await dispatchSession();
+    await cleanupRun(cleanupOptions({ runId: runtime.runId }));
+    expect(existsSync(runRoot)).toBe(true);
+  });
+
+  test("#2300: the directory a dispatched session creates is gone after runtime.close", async () => {
     // ── create side: the production dispatch path, sandbox confinement on ──
     await dispatchSession();
 
     // The run's own root, with a real session dir under it.
     expect(existsSync(sessionTmpDirUnder(runRoot, SESSION_NAME))).toBe(true);
 
-    // ── wipe side: the REAL wipeRunTmp, not the _runCleanupDeps stub ──
-    await cleanupRun(cleanupOptions());
+    // Runtime close performs the real wipe.
+    await runtime.close();
 
     expect(existsSync(runRoot)).toBe(false);
   });
@@ -169,12 +153,12 @@ describe.skipIf(isConfinedTestRun())("#2300 — the run temp root dispatch creat
     // the run that ended. It is created here through the same dispatch the first
     // test uses, so the wipe has real work to do and this is a genuine
     // sibling-beside-a-live-root case rather than a wipe that early-returned.
-    const siblingRoot = runTmpRoot(`${runtimeRunId}-sibling`);
+    const siblingRoot = runTmpRoot(`${runtime.runId}-sibling`);
     await mkdir(siblingRoot, { recursive: true });
 
     try {
       await dispatchSession();
-      await cleanupRun(cleanupOptions());
+      await runtime.close();
 
       // The run's own root went, and only that one: the sibling's id extends
       // this run's id, so an over-reaching prefix match takes both.

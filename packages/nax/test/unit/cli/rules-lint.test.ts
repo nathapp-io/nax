@@ -385,7 +385,6 @@ describe("rulesLintCommand — ignored stages warning", () => {
     _rulesCLIDeps.loadCanonicalRules = async () => [
       makeRuleWithWarnings({
         path: "weird.md",
-        stages: ["review"],
         warnings: [
           'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
         ],

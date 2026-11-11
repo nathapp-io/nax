@@ -38,7 +38,6 @@ export interface RuleSection {
   /** appliesTo scope inherited from the owning rule. */
   appliesTo?: string[];
   /** Stages inherited from the owning rule. */
-  stages?: string[];
   /** Zero-based position of this section within the owning rule. */
   ordinal: number;
   /** Heading text for this section; `undefined` for the preamble section. */
@@ -81,7 +80,6 @@ function buildSection(args: {
     priority: args.rule.priority,
     paths: args.rule.paths,
     appliesTo: args.rule.appliesTo,
-    stages: args.rule.stages,
     ordinal: args.ordinal,
     heading: args.heading,
     slug: args.slug,

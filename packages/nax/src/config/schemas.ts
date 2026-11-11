@@ -47,7 +47,6 @@ import {
   PluginConfigEntrySchema,
   PrecheckConfigSchema,
   ProjectProfileSchema,
-  PromptsConfigSchema,
   RoutingConfigSchema,
 } from "./schemas-infra";
 import { McpConfigSchema } from "./schemas-mcp";
@@ -68,12 +67,11 @@ export type { AuthConfig } from "./schemas-auth";
 export { AuthConfigSchema } from "./schemas-auth";
 export { ContextConfigSchema, ContextV2ConfigSchema } from "./schemas-context";
 // Re-export named schemas consumed by other modules (via config/schema.ts barrel)
-export { PlanConfigSchema, PromptsConfigSchema } from "./schemas-infra";
+export { PlanConfigSchema } from "./schemas-infra";
 export { McpConfigSchema } from "./schemas-mcp";
 export {
   AdversarialReviewConfigSchema,
   FixReviewConfigSchema,
-  NonBlockingFixConfigSchema,
   SemanticReviewConfigSchema,
 } from "./schemas-review";
 
@@ -230,9 +228,6 @@ export const NaxConfigSchema = z
         "GH_ENTERPRISE_TOKEN",
         "GITHUB_ENTERPRISE_TOKEN",
       ],
-      testing: {
-        hermetic: true,
-      },
     }),
     tdd: TddConfigSchema.default({
       strategy: "auto",
@@ -248,16 +243,14 @@ export const NaxConfigSchema = z
       checks: ["typecheck", "lint"],
       commands: {},
       audit: { enabled: false },
-      conflictDetection: { enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 },
       blockingThreshold: "error",
       // US-001 — scoped fix-review config, derived from the schema's own
       // defaults (SSOT) so it cannot drift from FixReviewConfigSchema.
       fixReview: FixReviewConfigSchema.parse({}),
 
       pluginMode: "observational",
-      parseRetryMaxAttempts: 3,
       // Derived from the schema's own defaults (SSOT, issue #1338 / #1666) so new
-      // SemanticReviewConfigSchema fields (e.g. acRegroundOnDrop) flow in
+      // SemanticReviewConfigSchema fields flow in
       // automatically instead of being hand-copied here — a hand-copied literal
       // silently stops matching the schema's OUTPUT type the moment a new
       // required (`.default()`-ed) field is added, since `.default()`'s value
@@ -361,7 +354,6 @@ export const NaxConfigSchema = z
         maxReplanAttempts: 3,
       },
     }),
-    prompts: PromptsConfigSchema.default({ behavioralGuardrails: "lite" }),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
     autoPr: z

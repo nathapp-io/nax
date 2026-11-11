@@ -61,7 +61,7 @@ Some blocks are restricted by layer:
 | `auth` | unset | Global-only credential source for the `native` agent (`source`: `file`/`exec`, `onChange`: `warn`/`refuse`). See [CLI reference](cli-reference.md) (`nax auth`) |
 | `advisor` | `enabled: false`, every caller off, `model: "powerful"`, `memory: "stateless"` | Advisor rules on judgment calls instead of stopping the run — [below](#advisor) |
 | `workflow` | `publish: "pr"`, `maxFixRounds: 5`, `maxBranchFixRounds: 2`, `finalGateRepairRounds: 1`, `preflight: true`, `interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 }` | Workflow-mode loop, fix rounds, step-limit continues, publish and CI wait — [below](#workflow) |
-| `quality` | `commands: {}`, `shell: "/bin/sh"`, `testing.hermetic: true` | Project lint/typecheck/test commands and gates |
+| `quality` | `commands: {}`, `shell: "/bin/sh"` | Project lint/typecheck/test commands and gates |
 | `tdd` | `strategy: "auto"` | Stored test strategy used by routing — [options](#tdd-strategy-options) |
 | `review` | `enabled: true`, `checks: ["typecheck", "lint"]`, `pluginMode: "observational"` | Review checks (`typecheck`, `lint`, `test`, `build`, `semantic`, `adversarial`) |
 | `plan` | `model: "balanced"`, `mode` unset (→ `single`), `timeoutSeconds: 600` | `nax plan` — `mode` is `single` or `refine`; the retired `debate`/`pipeline` modes are rejected at load |
@@ -69,7 +69,6 @@ Some blocks are restricted by layer:
 | `constitution` | `enabled: true`, `path: "constitution.md"`, `maxTokens: 2000` | Constitution injected into prompts |
 | `interaction` | `plugin: "cli"`, `defaults.timeout: 600000` | Interaction triggers/plugins — see [Triggers](triggers.md) |
 | `precheck` | `storySizeGate.enabled: true`, `action: "block"` | Pre-run checks and the story-size gate |
-| `prompts` | `behavioralGuardrails: "lite"` | Accepted, but nothing reads it: prompts always use the `lite` guardrails (#2832) |
 | `autoPr` | `enabled: false`, `draft: true` | Open a (draft) PR after a run |
 | `finish` | `enabled: false` | Autonomous finish — [below](#autonomous-finish-finish) |
 | `mcp` | `servers: {}` | MCP servers the native agent may call — [below](#mcp-servers) |
@@ -758,9 +757,7 @@ LLM-based adversarial code review that asks "Where does this break?" rather than
       "model": "balanced",
       "diffMode": "ref",
       "rules": [],
-      "timeoutMs": 600000,
-      "parallel": false,
-      "maxConcurrentSessions": 2
+      "timeoutMs": 600000
     }
   }
 }
@@ -773,8 +770,6 @@ LLM-based adversarial code review that asks "Where does this break?" rather than
 | `rules` | `[]` | Project-specific rules passed verbatim to the adversarial prompt |
 | `timeoutMs` | `600000` | Session timeout in milliseconds (600s matches semantic review timeout) |
 | `excludePatterns` | unset | Git pathspec patterns to exclude from the diff. Unset derives them from `testFilePatterns` + noise dirs (adversarial sees test files); any explicit value, including `[]`, is used as-is |
-| `parallel` | `false` | When `true`, semantic and adversarial reviews run concurrently instead of sequentially |
-| `maxConcurrentSessions` | `2` | Maximum concurrent LLM review sessions when `parallel: true`. Higher values use more LLM quota but complete faster. |
 
 The workflow story review does not read these keys; see [Semantic Review](semantic-review.md).
 
@@ -912,12 +907,13 @@ Keys that only configured pipeline mode (or were never read) are removed. A conf
 | Section | Removed keys |
 |:--------|:-------------|
 | `acceptance` | the whole section |
+| `curator` | the whole section (existing `~/.nax/global/curator` data may be deleted) |
 | `autoMode` | `enabled` |
 | `tdd` | `maxRetries`, `sessionTiers`, `verifierTimeoutSeconds`, `testWriterAllowedPaths`, `testWriterCommitHooks`, `rollbackOnFailure` |
-| `quality` | `commands.lintFix`, `commands.lintFixScoped`, `commands.formatFix`, `commands.formatFixScoped`, `typecheckOutput`, `autofix` |
-| `review` | `commands.lintFix`, `commands.lintFixScoped`, `commands.formatFix`, `commands.formatFixScoped` |
+| `quality` | `testing`, `commands.lintFix`, `commands.lintFixScoped`, `commands.formatFix`, `commands.formatFixScoped`, `typecheckOutput`, `autofix` |
+| `review` | `nonBlockingFix`, `adversarial.nonBlockingFix`, `parseRetryMaxAttempts`, `conflictDetection`, `semantic.demandInspectionTrail`, `semantic.acRegroundOnDrop`, `semantic.recurrenceDemotion`, `adversarial.demandInspectionTrail`, `adversarial.acRegroundOnDrop`, `adversarial.recurrenceDemotion`, `adversarial.parallel`, `adversarial.maxConcurrentSessions`, `commands.lintFix`, `commands.lintFixScoped`, `commands.formatFix`, `commands.formatFixScoped` |
 | `optimizer` | the whole section |
-| `prompts` | `overrides` |
+| `prompts` | `behavioralGuardrails`, `overrides` |
 | `plan` | `outputPath` |
 | `routing` | `llm.timeoutMs`, `agents.strategy` |
 | `hooks` | the whole section (lifecycle hooks load from `.nax/hooks.json`) |

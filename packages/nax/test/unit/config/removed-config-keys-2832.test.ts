@@ -136,7 +136,7 @@ describe("removed keys through project loader", () => {
     expect(warnings.filter((w) => w.includes("nonBlockingFix"))).toEqual([
       message("review.adversarial.nonBlockingFix", removed.PIPELINE_ONLY_KEY_HINT),
     ]);
-    expect(config.review?.nonBlockingFix).toBeUndefined();
+    expect(Object.hasOwn(config.review, "nonBlockingFix")).toBe(false);
   });
   test("AC-12: legacy path never emits a deprecation warning", async () => {
     const { warnings } = await load({ review: { adversarial: { nonBlockingFix: { enabled: true } } } });

@@ -21,7 +21,6 @@ describe("ignored rule stages", () => {
         budgetTokens: 8000,
       });
       expect(result.chunks.map((chunk) => chunk.content).join("\n")).toContain("Rule content.");
-      expect(result.scopingReport?.stageFilteredIds).toEqual([]);
     } finally {
       cleanupTempDir(root);
     }

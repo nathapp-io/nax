@@ -20,6 +20,7 @@ import {
 } from "@test/helpers";
 import { _runCleanupDeps, cleanupRun } from "@/execution";
 import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
+import { _runTmpWipeDeps } from "@/execution/lifecycle/run-tmp-wipe";
 import type { HookContext } from "@/hooks";
 import * as loggerModule from "@/logger";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "@/plugins/extensions";
@@ -60,7 +61,6 @@ function makePluginRegistry(actions: IPostRunAction[] = [], reporters: unknown[]
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
   return {
     runId: "run-001",
-    runtimeRunId: "run-001",
     startTime: Date.now() - 1000,
     totalCost: 0.05,
     storiesCompleted: 1,
@@ -86,6 +86,18 @@ function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunClea
 // ============================================================================
 
 describe("RunCleanupOptions", () => {
+  test("does not invoke the run temp wipe", async () => {
+    const original = { ..._runTmpWipeDeps };
+    const remove = mock(async (_path: string) => {});
+    _runTmpWipeDeps.exists = () => true;
+    _runTmpWipeDeps.remove = remove;
+    try {
+      await cleanupRun(makeCleanupOptions());
+      expect(remove).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(_runTmpWipeDeps, original);
+    }
+  });
   test("accepts feature, prdPath, branch, and version fields", () => {
     expect(makeCleanupOptions({ feature: "some-feature" }).feature).toBe("some-feature");
     expect(makeCleanupOptions({ prdPath: "/path/to/prd.json" }).prdPath).toBe("/path/to/prd.json");
@@ -607,7 +619,6 @@ describe("runner.ts — cleanupRun receives feature/prdPath/branch/version", () 
     // Build a full RunCleanupOptions — TypeScript will reject this if fields are missing
     const opts: RunCleanupOptions = {
       runId: "run-test",
-      runtimeRunId: "run-test",
       startTime: Date.now(),
       totalCost: 0,
       storiesCompleted: 0,

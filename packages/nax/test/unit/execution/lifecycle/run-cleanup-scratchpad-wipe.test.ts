@@ -26,7 +26,6 @@ import type { RunCleanupOptions } from "@/execution/lifecycle/run-cleanup";
 function makeCleanupOptions(overrides: Partial<RunCleanupOptions> = {}): RunCleanupOptions {
   return {
     runId: "run-us004",
-    runtimeRunId: "run-us004",
     startTime: Date.now() - 1000,
     totalCost: 0,
     storiesCompleted: 0,

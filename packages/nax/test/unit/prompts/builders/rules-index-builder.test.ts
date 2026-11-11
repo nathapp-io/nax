@@ -269,9 +269,7 @@ describe("toRulesIndexEntry", () => {
   // `stages:` is a pipeline-only key: workflow mode never applies it, so an
   // entry is listed whatever stages it names.
   test("a rule carrying stages frontmatter is still indexed", () => {
-    const entry = toRulesIndexEntry(
-      resolvedRule({ ruleId: "f", content: "# F\n", stages: ["execution", "not-a-stage"] }),
-    );
+    const entry = toRulesIndexEntry(resolvedRule({ ruleId: "f", content: "# F\n" }));
     expect(entry.ruleId).toBe("f");
     expect(entry.description).toBe("F");
   });

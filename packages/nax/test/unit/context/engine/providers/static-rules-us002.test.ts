@@ -94,7 +94,6 @@ function sectionOf(
     priority: rule.priority,
     paths: rule.paths,
     appliesTo: rule.appliesTo,
-    stages: rule.stages,
     ordinal: partial.ordinal ?? 0,
     heading: partial.heading,
     slug: partial.slug,
@@ -428,21 +427,18 @@ describe("StaticRulesProvider — real resolver output (nax#2060 decisive check)
         id: "test-writing",
         fileName: "test-writing.md",
         content: "Extension-shaped test rule.",
-        stages: ["tdd-test-writer"],
         appliesTo: ["**/*.test.ts"],
       },
       {
         id: "test-ratchets",
         fileName: "test-ratchets.md",
         content: "Directory-shaped test rule.",
-        stages: ["tdd-test-writer"],
         appliesTo: ["test/**/*.ts"],
       },
       {
         id: "unrelated-docs",
         fileName: "unrelated-docs.md",
         content: "Unrelated docs rule.",
-        stages: ["tdd-test-writer"],
         appliesTo: ["docs/**/*.md"],
       },
     ]);
@@ -483,7 +479,6 @@ describe("StaticRulesProvider — authoring-stage appliesTo scoping guard condit
       {
         fileName: "test-writing.md",
         content: "Test-authoring rule.",
-        stages: ["tdd-implementer"],
         appliesTo: ["test/**/*.test.ts"],
       },
     ]);
@@ -508,7 +503,6 @@ describe("StaticRulesProvider — authoring-stage appliesTo scoping guard condit
       {
         fileName: "test-writing.md",
         content: "Test-authoring rule.",
-        stages: ["tdd-test-writer"],
         appliesTo: ["test/**/*.test.ts"],
       },
     ]);

@@ -448,10 +448,6 @@ export const PrecheckConfigSchema = z.object({
   storySizeGate: StorySizeGateConfigSchema,
 });
 
-export const PromptsConfigSchema = z.object({
-  behavioralGuardrails: z.enum(["off", "lite", "strict"]).default("lite"),
-});
-
 export const ProjectProfileSchema = z.object({
   language: z.enum(["typescript", "javascript", "go", "rust", "python", "ruby", "java", "kotlin", "php"]).optional(),
   type: z.string().optional(),

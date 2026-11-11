@@ -24,7 +24,6 @@ function makeSection(overrides: Partial<RuleSection> & { slug: string; ordinal: 
     priority: overrides.priority ?? 1,
     paths: overrides.paths,
     appliesTo: overrides.appliesTo,
-    stages: overrides.stages,
     ordinal: overrides.ordinal,
     heading: overrides.heading,
     slug: overrides.slug,

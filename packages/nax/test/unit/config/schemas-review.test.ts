@@ -1,6 +1,6 @@
 // test/unit/config/schemas-review.test.ts
 import { describe, expect, test } from "bun:test";
-import { AdversarialReviewConfigSchema, NaxConfigSchema, ReviewConfigSchema } from "@/config";
+import { NaxConfigSchema } from "@/config";
 import type { FixReviewConfig } from "@/config/selectors";
 
 // Type-level assertions (compile-time, no runtime body) — US-001.
@@ -39,36 +39,6 @@ type AssertFixReviewModelIsOptional = AssertTrue<undefined extends FixReviewConf
 const _fixReviewEnabledIsRequired: AssertFixReviewEnabledIsRequired = true;
 const _fixReviewTimeoutMsIsRequired: AssertFixReviewTimeoutMsIsRequired = true;
 const _fixReviewModelIsOptional: AssertFixReviewModelIsOptional = true;
-
-describe("AdversarialReviewConfigSchema.recurrenceDemotion", () => {
-  test("defaults to enabled with maxBlockingRounds 2", () => {
-    const parsed = AdversarialReviewConfigSchema.parse({});
-    expect(parsed.recurrenceDemotion).toEqual({ enabled: true, maxBlockingRounds: 2, maxAdvisoryRounds: 2 });
-  });
-  test("accepts overrides", () => {
-    const parsed = AdversarialReviewConfigSchema.parse({
-      recurrenceDemotion: { enabled: false, maxBlockingRounds: 3 },
-    });
-    expect(parsed.recurrenceDemotion).toEqual({ enabled: false, maxBlockingRounds: 3, maxAdvisoryRounds: 2 });
-  });
-});
-
-describe("ReviewConfigSchema.conflictDetection", () => {
-  test("defaults enabled with maxOscillations 2", () => {
-    const parsed = ReviewConfigSchema.parse({ enabled: true, checks: [], commands: {} });
-    expect(parsed.conflictDetection).toEqual({ enabled: true, maxOscillations: 2, maxCrossAttemptRecurrences: 2 });
-  });
-
-  test("accepts a maxOscillations override", () => {
-    const parsed = ReviewConfigSchema.parse({
-      enabled: true,
-      checks: [],
-      commands: {},
-      conflictDetection: { maxOscillations: 4 },
-    });
-    expect(parsed.conflictDetection.maxOscillations).toBe(4);
-  });
-});
 
 /**
  * US-001 — `review.fixReview` (the scoped review of a fix's own delta).

@@ -32,7 +32,6 @@ import { clearWorkspaceCache } from "@/test-runners/detect";
 import { clearGitRootCache } from "@/verification";
 import { releaseFeatureLock } from "../feature-lock";
 import { releaseLock } from "../helpers";
-import { wipeRunTmp } from "./run-tmp-wipe";
 // Sibling import: the wipe is a local lifecycle module, and routing it through
 // the lifecycle barrel would point this module at its own barrel to reach the
 // file next door.
@@ -54,9 +53,6 @@ export const _runCleanupDeps = {
   // US-004 — end-of-run scratchpad wipe. Injected so the test can stub a
   // fail-open path without monkey-patching Bun.file / fs.rm.
   wipeScratchpad,
-  // US-004 — end-of-run run-temp wipe. Injected alongside wipeScratchpad so the
-  // test can observe the call; unlike the scratchpad it is not gated on success.
-  wipeRunTmp,
   // P4 — end-of-run sandbox reset. Injected alongside wipeScratchpad so the
   // test can observe the call without spawning real proxy/bridge processes.
   resetSandbox: resetSandboxBackend,
@@ -69,15 +65,6 @@ export const _runCleanupDeps = {
 
 export interface RunCleanupOptions {
   runId: string;
-  /**
-   * US-004 / #2300 — `NaxRuntime.runId`, the `crypto.randomUUID()` that
-   * `createRuntime` mints and the `AgentManager` forwards as
-   * `AgentRunOptions.runId`. It is NOT `runId`: that one is
-   * `buildRunId(workdir, …)`, which addresses status.json, the log file name and
-   * the feature lock. Only this id addresses the tree `runTmpRoot` created, so
-   * only this id may be handed to `wipeRunTmp`.
-   */
-  runtimeRunId: string;
   startTime: number;
   totalCost: number;
   storiesCompleted: number;
@@ -364,26 +351,6 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
     } catch (err) {
       logger?.warn("cleanup", "End-of-run scratchpad wipe failed — continuing", {
         workdir,
-        error: errorMessage(err),
-      });
-    }
-  }
-
-  // US-004 — end-of-run run-temp wipe. Deliberately NOT gated on
-  // `runCompleted`: a failed run's `/tmp` files are not kept for inspection,
-  // because no later run can find them to clear. A dry run is a preview, not a
-  // mutation, so it is skipped outright. Fail-open: a rejected wipe is logged
-  // at warn and the run's verdict is unaffected — this is the finally block.
-  if (!options.dryRun) {
-    try {
-      // #2300 — `runtimeRunId`, NEVER `runId`. The session temp dirs were
-      // created under `runTmpRoot(runtime.runId)`; `rm(..., { force: true })` on
-      // the path `runId` resolves to never raised, so every run's temp tree
-      // survived the wipe that was meant to remove it.
-      await _runCleanupDeps.wipeRunTmp(options.runtimeRunId);
-    } catch (err) {
-      logger?.warn("cleanup", "End-of-run run-temp wipe failed — continuing", {
-        runtimeRunId: options.runtimeRunId,
         error: errorMessage(err),
       });
     }

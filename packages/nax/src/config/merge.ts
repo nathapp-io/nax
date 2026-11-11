@@ -170,11 +170,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...root.quality.commands,
         ...packageOverride.quality?.commands,
       },
-      // ENH-010: deep-merge testing config so per-package overrides work
-      testing:
-        packageOverride.quality?.testing !== undefined
-          ? { ...root.quality.testing, ...packageOverride.quality.testing }
-          : root.quality.testing,
       lintOutput:
         packageOverride.quality?.lintOutput !== undefined
           ? { ...root.quality.lintOutput, ...packageOverride.quality.lintOutput }

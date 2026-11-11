@@ -61,17 +61,14 @@ export interface ProviderBudgetPressure {
 
 /**
  * A provider's rule-scoping report — records which canonical rules were
- * dropped by the stage/appliesTo filters and whether an appliesTo
+ * dropped by appliesTo scoping and whether an appliesTo
  * declaration had no effect (US — rule-scoping).
  *
- * Emitted on `ContextProviderResult.scopingReport`. Both filters are
- * fail-open: a rule with no `stages:` applies to every stage, and
- * `appliesTo:` still loads when the scope set is empty (reported via
+ * Emitted on `ContextProviderResult.scopingReport`. `appliesTo:` still
+ * loads when the scope set is empty (reported via
  * `appliesToInertCount`, not enforced).
  */
 export interface ProviderScopingReport {
-  /** Stable ids of rules dropped because request.stage was not in their `stages:` list. */
-  stageFilteredIds: string[];
   /** Stable ids of rules dropped because no scope file matched their `appliesTo:` globs. */
   appliesToFilteredIds: string[];
   /**
@@ -81,7 +78,7 @@ export interface ProviderScopingReport {
   appliesToInertCount: number;
   /** Size of the scope set the filters ran against. The list itself is not persisted. */
   scopeFileCount: number;
-  /** Number of rule sections remaining after stage + appliesTo filtering (US-004). */
+  /** Number of rule sections remaining after appliesTo filtering (US-004). */
   sectionCount: number;
 }
 

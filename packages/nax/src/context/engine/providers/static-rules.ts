@@ -226,7 +226,6 @@ export class StaticRulesProvider implements IContextProvider {
           chunks: [],
           pullTools: [],
           scopingReport: {
-            stageFilteredIds: [],
             appliesToFilteredIds: [],
             appliesToInertCount: 0,
             scopeFileCount: request.scopeFiles?.length ?? 0,
@@ -236,7 +235,6 @@ export class StaticRulesProvider implements IContextProvider {
       }
 
       if (mergedRules.length > 0) {
-        const stageFilteredIds: string[] = [];
         const appliesToFilteredIds: string[] = [];
         let appliesToInertCount = 0;
         const scopeIsEmpty = !request.scopeFiles || request.scopeFiles.length === 0;
@@ -251,7 +249,6 @@ export class StaticRulesProvider implements IContextProvider {
         });
 
         const scopingReport: ProviderScopingReport = {
-          stageFilteredIds,
           appliesToFilteredIds,
           appliesToInertCount,
           scopeFileCount: request.scopeFiles?.length ?? 0,
@@ -333,7 +330,6 @@ export class StaticRulesProvider implements IContextProvider {
           if (allSections.length === 0) {
             logger.warn("static-rules", "Every canonical rule was filtered out by appliesTo scoping", {
               storyId: request.storyId,
-              stageFilteredCount: stageFilteredIds.length,
               appliesToFilteredCount: appliesToFilteredIds.length,
               stage: request.stage,
               scopeFileCount: request.scopeFiles?.length ?? 0,

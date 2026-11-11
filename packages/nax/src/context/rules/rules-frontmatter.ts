@@ -42,7 +42,6 @@ export interface CanonicalRule {
   priority?: number;
   paths?: string[];
   appliesTo?: string[];
-  stages?: string[];
   description?: string;
   warnings?: string[];
 }
@@ -52,7 +51,6 @@ export interface ParsedFrontmatter {
   priority: number;
   paths?: string[];
   appliesTo?: string[];
-  stages?: string[];
   description?: string;
   warnings: string[];
 }
@@ -188,23 +186,21 @@ function extractAppliesTo(doc: Record<string, unknown>, filePath: string): strin
 }
 
 /** AC1-AC9: stages parsing with type validation and advisory warnings */
-function extractStages(doc: Record<string, unknown>, filePath: string, warnings: string[]): string[] | undefined {
+function extractStages(doc: Record<string, unknown>, filePath: string, warnings: string[]): void {
   const stagesRaw = doc.stages;
-  if (stagesRaw === undefined) return undefined;
+  if (stagesRaw === undefined) return;
   // AC4: throws when stages is not an array of strings
   if (!Array.isArray(stagesRaw)) {
     throw new RulesFrontmatterError("frontmatter.stages must be a list of strings", filePath);
   }
-  // AC3: empty list → undefined (falls through to the no-op below)
-  if (stagesRaw.length === 0) return undefined;
+  // An empty list needs no warning.
+  if (stagesRaw.length === 0) return;
   for (const v of stagesRaw) {
     if (typeof v !== "string" || !v.trim()) {
       throw new RulesFrontmatterError("frontmatter.stages must be a list containing only strings", filePath);
     }
   }
-  const stages = stagesRaw.map((v) => v.trim());
   warnings.push('Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.');
-  return stages;
 }
 
 function extractDescription(doc: Record<string, unknown>, filePath: string): string | undefined {
@@ -266,7 +262,7 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
   const priority = extractPriority(doc, filePath);
   const paths = extractPaths(doc, filePath);
   const appliesTo = extractAppliesTo(doc, filePath);
-  const stages = extractStages(doc, filePath, warnings);
+  extractStages(doc, filePath, warnings);
   const description = extractDescription(doc, filePath);
 
   return {
@@ -274,7 +270,6 @@ export function parseFrontmatter(raw: string, filePath: string): ParsedFrontmatt
     priority,
     ...(paths && { paths }),
     ...(appliesTo && { appliesTo }),
-    ...(stages && { stages }),
     ...(description && { description }),
     warnings,
   };

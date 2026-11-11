@@ -289,7 +289,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "precheck.storySizeGate.maxReplanAttempts": "Max replan attempts before escalating (default: 3)",
 
   // Prompts
-  prompts: "Prompt settings (behavioralGuardrails is accepted but not read; #2832)",
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",
@@ -352,11 +351,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Consecutive repeats of the same call whose result is unchanged before the turn ends (default: 12, 0 disables) — closes the laundering hole where one interleaving call lets a loop reset (nax#2047, nax#2120)",
   "agent.spinBreaker.stopAfterNoProgressSeconds":
     "Seconds with no new call key after which a repeat run ends the turn so a slow spin stops as fail-spin before the tool-call-only idle watchdog cancels it as fail-stale (default: half agent.idleWatchdog.toolCallOnlyIdleTimeoutSeconds, 900 when that watchdog is off; 0 disables) (nax#2017)",
-  // quality.testing (ENH-010) — per-package overridable
-  "quality.testing": "Hermetic test settings — accepted but not read since pipeline mode was removed (#2832)",
-  "quality.testing.hermetic": "Hermetic test requirement for prompts — currently not read (#2832) (default: true)",
-  "quality.testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'gh', 'redis'])",
-  "quality.testing.mockGuidance": "Project-specific mocking guidance — currently not read (#2832)",
 
   // MCP
   mcp: "External MCP servers the native agent may call tools on (client only; nax is not an MCP server)",

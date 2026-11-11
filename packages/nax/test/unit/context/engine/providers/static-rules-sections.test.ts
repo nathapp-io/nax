@@ -86,7 +86,6 @@ function sectionOf(
     priority: rule.priority,
     paths: rule.paths,
     appliesTo: rule.appliesTo,
-    stages: rule.stages,
     ordinal: partial.ordinal ?? 0,
     heading: partial.heading,
     slug: partial.slug,
@@ -392,7 +391,7 @@ describe("StaticRulesProvider — US-004 AC9: scopingReport.sectionCount", () =>
     // Both rules reach sectioning regardless of stages.
     setupCanonical([
       { fileName: "kept.md", id: "kept", content: "## A\nbody" },
-      { fileName: "filtered.md", id: "filtered", content: "## B\nbody", stages: ["other"] },
+      { fileName: "filtered.md", id: "filtered", content: "## B\nbody" },
     ]);
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
@@ -425,7 +424,7 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stages do not filter rule se
   test("AC10: returns a chunk originating from a rule whose stages list excludes request.stage", async () => {
     setupCanonical([
       { fileName: "kept.md", id: "kept", content: "## A\nbody" },
-      { fileName: "filtered.md", id: "filtered", content: "## B\nbody", stages: ["other-stage"] },
+      { fileName: "filtered.md", id: "filtered", content: "## B\nbody" },
     ]);
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;
@@ -451,7 +450,7 @@ describe("StaticRulesProvider — US-004 AC10/AC11: stages do not filter rule se
   test("AC11: when request.stage excludes a rule, applySectionBudget receives a section from that rule", async () => {
     setupCanonical([
       { fileName: "kept.md", id: "kept", content: "## A\nbody" },
-      { fileName: "filtered.md", id: "filtered", content: "## B\nbody", stages: ["other-stage"] },
+      { fileName: "filtered.md", id: "filtered", content: "## B\nbody" },
     ]);
     const keptRule = { fileName: "kept.md", id: "kept" } as CanonicalRule;
     const filteredRule = { fileName: "filtered.md", id: "filtered" } as CanonicalRule;

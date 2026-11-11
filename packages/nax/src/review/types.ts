@@ -102,25 +102,6 @@ export interface SemanticReviewConfig {
    * Optional — undefined means "derive from testFilePatterns + well-known noise dirs". (ADR-009 §4.4)
    */
   excludePatterns?: string[];
-  /**
-   * When true (default), after the first semantic pass, if all blocking findings
-   * were dropped by AC-grounding while no blocking findings remain, issue one
-   * reprompt asking the reviewer to re-ground their findings against the AC text.
-   *
-   * Read by nobody today: the semantic review operation and the AC-grounding
-   * filter were deleted with C1 wave B2b-2 (US-001/US-003 of
-   * pipeline-review-delete). The key survives here because the config surface
-   * is reconciled in a later wave.
-   */
-  acRegroundOnDrop?: boolean;
-  /**
-   * When true (default), a ref-mode empty-findings `passed:true` verdict with no
-   * declared `inspectedFiles` triggers one same-session re-prompt demanding the
-   * reviewer actually open the code before passing (#3A inspection-trail guard).
-   */
-  demandInspectionTrail?: boolean;
-  /** Opt-in for semantic (default disabled) — see schemas-review.ts. */
-  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number; maxAdvisoryRounds: number };
 }
 
 /** Review check result */
@@ -234,13 +215,6 @@ export interface AdversarialReviewConfig {
    * Optional — undefined means "derive from testFilePatterns + noise dirs". (ADR-009 §4.4)
    */
   excludePatterns?: string[];
-  /**
-   * When true, both review phases run concurrently when scheduled together and
-   * `maxConcurrentSessions` is 2 or more; otherwise they run sequentially. Default false.
-   */
-  parallel: boolean;
-  /** Minimum available reviewer sessions required for concurrent semantic/adversarial review. Default 2. */
-  maxConcurrentSessions: number;
   /** Controls bounded same-session recovery when verifiedBy.observed does not match disk. */
   substantiation?: {
     /** When true, ask the same reviewer session for one verbatim requote before downgrade. */
@@ -248,27 +222,6 @@ export interface AdversarialReviewConfig {
     /** Maximum number of requote turns per adversarial review. */
     maxRequotes: number;
   };
-  /**
-   * When true (default), after the first adversarial pass, if all blocking findings
-   * were dropped by AC-grounding while no blocking findings remain, issue one reprompt
-   * asking the reviewer to re-ground their findings against the AC text.
-   */
-  acRegroundOnDrop?: boolean;
-  /**
-   * Phase 0 recurrence-demotion. Non-test-gap error findings demote to advisory
-   * after recurring beyond `maxBlockingRounds` rounds; entry guard suppresses
-   * flip-flops. Default `{ enabled: true, maxBlockingRounds: 2, maxAdvisoryRounds: 2 }`.
-   */
-  recurrenceDemotion?: { enabled: boolean; maxBlockingRounds: number; maxAdvisoryRounds: number };
-  /**
-   * When true (default), a ref-mode empty-findings `passed:true` verdict with no
-   * declared `inspectedFiles` triggers one same-session re-prompt demanding the
-   * reviewer actually open the code before passing (#3A inspection-trail guard).
-   */
-  demandInspectionTrail?: boolean;
-  // nonBlockingFix moved to ReviewConfig.nonBlockingFix (US-001) — the seeded
-  // `sources` list may include both reviewers, so the block belongs at the
-  // review level rather than under `adversarial`.
 }
 
 /** Review configuration */
@@ -302,21 +255,10 @@ export interface ReviewConfig {
    * "gating": any failing plugin reviewer marks the run failed (RunResult.success = false).
    */
   pluginMode: "observational" | "gating";
-  /**
-   * Total call attempts (initial call + corrective re-prompts) the semantic/adversarial
-   * parse-retry strategy gets before exhausting to its fallback. Default 3.
-   */
-  parseRetryMaxAttempts: number;
   /** Semantic review configuration (when 'semantic' is in checks) */
   semantic?: SemanticReviewConfig;
   /** Adversarial review configuration (when 'adversarial' is in checks) */
   adversarial?: AdversarialReviewConfig;
-  /**
-   * US-001 — non-blocking best-effort auto-fix (ADR-024). Lives at the review
-   * level rather than under `adversarial` because the seeded `sources` list
-   * may include both reviewers; the rest of the knobs govern the one fix pass.
-   */
-  nonBlockingFix?: import("../config/selectors").NonBlockingFixConfig;
   /**
    * US-001 (fix-review) — scoped review of a fix's own delta. Required: the
    * schema declares it with `.default({})`, so every parsed config carries the
@@ -325,8 +267,6 @@ export interface ReviewConfig {
    * nothing reads this today; the config surface is reconciled in a later wave.
    */
   fixReview: import("../config/selectors").FixReviewConfig;
-  /** Parsed oscillation + cross-attempt review-recurrence circuit-breaker configuration. */
-  conflictDetection: { enabled: boolean; maxOscillations: number; maxCrossAttemptRecurrences: number };
 }
 
 /**

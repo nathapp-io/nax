@@ -29,7 +29,6 @@ export type {
   PluginConfigEntry,
   PrecheckConfig,
   ProjectProfile,
-  PromptsConfig,
   QualityConfig,
   RectificationConfig,
   RegressionGateConfig,
@@ -39,7 +38,6 @@ export type {
   StorySizeGateConfig,
   TddConfig,
   TestCoverageConfig,
-  TestingConfig,
 } from "./runtime-types";
 export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig } from "./runtime-types-auto-route";
 export type { BotConfig, BotModelsConfig } from "./runtime-types-bot";
