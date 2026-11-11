@@ -3,7 +3,7 @@
   "feature": "run-tmp-and-dead-config",
   "branchName": "feat/run-tmp-and-dead-config",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T12:37:26.538Z",
+  "updatedAt": "2026-11-11T12:50:44.432Z",
   "userStories": [
     {
       "id": "US-001",
@@ -306,14 +306,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Wide but mechanical deletion with no new abstractions; typecheck and lint catch dangling references, and the four runtime ACs are pinned by one new small test."
+        "reasoning": "Wide but mechanical deletion with no new abstractions; typecheck and lint catch dangling references, and the four runtime ACs are pinned by one new small test.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/plugins/loader.ts",
@@ -474,7 +477,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6991aa090bf7d67c3e235b3d8e243f34e40e3c29"
     },
     {
       "id": "US-006",
