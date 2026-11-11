@@ -8,6 +8,21 @@ import { ConfiguredModelSchema } from "./schemas-model";
 
 export const ExecutionModeSchema = z.enum(["pipeline", "workflow"]);
 
+/**
+ * US-002 (nax#2858): the branch review's slice size and its own coverage retry budget. Split out so
+ * `WORKFLOW_REVIEW_DEFAULTS` is the parsed form of exactly this object, and a consumer holding a
+ * hand-built `workflow` block (which omits `review`) reads the same numbers.
+ */
+const WorkflowReviewConfigSchema = z
+  .object({
+    sliceFiles: z.number().int().min(1).default(15),
+    coverageRetries: z.number().int().min(0).default(3),
+  })
+  .prefault({});
+
+/** The parsed defaults of `workflow.review`; read as `workflow.review ?? WORKFLOW_REVIEW_DEFAULTS`. */
+export const WORKFLOW_REVIEW_DEFAULTS: NonNullable<WorkflowConfig["review"]> = WorkflowReviewConfigSchema.parse({});
+
 export const WorkflowConfigObjectSchema = z.object({
   models: z
     .object({
@@ -22,6 +37,7 @@ export const WorkflowConfigObjectSchema = z.object({
   ciRepairRounds: z.number().int().min(0).default(1),
   preflight: z.boolean().default(true),
   publish: z.enum(["pr", "push", "none"]).default("pr"),
+  review: WorkflowReviewConfigSchema,
   // US-003: an implementer turn that hits its step limit gets a continue turn on the same warm
   // session, at `budgetMultiplier` of the limit it hit. `maxAttempts: 0` turns the continue off.
   interruptRetry: z

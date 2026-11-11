@@ -165,6 +165,7 @@ export {
   ExecutionModeSchema,
   resolveWorkflowConfig,
   WORKFLOW_DEFAULTS,
+  WORKFLOW_REVIEW_DEFAULTS,
   WorkflowConfigObjectSchema,
 } from "./schemas-workflow";
 export type { ConfigSecretFinding, ConfigSecretKind, ConfigSecretScan } from "./secret-scan";

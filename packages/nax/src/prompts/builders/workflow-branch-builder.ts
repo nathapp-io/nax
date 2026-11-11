@@ -161,18 +161,25 @@ ${REVIEW_JSON}`;
  * command to read each one, and the instruction to list everything it has read in this session —
  * the first reply's `inspectedFiles` named only the files it opened after the retry prompt, so the
  * whole list has to be sent again, not just the additions.
+ *
+ * US-002 (nax#2858): `progress` names which coverage retry this is. Coverage has a budget of its own
+ * now, so the reviewer is told how many asks it has and that leaving a file out keeps the PR a draft.
  */
 export function buildWorkflowBranchCoverageRetry(
   range: string,
   missing: readonly string[],
   staticMode = false,
+  progress?: { attempt: number; max: number },
 ): string {
   const read = staticMode
     ? "Read each of these with Read (commands are unavailable)"
     : `Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it)`;
+  const budget = progress
+    ? `\nThis is coverage retry ${progress.attempt} of ${progress.max}. Read all of them before you reply; a file you leave out stays unread and keeps the PR a draft.\n`
+    : "";
   return `Your reply parsed, but its inspectedFiles does not cover every changed file. ${read}, and review it:
 ${missing.map((path) => `- ${path}`).join("\n")}
-
+${budget}
 List in inspectedFiles every file you have read or diffed in this session, not only the new ones.
 Re-send the whole JSON object: the same findings, plus anything the files above turned up.`;
 }

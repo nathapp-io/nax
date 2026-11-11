@@ -158,9 +158,14 @@ describe("workflowBranchReviewOp coverage retry (US-003)", () => {
     expect(decision.nextPrompt).toBe(buildWorkflowReviewJsonRetry());
   });
 
-  test("the one retry spent, an incomplete verdict is kept with its findings (AC-11)", () => {
+  test("a coverage retry that covered no more files keeps the incomplete verdict with its findings (AC-11)", () => {
+    const strategy = strategyFor(retryInput);
+    // US-002: at attempt 0 the incomplete verdict is asked again, on the coverage budget of its own.
+    expect(strategy.shouldRetry(new ParseValidationError("bad"), 0, retryCtx(verdictJson([])))).toMatchObject({
+      retry: true,
+    });
     const lastOutput = verdictJson([], [IMPORTANT_FINDING]);
-    const decision = strategyFor(retryInput).shouldRetry(new ParseValidationError("bad"), 1, retryCtx(lastOutput));
+    const decision = strategy.shouldRetry(new ParseValidationError("bad"), 1, retryCtx(lastOutput));
 
     expect(decision.retry).toBe(false);
     expect(decision).toEqual({ retry: false, fallback: parseBranchReviewReply(lastOutput, []) });
