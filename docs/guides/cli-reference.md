@@ -287,6 +287,15 @@ Without `--json` an error goes to stderr instead. Exit `1` means nax could not a
 Print the verdict of the feature's newest readable run: the outcome, the PR url, and every item the
 run still leaves open, with the evidence in full.
 
+For a draft record, or a ready record with open items, a valid PR URL enables a read-only live
+check. Matching indexed PR rulings settle items by their full identity (id, kind and issue), and
+accepted replies after a ruling reopen them. Confirmed advisor items stay open until answered by a
+fix. The report's `source` is `live`; its outcome follows the PR's draft state. CI, reasons and
+supplementary items remain the publish-time snapshot. If the forge is unavailable or the PR has no
+item index, `source` stays `run-record` and `liveError` explains the fallback (also printed in plain
+output). Ready records without open items skip the live check. Status never rewrites the run or
+rulings sidecar.
+
 ```bash
 nax workflow status -f auth
 nax workflow status -f auth --json

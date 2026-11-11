@@ -4,7 +4,7 @@ Closes: #2751, #2752
 
 ## Summary
 
-On a workflow PR, a collaborator reply of `confirm` on an advisor item (`w-*` thread, item kind `advisor`) now means "agreed, the named change is required". The ruling is recorded, but the item is not closed: it stays open work until a `nax bot fix` push answers it. `nax bot review` hands it to `nax bot fix` as an agreed item, `nax bot fix` fixes it, replies `Fixed in <sha>` and resolves the thread, and only then does readiness let the PR be marked ready. A PR with a confirmed advisor item that no fix has answered is held, with a reason that names the item. Separately, `nax workflow status` reads the live PR when the run record is a draft that names a PR: items whose threads carry a ruling are no longer listed as open, and `outcome` is `ready` once the PR is no longer a draft. When the PR cannot be read, the command reports the run record exactly as it does today and says so.
+On a workflow PR, a collaborator reply of `confirm` on an advisor item (`w-*` thread, item kind `advisor`) now means "agreed, the named change is required". The ruling is recorded, but the item is not closed: it stays open work until a `nax bot fix` push answers it. `nax bot review` hands it to `nax bot fix` as an agreed item, `nax bot fix` fixes it, replies `Fixed in <sha>` and resolves the thread, and only then does readiness let the PR be marked ready. A PR with a confirmed advisor item that no fix has answered is held, with a reason that names the item. Separately, `nax workflow status` reads the live PR when the run record names a PR and is draft or is ready with open items: items whose threads carry a ruling are no longer listed as open, and `outcome` is `ready` once the PR is no longer a draft. When the PR cannot be read, the command reports the run record exactly as it does today and says so.
 
 ## Motivation
 
@@ -76,7 +76,7 @@ export function readLiveStatus(input: {
 }): Promise<LiveStatus>;
 ```
 
-An item is matched to its thread by `ItemThread.itemId` (the id parsed from the thread opener) for threads in the PR's `w-index`; no `itemKey` hash comparison is done, so a run-record item whose `kind` or `issue` differs from the published opener still matches by id. The `items` input limits the returned ids to those present in the run record. A PR with no `w-index` comment returns `{ source: "run-record", error: "no nax item index on this PR" }`. It never throws and never writes to the forge. `canRule` in `promote-rulings.ts` is exported so both readers share one writer check.
+An item is matched to an indexed thread by `itemKey(localItem) === ItemThread.key`, including the id and kind/issue hash. A run-record item whose kind or issue differs from the published opener does not settle from that thread. The `items` input limits the returned ids to those present in the run record. A PR with no `w-index` comment returns `{ source: "run-record", error: "no nax item index on this PR" }`. It never throws and never writes to the forge. `canRule` in `promote-rulings.ts` is exported so both readers share one writer check.
 
 ### Failure Handling
 
@@ -108,9 +108,9 @@ An item is matched to its thread by `ItemThread.itemId` (the id parsed from the 
 
 **US-005: `nax bot fix` answers a confirmed advisor item after its fix push.** Depends on US-004. Workdir: `packages/nax`. In `resolveOwnFindings` (`bot/fix-report.ts`) stop skipping an agreed `w-` key whose thread opener parses as an `advisor` item, so the bot posts the `Fixed in <sha>` reply with marker `fix-<key>` and resolves the thread; for these advisor items only, skip the reply when an own `fix-<key>` comment already follows the thread's latest own `wr-` echo.
 
-**US-006: A read-only reader returns the live ruling state of a draft workflow PR.** Depends on US-001. Workdir: `packages/nax`. Add `workflow/live-status.ts` with `readLiveStatus`, export `canRule` from `workflow/promote-rulings.ts`, and reuse `readPrState`, `readItemThreads` and `settleItemThreads`.
+**US-006: A read-only reader returns the live ruling state of a workflow PR.** Depends on US-001. Workdir: `packages/nax`. Add `workflow/live-status.ts` with `readLiveStatus`, export `canRule` from `workflow/promote-rulings.ts`, and reuse `readPrState`, `readItemThreads` and `settleItemThreads`.
 
-**US-007: `nax workflow status` reports the live PR when the run is a draft.** Depends on US-006. Workdir: `packages/nax`. In `buildReport` (`cli/workflow.ts`) call `readLiveStatus` when the run record's `outcome` is `draft` and its `url` names a PR number (`prNumberFromUrl`), then overlay `outcome` and `openItems`, and add `source`, `liveError` and `settledItems` to the report.
+**US-007: `nax workflow status` reports the live PR when the run is draft or ready with open items.** Depends on US-006. Workdir: `packages/nax`. In `buildReport` (`cli/workflow.ts`) call `readLiveStatus` when the run record's `outcome` is `draft`, or is `ready` with nonempty snapshot `openItems`, and its `url` names a PR number (`prNumberFromUrl`), then overlay `outcome` and `openItems`, and add `source`, `liveError` and `settledItems` to the report.
 
 ### Context Files
 
@@ -281,10 +281,14 @@ None. Every new field is optional and appears only when it has a value (`fixClos
 - [unit] With the PR still a draft and every item ruled, `outcome` stays `draft` and the exit code is 2.
 - [unit] A confirmed advisor item with no `fix-` comment stays in `openItems`, and a non-draft PR with such an item reports `outcome` `ready` with `D-1` still open and exit code 2.
 - [unit] When the live read fails, the report equals the run-record report, has `source` `run-record` and a `liveError` equal to the failure message, and the exit code is the run-record exit code.
-- [unit] With a run record whose `outcome` is `ready`, a draft record with no `url`, or a draft record whose `url` carries no PR number (for example `https://gh/pr/7`), the fake forge's `run` is never called, `source` is `run-record`, there is no `liveError`, and the plain output has no `(run record only:` line.
+- [unit] With a run record whose `outcome` is `ready` with no open items, a draft record with no `url`, or a draft record whose `url` carries no PR number (for example `https://gh/pr/7`), the fake forge's `run` is never called, `source` is `run-record`, there is no `liveError`, and the plain output has no `(run record only:` line.
 - [unit] `supplementaryItems` in the report equal the run record's supplementary items on a live read.
 - [unit] `workflowPassed`, `reasons`, `ci` and `step` in the report are the run record's values after the overlay.
 - [unit] With a non-draft PR and a run record that lists `_run:ci` as an open item, the report's `openItems` has no `_run:ci`; with a draft PR it stays listed.
 - [unit] `--json` output contains `source`, and contains `liveError` only on a failed live read.
 - [unit] Plain output after a failed live read prints a line `(run record only: <error>)` after the first line, and prints no such line on a live read.
 - [unit] Running `workflowStatusCommand` twice over the same fakes prints the same report and calls no forge command that writes.
+
+### #2871: Ready run reconciliation
+
+Publish-time `result.json` and sidecar data remain immutable snapshots. A ready record with open items receives the same read-only live overlay as a draft record. Settlement matches the complete durable `itemKey` (id plus kind/issue hash); a reused positional id with a different issue stays open. Recorded verified rulings settle matching items, accepted replies after a ruling reopen them, and confirmed advisor items remain open until a fix answers them. Missing indexes and offline forge reads preserve the snapshot and diagnostic. Ready records with no open items skip forge reads. This changes status reporting only; publish readiness policy is unchanged.

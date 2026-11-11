@@ -179,10 +179,10 @@ describe("readLiveStatus", () => {
   test("AC-7: ignores unindexed thread", async () => {
     expect((await read({ index: "empty" })).result).toEqual(live());
   });
-  test("AC-8: matches by id despite kind and issue drift", async () => {
+  test("AC-8: keeps items open when kind or issue drifts", async () => {
     const changed: OpenItem = { ...item, kind: "finding", issue: "different" };
     expect(itemKey(changed)).not.toBe(itemKey(item));
-    expect((await read({}, [changed])).result).toEqual(live([{ id: "D-1", disposition: "fixed" }]));
+    expect((await read({}, [changed])).result).toEqual(live());
   });
   test("AC-9: missing index falls back", async () => {
     expect((await read({ index: "missing" })).result).toEqual({
@@ -237,9 +237,9 @@ describe("readLiveStatus", () => {
       live([{ id: "D-1", disposition: "fixed" }]),
     );
   });
-  test("partitions by thread kind despite run-record drift", async () => {
+  test("does not mark a different-kind item as awaiting a fix", async () => {
     expect((await read({ echo: "confirmed", isDraft: true }, [{ ...item, kind: "finding" }])).result).toEqual({
-      ...live([], ["D-1"]),
+      ...live(),
       isDraft: true,
     });
   });

@@ -10,6 +10,7 @@ import {
   resolvePrRef,
 } from "@/forge";
 import { readItemThreads, type SettledItems, settleItemThreads } from "./item-thread-state";
+import { itemKey } from "./item-threads";
 import { readPrState } from "./pr-state";
 import { canRule } from "./promote-rulings";
 import type { OpenItem } from "./types";
@@ -26,11 +27,11 @@ export type LiveStatus =
   | { readonly source: "run-record"; readonly error: string };
 
 function partition(items: readonly OpenItem[], state: SettledItems) {
-  const ids = new Set(items.map((item) => item.id));
+  const keys = new Set(items.map(itemKey));
   const settled: { id: string; disposition: string }[] = [];
   const awaitingFix: string[] = [];
   for (const item of state.settled) {
-    if (!ids.has(item.itemId)) continue;
+    if (!keys.has(item.key)) continue;
     if (item.kind === "advisor" && item.ruling.disposition === "confirmed" && !item.fixClosed) {
       awaitingFix.push(item.itemId);
     } else {
