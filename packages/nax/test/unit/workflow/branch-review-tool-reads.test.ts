@@ -145,7 +145,8 @@ describe("runBranchReview — tool-observed reads", () => {
 
   test("with no runId the audit is never read (AC-3)", async () => {
     const ctx = context({ runId: undefined });
-    const scanned = stubAudit(ledger(context(), [readCall("src/b.ts")]));
+    // The ledger sits in the canonical dir a read would scan, so a missing guard credits src/b.ts.
+    const scanned = stubAudit(ledger(ctx, [readCall("src/b.ts")]));
 
     const result = await review(ctx, ["src/a.ts"]);
 
@@ -155,7 +156,9 @@ describe("runBranchReview — tool-observed reads", () => {
 
   test("with no outputDir the audit is never read (AC-4)", async () => {
     const ctx = context({ outputDir: undefined });
-    const scanned = stubAudit(ledger(context(), [readCall("src/b.ts")]));
+    // `auditDirOf` resolves the same repo-local fallback `toolAuditDir` gives a run with no output
+    // dir, so this ledger is exactly the one an unguarded read would find.
+    const scanned = stubAudit(ledger(ctx, [readCall("src/b.ts")]));
 
     const result = await review(ctx, ["src/a.ts"]);
 
