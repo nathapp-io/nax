@@ -2,13 +2,22 @@ import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { ForgeDeps, OwnComment, PrComment, PrInfo, PrRef, PrThread } from "@/forge";
-import { editComment, postInlineComment, postPrComment, replyToThread, unresolveThread } from "@/forge";
+import {
+  editComment,
+  hasNaxWorkflowMarker,
+  postInlineComment,
+  postPrComment,
+  replyToThread,
+  unresolveThread,
+  withNaxBotMarker,
+} from "@/forge";
 import { getLogger } from "@/logger";
 import type { PrReviewVerdict, PrTriageDecision } from "@/operations/bot-types";
 import type { WorkflowFindingDraft, WorkflowSeverity } from "@/operations/workflow-types";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import type { CallerRulingsReport } from "./caller-rulings";
 import type { BotChecks } from "./checks";
+import { COVERAGE_RECORD_KEY, renderCoverageRecord } from "./coverage-record";
 import { earlierCounts, earlierIssue, effectiveEarlier, postEarlier, withdrawalEvents } from "./post-earlier";
 import { commentKey, findingKey, threadKey } from "./render";
 import { renderFindingComment, renderReviewSummary, renderThreadReply } from "./render-comments";
@@ -338,6 +347,40 @@ async function postSummary(
   else await postPrComment(input.ref, body, input.deps, input.cwd);
 }
 
+/**
+ * Only a real code review of a workflow PR has coverage to record: a static (untrusted) review reads
+ * nothing by design, and a conversation-only review owes no file a look.
+ */
+function recordsCoverage(input: PostReviewInput): boolean {
+  if (input.staticMode || input.scope === "conversation-only") return false;
+  return hasNaxWorkflowMarker(input.info.body);
+}
+
+/**
+ * The record a later readiness check reads back (US-013/US-014): the head this review looked at and the
+ * required files it did not read. The summary lists the same files, so the two can never disagree.
+ *
+ * Best-effort: the record is a claim *about* the review. A forge that refuses the write must not turn a
+ * completed review into a failed one, so the failure is logged and the outcome left alone.
+ */
+async function postCoverageRecord(input: PostReviewInput): Promise<void> {
+  if (!recordsCoverage(input)) return;
+  try {
+    const body = withNaxBotMarker(
+      renderCoverageRecord({ headSha: input.info.headSha, uncovered: input.unreadFiles ?? [] }),
+      COVERAGE_RECORD_KEY,
+    );
+    const own = input.own.find(({ key }) => key === COVERAGE_RECORD_KEY);
+    if (own) await editComment(input.ref, own.comment, body, input.deps, input.cwd);
+    else await postPrComment(input.ref, body, input.deps, input.cwd);
+  } catch (cause) {
+    getLogger()?.warn("bot-post", "Could not write the review coverage record", {
+      pr: input.ref.number,
+      error: errorMessage(cause),
+    });
+  }
+}
+
 /** Save complete fix inputs before mutation, then publish findings and the final summary. */
 export async function postPrReview(input: PostReviewInput): Promise<PostReviewOutcome> {
   await persistArtifact(input);
@@ -346,6 +389,7 @@ export async function postPrReview(input: PostReviewInput): Promise<PostReviewOu
   const earlier = await postEarlier(input);
   const failed = threads.failed + earlier.failed;
   await postSummary(input, findings, { ...threads, failed });
+  await postCoverageRecord(input);
   return {
     inlineFindings: findings.inlineFindings,
     ...threads,
