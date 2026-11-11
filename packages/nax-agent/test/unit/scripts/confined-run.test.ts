@@ -324,6 +324,25 @@ describe("runConfinedTests", () => {
     expect(record.events).toEqual(["reset"]);
   });
 
+  test("still says why the sandbox is unavailable when the reset fails (#2863)", async () => {
+    const record = installSeam({ probe: unavailable, backendFailures: { reset: true } });
+    await expect(runConfinedTests({ packageDir, paths: ["./test/unit/"] })).rejects.toThrow(
+      "the backend could not reset",
+    );
+    expect(record.stderrChunks.join("")).toBe("sandbox unavailable: no bwrap\n");
+  });
+
+  test("releases the probed backend when resolving the git root fails (#2863)", async () => {
+    const record = installSeam({
+      gitRoot: async () => {
+        throw new Error("git failed");
+      },
+    });
+    await expect(runConfinedTests({ packageDir, paths: ["./test/unit/"] })).rejects.toThrow("git failed");
+    expect(record.spawned.length).toBe(0);
+    expect(record.events).toEqual(["reset"]);
+  });
+
   test("AC-10: the wrapped run's own exit code is returned", async () => {
     const record = installSeam({ exitPromise: Promise.resolve(1) });
     expect(await runConfinedTests({ packageDir, paths: ["./test/unit/"] })).toBe(1);
