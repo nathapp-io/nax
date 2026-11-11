@@ -3,7 +3,7 @@
   "feature": "run-tmp-and-dead-config",
   "branchName": "feat/run-tmp-and-dead-config",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T12:21:58.301Z",
+  "updatedAt": "2026-11-11T12:30:50.140Z",
   "userStories": [
     {
       "id": "US-001",
@@ -161,14 +161,17 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Table-driven additions to an existing mechanism plus one shim deletion; several existing tests need updating."
+        "reasoning": "Table-driven additions to an existing mechanism plus one shim deletion; several existing tests need updating.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/removed-config-keys.ts",
@@ -202,7 +205,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "954b076d56f2ac24e4cec6606c52e43962292828"
     },
     {
       "id": "US-004",
