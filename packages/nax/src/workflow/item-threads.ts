@@ -4,7 +4,7 @@ import { NaxError } from "@/errors";
 import { isNaxBotMarkerKey, NAX_BOT_HEADER, parseNaxBotMarker } from "@/forge";
 import { RULING_SHA_PATTERN, RULING_SHA_SOURCE } from "@/utils/ruling-sha";
 import type { Disposition } from "./decisions-sidecar";
-import { safeInline } from "./pr-body-safe";
+import { safeCode, safeInline } from "./pr-body-safe";
 import type { OpenItem } from "./types";
 
 export interface PrRuling {
@@ -34,6 +34,9 @@ const SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
 const REPLY_INSTRUCTION =
   "Rule on it by replying: fixed <sha>, waive: <reason>, confirm, override: <reason>, or verified. Any other reply from a collaborator is read as a ruling only when its meaning is clear.";
 const CHANGE_INSTRUCTION = "To change it, reply on this thread.";
+/** US-010: the heading of the coverage item's file list, and one path per code span below it. */
+const FILES_HEADING = "Files:";
+const FILES_LINE = /^ - `(.*)`$/;
 // Exhaustive type-checked vocabularies without importing the sidecar's I/O implementation.
 const DISPOSITION_NAMES = {
   fixed: true,
@@ -77,8 +80,18 @@ export function renderItemOpener(item: OpenItem): string {
     `Open item **${item.id}** (${item.kind}): ${safeInline(item.issue)}`,
     ...(item.suggestion ? [`Suggestion: ${safeInline(item.suggestion)}`] : []),
     ...(item.ruling ? [`Advisor: ${safeInline(item.ruling.action)} — ${safeInline(item.ruling.why)}`] : []),
+    ...filesBlock(item.files),
     REPLY_INSTRUCTION,
   ].join("\n");
+}
+
+/**
+ * US-010: the paths a coverage item covers, one code span per line. `safeCode`, not `safeInline`:
+ * inline would rewrite `@modal` and `#1` and cap the path at the cell limit, so the path a human
+ * reads would no longer be the path a ruling credits.
+ */
+function filesBlock(files: readonly string[] | undefined): string[] {
+  return files?.length ? [FILES_HEADING, ...files.map((path) => ` - \`${safeCode(path)}\``)] : [];
 }
 
 /** Accept raw render output or a forge-marked comment; this does not establish ownership. */
@@ -94,6 +107,24 @@ export function parseItemOpener(body: string): Pick<OpenItem, "id" | "kind" | "i
   const kind = match?.[2] ?? "";
   if (!match?.[1] || !isOpenItemKind(kind)) return null;
   return { id: match[1], kind, issue: match[3] ?? "" };
+}
+
+/**
+ * US-010: the paths an opener's `Files:` block lists, in render order; empty when the item covers
+ * none. Reads raw and forge-marked bodies alike. Only the contiguous block under the heading counts,
+ * and the issue line cannot forge one: it renders through `safeInline`, which flattens newlines.
+ */
+export function parseItemFiles(body: string): string[] {
+  const lines = bodyLines(body);
+  const start = lines.indexOf(FILES_HEADING);
+  if (start < 0) return [];
+  const files: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const path = FILES_LINE.exec(line)?.[1];
+    if (path === undefined || path === "") break;
+    files.push(path);
+  }
+  return files;
 }
 
 export function isOpenItemKind(kind: string): kind is OpenItem["kind"] {

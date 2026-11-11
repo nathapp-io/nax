@@ -108,6 +108,12 @@ export interface OpenItem {
   readonly issue: string;
   readonly suggestion?: string;
   readonly ruling?: { readonly action: WorkflowRuling["action"]; readonly why: string; readonly decisionId?: string };
+  /**
+   * US-010: the paths this item covers, listed on its PR opener so a ruling can name what it
+   * covered. Set on the reason item whose text names the files a branch review did not read.
+   * Identity (`itemKey`) hashes kind and issue only, so an item that gains files keeps its thread.
+   */
+  readonly files?: readonly string[];
 }
 
 /** #2496: the feature's top-level verdict in result.json (see the A5 spec appendix). */
