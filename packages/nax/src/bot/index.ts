@@ -27,6 +27,7 @@ export {
   resolveBotChecks,
   reviewBuildSteps,
 } from "./checks";
+export { creditedFiles } from "./coverage-credit";
 export { _decisionsDeps, type BotDecision, loadBotDecisions } from "./decisions";
 export {
   _findingRulingsDeps,
