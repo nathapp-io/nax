@@ -50,7 +50,9 @@ describe("branch review required-file coverage", () => {
 describe("branch package reading note", () => {
   test("AC-10/11: clarifies package contents and preserves the per-file diff command", () => {
     const note = buildBranchPackageReadingNote("s..HEAD");
-    expect(note).toContain("## How to read the diff\nThis package holds no diff, only the commit list, the --stat summary and the changed-file names.");
+    expect(note).toContain(
+      "## How to read the diff\nThis package holds no diff, only the commit list, the --stat summary and the changed-file names.",
+    );
     expect(note).toContain("git diff s..HEAD -- <path>");
   });
 });
