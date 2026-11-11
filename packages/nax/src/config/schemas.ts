@@ -38,7 +38,6 @@ import {
 } from "./schemas-execution";
 import {
   AgentConfigSchema,
-  CuratorConfigSchema,
   DEFAULT_AGENT_CODEX_ACP_CONFIG,
   DEFAULT_AGENT_IDLE_WATCHDOG_CONFIG,
   DEFAULT_AGENT_TIMEOUT_RETRY_CONFIG,
@@ -365,7 +364,6 @@ export const NaxConfigSchema = z
     prompts: PromptsConfigSchema.default({ behavioralGuardrails: "lite" }),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
-    curator: CuratorConfigSchema.optional(),
     autoPr: z
       .object({
         enabled: z.boolean().default(false),

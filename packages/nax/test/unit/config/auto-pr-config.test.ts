@@ -2,7 +2,7 @@
  * AutoPr Config Schema Tests
  *
  * Story: Add autoPr root config schema — defines `autoPr` as a sibling top-level
- * key beside `curator` on NaxConfigSchema with opt-in defaults.
+ * key on NaxConfigSchema with opt-in defaults.
  */
 
 import { describe, expect, test } from "bun:test";

@@ -30,7 +30,7 @@ export interface ChunkEffectiveness {
  * Emitted on `ContextProviderResult.budgetPressure` by providers that have
  * a token budget and can lose information when they exceed it. Omitted
  * (undefined) when the provider fits inside its budget — no pressure to
- * report. Used by the manifest/curator to surface silent loss that
+ * report. Used by the manifest to surface silent loss that
  * would otherwise be invisible.
  */
 export interface ProviderBudgetPressure {
@@ -187,7 +187,7 @@ export interface ContextManifest {
    * packing — `includedChunks` and `excludedChunks` alike (Finding 5, #2061).
    * Absent when no chunk with a known cost was seen.
    *
-   * Written so downstream consumers (curator `chunk-included` observations)
+   * Written so downstream consumers
    * can report a real token cost per chunk instead of a placeholder, and so
    * "the budget evicted X tokens of context" is answerable from the manifest.
    * Without it the context budget cannot be tuned against measured data — see

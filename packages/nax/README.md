@@ -22,7 +22,6 @@ nax is an **orchestrator, not an agent** — it doesn't write code itself. It dr
 - **Monorepo-ready** — per-package config and per-story working directories
 - **Extensible** — plugin system for routing, review, reporting, and post-run actions
 - **Language-aware** — auto-detects Go, Rust, Python, TypeScript from manifest files; adapts commands and test structure per language
-- **Context curator** — deterministic post-run analysis that proposes additions/deletions to context.md and rules files, preventing context drift
 - **Guarded agent commands** — agent-authored shell commands run inside an OS sandbox by default, are adjudicated by a per-stage bash approval mode, and can pause for interactive approval that you can remember and later revoke (`nax approvals`)
 
 ## Install
@@ -116,7 +115,6 @@ See [Workflow Mode](https://github.com/nathapp-io/nax/blob/main/docs/guides/work
 | `nax mcp lock` | Pin configured MCP servers' tool surface to `.nax/mcp-lock.json` (`--global`: `~/.nax/mcp-lock.json`, used by projects without their own lock) |
 | [`nax cost`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-cost) | Query the cost ledger by date range across projects (`--today`, `--since`, `--by stage,model,...`, `--json`) |
 | [`nax config`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-config) | Display the effective merged config (`--explain`, `--diff`); `nax config profile` manages config profiles |
-| [`nax curator`](https://github.com/nathapp-io/nax/blob/main/docs/guides/cli-reference.md#nax-curator-status) | Inspect, commit, or garbage-collect curator proposals |
 | `nax routing calibrate` | Propose complexity→tier mapping adjustments from run history |
 | `nax plugins list` | List installed plugins |
 | `nax migrate` | Recover a project-name collision: `--reclaim <name>` or `--merge <name>` |

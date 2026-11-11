@@ -133,11 +133,26 @@ describe("buildPostRunContext", () => {
     expect(ctx.pluginConfig).toEqual({});
   });
 
+  test("forwards the external plugin context without a rollup path", async () => {
+    const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
+    const config = { example: true };
+    const opts = makeCleanupOptions({
+      outputDir: "/out",
+      globalDir: "/global",
+      projectKey: "p",
+      logFilePath: "/run.jsonl",
+      config,
+    });
+    const ctx = buildPostRunContext(opts, 1, makePluginLogger());
+    expect(ctx.outputDir).toBe("/out");
+    expect(ctx.globalDir).toBe("/global");
+    expect(ctx.projectKey).toBe("p");
+    expect(ctx.logFilePath).toBe("/run.jsonl");
+    expect(ctx.config).toBe(config);
+    expect(Object.hasOwn(ctx, "curatorRollupPath")).toBe(false);
+  });
+
   test("populates runStartedAt from the run's startTime (#1422)", async () => {
-    // The curator scopes its observations with this value. If the producer stops
-    // setting it, every collector silently falls back to "no scoping" and the
-    // cumulative-count defect returns — with the consumer-side tests still green,
-    // because they inject runStartedAt directly.
     const { buildPostRunContext } = await import("@/execution/lifecycle/run-cleanup");
     const startTime = Date.parse("2026-08-01T12:00:00.000Z");
     const ctx = buildPostRunContext(makeCleanupOptions({ startTime }), 5000, makePluginLogger());

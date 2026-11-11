@@ -410,8 +410,6 @@ export interface NaxConfig {
   generate?: GenerateConfig;
   /** Project profile — language and tooling metadata (US-001) */
   project?: import("./runtime-types-project").ProjectProfile;
-  /** Curator configuration */
-  curator?: import("./runtime-types-curator").CuratorConfig;
   autoPr: import("./runtime-types-autopr").AutoPrConfig;
   /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;
@@ -429,4 +427,3 @@ export type {
   TranscriptAuditConfig,
   UsageAuditConfig,
 } from "./runtime-types-agent";
-export type { CuratorConfig, CuratorRetentionConfig, CuratorThresholds } from "./runtime-types-curator";

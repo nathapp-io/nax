@@ -295,7 +295,6 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "agent",
   "generate",
   "project",
-  "curator",
   "autoPr",
   "finish",
   "advisor",

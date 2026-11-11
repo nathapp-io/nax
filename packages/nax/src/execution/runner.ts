@@ -427,7 +427,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
         outputDir: runtime.outputDir,
         globalDir: runtime.globalDir,
         projectKey: runtime.projectKey,
-        curatorRollupPath: runtime.curatorRollupPath,
         logFilePath,
         config,
         // US-002: the seal built at setup. cleanupRun awaits it after the

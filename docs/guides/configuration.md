@@ -14,7 +14,7 @@ Config is layered — project overrides global:
 | `.nax/config.json` | Project-level override |
 | `.nax/mono/<package>/config.json` | Per-package override (monorepos) |
 
-The authoritative source is the Zod schema (`packages/nax/src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Most keys have a schema default. A few are unset until you add them (`project`, `curator`, `plugins`, `disabledPlugins`, `generate`). Run `nax config --explain` to see the merged result with field descriptions.
+The authoritative source is the Zod schema (`packages/nax/src/config/schemas*.ts`); `DEFAULT_CONFIG` is `NaxConfigSchema.parse({})`. Most keys have a schema default. A few are unset until you add them (`project`, `plugins`, `disabledPlugins`, `generate`). Run `nax config --explain` to see the merged result with field descriptions.
 
 **Sharing `~/.nax` across machines.** If `~/.nax` is a synced repo, put per-machine settings (an `auth.exec.command` with absolute paths, local cost limits) in `~/.nax/config.local.json` and keep that file out of version control. The global dir is never treated as a project: running nax from a directory under `$HOME` with no nearer `.nax/config.json` loads `~/.nax` once, as the global layer.
 
@@ -76,7 +76,6 @@ Some blocks are restricted by layer:
 | `reporters` | `webhook.enabled: false`, `otel.enabled: false` | Built-in webhook / OpenTelemetry reporters |
 | `install` | `allowScripts: false` | Dependency-install script policy |
 | `project` | unset (auto-detected) | Language/type overrides — [below](#project-language--type) |
-| `curator` | unset (`enabled: true` when present) | Curator thresholds, rollup path, retention — see [Curator](curator.md) |
 | `plugins` / `disabledPlugins` / `generate` | unset | Plugin entries, `nax generate` agent list. Lifecycle hooks are **not** read from `config.json` — they load from `.nax/hooks.json` / `~/.nax/hooks.json` (see [Hooks](hooks.md)) |
 | `profile` | `"default"` | Active config profile |
 

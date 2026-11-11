@@ -7,7 +7,6 @@ import { globalConfigDir } from "@/config/paths";
 import { NaxError } from "@/errors";
 import {
   claimProjectIdentity,
-  curatorRollupPath,
   globalOutputDir,
   identityPath,
   type ProjectIdentity,
@@ -89,28 +88,6 @@ describe("identity I/O", () => {
     await Bun.write(path.join(identDir, ".identity"), JSON.stringify({ name: TEST_PROJECT_KEY }));
     const result = await readProjectIdentity(TEST_PROJECT_KEY);
     expect(result).toBeNull();
-  });
-});
-
-describe("curatorRollupPath", () => {
-  it.each([
-    [
-      "no override (defaults to globalDir/curator/rollup.jsonl)",
-      undefined,
-      "/home/user/.nax/global/curator/rollup.jsonl",
-    ],
-    ["absolute path override", "/mnt/team/rollup.jsonl", "/mnt/team/rollup.jsonl"],
-  ] as const)("%s", (_label, override, expected) => {
-    expect(curatorRollupPath("/home/user/.nax/global", override)).toBe(expected);
-  });
-
-  it("expands tilde in override", () => {
-    const result = curatorRollupPath("/home/user/.nax/global", "~/custom/rollup.jsonl");
-    expect(result).toBe(path.join(os.homedir(), "custom/rollup.jsonl"));
-  });
-
-  it("throws NaxError for relative override", () => {
-    expect(() => curatorRollupPath("/home/user/.nax/global", "relative/path")).toThrow(NaxError);
   });
 });
 
@@ -243,7 +220,6 @@ describe("NaxConfigSchema name field", () => {
     ["a name with underscores and digits", { name: "proj_1" }],
     ["optional outputDir as absolute path", { name: "demo-app", outputDir: "/mnt/fast/nax/demo-app" }],
     ["outputDir starting with ~/", { name: "demo-app", outputDir: "~/custom/demo-app" }],
-    ["curator.rollupPath", { name: "demo-app", curator: { rollupPath: "/mnt/share/rollup.jsonl" } }],
   ] as const)("accepts %s", (_label, input) => {
     expect(NaxConfigSchema.safeParse(input).success).toBe(true);
   });

@@ -104,17 +104,15 @@ export interface RunCleanupOptions {
    * and a preview is not a mutation, so the wipe is skipped.
    */
   dryRun: boolean;
-  /** Project output directory (for curator and other plugins) */
+  /** Project output directory (for plugins) */
   outputDir?: string;
-  /** Global output directory (for curator and other plugins) */
+  /** Global output directory (for plugins) */
   globalDir?: string;
-  /** Project key (for curator and other plugins) */
+  /** Project key (for plugins) */
   projectKey?: string;
-  /** Path to curator rollup file (for curator plugin) */
-  curatorRollupPath?: string;
-  /** Path to active run JSONL (for curator and other plugins) */
+  /** Path to active run JSONL (for plugins) */
   logFilePath?: string;
-  /** Full nax config (for curator and other plugins) */
+  /** Full nax config (for plugins) */
   config?: unknown;
   /**
    * US-002 — the run's end-of-run approvals seal (`RunSetupResult.sealApprovals`).
@@ -206,7 +204,6 @@ export function buildPostRunContext(opts: RunCleanupOptions, durationMs: number,
     outputDir,
     globalDir,
     projectKey,
-    curatorRollupPath,
     logFilePath,
     config,
     startTime,
@@ -235,7 +232,6 @@ export function buildPostRunContext(opts: RunCleanupOptions, durationMs: number,
     outputDir,
     globalDir,
     projectKey,
-    curatorRollupPath,
     logFilePath,
     config,
   };

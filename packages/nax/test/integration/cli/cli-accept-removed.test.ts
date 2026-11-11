@@ -48,6 +48,19 @@ async function spawnNax(cwd: string, args: string[]): Promise<SpawnResult> {
   return { exitCode, stdout, stderr };
 }
 
+describe("removed curator command", () => {
+  test("rejects status as extra chat arguments", async () => {
+    const dir = makeTempDir("nax-removed-command-");
+    try {
+      const result = await spawnNax(dir, ["curator", "status"]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("too many arguments for 'chat'");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  }, 20000);
+});
+
 function spawnAccept(cwd: string, args: string[]): Promise<SpawnResult> {
   return spawnNax(cwd, ["accept", ...args]);
 }

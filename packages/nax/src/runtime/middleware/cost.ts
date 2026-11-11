@@ -120,7 +120,7 @@ export function attachCostSubscriber(
   /**
    * Stable project identity. `runId` and `storyId` are project-local and collide
    * across repos, so a row lifted out of its directory cannot otherwise say where
-   * it came from — the same defect #1429 fixed for curator observations.
+   * it came from.
    */
   projectKey?: string,
 ): () => void {

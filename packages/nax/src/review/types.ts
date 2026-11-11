@@ -23,8 +23,7 @@ export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semanti
  * finding as `addressed`, `still-blocking`, or `never-an-issue`. Only
  * `still-blocking` is a defect; the other two are bookkeeping. Before this
  * type existed the reviewer's only output channel was `findings`, so
- * acknowledgements were counted as findings — 2.2% of July's, all `info` —
- * and surfaced as the evidence samples in curator rule proposals.
+ * acknowledgements were counted as findings — 2.2% of July's, all `info`.
  */
 export interface ReviewAck {
   /** Short identifier of the prior finding: `file:line`, or a few words of its message. */

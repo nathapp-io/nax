@@ -13,7 +13,6 @@ export type {
   ContextAutoDetectConfig,
   ContextConfig,
   ContextV2Config,
-  CuratorConfig,
   EscalationEntry,
   ExecutionConfig,
   FeatureContextEngineConfig,

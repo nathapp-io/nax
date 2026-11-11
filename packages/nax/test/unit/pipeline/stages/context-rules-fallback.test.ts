@@ -74,7 +74,7 @@ describe("context stage — rules-integrity fallback", () => {
         async assemble() {
           throw new NeutralityLintError([
             {
-              file: "curator-suggestions.md",
+              file: "suggestions.md",
               lineNumber: 1,
               line: "IMPORTANT:",
               ruleId: "important-shouting",

@@ -27,7 +27,7 @@ packages/nax/src/                       # @nathapp/nax: CLI orchestrator
 ├── analyze/          # Codebase scanning used by nax plan (there is no `nax analyze` command)
 ├── bakeoff/          # Multi-contestant runs, ranking and reporting (library module)
 ├── cli/              # CLI command handlers (init, setup, plan, runs, config, approvals, auth, mcp, advisor, trust, rules, etc.)
-├── commands/         # Subcommand wrappers (curator, detect, doctor, logs, migrate, precheck, replay, resume, runs, unlock)
+├── commands/         # Subcommand wrappers (detect, doctor, logs, migrate, precheck, replay, resume, runs, unlock)
 ├── config/           # Configuration loading, schemas (schemas-*.ts), defaults, permissions resolver, workflow and advisor schemas, root-only keys
 ├── constitution/     # Project governance document generation
 │   └── generators/   # Per-agent constitution generators (aider, claude, cursor, opencode, windsurf)
@@ -52,7 +52,7 @@ packages/nax/src/                       # @nathapp/nax: CLI orchestrator
 │   ├── stages/       # Stages: queue-check, routing, constitution, context, completion (the workflow stage lives in src/workflow)
 │   └── subscribers/  # Event subscribers (reporters, hooks, interaction, events-writer)
 ├── plan/             # `nax plan`: single and refine strategies, spec lint gate, PRD persist and write
-├── plugins/          # Plugin system (loader, registry, types, built-in plugins such as curator)
+├── plugins/          # Plugin system (loader, registry, types, built-in plugins)
 ├── precheck/         # Pre-run validation (agents, CLI, config, git, system, native credentials, story-size gate)
 ├── prd/              # PRD schema and parsing, story fields, out-of-scope, spec lint and drift
 ├── project/          # Auto-detect project type, language, frameworks

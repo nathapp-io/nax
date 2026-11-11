@@ -118,8 +118,7 @@ describe("ContextOrchestrator.assemble()", () => {
   });
 
   test("manifest records each packed chunk's token cost (#1421)", async () => {
-    // Without this the curator can only record tokens:0 for every chunk, and the
-    // context budget cannot be tuned against real data.
+    // Without this the context budget cannot be tuned against real data.
     // Distinct content per chunk — identical content is deduped before packing.
     const orch = new ContextOrchestrator([
       makeProvider("p1", makeChunkResult({ id: "c:1", tokens: 412, content: "alpha content" })),
