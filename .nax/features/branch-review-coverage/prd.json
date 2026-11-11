@@ -3,7 +3,7 @@
   "feature": "branch-review-coverage",
   "branchName": "feat/branch-review-coverage",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T07:27:26.071Z",
+  "updatedAt": "2026-11-11T07:47:35.204Z",
   "userStories": [
     {
       "id": "US-001",
@@ -684,14 +684,17 @@
         "US-003",
         "US-011"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module trust/provenance integration grants review exemptions from authorized rulings and commit state; strict TDD protects fail-closed credit."
+        "reasoning": "Cross-module trust/provenance integration grants review exemptions from authorized rulings and commit state; strict TDD protects fail-closed credit.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/review-step.ts",
@@ -710,7 +713,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a1628e6268e7f22612b789d9e50bbd6b64661ea0"
     },
     {
       "id": "US-013",
