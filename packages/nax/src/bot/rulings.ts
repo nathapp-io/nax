@@ -22,6 +22,7 @@ import type { ItemIndex, PrRuling } from "../workflow/item-threads";
 import {
   askKey,
   isOpenItemKind,
+  parseItemFiles,
   parseItemOpener,
   renderItemIndex,
   renderRulingAsk,
@@ -287,6 +288,24 @@ function callerReport(
   };
 }
 
+/**
+ * US-011: a `verified` ruling on an item whose opener lists files records the head the bot sees when it
+ * records the ruling, so the approval names the commit it covered. A caller ruling is already exact (its
+ * file's `headSha` must equal the PR head); a thread reply carries no head, so a push between the reply
+ * and this recording is credited as read. Items with no file list, every other disposition and a ruling
+ * that already carries a sha are left untouched. Only indexed, owned openers reach `ruleItem`
+ * (`readThread` rejects anything else), so the opener's Files block is the run's own.
+ *
+ * A head the echo grammar could not carry back (`RULING_SHA_PATTERN`) is not stamped: the ruling would
+ * be recorded against a commit no reader could recover, so it records no head at all.
+ */
+function stampVerifiedHead(input: RecordRulingsInput, item: OpenRulingItem, ruling: PrRuling): PrRuling {
+  if (ruling.disposition !== "verified" || ruling.sha !== undefined) return ruling;
+  if (!RULING_SHA_PATTERN.test(input.info.headSha)) return ruling;
+  if (parseItemFiles(item.thread.comments[0]?.body ?? "").length === 0) return ruling;
+  return { ...ruling, sha: input.info.headSha };
+}
+
 async function ruleItem(
   input: RecordRulingsInput,
   item: OpenRulingItem,
@@ -297,14 +316,15 @@ async function ruleItem(
     progress.open.push(item);
     return;
   }
-  if (!(await postEcho(input, item, ruling))) {
+  const stamped = stampVerifiedHead(input, item, ruling);
+  if (!(await postEcho(input, item, stamped))) {
     progress.open.push(item);
-    if (ruling.callerBy !== undefined) progress.echoFailed.push(item.itemId);
+    if (stamped.callerBy !== undefined) progress.echoFailed.push(item.itemId);
     progress.failed++;
     return;
   }
-  progress.recorded.push(ruling);
-  const entry = renewedRuling(item, ruling);
+  progress.recorded.push(stamped);
+  const entry = renewedRuling(item, stamped);
   if (isConfirmedWork(entry)) progress.confirmedWork.push(entry);
   else {
     progress.settled.push(entry);

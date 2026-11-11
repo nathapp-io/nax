@@ -143,14 +143,24 @@ function callerLabel(by: string): string {
   return safeInline(by).replace(/\(/g, "[").replace(/\)/g, "]");
 }
 
+/**
+ * US-011: the dispositions whose echo names the commit the ruling was made at. `fixed` always carries
+ * one, `verified` carries one when the ruling records the head it covered, and no other disposition
+ * may (`echoShaAllowed` is the reading side of the same grammar).
+ */
+function echoSha(ruling: PrRuling): string | undefined {
+  if (ruling.disposition !== "fixed" && ruling.disposition !== "verified") return undefined;
+  return ruling.sha?.slice(0, SHORT_SHA_CHARS) || undefined;
+}
+
 export function renderRulingEcho(ruling: PrRuling): string {
   if (ruling.disposition === "fixed" && (!ruling.sha || !RULING_SHA_PATTERN.test(ruling.sha))) {
     throw new NaxError("[workflow] Fixed ruling requires a valid sha", "WORKFLOW_RULING_INVALID", {
       stage: "workflow",
     });
   }
-  const recorded =
-    ruling.disposition === "fixed" ? `fixed in ${ruling.sha?.slice(0, SHORT_SHA_CHARS) ?? ""}` : ruling.disposition;
+  const sha = echoSha(ruling);
+  const recorded = sha === undefined ? ruling.disposition : `${ruling.disposition} in ${sha}`;
   const provenance = ruling.callerBy === undefined ? "" : ` (caller ruling by ${callerLabel(ruling.callerBy)})`;
   return [
     `Recorded: ${recorded} — ${neutraliseSuffix(safeInline(ruling.reason))}${provenance}`,
@@ -161,6 +171,17 @@ export function renderRulingEcho(ruling: PrRuling): string {
 
 function isDisposition(value: string): value is Disposition {
   return Object.hasOwn(DISPOSITION_NAMES, value);
+}
+
+/**
+ * US-011: which dispositions may carry the ` in <sha>` part. `fixed` must name its commit, `verified`
+ * may name the head it covered, and every other disposition must not — so a `waived in <sha>` echo is
+ * never read as a ruling about a commit.
+ */
+function echoShaAllowed(disposition: Disposition, sha: string | undefined): boolean {
+  if (disposition === "fixed") return sha !== undefined;
+  if (disposition === "verified") return true;
+  return sha === undefined;
 }
 
 export function parseRulingEcho(key: string, body: string): PrRuling | null {
@@ -174,7 +195,7 @@ export function parseRulingEcho(key: string, body: string): PrRuling | null {
   const login = /^By @([A-Za-z0-9_.-]+)$/.exec(author ?? "")?.[1];
   if (!line || line[1] !== disposition || !line[3]?.trim() || instruction !== CHANGE_INSTRUCTION || extra.length)
     return null;
-  if ((disposition === "fixed") !== (line[2] !== undefined)) return null;
+  if (!echoShaAllowed(disposition, line[2])) return null;
   if (author !== "By nax bot" && !login) return null;
   const caller = CALLER_SUFFIX.exec(line[3]);
   return {

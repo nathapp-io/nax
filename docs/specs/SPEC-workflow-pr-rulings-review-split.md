@@ -95,9 +95,11 @@ All keys go through `withNaxBotMarker` / `parseNaxBotMarker` (`src/forge/marker.
   files a branch review missed lists them in full (the reason text stops at five).
 - **Ruling echo key:** `wr-<disposition>-<itemKey>`, `<disposition>` one of the sidecar `DISPOSITIONS`
   (`fixed`, `waived`, `confirmed`, `overridden`, `verified`), none of which contains `-`.
-- **Ruling echo body:** first line `Recorded: <disposition> — <reason>` (or `Recorded: fixed in <sha7> — <reason>`),
-  reason through `safeInline`; second line `By @<login>`, or `By nax bot` for a bot ruling; third line
-  `To change it, reply on this thread.`
+- **Ruling echo body:** first line `Recorded: <disposition> — <reason>` (or `Recorded: fixed in <sha7> — <reason>`,
+  or `Recorded: verified in <sha7> — <reason>` when the ruling records the head it covered), reason through
+  `safeInline`; second line `By @<login>`, or `By nax bot` for a bot ruling; third line
+  `To change it, reply on this thread.` Only `fixed` (required) and `verified` (optional) carry the ` in <sha>`
+  part; a `Recorded: waived in <sha7> — ...` echo is not a ruling.
 - **Ask key:** `wq-<itemKey>-<replyId>`; body
   `I could not read a ruling from that reply. Start a reply with fixed <sha>, waive: <reason>, confirm, override: <reason> or verified.`
 - **Closed key:** `wc-<itemKey>`; body `No longer open in the run at <sha7>.` (not a ruling).
