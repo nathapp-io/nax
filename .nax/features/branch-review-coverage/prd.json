@@ -3,7 +3,7 @@
   "feature": "branch-review-coverage",
   "branchName": "feat/branch-review-coverage",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T04:45:41.415Z",
+  "updatedAt": "2026-11-11T04:57:14.237Z",
   "userStories": [
     {
       "id": "US-001",
@@ -96,14 +96,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The Zod defaults, optional runtime field, barrel/description entries and branch-op wiring follow existing patterns and reuse US-001; the real callOp seam verifies successive retries without introducing another dispatch abstraction."
+        "reasoning": "The Zod defaults, optional runtime field, barrel/description entries and branch-op wiring follow existing patterns and reuse US-001; the real callOp seam verifies successive retries without introducing another dispatch abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/workflow-branch-review.ts",
@@ -130,7 +133,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "cfbb42facc70401cd3d0800d2e666a064654ce51"
     },
     {
       "id": "US-003",
