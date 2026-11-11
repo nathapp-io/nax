@@ -1,0 +1,764 @@
+{
+  "project": "nax-monorepo",
+  "feature": "branch-review-coverage",
+  "branchName": "feat/branch-review-coverage",
+  "createdAt": "2026-11-11T00:00:00.000Z",
+  "updatedAt": "2026-11-11T04:27:40.879Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add an independent coverage retry strategy",
+      "description": "**Goal** — Add a reusable coverage retry wrapper with an independent budget and progress stopping rule.\n\n**Motivation** — The coverage retry shares `maxAttempts: 2` with the JSON-shape retry, so a reviewer that answers \"I did not read them\" faces no second ask.\n\n**Approach** — **Coverage retry strategy.** New `makeCoverageRetryStrategy` in `packages/nax/src/agents/retry/coverage-retry.ts`, exported from `@/agents/retry`. It wraps an inner `RetryStrategy` (the op's shape or triage retry) and owns the coverage decision:\n\n`shouldRetry(failure, attempt, ctx)` decides in this order:\n\n1. Let `issued` be the coverage retries this strategy has returned so far (closure state). The strategy is resolved once per `callOp` call, so the coverage budget is per `callOp`, not per hop. The inner strategy is always called with `Math.max(0, attempt - issued)`, so coverage retries never spend the inner budget, and a hop re-run that resets `attempt` cannot push it below zero.\n2. If `failure` is not a `ParseValidationError`, `ctx.lastOutput` is empty, or `ctx.lastTurnResult?.adapterFailure` is set, return the inner decision.\n3. Parse `ctx.lastOutput` with `opts.parse`. A `null` result returns the inner decision.\n4. Ask the inner strategy. If it retries, return that decision: shape and triage come first.\n5. If the inner decision is `{ retry: false }` and carries a `fallback` key (its own budget is spent on an incomplete triage), return it: coverage never retries past an exhausted inner.\n6. Compute `missing`. Empty: return the inner decision.\n7. Non-empty, and `issued >= maxCoverageRetries`: stop with `{ retry: false, fallback: exhaustedFallback(lastOutput) }` and log `\"Coverage retry stopped\"` with `{ storyId, unread: missing.length, attempt: issued, reason: \"budget\" }`.\n8. Non-empty, `issued > 0`, and `missing.length` is not lower than the count when the previous coverage retry was sent: stop the same way with `reason: \"no progress\"`.\n9. Otherwise increment `issued`, remember `missing.length`, log `\"Coverage retry\"` with `{ storyId, unread: missing.length, attempt: issued, max }`, and return `{ retry: true, delayMs: 0, nextPrompt: prompt(missing, { attempt: issued, max }) }`.\n\n`storyId` is `ctx.storyId` and is the first key of every log data object. `callOp`'s `MAX_COMPLETE_RETRY_ATTEMPTS` still bounds the whole loop. `callOp`'s own generic `Op retrying ... parse probe failed` debug line is unchanged.\n\n**Scope** — In: wrapper, barrel exports, stub-inner and injected-logger tests in test/unit/agents/retry/coverage-retry.test.ts. Out: branch/config wiring (US-002), bot wiring (US-003), dispatch-loop changes, and the manual retry-rule wording update.\n\n**Interface** —\n```ts\nexport interface CoverageRetryOpts {\n  /** The op's shape (and, for the bot, triage) retry. Its `validate` no longer checks coverage. */\n  readonly inner: RetryStrategy;\n  readonly parse: (output: string) => unknown;\n  /** Required files the parsed verdict does not cover. */\n  readonly missing: (parsed: unknown) => readonly string[];\n  readonly maxCoverageRetries: number;\n  readonly prompt: (missing: readonly string[], progress: { attempt: number; max: number }) => string;\n  readonly exhaustedFallback: (lastOutput: string) => unknown;\n  readonly reviewerKind: string;\n  readonly _logger?: { warn(kind: string, msg: string, data: Record<string, unknown>): void };\n}\nexport function makeCoverageRetryStrategy(opts: CoverageRetryOpts): RetryStrategy;\n```",
+      "acceptanceCriteria": [
+        "[unit] makeCoverageRetryStrategy is importable from @/agents/retry and returns an object with a shouldRetry function.",
+        "[unit] With a failure that is not a ParseValidationError, shouldRetry returns exactly the inner strategy's decision.",
+        "[unit] With ctx.lastOutput empty, shouldRetry returns exactly the inner strategy's decision.",
+        "[unit] With ctx.lastTurnResult.adapterFailure set, shouldRetry returns exactly the inner strategy's decision.",
+        "[unit] When parse returns null, shouldRetry returns the inner strategy's decision.",
+        "[unit] When the inner strategy returns { retry: true, delayMs: 0, nextPrompt: \"triage\" } for a parseable reply with missing files, shouldRetry returns that decision, not a coverage retry.",
+        "[unit] For a parseable reply with no missing files, shouldRetry returns the inner strategy's decision.",
+        "[unit] For a parseable reply missing [\"a.ts\", \"b.ts\"] with maxCoverageRetries: 3, the first call returns { retry: true, delayMs: 0, nextPrompt: prompt([\"a.ts\", \"b.ts\"], { attempt: 1, max: 3 }) }.",
+        "[unit] After one coverage retry, a second reply missing only [\"b.ts\"] returns a retry whose prompt is prompt([\"b.ts\"], { attempt: 2, max: 3 }).",
+        "[unit] After one coverage retry, a second reply still missing two files returns { retry: false, fallback: exhaustedFallback(lastOutput) }.",
+        "[unit] After three coverage retries, each covering one more file, a fourth reply still missing a file returns { retry: false, fallback: exhaustedFallback(lastOutput) }.",
+        "[unit] With maxCoverageRetries: 0, a parseable reply missing a file returns { retry: false, fallback: exhaustedFallback(lastOutput) } on the first call.",
+        "[unit] After two coverage retries, a call with attempt 2 and an unparseable reply passes attempt 0 to the inner strategy.",
+        "[unit] A coverage retry logs one warn with message \"Coverage retry\" and data whose first key is storyId, with unread 2, attempt 1 and max 3.",
+        "[unit] Stopping on the budget logs one warn with message \"Coverage retry stopped\" and reason \"budget\".",
+        "[unit] Stopping on no progress logs one warn with message \"Coverage retry stopped\" and reason \"no progress\".",
+        "[unit] A coverage retry never logs a message containing \"JSON parse retry\".",
+        "[unit] When the inner strategy returns { retry: false, fallback: F } for a parseable reply that also misses a file, shouldRetry returns { retry: false, fallback: F } and sends no coverage retry.",
+        "[unit] After two coverage retries, a call with attempt 0 passes attempt 0 to the inner strategy."
+      ],
+      "tags": [
+        "feature",
+        "retry",
+        "review"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded closure implements the existing RetryStrategy interface in one new module; stubbed inner decisions and an injected logger directly exercise budget, progress, fallback and hop-reset behavior without changing dispatch or session lifecycle."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/retry/parse-retry.ts",
+        "packages/nax/src/agents/retry/types.ts",
+        "packages/nax/src/agents/retry/compose.ts",
+        "packages/nax/src/agents/retry/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/agents/retry/coverage-retry.ts",
+        "packages/nax/test/unit/agents/retry/coverage-retry.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Configure review limits and separate branch coverage retries",
+      "description": "**Goal** — Add review defaults and connect the branch op to independent coverage retries with progress prompts.\n\n**Motivation** — The log line said `JSON parse retry — invalid shape`, although the reply had parsed.\n\n**Approach** — **Config.** `WorkflowConfigObjectSchema` gains:\n```ts\nreview: z.object({\n  sliceFiles: z.number().int().min(1).default(15),\n  coverageRetries: z.number().int().min(0).default(3),\n}).prefault({}),\n```\n`runtime-types-workflow.ts` `WorkflowConfig` gains `review?: { readonly sliceFiles: number; readonly coverageRetries: number }` (optional, so hand-built test configs keep compiling). `schemas-workflow.ts` exports `WORKFLOW_REVIEW_DEFAULTS`, the parsed defaults of the `review` object, and consumers read `workflow.review ?? WORKFLOW_REVIEW_DEFAULTS`, imported from `@/config` (the barrel `src/config/index.ts` lists it beside `WORKFLOW_DEFAULTS`). `FIELD_DESCRIPTIONS` in `src/cli/config-descriptions.ts` gains non-empty rows for `workflow.review`, `workflow.review.sliceFiles` and `workflow.review.coverageRetries`.\n\n**Branch op.** `workflowBranchReviewOp.retry` becomes `makeCoverageRetryStrategy` over a `makeParseRetryStrategy` with `maxAttempts: 2`, whose `validate` is only `parsed !== null` and whose `invalid` prompt is `buildWorkflowReviewJsonRetry()`. `missing` is `unreadFiles(input.requiredFiles, verdict.inspectedFiles, input.repoRoot)`. `maxCoverageRetries` is `input.coverageRetries`, or `WORKFLOW_REVIEW_DEFAULTS.coverageRetries` when absent. `prompt` is `buildWorkflowBranchCoverageRetry(input.range, missing, false, progress)`.\n\n`buildWorkflowBranchCoverageRetry(range, missing, staticMode = false, progress?)` gains the optional `progress: { attempt: number; max: number }`. With it, the retry adds `This is coverage retry <attempt> of <max>. Read all of them before you reply; a file you leave out stays unread and keeps the PR a draft.`\n\nThe ruled exception in `.nax/rules/retry-strategy.md` (coverage inside the strategy, not in `op.parse`) still holds after this change: coverage only decides whether to ask again, and an incomplete verdict is kept. Its wording names `validate`, which no longer carries coverage; the rule text update is a manual step (Out of Scope).\n\nUpdate test/unit/config/workflow-config.test.ts: its defaults test asserts parsed.workflow with toEqual against an object that has no review key. Add review: { sliceFiles: 15, coverageRetries: 3 }; every other member keeps its value. Update test/unit/operations/workflow-branch-review.test.ts AC-11 from attempt-1 shared-budget exhaustion to no-progress exhaustion with fallback equal to parseBranchReviewReply(lastOutput, []), findings included. The unparseable-reply assertions (AC-12 and the JSON prompt) hold unchanged. Add the two new unit files listed in expectedFiles; exercise two successive coverage retries through callOp with a stub agent as well.\n\n**Scope** — In: schema/runtime type/config barrel/descriptions, branch-op wrapper, optional progress text, and compatibility assertion updates. Out: bot wrapper (US-003), initial required-file prompt section (US-004), slice orchestration (US-008), and manual rule text changes.\n\n**Interface** —\n```ts\n// WorkflowBranchReviewInput adds:\nreadonly coverageRetries?: number;\n// WorkflowConfig adds:\nreview?: { readonly sliceFiles: number; readonly coverageRetries: number };\n// Target prompt signature:\n(range: string, missing: readonly string[], staticMode = false, progress?: { attempt: number; max: number }) => string\n```",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}) yields workflow.review equal to { sliceFiles: 15, coverageRetries: 3 }.",
+        "[unit] WORKFLOW_REVIEW_DEFAULTS equals { sliceFiles: 15, coverageRetries: 3 }.",
+        "[unit] NaxConfigSchema.safeParse with workflow.review.sliceFiles: 0 fails.",
+        "[unit] NaxConfigSchema.safeParse with workflow.review.coverageRetries: -1 fails.",
+        "[unit] NaxConfigSchema.parse with workflow.review.coverageRetries: 0 keeps 0.",
+        "[unit] workflowBranchReviewOp.retry(input) with requiredFiles: [\"src/a.ts\"] and a parseable reply whose inspectedFiles is [], at attempt 0, returns nextPrompt equal to buildWorkflowBranchCoverageRetry(input.range, [\"src/a.ts\"], false, { attempt: 1, max: 3 }).",
+        "[unit] The same strategy at attempt 1, after that coverage retry, with a reply whose inspectedFiles is still [], returns { retry: false, fallback: parseBranchReviewReply(lastOutput, input.minorIds) }.",
+        "[unit] With coverageRetries: 1 in the input, the coverage prompt's progress is { attempt: 1, max: 1 }.",
+        "[unit] With an unparseable reply at attempt 0, the strategy returns nextPrompt equal to buildWorkflowReviewJsonRetry().",
+        "[unit] With an unparseable reply at attempt 1 and no coverage retry sent, the strategy returns { retry: false, fallback: null }.",
+        "[unit] With an empty requiredFiles, a parseable reply returns { retry: false }.",
+        "[unit] buildWorkflowBranchCoverageRetry(\"s..HEAD\", [\"a.ts\"], false, { attempt: 2, max: 3 }) includes \"This is coverage retry 2 of 3.\".",
+        "[unit] buildWorkflowBranchCoverageRetry(\"s..HEAD\", [\"a.ts\"]) with no progress includes no line starting \"This is coverage retry\".",
+        "[unit] FIELD_DESCRIPTIONS has a non-empty string for each of workflow.review, workflow.review.sliceFiles and workflow.review.coverageRetries.",
+        "[integration] Through callOp with a stub agent whose three replies inspect none, one, then both of two required files, workflowBranchReviewOp sends two coverage retries, the second prompt includes \"This is coverage retry 2 of 3.\", and the op returns the third reply's verdict.",
+        "[unit] With coverageRetries: 0 and a parseable branch reply missing a required file, workflowBranchReviewOp.retry(input).shouldRetry returns { retry: false, fallback: parseBranchReviewReply(lastOutput, input.minorIds) }, retaining the reply's findings without issuing a coverage prompt."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "retry",
+        "review"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The Zod defaults, optional runtime field, barrel/description entries and branch-op wiring follow existing patterns and reuse US-001; the real callOp seam verifies successive retries without introducing another dispatch abstraction."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/workflow-branch-review.ts",
+        "packages/nax/src/config/schemas-workflow.ts",
+        "packages/nax/src/config/index.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/src/agents/retry/coverage-retry.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/operations/workflow-branch-review-coverage.test.ts",
+        "packages/nax/test/unit/config/schemas-workflow-review.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/workflow-config.test.ts",
+          "reason": "the defaults test asserts `parsed.workflow` with `toEqual` against an object that has no `review` key. After this story the parsed defaults carry `review: { sliceFiles: 15, coverageRetries: 3 }`; add that member to the expected object. Every other member keeps its value."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/workflow-branch-review.test.ts",
+          "reason": "the test \"the one retry spent, an incomplete verdict is kept with its findings (AC-11)\" asserts that at attempt 1 a parseable incomplete verdict stops with the fallback. After this story coverage retries have their own budget (default 3), so at attempt 1 with files still missing and no coverage retry sent, the strategy retries with the coverage prompt. Replace it with: once a coverage retry covered no more files than the one before, the same reply stops with `fallback` equal to `parseBranchReviewReply(lastOutput, [])`, findings included. The unparseable-reply assertions (AC-12 and the JSON prompt) hold unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Give bot review independent coverage retries",
+      "description": "**Goal** — Apply the shared coverage retry budget to both bot review ops without changing triage precedence.\n\n**Motivation** — `nax bot review` at `ec1c569` read 1 file, approved because \"the settled rulings say the files were already read\", spent its coverage re-prompt on ~60 files, diffed 4, and posted ~60 false \"Not read by the review\" lines.\n\n**Approach** — **Bot ops.** `reviewRetry` in `bot-pr-review.ts` keeps its `makeParseRetryStrategy` with `maxAttempts: 2` and `validate` = triage complete only (the `missingFiles` term moves out), and its `invalid` prompt keeps the triage retry and drops the coverage branch. The wrapper adds coverage, with `missing` = `missingFiles(verdict)`, `maxCoverageRetries` = `input.coverageRetries` (default as above), and `prompt` = `buildWorkflowBranchCoverageRetry(coverage.range, missing, staticMode, progress)`. With no `requiredFiles`, `missing` is always empty. The existing `coverageContext` throw (`BOT_REVIEW_COVERAGE_INVALID` when non-empty `requiredFiles` is set without `repoRoot` or `range`) is kept.\n\n`reviewRetry` in `src/operations/bot-pr-review.ts` as in Design § Approach; `BotPrReviewInput` gains `coverageRetries`; `runPrReview` passes `(ctx.workflow.review ?? WORKFLOW_REVIEW_DEFAULTS).coverageRetries`. The default above is WORKFLOW_REVIEW_DEFAULTS.coverageRetries (3). Stop on budget or no progress with the last parsed verdict, findings retained; an exhausted triage fallback stops before coverage.\n\nUpdate test/unit/operations/bot-pr-review.test.ts: (1) an attempt-1 triage-complete partial reply with an uncovered file now retries if no coverage retry has been sent; assert fallback after a coverage retry that covered no more files instead, using op.parse(partial, value, ctx()). (2) The US-015 AC-1–5 nextPrompt comparison gains progress { attempt: 1, max: 3 } in buildWorkflowBranchCoverageRetry(value.range, [\"src/a.ts\"], op === botPrStaticReviewOp, progress). The triage assertions at attempt 1 and the triage-before-coverage ordering hold unchanged. Add test/unit/operations/bot-pr-review-coverage.test.ts, including runPrReview-to-callOp budget wiring.\n\n**Scope** — In: trusted/static bot retry wrappers and budget input plumbing. Out: settled-file credit (US-012), bot prompt credit section (US-012), branch slicing (US-008), tool-observed bot reads, and bot slicing.\n\n**Interface** —\n```ts\n// BotPrReviewInput adds:\nreadonly coverageRetries?: number;\n```",
+      "acceptanceCriteria": [
+        "[unit] For botPrReviewOp, a triage-complete reply missing src/a.ts at attempt 0 returns nextPrompt equal to buildWorkflowBranchCoverageRetry(range, [\"src/a.ts\"], false, { attempt: 1, max: 3 }).",
+        "[unit] For botPrStaticReviewOp, the same reply returns nextPrompt equal to buildWorkflowBranchCoverageRetry(range, [\"src/a.ts\"], true, { attempt: 1, max: 3 }).",
+        "[unit] For botPrReviewOp, a reply missing a thread id and a required file returns the buildBotTriageRetry prompt, not the coverage prompt.",
+        "[unit] For botPrReviewOp at attempt 1, after one coverage retry, a triage-complete reply still missing src/a.ts with coverageRetries: 3 and no fewer missing files than before returns { retry: false, fallback: op.parse(lastOutput, input, ctx) }.",
+        "[unit] For botPrReviewOp at attempt 1 with no coverage retry sent, a reply still missing a thread id returns { retry: false } with the parsed fallback, as before.",
+        "[unit] For botPrReviewOp with no requiredFiles, a triage-complete reply returns { retry: false }.",
+        "[unit] For botPrReviewOp at attempt 1, a reply still missing a thread id and also missing src/a.ts returns { retry: false } with the parsed fallback and no coverage prompt.",
+        "[unit] botPrReviewOp.retry with requiredFiles: [\"src/a.ts\"] set and no range throws a NaxError of code BOT_REVIEW_COVERAGE_INVALID.",
+        "[integration] runPrReview with ctx.workflow.review.coverageRetries 1 calls the stubbed callOp with an input whose coverageRetries is 1."
+      ],
+      "tags": [
+        "feature",
+        "bot",
+        "retry",
+        "review"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Standard integration of the existing wrapper into two related operations and one caller, preserving triage and static-mode behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/bot-pr-review.ts",
+        "packages/nax/src/bot/review-step.ts",
+        "packages/nax/src/agents/retry/coverage-retry.ts",
+        "packages/nax/test/unit/operations/bot-pr-review.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/operations/bot-pr-review-coverage.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/bot-pr-review.test.ts",
+          "reason": "two assertions change, both because coverage now has its own budget. (1) At attempt 1 a triage-complete reply with an uncovered file (`partial`) was expected to stop with `fallback: op.parse(partial, value, ctx())`; with no coverage retry sent it now retries with the coverage prompt, so assert instead that after a coverage retry that covered no more files the same reply stops with that fallback. (2) The US-015 AC-1–5 test compares nextPrompt with buildWorkflowBranchCoverageRetry(value.range, [\"src/a.ts\"], op === botPrStaticReviewOp); compare with the same call plus the progress argument { attempt: 1, max: 3 }. The triage assertions at attempt 1 and the triage-before-coverage ordering hold unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "State the branch review's required-file obligation",
+      "description": "**Goal** — Tell each branch review exactly which files it must read and explain the draft consequence.\n\n**Motivation** — The prompt never lists the required files, never gives their count, and never says nax checks the list or that an unread file keeps the PR a draft.\n\n**Approach** — **Prompt.** `BranchReviewPromptInput` gains `requiredFiles?: readonly string[]` and `slice?: { index: number; count: number; otherFiles: number }`. With a non-empty `requiredFiles`, `buildWorkflowBranchReviewPrompt` adds a section after \"## How to read the diff\":\n```\n## Files you must review (N)\n- path/one.ts\n- path/two.ts\nnax compares your inspectedFiles with this list. A file on it that you do not read or diff is reported unread, and an unread file keeps the PR a draft. Repo gates passing is not a review of a file, and neither is a story review: read each one.\n```\nWith `slice` set it adds a line to that section: `This is review slice <index> of <count>. Other slices review the other <otherFiles> changed file(s); read any of them only to check a contract with your files.` `buildBranchPackageReadingNote` (shared with the bot review package) replaces its `No diff is inlined.` sentence with `This package holds no diff, only the commit list, the --stat summary and the changed-file names.`, which closes #2859 minor 2.\n\nKeep the existing git diff range instruction and omit the new section for absent or empty requiredFiles. Add test/unit/prompts/workflow-branch-builder-coverage.test.ts; existing unrelated prompt behavior remains unchanged.\n\n**Scope** — In: initial branch prompt input and required-file/slice section, shared package-reading note sentence. Out: coverage retry progress (US-002), actual slice execution (US-008), and settled-ruling prompt section (US-012).\n\n**Interface** —\n```ts\n// BranchReviewPromptInput adds:\nrequiredFiles?: readonly string[];\nslice?: { index: number; count: number; otherFiles: number };\n```",
+      "acceptanceCriteria": [
+        "[unit] buildWorkflowBranchReviewPrompt with requiredFiles: [\"src/a.ts\", \"src/b.ts\"] includes the heading \"## Files you must review (2)\".",
+        "[unit] The same prompt includes the lines \"- src/a.ts\" and \"- src/b.ts\".",
+        "[unit] The same prompt includes \"nax compares your inspectedFiles with this list.\".",
+        "[unit] The same prompt includes \"Repo gates passing is not a review of a file\".",
+        "[unit] In the same prompt, \"## Files you must review\" comes after \"## How to read the diff\".",
+        "[unit] buildWorkflowBranchReviewPrompt with no requiredFiles includes no \"## Files you must review\" heading.",
+        "[unit] buildWorkflowBranchReviewPrompt with requiredFiles: [] includes no \"## Files you must review\" heading.",
+        "[unit] With slice: { index: 2, count: 3, otherFiles: 30 }, the prompt includes \"This is review slice 2 of 3.\" and \"the other 30 changed file(s)\".",
+        "[unit] With requiredFiles and no slice, the prompt includes no line starting \"This is review slice\".",
+        "[unit] buildBranchPackageReadingNote(\"s..HEAD\") starts its body with \"This package holds no diff, only the commit list, the --stat summary and the changed-file names.\".",
+        "[unit] buildBranchPackageReadingNote(\"s..HEAD\") still includes \"git diff s..HEAD -- <path>\"."
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "review"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive optional input fields and conditional prompt text in one source module."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
+        "packages/nax/test/unit/prompts/workflow-branch-builder.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/prompts/workflow-branch-builder-coverage.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Recognize files read through nax review tools",
+      "description": "**Goal** — Extract whole-file read/diff credit from successful bounded tool-call records.\n\n**Motivation** — Turn 1 read the spec, listed the changed files, read 3 of them, and approved.\n\n**Approach** — **Tool-observed reads.** New `packages/nax/src/workflow/review-tool-reads.ts`:\n\n`toolReadPaths` keeps calls with `outcome === \"ok\"` whose `resultBytes` is at or below `TOOL_READ_CREDIT_MAX_BYTES` (exported, `40_000`, the size nax-agent's `MODEL_MAX_BYTES` lets the model see), and returns repo-relative paths, deduplicated, in first-appearance order. A larger result reached the model cut short, so its call credits nothing.\n\n- `Read`: `input.path`, only when the call has neither `offset` nor `limit` (a ranged read did not show the whole file).\n- `Git`: `input.subcommand === \"diff\"` with `input.nameOnly !== true`: each `input.paths` entry.\n- `Bash`: `input.command` is split into segments on `;`, `&&` and newlines, and each segment is cut at its first `|`. A segment `cd <dir>` (no `$`) sets the directory for the later segments. A segment whose words begin `git diff` or `rtk git diff`, that contains a standalone `--`, and that has none of `--name-only`, `--name-status` or `--stat`, contributes each word after `--` that does not start with `-` and contains none of `$ * ? [`, joined to the current directory.\n- A word wrapped in single or double quotes is unquoted first, and a word whose quotes do not close is dropped.\n- Each path is normalised the way `unreadFiles` normalises an entry: an absolute path inside `repoRoot` becomes relative, a leading `./` is dropped, and a path outside `repoRoot` is dropped. The private `normalize` in `src/operations/workflow-review-coverage.ts` is exported as `normalizeReviewPath(entry, repoRoot): string | undefined` and reused, not duplicated.\n\nAdd test/unit/workflow/review-tool-reads.test.ts with ToolCallRecord fixtures. ToolCallRecord is imported from @nathapp/nax-agent; the agent package is context only, not modified. Preserve unreadFiles behavior while renaming its shared normalization.\n\n**Scope** — In: pure read-path extraction and shared normalization export. Out: audit-file loading (US-006), branch integration (US-009), bot tool credit, ACP-owned tools, and credit for cat/sed/head/git show. The specified git-diff-before-pipe case still earns credit.\n\n**Interface** —\n```ts\nexport function toolReadPaths(calls: readonly ToolCallRecord[], repoRoot: string): string[];\nexport const TOOL_READ_CREDIT_MAX_BYTES = 40_000;\nexport function normalizeReviewPath(entry: string, repoRoot: string): string | undefined;\n```",
+      "acceptanceCriteria": [
+        "[unit] toolReadPaths for a Read call with input.path \"src/a.ts\" and outcome \"ok\" returns [\"src/a.ts\"].",
+        "[unit] toolReadPaths for a Read call with outcome \"denied\" returns [].",
+        "[unit] toolReadPaths for a Read of \"/repo/src/a.ts\" with repoRoot \"/repo\" returns [\"src/a.ts\"].",
+        "[unit] toolReadPaths for a Read of \"/other/x.ts\" with repoRoot \"/repo\" returns [].",
+        "[unit] toolReadPaths for a Git call { subcommand: \"diff\", refs: [\"s..HEAD\"], paths: [\"src/a.ts\", \"src/b.ts\"] } returns [\"src/a.ts\", \"src/b.ts\"].",
+        "[unit] toolReadPaths for a Git call { subcommand: \"diff\", nameOnly: true, paths: [\"src/a.ts\"] } returns [].",
+        "[unit] toolReadPaths for a Bash command \"git diff s..HEAD -- src/a.ts src/b.ts\" returns [\"src/a.ts\", \"src/b.ts\"].",
+        "[unit] toolReadPaths for a Bash command \"cd apps/api; B=abc; rtk git diff $B..HEAD -- src/x.ts prisma/schema.prisma\" returns [\"apps/api/src/x.ts\", \"apps/api/prisma/schema.prisma\"].",
+        "[unit] toolReadPaths for a Bash command \"git diff --name-only s..HEAD -- src/a.ts\" returns [].",
+        "[unit] toolReadPaths for a Bash command \"git diff s..HEAD -- src/a.ts | head -150\" returns [\"src/a.ts\"].",
+        "[unit] toolReadPaths for a Bash command \"git diff s..HEAD -- 'src/*.ts' $F\" returns [].",
+        "[unit] toolReadPaths for a Bash command \"cat src/a.ts\" returns [].",
+        "[unit] toolReadPaths for two calls that both read src/a.ts returns [\"src/a.ts\"] once.",
+        "[unit] toolReadPaths for a Bash command `git diff s..HEAD -- 'src/a.ts' \"src/b.ts\"` returns [\"src/a.ts\", \"src/b.ts\"].",
+        "[unit] normalizeReviewPath(\"./src/a.ts\", \"/repo\") returns \"src/a.ts\", and normalizeReviewPath(\"../x.ts\", \"/repo\") returns undefined.",
+        "[unit] toolReadPaths for a Git diff call with resultBytes 40000 credits its paths, and the same call with resultBytes 40001 credits none.",
+        "[unit] toolReadPaths for a Bash git diff call with resultBytes above TOOL_READ_CREDIT_MAX_BYTES returns [].",
+        "[unit] toolReadPaths for a Read of src/a.ts with limit 120 returns [].",
+        "[unit] toolReadPaths for a Read of src/a.ts with offset set returns [], since a ranged Read credits no file."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "audit",
+        "paths"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure parsing recognizes a deliberately restricted command grammar and reuses the existing normalization leaf; fixture-driven tests cover denied, ranged, oversized and outside-repository calls without executing commands or changing filesystem access controls."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/tool-audit.ts",
+        "packages/nax-agent/src/tools/truncate.ts",
+        "packages/nax/src/operations/workflow-review-coverage.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/review-tool-reads.ts",
+        "packages/nax/test/unit/workflow/review-tool-reads.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When unreadFiles receives required [\"src/a.ts\", \"src/b.ts\"] and inspected [\"/repo/src/a.ts\", \"/other/src/b.ts\"] with repoRoot \"/repo\", it returns [\"src/b.ts\"], preserving its existing normalization behavior after the helper is exported."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Load tool calls for the exact review sessions",
+      "description": "**Goal** — Load persisted audit calls for a run/session/time window with best-effort malformed-file isolation.\n\n**Motivation** — The branch review took 22 s over 2 turns.\n\n**Approach** — `readSessionToolCalls` scans `auditDir` (explicit `cwd`) for `<runId>-<digits>-<ledgerSessionName>.json` with `<digits>` at or above `sinceMs`, parses each, and concatenates their `calls` arrays in file name order. A missing directory gives `[]`. A file that does not parse, or has no `calls` array, is skipped with a warn.\n\nThe branch review reads its calls from `toolAuditDir({ root: fc.projectDir, outputDir: fc.outputDir }, fc.feature)` with `ledgerSessionName = buildLedgerSessionName({ featureName: fc.feature, sessionRole: \"wf-branch-review\" })`. That is the same dir and name the dispatch writes (`resolveDispatchAuditDir`, `coding-tool-support-resolve.ts`). The audit file is flushed when the hop ends, so tool reads reduce the final unread list only; they do not feed the coverage retry inside a session.\n\nExtend the US-005 module with the loader and injected glob/readText/logger seams. Tests in new test/unit/workflow/review-tool-reads-loader.test.ts, in a temp directory. Match exact runId and session names and an inclusive timestamp boundary; do not use process cwd implicitly.\n\n**Scope** — In: session tool-call loader and dependency seams. Out: pure path recognition already delivered by US-005, branch caller integration (US-009), audit writer changes, and in-session retry feedback.\n\n**Interface** —\n```ts\nexport async function readSessionToolCalls(input: {\n  readonly auditDir: string;\n  readonly runId: string;\n  readonly ledgerSessionName: string;\n  readonly sinceMs: number;\n}): Promise<ToolCallRecord[]>;\nexport const _reviewToolReadsDeps: { glob; readText; logger };\n```",
+      "acceptanceCriteria": [
+        "[unit] readSessionToolCalls over a temp dir holding r1-2000-f-wf-branch-review.json with two calls returns those two calls for runId r1, ledgerSessionName f-wf-branch-review and sinceMs 1000.",
+        "[unit] readSessionToolCalls skips a file whose stamp is below sinceMs.",
+        "[unit] readSessionToolCalls skips a file for another runId or another session name.",
+        "[unit] readSessionToolCalls for a directory that does not exist returns [].",
+        "[unit] readSessionToolCalls skips a file holding \"not json\", returns the calls of the other files, and logs one warn.",
+        "[unit] readSessionToolCalls for two matching files returns the calls of the lower stamp first.",
+        "[unit] When an audit file has no calls array, readSessionToolCalls skips that file with a warn and still returns calls from other matching files."
+      ],
+      "tags": [
+        "feature",
+        "audit",
+        "review"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "An injected glob/readText/logger loader filters existing audit filenames and tolerates malformed JSON; temp-directory tests verify exact run/session-name matching without changing agent session lifecycle, authentication or permissions."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/review-tool-reads.ts",
+        "packages/nax-agent/src/tools/tool-audit.ts",
+        "packages/nax/src/agents/coding-tool-support-resolve.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/review-tool-reads-loader.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Plan review slices and merge their verdicts",
+      "description": "**Goal** — Add deterministic directory-grouped slice planning and conservative verdict aggregation.\n\n**Motivation** — 58 files is more than one session takes on.\n\n**Approach** — **Slice planning.** New `packages/nax/src/workflow/branch-review-slices.ts`:\n\nFiles are grouped by parent directory (the path up to its last `/`, or `\"\"` at the root), preserving the complete `required` input order. Use contiguous directory groups in encounter order, with files retaining their `required` order within a group. If a parent directory recurs after an intervening directory, keep its later files in a later group instead of moving them ahead of the intervening files. This resolves the design's global-directory-grouping ambiguity toward the authoritative acceptance criterion that every input path appears exactly once, in input order; even git path order can interleave a parent directory with its nested directories. Packing is greedy: a group joins the current slice when the total stays at or under `sliceFiles`; otherwise the current slice closes and the group starts the next one. A group larger than `sliceFiles` closes the current slice and is cut into consecutive slices of `sliceFiles` files; its last, shorter slice stays open, so the next group joins it when the total stays at or under `sliceFiles`. When `required.length <= sliceFiles` the result is `[required]`; an empty `required` gives `[[]]`. `required` arrives in git's path order, so neighbouring directories, and therefore one package's files, tend to share a slice.\n\n**Verdict merge.** Same file:\n\nIt returns `null` when every `verdict` is `null`. A verdict's `inspectedFiles` is read as `inspectedFiles ?? []` everywhere, since a verdict can lack it. When exactly one part was given and it ran, the result is that part's verdict object unchanged (no `slices`), so runtime-only members such as an attached `adapterFailure` survive. Otherwise, over the slices that ran:\n\n- `spec` is `\"fail\"` if any slice says `\"fail\"`;\n- `quality` is `\"changes\"` if any slice says `\"changes\"`;\n- `findings` are concatenated in slice order;\n- `cannotVerify` is concatenated in slice order, exact duplicates dropped;\n- `inspectedFiles` is the union, in first-appearance order;\n- `minorTriage` takes the first ran slice's id order, and each id is `\"fix-now\"` if any ran slice says `\"fix-now\"`, else `\"leave\"`;\n- `slices` is one `BranchReviewSlice` per part, in order: `{ files, inspectedFiles: verdict?.inspectedFiles ?? [], ran: verdict !== null, why? }`.\n\n`BranchReviewVerdict` in `src/operations/workflow-types.ts` gains `readonly slices?: readonly BranchReviewSlice[]`, and the file exports `BranchReviewSlice`.\n\nAdd test/unit/workflow/branch-review-slices.test.ts. Keep the operations-owned wire type direction and the single-part object identity; failed slices contribute metadata, not spec/quality/findings.\n\n**Scope** — In: pure planner/merge, SliceResult, BranchReviewSlice and optional verdict slices. Out: orchestration (US-008), tool observations (US-009), findings deduplication, story-based grouping, and parallelism.\n\n**Interface** —\n```ts\nexport function planReviewSlices(required: readonly string[], sliceFiles: number): string[][];\nexport interface SliceResult {\n  readonly files: readonly string[];\n  readonly verdict: BranchReviewVerdict | null;\n  readonly why?: string;\n}\nexport function mergeSliceVerdicts(parts: readonly SliceResult[]): BranchReviewVerdict | null;\n// BranchReviewVerdict adds:\nreadonly slices?: readonly BranchReviewSlice[];\n// BranchReviewSlice records each part as { files, inspectedFiles, ran, why? }.\n```",
+      "acceptanceCriteria": [
+        "[unit] planReviewSlices([\"a/1\", \"a/2\"], 15) returns [[\"a/1\", \"a/2\"]].",
+        "[unit] planReviewSlices([], 15) returns [[]].",
+        "[unit] planReviewSlices for 3 files in a/ then 3 in b/ with sliceFiles 4 returns [[\"a/1\", \"a/2\", \"a/3\"], [\"b/1\", \"b/2\", \"b/3\"]].",
+        "[unit] planReviewSlices for 2 files in a/ then 2 in b/ with sliceFiles 4 returns one slice holding all four in order.",
+        "[unit] planReviewSlices for 1 file in a/ then 10 files in b/ with sliceFiles 4 returns [[\"a/1\"], [\"b/1\", \"b/2\", \"b/3\", \"b/4\"], [\"b/5\", \"b/6\", \"b/7\", \"b/8\"], [\"b/9\", \"b/10\"]].",
+        "[unit] planReviewSlices([\"x.json\", \"y.json\"], 2) returns [[\"x.json\", \"y.json\"]], grouping the root files together.",
+        "[unit] planReviewSlices never returns a slice longer than sliceFiles, for 40 files across 7 directories and sliceFiles 6.",
+        "[unit] planReviewSlices returns every input path exactly once across its slices, in input order.",
+        "[unit] mergeSliceVerdicts of two slices whose verdicts are both null returns null.",
+        "[unit] mergeSliceVerdicts returns spec \"fail\" when one ran slice says \"fail\" and the other \"pass\".",
+        "[unit] mergeSliceVerdicts returns quality \"changes\" when one ran slice says \"changes\".",
+        "[unit] mergeSliceVerdicts returns the findings of slice 1 followed by those of slice 2.",
+        "[unit] mergeSliceVerdicts returns cannotVerify with an entry both slices list exactly once.",
+        "[unit] mergeSliceVerdicts returns inspectedFiles as the union, a file both slices list appearing once.",
+        "[unit] mergeSliceVerdicts returns M1 as \"fix-now\" when one slice says \"fix-now\" and the other \"leave\".",
+        "[unit] mergeSliceVerdicts with slice 2's verdict null and why \"timeout\" returns slices[1] equal to { files: <slice 2 files>, inspectedFiles: [], ran: false, why: \"timeout\" }.",
+        "[unit] mergeSliceVerdicts with slice 2's verdict null takes spec, quality and findings from slice 1 only.",
+        "[unit] mergeSliceVerdicts returns slices[0].inspectedFiles equal to slice 1's verdict inspectedFiles.",
+        "[unit] planReviewSlices for 6 files in a/ then 1 file in b/ with sliceFiles 4 returns [[\"a/1\", \"a/2\", \"a/3\", \"a/4\"], [\"a/5\", \"a/6\", \"b/1\"]].",
+        "[unit] mergeSliceVerdicts of one ran part returns that part's verdict object itself, with no slices field.",
+        "[unit] mergeSliceVerdicts of two ran parts where one verdict has no inspectedFiles property returns the other part's inspectedFiles."
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "slices"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two deterministic pure algorithms and an additive wire contract have clear bounded behavior and no external integration."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/workflow-types.ts",
+        "packages/nax/src/operations/workflow-replies.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/branch-review-slices.ts",
+        "packages/nax/test/unit/workflow/branch-review-slices.test.ts"
+      ],
+      "suggestedCriteria": [
+        "planReviewSlices([\"a/one.ts\", \"a/nested/two.ts\", \"a/three.ts\"], 2) returns [[\"a/one.ts\", \"a/nested/two.ts\"], [\"a/three.ts\"]], preserving input order when a parent directory recurs after a nested directory."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Run branch review as sequential fresh slices",
+      "description": "**Goal** — Prepare the branch once, review directory-grouped slices sequentially, and return one merged verdict.\n\n**Motivation** — 58 files is more than one session takes on.\n\n**Approach** — **`runBranchReview`, sliced.** In `src/workflow/branch-review.ts`:\n\n1. Write the package and compute `requiredFiles` once, before any slice, with the same failure semantics `underReviewLimit` gives a package failure: a throw while `fc.runSignal` is aborted rethrows, any other throw returns `{ ran: false, why: \"review package failed: <message>\" }`. The rules and project-context appends stay in this step.\n2. `slices = planReviewSlices(requiredFiles, review.sliceFiles)`.\n3. For each slice in order, build the prompt with `requiredFiles: slice` and, when there is more than one slice, `slice: { index, count, otherFiles }`, where `otherFiles` is the number of required files outside this slice. Run it through `underReviewLimit(fc, noop, run)` so each slice has its own review timeout, and call `workflowBranchReviewOp` with `requiredFiles: slice` and `coverageRetries: review.coverageRetries`. A slice that does not run records its `why` and the next slice still runs. An abort rethrows and stops the loop.\n5. `merged = mergeSliceVerdicts(results)`. `null` returns `{ ran: false, why: <first slice's why> }`.\n6. `unread = unreadFiles(requiredFiles, [...(merged.inspectedFiles ?? []), ...toolReads], fc.projectDir)`.\n7. Return `merged`, plus `unreadFiles` when non-empty. `slices` is kept only when there was more than one slice, so a one-slice verdict is unchanged in shape.\n\nStep 4 (audit observation) belongs to US-009; toolReads is empty in this story. The inspectedFiles nullish guard in step 6 is mandatory for the missing-property AC.\n\n`BranchStepContext` declares optional `runId` and `outputDir`. `FeatureContext` already has both as required fields and is passed to `runBranchReview` structurally, so nothing is set by hand; `buildPrStepContext` leaves them absent. Each slice is its own fresh `wf-branch-review` session, opened and closed before the next one starts.\n\nResolve review with fc.workflow.review ?? WORKFLOW_REVIEW_DEFAULTS from @/config. Preserve the story-report inventory, spec/PRD/preflight references, memory index and existing rule/project-context append behavior. A one-slice ran verdict object must survive unchanged except the existing optional unreadFiles spread, including runtime-only members and absent inspectedFiles. An empty required set still has one slice. Per-slice timeout, null reply, or ordinary throw leaves that slice unread and does not suppress later slices; run abort does. Add test/unit/workflow/branch-review-sliced.test.ts with _workflowDeps.callOp and _workflowDeps.git stubbed. Existing branch-review.test.ts assertions remain unchanged.\n\n**Scope** — In: package-once sequential review orchestration, own timeout per slice, optional context fields, merge and final unread computation. Out: audit-loader wiring (US-009), planner internals (US-007), model/effort changes, parallel slices, and changing test-file selection.\n\n**Interface** —\n```ts\nrunBranchReview(fc, input) // same signature and return type\n// BranchStepContext adds:\nreadonly runId?: string;\nreadonly outputDir?: string;\n```",
+      "acceptanceCriteria": [
+        "[unit] runBranchReview with 10 required files and sliceFiles 15 calls the stubbed callOp once, with requiredFiles equal to all 10.",
+        "[unit] In that one-slice case the prompt passed to callOp equals buildWorkflowBranchReviewPrompt with requiredFiles set to the 10 files and no slice.",
+        "[unit] In that one-slice case the returned verdict has no slices field.",
+        "[unit] runBranchReview with 20 required files in two directories of 10 and sliceFiles 15 calls callOp twice, the first with the first directory's files as requiredFiles and the second with the second's.",
+        "[unit] In that two-slice case the second prompt includes \"This is review slice 2 of 2.\".",
+        "[unit] In that two-slice case the first callOp resolves before the second starts.",
+        "[unit] In that two-slice case each callOp input has coverageRetries equal to fc.workflow.review.coverageRetries.",
+        "[unit] In that two-slice case the returned verdict's slices has two entries whose files are the two slices.",
+        "[unit] When the stubbed package writer throws boom and the run is not aborted, runBranchReview returns { ran: false, why: \"review package failed: boom\" } and callOp is not called.",
+        "[unit] When the stubbed package writer throws while fc.runSignal is aborted, runBranchReview rejects with that error.",
+        "[unit] When the first of two slices' callOp returns null, the second slice still runs and the result is ran: true.",
+        "[unit] In that case the first slice's files are in unreadFiles and slices[0].ran is false with why \"unparseable reply\".",
+        "[unit] When both slices' callOp return null, runBranchReview returns { ran: false, why: \"unparseable reply\" }.",
+        "[unit] When callOp rejects for slice 1 while fc.runSignal is aborted, runBranchReview rejects and callOp is called once.",
+        "[unit] When the first of two slices' callOp rejects with boom and the run is not aborted, the second slice still runs and slices[0] has ran false and why \"boom\".",
+        "[unit] When the first of two slices hits its review timeout, slices[0].why is \"timeout\" and the second slice still runs.",
+        "[unit] When the stubbed op returns a verdict with no inspectedFiles property for a single slice, runBranchReview returns ran: true with every required file in unreadFiles.",
+        "[unit] When reviewRequiredFiles throws boom before slices and the run is not aborted, runBranchReview returns { ran: false, why: \"review package failed: boom\" } without running a slice.",
+        "[unit] When every slice fails to run with different reasons, runBranchReview returns { ran: false, why: <first slice's why> }.",
+        "[unit] When the first of two slices times out or throws without a verdict, the second succeeds without inspecting the first slice's files, and no tool-read credit is available, runBranchReview includes the first slice's required files in unreadFiles."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "review",
+        "slices"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-004",
+        "US-007"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module orchestration changes fresh session lifecycle and cancellation/timeout boundaries; session isolation requires strict TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/branch-review.ts",
+        "packages/nax/src/workflow/branch-step-context.ts",
+        "packages/nax/src/workflow/story-review.ts",
+        "packages/nax/test/unit/workflow/branch-review.test.ts",
+        "packages/nax/src/workflow/branch-review-slices.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/branch-review-sliced.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-009",
+      "title": "Credit observed reads after the branch slices finish",
+      "description": "**Goal** — Reduce final branch unread files using audit evidence from the exact run's review sessions.\n\n**Motivation** — The retry turn did one 33 KB diff over 11 files and stopped.\n\n**Approach** — `runBranchReview` step 4:\n\n4. After the last slice, read the session's tool calls since the first slice started (`_workflowDeps.now()` taken before slice 1), when `fc.runId` and `fc.outputDir` are present.\n\nThe branch review reads its calls from `toolAuditDir({ root: fc.projectDir, outputDir: fc.outputDir }, fc.feature)` with `ledgerSessionName = buildLedgerSessionName({ featureName: fc.feature, sessionRole: \"wf-branch-review\" })`. That is the same dir and name the dispatch writes (`resolveDispatchAuditDir`, `coding-tool-support-resolve.ts`). The audit file is flushed when the hop ends, so tool reads reduce the final unread list only; they do not feed the coverage retry inside a session.\n\n`merged = mergeSliceVerdicts(results)`. `null` returns `{ ran: false, why: <first slice's why> }`. Compute `unread = unreadFiles(requiredFiles, [...(merged.inspectedFiles ?? []), ...toolReads], fc.projectDir)`. Return `merged`, plus `unreadFiles` when non-empty. `slices` is kept only when there was more than one slice, so a one-slice verdict is unchanged in shape.\n\nThe nullish guard preserves the existing verdict-without-inspectedFiles case. Do not add observations to verdict.inspectedFiles or per-slice inspectedFiles: evidence affects only the final unread list. Missing runId or outputDir skips observation. A missing audit directory gives no tool-observed reads; malformed audit files are handled by the loader without losing other evidence. Add test/unit/workflow/branch-review-tool-reads.test.ts with _workflowDeps.callOp and _reviewToolReadsDeps stubbed.\n\n**Scope** — In: capture start time, resolve canonical audit dir/ledger session name, collect calls after sequential slices, and combine credit for final unreadFiles only. Out: in-session coverage retry feedback, bot review tool credit, ACP-owned tool collection, and changing slice verdict provenance.\n\n**Interface** —\n```ts\nreadSessionToolCalls({ auditDir, runId: fc.runId, ledgerSessionName, sinceMs })\ntoolReadPaths(calls, fc.projectDir)\n```",
+      "acceptanceCriteria": [
+        "[unit] When the stubbed tool-audit file for session <feature>-wf-branch-review records a Read of src/b.ts, which no slice listed in inspectedFiles, src/b.ts is not in the result's unreadFiles.",
+        "[unit] A tool-audit Read of a file outside the required set adds nothing to the verdict's inspectedFiles or unreadFiles.",
+        "[unit] With fc.runId absent, readSessionToolCalls is not called.",
+        "[unit] With fc.outputDir absent, readSessionToolCalls is not called.",
+        "[unit] When readSessionToolCalls returns [], unreadFiles is the required files no slice listed.",
+        "[unit] When the stubbed tool-audit file records a Git diff of src/b.ts with resultBytes above TOOL_READ_CREDIT_MAX_BYTES, src/b.ts stays in unreadFiles.",
+        "[unit] When the tool-audit directory does not exist, runBranchReview's review result is unchanged except that no tool-observed read credit is applied."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "audit",
+        "review"
+      ],
+      "dependencies": [
+        "US-005",
+        "US-006",
+        "US-008"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The already-sliced caller resolves existing audit paths and ledger names, invokes US-006 and US-005, and unions their output only for final unreadFiles; injected workflow/audit seams verify the integration without changing session lifecycle or retry policy."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/branch-review.ts",
+        "packages/nax/src/workflow/feature-context.ts",
+        "packages/nax/src/config/paths/index.ts",
+        "packages/nax/src/workflow/review-tool-reads.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/branch-review-tool-reads.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-010",
+      "title": "Publish structured file lists on unread-file items",
+      "description": "**Goal** — Carry unread-file paths through durable workflow item openers without changing item identity.\n\n**Motivation** — The approval was right, but nax got there only because the model chose to trust free text: no record says which files a ruling covered, or at which commit.\n\n**Approach** — **Coverage items carry their files.** `OpenItem` in `src/workflow/types.ts` gains `readonly files?: readonly string[]`. In `open-items.ts`, the reason item whose text equals `describeUnread(rec.reviewUnread)` gets `files: rec.reviewUnread`. `renderItemOpener` renders, when `files` is non-empty, a `Files:` line and one `` - `<path>` `` line per file (through `safeCode`, as `render-comments.ts` renders unread paths; `safeInline` would rewrite `@` and `#1` and cap the length), after the suggestion and advisor lines and before the reply instruction. New `parseItemFiles(body: string): string[]` in `item-threads.ts` reads them back from a raw or forge-marked opener body. `itemKey` is unchanged (it hashes kind and issue only).\n\nAdd test/unit/workflow/item-threads-files.test.ts and test/unit/workflow/open-items-files.test.ts. Exercise postItemThreads publication and parse the resulting opener, including app/@modal/page.tsx and docs/#1.md. Keep no-files render output identical, parseItemOpener identity unchanged, and nonmatching reason items without a files field. A path that does not survive this opener round trip must not later earn coverage credit.\n\n**Scope** — In: optional OpenItem files, matching reason-item metadata, safe Files block, parser and publication seam. Out: ruling sha echoes/stamping (US-011), credit computation (US-012), and coverage record wire format (US-013).\n\n**Interface** —\n```ts\n// OpenItem adds:\nreadonly files?: readonly string[];\nexport function parseItemFiles(body: string): string[];\n```",
+      "acceptanceCriteria": [
+        "[unit] buildOpenItems for a record with reviewUnread: [\"a.ts\", \"b.ts\"] and the matching describeUnread text in reasons returns that reason item with files: [\"a.ts\", \"b.ts\"].",
+        "[unit] buildOpenItems returns other reason items with no files field.",
+        "[unit] renderItemOpener for an item with files: [\"a.ts\", \"b.ts\"] includes the line \"Files:\" followed by \" - `a.ts`\" and \" - `b.ts`\".",
+        "[unit] In that opener, the Files: line comes before the reply instruction line.",
+        "[unit] renderItemOpener for an item with no files is identical to its output before this feature.",
+        "[unit] parseItemFiles of that opener returns [\"a.ts\", \"b.ts\"].",
+        "[unit] parseItemFiles of the same opener wrapped with withNaxBotMarker returns [\"a.ts\", \"b.ts\"].",
+        "[unit] parseItemFiles of an opener with no Files: block returns [].",
+        "[unit] parseItemOpener of an opener with files returns the same id, kind and issue as without them.",
+        "[unit] itemKey of an item is the same with and without files.",
+        "[unit] postItemThreads for a record with reviewUnread: [\"a.ts\"] and the matching reason posts an opener whose body parseItemFiles reads as [\"a.ts\"].",
+        "[unit] parseItemFiles of an opener rendered with files: [\"app/@modal/page.tsx\", \"docs/#1.md\"] returns those two paths unchanged."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "rulings",
+        "wire-format"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive metadata and a small existing Markdown wire-format extension, with exact round-trip and legacy-output regression checks."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/src/workflow/item-threads.ts",
+        "packages/nax/src/workflow/types.ts",
+        "packages/nax/src/workflow/pr-body-safe.ts",
+        "packages/nax/src/workflow/item-threads-post.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/item-threads-files.test.ts",
+        "packages/nax/test/unit/workflow/open-items-files.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-011",
+      "title": "Stamp verified coverage rulings with the PR head",
+      "description": "**Goal** — Persist the recording head on verified rulings for file-carrying items.\n\n**Motivation** — The approval was right, but nax got there only because the model chose to trust free text: no record says which files a ruling covered, or at which commit.\n\n**Approach** — **Verified rulings record their head.** `renderRulingEcho` renders a `verified` ruling with a valid `sha` as `Recorded: verified in <sha7> — <reason>`. `parseRulingEcho` accepts the ` in <sha>` part for `verified` (optional) as well as `fixed` (required), and rejects it for every other disposition. In `src/bot/rulings.ts` `ruleItem`, a `verified` ruling without a `sha`, on an item whose opener has a non-empty `parseItemFiles` list, is echoed and recorded with `sha: input.info.headSha`. That covers thread replies, model-read rulings and caller rulings alike. A caller ruling is exact, because `callerGate` already requires its `headSha` to equal the PR head. A thread reply carries no head, so it is stamped with the head the bot sees when it records the reply; a push between the reply and that recording is credited too (Out of Scope).\n\nAdd test/unit/workflow/item-threads-verified-sha.test.ts and test/unit/bot/rulings-coverage-sha.test.ts. Keep fixed-sha requirements, legacy verified/no-sha echoes, writer authorization, and successful-echo-only recording intact. Do not stamp waived or other dispositions or items without file lists, and do not replace a verified ruling's existing sha.\n\n**Scope** — In: verified echo sha grammar and centralized head stamping before echo/record. Out: parsing item files already provided by US-010, settled-file extraction and credit (US-012), authorization redesign, and reply-time head reconstruction.\n\n**Interface** —\n```ts\nrenderRulingEcho(ruling: PrRuling): string\nparseRulingEcho(key: string, body: string): PrRuling | null\n// ruleItem records a file-carrying verified/no-sha ruling with:\nsha: input.info.headSha\n```",
+      "acceptanceCriteria": [
+        "[unit] renderRulingEcho for { disposition: \"verified\", sha: \"<40 hex>\", reason: \"read all\" } starts with \"Recorded: verified in <first 7 hex> — read all\".",
+        "[unit] renderRulingEcho for a verified ruling with no sha starts with \"Recorded: verified — \".",
+        "[unit] parseRulingEcho of a wr-verified-<key> echo \"Recorded: verified in abc1234 — read all\" returns a ruling with disposition \"verified\" and sha \"abc1234\".",
+        "[unit] parseRulingEcho of a wr-verified-<key> echo with no \" in <sha>\" returns a ruling with no sha.",
+        "[unit] parseRulingEcho of a wr-waived-<key> echo \"Recorded: waived in abc1234 — x\" returns null.",
+        "[unit] parseRulingEcho of a wr-fixed-<key> echo with no \" in <sha>\" returns null.",
+        "[unit] recordPrRulings with a writer's verified reply on an item whose opener lists files, and info.headSha H, records a ruling with sha H.",
+        "[unit] In that case the ruling echo posted with replyToThread, after unwrapping its withNaxBotMarker envelope, starts with \"Recorded: verified in <H first 7>\".",
+        "[unit] recordPrRulings with a writer's verified reply on an item whose opener lists no files records a ruling with no sha.",
+        "[unit] recordPrRulings with a caller ruling verified on a file-carrying item records a ruling with sha equal to info.headSha.",
+        "[unit] recordPrRulings with a writer's \"waived: reason\" reply on a file-carrying item records a ruling with no sha."
+      ],
+      "tags": [
+        "feature",
+        "bot",
+        "rulings",
+        "provenance"
+      ],
+      "dependencies": [
+        "US-010"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Changes durable provenance in the writer-authorized ruling path; strict TDD protects existing access checks and head attribution."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/item-threads.ts",
+        "packages/nax/src/bot/rulings.ts",
+        "packages/nax/test/unit/workflow/item-threads.test.ts",
+        "packages/nax/test/unit/bot/rulings.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/item-threads-verified-sha.test.ts",
+        "packages/nax/test/unit/bot/rulings-coverage-sha.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-012",
+      "title": "Credit unchanged files from settled verified rulings",
+      "description": "**Goal** — Remove proven unchanged verified files from bot review obligations and name that credit in the prompt.\n\n**Motivation** — The agent finishing the PR read all 45 files at commit `ec1c569` and settled the items `verified`.\n\n**Approach** — **Credit.** `BotSettledRuling` gains `readonly files?: readonly string[]`, present only when non-empty. `readReviewRulings` sets it from `parseItemFiles(item.thread.comments[0]?.body ?? \"\")` when non-empty. New pure `creditedFiles` in `packages/nax/src/bot/coverage-credit.ts`:\n\nA ruling credits files only when its `disposition` is `\"verified\"`, `files` is non-empty and `sha` is set; `changedSince` is called only for such rulings, once per distinct sha. It credits each listed file that is in `required` and absent from `changedSince(sha)`. A `null` from `changedSince` credits nothing for that ruling. The result is the union, in `required` order.\n\nIn `runPrReview`, `changedSince` runs `git diff --name-only <sha>..HEAD` through `_workflowDeps.git` in `ctx.projectDir`. A non-zero exit returns `null` and logs a warn with `{ storyId: \"_run\", sha }`. Inside the package callback, after `requiredFiles` is computed, `credited` is computed from `input.settled ?? []`. The op receives `requiredFiles` minus `credited`. The prompt is built inside the `run` callback, after the package step, so it can carry `coveredByRulings: credited`. The outcome's `unreadFiles` is computed against `requiredFiles` minus `credited`, and stays absent when empty, as today. `PrReviewOutcome` gains no field.\n\n`BotPrReviewPromptInput` gains `coveredByRulings?: readonly string[]`. When non-empty, the prompt adds:\n```\n## Files covered by settled rulings\nA collaborator verified these files at a commit they have not changed since. You do not need to read them. Read every other changed file in the package.\n- path/one.ts\n```\n\nA file path that does not survive the opener round trip earns no credit; the bot review must read it. A verified ruling with no sha or whose item lists no files credits nothing. Preserve the existing required-file classifier (including tests for bot review), triage, optional-empty outcome fields, existing caller-head authorization, and no-settled prompt behavior. Tests in test/unit/bot/coverage-credit.test.ts, test/integration/bot/review-step-credit.test.ts and test/unit/prompts/bot-pr-review-builder-covered.test.ts.\n\n**Scope** — In: settled-file extraction/type, pure memoized-sha credit helper, git comparison dependency, lazy prompt and narrowed op/outcome obligations, credit prompt section. Out: ruling stamping (US-011), coverage record posting (US-013), readiness hold (US-014), bot tool reads, bot slicing, legacy ruling backfill, and aligning bot/branch test-file policies.\n\n**Interface** —\n```ts\nexport async function creditedFiles(input: {\n  readonly settled: readonly BotSettledRuling[];\n  readonly required: readonly string[];\n  readonly changedSince: (sha: string) => Promise<readonly string[] | null>;\n}): Promise<string[]>;\n// BotSettledRuling adds:\nreadonly files?: readonly string[];\n// BotPrReviewPromptInput adds:\ncoveredByRulings?: readonly string[];\n```",
+      "acceptanceCriteria": [
+        "[unit] creditedFiles with a verified ruling listing [\"a.ts\", \"b.ts\"] at sha S, required [\"a.ts\", \"b.ts\", \"c.ts\"] and changedSince(S) returning [] returns [\"a.ts\", \"b.ts\"].",
+        "[unit] creditedFiles with changedSince(S) returning [\"b.ts\"] returns [\"a.ts\"].",
+        "[unit] creditedFiles with changedSince(S) returning null returns [].",
+        "[unit] creditedFiles with a verified ruling with no sha returns [].",
+        "[unit] creditedFiles with a waived ruling listing files at a sha returns [].",
+        "[unit] creditedFiles drops a ruling's file that is not in required.",
+        "[unit] creditedFiles with two rulings crediting c.ts and a.ts returns [\"a.ts\", \"c.ts\"] in required order.",
+        "[unit] creditedFiles calls changedSince once per distinct sha, and never for a ruling with no sha or no files.",
+        "[unit] readReviewRulings for a settled verified item whose opener lists [\"a.ts\"] and whose echo carries sha abc1234 returns a settled entry with files: [\"a.ts\"] and sha: \"abc1234\".",
+        "[unit] readReviewRulings for a settled item whose opener lists no files returns a settled entry with no files field.",
+        "[integration] runPrReview with settled holding a verified ruling for [\"src/a.ts\"] at sha S, required files [\"src/a.ts\", \"src/b.ts\"], and git diff --name-only S..HEAD printing nothing, calls callOp with requiredFiles: [\"src/b.ts\"].",
+        "[integration] In that case the prompt passed to callOp includes \"## Files covered by settled rulings\" and \"- src/a.ts\".",
+        "[integration] In that case a verdict with inspectedFiles: [\"src/b.ts\"] gives an outcome with no unreadFiles field.",
+        "[integration] When git diff --name-only S..HEAD prints src/a.ts, callOp receives requiredFiles: [\"src/a.ts\", \"src/b.ts\"].",
+        "[integration] When git diff --name-only S..HEAD exits 128, callOp receives both files and one warn is logged whose data has sha S.",
+        "[integration] With no settled rulings, callOp receives the full required set and the prompt has no \"## Files covered by settled rulings\" heading.",
+        "[unit] buildBotPrReviewPrompt with coveredByRulings: [\"a.ts\"] includes \"You do not need to read them. Read every other changed file in the package.\".",
+        "[unit] buildBotPrReviewPrompt with coveredByRulings: [] includes no \"## Files covered by settled rulings\" heading.",
+        "[unit] creditedFiles returns [] for a verified ruling with sha but no non-empty file list.",
+        "[integration] When a required file path does not survive an item opener round trip, runPrReview grants it no ruling credit and still requires the bot reviewer to read it.",
+        "[integration] When git diff --name-only S..HEAD fails, runPrReview logs its warning with { storyId: \"_run\", sha: S }."
+      ],
+      "tags": [
+        "feature",
+        "bot",
+        "rulings",
+        "coverage",
+        "provenance"
+      ],
+      "dependencies": [
+        "US-003",
+        "US-011"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module trust/provenance integration grants review exemptions from authorized rulings and commit state; strict TDD protects fail-closed credit."
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/review-step.ts",
+        "packages/nax/src/bot/review-rulings.ts",
+        "packages/nax/src/prompts/builders/bot-pr-review-builder.ts",
+        "packages/nax/test/integration/bot/review-step.test.ts",
+        "packages/nax/src/workflow/item-threads.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/coverage-credit.ts",
+        "packages/nax/test/unit/bot/coverage-credit.test.ts",
+        "packages/nax/test/integration/bot/review-step-credit.test.ts",
+        "packages/nax/test/unit/prompts/bot-pr-review-builder-covered.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-013",
+      "title": "Post a head-bound bot review coverage record",
+      "description": "**Goal** — Persist the bot review's uncovered files at its reviewed head in an owned upserted comment.\n\n**Motivation** — The approval was right, but nax got there only because the model chose to trust free text: no record says which files a ruling covered, or at which commit.\n\n**Approach** — **Coverage record and readiness.** New `packages/nax/src/bot/coverage-record.ts`:\n\nThe rendered body is `Review coverage at <sha40>: <n> required file(s) not read`, then one `` - `<path>` `` line per uncovered file. `parseCoverageRecord` accepts a raw or forge-marked body and returns `null` for anything else.\n\nAfter a bot review that ran (not conversation-only, not static mode) on a PR with the nax workflow marker, the post step posts the record wrapped in `withNaxBotMarker(body, COVERAGE_RECORD_KEY)`, editing the bot's existing `w-coverage` comment when there is one, with `uncovered` = the outcome's `unreadFiles ?? []` and `headSha` = the reviewed head.\n\n`TOP_LEVEL_MARKER_KEYS` in `src/forge/marker-grammar.ts` gains `\"w-coverage\"`, so a GitLab top-level note with replies is still read as the bot's own record (`src/forge/threads.ts`).\n\nPatterns to mirror: `writeEvidence` in `src/bot/fix-report.ts` (find the own keyed comment, edit it or post a new one) for the coverage record; `reviewRequiredFiles`' `_workflowDeps` injection for git and file access. Posting or editing the w-coverage comment warns on failure; the review outcome is unchanged. Keep the summary's unread list and record uncovered list identical, including writing an empty record when a real code review covered everything. Propagate conversation-only scope into the post condition without changing static review or other post behavior.\n\nAdd test/unit/bot/coverage-record.test.ts and test/integration/bot/review-run-coverage-record.test.ts. Update only the existing top-level marker-array expectation in test/unit/forge/threads-comments.test.ts to end with w-coverage.\n\n**Scope** — In: record render/parse contract, top-level marker grammar, actual review post/update integration, and best-effort warning semantics. Out: readiness reading/hold (US-014), settled-ruling credit (US-012), conversation-only/static coverage publication, and readiness holds caused solely by publication failure.\n\n**Interface** —\n```ts\nexport const COVERAGE_RECORD_KEY = \"w-coverage\";\nexport interface CoverageRecord { readonly headSha: string; readonly uncovered: readonly string[] }\nexport function renderCoverageRecord(record: CoverageRecord): string;\nexport function parseCoverageRecord(body: string): CoverageRecord | null;\n// TOP_LEVEL_MARKER_KEYS target:\n[\"summary\", \"w-index\", \"w-evidence\", \"fix-summary\", \"w-coverage\"]\n```",
+      "acceptanceCriteria": [
+        "[unit] renderCoverageRecord({ headSha: H, uncovered: [\"a.ts\"] }) starts with \"Review coverage at <H>: 1 required file(s) not read\".",
+        "[unit] parseCoverageRecord(renderCoverageRecord(r)) returns a record deep-equal to r for uncovered [\"a.ts\", \"b.ts\"].",
+        "[unit] parseCoverageRecord of the record wrapped with withNaxBotMarker(body, COVERAGE_RECORD_KEY) returns the same record.",
+        "[unit] parseCoverageRecord(renderCoverageRecord({ headSha: H, uncovered: [] })) returns { headSha: H, uncovered: [] }.",
+        "[unit] parseCoverageRecord(\"hello\") returns null.",
+        "[unit] TOP_LEVEL_MARKER_KEYS includes \"w-coverage\".",
+        "[integration] runBotReview on a workflow-marker PR whose stubbed review outcome has unreadFiles: [\"src/a.ts\"] posts one comment whose body parseCoverageRecord reads as { headSha: <reviewed head>, uncovered: [\"src/a.ts\"] }.",
+        "[integration] When the bot already has a w-coverage comment, runBotReview edits that comment and posts no new w-coverage comment.",
+        "[integration] runBotReview on a PR without the workflow marker posts no w-coverage comment.",
+        "[integration] A conversation-only runBotReview posts no w-coverage comment.",
+        "[integration] When posting the w-coverage comment rejects, runBotReview still returns outcome \"posted\" and logs one warn.",
+        "[integration] When editing the existing w-coverage comment rejects, runBotReview still returns outcome \"posted\" and logs one warn.",
+        "[integration] For the same review outcome, the number of \"Not read by the review\" lines in the summary comment equals the uncovered count in the w-coverage record."
+      ],
+      "tags": [
+        "feature",
+        "bot",
+        "forge",
+        "coverage"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A small pure wire format and guarded best-effort upsert mirror writeEvidence using the post step's existing owned-comment snapshot and scope; no authentication or ownership-resolution mechanism is introduced."
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/post.ts",
+        "packages/nax/src/bot/review-run.ts",
+        "packages/nax/src/forge/marker-grammar.ts",
+        "packages/nax/src/bot/fix-report.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/coverage-record.ts",
+        "packages/nax/test/unit/bot/coverage-record.test.ts",
+        "packages/nax/test/integration/bot/review-run-coverage-record.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When runBotReview uses static mode, it posts no w-coverage comment.",
+        "When a real workflow code review returns no unreadFiles, runBotReview replaces a prior coverage record with uncovered: [] at the reviewed head.",
+        "When a different author's comment has the w-coverage marker, runBotReview leaves it unchanged and posts its own record."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/forge/threads-comments.test.ts",
+          "reason": "the test \"AC-1 exports the top-level marker keys\" asserts `TOP_LEVEL_MARKER_KEYS` equals `[\"summary\", \"w-index\", \"w-evidence\", \"fix-summary\"]`. After this story the list ends with `\"w-coverage\"`; the expected array gains that last entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-014",
+      "title": "Hold workflow readiness on current-head uncovered files",
+      "description": "**Goal** — Prevent bot fix from marking a workflow PR ready when its current-head coverage record names unread files.\n\n**Motivation** — Finish problems go to an agent, never to a new human step.\n\n**Approach** — `workflowPrReadiness` gains an optional `coverage?: CoverageRecord` and `headSha?: string`. After the confirmed-work check and before the CI check, it returns `{ ready: false, reason: \"bot review did not read <n> required file(s) at <sha7>: <first 5>[, +<k> more]; run nax bot review\" }` when `coverage.headSha === headSha` and `uncovered` is non-empty. A record for another head does not hold. `workflowReadyHold` in `fix-report.ts` reads the bot's own `w-coverage` comment from the `comments` that `readReadyRulings` returns, parses it, and passes it with `info.headSha` to both `workflowPrReadiness` calls.\n\nThe w-coverage comment does not parse: readiness treats it as absent. A w-coverage comment from another author is ignored; only the bot's own comment is read. Preserve existing missing-index/unindexed/missing-thread/open-item and confirmed-work holds ahead of coverage; coverage precedes failed CI. Apply this only through the existing workflow-marker readiness path, retaining both exact-head freshness checks and the post-CI reread. Tests in new test/unit/bot/workflow-ready-coverage.test.ts and test/integration/bot/fix-ready-coverage.test.ts, driving workflowReadyHold through readyStep with readyOnly.\n\n**Scope** — In: same-head coverage hold, bounded reason formatting, own-comment parsing and both pre-/post-CI readiness calls. Out: coverage record publication (US-013), holding on a stale/malformed/missing record, holding nonworkflow PRs, and treating failed record publication as a readiness failure.\n\n**Interface** —\n```ts\nworkflowPrReadiness(input: {\n  outcome?: RecordRulingsOutcome;\n  ci: CiWaitResult;\n  coverage?: CoverageRecord;\n  headSha?: string;\n}): WorkflowPrReadiness\n```",
+      "acceptanceCriteria": [
+        "[unit] workflowPrReadiness with every item settled, CI green, headSha H and coverage { headSha: H, uncovered: [\"a.ts\", \"b.ts\"] } returns { ready: false } with a reason starting \"bot review did not read 2 required file(s) at <H first 7>: a.ts, b.ts\".",
+        "[unit] That reason ends with \"run nax bot review\".",
+        "[unit] With 7 uncovered files, the reason lists the first 5 and then \"+2 more\".",
+        "[unit] With coverage.headSha different from headSha, workflowPrReadiness returns { ready: true } when every item is settled and CI is green.",
+        "[unit] With coverage.uncovered empty, workflowPrReadiness returns { ready: true } when every item is settled and CI is green.",
+        "[unit] With an open item and uncovered files at the head, the reason names the open item, not the coverage.",
+        "[unit] With uncovered files at the head and CI failed, the reason is the coverage reason.",
+        "[integration] workflowReadyHold (through readyStep with readyOnly) on a draft workflow PR whose own w-coverage comment names src/a.ts at the PR head returns a readyHeld starting \"bot review did not read 1 required file(s)\".",
+        "[integration] The same draft PR whose own w-coverage comment body does not parse gets no coverage hold.",
+        "[integration] workflowReadyHold ignores a w-coverage comment naming files at the PR head when its author is not the bot's login."
+      ],
+      "tags": [
+        "feature",
+        "bot",
+        "readiness",
+        "coverage"
+      ],
+      "dependencies": [
+        "US-013"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The existing readiness predicate and its two callers gain a bounded coverage condition and comment lookup; strict TDD remains justified because the author-ownership check controls which durable evidence can gate draft promotion."
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/workflow-ready.ts",
+        "packages/nax/src/bot/fix-report.ts",
+        "packages/nax/test/unit/bot/workflow-ready.test.ts",
+        "packages/nax/src/bot/coverage-record.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/bot/workflow-ready-coverage.test.ts",
+        "packages/nax/test/integration/bot/fix-ready-coverage.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "This is an enhancement to the existing Bun/TypeScript CLI, closing #2858 and #2859, not a new subsystem or a package extraction. All 14 implementation stories are scoped to packages/nax. nax-agent is read-only context for its public ToolCallRecord and internal ledger-name helper; neither nax-agent-acp nor nax-ai needs modification. The codebase-memory MCP is unavailable in this host, so discovery used direct reads and text searches rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax. Repository architecture was consulted at docs/architecture/ARCHITECTURE.md:11 (focused standards index), :27 (coding/testing standards), and :82 (operations/callOp). Keep operations independent of workflow imports, build prompts only under prompts/, use Bun-native I/O and injectable dependency seams, use named constants, and retain canonical agent and permission resolution. No release or version changes are required.\n\nRefine-pass audit: all 186 explicit spec acceptance criteria were compared in story order against this PRD. The ordinal mapping is one-to-one: US-001 spec AC1-AC19 -> acceptanceCriteria entries 1-19; US-002 AC1-AC15 -> entries 1-15; US-003 AC1-AC9 -> entries 1-9; US-004 AC1-AC11 -> entries 1-11; US-005 AC1-AC18 -> entries 1-18; US-006 AC1-AC6 -> entries 1-6; US-007 AC1-AC21 -> entries 1-21; US-008 AC1-AC17 -> entries 1-17; US-009 AC1-AC6 -> entries 1-6; US-010 AC1-AC12 -> entries 1-12; US-011 AC1-AC11 -> entries 1-11; US-012 AC1-AC18 -> entries 1-18; US-013 AC1-AC13 -> entries 1-13; US-014 AC1-AC10 -> entries 1-10. Subsequent entries only expand the spec's explicit failure table. No spec assertion was removed or moved across stories. Regression qualifiers retained include the matching describeUnread text/reason, unchanged path round trips, legacy no-files opener output, the triage fallback 'as before', the shared git diff instruction, and the single-slice verdict object itself. Criteria observe returned values, captured calls/prompts, parsed comments, exceptions or logs; none is a quality-gate or test-count requirement.\n\nEvery story already has an observable negative path: US-001 null parse/empty output/no progress; US-002 invalid config/unparseable reply; US-003 missing range/incomplete triage; US-004 absent/empty required files; US-005 denied/ranged/oversized/outside reads; US-006 absent directory/corrupt file/missing calls array; US-007 all-null slice verdicts; US-008 failed package/timeout/abort; US-009 missing audit identity/oversized evidence; US-010 absent Files block; US-011 disallowed sha grammar; US-012 changedSince failure/missing provenance; US-013 malformed record/post/edit failures; US-014 malformed/stale/third-party record. The 18 failure-table rows map respectively to US-008 preparation failure; US-008 preparation abort; US-008 slice failure and final unread retention; US-008 all-failed first reason; US-008 slice abort; US-006/US-009 missing audit directory; US-006 corrupt/missing-calls audit file; US-005 oversized/ranged call; US-012 non-round-tripping path; US-009 absent runId/outputDir; US-001 coverage-budget exhaustion; US-001 no-progress stop; US-001/US-002 zero retries; US-012 failed diff; US-012 missing sha/files; US-013 post/edit failure; US-014 unparseable record; US-014 another author. The zero-retry branch-parser check and failed-slice unread check were made explicit in their existing code stories, not new test-only stories.\n\nCodebase-fit corrections from the audit: packages/nax/src/bot/rulings.ts:109 wraps renderRulingEcho with withNaxBotMarker before replyToThread, so US-011 checks the unwrapped echo's Recorded prefix rather than the envelope's first line. packages/nax/src/operations/bot-pr-review.ts:36 returns early for an absent or empty requiredFiles set; US-003's invalid-context example now explicitly supplies a non-empty set without range. packages/nax/src/bot/post.ts:336 always publishes the review summary: US-013's upsert assertion forbids only a duplicate w-coverage record, not unrelated existing summary comments. US-007's root grouping example now supplies a concrete sliceFiles argument. Its global-directory-grouping prose conflicted with the explicit input-order AC for input such as a/one.ts, a/nested/two.ts, a/three.ts. The AC is authoritative: the description now treats recurring parent-directory runs as later groups rather than reordering the input; greedy packing, oversized splitting and all specified examples remain unchanged. The nested-directory example is suggestedCriteria, not an invented spec AC.\n\nAll 15 feature-level out-of-scope items remain verbatim in outOfScope. All 14 binding workdirs and dependency arrays remain unchanged, including dependencies that would otherwise be transitively redundant. Every spec-recommended context file is retained within the five-file limit, with upstream-created modules treated as readable dependency outputs rather than this story's expectedFiles. No story lists its own new source or test file as context. Routine closure/config wiring, pure read-credit parsing, audit loading, audit integration and record upsert were downgraded to medium/tdd-simple: audit session names are data, not authentication or session lifecycle changes. Strict isolation is retained where the actual fresh-session lifecycle changes (US-008), writer-authorized provenance changes (US-011/US-012), or ownership checks gate promotion (US-014).\n\nAdditional verified integration and compatibility notes: packages/nax/src/workflow/branch-review.ts:102 currently builds the prompt before requiredFiles is assigned in underReviewLimit's package callback (:135); move initial prompt construction after preparation so the actual required slice reaches the prompt. Retain story-report inventory (:35), the optional memory index (:113), changed-file rules (:68), and the project-context override (:88). Package preparation remains outside individual slice timeouts; each slice uses underReviewLimit with a no-op package callback, retaining the shared abort/timeout/unparseable/error semantics at packages/nax/src/workflow/story-review.ts:22. packages/nax/src/workflow/feature-env.ts:70 is the upstream branch-review caller; packages/nax/src/workflow/feature-steps.ts:155 already spreads the verdict into branch-review.json, so optional slices survive without a second artifact writer. packages/nax/src/workflow/feature-context.ts:44 already carries runtime.runId and outputDir; extending BranchStepContext at packages/nax/src/workflow/branch-step-context.ts:7 must not introduce manual context reconstruction or require these fields on standalone PR contexts.\n\nBaseline tests and implementation seams verified in this pass: packages/nax/test/unit/workflow/branch-review.test.ts:38 exercises the package and one-op path; :62 expects the unchanged single-slice outcome; :151 exercises a verdict with no inspectedFiles. Keep those assertions and preserve object identity whenever no unreadFiles annotation is needed. packages/nax/test/integration/bot/review-step.test.ts:12 snapshots/restores _workflowDeps and _reviewStepDeps, and :69 injects the package writer and callOp; mirror those seams instead of global module mocks. packages/nax/test/unit/operations/workflow-branch-review.test.ts:161 is the legacy shared-budget assertion that US-002 must replace with the no-progress fallback assertion, keeping findings and the unparseable JSON assertions. packages/nax/test/unit/operations/bot-pr-review.test.ts:93 contains the shared-budget/static-mode regression assertions US-003 must update, including progress { attempt: 1, max: 3 }. packages/nax/test/unit/config/workflow-config.test.ts:8 has the exact default object that must gain only review: { sliceFiles: 15, coverageRetries: 3 }. Existing forge top-level-key equality must gain w-coverage, while no other prior assertion is intentionally changed.\n\nEvidence interpretation is deliberately bounded by this spec, not a general shell parser or audit hardening project. packages/nax-agent/src/tools/tool-audit.ts:24 exposes public ToolCallRecord with resultBytes (:29); :79 documents a separate resultBytesPreTruncation field. The specified credit rule uses resultBytes <= 40_000, not that separate field; the exact-40_000 acceptance criterion is authoritative. packages/nax-agent/src/tools/truncate.ts:28 defines MODEL_MAX_BYTES = 40_000. Preserve the specified positive piped-diff credit (git diff ... -- src/a.ts | head -150), and do not add cat/sed/head/git-show recognition. The ledger parser at packages/nax/src/workflow/tool-error-outcome.ts:116 is nearby read-only context, not a substitute: it scans all run sessions rather than the exact ledgerSessionName and has different malformed-file behavior. Normalize through the exported operations leaf rather than introducing a workflow dependency in operations. A failed audit scan must never manufacture coverage.\n\nRuling/readiness integration verified: packages/nax/src/bot/review-step.ts:72 eagerly constructs its current prompt before package preparation, so credit requires moving prompt construction into the run callback. Keep reviewRequiredFiles(..., { keepTests: true }) and unchanged conversation/static scoping. packages/nax/src/bot/review-rulings.ts:78 already gates caller files on exact PR head and :125 excludes static/nonworkflow ruling reads; do not bypass these checks when attaching file metadata. packages/nax/src/bot/rulings.ts:289 centralizes ruleItem before postEcho and successful recording, so stamp there for keyword, model and caller candidates alike, preserving writer authorization and successful-echo-only recording. packages/nax/src/bot/post.ts:331 posts the summary, while packages/nax/src/bot/review-run.ts:123 supplies the forge post node; pass the review's existing scope (:381) rather than guessing conversation-only from an empty required set. packages/nax/src/bot/fix-report.ts:173 returns fresh info, user, comments and rulings, :197 performs preflight readiness, :205 re-reads after CI, and :218 shows owned keyed comment upsert in writeEvidence. Both readiness calls must use coverage parsed from their own contemporaneous comment snapshots and info.headSha. Existing head-change checks, item holds, head gates, and CI behavior remain in place.\n\nMigration/risk notes: all durable fields are additive and optional; no backfill or version bump is needed. Legacy verified echoes without a sha remain parseable but earn no credit. Existing item hashes remain kind-plus-issue only, so adding Files must not fork thread identity. Absent/empty optional arrays must remain absent where specified, particularly settled files, unreadFiles and slices for one slice. A stored coverage record for an old head is intentionally ignored, not treated as evidence about the new head. Failed record publication warns without creating a new readiness hold. Exact wire parsing and bot ownership must not expand access or accept third-party coverage comments. Prompt prose line wrapping is presentational: preserve the literal continuous phrases asserted by US-004 and US-012. Slice planning must retain the input order, including recurring parent directories; do not reinterpret it as story grouping. Independent closure retry state is per callOp invocation, and no-progress compares missing counts rather than set identity. Inner fallback-key presence, including a key whose value is undefined, prevents coverage from continuing past exhausted triage. New tests are authored with each code story, regressions must be demonstrated red before implementation, and neither a documentation story nor a new human finishing step is introduced.\n\nRetry architecture and impact: packages/nax/src/agents/retry/types.ts:5 defines the fallback-bearing RetryDecision union, :14 defines the context including lastTurnResult, and :23 documents synthetic ParseValidationError probes. packages/nax/src/agents/retry/parse-retry.ts:77 constructs the existing shape/triage strategy; :92 bypasses format retries for adapter failures, :107 handles empty output, :134 accepts a valid parse, and :138 applies the inner attempt budget. packages/nax/src/agents/retry/compose.ts:21 cannot implement the requested wrapper: it returns the first retry=true and otherwise discards fallback-bearing decisions. Add a purpose-built closure strategy and export it through packages/nax/src/agents/retry/index.ts:15. packages/nax/src/operations/call-dispatch-run.ts:103 resolves one strategy per invocation; :281 implements the per-hop probe loop and :297 calls shouldRetry. Coverage-issued state must span hop resets while the delegated attempt is clamped to zero. The global bound remains MAX_COMPLETE_RETRY_ATTEMPTS = 20 at packages/nax/src/operations/call-resolvers.ts:34. No generic dispatch logging or retry-cap changes are needed. packages/nax/src/operations/workflow-branch-review.ts:17 declares the input, :35 already declares a fresh wf-branch-review session, and :48 currently mixes coverage with the maxAttempts:2 parse strategy. packages/nax/src/operations/bot-pr-review.ts:19 declares bot input; :35 checks coverage context; :44 mixes triage and coverage. Preserve its missing-context error and triage exhaustion fallback, and wrap both trusted and static review operations without expanding static tools (:91).\n\nConfiguration and prompt impacts: packages/nax/src/config/schemas-workflow.ts:11 owns WorkflowConfigObjectSchema and :45 derives WORKFLOW_DEFAULTS. Follow its existing Zod 4 prefault pattern, export parsed review defaults through packages/nax/src/config/index.ts:167, and add an optional review member to packages/nax/src/config/runtime-types-workflow.ts:40 so sparse hand-built configurations remain compatible. Descriptions live beside existing workflow fields at packages/nax/src/cli/config-descriptions.ts:80. The exact defaults assertion in packages/nax/test/unit/config/workflow-config.test.ts:11 must gain review while preserving all other fields. packages/nax/src/prompts/builders/workflow-branch-builder.ts:16 declares BranchReviewPromptInput; :101 builds the shared reading note; :111 builds the initial prompt; :172 builds the coverage retry. Explicit required-file obligations go after the reading note, optional slice metadata is 1-based in prompts, and optional progress preserves callers omitting it. The shared reading note is also consumed by packages/nax/src/workflow/git.ts:210 and exported by packages/nax/src/prompts/index.ts:105, so retain its per-file diff instruction and only replace the specified sentence. packages/nax/src/prompts/builders/bot-pr-review-builder.ts:12 owns BotSettledRuling and :21 owns prompt input; :103 assembles project sections. Credited files must be a distinct conditional section, not inferred from free-text settled reasons.\n\nBranch execution and artifact flow: packages/nax/src/workflow/branch-review.ts:102 currently builds one prompt before the package callback, :128 computes requiredFiles inside underReviewLimit, and :146 computes unread paths. Inventory/story-report and memory-index inputs already exist at :34 and :112 and must survive the refactor, as must changed-file rule and project-context appends at :68 and :84. Move package preparation and required-file computation ahead of per-slice prompts, perform that preparation once, then await fresh callOp invocations sequentially, each under its own review limit. packages/nax/src/workflow/story-review.ts:22 provides exactly the package-error, abort, timeout, null-verdict, and ordinary-error semantics to preserve; reuse it with a no-op writer for each slice. packages/nax/src/workflow/review-coverage.ts:73 owns required-file classification; :78 preserves bot tests via keepTests:true, while :107 drops branch tests. Do not align these policies. The new pure slice planner groups parent directories and greedily packs them; the pure merger preserves findings, optional absent inspectedFiles, first triage order, conservative verdict severity, and identity for a single ran part. packages/nax/src/operations/workflow-types.ts:42 defines the base verdict and :74 the branch extension: the new slice contract belongs here to preserve dependency direction. packages/nax/src/workflow/feature-env.ts:70 already passes FeatureContext structurally into runBranchReview. FeatureContext has required runId/outputDir at packages/nax/src/workflow/feature-context.ts:44; only BranchStepContext at packages/nax/src/workflow/branch-step-context.ts:7 needs optional declarations. The existing artifact sink at packages/nax/src/workflow/feature-steps.ts:155 spreads the verdict into branch-review.json, so merged slices flow through without adding a parallel artifact writer. Existing one-slice verdict identity and no-inspectedFiles behavior are regression anchors at packages/nax/test/unit/workflow/branch-review.test.ts:39 and :150.\n\nObserved-read boundary: packages/nax-agent/src/tools/tool-audit.ts:24 defines ToolCallRecord, including resultBytes and outcome, and :14 documents persisted filename format. It also has resultBytesPreTruncation at :85; this feature explicitly uses resultBytes <= 40_000, not a redesign of audit accounting. Follow the specified Read/Git/restricted-Bash recognition rather than executing shell commands or granting credit to grep/cat/ranged reads. packages/nax/src/operations/workflow-review-coverage.ts:15 owns lexical normalization, :30 compares required and inspected paths. Export/rename that normalization instead of copying it into workflow. File containment and conservative shell-word handling are important: only closed quoted literal paths, no outside-root paths, no globs/variables in credited path words, and no name-only/stat diffs. The spec explicitly credits git diff before a pipe, including a pipe to head; do not substitute an inferred stricter policy. Directory state is local to command segments in one Bash call. Audit files flush at hop completion, so read observation only reduces final unread files and never feeds in-session retries or mutates self-reported inspectedFiles. Match dispatch's anchor/name exactly: packages/nax/src/agents/coding-tool-support-resolve.ts:201 resolves audit paths, :490 uses that resolver, and :491 builds the ledger name. Use toolAuditDir with feature and explicit cwd, exact run/session/timestamp matching, ordered files, and injectable glob/readText/logger; missing directories are empty and malformed individual files warn and do not prevent reading other files.\n\nDurable coverage ruling flow: packages/nax/src/workflow/open-items.ts:118 builds reason items; match describeUnread text rather than inventing a second issue string. packages/nax/src/workflow/item-threads.ts:69 hashes kind+issue (unchanged), :78 renders openers, :89 unwraps raw/forge-marked bodies, :122 renders ruling echoes, and :145 parses echoes with the current fixed-only sha restriction. Add safeCode file blocks and parseItemFiles without changing item identity, opener parsing, legacy byte-for-byte output when files are absent, or unrelated ruling dispositions. packages/nax/src/workflow/pr-body-safe.ts:44 preserves path @/# characters using safeCode; safeInline at :39 would neutralize them and lose exact credit. File text that cannot round-trip must earn no credit. packages/nax/src/bot/rulings.ts:291 funnels keyword, model, and caller candidates into ruleItem before postEcho and recording, so stamp headSha there only for verified/no-sha/file-carrying openers. Preserve writer authorization at :84 and successful-echo-only persistence at :315. packages/nax/src/bot/review-rulings.ts:73 already gates caller provenance against trust/workflow/head and :133 maps settled items; enrich the settled data with parsed files only when non-empty. Legacy verified echoes without sha remain accepted but cannot earn credit; no historical migration/backfill. Sha rendering remains seven characters under existing ruling grammar, and git can resolve that stored sha; the separate coverage record uses the full forty-character reviewed head. Thread replies are stamped at recording-time head, with the spec's acknowledged push race; caller rulings retain exact-head gating.\n\nBot integration: packages/nax/src/bot/review-step.ts:63 currently builds prompt before package preparation; :95 computes requiredFiles with keepTests:true, :99 dispatches the appropriate op, and :121 returns optional unreadFiles. Compute credit in the package callback after required files, memoize changedSince by distinct eligible sha in the new pure creditedFiles helper, then construct the prompt lazily in run and send only uncredited required paths. Git runs via _workflowDeps.git with cwd ctx.projectDir and explicit --name-only <sha>..HEAD; nonzero exit means no credit with warning {storyId:'_run',sha}. Do not add an outcome field or a separate tool-read bot path. Empty credit must preserve prompts and absent unreadFiles.\n\nCoverage publication/readiness: packages/nax/src/bot/review-run.ts:64 already carries unreadFiles through ReviewState and :121 sends it to postPrReview; its review scope classifies conversation-only. packages/nax/src/bot/post.ts:76 defines publication input, :308 builds summaries from unreadFiles, and :340 persists/posts a successful review. Thread the scope condition to post as necessary so only actual nonstatic code reviews of workflow-marker PRs upsert w-coverage. Model writeEvidence at packages/nax/src/bot/fix-report.ts:225: find an owned keyed comment then edit or post, using the same reviewed head as the summary, and swallow only coverage-post failures with a warning. Do not make failure to publish coverage fail the review or hold readiness by itself. packages/nax/src/forge/marker-grammar.ts:2 currently has four top-level keys: append w-coverage so GitLab notes with replies are still top-level. Marker syntax alone is not ownership. packages/nax/src/bot/workflow-ready.ts:20 performs ordered holds for missing/outstanding items and confirmed work before CI at :40; insert same-head nonempty uncovered hold between confirmed work and CI. packages/nax/src/bot/fix-report.ts:173 readReadyRulings already returns comments/user/info, and :197 workflowReadyHold performs pre-CI and post-CI readiness calls. Parse only ownComments matching w-coverage and pass coverage/headSha to both; preserve all freshness checks and the workflow-only entry guard at :293. A malformed or stale-head coverage record is absent/nonholding by specification.\n\nTesting and migration: use new files listed per story, with bun:test, shared helpers, and restored _deps seams instead of global/module monkey-patching. Show regression tests fail before implementation; do not run bare bun test, and do not run coverage inside NAX_SANDBOXED=1. Existing tests to preserve include packages/nax/test/unit/operations/workflow-branch-review.test.ts:80 (JSON/truncation prompts) and :134 (coverage), packages/nax/test/unit/operations/bot-pr-review.test.ts:62 (triage), :93 (coverage), :185 (invalid caller context), packages/nax/test/unit/workflow/branch-review.test.ts:113 (coverage and failures), existing prompt/item-thread/rulings tests, packages/nax/test/integration/bot/review-step.test.ts, packages/nax/test/unit/bot/workflow-ready.test.ts, and packages/nax/test/integration/bot/fix-ready-only.test.ts. Authorized assertion changes are the parsed workflow default object, independent-budget/no-progress branch and bot expectations plus progress in bot coverage prompts, and the forge marker-key array. Keep other compatibility assertions unchanged, including legacy openers and one-slice verdicts without inspectedFiles. Dependencies are exactly the binding 14-story graph. Build reusable retry/config/prompt/path/slice leaves first, then branch orchestration, then durable files/sha rulings, credit, publication, and readiness. Risks are shared retry state across hops, consuming exhausted triage fallbacks accidentally, per-slice abort/timeout isolation, losing runtime verdict members, audit path/name mismatches, lossy Markdown file round trips, unauthorized or stale-head credit, and accidentally posting coverage for conversation/static reviews. No database migration, new human step, new transport/model, or API version bump is required; all persisted and input extensions are optional and legacy data safely receives zero new credit. The spec's manual .nax/rules/retry-strategy.md wording update remains outside implementation.",
+  "outOfScope": [
+    "Slices run one after another; parallel slice sessions are out (user ruling 2026-11-11: parallel slices would miss cross-file context).",
+    "Grouping slice files by the story whose commits changed them is out; slices group by parent directory in git's path order.",
+    "Tool-observed reads do not feed the coverage retry inside a session, because the tool-audit file is written when the hop ends; they only reduce the final unread list.",
+    "Tool-observed reads are not collected for ACP agents that use their own tools (nax has no tool-audit rows for them) or for `nax bot review`.",
+    "From Bash commands, only `git diff ... -- <paths>` (optionally after `cd <dir>`) is credited; `cat`, `sed`, `head` and `git show` are not.",
+    "Findings are not deduplicated across slices.",
+    "`nax bot review` is not sliced.",
+    "The bot review keeps test files in its required set while the branch review drops them; aligning the two is out (#2859 minor 3 stays as documented behaviour).",
+    "A verified ruling recorded before this feature, which has no head sha, credits no files.",
+    "The coverage readiness hold applies only to PRs with the nax workflow marker.",
+    "A failed post of the `w-coverage` comment does not hold readiness; the review summary still lists the unread files.",
+    "Updating the ruled-exception wording in `.nax/rules/retry-strategy.md` is a manual step after merge (`.nax/` is read-only to the run).",
+    "The branch review's model and reasoning effort are not changed.",
+    "A thread `verified` reply is stamped with the PR head at the time the bot records it, not the head at reply time (a forge reply carries no head); a push between the reply and the recording is credited as read. Caller rulings (`nax bot review --rulings`) are exact.",
+    "`callOp`'s generic `Op retrying ... parse probe failed` debug line is not relabelled; the strategy's own `Coverage retry` warn is the coverage signal."
+  ],
+  "routingProfile": "native-codex-ds"
+}
