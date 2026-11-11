@@ -3,7 +3,7 @@
   "feature": "run-tmp-and-dead-config",
   "branchName": "feat/run-tmp-and-dead-config",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T12:00:50.839Z",
+  "updatedAt": "2026-11-11T12:21:58.301Z",
   "userStories": [
     {
       "id": "US-001",
@@ -98,14 +98,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two small new modules and a single call in the existing runtime teardown finally, all using the repo's injectable _deps idiom; no new abstractions, so one tdd-simple session suffices."
+        "reasoning": "Two small new modules and a single call in the existing runtime teardown finally, all using the repo's injectable _deps idiom; no new abstractions, so one tdd-simple session suffices.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/runtime/index.ts",
@@ -131,7 +134,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4ce43023764030db1e9fba765030fa9273ea89a6"
     },
     {
       "id": "US-003",
