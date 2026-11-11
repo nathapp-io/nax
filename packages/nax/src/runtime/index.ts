@@ -140,6 +140,7 @@ import { createPackageRegistry } from "./packages";
 import { curatorRollupPath, globalOutputDir, projectOutputDir } from "./paths";
 import type { IPromptAuditor } from "./prompt-auditor";
 import { createNoOpPromptAuditor, PromptAuditor } from "./prompt-auditor";
+import { closeRunTmp } from "./run-tmp-close";
 import { withRunMemory, withRunSkills } from "./run-tool-providers";
 import { createRunTurnHooks } from "./run-turn-hooks";
 import type { CreateRuntimeOptions } from "./runtime-options";
@@ -253,6 +254,8 @@ export const _runtimeRunStateDeps = { repairRunState };
 
 /** Lazy resource discovery for opted-in run dispatches. */
 export const _runtimeResourceDeps = { loadResourceCatalog };
+
+export const _runtimeTmpDeps = { closeRunTmp };
 
 function warnMissingPromptAuditIdentity(auditEnabled: boolean, workdir: string): void {
   if (!auditEnabled) return;
@@ -468,7 +471,11 @@ export function createRuntime(config: NaxConfig, workdir: string, opts?: CreateR
         }
       }
     } finally {
-      await opts?.memory?.close();
+      try {
+        await opts?.memory?.close();
+      } finally {
+        await _runtimeTmpDeps.closeRunTmp({ runId, dryRun: opts?.dryRun ?? false });
+      }
     }
   };
 

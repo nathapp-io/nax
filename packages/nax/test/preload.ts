@@ -24,7 +24,11 @@ import { cleanupTempDir, makeTempDir } from "@nathapp/nax-test-kit/bun/temp";
 import { _acpDeps } from "../src/agents/acp/session";
 import { configureNaxCredentials } from "../src/config";
 import { _nativeCredentialDeps } from "../src/precheck/checks-native-credentials";
+import { _runTmpCloseDeps } from "../src/runtime/run-tmp-close";
 import { markTrusted } from "../src/trust";
+
+// Never sweep the developer's real run temp parent during tests.
+_runTmpCloseDeps.sweepStaleRunTmpRoots = async () => {};
 
 const isolatedGlobalDir = makeTempDir("nax-test-global-");
 
