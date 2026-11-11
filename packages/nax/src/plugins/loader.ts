@@ -17,7 +17,6 @@ import { assertTrusted } from "../trust";
 import { validateModulePath } from "../utils/path-security";
 import { autoPrPlugin } from "./builtin/auto-pr";
 import { autoRoutePlugin } from "./builtin/auto-route";
-import { curatorPlugin } from "./builtin/curator";
 import { createOtelReporterPlugin } from "./builtin/otel-reporter";
 import { createWebhookReporterPlugin } from "./builtin/webhook-reporter";
 import { createPluginLogger } from "./plugin-logger";
@@ -137,20 +136,6 @@ export async function loadPlugins(
   const logger = getSafeLogger();
 
   // 0. Load built-in plugins.
-  if (!disabledSet.has(curatorPlugin.name)) {
-    if (curatorPlugin.setup) {
-      const pluginLogger = createPluginLogger(curatorPlugin.name);
-      await curatorPlugin.setup({}, pluginLogger);
-    }
-    loadedPlugins.push({
-      plugin: curatorPlugin,
-      source: { type: "builtin", path: curatorPlugin.name },
-    });
-    pluginNames.add(curatorPlugin.name);
-  } else {
-    logger?.info("plugins", `Skipping disabled plugin: '${curatorPlugin.name}' (built-in)`);
-  }
-
   if (!disabledSet.has(autoPrPlugin.name)) {
     if (autoPrPlugin.setup) {
       const pluginLogger = createPluginLogger(autoPrPlugin.name);
