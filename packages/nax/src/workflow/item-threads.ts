@@ -4,7 +4,7 @@ import { NaxError } from "@/errors";
 import { isNaxBotMarkerKey, NAX_BOT_HEADER, parseNaxBotMarker } from "@/forge";
 import { RULING_SHA_PATTERN, RULING_SHA_SOURCE } from "@/utils/ruling-sha";
 import type { Disposition } from "./decisions-sidecar";
-import { safeCode, safeInline } from "./pr-body-safe";
+import { safeInline, safePath } from "./pr-body-safe";
 import type { OpenItem } from "./types";
 
 export interface PrRuling {
@@ -86,12 +86,15 @@ export function renderItemOpener(item: OpenItem): string {
 }
 
 /**
- * US-010: the paths a coverage item covers, one code span per line. `safeCode`, not `safeInline`:
- * inline would rewrite `@modal` and `#1` and cap the path at the cell limit, so the path a human
- * reads would no longer be the path a ruling credits.
+ * US-010: the paths a coverage item covers, one code span per line.
+ *
+ * `safePath`, not `safeInline`: inline would rewrite `@modal` and `#1`. Not `safeCode` either —
+ * its `CELL_MAX` cap clips the path and appends an ellipsis, and the clipped string is what
+ * `parseItemFiles` hands back to the ruling credit, so a long path would name no file at all. The
+ * path a human reads has to be the path a ruling credits.
  */
 function filesBlock(files: readonly string[] | undefined): string[] {
-  return files?.length ? [FILES_HEADING, ...files.map((path) => ` - \`${safeCode(path)}\``)] : [];
+  return files?.length ? [FILES_HEADING, ...files.map((path) => ` - \`${safePath(path)}\``)] : [];
 }
 
 /** Accept raw render output or a forge-marked comment; this does not establish ownership. */

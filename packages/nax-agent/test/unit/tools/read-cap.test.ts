@@ -337,3 +337,50 @@ describe("AC11-AC13: built-in runtime Read on a 1500-line file cuts at the cap f
     expect(after).toBe(outcome.content);
   });
 });
+
+// -----------------------------------------------------------------------------
+// The cut states itself: `ToolResult.truncated`.
+//
+// The cap cut delivers a body that fits every model-facing cap, so
+// `applyModelTruncationPolicy` is a no-op on it (AC13 above) and the runtime
+// cannot tell a cut result from a whole one by comparing content. `Read`
+// therefore reports its own cut, and the runtime records
+// `ToolCallRecord.truncated` from that flag OR the policy's verdict. Without
+// it a 1500-line read of a 1500-line file ledged as complete, and
+// `toolReadPaths` credited the whole file to a review that saw two thirds.
+// -----------------------------------------------------------------------------
+describe("ToolResult.truncated: Read states its own cap cut", () => {
+  test("a line-cap cut reports truncated true", async () => {
+    const path = join(root, "fifteen.txt");
+    writeFileSync(path, Array.from({ length: 1500 }, () => "x").join("\n"));
+    const res = await readTool.run({ path: "fifteen.txt" }, ctx([path], 100_000));
+    expect(res.content).toContain("Showing lines");
+    expect(res.truncated).toBe(true);
+  });
+
+  test("a byte-cap cut reports truncated true", async () => {
+    const path = join(root, "dense.txt");
+    writeFileSync(path, Array.from({ length: 200 }, () => "x".repeat(399)).join("\n"));
+    const res = await readTool.run({ path: "dense.txt" }, ctx([path], MODEL_MAX_BYTES));
+    expect(res.content).toContain("Showing lines");
+    expect(res.truncated).toBe(true);
+  });
+
+  test("a within-cap read reports truncated false", async () => {
+    const path = join(root, "small.txt");
+    writeFileSync(path, "a\nb\nc\n");
+    const res = await readTool.run({ path: "small.txt" }, ctx([path], 100_000));
+    expect(res.content).not.toContain("Showing lines");
+    expect(res.truncated).toBe(false);
+  });
+
+  test("the overlong-line pass-through reports false — the after_tool policy, not the tool, cuts that one", async () => {
+    // A single line wider than the whole byte budget is handed to the policy
+    // unshaped (step 2), so the tool itself dropped nothing and the policy's
+    // own verdict is the one that states the row's completeness.
+    const path = join(root, "one-long.txt");
+    writeFileSync(path, "x".repeat(MODEL_MAX_BYTES + 1));
+    const res = await readTool.run({ path: "one-long.txt" }, ctx([path], MODEL_MAX_BYTES));
+    expect(res.truncated).toBe(false);
+  });
+});

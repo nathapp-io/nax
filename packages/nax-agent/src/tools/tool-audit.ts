@@ -83,17 +83,23 @@ export interface ToolCallRecord {
    */
   readonly resultBytesPreTruncation?: number;
   /**
-   * Whether the shared model-facing truncation policy cut this result before
-   * the model saw it — by ANY of its stages, not only the byte ceiling.
+   * Whether this result reached the model incomplete — cut either by the
+   * shared model-facing truncation policy or by the tool's own shaping
+   * (`ToolResult.truncated`; the runtime records the OR of the two).
+   *
+   * The tool half matters because `Read` caps its whole-file body at these
+   * same ceilings: the policy then sees a within-cap result and changes
+   * nothing, so on a Read row the policy's verdict alone would state
+   * completeness for a file the model saw a prefix of.
    *
    * `resultBytes` alone cannot answer "did the model see the whole result?":
    * the policy also caps line length (`MODEL_MAX_LINE_CHARS`) and line count
    * (`MODEL_MAX_LINES`), so a body cut from 2 000 short lines down to 1 000 is
    * well under `MODEL_MAX_BYTES` yet half of it never reached the model.
    *
-   * `false` means the policy ran on this result and changed nothing: the row
-   * STATES completeness rather than leaving it to be inferred from size. It is
-   * recorded on every row the coding-tool runtime writes.
+   * `false` means nothing cut this result: the row STATES completeness rather
+   * than leaving it to be inferred from size. It is recorded on every row the
+   * coding-tool runtime writes.
    *
    * ABSENT means unknown, not complete — a row written before this field
    * existed, or one an ACP session produced, where nax never shaped the result

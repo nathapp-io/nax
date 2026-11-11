@@ -5,7 +5,9 @@
  * logged rather than silently excusing the files.
  */
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { makeMockCallContext, makeNaxConfig, makeScriptedCallOp } from "@test/helpers";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { cleanupTempDir, makeMockCallContext, makeNaxConfig, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import { _reviewStepDeps, runPrReview } from "@/bot";
 import { resolveWorkflowConfig } from "@/config";
 import type { PrInfo } from "@/forge";
@@ -37,14 +39,14 @@ const info: PrInfo = {
   crossRepo: false,
 };
 
-function verifiedRuling(files: readonly string[]): BotSettledRuling {
+function verifiedRuling(files: readonly string[], sha: string = SHA): BotSettledRuling {
   return {
     id: "w-1",
     kind: "cannot-verify",
     issue: "coverage gap",
     disposition: "verified",
     reason: "read",
-    sha: SHA,
+    sha,
     files,
   };
 }
@@ -124,7 +126,7 @@ describe("runPrReview credits settled verified rulings (US-012)", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.op).toBe(botPrReviewOp);
     expect(calls[0]?.input).toMatchObject({ requiredFiles: ["src/b.ts"] });
-    expect(gitCalls).toEqual([{ args: ["diff", "--name-only", `${SHA}..HEAD`], cwd: ctx.projectDir }]);
+    expect(gitCalls).toEqual([{ args: ["diff", "--name-only", "-z", `${SHA}..HEAD`], cwd: ctx.projectDir }]);
   });
 
   test("AC-12 the prompt names the credited file", async () => {
@@ -140,7 +142,7 @@ describe("runPrReview credits settled verified rulings (US-012)", () => {
   });
 
   test("AC-14 a file the ruling's commit changed is still required", async () => {
-    gitResult = { stdout: "src/a.ts\n", exitCode: 0 };
+    gitResult = { stdout: "src/a.ts\0", exitCode: 0 };
     await runPrReview(ctx, { ...baseInput, settled: [verifiedRuling(["src/a.ts"])] });
     expect(calls[0]?.input).toMatchObject({ requiredFiles: ["src/a.ts", "src/b.ts"] });
     expect(promptOf()).not.toContain(HEADING);
@@ -179,5 +181,95 @@ describe("runPrReview credits settled verified rulings (US-012)", () => {
     packagePaths = ["src/a.ts"];
     await runPrReview(ctx, { ...baseInput, settled: [verifiedRuling(["src/a.ts"])] });
     expect(calls[0]?.input).not.toHaveProperty("requiredFiles");
+  });
+});
+
+// ── B2: the changed-path comparison is exact ────────────────────────────────
+//
+// Under the default `core.quotePath` git quotes any path holding a non-ASCII byte, a quote or a
+// control character: `src/é.ts` comes back as `"src/\303\251.ts"`. Compared as raw strings the
+// quoted form never equals the path a ruling lists, so a file the ruling's commit DID change drops
+// out of the changed set — the credit survives and the file is excused from review. That is the
+// exclusion path failing open, which is why `git diff --name-only -z` (verbatim, NUL-terminated)
+// is the contract, not a formatting preference.
+
+/** `git <args>` in `cwd`, with stdout collected. Test-side: the comparison itself goes through `_workflowDeps`. */
+async function git(args: string[], cwd: string): Promise<string> {
+  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const stdout = await new Response(proc.stdout).text();
+  await proc.exited;
+  return stdout;
+}
+
+/** A fresh repository with one commit that adds `path`; returns that commit's sha. */
+async function repoWithCommittedFile(root: string, path: string): Promise<string> {
+  for (const args of [["init"], ["config", "user.email", "test@example.com"], ["config", "user.name", "Test User"]]) {
+    await git(args, root);
+  }
+  mkdirSync(join(root, dirname(path)), { recursive: true });
+  writeFileSync(join(root, path), "first\n");
+  await git(["add", "-A"], root);
+  await git(["commit", "-m", "first"], root);
+  return (await git(["rev-parse", "HEAD"], root)).trim();
+}
+
+describe("the changed-path comparison is exact (B2)", () => {
+  test.each([
+    ["a non-ASCII path", "src/é.ts"],
+    ["a path holding a double quote", 'src/a"b.ts'],
+    ["a path holding a newline", "src/a\nb.ts"],
+  ])("AC-14 %s the ruling's commit changed stays required and earns no credit", async (_label, path) => {
+    packagePaths = [path, "src/b.ts"];
+    gitResult = { stdout: `${path}\0`, exitCode: 0 };
+    await runPrReview(ctx, { ...baseInput, settled: [verifiedRuling([path])] });
+    expect(calls[0]?.input).toMatchObject({ requiredFiles: [path, "src/b.ts"] });
+    expect(promptOf()).not.toContain(HEADING);
+  });
+
+  test("an unchanged path is still credited from a NUL-separated list", async () => {
+    packagePaths = ["src/a.ts", "src/b.ts"];
+    gitResult = { stdout: "src/b.ts\0", exitCode: 0 };
+    await runPrReview(ctx, { ...baseInput, settled: [verifiedRuling(["src/a.ts"])] });
+    expect(calls[0]?.input).toMatchObject({ requiredFiles: ["src/b.ts"] });
+    expect(promptOf()).toContain("- src/a.ts");
+  });
+
+  test("real git: a modified non-ASCII path stays required under the default core.quotePath", async () => {
+    // The end of the chain the stubs cannot reach: what `git diff --name-only -z` really prints for
+    // a path git would otherwise quote. `_workflowDeps.git` is put back to the production command
+    // for this case, so the comparison runs against a real repository.
+    const root = makeTempDir("nax-credit-quotepath-");
+    try {
+      const path = "src/é.ts";
+      const sha = await repoWithCommittedFile(root, path);
+      writeFileSync(join(root, path), "changed after the ruling\n");
+      await git(["add", "-A"], root);
+      await git(["commit", "-m", "modify"], root);
+      _workflowDeps.git = originalWorkflow.git;
+      packagePaths = [path];
+      await runPrReview({ ...ctx, projectDir: root }, { ...baseInput, settled: [verifiedRuling([path], sha)] });
+      expect(calls[0]?.input).toMatchObject({ requiredFiles: [path] });
+      expect(promptOf()).not.toContain(HEADING);
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+
+  test("real git: an unchanged non-ASCII path is credited", async () => {
+    const root = makeTempDir("nax-credit-quotepath-unchanged-");
+    try {
+      const path = "src/é.ts";
+      const sha = await repoWithCommittedFile(root, path);
+      writeFileSync(join(root, "other.ts"), "unrelated\n");
+      await git(["add", "-A"], root);
+      await git(["commit", "-m", "unrelated"], root);
+      _workflowDeps.git = originalWorkflow.git;
+      packagePaths = [path, "other.ts"];
+      await runPrReview({ ...ctx, projectDir: root }, { ...baseInput, settled: [verifiedRuling([path], sha)] });
+      expect(calls[0]?.input).toMatchObject({ requiredFiles: ["other.ts"] });
+      expect(promptOf()).toContain(`- ${path}`);
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 });

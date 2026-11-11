@@ -8,7 +8,7 @@ const ROOT = makeTempDir("nax-audit-elision-");
 
 afterAll(() => cleanupTempDir(ROOT));
 
-function runtimeWith(result: { content: string; resultBytesPreTruncation?: number }, root = ROOT) {
+function runtimeWith(result: { content: string; resultBytesPreTruncation?: number; truncated?: boolean }, root = ROOT) {
   const calls: ToolCallRecord[] = [];
   const runtime = createCodingToolRuntime({
     policy: compileToolPolicy([{ tool: "probe__t", patterns: ["*"] }], root),
@@ -83,6 +83,35 @@ describe("ToolCallRecord.truncated", () => {
     const outcome = await runtime.callTool("probe__t", {}, { deferModelTruncation: true });
     if (outcome.kind === "denied") throw new Error("unexpected denial");
     outcome.finalizeAudit?.("short");
+    expect(calls[0]?.truncated).toBe(false);
+  });
+
+  test("a tool that states its own cut is recorded even though the policy changed nothing", async () => {
+    // `Read` caps its own body at the model-facing ceilings, so its result already
+    // fits every one of them and `applyModelTruncationPolicy` is a no-op. Judging
+    // completeness by the policy alone would call a 2 000-line file read whole.
+    const { runtime, calls } = runtimeWith({ content: "short", truncated: true });
+    runtime.advertised(["probe__t"]);
+    await runtime.callTool("probe__t", {});
+    expect(calls[0]?.resultBytes).toBe(5);
+    expect(calls[0]?.truncated).toBe(true);
+  });
+
+  test("the tool's own cut is recorded on the deferred path too", async () => {
+    const { runtime, calls } = runtimeWith({ content: "short", truncated: true });
+    runtime.advertised(["probe__t"]);
+    const outcome = await runtime.callTool("probe__t", {}, { deferModelTruncation: true });
+    if (outcome.kind === "denied") throw new Error("unexpected denial");
+    // What the native `after_tool` handler does on a within-cap body: the policy
+    // returns it unchanged, then settles the audit.
+    outcome.finalizeAudit?.(outcome.content);
+    expect(calls[0]?.truncated).toBe(true);
+  });
+
+  test("records false when the tool cut nothing and the policy changed nothing", async () => {
+    const { runtime, calls } = runtimeWith({ content: "short", truncated: false });
+    runtime.advertised(["probe__t"]);
+    await runtime.callTool("probe__t", {});
     expect(calls[0]?.truncated).toBe(false);
   });
 });

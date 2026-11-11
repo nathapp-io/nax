@@ -467,12 +467,16 @@ export function createCodingToolRuntime(opts: {
           });
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);
-          // `applyModelTruncationPolicy` returns its input unchanged when no
-          // stage cut it, so an identity check is the one signal that covers
-          // every stage — and it works for the deferred path too, where the
-          // policy runs in the native `after_tool` handler and `record` is
-          // handed the final content instead. Recorded either way, because the
-          // row states completeness rather than leaving it to be inferred.
+          // Two cuts can hide content from the model, and either one alone under-reports:
+          // the tool's own (Read caps itself at the same ceilings, so the policy is a
+          // no-op on its already-cut body) and the policy's (which also cuts by line
+          // length and count, not only bytes). `applyModelTruncationPolicy` returns its
+          // input unchanged when no stage cut it, so an identity check is the one signal
+          // that covers every policy stage — and it works for the deferred path too,
+          // where `record` is handed the final content instead. The row states
+          // completeness rather than leaving it to be inferred, which is why both are
+          // ORed rather than one overwriting the other.
+          const toolTruncated = result.truncated === true;
           const record = (finalContent: string) =>
             logCall(
               policyIdentity,
@@ -486,7 +490,7 @@ export function createCodingToolRuntime(opts: {
               {
                 ...result.audit,
                 ...(approval ? { approval } : {}),
-                truncated: finalContent !== result.content,
+                truncated: toolTruncated || finalContent !== result.content,
               },
               result.resultBytesPreTruncation,
             );

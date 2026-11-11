@@ -130,13 +130,13 @@ function bashPaths(input: Record<string, unknown>): string[] {
  * The paths a tool call credits, before normalisation.
  *
  * Three gates, because none of them is sufficient alone:
- * - `truncated === false` — the model-facing policy ran on this result and
- *   changed nothing. It is the only POSITIVE evidence of completeness: the
- *   policy also cuts by line length and line count, so a body reduced from
- *   2 000 short lines to 1 000 stays well under the byte ceiling. An absent
- *   value means unknown — a row written before the field existed, or one an
- *   ACP session produced, where nax never shaped the result at all — and
- *   unknown credits nothing, because the whole point of this module is to
+ * - `truncated === false` — nothing cut this result: neither the tool's own shaping (a whole-file
+ *   `Read` caps itself at the model-facing ceilings and states the cut, so this is the only field
+ *   that can tell a cut Read from a whole one) nor the model-facing policy, which also cuts by line
+ *   length and line count, so a body reduced from 2 000 short lines to 1 000 stays well under the
+ *   byte ceiling. It is the only POSITIVE evidence of completeness. An absent value means unknown —
+ *   a row written before the field existed, or one an ACP session produced, where nax never shaped
+ *   the result at all — and unknown credits nothing, because the whole point of this module is to
  *   trust evidence rather than a plausible-looking size.
  * - `truncated === true` is therefore refused by the same test, explicitly.
  * - `resultBytes > TOOL_READ_CREDIT_MAX_BYTES` is the belt for a transport that

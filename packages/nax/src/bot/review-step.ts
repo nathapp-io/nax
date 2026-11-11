@@ -75,10 +75,16 @@ async function writePackage(
 /**
  * US-012: paths changed between a ruling's commit and HEAD. `null` when git cannot answer — the
  * credit is void, so an unreadable comparison never excuses a file from review.
+ *
+ * `-z` is not a formatting preference. Without it git quotes any path holding a non-ASCII byte, a
+ * quote or a control character (`src/é.ts` arrives as `"src/\303\251.ts"` under the default
+ * `core.quotePath`), and a quoted name is never equal to the raw path this credit compares it with:
+ * a file that DID change would drop out of the changed set, keep its ruling's credit and be excused
+ * from review. With `-z` git emits each path verbatim, NUL-terminated, so the comparison is exact.
  */
 async function changedSince(ctx: PrStepContext, sha: string): Promise<readonly string[] | null> {
-  const { stdout, exitCode } = await _workflowDeps.git(["diff", "--name-only", `${sha}..HEAD`], ctx.projectDir);
-  if (exitCode === 0) return stdout.split("\n").filter((line) => line !== "");
+  const { stdout, exitCode } = await _workflowDeps.git(["diff", "--name-only", "-z", `${sha}..HEAD`], ctx.projectDir);
+  if (exitCode === 0) return stdout.split("\0").filter((path) => path !== "");
   getSafeLogger()?.warn("bot", "Could not compare a verified ruling's commit with HEAD; crediting nothing", {
     storyId: "_run",
     sha,

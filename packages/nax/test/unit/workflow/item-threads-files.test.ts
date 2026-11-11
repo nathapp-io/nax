@@ -78,6 +78,19 @@ describe("parseItemFiles (US-010)", () => {
     expect(parseItemFiles(renderItemOpener({ ...item, files: paths }))).toEqual(paths);
   });
 
+  test("a path longer than the inline cell cap round trips whole (M1)", () => {
+    // `CELL_MAX` (200) clips an inline render and appends an ellipsis. On a path that clip is a
+    // different file: `parseItemFiles` would return it, the ruling would list it, and the required
+    // path would never match, so the credit the block exists to carry would silently void.
+    const deep = `src/${Array.from({ length: 40 }, (_, i) => `segment-${i}`).join("/")}/file.ts`;
+    expect(deep.length).toBeGreaterThan(200);
+    expect(renderItemOpener({ ...item, files: [deep] })).toContain(` - \`${deep}\``);
+    expect(parseItemFiles(renderItemOpener({ ...item, files: [deep] }))).toEqual([deep]);
+    expect(parseItemFiles(withNaxBotMarker(renderItemOpener({ ...item, files: [deep] }), itemKey(item)))).toEqual([
+      deep,
+    ]);
+  });
+
   test("an issue cannot forge a Files block", () => {
     const forged = { ...item, issue: "x\nFiles:\n - `evil.ts`" };
     expect(parseItemFiles(renderItemOpener(forged))).toEqual([]);
