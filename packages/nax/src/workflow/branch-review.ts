@@ -6,8 +6,10 @@
  * A branch of 58 changed files is more than one review session takes on.
  */
 import { join } from "node:path";
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { buildLedgerSessionName, errorMessage } from "@nathapp/nax-agent/internal";
 import { type ConfiguredModel, WORKFLOW_REVIEW_DEFAULTS } from "@/config";
+// The audit dir SSOT — the same helper the dispatch writes through (nested barrel, exact alias).
+import { toolAuditDir } from "@/config/paths";
 import { getLogger } from "@/logger";
 import { unreadFiles, workflowBranchReviewOp, workflowReReviewOp } from "@/operations";
 import {
@@ -21,6 +23,7 @@ import type { BranchStepContext } from "./branch-step-context";
 import { writeBranchReviewPackage, writeReviewPackage } from "./git";
 import { workflowStoryDir } from "./paths";
 import { reviewRequiredFiles } from "./review-coverage";
+import { readSessionToolCalls, toolReadPaths } from "./review-tool-reads";
 import { _workflowDeps } from "./step-context";
 import { type ReviewOutcome, reviewPackageFailure, underReviewLimit } from "./story-review";
 import type { BranchReviewVerdict, ReReviewVerdict, WorkflowFinding } from "./types";
@@ -217,18 +220,52 @@ function runSlice(fc: BranchStepContext, run: SliceRun): Promise<ReviewOutcome<B
 }
 
 /**
- * US-008 steps 5-7: one verdict from the slices, the unread set against the whole required list, and
- * `slices` only when the review really was sliced (the merge keeps a lone verdict untouched).
+ * US-009: the files this run's branch-review session showed the model in full, from the tool audit
+ * its dispatch wrote. Read AFTER the last slice, because the audit file is flushed when the hop
+ * ends — so observed reads reduce the final unread list and never feed a slice's own coverage retry.
+ *
+ * Two guards, both from the branch review's two homes. Outside a run (`nax bot review`) there is no
+ * `runId` to match files on and no `outputDir` to look under, so there is nothing to read. A session
+ * that wrote no audit file — or a directory that is not there — yields no reads; that is the
+ * common case for a first review, not an error.
  */
-function mergeBranchReview(
-  results: readonly SliceResult[],
-  requiredFiles: readonly string[],
-  projectDir: string,
-): ReviewOutcome<BranchReviewVerdict> {
+async function observedToolReads(fc: BranchStepContext, sinceMs: number): Promise<string[]> {
+  if (fc.runId === undefined || fc.outputDir === undefined) return [];
+  const calls = await readSessionToolCalls({
+    auditDir: toolAuditDir({ root: fc.projectDir, outputDir: fc.outputDir }, fc.feature),
+    runId: fc.runId,
+    // The role comes off the op itself, so a reader cannot name a session the dispatch never wrote.
+    ledgerSessionName: buildLedgerSessionName({
+      featureName: fc.feature,
+      sessionRole: workflowBranchReviewOp.session.role,
+    }),
+    sinceMs,
+  });
+  return toolReadPaths(calls, fc.projectDir);
+}
+
+/** Everything `mergeBranchReview` reads: the slices, the required set, and the audit's credit. */
+interface BranchReviewMerge {
+  readonly results: readonly SliceResult[];
+  readonly requiredFiles: readonly string[];
+  readonly projectDir: string;
+  /** US-009: repo-relative files the session's own tool calls showed in full. */
+  readonly toolReads: readonly string[];
+}
+
+/**
+ * US-008 steps 5-7 + US-009 step 6: one verdict from the slices, the unread set against the whole
+ * required list (self-reported inspection plus tool-observed reads), and `slices` only when the
+ * review really was sliced (the merge keeps a lone verdict untouched).
+ */
+function mergeBranchReview(input: BranchReviewMerge): ReviewOutcome<BranchReviewVerdict> {
+  const { results, requiredFiles, projectDir, toolReads } = input;
   const merged = mergeSliceVerdicts(results);
   if (merged === null) return { ran: false, why: results.at(0)?.why ?? "unparseable reply" };
-  // `?? []` is mandatory: a verdict need not carry `inspectedFiles`, and it must not gain one here.
-  const unread = unreadFiles(requiredFiles, merged.inspectedFiles ?? [], projectDir);
+  // `?? []` is mandatory: a verdict need not carry `inspectedFiles`, and it must not gain one here —
+  // which is also why the observed reads are appended to a NEW list rather than onto the verdict.
+  const inspected = [...(merged.inspectedFiles ?? []), ...toolReads];
+  const unread = unreadFiles(requiredFiles, inspected, projectDir);
   // A spread, not a mutation: the verdict the op returned is also written as an artifact elsewhere.
   return unread.length > 0
     ? { ran: true, verdict: { ...merged, unreadFiles: unread } }
@@ -247,6 +284,8 @@ export async function runBranchReview(
   if ("why" in prepared) return { ran: false, why: prepared.why };
   const slices = planReviewSlices(prepared.requiredFiles, review.sliceFiles);
   const minorIds = input.facts.minors.map((m) => m.id);
+  // US-009 step 4: taken BEFORE slice 1, so the read below covers this review and nothing else.
+  const startedAt = _workflowDeps.now();
   const results: SliceResult[] = [];
   for (const [index, slice] of slices.entries()) {
     // A slice that does not run is recorded and the next one still runs; an abort is rethrown by
@@ -265,7 +304,15 @@ export async function runBranchReview(
       outcome.ran ? { files: slice, verdict: outcome.verdict } : { files: slice, verdict: null, why: outcome.why },
     );
   }
-  return mergeBranchReview(results, prepared.requiredFiles, fc.projectDir);
+  // After the last slice: the session's own ledger is flushed by now, so the reads it observed can
+  // only ever shorten the final unread list.
+  const toolReads = await observedToolReads(fc, startedAt);
+  return mergeBranchReview({
+    results,
+    requiredFiles: prepared.requiredFiles,
+    projectDir: fc.projectDir,
+    toolReads,
+  });
 }
 
 export async function runBranchReReview(
