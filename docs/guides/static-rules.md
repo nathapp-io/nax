@@ -46,7 +46,7 @@ Frontmatter keys (all optional):
 | `priority` | int | `100` | Lower = more important. Drives sort order and budget-truncation tail bias. Use `50-80` for must-have rules, `100` for normal, `150+` for nice-to-have. |
 | `paths` | string \| string[] | none | Globs against the story's package-relative workdir (`request.storyWorkdir`). Rule loads only when the **package** matches. Always-true in single-package repos. |
 | `appliesTo` | string[] | none | Globs against `request.scopeFiles` (see below). Rule loads only when the story touches a matching file. Must be a list. |
-| `stages` | string[] | none | Pipeline stages the rule applies to (e.g. `single-session`, `tdd-test-writer`, `review-semantic`; keys of `STAGE_CONTEXT_MAP` in `src/context/engine/stage-config.ts`). Rule loads only when `request.stage` is listed. Unknown stage names warn but do not reject the rule. In workflow mode the context stage assembles with the stage name `context`, so a rule scoped to strategy stage names may not load there. |
+| `stages` | string[] | none | Ignored for rule selection in both push and index delivery. Non-empty lists warn; remove this key. Invalid shapes still fail validation. |
 | `description` | string | none | One-line summary, shown on the rule's line in the workflow-mode rules index (see [Delivery in workflow mode](#delivery-in-workflow-mode)). Not used for filtering. Without it the index shows the rule's first heading. |
 
 Any other key rejects the file (`RULES_FRONTMATTER_INVALID`). At run time the file is logged as `Invalid rule frontmatter — skipping file` and dropped so one bad rule never aborts a run; `nax rules lint` instead loads strictly, reports every invalid file as an error, and exits non-zero (`RULES_LINT_FAILED`), and the run-start precheck blocks on it. Frontmatter preceded by a BOM, a blank line, or an HTML comment is warned about as *displaced*; an HTML-comment-displaced block is not honored. `nax rules lint` checks a store without running a story.
@@ -55,11 +55,10 @@ Body must pass the neutrality linter — see below.
 
 ## How filtering actually works
 
-Three filter axes apply in order, all inside `StaticRulesProvider.fetch`:
+Two filter axes apply in order, all inside `StaticRulesProvider.fetch`:
 
 1. **`paths:` (package-scope)** — drops the rule if the story's package-relative workdir doesn't match (`ruleMatchesPackage` in [scope-path-match.ts](../../packages/nax/src/context/engine/scope-path-match.ts)).
-2. **`stages:`** — drops the rule if the current stage isn't listed.
-3. **`appliesTo:` (scope files)** — drops the rule if no entry of `request.scopeFiles` matches (`ruleMatchesScopeFiles`).
+2. **`appliesTo:` (scope files)** — drops the rule if no entry of `request.scopeFiles` matches (`ruleMatchesScopeFiles`).
 
 Then a section-level token budget pass (see [Priority and budget truncation](#priority-and-budget-truncation)).
 
@@ -175,7 +174,7 @@ This pattern uses only the file-level filter axis already shipped — no new cod
 
 `appliesTo:` filters against files the story already touches, not artifacts the agent will **produce**. At the test-writer stage the spec doesn't exist yet, so a concrete scope file can't match `**/*.spec.ts`.
 
-Stages that author tests (`tdd-test-writer`, `single-session`, `tdd-simple`, `batch`) have a narrow exception (nax#2060): a rule is also admitted when its `appliesTo:` pattern itself denotes a test location — a test-file-shaped glob such as `**/*.test.ts`, or one rooted at a well-known test directory such as `test/**`. When the `appliesTo:` filter drops every rule that named the current stage in `stages:`, the provider warns `appliesTo filter dropped every rule that named this stage explicitly`.
+Stages that author tests (`tdd-test-writer`, `single-session`, `tdd-simple`, `batch`) have a narrow exception (nax#2060): a rule is also admitted when its `appliesTo:` pattern itself denotes a test location — a test-file-shaped glob such as `**/*.test.ts`, or one rooted at a well-known test directory such as `test/**`.
 
 Outside those stages the pitfall stands — e.g. rectification rules never load when the agent is about to fix a file that hasn't been edited yet.
 
@@ -278,7 +277,7 @@ default (`context.rules.delivery: "index"`):
 Which rules apply follows the same keys as above: `paths:` picks the package, and `appliesTo:`
 picks the files within it. A rule with no `appliesTo` governs every file in its package.
 Write the description without a trailing period; the index line adds one.
-Under `delivery: "index"`, `stages:` is ignored.
+Under both `delivery: "index"` and `delivery: "push"`, `stages:` is ignored.
 
 A session sees each rule body at most once. After compaction the record is cleared, so a rule is
 delivered again on the next matching call. The bodies delivered on one call are capped at
@@ -361,7 +360,7 @@ Useful events:
 | `Loaded canonical rules` (debug) | Lists `files: [...]` actually included |
 | `Package-scope filter applied to repo-level rules` (debug) | `paths:` filter dropped some — `total: N matched: M` |
 | `Canonical rules found but none apply to this package context` | `paths:` eliminated everything — empty rules in this story |
-| `Every canonical rule was filtered out by stage/appliesTo scoping` | `stages:` / `appliesTo:` eliminated everything |
+| `Every canonical rule was filtered out by appliesTo scoping` | `appliesTo:` eliminated everything |
 | `appliesTo rules admitted unconditionally — scope-file set is empty` | Empty-list short-circuit fired |
 | `Canonical rules are approaching/exceeding static rules budget` | At 75% of the effective rules budget |
 | `Rule sections truncated by static rules budget` | Sections dropped — `droppedCount: N` |

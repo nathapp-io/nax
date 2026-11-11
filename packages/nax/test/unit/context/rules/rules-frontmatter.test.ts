@@ -279,7 +279,9 @@ describe("parseFrontmatter — AC8 unknown stage warning", () => {
     const content = ["---", "stages:", '  - "not-a-real-stage"', "---", "", "Body."].join("\n");
     const result = parseFrontmatter(content, "/project/.nax/rules/unknown-stage.md");
     expect(result.stages).toEqual(["not-a-real-stage"]);
-    expect(result.warnings.some((w) => w.includes("not-a-real-stage"))).toBe(true);
+    expect(result.warnings).toEqual([
+      'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
+    ]);
   });
 });
 
@@ -287,17 +289,21 @@ describe("parseFrontmatter — AC8 unknown stage warning", () => {
 // AC9: empty warnings list for known stage
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("parseFrontmatter — AC9 known stage no warning", () => {
-  test("[AC9] returns an empty warnings list for stages: ['acceptance-setup']", () => {
+describe("parseFrontmatter — AC9 known stage ignored warning", () => {
+  test("[AC9] returns an ignored-key warning for stages: ['acceptance-setup']", () => {
     const content = ["---", "stages:", '  - "acceptance-setup"', "---", "", "Body."].join("\n");
     const result = parseFrontmatter(content, "/project/.nax/rules/known-stage.md");
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
+    ]);
   });
 
-  test("[AC9] returns an empty warnings list for stages: ['decompose'], a real pipeline stage (decomposeOp.name)", () => {
+  test("[AC9] returns an ignored-key warning for stages: ['decompose'], a real pipeline stage (decomposeOp.name)", () => {
     const content = ["---", "stages:", '  - "decompose"', "---", "", "Body."].join("\n");
     const result = parseFrontmatter(content, "/project/.nax/rules/decompose-stage.md");
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
+    ]);
   });
 });
 
@@ -655,11 +661,15 @@ describe("loadCanonicalRules — US-006 real .nax/rules store stage scoping", ()
     });
   }
 
-  test("[US-006 AC 6] every CanonicalRule has an empty warnings list under the real .nax/rules store", async () => {
+  test("[US-006 AC 6] stage-tagged rules report the ignored-key warning under the real .nax/rules store", async () => {
     const rules = await loadCanonicalRules(findRepoRoot(import.meta.dir));
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
-      expect(rule.warnings ?? []).toEqual([]);
+      expect(rule.warnings ?? []).toEqual(
+        rule.stages?.length
+          ? ['Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.']
+          : [],
+      );
     }
   });
 });

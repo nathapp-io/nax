@@ -8,7 +8,6 @@
  */
 
 import { NaxError } from "@/errors";
-import { STAGE_CONTEXT_MAP } from "../engine/stage-config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -16,42 +15,6 @@ import { STAGE_CONTEXT_MAP } from "../engine/stage-config";
 
 export const KNOWN_FRONTMATTER_KEYS = new Set(["priority", "paths", "appliesTo", "stages", "description"]);
 export const FRONTMATTER_PRIORITY_DEFAULT = 100;
-
-/**
- * Pipeline stage / operation names that are valid `stages:` entries but have
- * no entry in STAGE_CONTEXT_MAP (no custom per-stage context config).
- */
-const EXTRA_KNOWN_STAGES = [
-  "queue-check",
-  "routing",
-  "constitution",
-  "prompt",
-  "optimizer",
-  "completion",
-  "acceptance-setup",
-  "regression",
-  // Operation names (src/operations/*) recognised as stage identifiers
-  "decompose",
-  // nax#1743: the pipeline stage named "execution", which
-  // belongs in this list for the same reason "prompt" and "routing" do. It was
-  // only ever accepted implicitly, via a STAGE_CONTEXT_MAP key of the same name
-  // that no assembly site ever selected; retiring that dead key made the 12
-  // checked-in .nax/rules/*.md files tagging `stages: [..., "execution"]` read
-  // as unknown. Those rules lose no delivery — each also lists the four
-  // strategy stages (single-session / tdd-simple / no-test / batch) that
-  // actually get assembled.
-  "execution",
-];
-
-/**
- * Known stage names for frontmatter `stages:` validation.
- *
- * Advisory-only — an unknown stage name emits a warning but does not reject the
- * rule. Derived from STAGE_CONTEXT_MAP keys (per-stage context config) plus
- * EXTRA_KNOWN_STAGES (pipeline stage names that lack custom context config),
- * so this set never drifts from the real stage registry.
- */
-const KNOWN_VALID_STAGES = new Set([...Object.keys(STAGE_CONTEXT_MAP), ...EXTRA_KNOWN_STAGES]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error type
@@ -240,12 +203,7 @@ function extractStages(doc: Record<string, unknown>, filePath: string, warnings:
     }
   }
   const stages = stagesRaw.map((v) => v.trim());
-  // AC8/AC9: advisory warning for unknown stage names
-  for (const s of stages) {
-    if (!KNOWN_VALID_STAGES.has(s)) {
-      warnings.push(`Unknown stage name "${s}" — rule will still load but may never be applied`);
-    }
-  }
+  warnings.push('Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.');
   return stages;
 }
 

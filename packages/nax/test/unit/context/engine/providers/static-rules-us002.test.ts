@@ -14,7 +14,7 @@
  * through to the emitted RawChunk.
  */
 
-import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { findRepoRoot } from "@scripts/lib/repo-root";
@@ -24,7 +24,6 @@ import { _staticRulesDeps, StaticRulesProvider } from "@/context/engine";
 import type { ContextRequest } from "@/context/engine/types";
 import { type CanonicalRule, loadCanonicalRules } from "@/context/rules/canonical-loader";
 import type { RuleSection } from "@/context/rules/rule-sections";
-import type { Logger } from "@/logger";
 import { extractTestDirs, globsToPathspec, globsToTestRegex } from "@/test-runners/conventions";
 import type { ResolvedTestPatterns } from "@/test-runners/resolver";
 import { resolveTestFilePatterns } from "@/test-runners/resolver";
@@ -526,69 +525,10 @@ describe("StaticRulesProvider — authoring-stage appliesTo scoping guard condit
       restore();
     }
   });
-
-  describe("stage-contradiction warning", () => {
-    let warnSpy: Mock<Logger["warn"]> | undefined;
-
-    beforeEach(async () => {
-      const { resetLogger, initLogger } = await import("@/logger");
-      resetLogger();
-      const logger = initLogger({ level: "silent" });
-      warnSpy = spyOn(logger, "warn");
-    });
-
-    afterEach(async () => {
-      warnSpy?.mockRestore();
-      warnSpy = undefined;
-      const { resetLogger } = await import("@/logger");
-      resetLogger();
-    });
-
-    test("logs a warning when appliesTo drops every rule that explicitly named this stage", async () => {
-      const restore = setupAuthoringCanonical([
-        {
-          id: "unrelated",
-          fileName: "unrelated.md",
-          content: "Unrelated docs rule.",
-          stages: ["tdd-test-writer"],
-          appliesTo: ["docs/**/*.md"],
-        },
-      ]);
-      try {
-        const provider = new StaticRulesProvider();
-        await provider.fetch({
-          ...AUTHORING_BASE_REQUEST,
-          scopeFiles: ["src/cost-row-rate-provenance.ts"],
-          resolvedTestPatterns: TEST_PATTERNS,
-        });
-
-        const call = warnSpy?.mock.calls.find(
-          (c) =>
-            c[0] === "static-rules" && c[1] === "appliesTo filter dropped every rule that named this stage explicitly",
-        );
-        expect(call).toBeDefined();
-        expect(call?.[2]).toMatchObject({
-          storyId: "US-002",
-          stage: "tdd-test-writer",
-          contradictedRuleIds: ["unrelated"],
-        });
-      } finally {
-        restore();
-      }
-    });
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// US-006 stage scoping against the real .nax/rules store — absorbed from
-// static-rules-us006.test.ts
-//
-// US-006: stage scoping drives chunk emission from the real .nax/rules
-// store. The test-authoring rules declare `stages:` lists excluding
-// plan/acceptance/route so they never appear in plan or acceptance or
-// route contexts. These tests run against the real `.nax/rules/` directory
-// by importing the real `loadCanonicalRules` and re-wiring `_staticRulesDeps`
-// to invoke it for each test.
+// Real rules remain eligible even when their legacy stages omit the request.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", () => {
@@ -612,28 +552,28 @@ describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", (
     _staticRulesDeps.loadCanonicalRules = origLoadCanonicalRules;
   });
 
-  test("[US-006 AC 3] emits no static-rules:test-writing: chunk when request.stage is plan", async () => {
+  test("[US-006 AC 3] emits static-rules:test-writing: chunk when request.stage is plan", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(false);
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-writing:"))).toBe(true);
   });
 
-  test("[US-006 AC 3] emits no static-rules:test-architecture: chunk when request.stage is plan", async () => {
+  test("[US-006 AC 3] emits static-rules:test-architecture: chunk when request.stage is plan", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-architecture:"))).toBe(false);
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-architecture:"))).toBe(true);
   });
 
-  test("[US-006 AC 3] emits no static-rules:test-helpers: chunk when request.stage is plan", async () => {
+  test("[US-006 AC 3] emits static-rules:test-helpers: chunk when request.stage is plan", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-helpers:"))).toBe(false);
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:test-helpers:"))).toBe(true);
   });
 
-  test("[US-006 AC 3] emits no static-rules:testing-commands: chunk when request.stage is plan", async () => {
+  test("[US-006 AC 3] emits static-rules:testing-commands: chunk when request.stage is plan", async () => {
     const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
     const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-    expect(result.chunks.some((c) => c.id.startsWith("static-rules:testing-commands:"))).toBe(false);
+    expect(result.chunks.some((c) => c.id.startsWith("static-rules:testing-commands:"))).toBe(true);
   });
 
   // Split into -source/-tests by SPEC-bounded-rules-floor US-005; the stage
@@ -645,15 +585,12 @@ describe("StaticRulesProvider — US-006 real .nax/rules store stage scoping", (
   ] as const;
 
   for (const rule of STAGE_SCOPED_EVERYWHERE_BUT_PLAN) {
-    test(`[US-006 AC 4] emits no static-rules:${rule}: chunk when request.stage is plan`, async () => {
+    test(`[US-006 AC 4] emits static-rules:${rule}: chunk when request.stage is plan`, async () => {
       const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
       const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "plan" });
-      expect(result.chunks.some((c) => c.id.startsWith(`static-rules:${rule}:`))).toBe(false);
+      expect(result.chunks.some((c) => c.id.startsWith(`static-rules:${rule}:`))).toBe(true);
     });
 
-    // Guards the exclusion above against passing vacuously: a rule scoped to
-    // no stage at all, or one that stopped loading entirely, would satisfy the
-    // plan-stage assertion while silently reaching no agent anywhere.
     test(`[US-006 AC 4] emits a static-rules:${rule}: chunk when request.stage is execution`, async () => {
       const provider = new StaticRulesProvider({ budgetTokens: 1_000_000 });
       const result = await provider.fetch({ ...REAL_REPO_REQUEST, stage: "execution" });

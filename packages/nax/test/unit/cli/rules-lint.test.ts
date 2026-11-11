@@ -379,48 +379,22 @@ function captureLoggerCalls(): MockLogger {
   return logger;
 }
 
-describe("rulesLintCommand — AC1 unrecognised-stage warning", () => {
-  test("[AC1] emits a warning through _rulesCLIDeps.getLogger() naming the rule file when a stage matches neither STAGE_CONTEXT_MAP nor known stage literals", async () => {
+describe("rulesLintCommand — ignored stages warning", () => {
+  test("re-emits the ignored-key warning with the rule file", async () => {
     _rulesCLIDeps.globCanonicalRuleFiles = () => [];
     _rulesCLIDeps.loadCanonicalRules = async () => [
       makeRuleWithWarnings({
         path: "weird.md",
-        fileName: "weird.md",
-        stages: ["not-a-real-stage"],
-        warnings: [`Unknown stage name "not-a-real-stage" — rule will still load but may never be applied`],
+        stages: ["review"],
+        warnings: [
+          'Frontmatter key "stages" is ignored — rules apply to every session. Remove it from the frontmatter.',
+        ],
       }),
     ];
-
     const spy = captureLoggerCalls();
-
     await rulesLintCommandFromRules({ dir: "/project" });
-
-    const warn = spy.calls.find((c) => c.level === "warn" && /not-a-real-stage/i.test(c.message));
-    expect(warn).toBeDefined();
+    const warn = spy.calls.find((c) => c.level === "warn" && c.message.includes('key "stages" is ignored'));
     expect(warn?.data?.file).toBe("weird.md");
-  });
-});
-
-describe("rulesLintCommand — AC2 no unrecognised-stage warning when stages recognised", () => {
-  test("[AC2] emits no unrecognised-stage warning when every declared stage is recognised", async () => {
-    _rulesCLIDeps.globCanonicalRuleFiles = () => [];
-    _rulesCLIDeps.loadCanonicalRules = async () => [
-      makeRuleWithWarnings({
-        path: "exec.md",
-        fileName: "exec.md",
-        stages: ["execution", "review"],
-        warnings: [],
-      }),
-    ];
-
-    const spy = captureLoggerCalls();
-
-    await rulesLintCommandFromRules({ dir: "/project" });
-
-    const unrecognisedWarn = spy.calls.find(
-      (c) => c.level === "warn" && /unknown stage|unrecognised stage|not-a-real-stage/i.test(c.message),
-    );
-    expect(unrecognisedWarn).toBeUndefined();
   });
 });
 

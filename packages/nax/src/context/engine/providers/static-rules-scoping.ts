@@ -22,15 +22,8 @@
  * them ever matched a directory-scoped rule like `test/**\/*.test.ts`.
  * Verified against the real resolver output — see the regression test.
  *
- * `warnOnAppliesToStageContradiction` covers the observability half of the
- * fix: when every rule that explicitly named the current stage in its
- * `stages:` frontmatter gets removed by the `appliesTo:` filter, that is a
- * scoping contradiction — the rule author said "this stage needs me" and
- * the path filter said "no file here is yours" — and today it drops silently.
  */
 
-import type { CanonicalRule } from "@/context/rules/canonical-loader";
-import type { Logger } from "@/logger";
 import { DEFAULT_SCAN_TEST_DIRS } from "@/test-runners";
 import { getStageContextConfig } from "../stage-config";
 import type { ContextRequest } from "../types";
@@ -87,34 +80,4 @@ export function ruleTargetsAuthoredTests(
   if (!getStageContextConfig(request.stage).producesTestFiles) return false;
   const { regex } = request.resolvedTestPatterns;
   return appliesTo.some((pattern) => isTestShapedPattern(pattern, regex));
-}
-
-/**
- * Log a warning when the `appliesTo:` filter removed every rule that
- * explicitly declared the current stage in its `stages:` frontmatter — a
- * scoping contradiction that was previously silent (nax#2060).
- *
- * "Explicitly declared" excludes rules with no `stages:` key: those are
- * universal by fail-open design (`ruleMatchesStage`), not a stage-specific
- * claim the `appliesTo:` filter could contradict.
- */
-export function warnOnAppliesToStageContradiction(
-  logger: Logger,
-  request: Pick<ContextRequest, "storyId" | "stage">,
-  stageMatchedRules: readonly CanonicalRule[],
-  appliesToFilteredIds: readonly string[],
-  ruleId: (rule: CanonicalRule) => string,
-): void {
-  const explicit = stageMatchedRules.filter((rule) => rule.stages?.includes(request.stage));
-  if (explicit.length === 0) return;
-
-  const explicitIds = explicit.map(ruleId);
-  const survivedFiltering = explicitIds.some((id) => !appliesToFilteredIds.includes(id));
-  if (survivedFiltering) return;
-
-  logger.warn("static-rules", "appliesTo filter dropped every rule that named this stage explicitly", {
-    storyId: request.storyId,
-    stage: request.stage,
-    contradictedRuleIds: explicitIds,
-  });
 }
