@@ -3,7 +3,7 @@
   "feature": "branch-review-coverage",
   "branchName": "feat/branch-review-coverage",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T06:32:59.155Z",
+  "updatedAt": "2026-11-11T06:48:07.294Z",
   "userStories": [
     {
       "id": "US-001",
@@ -508,14 +508,17 @@
         "US-006",
         "US-008"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The already-sliced caller resolves existing audit paths and ledger names, invokes US-006 and US-005, and unions their output only for final unreadFiles; injected workflow/audit seams verify the integration without changing session lifecycle or retry policy."
+        "reasoning": "The already-sliced caller resolves existing audit paths and ledger names, invokes US-006 and US-005, and unions their output only for final unreadFiles; injected workflow/audit seams verify the integration without changing session lifecycle or retry policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/branch-review.ts",
@@ -530,7 +533,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6579fa8e35a7432a0a3809db0fc6f10d7a18c75c"
     },
     {
       "id": "US-010",
