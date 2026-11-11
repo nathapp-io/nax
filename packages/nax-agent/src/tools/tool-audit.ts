@@ -83,6 +83,22 @@ export interface ToolCallRecord {
    */
   readonly resultBytesPreTruncation?: number;
   /**
+   * `true` when the shared model-facing truncation policy cut this result before
+   * the model saw it — by ANY of its stages, not only the byte ceiling.
+   *
+   * `resultBytes` alone cannot answer "did the model see the whole result?":
+   * the policy also caps line length (`MODEL_MAX_LINE_CHARS`) and line count
+   * (`MODEL_MAX_LINES`), so a body cut from 2 000 short lines down to 1 000 is
+   * well under `MODEL_MAX_BYTES` yet half of it never reached the model. A
+   * reader that credits a file for having been read must gate on this, not on
+   * size alone.
+   *
+   * Absent when nothing was cut, on rows written before this field existed, and
+   * on ACP rows nax does not shape. Additive and optional, so
+   * `TOOL_AUDIT_SCHEMA_VERSION` stays 1 (as `sandbox` and `exitCode` did).
+   */
+  readonly truncated?: boolean;
+  /**
    * The `callOp` invocation this tool call happened under.
    *
    * NOT unique: one callId spans every retry, agent-swap hop and turn of the

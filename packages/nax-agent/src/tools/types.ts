@@ -188,3 +188,32 @@ export interface ToolPolicy {
   grantedTools(): readonly string[];
   check(tool: string, scope: ToolScope, input: Record<string, unknown>): PolicyVerdict;
 }
+
+/**
+ * Per-call context. Identity fields are recorded on the audit ledger.
+ *
+ * Lives here rather than beside the runtime that reads it because it is shared
+ * vocabulary: the runtime, `runtime-calltool` and the session layer all name it.
+ */
+export interface ToolCallContext {
+  readonly turnId?: string;
+  readonly roundTrips?: number;
+  readonly toolCallId?: string;
+  /** Return the full result so a downstream model-facing chokepoint can shape it. */
+  readonly deferModelTruncation?: boolean;
+  /**
+   * US-002: the turn's abort signal, forwarded from the native coding-tool
+   * request. `runTool` copies it onto the `ToolRunContext` so the tool can
+   * stop in-flight work (Bash/Exec SIGKILL their process group) when the
+   * turn is cancelled, exactly as the runtime-level `signal` does when no
+   * per-call signal is present.
+   */
+  readonly signal?: AbortSignal;
+  /**
+   * US-002: notifies the runtime's caller (and through it the turn loop)
+   * that this tool is about to WAIT on something external, so an idle
+   * watchdog does not time it out. Forwarded from the native coding-tool
+   * request; tools that wait on a human call it before blocking.
+   */
+  readonly onWaiting?: () => void;
+}

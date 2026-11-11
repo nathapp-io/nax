@@ -39,9 +39,9 @@ import {
 } from "./runtime-calltool.ts";
 import { scratchpadListTool, scratchpadReadTool, scratchpadWriteTool } from "./scratchpad.ts";
 import { applyModelTruncationPolicy } from "./spill.ts";
-import { createNoOpToolAuditSink, type ToolAuditSink } from "./tool-audit.ts";
+import { createNoOpToolAuditSink, type ToolAuditSink, type ToolCallRecord } from "./tool-audit.ts";
 import { READ_CEILING } from "./truncate.ts";
-import type { ToolPolicy } from "./types.ts";
+import type { ToolCallContext, ToolPolicy } from "./types.ts";
 import { writeTool } from "./write.ts";
 
 /** Per-call output ceiling, mirroring ToolDescriptor.maxTokensPerCall in spirit. */
@@ -77,29 +77,17 @@ export type CodingToolOutcome =
 /** Injectable logger seam, mirroring _pullToolsDeps.getLogger. */
 export const _codingToolDeps = { getLogger: getSafeLogger };
 
-/** Per-call context. Identity fields are recorded on the audit ledger. */
-export interface ToolCallContext {
-  readonly turnId?: string;
-  readonly roundTrips?: number;
-  readonly toolCallId?: string;
-  /** Return the full result so a downstream model-facing chokepoint can shape it. */
-  readonly deferModelTruncation?: boolean;
-  /**
-   * US-002: the turn's abort signal, forwarded from the native coding-tool
-   * request. `runTool` copies it onto the `ToolRunContext` so the tool can
-   * stop in-flight work (Bash/Exec SIGKILL their process group) when the
-   * turn is cancelled, exactly as the runtime-level `signal` does when no
-   * per-call signal is present.
-   */
-  readonly signal?: AbortSignal;
-  /**
-   * US-002: notifies the runtime's caller (and through it the turn loop)
-   * that this tool is about to WAIT on something external, so an idle
-   * watchdog does not time it out. Forwarded from the native coding-tool
-   * request; tools that wait on a human call it before blocking.
-   */
-  readonly onWaiting?: () => void;
+/** The console level for one call: a breach alone reaches `error`, a routine tool error is `debug`. */
+function auditLevel(
+  outcome: ToolCallRecord["outcome"],
+  breach: boolean | undefined,
+  routineErrors: boolean | undefined,
+): "debug" | "warn" | "error" {
+  if (outcome === "denied" || outcome === "denied:ask") return breach === true ? "error" : "warn";
+  return outcome === "error" && routineErrors !== true ? "warn" : "debug";
 }
+
+export type { ToolCallContext };
 
 export interface CodingToolRuntime {
   /** Op declaration intersected with policy grants. Both can only narrow. */
@@ -282,21 +270,15 @@ export function createCodingToolRuntime(opts: {
       approval?: { decidedBy: string; remembered: boolean; latencyMs: number };
       sandbox?: SandboxRecord;
       exitCode?: number;
+      /** The model-facing policy cut the result — recorded as `ToolCallRecord.truncated`. */
+      truncated?: boolean;
     },
     resultBytesPreTruncation?: number,
   ): void {
     // The level is the console filter: `normal` mode drops debug, and the file
     // sink writes every level regardless, so demoting keeps the record without
-    // spending an operator's attention on it. A breach is the one outcome that
-    // can indicate prompt injection, so it alone reaches `error`.
-    const level =
-      outcome === "denied" || outcome === "denied:ask"
-        ? breach === true
-          ? "error"
-          : "warn"
-        : outcome === "error" && !routineErrors
-          ? "warn"
-          : "debug";
+    // spending an operator's attention on it.
+    const level = auditLevel(outcome, breach, routineErrors);
 
     // Never parse the namespaced name apart — the provider id is carried
     // explicitly precisely so a naming-convention change cannot break
@@ -330,6 +312,7 @@ export function createCodingToolRuntime(opts: {
       ...(audit?.approval !== undefined ? { approval: audit.approval } : {}),
       ...(audit?.sandbox !== undefined ? { sandbox: audit.sandbox } : {}),
       ...(audit?.exitCode !== undefined ? { exitCode: audit.exitCode } : {}),
+      ...(audit?.truncated === true ? { truncated: true } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(resultBytesPreTruncation !== undefined ? { resultBytesPreTruncation } : {}),
       ...(opts.callId !== undefined ? { callId: opts.callId } : {}),
@@ -484,6 +467,11 @@ export function createCodingToolRuntime(opts: {
           });
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);
+          // `applyModelTruncationPolicy` returns its input unchanged when no
+          // stage cut it, so an identity check is the one signal that covers
+          // every stage — and it works for the deferred path too, where the
+          // policy runs in the native `after_tool` handler and `record` is
+          // handed the final content instead.
           const record = (finalContent: string) =>
             logCall(
               policyIdentity,
@@ -494,7 +482,11 @@ export function createCodingToolRuntime(opts: {
               false,
               kind === "error" ? result.content : undefined,
               target.routineErrors,
-              { ...result.audit, ...(approval ? { approval } : {}) },
+              {
+                ...result.audit,
+                ...(approval ? { approval } : {}),
+                ...(finalContent === result.content ? {} : { truncated: true }),
+              },
               result.resultBytesPreTruncation,
             );
           if (context?.deferModelTruncation === true) return { kind, content, finalizeAudit: record };
@@ -513,7 +505,10 @@ export function createCodingToolRuntime(opts: {
               false,
               rawContent,
               target.routineErrors,
-              approval ? { approval } : undefined,
+              {
+                ...(approval ? { approval } : {}),
+                ...(finalContent === rawContent ? {} : { truncated: true }),
+              },
             );
           if (context?.deferModelTruncation === true) {
             return { kind: "error", content, finalizeAudit: record };

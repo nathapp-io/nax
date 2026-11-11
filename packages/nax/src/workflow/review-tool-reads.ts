@@ -122,9 +122,18 @@ function bashPaths(input: Record<string, unknown>): string[] {
   return out;
 }
 
-/** The paths a tool call credits, before normalisation. */
+/**
+ * The paths a tool call credits, before normalisation.
+ *
+ * Two independent gates, because neither is sufficient alone:
+ * - `truncated` — the model-facing policy cut the result, by any of its stages.
+ *   A body cut from 2 000 short lines to 1 000 stays well under the byte
+ *   ceiling, so size cannot reveal it.
+ * - `resultBytes > TOOL_READ_CREDIT_MAX_BYTES` — a belt for rows written before
+ *   `truncated` existed, and for a transport that shapes results itself.
+ */
 function creditedPaths(call: ToolCallRecord): string[] {
-  if (call.outcome !== "ok" || call.resultBytes > TOOL_READ_CREDIT_MAX_BYTES) return [];
+  if (call.outcome !== "ok" || call.truncated === true || call.resultBytes > TOOL_READ_CREDIT_MAX_BYTES) return [];
   if (call.tool === "Read") return readPaths(call.input);
   if (call.tool === "Git") return gitPaths(call.input);
   if (call.tool === "Bash") return bashPaths(call.input);

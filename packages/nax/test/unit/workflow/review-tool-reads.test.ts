@@ -132,6 +132,17 @@ describe("toolReadPaths — dedupe and result size", () => {
     );
     expect(toolReadPaths([bash], "/repo")).toEqual([]);
   });
+
+  test.each([
+    ["Read", { path: "src/a.ts" }],
+    ["Git", { subcommand: "diff", paths: ["src/a.ts"] }],
+    ["Bash", { command: "git diff s..HEAD -- src/a.ts" }],
+  ] as const)("a %s result the truncation policy cut credits nothing, whatever its size (F1)", (tool, input) => {
+    // 2 000 short lines are cut to 1 000 by the line-count cap and stay well
+    // under the byte ceiling, so size alone would credit a file the model only
+    // half saw. `truncated` is the signal that says so.
+    expect(toolReadPaths([call(tool, input, { resultBytes: 900, truncated: true })], "/repo")).toEqual([]);
+  });
 });
 
 describe("normalizeReviewPath (AC-15)", () => {
