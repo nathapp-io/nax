@@ -1,15 +1,12 @@
 /**
  * US-010 (branch-review-coverage): a coverage item's opener lists the paths it covers, rendered
  * through `safeCode` so `@` and `#1` survive, and `parseItemFiles` reads them back from a raw or
- * forge-marked body. Item identity (first line, `parseItemOpener`, `itemKey`) is untouched.
+ * forge-marked body. Item identity (first line, `parseItemOpener`, `itemKey`) is untouched. The
+ * publication seam is covered where its harness lives (`item-threads-post.test.ts`).
  */
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { type ForgeDeps, withNaxBotMarker } from "@/forge";
-import { initLogger, resetLogger } from "@/logger";
-import { describeUnread } from "@/workflow/approval";
-import { newFeatureRecord } from "@/workflow/feature-record";
+import { describe, expect, test } from "bun:test";
+import { withNaxBotMarker } from "@/forge";
 import { itemKey, parseItemFiles, parseItemOpener, renderItemOpener } from "@/workflow/item-threads";
-import { postItemThreads } from "@/workflow/item-threads-post";
 import type { OpenItem } from "@/workflow/types";
 
 const REPLY_INSTRUCTION =
@@ -23,14 +20,15 @@ describe("renderItemOpener: Files block (US-010)", () => {
   test("AC-3: one code-span line per file, under a Files: line", () => {
     const lines = renderItemOpener(filesItem).split("\n");
     const at = lines.indexOf("Files:");
-    expect(at).toBeGreaterThan(-1);
+    expect(at).not.toBe(-1);
     expect(lines.slice(at + 1, at + 3)).toEqual([" - `a.ts`", " - `b.ts`"]);
   });
 
   test("AC-4: the Files block comes before the reply instruction", () => {
     const lines = renderItemOpener(filesItem).split("\n");
-    expect(lines.indexOf("Files:")).toBeGreaterThan(-1);
-    expect(lines.indexOf("Files:")).toBeLessThan(lines.indexOf(REPLY_INSTRUCTION));
+    const at = lines.indexOf("Files:");
+    expect(at).not.toBe(-1);
+    expect(at).toBeLessThan(lines.indexOf(REPLY_INSTRUCTION));
   });
 
   test("AC-4: Files follows the suggestion and advisor lines", () => {
@@ -101,66 +99,5 @@ describe("item identity ignores files (US-010)", () => {
   test("AC-10: itemKey is the same with and without files", () => {
     expect(itemKey(filesItem)).toBe(itemKey(item));
     expect(itemKey({ ...item, files: ["other.ts"] })).toBe(itemKey(item));
-  });
-});
-
-describe("postItemThreads publishes the files (US-010)", () => {
-  const field = (cmd: string[] | undefined, name: string) =>
-    cmd?.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
-
-  function harness() {
-    const writes: string[][] = [];
-    const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
-    const deps: ForgeDeps = {
-      readText: async () => null,
-      run: async (cmd) => {
-        // The index write has its own suite; these tests read the item openers.
-        if (cmd.some((arg) => arg.includes("key=w-index"))) return ok({ id: 99 });
-        if (cmd.includes("POST")) {
-          writes.push(cmd);
-          return ok({ id: 1 });
-        }
-        if (cmd[0] === "git") return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
-        if (cmd.includes("user")) return ok({ login: "bot", username: "bot", id: 1 });
-        if (cmd.includes("graphql")) {
-          return ok({
-            data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } } } } },
-          });
-        }
-        if (cmd.some((arg) => arg.includes("?per_page="))) return ok([]);
-        return ok({ head: { sha: "head", ref: "feature" }, base: { ref: "main" }, user: { login: "author" } });
-      },
-    };
-    return { deps, writes };
-  }
-
-  const record = (unread: readonly string[]) => ({
-    ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
-    reviewUnread: unread,
-    reasons: [describeUnread(unread)],
-  });
-
-  beforeEach(() => {
-    initLogger({ level: "warn", suppressConsole: true });
-  });
-  afterEach(() => {
-    resetLogger();
-  });
-
-  test("AC-11: the posted opener reads back its unread files", async () => {
-    const h = harness();
-    const outcome = await postItemThreads(
-      {
-        record: record(["a.ts"]),
-        url: "https://github.com/o/r/pull/7",
-        projectDir: "/repo",
-        feature: "demo",
-        changedFiles: [".nax/features/demo/prd.json"],
-      },
-      h.deps,
-    );
-    expect(outcome).toEqual({ posted: 1, closed: 0, skipped: 0, failed: 0 });
-    expect(h.writes).toHaveLength(1);
-    expect(parseItemFiles(field(h.writes[0], "body") ?? "")).toEqual(["a.ts"]);
   });
 });

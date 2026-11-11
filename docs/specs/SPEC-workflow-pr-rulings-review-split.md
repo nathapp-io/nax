@@ -84,9 +84,15 @@ All keys go through `withNaxBotMarker` / `parseNaxBotMarker` (`src/forge/marker.
   (logged); its key is still written to the index, so readiness holds the PR (fail closed).
 - **Item thread opener** (body passed to `withNaxBotMarker` with the item key): first line
   `Open item **<itemId>** (<kind>): <issue>`, `<issue>` through `safeInline`; then `Suggestion: <suggestion>`
-  when the item has one and `Advisor: <action> — <why>` when it has a ruling (both through `safeInline`); then
+  when the item has one and `Advisor: <action> — <why>` when it has a ruling (both through `safeInline`); then,
+  when the item has a non-empty `files`, the line `Files:` followed by one `` - `<path>` `` line per path, each
+  path through `safeCode` (`safeInline` would rewrite `@modal` and `#1` and cap the path); then
   the line
   `Rule on it by replying: fixed <sha>, waive: <reason>, confirm, override: <reason>, or verified. Any other reply from a collaborator is read as a ruling only when its meaning is clear.`
+  An item with no `files` renders exactly as it did before the block existed, and `parseItemFiles(body)` reads
+  the block back (raw or marked; empty when the item covers no files). `files` is producer-side: the reason item
+  whose text equals `describeUnread(rec.reviewUnread)` carries `rec.reviewUnread`, so the item that names the
+  files a branch review missed lists them in full (the reason text stops at five).
 - **Ruling echo key:** `wr-<disposition>-<itemKey>`, `<disposition>` one of the sidecar `DISPOSITIONS`
   (`fixed`, `waived`, `confirmed`, `overridden`, `verified`), none of which contains `-`.
 - **Ruling echo body:** first line `Recorded: <disposition> — <reason>` (or `Recorded: fixed in <sha7> — <reason>`),
@@ -203,7 +209,7 @@ New modules:
 - `src/forge/api-reply.ts`, `src/forge/access.ts` — above.
 - `src/workflow/item-threads.ts` (pure formats; imports only `node:crypto`, `./pr-body-safe`, `@/forge` and
   types, never `./pr-body`, which reaches `@/finish` and from there `@/cli`) — `itemKey(item)`, `isPostable(item)`, `renderItemOpener(item)`,
-  `parseItemOpener(body)`, `parseRulingKeyword(text)`, `renderRulingEcho(ruling)`, `parseRulingEcho(key, body)`,
+  `parseItemOpener(body)`, `parseItemFiles(body)`, `parseRulingKeyword(text)`, `renderRulingEcho(ruling)`, `parseRulingEcho(key, body)`,
   `askKey(itemKey, replyId)`, `renderRulingAsk()`, `renderItemIndex(index)`, `parseItemIndex(body)`.
 - `src/workflow/ruling-keyword.ts` (pure) — `parseRulingKeyword(text)`.
 - `src/workflow/item-thread-state.ts` — `readItemThreads(threads, comments, login)`, `settleItemThreads(read, canRule)`.
