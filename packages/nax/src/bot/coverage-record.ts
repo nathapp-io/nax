@@ -4,6 +4,7 @@
  * The summary lists the same files for a human; this record is the machine-readable copy the
  * readiness gate reads back (US-013/US-014), so the two must never be able to disagree.
  */
+import { stripNaxBotMarkers } from "@/forge";
 
 export const COVERAGE_RECORD_KEY = "w-coverage";
 
@@ -25,28 +26,34 @@ export function renderCoverageRecord(record: CoverageRecord): string {
   return [heading(record.headSha, record.uncovered.length), ...files].join("\n");
 }
 
-/** The file lines that follow the heading; anything that is not one ends the list. */
-function fileLines(lines: readonly string[]): string[] {
+/**
+ * The file lines that follow the heading; anything that is not one ends the list. What is left over
+ * is checked by the caller, so a body that carries more than the record is not read as one.
+ */
+function fileLines(lines: readonly string[]): { files: string[]; rest: readonly string[] } {
   const files: string[] = [];
-  for (const line of lines) {
-    const match = FILE_LINE.exec(line);
+  let index = 0;
+  for (; index < lines.length; index++) {
+    const match = FILE_LINE.exec(lines[index] ?? "");
     if (match?.[1] === undefined) break;
     files.push(match[1]);
   }
-  return files;
+  return { files, rest: lines.slice(index) };
 }
 
 /**
- * Read a raw or forge-marked body back. A heading, its declared count and the file lines under it
- * must agree, so a truncated or edited body reads as no record at all rather than a wrong one.
+ * Read a raw or forge-marked body back. A heading, its declared count, the file lines under it and an
+ * otherwise empty tail must all agree, so a truncated or edited body reads as no record at all rather
+ * than as a claim that fewer files went unread.
  */
 export function parseCoverageRecord(body: string): CoverageRecord | null {
-  const lines = body.split(/\r?\n/);
+  const lines = stripNaxBotMarkers(body).split(/\r?\n/);
   const start = lines.findIndex((line) => HEADING.test(line));
   if (start === -1) return null;
   const [, headSha, declared] = HEADING.exec(lines[start] ?? "") ?? [];
   if (headSha === undefined || declared === undefined) return null;
-  const uncovered = fileLines(lines.slice(start + 1));
+  const { files: uncovered, rest } = fileLines(lines.slice(start + 1));
   if (uncovered.length !== Number(declared)) return null;
+  if (rest.some((line) => line.trim() !== "")) return null;
   return { headSha, uncovered };
 }

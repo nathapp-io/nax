@@ -61,6 +61,20 @@ describe("parseCoverageRecord", () => {
     expect(parseCoverageRecord("Review coverage at abc1234: 1 required file(s) not read\n- `a.ts`")).toBeNull();
   });
 
+  test("returns null when a zero-count record is followed by other text", () => {
+    expect(parseCoverageRecord(`Review coverage at ${HEAD}: 0 required file(s) not read\njunk`)).toBeNull();
+  });
+
+  test("returns null when a counted record is followed by other text", () => {
+    expect(parseCoverageRecord(`Review coverage at ${HEAD}: 1 required file(s) not read\n- \`a.ts\`\njunk`)).toBeNull();
+  });
+
+  test("returns null when a list is interrupted and resumed", () => {
+    expect(
+      parseCoverageRecord(`Review coverage at ${HEAD}: 2 required file(s) not read\n- \`a.ts\`\njunk\n- \`b.ts\``),
+    ).toBeNull();
+  });
+
   test("reads the record a later review appended after other text", () => {
     const body = withNaxBotMarker(
       `Review coverage at ${OTHER}: 1 required file(s) not read\n- \`c.ts\``,
