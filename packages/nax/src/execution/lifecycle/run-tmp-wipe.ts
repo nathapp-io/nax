@@ -20,7 +20,8 @@
  */
 
 import { lstatSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { chmod, lstat, readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { runTmpRoot } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
@@ -28,6 +29,9 @@ import { getSafeLogger } from "@/logger";
 /** Injectable deps for the wipe (see docs/architecture/conventions.md §2). */
 export const _runTmpWipeDeps = {
   remove: (path: string): Promise<void> => rm(path, { recursive: true, force: true }),
+  lstat: (path: string) => lstat(path),
+  chmod: (path: string, mode: number): Promise<void> => chmod(path, mode),
+  readdir: (path: string): Promise<string[]> => readdir(path),
   /**
    * #2300 — one synchronous stat, so a wipe aimed at an id nothing was created
    * under is recorded instead of passing silently.
@@ -53,6 +57,42 @@ export const _runTmpWipeDeps = {
     }
   },
 };
+
+/** Best-effort permission repair; the subsequent removal decides success. */
+async function makeDirectoriesWritable(path: string): Promise<void> {
+  let stats: Awaited<ReturnType<typeof lstat>>;
+  try {
+    stats = await _runTmpWipeDeps.lstat(path);
+  } catch {
+    return; // An inaccessible or vanished entry cannot be repaired.
+  }
+  if (!stats.isDirectory() || stats.isSymbolicLink()) return;
+  try {
+    await _runTmpWipeDeps.chmod(path, stats.mode | 0o700);
+  } catch {
+    // A failed chmod need not prevent traversing this directory or its siblings.
+  }
+  let entries: string[];
+  try {
+    entries = await _runTmpWipeDeps.readdir(path);
+  } catch {
+    return; // Retry removal even when this directory cannot be listed.
+  }
+  for (const entry of entries) await makeDirectoriesWritable(join(path, entry));
+}
+
+/** Remove a run root, repairing directory permissions after a permission failure. */
+export async function removeRunTmpTree(path: string): Promise<void> {
+  try {
+    await _runTmpWipeDeps.remove(path);
+    return;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | null)?.code;
+    if (code !== "EACCES" && code !== "EPERM") throw err;
+  }
+  await makeDirectoriesWritable(path);
+  await _runTmpWipeDeps.remove(path);
+}
 
 /** What one presence check concluded. A failed check is not an absence. */
 type Presence =
@@ -100,7 +140,7 @@ export async function wipeRunTmp(runId: string, opts: WipeRunTmpOptions = {}): P
     });
   }
   try {
-    await _runTmpWipeDeps.remove(path);
+    await removeRunTmpTree(path);
   } catch (err) {
     getSafeLogger()?.warn("sandbox", `Failed to wipe run temp dir ${path} — continuing`, {
       runId,
