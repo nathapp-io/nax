@@ -144,7 +144,10 @@ export const readTool: CodingTool = {
           maxBytes: ctx.maxBytes,
           maxLines: MODEL_MAX_LINES,
         });
-        return { content: result.content };
+        // The cut result fits every model-facing cap, so the after_tool policy is a
+        // no-op on it and cannot report what the tool dropped. Stating it here is
+        // what keeps the ledger row from claiming the model saw the whole file.
+        return { content: result.content, truncated: result.truncated };
       }
 
       // Read up to maxFileBytes, not maxBytes: the requested range may start
@@ -200,7 +203,7 @@ export const readTool: CodingTool = {
         maxBytes: ctx.maxBytes,
         maxLines: MODEL_MAX_LINES,
       });
-      return { content: result.content };
+      return { content: result.content, truncated: result.truncated };
     } catch (err) {
       // An unreadable file is a tool ERROR the model can react to, never a
       // denial: the policy already said yes.

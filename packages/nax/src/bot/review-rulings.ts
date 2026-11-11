@@ -4,7 +4,7 @@ import { getLogger } from "@/logger";
 import type { BotSettledRuling } from "@/prompts";
 import type { PrStepContext } from "../workflow/branch-step-context";
 import type { Disposition } from "../workflow/decisions-sidecar";
-import { type ItemIndex, parseItemOpener } from "../workflow/item-threads";
+import { type ItemIndex, type PrRuling, parseItemFiles, parseItemOpener } from "../workflow/item-threads";
 import {
   CallerRecordingError,
   type CallerRulingsFile,
@@ -95,6 +95,29 @@ function failedReport(file: CallerRulingsFile, error: unknown): CallerRulingsRep
   return error instanceof CallerRecordingError ? error.callerRulings : unappliedReport(file, "recorder-failed");
 }
 
+/**
+ * US-012: one settled ruling as the prompt and the credit helper see it. `files` travels only when the
+ * item's opener lists some — a ruling that covers nothing named is not a coverage claim.
+ */
+function settledEntry(item: {
+  readonly itemId: string;
+  readonly kind: string;
+  readonly thread: PrThread;
+  readonly ruling: PrRuling;
+}): BotSettledRuling {
+  const opener = item.thread.comments[0]?.body ?? "";
+  const files = parseItemFiles(opener);
+  return {
+    id: item.itemId,
+    kind: item.kind,
+    issue: parseItemOpener(opener)?.issue ?? earlierIssue(item.thread),
+    disposition: item.ruling.disposition,
+    reason: item.ruling.reason,
+    ...(item.ruling.sha !== undefined && { sha: item.ruling.sha }),
+    ...(files.length > 0 && { files }),
+  };
+}
+
 /** Ruling reads are privileged and best-effort; an absent outcome must not invent counts. */
 export async function readReviewRulings(
   input: Omit<RecordRulingsInput, "readModel" | "callerRulings"> & {
@@ -126,14 +149,7 @@ export async function readReviewRulings(
       reviewedIndex: outcome.index,
       ...(outcome.index === undefined ? {} : { itemStatus: itemStatus(outcome) }),
       ...(outcome.confirmedWork?.length ? { itemConfirmed: confirmedItems(outcome, raw.login) } : {}),
-      settled: [...outcome.settled, ...(outcome.confirmedWork ?? [])].map((item) => ({
-        id: item.itemId,
-        kind: item.kind,
-        issue: parseItemOpener(item.thread.comments[0]?.body ?? "")?.issue ?? earlierIssue(item.thread),
-        disposition: item.ruling.disposition,
-        reason: item.ruling.reason,
-        ...(item.ruling.sha !== undefined && { sha: item.ruling.sha }),
-      })),
+      settled: [...outcome.settled, ...(outcome.confirmedWork ?? [])].map(settledEntry),
       itemEarlier: rulingEarlier(outcome, raw.login),
       rulings: {
         recorded: outcome.recorded.length,

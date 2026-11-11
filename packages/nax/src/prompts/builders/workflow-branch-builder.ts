@@ -20,6 +20,8 @@ export interface BranchReviewPromptInput {
   readonly packagePath: string;
   /** `<seed>..HEAD`: the commit range every changed file is read through (US-001). */
   readonly range: string;
+  readonly requiredFiles?: readonly string[];
+  readonly slice?: { readonly index: number; readonly count: number; readonly otherFiles: number };
   readonly stories: readonly {
     readonly id: string;
     readonly state: string;
@@ -100,7 +102,17 @@ function storyReportsBlock(reports: BranchReviewPromptInput["storyReports"]): st
  */
 export function buildBranchPackageReadingNote(range: string): string {
   return `## How to read the diff
-No diff is inlined. For each changed file run \`git diff ${range} -- <path>\`, or Read a file the branch added. Start with production source, then migrations and schema, then tests.`;
+This package holds no diff, only the commit list, the --stat summary and the changed-file names. For each changed file run \`git diff ${range} -- <path>\`, or Read a file the branch added. Start with production source, then migrations and schema, then tests.`;
+}
+
+function requiredFilesBlock(input: BranchReviewPromptInput): string {
+  const files = input.requiredFiles;
+  if (!files || files.length === 0) return "";
+  const fileLines = files.map((file) => `- ${file}`).join("\n");
+  const sliceLine = input.slice
+    ? `This is review slice ${input.slice.index} of ${input.slice.count}. Other slices review the other ${input.slice.otherFiles} changed file(s); read any of them only to check a contract with your files.\n`
+    : "";
+  return `\n## Files you must review (${files.length})\n${fileLines}\n${sliceLine}nax compares your inspectedFiles with this list. A file on it that you do not read or diff is reported unread, and an unread file keeps the PR a draft. Repo gates passing is not a review of a file, and neither is a story review: read each one.\n`;
 }
 
 const REVIEW_JSON =
@@ -116,7 +128,7 @@ export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput):
 - the branch review package (commits, --stat, changed files; no diff is inlined): ${input.packagePath}
 
 ${buildBranchPackageReadingNote(input.range)}
-
+${requiredFilesBlock(input)}
 ## Stories
 ${storyLines(input)}
 ${storyReportsBlock(input.storyReports)}
@@ -161,18 +173,25 @@ ${REVIEW_JSON}`;
  * command to read each one, and the instruction to list everything it has read in this session —
  * the first reply's `inspectedFiles` named only the files it opened after the retry prompt, so the
  * whole list has to be sent again, not just the additions.
+ *
+ * US-002 (nax#2858): `progress` names which coverage retry this is. Coverage has a budget of its own
+ * now, so the reviewer is told how many asks it has and that leaving a file out keeps the PR a draft.
  */
 export function buildWorkflowBranchCoverageRetry(
   range: string,
   missing: readonly string[],
   staticMode = false,
+  progress?: { attempt: number; max: number },
 ): string {
   const read = staticMode
     ? "Read each of these with Read (commands are unavailable)"
     : `Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it)`;
+  const budget = progress
+    ? `\nThis is coverage retry ${progress.attempt} of ${progress.max}. Read all of them before you reply; a file you leave out stays unread and keeps the PR a draft.\n`
+    : "";
   return `Your reply parsed, but its inspectedFiles does not cover every changed file. ${read}, and review it:
 ${missing.map((path) => `- ${path}`).join("\n")}
-
+${budget}
 List in inspectedFiles every file you have read or diffed in this session, not only the new ones.
 Re-send the whole JSON object: the same findings, plus anything the files above turned up.`;
 }

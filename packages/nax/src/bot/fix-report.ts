@@ -10,6 +10,7 @@ import {
   listPrComments,
   listReviewThreads,
   ownComments,
+  type PrComment,
   type PrThread,
   parseNaxBotMarker,
   postPrComment,
@@ -27,6 +28,7 @@ import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sideca
 import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
+import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { readHeadGateNames } from "./head-gates";
 import { waitForPrHead } from "./pr-head-wait";
@@ -195,20 +197,40 @@ async function readReadyRulings(env: BotFixEnv) {
   return { info, user, comments, outcome };
 }
 
+/**
+ * The bot review's own coverage record (US-013/US-014), read back from the PR's top-level comments.
+ * Only an own marked comment is read, and a body the record grammar rejects reads as no record at all,
+ * so a comment naming files no review skipped can never hold a draft.
+ */
+function ownCoverage(comments: readonly PrComment[], login: string): CoverageRecord | undefined {
+  const own = ownComments(comments, login).find(({ key }) => key === COVERAGE_RECORD_KEY);
+  return own === undefined ? undefined : (parseCoverageRecord(own.comment.body) ?? undefined);
+}
+
 async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<string | undefined> {
   try {
     const expectedSha = state.pushedSha ?? env.info.headSha;
     const initial = await readReadyRulings(env);
     if (initial.info.headSha !== expectedSha) return "PR head changed since this execution";
     // Green here only bypasses the CI check for the initial item-only decision.
-    const items = workflowPrReadiness({ outcome: initial.outcome, ci: { outcome: "green", detail: "item preflight" } });
+    const items = workflowPrReadiness({
+      outcome: initial.outcome,
+      ci: { outcome: "green", detail: "item preflight" },
+      coverage: ownCoverage(initial.comments, initial.user.login),
+      headSha: initial.info.headSha,
+    });
     if (!items.ready) return items.reason;
     const ci = await waitForCi(env, { pushedSha: expectedSha });
     env.ctx.callCtx.runtime.signal.throwIfAborted();
     // Rulings and index membership can change without a push while CI runs.
     const { info, user, comments, outcome } = await readReadyRulings(env);
     if (info.headSha !== expectedSha) return "PR head changed since this execution";
-    const ready = workflowPrReadiness({ outcome, ci });
+    const ready = workflowPrReadiness({
+      outcome,
+      ci,
+      coverage: ownCoverage(comments, user.login),
+      headSha: info.headSha,
+    });
     if (!ready.ready) return ready.reason;
     const evidence = await writeEvidence(env, outcome, ownComments(comments, user.login));
     if (evidence) return evidence;

@@ -6,6 +6,7 @@ import type { RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
 import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
 import { initLogger, resetLogger } from "@/logger";
 import { buildBotPrReviewPrompt } from "@/prompts";
+import { renderItemOpener } from "@/workflow/item-threads";
 
 const env = makeBotFixEnv();
 const input = {
@@ -72,6 +73,21 @@ describe("readReviewRulings settled projection", () => {
     expect(await readReviewRulings(input, async () => result)).toMatchObject({
       settled: [{ issue: earlierIssue(result.settled[0].thread), sha: "abc1234" }],
     });
+  });
+  test("US-012 AC-9 carries the item's files beside the verifying sha", async () => {
+    const filesOpener = renderItemOpener({
+      id: "_run:cv1",
+      kind: "cannot-verify",
+      issue: "Live job-log availability",
+      files: ["a.ts"],
+    });
+    expect(await readReviewRulings(input, async () => outcome(filesOpener, "abc1234"))).toMatchObject({
+      settled: [{ id: "_run:cv1", files: ["a.ts"], sha: "abc1234" }],
+    });
+  });
+  test("US-012 AC-10 omits files for an item that lists none", async () => {
+    const result = await readReviewRulings(input, async () => outcome());
+    expect(result.settled?.[0]).not.toHaveProperty("files");
   });
   test("AC-13/14 static mode never records or projects settled", async () => {
     const record = mock<typeof recordPrRulings>(async () => outcome());

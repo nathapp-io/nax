@@ -163,6 +163,16 @@ export interface ApplyCapCutInput {
 export interface ApplyCapCutResult {
   /** The composed result content. */
   readonly content: string;
+  /**
+   * True iff the cap cut fired — steps 1-2 delivered the candidate unchanged,
+   * so only step 3 reports a body the model will not see whole.
+   *
+   * The tool forwards this as `ToolResult.truncated`. It has to be stated here
+   * rather than inferred by the caller from `content`, which is exactly the
+   * mistake the runtime used to make: a cut result fits every cap by
+   * construction, so nothing downstream can tell it apart from a whole one.
+   */
+  readonly truncated: boolean;
 }
 
 /**
@@ -201,7 +211,7 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
   // cap (e.g. header + 999 body lines + "\n" reports as 1001 lines via
   // raw split but 1000 via `splitModelLines`).
   if (splitModelLines(candidate).length <= maxLines && Buffer.byteLength(candidate, "utf8") <= maxBytes) {
-    return { content: candidate };
+    return { content: candidate, truncated: false };
   }
 
   // Step 2 — overlong line: hand the body to the after_tool policy.
@@ -220,7 +230,7 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
   // overlong line at the per-line ceiling instead of evicting the lines
   // around it, and spills what it cuts, so the tail stays reachable.
   if (lines.some((line) => Buffer.byteLength(line, "utf8") > maxBytes)) {
-    return { content: candidate };
+    return { content: candidate, truncated: false };
   }
 
   // Step 3 — cap cut. Try k from largest to smallest; the first one that
@@ -247,7 +257,7 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
     const cut = `${header}\n${bodyJoined}\n${footer}`;
 
     if (Buffer.byteLength(cut, "utf8") <= maxBytes) {
-      return { content: cut };
+      return { content: cut, truncated: true };
     }
   }
 
@@ -255,5 +265,5 @@ export function applyCapCut(input: ApplyCapCutInput): ApplyCapCutResult {
   // cap footer is absent here — the rule is "no line fits with the header
   // and cap footer", so neither can be appended. The after_tool policy
   // is the backstop for these cases.
-  return { content: candidate };
+  return { content: candidate, truncated: false };
 }

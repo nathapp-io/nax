@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-03T12:59:25.780Z",
+  "updatedAt": "2026-11-11T05:33:30.736Z",
   "limit": 20,
   "byFile": {
     "src/coding-tools/coding-tool-extras.ts": { "buildDeclaredCommandTools": 24 },
@@ -13,7 +13,7 @@
     "src/tools/policy-bash-raw.ts": { "screenRawBashCommand": 24 },
     "src/tools/policy.ts": { "verbBranch": 29, "argvBranch": 23 },
     "src/tools/run-command.ts": { "run": 53 },
-    "src/tools/runtime.ts": { "log": 40, "runTool": 24 },
+    "src/tools/runtime.ts": { "log": 32, "runTool": 24 },
     "src/tools/truncate.ts": { "truncateForModel": 24 },
     "test/unit/tools/glob.test.ts": { "parseGroupLine": 26 }
   }

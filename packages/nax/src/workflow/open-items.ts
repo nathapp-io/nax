@@ -1,5 +1,5 @@
 /** #2496, US-002: what is still open on a workflow feature, and the verdict a finishing tool reads. Pure. */
-import { ciReason, gateReasons, storyReasons } from "./approval";
+import { ciReason, describeUnread, gateReasons, storyReasons } from "./approval";
 import type {
   OpenItem,
   StoryStateItem,
@@ -118,10 +118,19 @@ function explainsFlags(text: string, rec: WorkflowFeatureRecord): boolean {
 /** One item per reason nothing else explains, numbered by its position in `reasons` (stable ids). */
 function reasonItems(rec: WorkflowFeatureRecord): OpenItem[] {
   const explained = explainedTexts(rec);
+  const unread = rec.reviewUnread ?? [];
+  const unreadReason = unread.length > 0 ? describeUnread(unread) : undefined;
   return rec.reasons.flatMap((text, i) =>
     explained.has(text) || explainsFlags(text, rec)
       ? []
-      : [{ id: `_run:reason${i + 1}`, kind: "reason" as const, issue: text }],
+      : [
+          {
+            id: `_run:reason${i + 1}`,
+            kind: "reason" as const,
+            issue: text,
+            ...(text === unreadReason ? { files: unread } : {}),
+          },
+        ],
   );
 }
 

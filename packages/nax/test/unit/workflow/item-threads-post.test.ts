@@ -3,8 +3,9 @@ import type { ForgeDeps } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
+import { describeUnread } from "@/workflow/approval";
 import { newFeatureRecord } from "@/workflow/feature-record";
-import { itemKey, renderItemOpener } from "@/workflow/item-threads";
+import { itemKey, parseItemFiles, renderItemOpener } from "@/workflow/item-threads";
 import type { ItemThreadsInput } from "@/workflow/item-threads-post";
 import { postItemThreads } from "@/workflow/item-threads-post";
 import type { OpenItem } from "@/workflow/types";
@@ -253,5 +254,16 @@ describe("postItemThreads", () => {
     expect(await postItemThreads(input(), h.deps)).toEqual(outcome(0, 1));
     expect(h.writes).toHaveLength(3);
     expect(logs.filter((entry) => entry.data?.itemId === "B1")).toHaveLength(3);
+  });
+  test("US-010 AC-11 posts the unread-files item and lists its files", async () => {
+    const h = harness();
+    const record = {
+      ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+      reviewUnread: ["a.ts"],
+      reasons: [describeUnread(["a.ts"])],
+    };
+    expect(await postItemThreads(input({ record }), h.deps)).toEqual(outcome(1));
+    expect(h.writes).toHaveLength(1);
+    expect(parseItemFiles(field(h.writes[0], "body") ?? "")).toEqual(["a.ts"]);
   });
 });

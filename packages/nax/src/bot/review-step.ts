@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { ConfiguredModel } from "@/config";
+import { WORKFLOW_REVIEW_DEFAULTS } from "@/config";
 import type { LinkedIssue, PrComment, PrInfo, PrThread } from "@/forge";
 import { getSafeLogger } from "@/logger";
 import { botPrReviewOp, botPrStaticReviewOp, type PrReviewVerdict, unreadFiles } from "@/operations";
@@ -11,6 +12,7 @@ import { reviewRequiredFiles } from "../workflow/review-coverage";
 import { _workflowDeps } from "../workflow/step-context";
 import { type ReviewOutcome, underReviewLimit } from "../workflow/story-review";
 
+import { creditedFiles } from "./coverage-credit";
 import type { BotDecision } from "./decisions";
 import { reviewScopeOf } from "./review-rulings";
 
@@ -37,6 +39,16 @@ export interface PrReviewInput {
   readonly ci?: CiWaitResult;
 }
 
+/** What the package step settles before either the prompt or the op can be built (US-012). */
+interface ReviewStep {
+  readonly packagePath: string;
+  readonly rangeBase: string;
+  /** Every changed file the review owes a look at. */
+  required: readonly string[];
+  /** The subset a settled `verified` ruling already covered at an unchanged commit. */
+  credited: readonly string[];
+}
+
 async function writePackage(
   ctx: PrStepContext,
   mergeBase: string,
@@ -60,6 +72,94 @@ async function writePackage(
   return paths;
 }
 
+/**
+ * US-012: paths changed between a ruling's commit and HEAD. `null` when git cannot answer — the
+ * credit is void, so an unreadable comparison never excuses a file from review.
+ *
+ * `-z` is not a formatting preference. Without it git quotes any path holding a non-ASCII byte, a
+ * quote or a control character (`src/é.ts` arrives as `"src/\303\251.ts"` under the default
+ * `core.quotePath`), and a quoted name is never equal to the raw path this credit compares it with:
+ * a file that DID change would drop out of the changed set, keep its ruling's credit and be excused
+ * from review. With `-z` git emits each path verbatim, NUL-terminated, so the comparison is exact.
+ */
+async function changedSince(ctx: PrStepContext, sha: string): Promise<readonly string[] | null> {
+  const { stdout, exitCode } = await _workflowDeps.git(["diff", "--name-only", "-z", `${sha}..HEAD`], ctx.projectDir);
+  if (exitCode === 0) return stdout.split("\0").filter((path) => path !== "");
+  getSafeLogger()?.warn("bot", "Could not compare a verified ruling's commit with HEAD; crediting nothing", {
+    storyId: "_run",
+    sha,
+  });
+  return null;
+}
+
+/** The required set minus what a settled ruling already covered: what the op must actually read. */
+function outstanding(step: ReviewStep): readonly string[] {
+  const credited = new Set(step.credited);
+  return step.required.filter((path) => !credited.has(path));
+}
+
+function reviewPrompt(input: PrReviewInput, step: ReviewStep): string {
+  return buildBotPrReviewPrompt({
+    packagePath: step.packagePath,
+    range: `${step.rangeBase}..HEAD`,
+    conversationOnly: input.conversationOnly,
+    ...(reviewScopeOf(input) === "incremental" && { incrementalSince: step.rangeBase }),
+    pr: { number: input.info.number, title: input.info.title, body: input.info.body, author: input.info.author.login },
+    issues: input.issues,
+    threads: input.threads,
+    comments: input.comments,
+    earlier: input.earlier,
+    settled: input.settled,
+    ...(step.credited.length > 0 && { coveredByRulings: step.credited }),
+    checks: input.checks,
+    decisions: input.decisions,
+    ...(input.prdPath !== undefined && { prdPath: input.prdPath }),
+    ...(input.specPath !== undefined && { specPath: input.specPath }),
+    ...(input.checkoutState !== undefined && { checkoutState: input.checkoutState }),
+    staticMode: input.staticMode,
+    ...(input.ci !== undefined && { ci: input.ci }),
+  });
+}
+
+/** Builds the package and the credit both the prompt and the op need; a no-op for a talk-only review. */
+async function prepareReview(ctx: PrStepContext, input: PrReviewInput, step: ReviewStep): Promise<void> {
+  if (input.conversationOnly) return;
+  const paths = await writePackage(ctx, step.rangeBase, step.packagePath, input.staticMode);
+  step.required = await reviewRequiredFiles(paths, ctx, { keepTests: true });
+  step.credited = await creditedFiles({
+    settled: input.settled ?? [],
+    required: step.required,
+    changedSince: (sha) => changedSince(ctx, sha),
+  });
+}
+
+function dispatchReview(
+  ctx: PrStepContext,
+  input: PrReviewInput,
+  step: ReviewStep,
+  signal: AbortSignal | undefined,
+): Promise<PrReviewVerdict | null> {
+  const requiredFiles = outstanding(step);
+  return _workflowDeps.callOp(
+    { ...ctx.callCtx, ...(signal ? { signal } : {}) },
+    input.staticMode ? botPrStaticReviewOp : botPrReviewOp,
+    {
+      prompt: reviewPrompt(input, step),
+      repoRoot: ctx.projectDir,
+      range: `${step.rangeBase}..HEAD`,
+      ...(requiredFiles.length > 0 && { requiredFiles }),
+      threadIds: input.threads.map((thread) => thread.id),
+      commentIds: input.comments.map((comment) => comment.id),
+      earlierIds: (input.earlier ?? []).slice(0, MAX_EARLIER_THREADS).map((thread) => thread.id),
+      decisionIds: (input.decisions ?? []).map((decision) => decision.id),
+      timeoutMs: ctx.workflow.timeouts.reviewMs,
+      // US-003: coverage has its own budget; the op falls back to the same default when absent.
+      coverageRetries: (ctx.workflow.review ?? WORKFLOW_REVIEW_DEFAULTS).coverageRetries,
+      ...(input.model !== undefined && { model: input.model }),
+    },
+  );
+}
+
 export type PrReviewOutcome = ReviewOutcome<PrReviewVerdict> & { readonly unreadFiles?: readonly string[] };
 
 /** Review a PR with the shared package-failure, timeout and abort semantics; triage retries live in the op. */
@@ -70,54 +170,18 @@ export async function runPrReview(ctx: PrStepContext, input: PrReviewInput): Pro
       cap: MAX_EARLIER_THREADS,
       dropped,
     });
-  const packagePath = join(ctx.runDir, "package-pr.diff");
-  const rangeBase = input.rangeBase ?? input.mergeBase;
-  const prompt = buildBotPrReviewPrompt({
-    packagePath,
-    range: `${rangeBase}..HEAD`,
-    conversationOnly: input.conversationOnly,
-    ...(reviewScopeOf(input) === "incremental" && { incrementalSince: rangeBase }),
-    pr: { number: input.info.number, title: input.info.title, body: input.info.body, author: input.info.author.login },
-    issues: input.issues,
-    threads: input.threads,
-    comments: input.comments,
-    earlier: input.earlier,
-    settled: input.settled,
-    checks: input.checks,
-    decisions: input.decisions,
-    ...(input.prdPath !== undefined && { prdPath: input.prdPath }),
-    ...(input.specPath !== undefined && { specPath: input.specPath }),
-    ...(input.checkoutState !== undefined && { checkoutState: input.checkoutState }),
-    staticMode: input.staticMode,
-    ...(input.ci !== undefined && { ci: input.ci }),
-  });
-  let requiredFiles: readonly string[] = [];
+  const step: ReviewStep = {
+    packagePath: join(ctx.runDir, "package-pr.diff"),
+    rangeBase: input.rangeBase ?? input.mergeBase,
+    required: [],
+    credited: [],
+  };
   const outcome = await underReviewLimit(
     ctx,
-    async () => {
-      if (input.conversationOnly) return;
-      const paths = await writePackage(ctx, rangeBase, packagePath, input.staticMode);
-      requiredFiles = await reviewRequiredFiles(paths, ctx, { keepTests: true });
-    },
-    (signal) =>
-      _workflowDeps.callOp(
-        { ...ctx.callCtx, ...(signal ? { signal } : {}) },
-        input.staticMode ? botPrStaticReviewOp : botPrReviewOp,
-        {
-          prompt,
-          repoRoot: ctx.projectDir,
-          range: `${rangeBase}..HEAD`,
-          ...(requiredFiles.length > 0 && { requiredFiles }),
-          threadIds: input.threads.map((thread) => thread.id),
-          commentIds: input.comments.map((comment) => comment.id),
-          earlierIds: (input.earlier ?? []).slice(0, MAX_EARLIER_THREADS).map((thread) => thread.id),
-          decisionIds: (input.decisions ?? []).map((decision) => decision.id),
-          timeoutMs: ctx.workflow.timeouts.reviewMs,
-          ...(input.model !== undefined && { model: input.model }),
-        },
-      ),
+    () => prepareReview(ctx, input, step),
+    (signal) => dispatchReview(ctx, input, step, signal),
   );
   if (!outcome.ran) return outcome;
-  const missing = unreadFiles(requiredFiles, outcome.verdict.inspectedFiles, ctx.projectDir);
+  const missing = unreadFiles(outstanding(step), outcome.verdict.inspectedFiles, ctx.projectDir);
   return { ...outcome, ...(missing.length > 0 && { unreadFiles: missing }) };
 }

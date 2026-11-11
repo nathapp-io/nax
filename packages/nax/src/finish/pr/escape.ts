@@ -45,7 +45,19 @@ export function escapeTableCell(value: string, max: number = CELL_MAX): string {
   );
 }
 
+/**
+ * The inline escapes with NO length cap: no code spans, no tags, one line.
+ *
+ * Separate from `escapeInline` because the cap is the wrong default for a value that has to survive
+ * a round trip rather than be read as prose — a file path rendered into an item body is read back
+ * and compared with a real path, so clipping it would name nothing. Callers that need that say so
+ * by calling this, instead of passing a huge `max`.
+ */
+export function escapeInlineUncapped(value: string): string {
+  return value.replace(/`/g, "'").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, " ");
+}
+
 /** A string for inline markdown outside a table: no code spans, no tags, one line, capped after escaping. */
 export function escapeInline(value: string, max: number = CELL_MAX): string {
-  return capEscaped(value.replace(/`/g, "'").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, " "), max);
+  return capEscaped(escapeInlineUncapped(value), max);
 }

@@ -12,7 +12,7 @@
  */
 import { redactSecrets } from "@/logger";
 // Keep the shared escaping leaf independent of the broader finish helpers.
-import { escapeInline, escapeTableCell } from "../finish/pr/escape";
+import { escapeInline, escapeInlineUncapped, escapeTableCell } from "../finish/pr/escape";
 
 const ZERO_WIDTH_SPACE = "​";
 
@@ -42,6 +42,19 @@ export function safeInline(text: string, max?: number): string {
 /** Redacted, one-line text for an inline code span (a file path): GitHub neither links nor mentions there. */
 export function safeCode(text: string, max?: number): string {
   return escapeInline(redactSecrets(text), max);
+}
+
+/**
+ * Redacted, one-line text for an inline code span holding a FILE PATH — escaped, never capped.
+ *
+ * `safeCode` caps at `CELL_MAX` (200) like every other inline render, because prose must not push a
+ * body past the forge's size limit. A path is not prose: an item's `Files:` block is read back by
+ * `parseItemFiles` and its entries compared with the required changed files, so a clipped path (an
+ * ellipsis appended) names no file that exists and silently voids the credit the block exists to
+ * carry. A repository path is bounded by the filesystem, not by prose length.
+ */
+export function safePath(text: string): string {
+  return escapeInlineUncapped(redactSecrets(text));
 }
 
 /** Redacted, neutralised, escaped table-cell text. */

@@ -69,7 +69,7 @@ function replied(key = "summary"): GitlabDiscussion {
 
 describe("replied GitLab top-level notes", () => {
   test("AC-1 exports the top-level marker keys", () => {
-    expect(forge.TOP_LEVEL_MARKER_KEYS).toEqual(["summary", "w-index", "w-evidence", "fix-summary"]);
+    expect(forge.TOP_LEVEL_MARKER_KEYS).toEqual(["summary", "w-index", "w-evidence", "fix-summary", "w-coverage"]);
   });
   test("AC-2 preserves the public marker parser", () => {
     expect(forge.parseNaxBotMarker(forge.withNaxBotMarker("body", "summary"))).toEqual({ key: "summary" });

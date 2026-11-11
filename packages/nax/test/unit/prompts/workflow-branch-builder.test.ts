@@ -216,6 +216,20 @@ describe("buildWorkflowBranchCoverageRetry (US-003, nax#2532)", () => {
       "List in inspectedFiles every file you have read or diffed in this session, not only the new ones.",
     );
   });
+
+  // US-002 (nax#2858): the retry now carries its own budget, so each one says which it is.
+  test("AC-12: a progress argument names the attempt and the budget", () => {
+    const withProgress = buildWorkflowBranchCoverageRetry("seed0..HEAD", ["src/a.ts"], false, { attempt: 2, max: 3 });
+
+    expect(withProgress).toContain(
+      "This is coverage retry 2 of 3. Read all of them before you reply; a file you leave out stays unread and keeps the PR a draft.",
+    );
+  });
+
+  test("AC-13: with no progress, no coverage-retry line at all", () => {
+    const lines = retry.split("\n");
+    expect(lines.some((line) => line.startsWith("This is coverage retry"))).toBe(false);
+  });
 });
 
 describe("buildWorkflowBranchReReviewPrompt", () => {

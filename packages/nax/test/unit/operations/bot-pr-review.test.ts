@@ -111,7 +111,10 @@ for (const op of [botPrReviewOp, botPrStaticReviewOp]) {
       expect(strategy.shouldRetry(failure, 0, retryCtx(partial))).toEqual({
         retry: true,
         delayMs: 0,
-        nextPrompt: buildWorkflowBranchCoverageRetry(value.range, ["src/a.ts"], op === botPrStaticReviewOp),
+        nextPrompt: buildWorkflowBranchCoverageRetry(value.range, ["src/a.ts"], op === botPrStaticReviewOp, {
+          attempt: 1,
+          max: 3,
+        }),
       });
       const covered = JSON.stringify({ ...JSON.parse(partial), inspectedFiles: ["/checkout/src/a.ts"] });
       expect(strategy.shouldRetry(failure, 0, retryCtx(covered))).toEqual({ retry: false });
@@ -124,6 +127,8 @@ for (const op of [botPrReviewOp, botPrStaticReviewOp]) {
           strategy.shouldRetry(failure, 0, retryCtx(JSON.stringify({ ...JSON.parse(partial), [field]: [] }))),
         ).toEqual({ retry: true, delayMs: 0, nextPrompt: expected });
       }
+      // One coverage retry was sent above; this reply covers no more files than that one, so the
+      // no-progress stop applies and the partial verdict is kept, findings included (US-003).
       expect(strategy.shouldRetry(failure, 1, retryCtx(partial))).toEqual({
         retry: false,
         fallback: op.parse(partial, value, ctx()),

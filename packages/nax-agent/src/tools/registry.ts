@@ -59,6 +59,26 @@ export interface ToolResult {
    * much did we discard" is unanswerable.
    */
   readonly resultBytesPreTruncation?: number;
+  /**
+   * Whether THIS TOOL cut its own result before returning it, so `content`
+   * does not hold everything the tool read.
+   *
+   * `Read` sets it: it caps its whole-file body at the model-facing ceilings
+   * (`applyCapCut`) and names the delivered range in a cap footer. The result
+   * therefore already fits every cap, so `applyModelTruncationPolicy` runs on
+   * it and changes nothing — and a runtime that judged completeness by
+   * comparing the policy's output with `content` would record the row as
+   * complete while the model saw a prefix of a 2 000-line file. That row is
+   * what `toolReadPaths` credits a whole changed file from.
+   *
+   * The runtime ORs this with its own policy's verdict
+   * (`ToolCallRecord.truncated`), because the policy call answers only "did I
+   * change anything?", which is not the same question as "did the model see
+   * the whole result?".
+   *
+   * Absent means this tool cut nothing.
+   */
+  readonly truncated?: boolean;
 }
 
 export interface ToolRunContext {

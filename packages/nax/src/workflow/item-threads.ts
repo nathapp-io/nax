@@ -4,7 +4,7 @@ import { NaxError } from "@/errors";
 import { isNaxBotMarkerKey, NAX_BOT_HEADER, parseNaxBotMarker } from "@/forge";
 import { RULING_SHA_PATTERN, RULING_SHA_SOURCE } from "@/utils/ruling-sha";
 import type { Disposition } from "./decisions-sidecar";
-import { safeInline } from "./pr-body-safe";
+import { safeInline, safePath } from "./pr-body-safe";
 import type { OpenItem } from "./types";
 
 export interface PrRuling {
@@ -34,6 +34,9 @@ const SHA_PATTERN = /^[a-fA-F0-9]{40}$/;
 const REPLY_INSTRUCTION =
   "Rule on it by replying: fixed <sha>, waive: <reason>, confirm, override: <reason>, or verified. Any other reply from a collaborator is read as a ruling only when its meaning is clear.";
 const CHANGE_INSTRUCTION = "To change it, reply on this thread.";
+/** US-010: the heading of the coverage item's file list, and one path per code span below it. */
+const FILES_HEADING = "Files:";
+const FILES_LINE = /^ - `(.*)`$/;
 // Exhaustive type-checked vocabularies without importing the sidecar's I/O implementation.
 const DISPOSITION_NAMES = {
   fixed: true,
@@ -77,8 +80,21 @@ export function renderItemOpener(item: OpenItem): string {
     `Open item **${item.id}** (${item.kind}): ${safeInline(item.issue)}`,
     ...(item.suggestion ? [`Suggestion: ${safeInline(item.suggestion)}`] : []),
     ...(item.ruling ? [`Advisor: ${safeInline(item.ruling.action)} — ${safeInline(item.ruling.why)}`] : []),
+    ...filesBlock(item.files),
     REPLY_INSTRUCTION,
   ].join("\n");
+}
+
+/**
+ * US-010: the paths a coverage item covers, one code span per line.
+ *
+ * `safePath`, not `safeInline`: inline would rewrite `@modal` and `#1`. Not `safeCode` either —
+ * its `CELL_MAX` cap clips the path and appends an ellipsis, and the clipped string is what
+ * `parseItemFiles` hands back to the ruling credit, so a long path would name no file at all. The
+ * path a human reads has to be the path a ruling credits.
+ */
+function filesBlock(files: readonly string[] | undefined): string[] {
+  return files?.length ? [FILES_HEADING, ...files.map((path) => ` - \`${safePath(path)}\``)] : [];
 }
 
 /** Accept raw render output or a forge-marked comment; this does not establish ownership. */
@@ -94,6 +110,24 @@ export function parseItemOpener(body: string): Pick<OpenItem, "id" | "kind" | "i
   const kind = match?.[2] ?? "";
   if (!match?.[1] || !isOpenItemKind(kind)) return null;
   return { id: match[1], kind, issue: match[3] ?? "" };
+}
+
+/**
+ * US-010: the paths an opener's `Files:` block lists, in render order; empty when the item covers
+ * none. Reads raw and forge-marked bodies alike. Only the contiguous block under the heading counts,
+ * and the issue line cannot forge one: it renders through `safeInline`, which flattens newlines.
+ */
+export function parseItemFiles(body: string): string[] {
+  const lines = bodyLines(body);
+  const start = lines.indexOf(FILES_HEADING);
+  if (start < 0) return [];
+  const files: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const path = FILES_LINE.exec(line)?.[1];
+    if (path === undefined || path === "") break;
+    files.push(path);
+  }
+  return files;
 }
 
 export function isOpenItemKind(kind: string): kind is OpenItem["kind"] {
@@ -112,14 +146,24 @@ function callerLabel(by: string): string {
   return safeInline(by).replace(/\(/g, "[").replace(/\)/g, "]");
 }
 
+/**
+ * US-011: the dispositions whose echo names the commit the ruling was made at. `fixed` always carries
+ * one, `verified` carries one when the ruling records the head it covered, and no other disposition
+ * may (`echoShaAllowed` is the reading side of the same grammar).
+ */
+function echoSha(ruling: PrRuling): string | undefined {
+  if (ruling.disposition !== "fixed" && ruling.disposition !== "verified") return undefined;
+  return ruling.sha?.slice(0, SHORT_SHA_CHARS) || undefined;
+}
+
 export function renderRulingEcho(ruling: PrRuling): string {
   if (ruling.disposition === "fixed" && (!ruling.sha || !RULING_SHA_PATTERN.test(ruling.sha))) {
     throw new NaxError("[workflow] Fixed ruling requires a valid sha", "WORKFLOW_RULING_INVALID", {
       stage: "workflow",
     });
   }
-  const recorded =
-    ruling.disposition === "fixed" ? `fixed in ${ruling.sha?.slice(0, SHORT_SHA_CHARS) ?? ""}` : ruling.disposition;
+  const sha = echoSha(ruling);
+  const recorded = sha === undefined ? ruling.disposition : `${ruling.disposition} in ${sha}`;
   const provenance = ruling.callerBy === undefined ? "" : ` (caller ruling by ${callerLabel(ruling.callerBy)})`;
   return [
     `Recorded: ${recorded} — ${neutraliseSuffix(safeInline(ruling.reason))}${provenance}`,
@@ -130,6 +174,17 @@ export function renderRulingEcho(ruling: PrRuling): string {
 
 function isDisposition(value: string): value is Disposition {
   return Object.hasOwn(DISPOSITION_NAMES, value);
+}
+
+/**
+ * US-011: which dispositions may carry the ` in <sha>` part. `fixed` must name its commit, `verified`
+ * may name the head it covered, and every other disposition must not — so a `waived in <sha>` echo is
+ * never read as a ruling about a commit.
+ */
+function echoShaAllowed(disposition: Disposition, sha: string | undefined): boolean {
+  if (disposition === "fixed") return sha !== undefined;
+  if (disposition === "verified") return true;
+  return sha === undefined;
 }
 
 export function parseRulingEcho(key: string, body: string): PrRuling | null {
@@ -143,7 +198,7 @@ export function parseRulingEcho(key: string, body: string): PrRuling | null {
   const login = /^By @([A-Za-z0-9_.-]+)$/.exec(author ?? "")?.[1];
   if (!line || line[1] !== disposition || !line[3]?.trim() || instruction !== CHANGE_INSTRUCTION || extra.length)
     return null;
-  if ((disposition === "fixed") !== (line[2] !== undefined)) return null;
+  if (!echoShaAllowed(disposition, line[2])) return null;
   if (author !== "By nax bot" && !login) return null;
   const caller = CALLER_SUFFIX.exec(line[3]);
   return {
