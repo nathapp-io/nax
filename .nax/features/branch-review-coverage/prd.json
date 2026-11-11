@@ -3,7 +3,7 @@
   "feature": "branch-review-coverage",
   "branchName": "feat/branch-review-coverage",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T07:47:35.204Z",
+  "updatedAt": "2026-11-11T08:17:19.538Z",
   "userStories": [
     {
       "id": "US-001",
@@ -744,14 +744,17 @@
       "dependencies": [
         "US-012"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A small pure wire format and guarded best-effort upsert mirror writeEvidence using the post step's existing owned-comment snapshot and scope; no authentication or ownership-resolution mechanism is introduced."
+        "reasoning": "A small pure wire format and guarded best-effort upsert mirror writeEvidence using the post step's existing owned-comment snapshot and scope; no authentication or ownership-resolution mechanism is introduced.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/bot/post.ts",
@@ -779,7 +782,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "624cdebb59808b2647c01ba48131e6f55f06f799"
     },
     {
       "id": "US-014",
