@@ -2,7 +2,6 @@ export type { Pricing, PricingRates, PricingTier, TokenUsage } from "@nathapp/na
 export { estimateCostUsd, priceCall } from "@nathapp/nax-agent";
 export {
   addTokenUsage,
-  formatCostWithConfidence,
   inputClassTokens,
   resolvePricingSource,
 } from "./calculate";
@@ -14,5 +13,3 @@ export {
   type RateCardSource,
   resolveRateCard,
 } from "./rate-card";
-export type { ITokenUsageMapper } from "./token-mapper";
-export type { CostEstimate, ModelCostRates, TokenUsageWithConfidence } from "./types";

@@ -17,7 +17,6 @@ import type { RunnerExecutionOptions } from "@/execution/runner-execution";
 import type { PipelineContext } from "@/pipeline/types";
 import type { RoutingContext } from "@/routing/router";
 import type { DispatchContext } from "@/runtime/dispatch-context";
-import type { SessionRunnerContext } from "@/session/session-runner";
 
 function assertExtends<T extends U, U>(_value: T): void {}
 
@@ -63,13 +62,6 @@ describe("DispatchContext type hierarchy", () => {
     const ctx = {} as RunCompletionOptions;
     const base: DispatchContext = ctx;
     assertExtends<RunCompletionOptions, DispatchContext>(ctx);
-    expect(base).toBeDefined();
-  });
-
-  test("SessionRunnerContext extends DispatchContext", () => {
-    const ctx = {} as SessionRunnerContext;
-    const base: DispatchContext = ctx;
-    assertExtends<SessionRunnerContext, DispatchContext>(ctx);
     expect(base).toBeDefined();
   });
 });

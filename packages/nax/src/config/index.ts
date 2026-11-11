@@ -199,4 +199,3 @@ export {
 } from "./test-strategy";
 export { trackedSpawnDeadlines } from "./tracked-spawn-deadlines";
 export { describeUnreferencedAgentModels, findUnreferencedAgentModels } from "./unreferenced-agent-models";
-export { type ValidationResult, validateConfig } from "./validate"; // @deprecated: Use NaxConfigSchema.safeParse() instead

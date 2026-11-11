@@ -17,8 +17,6 @@ export type {
 // Re-export scratch-writer so callers can use `@/session/scratchFilePath` /
 // `@/session/ScratchEntry` instead of reaching into the internal path.
 export { appendScratchEntry, digestFilePath, readDigestFile, scratchFilePath, writeDigestFile } from "./scratch-writer";
-export type { SessionKeeperOptions, SessionKeeperSendOptions } from "./session-keeper";
-export { SessionKeeper } from "./session-keeper";
 export type { SweepFeatureTranscriptsOptions } from "./transcript-sweep";
 export { sweepFeatureTranscripts } from "./transcript-sweep";
 export type { AfterTurnHook, BeforeTurnHook, TurnHookPair } from "./turn-hooks";

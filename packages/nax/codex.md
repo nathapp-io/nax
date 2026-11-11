@@ -100,11 +100,11 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/agents/catalog/` | nax-ai model-catalog boundary — returns nax-ai's `Pricing`; other code uses its `Pricing`/`TokenUsage` via `@nathapp/nax-agent` |
 | `src/agents/cost/` | Centralized cost calculation (pricing, token parsing) |
 | `src/agents/native-agent/` | nax's thin `NativeAgentAdapter` shell over `@nathapp/nax-agent`'s native session adapter |
-| `src/agents/shared/` | Cross-adapter utilities (decompose, env, model-resolution, validation) |
+| `src/agents/shared/` | Cross-adapter utilities (decompose, env, validation) |
 | `src/cli/` + `src/commands/` | CLI commands — check both locations |
 | `src/prd/` | PRD types, loader, story state machine |
 | `src/hooks/` | Lifecycle hook wiring (15 event types) |
-| `src/constitution/` | Constitution loader + generation (5 agent types) |
+| `src/constitution/` | Constitution loader |
 | `src/context/` | Context generation + auto-detect (7 agent generators) |
 | `src/review/` | Review runner, diff utils, audit, scoped lint, reviewer guard |
 | `src/analyze/` | Codebase scanner used by `nax plan` |
@@ -120,7 +120,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator]
 | `src/precheck/` | Pre-run checks (agents, CLI, config, git, system) + story-size gate |
 | `src/quality/` | Resolves and runs the project's real lint/typecheck/test commands |
 | `src/test-runners/` | Test-framework detection, output parsing, scoped test selection |
-| `src/session/` | Agent session lifecycle — naming, model selection, session keeper (`session-keeper.ts`, not the run-state keeper), scratch dirs, sweep |
+| `src/session/` | Agent session lifecycle — naming, model selection, scratch dirs, sweep |
 | `src/plan/` | `nax plan` — single/refine strategies, prompt building, PRD types, spec lint gate, persist/write (incl. fidelity repair) |
 | `src/replay/` | Reconstruct a past run from its artifacts (`nax replay`) |
 | `src/bakeoff/` | Multi-contestant bakeoff runs — coordinator, ranking, report |

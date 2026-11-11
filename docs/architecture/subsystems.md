@@ -881,7 +881,7 @@ and a new one opened to continue. `sendPrompt` on a terminal (`COMPLETED` /
 
 `src/session/index.ts` exports `SessionManager`, `ISessionManager`,
 `SessionDescriptor`, `SessionState`, `SESSION_TRANSITIONS`,
-`CreateSessionOptions`, `formatSessionName`, `SessionKeeper`, and the
+`CreateSessionOptions`, `formatSessionName`, and the
 scratch-writer helpers (`appendScratchEntry`, `scratchFilePath`, …).
 
 ---
@@ -936,7 +936,7 @@ Neither imports the other. Integration happens at callOp / buildHopCallback.
 | Method | Use case | Session involvement |
 |:---|:---|:---|
 | `completeAs(name, prompt, opts)` / `completeAsWithFallback(name, prompt, opts)` | Sessionless one-shot — routing, decompose (`kind:"complete"` ops go through `completeAsWithFallback`, which also returns agent-swap records) | None — calls `adapter.complete` directly |
-| `runAsSession(agent, handle, prompt, opts)` | Caller-managed session — callers that keep a session open across multiple prompts (`src/session/session-keeper.ts`, the hop callback) | Caller opens handle via `SessionManager.openSession`; AgentManager wraps `sessionManager.sendPrompt` with the middleware envelope; **no internal fallback** |
+| `runAsSession(agent, handle, prompt, opts)` | Caller-managed session — callers that keep a session open across multiple prompts (the hop callback) | Caller opens handle via `SessionManager.openSession`; AgentManager wraps `sessionManager.sendPrompt` with the middleware envelope; **no internal fallback** |
 | `runWithFallback(request)` | Chain iteration with per-hop callback delegation | Iterates the fallback chain; invokes `request.executeHop(agent, bundle, failure, opts)` per hop. The callback (constructed by `callOp` via `buildHopCallback`, §37) owns rebuild + open + send + close |
 
 Every `completeAs*` and `runAsSession` call runs through the same middleware
