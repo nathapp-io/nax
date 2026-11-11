@@ -3,7 +3,7 @@
   "feature": "branch-review-coverage",
   "branchName": "feat/branch-review-coverage",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T07:12:25.044Z",
+  "updatedAt": "2026-11-11T07:27:26.071Z",
   "userStories": [
     {
       "id": "US-001",
@@ -617,14 +617,17 @@
       "dependencies": [
         "US-010"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Changes durable provenance in the writer-authorized ruling path; strict TDD protects existing access checks and head attribution."
+        "reasoning": "Changes durable provenance in the writer-authorized ruling path; strict TDD protects existing access checks and head attribution.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/item-threads.ts",
@@ -640,7 +643,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a7f935421b097933b0b0bf4b7bf3e228e868c2fc"
     },
     {
       "id": "US-012",
