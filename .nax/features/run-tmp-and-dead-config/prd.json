@@ -3,7 +3,7 @@
   "feature": "run-tmp-and-dead-config",
   "branchName": "feat/run-tmp-and-dead-config",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-11T12:30:50.140Z",
+  "updatedAt": "2026-11-11T12:37:26.538Z",
   "userStories": [
     {
       "id": "US-001",
@@ -226,14 +226,17 @@
         "rules"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Filter removal and a warning swap in two source files, dead-code deletion, many existing test inversions and two docs edits."
+        "reasoning": "Filter removal and a warning swap in two source files, dead-code deletion, many existing test inversions and two docs edits.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/context/engine/providers/static-rules.ts",
@@ -283,7 +286,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c94dc5347cfac32028040698e6246d4b980e78c3"
     },
     {
       "id": "US-005",
