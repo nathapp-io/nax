@@ -102,7 +102,8 @@ async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForg
   const loaded = await loadRunVerdict(dir, feature, forgeDeps.resolveOutputDir);
   const report = reportFor(dir, feature, loaded);
   const { outcome, url } = loaded.record;
-  if (outcome !== "draft" || !url || prNumberFromUrl(url) === null) return report;
+  const needsLiveStatus = outcome === "draft" || (outcome === "ready" && report.openItems.length > 0);
+  if (!needsLiveStatus || !url || prNumberFromUrl(url) === null) return report;
   const live = await readLiveStatus({ url, cwd: dir, deps: forgeDeps.forge, items: report.openItems });
   if (live.source === "run-record") return { ...report, liveError: live.error };
   const settled = new Set(live.settled.map((item) => item.id));

@@ -15,6 +15,8 @@ const NOW = "2026-10-13T09:12:00Z";
 type Options = {
   isDraft?: boolean;
   cvRuled?: boolean;
+  cvRuling?: "fixed" | "verified";
+  cvReopened?: boolean;
   advisorRuling?: "fixed" | "confirmed";
   failure?: "missing-index" | "offline" | "undetected";
   record?: Partial<WorkflowFeatureRecord>;
@@ -34,7 +36,7 @@ function record(overrides: Partial<WorkflowFeatureRecord> = {}): WorkflowFeature
   };
 }
 
-function thread(item: OpenItem, disposition?: "fixed" | "confirmed") {
+function thread(item: OpenItem, disposition?: "fixed" | "verified" | "confirmed", reopened = false) {
   const key = itemKey(item);
   const comment = (body: string) => ({ databaseId: 1, author: { login: "nax" }, body, createdAt: NOW });
   const comments = [comment(withNaxBotMarker(renderItemOpener(item), key))];
@@ -54,6 +56,7 @@ function thread(item: OpenItem, disposition?: "fixed" | "confirmed") {
         ),
       ),
     );
+  if (reopened) comments.push({ databaseId: 3, author: { login: "nax" }, body: "verify again", createdAt: NOW });
   return {
     id: key,
     isResolved: true,
@@ -72,7 +75,7 @@ function reviewThreadsResponse(options: Options) {
         pullRequest: {
           reviewThreads: {
             nodes: [
-              thread(CV, options.cvRuled === false ? undefined : "fixed"),
+              thread(CV, options.cvRuled === false ? undefined : (options.cvRuling ?? "fixed"), options.cvReopened),
               thread(ADVISOR, options.advisorRuling ?? "fixed"),
             ],
             pageInfo: { hasNextPage: false, endCursor: null },
@@ -108,6 +111,7 @@ function forgeResponse(argv: readonly string[], options: Options) {
   if (argv.includes("view")) return ok({ isDraft: options.isDraft ?? false, body: "" });
   if (argv.includes("graphql")) return ok(reviewThreadsResponse(options));
   const endpoint = argv.at(-1) ?? "";
+  if (endpoint.endsWith("/permission")) return ok({ permission: "write" });
   if (endpoint === "user") return ok({ login: "nax", id: 1 });
   if (endpoint.includes("/issues/7/comments?")) return ok(indexComments(options));
   if (endpoint.includes("/reviews?")) return ok([]);
@@ -166,6 +170,43 @@ function expectLive(value: Record<string, unknown>) {
 }
 
 describe("workflowStatusCommand live overlay", () => {
+  test("ready run reconciles a recorded verified ruling without changing artifacts", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { record: { outcome: "ready" }, cvRuling: "verified" });
+      const before = await Bun.file(fx.file).text();
+      const first = await fx.report();
+      expectLive(first.value);
+      expect(first.code).toBe(0);
+      expect(first.value.openItems).toEqual([]);
+      expect(first.value.settledItems).toEqual([
+        { id: CV.id, disposition: "verified" },
+        { id: ADVISOR.id, disposition: "fixed" },
+      ]);
+      expect(await fx.report()).toEqual(first);
+      expect(await Bun.file(fx.file).text()).toBe(before);
+    });
+  });
+  test.each(["draft", "ready"] as const)("%s run keeps a reused item id with different issue open", async (outcome) => {
+    await withTempDir(async (dir) => {
+      const { code, value } = await (
+        await fixture(dir, {
+          record: { outcome, cannotVerify: ["different manual check"] },
+        })
+      ).report();
+      expectLive(value);
+      expect(value.openItems).toEqual([{ ...CV, issue: "different manual check" }]);
+      expect(value.settledItems).toEqual([{ id: ADVISOR.id, disposition: "fixed" }]);
+      expect(code).toBe(2);
+    });
+  });
+  test("ready run keeps an accepted reply after the ruling open", async () => {
+    await withTempDir(async (dir) => {
+      const { code, value } = await (await fixture(dir, { record: { outcome: "ready" }, cvReopened: true })).report();
+      expectLive(value);
+      expect(value.openItems).toEqual([CV]);
+      expect(code).toBe(2);
+    });
+  });
   test("AC-1/2/17/18: ready PR with both rulings exits zero and exposes live settlement", async () => {
     await withTempDir(async (dir) => {
       const fx = await fixture(dir);
@@ -198,21 +239,35 @@ describe("workflowStatusCommand live overlay", () => {
       expect(code).toBe(2);
     });
   });
-  test.each([true, false])("AC-6/7: outstanding confirmed advisor stays open, draft=%s", async (isDraft) => {
-    await withTempDir(async (dir) => {
-      const { code, value } = await (await fixture(dir, { isDraft, advisorRuling: "confirmed" })).report();
-      expectLive(value);
-      expect(value.openItems).toEqual([ADVISOR]);
-      expect(value.outcome).toBe(isDraft ? "draft" : "ready");
-      expect(value.settledItems).toEqual([{ id: CV.id, disposition: "fixed" }]);
-      expect(code).toBe(2);
-    });
-  });
-  test.each(["missing-index", "offline", "undetected"] as const)(
-    "AC-8/9/18/19: %s failure preserves snapshot and prints diagnostic",
-    async (failure) => {
+  test.each([
+    { isDraft: true, outcome: "draft" },
+    { isDraft: false, outcome: "draft" },
+    { isDraft: true, outcome: "ready" },
+    { isDraft: false, outcome: "ready" },
+  ] as const)(
+    "AC-6/7: outstanding confirmed advisor stays open, $outcome draft=$isDraft",
+    async ({ isDraft, outcome }) => {
       await withTempDir(async (dir) => {
-        const fx = await fixture(dir, { failure });
+        const { code, value } = await (
+          await fixture(dir, { isDraft, advisorRuling: "confirmed", record: { outcome } })
+        ).report();
+        expectLive(value);
+        expect(value.openItems).toEqual([ADVISOR]);
+        expect(value.outcome).toBe(isDraft ? "draft" : "ready");
+        expect(value.settledItems).toEqual([{ id: CV.id, disposition: "fixed" }]);
+        expect(code).toBe(2);
+      });
+    },
+  );
+  test.each(
+    (["draft", "ready"] as const).flatMap((outcome) =>
+      (["missing-index", "offline", "undetected"] as const).map((failure) => ({ outcome, failure })),
+    ),
+  )(
+    "AC-8/9/18/19: $outcome $failure failure preserves snapshot and prints diagnostic",
+    async ({ failure, outcome }) => {
+      await withTempDir(async (dir) => {
+        const fx = await fixture(dir, { failure, record: { outcome } });
         const { value, code } = await fx.report();
         expect(value.source).toBe("run-record");
         const message =
@@ -222,20 +277,20 @@ describe("workflowStatusCommand live overlay", () => {
               ? "forge offline"
               : "Cannot determine forge";
         expect(value.liveError).toEqual(expect.stringContaining(message));
-        const baseline = await fixture(dir, { record: { url: "https://gh/pr/7" } });
+        const baseline = await fixture(dir, { record: { outcome, url: "https://gh/pr/7" } });
         const snapshot = await baseline.report();
         expect(value).toEqual({ ...snapshot.value, url: URL, liveError: value.liveError });
         expect(value.settledItems).toEqual([]);
         expect(code).toBe(snapshot.code);
         expect(code).toBe(2);
         // Restore the eligible URL before testing the plain command.
-        const plain = await (await fixture(dir, { failure })).invoke(false);
+        const plain = await (await fixture(dir, { failure, record: { outcome } })).invoke(false);
         expect(plain.out[1]).toBe(`(run record only: ${value.liveError})`);
       });
     },
   );
   test.each([
-    { outcome: "ready", url: URL },
+    { outcome: "ready", url: URL, cannotVerify: [], approval: undefined },
     { outcome: "draft", url: undefined },
     { outcome: "draft", url: "https://gh/pr/7" },
   ] as const)("AC-10/11/12/17/18: ineligible $outcome $url never invokes forge", async (record) => {
@@ -268,33 +323,36 @@ describe("workflowStatusCommand live overlay", () => {
       });
     },
   );
-  test("AC-20/21/22: repeated reports are identical and all forge commands are read-only", async () => {
-    await withTempDir(async (dir) => {
-      const fx = await fixture(dir);
-      const before = await Bun.file(fx.file).text();
-      const first = await fx.report();
-      const second = await fx.report();
-      expectLive(first.value);
-      expect(second).toEqual(first);
-      const plain = await fx.invoke(false);
-      expect(plain.out).toEqual([
-        `auth: ready ${URL}`,
-        "No open items.",
-        "Also to verify (not blocking):",
-        "- [cannot-verify] US-001:cv1 — Redis TTL",
-      ]);
-      expect(fx.calls.length).toBeGreaterThan(0);
-      for (const argv of fx.calls) {
-        const readOnly =
-          argv[0] === "git"
-            ? argv.slice(1).join(" ") === "remote get-url origin"
-            : argv[0] === "gh" &&
-              (argv[1] === "api"
-                ? !argv.some((arg) => /mutation|POST|PATCH|PUT|DELETE/.test(arg))
-                : argv[1] === "pr" && argv[2] === "view");
-        expect(readOnly).toBe(true);
-      }
-      expect(await Bun.file(fx.file).text()).toBe(before);
-    });
-  });
+  test.each(["draft", "ready"] as const)(
+    "AC-20/21/22: $outcome repeated reports are identical and all forge commands are read-only",
+    async (outcome) => {
+      await withTempDir(async (dir) => {
+        const fx = await fixture(dir, { record: { outcome } });
+        const before = await Bun.file(fx.file).text();
+        const first = await fx.report();
+        const second = await fx.report();
+        expectLive(first.value);
+        expect(second).toEqual(first);
+        const plain = await fx.invoke(false);
+        expect(plain.out).toEqual([
+          `auth: ready ${URL}`,
+          "No open items.",
+          "Also to verify (not blocking):",
+          "- [cannot-verify] US-001:cv1 — Redis TTL",
+        ]);
+        expect(fx.calls.length).toBeGreaterThan(0);
+        for (const argv of fx.calls) {
+          const readOnly =
+            argv[0] === "git"
+              ? argv.slice(1).join(" ") === "remote get-url origin"
+              : argv[0] === "gh" &&
+                (argv[1] === "api"
+                  ? !argv.some((arg) => /mutation|POST|PATCH|PUT|DELETE/.test(arg))
+                  : argv[1] === "pr" && argv[2] === "view");
+          expect(readOnly).toBe(true);
+        }
+        expect(await Bun.file(fx.file).text()).toBe(before);
+      });
+    },
+  );
 });
