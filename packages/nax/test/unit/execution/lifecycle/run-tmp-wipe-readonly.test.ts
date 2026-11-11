@@ -126,7 +126,7 @@ describe("removeRunTmpTree read-only recovery", () => {
     _runTmpWipeDeps.lstat = async (path) => {
       visited.push(path);
       const stats = await lstat(path);
-      if (path === nested) {
+      if (path === nested && !replaced) {
         try {
           renameSync(nested, saved);
           symlinkSync(outside, nested);
@@ -144,7 +144,7 @@ describe("removeRunTmpTree read-only recovery", () => {
     };
     try {
       await removeRunTmpTree(root);
-      expect(visited).toContain(nested);
+      expect(visited.filter((path) => path === nested)).toHaveLength(2);
       expect(replacementError).toBeUndefined();
       expect(replaced).toBe(true);
       expect(statSync(outside).mode & 0o777).toBe(0o500);
@@ -155,6 +155,28 @@ describe("removeRunTmpTree read-only recovery", () => {
       }
       chmodSync(outside, 0o700);
     }
+  });
+
+  test("an inaccessible recheck skips the entry and continues to its sibling", async () => {
+    const sibling = join(root, "sibling");
+    mkdirSync(sibling);
+    const lstat = _runTmpWipeDeps.lstat;
+    let nestedChecks = 0;
+    _runTmpWipeDeps.lstat = (path) => {
+      if (path === nested && ++nestedChecks === 2) return Promise.reject(denied());
+      return lstat(path);
+    };
+    let calls = 0;
+    _runTmpWipeDeps.remove = async () => {
+      if (++calls === 1) throw denied();
+    };
+    const chmod = mock(async (_path: string, _mode: number) => {});
+    _runTmpWipeDeps.chmod = chmod;
+    await removeRunTmpTree(root);
+    expect(nestedChecks).toBe(2);
+    expect(chmod.mock.calls.map(([path]) => path)).not.toContain(nested);
+    expect(chmod.mock.calls.map(([path]) => path)).toContain(sibling);
+    expect(calls).toBe(2);
   });
 
   test("AC-5: retries EACCES exactly once", async () => {

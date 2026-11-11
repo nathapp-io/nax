@@ -68,6 +68,12 @@ async function makeDirectoriesWritable(path: string): Promise<void> {
   }
   if (!stats.isDirectory() || stats.isSymbolicLink()) return;
   try {
+    stats = await _runTmpWipeDeps.lstat(path);
+  } catch {
+    return; // The entry changed or became inaccessible before permission repair.
+  }
+  if (!stats.isDirectory() || stats.isSymbolicLink()) return;
+  try {
     await _runTmpWipeDeps.chmod(path, stats.mode | 0o700);
   } catch {
     // A failed chmod need not prevent traversing this directory or its siblings.
@@ -81,7 +87,12 @@ async function makeDirectoriesWritable(path: string): Promise<void> {
   for (const entry of entries) await makeDirectoriesWritable(join(path, entry));
 }
 
-/** Remove a run root, repairing directory permissions after a permission failure. */
+/**
+ * Remove a run root, repairing directory permissions after a permission failure.
+ * `runTmpRoot` selects a user-owned parent; this assumes only the same uid can
+ * race the walk and gains no privilege. The remaining lstat-to-chmod window is
+ * accepted, so callers must maintain that trust boundary for the supplied path.
+ */
 export async function removeRunTmpTree(path: string): Promise<void> {
   try {
     await _runTmpWipeDeps.remove(path);
