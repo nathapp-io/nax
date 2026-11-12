@@ -3,7 +3,7 @@
   "feature": "review-rulings",
   "branchName": "feat/review-rulings",
   "createdAt": "2026-11-13T00:00:00.000Z",
-  "updatedAt": "2026-11-12T11:29:07.601Z",
+  "updatedAt": "2026-11-12T11:36:23.666Z",
   "userStories": [
     {
       "id": "US-001",
@@ -280,14 +280,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Reuses the upstream helper at a second repair site with established graph/test patterns, while preserving CI-specific session options and concern patches."
+        "reasoning": "Reuses the upstream helper at a second repair site with established graph/test patterns, while preserving CI-specific session options and concern patches.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/ci-repair-steps.ts",
@@ -309,7 +312,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "78afad49a00ed0a1930110ea15446a43f328964e"
     },
     {
       "id": "US-006",
