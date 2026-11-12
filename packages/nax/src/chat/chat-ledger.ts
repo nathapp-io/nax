@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { SessionEvent } from "@nathapp/nax-agent";
 import { CostAggregator } from "@/runtime";
 import { COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware";
+import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 export type ChatUsageEvent = Extract<SessionEvent, { type: "usage" }>;
 
@@ -54,6 +55,12 @@ export function createChatLedger(options: ChatLedgerOptions): ChatLedger {
         confidence: exact ? "exact" : "estimated",
         exactCostUsd: exact ? event.costUsd : 0,
         estimatedCostUsd: exact ? 0 : event.costUsd,
+        // US-007: the chat ledger builds its row directly instead of going
+        // through `attachCostSubscriber`, so it stamps the build identity
+        // itself — a chat row would otherwise be the one cost row with no
+        // record of the nax that wrote it.
+        naxVersion: NAX_VERSION,
+        naxCommit: NAX_COMMIT,
       });
     },
     async drain() {
