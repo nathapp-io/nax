@@ -3,7 +3,7 @@
   "feature": "review-rulings",
   "branchName": "feat/review-rulings",
   "createdAt": "2026-11-13T00:00:00.000Z",
-  "updatedAt": "2026-11-12T11:04:47.497Z",
+  "updatedAt": "2026-11-12T11:09:25.046Z",
   "userStories": [
     {
       "id": "US-001",
@@ -156,14 +156,17 @@
         "evidence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "Single-source-file additive prompt change; validator and decision persistence already support the requested evidence field."
+        "reasoning": "Single-source-file additive prompt change; validator and decision persistence already support the requested evidence field.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/advisor-batch-builder.ts",
@@ -173,7 +176,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "386732be06666f44fe98792f2173729118af1913"
     },
     {
       "id": "US-004",
