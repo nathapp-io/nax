@@ -36,6 +36,8 @@ export {
 } from "./out-of-scope-extract";
 export { _prdCommitDeps, commitPrdProgress, savePrdProgress } from "./progress-commit";
 export { savePRD } from "./save";
+export type { PrdSecretShape } from "./secret-shapes";
+export { findPrdSecretShapes } from "./secret-shapes";
 export type { SpecDriftViolation } from "./spec-drift";
 export { findSpecDriftViolations } from "./spec-drift";
 export type { SpecLintFinding, SpecLintOptions } from "./spec-lint";

@@ -3,6 +3,7 @@ import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { AgentRoutingConfig, AgentRoutingProfile } from "@/config";
 import { getLogger } from "@/logger";
 import { _persistPrdDeps, finalizeAndWritePrd } from "@/plan/strategies";
+import { _secretShapesDeps } from "@/prd/secret-shapes";
 import type { PRD } from "@/prd/types";
 
 const PROFILES: AgentRoutingProfile[] = [
@@ -77,6 +78,64 @@ async function persist(
 function expectDistribution(data: Record<string, unknown>): void {
   expect(info.mock.calls).toEqual([["plan", MESSAGE, data]]);
 }
+
+describe("finalizeAndWritePrd secret-shape advisory", () => {
+  test("warns with metadata and writes the original criterion", async () => {
+    const text = "example sk-aaaaaaaaaaaaaaaaaaaa";
+    const prd = makePRD({ userStories: [makeStory({ acceptanceCriteria: [text] })] });
+    const written = await persist(prd, ROUTING);
+    expect(written.userStories[0]?.acceptanceCriteria).toEqual([text]);
+    expect(warn.mock.calls.filter((c) => c[1] === "PRD story text has a secret shape")).toEqual([
+      ["plan", "PRD story text has a secret shape", { storyId: "US-001", field: "acceptanceCriteria[0]" }],
+    ]);
+  });
+
+  test("clean text produces no secret-shape warning", async () => {
+    await persist(makePRD());
+    expect(warn.mock.calls.filter((c) => c[1].includes("secret-shape") || c[1].includes("secret shape"))).toEqual([]);
+  });
+
+  test("scopes scan to the requested stories", async () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({ title: "ghp_aaaaaaaaaaaaaaaaaaaa" }),
+        makeStory({ id: "US-002", description: "ghp_aaaaaaaaaaaaaaaaaaaa" }),
+      ],
+    });
+    await persist(prd, ROUTING, new Set(["US-002"]));
+    expect(warn.mock.calls.filter((c) => c[1] === "PRD story text has a secret shape")).toEqual([
+      ["plan", "PRD story text has a secret shape", { storyId: "US-002", field: "description" }],
+    ]);
+  });
+
+  test("writes and warns once if the shared redactor throws", async () => {
+    const original = _secretShapesDeps.redactSecrets;
+    try {
+      _secretShapesDeps.redactSecrets = () => {
+        throw new Error("redactor failed");
+      };
+      const written = await persist(makePRD());
+      expect(written.userStories[0]?.title).toBe("Test story");
+      expect(warn.mock.calls.filter((c) => c[1] === "PRD secret-shape scan could not run")).toEqual([
+        ["plan", "PRD secret-shape scan could not run"],
+      ]);
+    } finally {
+      _secretShapesDeps.redactSecrets = original;
+    }
+  });
+
+  test("writes and warns once if the scan throws", async () => {
+    _persistPrdDeps.findPrdSecretShapes = () => {
+      throw new Error("scan failed");
+    };
+    const prd = makePRD();
+    const written = await persist(prd);
+    expect(written.userStories[0]?.title).toBe(prd.userStories[0]?.title);
+    expect(warn.mock.calls.filter((c) => c[1] === "PRD secret-shape scan could not run")).toEqual([
+      ["plan", "PRD secret-shape scan could not run"],
+    ]);
+  });
+});
 
 describe("finalizeAndWritePrd profile distribution", () => {
   test("AC-12, AC-20: logs a/a/b exactly once through info, never warn", async () => {

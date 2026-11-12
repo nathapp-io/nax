@@ -34,6 +34,7 @@ import {
   canonicalizePrdWorkdirs,
   extractSpecStructure,
   findNonCanonicalDeclaredPaths,
+  findPrdSecretShapes,
   findSpecStructureViolations,
   formatSpecStructureViolation,
 } from "@/prd";
@@ -54,6 +55,7 @@ export const _persistPrdDeps = {
    */
   renameSync: (from: string, to: string): void => defaultRenameSync(from, to),
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => defaultDiscoverWorkspacePackages(repoRoot),
+  findPrdSecretShapes,
 };
 
 export interface PersistPrdArgs {
@@ -353,6 +355,14 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
     args.preserveScopedAgents,
   );
   logAgentProfileAssignment(finalized, args);
+  try {
+    for (const hit of _persistPrdDeps.findPrdSecretShapes(finalized, args.scope)) {
+      getLogger().warn("plan", "PRD story text has a secret shape", { ...hit });
+    }
+  } catch {
+    // Avoid logging an exception that could contain the candidate story text.
+    getLogger().warn("plan", "PRD secret-shape scan could not run");
+  }
   await args.writeFile(args.outputPath, JSON.stringify(finalized, null, 2));
   return args.outputPath;
 }

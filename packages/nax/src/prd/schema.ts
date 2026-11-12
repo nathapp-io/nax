@@ -114,7 +114,7 @@ function parseRawString(text: string): unknown {
  * @param branch - Branch name for auto-fill
  * @returns Validated PRD object
  */
-export function validatePlanOutput(raw: unknown, feature: string, branch: string): PRD {
+export function validatePlanOutput(raw: unknown, feature: string, branch: string, now?: Date): PRD {
   // Parse string input
   const parsed: unknown = typeof raw === "string" ? parseRawString(raw) : raw;
 
@@ -153,15 +153,15 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
   // BUG-27: fail fast on a cycle instead of letting worktree/merge.ts discover it mid-run.
   assertNoDependencyCycle(userStories);
 
-  const now = new Date().toISOString();
+  const timestamp = (now ?? new Date()).toISOString();
   const featureOutOfScope = normalizeOutOfScopeList(obj.outOfScope);
 
   return {
     project: typeof obj.project === "string" && obj.project !== "" ? obj.project : feature,
     feature,
     branchName: branch,
-    createdAt: typeof obj.createdAt === "string" ? obj.createdAt : now,
-    updatedAt: now,
+    createdAt: timestamp,
+    updatedAt: timestamp,
     userStories,
     ...(typeof obj.analysis === "string" && obj.analysis.trim() !== "" ? { analysis: obj.analysis.trim() } : {}),
     ...(featureOutOfScope !== undefined ? { outOfScope: featureOutOfScope } : {}),

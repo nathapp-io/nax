@@ -47,6 +47,9 @@ describe("PlanPromptBuilder.build — 3-step structure (ENH-006)", () => {
 // ─── taskContext / outputFormat split ─────────────────────────────────────────
 
 describe("PlanPromptBuilder.build — taskContext/outputFormat split", () => {
+  test.each(['"createdAt"', '"updatedAt"'])("output schema omits %s", (field) => {
+    expect(new PlanPromptBuilder().build(SPEC, CTX).outputFormat).not.toContain(field);
+  });
   test("taskContext excludes Output Schema; outputFormat contains schema and format but not spec steps", () => {
     const { taskContext, outputFormat } = new PlanPromptBuilder().build(SPEC, CTX);
     expect(taskContext).not.toContain("Output Schema");
