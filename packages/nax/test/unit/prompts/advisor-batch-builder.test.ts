@@ -35,6 +35,9 @@ describe("buildAdvisorBatchPrompt", () => {
       '"answers"',
       '"itemId"',
       '"diagnoses"',
+      '"inspectedFiles": ["path"]',
+      "Read the file each item names before you rule",
+      "list every file you opened in inspectedFiles",
       "Decision policy",
     ]) {
       expect(text).toContain(needle);
@@ -50,6 +53,7 @@ describe("buildAdvisorBatchPrompt", () => {
       redGates: [],
       storyIds: ["US-1", "US-2"],
     });
+    expect(text).not.toContain("inspectedFiles");
     for (const needle of [
       '"overlap"',
       '"conflicts"',
