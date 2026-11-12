@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
-import { _rulingsDeps, type RecordRulingsInput, recordPrRulings } from "@/bot/rulings";
+import { _rulingsDeps, type RecordRulingsInput, readSettledKeys, recordPrRulings } from "@/bot/rulings";
 import { withNaxBotMarker } from "@/forge";
 import type { PrComment, PrInfo, PrThread } from "@/forge/pr-types";
 import { renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
@@ -327,5 +327,44 @@ describe("recordPrRulings index refresh", () => {
       "[bot-rulings] Could not refresh the item index",
       expect.objectContaining({ error: "refresh failed" }),
     );
+  });
+});
+
+// US-001 / B1: the readiness hold reconciles an immutable review artifact against the PR as it is now,
+// so this read must settle what a durable ruling or a closed finding thread has closed — and write nothing.
+describe("readSettledKeys", () => {
+  const findingKey = "f-1a2b3c4d";
+  const findingThread = (resolved: boolean, author = "bot"): PrThread => ({
+    id: "finding-thread",
+    replyTo: "2",
+    resolved,
+    outdated: false,
+    comments: [
+      comment("5", withNaxBotMarker("leaks the token", findingKey), author),
+      comment("6", "fixed in abc1234", "alice"),
+    ],
+  });
+
+  test("a resolved own finding thread settles its key; an open one does not", async () => {
+    expect(await readSettledKeys(input([findingThread(true)]))).toEqual(new Set([findingKey]));
+    expect(await readSettledKeys(input([findingThread(false)]))).toEqual(new Set());
+  });
+
+  test("a finding thread someone else opened settles nothing", async () => {
+    expect(await readSettledKeys(input([findingThread(true, "alice")]))).toEqual(new Set());
+  });
+
+  test("an indexed item with a ruling echo is settled; a writer reply reopens it", async () => {
+    expect(await readSettledKeys(input([thread(opener(), echo())]))).toEqual(new Set([key]));
+    expect(await readSettledKeys(input([thread(opener(), echo(), reply())]))).toEqual(new Set());
+  });
+
+  test("reads settlements without echoing, resolving, editing or calling a model", async () => {
+    await readSettledKeys(input([thread(opener(), reply("confirm")), findingThread(true)]));
+    expect(post).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(edit).not.toHaveBeenCalled();
+    expect(tick).not.toHaveBeenCalled();
+    expect(readModel).not.toHaveBeenCalled();
   });
 });

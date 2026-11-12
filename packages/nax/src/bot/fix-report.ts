@@ -35,7 +35,7 @@ import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
 import { safeText } from "./render";
 import { rulingModelReader } from "./ruling-reader";
-import { type RecordRulingsOutcome, recordPrRulings } from "./rulings";
+import { type RecordRulingsOutcome, readSettledKeys, recordPrRulings } from "./rulings";
 import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
@@ -56,6 +56,7 @@ export const _fixReportDeps = {
   listReviewThreads,
   listPrComments,
   recordPrRulings,
+  readSettledKeys,
   readHeadGateNames,
 };
 
@@ -178,7 +179,8 @@ function settledEntries(outcome: RecordRulingsOutcome): DecisionEntry[] {
   });
 }
 
-async function readReadyRulings(env: BotFixEnv) {
+/** The PR as it is now: the readiness checks and the open-finding reconciliation both read it. */
+async function readPrState(env: BotFixEnv) {
   const deps = _fixReportDeps;
   const [info, user, threads, comments] = await Promise.all([
     deps.readPrInfo(env.ref, env.forge, env.repoRoot),
@@ -186,6 +188,12 @@ async function readReadyRulings(env: BotFixEnv) {
     deps.listReviewThreads(env.ref, env.forge, env.repoRoot),
     deps.listPrComments(env.ref, env.forge, env.repoRoot),
   ]);
+  return { info, user, threads, comments };
+}
+
+async function readReadyRulings(env: BotFixEnv) {
+  const deps = _fixReportDeps;
+  const { info, user, threads, comments } = await readPrState(env);
   const outcome = await deps.recordPrRulings({
     ref: env.ref,
     info,
@@ -309,15 +317,60 @@ function readinessReview(env: BotFixEnv): BotReviewArtifact {
   return env.codeReview ?? env.review;
 }
 
-/**
- * US-001: an open critical/important finding of the head's bot review holds readiness. `agreed` already
- * excludes settled findings, and minor findings, threads and comments never hold.
- */
-function openFindingHold(env: BotFixEnv): string | undefined {
-  const review = readinessReview(env);
-  const keys = review.agreed
+/** The readiness review's open critical/important finding keys, in `agreed` order. */
+function blockingKeys(review: BotReviewArtifact): string[] {
+  return review.agreed
     .filter((item) => item.kind === "finding" && (item.severity === "critical" || item.severity === "important"))
     .map((item) => item.key);
+}
+
+/**
+ * A newer review of the same head can withdraw a finding without rewriting the code review that raised
+ * it: `withdrawalEvents` records that in the newer artifact's own `events`.
+ */
+function withdrawnKeys(env: BotFixEnv): ReadonlySet<string> {
+  const events = env.review.events ?? [];
+  return new Set(events.flatMap((event) => (event.type === "finding-withdrawn" ? [event.key] : [])));
+}
+
+/**
+ * Drop the keys the PR as it is now has closed: a durable ruling or a resolved thread settles a finding
+ * after the artifact was written, and `--ready-only` exists to recover from exactly that. An unreadable
+ * PR state settles nothing, so the hold stands (fail closed).
+ */
+async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readonly string[]> {
+  const withdrawn = withdrawnKeys(env);
+  const live = keys.filter((key) => !withdrawn.has(key));
+  if (live.length === 0) return live;
+  try {
+    const { info, user, threads, comments } = await readPrState(env);
+    const settled = await _fixReportDeps.readSettledKeys({
+      ref: env.ref,
+      info,
+      login: user.login,
+      threads,
+      comments,
+      deps: env.forge,
+      cwd: env.repoRoot,
+    });
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    return live.filter((key) => !settled.has(key));
+  } catch (error) {
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    getLogger()?.warn("bot-fix", "Could not read the PR rulings", { pr: env.ref.number, error: errorMessage(error) });
+    return live;
+  }
+}
+
+/**
+ * US-001: an open critical/important finding of the head's bot review holds readiness. `agreed` already
+ * excludes the findings that were settled when that review was written; a settlement or withdrawal
+ * recorded since is reconciled against the PR, so a ruling does not need another full code review.
+ * Minor findings, threads and comments never hold.
+ */
+async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
+  const review = readinessReview(env);
+  const keys = await openKeys(env, blockingKeys(review));
   if (keys.length === 0) return undefined;
   const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
   const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");
@@ -337,7 +390,7 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
     };
   const pushedHeld = pushedHeadHold(env, state);
   if (pushedHeld) return { patch: { markedReady: false, readyHeld: pushedHeld }, exit: "report" };
-  const findingsHeld = openFindingHold(env);
+  const findingsHeld = await openFindingHold(env);
   if (findingsHeld) return { patch: { markedReady: false, readyHeld: findingsHeld }, exit: "report" };
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
   const headGates = await headGateHold(env);

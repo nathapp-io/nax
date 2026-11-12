@@ -226,6 +226,20 @@ describe("US-001 ready-only CLI pass", () => {
     expect(stdout.join("\n")).not.toContain("Marked ready");
     expect(exits).toEqual([0]);
   });
+
+  test("B2 --ready-only forwards --trust, so detected checks can be readied", async () => {
+    result = { outcome: "ready-pass", step: "done", timings: {}, readyOnly: true, markedReady: true };
+    await run(["42", "--ready-only", "--trust"]);
+    expect(fix).toHaveBeenCalledTimes(1);
+    expect(fix).toHaveBeenCalledWith(expect.objectContaining({ readyOnly: true, trust: true }));
+    expect(exits).toEqual([0]);
+  });
+
+  test("B2 --ready-only omits trust when it was not requested", async () => {
+    result = { outcome: "ready-pass", step: "done", timings: {}, readyOnly: true, markedReady: true };
+    await run(["42", "--ready-only"]);
+    expect(fix.mock.calls[0]?.[0]).not.toHaveProperty("trust");
+  });
 });
 
 describe("US-016 fix CLI log", () => {

@@ -1,11 +1,12 @@
 /** Shared git plumbing for the reviewer guard (nax#2500): the injectable seam and thin git wrappers. */
-import { lstat, rm } from "node:fs/promises";
+import { lstat, rename, rm } from "node:fs/promises";
 import { NaxError } from "@/errors";
 import { changedPathsBetween, snapshotWorkingTree } from "@/review/fix-review/tree-snapshot";
 import { runHardenedGit } from "@/utils/hardened-git";
 
 export const _snapshotDeps = {
   rm,
+  rename,
   lstat,
   snapshotWorkingTree,
   changedPathsBetween,

@@ -152,7 +152,7 @@ function callerRulingsSummary(
 
 export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
   return withBotInput(options, deps, async (input) =>
-    options.readyOnly === true ? readyOnlyPass(input, deps) : fixCyclePass(input, options, deps),
+    options.readyOnly === true ? readyOnlyPass(input, options, deps) : fixCyclePass(input, options, deps),
   );
 }
 
@@ -201,9 +201,16 @@ function readinessSummary(state: { readonly markedReady?: boolean; readonly read
  * `nax bot fix <pr> --ready-only` (US-001): the readiness pass alone — no fix session, no post-push review.
  * It is the recovery for a `--no-rereview` push and for a hold a ruling or a new review has lifted, so it
  * reports the readiness result and exits zero whether the PR was readied or held.
+ *
+ * `--trust` is forwarded exactly as the fix cycle forwards it: a project whose checks nax detected from the
+ * package scripts can only be readied through a pass that was told to trust them.
  */
-async function readyOnlyPass(input: BotInput, deps: BotCliDeps): Promise<number> {
-  const result = await deps.runBotFix({ ...input, readyOnly: true });
+async function readyOnlyPass(input: BotInput, options: BotFixOptions, deps: BotCliDeps): Promise<number> {
+  const result = await deps.runBotFix({
+    ...input,
+    readyOnly: true,
+    ...(options.trust === true && { trust: true }),
+  });
   if (result.outcome === "refused") {
     deps.logErr(result.reason);
     if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);

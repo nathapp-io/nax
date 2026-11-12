@@ -12,7 +12,10 @@
  * nax#1439: a tool the reviewer runs may drop its own .gitignore inside a directory the repository
  * already ignores (`.venv/.gitignore`, `.mypy_cache/.gitignore`, `node_modules/.bun/.../.gitignore`).
  * Such a file can only affect paths that are already ignored, so it cannot hide the reviewer's work
- * from the comparison: it is left in place and not reported.
+ * from the comparison: it is left in place and not reported. Which directory is ignored is read from
+ * the SNAPSHOT-time rules only: every added .gitignore is parked aside while they are classified, so
+ * one added rule (`sub/.gitignore` holding `*`) can never vouch for another (`sub/.cache/.gitignore`)
+ * and keep the reviewer's own files out of the comparison.
  */
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -21,6 +24,11 @@ import { _snapshotDeps, git, gitRaw } from "./deps";
 const IGNORE_FILE = ".gitignore";
 const IGNORE_PATHSPEC = `:(top,glob)**/${IGNORE_FILE}`;
 const CHUNK = 500;
+/**
+ * Suffix an added `.gitignore` is parked under while the classification runs. git does not read it as a
+ * rule file, so the classification below sees the snapshot-time rules and nothing else.
+ */
+const HOLD_SUFFIX = ".nax-restore-hold";
 
 /** One snapshot-tree entry: its git object type ("commit" = gitlink) and blob id. */
 export interface TreeEntry {
@@ -123,22 +131,68 @@ async function resetKnownIgnoreFiles(
 }
 
 /**
- * Remove the .gitignore files the reviewer added, except one inside a directory the restored rules
+ * Remove the .gitignore files the reviewer added, except one inside a directory the SNAPSHOT-time rules
  * ignore (nax#1439): it can only affect already-ignored paths, so it hides nothing from the comparison.
- * Every other exit code but 0 — 1, "not ignored", and 128, "no answer" — keeps today's removal.
+ *
+ * Every added file is parked under `HOLD_SUFFIX` before any of them is classified. Otherwise one added
+ * rule file decides another's fate: a reviewer-written `sub/.gitignore` holding `*` makes `sub/.cache`
+ * look ignored, so `sub/.cache/.gitignore` would be kept and its `*` would hide the reviewer's own
+ * `sub/.cache/planted.txt` from the comparison. Parked, git reads only the restored rules.
+ *
+ * Every exit code but 0 — 1, "not ignored", and 128, "no answer" — keeps today's removal.
  */
 async function removeAddedIgnoreFiles(
   ctx: IgnoreRuleRestore,
   added: readonly string[],
   failures: string[],
 ): Promise<string[]> {
-  const removed: string[] = [];
-  for (const p of added) {
-    if (await isInsideIgnoredDirectory(ctx.toplevel, p)) continue;
-    await ctx.remove(join(ctx.toplevel, p)).catch((err) => failures.push(`remove ${p}: ${errorMessage(err)}`));
-    removed.push(p);
+  const removed = new Set<string>();
+  const parked = await parkAddedIgnoreFiles(ctx, added, failures, removed);
+  for (const [path, held] of parked) {
+    if (await isInsideIgnoredDirectory(ctx.toplevel, path)) {
+      await unparkIgnoreFile(ctx, path, held, failures);
+      continue;
+    }
+    await ctx.remove(join(ctx.toplevel, held)).catch((err) => failures.push(`remove ${path}: ${errorMessage(err)}`));
+    removed.add(path);
   }
-  return removed;
+  return [...removed];
+}
+
+/**
+ * Move every added .gitignore aside, so no added rule can influence the classification. One that cannot
+ * be moved is removed instead and reported: a live rule could hide the reviewer's work, so this fails
+ * toward restoring the tree.
+ */
+async function parkAddedIgnoreFiles(
+  ctx: IgnoreRuleRestore,
+  added: readonly string[],
+  failures: string[],
+  removed: Set<string>,
+): Promise<Map<string, string>> {
+  const parked = new Map<string, string>();
+  for (const path of added) {
+    const held = `${path}${HOLD_SUFFIX}`;
+    try {
+      await _snapshotDeps.rename(join(ctx.toplevel, path), join(ctx.toplevel, held));
+      parked.set(path, held);
+    } catch (err) {
+      failures.push(`park ${path}: ${errorMessage(err)}`);
+      await ctx.remove(join(ctx.toplevel, path)).catch((e) => failures.push(`remove ${path}: ${errorMessage(e)}`));
+      removed.add(path);
+    }
+  }
+  return parked;
+}
+
+/** Put a tool-written .gitignore back where it was; a failed move is reported, never silent. */
+async function unparkIgnoreFile(ctx: IgnoreRuleRestore, path: string, held: string, failures: string[]): Promise<void> {
+  try {
+    await _snapshotDeps.rename(join(ctx.toplevel, held), join(ctx.toplevel, path));
+  } catch (err) {
+    failures.push(`restore ${path}: ${errorMessage(err)}`);
+    await ctx.remove(join(ctx.toplevel, held)).catch((e) => failures.push(`remove ${path}: ${errorMessage(e)}`));
+  }
 }
 
 /** True when the directory holding this repo-relative .gitignore is itself ignored, read from the raw seam. */

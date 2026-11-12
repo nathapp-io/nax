@@ -5,12 +5,13 @@ import {
   editComment,
   hasWriteAccess,
   ownComments,
+  parseNaxBotMarker,
   readPrInfo,
   replyToThread,
   resolveThread,
   withNaxBotMarker,
 } from "@/forge";
-import type { PrComment, PrInfo, PrRef } from "@/forge/pr-types";
+import type { PrComment, PrInfo, PrRef, PrThread } from "@/forge/pr-types";
 import { getLogger } from "@/logger";
 import { RULING_SHA_PATTERN } from "@/utils/ruling-sha";
 import type { BotRulingReadInput, BotRulingReadVerdict } from "../operations/bot-ruling-read";
@@ -84,8 +85,15 @@ function warn(message: string, data: Record<string, unknown>): void {
   _rulingsDeps.getLogger()?.warn("bot-rulings", `[bot-rulings] ${message}`, data);
 }
 
-/** Cache the promise, not just the result: settlement checks replies concurrently. */
-function permissionReader(input: RecordRulingsInput): (comment: PrComment) => Promise<boolean> {
+/**
+ * The permission gate settlement checks need; the input is any of the recorder's shapes.
+ * Cache the promise, not just the result: settlement checks replies concurrently.
+ */
+function permissionReader(input: {
+  readonly ref: RecordRulingsInput["ref"];
+  readonly deps: RecordRulingsInput["deps"];
+  readonly cwd: string;
+}): (comment: PrComment) => Promise<boolean> {
   const check = writerCheck(
     input,
     (...args) => _rulingsDeps.hasWriteAccess(...args),
@@ -381,4 +389,37 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     if (caller === undefined) throw error;
     throw new CallerRecordingError(error, callerReport(caller, progress, true));
   }
+}
+
+export type SettlementReadInput = Omit<RecordRulingsInput, "readModel" | "callerRulings">;
+
+/**
+ * A finding thread the bot opened that is now closed. The recorder settles indexed items only; a bot
+ * review finding is settled by the later review that reports it fixed or withdrawn, or by a writer who
+ * resolves its thread — neither rewrites the immutable artifact that listed it as open.
+ */
+function resolvedFindingKeys(threads: readonly PrThread[], login: string): string[] {
+  return threads.flatMap((thread) => {
+    if (!thread.resolved) return [];
+    const first = thread.comments[0];
+    if (first === undefined || first.author !== login) return [];
+    // An indexed item is settled by its ruling echo, never by a bare thread resolution.
+    if (parseItemOpener(first.body) !== null) return [];
+    const key = parseNaxBotMarker(first.body)?.key;
+    return key ? [key] : [];
+  });
+}
+
+/**
+ * US-001: what a durable, permission-checked settlement has closed on the PR *now*, read without
+ * recording anything (no echo, no model read, no comment write). The readiness hold reconciles the
+ * immutable artifact's open findings against this, so a ruling written after that review lifts it.
+ *
+ * A reply only keeps its item settled when an authorized writer wrote it, exactly as the recorder
+ * decides; an unreadable permission check settles nothing.
+ */
+export async function readSettledKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
+  const read = readItemThreads(input.threads, input.comments, input.login);
+  const settled = await settleItemThreads(read, permissionReader(input));
+  return new Set([...settled.settled.map(({ key }) => key), ...resolvedFindingKeys(input.threads, input.login)]);
 }

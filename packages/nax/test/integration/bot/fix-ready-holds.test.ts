@@ -1,7 +1,14 @@
 /** US-001: readiness is held for an unreviewed pushed head and for open critical/important findings. */
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDraftEnv, makeBotFixEnv } from "@test/helpers";
-import { _fixReportDeps, type AgreedItem, type BotFixEnv, type BotFixState, readyStep } from "@/bot";
+import {
+  _fixReportDeps,
+  type AgreedItem,
+  type BotFixEnv,
+  type BotFixState,
+  type BotReviewArtifact,
+  readyStep,
+} from "@/bot";
 import { markReadyArgv } from "@/workflow/promote";
 
 const HEAD = "abc1234def";
@@ -23,6 +30,8 @@ const threadItem: AgreedItem = {
   replyTo: "r1",
 };
 const commentItem: AgreedItem = { kind: "comment", key: "c-1", issue: "please rename", reason: "reasonable" };
+/** What the PR read reports as settled; each test sets the keys it needs. */
+const settled = { current: new Set<string>() };
 
 /** A draft PR at `HEAD` whose readiness review agreed on `agreed`. */
 function draftEnv(agreed: readonly AgreedItem[] = []): BotFixEnv {
@@ -38,6 +47,12 @@ beforeEach(() => {
   spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
   spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
   spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({ ...makeBotFixDraftEnv().info, headSha: HEAD });
+  // The open-finding hold reconciles with the PR (B1), so its reads are stubbed for every case.
+  settled.current = new Set();
+  spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue({ login: "bot" });
+  spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
+  spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+  spyOn(_fixReportDeps, "readSettledKeys").mockImplementation(async () => settled.current);
 });
 afterEach(() => mock.restore());
 
@@ -131,5 +146,87 @@ describe("readyStep open-finding hold", () => {
       expect(result.patch.readyHeld).toBeUndefined();
       expect(result.patch.markedReady).toBe(true);
     }
+  });
+});
+
+// B1: the artifact is immutable, so a settlement or withdrawal recorded after it was written must lift
+// the hold — otherwise `--ready-only` (the documented recovery) still needs a whole new code review.
+describe("readyStep open-finding hold reconciled with the PR now", () => {
+  const codeReview: BotReviewArtifact = {
+    version: 3,
+    scope: "full",
+    pr: { forge: "github", host: "github.com", repo: "o/r", number: 42 },
+    headSha: HEAD,
+    trusted: true,
+    intent: "pass",
+    quality: "changes",
+    agreed: [finding("f-9", "important")],
+  };
+  /** The newer review of the same head: conversation-only, so it read no code and raised nothing itself. */
+  const conversationOnly: BotReviewArtifact = {
+    ...codeReview,
+    scope: "conversation-only",
+    quality: "not-reviewed",
+    agreed: [],
+  };
+
+  function reconciledEnv(review: BotReviewArtifact): BotFixEnv {
+    return { ...draftEnv(), review, codeReview };
+  }
+
+  test("a ruling recorded since the code review lifts its hold and readies the PR", async () => {
+    settled.current = new Set(["f-9"]);
+    const env = reconciledEnv(conversationOnly);
+    const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    expect(await readyStep(env, readyPass)).toEqual({ patch: { markedReady: true }, exit: "report" });
+    expect(run).toHaveBeenCalledWith(markReadyArgv(env.ref.forge, env.info.url), { cwd: env.repoRoot });
+  });
+
+  test("a newer review's finding-withdrawn event lifts the hold without re-reading rulings", async () => {
+    const review: BotReviewArtifact = {
+      ...conversationOnly,
+      events: [
+        {
+          type: "finding-withdrawn",
+          key: "f-9",
+          threadId: "n1",
+          finding: "leaks",
+          reason: "wrong",
+          disagreedBy: ["alice"],
+        },
+      ],
+    };
+    const env = reconciledEnv(review);
+    const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    expect(await readyStep(env, readyPass)).toEqual({ patch: { markedReady: true }, exit: "report" });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(_fixReportDeps.readSettledKeys).not.toHaveBeenCalled();
+  });
+
+  test("only the settled keys are released; the rest still hold", async () => {
+    settled.current = new Set(["f-9"]);
+    const env: BotFixEnv = {
+      ...reconciledEnv(conversationOnly),
+      codeReview: { ...codeReview, agreed: [finding("f-9", "important"), finding("f-8", "critical")] },
+    };
+    expect(await readyStep(env, readyPass)).toEqual({
+      patch: {
+        markedReady: false,
+        readyHeld: "1 open critical/important finding(s) in the bot review of abc1234: f-8",
+      },
+      exit: "report",
+    });
+  });
+
+  test("an unreadable PR state keeps every key open (fail closed)", async () => {
+    const env = reconciledEnv(conversationOnly);
+    spyOn(_fixReportDeps, "readSettledKeys").mockRejectedValue(new Error("offline"));
+    const run = spyOn(env.forge, "run");
+    const result = await readyStep(env, readyPass);
+    expect(result.patch).toEqual({
+      markedReady: false,
+      readyHeld: "1 open critical/important finding(s) in the bot review of abc1234: f-9",
+    });
+    expect(run).not.toHaveBeenCalled();
   });
 });

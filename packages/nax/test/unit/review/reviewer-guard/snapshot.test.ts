@@ -466,6 +466,58 @@ describe("tool-written .gitignore files inside ignored directories (nax#1439)", 
     expect(report.paths).toEqual([".gitignore"]);
     expect(await readFile(join(d, ".gitignore"), "utf8")).toBe("ignored/\n.venv/\n");
   });
+
+  // B3: git lists the child ignore file first. Classified against the still-live parent, `sub/.cache`
+  // looked ignored, so the child survived, its `*` hid the reviewer's own file, and nothing was reported.
+  test("B3: an added parent .gitignore cannot authorize keeping an added child (child listed first)", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub", ".cache"), { recursive: true });
+    await writeFile(join(d, "sub", ".cache", ".gitignore"), "*\n");
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    await writeFile(join(d, "sub", ".cache", "planted.txt"), "planted\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, "sub", ".cache", "planted.txt"))).toBe(false);
+    expect(existsSync(join(d, "sub", ".cache", ".gitignore"))).toBe(false);
+    expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+    expect([...report.paths].sort()).toEqual(["sub/.cache/.gitignore", "sub/.cache/planted.txt", "sub/.gitignore"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  // The same shape one level down: a genuinely ignored directory keeps its tool-written file even when a
+  // sibling added .gitignore sits beside it, because the keyed directory is decided by the snapshot rules.
+  test("B3: a tool-written .gitignore under an ignored directory still survives beside added rules", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub"), { recursive: true });
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+    expect(report.paths).toEqual(["sub/.gitignore"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("B3: an added .gitignore that cannot be parked is removed and reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    const realRename = _snapshotDeps.rename;
+    _snapshotDeps.rename = async () => {
+      throw Object.assign(new Error("denied"), { code: "EACCES" });
+    };
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+      expect(report.paths).toContain("sub/.gitignore");
+      expect(report.failures.some((f) => f.includes("sub/.gitignore"))).toBe(true);
+    } finally {
+      _snapshotDeps.rename = realRename;
+    }
+  });
 });
 
 describe("US-007 defensive restore", () => {
