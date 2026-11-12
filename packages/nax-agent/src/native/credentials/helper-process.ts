@@ -11,7 +11,7 @@
 
 import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger, NaxError } from "#src/infra/index";
-import { redactSecrets } from "#src/internal/redact";
+import { redactDiagnosticText } from "#src/internal/redact";
 import { type AgentSpawnResult, type AgentSpawnStdin, runtimeSpawn } from "#src/runtime/index";
 import { HELPER_SUBCOMMAND, requestLine } from "./helper-protocol.ts";
 
@@ -310,12 +310,9 @@ export async function runHelper(
 
   // Redact first, truncate second. The other order can cut a secret in half and
   // leave a fragment no redaction pattern can recognise. Helper stderr is an
-  // untrusted diagnostic channel: a real key may be concatenated to identifier
-  // text, so scrub sk-shaped values here even when the shared redactor's left
-  // boundary correctly treats the same text as an ordinary identifier.
-  const stderr = redactSecrets(run.stderr)
-    .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[REDACTED]")
-    .slice(0, AUTH_HELPER_STDERR_MAX_BYTES);
+  // untrusted diagnostic channel, so its shared redaction entry deliberately
+  // ignores the `sk-` left boundary for credential-shaped values.
+  const stderr = redactDiagnosticText(run.stderr).slice(0, AUTH_HELPER_STDERR_MAX_BYTES);
 
   if (run.trip === "cap") {
     return {

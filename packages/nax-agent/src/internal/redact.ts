@@ -144,6 +144,25 @@ function redactString(value: string): string {
 }
 
 /**
+ * Redact untrusted diagnostic text, where credential-shaped OpenAI keys must
+ * be masked even when concatenated to identifier characters. Derive the
+ * boundary-free expression from the shared OpenAI entry so its key shape and
+ * replacement marker remain single-sourced.
+ */
+export function redactDiagnosticText(input: string): string {
+  const redacted = redactString(input);
+  const openAiPattern = SECRET_VALUE_PATTERNS.find(({ kind }) => kind === "openai");
+  if (openAiPattern === undefined) return redacted;
+
+  const keyStart = openAiPattern.re.source.indexOf("sk-");
+  if (keyStart < 0) return redacted;
+
+  const unboundedPattern = new RegExp(openAiPattern.re.source.slice(keyStart), openAiPattern.re.flags);
+  unboundedPattern.lastIndex = 0;
+  return redacted.replace(unboundedPattern, REDACTED);
+}
+
+/**
  * Recursively walk `input` and return a new value with secrets removed.
  * - Primitive non-strings are returned as-is.
  * - Object keys matching SECRET_KEY_PATTERN → value replaced with "[REDACTED]".

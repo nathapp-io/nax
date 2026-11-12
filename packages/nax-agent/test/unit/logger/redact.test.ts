@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { redactEntry, redactSecrets, SECRET_VALUE_PATTERNS } from "#src/internal/redact";
+import { redactDiagnosticText, redactEntry, redactSecrets, SECRET_VALUE_PATTERNS } from "#src/internal/redact";
 
 describe("redactSecrets", () => {
   describe("US-002 sk- left boundary", () => {
@@ -24,6 +24,10 @@ describe("redactSecrets", () => {
     ])("%s redacts a key after a valid left boundary", (_ac, input) => {
       expect(redactSecrets(input)).not.toContain("aaaaaaaaaaaaaaaaaaaa");
     });
+  });
+
+  test("redactDiagnosticText masks a credential concatenated to diagnostic text", () => {
+    expect(redactDiagnosticText("outputXsk-abcdefghijklmnopqrst")).toBe("outputX[REDACTED]");
   });
 
   describe("US-002 vendor secret values", () => {
