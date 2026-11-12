@@ -243,14 +243,15 @@ describe("catalog slash routing", () => {
     expect(ui.lastFrame()).toContain("unknown command /nothing");
     expect(ui.send).not.toHaveBeenCalled();
   });
-  test("AC-11 help appends commands then skills after built-ins", async () => {
+  test("help summarizes resources and exposes keyboard controls", async () => {
     const ui = mount();
     await ui.line("/help");
     const frame = ui.lastFrame() ?? "";
-    expect(frame).toContain("/brainstorming - Explore ideas");
-    expect(frame).toContain("/review - Run review");
-    expect(frame.indexOf("/review -")).toBeGreaterThan(frame.indexOf("/quit"));
-    expect(frame.indexOf("/brainstorming -")).toBeGreaterThan(frame.indexOf("/review -"));
+    expect(frame).not.toContain("/brainstorming - Explore ideas");
+    expect(frame).toContain("type / to search");
+    expect(frame).toContain("pgup/pgdn");
+    expect(frame).toContain("shift+enter");
+    expect(frame).toContain("ctrl+o");
   });
   test("AC-12 local command returns undefined", async () => {
     const { host } = fixture();

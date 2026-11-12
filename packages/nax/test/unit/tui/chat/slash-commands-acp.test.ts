@@ -141,9 +141,9 @@ describe("runSlashCommand on an ACP brain", () => {
     const { shown } = await run(makeHost(ACP_MODEL), "/help");
     // US-004: the built-in lines, then the one key that is not a command — ctrl+s steers the
     // running turn, or interrupts it and sends the draft.
-    expect(shown).toEqual([
-      [...COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`), STEER_HINT].join("\n"),
-    ]);
+    expect(shown[0]).toStartWith(COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`).join("\n"));
+    expect(shown[0]).toContain("pgup/pgdn");
+    expect(shown[0]).toEndWith(STEER_HINT);
     expect(shown[0]).not.toContain("/review");
     expect(shown[0]).not.toContain("/brainstorming");
   });

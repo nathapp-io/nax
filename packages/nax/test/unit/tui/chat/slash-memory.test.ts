@@ -227,6 +227,7 @@ describe("runSlashCommand for /help with the memory built-in", () => {
       // US-004: the chat's steering key is the listing's last line, after every command.
       "ctrl+s  steer the running turn (or interrupt and send)",
     ];
-    expect(shown).toEqual([expected.join("\n")]);
+    expect(shown[0]).toStartWith(expected.slice(0, -1).join("\n"));
+    expect(shown[0]).toEndWith(expected.at(-1) ?? "");
   });
 });

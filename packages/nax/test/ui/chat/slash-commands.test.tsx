@@ -223,6 +223,7 @@ describe("slash command routing", () => {
   });
   test("US-008 AC-21 US-024 AC-14 help lists /image and /mcp after /plugins", async () => {
     const ui = mount();
+    await ui.resize(100, 50);
     await ui.line("/help");
     expect(ui.lastFrame()).toContain(
       "/plugins  List plugins and what they provide\n/image  Attach an image to the next message\n/mcp  List MCP servers",
@@ -389,7 +390,7 @@ describe("agents command", () => {
     );
   });
 
-  test("US-024 AC-16 help lists a catalog command with its hyphen description", async () => {
+  test("help summarizes catalog commands and points to search", async () => {
     const ui = mount();
     Object.assign(ui.host, {
       catalog: buildResourceCatalog([
@@ -417,7 +418,8 @@ describe("agents command", () => {
       ]),
     });
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("/deploy - Ship it");
+    expect(ui.lastFrame()).toContain("1 commands · 0 skills");
+    expect(ui.lastFrame()).toContain("type / to search");
   });
 
   test("US-011 shows the listing of host.agents() in the transcript without sending", async () => {

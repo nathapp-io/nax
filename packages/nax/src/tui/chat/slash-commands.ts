@@ -17,6 +17,7 @@ import { NaxError } from "@/errors";
 import { formatMemoryStatus, formatMemorySyncResult } from "@/memory";
 import { buildChatFeatureMessage, buildSkillInvocationMessage } from "@/prompts";
 import { buildResourceCatalog, formatPluginsListing, formatSkillsListing } from "@/resources";
+import { CHAT_KEYBOARD_HELP, resourceHelp } from "./help-text";
 
 /** The no-argument commands whose argument is chosen in a picker rather than typed. */
 export type PickerKind = "model" | "resume" | "mode" | "effort" | "jobs";
@@ -209,20 +210,14 @@ function acpDispatch(
   return { outcome: undefined };
 }
 
-/**
- * The one key `/help` names that is not a command (US-004): ctrl+s steers the running turn,
- * or interrupts it and sends the draft. It is the listing's last line, after the commands.
- */
-const STEER_HINT = "ctrl+s  steer the running turn (or interrupt and send)";
-
 function formatHelp(host: ChatHost, brain: ChatAcpModel | undefined): string {
   const builtins = COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`);
-  if (brain) return [...builtins, STEER_HINT].join("\n");
+  if (brain) return [...builtins, "", CHAT_KEYBOARD_HELP].join("\n");
   return [
     ...builtins,
-    ...(host.catalog?.commands ?? []).map((entry) => `/${entry.name} - ${entry.description ?? ""}`),
-    ...(host.catalog?.skills ?? []).map((entry) => `/${entry.name} - ${entry.description}`),
-    STEER_HINT,
+    resourceHelp(host.catalog?.commands.length ?? 0, host.catalog?.skills.length ?? 0),
+    "",
+    CHAT_KEYBOARD_HELP,
   ].join("\n");
 }
 

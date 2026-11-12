@@ -258,6 +258,7 @@ describe("/image in the command surfaces", () => {
   test("AC-7 /help lists the image command directly after /plugins", async () => {
     const ui = mount();
     await ui.submit("/help");
+    ui.press("\u001b[5~");
     expect(ui.frame()).toContain(
       "/plugins  List plugins and what they provide\n/image  Attach an image to the next message",
     );
