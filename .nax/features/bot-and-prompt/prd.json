@@ -3,7 +3,7 @@
   "feature": "bot-and-prompt",
   "branchName": "feat/bot-and-prompt",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T14:06:47.982Z",
+  "updatedAt": "2026-11-12T14:15:33.661Z",
   "userStories": [
     {
       "id": "US-001",
@@ -299,14 +299,17 @@
         "sandbox"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One existing placeholder scan feeds two schema helper arguments and a shared sentence gains text; command execution, placeholder validation and sandbox/access policy do not change, so ordinary failing-first unit tests suffice."
+        "reasoning": "One existing placeholder scan feeds two schema helper arguments and a shared sentence gains text; command execution, placeholder validation and sandbox/access policy do not change, so ordinary failing-first unit tests suffice.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/tools/run-command-surface.ts",
@@ -317,7 +320,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "db4ea8b646242e32ca59b11ca99e7641f26b5b9e"
     },
     {
       "id": "US-006",
