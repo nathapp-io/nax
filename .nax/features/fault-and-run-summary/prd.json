@@ -1,0 +1,447 @@
+{
+  "project": "nax-monorepo",
+  "feature": "fault-and-run-summary",
+  "branchName": "feat/fault-and-run-summary",
+  "createdAt": "2026-11-12T00:00:00.000Z",
+  "updatedAt": "2026-11-12T05:59:30.747Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Classify provider API-error messages by HTTP status",
+      "description": "**Goal** \u2014 Classify anchored provider API-error messages by their status on both pi-client error paths instead of retrying deterministic 4xx as transport faults.\n\n**Motivation** \u2014 The observed retries logged `kind: \"transport\"`: a 400 that can never succeed (the provider's \"model trains on request data\" policy) was retried 2x by the native adapter times 3 same-agent attempts, about 12 calls and 75 s per review call; 84 retry events in two runs on one day.\n\n**Approach** \u2014 The prefix is a provider name: a letter or digit, then up to 79 characters from letters, digits, space, `.`, `_` and `-` (no colon, so `Request failed: x API error (400)` is not read), then ` API error (`, three digits starting 4 or 5, then `): `. In regex form: `^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79} API error \\(([45]\\d\\d)\\): `. It matches `opencode-go`, `Azure OpenAI`, `github-copilot` and `Mistral`. The existing two shapes keep working. In `classifyThrown` the thrown value's own `status` / `statusCode` / `response.status` (`thrownStatus`) wins, then the message. A throw whose message matches no shape stays `transport`, as before (connection reset, DNS failure). The kind is `classifyProviderError(status, message)` on both paths, so 503 is `overloaded` and 500 is `transport`.\n\nExtend `statusFromSdkMessage` with the `<provider> API error (<status>): ` shape (the provider-name grammar above), which also fixes the stream error event path in `pi-client.ts`, and make `classifyThrown` fall back to it when the thrown value has no status property, so a 4xx is `bad-request` / `auth` / `rate-limit` / `quota` on both paths and is never retried as a transport fault. Preserve ProtocolSetupError, cause, full message, retry-after and existing classification refinements.\n\n**Scope** \u2014 In: errors.ts parser and throw classification plus regressions through both pi-client stream seams. Out: US-003's adapter swap policy, US-004's no-work close and new retry configuration.\n- Caching a provider's credential failure across runs: `fail-auth` already parks the provider for the whole run (`cooldown: \"run\"`); the #2877 report of a second 401 was a second run, ruled not a defect 2026-11-12.\n- Recovering a status quoted in the middle of an error message: only the anchored prefix shapes are read. The extended parser is reached from pi-client.ts:419 (stream error event); classifyThrown is reached from pi-client.ts:463 (stream catch). Enter each path through the pi client stream in seam tests.\n\n**Interface** \u2014 `statusFromSdkMessage(message: string | undefined): number | undefined`; `classifyThrown(cause: unknown): ProtocolError`. No signature changes. No `thrownStatus` -> `statusFromSdkMessage(message)`; when that yields a status the kind is `classifyProviderError(status, message)` and the error carries `status`; otherwise `transport` as before. Update packages/nax-ai/test/protocols/pi-client-error-status.test.ts by adding an `opencode-go API error (400): {...}` error-event row with no observed status, expecting kind `bad-request` and status 400; existing rows are unchanged.",
+      "acceptanceCriteria": [
+        "[unit] statusFromSdkMessage(\"opencode-go API error (400): {\\\"type\\\":\\\"invalid_request_error\\\"}\") returns 400.",
+        "[unit] statusFromSdkMessage(\"Azure OpenAI API error (429): rate limited\") returns 429, so a provider name with a space is read.",
+        "[unit] statusFromSdkMessage(\"github-copilot API error (413): {\\\"message\\\":\\\"failed to parse request\\\"}\") returns 413.",
+        "[unit] statusFromSdkMessage(\"opencode-go API error (503): upstream down\") returns 503.",
+        "[unit] statusFromSdkMessage(\"Request failed: opencode-go API error (400): x\") returns undefined, because a colon is not part of a provider name.",
+        "[unit] statusFromSdkMessage(\"opencode-go API error (200): x\") returns undefined, because only 4xx and 5xx are read.",
+        "[unit] statusFromSdkMessage(\"400 {\\\"error\\\":\\\"bad\\\"}\") still returns 400.",
+        "[unit] statusFromSdkMessage(\"400 status code (no body)\") still returns 400.",
+        "[unit] classifyThrown(new Error(\"opencode-go API error (400): {\\\"type\\\":\\\"invalid_request_error\\\"}\")) returns an error classified as { kind: \"bad-request\", status: 400 }.",
+        "[unit] classifyThrown(new Error(\"opencode-go API error (401): {\\\"code\\\":\\\"api_key_expired\\\"}\")) returns kind \"auth\".",
+        "[unit] classifyThrown(new Error(\"opencode-go API error (429): slow down\")) returns kind \"rate-limit\".",
+        "[unit] classifyThrown(new Error(\"opencode-go API error (503): upstream down\")) returns kind \"overloaded\".",
+        "[unit] classifyThrown(new Error(\"opencode-go API error (500): upstream down\")) returns an error classified as { kind: \"transport\", status: 500 }.",
+        "[unit] classifyThrown(new Error(\"socket hang up\")) still returns kind \"transport\" with no status.",
+        "[unit] classifyThrown(Object.assign(new Error(\"opencode-go API error (400): x\"), { status: 429 })) returns an error classified as { kind: \"rate-limit\", status: 429 }, because the thrown status property wins over the message.",
+        "[unit] classifyThrown(new Error(\"opencode-go API error (400): x\")) keeps the original error as cause.",
+        "[unit] classifyThrown(new Error(\"opencode-go API error (400): x\")) keeps the full message as message.",
+        "[integration] When the pi-ai stream the pi client drives throws new Error(\"opencode-go API error (400): {\\\"type\\\":\\\"invalid_request_error\\\"}\") with no status property, the pi client stream yields one error event whose error is classified as { kind: \"bad-request\", status: 400 }.",
+        "[integration] When the pi-ai stream emits an error event whose errorMessage is 'opencode-go API error (400): {\"type\":\"invalid_request_error\"}' and no response status was observed, the pi client stream yields one error event whose error is classified as { kind: \"bad-request\", status: 400 }."
+      ],
+      "tags": [
+        "bug",
+        "providers",
+        "retry",
+        "auth"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Only errors.ts needs production edits: extend one anchored parser and reuse it in the classifier; the auth-status classification keeps the mandatory security-isolated strategy despite the small scope."
+      },
+      "contextFiles": [
+        "packages/nax-ai/src/protocols/errors.ts",
+        "packages/nax-ai/src/protocols/pi-client.ts",
+        "packages/nax-ai/src/protocols/retry.ts",
+        "packages/nax-ai/test/protocols/errors.test.ts",
+        "packages/nax-ai/test/protocols/pi-client-error-status.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a provider API-error message has an 81-character provider name, statusFromSdkMessage returns undefined.",
+        "When a provider API-error message begins with a punctuation character rather than a letter or digit, statusFromSdkMessage returns undefined.",
+        "When retryTransportFaults wraps the pi client stream for a provider API error (400) before any content, the underlying stream is invoked exactly once."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-ai/test/protocols/pi-client-error-status.test.ts",
+          "reason": "add an `opencode-go API error (400): {...}` error-event row (no observed status) to the status table, expecting kind `bad-request` and status 400; existing rows are unchanged."
+        }
+      ],
+      "workdir": "packages/nax-ai",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Require a left boundary before sk- secrets",
+      "description": "**Goal** \u2014 Stop the shared redactor from interpreting the sk- suffix of ordinary identifiers as an API key while retaining real-key masking.\n\n**Motivation** \u2014 `SECRET_VALUE_PATTERNS` openai entry `/sk-[A-Za-z0-9_-]{16,}/g` (`packages/nax-agent/src/internal/redact.ts:44`) has no left boundary, so `task-...` became `ta[REDACTED]` 62 times in audit files.\n\n**Approach** \u2014 the openai pattern becomes `/(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/g`. Anchor the openai entry of `SECRET_VALUE_PATTERNS` with `(?<![A-Za-z0-9_-])` so `task-...`, `disk-...` and similar words are not redacted, while a real `sk-` key at the start, after whitespace or punctuation or inside quotes still is.\n\n**Scope** \u2014 In: the openai entry in packages/nax-agent/src/internal/redact.ts and additive boundary regressions in test/unit/logger/redact.test.ts. Out: US-008's PRD scan/warnings and US-001's provider-status classification; do not alter other secret patterns, key-based masking, replacement markers, recursive behavior or the exported pattern table's shape. Existing redactor tests remain unchanged: no existing case constructs an sk- run preceded by a letter, digit, _ or -.\n\n**Interface** \u2014 `SECRET_VALUE_PATTERNS` openai entry: baseline `{ kind: \"openai\", re: /sk-[A-Za-z0-9_-]{16,}/g }`; target `{ kind: \"openai\", re: /(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/g }`. The consumer signature stays `redactSecrets<T>(input: T): T`. Preserve global-regex resetting and Node-compatible source.",
+      "acceptanceCriteria": [
+        "[unit] redactSecrets(\"test:task-abcdefghijklmnopqrst\") returns \"test:task-abcdefghijklmnopqrst\" unchanged.",
+        "[unit] redactSecrets(\"chat-task-abcdefghijklmnopq/workflow\") returns the input unchanged.",
+        "[unit] redactSecrets(\"disk-0123456789abcdefgh\") returns the input unchanged.",
+        "[unit] redactSecrets(\"my_sk-0123456789abcdefgh\") returns the input unchanged, because _ before sk- is a word character.",
+        "[unit] redactSecrets(\"sk-aaaaaaaaaaaaaaaaaaaa\") returns a string that no longer holds \"aaaaaaaaaaaaaaaaaaaa\".",
+        "[unit] redactSecrets(\"key: sk-aaaaaaaaaaaaaaaaaaaa\") redacts the key that follows ': '.",
+        "[unit] redactSecrets('\"sk-aaaaaaaaaaaaaaaaaaaa\"') redacts the key inside double quotes.",
+        "[unit] redactSecrets(\"token=sk-proj-aaaaaaaaaaaaaaaaaaaa\") returns a string that no longer holds \"aaaaaaaaaaaaaaaaaaaa\".",
+        "[unit] redactSecrets(\"(sk-aaaaaaaaaaaaaaaaaaaa)\") redacts the key that follows '('.",
+        "[unit] redactSecrets(\"line one\\nsk-aaaaaaaaaaaaaaaaaaaa\") redacts the key that follows a newline.",
+        "[unit] redactSecrets(\"keys/sk-aaaaaaaaaaaaaaaaaaaa\") redacts the key that follows '/'.",
+        "[unit] redactSecrets(\"a,sk-aaaaaaaaaaaaaaaaaaaa\") redacts the key that follows ','."
+      ],
+      "tags": [
+        "bug",
+        "security",
+        "redaction"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "One regex entry changes, but credential/token redaction is security-critical and requires strict three-session TDD."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/redact.ts",
+        "packages/nax-agent/test/unit/logger/redact.test.ts"
+      ],
+      "suggestedCriteria": [
+        "redactSecrets(\"1sk-aaaaaaaaaaaaaaaaaaaa\") returns the input unchanged because a digit immediately precedes sk-.",
+        "redactSecrets(\"-sk-aaaaaaaaaaaaaaaaaaaa\") returns the input unchanged because a hyphen immediately precedes sk-."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Swap adapter errors after the same-agent retry lane",
+      "description": "**Goal** \u2014 Make fail-adapter-error eligible for fallback after its existing same-agent retry even when onQualityFailure is disabled.\n\n**Motivation** \u2014 An implementer hop got `{\"detail\":\"Bad Request\"}` (kind `bad-request`, outcome `fail-adapter-error`).\n\n**Approach** \u2014 `after-retry-lane` already exists (`fail-timeout`, `fail-spin`, `fail-invalid-tool-call`): `trySameAgentRetry` spends the `adapter-error` lane first, then `decideSwap` swaps, subject to `fallback.enabled` and the hop cap. This reverses the earlier rule, pinned in `test/unit/agents/native/errors.test.ts`, that a malformed request (`bad-request`) and a context overflow stay on the failing agent unless `onQualityFailure` is on: user ruling 2026-11-12, a provider-side 400 is better served by another agent than by gates on an empty branch. `fail-quality` and `fail-unknown` stay `quality-gated`.\n\nChange the `fail-adapter-error` row of `POLICIES` to `swap: \"after-retry-lane\"` (a design change: a `bad-request` and a context overflow now swap without `onQualityFailure`). Other fields unchanged. The manager already retries before decideSwap; add no new retry-lane flag, state machine, configuration or duplicate gate. Preserve the early abort exit.\n\n**Scope** \u2014 In: failure-policy.ts and regressions through decideSwap and AgentManager.runWithFallback. Out: US-001's provider-message parsing and US-004's story close behavior.\n- Rewording the `fail-adapter-error: same-agent retry with fresh session` log line or its `retriable` field.\n- Marking `fail-quality` or `fail-unknown` swap-eligible without `onQualityFailure`.\n\n**Required test updates (in scope)** \u2014 Rename/update the native errors tests 'an overflow is declined by default, like any fail-adapter-error' and 'a genuinely malformed request stays declined' to assert swaps after the retry lane, reflecting the explicit design change.\n\n**Interface** \u2014 `POLICIES[\"fail-adapter-error\"]`: target `swap: \"after-retry-lane\"`; other fields unchanged. Read-only consumer: `decideSwap(failure, hopsSoFar, fallback): SwapDecision`. Keep `sameAgentRetry: \"adapter-error\"`, `cooldown: \"none\"`, `cooldownScope: \"model\"` and terminalBackoff as today. Demonstrate the claude-to-codex manager seam with fallback enabled, onQualityFailure false and unsuccessful claude hops, not just a pure policy assertion.",
+      "acceptanceCriteria": [
+        "[unit] failurePolicyFor(\"fail-adapter-error\").swap returns \"after-retry-lane\".",
+        "[unit] failurePolicyFor(\"fail-adapter-error\").sameAgentRetry is still \"adapter-error\".",
+        "[unit] failurePolicyFor(\"fail-adapter-error\").cooldown is still \"none\".",
+        "[unit] failurePolicyFor(\"fail-adapter-error\").cooldownScope is still \"model\".",
+        "[unit] failurePolicyFor(\"fail-quality\").swap is still \"quality-gated\".",
+        "[unit] failurePolicyFor(\"fail-unknown\").swap is still \"quality-gated\".",
+        "[unit] decideSwap(toAdapterFailure({ kind: \"bad-request\" }), 0, { enabled: true, onQualityFailure: false, maxHopsPerStory: 2 }) returns { swap: true }, not quality-failure-declined.",
+        "[unit] decideSwap(toAdapterFailure({ kind: \"context-overflow\" }), 0, { enabled: true, onQualityFailure: false, maxHopsPerStory: 2 }) returns { swap: true } with the same fallback config.",
+        "[unit] decideSwap with a fail-quality failure and the same fallback config still returns { swap: false, reason: \"quality-failure-declined\" }.",
+        "[unit] decideSwap with a fail-adapter-error failure and fallback.enabled false returns { swap: false, reason: \"fallback-disabled\" }.",
+        "[unit] decideSwap with a fail-adapter-error failure and hopsSoFar equal to the configured hop cap returns { swap: false, reason: \"hop-cap-reached\" }.",
+        "[integration] AgentManager.runWithFallback with agent.fallback { enabled: true, map: { claude: [\"codex\"] }, onQualityFailure: false }, where every claude attempt fails with { category: \"quality\", outcome: \"fail-adapter-error\", retriable: false } and codex succeeds, dispatches codex after the claude attempts.",
+        "[integration] In that claude-to-codex fallback setup, AgentManager.runWithFallback returns result.success true.",
+        "[integration] In the same setup with an aborted run signal, an aborted fail-adapter-error hop is still neither retried nor swapped."
+      ],
+      "tags": [
+        "bug",
+        "agents",
+        "fallback",
+        "sessions"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The production change is one existing policy value; manager retry/swap ordering already exists, while the fresh-session retry/abort regressions retain the mandatory session-security strategy."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/retry/failure-policy.ts",
+        "packages/nax/src/agents/swap-decision.ts",
+        "packages/nax/src/agents/manager-run-fallback.ts",
+        "packages/nax/test/unit/agents/fail-stale-agent-manager.test.ts",
+        "packages/nax/test/unit/agents/native/errors.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/agents/native/errors.test.ts",
+          "reason": "the test \"an overflow is declined by default, like any fail-adapter-error\" now expects `decideSwap(toAdapterFailure({ kind: \"context-overflow\" }), 0, fallback)` to return a swap (`{ swap: true }`), and is renamed to say an overflow swaps after the retry lane. The test \"a genuinely malformed request stays declined\" now expects `decideSwap(toAdapterFailure({ kind: \"bad-request\" }), 0, fallback)` to return a swap, and is renamed to say a malformed request swaps after the retry lane (design change, user ruling 2026-11-12)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Close a failed first dispatch with no work before gates",
+      "description": "**Goal** \u2014 Close the story complete-gate-open without gates or review when its first implement phase ends in a dispatch failure with explicitly absent work.\n\n**Motivation** \u2014 Its policy is `swap: \"quality-gated\"`, so with `onQualityFailure` off the swap was declined; the failure became a session finding (`story-steps.ts` `absorbTurn`), `implementStep` exited `worked`, and the gates ran against a branch with no implementation.\n\n**Approach** \u2014 The check is the existing optional story-loop step `steps.workProduced` (`workflow/story-loop.ts:60`; `buildStoryEnv` wires it to `storyWorkEvidence`). Absent means \"work produced\" and a throw is read as work, the same fail-open reading `runNoWorkLadder` uses (`workflow/no-work.ts`). The close mirrors the no-work ladder close: `closeAs` with state `complete-gate-open`, exit `\"no-work\"` (the graph routes `no-work` to `close`, skipping `evaluate`). Only the story's first implement turn is covered; a fix-round dispatch failure keeps today's session-finding path. The discriminator is `result.outcome` (the no-work ladder's last turn). An aborted run (`env.aborted?.()` true) never takes the new close: the stage's abort path handles it.\n\nIn `implementStep`, after the no-work ladder: when `result.outcome.failure` is set, the ladder did not close the story, the run is not aborted, and `env.steps.workProduced` is wired and resolves `false`, close the story `complete-gate-open` with reason `implementer dispatch failed: <failure>` and exit `\"no-work\"`. A missing or rejecting work check retains today's worked/session-finding path; a successful turn is not this failure path. Existing failure tests without workProduced remain on today's path.\n\n**Scope** \u2014 In: implementStep's first implement phase, its conservative evidence reading, direct step behavior and runStoryLoop wiring. Out: US-003's fallback policy and US-005's summary counters, changes to storyWorkEvidence and changes to the stage's existing abort handling.\n- A fix-round implementer dispatch that fails: it keeps today's session-finding path; only the story's first implement turn closes gate-open.\n\n**Interface** \u2014 `implementStep(env: StoryLoopEnv, state: StoryLoopState): Promise<StepResult<StoryLoopState>>` stays unchanged; optional existing `workProduced?(): Promise<boolean>`. When `result.outcome.failure` is set, the ladder did not close, and the non-aborted work check resolves false, return `closeAs: { state: \"complete-gate-open\", reason: \"implementer dispatch failed: <failure>\" }` and exit `\"no-work\"`. Reuse the existing graph transition, rather than bypassing the story loop. The integration seam enters runStoryLoop and observes that gates and storyReview never run, with zero fix rounds.",
+      "acceptanceCriteria": [
+        "[unit] With an implement turn returning { failure: 'Agent \"native\" failed: Bad Request', autoCommitted: false } and steps.workProduced resolving false, implementStep returns exit \"no-work\".",
+        "[unit] In the same failed-turn/no-work case, implementStep's patch carries closeAs.state \"complete-gate-open\".",
+        "[unit] In the same failed-turn/no-work case, closeAs.reason is 'implementer dispatch failed: Agent \"native\" failed: Bad Request'.",
+        "[unit] With the same failed turn and steps.workProduced resolving true, implementStep returns exit \"worked\".",
+        "[unit] With the same failed turn and steps.workProduced resolving true, implementStep's patch.pendingSession contains a finding whose issue is 'implementer session failed: Agent \"native\" failed: Bad Request'.",
+        "[unit] With the same failed turn and no steps.workProduced wired, implementStep returns exit \"worked\".",
+        "[unit] With the same failed turn and steps.workProduced rejecting, implementStep returns exit \"worked\".",
+        "[unit] With the same failed turn, steps.workProduced resolving false and env.aborted returning true, implementStep does not return a closeAs whose reason starts with 'implementer dispatch failed:'.",
+        "[unit] With a turn returning a reply and no failure, steps.workProduced resolving false does not produce a closeAs whose reason starts with 'implementer dispatch failed:'.",
+        "[integration] runStoryLoop(env) with a first implement turn returning { failure: \"Bad Request\", autoCommitted: false } and steps.workProduced resolving false never calls env.steps.gates.",
+        "[integration] In the same run, runStoryLoop returns state \"complete-gate-open\".",
+        "[integration] In the same run, runStoryLoop returns rounds 0.",
+        "[integration] In the same run, env.steps.storyReview is never called.",
+        "[integration] runStoryLoop(env) with the same failed first turn and steps.workProduced resolving true calls env.steps.gates.",
+        "[integration] In that work-produced run, the next fix turn's findings include 'implementer session failed: Bad Request'.",
+        "[unit] With the failed turn 'Agent \"native\" failed: Bad Request' and steps.workProduced rejecting, implementStep's patch.pendingSession contains a finding whose issue is 'implementer session failed: Agent \"native\" failed: Bad Request', preserving today's session-finding path when the evidence check fails.",
+        "[integration] runStoryLoop(env) with a first implement turn returning { failure: \"Bad Request\", autoCommitted: false } and steps.workProduced rejecting still calls env.steps.gates, reading the throwing evidence check as work produced."
+      ],
+      "tags": [
+        "bug",
+        "workflow",
+        "no-work",
+        "sessions"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "An existing step-graph branch with conservative evidence and abort semantics; session failure handling requires strict three-session TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/no-work.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/story-graph.ts",
+        "packages/nax/test/unit/workflow/story-loop-no-work.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Separate gate-open closures from completed run stories",
+      "description": "**Goal** \u2014 Carry story workflow end state to completion and count gate-open closures separately from completed work, with PRD-wide passed totals in the run summary.\n\n**Motivation** \u2014 `workflow/stage.ts` always sets `ctx.agentResult.success = true`, so `pipeline/stages/completion.ts` logs \"Story passed\" and `handlePipelineSuccess` counts the story in `storiesCompleted` even when the story closed `complete-gate-open`: one run reported `storiesCompleted: 9, storiesFailed: 0` with `success: false` and a draft PR.\n\n**Approach** \u2014 A story whose workflow end state is `complete-gate-open` is still marked `passed` in `prd.json` (user ruling 2026-11-12: reporting only, so a resume never re-runs it); it is not counted in `storiesCompleted` and is counted in a new `storiesGateOpen` on the \"Feature execution completed\" event, which also adds `storiesPassed`, the PRD-wide passed count (gate-open stories included, because their PRD status is `passed`). The new counters are optional fields read with `?? 0`, so the many test literals of `IterationResult` and the completion options keep compiling. A gate-open story still ends its iteration as terminal (`closeStoryIfTerminal`), so its sessions close. The progress line keeps status `passed` (`appendProgress` takes a `StoryStatus`, which has no gate-open value) and its text says `closed gate-open`.\n\nThe workflow stage sets ctx.workflowEndState to outcome.state after runStoryLoop, and to complete-gate-open on its non-aborted error path. Completion still calls markStoryPassed, but uses info message `Story closed gate-open` at stage completion and progress text ending `\u2014 closed gate-open` for that state. Ordinary/no-state contexts retain `Story passed`. handlePipelineSuccess excludes gate-open from storiesCompletedDelta and sets storiesGateOpenDelta on every success result. Keep the new count beside the completed count across every return/state copy, including dry-run and failure iterations, using zero defaults for missing inputs. No per-story batching redesign: workflow already rejects batches.\n\n**Scope** \u2014 In: PipelineContext, workflow stage, completion stage, success result handling, iteration/executor/runner/completion plumbing, terminal session cleanup and Feature execution completed fields. Out: US-004's new dispatch-failure close, US-006's interrupt summary, US-007's push verdict and changes to resume selection.\n- Changing a `complete-gate-open` story's `prd.json` status away from `passed`: ruled out 2026-11-12 (reporting only), so a resume never re-runs it.\n- The `story:completed` event's `passed: true` for a gate-open story (hook and reporter payloads): only the log line and the run counters change.\n\n**Interface** \u2014 `PipelineContext` gains optional `workflowEndState?: StoryState` (`StoryState` from workflow/types.ts:170). `PipelineSuccessResult` gains optional `storiesGateOpenDelta?: number`, set on every success result. The iteration result and executor chain gains an optional `storiesGateOpen?: number` / `storiesGateOpenDelta?: number` beside each `storiesCompleted` / `storiesCompletedDelta`, read with `?? 0`; `closeStoryIfTerminal` treats `storiesCompletedDelta > 0 || (storiesGateOpenDelta ?? 0) > 0` as terminal. Propagate through execution/iteration-runner.ts (dry-run/success/failure results), execution/dry-run.ts, execution/executor-types.ts, execution/unified-executor.ts, execution/unified-executor-dispatch-phases.ts (all early exits), execution/runner-execution.ts, execution/runner-completion.ts, execution/lifecycle/run-completion.ts (`RunCompletionOptions`) and execution/runner.ts. Feature execution completed data adds `storiesGateOpen` (0 when absent) and `storiesPassed: finalCounts.passed`.\n\nThe integration seam starts with workflow outcome production, consumes context state in completion/result handling and reaches the summary through the unified-executor chain. Test terminal session closure as well as the two-story complete/gate-open totals. Existing optional-field literals must retain their behavior without being mass-updated to conceal absent-field handling.",
+      "acceptanceCriteria": [
+        "[unit] After runStoryLoop resolves with state \"complete-gate-open\", the workflow stage execute leaves ctx.workflowEndState equal to \"complete-gate-open\".",
+        "[unit] After runStoryLoop resolves with state \"complete\", the workflow stage leaves ctx.workflowEndState equal to \"complete\".",
+        "[unit] When runStoryLoop throws and the run is not aborted, the workflow stage leaves ctx.workflowEndState equal to \"complete-gate-open\".",
+        "[unit] The completion stage, for a story with workflowEndState \"complete-gate-open\", still sets the story's PRD status to \"passed\".",
+        "[unit] The completion stage, for that gate-open story, logs info \"Story closed gate-open\" under stage completion and does not log \"Story passed\".",
+        "[unit] The completion stage, for that gate-open story, appends a progress entry with status \"passed\" whose text ends with '\u2014 closed gate-open'.",
+        "[unit] The completion stage, for a story with workflowEndState \"complete\", logs \"Story passed\" as today.",
+        "[unit] The completion stage, for a story with no workflowEndState, logs \"Story passed\" as today.",
+        "[unit] handlePipelineSuccess for one story whose pipeline context has workflowEndState \"complete-gate-open\" returns storiesCompletedDelta 0.",
+        "[unit] handlePipelineSuccess for that gate-open story returns storiesGateOpenDelta 1.",
+        "[unit] handlePipelineSuccess for one story with no workflowEndState returns storiesCompletedDelta 1.",
+        "[unit] handlePipelineSuccess for one story with no workflowEndState returns storiesGateOpenDelta 0.",
+        "[unit] closeStoryIfTerminal with storiesCompletedDelta 0 and storiesGateOpenDelta 1 closes the story's sessions, as it does for a completed story.",
+        "[unit] The unified executor dispatch phase given an iteration result with no storiesGateOpenDelta key leaves its storiesGateOpen count unchanged, not NaN.",
+        "[integration] A unified-executor run over two stories, the first ending complete and the second complete-gate-open, ends with storiesCompleted 1.",
+        "[integration] In the same run, the unified executor ends with storiesGateOpen 1.",
+        "[integration] In the same run, Feature execution completed data carries storiesGateOpen 1.",
+        "[integration] In the same run, Feature execution completed data carries storiesCompleted 1.",
+        "[unit] Feature execution completed data carries storiesPassed equal to countStories(prd).passed, including stories passed by an earlier run of the same feature."
+      ],
+      "tags": [
+        "bug",
+        "workflow",
+        "reporting",
+        "execution",
+        "sessions"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module result/state propagation through pipeline, executor and runner, including terminal session cleanup; session handling requires the strict security override."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/stage.ts",
+        "packages/nax/src/pipeline/stages/completion.ts",
+        "packages/nax/src/execution/pipeline-result-handler.ts",
+        "packages/nax/src/execution/unified-executor-dispatch-phases.ts",
+        "packages/nax/src/execution/lifecycle/run-completion-phases.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Read live PRD counters in interrupt summaries",
+      "description": "**Goal** \u2014 Report PRD-wide passed/failed counts from the live status-writer PRD when a run is interrupted, including safe setup-time fallbacks.\n\n**Motivation** \u2014 \"Feature execution terminated\" (`execution/crash-writer.ts`) reports `storiesCompleted: 0` after an interrupt because `runner.ts` assigns its counter only after execution returns; a resumed run's `run.complete` counts only that session's stories.\n\n**Approach** \u2014 \"Feature execution terminated\" reads the PRD the executor last loaded: the runner's own `prd` is the setup copy, and the unified executor replaces `state.prd` with a fresh `loadPRD` after each story, so the only live copy reachable from the crash handler is the one `StatusWriter.setPrd` receives each iteration. The event reports `storiesCompleted` and `storiesPassed` (both the PRD passed count) and `storiesFailed` (the PRD failed count).\n\nEach runner crash getter reads `setupResult?.statusWriter.currentPrd() ?? prd` through setupResult, as getTotalCost does, because the destructured statusWriter const is not yet initialized when a signal arrives during setup. When a PRD exists, getStoriesCompleted/getStoriesPassed use countStories(...).passed and getStoriesFailed uses .failed. With no PRD, getStoriesCompleted falls back to the runner's own counter and getStoriesPassed/getStoriesFailed return 0. If setupResult is not available, the setup PRD or zero fallback must be safe without a temporal-dead-zone exception. No disk reload is needed.\n\n**Scope** \u2014 In: StatusWriter getter, RunCompleteContext getter fields, writeRunComplete payload, runner closures and the setup/crash-recovery forwarding contracts needed to connect them. Out: US-005's normal-completion gate-open count, US-007's workflow success rule and changes to status persistence.\n- Logging an interrupt during session open at a level other than error (\"Story failed\").\n\n**Interface** \u2014 `StatusWriter` gains `currentPrd(): PRD | null`, returning the PRD last passed to setPrd. `RunCompleteContext` gains optional `getStoriesFailed?: () => number` and `getStoriesPassed?: () => number`; Feature execution terminated data adds storiesFailed and storiesPassed, 0 when a getter is absent. Preserve the existing optional getStoriesCompleted contract. Forward both new getters through RunnerSetupOptions/runSetupPhase in execution/runner-setup.ts, setupRun options/installation in execution/lifecycle/run-setup.ts and CrashRecoveryContext in execution/crash-recovery.ts so installSignalHandlers/writeRunComplete receive them.\n\nStatusWriter.currentPrd is produced and consumed in this same story. Tests must reach the runner's actual crash-context closures with a different live PRD than its setup PRD, plus a signal during awaited setup, rather than testing only countStories or a hand-built final log.",
+      "acceptanceCriteria": [
+        "[unit] StatusWriter.currentPrd() returns null before any setPrd call.",
+        "[unit] After setPrd(a) then setPrd(b), StatusWriter.currentPrd() returns b.",
+        "[unit] writeRunComplete with getStoriesCompleted returning 8, getStoriesPassed returning 8 and getStoriesFailed returning 1 writes Feature execution terminated data with storiesCompleted 8.",
+        "[unit] In that writeRunComplete call, Feature execution terminated data contains storiesPassed 8.",
+        "[unit] In that writeRunComplete call, Feature execution terminated data contains storiesFailed 1.",
+        "[unit] writeRunComplete with no getStoriesPassed and no getStoriesFailed writes storiesPassed 0.",
+        "[unit] writeRunComplete with no getStoriesPassed and no getStoriesFailed writes storiesFailed 0.",
+        "[integration] The runner's crash context, when the status writer's current PRD has 3 stories passed and 1 failed while the runner setup PRD has none passed, reports getStoriesCompleted() 3.",
+        "[integration] In that live-PRD crash context, getStoriesPassed() returns 3.",
+        "[integration] In that live-PRD crash context, getStoriesFailed() returns 1.",
+        "[integration] The runner's crash context, when the status writer has no PRD yet and the setup PRD has 2 passed stories and 1 failed story, returns getStoriesCompleted() 2, falling back to the setup PRD's counts.",
+        "[integration] In that no-current-PRD setup, the runner's crash-context getStoriesPassed() returns 2, falling back to the setup PRD's counts.",
+        "[integration] In that no-current-PRD setup, the runner's crash-context getStoriesFailed() returns 1, falling back to the setup PRD's counts.",
+        "[integration] A signal that writes Feature execution terminated while setup is still running, with no setup result yet, does not throw.",
+        "[integration] That setup-time signal's Feature execution terminated entry carries storiesPassed 0.",
+        "[integration] That setup-time signal's Feature execution terminated entry carries storiesFailed 0.",
+        "[integration] When no PRD is loaded, the runner's crash-context getStoriesCompleted() returns the runner's own completed counter.",
+        "[integration] When no PRD is loaded, the runner's crash-context getStoriesPassed() returns 0.",
+        "[integration] When no PRD is loaded, the runner's crash-context getStoriesFailed() returns 0."
+      ],
+      "tags": [
+        "bug",
+        "reporting",
+        "crash-recovery",
+        "execution"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Read-only counters cross status writer, runner, multiple setup layers and signal context, with asynchronous setup/TDZ risks; no authentication or session-security behavior changes."
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/status-writer.ts",
+        "packages/nax/src/execution/crash-writer.ts",
+        "packages/nax/src/execution/runner.ts",
+        "packages/nax/src/execution/unified-executor.ts",
+        "packages/nax/test/unit/execution/crash-recovery.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Make failed pushes fail the workflow verdict",
+      "description": "**Goal** \u2014 Distinguish a failed push from intentional local-only publishing and propagate that failure to workflow verdicts and run.complete success.\n\n**Motivation** \u2014 A push rejected by the forge (GitHub push protection GH013 on a secret-shaped test string the run auto-committed into `prd.json`) ended `outcome: \"local-only\", passed: true`; the run looked green and published nothing.\n\n**Approach** \u2014 `featurePassed` (`approval.ts:135`) stays a stories-and-gates verdict; `publishStep` ANDs it with \"no push failure\", because the run's `success` comes from the record's `passed` (`workflow-end-report.ts:223` -> `run-completion-phases.ts:395`), not from `buildVerdict`. `buildVerdict` gets the same clause for `nax workflow status` and chat. `publishStep` always writes `pushFailed` (true or false), like `approval` and `ciDetail`, because the record merges patches (`stage-env.ts:168`) and a `--publish-only` re-publish resumes the prior record (`publish-only.ts:31`): a successful re-publish after a failed push must clear the flag. The finished-at-HEAD path (`feature.ts:239-245`) is unchanged: it only accepts `ready`, `draft` or `pushed` records, which never carry a push failure once the flag is cleared.\n\nSet pushFailed only on failed-push returns from both pushMode and prMode, and log `Push failed \u2014 the feature ends local-only` at error level with the rejection in error. A publish:none or no-forge local-only outcome is not a push failure and leaves the stories-and-gates verdict unchanged. Do not special-case GH013 text; all non-aborted rejected pushes take this failure path. Preserve abort propagation and existing CI/readiness behavior.\n\n**Scope** \u2014 In: PublishOutcome/WorkflowFeatureRecord flag, failed-push returns, existing push log level, publishStep patch clearing and passed composition, buildVerdict guard and end-report integration. Out: US-005/US-006's story counters, US-008's planner warning, changes to featurePassed, new push-protection bypasses, or finished-at-HEAD/publish-only eligibility changes.\n\n**Interface** \u2014 `PublishOutcome` gains optional `pushFailed?: true`, set on the failed-push returns of pushMode and prMode. `WorkflowFeatureRecord` gains optional `pushFailed?: boolean`. `publishStep` always writes `pushFailed: out.pushFailed === true`; when it is true, `passed` is false, otherwise passed is as today. `buildVerdict(rec: WorkflowFeatureRecord): WorkflowVerdict | undefined` makes workflowPassed also false when `rec.pushFailed === true`.\n\nThe integration seam is publish -> publishStep -> persisted passed:false -> runEndPhaseReported/CloseInput -> Feature execution completed success:false. Test successful re-publish on a prior pushFailed:true record to prove merge-safe clearing. Older records with no flag retain existing behavior.",
+      "acceptanceCriteria": [
+        "[unit] publish in push mode, when _featureDeps.commitAndPush rejects with new Error(\"remote: error: GH013: Repository rule violations found\"), returns outcome \"local-only\".",
+        "[unit] In that rejected push-mode call, publish returns pushFailed true.",
+        "[unit] publish in pr mode, when the push rejects with the same GH013 error, returns outcome \"local-only\".",
+        "[unit] In that rejected pr-mode call, publish returns pushFailed true.",
+        "[unit] publish with publish:none returns outcome \"local-only\".",
+        "[unit] publish with publish:none returns no pushFailed key.",
+        "[unit] publish in push mode with a successful push returns no pushFailed key.",
+        "[unit] A rejected push logs \"Push failed \u2014 the feature ends local-only\" at error level with the rejection message in error.",
+        "[unit] publishStep given a publish outcome with pushFailed true and stories all closed complete returns a patch with pushFailed true.",
+        "[unit] publishStep given that failed push outcome and complete stories returns a patch with passed false.",
+        "[unit] publishStep given a publish outcome with no pushFailed and the same complete stories returns a patch with pushFailed false.",
+        "[unit] publishStep given that non-failed outcome and complete stories returns a patch with passed true.",
+        "[unit] publishStep run on a prior record carrying pushFailed true for a --publish-only re-publish, with a successful publish outcome and stories all closed complete, returns a patch with pushFailed false.",
+        "[unit] In that successful re-publish, publishStep returns a patch with passed true.",
+        "[unit] buildVerdict for a record with outcome \"local-only\", passed true, pushFailed true and no open items returns workflowPassed false.",
+        "[unit] buildVerdict for a record with outcome \"local-only\", passed true, no pushFailed and no open items returns workflowPassed true.",
+        "[integration] runEndPhaseReported whose end phase returns a feature record with passed false after a failed push hands workflowPassed false to the close input.",
+        "[integration] In that failed-push end-phase run, Feature execution completed data carries success false.",
+        "[unit] When no forge is detected and publish ends local-only, publishStep writes pushFailed false.",
+        "[unit] When no forge is detected and publish ends local-only, publishStep leaves passed equal to the stories-and-gates verdict.",
+        "[unit] When publish:none ends local-only, publishStep leaves passed equal to the stories-and-gates verdict."
+      ],
+      "tags": [
+        "bug",
+        "workflow",
+        "publish",
+        "reporting"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Four production files add and consume a boolean using existing publish/patch/verdict patterns; the end-report seam already forwards passed, so no new abstraction or security-sensitive behavior requires heavier isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/publish-only.ts",
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/src/execution/workflow-end-report.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Stamp plan timestamps and warn on secret-shaped story text",
+      "description": "**Goal** \u2014 Generate plan timestamps in code and warn, without mutation or refusal, when persisted PRD story strings match shared secret-redaction patterns.\n\n**Motivation** \u2014 The planner prompt asks the model for `createdAt` (`plan-builder.ts:418`) and `validatePlanOutput` (`prd/schema.ts:163`) trusts it; PRDs were dated weeks in the future.\n\n**Approach** \u2014 For each story (only the stories in `args.scope` when a scope is given), every string in `title`, `description` and `acceptanceCriteria` is passed through `redactSecrets` (`@nathapp/nax-agent/internal`, as `config/secret-scan.ts` imports it); a string that comes back changed is a hit. Hits are warned, never redacted and never fatal (user ruling 2026-11-12: specs about redaction quote fake keys legitimately). `findPrdSecretShapes` is exported from the `src/prd/index.ts` barrel.\n\n`validatePlanOutput` takes an optional `now` and ignores the model's `createdAt`/`updatedAt`; the planner prompt stops asking for them. Create `prd/secret-shapes.ts` with `findPrdSecretShapes`, exported from `src/prd/index.ts`; `finalizeAndWritePrd` warns once per hit with the story id and field and writes the PRD unchanged. Visit stories in their existing order and fields in title, description, acceptance-criteria-index order; return one result per changed string, not per token. Scan the finalized PRD immediately before args.writeFile, passing args.scope. Log metadata, not the candidate string. If redactSecrets/findPrdSecretShapes throws, catch at the persistence boundary, warn once that the secret-shape scan could not run, and still write the PRD. No new regex catalog or config setting.\n\n**Scope** \u2014 In: schema.ts timestamp normalization, removal of timestamp keys from the planner's displayed schema, new PRD scanner/barrel export, advisory persistence warnings and their seam tests. Out: US-002's shared redactor boundary, US-007's failed-push verdict, scanning unrelated PRD fields and rewriting existing execution PRDs' timestamps.\n- Refusing `nax plan` on a secret-shaped PRD string, or redacting it: ruled out 2026-11-12; the plan only warns.\n\n**Integration boundary** \u2014 Keep all dependencies empty per the binding structure; reuse the shared redactor rather than independently fixing its task- false positive here.\n\n**Interface** \u2014 `validatePlanOutput(raw: unknown, feature: string, branch: string, now?: Date): PRD`; createdAt and updatedAt are both `(now ?? new Date()).toISOString()`, whatever the model wrote. The createdAt and updatedAt lines are removed from the schema the model is shown. New `findPrdSecretShapes(prd: PRD, scope?: ReadonlySet<string>): PrdSecretShape[]` in packages/nax/src/prd/secret-shapes.ts with `interface PrdSecretShape { readonly storyId: string; readonly field: string }`; field is `\"title\"`, `\"description\"` or `\"acceptanceCriteria[<index>]\"`. With a scope, only stories whose id is in it are scanned. `finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>` keeps its signature; before the final write it calls findPrdSecretShapes(prd, args.scope) and logs one `getLogger().warn(\"plan\", ...)` per hit; the written PRD is unchanged. `redactSecrets<T>(input: T): T` remains read-only. Add packages/nax/test/unit/prd/secret-shapes.test.ts and extend existing schema, prompt and persistence tests; use the existing injectable persistence seam for the throwing-scan integration case.",
+      "acceptanceCriteria": [
+        "[unit] validatePlanOutput(raw, \"f\", \"feat/f\", new Date(\"2026-11-12T00:00:00.000Z\")) with raw.createdAt \"2026-12-04T00:00:00.000Z\" returns createdAt \"2026-11-12T00:00:00.000Z\".",
+        "[unit] The same validatePlanOutput call returns updatedAt \"2026-11-12T00:00:00.000Z\".",
+        "[unit] validatePlanOutput(raw, \"f\", \"feat/f\") with no now returns createdAt within one second of the current time, whatever raw.createdAt holds.",
+        "[unit] The planner prompt built by the plan builder shows a PRD schema with no createdAt key.",
+        "[unit] The planner prompt built by the plan builder shows a PRD schema with no updatedAt key.",
+        "[unit] findPrdSecretShapes for a PRD whose US-002 acceptance criterion at index 3 holds sk-aaaaaaaaaaaaaaaaaaaa returns [{ storyId: \"US-002\", field: \"acceptanceCriteria[3]\" }].",
+        "[unit] findPrdSecretShapes for a PRD whose US-001 description holds ghp_aaaaaaaaaaaaaaaaaaaa returns [{ storyId: \"US-001\", field: \"description\" }].",
+        "[unit] findPrdSecretShapes for a PRD whose US-001 title holds ghp_aaaaaaaaaaaaaaaaaaaa returns [{ storyId: \"US-001\", field: \"title\" }].",
+        "[unit] findPrdSecretShapes for a PRD with no secret-shaped string returns [].",
+        "[unit] findPrdSecretShapes for a PRD whose story text holds task-abcdefghijklmnopqrst returns [].",
+        "[unit] findPrdSecretShapes returns one entry per hit, in story order then field order (title, description, acceptance criteria by index).",
+        "[unit] findPrdSecretShapes(prd, new Set([\"US-002\"])) for a PRD with a hit in US-001 and one in US-002 returns only the US-002 entry.",
+        "[unit] findPrdSecretShapes imported from the src/prd barrel returns the same result as the module function.",
+        "[integration] finalizeAndWritePrd for a PRD with one hit logs one warn under stage plan whose data names storyId and field.",
+        "[integration] In the same finalizeAndWritePrd call, the file written to args.outputPath still holds the acceptance criterion's original text.",
+        "[integration] finalizeAndWritePrd for a PRD with no hit logs no warn under stage plan about secret-shaped strings.",
+        "[integration] When findPrdSecretShapes throws, finalizeAndWritePrd still writes the PRD.",
+        "[integration] When findPrdSecretShapes throws, finalizeAndWritePrd logs one warn under stage plan saying the secret-shape scan could not run.",
+        "[integration] When redactSecrets throws inside findPrdSecretShapes, finalizeAndWritePrd still writes the PRD.",
+        "[integration] When redactSecrets throws inside findPrdSecretShapes, finalizeAndWritePrd logs one warn saying the scan could not run."
+      ],
+      "tags": [
+        "bug",
+        "plan",
+        "prd",
+        "security",
+        "timestamps"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Standard timestamp normalization and a small scanner integrated with existing persistence, but credential/token detection and redaction boundaries require strict three-session TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/prd/schema.ts",
+        "packages/nax/src/prompts/builders/plan-builder.ts",
+        "packages/nax/src/plan/strategies/persist-prd.ts",
+        "packages/nax/src/config/secret-scan.ts",
+        "packages/nax/src/prd/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/prd/secret-shapes.ts",
+        "packages/nax/test/unit/prd/secret-shapes.test.ts"
+      ],
+      "suggestedCriteria": [
+        "findPrdSecretShapes(prd, new Set()) returns [] even when stories contain secret-shaped strings.",
+        "When one acceptance-criterion string contains two secret-shaped substrings, findPrdSecretShapes returns only one entry for that field."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Grounding and delivery contract\nThis is an enhancement/bug-fix feature in an existing Bun-workspace TypeScript monorepo, closing #2877, #2879 and #2882. The codebase-memory MCP is unavailable in this session; findings below were grounded using direct source reads and targeted text searches at the supplied repository root. Preserve exactly US-001 through US-008, their package workdirs and empty dependency arrays. There are no new configuration keys, package dependencies, releases or changes required in nax-agent-acp. The individual stories remain independently scoped even where their behaviors compose. Read docs/architecture/ARCHITECTURE.md:17 for the repository's conventions, dependency injection, testing and logging references. Package-specific AGENTS.md instructions govern implementation. Only the PRD is being authored by this planning task; no implementation or tests have been executed.\n\nUS-001: provider errors and transport retry\npackages/nax-ai/src/protocols/errors.ts:23 currently recognizes only /^([45]\\d\\d):? (\\{|status code)/. classifyHttpError at :11 distinguishes auth (401/403), quota (402), rate-limit (429), overloaded (503/529), other 4xx bad-request and other 5xx transport. classifyProviderError at :176 preserves message-aware context-overflow and quota refinements; reuse it, rather than adding a second classification table. thrownStatus at :247 already reads status/statusCode/response.status and validates a finite number; preserve precedence and this helper's behavior. classifyThrown at :292 currently returns transport immediately for a status-less throw; only fall back to the anchored SDK-message parser after thrownStatus yields undefined. Preserve ProtocolSetupError handling, message, cause and retry-after handling. packages/nax-ai/src/protocols/pi-client.ts:419 invokes statusFromSdkMessage for error events when observed status is absent; :463 invokes classifyThrown in the stream catch. Therefore one parser change covers two distinct stream seams, and tests must enter both through createPiProtocol.stream, not merely call the pure helper. An observed response status remains authoritative on the error-event path. packages/nax-ai/src/protocols/retry.ts:35 and :91 permit only transport retry before the first event; classification changes remove deterministic provider 4xx from that lane without changing retry policy. A 500 stays transport, 503 stays overloaded and a socket/DNS failure remains transport. Existing tests: packages/nax-ai/test/protocols/errors.test.ts:35 and :300 cover parsing and throws; packages/nax-ai/test/protocols/pi-client-error-status.test.ts:60 contains the table to extend, :91 pins observed-status precedence and :107 exercises retry through a fake pi dependency. Scripted stream tests demonstrate mapping and wiring, not a fresh live-provider contract. Node-compatible ESM source, explicit relative .ts imports and exactOptionalPropertyTypes apply; do not introduce pi-ai imports outside its existing allowlist.\n\nUS-002: redaction boundary\npackages/nax-agent/src/internal/redact.ts:43 exports SECRET_VALUE_PATTERNS; :44 has the unbounded openai /sk-/ entry. Add only the specified negative lookbehind; do not replace all token matching or key-aware masking. redactString at :137 resets each global regex lastIndex before replacement; redactSecrets at :153 recursively applies masking. This exported pattern table also feeds shell-span masking, so preserving its shape matters beyond logger output. Existing packages/nax-agent/test/unit/logger/redact.test.ts:43 tests token-shaped text and :78 protects plural metric keys; add boundary-positive and false-positive cases there without weakening existing vendor/token tests. This is a credential-redaction change and uses strict three-session TDD. Modern Node targets support the required lookbehind; no runtime polyfill or dependency is needed.\n\nUS-003: same-agent retry before adapter-error fallback\npackages/nax/src/agents/retry/failure-policy.ts:147 assigns fail-adapter-error the adapter-error lane, quality-gated swap, no cooldown, model cooldownScope and terminalBackoff false. Only swap changes. The invariant is already documented at :23: after-retry-lane is not a new state bit. packages/nax/src/agents/manager-run-fallback.ts:151 stops on an aborted signal, :166 calls trySameAgentRetry, and :210 calls decideSwap only after that lane is spent. packages/nax/src/agents/swap-decision.ts:58 gates on failure, never, fallback.enabled, hop cap, then quality-gated policy. Do not modify that gate ordering or relax quality/unknown failures. Native errors are mapped through @nathapp/nax-agent/internal; do not create a new nax-ai import site in nax. packages/nax/test/unit/agents/native/errors.test.ts:85-111 deliberately pins the old overflow/malformed-request decline behavior: rename and update those two tests as an explicit user-ruled design change. packages/nax/test/unit/agents/fail-stale-agent-manager.test.ts:431 already has aborted fail-adapter-error cases to preserve; extend its manager harness for claude-to-codex success with onQualityFailure false. No cooldown, retry-count, retriable-field or retry-log wording change is intended.\n\nUS-004: first implement dispatch without evidence\npackages/nax/src/workflow/story-steps.ts:332 implements only the first implement node. It calls runNoWorkLadder, absorbs the final result.outcome, and currently only closes when result.closed is true. packages/nax/src/workflow/no-work.ts:84 treats outcome.failure as NOT a no-work turn, explaining why dispatch errors currently proceed to evaluation. :70 reads an absent or throwing work check as work produced, logging a safe warning on a throw. Mirror that conservative behavior for the new failed-dispatch check. storyWorkEvidence at :42 examines committed changes since story base, uncommitted changes and report existence; leave its definition unchanged. StoryLoopSteps.workProduced is optional at packages/nax/src/workflow/story-loop.ts:60. packages/nax/src/workflow/story-graph.ts:21 already routes implement exit no-work straight to close, bypassing evaluate, gates, full suite, story review and fix rounds; no graph redesign is required. Use result.outcome, not the original first outcome, because a no-work restart may be the failed turn. Check the run's abort predicate before applying this new close; never replace stage abort handling. Preserve session findings for work present/unknown, successful turns and fix-round failures. packages/nax/test/unit/workflow/story-loop-no-work.test.ts:78 provides a work/throws/absent harness and :115 captures gate/review calls; extend it alongside direct implementStep assertions.\n\nUS-005: terminal gate-open reporting across the pipeline\npackages/nax/src/workflow/stage.ts:52 gets the story-loop outcome but :81 always assigns a successful agent result; the catch at :62 persists complete-gate-open without carrying that state to completion. Add optional PipelineContext.workflowEndState using StoryState from packages/nax/src/workflow/types.ts:170. Set it from the loop outcome, and to complete-gate-open on non-aborted error paths; retain success=true and PRD passed semantics. packages/nax/src/pipeline/stages/completion.ts:139 marks stories passed, :144 logs Story passed, :151 appends progress with StoryStatus passed, and :165 emits story:completed passed=true. Change only the specified completion log/progress text for gate-open; do not alter hook/reporter payloads. packages/nax/src/prd/index.ts:270 counts passes or status passed and :298 sets both fields, also promoting decomposed parents; reuse these operations unchanged. packages/nax/src/execution/pipeline-result-handler.ts:206 defines PipelineSuccessResult, :225 currently counts all successful pipeline stories and :280 returns the result. Return completed delta 0 and gate-open delta 1 for a gate-open single story; set the new delta on every success result, with ordinary stories returning zero. The workflow stage rejects batches (stage.ts:28), so do not invent per-story end-state arrays or new batching behavior.\nPropagate optional storiesGateOpenDelta/storiesGateOpen alongside the existing completed fields through execution/iteration-runner.ts:25, :76, :247 and :256; execution/dry-run.ts:27; execution/executor-types.ts:76; execution/unified-executor.ts:101 and :154; execution/unified-executor-dispatch-phases.ts:38, :112 and :183; execution/runner-execution.ts:70 and :288; execution/runner.ts:138 and :314; execution/runner-completion.ts:55 and :161; execution/lifecycle/run-completion.ts:64. These paths are all under packages/nax/src/. Preserve the count in every dispatch early-return state, not just the successful iteration path, and use ?? 0 wherever optional input is consumed to prevent NaN and preserve existing fixtures. unified-executor-dispatch-phases.ts:68 currently recognizes terminal sessions only from completed delta or terminal finalAction; include gate-open delta so session closure and transient-unavailable reset still happen. lifecycle/run-completion-phases.ts:392 emits Feature execution completed; add storiesGateOpen default zero and storiesPassed from finalCounts.passed, independently of this session's completed count. This is additive telemetry, not a persistent StoryStatus migration. Existing test locations include workflow/stage.test.ts, execution/pipeline-result-handler.test.ts, execution/iteration-runner.test.ts, execution/unified-executor-results.test.ts, execution/unified-executor-dispatch.test.ts, execution/unified-executor-session-close.test.ts and execution/lifecycle/run-completion-edges.test.ts:312. A seam test must traverse executor accumulation and completion logging, not fabricate the final logger payload.\n\nUS-006: live interrupted-run counts\npackages/nax/src/execution/status-writer.ts:80 stores _prd=null and :157 replaces it in setPrd. Expose currentPrd(): PRD | null without cloning or disk reload. packages/nax/src/execution/unified-executor-dispatch-phases.ts:191 reloads the PRD when dirty and :194 passes that replacement to the writer each iteration. Reading runner's setup PRD cannot recover that updated reference. packages/nax/src/execution/runner.ts:200 initializes its local completed count, :209 declares prd before setup, :216 declares setupResult, :247 already uses setupResult?.statusWriter for live cost, :252 exposes only the stale local completed count, and :262 destructures statusWriter after awaited setup. New getter closures must read setupResult?.statusWriter.currentPrd() ?? prd, not close over the later destructured const. If no PRD exists, completed falls back to the runner local counter while passed and failed are zero; the AC/failure table governs this over the integration paragraph's inconsistent fallback wording for passed.\nImportant additional forwarding files discovered beyond the spec's short target list: packages/nax/src/execution/runner-setup.ts:15 defines RunnerSetupOptions and :92 forwards getters into setupRun; execution/lifecycle/run-setup.ts:148 defines the next options layer and :354 forwards into installCrashHandlers; execution/crash-recovery.ts:34 defines CrashRecoveryContext. Add optional getStoriesPassed/getStoriesFailed to these compatible contracts and forward them through both setup layers, otherwise correct runner getters never reach writeRunComplete. execution/crash-signals.ts:28 extends RunCompleteContext and receives the installed context. execution/crash-writer.ts:44 defines RunCompleteContext, :66 reads completed and :81 writes Feature execution terminated. Add zero-default passed and failed readings there. Existing execution/crash-recovery.test.ts, execution/crash-signals.test.ts, execution/status-writer-live-cost.test.ts and execution/lifecycle/run-setup-crash-locks.test.ts are relevant harnesses; integration assertions must capture the actual setup/crash context, including setup-time signal timing. Do not introduce signal-handler globals, extra disk reads or new locking.\n\nUS-007: failed publish must reach run failure\npackages/nax/src/workflow/finalize.ts:41 defines PublishOutcome; :95 pushBranch logs a rejected push as warn at :104 and returns a reason; pushMode at :437 and prMode at :460 currently return local-only with skipped CI on push failure but no discriminating flag. Add optional literal-true pushFailed only to those failure returns, and raise the existing log to error with the original error data. publish:none, absent forge, successful push and ordinary local-only reasons are not push failures. packages/nax/src/workflow/feature-steps.ts:422 consumes publish and :447 patches the feature record; :469 derives passed from featurePassed alone. Keep featurePassed a stories-and-gates verdict; AND it with no push failure at this boundary. Add optional boolean pushFailed to WorkflowFeatureRecord (workflow/types.ts:220). Always patch pushFailed to out.pushFailed === true, even on success, because merged records must clear prior failure. packages/nax/src/workflow/publish-only.ts:29 resumes an earlier record at publish, which is why omission would leave a stale flag. buildVerdict at workflow/open-items.ts:158 also needs an explicit pushFailed guard even when a stale passed=true record has no blocking items. packages/nax/src/execution/workflow-end-report.ts:223 reads outcome.passed directly and passes it into CloseInput at :226; lifecycle/run-completion-phases.ts:395 derives success from that verdict, so fixing only buildVerdict would not fix run.complete. Existing workflow/finalize.test.ts, workflow/finalize-approval-failures.test.ts, workflow/open-items.test.ts, workflow/feature-steps-ci-repair-decision.test.ts and execution/runner-completion-workflow-duration.test.ts cover related paths. Keep feature.ts's finished-at-HEAD acceptance logic and publish-only eligibility unchanged. No special-case parsing of GH013 is required: any rejected non-aborted push sets the flag.\n\nUS-008: deterministic plan timestamps and advisory string scanning\npackages/nax/src/prd/schema.ts:117 defines validatePlanOutput and :156 computes a timestamp but :163 trusts model createdAt. Accept an optional Date now and stamp both timestamps from the same ISO value; existing three-argument callers remain compatible. packages/nax/src/prompts/builders/plan-builder.ts:418-419 exposes both timestamp keys in the model's output schema; remove those lines only. packages/nax/src/config/secret-scan.ts:2 imports redactSecrets from @nathapp/nax-agent/internal and :104 detects token shapes by comparing the redacted string to its input. Reuse that seam, not a separate token regex catalog. New packages/nax/src/prd/secret-shapes.ts exports PrdSecretShape and findPrdSecretShapes(prd, scope?) with story-id/field-only results. Visit stories in PRD order, then title, description, acceptance criteria in index order; a hit is a string changed by redactSecrets. Scope filters by story id and an empty scope scans nothing. Return one entry per changed field, not per token. Export the function (and its type) from packages/nax/src/prd/index.ts:10 onward. Do not inspect unrelated fields or mutate the PRD. The task- false-positive regression composes with US-002's shared redactor fix, but binding dependencies remain empty; do not implement a workaround regex or add a dependency.\npackages/nax/src/plan/strategies/persist-prd.ts:233 is the shared persistence invariant for strategy and recovery paths: fidelity, structure checks, canonicalization, routing, then :356 writes finalized JSON through args.writeFile. Run the new scanner on the final PRD with args.scope immediately before that write. Warn once per result under plan using storyId/field metadata only, without logging candidate secret text. Scan exceptions must produce one advisory warning and still reach the write. _persistPrdDeps at :48 already supplies test seams, and PersistPrdArgs at :58 already carries scope/writeFile; extend an appropriate seam for deterministic scan-exception tests rather than patching globals. Existing prd/schema.test.ts:65 covers schema normalization, prompts/builders/plan-builder.test.ts can cover generated schema, and plan/strategies/persist-prd-profile-log.test.ts:47 captures persisted JSON and log ordering. Create the specified test/unit/prd/secret-shapes.test.ts; extend existing schema/prompt/persistence tests for the other seams.\n\nRisks, compatibility and implementation validation\nThe largest risk is losing the optional gate-open count across one of many result/state copies; another is accidentally leaving gate-open sessions open by keying terminality solely on completed delta. Distinguish session-local completed/gate-open counts from PRD-wide passed/failed counts, especially on resume; interrupted completed intentionally uses PRD passed by spec. The new getter method must be available on relevant StatusWriter test doubles when those paths are exercised, while optional counter/getter fields keep old result/option literals compatible. Additive record fields need no data migration: old records omit pushFailed and retain existing behavior, while every new publish explicitly clears or sets it. Older PRDs keep loading unchanged; timestamps are stamped only for newly normalized plan output, not by rewriting execution artifacts. No backfill of historical run logs or credential-failure caching is requested. Preserve exact anchored provider grammar and property precedence so quoted or unrelated text cannot acquire a status. Avoid disclosing token text in scan warnings; intentional fake examples remain unchanged on disk. Use shared fixture/mocking helpers and existing _deps seams, with package-local commands (vitest through bun run test in nax-ai, targeted path-based bun:test in nax/nax-agent). Every regression test must be demonstrated failing against the old implementation before the fix counts; no live paid-provider calls are needed for this feature. Security-sensitive credential/auth/redaction and session-lifecycle stories use three-session-tdd; pure summary/publish propagation uses the complexity-appropriate isolated strategy. The eight stories may overlap files such as runner.ts; coordinate those edits without merging stories or adding dependencies.\n\nAdversarial refinement audit\nRe-read the stored spec and the current parser/classifier, redactor, policy, swap decision, implement step, workflow stage, executor live-PRD handoff, setup forwarding, publish-only, publish patch, featurePassed and planner persistence code. All 98 explicitly numbered spec ACs remain in their original stories. The following complete inventory maps each original spec AC number to the revised story acceptanceCriteria positions (1-based); split compound ACs retain every original assertion and qualifying clause.\nUS-001: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7,8; 8->9; 9->10; 10->11; 11->12,13; 12->14; 13->15; 14->16,17; 15->18; 16->19.\nUS-002: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7; 8->8; 9->9; 10->10; 11->11; 12->12.\nUS-003: 1->1; 2->2,3,4; 3->5,6; 4->7; 5->8; 6->9; 7->10; 8->11; 9->12,13; 10->14.\nUS-004: 1->1; 2->2; 3->3; 4->4,5; 5->6; 6->7; 7->8; 8->9; 9->10; 10->11,12; 11->13; 12->14,15.\nUS-005: 1->1; 2->2; 3->3; 4->4; 5->5; 6->6; 7->7,8; 8->9,10; 9->11,12; 10->13; 11->14; 12->15,16; 13->17,18; 14->19.\nUS-006: 1->1; 2->2; 3->3,4,5; 4->6,7; 5->8,9,10; 6->11,12,13; 7->14,15,16.\nUS-007: 1->1,2; 2->3,4; 3->5,6; 4->7; 5->8; 6->9,10; 7->11,12; 8->13,14; 9->15; 10->16; 11->17,18.\nUS-008: 1->1; 2->2; 3->3; 4->4,5; 5->6; 6->7; 7->8; 8->9; 9->10; 10->11; 11->12; 12->13; 13->14; 14->15; 15->16; 16->17,18.\nRegression qualifiers retained include US-001's existing prefix shapes and transport-without-status behavior, US-002's unchanged identifiers and underscore boundary, US-003's still-unchanged retry/cooldown/quality/abort behavior, US-005's still-passed PRD status, normal completion wording, completed-session cleanup equivalence and absent-delta non-NaN behavior, and US-008's original written text. No deprecated file-check tags needed rewriting.\nFailure-table inventory, in source row order: 1 property/message conflict -> US-001 AC15; 2 evidence throws -> US-004 AC7,16,17 (explicit worked result, retained session finding and gates execution); 3 evidence absent -> US-004 AC6; 4 run aborted -> US-004 AC8; 5 workflow throws -> US-005 AC3; 6 no loaded PRD -> US-006 AC17-19; 7 publish:none/no forge -> US-007 AC11-12,19-21; 8 successful re-publish -> US-007 AC13-14; 9 setup-time signal -> US-006 AC14-16; 10 redactor throws -> US-008 AC19-20. Every story has a negative path and an observable regression anchor; additional hardening not stated in the spec remains in suggestedCriteria.\nCorrections made: US-003 decline assertions now name the actual SwapDecision object rather than suggesting the function returns a bare reason string (swap-decision.ts:65-75). US-004 finding assertions use the exact issue emitted at story-steps.ts:172; the abort assertion tests the reason prefix rather than a literal ellipsis. US-006 setup-PRD fallback is now asserted through three concrete getter values instead of an unspecified counts phrase. The specified five context files were restored for US-006 and US-007; setup-forwarding files and WorkflowFeatureRecord remain implementation inputs named in analysis/description, not exclusions. All other context sets already include their spec recommendations, no created file is a context input, and only the two declared US-008 outputs are new files. US-001/US-003 complexity is simple because each changes one production file; security/session overrides retain strict three-session TDD. US-007 is medium/tdd-simple: four standard existing production modules change and end-report forwarding already exists, so heavier routing was not justified. US-005's long accumulation chain and terminal session cleanup remain complex/strict; US-006's multi-layer getter forwarding and asynchronous signal timing remain complex/lite.\nAll eight binding ids/workdirs and empty dependencies are unchanged. No description contradicts its ACs: gate-open stays PRD passed; normal and interrupted counter meanings remain distinct; publish outcome omits the flag on non-failure while the merged record always writes a boolean; scan failures warn without mutating or blocking persistence. All ten top-level exclusions remain verbatim, in spec order: credential caching, observations.jsonl, fix-round failures, PRD passed status, warning-only plan scanning, retry log/retriable wording, quality/unknown eligibility, unanchored status recovery, interrupt log level and story:completed payloads. Relevant exclusions are also echoed verbatim under the neighboring story scope. This audit changed only the PRD; it did not run implementation tests.",
+  "outOfScope": [
+    "Caching a provider's credential failure across runs: `fail-auth` already parks the provider for the whole run (`cooldown: \"run\"`); the #2877 report of a second 401 was a second run, ruled not a defect 2026-11-12.",
+    "`runs/run-*/observations.jsonl` accuracy (#2879 item 4): nothing on main writes the file since the curator was removed in #2861.",
+    "A fix-round implementer dispatch that fails: it keeps today's session-finding path; only the story's first implement turn closes gate-open.",
+    "Changing a `complete-gate-open` story's `prd.json` status away from `passed`: ruled out 2026-11-12 (reporting only), so a resume never re-runs it.",
+    "Refusing `nax plan` on a secret-shaped PRD string, or redacting it: ruled out 2026-11-12; the plan only warns.",
+    "Rewording the `fail-adapter-error: same-agent retry with fresh session` log line or its `retriable` field.",
+    "Marking `fail-quality` or `fail-unknown` swap-eligible without `onQualityFailure`.",
+    "Recovering a status quoted in the middle of an error message: only the anchored prefix shapes are read.",
+    "Logging an interrupt during session open at a level other than error (\"Story failed\").",
+    "The `story:completed` event's `passed: true` for a gate-open story (hook and reporter payloads): only the log line and the run counters change."
+  ],
+  "routingProfile": "native-codex"
+}
