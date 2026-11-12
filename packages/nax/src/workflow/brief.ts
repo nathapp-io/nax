@@ -1,5 +1,5 @@
 /** Story brief (spec §6 step 1): requirements, spec excerpts, rulings, red-base warnings. */
-import { mkdir } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision } from "@/advisor";
@@ -11,6 +11,40 @@ import { rulingsForStory } from "./rulings";
 import { _workflowDeps, type StepContext } from "./step-context";
 
 const MAX_EXCERPT_CHARS = 12_000;
+
+/**
+ * The brief's own write (US-001 fix F2). `Bun.write` opens the target path and truncates it, so a
+ * write that fails part-way leaves a damaged brief — and `refreshBrief`'s fallback is only honest
+ * if the *previous* brief survives a failed refresh. The write goes to a sibling temporary file
+ * that is renamed into place once it is whole; the seam here is what lets a test drive the
+ * half-written-then-failed case without corrupting a real file.
+ */
+export const _briefDeps = {
+  write: async (path: string, text: string): Promise<void> => {
+    await Bun.write(path, text);
+  },
+  rename: async (from: string, to: string): Promise<void> => {
+    await rename(from, to);
+  },
+  remove: async (path: string): Promise<void> => {
+    await rm(path, { force: true });
+  },
+};
+
+/**
+ * Write `text` to `path` atomically: a sibling temporary file, renamed over `path` once it is
+ * whole. A failed write leaves `path` exactly as it was and removes its own leftovers.
+ */
+async function writeFileAtomic(path: string, text: string): Promise<void> {
+  const temp = `${path}.${crypto.randomUUID()}.tmp`;
+  try {
+    await _briefDeps.write(temp, text);
+    await _briefDeps.rename(temp, path);
+  } catch (err) {
+    await _briefDeps.remove(temp);
+    throw err;
+  }
+}
 
 /** Markdown sections (any heading level) whose text names the story id. */
 export function specExcerpts(specText: string, storyId: string): string[] {
@@ -145,7 +179,7 @@ export async function writeBrief(sc: StepContext): Promise<void> {
     reportPath: sc.reportPath,
   });
   await mkdir(sc.storyDir, { recursive: true });
-  await Bun.write(sc.briefPath, text);
+  await writeFileAtomic(sc.briefPath, text);
 }
 
 /**

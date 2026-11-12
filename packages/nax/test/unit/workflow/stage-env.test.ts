@@ -551,10 +551,15 @@ describe("buildStoryEnv — the brief is refreshed before each review (US-001)",
     // The answer the would-be refresh carries in, and the previous brief it can no longer replace.
     stubRefreshDeps([answerFor(ctx.story.id)]);
     await Bun.write(join(sc.storyDir, "brief.md"), "# Brief: the previous one\n");
+    let refreshAttempts = 0;
     _workflowDeps.loadProjectContextOverride = async () => {
+      refreshAttempts += 1;
       throw new Error("context file gone");
     };
     const { briefs } = await briefAtEachOp(sc, () => env.steps.storyReview([], {}));
+    // The refresh really ran and failed before the review: what follows is the fallback, not a
+    // review that simply never tried to rewrite the brief.
+    expect(refreshAttempts).toBe(1);
     expect(briefs["workflow-story-review"]).toBe("# Brief: the previous one\n");
     expect(briefs["workflow-story-review"]).not.toContain("Advisor answer D-2");
   });
