@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { join } from "node:path";
 import { makeBotFixDeps, makeBotFixEnv, makeNaxConfig, makeTestRuntime } from "@test/helpers";
-import type { resolveBotChecks } from "@/bot/checks";
+import { REVIEW_BUILD_TIMEOUT_SECONDS, type resolveBotChecks } from "@/bot/checks";
 import { _fixInputDeps, loadLatestReview } from "@/bot/fix-input";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { _fixStepsDeps, checkStep, fixStep, gatesStep } from "@/bot/fix-steps";
@@ -17,6 +17,7 @@ import { botRunDir } from "@/workflow/paths";
 import { _workflowDeps } from "@/workflow/step-context";
 
 const originalCallOp = _workflowDeps.callOp;
+const BUILD = "bun run build";
 const resolve = mock<typeof resolveBotChecks>(async () => env.checks);
 const original = { ..._botFixDeps };
 const input = { dir: "/repo/sub", pr: 42, profiles: ["a"], interactive: false, trust: true };
@@ -360,6 +361,29 @@ describe("runBotFix", () => {
     expect(preRun).toHaveBeenCalledWith({ steps: env.checks.preRun, workdir: "/worktree" });
     expect(events.indexOf("pre-run")).toBeLessThan(events.indexOf("fix"));
     expect(fix).toHaveBeenCalledTimes(1);
+  });
+  test("AC-4: a fresh checkout builds after the install, in the checkout worktree", async () => {
+    env = {
+      ...env,
+      checks: { ...env.checks, gates: [...env.checks.gates, { name: "build", command: BUILD }] },
+    };
+    await runBotFix(input);
+    expect(preRun).toHaveBeenCalledTimes(2);
+    expect(preRun.mock.calls[0]?.[0]).toEqual({ steps: env.checks.preRun, workdir: "/worktree" });
+    expect(preRun.mock.calls[1]?.[0]).toEqual({
+      steps: [{ command: BUILD, timeoutSeconds: REVIEW_BUILD_TIMEOUT_SECONDS }],
+      workdir: "/worktree",
+    });
+    expect(events.indexOf("pre-run")).toBeLessThan(events.indexOf("fix"));
+  });
+  test("AC-6: a ready-only run installs and builds nothing", async () => {
+    env = {
+      ...env,
+      checks: { ...env.checks, gates: [...env.checks.gates, { name: "build", command: BUILD }] },
+    };
+    expect(await runBotFix({ ...input, readyOnly: true })).toMatchObject({ readyOnly: true });
+    expect(preRun).not.toHaveBeenCalled();
+    expect(fix).not.toHaveBeenCalled();
   });
   test("AC-15/16 pre-run failure resolves as setup-failed without fix", async () => {
     const failure = new NaxError("[execution] setup failed", "PRE_RUN_FAILED", {

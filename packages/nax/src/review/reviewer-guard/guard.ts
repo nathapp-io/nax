@@ -87,23 +87,26 @@ export class ReviewerTreeGuard {
       const snap = await entry.snapshot;
       if (snap === undefined) return;
       const report = await _reviewerGuardDeps.restore(snap);
-      const touched =
-        report.paths.length > 0 ||
-        report.indexRestored ||
-        report.headRestored ||
-        report.refsLeft.length > 0 ||
-        report.stashLeft.length > 0 ||
-        report.failures.length > 0;
-      if (touched) {
+      // nax#1439: refs and stash entries are only reported (R15), never moved back, so their movement
+      // is not a reverted tree.
+      const reverted =
+        report.paths.length > 0 || report.indexRestored || report.headRestored || report.failures.length > 0;
+      if (reverted) {
         getSafeLogger()?.warn("review", "reviewer-tree-reverted", {
           storyId: desc.storyId,
           role: desc.role,
           paths: report.paths,
           indexRestored: report.indexRestored,
           headRestored: report.headRestored,
+          failures: report.failures,
+        });
+      }
+      if (report.refsLeft.length > 0 || report.stashLeft.length > 0) {
+        getSafeLogger()?.warn("review", "reviewer-refs-left", {
+          storyId: desc.storyId,
+          role: desc.role,
           refsLeft: report.refsLeft,
           stashLeft: report.stashLeft,
-          failures: report.failures,
         });
       }
       if (report.failures.length > 0) {

@@ -30,6 +30,44 @@ const SIGKILL_GRACE_PERIOD_MS = 5_000;
 export const STREAM_DRAIN_TIMEOUT_MS = 2_000;
 
 /**
+ * Colour-control defaults added to every spawned quality command and gate.
+ *
+ * ANSI colour codes made 223 of 501 `RunCommand` failures unreadable in one
+ * project: the escapes cost the agent context and break output parsing for no
+ * benefit — nothing downstream renders colour. `NO_COLOR` is the portable opt
+ * out; `FORCE_COLOR=0` covers the tools that honour only the Node convention.
+ * Neither overrides a value the caller or its environment already set — see
+ * {@link withNoColorEnv}.
+ */
+const NO_COLOR_ENV: Readonly<Record<string, string>> = { NO_COLOR: "1", FORCE_COLOR: "0" };
+
+/**
+ * Add the no-color defaults to an env, without overriding anything the caller
+ * (or its environment) already decided.
+ *
+ * Two "already decided" cases, both left as they are:
+ * - a variable the base env already sets — an explicit empty value counts as
+ *   set, so `NO_COLOR: ""` survives verbatim;
+ * - a variable named in `strippedVars` — stripping it was deliberate, so the
+ *   default must not resurrect it.
+ *
+ * The caller's `env` option is applied by {@link runSingleCommand} AFTER this,
+ * so a per-call override still wins last.
+ */
+export function withNoColorEnv(
+  env: Record<string, string | undefined>,
+  strippedVars: readonly string[] = [],
+): Record<string, string | undefined> {
+  const result = { ...env };
+  for (const [key, value] of Object.entries(NO_COLOR_ENV)) {
+    if (strippedVars.includes(key)) continue;
+    if (result[key] !== undefined) continue;
+    result[key] = value;
+  }
+  return result;
+}
+
+/**
  * How much of a timed-out agent-tool command's output is kept: the tail, so the
  * agent can see which step was still running (#2536). Harness runs keep only
  * the notice, because their findings parsers would read a partial run as a
@@ -214,6 +252,11 @@ async function runSingleCommand(
     // roll call). Shared with verification/executor.ts so the two spawn sites
     // cannot drift; a caller that strips AGENT keeps it stripped.
     const agentEnv = withAgentOutputEnv(baseEnv, stripEnvVars ?? []);
+    // …and out of ANSI colour: this spawn site backs every declared command the
+    // agent calls through `RunCommand` plus every quality gate. Added AFTER the
+    // agent-output env so the two helpers stay independent, and BEFORE the
+    // caller's `env` overlay below so an explicit override still wins last.
+    const noColorEnv = withNoColorEnv(agentEnv, stripEnvVars ?? []);
 
     // Execute via shell to preserve quoting semantics of configured commands.
     // Splitting on whitespace loses quoted args and escaped spaces.
@@ -223,7 +266,7 @@ async function runSingleCommand(
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...agentEnv, ...(env ?? {}) },
+      env: { ...noColorEnv, ...(env ?? {}) },
       // Bun.spawn does not setpgid children into their own group by default, so
       // killProcessGroup(-pid) on timeout would target a group the shell isn't
       // actually the leader of (ESRCH -> falls back to killing only the /bin/sh

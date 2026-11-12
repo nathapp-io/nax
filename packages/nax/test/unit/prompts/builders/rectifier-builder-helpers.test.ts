@@ -21,6 +21,7 @@ import {
   implementerOwnsTests,
   testEditHeadline,
 } from "@/prompts/builders/rectifier-builder-helpers";
+import { applyProtocolRegions } from "@/prompts/sections/protocol-region";
 import type { ReviewCheckResult } from "@/review/types";
 
 const TDD_STORY = makeStory({
@@ -635,5 +636,81 @@ describe("failingTestRectification — per-file scoped commands", () => {
       testScopedTemplate: "bun test {{files}} && echo {{files}}",
     });
     expect(prompt).toContain("bun test test/unit/a$$b.test.ts && echo test/unit/a$$b.test.ts");
+  });
+});
+
+// ─── US-006 — a template with no {{files}} cannot be scoped per file ─────────
+
+describe("failingTestRectification — unscopable template (US-006)", () => {
+  const failingFinding = (file: string): Finding => ({
+    source: "test-runner",
+    severity: "error",
+    category: "failed-test",
+    rule: "should pass",
+    file,
+    message: "AssertionError: expected true to be false",
+  });
+
+  /** Every `<!--nax:<kind>:<nonce> {...}-->` spec in `prompt`, parsed. */
+  function regionSpecs(kind: string, prompt: string): Record<string, unknown>[] {
+    const marker = new RegExp(`<!--nax:${kind}:[a-f0-9]+ (\\{.*?\\})-->`, "g");
+    // JSON.parse answers `any`; the declared return type is what narrows it, so
+    // no cast is needed (or counted) here.
+    return Array.from(prompt.matchAll(marker)).map((m) => JSON.parse(m[1] ?? "{}"));
+  }
+
+  test("AC-1: a {{files}} template yields a run-test region whose spec names the failing file", () => {
+    const prompt = RectifierPromptBuilder.failingTestRectification([failingFinding("test/unit/a.test.ts")], TDD_STORY, {
+      testCommand: "bun test",
+      testScopedTemplate: "bun test {{files}}",
+      fileScopeCommandName: "testScoped",
+    });
+
+    expect(regionSpecs("run-test", prompt)).toEqual([{ command: "testScoped", files: "test/unit/a.test.ts" }]);
+  });
+
+  test("AC-2: a template with no {{files}} emits no run-test region", () => {
+    const prompt = RectifierPromptBuilder.failingTestRectification(
+      [failingFinding("test/unit/a.test.ts"), failingFinding("test/unit/b.test.ts")],
+      TDD_STORY,
+      {
+        testCommand: "bun test",
+        testScopedTemplate: "npx turbo test --filter=[HEAD^1]",
+        fileScopeCommandName: "testScoped",
+      },
+    );
+
+    expect(regionSpecs("run-test", prompt)).toEqual([]);
+    expect(prompt).not.toContain("<!--nax:run-test:");
+  });
+
+  test("AC-3: a template with no {{files}} renders one run-check region instead of one line per file", () => {
+    const template = "npx turbo test --filter=[HEAD^1]";
+    const prompt = RectifierPromptBuilder.failingTestRectification(
+      [failingFinding("test/unit/a.test.ts"), failingFinding("test/unit/b.test.ts")],
+      TDD_STORY,
+      {
+        testCommand: "bun test",
+        testScopedTemplate: template,
+        fileScopeCommandName: "testScoped",
+      },
+    );
+
+    expect(regionSpecs("run-check", prompt)).toEqual([{ command: "testScoped" }]);
+
+    // Exactly one line, holding the template — not one per failing file. Read
+    // through the ACP dispatch so the assertion is about what the agent reads
+    // once the region markers are resolved.
+    const acp = applyProtocolRegions(prompt, { protocol: "acp" });
+    const blockStart = acp.indexOf("## Per-failing-file run") + "## Per-failing-file run".length;
+    const blockEnd = acp.indexOf("Do NOT change test files", blockStart);
+    const lines = acp
+      .slice(blockStart, blockEnd)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+
+    expect(lines).toEqual([template]);
+    expect(prompt.split(template)).toHaveLength(2);
   });
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
@@ -47,6 +47,14 @@ async function repo(): Promise<string> {
   await git(d, "add", "-A");
   await git(d, "commit", "-q", "-m", "seed");
   return git(d, "rev-parse", "--show-toplevel");
+}
+
+/** Same seed, but the root .gitignore also ignores `.venv/` — where a tool writes its own .gitignore. */
+async function toolRepo(): Promise<string> {
+  const d = await repo();
+  await writeFile(join(d, ".gitignore"), "ignored/\n.venv/\n");
+  await git(d, "commit", "-qam", "ignore .venv");
+  return d;
 }
 
 describe("reviewer tree snapshot (nax#2500)", () => {
@@ -384,6 +392,207 @@ describe("reviewer ignore-rule edits cannot hide files from the restore (#2552)"
     const report = await restoreRepoSnapshot(snap);
     expect(report.paths).toEqual([]);
     expect(existsSync(join(d, "ignored", "cache"))).toBe(true);
+  });
+});
+
+// A tool the reviewer runs (uv, mypy, bun install) drops a .gitignore inside a directory the repo
+// already ignores (nax#1439). That file can only affect paths that are already ignored, so removing
+// and reporting it made five runs look as if the reviewer had reverted the tree.
+describe("tool-written .gitignore files inside ignored directories (nax#1439)", () => {
+  test("AC-1/AC-2: stays on disk after restore and is not reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv", "lib"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", "lib", "python.py"), "x\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(report.paths).toEqual([]);
+    expect(report.failures).toEqual([]);
+  });
+
+  // B6: the parking name was predictable, so a file already sitting there was overwritten by the rename
+  // and then deleted with the parked .gitignore — silently, with no path or failure reported.
+  test("B6: a file already at the parking name is preserved, never overwritten", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "kept by a tool\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(await readFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "utf8")).toBe("kept by a tool\n");
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(report.paths).toEqual([]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("B6: the parking name stays collision-safe when the .gitignore is removed", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "kept by a tool\n");
+    _snapshotDeps.git = async (args, cwd) =>
+      args[0] === "check-ignore"
+        ? { stdout: "", stderr: "fatal: index unreadable", exitCode: 128 }
+        : deps.git(args, cwd);
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(false);
+      expect(await readFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "utf8")).toBe("kept by a tool\n");
+      expect(report.paths).toContain(".venv/.gitignore");
+      expect(report.failures).toEqual([]);
+    } finally {
+      _snapshotDeps.git = deps.git;
+    }
+  });
+
+  // B6: a file that appears at the old predictable parking name AFTER any lookup (here: just before the
+  // park rename) used to be overwritten by the rename and deleted with the parked rule.
+  test("B6: a destination created after the lookup survives the park and the removal", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    const realRename = _snapshotDeps.rename;
+    _snapshotDeps.rename = async (from, to) => {
+      await writeFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "created mid-restore\n");
+      await realRename(from, to);
+    };
+    _snapshotDeps.git = async (args, cwd) =>
+      args[0] === "check-ignore"
+        ? { stdout: "", stderr: "fatal: index unreadable", exitCode: 128 }
+        : deps.git(args, cwd);
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(await readFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "utf8")).toBe("created mid-restore\n");
+      expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(false);
+      expect(report.paths).toContain(".venv/.gitignore");
+      expect(report.failures).toEqual([]);
+    } finally {
+      _snapshotDeps.rename = realRename;
+      _snapshotDeps.git = deps.git;
+    }
+  });
+
+  test("B6: no private parking directory is left behind after a restore", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await mkdir(join(d, "sub"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    await restoreRepoSnapshot(snap);
+    const leftovers = [...(await readdir(join(d, ".venv"))), ...(await readdir(join(d, "sub")))];
+    expect(leftovers.filter((name) => name.startsWith(".nax-restore-hold"))).toEqual([]);
+  });
+
+  test("AC-3: an added .gitignore in a directory the snapshot rules ignore is removed and reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+    expect(report.paths).toEqual(["sub/.gitignore"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("AC-4: an appended rule is reverted while the ignored-directory .gitignore stays", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await writeFile(join(d, ".gitignore"), "ignored/\n.venv/\nplanted*\n");
+    await writeFile(join(d, "planted1.sh"), "echo planted\n");
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*.log\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(await readFile(join(d, ".gitignore"), "utf8")).toBe("ignored/\n.venv/\n");
+    expect(existsSync(join(d, "planted1.sh"))).toBe(false);
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(report.paths).toEqual([".gitignore", "planted1.sh"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("AC-5: a check-ignore that fails to answer keeps nothing — removed and reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    const wrapped: string[] = [];
+    _snapshotDeps.git = async (args, cwd) => {
+      if (args[0] !== "check-ignore") return deps.git(args, cwd);
+      wrapped.push(args.join(" "));
+      return { stdout: "", stderr: "fatal: index unreadable", exitCode: 128 };
+    };
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(wrapped).toContain("check-ignore -q -- .venv");
+      expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(false);
+      expect(report.paths).toContain(".venv/.gitignore");
+    } finally {
+      _snapshotDeps.git = deps.git;
+    }
+  });
+
+  test("AC-6: an edited known root .gitignore is still listed in paths", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await writeFile(join(d, ".gitignore"), "ignored/\n.venv/\nextra\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.paths).toEqual([".gitignore"]);
+    expect(await readFile(join(d, ".gitignore"), "utf8")).toBe("ignored/\n.venv/\n");
+  });
+
+  // B3: git lists the child ignore file first. Classified against the still-live parent, `sub/.cache`
+  // looked ignored, so the child survived, its `*` hid the reviewer's own file, and nothing was reported.
+  test("B3: an added parent .gitignore cannot authorize keeping an added child (child listed first)", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub", ".cache"), { recursive: true });
+    await writeFile(join(d, "sub", ".cache", ".gitignore"), "*\n");
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    await writeFile(join(d, "sub", ".cache", "planted.txt"), "planted\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, "sub", ".cache", "planted.txt"))).toBe(false);
+    expect(existsSync(join(d, "sub", ".cache", ".gitignore"))).toBe(false);
+    expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+    expect([...report.paths].sort()).toEqual(["sub/.cache/.gitignore", "sub/.cache/planted.txt", "sub/.gitignore"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  // The same shape one level down: a genuinely ignored directory keeps its tool-written file even when a
+  // sibling added .gitignore sits beside it, because the keyed directory is decided by the snapshot rules.
+  test("B3: a tool-written .gitignore under an ignored directory still survives beside added rules", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub"), { recursive: true });
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+    expect(report.paths).toEqual(["sub/.gitignore"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("B3: an added .gitignore that cannot be parked is removed and reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    const realRename = _snapshotDeps.rename;
+    _snapshotDeps.rename = async () => {
+      throw Object.assign(new Error("denied"), { code: "EACCES" });
+    };
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+      expect(report.paths).toContain("sub/.gitignore");
+      expect(report.failures.some((f) => f.includes("sub/.gitignore"))).toBe(true);
+    } finally {
+      _snapshotDeps.rename = realRename;
+    }
   });
 });
 

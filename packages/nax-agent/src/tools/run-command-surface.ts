@@ -81,14 +81,30 @@ export function runCommandDescription(commandDescriptions: string, exec: RunComm
   return execDescription(commandDescriptions, exec);
 }
 
+/**
+ * US-005: the `values` description for a project whose declared commands DO
+ * take `{{files}}`. The path examples are what teach the model the multi-file
+ * shapes (one call, not one per file), so they stay verbatim.
+ */
+const VALUES_WITH_FILES_DESCRIPTION =
+  'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }. A path placeholder takes several paths separated by spaces, e.g. { files: "a.test.ts b.test.ts" }, or as an array of paths, e.g. { files: ["test/a.test.ts", "test/b.test.ts"] } -- one call, not one per file.';
+
+/**
+ * US-005: and the one for a project where no declared command consumes
+ * `{{files}}` -- e.g. `testScoped: "npx turbo test --filter=[HEAD^1]"`. The
+ * file examples used to be advertised regardless, so the model sent a value no
+ * declared command accepted and `substituteCommandSpec` refused it. Saying
+ * "omit values" is the whole truth for such a project.
+ */
+const VALUES_WITHOUT_PLACEHOLDERS_DESCRIPTION = "None of the declared commands take placeholders: omit values.";
+
 /** The declared branch's two fields, always present. */
-function declaredInputProperties(keys: readonly string[]): Record<string, unknown> {
+function declaredInputProperties(keys: readonly string[], takesFiles: boolean): Record<string, unknown> {
   return {
     command: { type: "string", enum: keys, description: "Which declared command to run" },
     values: {
       type: "object",
-      description:
-        'Values for the command\'s placeholders, e.g. { files: "a.test.ts" }. A path placeholder takes several paths separated by spaces, e.g. { files: "a.test.ts b.test.ts" }, or as an array of paths, e.g. { files: ["test/a.test.ts", "test/b.test.ts"] } -- one call, not one per file.',
+      description: takesFiles ? VALUES_WITH_FILES_DESCRIPTION : VALUES_WITHOUT_PLACEHOLDERS_DESCRIPTION,
     },
   };
 }
@@ -132,11 +148,12 @@ function unsandboxedArgvProperties(exec: RunCommandExecOptions): Record<string, 
 export function runCommandInputSchema(
   keys: readonly string[],
   exec: RunCommandExecOptions | undefined,
+  takesFiles: boolean,
 ): CodingTool["inputSchema"] {
   return {
     type: "object",
     properties: {
-      ...declaredInputProperties(keys),
+      ...declaredInputProperties(keys, takesFiles),
       ...(exec === undefined ? {} : { ...argvInputProperties(), ...unsandboxedArgvProperties(exec) }),
     },
     ...(exec === undefined ? { required: ["command"] } : {}),

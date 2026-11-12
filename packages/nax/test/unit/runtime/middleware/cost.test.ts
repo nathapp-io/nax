@@ -5,6 +5,7 @@ import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachAuditSubscriber } from "@/runtime/middleware/audit";
 import { attachCostSubscriber, COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware/cost";
 import { createNoOpPromptAuditor, type PromptAuditEntry } from "@/runtime/prompt-auditor";
+import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
@@ -740,5 +741,22 @@ describe("attachCostSubscriber — turnId (tier 3)", () => {
     expect(audit).toHaveLength(1);
     expect(recorded[0].turnId).toBe("turn-9");
     expect(audit[0].turnId).toBe(recorded[0].turnId);
+  });
+});
+
+// ─── US-007: cost rows identify the nax build that wrote them ───────────────
+
+describe("attachCostSubscriber — build identity on the row (US-007 AC-1)", () => {
+  test("AC-1: a successful dispatch appends a row stamped with NAX_VERSION and NAX_COMMIT", () => {
+    const recorded: CostEvent[] = [];
+    const agg = { ...createNoOpCostAggregator(), record: (e: CostEvent) => recorded.push(e) };
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatch(makeSessionTurnEvent());
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].naxVersion).toBe(NAX_VERSION);
+    expect(recorded[0].naxCommit).toBe(NAX_COMMIT);
   });
 });

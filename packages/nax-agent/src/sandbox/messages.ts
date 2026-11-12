@@ -17,9 +17,16 @@ function describeNetwork(network: "open" | readonly string[]): string {
  * (`sharedTmp: false`) can only write under the run's own temp directory, so
  * promising "the system temp directories" would send the agent at a denied
  * write; a shared-temp session keeps the wording it had before.
+ *
+ * US-005: naming $TMPDIR alone is not enough — /tmp is the path an agent
+ * reaches for first, and under a confined sandbox it is denied. The confined
+ * phrase therefore names it as the root that does NOT work, extending the
+ * pre-change phrase rather than replacing it.
  */
 const tempRootsPhrase = (sharedTmp: boolean): string =>
-  sharedTmp ? "the system temp directories" : "this run's temp directory ($TMPDIR)";
+  sharedTmp
+    ? "the system temp directories"
+    : "this run's temp directory ($TMPDIR) rather than /tmp, which is not writable";
 
 /**
  * US-006: on macOS srt refuses every setuid program, `/bin/ps` among them, and

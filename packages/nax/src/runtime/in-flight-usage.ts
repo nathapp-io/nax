@@ -4,6 +4,8 @@
 // though its `agent.usage_update` beats report spend. This module accumulates
 // the per-stream-`callId` deltas and maps whatever is still unrecorded onto a
 // schema-v7 partial `CostEvent` (see `toPartialCostEvent`).
+
+import { NAX_COMMIT, NAX_VERSION } from "../version";
 import type {
   AgentCallEndedEvent,
   AgentCallStartedEvent,
@@ -69,6 +71,11 @@ function hasSpend(entry: StreamEntry): boolean {
  * `error`/`cancelled` end as "ended-unrecorded", then clear an entry when its
  * spend is shown to have landed on a dispatch row (a session-turn event for a
  * cancelled turn, or a dispatch-error event for an errored one).
+ *
+ * Since US-007 a dispatch-error event also hands its `storyId` and `stage` to
+ * every ended entry in its scope that has none of its own, whether or not the
+ * event recorded spend — an interrupted session's partial row would otherwise
+ * land under `storyId: null` and be unattributable.
  */
 export function attachInFlightUsageTracker(
   streamBus: IAgentStreamEventBus,
@@ -172,7 +179,37 @@ export function attachInFlightUsageTracker(
     return entry.scopeId === event.scopeId || entry.scopeId === event.callId;
   };
 
+  /** Every ended entry the event matches by scope — rule 5's "ended-unrecorded" set. */
+  const endedInScope = (event: DispatchErrorEvent): StreamEntry[] => {
+    const matched: StreamEntry[] = [];
+    for (const entry of entries.values()) {
+      if (entry.endedStatus === undefined || !matchesScope(entry, event)) continue;
+      matched.push(entry);
+    }
+    return matched;
+  };
+
+  /**
+   * US-007: an entry with no `storyId` of its own inherits the dispatch
+   * error's `storyId` and `stage`. `stage` follows `storyId` instead of being
+   * merged per-field: the pair is what a partial row is attributed by, and an
+   * entry that never learned its story has no independent stage claim to keep.
+   * An entry that already carries a story is never overwritten.
+   */
+  const inheritAttribution = (entry: StreamEntry, event: DispatchErrorEvent): void => {
+    if (entry.storyId !== undefined) return;
+    if (event.storyId !== undefined) entry.storyId = event.storyId;
+    if (event.stage !== undefined) entry.stage = event.stage;
+  };
+
   const onDispatchError = (event: DispatchErrorEvent): void => {
+    const matched = endedInScope(event);
+    // US-007: attribution is taken whether or not the event recorded spend.
+    // A spendless error is exactly the interrupted-session shape whose partial
+    // row otherwise lands under `storyId: null`; rule 6 below still decides
+    // whether the entry is cleared, so this cannot drop a residual early.
+    for (const entry of matched) inheritAttribution(entry, event);
+
     const hasUsage = event.tokenUsage !== undefined;
     const costUsd = event.exactCostUsd ?? event.estimatedCostUsd ?? 0;
     // Rule 6: only an error row that actually recorded spend may clear an
@@ -182,8 +219,7 @@ export function attachInFlightUsageTracker(
     if (!hasUsage && !(Number.isFinite(costUsd) && costUsd > 0)) return;
 
     let target: StreamEntry | undefined;
-    for (const entry of entries.values()) {
-      if (entry.endedStatus === undefined || !matchesScope(entry, event)) continue;
+    for (const entry of matched) {
       if (target === undefined || (entry.endedSeq ?? 0) > (target.endedSeq ?? 0)) target = entry;
     }
     if (target !== undefined) forget(target.streamCallId);
@@ -258,6 +294,10 @@ export function toPartialCostEvent(residual: InFlightResidual, runId: string, pr
     estimatedCostUsd: residual.costUsd,
     exactCostUsd: residual.costUsd,
     confidence: "estimated",
+    // US-007: a partial row names the build that wrote it, exactly as a
+    // finished row does.
+    naxVersion: NAX_VERSION,
+    naxCommit: NAX_COMMIT,
     durationMs: 0,
   };
 }

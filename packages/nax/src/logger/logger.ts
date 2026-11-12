@@ -59,10 +59,15 @@ function flushDeferredWarnings(): void {
   }
 }
 
-/** Log immediately when initialized; otherwise preserve distinct warnings in order. */
+/** Log immediately when initialized; otherwise preserve distinct warnings in order.
+ *
+ * The initialized branch routes through `warnOnce` (US-004): config loading runs more than
+ * once per run (root, then the package/bot layer), so the same removed-key or deprecation
+ * warning arrived twice for one standing condition. The pre-logger branch already
+ * de-duplicates and is unchanged. */
 export function warnOrDefer(stage: string, message: string): void {
   if (instance !== null) {
-    instance.warn(stage, message);
+    instance.warnOnce(stage, message);
     return;
   }
   if (deferredWarnings.some((item) => item.stage === stage && item.message === message)) return;
@@ -341,7 +346,14 @@ export class Logger {
     this.warnOnceSeen.set(key, seen);
 
     if (seen === 1) {
-      this.warn(stage, message, data);
+      // Forward the caller's own arity: `warnOrDefer` routes two-argument config
+      // warnings through here, and a spy asserting the exact warn tuple must still
+      // see `(stage, message)` rather than a trailing `undefined`.
+      if (data === undefined) {
+        this.warn(stage, message);
+      } else {
+        this.warn(stage, message, data);
+      }
       return;
     }
     this.debug(stage, message, { ...data, occurrence: seen });

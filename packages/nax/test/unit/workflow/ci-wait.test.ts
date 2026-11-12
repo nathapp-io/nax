@@ -238,6 +238,26 @@ describe("GitHub failing polls settle (US-003)", () => {
   });
 });
 
+/**
+ * US-003: a red CI is all the fix agent learns about the failure, so the failure detail has to name
+ * the checks that failed. GitLab polls carry no per-check detail and keep the fallback text.
+ */
+describe("terminal CI failure detail (US-003)", () => {
+  const check = (name: string, bucket: string) => ({ name, state: bucket.toUpperCase(), bucket });
+
+  test("AC-9: a settled GitHub failure names the failing check", async () => {
+    script([r(JSON.stringify([check("lint", "fail"), check("test", "pass"), check("build", "pass")]), 8)]);
+    const out = await waitForChecks("github", "b", OPTS);
+    expect(out.outcome).toBe("failed");
+    expect(out.detail).toContain("lint");
+  });
+
+  test("a GitLab pipeline failure keeps the fallback detail", async () => {
+    script([r(JSON.stringify({ iid: 3, head_pipeline: { status: "failed" } }))]);
+    expect(await waitForChecks("gitlab", "b", OPTS)).toEqual({ outcome: "failed", detail: "a check failed" });
+  });
+});
+
 describe("waitForChecks (gitlab)", () => {
   const mr = (status: string | null): ForgeRunResult =>
     r(JSON.stringify({ iid: 3, head_pipeline: status === null ? null : { status } }));

@@ -138,6 +138,44 @@ describe("F2 invariant — pre-hydrate warn for non-root resolve()", () => {
     _packagesDeps.getSafeLogger = origGetSafeLogger;
   });
 
+  // US-004 — the bot runs resolve a worktree ROOT (`.nax-wt/bot-pr-7`) before
+  // hydrate(), which has no per-package override to miss: it is the root view
+  // in a worktree, exactly like the repo root. Warning on it made every bot run
+  // emit a warning that named no real problem.
+  test("US-004 AC-1: does not warn for a worktree root resolved before hydrate()", () => {
+    const mockLogger = makeLogger();
+    _packagesDeps.getSafeLogger = mock(() => mockLogger);
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { lint: "root-lint" } } }));
+    const registry = createPackageRegistry(loader, "/repo");
+
+    const view = registry.resolve("/repo/.nax-wt/bot-pr-7");
+
+    // Root config, because a worktree root is the repo-level package.
+    expect(view.hasOverride).toBe(false);
+    expect(view.config).toBe(loader.current());
+    // ...but the view still addresses the worktree, not the main checkout.
+    expect(view.packageDir).toBe(".nax-wt/bot-pr-7");
+    expect(mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages")).toHaveLength(0);
+  });
+
+  // US-004 — the warning that remains: a real package that resolve() could not
+  // give its override because hydrate() never ran.
+  test("US-004 AC-2: still warns for a real package resolved before hydrate()", () => {
+    const mockLogger = makeLogger();
+    _packagesDeps.getSafeLogger = mock(() => mockLogger);
+    const loader = createConfigLoader(minConfig);
+    const registry = createPackageRegistry(loader, "/repo");
+
+    registry.resolve("/repo/packages/lib");
+
+    const warnCalls = mockLogger.calls.filter((c) => c.level === "warn" && c.stage === "packages");
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0].message).toBe(
+      "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
+    );
+    expect(warnCalls[0].data?.packageDir).toBe("packages/lib");
+  });
+
   test("warns when resolve(nonRootPkg) is called before hydrate()", () => {
     const mockLogger = makeLogger();
     _packagesDeps.getSafeLogger = mock(() => mockLogger);

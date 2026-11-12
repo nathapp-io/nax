@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDeps, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
 import { _fixReportDeps } from "@/bot/fix-report";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { _fixStepsDeps } from "@/bot/fix-steps";
 import { NaxError } from "@/errors";
+import { getLogger, initLogger, resetLogger } from "@/logger";
 
 const original = { ..._botFixDeps };
 const reportOriginal = { ..._fixReportDeps };
@@ -52,5 +53,59 @@ describe("runBotFix setup failure", () => {
     await expect(runBotFix(input)).rejects.toBe(failure);
     expect(branchFix).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * US-003: the fresh checkout's build runs after a successful install. A build that fails for its own
+ * reason (`PRE_RUN_FAILED`) must not read as a setup failure — the fix session still runs — while
+ * anything else still ends the run.
+ */
+describe("runBotFix build failure", () => {
+  const BUILD = "bun run build";
+  const checks = {
+    source: "config" as const,
+    gates: [{ name: "build", command: BUILD }],
+    preRun: [{ command: "bun install", timeoutSeconds: 60 }],
+  };
+
+  beforeEach(() => {
+    _botFixDeps.resolveBotChecks = async () => checks;
+    branchFix.mockImplementation(async () => ({ autoCommitted: false, dirty: false }));
+    // The tree here is a fixture, not a checkout: stop the graph after the session it just ran.
+    _botFixDeps.checkStep = async () => ({ patch: { outcome: "nothing" }, exit: "no-change" });
+  });
+
+  /** Fail the build invocation only; the install succeeded. */
+  function failBuild(failure: unknown): void {
+    _botFixDeps.runPreRunSteps = async ({ steps }) => {
+      if (steps.some(({ command }) => command === BUILD)) throw failure;
+    };
+  }
+
+  test("AC-7: a failed build warns and the fix session still runs", async () => {
+    initLogger({ level: "silent" });
+    const warn = spyOn(getLogger(), "warn");
+    failBuild(new NaxError("[bot] build failed", "PRE_RUN_FAILED", { stage: "execution", command: BUILD }));
+    try {
+      const result = await runBotFix(input);
+      expect(result).not.toMatchObject({ outcome: "setup-failed" });
+      expect(branchFix).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "bot-fix",
+        "Fix build step failed",
+        expect.objectContaining({ pr: 42, command: BUILD }),
+      );
+    } finally {
+      warn.mockRestore();
+      resetLogger();
+    }
+  });
+
+  test("AC-8: any other build failure rejects the run", async () => {
+    const failure = new Error("build blew up");
+    failBuild(failure);
+    await expect(runBotFix(input)).rejects.toBe(failure);
+    expect(branchFix).not.toHaveBeenCalled();
   });
 });

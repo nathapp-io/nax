@@ -65,11 +65,17 @@ async function readReview(path: string): Promise<BotReviewArtifact | null> {
   }
 }
 
-/** Select only exact-head reviews; persisted trust is diagnostic, never authorization. */
+/**
+ * Select only exact-head reviews; persisted trust is diagnostic, never authorization.
+ *
+ * `codeOnly` skips a conversation-only artifact (US-001): that review read no code because the head was
+ * already reviewed, so the head's open findings live in the earlier code review, not in it.
+ */
 export async function loadLatestReview(
   outputDir: string,
   prNumber: number,
   headSha: string,
+  options: { readonly codeOnly?: boolean } = {},
 ): Promise<BotReviewArtifact | null> {
   let paths: string[];
   try {
@@ -83,6 +89,7 @@ export async function loadLatestReview(
   for (const path of paths) {
     const review = await readReview(path);
     if (review?.headSha !== headSha) continue;
+    if (options.codeOnly === true && review.scope === "conversation-only") continue;
     let mtime: number;
     try {
       mtime = await _fixInputDeps.mtimeMs(path);

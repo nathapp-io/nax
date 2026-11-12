@@ -1,6 +1,7 @@
 /** PR-specific fix, repair and checkout preparation instructions. */
 import { markdownFence } from "@/utils/markdown-fence";
 import {
+  FIX_PROTECTED_PATHS_RULE,
   GATE_INTEGRITY_RULE,
   REPAIR_VERIFICATION_RULE,
   renderWorkflowFindings,
@@ -34,6 +35,7 @@ function instructions(input: BotPrFixPromptInput): string {
     case "fix":
       return `- Fix every item; add a test where an item names a missing one (TDD: see it fail first).
 - ${GATE_INTEGRITY_RULE}
+- ${FIX_PROTECTED_PATHS_RULE}
 - Before you commit, run every command in The bar; if one fails for missing setup, prepare the checkout first, then re-run the commands.
 - Commit, then append a "Fix" section to ${input.reportPath}: items changed, commands run, results.`;
     case "repair":

@@ -294,15 +294,16 @@ describe("US-003 Bash interception", () => {
       expect(requests[0]?.spec).toEqual({ kind: "shell", shell: "/bin/sh", command: REWRITTEN });
     });
 
-    test("US-003 AC10: a rewritten call's output has the rtk hint line stripped", async () => {
+    test("US-003 AC10: a rewritten call's output has the rtk hint replaced by the compaction marker", async () => {
       interceptor = rtkRewritingTo(REWRITTEN);
       stubRunArgv({ stdout: HINTED_STDOUT });
 
       const result = await createBashTool().run({ command: ORIGINAL }, ctx());
 
       // The framing is `exit <code>\n<stdout>\n<stderr>` over the POST-PROCESSED
-      // stdout, and rtk's hint regex takes the newline before the hint with it.
-      expect(result.content).toBe("exit 0\nout\n");
+      // stdout. US-006: the hint line becomes `[output compacted]` — no rtk
+      // command reaches the agent (R4), and the truncation is still visible.
+      expect(result.content).toBe("exit 0\nout\n[output compacted]\n");
     });
 
     test("US-003 AC11: an unrewritten call keeps the hint line", async () => {

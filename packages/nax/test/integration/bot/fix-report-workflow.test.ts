@@ -8,6 +8,10 @@ import { botRulingReadOp } from "@/operations";
 import { evidenceComment, markReadyArgv } from "@/workflow/promote";
 import { _workflowDeps } from "@/workflow/step-context";
 
+/**
+ * The execution head: `pushedSha` pins which head the readiness checks read. A pushed head is held before
+ * these checks (US-001), so the tests that need to reach them mark the pass ready-only.
+ */
 const state: BotFixState = { step: "ready", timings: {}, outcome: "nothing" };
 const green = { outcome: "green", detail: "passed" } as const;
 const empty: RecordRulingsOutcome = { index: { keys: [] }, recorded: [], settled: [], open: [], asked: 0, failed: 0 };
@@ -77,7 +81,7 @@ describe("readyStep workflow drafts", () => {
   test("concurrent push before readiness cannot switch the execution head", async () => {
     const s = setup();
     s.read.mockResolvedValue({ ...s.fresh, headSha: "concurrent" });
-    const out = await readyStep(s.env, { ...state, pushedSha: "pushed" });
+    const out = await readyStep(s.env, { ...state, pushedSha: "pushed", readyOnly: true });
     expect(out.patch).toEqual({ markedReady: false, readyHeld: "PR head changed since this execution" });
     expect(s.wait).not.toHaveBeenCalled();
     expect(s.run).not.toHaveBeenCalled();
@@ -87,7 +91,7 @@ describe("readyStep workflow drafts", () => {
     s.read
       .mockResolvedValueOnce({ ...s.fresh, headSha: "pushed" })
       .mockResolvedValue({ ...s.fresh, headSha: "concurrent" });
-    const out = await readyStep(s.env, { ...state, pushedSha: "pushed" });
+    const out = await readyStep(s.env, { ...state, pushedSha: "pushed", readyOnly: true });
     expect(s.wait.mock.calls[0]?.[2]?.expectedSha).toBe("pushed");
     expect(out.patch.markedReady).toBe(false);
     expect(s.run).not.toHaveBeenCalled();

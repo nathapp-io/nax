@@ -23,6 +23,7 @@ import {
   rejectRemovedPlanModes,
   validatePermissionsBlock,
   warnQualityCommandChains,
+  warnScopedTestCommand,
 } from "./config-guards";
 import { loadGlobalConfigRaw } from "./global-files";
 import { rejectGlobalOnlyKeys } from "./global-only-keys";
@@ -211,6 +212,12 @@ function finalizeAndValidateRootConfig(rawConfig: Record<string, unknown>): NaxC
   // strip above: one warning per resolved config regardless of which layer
   // supplied the command.
   warnQualityCommandChains(stripped, defaultConfigWarn);
+
+  // US-006 — warn (never throw) when a declared scoped-test command cannot be
+  // scoped: no `{{files}}` placeholder, or identical to the full-suite command.
+  // Immediately beside the chain nudge, on the same post-merge placement, so
+  // both read from the same resolved config.
+  warnScopedTestCommand(stripped, defaultConfigWarn);
 
   const result = NaxConfigSchema.safeParse(stripped);
   if (!result.success) {

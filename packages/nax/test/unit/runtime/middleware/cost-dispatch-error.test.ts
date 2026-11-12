@@ -17,6 +17,7 @@ import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
 import type { DispatchErrorEvent } from "@/runtime/dispatch-events";
 import { DispatchEventBus } from "@/runtime/dispatch-events";
 import { attachCostSubscriber } from "@/runtime/middleware/cost";
+import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
@@ -184,5 +185,22 @@ describe("attachCostSubscriber — CostErrorEvent.costUsd normalisation (AC10-11
     expect(row.costUsd).toBe(0.0084);
     expect(row.estimatedCostUsd).toBe(0.0084);
     expect(row.exactCostUsd).toBeUndefined();
+  });
+});
+
+// ─── US-007: error cost rows identify the nax build that wrote them ─────────
+
+describe("attachCostSubscriber — build identity on the error row (US-007 AC-2)", () => {
+  test("AC-2: a dispatch error appends an error row stamped with NAX_VERSION and NAX_COMMIT", () => {
+    const agg = makeRecordingAggregator();
+    const bus = new DispatchEventBus();
+    attachCostSubscriber(bus, agg, "r-001");
+
+    bus.emitDispatchError(makeDispatchErrorEvent());
+
+    expect(agg.recordedErrors).toHaveLength(1);
+    const row = agg.recordedErrors[0];
+    expect(row.naxVersion).toBe(NAX_VERSION);
+    expect(row.naxCommit).toBe(NAX_COMMIT);
   });
 });

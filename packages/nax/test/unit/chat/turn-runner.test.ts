@@ -15,6 +15,7 @@ const { createChatLedger, runChatTurn } = chat;
 
 import type { CostEvent } from "@/runtime";
 import { COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware";
+import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 const ID = "chat-test";
 const MODEL = "anthropic/test-model";
@@ -286,6 +287,15 @@ describe("runChatTurn", () => {
     const persisted = await rows();
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.sessionRole).toBe("tui");
+  });
+  test("US-007 AC-4: the persisted ledger row carries NAX_VERSION and NAX_COMMIT", async () => {
+    const costLedger = ledger();
+    costLedger.record(usageEvent, START);
+    await costLedger.drain();
+    const persisted = await rows();
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.naxVersion).toBe(NAX_VERSION);
+    expect(persisted[0]?.naxCommit).toBe(NAX_COMMIT);
   });
   test("AC-9 extraCostUsd is added to the turn_end spend in metadata", async () => {
     events = [start, { ...end, costUsd: 1 }];

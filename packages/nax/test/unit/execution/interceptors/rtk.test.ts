@@ -211,21 +211,29 @@ function postProcess() {
 }
 
 describe("rtk postProcess", () => {
-  test("strips a full-diff hint and the newline before it", () => {
-    expect(postProcess()("diff body\n[full diff: rtk git diff --no-compact]", postProcessReq).output).toBe("diff body");
+  // US-006 — a hint is no longer deleted, it is REPLACED by a neutral marker:
+  // a nax agent has no shell, so `rtk recall …` is a command it cannot follow
+  // (R4), but silently dropping the line hides that output was truncated.
+  test("AC-14: replaces a full-diff hint with the neutral compaction marker", () => {
+    expect(postProcess()("diff\n[full diff: rtk git diff --no-compact]", postProcessReq).output).toBe(
+      "diff\n[output compacted]",
+    );
   });
 
-  test("strips a hidden-lines hint", () => {
-    const { output } = postProcess()("body\n[+12 hidden: rtk recall 3f9c2a81d4e7]", postProcessReq);
-    expect(output).toBe("body");
+  test("AC-13: replaces a hidden-lines hint with the marker naming the count", () => {
+    const { output } = postProcess()("ok\n[+12 hidden: rtk recall 3f9c2a81d4e7]", postProcessReq);
+    expect(output).toBe("ok\n[output compacted: 12 lines hidden]");
     expect(output).not.toContain("rtk recall");
   });
 
-  test("strips a full-output hint", () => {
-    // US-005 item 1 names `[full output: rtk recall <hash>]` as the third hint
-    // shape rtk appends — the acceptance is "no rtk hint string survives into
-    // a tool result".
-    expect(postProcess()("body\n[full output: rtk recall 3f9c2a81d4e7]", postProcessReq).output).toBe("body");
+  test("AC-15: replaces a full-output hint with the neutral compaction marker", () => {
+    expect(postProcess()("out\n[full output: rtk recall 3f9c2a81d4e7]", postProcessReq).output).toBe(
+      "out\n[output compacted]",
+    );
+  });
+
+  test("AC-16: leaves output with no trailing hint byte-for-byte", () => {
+    expect(postProcess()("plain output  \n", postProcessReq).output).toBe("plain output  \n");
   });
 
   test("leaves output with no hints untouched", () => {
@@ -236,6 +244,14 @@ describe("rtk postProcess", () => {
     // Stripping is hint-shaped, not a general trim: trimEnd happens later at
     // the call site, and postProcess must not pre-empt it.
     expect(postProcess()("plain body\n\n", postProcessReq).output).toBe("plain body\n\n");
+  });
+
+  test("replaces a hint that is followed by trailing whitespace", () => {
+    // The git tool's call site runs postProcess BEFORE trimEnd, so the hint is
+    // not always the final characters of the string.
+    expect(postProcess()("body\n[full diff: rtk git diff --no-compact]\n   ", postProcessReq).output).toBe(
+      "body\n[output compacted]",
+    );
   });
 });
 

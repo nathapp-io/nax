@@ -31,13 +31,15 @@ import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { readHeadGateNames } from "./head-gates";
+import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
 import { safeText } from "./render";
 import { rulingModelReader } from "./ruling-reader";
-import { type RecordRulingsOutcome, recordPrRulings } from "./rulings";
+import { type RecordRulingsOutcome, readConfirmedKeys, readSettledKeys, recordPrRulings } from "./rulings";
 import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
+const READY_HOLD_FINDINGS_SHOWN = 5;
 const MAX_FAILURE_LENGTH = 500;
 const MAX_ISSUE_LENGTH = 200;
 const OUT_OF_ITEM_FILES_SHOWN = 20;
@@ -54,6 +56,8 @@ export const _fixReportDeps = {
   listReviewThreads,
   listPrComments,
   recordPrRulings,
+  readSettledKeys,
+  readConfirmedKeys,
   readHeadGateNames,
 };
 
@@ -176,7 +180,8 @@ function settledEntries(outcome: RecordRulingsOutcome): DecisionEntry[] {
   });
 }
 
-async function readReadyRulings(env: BotFixEnv) {
+/** The PR as it is now: the readiness checks and the open-finding reconciliation both read it. */
+async function readPrState(env: BotFixEnv) {
   const deps = _fixReportDeps;
   const [info, user, threads, comments] = await Promise.all([
     deps.readPrInfo(env.ref, env.forge, env.repoRoot),
@@ -184,6 +189,12 @@ async function readReadyRulings(env: BotFixEnv) {
     deps.listReviewThreads(env.ref, env.forge, env.repoRoot),
     deps.listPrComments(env.ref, env.forge, env.repoRoot),
   ]);
+  return { info, user, threads, comments };
+}
+
+async function readReadyRulings(env: BotFixEnv) {
+  const deps = _fixReportDeps;
+  const { info, user, threads, comments } = await readPrState(env);
   const outcome = await deps.recordPrRulings({
     ref: env.ref,
     info,
@@ -291,6 +302,79 @@ async function headGateHold(env: BotFixEnv): Promise<string | undefined> {
   }
 }
 
+/**
+ * US-001: this execution pushed, so no bot review has seen the pushed head yet. The cycle reviews it and
+ * then runs the ready-only pass; `--no-rereview` leaves the PR a draft until `--ready-only` recovers it.
+ */
+function pushedHeadHold(env: BotFixEnv, state: BotFixState): string | undefined {
+  if (!state.pushedSha || state.readyOnly === true) return undefined;
+  const n = env.ref.number;
+  const sha = state.pushedSha.slice(0, SHORT_SHA_LENGTH);
+  return `pushed ${sha}; a bot review of the pushed head decides readiness (nax bot review ${n}, then nax bot fix ${n} --ready-only)`;
+}
+
+/** The review readiness reads: the head's code review when the caller loaded one, else the latest. */
+function readinessReview(env: BotFixEnv): BotReviewArtifact {
+  return env.codeReview ?? env.review;
+}
+
+/** The readiness review's open critical/important finding keys, in `agreed` order. */
+function blockingKeys(review: BotReviewArtifact): string[] {
+  return review.agreed
+    .filter((item) => item.kind === "finding" && (item.severity === "critical" || item.severity === "important"))
+    .map((item) => item.key);
+}
+
+/**
+ * A newer review of the same head can withdraw a finding without rewriting the code review that raised
+ * it: `withdrawalEvents` records that in the newer artifact's own `events`.
+ */
+function withdrawnKeys(env: BotFixEnv): ReadonlySet<string> {
+  const events = env.review.events ?? [];
+  return new Set(events.flatMap((event) => (event.type === "finding-withdrawn" ? [event.key] : [])));
+}
+
+/**
+ * Drop the keys the PR as it is now has closed: a durable ruling or a resolved thread settles a finding
+ * after the artifact was written, and `--ready-only` exists to recover from exactly that. A withdrawal
+ * releases a finding only while no authorized writer has reconfirmed it since (B5). An unreadable PR
+ * state settles nothing, so the hold stands (fail closed).
+ */
+async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readonly string[]> {
+  if (keys.length === 0) return keys;
+  const withdrawn = withdrawnKeys(env);
+  try {
+    const { info, user, threads, comments } = await readPrState(env);
+    const input = { ref: env.ref, info, login: user.login, threads, comments, deps: env.forge, cwd: env.repoRoot };
+    const [settled, confirmed] = await Promise.all([
+      _fixReportDeps.readSettledKeys(input),
+      withdrawn.size === 0 ? new Set<string>() : _fixReportDeps.readConfirmedKeys(input),
+    ]);
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    return keys.filter((key) => (withdrawn.has(key) ? confirmed.has(key) : !settled.has(key)));
+  } catch (error) {
+    env.ctx.callCtx.runtime.signal.throwIfAborted();
+    getLogger()?.warn("bot-fix", "Could not read the PR rulings", { pr: env.ref.number, error: errorMessage(error) });
+    return keys;
+  }
+}
+
+/**
+ * US-001: an open critical/important finding of the head's bot review holds readiness. `agreed` already
+ * excludes the findings that were settled when that review was written; a settlement or withdrawal
+ * recorded since is reconciled against the PR, so a ruling does not need another full code review.
+ * Minor findings, threads and comments never hold.
+ */
+async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
+  const review = readinessReview(env);
+  const keys = await openKeys(env, blockingKeys(review));
+  if (keys.length === 0) return undefined;
+  const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
+  const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");
+  const head = review.headSha.slice(0, SHORT_SHA_LENGTH);
+  return `${keys.length} open critical/important finding(s) in the bot review of ${head}: ${listed}${hidden > 0 ? `, +${hidden} more` : ""}`;
+}
+
 /** Only durable workflow rulings and exact-head green CI can release a workflow draft. */
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (
@@ -301,6 +385,10 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
       patch: { markedReady: false, readyHeld: `PR head did not reach ${state.pushedSha.slice(0, SHORT_SHA_LENGTH)}` },
       exit: "report",
     };
+  const pushedHeld = pushedHeadHold(env, state);
+  if (pushedHeld) return { patch: { markedReady: false, readyHeld: pushedHeld }, exit: "report" };
+  const findingsHeld = await openFindingHold(env);
+  if (findingsHeld) return { patch: { markedReady: false, readyHeld: findingsHeld }, exit: "report" };
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
   const headGates = await headGateHold(env);
   if (headGates) return { patch: { markedReady: false, readyHeld: headGates }, exit: "report" };

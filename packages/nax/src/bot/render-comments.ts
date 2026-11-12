@@ -35,7 +35,8 @@ export interface ReviewSummaryInput {
   readonly scope?: BotReviewScope;
   readonly incrementalSince?: string;
   readonly intent: PrIntent;
-  readonly quality: "approved" | "changes";
+  /** `not-reviewed` when the review read no code (US-001). */
+  readonly quality: "approved" | "changes" | "not-reviewed";
   readonly inlineFindings: number;
   readonly threadsAnswered: number;
   readonly offLine: readonly WorkflowFindingDraft[];

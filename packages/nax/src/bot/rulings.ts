@@ -5,12 +5,13 @@ import {
   editComment,
   hasWriteAccess,
   ownComments,
+  parseNaxBotMarker,
   readPrInfo,
   replyToThread,
   resolveThread,
   withNaxBotMarker,
 } from "@/forge";
-import type { PrComment, PrInfo, PrRef } from "@/forge/pr-types";
+import type { PrComment, PrInfo, PrRef, PrThread } from "@/forge/pr-types";
 import { getLogger } from "@/logger";
 import { RULING_SHA_PATTERN } from "@/utils/ruling-sha";
 import type { BotRulingReadInput, BotRulingReadVerdict } from "../operations/bot-ruling-read";
@@ -37,6 +38,7 @@ import {
   type CallerRulingsReport,
   planCallerRulings,
 } from "./caller-rulings";
+import { isConfirmingRuling, latestFindingRuling } from "./finding-rulings";
 import { writerCheck } from "./writers";
 
 export const MAX_RULING_ITEMS = 20;
@@ -84,8 +86,15 @@ function warn(message: string, data: Record<string, unknown>): void {
   _rulingsDeps.getLogger()?.warn("bot-rulings", `[bot-rulings] ${message}`, data);
 }
 
-/** Cache the promise, not just the result: settlement checks replies concurrently. */
-function permissionReader(input: RecordRulingsInput): (comment: PrComment) => Promise<boolean> {
+/**
+ * The permission gate settlement checks need; the input is any of the recorder's shapes.
+ * Cache the promise, not just the result: settlement checks replies concurrently.
+ */
+function permissionReader(input: {
+  readonly ref: RecordRulingsInput["ref"];
+  readonly deps: RecordRulingsInput["deps"];
+  readonly cwd: string;
+}): (comment: PrComment) => Promise<boolean> {
   const check = writerCheck(
     input,
     (...args) => _rulingsDeps.hasWriteAccess(...args),
@@ -381,4 +390,87 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
     if (caller === undefined) throw error;
     throw new CallerRecordingError(error, callerReport(caller, progress, true));
   }
+}
+
+export type SettlementReadInput = Omit<RecordRulingsInput, "readModel" | "callerRulings">;
+
+/**
+ * A finding thread the bot opened that is not an indexed item. `recordFindingRulings` owns these: the
+ * newest authorized writer ruling decides, and thread resolution is presentation on top of it. Reading
+ * resolution alone disagreed with the recorder twice:
+ *
+ * - an authorized non-confirming ruling (waive, override, fixed) settles the finding whether or not the
+ *   thread was resolved, so a waiver whose presentation-only resolve failed still lifts the hold (B1);
+ * - a confirmed or verified ruling reconfirms outstanding work, so a resolved thread does not settle a
+ *   finding an authorized writer has since reconfirmed (B5).
+ *
+ * Without an authorized ruling, resolution alone settles the thread, as before. Only own openers count,
+ * and an indexed item is skipped: its ruling echo settles it, never a bare thread resolution.
+ */
+async function settledFindingKeys(
+  threads: readonly PrThread[],
+  login: string,
+  canRule: (comment: PrComment) => Promise<boolean>,
+): Promise<string[]> {
+  const settled: string[] = [];
+  for (const { key, thread, ruling } of await ownFindingThreads(threads, login, canRule)) {
+    if (ruling === null ? thread.resolved : !isConfirmingRuling(ruling.keyword)) settled.push(key);
+  }
+  return settled;
+}
+
+interface FindingThreadRuling {
+  readonly key: string;
+  readonly thread: PrThread;
+  readonly ruling: Awaited<ReturnType<typeof latestFindingRuling>>;
+}
+
+/** The finding threads the bot opened that are not indexed items, each with its newest authorized ruling. */
+async function ownFindingThreads(
+  threads: readonly PrThread[],
+  login: string,
+  canRule: (comment: PrComment) => Promise<boolean>,
+): Promise<FindingThreadRuling[]> {
+  const found: FindingThreadRuling[] = [];
+  for (const thread of threads) {
+    const first = thread.comments[0];
+    if (first === undefined || first.author !== login) continue;
+    if (parseItemOpener(first.body) !== null) continue;
+    const key = parseNaxBotMarker(first.body)?.key;
+    if (key === undefined) continue;
+    found.push({ key, thread, ruling: await latestFindingRuling({ login, isWriter: canRule }, thread) });
+  }
+  return found;
+}
+
+/**
+ * US-001: what a durable, permission-checked settlement has closed on the PR *now*, read without
+ * recording anything (no echo, no model read, no comment write). The readiness hold reconciles the
+ * immutable artifact's open findings against this, so a ruling written after that review lifts it.
+ *
+ * A reply only keeps its item settled when an authorized writer wrote it, exactly as the recorder
+ * decides; an unreadable permission check settles nothing.
+ */
+export async function readSettledKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
+  const read = readItemThreads(input.threads, input.comments, input.login);
+  // One reader for both: an author's write access is looked up once per login.
+  const canRule = permissionReader(input);
+  const [settled, findings] = await Promise.all([
+    settleItemThreads(read, canRule),
+    settledFindingKeys(input.threads, input.login, canRule),
+  ]);
+  return new Set([...settled.settled.map(({ key }) => key), ...findings]);
+}
+
+/**
+ * The finding keys whose newest authorized writer ruling reconfirms them (`confirm`, `verified`). A newer
+ * review may withdraw a finding on a commenter's say-so, but an authorized reconfirmation outranks that
+ * (B5), so the readiness hold keeps these open whatever a withdrawal event says. Resolution alone never
+ * confirms.
+ */
+export async function readConfirmedKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
+  const found = await ownFindingThreads(input.threads, input.login, permissionReader(input));
+  return new Set(
+    found.filter(({ ruling }) => ruling !== null && isConfirmingRuling(ruling.keyword)).map(({ key }) => key),
+  );
 }

@@ -4,7 +4,8 @@ import { makeBotFixDraftEnv } from "@test/helpers";
 import { _fixReportDeps, type BotFixEnv, type BotFixState, readyStep } from "@/bot";
 import { NAX_WORKFLOW_PR_MARKER } from "@/forge";
 
-const state: BotFixState = { step: "ready", timings: {}, outcome: "pushed", pushedSha: "abcdef12" };
+/** A ready-only pass: the pushed-head hold is US-001's, and these tests are about the head gates. */
+const state: BotFixState = { step: "ready", timings: {}, outcome: "pushed", pushedSha: "abcdef12", readyOnly: true };
 const greenCi = { outcome: "green", detail: "all checks passed" } as const;
 
 function envWithBotGates(names: readonly string[], body = ""): BotFixEnv {

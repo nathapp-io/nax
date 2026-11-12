@@ -70,6 +70,8 @@ export interface BotFixOptions extends Omit<BotReviewOptions, "full" | "rulings"
   readonly trust?: boolean;
   readonly rereview?: boolean;
   readonly fresh?: boolean;
+  /** Run only the readiness pass on a review of the current head (US-001). */
+  readonly readyOnly?: boolean;
 }
 type BotInput = Parameters<typeof runBotFix>[0];
 const SHORT_SHA_LENGTH = 7;
@@ -149,38 +151,74 @@ function callerRulingsSummary(
 }
 
 export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
-  return withBotInput(options, deps, async (input) => {
-    const decisions = await loadDecisionsOption(options, deps);
-    const cycle = await deps.runBotFixCycle({
-      ...input,
-      ...(decisions === undefined ? {} : { decisions }),
-      ...(options.trust === true && { trust: true }),
-      rereview: options.rereview ?? true,
-      fresh: options.fresh ?? false,
-    });
-    const result = cycle.fix;
-    if (result.outcome !== "pushed" && result.outcome !== "nothing") {
-      deps.logErr("reason" in result ? result.reason : result.outcome);
-      if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
-      return 2;
-    }
-    if (result.outcome === "pushed" && !result.pushedSha) {
-      throw new NaxError(`[bot] Missing pushed SHA for PR #${input.pr}`, "BOT_PUSHED_SHA_MISSING", {
-        stage: "bot",
-        pr: input.pr,
-      });
-    }
-    const summary = fixSummary(result.outcome, result.pushedSha);
-    deps.log(`nax bot fix: PR #${input.pr} — ${summary}`);
-    printFixCycle({ cycle, pr: input.pr, deps });
-    if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
-    return 0;
+  return withBotInput(options, deps, async (input) =>
+    options.readyOnly === true ? readyOnlyPass(input, options, deps) : fixCyclePass(input, options, deps),
+  );
+}
+
+/** The default pass: one fix, then its post-push review and ready-only pass. */
+async function fixCyclePass(input: BotInput, options: BotFixOptions, deps: BotCliDeps): Promise<number> {
+  const decisions = await loadDecisionsOption(options, deps);
+  const cycle = await deps.runBotFixCycle({
+    ...input,
+    ...(decisions === undefined ? {} : { decisions }),
+    ...(options.trust === true && { trust: true }),
+    rereview: options.rereview ?? true,
+    fresh: options.fresh ?? false,
   });
+  const result = cycle.fix;
+  if (result.outcome !== "pushed" && result.outcome !== "nothing") {
+    deps.logErr("reason" in result ? result.reason : result.outcome);
+    if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
+    return 2;
+  }
+  if (result.outcome === "pushed" && !result.pushedSha) {
+    throw new NaxError(`[bot] Missing pushed SHA for PR #${input.pr}`, "BOT_PUSHED_SHA_MISSING", {
+      stage: "bot",
+      pr: input.pr,
+    });
+  }
+  const summary = fixSummary(result.outcome, result.pushedSha);
+  deps.log(`nax bot fix: PR #${input.pr} — ${summary}`);
+  printFixCycle({ cycle, pr: input.pr, deps });
+  if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
+  return 0;
 }
 
 function fixSummary(outcome: "nothing" | "pushed", sha?: string): string {
   if (outcome === "pushed") return `pushed ${sha?.slice(0, SHORT_SHA_LENGTH)}`;
   return sha ? `nothing to fix; pushed advisor ledger ${sha.slice(0, SHORT_SHA_LENGTH)}` : "nothing to fix";
+}
+
+/** How the ready pass reads to a human: readied, held for a reason, or not a draft at all. */
+function readinessSummary(state: { readonly markedReady?: boolean; readonly readyHeld?: string }): string {
+  if (state.markedReady) return "Marked ready.";
+  if (state.readyHeld !== undefined) return `Kept as draft: ${state.readyHeld}`;
+  return "not a draft";
+}
+
+/**
+ * `nax bot fix <pr> --ready-only` (US-001): the readiness pass alone — no fix session, no post-push review.
+ * It is the recovery for a `--no-rereview` push and for a hold a ruling or a new review has lifted, so it
+ * reports the readiness result and exits zero whether the PR was readied or held.
+ *
+ * `--trust` is forwarded exactly as the fix cycle forwards it: a project whose checks nax detected from the
+ * package scripts can only be readied through a pass that was told to trust them.
+ */
+async function readyOnlyPass(input: BotInput, options: BotFixOptions, deps: BotCliDeps): Promise<number> {
+  const result = await deps.runBotFix({
+    ...input,
+    readyOnly: true,
+    ...(options.trust === true && { trust: true }),
+  });
+  if (result.outcome === "refused") {
+    deps.logErr(result.reason);
+    if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
+    return 2;
+  }
+  deps.log(`nax bot fix: ready pass — ${readinessSummary(result)}`);
+  if (result.logPath !== undefined) deps.log(`nax bot fix: log ${result.logPath}`);
+  return 0;
 }
 
 function printFixCycle({ cycle, pr, deps }: { cycle: BotFixCycleResult; pr: number; deps: BotCliDeps }): void {
@@ -193,12 +231,7 @@ function printFixCycle({ cycle, pr, deps }: { cycle: BotFixCycleResult; pr: numb
     deps.logErr(review.reason);
   }
   if (ready?.outcome === "ready-pass") {
-    const summary = ready.markedReady
-      ? "Marked ready."
-      : ready.readyHeld !== undefined
-        ? `Kept as draft: ${ready.readyHeld}`
-        : "not a draft";
-    deps.log(`nax bot fix: ready pass — ${summary}`);
+    deps.log(`nax bot fix: ready pass — ${readinessSummary(ready)}`);
   } else if (ready) {
     deps.logErr("reason" in ready ? ready.reason : ready.outcome);
   }
@@ -236,6 +269,7 @@ export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliD
     .option("--trust", "Run on checks detected from package scripts (no nax config on the base branch)")
     .option("--decisions <path>", "Caller decisions file, applied to the post-push re-review only")
     .option("--no-rereview", "Skip post-push review and ready pass (--decisions is then unused)")
+    .option("--ready-only", "Run only the readiness pass on a review of the current head (no fix session)")
     .option("--fresh", "Discard the saved fix", false)
     .action(async (pr: string, options: Omit<BotFixOptions, "pr">) => {
       deps.exit(await botFixCommand({ ...options, pr }, deps));

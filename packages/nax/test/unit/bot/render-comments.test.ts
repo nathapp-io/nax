@@ -425,4 +425,9 @@ describe("renderReviewSummary review scope (nax#2667)", () => {
   test("keeps the first line plain when the scope is absent", () => {
     expect(firstLine({})).toBe("Review of abc1234: intent pass, quality approved.");
   });
+  test("US-001 AC-19 prints an honest quality for a conversation-only review", () => {
+    expect(firstLine({ quality: "not-reviewed", scope: "conversation-only" })).toBe(
+      "Review of abc1234 (conversation only): intent pass, quality not-reviewed.",
+    );
+  });
 });

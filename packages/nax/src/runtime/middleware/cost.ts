@@ -1,6 +1,6 @@
 import type { AuthStamp } from "@nathapp/nax-agent";
 import { resolvePricingSource } from "@/agents";
-import { NAX_AI_VERSION } from "@/version";
+import { NAX_AI_VERSION, NAX_COMMIT, NAX_VERSION } from "@/version";
 import type { CostErrorEvent, CostEvent, ICostAggregator, OperationSummaryEvent } from "../cost-aggregator";
 import { toCostRowRates } from "../cost-row-rates";
 import type { DispatchErrorEvent, DispatchEvent, IDispatchEventBus, OperationCompletedEvent } from "../dispatch-events";
@@ -97,6 +97,12 @@ export const _costSubscriberDeps = {
  *     and partial rows are stamped with this same version but carry no `auth`
  *     — a failed call's credential is not attributable, so absence there is
  *     the documented shape rather than a missing field.
+ *
+ * US-007 added `naxVersion` / `naxCommit` to every row WITHOUT a bump: the
+ * stamp is written by this build on every version, so a reader that wants the
+ * build keys on the field's presence, not on `schemaVersion`. Re-versioning
+ * rows whose shape is otherwise unchanged would strand every pre-US-007 row as
+ * a "different generation" of the same shape, with no field to gain from it.
  *
  * Bump this when adding or changing a field consumers key on, and extend the
  * list above — the constant is how a reader learns what a row guarantees.
@@ -249,6 +255,10 @@ export function attachCostSubscriber(
       ...(event.pricingSource === "catalog-rates" && event.rates !== undefined && catalogVersion !== undefined
         ? { catalogVersion }
         : {}),
+      // US-007: every row names the nax build that wrote it, so a ledger lifted
+      // out of its run directory is still placeable against a release.
+      naxVersion: NAX_VERSION,
+      naxCommit: NAX_COMMIT,
       durationMs: event.durationMs,
     };
     aggregator.record(costEvent);
@@ -302,6 +312,10 @@ export function attachCostSubscriber(
       // US-002: name the card that priced the failed dispatch's estimate,
       // forwarded off the thrown SessionTurnError when it carried one.
       ...(event.pricingSource !== undefined ? { pricingSource: event.pricingSource } : {}),
+      // US-007: the failed-dispatch carrier stamps the same build identity a
+      // successful row carries.
+      naxVersion: NAX_VERSION,
+      naxCommit: NAX_COMMIT,
     };
     aggregator.recordError(errorEvent);
   });

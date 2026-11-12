@@ -126,6 +126,7 @@ export {
   buildWorkflowImplementPrompt,
   buildWorkflowReportPrompt,
   buildWorkflowRestartPrompt,
+  FIX_PROTECTED_PATHS_RULE,
   GATE_INTEGRITY_RULE,
   REPAIR_VERIFICATION_RULE,
   WORKFLOW_ARTIFACTS_RULE,

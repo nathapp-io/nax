@@ -1,14 +1,18 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDeps, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
+import { _fixInputDeps, _fixReportDeps, type BotReviewArtifact, loadLatestReview } from "@/bot";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { _fixStepsDeps } from "@/bot/fix-steps";
 
 const original = { ..._botFixDeps };
 const stepsOriginal = { ..._fixStepsDeps };
+const inputOriginal = { ..._fixInputDeps };
 const runtimes: ReturnType<typeof makeTestRuntime>[] = [];
 afterEach(async () => {
   Object.assign(_botFixDeps, original);
   Object.assign(_fixStepsDeps, stepsOriginal);
+  Object.assign(_fixInputDeps, inputOriginal);
+  mock.restore();
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
 });
 function fixture(withFindings = false) {
@@ -70,5 +74,74 @@ describe("runBotFix ready-only", () => {
       reason: expect.stringContaining("no nax bot review of head"),
     });
     expect(f.readyStep).not.toHaveBeenCalled();
+  });
+  test("US-001 AC-9: open findings survive a newer conversation-only review of the head", async () => {
+    const f = fixture();
+    const code: BotReviewArtifact = {
+      version: 3,
+      scope: "full",
+      pr: f.env.ref,
+      headSha: f.env.info.headSha,
+      trusted: true,
+      intent: "pass",
+      quality: "changes",
+      agreed: [{ kind: "finding", key: "f-9", issue: "leaks", severity: "important" }],
+    };
+    const conversation: BotReviewArtifact = {
+      ...code,
+      scope: "conversation-only",
+      quality: "not-reviewed",
+      agreed: [],
+    };
+    // Two artifacts of one head, served through the real selector: the newer review read no code.
+    _fixInputDeps.glob = async () => ["newer", "older"];
+    _fixInputDeps.readText = async (path) => JSON.stringify(path === "newer" ? conversation : code);
+    _fixInputDeps.mtimeMs = async (path) => (path === "newer" ? 2 : 1);
+    _botFixDeps.loadLatestReview = loadLatestReview;
+    // B1: the open-finding hold reconciles with the PR; this PR reports no settlement and no closed thread.
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(f.env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(f.env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "readSettledKeys").mockResolvedValue(new Set());
+    const result = await runBotFix({ ...input, readyOnly: true });
+    if (result.outcome === "refused") throw new Error(`refused: ${result.reason}`);
+    expect(f.readyStep.mock.calls[0]?.[0].codeReview).toEqual(code);
+    expect(result.markedReady).toBe(false);
+    expect(result.readyHeld).toContain("f-9");
+  });
+
+  test("B1: a finding settled after the code review is not held by the ready-only recovery", async () => {
+    const f = fixture();
+    const code: BotReviewArtifact = {
+      version: 3,
+      scope: "full",
+      pr: f.env.ref,
+      headSha: f.env.info.headSha,
+      trusted: true,
+      intent: "pass",
+      quality: "changes",
+      agreed: [{ kind: "finding", key: "f-9", issue: "leaks", severity: "important" }],
+    };
+    const conversation: BotReviewArtifact = {
+      ...code,
+      scope: "conversation-only",
+      quality: "not-reviewed",
+      agreed: [],
+    };
+    _fixInputDeps.glob = async () => ["newer", "older"];
+    _fixInputDeps.readText = async (path) => JSON.stringify(path === "newer" ? conversation : code);
+    _fixInputDeps.mtimeMs = async (path) => (path === "newer" ? 2 : 1);
+    _botFixDeps.loadLatestReview = loadLatestReview;
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(f.env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(f.env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
+    spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
+    // A durable ruling recorded after that code review settled the finding.
+    spyOn(_fixReportDeps, "readSettledKeys").mockResolvedValue(new Set(["f-9"]));
+    const result = await runBotFix({ ...input, readyOnly: true });
+    if (result.outcome === "refused") throw new Error(`refused: ${result.reason}`);
+    expect(f.readyStep.mock.calls[0]?.[0].codeReview).toEqual(code);
+    expect(result.readyHeld).toBeUndefined();
   });
 });

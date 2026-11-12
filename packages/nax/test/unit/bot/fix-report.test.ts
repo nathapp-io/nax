@@ -85,12 +85,16 @@ describe("readyStep published head (US-009)", () => {
     const post = spyOn(_fixReportDeps, "postPrComment");
     const result = await readyStep(env, { step: "ready", timings: {}, pushedSha: "abcdef1234" });
     expect(wait).toHaveBeenCalledWith({ ref: env.ref, repoRoot: env.repoRoot, sha: "abcdef1234" });
-    expect(order).toEqual(published ? ["head", "rulings"] : ["head"]);
-    if (!published) {
-      expect(result.patch).toEqual({ markedReady: false, readyHeld: "PR head did not reach abcdef1" });
-      expect(read).not.toHaveBeenCalled();
-      expect(ci).not.toHaveBeenCalled();
-    }
+    // US-001: the head wait stays first, and a pushed head is held before any rulings read.
+    expect(order).toEqual(["head"]);
+    expect(result.patch).toEqual({
+      markedReady: false,
+      readyHeld: published
+        ? expect.stringContaining("pushed abcdef1; a bot review of the pushed head decides readiness")
+        : "PR head did not reach abcdef1",
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(ci).not.toHaveBeenCalled();
     expect(forge).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
   });

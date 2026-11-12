@@ -18,6 +18,7 @@ import { type CostEvent, createNoOpCostAggregator } from "@/runtime/cost-aggrega
 import { type DispatchErrorEvent, DispatchEventBus, type SessionTurnDispatchEvent } from "@/runtime/dispatch-events";
 import { attachInFlightUsageTracker, type InFlightResidual, toPartialCostEvent } from "@/runtime/in-flight-usage";
 import { attachCostSubscriber, COST_ROW_SCHEMA_VERSION } from "@/runtime/middleware/cost";
+import { NAX_COMMIT, NAX_VERSION } from "@/version";
 
 const PERMS = { mode: "approve-reads" as const, bashApproval: "raw" as const };
 
@@ -632,5 +633,97 @@ describe("toPartialCostEvent — adversarial edge cases (US-003)", () => {
     residual.tokens.input = 999;
 
     expect(row.tokens?.input).toBe(100);
+  });
+});
+
+// ─── US-007: partial rows identify the build and carry their story ──────────
+
+describe("toPartialCostEvent — build identity (US-007 AC-3)", () => {
+  test("AC-3: a partial row is stamped with NAX_VERSION and NAX_COMMIT", () => {
+    const row = toPartialCostEvent(makeResidual(), "run-9");
+
+    expect(row.naxVersion).toBe(NAX_VERSION);
+    expect(row.naxCommit).toBe(NAX_COMMIT);
+  });
+});
+
+// ─── US-007: a matching dispatch error inherits its story onto the residual ──
+
+describe("attachInFlightUsageTracker — dispatch-error story attribution (US-007 AC-5..AC-9)", () => {
+  /**
+   * A cancelled stream with positive spend and no story of its own — the shape
+   * an interrupted session leaves behind (the ~$1.9 of `storyId: null` rows).
+   */
+  function spentCancelledStream(stream: AgentStreamEventBus, callId = "c1", scopeId = "s1"): void {
+    stream.emitAgentStream(makeBeat({ callId, scopeId, costUsd: 0.1, roundTrip: 1 }));
+    stream.emitAgentStream(makeCallEnded({ callId, scopeId, status: "cancelled" }));
+  }
+
+  test("AC-5: a spendless dispatch error in the stream's scope gives the residual its storyId and stage", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    spentCancelledStream(stream);
+    // No tokenUsage, no estimated/exact cost: the dispatch error recorded no
+    // spend, so rule 6 keeps the entry — but the attribution is still its own
+    // signal and must land before the no-spend early return.
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", storyId: "US-003", stage: "run" }));
+
+    const residuals = tracker.residuals();
+    expect(residuals).toHaveLength(1);
+    expect(residuals[0].storyId).toBe("US-003");
+    expect(residuals[0].stage).toBe("run");
+  });
+
+  test("AC-6: the partial row built from that residual carries storyId US-003", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    spentCancelledStream(stream);
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", storyId: "US-003", stage: "run" }));
+
+    const row = toPartialCostEvent(tracker.residuals()[0], "run-9");
+    expect(row.storyId).toBe("US-003");
+  });
+
+  test("AC-7: an entry that already has a storyId keeps it", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    stream.emitAgentStream(makeBeat({ callId: "c1", scopeId: "s1", storyId: "US-001", costUsd: 0.1, roundTrip: 1 }));
+    stream.emitAgentStream(makeCallEnded({ callId: "c1", scopeId: "s1", storyId: "US-001", status: "cancelled" }));
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", storyId: "US-003", stage: "run" }));
+
+    const residuals = tracker.residuals();
+    expect(residuals).toHaveLength(1);
+    expect(residuals[0].storyId).toBe("US-001");
+  });
+
+  test("AC-8: a dispatch error whose scope matches no ended entry leaves every residual alone", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    spentCancelledStream(stream, "c1", "s1");
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s2", storyId: "US-003", stage: "run" }));
+
+    const residuals = tracker.residuals();
+    expect(residuals).toHaveLength(1);
+    expect("storyId" in residuals[0]).toBe(false);
+    expect("stage" in residuals[0]).toBe(false);
+  });
+
+  test("AC-9: a matching dispatch error that recorded spend still clears the stream", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    spentCancelledStream(stream);
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", storyId: "US-003", estimatedCostUsd: 0.02 }));
+
+    expect(tracker.residuals()).toHaveLength(0);
+  });
+
+  test("US-007: every matching ended entry takes the attribution, not just the most recent one", () => {
+    const { stream, dispatch, tracker } = setup();
+
+    spentCancelledStream(stream, "c1", "s1");
+    spentCancelledStream(stream, "c2", "s1");
+    dispatch.emitDispatchError(makeDispatchError({ scopeId: "s1", storyId: "US-003", stage: "run" }));
+
+    expect(tracker.residuals().map((r) => r.storyId)).toEqual(["US-003", "US-003"]);
   });
 });

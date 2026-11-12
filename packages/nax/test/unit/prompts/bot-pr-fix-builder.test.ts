@@ -145,3 +145,33 @@ describe("the repair verification rule in the bot fix prompt (US-002)", () => {
     expect(prompts.buildBotPrFixPrompt({ ...base, mode: "fix" })).not.toContain(prompts.REPAIR_VERIFICATION_RULE);
   });
 });
+
+/**
+ * US-003: a fix can never push a protected path — `fixProtectedPaths` refuses it after the session —
+ * so the prompt says so before the agent spends time on an item it cannot land.
+ */
+describe("the protected-path rule in the bot fix prompt (US-003)", () => {
+  const fixText = () => prompts.buildBotPrFixPrompt({ ...base, mode: "fix" });
+
+  test("AC-1: fix states the control paths can never be changed", () => {
+    const text = fixText();
+    expect(text).toContain(prompts.FIX_PROTECTED_PATHS_RULE);
+    expect(text).toContain("can never change files under .nax/, .github/ or .gitlab/");
+    for (const path of [".nax/rules", "AGENTS.md", "CLAUDE.md", ".claude/", ".env", "key files"]) {
+      expect(text).toContain(path);
+    }
+    expect(text).toContain("nax refuses to push them");
+  });
+
+  test("AC-2: fix leaves such an item unchanged and names it in concerns", () => {
+    const text = fixText();
+    expect(text).toContain("Leave an item whose fix needs one of them unchanged");
+    expect(text).toContain('name it in "concerns" with status DONE_WITH_CONCERNS');
+  });
+
+  test.each(["repair", "prepare"] as const)("AC-3: %s does not carry the protected-path rule", (mode) => {
+    const text = prompts.buildBotPrFixPrompt({ ...base, mode });
+    expect(text).not.toContain(prompts.FIX_PROTECTED_PATHS_RULE);
+    expect(text).not.toContain("can never change files under .nax/, .github/ or .gitlab/");
+  });
+});

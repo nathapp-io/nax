@@ -183,7 +183,12 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     // Warn when a caller resolves a non-root package before hydrate() has run — the
     // returned view silently uses root config instead of per-package overrides.  This
     // catches entry points (CLI one-off commands, plugins) that skip runSetupPhase.
-    if (!hasOverride && key) {
+    //
+    // Eligibility is the OVERRIDE key, not the identity key (US-004): a worktree ROOT
+    // (`.nax-wt/bot-pr-7`) has an empty override key, so it is the repo-level package
+    // in a worktree — exactly the root view, with no override to miss. Only a package
+    // that could carry an override is worth warning about.
+    if (!hasOverride && overrideKey) {
       if (!hydrated) {
         _packagesDeps
           .getSafeLogger()
@@ -192,7 +197,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
             "resolve() called for non-root package before hydrate(); returning root config (per-package overrides not applied)",
             { packageDir: key },
           );
-      } else if (overrideKey && !knownPackages.has(overrideKey)) {
+      } else if (!knownPackages.has(overrideKey)) {
         _packagesDeps
           .getSafeLogger()
           ?.warn(

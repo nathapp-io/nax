@@ -127,6 +127,23 @@ describe("runBotFix in-place", () => {
     expect(await git(["symbolic-ref", "--short", "HEAD"])).toBe("feat/x");
   });
 
+  test("AC-5: an in-place checkout runs the install only, never the build", async () => {
+    const preRun = mock<typeof _botFixDeps.runPreRunSteps>(async () => {});
+    _botFixDeps.runPreRunSteps = preRun;
+    const install = [{ command: "bun install", timeoutSeconds: 60 }];
+    _botFixDeps.resolveBotChecks = async () => ({
+      source: "config",
+      gates: [
+        { name: "test", command: "test-command" },
+        { name: "build", command: "bun run build" },
+      ],
+      preRun: install,
+    });
+    await runBotFix(input);
+    expect(preRun).toHaveBeenCalledTimes(1);
+    expect(preRun.mock.calls[0]?.[0]).toEqual({ steps: install, workdir: repo });
+  });
+
   test("refuses untracked setup output even when git hides untracked files (AC-9–11)", async () => {
     await git(["config", "status.showUntrackedFiles", "no"]);
     _botFixDeps.runPreRunSteps = async ({ workdir }) => {

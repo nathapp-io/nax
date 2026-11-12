@@ -21,8 +21,8 @@ describe("Git tool interception — rtk postProcess (stays in nax: the real rtk 
     ...(interceptor !== undefined ? { interceptor } : {}),
   });
 
-  test("a hint is stripped from output that also needs trimming", async () => {
-    // The call site runs postProcess BEFORE trimEnd, so it must strip a hint
+  test("a hint is replaced by the compaction marker in output that also needs trimming", async () => {
+    // The call site runs postProcess BEFORE trimEnd, so it must rewrite a hint
     // even when the hint is not the final characters — the trailing whitespace
     // after it is exactly what trimEnd would otherwise remove.
     _gitDeps.spawn = makeSpawn(() => "body\n[full diff: rtk git diff --no-compact]\n   ").spawn;
@@ -35,6 +35,8 @@ describe("Git tool interception — rtk postProcess (stays in nax: the real rtk 
     const result = await gitTool.run({ subcommand: "log" }, ctx());
 
     expect(result.isError).toBeFalsy();
-    expect(result.content).toBe("body");
+    // US-006 — the rtk hint becomes a neutral compaction marker (no rtk
+    // command reaches the agent, R4) instead of being dropped.
+    expect(result.content).toBe("body\n[output compacted]");
   });
 });

@@ -138,6 +138,15 @@ export const GATE_INTEGRITY_RULE =
   "Make a red gate green only by fixing the code or tests it checks. Never create, delete or edit files only to satisfy a gate's precondition, and never change the gate's command or the quality config to make it pass. If no code defect explains the failure (for example, the gate output says it is turned green outside the code), leave it red and reply BLOCKED with the reason in \"concerns\".";
 
 /**
+ * US-003 (bot-and-prompt): `fixProtectedPaths` refuses to push a protected path after the session,
+ * so a fix that edits one is wasted time. The bot fix prompt states the constraint up front and
+ * tells the agent to report the item instead. Only the bot's `fix` mode carries it — `repair`
+ * fixes the gates the fix broke and `prepare` touches no tracked file at all.
+ */
+export const FIX_PROTECTED_PATHS_RULE =
+  'A fix can never change files under .nax/, .github/ or .gitlab/, agent configuration (AGENTS.md, CLAUDE.md, .claude/, .nax/rules and similar), .env files or key files: nax refuses to push them. Leave an item whose fix needs one of them unchanged and name it in "concerns" with status DONE_WITH_CONCERNS.';
+
+/**
  * US-001: the brief's rulings and scope are settled context, not open questions. Both story
  * reviewers carry this, so a ruling the implementer obeyed is not re-raised as an unaddressed
  * finding — the loop that could never converge on a waived trade-off.

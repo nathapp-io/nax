@@ -479,14 +479,38 @@ export interface FailingTestRectificationOptions {
    *  `run-check` region. */
   testCommandScopeCommandName?: string;
   /** The resolved scoped-test template (`quality.commands.testScoped` slot).
-   *  With `fileScopeCommandName`, the per-failing-file block wraps each line in
-   *  a `run-test` region so dispatch can substitute a
+   *  When it carries a `{{files}}` placeholder and `fileScopeCommandName` is
+   *  supplied, the per-failing-file block wraps each line in a `run-test`
+   *  region so dispatch can substitute a
    *  `RunCommand {"command": "testScoped", "values": {"files": "<path>"}}` call
    *  under native + advertised `RunCommand` (AC4). ACP preserves the shell
-   *  string (AC7). */
+   *  string (AC7).
+   *
+   *  A template with NO `{{files}}` placeholder takes no file argument, so the
+   *  block renders it once in a `run-check` region naming `fileScopeCommandName`
+   *  (US-006) instead of once per failing file. */
   testScopedTemplate?: string;
   /** Declared `quality.commands.testScoped` key name. */
   fileScopeCommandName?: string;
+}
+
+/**
+ * The placeholder a scoped test template takes in place of one failing file's
+ * path. `RunCommand`'s exact-placeholder match and the `run-test` affordance
+ * both key off it, so a template without it cannot be scoped per file.
+ */
+const TEST_FILES_PLACEHOLDER = "{{files}}";
+
+/**
+ * One line for a scoped-test template that carries no `{{files}}` placeholder.
+ *
+ * Such a template takes no file argument — every failing file would render the
+ * identical command, and a `run-test` region would carry a `files` value the
+ * declared command cannot accept. The whole declared key is offered once
+ * instead, as a `run-check` region.
+ */
+function unscopableTestLine(template: string, commandName: string | undefined): string {
+  return commandName ? `  ${wrapAffordance("run-check", { command: commandName }, template)}` : `  ${template}`;
 }
 
 /**
@@ -520,24 +544,35 @@ export function failingTestRectification(
   }
   // US-004 (AC4/AC7) — per-failing-file block, appended AFTER the
   // `# TEST COMMAND` block. Wraps each line in a `run-test` region when
-  // both a scoped template and a scoped key are supplied (the gate that
-  // `RunCommand`'s exact-placeholder match enforces — see
+  // both a scoped template carrying `{{files}}` and a scoped key are supplied
+  // (the gate that `RunCommand`'s exact-placeholder match enforces — see
   // packages/nax-agent/src/tools/run-command.ts). Without the template, the line is plain
   // shell strings of the form `<testCommand> <file>`.
+  //
+  // US-006 — a template WITHOUT `{{files}}` takes no file argument, so it
+  // renders once as a `run-check` region instead of once per failing file.
   if (opts?.testCommand && findings.length > 0) {
+    const testCommand = opts.testCommand;
+    const template = opts.testScopedTemplate;
+    // The template as a per-file template — undefined when there is none, or
+    // when it carries no placeholder and so cannot take a file argument.
+    const scopedTemplate = template?.includes(TEST_FILES_PLACEHOLDER) ? template : undefined;
     const failingFiles = Array.from(new Set(findings.map((f) => f.file).filter((f): f is string => !!f)));
     if (failingFiles.length > 0) {
-      const perFileLines = failingFiles
-        .map((file) => {
-          const scopedCmd = opts.testScopedTemplate
-            ? opts.testScopedTemplate.replaceAll("{{files}}", () => file)
-            : `${opts.testCommand} ${file}`;
-          if (opts.testScopedTemplate && opts.fileScopeCommandName) {
-            return `  ${wrapAffordance("run-test", { command: opts.fileScopeCommandName, files: file }, scopedCmd)}`;
-          }
-          return `  ${scopedCmd}`;
-        })
-        .join("\n");
+      const perFileLines =
+        template !== undefined && scopedTemplate === undefined
+          ? unscopableTestLine(template, opts.fileScopeCommandName)
+          : failingFiles
+              .map((file) => {
+                const scopedCmd = scopedTemplate
+                  ? scopedTemplate.replaceAll(TEST_FILES_PLACEHOLDER, () => file)
+                  : `${testCommand} ${file}`;
+                if (scopedTemplate !== undefined && opts.fileScopeCommandName) {
+                  return `  ${wrapAffordance("run-test", { command: opts.fileScopeCommandName, files: file }, scopedCmd)}`;
+                }
+                return `  ${scopedCmd}`;
+              })
+              .join("\n");
       parts.push(`\n\n## Per-failing-file run\n\n${perFileLines}`);
     }
   }

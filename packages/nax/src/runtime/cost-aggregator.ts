@@ -123,14 +123,11 @@ export interface CostEvent {
     | "catalog-rates"
     | "config-override";
   /**
-   * The four post-selection, post-fallback per-1M rates that priced the call
-   * (US-003). Sourced from `DispatchEvent.rates` when the producer stamped
-   * them: native always, ACP only on a nonzero accumulator. Describes
-   * `estimatedCostUsd`, NOT `costUsd` — when a wire-exact cost overwrites
-   * the row, `rates` still records the numbers the estimate was built from,
-   * and the row's `pricingSource` becomes `"wire"` independently. Omitted
-   * (not undefined) when the producer did not stamp, so a reader can tell
-   * "no report" apart from "explicitly unknown".
+   * The four per-1M rates that priced the call (US-003), sourced from
+   * `DispatchEvent.rates` when the producer stamped them. Describes
+   * `estimatedCostUsd`, NOT `costUsd` — a wire-exact cost overwrites the row's
+   * `pricingSource` to `"wire"` while `rates` still records the estimate's
+   * numbers. Omitted (not undefined) when the producer did not stamp.
    */
   readonly rates?: import("./cost-row-rates").CostRowRates;
   readonly auth?: import("@nathapp/nax-agent").AuthStamp;
@@ -145,6 +142,10 @@ export interface CostEvent {
    * placeholder string never reaches a row.
    */
   readonly catalogVersion?: string;
+  /** nax build that wrote this row (US-007): `NAX_VERSION`. Absent on rows written before it. */
+  readonly naxVersion?: string;
+  /** `NAX_COMMIT` of that build — read absence as "not recorded", never as "unknown build". */
+  readonly naxCommit?: string;
   readonly durationMs: number;
 }
 
@@ -189,6 +190,9 @@ export interface CostErrorEvent {
    * summed separately into `CostSnapshot.totalErrorCostUsd`.
    */
   readonly costUsd?: number;
+  /** nax build that wrote this row (US-007), as on a successful row. Absent on older rows. */
+  readonly naxVersion?: string;
+  readonly naxCommit?: string;
 }
 
 export interface CostSnapshot {

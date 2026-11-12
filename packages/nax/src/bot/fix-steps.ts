@@ -94,6 +94,11 @@ export interface BotFixEnv {
   readonly info: PrInfo;
   readonly checkout: PrCheckout;
   readonly review: BotReviewArtifact;
+  /**
+   * The head's latest code review when `review` is a conversation-only artifact (US-001): that review
+   * read no code, so the head's open findings live in the earlier code review.
+   */
+  readonly codeReview?: BotReviewArtifact;
   readonly model?: ConfiguredModel;
   readonly forge: ForgeDeps;
   readonly repoRoot: string;

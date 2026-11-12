@@ -52,13 +52,26 @@ function warn(message: string, thread: PrThread, error: unknown): void {
   });
 }
 
-interface Candidate {
+interface FindingRulingCandidate {
   readonly keyword: RulingKeyword;
   readonly reply: PrComment;
   readonly index: number;
 }
 
-async function lastRuling(input: FindingRulingsInput, thread: PrThread): Promise<Candidate | null> {
+/** A ruling that reconfirms the finding: the work stands, so the finding is not settled. */
+export function isConfirmingRuling(ruling: Pick<RulingKeyword, "disposition">): boolean {
+  return ruling.disposition === "confirmed" || ruling.disposition === "verified";
+}
+
+/**
+ * The newest non-own reply whose first line is a ruling keyword and whose author may rule. Own comments
+ * (openers, echoes, fix replies) never count, and a reply whose permission cannot be read denies only
+ * itself.
+ */
+export async function latestFindingRuling(
+  input: Pick<FindingRulingsInput, "login" | "isWriter">,
+  thread: PrThread,
+): Promise<FindingRulingCandidate | null> {
   const own = new Set(ownComments(thread.comments, input.login).map(({ comment }) => comment));
   for (let index = thread.comments.length - 1; index > 0; index--) {
     const reply = thread.comments[index];
@@ -99,7 +112,7 @@ async function resolve(input: FindingRulingsInput, thread: PrThread): Promise<bo
 async function recordThread(
   input: FindingRulingsInput,
   thread: PrThread,
-  { key, candidate }: { key: string; candidate: Candidate },
+  { key, candidate }: { key: string; candidate: FindingRulingCandidate },
 ) {
   const { keyword, reply, index } = candidate;
   const ruling: BotSettledRuling = {
@@ -108,7 +121,7 @@ async function recordThread(
     issue: earlierIssue(thread).split(/\r?\n/)[0] ?? "",
     ...keyword,
   };
-  const confirming = keyword.disposition === "confirmed" || keyword.disposition === "verified";
+  const confirming = isConfirmingRuling(keyword);
   let echoed = 0;
   let failed = 0;
   if (!thread.resolved) {
@@ -137,7 +150,7 @@ export async function recordFindingRulings(input: FindingRulingsInput): Promise<
   for (const thread of input.threads) {
     const opener = ownComments(thread.comments.slice(0, 1), input.login)[0];
     if (!opener?.key.startsWith("f-") || !isNaxBotMarkerKey(opener.key)) continue;
-    const candidate = await lastRuling(input, thread);
+    const candidate = await latestFindingRuling(input, thread);
     if (!candidate) continue;
     const recorded = await recordThread(input, thread, { key: opener.key, candidate });
     (recorded.confirming ? confirmed : settled).push(recorded.entry);

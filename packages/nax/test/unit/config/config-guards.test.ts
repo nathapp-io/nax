@@ -11,7 +11,7 @@
 
 import { describe, expect, it, test } from "bun:test";
 import * as guards from "@/config/config-guards";
-import { rejectRemovedPlanModes, warnQualityCommandChains } from "@/config/config-guards";
+import { rejectRemovedPlanModes, warnQualityCommandChains, warnScopedTestCommand } from "@/config/config-guards";
 import { NaxError } from "@/errors";
 
 describe("warnQualityCommandChains", () => {
@@ -65,6 +65,61 @@ describe("warnQualityCommandChains", () => {
 
   test("does nothing when warn is omitted", () => {
     expect(() => warnQualityCommandChains({ quality: { commands: { lint: "a && b" } } })).not.toThrow();
+  });
+});
+
+describe("warnScopedTestCommand (US-006)", () => {
+  /** The messages the sink received, in order. */
+  function warningsFor(conf: Record<string, unknown>): string[] {
+    const captured: string[] = [];
+    warnScopedTestCommand(conf, (msg) => captured.push(msg));
+    return captured;
+  }
+
+  test("AC-4: a testScoped command with no {{files}} placeholder warns once, naming the placeholder", () => {
+    const messages = warningsFor({
+      quality: { commands: { testScoped: "npx turbo test --filter=[HEAD^1]" } },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("declares no {{files}} placeholder");
+  });
+
+  test("AC-5: a testScoped command equal to the test command warns that every scoped run is the full suite", () => {
+    const messages = warningsFor({ quality: { commands: { test: "pytest -q", testScoped: "pytest -q" } } });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("equals quality.commands.test");
+  });
+
+  test("AC-6: a list where one entry carries {{files}} is silent", () => {
+    expect(warningsFor({ quality: { commands: { testScoped: ["tsc --noEmit", "bun test {{files}}"] } } })).toEqual([]);
+  });
+
+  test("AC-7: is silent when no testScoped command is declared", () => {
+    expect(warningsFor({ quality: { commands: { test: "bun test" } } })).toEqual([]);
+    expect(warningsFor({ quality: {} })).toEqual([]);
+    expect(warningsFor({})).toEqual([]);
+  });
+
+  test("checks a list across its entries: every entry without the placeholder still warns", () => {
+    const messages = warningsFor({ quality: { commands: { testScoped: ["tsc --noEmit", "npm run e2e"] } } });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("declares no {{files}} placeholder");
+  });
+
+  test("is silent for a malformed spec, leaving it to Zod validation", () => {
+    const conf = JSON.parse('{"quality": {"commands": {"testScoped": 42}}}');
+
+    expect(() => warnScopedTestCommand(conf, () => {})).not.toThrow();
+    expect(warningsFor(conf)).toEqual([]);
+  });
+
+  test("does nothing when warn is omitted", () => {
+    expect(() =>
+      warnScopedTestCommand({ quality: { commands: { testScoped: "npx turbo test --filter=[HEAD^1]" } } }),
+    ).not.toThrow();
   });
 });
 

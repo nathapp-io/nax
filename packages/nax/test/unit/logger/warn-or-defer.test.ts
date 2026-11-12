@@ -65,16 +65,25 @@ describe("warnOrDefer", () => {
     ]);
     expect(onExit).toHaveBeenCalledTimes(1);
   });
-  test("AC-4: initialized warnings log immediately, including repetitions", () => {
+  // US-004 — warnOrDefer now routes to the logger's warnOnce, so the same config
+  // warning raised by a second loadConfig in one run is written once.
+  test("US-004 AC-3: an initialized logger writes a repeated warning once", () => {
     const logger = init();
-    warnOrDefer("config", "m");
-    warnOrDefer("config", "m");
+    warnOrDefer("config", "x removed");
+    warnOrDefer("config", "x removed");
+    expect(warn.mock.calls).toEqual([["config", "x removed"]]);
+    expect(warn.mock.contexts).toEqual([logger]);
+    expect(onExit).not.toHaveBeenCalled();
+  });
+  test("US-004 AC-4: an initialized logger writes distinct warnings separately", () => {
+    const logger = init();
+    warnOrDefer("config", "a");
+    warnOrDefer("config", "b");
     expect(warn.mock.calls).toEqual([
-      ["config", "m"],
-      ["config", "m"],
+      ["config", "a"],
+      ["config", "b"],
     ]);
     expect(warn.mock.contexts).toEqual([logger, logger]);
-    expect(onExit).not.toHaveBeenCalled();
   });
   test("AC-5: exit writes every pending warning with exact formatting", () => {
     warnOrDefer("config", "first");

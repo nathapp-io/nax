@@ -352,13 +352,20 @@ export function createRunCommandTool(
   const exec = opts.exec;
   const hasExec = exec !== undefined;
   const commandDescriptions = describeDeclaredCommands(declared);
+  // US-005: does ANY declared command consume `files`? Scanned across every
+  // spec, list entries included, because a spec like
+  // `["tsc --noEmit", "bun test {{files}}"]` takes files through its second
+  // entry alone. Computed here rather than in `run-command-surface.ts` because
+  // this module already owns the placeholder scan (`placeholdersOf`) and the
+  // surface module must stay schema-only, with no import back into execution.
+  const takesFiles = [...declared.values()].some((spec) => placeholdersOf(spec).has("files"));
   const runDeclared = declaredCommandRunner(opts);
   return {
     name: "RunCommand",
     // A non-zero exit here is the agent's red/green loop, not a fault.
     routineErrors: true,
     description: runCommandDescription(commandDescriptions, exec),
-    inputSchema: runCommandInputSchema(keys, exec),
+    inputSchema: runCommandInputSchema(keys, exec, takesFiles),
     // `{{files}}` is the declared scoped-test path parameter. Keeping it in
     // the policy's containment seam prevents a quoted-but-otherwise harmless
     // absolute filename from making the configured command act outside root.

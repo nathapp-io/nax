@@ -16,6 +16,8 @@ import { safeCode } from "@/workflow/pr-body-safe";
 import { markReadyArgv } from "@/workflow/promote";
 
 const state: BotFixState = { step: "reply", timings: {}, outcome: "pushed", pushedSha: "abcdef12" };
+/** A readiness pass at this execution's head: the pushed-head hold (US-001) is not what these tests read. */
+const readyPass: BotFixState = { ...state, readyOnly: true };
 /** The `nothing` route: the fix pushed nothing, so there is no pushed head to wait on. */
 const nothingState: BotFixState = { step: "ready", timings: {}, outcome: "nothing" };
 /** The one CI answer that lets a draft become ready (US-003). */
@@ -268,7 +270,7 @@ describe("readyStep", () => {
     "US-008 AC-1/3/5–8: post-green head %s",
     async (mode) => {
       const env = makeBotFixDraftEnv();
-      const currentState = mode === "reviewed" ? nothingState : state;
+      const currentState = mode === "reviewed" ? nothingState : readyPass;
       const order: string[] = [];
       spyOn(_fixReportDeps, "waitForChecks").mockImplementation(async () => {
         order.push("ci");
@@ -305,7 +307,7 @@ describe("readyStep", () => {
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
       throw new Error("waitForChecks must not run on a PR that is not a draft");
     });
-    expect(await readyStep(env, state)).toEqual({ patch: { markedReady: false }, exit: "report" });
+    expect(await readyStep(env, readyPass)).toEqual({ patch: { markedReady: false }, exit: "report" });
     expect(wait).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
@@ -326,7 +328,7 @@ describe("readyStep", () => {
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockImplementation(() => {
       throw new Error("waitForChecks must not run on a nax-workflow PR");
     });
-    expect(await readyStep(env, { ...state, pushedSha: env.info.headSha })).toEqual({
+    expect(await readyStep(env, { ...readyPass, pushedSha: env.info.headSha })).toEqual({
       patch: { markedReady: false, readyHeld: "no nax item index on this PR" },
       exit: "report",
     });
@@ -341,7 +343,7 @@ describe("readyStep", () => {
     });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-    await readyStep(env, state);
+    await readyStep(env, readyPass);
     expect(wait.mock.calls[0]?.[2]?.expectedSha).toBe("abcdef12");
   });
   test("AC-8: waits for CI on the reviewed head when nothing was pushed", async () => {
@@ -360,7 +362,7 @@ describe("readyStep", () => {
     });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-    await readyStep(env, state);
+    await readyStep(env, readyPass);
     expect(wait.mock.calls[0]?.[2]?.timeoutMs).toBe(CI_WAIT_MS);
   });
   test("AC-10: waits with the configured CI poll interval", async () => {
@@ -371,14 +373,14 @@ describe("readyStep", () => {
     });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-    await readyStep(env, state);
+    await readyStep(env, readyPass);
     expect(wait.mock.calls[0]?.[2]?.pollMs).toBe(CI_POLL_MS);
   });
   test("AC-11/12: keeps the draft and says why when CI failed", async () => {
     const env = makeBotFixDraftEnv();
     spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "failed", detail: "a check failed" });
     const run = spyOn(env.forge, "run");
-    expect(await readyStep(env, state)).toEqual({
+    expect(await readyStep(env, readyPass)).toEqual({
       patch: { markedReady: false, readyHeld: "CI failed: a check failed" },
       exit: "report",
     });
@@ -390,7 +392,7 @@ describe("readyStep", () => {
       outcome: "pending",
       detail: "no CI result within 1200000ms",
     });
-    const result = await readyStep(env, state);
+    const result = await readyStep(env, readyPass);
     expect(result.patch.markedReady).toBe(false);
     expect(result.patch.readyHeld).toStartWith("CI pending: ");
   });
@@ -403,7 +405,7 @@ describe("readyStep", () => {
     });
     const wait = spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(greenCi);
     const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-    expect(await readyStep(env, state)).toEqual({ patch: { markedReady: true }, exit: "report" });
+    expect(await readyStep(env, readyPass)).toEqual({ patch: { markedReady: true }, exit: "report" });
     expect(wait).toHaveBeenCalledTimes(1);
     expect(run).toHaveBeenCalledWith(markReadyArgv(forge, env.info.url), { cwd: env.repoRoot });
   });
@@ -427,7 +429,7 @@ describe("readyStep", () => {
       return { exitCode: 0, stdout, stderr: "" };
     });
     const run = spyOn(env.forge, "run");
-    await expect(readyStep(env, state)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(readyStep(env, readyPass)).rejects.toMatchObject({ name: "AbortError" });
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(checks.mock.calls.filter(([cmd]) => cmd[2] === "checks")).toHaveLength(1);
     expect(run).not.toHaveBeenCalled();
@@ -443,7 +445,7 @@ describe("readyStep", () => {
     });
     const read = spyOn(_fixReportDeps, "readPrInfo");
     const run = spyOn(env.forge, "run");
-    await expect(readyStep(env, state)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(readyStep(env, readyPass)).rejects.toMatchObject({ name: "AbortError" });
     expect(read).not.toHaveBeenCalled();
     expect(wait.mock.calls[0]?.[2]?.signal).toBe(runtime.signal);
     expect(run).not.toHaveBeenCalled();
@@ -459,7 +461,7 @@ describe("readyStep", () => {
       headSha: state.pushedSha ?? env.info.headSha,
     });
     spyOn(env.forge, "run").mockResolvedValue({ exitCode, stdout: "", stderr });
-    expect(await readyStep(env, state)).toEqual({
+    expect(await readyStep(env, readyPass)).toEqual({
       patch: { markedReady: false, readyHeld: `could not mark ready: ${detail}` },
       exit: "report",
     });
