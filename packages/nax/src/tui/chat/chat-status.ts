@@ -5,7 +5,9 @@
  * line share (US-016). `footerModel` composes the screen's one-line footer from a host
  * state, that status and the hint the screen is offering (US-017). `workingLine` turns
  * the same status into the animated line the screen redraws every `WORKING_TICK_MS`, and
- * `headerLines` composes the three fixed rows above the transcript (US-018).
+ * `headerLines` composes the three fixed rows above the transcript (US-018). The footer's
+ * role-tagged segmentation, which a fitter drops one role at a time, lives in
+ * `footer-segments.ts` (US-001); this module supplies the spans it is built from.
  *
  * Everything here is pure. A status the event does not change is returned as the same
  * object, so a component that compares by reference does no needless work.
@@ -15,7 +17,7 @@ import { acpModelLabel, type ChatHostState, isChatAcpModel, sessionTitleText } f
 import { contextSpan, formatTokens } from "./context-span";
 import { oneLine, resolveWidth } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
-import { type ChatGlyphs, resolveChatTheme } from "./theme";
+import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
 import { toolTitle } from "./tool-card";
 
 /** What the turn is doing. Only meaningful while `running`. */
@@ -160,25 +162,56 @@ export function shortModel(model: string): string {
   return `${elideEnd(name, SHORT_MODEL_MAX, ELLIPSIS)}${suffix}`;
 }
 
+const SEPARATOR = " · ";
+const SANDBOX_OFF = "sandbox off";
+const SANDBOX_UNAVAILABLE = "sandbox unavailable";
+
 /** The hints with text of their own; `copied` and `layer` compose theirs from a caller's value. */
 type FixedHint = "quit" | "clear" | "busy" | "background" | "backgroundTmux" | "expanded" | "idle";
 
 /** The gesture the footer offers, in precedence order; only one is ever shown. */
 export type FooterHint = FixedHint | "copied" | "layer";
 
-const HINT_TEXT: Readonly<Record<FixedHint, string>> = {
-  quit: "press ctrl-c again to quit",
-  clear: "esc again to clear",
-  busy: "esc to interrupt",
-  background: "esc to interrupt · ctrl+b to background",
-  backgroundTmux: "esc to interrupt · ctrl+b ctrl+b to background",
-  expanded: "ctrl+o to collapse",
-  idle: "shift+tab to cycle",
+/**
+ * How each hint's text splits: the gesture it offers, and the extra keybinding that follows it
+ * when it names a second one. A fitter drops the extra before the gesture, so the split lives
+ * here, with the wording, rather than being recovered from the drawn text.
+ */
+const HINT_PARTS: Readonly<Record<FixedHint, { readonly gesture: string; readonly extra?: string }>> = {
+  quit: { gesture: "press ctrl-c again to quit" },
+  clear: { gesture: "esc again to clear" },
+  busy: { gesture: "esc to interrupt" },
+  background: { gesture: "esc to interrupt", extra: "ctrl+b to background" },
+  backgroundTmux: { gesture: "esc to interrupt", extra: "ctrl+b ctrl+b to background" },
+  expanded: { gesture: "ctrl+o to collapse" },
+  idle: { gesture: "/ commands", extra: "shift+tab to cycle" },
 };
 
-const SEPARATOR = " · ";
-const SANDBOX_OFF = "sandbox off";
-const SANDBOX_UNAVAILABLE = "sandbox unavailable";
+/** The hint's own spans; `copied` and `layer` read their text from the caller. */
+export function hintSpans(
+  hint: FooterHint,
+  copiedChars = 0,
+  layerHint = "",
+): { readonly gesture: Span; readonly extra?: Span } {
+  const fixed = hint === "copied" || hint === "layer" ? undefined : HINT_PARTS[hint];
+  const gestureText = fixed?.gesture ?? (hint === "copied" ? `copied ${copiedChars} chars` : layerHint);
+  const color: ChatColorToken = hint === "quit" ? "warning" : "muted";
+  const gesture: Span = { text: gestureText, color };
+  return fixed?.extra === undefined ? { gesture } : { gesture, extra: { text: fixed.extra, color } };
+}
+
+/**
+ * The hint's text as one span: the gesture, then its extra. The unfitted footer draws the idle
+ * hint's extra alone, since the `/ commands` gesture exists only in the fitted footer.
+ */
+function hintSpan(hint: FooterHint, copiedChars = 0, layerHint = ""): Span {
+  const { gesture, extra } = hintSpans(hint, copiedChars, layerHint);
+  if (hint === "idle") return extra ?? gesture;
+  return {
+    text: extra === undefined ? gesture.text : `${gesture.text}${SEPARATOR}${extra.text}`,
+    color: gesture.color,
+  };
+}
 
 const COST_DECIMALS = 2;
 const COST_PREFIX = "$";
@@ -189,7 +222,7 @@ const COST_PREFIX = "$";
  * resolved theme passes that theme's glyphs in, so an ASCII or a differently-glyphed terminal
  * reaches the header and the footer too — `StyledLineView` substitutes colours, not glyphs.
  */
-const GLYPHS = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs;
+export const GLYPHS = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs;
 
 /**
  * Host text as one row: escape sequences and controls are stripped, then a line break
@@ -197,7 +230,7 @@ const GLYPHS = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs;
  * each, so a cwd, a version, a model or a tool name carrying a newline must not add a row
  * to the screen.
  */
-function singleRow(text: string): string {
+export function singleRow(text: string): string {
   return oneLine(sanitizeText(text));
 }
 
@@ -206,7 +239,7 @@ function modeLabel(mode: ChatHostState["mode"]): string {
   return mode === "full" ? "full" : "guarded";
 }
 
-function modeSpan(state: ChatHostState, glyphs: ChatGlyphs): Span {
+export function modeSpan(state: ChatHostState, glyphs: ChatGlyphs): Span {
   const full = state.mode === "full";
   return {
     text: `${full ? glyphs.modeFull : glyphs.modeGuarded} ${modeLabel(state.mode)}`,
@@ -214,14 +247,8 @@ function modeSpan(state: ChatHostState, glyphs: ChatGlyphs): Span {
   };
 }
 
-/** The hint's own text: `copied` and `layer` read their value from the caller. */
-function hintSpan(hint: FooterHint, copiedChars = 0, layerHint = ""): Span {
-  const text = hint === "copied" ? `copied ${copiedChars} chars` : hint === "layer" ? layerHint : HINT_TEXT[hint];
-  return { text, color: hint === "quit" ? "warning" : "muted" };
-}
-
 /** A sandbox nobody can rely on is a warning; one that is off is only a muted fact. */
-function sandboxSpan(sandbox: ChatHostState["sandbox"]): Span | undefined {
+export function sandboxSpan(sandbox: ChatHostState["sandbox"]): Span | undefined {
   if (sandbox?.kind === "available") return undefined;
   if (sandbox?.kind === "unavailable") {
     return { text: `${SEPARATOR}${SANDBOX_UNAVAILABLE}`, color: "warning" };
@@ -244,7 +271,7 @@ function leftLine(input: {
   return sandbox === undefined ? spans : [...spans, sandbox];
 }
 
-function costSpan(state: ChatHostState): Span {
+export function costSpan(state: ChatHostState): Span {
   const cost = (state.meta.costUsd ?? 0).toFixed(COST_DECIMALS);
   return { text: `${SEPARATOR}${COST_PREFIX}${cost}`, color: "muted" };
 }
@@ -398,7 +425,7 @@ function workingDetail(status: TurnStatus, elapsed: number, escHint: string): st
 }
 
 /** What esc does on the top layer, when nothing is drawn over the turn. */
-const ESC_INTERRUPT = HINT_TEXT.busy;
+const ESC_INTERRUPT = HINT_PARTS.busy.gesture;
 
 /**
  * The line the screen shows while a turn runs: a spinner frame and what the turn is doing,
