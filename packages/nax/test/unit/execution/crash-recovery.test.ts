@@ -15,6 +15,7 @@ import {
   startHeartbeat,
   stopHeartbeat,
   writeExitSummary,
+  writeRunComplete,
 } from "@/execution/crash-recovery";
 import { StatusWriter } from "@/execution/status-writer";
 
@@ -42,6 +43,31 @@ afterEach(() => {
   if (existsSync(TEST_DIR)) {
     rmSync(TEST_DIR, { recursive: true, force: true });
   }
+});
+
+describe("writeRunComplete counters", () => {
+  test.each([
+    {
+      getters: { getStoriesCompleted: () => 8, getStoriesPassed: () => 8, getStoriesFailed: () => 1 },
+      expected: [8, 8, 1],
+    },
+    { getters: {}, expected: [0, 0, 0] },
+  ])("writes counters with optional getters", async ({ getters, expected }) => {
+    await writeRunComplete(
+      {
+        jsonlFilePath: TEST_JSONL,
+        runId: "r",
+        feature: "f",
+        getTotalCost: () => 0,
+        getIterations: () => 0,
+        ...getters,
+      },
+      "sigterm",
+    );
+    const entry = JSON.parse(await Bun.file(TEST_JSONL).text());
+    expect(entry.message).toBe("Feature execution terminated");
+    expect([entry.data.storiesCompleted, entry.data.storiesPassed, entry.data.storiesFailed]).toEqual([...expected]);
+  });
 });
 
 describe("crash-recovery", () => {

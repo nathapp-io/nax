@@ -146,6 +146,8 @@ export interface RunSetupOptions {
   getIterations: () => number;
   // @design: BUG-017: Additional getters for run.complete event on SIGTERM
   getStoriesCompleted: () => number;
+  getStoriesPassed?: () => number;
+  getStoriesFailed?: () => number;
   getTotalStories: () => number;
   /** Protocol-aware agent resolver — passed from runner.ts registry */
   agentGetFn?: AgentGetFn;
@@ -352,6 +354,8 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       getStartTime: () => options.startTime,
       getTotalStories: options.getTotalStories,
       getStoriesCompleted: options.getStoriesCompleted,
+      getStoriesPassed: options.getStoriesPassed,
+      getStoriesFailed: options.getStoriesFailed,
       emitError: (reason: string) => {
         pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
       },

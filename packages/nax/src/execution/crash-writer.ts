@@ -50,6 +50,8 @@ export interface RunCompleteContext {
   getStartTime?: () => number;
   getTotalStories?: () => number;
   getStoriesCompleted?: () => number;
+  getStoriesPassed?: () => number;
+  getStoriesFailed?: () => number;
 }
 
 export async function writeRunComplete(ctx: RunCompleteContext, exitReason: string): Promise<void> {
@@ -79,6 +81,8 @@ export async function writeRunComplete(ctx: RunCompleteContext, exitReason: stri
         iterations,
         totalStories,
         storiesCompleted,
+        storiesPassed: ctx.getStoriesPassed?.() ?? 0,
+        storiesFailed: ctx.getStoriesFailed?.() ?? 0,
         durationMs,
       },
     };

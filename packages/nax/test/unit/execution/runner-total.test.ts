@@ -20,6 +20,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   assertDefined,
+  cleanupTempDir,
   makeMockRuntime,
   makeNaxConfig,
   makePluginRegistry,
@@ -27,6 +28,7 @@ import {
   makeSpawn,
   makeStatusWriter,
   makeStory,
+  makeTempDir,
 } from "@test/helpers";
 import {
   _runnerDeps,
@@ -36,7 +38,9 @@ import {
   type RunOptions,
   run,
 } from "@/execution";
-import type { RunnerSetupResult } from "@/execution/runner-setup";
+import { _crashSignalsDeps, installSignalHandlers } from "@/execution/crash-signals";
+import type { RunnerSetupOptions, RunnerSetupResult } from "@/execution/runner-setup";
+import { StatusWriter } from "@/execution/status-writer";
 import { InteractionChain } from "@/interaction";
 import type { PRD } from "@/prd";
 import { RunStateKeeper } from "@/runstate";
@@ -277,6 +281,104 @@ describe("runner.run() — US-001 reconciled-total handoff", () => {
     expect(result.totalCost).toBeCloseTo(RECONCILED_TOTAL, 4);
     expect(cleanupTotalCost).toBeCloseTo(RECONCILED_TOTAL, 4);
     expect(cleanupTotalCost).not.toBeCloseTo(EXECUTION_ACCUMULATOR, 4);
+  });
+});
+
+describe("runner crash counters", () => {
+  test.each([true, false])("uses live PRD when present: %s", async (live) => {
+    const setupPrd = live
+      ? makePRD({ userStories: [makeStory({ status: "pending" })] })
+      : makePRD({
+          userStories: [
+            makeStory({ status: "passed" }),
+            makeStory({ status: "passed" }),
+            makeStory({ status: "failed" }),
+          ],
+        });
+    const livePrd = makePRD({
+      userStories: [
+        makeStory({ status: "passed" }),
+        makeStory({ status: "passed" }),
+        makeStory({ status: "passed" }),
+        makeStory({ status: "failed" }),
+      ],
+    });
+    const setup = makeSetupResult(setupPrd);
+    setup.statusWriter = new StatusWriter("/tmp/unused-status.json", makeNaxConfig(), {
+      runId: "r",
+      feature: "f",
+      startedAt: "",
+      dryRun: false,
+      startTimeMs: 0,
+      pid: 0,
+    });
+    if (live) setup.statusWriter.setPrd(livePrd);
+    let captured: RunnerSetupOptions | undefined;
+    _runnerDeps.runSetupPhase = async (opts) => {
+      captured = opts;
+      return setup;
+    };
+    _runnerDeps.runExecutionPhase = async () => {
+      assertDefined(captured, "setup options");
+      expect(captured.getStoriesCompleted()).toBe(live ? 3 : 2);
+      expect(captured.getStoriesPassed?.()).toBe(live ? 3 : 2);
+      expect(captured.getStoriesFailed?.()).toBe(1);
+      return {
+        prd: setupPrd,
+        iterations: 0,
+        storiesCompleted: 0,
+        totalCost: 0,
+        allStoryMetrics: [],
+        exitReason: "completed",
+      };
+    };
+    _runnerDeps.runCompletionPhase = async () => ({
+      durationMs: 0,
+      runCompletedAt: "",
+      pluginGateFailed: false,
+      reportedTotal: 0,
+    });
+    _runnerDeps.cleanupRun = async () => {};
+    await run(makeMinimalOptions());
+  });
+
+  test("setup-time interrupt safely writes zero counters before setup resolves", async () => {
+    const dir = makeTempDir("runner-crash-");
+    try {
+      _runnerDeps.runSetupPhase = async (opts) => {
+        const originalExit = _crashSignalsDeps.exit;
+        _crashSignalsDeps.exit = () => {};
+        const cleanup = installSignalHandlers({
+          ...opts,
+          workdir: undefined,
+          statusWriter: makeStatusWriter(),
+          jsonlFilePath: `${dir}/log`,
+          feature: "f",
+        });
+        try {
+          const listeners = process.listeners("SIGTERM");
+          const handler = listeners[listeners.length - 1];
+          assertDefined(handler, "SIGTERM handler");
+          await handler("SIGTERM");
+        } finally {
+          cleanup();
+          _crashSignalsDeps.exit = originalExit;
+        }
+        const entries = (await Bun.file(`${dir}/log`).text())
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        const entry = entries.find((item) => item.message === "Feature execution terminated");
+        expect(entry).toBeDefined();
+        expect(entry.data.storiesCompleted).toBe(0);
+        expect(entry.data.storiesPassed).toBe(0);
+        expect(entry.data.storiesFailed).toBe(0);
+        throw new Error("stop after setup signal");
+      };
+      await expect(run(makeMinimalOptions())).rejects.toThrow("stop after setup signal");
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });
 
