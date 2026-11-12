@@ -13,6 +13,7 @@ import { _statusLayoutDeps } from "@/tui/chat/status-layout";
  */
 const MODEL = "opencode-go/deepseek-v4.1-flash";
 const AVAILABLE: SandboxState = { kind: "available", backend: "srt", network: "open" };
+const UNAVAILABLE: SandboxState = { kind: "unavailable", backend: "srt", reason: "no-backend" };
 /** What a stubbed `footerSegments` returns, so the row can only come from those segments. */
 const STUB_GESTURE = "STUB-GESTURE";
 const STUB_COST = "STUB-COST";
@@ -28,8 +29,8 @@ afterEach(() => {
 });
 
 /** The screen mounted over the story's fixture state. */
-function mountScreen() {
-  return mountChatPicker({ current: { model: MODEL, sandbox: AVAILABLE } });
+function mountScreen(sandbox: SandboxState = AVAILABLE) {
+  return mountChatPicker({ current: { model: MODEL, sandbox } });
 }
 
 /**
@@ -78,6 +79,18 @@ describe("ChatApp footer on a narrow terminal", () => {
     screen.emit({ type: "turn_start" });
     const row = footerRow(screen);
     expect(row).toContain("esc to interrupt");
+    expect(row).toContain("$0.00");
+    expect(Bun.stringWidth(row)).toBeLessThanOrEqual(40);
+    await screen.finish();
+  });
+
+  test("AC-12 a 40x20 screen on an unavailable sandbox keeps the short warning and the cost", async () => {
+    const screen = mountScreen(UNAVAILABLE);
+    await resizeAt(screen, 40, 20);
+    await screen.submit("hello");
+    screen.emit({ type: "turn_start" });
+    const row = footerRow(screen);
+    expect(row).toContain("sandbox n/a");
     expect(row).toContain("$0.00");
     expect(Bun.stringWidth(row)).toBeLessThanOrEqual(40);
     await screen.finish();
