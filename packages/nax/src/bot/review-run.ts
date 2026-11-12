@@ -24,7 +24,7 @@ import { featureIntentPaths } from "./intent";
 import type { BotLog } from "./log";
 import { botModel } from "./models";
 import { sensitivePaths } from "./path-policy";
-import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome } from "./post";
+import { BOT_REVIEW_FILENAME, type PostReviewInput, type PostReviewOutcome, reviewQuality } from "./post";
 import { _botReviewDeps } from "./review-deps";
 import { readReviewRulings, reviewRange, reviewScopeOf } from "./review-rulings";
 import type { PrReviewInput } from "./review-step";
@@ -39,7 +39,8 @@ export type BotReviewResult =
       readonly spentUsd?: number;
       readonly limitUsd?: number;
       readonly intent: PrReviewVerdict["intent"];
-      readonly quality: PrReviewVerdict["quality"];
+      /** `not-reviewed` when the review read no code (US-001). */
+      readonly quality: PrReviewVerdict["quality"] | "not-reviewed";
       readonly staticMode: boolean;
       readonly checksSource: BotCheckSource | null;
       readonly artifactPath: string;
@@ -385,13 +386,15 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     },
   );
   if (!state.posted || !state.verdict) return { outcome: "not-reviewed", reason: state.reason ?? "review did not run" };
+  // The artifact, the summary and this result all report the same quality (US-001).
+  const quality = reviewQuality(env.post.scope, state.verdict.quality);
   getLogger().info("bot", "Bot review posted", {
     inlineFindings: state.posted.inlineFindings,
     threadsAnswered: state.posted.threadsAnswered,
     earlierAnswered: state.posted.earlierAnswered,
     failed: state.posted.failed,
     intent: state.verdict.intent,
-    quality: state.verdict.quality,
+    quality,
   });
   return {
     outcome: "posted",
@@ -399,7 +402,7 @@ async function executeReview(env: ReviewEnv, runtime: ReturnType<typeof createRu
     limitUsd: env.cost.limitUsd,
     ...state.posted,
     intent: state.verdict.intent,
-    quality: state.verdict.quality,
+    quality,
     staticMode: env.review.staticMode,
     checksSource: env.checks?.source ?? null,
     ...(env.post.callerRulings === undefined ? {} : { callerRulings: env.post.callerRulings }),

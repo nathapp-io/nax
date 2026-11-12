@@ -134,6 +134,17 @@ describe("runBotFixCycle", () => {
       });
     },
   );
+  test("US-001 AC-15 the ready pass readies the pushed head, never the post-push fix", async () => {
+    const { deps } = fixture();
+    const ready: BotFixResult = { step: "done", timings: {}, outcome: "ready-pass", markedReady: true };
+    deps.runBotFix.mockImplementation(async (call: BotFixInput) => (call.readyOnly === true ? ready : pushed));
+    const result = await runBotFixCycle(input, deps);
+    if (result.fix.outcome === "refused") throw new Error(`refused: ${result.fix.reason}`);
+    expect(result.fix.markedReady).not.toBe(true);
+    if (result.ready?.outcome === "refused") throw new Error(`refused: ${result.ready.reason}`);
+    expect(result.ready?.markedReady).toBe(true);
+    expect(deps.runBotFix).toHaveBeenLastCalledWith({ ...input, readyOnly: true, costLimitUsd: 3 });
+  });
   test("explicit override wins over fix limit", async () => {
     const { deps } = fixture();
     await runBotFixCycle({ ...input, costLimitUsd: 10 }, deps);

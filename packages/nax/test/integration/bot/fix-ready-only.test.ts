@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { makeBotFixDeps, makeBotFixEnv, makeTestRuntime } from "@test/helpers";
+import { _fixInputDeps, type BotReviewArtifact, loadLatestReview } from "@/bot";
 import { _botFixDeps, runBotFix } from "@/bot/fix-run";
 import { _fixStepsDeps } from "@/bot/fix-steps";
 
 const original = { ..._botFixDeps };
 const stepsOriginal = { ..._fixStepsDeps };
+const inputOriginal = { ..._fixInputDeps };
 const runtimes: ReturnType<typeof makeTestRuntime>[] = [];
 afterEach(async () => {
   Object.assign(_botFixDeps, original);
   Object.assign(_fixStepsDeps, stepsOriginal);
+  Object.assign(_fixInputDeps, inputOriginal);
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
 });
 function fixture(withFindings = false) {
@@ -70,5 +73,34 @@ describe("runBotFix ready-only", () => {
       reason: expect.stringContaining("no nax bot review of head"),
     });
     expect(f.readyStep).not.toHaveBeenCalled();
+  });
+  test("US-001 AC-9: open findings survive a newer conversation-only review of the head", async () => {
+    const f = fixture();
+    const code: BotReviewArtifact = {
+      version: 3,
+      scope: "full",
+      pr: f.env.ref,
+      headSha: f.env.info.headSha,
+      trusted: true,
+      intent: "pass",
+      quality: "changes",
+      agreed: [{ kind: "finding", key: "f-9", issue: "leaks", severity: "important" }],
+    };
+    const conversation: BotReviewArtifact = {
+      ...code,
+      scope: "conversation-only",
+      quality: "not-reviewed",
+      agreed: [],
+    };
+    // Two artifacts of one head, served through the real selector: the newer review read no code.
+    _fixInputDeps.glob = async () => ["newer", "older"];
+    _fixInputDeps.readText = async (path) => JSON.stringify(path === "newer" ? conversation : code);
+    _fixInputDeps.mtimeMs = async (path) => (path === "newer" ? 2 : 1);
+    _botFixDeps.loadLatestReview = loadLatestReview;
+    const result = await runBotFix({ ...input, readyOnly: true });
+    if (result.outcome === "refused") throw new Error(`refused: ${result.reason}`);
+    expect(f.readyStep.mock.calls[0]?.[0].codeReview).toEqual(code);
+    expect(result.markedReady).toBe(false);
+    expect(result.readyHeld).toContain("f-9");
   });
 });

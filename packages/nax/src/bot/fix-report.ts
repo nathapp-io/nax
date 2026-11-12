@@ -31,6 +31,7 @@ import { evidenceComment, markReadyArgv } from "../workflow/promote";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { readHeadGateNames } from "./head-gates";
+import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
 import { safeText } from "./render";
 import { rulingModelReader } from "./ruling-reader";
@@ -38,6 +39,7 @@ import { type RecordRulingsOutcome, recordPrRulings } from "./rulings";
 import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
+const READY_HOLD_FINDINGS_SHOWN = 5;
 const MAX_FAILURE_LENGTH = 500;
 const MAX_ISSUE_LENGTH = 200;
 const OUT_OF_ITEM_FILES_SHOWN = 20;
@@ -291,6 +293,38 @@ async function headGateHold(env: BotFixEnv): Promise<string | undefined> {
   }
 }
 
+/**
+ * US-001: this execution pushed, so no bot review has seen the pushed head yet. The cycle reviews it and
+ * then runs the ready-only pass; `--no-rereview` leaves the PR a draft until `--ready-only` recovers it.
+ */
+function pushedHeadHold(env: BotFixEnv, state: BotFixState): string | undefined {
+  if (!state.pushedSha || state.readyOnly === true) return undefined;
+  const n = env.ref.number;
+  const sha = state.pushedSha.slice(0, SHORT_SHA_LENGTH);
+  return `pushed ${sha}; a bot review of the pushed head decides readiness (nax bot review ${n}, then nax bot fix ${n} --ready-only)`;
+}
+
+/** The review readiness reads: the head's code review when the caller loaded one, else the latest. */
+function readinessReview(env: BotFixEnv): BotReviewArtifact {
+  return env.codeReview ?? env.review;
+}
+
+/**
+ * US-001: an open critical/important finding of the head's bot review holds readiness. `agreed` already
+ * excludes settled findings, and minor findings, threads and comments never hold.
+ */
+function openFindingHold(env: BotFixEnv): string | undefined {
+  const review = readinessReview(env);
+  const keys = review.agreed
+    .filter((item) => item.kind === "finding" && (item.severity === "critical" || item.severity === "important"))
+    .map((item) => item.key);
+  if (keys.length === 0) return undefined;
+  const hidden = keys.length - READY_HOLD_FINDINGS_SHOWN;
+  const listed = keys.slice(0, READY_HOLD_FINDINGS_SHOWN).join(", ");
+  const head = review.headSha.slice(0, SHORT_SHA_LENGTH);
+  return `${keys.length} open critical/important finding(s) in the bot review of ${head}: ${listed}${hidden > 0 ? `, +${hidden} more` : ""}`;
+}
+
 /** Only durable workflow rulings and exact-head green CI can release a workflow draft. */
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (
@@ -301,6 +335,10 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
       patch: { markedReady: false, readyHeld: `PR head did not reach ${state.pushedSha.slice(0, SHORT_SHA_LENGTH)}` },
       exit: "report",
     };
+  const pushedHeld = pushedHeadHold(env, state);
+  if (pushedHeld) return { patch: { markedReady: false, readyHeld: pushedHeld }, exit: "report" };
+  const findingsHeld = openFindingHold(env);
+  if (findingsHeld) return { patch: { markedReady: false, readyHeld: findingsHeld }, exit: "report" };
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
   const headGates = await headGateHold(env);
   if (headGates) return { patch: { markedReady: false, readyHeld: headGates }, exit: "report" };

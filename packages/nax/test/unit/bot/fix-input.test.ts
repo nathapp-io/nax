@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import type { BotReviewArtifact } from "@/bot";
 import * as bot from "@/bot";
 import { getLogger } from "@/logger";
 import { buildUntrustedRequestIssue } from "@/prompts";
@@ -80,6 +81,34 @@ test.each([
   bot._fixInputDeps.readText = async () => JSON.stringify({ version: 2, headSha: "h", checks });
   bot._fixInputDeps.mtimeMs = async () => 1;
   expect(await bot.loadLatestReview("/o", 42, "h")).toBeNull();
+});
+
+describe("loadLatestReview code-only selection (US-001)", () => {
+  const code: BotReviewArtifact = {
+    version: 3,
+    headSha: "h",
+    scope: "full",
+    quality: "changes",
+    trusted: true,
+    pr: { forge: "github", host: "github.test", repo: "o/r", number: 42 },
+    intent: "pass",
+    agreed: [{ kind: "finding", key: "f-1", issue: "Leak", severity: "important" }],
+  };
+  const conversation: BotReviewArtifact = { ...code, scope: "conversation-only", quality: "not-reviewed", agreed: [] };
+  /** Two artifacts of one head: the newer conversation-only review over the older code review. */
+  function oneHead(): void {
+    bot._fixInputDeps.glob = async () => ["newer", "older"];
+    bot._fixInputDeps.readText = async (path) => JSON.stringify(path === "newer" ? conversation : code);
+    bot._fixInputDeps.mtimeMs = async (path) => (path === "newer" ? 2 : 1);
+  }
+  test("AC-10 reads past a conversation-only artifact of the same head", async () => {
+    oneHead();
+    expect(await bot.loadLatestReview("/o", 42, "h", { codeOnly: true })).toEqual(code);
+  });
+  test("AC-11 without the option the newest artifact wins", async () => {
+    oneHead();
+    expect(await bot.loadLatestReview("/o", 42, "h")).toEqual(conversation);
+  });
 });
 
 describe("loadLatestReview writer-checked artifact versions", () => {

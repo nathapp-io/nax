@@ -386,6 +386,8 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
         },
         log,
       );
+    // A conversation-only review reads no code; the head's readiness findings live in its code review.
+    const codeReview = await deps.loadLatestReview(runtime.outputDir, ref.number, info.headSha, { codeOnly: true });
     if (!input.readyOnly) {
       const access = await deps.checkPushAccess(checkout.worktree, info.headRef);
       if (!access.ok)
@@ -415,6 +417,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       },
       config,
       review,
+      ...(codeReview === null ? {} : { codeReview }),
       model: input.model,
       forge: deps.forge,
       cost: botCostEnv(config, runtime, input.costLimitUsd),

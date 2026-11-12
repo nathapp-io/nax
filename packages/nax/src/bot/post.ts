@@ -75,7 +75,8 @@ export interface BotReviewArtifact {
   /** Diagnostic only; not an authorization decision for fixes. */
   readonly trusted: boolean;
   readonly intent: PrReviewVerdict["intent"];
-  readonly quality: PrReviewVerdict["quality"];
+  /** `not-reviewed` when the review read no code (US-001); the verdict's own quality otherwise. */
+  readonly quality: PrReviewVerdict["quality"] | "not-reviewed";
   readonly agreed: readonly AgreedItem[];
 }
 export interface PostReviewInput {
@@ -124,6 +125,17 @@ export interface PostReviewOutcome {
 }
 
 export const BOT_REVIEW_FILENAME = "bot-review.json";
+
+/**
+ * What a review may honestly report about code quality (US-001). A conversation-only review read no code,
+ * so it reports `not-reviewed` rather than the verdict's own quality, which its prompt could not have earned.
+ */
+export function reviewQuality(
+  scope: BotReviewScope | undefined,
+  quality: PrReviewVerdict["quality"],
+): BotReviewArtifact["quality"] {
+  return scope === "conversation-only" ? "not-reviewed" : quality;
+}
 
 export const _postDeps = {
   writeArtifact: (path: string, artifact: BotReviewArtifact): Promise<number> =>
@@ -213,7 +225,7 @@ async function persistArtifact(input: PostReviewInput): Promise<void> {
     headSha: input.info.headSha,
     trusted: !input.staticMode,
     intent: input.verdict.intent,
-    quality: input.verdict.quality,
+    quality: reviewQuality(input.scope, input.verdict.quality),
     agreed: agreedItems(input),
   };
   try {
@@ -325,7 +337,7 @@ async function postSummary(
     ...(input.scope === undefined ? {} : { scope: input.scope }),
     ...(input.incrementalSince === undefined ? {} : { incrementalSince: input.incrementalSince }),
     intent: input.verdict.intent,
-    quality: input.verdict.quality,
+    quality: reviewQuality(input.scope, input.verdict.quality),
     earlier: earlierCounts(input),
     checks: input.staticMode ? null : input.checks,
     preRunFailed: input.preRunFailed,

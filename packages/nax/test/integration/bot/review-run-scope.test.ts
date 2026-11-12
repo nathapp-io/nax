@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeBotReviewDeps, makeNaxConfig, makeTestRuntime } from "@test/helpers";
+import { _postDeps, type BotReviewArtifact, postPrReview as botPostPrReview } from "@/bot";
 import { _botReviewDeps, runBotReview } from "@/bot/review-run";
 import { _reviewStepDeps, type runPrReview } from "@/bot/review-step";
 import type { RecordRulingsOutcome, recordPrRulings } from "@/bot/rulings";
@@ -132,5 +133,42 @@ describe("runBotReview review scope", () => {
   test("AC-8 a same-head review posts the conversation-only scope", async () => {
     await runBotReview(input);
     expect(postInput().scope).toBe("conversation-only");
+  });
+});
+
+describe("runBotReview reported quality (US-001)", () => {
+  const writeArtifact = _postDeps.writeArtifact;
+  const artifacts: BotReviewArtifact[] = [];
+  /** The real post step, so the artifact and the summary read the same quality. */
+  function realPost(): void {
+    Object.assign(_botReviewDeps, {
+      forge: { run: async () => ({ exitCode: 0, stdout: '{"id":1}', stderr: "" }), readText: async () => null },
+      postPrReview: botPostPrReview,
+    });
+  }
+  beforeEach(() => {
+    artifacts.length = 0;
+    _postDeps.writeArtifact = async (_path, artifact) => {
+      artifacts.push(artifact);
+      return 0;
+    };
+  });
+  afterEach(() => {
+    _postDeps.writeArtifact = writeArtifact;
+  });
+  test("AC-16/17 a conversation-only review writes and reports not-reviewed", async () => {
+    realPost();
+    const result = await runBotReview(input);
+    if (result.outcome !== "posted") throw new Error(`not posted: ${result.reason}`);
+    expect(artifacts.map((artifact) => artifact.quality)).toEqual(["not-reviewed"]);
+    expect(result.quality).toBe("not-reviewed");
+  });
+  test("AC-18 a full review keeps the verdict's own quality", async () => {
+    realPost();
+    info = { ...info, headSha: later };
+    const result = await runBotReview(full);
+    if (result.outcome !== "posted") throw new Error(`not posted: ${result.reason}`);
+    expect(artifacts.map((artifact) => artifact.quality)).toEqual(["approved"]);
+    expect(result.quality).toBe("approved");
   });
 });

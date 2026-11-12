@@ -176,12 +176,15 @@ describe("BOT_FIX_GRAPH ready node", () => {
     _botFixDeps.reportStep = reportStep;
     spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
     spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue({ outcome: "green", detail: "passed" });
-    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue({ ...env.info, headSha: "abcdef12" });
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
     spyOn(env.forge, "run").mockResolvedValue({ exitCode: 1, stdout: "", stderr: "denied\n" });
     const post = spyOn(_fixReportDeps, "postPrComment").mockResolvedValue({ id: "summary" });
+    // Nothing pushed, so no US-001 pushed-head hold stands between the ready write and its report.
+    nothingRoute();
     const result = await runGraph(env);
     expect(result.step).toBe("done");
     expect(result.markedReady).toBe(false);
+    expect(result.readyHeld).toBe("could not mark ready: denied");
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0]?.[1]).toContain("Kept as draft: could not mark ready");
   });
@@ -202,6 +205,27 @@ describe("BOT_FIX_GRAPH ready node", () => {
       { aborted: () => false, now: () => 0 },
     );
   }
+
+  test("US-001 AC-8: a fix that pushed holds readiness for a bot review of the pushed head", async () => {
+    _botFixDeps.readyStep = async (env, state) => {
+      calls.push("ready");
+      return readyStep(env, state);
+    };
+    _botFixDeps.pushStep = async () => {
+      calls.push("push");
+      return { patch: { outcome: "pushed", pushedSha: "abc1234def" }, exit: "pushed" };
+    };
+    spyOn(_fixReportDeps, "waitForPrHead").mockResolvedValue(true);
+    const run = spyOn(_botFixDeps.forge, "run");
+    const result = await runBotFix(input);
+    if (result.outcome === "refused") throw new Error(`refused: ${result.reason}`);
+    expect(result.outcome).toBe("pushed");
+    expect(result.pushedSha).toBe("abc1234def");
+    expect(result.markedReady).not.toBe(true);
+    expect(result.readyHeld).toStartWith("pushed abc1234");
+    expect(calls).toEqual(["fix", "check", "gates", "ledger", "push", "reply", "ready", "report"]);
+    expect(run).not.toHaveBeenCalled();
+  });
 
   test("AC-19/20: a failed CI keeps the draft and never marks it ready", async () => {
     const env = makeBotFixDraftEnv();

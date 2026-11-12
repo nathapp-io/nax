@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { Command } from "commander";
-import type { BotFixResult, BotReviewResult, runBotFix, runBotReview } from "@/bot";
+import type { BotFixResult, BotReviewResult, runBotFix, runBotFixCycle, runBotReview } from "@/bot";
 import { _botCliDeps, registerBotCommand } from "@/cli/bot";
 import { NaxError } from "@/errors";
 
@@ -10,6 +10,7 @@ let exits: number[];
 let result: BotFixResult;
 let failure: unknown;
 let interactive: boolean;
+let cycles: Parameters<typeof runBotFixCycle>[0][];
 const fix = mock(async (_input: Parameters<typeof runBotFix>[0]) => {
   if (failure) throw failure;
   return result;
@@ -24,6 +25,7 @@ beforeEach(() => {
   stdout = [];
   stderr = [];
   exits = [];
+  cycles = [];
   result = { outcome: "pushed", pushedSha: "abcdef12", step: "done", timings: {} };
   failure = undefined;
   interactive = false;
@@ -46,7 +48,10 @@ async function run(args: string[], command = "fix"): Promise<void> {
     },
     isInteractive: () => interactive,
     runBotFix: fix,
-    runBotFixCycle: async (input) => ({ fix: await fix(input) }),
+    runBotFixCycle: async (input) => {
+      cycles.push(input);
+      return { fix: await fix(input) };
+    },
     runBotReview: review,
   });
   await program.parseAsync(["bot", command, ...args], { from: "user" });
@@ -184,6 +189,42 @@ describe("bot fix help and export", () => {
   test("exports botFixCommand through the public CLI barrel", async () => {
     const cli = await import("@/cli");
     expect(Reflect.get(cli, "botFixCommand")).toBeFunction();
+  });
+});
+
+describe("US-001 ready-only CLI pass", () => {
+  test("AC-12 --ready-only calls runBotFix directly and never the cycle", async () => {
+    result = { outcome: "ready-pass", step: "done", timings: {}, readyOnly: true, markedReady: true };
+    await run(["42", "--ready-only"]);
+    expect(cycles).toEqual([]);
+    expect(fix).toHaveBeenCalledTimes(1);
+    expect(fix).toHaveBeenCalledWith(expect.objectContaining({ pr: 42, readyOnly: true }));
+  });
+
+  test("AC-13 prints the held readiness pass and exits zero", async () => {
+    result = {
+      outcome: "ready-pass",
+      step: "done",
+      timings: {},
+      readyOnly: true,
+      markedReady: false,
+      readyHeld: "1 open critical/important finding(s) in the bot review of abc1234: f-1",
+    };
+    await run(["42", "--ready-only"]);
+    expect(stdout).toEqual([
+      "nax bot fix: ready pass — Kept as draft: 1 open critical/important finding(s) in the bot review of abc1234: f-1",
+    ]);
+    expect(stderr).toEqual([]);
+    expect(exits).toEqual([0]);
+  });
+
+  test("AC-14 --no-rereview forwards the opt-out and reports no readiness of the pushed head", async () => {
+    await run(["42", "--no-rereview"]);
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0]).toMatchObject({ pr: 42, rereview: false });
+    expect(stdout).toEqual(["nax bot fix: PR #42 — pushed abcdef1"]);
+    expect(stdout.join("\n")).not.toContain("Marked ready");
+    expect(exits).toEqual([0]);
   });
 });
 
