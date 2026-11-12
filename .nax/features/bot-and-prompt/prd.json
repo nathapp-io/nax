@@ -3,7 +3,7 @@
   "feature": "bot-and-prompt",
   "branchName": "feat/bot-and-prompt",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T13:35:30.102Z",
+  "updatedAt": "2026-11-12T13:51:54.428Z",
   "userStories": [
     {
       "id": "US-001",
@@ -191,14 +191,17 @@
         "security"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A mode-specific prompt constant, reuse of reviewBuildSteps and propagation of existing CI failureDetail are bounded changes across existing sites; neither protected-path enforcement nor permissions/session management changes."
+        "reasoning": "A mode-specific prompt constant, reuse of reviewBuildSteps and propagation of existing CI failureDetail are bounded changes across existing sites; neither protected-path enforcement nor permissions/session management changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/bot-pr-fix-builder.ts",
@@ -215,7 +218,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ae49b679592993aac645c9b33f1fe5bcf422f5c9"
     },
     {
       "id": "US-004",
