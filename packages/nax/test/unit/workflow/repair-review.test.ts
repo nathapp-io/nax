@@ -46,6 +46,8 @@ interface HarnessOpts {
   readonly limits?: FeatureLimits;
   /** `false` leaves `steps.repairReview` unset, as a run that wires no repair review has it. */
   readonly wired?: boolean;
+  /** The run's cost check, read at the moment the review would dispatch; absent = never exceeded. */
+  readonly cost?: (calls: readonly string[]) => boolean;
 }
 
 function harness(opts: HarnessOpts = {}) {
@@ -53,6 +55,7 @@ function harness(opts: HarnessOpts = {}) {
     { fix: opts.fix ?? FIXED },
     {
       limits: opts.limits ?? LIMITS,
+      ...(opts.cost ? { costExceeded: opts.cost } : {}),
       record: {
         ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
         gateRepairFindings: [GATE_CHECK],
@@ -244,6 +247,22 @@ describe("the gate repair's review of its own diff (US-004)", () => {
   test("a review that throws records itself as skipped and keeps the repair", async () => {
     const h = harness({ review: new Error("review op exploded") });
     expect(await h.patch()).toHaveProperty("repairReviews", ["gate repair r1 review skipped: review op exploded"]);
+  });
+
+  // B1: the graph reads the cost limit before the repair node; the repair can be what exhausts it.
+  test("B1: a repair that spends the last of the budget dispatches no review", async () => {
+    const h = harness({ cost: (calls) => calls.includes("branchFix") });
+    expect(await h.patch()).toHaveProperty("repairReviews", ["gate repair r1 review skipped: cost limit reached"]);
+    expect(h.reviews).toEqual([]);
+  });
+
+  test("B1: an exhausted budget still runs the repair and keeps its outcome", async () => {
+    const h = harness({ cost: () => true });
+    const patch = await h.patch();
+    expect(h.fixes()).toBe(1);
+    expect(patch).toHaveProperty("gateRepairRounds", 1);
+    expect(patch).toHaveProperty("repairReviews", ["gate repair r1 review skipped: cost limit reached"]);
+    expect(h.reviews).toEqual([]);
   });
 });
 

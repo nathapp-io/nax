@@ -18,7 +18,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
 import type { BranchFixOutcome } from "./branch-fix";
 import type { FeatureEnv } from "./feature-machine";
-import { NO_MIRROR } from "./feature-step-helpers";
+import { costExceeded, NO_MIRROR } from "./feature-step-helpers";
 import { ledgerText } from "./ledger";
 import type { ReviewOutcome } from "./story-review";
 import type { ReReviewVerdict, WorkflowFeatureRecord, WorkflowFinding, WorkflowFindingDraft } from "./types";
@@ -28,6 +28,14 @@ export type RepairReviewKind = "gate repair" | "CI repair";
 
 /** Why a repair diff was not reviewed when nax could not even read HEAD around the repair. */
 export const SKIPPED_HEAD = "could not read HEAD";
+
+/**
+ * Why a repair diff was not reviewed when the repair itself spent the run's `execution.costLimit`.
+ * ADR-034 §3: no agent step runs past the limit, and a repair review is a billed session like any
+ * other — the graph reads the limit before the repair *node*, which is the wrong moment for a check
+ * that the repair can flip while it runs.
+ */
+export const SKIPPED_COST = "cost limit reached";
 
 /** The wired review, as the helper sees it — `undefined` means the run reviews nothing. */
 type RepairReviewStep = NonNullable<FeatureEnv["steps"]["repairReview"]>;
@@ -121,11 +129,13 @@ function verdictText(verdict: ReReviewVerdict): string {
   return [entries, added === "" ? "" : `new: ${added}`].filter((part) => part !== "").join("; ");
 }
 
+/** `<kind> r<N> review skipped: <why>` — the one line a round adds when nothing was reviewed. */
+const skippedLine = (input: RepairReviewInput, why: string): string => `${labelOf(input)} review skipped: ${why}`;
+
 /** The one line a round's review adds to the record. */
 async function reviewLine(review: RepairReviewStep, input: RepairReviewInput, base: string): Promise<string> {
-  const label = labelOf(input);
   const outcome = await askReview(review, input.findings, base);
-  return outcome.ran ? `${label} reviewed: ${verdictText(outcome.verdict)}` : `${label} review skipped: ${outcome.why}`;
+  return outcome.ran ? `${labelOf(input)} reviewed: ${verdictText(outcome.verdict)}` : skippedLine(input, outcome.why);
 }
 
 /** A HEAD read that threw: no review, no record line, and the ledger says why. */
@@ -141,6 +151,11 @@ async function noteSkippedHead(env: FeatureEnv, input: RepairReviewInput): Promi
  * read, no record line. Otherwise HEAD is read before the repair and again after it; a repair that
  * failed, or that moved nothing, is not reviewed and adds no line. Only a moved HEAD is reviewed,
  * once, and its verdict appends one line to the record's `repairReviews`.
+ *
+ * The cost limit is re-read here, after the repair: the graph checked it before entering the node,
+ * and the repair's own session may be what spent the last of the budget. A review past the limit
+ * would be exactly the agent step ADR-034 §3 forbids, so the repair stands and the round records why
+ * nothing checked its diff.
  *
  * The HEAD note and the session failure are independent facts: a repair that failed under an
  * unreadable HEAD writes both, so the ledger never hides why nothing was reviewed.
@@ -158,6 +173,6 @@ export async function reviewRepairDiff(env: FeatureEnv, input: RepairReviewInput
   if (after === undefined) return { outcome, patch: await noteSkippedHead(env, input) };
   // A repair that committed nothing leaves the reviewed tree as it was: nothing new to review.
   if (after === before) return { outcome, patch: {} };
-  const line = await reviewLine(review, input, before);
+  const line = costExceeded(env) ? skippedLine(input, SKIPPED_COST) : await reviewLine(review, input, before);
   return { outcome, patch: { repairReviews: [...input.history, line] } };
 }
