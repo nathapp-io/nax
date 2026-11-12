@@ -427,6 +427,62 @@ describe("AgentManager.runWithFallback with fail-stale", () => {
   });
 });
 
+describe("AgentManager.runWithFallback with fail-adapter-error fallback", () => {
+  test("tries claude twice, then dispatches codex and succeeds when quality swaps are disabled", async () => {
+    const agents: string[] = [];
+    const manager = new AgentManager(
+      makeNaxConfig({
+        agent: {
+          default: "claude",
+          fallback: {
+            enabled: true,
+            map: { claude: ["codex"] },
+            maxHopsPerStory: 2,
+            onQualityFailure: false,
+            rebuildContext: true,
+          },
+        },
+        execution: { sessionErrorMaxRetries: 1 },
+      }),
+      undefined,
+      {
+        runHop: async (agent) => {
+          agents.push(agent);
+          if (agent === "claude") {
+            return hopResult({
+              success: false,
+              exitCode: 1,
+              output: "bad request",
+              rateLimited: false,
+              durationMs: 100,
+              estimatedCostUsd: 0,
+              adapterFailure: {
+                category: "quality",
+                outcome: "fail-adapter-error",
+                retriable: false,
+                message: "bad request",
+              },
+            });
+          }
+          return hopResult({
+            success: true,
+            exitCode: 0,
+            output: "ok",
+            rateLimited: false,
+            durationMs: 100,
+            estimatedCostUsd: 0,
+          });
+        },
+      },
+    );
+
+    const outcome = await manager.runWithFallback({ runOptions: RUN_OPTIONS });
+
+    expect(agents).toEqual(["claude", "claude", "codex"]);
+    expect(outcome.result.success).toBe(true);
+  });
+});
+
 describe("AgentManager.runWithFallback after an abort (finish A, #2462)", () => {
   const abortedFailures: readonly { name: string; failure: AdapterFailure }[] = [
     {
@@ -449,7 +505,7 @@ describe("AgentManager.runWithFallback after an abort (finish A, #2462)", () => 
               enabled: true,
               map: { claude: ["codex"] },
               maxHopsPerStory: 3,
-              onQualityFailure: true,
+              onQualityFailure: false,
               rebuildContext: true,
             },
           },
