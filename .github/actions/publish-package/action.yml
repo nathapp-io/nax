@@ -85,6 +85,13 @@ runs:
         sudo apt-get update -qq
         sudo apt-get install -y -qq bubblewrap socat ripgrep
         sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+        # Same as ci.yml (#2866): 24.10+ (ubuntu-latest is 26.04) confines
+        # /usr/bin/bwrap with bwrap-userns-restrict, which strips the caps srt's
+        # seccomp helper needs (apply-seccomp: write /proc/self/setgroups:
+        # Permission denied). The sysctl does not lift that; unloading does.
+        if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then
+          sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
+        fi
 
     - name: Pre-publish checks
       if: steps.published.outputs.skip != 'true'
