@@ -8,10 +8,15 @@
  * the reviewer added is removed, and only then is the working tree compared. The repo-level
  * `.git/info/exclude` and `core.excludesFile` are outside this reset: the sandbox denies
  * `.git/info` and `.git/config` (policy-builder gitDenies), so a sandboxed reviewer cannot move them.
+ *
+ * nax#1439: a tool the reviewer runs may drop its own .gitignore inside a directory the repository
+ * already ignores (`.venv/.gitignore`, `.mypy_cache/.gitignore`, `node_modules/.bun/.../.gitignore`).
+ * Such a file can only affect paths that are already ignored, so it cannot hide the reviewer's work
+ * from the comparison: it is left in place and not reported.
  */
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { git, gitRaw } from "./deps";
+import { _snapshotDeps, git, gitRaw } from "./deps";
 
 const IGNORE_FILE = ".gitignore";
 const IGNORE_PATHSPEC = `:(top,glob)**/${IGNORE_FILE}`;
@@ -73,7 +78,7 @@ async function currentShas(toplevel: string, paths: readonly string[]): Promise<
 
 /** Reset every .gitignore to its snapshot state; returns the paths changed. Failures are recorded, never thrown. */
 export async function restoreIgnoreRules(ctx: IgnoreRuleRestore, failures: string[]): Promise<string[]> {
-  const { toplevel, tree, entries } = ctx;
+  const { toplevel, entries } = ctx;
   try {
     const current = [...(await listIgnoreFiles(toplevel))].filter((p) => !ctx.skip(p));
     const wanted = [...entries]
@@ -86,22 +91,60 @@ export async function restoreIgnoreRules(ctx: IgnoreRuleRestore, failures: strin
       ctx.known === null
         ? current.filter((p) => !wantedSet.has(p) && known.has(p))
         : current.filter((p) => !wantedSet.has(p) && !known.has(p));
-    for (const p of added) {
-      await ctx.remove(join(toplevel, p)).catch((err) => failures.push(`remove ${p}: ${errorMessage(err)}`));
-    }
-    const present = new Set(current);
-    const live = wanted.filter((p) => present.has(p));
-    const shas = await currentShas(toplevel, live);
-    const stale = wanted.filter((p) => !present.has(p) || shas.get(p) !== entries.get(p)?.sha);
-    for (let i = 0; i < stale.length; i += CHUNK) {
-      const chunk = stale.slice(i, i + CHUNK);
-      await git(["checkout", tree, "--", ...chunk.map((p) => `:(top,literal)${p}`)], toplevel).catch((err) =>
-        failures.push(`checkout ${chunk.length} ignore file(s): ${errorMessage(err)}`),
-      );
-    }
-    return [...added, ...stale];
+    // The snapshot's own ignore files go back FIRST: the classification below reads the restored
+    // rules, so a pattern the reviewer appended must already be gone (nax#1439).
+    const stale = await resetKnownIgnoreFiles(ctx, wanted, new Set(current), failures);
+    const removed = await removeAddedIgnoreFiles(ctx, added, failures);
+    return [...removed, ...stale];
   } catch (err) {
     failures.push(`ignore-rules: ${errorMessage(err)}`);
     return [];
   }
+}
+
+/** Put the snapshot's own .gitignore files back; returns the ones that differed. */
+async function resetKnownIgnoreFiles(
+  ctx: IgnoreRuleRestore,
+  wanted: readonly string[],
+  present: ReadonlySet<string>,
+  failures: string[],
+): Promise<string[]> {
+  const { toplevel, tree, entries } = ctx;
+  const live = wanted.filter((p) => present.has(p));
+  const shas = await currentShas(toplevel, live);
+  const stale = wanted.filter((p) => !present.has(p) || shas.get(p) !== entries.get(p)?.sha);
+  for (let i = 0; i < stale.length; i += CHUNK) {
+    const chunk = stale.slice(i, i + CHUNK);
+    await git(["checkout", tree, "--", ...chunk.map((p) => `:(top,literal)${p}`)], toplevel).catch((err) =>
+      failures.push(`checkout ${chunk.length} ignore file(s): ${errorMessage(err)}`),
+    );
+  }
+  return stale;
+}
+
+/**
+ * Remove the .gitignore files the reviewer added, except one inside a directory the restored rules
+ * ignore (nax#1439): it can only affect already-ignored paths, so it hides nothing from the comparison.
+ * Every other exit code but 0 — 1, "not ignored", and 128, "no answer" — keeps today's removal.
+ */
+async function removeAddedIgnoreFiles(
+  ctx: IgnoreRuleRestore,
+  added: readonly string[],
+  failures: string[],
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const p of added) {
+    if (await isInsideIgnoredDirectory(ctx.toplevel, p)) continue;
+    await ctx.remove(join(ctx.toplevel, p)).catch((err) => failures.push(`remove ${p}: ${errorMessage(err)}`));
+    removed.push(p);
+  }
+  return removed;
+}
+
+/** True when the directory holding this repo-relative .gitignore is itself ignored, read from the raw seam. */
+async function isInsideIgnoredDirectory(toplevel: string, path: string): Promise<boolean> {
+  // No trailing slash: `check-ignore -- sub/` reports a directory as ignored because of a `*` inside
+  // `sub/.gitignore`, which would keep exactly the self-hiding file AC-3 must remove.
+  const r = await _snapshotDeps.git(["check-ignore", "-q", "--", dirname(path)], toplevel);
+  return r.exitCode === 0;
 }

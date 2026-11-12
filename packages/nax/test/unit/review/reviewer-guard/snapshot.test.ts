@@ -49,6 +49,14 @@ async function repo(): Promise<string> {
   return git(d, "rev-parse", "--show-toplevel");
 }
 
+/** Same seed, but the root .gitignore also ignores `.venv/` — where a tool writes its own .gitignore. */
+async function toolRepo(): Promise<string> {
+  const d = await repo();
+  await writeFile(join(d, ".gitignore"), "ignored/\n.venv/\n");
+  await git(d, "commit", "-qam", "ignore .venv");
+  return d;
+}
+
 describe("reviewer tree snapshot (nax#2500)", () => {
   test("clean tree, nothing changed: no-op report", async () => {
     const d = await repo();
@@ -384,6 +392,79 @@ describe("reviewer ignore-rule edits cannot hide files from the restore (#2552)"
     const report = await restoreRepoSnapshot(snap);
     expect(report.paths).toEqual([]);
     expect(existsSync(join(d, "ignored", "cache"))).toBe(true);
+  });
+});
+
+// A tool the reviewer runs (uv, mypy, bun install) drops a .gitignore inside a directory the repo
+// already ignores (nax#1439). That file can only affect paths that are already ignored, so removing
+// and reporting it made five runs look as if the reviewer had reverted the tree.
+describe("tool-written .gitignore files inside ignored directories (nax#1439)", () => {
+  test("AC-1/AC-2: stays on disk after restore and is not reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv", "lib"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", "lib", "python.py"), "x\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(report.paths).toEqual([]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("AC-3: an added .gitignore in a directory the snapshot rules ignore is removed and reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, "sub"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(existsSync(join(d, "sub", ".gitignore"))).toBe(false);
+    expect(report.paths).toEqual(["sub/.gitignore"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("AC-4: an appended rule is reverted while the ignored-directory .gitignore stays", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await writeFile(join(d, ".gitignore"), "ignored/\n.venv/\nplanted*\n");
+    await writeFile(join(d, "planted1.sh"), "echo planted\n");
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*.log\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(await readFile(join(d, ".gitignore"), "utf8")).toBe("ignored/\n.venv/\n");
+    expect(existsSync(join(d, "planted1.sh"))).toBe(false);
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(report.paths).toEqual([".gitignore", "planted1.sh"]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("AC-5: a check-ignore that fails to answer keeps nothing — removed and reported", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    const wrapped: string[] = [];
+    _snapshotDeps.git = async (args, cwd) => {
+      if (args[0] !== "check-ignore") return deps.git(args, cwd);
+      wrapped.push(args.join(" "));
+      return { stdout: "", stderr: "fatal: index unreadable", exitCode: 128 };
+    };
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(wrapped).toContain("check-ignore -q -- .venv");
+      expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(false);
+      expect(report.paths).toContain(".venv/.gitignore");
+    } finally {
+      _snapshotDeps.git = deps.git;
+    }
+  });
+
+  test("AC-6: an edited known root .gitignore is still listed in paths", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await writeFile(join(d, ".gitignore"), "ignored/\n.venv/\nextra\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(report.paths).toEqual([".gitignore"]);
+    expect(await readFile(join(d, ".gitignore"), "utf8")).toBe("ignored/\n.venv/\n");
   });
 });
 

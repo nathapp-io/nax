@@ -256,6 +256,46 @@ describe("ReviewerTreeGuard (nax#2500)", () => {
   });
 });
 
+// nax#1439: a moved ref or a new stash entry is not a reverted tree — R15 leaves them alone by
+// design, so reporting them under `reviewer-tree-reverted` made an untouched tree look changed.
+describe("ReviewerTreeGuard separates ref/stash movement from a reverted tree (#1439)", () => {
+  async function turn(report: RestoreReport): Promise<LogEntry[]> {
+    fakes(report);
+    const logs = captureLogs();
+    const g = new ReviewerTreeGuard();
+    await g.beforeTurn(desc("wf-story-review"));
+    await g.afterTurn(desc("wf-story-review"));
+    return logs;
+  }
+
+  test("AC-7: only refsLeft logs reviewer-refs-left and no reviewer-tree-reverted", async () => {
+    const logs = await turn({ ...CLEAN, refsLeft: ["moved refs/heads/x"] });
+    expect(logs.map((e) => e.message)).toEqual(["reviewer-refs-left"]);
+    expect(logs[0]?.data).toMatchObject({
+      storyId: "US-001",
+      role: "wf-story-review",
+      refsLeft: ["moved refs/heads/x"],
+    });
+  });
+
+  test("AC-8: only stashLeft logs reviewer-refs-left carrying that stashLeft", async () => {
+    const logs = await turn({ ...CLEAN, stashLeft: ["added abc"] });
+    expect(logs.map((e) => e.message)).toEqual(["reviewer-refs-left"]);
+    expect(logs[0]?.data).toMatchObject({ storyId: "US-001", role: "wf-story-review", stashLeft: ["added abc"] });
+  });
+
+  test("AC-9: reverted paths log reviewer-tree-reverted and no reviewer-refs-left", async () => {
+    const logs = await turn({ ...CLEAN, paths: ["a.ts"] });
+    expect(logs.map((e) => e.message)).toEqual(["reviewer-tree-reverted"]);
+    expect(logs[0]?.data).toMatchObject({ storyId: "US-001", role: "wf-story-review", paths: ["a.ts"] });
+  });
+
+  test("AC-10: a restore that reports nothing logs neither event", async () => {
+    const logs = await turn(CLEAN);
+    expect(logs).toEqual([]);
+  });
+});
+
 describe("ReviewerTreeGuard with a real repository", () => {
   test("an edit between two reviewers' beforeTurn is reverted by the last one out", async () => {
     const d = await mkdtemp(join(tmpdir(), "nax-rguard-g-"));
