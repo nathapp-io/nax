@@ -2,6 +2,18 @@ import { getSafeLogger } from "@/logger";
 import { totalSpendUsd } from "@/runtime";
 
 /**
+ * Material divergence threshold for {@link reconcileRunCost}, in USD.
+ *
+ * The two bases are sums of the same per-dispatch costs accumulated in a
+ * different order, so they routinely differ by float noise: `1.0000000000000002`
+ * against `1` is one ULP, not spend. Warning on that filled bot runs with a
+ * warning no operator could act on, so the divergence must clear this epsilon
+ * before it is surfaced. The returned total stays unrounded — the accumulator
+ * and the aggregator are reconciled, not the reported money.
+ */
+export const COST_RECONCILE_EPSILON_USD = 1e-9;
+
+/**
  * Reconcile the run cost accumulator with the cost aggregator's view (#2006).
  *
  * The orchestrator's `phaseCosts` sum (and `batchResult.totalCost` derived
@@ -17,17 +29,21 @@ import { totalSpendUsd } from "@/runtime";
  * aggregators, or a rolled-back pass left spend the aggregator forgave —
  * the larger figure is still the safe one to report, but the divergence is
  * surfaced once per run so a chronic basis inversion cannot drift silently.
+ *
+ * US-004: a divergence within {@link COST_RECONCILE_EPSILON_USD} is float
+ * noise, not a basis inversion, so it is not surfaced.
  */
 export function reconcileRunCost(
   totalCost: number,
   costAggregator: { snapshot(): { totalCostUsd: number; totalErrorCostUsd: number } },
 ): number {
   const aggregatorTotal = totalSpendUsd(costAggregator.snapshot());
-  if (totalCost > aggregatorTotal) {
+  const delta = totalCost - aggregatorTotal;
+  if (delta > COST_RECONCILE_EPSILON_USD) {
     getSafeLogger()?.warnOnce(
       "cost-reconcile",
       "Run cost accumulator exceeds the aggregator basis — reporting the larger figure",
-      { accumulator: totalCost, aggregatorTotal, delta: totalCost - aggregatorTotal },
+      { accumulator: totalCost, aggregatorTotal, delta },
     );
   }
   return Math.max(totalCost, aggregatorTotal);

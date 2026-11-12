@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import * as configExports from "@/config";
 import { loadConfig } from "@/config";
+import { addSink, initLogger, resetLogger } from "@/logger";
 import * as logging from "@/logger/logger";
 import { cleanupTempDir, makeTempDir } from "../helpers/temp";
 
@@ -49,6 +50,31 @@ afterEach(() => {
   logging.resetLogger();
   logging._resetDeferredWarnings?.();
   if (projectDir) cleanupTempDir(projectDir);
+});
+
+// US-004 — a bot run loads the config more than once per run (root, then the
+// package/bot layer), so a removed key used to warn once per load. With the
+// logger initialized, warnOrDefer goes through warnOnce: one entry per run.
+test("US-004 AC-5: two loadConfig calls warn once about a removed key", async () => {
+  resetLogger();
+  projectDir = makeTempDir("nax-config-warn-once-");
+  await Bun.write(
+    join(projectDir, ".nax/config.json"),
+    JSON.stringify({ execution: { verificationTimeoutSeconds: 120 } }),
+  );
+  initLogger({ level: "warn", suppressConsole: true });
+  const messages: string[] = [];
+  const removeSink = addSink((entry) => {
+    if (entry.level === "warn" && entry.stage === "config") messages.push(entry.message);
+  });
+  try {
+    await loadConfig(projectDir);
+    await loadConfig(projectDir);
+  } finally {
+    removeSink();
+  }
+
+  expect(messages.filter((m) => m.includes("execution.verificationTimeoutSeconds"))).toHaveLength(1);
 });
 
 test("loadConfig rejects removed pipeline mode before logging starts", async () => {

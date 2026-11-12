@@ -6,14 +6,39 @@
 // boundary; `liveRunTotalCost` is the crash-path getter's reading — the
 // same single number, available even when the last story boundary predates
 // the spent money (COST-1).
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { liveRunTotalCost, reconcileRunCost } from "@/execution/run-cost-reconcile";
+import type { LogEntry } from "@/logger";
+import { addSink, initLogger, resetLogger } from "@/logger";
 
 type AggLike = { snapshot(): { totalCostUsd: number; totalErrorCostUsd: number } };
 
 function agg(totalCostUsd: number, totalErrorCostUsd = 0): AggLike {
   return { snapshot: () => ({ totalCostUsd, totalErrorCostUsd }) };
 }
+
+/** Sink removers registered by {@link captureCostWarnings}, drained in afterEach. */
+const captured: (() => void)[] = [];
+
+/** Every warn entry the reconciler emits, captured through a real logger sink. */
+function captureCostWarnings(): LogEntry[] {
+  const entries: LogEntry[] = [];
+  const removeSink = addSink((entry) => {
+    if (entry.stage === "cost-reconcile") entries.push(entry);
+  });
+  captured.push(removeSink);
+  return entries;
+}
+
+beforeEach(() => {
+  resetLogger();
+  initLogger({ level: "warn", suppressConsole: true });
+});
+
+afterEach(() => {
+  for (const remove of captured.splice(0)) remove();
+  resetLogger();
+});
 
 describe("reconcileRunCost — #2006: accumulator reconciles to the aggregator basis", () => {
   test("aggregator total (success + error halves) wins when it exceeds the accumulator", () => {
@@ -31,6 +56,23 @@ describe("reconcileRunCost — #2006: accumulator reconciles to the aggregator b
 
   test("a negative error half cannot drag the total below the accumulator", () => {
     expect(reconcileRunCost(5, agg(3, -1))).toBe(5);
+  });
+
+  // US-004 — float noise is not divergence. 1.0000000000000002 - 1 is one ULP,
+  // well under a cent, and nothing an operator can act on.
+  test("US-004 AC-6: a sub-epsilon divergence warns nothing and reports the accumulator unrounded", () => {
+    const warnings = captureCostWarnings();
+    expect(reconcileRunCost(1.0000000000000002, agg(1))).toBe(1.0000000000000002);
+    expect(warnings).toEqual([]);
+  });
+
+  // ...while a material divergence is still surfaced once per run.
+  test("US-004 AC-7: a material divergence still warns and reports the larger figure", () => {
+    const warnings = captureCostWarnings();
+    expect(reconcileRunCost(1.5, agg(1))).toBe(1.5);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].level).toBe("warn");
+    expect(warnings[0].message).toContain("Run cost accumulator exceeds the aggregator basis");
   });
 });
 
