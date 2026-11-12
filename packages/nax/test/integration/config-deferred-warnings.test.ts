@@ -77,6 +77,29 @@ test("US-004 AC-5: two loadConfig calls warn once about a removed key", async ()
   expect(messages.filter((m) => m.includes("execution.verificationTimeoutSeconds"))).toHaveLength(1);
 });
 
+// US-006 — a declared scoped-test command that cannot be scoped reaches the
+// loader's warn sink exactly like the `&&`-chain nudge beside it.
+test("US-006 AC-8: loadConfig warns about a testScoped command with no {{files}} placeholder", async () => {
+  resetLogger();
+  projectDir = makeTempDir("nax-config-scoped-");
+  await Bun.write(
+    join(projectDir, ".nax/config.json"),
+    JSON.stringify({ quality: { commands: { testScoped: "npx turbo test --filter=[HEAD^1]" } } }),
+  );
+  initLogger({ level: "warn", suppressConsole: true });
+  const messages: string[] = [];
+  const removeSink = addSink((entry) => {
+    if (entry.level === "warn" && entry.stage === "config") messages.push(entry.message);
+  });
+  try {
+    await loadConfig(projectDir);
+  } finally {
+    removeSink();
+  }
+
+  expect(messages.some((m) => m.includes("declares no {{files}} placeholder"))).toBe(true);
+});
+
 test("loadConfig rejects removed pipeline mode before logging starts", async () => {
   logging.resetLogger();
   logging._resetDeferredWarnings?.();

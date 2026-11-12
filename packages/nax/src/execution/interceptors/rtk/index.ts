@@ -101,14 +101,38 @@ function defaultRecord(state: InterceptorState): void {
  * A trailing hint line rtk appends to the output it returns, e.g.
  * `[full diff: rtk git diff --no-compact]`, `[full output: rtk recall …]` or
  * `[+12 hidden: rtk recall …]` (spec US-005 item 1 names all three). A nax
- * agent has no shell, so these are instructions it cannot follow (R4); strip
- * them before the output reaches the agent.
+ * agent has no shell, so these are instructions it cannot follow (R4).
  *
- * Stripping is hint-shaped, not a trim: output with no trailing hint is
+ * US-006 — the hint is REPLACED by a neutral compaction marker rather than
+ * deleted: `[+N hidden: rtk …]` becomes `[output compacted: N lines hidden]`,
+ * and the full-output/full-diff forms become `[output compacted]`. Dropping
+ * the line entirely told the agent nothing about output having been truncated.
+ *
+ * Rewriting is hint-shaped, not a trim: output with no trailing hint is
  * returned byte-for-byte, trailing whitespace included — `trimEnd()` at the
  * call site is the only thing allowed to do that.
  */
-const RTK_HINT_LINE = /\n?\[(?:full diff: rtk |full output: rtk |\+\d+ hidden: rtk )[^\]]*\]\s*$/;
+const RTK_HIDDEN_HINT = /\n?\[\+(\d+) hidden: rtk [^\]]*\]\s*$/;
+const RTK_FULL_HINT = /\n?\[full (?:diff|output): rtk [^\]]*\]\s*$/;
+
+/** The marker for one rtk hint, keeping the newline that separated it from
+ *  the body so compaction reads as a final line rather than an appendage. */
+function compactionMarker(match: string, marker: string): string {
+  return `${match.startsWith("\n") ? "\n" : ""}${marker}`;
+}
+
+/** Replace a trailing rtk hint with the neutral marker; leave anything else
+ *  byte-for-byte. Hidden-lines hints are checked first: they carry the count,
+ *  and neither pattern can match the other's shape. */
+function compactRtkHint(output: string): string {
+  const hidden = RTK_HIDDEN_HINT.exec(output);
+  if (hidden !== null) {
+    return output.slice(0, hidden.index) + compactionMarker(hidden[0], `[output compacted: ${hidden[1]} lines hidden]`);
+  }
+  const full = RTK_FULL_HINT.exec(output);
+  if (full !== null) return output.slice(0, full.index) + compactionMarker(full[0], "[output compacted]");
+  return output;
+}
 
 type Mode =
   | { readonly kind: "disabled" }
@@ -200,7 +224,7 @@ export function createRtkInterceptor(opts: RtkInterceptorOptions): CommandInterc
       return { kind: "declined", reason: `rtk rewrite exited ${result.exitCode}` };
     },
     postProcess(output: string): { output: string } {
-      return { output: output.replace(RTK_HINT_LINE, "") };
+      return { output: compactRtkHint(output) };
     },
   };
 }

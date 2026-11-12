@@ -261,6 +261,63 @@ export function warnQualityCommandChains(conf: Record<string, unknown>, warn?: (
 }
 
 /**
+ * The placeholder a scoped test command MUST carry so the runner can scope a
+ * run to the agent's own files.
+ */
+const TEST_FILES_PLACEHOLDER = "{{files}}";
+
+/** The string entries of a raw, pre-safeParse `QualityCommandSpec`. A
+ *  malformed spec (scalar non-string, mixed array) yields none — Zod reports
+ *  it below, and this guard is warn-only. */
+function commandEntries(spec: unknown): string[] {
+  if (typeof spec === "string") return [spec];
+  if (Array.isArray(spec) && spec.every((entry) => typeof entry === "string")) return spec;
+  return [];
+}
+
+/**
+ * Warn (never throw) when `quality.commands.testScoped` cannot scope a run:
+ *
+ * - it carries no `{{files}}` placeholder, so there is nowhere to put the
+ *   agent's files and every "scoped" run is the declared command verbatim;
+ * - it is the same command as `quality.commands.test`, so a scoped run IS the
+ *   full suite — the exact failure the placeholder exists to prevent.
+ *
+ * A command list is checked across its entries: it warns for a missing
+ * placeholder only when NO entry holds one. Warn-only, like
+ * `warnQualityCommandChains`: the command still runs as configured, and an
+ * existing config must keep working.
+ *
+ * @param conf - Raw config object (post-merge, pre-`safeParse`).
+ * @param warn - Sink; called at most once, with the most specific message.
+ */
+export function warnScopedTestCommand(conf: Record<string, unknown>, warn?: (msg: string) => void): void {
+  const quality = conf.quality as Record<string, unknown> | undefined;
+  if (!quality || typeof quality !== "object") return;
+
+  const commands = quality.commands as Record<string, unknown> | undefined;
+  if (!commands || typeof commands !== "object") return;
+
+  const scoped = commandEntries(commands.testScoped);
+  if (scoped.length === 0) return;
+
+  const test = commandEntries(commands.test);
+  // Equality is reported first: when both hold, "every scoped run is the full
+  // suite" is the actionable consequence, and one warning per problem reads
+  // better than two lines saying the same thing twice.
+  if (test.length > 0 && scoped.length === test.length && scoped.every((entry, i) => entry === test[i])) {
+    warn?.("quality.commands.testScoped equals quality.commands.test, so every scoped run is the full suite");
+    return;
+  }
+
+  if (scoped.some((entry) => entry.includes(TEST_FILES_PLACEHOLDER))) return;
+
+  warn?.(
+    "quality.commands.testScoped declares no {{files}} placeholder, so agents cannot scope a test run to their files; add {{files}} where the runner takes test paths",
+  );
+}
+
+/**
  * Keys that were declared in the schema and CLI documentation but read at no
  * code site. Setting any of them to `false` was a silent no-op — the behaviour
  * ran unconditionally regardless. Removing them changes no behaviour, but

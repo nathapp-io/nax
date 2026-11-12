@@ -547,6 +547,92 @@ describe("runQualityCommand env stripping", () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-006 — no-color defaults for every declared command / quality gate
+// ---------------------------------------------------------------------------
+
+describe("runQualityCommand — no-color defaults (US-006)", () => {
+  let originalSpawn: typeof _qualityRunnerDeps.spawn;
+  // The suite itself may be running under a developer's (or agent's) shell that
+  // exports either variable; control them explicitly so each assertion tests
+  // the default, not the ambient environment.
+  const colourVars = ["NO_COLOR", "FORCE_COLOR"] as const;
+  let saved: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    originalSpawn = _qualityRunnerDeps.spawn;
+    saved = Object.fromEntries(colourVars.map((v) => [v, process.env[v]]));
+    for (const v of colourVars) delete process.env[v];
+  });
+
+  afterEach(() => {
+    _qualityRunnerDeps.spawn = originalSpawn;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  test("AC-9: adds NO_COLOR=1 and FORCE_COLOR=0 when the process env sets neither", async () => {
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
+
+    await runQualityCommand({ commandName: "test", command: "bun test", workdir: "/tmp" });
+
+    expect(lastEnv().NO_COLOR).toBe("1");
+    expect(lastEnv().FORCE_COLOR).toBe("0");
+  });
+
+  test("AC-10: an inherited FORCE_COLOR is left as it is", async () => {
+    process.env.FORCE_COLOR = "1";
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
+
+    await runQualityCommand({ commandName: "test", command: "bun test", workdir: "/tmp" });
+
+    expect(lastEnv().FORCE_COLOR).toBe("1");
+  });
+
+  test("AC-17: an inherited NO_COLOR is preserved rather than replaced by the default", async () => {
+    process.env.NO_COLOR = "2";
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
+
+    await runQualityCommand({ commandName: "test", command: "bun test", workdir: "/tmp" });
+
+    expect(lastEnv().NO_COLOR).toBe("2");
+  });
+
+  test("AC-11: a stripped NO_COLOR stays absent — the default does not resurrect it", async () => {
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
+
+    await runQualityCommand({
+      commandName: "test",
+      command: "bun test",
+      workdir: "/tmp",
+      stripEnvVars: ["NO_COLOR"],
+    });
+
+    expect("NO_COLOR" in lastEnv()).toBe(false);
+  });
+
+  test("AC-12: the caller's env option still overrides last", async () => {
+    const { spawn, lastEnv } = makeSpawn();
+    _qualityRunnerDeps.spawn = spawn;
+
+    await runQualityCommand({
+      commandName: "test",
+      command: "bun test",
+      workdir: "/tmp",
+      env: { NO_COLOR: "" },
+    });
+
+    // An explicit empty value counts as set, and the caller wins over the default.
+    expect(lastEnv().NO_COLOR).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // list commands — one spawn per entry, aggregate result
 // ---------------------------------------------------------------------------
 
