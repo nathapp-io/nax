@@ -46,6 +46,8 @@ export interface RunSummary {
   failed: number;
   /** Stories that were skipped */
   skipped: number;
+  /** Workflow stories closed `complete-gate-open` (a gate still red); in none of the counters above */
+  gateOpen?: number;
   /** Total run duration in milliseconds */
   durationMs: number;
   /** Total cost in dollars */

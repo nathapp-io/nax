@@ -317,8 +317,13 @@ export interface RunMetrics {
   errorCostUsd?: number;
   /** Total number of stories in the run */
   totalStories: number;
-  /** Number of stories completed successfully */
+  /** Number of stories completed successfully (excludes gate-open closures) */
   storiesCompleted: number;
+  /**
+   * Workflow mode: stories closed `complete-gate-open` (a gate still red). Counted in neither
+   * `storiesCompleted` nor `storiesFailed`. Absent on records written before #2879.
+   */
+  storiesGateOpen?: number;
   /** Number of stories that failed */
   storiesFailed: number;
   /** Total duration in milliseconds, through the end of the end phase (finish, or the feature workflow in workflow mode). */

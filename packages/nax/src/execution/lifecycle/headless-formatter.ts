@@ -25,6 +25,11 @@ export interface RunFooterOptions {
     passed: number;
     failed: number;
     skipped: number;
+    /**
+     * This session's `complete-gate-open` closures (#2879). The PRD marks them passed, so they
+     * are already inside `passed`; the footer moves them to their own line.
+     */
+    gateOpen?: number;
   };
   durationMs: number;
   totalCost: number;
@@ -79,10 +84,12 @@ export function outputRunFooter(options: RunFooterOptions): void {
     return;
   }
 
+  const gateOpen = Math.min(finalCounts.gateOpen ?? 0, finalCounts.passed);
   const runSummary: RunSummary = {
     authRelogins: options.authRelogins,
     total: finalCounts.total,
-    passed: finalCounts.passed,
+    passed: finalCounts.passed - gateOpen,
+    gateOpen,
     failed: finalCounts.failed,
     skipped: finalCounts.skipped,
     durationMs,

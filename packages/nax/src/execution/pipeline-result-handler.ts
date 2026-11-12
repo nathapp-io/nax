@@ -225,6 +225,13 @@ function successStoryDeltas(
   };
 }
 
+/** A gate-open close is not a success: say so in the record (#2879), and flag it for log readers. */
+function storyCompleteRecord(gateOpen: boolean): { message: string; fields: { gateOpen?: true } } {
+  return gateOpen
+    ? { message: "Story closed gate-open", fields: { gateOpen: true } }
+    : { message: "Story completed successfully", fields: {} };
+}
+
 export async function handlePipelineSuccess(
   ctx: PipelineHandlerContext,
   pipelineResult: PipelineRunResult,
@@ -238,10 +245,12 @@ export async function handlePipelineSuccess(
   }
 
   const { storiesCompletedDelta, storiesGateOpenDelta } = successStoryDeltas(ctx, pipelineResult);
+  const record = storyCompleteRecord(storiesGateOpenDelta > 0);
   for (const completedStory of ctx.storiesToExecute) {
     const now = Date.now();
-    logger?.info("story.complete", "Story completed successfully", {
+    logger?.info("story.complete", record.message, {
       storyId: completedStory.id,
+      ...record.fields,
       storyTitle: completedStory.title,
       totalCost: ctx.totalCost + costDelta,
       runElapsedMs: now - ctx.startTime,

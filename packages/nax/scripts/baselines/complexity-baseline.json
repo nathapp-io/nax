@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-12T06:58:50.012Z",
+  "updatedAt": "2026-11-12T08:50:14.695Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -29,7 +29,7 @@
     "src/cli/status-features.ts": { "displayAllFeatures": 37 },
     "src/commands/common.ts": { "resolveProject": 22 },
     "src/commands/detect.ts": { "detectCommand": 36 },
-    "src/commands/logs-reader.ts": { "extractRunSummary": 29 },
+    "src/commands/logs-reader.ts": { "extractRunSummary": 23 },
     "src/commands/runs.ts": { "runsCommand": 21 },
     "src/commands/unlock.ts": { "unlockCommand": 58 },
     "src/config/config-guards.ts": { "validatePermissionsBlock": 41 },
@@ -59,7 +59,7 @@
     "src/execution/lifecycle/run-setup-init.ts": { "initializeAfterLock": 21 },
     "src/execution/pipeline-result-handler.ts": { "handlePipelineFailure": 28 },
     "src/interaction/plugins/telegram.ts": { "send": 21 },
-    "src/log-format/formatter.ts": { "formatStoryComplete": 26, "formatDefault": 22 },
+    "src/log-format/formatter.ts": { "formatDefault": 22 },
     "src/logger/logger.ts": { "log": 22 },
     "src/mcp/pool.ts": { "open": 26 },
     "src/metrics/aggregator.ts": { "calculateAggregateMetrics": 28 },

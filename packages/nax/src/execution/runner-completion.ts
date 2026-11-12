@@ -211,6 +211,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         passed: finalCounts.passed,
         failed: finalCounts.failed,
         skipped: finalCounts.skipped,
+        gateOpen: options.storiesGateOpen ?? 0,
       },
       durationMs,
       totalCost: finalTotal,

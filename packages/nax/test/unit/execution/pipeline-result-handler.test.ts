@@ -12,6 +12,7 @@ import {
   makeSpawn,
   makeTempDir,
   makeTestContext,
+  withInfoSpy,
 } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _tierEscalationDeps } from "@/execution/escalation/tier-escalation";
@@ -144,6 +145,20 @@ describe("handlePipelineSuccess — outcome counts", () => {
     const counts = await handlePipelineSuccess(makeCtx(makeStory("US-001"), { storyGitRef: undefined }), result);
     expect(counts.storiesCompletedDelta).toBe(completed);
     expect(counts.storiesGateOpenDelta).toBe(gateOpen);
+  });
+
+  test.each([
+    { state: "complete-gate-open" as const, message: "Story closed gate-open", gateOpenField: true },
+    { state: undefined, message: "Story completed successfully", gateOpenField: undefined },
+  ])("logs story.complete for $state outcome as '$message'", async ({ state, message, gateOpenField }) => {
+    const result = makeMinimalResult();
+    result.context.workflowEndState = state;
+    await withInfoSpy(async (infoSpy) => {
+      await handlePipelineSuccess(makeCtx(makeStory("US-001"), { storyGitRef: undefined }), result);
+      const records = infoSpy.mock.calls.filter((c) => c[0] === "story.complete");
+      expect(records.map((c) => c[1])).toEqual([message]);
+      expect(records[0]?.[2]?.gateOpen).toBe(gateOpenField);
+    });
   });
 });
 

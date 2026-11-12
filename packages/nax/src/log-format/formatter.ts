@@ -228,6 +228,22 @@ function formatStoryStart(entry: LogEntry, c: ChalkLike, _timestamp: string, mod
 /**
  * Format story completion event
  */
+/**
+ * Status mark, colour and label for a completion record. A gate-open close (#2879) carries no
+ * `success` field, so it is checked first and must not fall through to PASSED.
+ */
+function storyCompleteStatus(
+  c: ChalkLike,
+  gateOpen: boolean,
+  success: unknown,
+  action: unknown,
+): { emoji: string; statusColor: (s: string) => string; status: string } {
+  if (gateOpen) return { emoji: EMOJI.warning, statusColor: c.yellow, status: "GATE-OPEN" };
+  if (success) return { emoji: EMOJI.success, statusColor: c.green, status: "PASSED" };
+  if (action === "escalate") return { emoji: EMOJI.retry, statusColor: c.yellow, status: "ESCALATED" };
+  return { emoji: EMOJI.failure, statusColor: c.red, status: "FAILED" };
+}
+
 function formatStoryComplete(entry: LogEntry, c: ChalkLike, _timestamp: string, mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
   // SEC-09: storyId is PRD-authored; reason (below) is agent-authored escalation text.
@@ -238,9 +254,7 @@ function formatStoryComplete(entry: LogEntry, c: ChalkLike, _timestamp: string, 
   const duration = typeof data.durationMs === "number" ? data.durationMs : 0;
   const action = data.finalAction || data.action;
 
-  const emoji = success ? EMOJI.success : action === "escalate" ? EMOJI.retry : EMOJI.failure;
-  const statusColor = success ? c.green : action === "escalate" ? c.yellow : c.red;
-  const status = success ? "PASSED" : action === "escalate" ? "ESCALATED" : "FAILED";
+  const { emoji, statusColor, status } = storyCompleteStatus(c, data.gateOpen === true, success, action);
 
   const lines: string[] = [];
   lines.push(statusColor(`  ${emoji} ${c.bold(storyId)}: ${status}`));

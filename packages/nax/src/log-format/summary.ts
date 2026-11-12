@@ -68,7 +68,14 @@ export function formatRunSummary(summary: RunSummary, options: FormatterOptions)
   // terminal state the counters do not model. Without it, a run whose last two
   // stories both hit a provider 429 printed "Total: 4 / Passed: 2 / 50.0%" and
   // said nothing at all about the two that stopped.
-  const unresolved = summary.total - summary.passed - summary.failed - summary.skipped;
+  const gateOpen = summary.gateOpen ?? 0;
+  if (gateOpen > 0) {
+    lines.push(
+      `  ${c.yellow(`${EMOJI.warning} Gate-open:`)} ${c.bold(gateOpen.toString())} ${c.gray("(closed with a gate still red)")}`,
+    );
+  }
+
+  const unresolved = summary.total - summary.passed - summary.failed - summary.skipped - gateOpen;
   if (unresolved > 0) {
     lines.push(
       `  ${c.yellow(`${EMOJI.warning} Unresolved:`)} ${c.bold(unresolved.toString())} ${c.gray("(paused / awaiting review)")}`,

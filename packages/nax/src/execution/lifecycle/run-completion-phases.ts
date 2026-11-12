@@ -243,6 +243,7 @@ export async function emitRunCompletedAndSaveMetrics(input: {
     ...errorCostField,
     totalStories: allStoryMetrics.length,
     storiesCompleted,
+    storiesGateOpen: options.storiesGateOpen ?? 0,
     storiesFailed: finalCounts.failed,
     totalDurationMs: durationMs,
     stories: allStoryMetrics,
