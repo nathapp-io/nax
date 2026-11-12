@@ -19,6 +19,7 @@ import {
   makeTempDir,
   makeTestContext,
 } from "@test/helpers";
+import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { pipelineEventBus } from "@/pipeline";
 import { _completionDeps, completionStage } from "@/pipeline/stages/completion";
 import type { PipelineContext } from "@/pipeline/types";
@@ -85,6 +86,38 @@ afterEach(() => {
 // Persistence — the story is marked passed in ctx.prd and the PRD is saved
 // to ctx.prdPath.
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe("completionStage outcome reporting", () => {
+  test.each([
+    { state: "complete-gate-open" as const, message: "Story closed gate-open" },
+    { state: "complete" as const, message: "Story passed" },
+    { state: undefined, message: "Story passed" },
+  ])("reports $state", async ({ state, message }) => {
+    const dir = makeTempDir("completion-outcome-");
+    const logs: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    _completionDeps.savePRD = async () => {};
+    _completionDeps.commitPrdProgress = async () => true;
+    const ctx = makeCtx({ featureDir: dir, workflowEndState: state });
+    try {
+      await completionStage.execute(ctx);
+      expect(ctx.prd.userStories[0].status).toBe("passed");
+      const messages = logs.filter((entry) => entry.stage === "completion").map((entry) => entry.message);
+      expect(messages).toContain(message);
+      if (state === "complete-gate-open") {
+        expect(messages).not.toContain("Story passed");
+        const progress = (await Bun.file(`${dir}/progress.txt`).text()).trim();
+        expect(progress).toContain("US-001 — PASSED —");
+        expect(progress).toEndWith("— closed gate-open");
+      }
+    } finally {
+      resetLogger();
+      cleanupTempDir(dir);
+    }
+  });
+});
 
 describe("completionStage persists the PRD", () => {
   test("AC-1: marks the story passed in ctx.prd and saves the PRD once with that path", async () => {

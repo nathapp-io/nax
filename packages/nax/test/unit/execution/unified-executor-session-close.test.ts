@@ -10,6 +10,7 @@ import { DEFAULT_CONFIG } from "@/config";
 import { stopHeartbeat } from "@/execution/crash-recovery";
 import type { SequentialExecutionContext } from "@/execution/unified-executor";
 import { _unifiedExecutorDeps, executeUnified } from "@/execution/unified-executor";
+import { closeStoryIfTerminal } from "@/execution/unified-executor-dispatch-phases";
 import type { LoadedHooksConfig } from "@/hooks";
 import type { PRD, UserStory } from "@/prd/types";
 import { createNoOpCostAggregator } from "@/runtime/cost-aggregator";
@@ -109,6 +110,14 @@ function makeCtx(sessionManager: ISessionManager): SequentialExecutionContext {
 }
 
 describe("unified-executor session close policy", () => {
+  test("closes sessions for gate-open terminal stories", async () => {
+    const sessionManager = makeSessionManager();
+    await closeStoryIfTerminal(makeCtx(sessionManager), "US-001", {
+      storiesCompletedDelta: 0,
+      storiesGateOpenDelta: 1,
+    });
+    expect(sessionManager.closeStory).toHaveBeenCalledWith("US-001");
+  });
   let originalRunIteration: typeof _unifiedExecutorDeps.runIteration;
 
   beforeEach(() => {

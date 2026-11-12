@@ -82,6 +82,12 @@ const FINAL = {
 const completes = () => logs.filter((e) => e.stage === "run.complete" && e.message === "Feature execution completed");
 
 describe("handleRunCompletion — run.complete in workflow mode (nax#2491)", () => {
+  test("reports gate-open and PRD-wide passed totals", async () => {
+    const priorAndCurrent = prd();
+    priorAndCurrent.userStories.push(makeStory({ id: "US-002", status: "passed", passes: true }));
+    await handleRunCompletion(opts({ prd: priorAndCurrent, storiesCompleted: 1, storiesGateOpen: 1 }));
+    expect(completes()[0]?.data).toMatchObject({ storiesCompleted: 1, storiesGateOpen: 1, storiesPassed: 2 });
+  });
   test("pipeline mode logs run.complete immediately, with no split fields", async () => {
     const result = await handleRunCompletion(opts());
     expect(completes()).toHaveLength(1);

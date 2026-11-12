@@ -141,7 +141,8 @@ export const completionStage: PipelineStage = {
 
       const costPerStory = sessionCost / ctx.stories.length;
       const errorCostPerStory = sessionSpend.errorCostUsd / ctx.stories.length;
-      logger.info("completion", "Story passed", {
+      const gateOpen = ctx.workflowEndState === "complete-gate-open";
+      logger.info("completion", gateOpen ? "Story closed gate-open" : "Story passed", {
         storyId: completedStory.id,
         cost: costPerStory,
       });
@@ -152,7 +153,7 @@ export const completionStage: PipelineStage = {
           ctx.featureDir,
           completedStory.id,
           "passed",
-          `${completedStory.title} — Cost: $${costPerStory.toFixed(4)}${isBatch ? " (batched)" : ""}`,
+          `${completedStory.title} — Cost: $${costPerStory.toFixed(4)}${isBatch ? " (batched)" : ""}${gateOpen ? " — closed gate-open" : ""}`,
         );
       }
 

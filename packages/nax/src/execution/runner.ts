@@ -334,6 +334,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       allStoryMetrics,
       totalCost,
       storiesCompleted,
+      storiesGateOpen: executionResult.storiesGateOpen ?? 0,
       iterations,
       statusWriter,
       pluginRegistry,

@@ -25,6 +25,7 @@ import type { StorySelection } from "./story-selector";
 export interface IterationResult {
   prd: PRD;
   storiesCompletedDelta: number;
+  storiesGateOpenDelta?: number;
   costDelta: number;
   prdDirty: boolean;
   finalAction?: string;
@@ -74,6 +75,7 @@ export async function runIteration(
     return {
       prd,
       storiesCompletedDelta: dryRunResult.storiesCompletedDelta,
+      storiesGateOpenDelta: dryRunResult.storiesGateOpenDelta ?? 0,
       costDelta: 0,
       prdDirty: dryRunResult.prdDirty,
     };
@@ -245,6 +247,7 @@ export async function runIteration(
     iterResult = {
       prd: r.prd,
       storiesCompletedDelta: r.storiesCompletedDelta,
+      storiesGateOpenDelta: r.storiesGateOpenDelta ?? 0,
       costDelta: r.costDelta,
       prdDirty: r.prdDirty,
       finalAction: pipelineResult.finalAction,
@@ -254,6 +257,7 @@ export async function runIteration(
     iterResult = {
       prd: r.prd,
       storiesCompletedDelta: 0,
+      storiesGateOpenDelta: 0,
       costDelta: r.costDelta,
       prdDirty: r.prdDirty,
       finalAction: pipelineResult.finalAction,

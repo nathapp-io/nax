@@ -134,6 +134,19 @@ afterEach(() => {
   mock.restore();
 });
 
+describe("handlePipelineSuccess — outcome counts", () => {
+  test.each([
+    { state: "complete-gate-open" as const, completed: 0, gateOpen: 1 },
+    { state: undefined, completed: 1, gateOpen: 0 },
+  ])("counts $state outcome", async ({ state, completed, gateOpen }) => {
+    const result = makeMinimalResult();
+    result.context.workflowEndState = state;
+    const counts = await handlePipelineSuccess(makeCtx(makeStory("US-001"), { storyGitRef: undefined }), result);
+    expect(counts.storiesCompletedDelta).toBe(completed);
+    expect(counts.storiesGateOpenDelta).toBe(gateOpen);
+  });
+});
+
 describe("handlePipelineSuccess — outputFiles capture (ENH-005)", () => {
   test("populates outputFiles on story when storyGitRef is set", async () => {
     const story = makeStory("US-001");

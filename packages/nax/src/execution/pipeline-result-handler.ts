@@ -205,6 +205,7 @@ export interface PipelineHandlerContext extends DispatchContext {
 
 export interface PipelineSuccessResult {
   storiesCompletedDelta: number;
+  storiesGateOpenDelta?: number;
   costDelta: number;
   prd: PRD;
   prdDirty: boolean;
@@ -222,7 +223,9 @@ export async function handlePipelineSuccess(
     ctx.allStoryMetrics.push(...pipelineResult.context.storyMetrics);
   }
 
-  const storiesCompletedDelta = ctx.storiesToExecute.length;
+  const gateOpen = pipelineResult.context.workflowEndState === "complete-gate-open";
+  const storiesCompletedDelta = gateOpen ? 0 : ctx.storiesToExecute.length;
+  const storiesGateOpenDelta = gateOpen ? ctx.storiesToExecute.length : 0;
   for (const completedStory of ctx.storiesToExecute) {
     const now = Date.now();
     logger?.info("story.complete", "Story completed successfully", {
@@ -277,7 +280,7 @@ export async function handlePipelineSuccess(
     storyDurationMs: ctx.storyStartTime ? Date.now() - ctx.storyStartTime : undefined,
   });
 
-  return { storiesCompletedDelta, costDelta, prd, prdDirty: true };
+  return { storiesCompletedDelta, storiesGateOpenDelta, costDelta, prd, prdDirty: true };
 }
 
 export interface PipelineFailureResult {

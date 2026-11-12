@@ -396,6 +396,8 @@ export function logRunCompletion(input: {
     iterations,
     totalStories: finalCounts.total,
     storiesCompleted,
+    storiesGateOpen: options.storiesGateOpen ?? 0,
+    storiesPassed: finalCounts.passed,
     storiesFailed: finalCounts.failed,
     storiesPending: finalCounts.pending,
     totalCost: timing?.totalCost ?? reportedTotal,

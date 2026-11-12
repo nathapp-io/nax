@@ -68,6 +68,7 @@ export interface RunnerExecutionResult {
   prd: PRD;
   iterations: number;
   storiesCompleted: number;
+  storiesGateOpen?: number;
   totalCost: number;
   allStoryMetrics: StoryMetrics[];
   /** End-of-run deferred plugin review result (#1146 G2). Forwarded to the completion phase. */
@@ -301,6 +302,7 @@ export async function runExecutionPhase(
     prd,
     iterations,
     storiesCompleted,
+    storiesGateOpen: unifiedResult.storiesGateOpen ?? 0,
     totalCost,
     allStoryMetrics,
     deferredReview: unifiedResult.deferredReview,
