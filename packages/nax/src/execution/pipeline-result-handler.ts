@@ -205,9 +205,31 @@ export interface PipelineHandlerContext extends DispatchContext {
 
 export interface PipelineSuccessResult {
   storiesCompletedDelta: number;
+  storiesGateOpenDelta?: number;
   costDelta: number;
   prd: PRD;
   prdDirty: boolean;
+}
+
+function successStoryDeltas(
+  ctx: PipelineHandlerContext,
+  pipelineResult: PipelineRunResult,
+): {
+  storiesCompletedDelta: number;
+  storiesGateOpenDelta: number;
+} {
+  const gateOpen = pipelineResult.context.workflowEndState === "complete-gate-open";
+  return {
+    storiesCompletedDelta: gateOpen ? 0 : ctx.storiesToExecute.length,
+    storiesGateOpenDelta: gateOpen ? ctx.storiesToExecute.length : 0,
+  };
+}
+
+/** A gate-open close is not a success: say so in the record (#2879), and flag it for log readers. */
+function storyCompleteRecord(gateOpen: boolean): { message: string; fields: { gateOpen?: true } } {
+  return gateOpen
+    ? { message: "Story closed gate-open", fields: { gateOpen: true } }
+    : { message: "Story completed successfully", fields: {} };
 }
 
 export async function handlePipelineSuccess(
@@ -222,11 +244,13 @@ export async function handlePipelineSuccess(
     ctx.allStoryMetrics.push(...pipelineResult.context.storyMetrics);
   }
 
-  const storiesCompletedDelta = ctx.storiesToExecute.length;
+  const { storiesCompletedDelta, storiesGateOpenDelta } = successStoryDeltas(ctx, pipelineResult);
+  const record = storyCompleteRecord(storiesGateOpenDelta > 0);
   for (const completedStory of ctx.storiesToExecute) {
     const now = Date.now();
-    logger?.info("story.complete", "Story completed successfully", {
+    logger?.info("story.complete", record.message, {
       storyId: completedStory.id,
+      ...record.fields,
       storyTitle: completedStory.title,
       totalCost: ctx.totalCost + costDelta,
       runElapsedMs: now - ctx.startTime,
@@ -277,7 +301,7 @@ export async function handlePipelineSuccess(
     storyDurationMs: ctx.storyStartTime ? Date.now() - ctx.storyStartTime : undefined,
   });
 
-  return { storiesCompletedDelta, costDelta, prd, prdDirty: true };
+  return { storiesCompletedDelta, storiesGateOpenDelta, costDelta, prd, prdDirty: true };
 }
 
 export interface PipelineFailureResult {

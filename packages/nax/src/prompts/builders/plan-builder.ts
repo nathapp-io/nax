@@ -415,8 +415,6 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
   "feature": "string — feature name",
   "analysis": "string — your Step 2 analysis: key files, impact areas, risks, architecture decisions, migration notes. All implementation agents will receive this.",
   "branchName": "string — git branch (e.g. feat/my-feature)",
-  "createdAt": "ISO 8601 timestamp",
-  "updatedAt": "ISO 8601 timestamp",
   ${OUT_OF_SCOPE_SCHEMA_FIELD}
   "userStories": [
     {

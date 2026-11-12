@@ -427,6 +427,7 @@
         "nextFindingId": 1,
         "outcome": "local-only",
         "passed": true,
+        "pushFailed": false,
         "reasons": ["branch is not publishable"],
         "repoGates": {
           "failing": [],
@@ -479,6 +480,7 @@
       "nextFindingId": 1,
       "outcome": "local-only",
       "passed": true,
+      "pushFailed": false,
       "reasons": ["branch is not publishable"],
       "repoGates": {
         "failing": [],

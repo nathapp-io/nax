@@ -19,10 +19,13 @@ export function classifyHttpError(status: number | undefined): ProtocolErrorKind
   return "unknown";
 }
 
-/** Recover only the known SDK error prefixes, not arbitrary leading numbers. */
+/** Recover anchored SDK status prefixes or provider API-error messages, not arbitrary numbers. */
 export function statusFromSdkMessage(message: string | undefined): number | undefined {
-  const match = message?.match(/^([45]\d\d):? (\{|status code)/);
-  return match === undefined || match === null ? undefined : Number(match[1]);
+  const sdkMatch = message?.match(/^([45]\d\d):? (\{|status code)/);
+  if (sdkMatch !== undefined && sdkMatch !== null) return Number(sdkMatch[1]);
+
+  const providerMatch = message?.match(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79} API error \(([45]\d\d)\): /);
+  return providerMatch === undefined || providerMatch === null ? undefined : Number(providerMatch[1]);
 }
 
 /**
@@ -284,15 +287,15 @@ export class ProtocolSetupError extends Error {
  * A `ProtocolSetupError` is `bad-request`: it names a request that cannot
  * succeed.
  *
- * A throw with NO status stays `transport`: that is the connection reset, DNS
- * failure and immediate socket error this function was written for, where
- * classifyHttpError(undefined) would return "unknown" and the fault genuinely
- * is ours to retry. `cause` is preserved either way.
+ * Without a status property, known SDK and provider message prefixes can supply
+ * one. If neither does, the throw stays `transport` without a status: connection
+ * resets, DNS failures and immediate socket errors are ours to retry rather than
+ * `unknown`. `cause` is preserved either way.
  */
 export function classifyThrown(cause: unknown): ProtocolError {
   const message = cause instanceof Error ? cause.message : String(cause);
   if (cause instanceof ProtocolSetupError) return { kind: "bad-request", message, cause };
-  const status = thrownStatus(cause);
+  const status = thrownStatus(cause) ?? statusFromSdkMessage(message);
   if (status === undefined) return { kind: "transport", message, cause };
 
   const retryAfter = parseRetryAfter(thrownHeaders(cause));

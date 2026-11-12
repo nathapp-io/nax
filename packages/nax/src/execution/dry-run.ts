@@ -25,6 +25,7 @@ export interface DryRunContext {
 
 export interface DryRunResult {
   storiesCompletedDelta: number;
+  storiesGateOpenDelta?: number;
   prdDirty: boolean;
 }
 
@@ -82,5 +83,5 @@ export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
   ctx.statusWriter.setCurrentStory(null);
   await ctx.statusWriter.update(ctx.totalCost, ctx.iterations);
 
-  return { storiesCompletedDelta: ctx.storiesToExecute.length, prdDirty: false };
+  return { storiesCompletedDelta: ctx.storiesToExecute.length, storiesGateOpenDelta: 0, prdDirty: false };
 }

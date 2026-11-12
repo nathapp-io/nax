@@ -34,6 +34,35 @@ function summary(over: Partial<RunSummary> = {}): RunSummary {
 
 const OPTS = { mode: "normal" as const, useColor: false };
 
+describe("formatRunSummary — gate-open stories (#2879)", () => {
+  test("prints gate-open stories on their own line, not as unresolved", () => {
+    const out = formatRunSummary(summary({ total: 3, passed: 2, gateOpen: 1 }), OPTS);
+    expect(out).toContain("Gate-open:");
+    expect(out).not.toContain("Unresolved:");
+  });
+
+  test("prints no gate-open line when there are none", () => {
+    expect(formatRunSummary(summary({ total: 2, passed: 2, gateOpen: 0 }), OPTS)).not.toContain("Gate-open:");
+  });
+});
+
+describe("formatLogEntry — gate-open story.complete (#2879)", () => {
+  test("labels a gate-open close GATE-OPEN, not PASSED", () => {
+    const { output } = formatLogEntry(
+      {
+        timestamp: "2026-11-12T00:00:00.000Z",
+        level: "info",
+        stage: "story.complete",
+        message: "Story closed gate-open",
+        data: { storyId: "US-001", gateOpen: true },
+      },
+      OPTS,
+    );
+    expect(output).toContain("US-001: GATE-OPEN");
+    expect(output).not.toContain("PASSED");
+  });
+});
+
 describe("formatRunSummary — unresolved stories", () => {
   test("reports the residual when the counters do not add up to total", () => {
     const output = formatRunSummary(summary(), OPTS);

@@ -14,6 +14,7 @@ import type { StoryMetrics } from "@/metrics/types";
 import type { PluginRegistry } from "@/plugins/registry";
 import type { PRD, UserStory } from "@/prd/types";
 import type { DispatchContext } from "@/runtime/dispatch-context";
+import type { StoryState } from "@/workflow/types";
 
 /**
  * Routing result from complexity classification
@@ -53,6 +54,7 @@ export interface RoutingResult {
 export type AgentGetFn = (name: string) => import("../agents/types").AgentAdapter | undefined;
 
 export interface PipelineContext extends DispatchContext {
+  workflowEndState?: StoryState;
   /** Reports live phases even in headless runs without an event emitter. */
   reportPhase?: (phase: string) => void;
   /**

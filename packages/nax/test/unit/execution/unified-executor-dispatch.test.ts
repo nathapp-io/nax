@@ -113,6 +113,35 @@ function makeCtx(overrides: { parallelCount?: number; dryRun?: boolean } = {}): 
   };
 }
 
+describe("gate-open counting", () => {
+  test("counts complete and gate-open iterations separately", async () => {
+    const original = _unifiedExecutorDeps.runIteration;
+    const prd = makePrd([makePendingStory("US-001"), makePendingStory("US-002")]);
+    _unifiedExecutorDeps.runIteration = async (_ctx, current, selection) => {
+      const gateOpen = selection.story.id === "US-001";
+      return {
+        prd: {
+          ...current,
+          userStories: current.userStories.map((s) =>
+            s.id === selection.story.id ? { ...s, status: "passed" as const, passes: true } : s,
+          ),
+        },
+        storiesCompletedDelta: gateOpen ? 0 : 1,
+        ...(gateOpen ? { storiesGateOpenDelta: 1 } : {}),
+        costDelta: 0,
+        prdDirty: false,
+      };
+    };
+    try {
+      const result = await executeUnified(makeCtx(), prd);
+      expect(result.storiesCompleted).toBe(1);
+      expect(result.storiesGateOpen).toBe(1);
+    } finally {
+      _unifiedExecutorDeps.runIteration = original;
+    }
+  });
+});
+
 describe("useBatch scheduling refresh", () => {
   let deps: Record<string, unknown>;
   let origRunIteration: unknown;

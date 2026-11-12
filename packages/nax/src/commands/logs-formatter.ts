@@ -26,6 +26,12 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 3,
 };
 
+/** Runs-table mark: a gate-open story (#2879) keeps a run from reading as a clean pass. */
+function runStatusMark(summary: { failed: number; gateOpen: number }): string {
+  if (summary.failed > 0) return chalk.red("✗");
+  return summary.gateOpen > 0 ? chalk.yellow("!") : chalk.green("✓");
+}
+
 /**
  * Display runs table
  */
@@ -52,7 +58,7 @@ export async function displayRunsList(runsDir: string): Promise<void> {
     const stories = summary ? `${summary.passed}/${summary.total}` : "?/?";
     const duration = summary ? formatDuration(summary.durationMs) : "?";
     const cost = summary ? `$${summary.totalCost.toFixed(4)}` : "$?.????";
-    const status = summary ? (summary.failed === 0 ? chalk.green("✓") : chalk.red("✗")) : "?";
+    const status = summary ? runStatusMark(summary) : "?";
 
     console.log(`  ${timestamp}  ${stories.padEnd(7)}  ${duration.padEnd(8)}  ${cost.padEnd(8)}  ${status}`);
   }

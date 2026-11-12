@@ -41,7 +41,7 @@ export interface SecretValuePattern {
 }
 
 export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
-  { kind: "openai", re: /sk-[A-Za-z0-9_-]{16,}/g },
+  { kind: "openai", re: /(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/g },
   { kind: "github", re: /ghp_[A-Za-z0-9]{16,}/g },
   { kind: "github", re: /gh[opsu]_[A-Za-z0-9]{16,}/g },
   // LOG-1: GitHub fine-grained PATs — gh[opsu]_ above never matches "github_pat_"
@@ -141,6 +141,25 @@ function redactString(value: string): string {
     out = out.replace(re, (match) => (acceptMatch && !acceptMatch(match) ? match : REDACTED));
   }
   return redactStructured(out);
+}
+
+/**
+ * Redact untrusted diagnostic text, where credential-shaped OpenAI keys must
+ * be masked even when concatenated to identifier characters. Derive the
+ * boundary-free expression from the shared OpenAI entry so its key shape and
+ * replacement marker remain single-sourced.
+ */
+export function redactDiagnosticText(input: string): string {
+  const redacted = redactString(input);
+  const openAiPattern = SECRET_VALUE_PATTERNS.find(({ kind }) => kind === "openai");
+  if (openAiPattern === undefined) return redacted;
+
+  const keyStart = openAiPattern.re.source.indexOf("sk-");
+  if (keyStart < 0) return redacted;
+
+  const unboundedPattern = new RegExp(openAiPattern.re.source.slice(keyStart), openAiPattern.re.flags);
+  unboundedPattern.lastIndex = 0;
+  return redacted.replace(unboundedPattern, REDACTED);
 }
 
 /**

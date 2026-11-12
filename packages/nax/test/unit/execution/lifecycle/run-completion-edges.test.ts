@@ -267,6 +267,22 @@ describe("handleRunCompletion — saved run-metrics payload", () => {
     expect(payload.stories).toBe(metrics);
     expect("fallback" in payload).toBe(false);
   });
+
+  test("records gate-open stories so completed + gate-open + failed accounts for every story", async () => {
+    const save = spyOn(metricsModule, "saveRunMetrics").mockResolvedValue(undefined);
+    const metrics = [makeStoryMetrics({ storyId: "US-001" }), makeStoryMetrics({ storyId: "US-002" })];
+    const prd = makePrd([
+      makeStory({ id: "US-001", status: "passed", passes: true }),
+      makeStory({ id: "US-002", status: "passed", passes: true }),
+    ]);
+
+    await handleRunCompletion(
+      makeOpts(edgeConfig(), prd, { allStoryMetrics: metrics, storiesCompleted: 1, storiesGateOpen: 1 }),
+    );
+
+    const [, payload] = save.mock.calls[0];
+    expect(payload).toMatchObject({ totalStories: 2, storiesCompleted: 1, storiesGateOpen: 1, storiesFailed: 0 });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -694,6 +694,7 @@
         "nextFindingId": 2,
         "outcome": "ready",
         "passed": true,
+        "pushFailed": false,
         "reReviewSkipped": true,
         "reasons": [],
         "repoGates": {
@@ -767,6 +768,7 @@
       "nextFindingId": 2,
       "outcome": "ready",
       "passed": true,
+      "pushFailed": false,
       "reReviewSkipped": true,
       "reasons": [],
       "repoGates": {

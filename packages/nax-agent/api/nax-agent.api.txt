@@ -1056,6 +1056,7 @@ readTranscriptDoc
 realOrRaw
 realSleep
 recordNativeTurnFailureUsage
+redactDiagnosticText
 redactEntry
 redactForRow
 redactRowStrings

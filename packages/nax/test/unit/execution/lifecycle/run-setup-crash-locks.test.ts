@@ -14,7 +14,11 @@ import { acquireFeatureLock, featureLockPath } from "@/execution/feature-lock";
 import { acquireLock } from "@/execution/helpers";
 import { _runSetupDeps, type RunSetupOptions, setupRun } from "@/execution/lifecycle/run-setup";
 
-type CapturedCrashContext = { releaseLocks?: () => Promise<void> };
+type CapturedCrashContext = {
+  releaseLocks?: () => Promise<void>;
+  getStoriesPassed?: () => number;
+  getStoriesFailed?: () => number;
+};
 const tempDirs: string[] = [];
 withDepsRestore(_runSetupDeps);
 
@@ -77,8 +81,12 @@ function makeHarness(): { options: RunSetupOptions; outputDir: string; crashCont
 describe("setupRun releaseLocks forwarder — US-004", () => {
   test("AC-7: releases the acquired feature and checkout locks", async () => {
     const { options, outputDir, crashContext } = makeHarness();
+    options.getStoriesPassed = () => 8;
+    options.getStoriesFailed = () => 1;
     const result = await setupRun(options);
     try {
+      expect(crashContext.getStoriesPassed?.()).toBe(8);
+      expect(crashContext.getStoriesFailed?.()).toBe(1);
       expect(await Bun.file(join(options.workdir, "nax.lock")).exists()).toBe(true);
       expect(await Bun.file(featureLockPath(outputDir, options.feature)).exists()).toBe(true);
       expect(typeof crashContext.releaseLocks).toBe("function");

@@ -33,6 +33,8 @@ export interface RunnerSetupOptions {
   getTotalCost: () => number;
   getIterations: () => number;
   getStoriesCompleted: () => number;
+  getStoriesPassed?: () => number;
+  getStoriesFailed?: () => number;
   getTotalStories: () => number;
   /** Protocol-aware agent resolver — bound from agentManager.getAgent in runner.ts */
   agentGetFn?: AgentGetFn;
@@ -90,6 +92,8 @@ export async function runSetupPhase(options: RunnerSetupOptions): Promise<Runner
     getIterations: options.getIterations,
     // @design: BUG-017: Pass getters for run.complete event on SIGTERM
     getStoriesCompleted: options.getStoriesCompleted,
+    getStoriesPassed: options.getStoriesPassed,
+    getStoriesFailed: options.getStoriesFailed,
     getTotalStories: options.getTotalStories,
     agentGetFn: options.agentGetFn,
     agentManager: options.agentManager,

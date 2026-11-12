@@ -146,7 +146,7 @@ const POLICIES: Readonly<Record<AdapterFailure["outcome"], FailurePolicy>> = Obj
   },
   "fail-adapter-error": {
     sameAgentRetry: "adapter-error",
-    swap: "quality-gated",
+    swap: "after-retry-lane",
     cooldown: "none",
     cooldownScope: "model",
     terminalBackoff: false,

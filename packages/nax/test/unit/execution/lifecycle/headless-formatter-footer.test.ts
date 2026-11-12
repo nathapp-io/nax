@@ -19,6 +19,13 @@ describe("outputRunFooter", () => {
     return log.mock.calls.map((c) => String(c[0])).join("\n");
   }
 
+  test("moves gate-open stories out of the PRD passed count into their own line (#2879)", () => {
+    const plain = Bun.stripANSI(footer({ finalCounts: { total: 3, passed: 3, failed: 0, skipped: 0, gateOpen: 1 } }));
+    expect(plain).toMatch(/Passed:\s+2/);
+    expect(plain).toMatch(/Gate-open:\s+1/);
+    expect(plain).not.toContain("Unresolved:");
+  });
+
   test("pipeline footer has no split and no workflow block", () => {
     const out = footer();
     expect(out).toContain("157m 28s");

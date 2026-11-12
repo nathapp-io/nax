@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { type NativeProtocolError, NativeSessionUnsupportedError, toAdapterFailure } from "@nathapp/nax-agent/internal";
+import { failurePolicyFor } from "@/agents/retry/failure-policy";
 import { decideSwap } from "@/agents/swap-decision";
 import type { AdapterFailure } from "@/context/engine";
 import { NaxError } from "@/errors";
@@ -77,32 +78,56 @@ describe("retryAfterSeconds", () => {
 });
 
 /**
- * The mapping only matters through the gate it feeds. Asserting the category
- * string alone would pass even if decideSwap stopped reading it, so both sides
- * are pinned here: an overflow becomes swappable, a malformed request does not.
+ * The mapping only matters through the gate it feeds. Assert outcomes through
+ * decideSwap as well as pinning the policy table, so routing regressions surface.
  */
+describe("failure policy", () => {
+  test("keeps adapter-error retry and cooldown fields while swapping after its retry lane", () => {
+    expect(failurePolicyFor("fail-adapter-error")).toMatchObject({
+      swap: "after-retry-lane",
+      sameAgentRetry: "adapter-error",
+      cooldown: "none",
+      cooldownScope: "model",
+    });
+  });
+
+  test.each(["fail-quality", "fail-unknown"] as const)("keeps %s quality-gated", (outcome) => {
+    expect(failurePolicyFor(outcome).swap).toBe("quality-gated");
+  });
+});
+
 describe("swap eligibility, through the real gate", () => {
-  const fallback = { enabled: true, maxHopsPerStory: 2 };
+  const fallback = { enabled: true, onQualityFailure: false, maxHopsPerStory: 2 };
 
-  test("an overflow is swap-eligible once quality swaps are opted in", () => {
+  test("an overflow swaps after the retry lane without quality swaps enabled", () => {
+    expect(decideSwap(toAdapterFailure({ kind: "context-overflow" }), 0, fallback)).toEqual({ swap: true });
+  });
+
+  test("a malformed request swaps after the retry lane without quality swaps enabled", () => {
+    expect(decideSwap(toAdapterFailure({ kind: "bad-request" }), 0, fallback)).toEqual({ swap: true });
+  });
+
+  test("a fail-quality failure remains declined without quality swaps enabled", () => {
     expect(
-      decideSwap(toAdapterFailure({ kind: "context-overflow" }), 0, { ...fallback, onQualityFailure: true }),
-    ).toEqual({
-      swap: true,
+      decideSwap(
+        { category: "quality", outcome: "fail-quality", retriable: false, message: "gate failed" },
+        0,
+        fallback,
+      ),
+    ).toEqual({ swap: false, reason: "quality-failure-declined" });
+  });
+
+  test("declines adapter-error swaps when fallback is disabled", () => {
+    expect(decideSwap(toAdapterFailure({ kind: "bad-request" }), 0, { ...fallback, enabled: false })).toEqual({
+      swap: false,
+      reason: "fallback-disabled",
     });
   });
 
-  test("an overflow is declined by default, like any fail-adapter-error", () => {
-    expect(decideSwap(toAdapterFailure({ kind: "context-overflow" }), 0, fallback)).toEqual({
+  test("declines adapter-error swaps at the hop cap", () => {
+    expect(decideSwap(toAdapterFailure({ kind: "bad-request" }), 2, fallback)).toEqual({
       swap: false,
-      reason: "quality-failure-declined",
-    });
-  });
-
-  test("a genuinely malformed request stays declined", () => {
-    expect(decideSwap(toAdapterFailure({ kind: "bad-request" }), 0, fallback)).toEqual({
-      swap: false,
-      reason: "quality-failure-declined",
+      reason: "hop-cap-reached",
     });
   });
 });

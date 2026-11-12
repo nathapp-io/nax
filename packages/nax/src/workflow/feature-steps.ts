@@ -462,7 +462,10 @@ export async function publishStep(
         ...(s.reason !== undefined ? { reason: s.reason } : {}),
       })),
       ...(head ? { head } : {}),
-      passed: featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
+      pushFailed: out.pushFailed === true,
+      passed:
+        out.pushFailed !== true &&
+        featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
       ...(flagged.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flagged } : {}),
       // US-006: the repair targets, only when there is a repair to make.
       ...(ciPlan ? { ciRepairFindings: ciPlan.findings, ciRepairTargets: ciPlan.targets } : {}),

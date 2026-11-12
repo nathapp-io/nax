@@ -74,7 +74,7 @@ export async function storyChangedFiles(sc: StepContext): Promise<string[]> {
  * failure, an unreadable report path) does too. A broken check must never close a story that did
  * work, so the ladder's worst failure is doing what nax did before it existed.
  */
-async function producedWork(env: StoryLoopEnv): Promise<boolean> {
+export async function producedWork(env: StoryLoopEnv): Promise<boolean> {
   const check = env.steps.workProduced;
   if (!check) return true;
   try {

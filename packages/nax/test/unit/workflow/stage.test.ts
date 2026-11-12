@@ -127,6 +127,21 @@ function wire(
 }
 
 describe("workflowStage", () => {
+  test.each(["complete", "complete-gate-open"] as const)("carries %s outcome", async (state) => {
+    wire(async () => ({ ...OUTCOME, state }));
+    const ctx = makeTestContext();
+    await workflowStage.execute(ctx);
+    expect(ctx.workflowEndState).toBe(state);
+  });
+
+  test("carries gate-open after a non-aborted loop error", async () => {
+    wire(async () => {
+      throw new Error("bug");
+    });
+    const ctx = makeTestContext();
+    await workflowStage.execute(ctx);
+    expect(ctx.workflowEndState).toBe("complete-gate-open");
+  });
   test("returns continue, sets agentResult, does not touch storyGitRef or mark the PRD", async () => {
     const disposed = wire(async () => ({
       state: "complete-gate-open",

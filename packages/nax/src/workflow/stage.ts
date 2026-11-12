@@ -52,6 +52,7 @@ export const workflowStage: PipelineStage = {
       const outcome = await _workflowStageDeps.runStoryLoop(env);
       // An abort swallowed inside a step (e.g. a gate) must not close the story as passed.
       if (ctx.abortSignal?.aborted) throw abortError(ctx);
+      ctx.workflowEndState = outcome.state;
       logger.info("workflow", "Story closed", {
         storyId: ctx.story.id,
         state: outcome.state,
@@ -67,6 +68,7 @@ export const workflowStage: PipelineStage = {
       await appendLedgerSafe(ctx, `complete-gate-open (workflow error: ${errorMessage(err)})`);
       if (closeOnError) await closeOnError(errorMessage(err));
       else await closeSetupError(ctx, errorMessage(err));
+      ctx.workflowEndState = "complete-gate-open";
     } finally {
       meter.stop();
       if (storyEnv) await recordTokensSafe(storyEnv.env, meter.byRole(), ctx.story.id);

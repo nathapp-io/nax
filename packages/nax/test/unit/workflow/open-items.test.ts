@@ -68,6 +68,11 @@ describe("buildOpenItems (#2496)", () => {
 });
 
 describe("buildVerdict (#2496)", () => {
+  test("a rejected push blocks an otherwise passing local-only verdict, unlike older records", () => {
+    const base = { ...rec({ outcome: "local-only", passed: true }), pushFailed: true };
+    expect(buildVerdict(base)?.workflowPassed).toBe(false);
+    expect(buildVerdict(rec({ outcome: "local-only", passed: true }))?.workflowPassed).toBe(true);
+  });
   test("undefined before publish", () => {
     expect(buildVerdict(rec({}))).toBeUndefined();
   });

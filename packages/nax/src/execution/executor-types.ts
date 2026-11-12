@@ -74,6 +74,7 @@ export interface SequentialExecutionResult {
   prd: PRD;
   iterations: number;
   storiesCompleted: number;
+  storiesGateOpen?: number;
   totalCost: number;
   allStoryMetrics: StoryMetrics[];
   exitReason: ExitReason;

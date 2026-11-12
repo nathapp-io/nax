@@ -99,6 +99,7 @@ export async function executeUnified(
     prdDirty: false,
     totalCost: 0,
     storiesCompleted: 0,
+    storiesGateOpen: 0,
     lastStoryId: null, // feeds retry-priority (BUG-39)
     warningSent: false,
   };
@@ -152,6 +153,7 @@ export async function executeUnified(
     prd: state.prd,
     iterations,
     storiesCompleted: state.storiesCompleted,
+    storiesGateOpen: state.storiesGateOpen ?? 0,
     totalCost: state.totalCost,
     allStoryMetrics,
     exitReason,

@@ -10,7 +10,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
+import { cleanupTempDir, makeNaxConfig, makePRD, makeTempDir } from "@test/helpers";
 import { StatusWriter } from "@/execution/status-writer";
 
 const tempDirs: string[] = [];
@@ -37,6 +37,18 @@ function makeWriter(): StatusWriter {
   });
   return writer;
 }
+
+describe("StatusWriter.currentPrd", () => {
+  test("starts empty and retains the last PRD by reference", () => {
+    const writer = makeWriter();
+    expect(writer.currentPrd()).toBeNull();
+    const a = makePRD();
+    const b = makePRD();
+    writer.setPrd(a);
+    writer.setPrd(b);
+    expect(writer.currentPrd()).toBe(b);
+  });
+});
 
 describe("StatusWriter.lastTotalCost — #2006 live run cost for the crash path", () => {
   test("starts at zero", () => {

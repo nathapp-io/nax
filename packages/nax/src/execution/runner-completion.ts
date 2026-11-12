@@ -53,6 +53,7 @@ export interface RunnerCompletionOptions extends DispatchContext {
   allStoryMetrics: StoryMetrics[];
   totalCost: number;
   storiesCompleted: number;
+  storiesGateOpen?: number;
   iterations: number;
   // biome-ignore lint/suspicious/noExplicitAny: StatusWriter interface varies by platform
   statusWriter: any;
@@ -159,6 +160,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     allStoryMetrics: options.allStoryMetrics,
     totalCost: options.totalCost,
     storiesCompleted: options.storiesCompleted,
+    storiesGateOpen: options.storiesGateOpen ?? 0,
     iterations: options.iterations,
     startTime: options.startTime,
     workdir: options.workdir,
@@ -209,6 +211,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
         passed: finalCounts.passed,
         failed: finalCounts.failed,
         skipped: finalCounts.skipped,
+        gateOpen: options.storiesGateOpen ?? 0,
       },
       durationMs,
       totalCost: finalTotal,

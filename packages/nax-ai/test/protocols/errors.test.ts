@@ -42,6 +42,12 @@ describe("statusFromSdkMessage", () => {
     ["401 Unauthorized", undefined],
     ['200 {"error":{}}', undefined],
     ['prefix 402 {"error":{}}', undefined],
+    ['opencode-go API error (400): {"type":"invalid_request_error"}', 400],
+    ["Azure OpenAI API error (429): rate limited", 429],
+    ['github-copilot API error (413): {"message":"failed to parse request"}', 413],
+    ["opencode-go API error (503): upstream down", 503],
+    ["Request failed: opencode-go API error (400): x", undefined],
+    ["opencode-go API error (200): x", undefined],
   ] as const)("recovers only SDK status prefixes: %s", (message, status) => {
     expect(statusFromSdkMessage(message)).toBe(status);
   });
@@ -298,11 +304,34 @@ describe("classifyProviderError", () => {
 });
 
 describe("classifyThrown", () => {
+  it.each([
+    ['opencode-go API error (400): {"type":"invalid_request_error"}', "bad-request", 400],
+    ['opencode-go API error (401): {"code":"api_key_expired"}', "auth", 401],
+    ["opencode-go API error (429): slow down", "rate-limit", 429],
+    ["opencode-go API error (503): upstream down", "overloaded", 503],
+    ["opencode-go API error (500): upstream down", "transport", 500],
+  ] as const)("classifies an API error throw by status: %s", (message, kind, status) => {
+    const error = classifyThrown(new Error(message));
+    expect(error.kind).toBe(kind);
+    expect(error.status).toBe(status);
+  });
+
+  it("prefers a thrown status over the status in its message", () => {
+    const thrown = Object.assign(new Error("opencode-go API error (400): x"), { status: 429 });
+    expect(classifyThrown(thrown)).toMatchObject({ kind: "rate-limit", status: 429 });
+  });
+
+  it("keeps the full API error message and cause", () => {
+    const cause = new Error("opencode-go API error (400): x");
+    expect(classifyThrown(cause)).toMatchObject({ message: cause.message, cause });
+  });
+
   it("classifies an arbitrary throw as a transport fault, preserving cause and message", () => {
     const cause = new Error("socket hang up");
     const error = classifyThrown(cause);
     expect(error.kind).toBe("transport");
     expect(error.message).toBe("socket hang up");
+    expect(error).not.toHaveProperty("status");
     expect(error.cause).toBe(cause);
   });
 

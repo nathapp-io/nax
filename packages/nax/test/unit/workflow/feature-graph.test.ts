@@ -74,6 +74,7 @@ const expectedProduces: Record<NodeId, string[]> = {
     "storyStates",
     "head",
     "passed",
+    "pushFailed",
     "flaggedDecisions",
     "ciRepairFindings",
     // US-005: the checks the decided repair targets.

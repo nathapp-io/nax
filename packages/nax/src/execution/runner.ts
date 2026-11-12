@@ -249,7 +249,18 @@ export async function run(options: RunOptions): Promise<RunResult> {
         ),
       getIterations: () => iterations,
       // @design: BUG-017: Pass getters for run.complete event on SIGTERM
-      getStoriesCompleted: () => storiesCompleted,
+      getStoriesCompleted: () => {
+        const current = setupResult?.statusWriter.currentPrd() ?? prd;
+        return current ? countStories(current).passed : storiesCompleted;
+      },
+      getStoriesPassed: () => {
+        const current = setupResult?.statusWriter.currentPrd() ?? prd;
+        return current ? countStories(current).passed : 0;
+      },
+      getStoriesFailed: () => {
+        const current = setupResult?.statusWriter.currentPrd() ?? prd;
+        return current ? countStories(current).failed : 0;
+      },
       getTotalStories: () => (prd ? countStories(prd).total : 0),
     });
   } catch (err) {
@@ -334,6 +345,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       allStoryMetrics,
       totalCost,
       storiesCompleted,
+      storiesGateOpen: executionResult.storiesGateOpen ?? 0,
       iterations,
       statusWriter,
       pluginRegistry,

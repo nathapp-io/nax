@@ -40,6 +40,7 @@ export interface LoopState {
   prdDirty: boolean;
   totalCost: number;
   storiesCompleted: number;
+  storiesGateOpen?: number;
   lastStoryId: string | null;
   warningSent: boolean;
 }
@@ -68,9 +69,12 @@ export interface SequentialDispatchDeps {
 export async function closeStoryIfTerminal(
   ctx: SequentialExecutionContext,
   storyId: string,
-  iter: { storiesCompletedDelta: number; finalAction?: string },
+  iter: { storiesCompletedDelta: number; storiesGateOpenDelta?: number; finalAction?: string },
 ): Promise<void> {
-  const isTerminal = iter.storiesCompletedDelta > 0 || (iter.finalAction && TERMINAL_ACTIONS.has(iter.finalAction));
+  const isTerminal =
+    iter.storiesCompletedDelta > 0 ||
+    (iter.storiesGateOpenDelta ?? 0) > 0 ||
+    (iter.finalAction && TERMINAL_ACTIONS.has(iter.finalAction));
   if (!isTerminal) return;
   if (ctx.sessionManager) await closeStorySessions(ctx.sessionManager, storyId, ctx.agentGetFn);
   ctx.agentManager?.resetTransientUnavailable?.();
@@ -110,6 +114,7 @@ export async function runSequentialDispatch(
 ): Promise<DispatchStep> {
   const { ctx, state, iterations, allStoryMetrics } = params;
   let { prd, totalCost, storiesCompleted, prdDirty } = state;
+  let storiesGateOpen = state.storiesGateOpen ?? 0;
   let warningSent = state.warningSent;
   let lastStoryId = state.lastStoryId;
 
@@ -126,7 +131,7 @@ export async function runSequentialDispatch(
     if (seqCostCheck.stop) {
       return {
         action: "return",
-        state: { prd, prdDirty, totalCost, storiesCompleted, lastStoryId, warningSent },
+        state: { prd, prdDirty, totalCost, storiesCompleted, storiesGateOpen, lastStoryId, warningSent },
         exitReason: "cost-limit",
       };
     }
@@ -165,7 +170,15 @@ export async function runSequentialDispatch(
     if (seqPre.prd.userStories.find((s) => s.id === selection.story.id)?.status === "failed") lastStoryId = null; // BUG-39
     return {
       action: "continue",
-      state: { prd: seqPre.prd, prdDirty: seqPre.prdDirty, totalCost, storiesCompleted, lastStoryId, warningSent },
+      state: {
+        prd: seqPre.prd,
+        prdDirty: seqPre.prdDirty,
+        totalCost,
+        storiesCompleted,
+        storiesGateOpen,
+        lastStoryId,
+        warningSent,
+      },
     };
   }
 
@@ -181,6 +194,7 @@ export async function runSequentialDispatch(
   await pipelineEventBus.drain();
   prd = iter.prd;
   storiesCompleted += iter.storiesCompletedDelta;
+  storiesGateOpen += iter.storiesGateOpenDelta ?? 0;
   totalCost = reconcileRunCost(totalCost + iter.costDelta, ctx.runtime.costAggregator);
   params.reportCost(totalCost);
   prdDirty = iter.prdDirty;
@@ -199,7 +213,7 @@ export async function runSequentialDispatch(
     pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
     return {
       action: "return",
-      state: { prd, prdDirty, totalCost, storiesCompleted, lastStoryId, warningSent },
+      state: { prd, prdDirty, totalCost, storiesCompleted, storiesGateOpen, lastStoryId, warningSent },
       exitReason: "stalled",
     };
   }
@@ -208,10 +222,13 @@ export async function runSequentialDispatch(
   if (delayOutcome.aborted) {
     return {
       action: "return",
-      state: { prd, prdDirty, totalCost, storiesCompleted, lastStoryId, warningSent },
+      state: { prd, prdDirty, totalCost, storiesCompleted, storiesGateOpen, lastStoryId, warningSent },
       exitReason: "aborted",
     };
   }
 
-  return { action: "continue", state: { prd, prdDirty, totalCost, storiesCompleted, lastStoryId, warningSent } };
+  return {
+    action: "continue",
+    state: { prd, prdDirty, totalCost, storiesCompleted, storiesGateOpen, lastStoryId, warningSent },
+  };
 }

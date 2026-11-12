@@ -62,6 +62,7 @@ export interface RunCompletionOptions extends DispatchContext {
   allStoryMetrics: StoryMetrics[];
   totalCost: number;
   storiesCompleted: number;
+  storiesGateOpen?: number;
   iterations: number;
   startTime: number;
   workdir: string;

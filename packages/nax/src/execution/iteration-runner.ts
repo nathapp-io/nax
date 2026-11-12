@@ -25,12 +25,17 @@ import type { StorySelection } from "./story-selector";
 export interface IterationResult {
   prd: PRD;
   storiesCompletedDelta: number;
+  storiesGateOpenDelta?: number;
   costDelta: number;
   prdDirty: boolean;
   finalAction?: string;
   reason?: string;
   /** Set when finalAction === "decomposed" — number of sub-stories created */
   subStoryCount?: number;
+}
+
+function gateOpenDelta(result: { storiesGateOpenDelta?: number }): number {
+  return result.storiesGateOpenDelta ?? 0;
 }
 
 /** Every story uses the workflow stages. */
@@ -74,6 +79,7 @@ export async function runIteration(
     return {
       prd,
       storiesCompletedDelta: dryRunResult.storiesCompletedDelta,
+      storiesGateOpenDelta: gateOpenDelta(dryRunResult),
       costDelta: 0,
       prdDirty: dryRunResult.prdDirty,
     };
@@ -245,6 +251,7 @@ export async function runIteration(
     iterResult = {
       prd: r.prd,
       storiesCompletedDelta: r.storiesCompletedDelta,
+      storiesGateOpenDelta: gateOpenDelta(r),
       costDelta: r.costDelta,
       prdDirty: r.prdDirty,
       finalAction: pipelineResult.finalAction,
@@ -254,6 +261,7 @@ export async function runIteration(
     iterResult = {
       prd: r.prd,
       storiesCompletedDelta: 0,
+      storiesGateOpenDelta: 0,
       costDelta: r.costDelta,
       prdDirty: r.prdDirty,
       finalAction: pipelineResult.finalAction,

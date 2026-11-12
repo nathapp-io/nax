@@ -43,6 +43,8 @@ export interface CrashRecoveryContext {
   getStartTime?: () => number;
   getTotalStories?: () => number;
   getStoriesCompleted?: () => number;
+  getStoriesPassed?: () => number;
+  getStoriesFailed?: () => number;
   emitError?: (reason: string) => void;
   /**
    * Shared abort controller (Issue 5). Signal handler calls `.abort()` on the

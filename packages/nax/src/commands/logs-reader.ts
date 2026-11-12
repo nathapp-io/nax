@@ -105,6 +105,16 @@ export async function selectRunFile(runsDir: string): Promise<string | null> {
 }
 
 /**
+ * Classify one story/agent completion record. A gate-open close (#2879) carries no `success`
+ * field, so it is checked before the legacy `success ?? true` default.
+ */
+function storyOutcome(data: Record<string, unknown> | undefined): "passed" | "gateOpen" | "skipped" | "failed" {
+  if (data?.gateOpen === true) return "gateOpen";
+  if (data?.success ?? true) return "passed";
+  return (data?.finalAction || data?.action) === "skip" ? "skipped" : "failed";
+}
+
+/**
  * Extract run summary from log file
  */
 export async function extractRunSummary(filePath: string): Promise<{
@@ -112,6 +122,7 @@ export async function extractRunSummary(filePath: string): Promise<{
   passed: number;
   failed: number;
   skipped: number;
+  gateOpen: number;
   durationMs: number;
   totalCost: number;
   startedAt: string;
@@ -122,9 +133,7 @@ export async function extractRunSummary(filePath: string): Promise<{
   const lines = content.trim().split("\n");
 
   let total = 0;
-  let passed = 0;
-  let failed = 0;
-  let skipped = 0;
+  const outcomes = { passed: 0, failed: 0, skipped: 0, gateOpen: 0 };
   let totalCost = 0;
   let startedAt = "";
   let completedAt: string | undefined;
@@ -150,16 +159,7 @@ export async function extractRunSummary(filePath: string): Promise<{
 
       if (entry.stage === "story.complete" || entry.stage === "agent.complete") {
         const data = entry.data as Record<string, unknown>;
-        const success = data?.success ?? true;
-        const action = data?.finalAction || data?.action;
-
-        if (success) {
-          passed++;
-        } else if (action === "skip") {
-          skipped++;
-        } else {
-          failed++;
-        }
+        outcomes[storyOutcome(data)]++;
 
         if (data?.cost && typeof data.cost === "number") {
           totalCost += data.cost;
@@ -182,9 +182,7 @@ export async function extractRunSummary(filePath: string): Promise<{
 
   return {
     total,
-    passed,
-    failed,
-    skipped,
+    ...outcomes,
     durationMs,
     totalCost,
     startedAt,

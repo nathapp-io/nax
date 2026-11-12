@@ -153,6 +153,11 @@ export class StatusWriter {
     return this._runStatus;
   }
 
+  /** Latest PRD supplied by the executor, or null before the first update. */
+  currentPrd(): PRD | null {
+    return this._prd;
+  }
+
   /** Update the loaded PRD used for progress counting */
   setPrd(prd: PRD): void {
     this._prd = prd;

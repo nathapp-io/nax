@@ -184,6 +184,65 @@ describe("publish survives a failed ledger commit (US-002)", () => {
   });
 });
 
+describe("push failure verdict", () => {
+  test.each(["push", "pr"] as const)("%s rejection marks local-only as failed", async (mode) => {
+    wireFinalize();
+    _featureDeps.commitAndPush = async () => {
+      throw new Error("remote: error: GH013: Repository rule violations found");
+    };
+    const fc = makeFeatureContext();
+    const out = await publish(
+      { ...fc, workflow: { ...fc.workflow, publish: mode } },
+      {
+        record: newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        stories: [DONE],
+        flagged: 0,
+        advisor: makeFinalizeAdvisor(true),
+        preflight: null,
+      },
+    );
+    expect(out.outcome).toBe("local-only");
+    expect(out).toHaveProperty("pushFailed", true);
+  });
+
+  test.each(["none", "no-forge"] as const)("%s local-only preserves the stories-and-gates verdict", async (mode) => {
+    wireFinalize();
+    if (mode === "no-forge") _featureDeps.detectForge = async () => null;
+    const fc = makeFeatureContext();
+    const out = await publish(
+      { ...fc, workflow: { ...fc.workflow, publish: mode === "none" ? "none" : "pr" } },
+      {
+        record: newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+        stories: [DONE],
+        flagged: 0,
+        advisor: makeFinalizeAdvisor(true),
+        preflight: null,
+      },
+    );
+    expect(out.outcome).toBe("local-only");
+    expect(out).not.toHaveProperty("pushFailed");
+    const h = stepHarness(out);
+    const patch = (await publishStep(h.env, h.env.record)).patch;
+    expect(patch?.pushFailed).toBe(false);
+    expect(patch?.passed).toBe(true);
+    const red = await publishStep(h.env, { ...h.env.record, finalGates: { ran: ["test"], failing: ["test"] } });
+    expect(red.patch?.passed).toBe(false);
+  });
+
+  test.each([true, false] as const)("publish step writes failed=%s and recomputes passed", async (failed) => {
+    const outcome = {
+      outcome: "local-only" as const,
+      ci: "skipped" as const,
+      reasons: [],
+      ...(failed ? { pushFailed: true as const } : {}),
+    };
+    const h = stepHarness(outcome);
+    const result = await publishStep(h.env, { ...h.env.record, pushFailed: true });
+    expect(result.patch?.pushFailed).toBe(failed);
+    expect(result.patch?.passed).toBe(!failed);
+  });
+});
+
 describe("publish survives a rejected push (US-002)", () => {
   test("AC-7: an approving advisor whose push fails ends local-only with the push failure", async () => {
     const h = harness({ ci: "green", pushFails: true });
