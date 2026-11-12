@@ -439,6 +439,76 @@ describe("buildStoryEnv — evidence and interrupt steps (US-005)", () => {
 });
 
 /**
+ * US-002: the live no-op detector the loop reads. It answers from real git, so the tests below run
+ * against a temporary repository rather than stubbing the reads that make the answer true.
+ */
+describe("buildStoryEnv — fixDiffEmpty (US-002)", () => {
+  const realGit = _workflowDeps.git;
+
+  beforeEach(() => {
+    _workflowDeps.git = realGit;
+  });
+
+  /** A committed repository plus the `buildStoryEnv` context that points at it. */
+  async function gitSetup() {
+    const dir = makeTempDir("wf-env-git-");
+    const outputDir = makeTempDir("wf-env-git-out-");
+    dirs.push(dir, outputDir);
+    const run = async (...args: string[]): Promise<string> => {
+      const proc = Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+      const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      return out.trim();
+    };
+    await run("init", "-q");
+    await run("config", "user.email", "t@t");
+    await run("config", "user.name", "t");
+    await Bun.write(join(dir, "a.txt"), "one\n");
+    await run("add", ".");
+    await run("commit", "-qm", "seed");
+    const config = makeNaxConfig({
+      outputDir,
+      execution: { costLimit: 5 },
+      workflow: { maxFixRounds: 4 },
+    });
+    const runtime = makeMockRuntime({ config, workdir: dir });
+    const ctx = makeTestContext({
+      config,
+      rootConfig: config,
+      runtime,
+      projectDir: dir,
+      workdir: dir,
+      prd: { ...makeTestContext().prd, feature: "feat" },
+    });
+    return { ctx, dir, run };
+  }
+
+  test("AC-20: HEAD at the base with a clean tree is an empty fix diff", async () => {
+    const { ctx, dir, run } = await gitSetup();
+    const base = await run("rev-parse", "HEAD");
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(dir).toBe(ctx.projectDir);
+    expect(await env.steps.fixDiffEmpty?.(base)).toBe(true);
+  });
+
+  test("AC-21: a commit after the base is not an empty fix diff", async () => {
+    const { ctx, dir, run } = await gitSetup();
+    const base = await run("rev-parse", "HEAD");
+    await Bun.write(join(dir, "a.txt"), "one\ntwo\n");
+    await run("commit", "-qam", "fix: two");
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.fixDiffEmpty?.(base)).toBe(false);
+  });
+
+  test("AC-22: an uncommitted edit at the base is not an empty fix diff", async () => {
+    const { ctx, dir, run } = await gitSetup();
+    const base = await run("rev-parse", "HEAD");
+    await Bun.write(join(dir, "a.txt"), "one\nedited\n");
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.fixDiffEmpty?.(base)).toBe(false);
+  });
+});
+
+/**
  * US-001: both review steps rewrite the brief first, so an advisor answer or residual ruling the
  * loop recorded after the story started is in the brief the reviewer reads. A refresh that fails
  * leaves the previous brief in place and the review runs anyway.

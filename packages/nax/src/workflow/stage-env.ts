@@ -136,6 +136,12 @@ export async function buildStoryEnv(
     // story gate-open rather than fix against a base or a dirty list that git never reported.
     head: () => readHead(sc.projectDir),
     uncommitted: () => listUncommitted(sc.projectDir),
+    // US-002: a fix round that changed nothing is not worth a re-review. Both reads throw on a git
+    // failure, which the loop reads as "not empty" — it re-reviews rather than skipping the round.
+    fixDiffEmpty: async (fixBase) => {
+      const [head, dirty] = await Promise.all([readHead(sc.projectDir), listUncommitted(sc.projectDir)]);
+      return head === fixBase && dirty.length === 0;
+    },
     workProduced: () => storyWorkEvidence(sc),
     // US-005: the evidence and fallback the interrupt path reads. `workSinceBase` throws on a git
     // failure like the checks above, and the continue turn says so in its prompt instead of claiming

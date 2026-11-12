@@ -309,6 +309,29 @@ ${WORKFLOW_REPLY_CONTRACT}`);
     expect(text).toContain("describe only what remains");
     expect(text).not.toContain("ADDRESSED or NOT_ADDRESSED");
   });
+
+  // US-002: the reply may mark a residual that is the same problem in a narrower form, and the
+  // residual it describes must name a scenario that still fails rather than an area that feels thin.
+  test("re-review offers the narrower flag on a residual (US-002 AC-5)", () => {
+    const text = buildWorkflowReReviewPrompt({
+      briefPath: "/b.md",
+      reportPath: "/r.md",
+      packagePath: "/p-2.diff",
+      findings: [{ id: "F1", kind: "quality", severity: "critical", issue: "leak" }],
+    });
+    expect(text).toContain('"narrower": true');
+    expect(text).toContain("the same problem as the finding, in a narrower form");
+  });
+
+  test("re-review asks the residual to name a concrete failing scenario (US-002 AC-6)", () => {
+    const text = buildWorkflowReReviewPrompt({
+      briefPath: "/b.md",
+      reportPath: "/r.md",
+      packagePath: "/p-2.diff",
+      findings: [{ id: "F1", kind: "quality", severity: "critical", issue: "leak" }],
+    });
+    expect(text).toContain("name a concrete scenario that still fails");
+  });
 });
 
 /**

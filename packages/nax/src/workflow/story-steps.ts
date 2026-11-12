@@ -9,6 +9,8 @@
  *
  * Spec: docs/specs/SPEC-step-graph-g3-story-port.md § State, § Node table, § Transitions.
  */
+import { errorMessage } from "@nathapp/nax-agent/internal";
+import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
 import { adjudicateResidual } from "./adjudicate";
 import { isFlaggedRuling } from "./advisor";
@@ -39,6 +41,9 @@ export const MAX_IMPLEMENTER_QUESTIONS = 2;
 /** The step line in the log already says it; ledger.md still records it. */
 const NO_MIRROR: LedgerWriteOptions = { mirror: false };
 
+/** The first words of the finding a failed implementer turn leaves pending (see `absorbTurn`). */
+const FIX_FAILURE_PREFIX = "implementer session failed";
+
 const isBlocking = (f: WorkflowFindingDraft): boolean => f.severity !== "minor";
 
 /**
@@ -64,6 +69,12 @@ class LoopState {
   costStop: boolean;
   lastTurn: StoryLoopState["lastTurn"];
   reportTurnRan: boolean;
+  /**
+   * US-002: this pass cannot converge (a fix round that changed nothing, or a narrower residual), so
+   * `evaluate` exits `capped` whatever the round and the residual node rules. Node-local on purpose:
+   * the graph's `produces` keys describe the record, and this decision never outlives the pass.
+   */
+  advisorRoute: boolean;
 
   constructor(state: StoryLoopState) {
     this.round = state.round;
@@ -82,6 +93,7 @@ class LoopState {
     this.costStop = state.costLimited;
     this.lastTurn = state.lastTurn;
     this.reportTurnRan = state.reportTurnRan;
+    this.advisorRoute = false;
   }
 
   assign(drafts: readonly WorkflowFindingDraft[]): WorkflowFinding[] {
@@ -215,6 +227,44 @@ async function recordConcern(env: StoryLoopEnv, s: LoopState, reply: Implementer
   await env.sink.ledger(ledgerText.note(`implementer${marker} ${concern}`));
 }
 
+/** US-002: a fix turn that failed is re-reviewed as today — its round still has to be retried. */
+function fixTurnFailed(s: LoopState): boolean {
+  return s.pendingSession.some((f) => f.issue.startsWith(FIX_FAILURE_PREFIX));
+}
+
+/**
+ * US-002: did the fix round leave the tree exactly where `fixBase` found it? An unwired step answers
+ * "not empty", and so does one that throws: a failed read says nothing about the diff, so the
+ * re-review runs and judges what it sees.
+ */
+async function fixDiffEmpty(env: StoryLoopEnv, fixBase: string): Promise<boolean> {
+  const step = env.steps.fixDiffEmpty;
+  if (step === undefined) return false;
+  try {
+    return await step(fixBase);
+  } catch (err) {
+    getLogger().warn("workflow", "Could not tell whether the fix round changed anything - re-reviewing", {
+      storyId: env.storyId,
+      error: errorMessage(err),
+    });
+    return false;
+  }
+}
+
+/** US-002: the ledger line for a fix round that produced no diff at all. */
+function noOpFixNote(round: number, open: readonly WorkflowFinding[]): string {
+  return `fix round r${round} changed nothing: ${open.map((f) => f.id).join(", ")} go to the advisor`;
+}
+
+/**
+ * US-002: does what is still open carry a residual the reviewer marked `narrower` — the same problem
+ * in a smaller form? `open` is the post-absorption list, so an addressed finding never routes.
+ */
+function carriesNarrower(open: readonly WorkflowFinding[], verdict: ReReviewVerdict): boolean {
+  const narrow = new Set(verdict.verdicts.filter((v) => v.narrower === true).map((v) => v.id));
+  return open.some((f) => narrow.has(f.id));
+}
+
 async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   if (!s.reviewed) {
     const step = startStep(env.storyId, "story-review", { model: env.steps.modelFor?.("story-review") });
@@ -239,8 +289,16 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
     return;
   }
   if (s.reviewOpen.length === 0 || s.fixBase === undefined) return;
+  const fixBase = s.fixBase;
+  if (!fixTurnFailed(s) && (await fixDiffEmpty(env, fixBase))) {
+    // US-002: nothing changed, so no reviewer could see progress on these findings. They go to the
+    // residual advisor now instead of spending the remaining rounds on the same unchanged diff.
+    s.advisorRoute = true;
+    await env.sink.ledger(ledgerText.note(noOpFixNote(s.round, s.reviewOpen)));
+    return;
+  }
   const step = startStep(env.storyId, `re-review r${s.round}`, { model: env.steps.modelFor?.("re-review") });
-  const out: ReviewOutcome<ReReviewVerdict> = await env.steps.reReview(s.round, s.reviewOpen, s.fixBase);
+  const out: ReviewOutcome<ReReviewVerdict> = await env.steps.reReview(s.round, s.reviewOpen, fixBase);
   if (!out.ran) {
     // fixBase is kept, so the next re-review covers this round's fix diff as well as the next one's.
     step.done(`skipped (${out.why})`);
@@ -253,6 +311,8 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   await deferMinors(env, s, absorbed.newDrafts);
   const added = s.assign(absorbed.newDrafts.filter(isBlocking));
   s.reviewOpen = [...absorbed.open, ...added];
+  // US-002: a narrower residual is the same problem again, so another fix round cannot converge on it.
+  if (carriesNarrower(absorbed.open, out.verdict)) s.advisorRoute = true;
   step.done(reReviewSummary(asked, out.verdict, added));
 }
 
@@ -354,9 +414,12 @@ export async function implementStep(env: StoryLoopEnv, state: StoryLoopState): P
 }
 
 /** The loop's two decisions after a pass, as the graph's three exits. */
-function passExit(open: readonly WorkflowFinding[], round: number, maxFixRounds: number): string {
+function passExit(open: readonly WorkflowFinding[], s: LoopState, maxFixRounds: number): string {
   if (open.length === 0) return "clean";
-  return round >= maxFixRounds ? "capped" : "open";
+  // US-002: a no-op fix round or a narrower residual cannot converge on another round, so the existing
+  // residual node adjudicates now — the same `capped` exit, whatever the round.
+  if (s.advisorRoute) return "capped";
+  return s.round >= maxFixRounds ? "capped" : "open";
 }
 
 /** One loop pass: gates -> suite -> report check -> review, then persist the pass's record patch. */
@@ -388,7 +451,7 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
       pendingSession: s.pendingSession,
       reportTurnRan: s.reportTurnRan,
     },
-    exit: passExit(open, s.round, env.maxFixRounds),
+    exit: passExit(open, s, env.maxFixRounds),
   };
 }
 
