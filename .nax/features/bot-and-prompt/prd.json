@@ -1,0 +1,446 @@
+{
+  "project": "nax-monorepo",
+  "feature": "bot-and-prompt",
+  "branchName": "feat/bot-and-prompt",
+  "createdAt": "2026-11-12T00:00:00.000Z",
+  "updatedAt": "2026-11-12T13:25:09.266Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Ready only a reviewed head without open blocking findings",
+      "description": "**Goal** — Hold readiness after this execution's push and while the head's latest code review has open critical/important findings, expose ready-only recovery, and report conversation-only quality honestly.\n\n**Motivation** — `readyStep` (`bot/fix-report.ts`) runs straight after `push` and `reply` in the fix graph. It checks the item index, coverage and CI, so a PR was marked ready on a head no bot review had seen; the post-push review then found an `important` finding, and the following ready-only pass returned `ready-pass` because the PR was no longer a draft.\n\n**Approach** — `readyStep(env, state)` gains two holds, checked before the draft check:\n\n- When `state.pushedSha` is set and `state.readyOnly` is not `true` (this execution pushed), it returns\n  `{ patch: { markedReady: false, readyHeld }, exit: \"report\" }` with\n  `readyHeld = \"pushed <sha7>; a bot review of the pushed head decides readiness (nax bot review <n>, then nax bot fix <n> --ready-only)\"`.\n  The existing `waitForPrHead` check stays first. `runBotFixCycle` already reviews the pushed head and then\n  runs a ready-only pass, so the default `nax bot fix` flow still readies a clean PR. With `--no-rereview`\n  (documented as \"Skip post-push review and ready pass\") a pushed PR stays a draft until\n  `nax bot fix <n> --ready-only` runs after a review of the pushed head.\n- A `\"not-reviewed\"` artifact does not itself hold readiness: its head was reviewed before, and that earlier\n  code review is the one the hold reads.\n- Otherwise, when the readiness review's `agreed` list holds an item with `kind: \"finding\"` and `severity`\n  `\"critical\"` or `\"important\"`, it holds with\n  `readyHeld = \"<n> open critical/important finding(s) in the bot review of <sha7>: <key>, <key>\"`\n  (keys in `agreed` order, at most 5 shown, then `, +<m> more`). The readiness review is the new optional\n  `BotFixEnv.codeReview` when set, else `env.review`. `fixCheckout` sets `codeReview` from\n  `loadLatestReview(outputDir, prNumber, headSha, { codeOnly: true })`, which skips artifacts whose\n  `scope` is `\"conversation-only\"`. A conversation-only review runs only when the head was already reviewed\n  (`reviewedHead === head` in `review-rulings.ts`) and reads no code, so the head's open findings live in the\n  earlier code review; reading only the newest artifact would let a conversation-only review hide them. The\n  `agreed` list already excludes settled findings, so a finding fixed, ruled or withdrawn before that review\n  does not hold. Minor findings, threads and comments never hold. `loadLatestReview` without the option is\n  unchanged.\n- `nax bot fix <pr> --ready-only` is a new CLI flag: `botFixCommand` calls `runBotFix` with `readyOnly: true`\n  directly (no fix session, no post-push review), prints the readiness result the way the cycle's ready pass\n  is printed today, and exits 0 whether the PR was readied or held. It is the documented recovery for a\n  `--no-rereview` push and for a hold lifted by a ruling or a new review.\n\n`BotReviewArtifact.quality` and the `posted` result's `quality` widen to\n`PrReviewVerdict[\"quality\"] | \"not-reviewed\"`. `persistArtifact` and `runBotReview` write `\"not-reviewed\"`\nwhen the review's scope is `\"conversation-only\"`, and the verdict's own quality otherwise. The review summary\nline (`renderReviewSummary`) prints the same value. The `PrReviewVerdict` type itself is unchanged.\n\n**Scope** — In: readyStep, BotFixEnv, exact-head review loading in fixCheckout, optional codeOnly artifact selection, CLI readyOnly registration/reporting, artifact/posted/summary quality and existing regression fixtures. Out: US-002 reviewer restoration; US-003 fix prompt/build and CI detail; US-004 noise suppression; US-005/006 tool/prompt output contracts; US-007 cost telemetry. Keep runBotFixCycle's existing graph/orchestration unchanged; prove the real graph and cycle seams rather than adding nodes or forge calls.\n\n**Interface** — `BotFixEnv.review: BotReviewArtifact`; the optional `codeReview` field on `BotFixEnv` and the `{ codeOnly }` option of `loadLatestReview`; `loadLatestReview` — optional fourth argument `{ codeOnly?: boolean }`; `botFixCommand(options, deps)` / `BotFixOptions` — `readyOnly?: boolean` from `--ready-only`; `BotReviewArtifact.quality` — `PrReviewVerdict[\"quality\"] | \"not-reviewed\"`; same widening on the `posted` `BotReviewResult`.\n\n**Implementation/test notes** — fixCheckout lives in bot/fix-run.ts. Also widen ReviewSummaryInput in bot/render-comments.ts and pass the normalized quality through postSummary. Reuse existing _botFixDeps, _fixReportDeps, _botCliDeps and fixture helpers. Update all pushed-fix readiness expectations in integration bot/fix-graph.test.ts, fix-report.test.ts, fix-report-workflow.test.ts, fix-ready-coverage.test.ts, fix-report-head-gates.test.ts and fix-run.test.ts; empty blocking agreed findings in fixtures testing other holds, including fix-ready-only.test.ts. Unit bot/fix-report.test.ts now expects [\"head\"] before the pushed-head hold. Regression tests must exercise runBotFix's real graph for AC8 and stub fix/review only for the AC15 cycle seam.",
+      "acceptanceCriteria": [
+        "[integration] readyStep for a draft PR, with state.pushedSha \"abc1234def\", state.readyOnly unset and waitForPrHead stubbed to resolve true, returns markedReady: false and a readyHeld that starts with \"pushed abc1234; a bot review of the pushed head decides readiness\".",
+        "[integration] In the same case, the stubbed forge run is never called with the mark-ready argv.",
+        "[integration] readyStep with state.readyOnly true, a draft PR, green CI, and env.review.agreed holding one finding with key \"f-1\" and severity \"important\" returns markedReady: false and a readyHeld that includes \"1 open critical/important finding(s)\" and \"f-1\".",
+        "[integration] readyStep with state.readyOnly true and env.review.agreed holding one finding with severity \"critical\" returns markedReady: false.",
+        "[integration] readyStep with state.readyOnly true, a draft non-workflow PR, green CI, and env.review.agreed holding only a finding with severity \"minor\" and one item of kind \"thread\" calls the mark-ready argv and returns markedReady: true.",
+        "[integration] readyStep with state.readyOnly true and env.review.agreed holding 7 important findings returns a readyHeld that lists the first 5 keys followed by \", +2 more\".",
+        "[integration] readyStep with state.readyOnly true, an important finding in env.review.agreed, and a PR that is not a draft returns markedReady: false with the open-finding readyHeld, not a bare markedReady: false.",
+        "[integration] runBotFix (not ready-only) on a draft PR, with the fix session, gates and push stubbed so the push step yields pushedSha \"abc1234def\" and waitForPrHead resolving true, returns markedReady not true and a readyHeld that starts with \"pushed abc1234\".",
+        "[integration] runBotFix with readyOnly: true, where the newest bot review of the head has scope \"conversation-only\" and an empty agreed, and an older review of the same head has scope \"full\" and an important finding \"f-9\", returns markedReady: false and a readyHeld that includes \"f-9\".",
+        "[unit] loadLatestReview with { codeOnly: true } over two artifacts of one head, the newer with scope \"conversation-only\", returns the older artifact.",
+        "[unit] loadLatestReview without the option over the same two artifacts returns the newer artifact.",
+        "[integration] botFixCommand with readyOnly: true calls runBotFix once with readyOnly: true and never calls runBotFixCycle.",
+        "[integration] botFixCommand with readyOnly: true and runBotFix returning outcome: \"ready-pass\", markedReady: false and a readyHeld exits 0 and logs the readyHeld text.",
+        "[integration] botFixCommand with rereview: false and the cycle's fix returning outcome: \"pushed\" calls runBotFixCycle with rereview: false, and the fix it reports carries no markedReady: true.",
+        "[integration] runBotFixCycle with the fix stub returning outcome: \"pushed\" and pushedSha \"abc1234def\", the review stub returning outcome: \"posted\", and the ready-only fix stub returning markedReady: true returns a result whose fix.markedReady is not true and whose ready.markedReady is true.",
+        "[integration] runBotReview for a review whose scope is \"conversation-only\" and whose verdict quality is \"approved\" writes a bot-review.json whose quality is \"not-reviewed\".",
+        "[integration] In the same case, the returned posted result's quality is \"not-reviewed\".",
+        "[integration] runBotReview for a review whose scope is \"full\" and whose verdict quality is \"approved\" writes a bot-review.json whose quality is \"approved\".",
+        "[unit] renderReviewSummary with quality: \"not-reviewed\" and scope \"conversation-only\" returns a summary line that includes \"quality not-reviewed\".",
+        "[integration] Given a ready-only draft non-workflow PR with all existing readiness checks satisfied, when the readiness review's agreed list holds only minor findings, threads or comments, readyStep does not return an open-critical/important-finding hold."
+      ],
+      "tags": [
+        "bot",
+        "readiness",
+        "cli",
+        "review",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Readiness, exact-head artifact selection, CLI dispatch and three review-quality outputs span several modules and need integration seams; existing trust, permissions and session lifecycle implementations remain unchanged, so the complex default lite strategy is sufficient.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/fix-report.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/bot/fix-input.ts",
+        "packages/nax/src/bot/post.ts",
+        "packages/nax/src/cli/bot.ts",
+        "packages/nax/src/bot/review-run.ts"
+      ],
+      "suggestedCriteria": [
+        "readyStep with a pushed SHA whose waitForPrHead returns false returns the existing PR-head-did-not-reach hold rather than the new pushed-head review hold.",
+        "readyStep uses env.codeReview's blocking agreed finding even when env.review contains no blocking finding.",
+        "botFixCommand with readyOnly: true and a markedReady: true ready-pass result prints Marked ready. and returns 0."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/integration/bot/fix-graph.test.ts",
+          "reason": "a fix that pushes no longer ends with `markedReady: true`; assert the `readyHeld` text naming the pushed head instead, and give a ready-path fixture review an `agreed` list with no critical or important finding where the test is about another hold."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/fix-report.test.ts",
+          "reason": "a fix that pushes no longer ends with `markedReady: true`; assert the `readyHeld` text naming the pushed head instead, and give a ready-path fixture review an `agreed` list with no critical or important finding where the test is about another hold."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/fix-report-workflow.test.ts",
+          "reason": "a fix that pushes no longer ends with `markedReady: true`; assert the `readyHeld` text naming the pushed head instead, and give a ready-path fixture review an `agreed` list with no critical or important finding where the test is about another hold."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/fix-ready-coverage.test.ts",
+          "reason": "a fix that pushes no longer ends with `markedReady: true`; assert the `readyHeld` text naming the pushed head instead, and give a ready-path fixture review an `agreed` list with no critical or important finding where the test is about another hold."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/fix-report-head-gates.test.ts",
+          "reason": "a fix that pushes no longer ends with `markedReady: true`; assert the `readyHeld` text naming the pushed head instead, and give a ready-path fixture review an `agreed` list with no critical or important finding where the test is about another hold."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/fix-run.test.ts",
+          "reason": "a fix that pushes no longer ends with `markedReady: true`; assert the `readyHeld` text naming the pushed head instead, and give a ready-path fixture review an `agreed` list with no critical or important finding where the test is about another hold."
+        },
+        {
+          "path": "packages/nax/test/unit/bot/fix-report.test.ts",
+          "reason": "`readyStep` called with `pushedSha` and a head that reached it now returns the pushed-head hold before reading rulings; the expected call order becomes `[\"head\"]` and the patch is the pushed-head `readyHeld`."
+        },
+        {
+          "path": "packages/nax/test/integration/bot/fix-ready-only.test.ts",
+          "reason": "a ready-only fixture review whose `agreed` holds a critical or important finding now holds; empty that `agreed` list where the test is about another outcome."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b6f494593b9ab9900c901db74d13d52243d344fb"
+    },
+    {
+      "id": "US-002",
+      "title": "Keep harmless ignored tool files and separate refs-left warnings",
+      "description": "**Goal** — Keep added .gitignore files inside already-ignored directories without weakening restoration, and distinguish ref/stash movement from reverted state.\n\n**Motivation** — `reviewer-tree-reverted` fired in 5 runs only because a tool the reviewer ran (`uv`, `mypy`, `bun install`) wrote a `.gitignore` under `.venv/`, `.mypy_cache/` or `node_modules/.bun/...`; `restoreIgnoreRules` deletes and reports it.\n\n**Approach** — `restoreIgnoreRules` resets the snapshot's own `.gitignore` files first, then classifies\neach added `.gitignore` (one outside the snapshot-time `known` set). An added `.gitignore` whose containing\ndirectory is ignored by the restored rules (`git check-ignore -q -- <dir>/` through the guard's `git` seam\n`_snapshotDeps.git`, exit 0) is left in place and not returned: it can only affect paths that\nare already ignored, so it cannot hide a reviewer's file from the comparison. Every other added\n`.gitignore` is removed and returned as today, including when `check-ignore` exits with anything other than 0\nor 1. Known `.gitignore` files reset to their snapshot content are still returned in `paths`, as today. The\n`known === null` branch is unchanged.\n`ReviewerTreeGuard.restoreEntry` logs `reviewer-tree-reverted` only when `paths`, `indexRestored`,\n`headRestored` or `failures` report something, and logs `refsLeft` / `stashLeft` under a separate warning\n`reviewer-refs-left` (fields `storyId`, `role`, `refsLeft`, `stashLeft`) when either is non-empty. Ref and\nstash restore behaviour (R15: only this worktree's own HEAD) is unchanged.\n\n**Scope** — In: snapshot-ignore-rules ordering/classification, existing guard logging and regression assertions. Out: US-001 bot readiness/review quality, US-003 fix setup/prompt/CI, US-004 general warning deduplication, US-005/006 tool text/output and US-007 telemetry. Restoring branches, tags or stash entries a reviewer moved; ruling R15 stands, they are only reported.\n\n**Interface** — `restoreIgnoreRules(ctx, failures)`; `ReviewerTreeGuard.restoreEntry`; guard git seam `_snapshotDeps.git`; warning `reviewer-refs-left` (fields `storyId`, `role`, `refsLeft`, `stashLeft`).\n\n**Implementation/test notes** — Use the raw seam's exitCode rather than the throwing git helper to distinguish check-ignore outcomes. Check the containing directory under restored rules, not a file hidden by its own new rule. Extend existing unit/review/reviewer-guard/snapshot.test.ts with temporary git-repository integration cases and guard.test.ts with stubbed restore reports. Update the existing ignored-file deletion assertion to kept/unreported and refs/stash event expectations without changing concurrent guard lifecycle or restore-incomplete warnings.",
+      "acceptanceCriteria": [
+        "[integration] In a temporary git repository whose root .gitignore ignores .venv/, a reviewer turn that creates .venv/.gitignore leaves .venv/.gitignore on disk after restoreRepoSnapshot.",
+        "[integration] In the same case, the restore report's paths does not include .venv/.gitignore.",
+        "[integration] In a temporary git repository, a reviewer turn that creates sub/.gitignore holding * in a directory the snapshot rules do not ignore removes sub/.gitignore and lists it in paths.",
+        "[integration] In a temporary git repository, a reviewer turn that appends planted* to the root .gitignore and also creates .venv/.gitignore restores the root .gitignore to its snapshot content and leaves .venv/.gitignore in place, with planted* files still reverted.",
+        "[integration] In a temporary git repository whose root .gitignore ignores .venv/, with _snapshotDeps.git wrapped so a check-ignore call exits 128, a reviewer turn that creates .venv/.gitignore removes it and lists it in paths.",
+        "[integration] In a temporary git repository, a reviewer turn that edits the known root .gitignore still lists .gitignore in paths after the restore.",
+        "[unit] ReviewerTreeGuard.afterTurn with the restore stub reporting only refsLeft: [\"moved refs/heads/x\"] logs a warning reviewer-refs-left carrying that refsLeft value and logs no reviewer-tree-reverted.",
+        "[unit] ReviewerTreeGuard.afterTurn with the restore stub reporting only stashLeft: [\"added abc\"] logs reviewer-refs-left carrying that stashLeft value.",
+        "[unit] ReviewerTreeGuard.afterTurn with the restore stub reporting paths: [\"a.ts\"] and empty refsLeft and stashLeft logs reviewer-tree-reverted with paths [\"a.ts\"] and logs no reviewer-refs-left.",
+        "[unit] ReviewerTreeGuard.afterTurn with the restore stub reporting nothing logs neither event."
+      ],
+      "tags": [
+        "review",
+        "git",
+        "restoration",
+        "security",
+        "logging"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Localized existing guard changes, but ignore-rule restoration prevents reviewer mutations from evading the comparison; this is security-sensitive session isolation and requires strict TDD."
+      },
+      "contextFiles": [
+        "packages/nax/src/review/reviewer-guard/snapshot-ignore-rules.ts",
+        "packages/nax/src/review/reviewer-guard/guard.ts",
+        "packages/nax/src/review/reviewer-guard/snapshot.ts",
+        "packages/nax/src/review/reviewer-guard/deps.ts"
+      ],
+      "suggestedCriteria": [
+        "ReviewerTreeGuard.afterTurn logs both reviewer-tree-reverted and reviewer-refs-left when a restore report contains changed paths and moved refs.",
+        "restoreRepoSnapshot retains the existing ignore-rules failure report and visible-added-ignore cleanup when the snapshot-time known list is null."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/review/reviewer-guard/guard.test.ts",
+          "reason": "refs and stash differences are now logged under `reviewer-refs-left`, and a `reviewer-tree-reverted` event no longer carries `refsLeft`/`stashLeft` when only refs moved; update the event-name and field assertions to match."
+        },
+        {
+          "path": "packages/nax/test/unit/review/reviewer-guard/snapshot.test.ts",
+          "reason": "an added `.gitignore` inside a directory the snapshot rules ignore is no longer removed or listed in `paths`; an assertion that such a file is deleted becomes an assertion that it is kept and unreported."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Explain fix restrictions, build fresh checkouts and name failed CI checks",
+      "description": "**Goal** — Give the fix agent actionable protected-path constraints, run the review checkout's build after fresh-checkout install, and retain failing GitHub check names.\n\n**Motivation** — An item needing an edit under `.nax/specs/` was attempted for 885 s and denied; `fixProtectedPaths` already forbids the push, but the fix prompt never says so.\n\n**Approach** — Three changes:\n\n- `buildBotPrFixPrompt` in `\"fix\"` mode adds one rule to \"How to work\": the fix can never change files under\n  `.nax/`, `.github/` or `.gitlab/`, agent configuration (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.nax/rules`\n  and similar), `.env` files or key files, because nax refuses to push them; an item whose fix needs one of\n  them is left unchanged and named in `\"concerns\"` with status `DONE_WITH_CONCERNS`. The rule is a constant\n  next to the other shared rules; the `repair` and `prepare` modes do not carry it.\n- `initialFixState` (`bot/fix-run.ts`), after a successful install and when the checkout is not in place,\n  runs `reviewBuildSteps(env.checks)` through `_botFixDeps.runPreRunSteps` in the worktree. A\n  `PRE_RUN_FAILED` from the build logs the warning `Fix build step failed` (fields `pr`, `command`) and the\n  fix continues; any other error propagates. A ready-only run and an in-place checkout run no build.\n- `terminalPoll` (`workflow/ci-wait.ts`) returns `{ outcome: \"failed\", detail: poll.failureDetail ?? \"a check failed\" }`\n  for a finished failure, the same fallback the pending-failure path in `checkHistory` already uses, so\n  `readyHeld: \"CI failed: ...\"` names the failing GitHub checks. GitLab polls carry\n  no `failureDetail` and keep the fallback text.\n\n**Scope** — In: fix-mode rule, post-install build in initialFixState, terminal CI failure detail and existing test fixtures. Out: US-001 readiness holds/CLI/review quality, US-002 reviewer restoration, US-004 logging noise, US-005/006 tool/prompt scope contracts and US-007 cost attribution. Fetching failed CI job logs (`gh run view --log-failed`, `glab ci trace`) and repairing from them; a red CI only names its failing checks. Naming failing checks for GitLab pipelines; GitLab keeps \"a check failed\". Building workspace packages when the project declares no root `build` gate; adding one is a project config change.\n\n**Interface** — `buildBotPrFixPrompt(input)`; `initialFixState(env, outputDir, input)`; `reviewBuildSteps(checks: BotChecks): PreRunStepConfig[]`; `_botFixDeps.runPreRunSteps`; `terminalPoll(poll)` returns `{ outcome: \"failed\", detail: poll.failureDetail ?? \"a check failed\" }` for a finished failure.\n\n**Implementation/test notes** — Preserve the existing terminal install failure behavior by isolating the build catch from the install catch. Use the existing root-build/list-step derivation and worktree cwd. Test through runBotFix with the pre-run seam, and drive waitForChecks with gh pr checks output instead of stubbing waitForChecks itself. Extend the existing bot-pr-fix-builder, fix-run/fix-setup-failed/in-place-fix and ci-wait suites. Do not change protected-path enforcement, trust, permission resolution or repair/prepare policies.",
+      "acceptanceCriteria": [
+        "[unit] buildBotPrFixPrompt with mode: \"fix\" returns text that states files under .nax/, .github/ and .gitlab/ can never be changed by the fix.",
+        "[unit] In the same case, the text tells the agent to leave an item that needs such a file unchanged and name it in \"concerns\" with status DONE_WITH_CONCERNS.",
+        "[unit] buildBotPrFixPrompt with mode: \"repair\", and again with mode: \"prepare\", returns text without the protected-path rule.",
+        "[integration] runBotFix on a fresh (not in-place) checkout whose checks declare a build gate \"bun run build\" calls the stubbed _botFixDeps.runPreRunSteps a second time, after the install call, with a step whose command is \"bun run build\" and with the checkout worktree as workdir.",
+        "[integration] runBotFix on an in-place checkout with the same build gate calls runPreRunSteps once (install only).",
+        "[integration] runBotFix with readyOnly: true never calls runPreRunSteps.",
+        "[integration] runBotFix whose build call throws NaxError code PRE_RUN_FAILED with context command: \"bun run build\" logs the warning Fix build step failed with command \"bun run build\" and still runs the fix session.",
+        "[integration] runBotFix whose build call throws a plain Error rejects with that error.",
+        "[integration] waitForChecks for a GitHub PR whose stubbed gh pr checks output reports check lint with bucket fail and every other check passed returns outcome: \"failed\" and a detail that includes \"lint\"."
+      ],
+      "tags": [
+        "bot",
+        "prompts",
+        "build",
+        "ci",
+        "security"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A mode-specific prompt constant, reuse of reviewBuildSteps and propagation of existing CI failureDetail are bounded changes across existing sites; neither protected-path enforcement nor permissions/session management changes."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/bot-pr-fix-builder.ts",
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/bot/checks.ts",
+        "packages/nax/src/workflow/ci-wait.ts",
+        "packages/nax/src/bot/path-policy.ts"
+      ],
+      "suggestedCriteria": [
+        "runBotFix whose install throws PRE_RUN_FAILED returns setup-failed without attempting the build or fix session, preserving existing install failure behavior.",
+        "waitForChecks for a finished failed GitLab pipeline without failureDetail returns detail \"a check failed\"."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Suppress worktree-root, repeated-config and floating-point warning noise",
+      "description": "**Goal** — Warn only for real pre-hydration package misses, distinct initialized config messages and material positive cost divergence.\n\n**Motivation** — Every bot run warns `resolve() called for non-root package before hydrate()` for `packageDir: \".nax-wt/bot-pr-...\"`, and a removed config key warns twice per bot run because the config is loaded twice.\n\n**Approach** —\n\n- `createPackageRegistry(...).resolve(packageDir)` warns only when the override key\n  (`packageOverrideKey(relativeKey)`) is non-empty. A `.nax-wt/<id>` worktree root has an empty override key,\n  so it resolves to the root view silently, as the repo root does.\n- `warnOrDefer(stage, message)` with an initialized logger calls `instance.warnOnce(stage, message)` instead\n  of `instance.warn(stage, message)`, so the same config warning from a second config load in one run is\n  written once. The deferred (pre-logger) branch already de-duplicates and is unchanged.\n- `reconcileRunCost` warns only when `totalCost - aggregatorTotal` exceeds `COST_RECONCILE_EPSILON_USD`\n  (`1e-9`); the returned value is still `Math.max(totalCost, aggregatorTotal)`.\n\n**Scope** — In: package resolve warning eligibility, initialized warnOrDefer routing and reconcile warning epsilon with existing regressions. Out: US-001 bot readiness, US-002 guard warning event split, US-003 fix setup, US-005 tool descriptions, US-006 new testScoped warning/color/rtk behavior and US-007 cost row metadata/attribution. Do not change package cwd identities, root configuration resolution, deferred-warning behavior or returned cost totals.\n\n**Interface** — `resolve(packageDir)` in `createPackageRegistry`; `packageOverrideKey(packageDir)`; `warnOrDefer(stage, message)`; `Logger.warnOnce(stage, message, data?, discriminator?)`; exported `COST_RECONCILE_EPSILON_USD` (`1e-9`) in `execution/run-cost-reconcile.ts`; `reconcileRunCost(totalCost, costAggregator)`.\n\n**Implementation/test notes** — Change warning eligibility to the normalized override key, never normalize the execution cwd. The root view in the approach means a view using root configuration, not object identity with registry.repo(): the returned worktree PackageView must retain its own packageDir for execution. warnOnce is per logger instance/run. Extend existing runtime/packages, logger/warn-or-defer and execution/run-cost-reconcile tests; rename the initialized-repetition test and resolve a real package for the positive hydrate-warning fixture. Prove deduplication through two real loadConfig calls as well as the helper. Keep floating-point input/output unrounded.",
+      "acceptanceCriteria": [
+        "[unit] A package registry created for repo root /repo, before hydrate, resolving /repo/.nax-wt/bot-pr-7 returns a view using the root config and logs no warning.",
+        "[unit] The same registry, before hydrate, resolving /repo/packages/lib still logs the resolve() called for non-root package before hydrate() warning.",
+        "[unit] With an initialized logger, calling warnOrDefer(\"config\", \"x removed\") twice writes one warning entry with message \"x removed\".",
+        "[unit] With an initialized logger, warnOrDefer(\"config\", \"a\") then warnOrDefer(\"config\", \"b\") writes two warning entries.",
+        "[integration] With an initialized logger, two loadConfig calls on a project config holding a removed key write that key's removal warning once.",
+        "[unit] reconcileRunCost(1.0000000000000002, aggregator) with the aggregator total 1 logs no cost-reconcile warning and returns 1.0000000000000002.",
+        "[unit] reconcileRunCost(1.5, aggregator) with the aggregator total 1 logs the cost-reconcile warning and returns 1.5."
+      ],
+      "tags": [
+        "logging",
+        "config",
+        "worktree",
+        "cost"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three localized condition/call changes reuse existing normalization and per-run warnOnce; no new abstraction or security behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/packages.ts",
+        "packages/nax/src/logger/logger.ts",
+        "packages/nax/src/execution/run-cost-reconcile.ts",
+        "packages/nax/src/config/loader.ts"
+      ],
+      "suggestedCriteria": [
+        "warnOrDefer emits the same stage/message again after a new logger instance starts a different run.",
+        "reconcileRunCost with an aggregator total larger than totalCost returns the aggregator total without a cost-reconcile warning."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/logger/warn-or-defer.test.ts",
+          "reason": "\"AC-4: initialized warnings log immediately, including repetitions\" now expects one `warn` call for two identical initialized `warnOrDefer(\"config\", \"m\")` calls, since repeats go through `warnOnce`; rename the test to match."
+        },
+        {
+          "path": "packages/nax/test/unit/runtime/packages.test.ts",
+          "reason": "the before-hydrate warning test must resolve a real package directory; a worktree root under the reserved worktree directory no longer warns."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-005",
+      "title": "Align RunCommand values guidance and confined-temp instructions",
+      "description": "**Goal** — Advertise files values only when a declared template takes files and explicitly direct confined Bash users to $TMPDIR rather than /tmp.\n\n**Motivation** — The `RunCommand` `values` field description always shows `{ files: \"a.test.ts\" }`, and the rectifier's per-failing-file block wraps a `run-test` region with `files` whenever a `testScoped` template exists, even one with no `{{files}}`.\n\n**Approach** —\n\n- `createRunCommandTool(declared, opts)` computes `takesFiles` (at least one declared command's template\n  carries a `{{files}}` placeholder, via `placeholdersOf`) and passes it to\n  `runCommandInputSchema(keys, exec, takesFiles)`, which passes it to `declaredInputProperties(keys, takesFiles)`.\n  The `values` description keeps today's `files` examples when `takesFiles` is `true`, and reads\n  `\"None of the declared commands take placeholders: omit values.\"` when it is `false`. The `command` enum is\n  unchanged. The flag is passed in rather than computed in `run-command-surface.ts`, which `run-command.ts`\n  imports.\n- `sandboxSentence(network, sharedTmp, platform)` with `sharedTmp` `false` reads\n  `\"this run's temp directory ($TMPDIR) rather than /tmp, which is not writable\"` in place of\n  `\"this run's temp directory ($TMPDIR)\"`; the old phrase stays a prefix. The `sharedTmp = true` default and the\n  shared-temp phrase are unchanged.\n\n**Scope** — In: createRunCommandTool takesFiles computation, schema helper boolean plumbing and shared sandbox temp wording, with regression tests in existing files. Out: US-006 rectifier affordances, config warnings, quality env and rtk markers; US-001 bot readiness, US-002 reviewer restoration, US-003 fix setup, US-004 warning noise and US-007 cost telemetry. Do not change substitution, argv/exec grants, sandbox write policy, permission resolution or package exports.\n\n**Interface** — `createRunCommandTool(declared, opts)`; the existing concrete signature is `createRunCommandTool(declared: ReadonlyMap<string, QualityCommandSpec>, opts: RunCommandToolOptions = {}): CodingTool`, so the command objects in the criteria denote map entries, not a new object-argument overload. `runCommandInputSchema(keys, exec, takesFiles: boolean)` and `declaredInputProperties(keys, takesFiles: boolean)`; `sandboxSentence(network, sharedTmp, platform)`. The only caller of runCommandInputSchema is createRunCommandTool; placeholdersOf is module-private in the same run-command.ts file.\n\n**Implementation/test notes** — Scan all declared specs including command-list entries with placeholdersOf(spec). Keep the schema surface independent of execution decisions; avoid a reverse runtime import. Extend existing tools/run-command-runner or related schema tests and sandbox/messages.test.ts; preserve existing substitution and shared-temp/platform tests. No new files or public exports are needed; source remains Node-compatible and relative imports retain .ts extensions. Show each regression fails against the old implementation.",
+      "acceptanceCriteria": [
+        "[unit] The inputSchema of createRunCommandTool for declared commands { test: \"bun test\", testScoped: \"bun test {{files}}\" } has a values description that includes { files: \"a.test.ts\" }.",
+        "[unit] The inputSchema of createRunCommandTool for declared commands { test: \"npx turbo test\", testScoped: \"npx turbo test --filter=[HEAD^1]\" } has a values description equal to \"None of the declared commands take placeholders: omit values.\".",
+        "[unit] In the second case, the command enum is still [\"test\", \"testScoped\"].",
+        "[unit] The inputSchema of createRunCommandTool for declared commands { check: [\"tsc --noEmit\", \"bun test {{files}}\"] } has a values description that includes { files: \"a.test.ts\" }.",
+        "[unit] sandboxSentence(\"open\", false) returns text that includes \"this run's temp directory ($TMPDIR) rather than /tmp, which is not writable\".",
+        "[unit] sandboxSentence(\"open\", true) returns text that includes \"the system temp directories\" and does not include \"rather than /tmp\"."
+      ],
+      "tags": [
+        "nax-agent",
+        "tools",
+        "prompts",
+        "sandbox"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One existing placeholder scan feeds two schema helper arguments and a shared sentence gains text; command execution, placeholder validation and sandbox/access policy do not change, so ordinary failing-first unit tests suffice."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/run-command-surface.ts",
+        "packages/nax-agent/src/tools/run-command.ts",
+        "packages/nax-agent/src/sandbox/messages.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-006",
+      "title": "Honor scoped placeholders, suppress command color and preserve compaction signals",
+      "description": "**Goal** — Stop sending undeclared files values, warn about unscopable root test commands, default declared commands to no color and replace rtk instructions with neutral compaction markers.\n\n**Motivation** — ANSI colour codes appeared in 223 of 501 `RunCommand` failures in one project.\n\n**Approach** —\n\n- `runQualityCommand` (`quality/runner.ts`), which runs every declared command an agent calls through\n  `RunCommand` and every quality gate, spawns with `NO_COLOR: \"1\"` and `FORCE_COLOR: \"0\"` added to the env\n  built by `withAgentOutputEnv`, through a new exported helper `withNoColorEnv(env, strippedVars)` in the same\n  file. A variable the base env already sets, or one named in `stripEnvVars`, is left as it is; the caller's\n  `env` option still overrides last. `withAgentOutputEnv` itself and the Bash tool env are unchanged.\n\n- `failingTestRectification`'s per-failing-file block wraps a line in a `run-test` region (with `files`) only\n  when `opts.testScopedTemplate` contains `{{files}}`. A template with no `{{files}}` placeholder renders a\n  single line holding the template, wrapped in a `run-check` region `{ command: opts.fileScopeCommandName }`,\n  instead of one line per failing file.\n- `warnScopedTestCommand(conf, warn)` in `config/config-guards.ts`, called by the loader right after\n  `warnQualityCommandChains`, warns when `quality.commands.testScoped` is declared and either holds no\n  `{{files}}` placeholder (`\"quality.commands.testScoped declares no {{files}} placeholder, so agents cannot scope a test run to their files; add {{files}} where the runner takes test paths\"`)\n  or equals `quality.commands.test` (`\"quality.commands.testScoped equals quality.commands.test, so every scoped run is the full suite\"`).\n  A command list is checked across its entries: it warns for no placeholder only when no entry holds one.\n- The rtk interceptor's `postProcess` replaces a trailing `[+N hidden: rtk ...]` hint with\n  `[output compacted: N lines hidden]` and a trailing `[full output: rtk ...]` or `[full diff: rtk ...]` hint\n  with `[output compacted]`. Output without a trailing hint is returned byte-for-byte, as today. No rtk\n  command reaches the agent (R4).\n\n**Scope** — In: rectifier run-test/run-check selection, root loader warning and exported guard, no-color helper and runner wiring, rtk marker replacement and affected Git/Bash output expectations. Out: US-005 RunCommand schema/takesFiles and sandbox wording; US-004 existing warning deduplication; US-001 readiness, US-002 reviewer guard, US-003 bot fix build/CI and US-007 cost rows. Wrapping user-authored command strings with rtk (ruling R10). A per-package `testScoped` warning from `.nax/mono/<pkg>/config.json`; the warning reads the loaded root config. Do not change withAgentOutputEnv or Bash env.\n\n**Interface** — New exported symbols (in existing files; no new files): `withNoColorEnv(env, strippedVars)` in `quality/runner.ts`, `warnScopedTestCommand(conf, warn)` in `config/config-guards.ts`. `failingTestRectification(findings, story, opts)`; `runQualityCommand(opts)`; `postProcess(output)` of `createRtkInterceptor`.\n\n**Implementation/test notes** — Preserve env stripping before defaults and caller overrides last; explicit empty values count as set. Wire warnScopedTestCommand immediately after warnQualityCommandChains in finalizeAndValidateRootConfig and keep it warn-only. Test the real loadConfig seam and runner spawn options, not just exported helpers. Retain full-suite affordance and no-template fallback behavior. The concrete interceptor contract is postProcess(output: string): { output: string }; assert the returned object's output field rather than treating postProcess as a string-returning helper. Update unit/execution/interceptors/rtk.test.ts outputs: diff body plus full-diff hint becomes diff body plus [output compacted]; hidden 12 hint becomes [output compacted: 12 lines hidden]; full-output hint becomes [output compacted]. Keep assertions that rtk recall is absent. unit/tools/git-interception-rtk.test.ts now expects body\\n[output compacted]; unit/tools/bash-intercept.test.ts's US-003 AC10 framed content becomes exit 0\\nout\\n[output compacted]\\n. Extend existing rectifier-builder-helpers, config-guards/loader and quality-runner suites. No other story consumes either new helper.",
+      "acceptanceCriteria": [
+        "[unit] failingTestRectification with testScopedTemplate \"bun test {{files}}\", fileScopeCommandName \"testScoped\" and one failing finding in a.test.ts returns text holding a run-test region whose spec has files \"a.test.ts\".",
+        "[unit] failingTestRectification with testScopedTemplate \"npx turbo test --filter=[HEAD^1]\", fileScopeCommandName \"testScoped\" and failing findings in a.test.ts and b.test.ts returns text with no run-test region.",
+        "[unit] In the second case, the per-failing-file block holds exactly one line, wrapped in a run-check region whose spec is { \"command\": \"testScoped\" }.",
+        "[unit] warnScopedTestCommand given quality.commands.testScoped \"npx turbo test --filter=[HEAD^1]\" calls warn once with a message that includes \"declares no {{files}} placeholder\".",
+        "[unit] warnScopedTestCommand given test \"pytest -q\" and testScoped \"pytest -q\" calls warn with a message that includes \"equals quality.commands.test\".",
+        "[unit] warnScopedTestCommand given testScoped [\"tsc --noEmit\", \"bun test {{files}}\"] does not call warn.",
+        "[unit] warnScopedTestCommand given a config with no quality.commands.testScoped does not call warn.",
+        "[integration] loadConfig on a project whose .nax/config.json declares quality.commands.testScoped \"npx turbo test --filter=[HEAD^1]\" logs a warning that includes \"declares no {{files}} placeholder\".",
+        "[integration] runQualityCommand with _qualityRunnerDeps.spawn stubbed and a process env that sets neither colour variable spawns with an env whose NO_COLOR is \"1\" and whose FORCE_COLOR is \"0\".",
+        "[integration] runQualityCommand with a process env holding FORCE_COLOR \"1\" spawns with FORCE_COLOR \"1\".",
+        "[integration] runQualityCommand with stripEnvVars: [\"NO_COLOR\"] spawns with an env that has no NO_COLOR key.",
+        "[integration] runQualityCommand with the env option { NO_COLOR: \"\" } spawns with NO_COLOR \"\".",
+        "[unit] The rtk interceptor's postProcess given \"ok\\n[+12 hidden: rtk recall abc]\" returns an object whose output is \"ok\\n[output compacted: 12 lines hidden]\".",
+        "[unit] postProcess given \"diff\\n[full diff: rtk git diff --no-compact]\" returns an object whose output is \"diff\\n[output compacted]\".",
+        "[unit] postProcess given \"out\\n[full output: rtk recall abc]\" returns an object whose output is \"out\\n[output compacted]\".",
+        "[unit] postProcess given \"plain output  \\n\" returns an object whose output is \"plain output  \\n\" unchanged.",
+        "[integration] runQualityCommand with a base process env already setting NO_COLOR preserves that NO_COLOR value in the spawned env, rather than replacing it with the no-color default."
+      ],
+      "tags": [
+        "prompts",
+        "config",
+        "quality",
+        "environment",
+        "rtk"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Five existing implementation files need independent template/regex predicates, a warning call and an env-default helper using established seams; no new abstraction or credential-stripping policy is introduced, and focused failing-first tests can verify precedence and output preservation."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/rectifier-builder-helpers.ts",
+        "packages/nax/src/config/config-guards.ts",
+        "packages/nax/src/config/loader.ts",
+        "packages/nax/src/execution/interceptors/rtk/index.ts",
+        "packages/nax/src/quality/runner.ts"
+      ],
+      "suggestedCriteria": [
+        "runQualityCommand with stripEnvVars: [\"FORCE_COLOR\"] and no caller override spawns with no FORCE_COLOR key.",
+        "runQualityCommand with an explicit empty NO_COLOR in the base process environment preserves the empty string.",
+        "The rtk interceptor's postProcess leaves a hint-shaped line embedded before subsequent ordinary output unchanged because it is not a trailing hint."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/interceptors/rtk.test.ts",
+          "reason": "a trailing rtk hint is now replaced by the neutral marker instead of removed: `\"diff body\\n[full diff: rtk git diff --no-compact]\"` now yields `\"diff body\\n[output compacted]\"`, `\"body\\n[+12 hidden: rtk recall 3f9c2a81d4e7]\"` yields `\"body\\n[output compacted: 12 lines hidden]\"`, and `\"body\\n[full output: rtk recall 3f9c2a81d4e7]\"` yields `\"body\\n[output compacted]\"`; the not-contain `rtk recall` checks still hold."
+        },
+        {
+          "path": "packages/nax/test/unit/tools/git-interception-rtk.test.ts",
+          "reason": "the Git tool's output after a trailing `[full diff: rtk git diff --no-compact]` hint is now `\"body\\n[output compacted]\"` instead of `\"body\"`; update the expected content."
+        },
+        {
+          "path": "packages/nax/test/unit/tools/bash-intercept.test.ts",
+          "reason": "\"US-003 AC10\" feeds `\"out\\n[full output: rtk recall 12]\"`; the framed content is now `\"exit 0\\nout\\n[output compacted]\\n\"` instead of `\"exit 0\\nout\\n\"`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-007",
+      "title": "Stamp cost rows with build identity and attribute interrupted spend",
+      "description": "**Goal** — Add nax build identity to all emitted cost rows and inherit dispatch-error story/stage attribution for matching unrecorded ended streams.\n\n**Motivation** — Partial cost rows of an interrupted session carry `storyId: null` (~$1.9 unattributable); cost rows carry no `naxVersion` / `naxCommit`; `reconcileRunCost` warns on deltas of ~1e-16.\n\n**Approach** —\n\n- Every cost row nax writes (`attachCostSubscriber` success and error rows, `toPartialCostEvent`, the chat\n  ledger row) carries `naxVersion: NAX_VERSION` and `naxCommit: NAX_COMMIT` from `src/version.ts`.\n  `CostEvent` gains both as optional strings; readers of older rows are unaffected.\n- In `attachInFlightUsageTracker`, the inner `onDispatchError` handler copies the event's `storyId` and `stage` onto every ended\n  entry that matches the event by scope (`matchesScope`) and has no `storyId` of its own, whether or not the\n  event recorded spend. A later `toPartialCostEvent` for that entry therefore carries the story. The existing\n  clear-on-recorded-spend rule (rule 6) is unchanged.\n\n**Scope** — In: successful/error/partial/chat cost row stamps, optional carrier fields and ended-stream story/stage inheritance before spend reconciliation. Out: US-004 reconcileRunCost warning epsilon (despite its mention in the motivation); US-001 readiness, US-002 reviewer restoration, US-003 fix setup, US-005 tool descriptions and US-006 prompt/output/env changes. A distinct error code for a session that hit its time or step limit; the dispatch error row keeps today's `errorCode`. `naxVersion` / `naxCommit` in prompt-audit and tool-audit headers; cost rows and the `run.start` log line identify the build. The 136 tool-audit sessions with zero recorded calls; no root cause is known yet.\n\n**Interface** — `CostEvent` (`runtime/cost-aggregator.ts`) — optional `naxVersion`, `naxCommit`; `NAX_VERSION`, `NAX_COMMIT` (`src/version.ts`); `attachCostSubscriber` row builders; `toPartialCostEvent`; `onDispatchError` in `in-flight-usage.ts` copies `storyId`/`stage` onto matching ended entries.\n\n**Implementation/test notes** — CostErrorEvent is a distinct carrier in cost-aggregator.ts; add the same optional string fields there so the error subscriber can emit typed stamped rows. Stamp the chat ledger explicitly since it bypasses the subscriber. Use existing version constants, not new build resolution or version bumps. Apply attribution to every matching ended entry without storyId before the current no-spend early return, then preserve rule 6's token/finite-positive-cost trigger and most-recent-ended removal. Existing story attribution must never be overwritten and unrelated scopes must remain untouched. Extend existing runtime/middleware cost and cost-dispatch-error, runtime/in-flight-usage and unit/chat/turn-runner.test.ts ledger-recording tests using real event buses and existing fixtures. The chat fixture calls createChatLedger and reads persisted JSONL after drain; assert actual NAX_VERSION/NAX_COMMIT values there, not a mocked ChatLedger interface. Keep schema/history compatibility, copied token objects, pricing/auth fields and errorCode semantics; no backfill, new files or audit-header changes.",
+      "acceptanceCriteria": [
+        "[integration] A cost subscriber attached to a runtime, given a successful dispatch event, appends a cost row whose naxVersion equals NAX_VERSION and whose naxCommit equals NAX_COMMIT.",
+        "[integration] The same subscriber, given a dispatch error event, appends an error cost row carrying the same naxVersion and naxCommit.",
+        "[unit] toPartialCostEvent for a residual returns a row whose naxVersion equals NAX_VERSION and whose naxCommit equals NAX_COMMIT.",
+        "[unit] When the chat ledger records a usage event and drains its ledger, the cost row carries naxVersion equal to NAX_VERSION and naxCommit equal to NAX_COMMIT.",
+        "[unit] An in-flight usage tracker that saw a round-trip usage update reporting positive spend and a cancelled call end for stream c1 with scopeId \"s1\" and no storyId, then a dispatch error event with scopeId \"s1\", storyId \"US-003\", stage \"run\" and no token usage or recorded cost, returns a residual for c1 whose storyId is \"US-003\" and whose stage is \"run\".",
+        "[unit] In the same case, toPartialCostEvent for that residual returns a row whose storyId is \"US-003\".",
+        "[unit] A tracker whose ended entry already has storyId \"US-001\", given a matching dispatch error event with storyId \"US-003\", keeps storyId \"US-001\" on the residual.",
+        "[unit] A tracker given a dispatch error event whose scopeId matches no ended entry leaves every residual's storyId unchanged.",
+        "[unit] A tracker given a matching dispatch error event that recorded positive estimatedCostUsd returns no residual for that stream, as before."
+      ],
+      "tags": [
+        "telemetry",
+        "cost",
+        "runtime",
+        "session",
+        "chat"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive fields in existing row builders/types and attribution before an existing spend guard reuse the current event buses and scope matcher; session lifecycle and spend-clearing rules stay unchanged, so focused event-sequence TDD is sufficient."
+      },
+      "contextFiles": [
+        "packages/nax/src/runtime/middleware/cost.ts",
+        "packages/nax/src/runtime/in-flight-usage.ts",
+        "packages/nax/src/runtime/cost-aggregator.ts",
+        "packages/nax/src/chat/chat-ledger.ts",
+        "packages/nax/src/version.ts"
+      ],
+      "suggestedCriteria": [
+        "A tracker with multiple ended entries sharing a scope and no storyId returns residuals attributed to the dispatch error's storyId/stage for all matching entries when the error records no spend.",
+        "A tracker does not attribute an active, not-ended stream from a dispatch error even when its scope matches.",
+        "A historical cost row omitting naxVersion and naxCommit remains readable by the existing cost ledger readers."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "Existing-code enhancement closing #2880 and #2881, not a greenfield architecture. Discovery used direct Read/Grep/Glob because codebase-memory MCP is unavailable in this host; no implementation or test execution was performed while drafting. All seven binding stories are independent, have dependencies [], and modify existing files only. Six stories run in packages/nax; US-005 runs in packages/nax-agent. No new config key, graph node, forge call, dependency, package, or release/version bump is needed. Read docs/architecture/ARCHITECTURE.md:13-49 and applicable .nax/rules before implementation. Preserve the dependency direction, Bun-native orchestration in nax, Node-compatible source in nax-agent, named public exports, #src/ imports and explicit .ts relative extensions in nax-agent. New external behavior must use existing _deps seams, never monkey-patched globals. All paths below are repo-rooted.\n\nUS-001 — Readiness and review reporting. packages/nax/src/bot/fix-report.ts:295-326 defines readyStep: waitForPrHead currently runs first, then the non-draft early return, head-gate checks, workflow rulings/coverage or exact-head CI, and markReadyArgv. Insert both new holds between the head wait and draft check; preserve all subsequent gates, cancellation, evidence, and fresh-head safeguards. The own-push hold must precede reading rulings and make no mark-ready forge call. Findings must be selected only from (env.codeReview ?? env.review).agreed, with finding-kind plus critical/important severity, preserving order and five-key truncation. packages/nax/src/bot/fix-steps.ts:37-104 already has readyOnly, markedReady, readyHeld and review; add optional codeReview without changing the fix session's source of work. packages/nax/src/bot/fix-input.ts:69-103 selects exact-head artifacts by mtime and tolerates corrupt/vanished files; add the optional codeOnly filter without changing the default selection or legacy-artifact handling at :34-65. fixCheckout is a function in packages/nax/src/bot/fix-run.ts:355-435, NOT a separate fix-checkout.ts file. Its existing review load at :380 and env construction at :412 must also obtain the latest code review of the same head through the existing _botFixDeps.loadLatestReview seam. A conversation-only latest artifact cannot conceal an earlier full review's open findings. packages/nax/src/bot/fix-run.ts:259-260 already bypasses setup for readyOnly; its graph ready node at :199-205 already terminates directly for ready-only. packages/nax/src/bot/fix-cycle.ts:36-65 already sequences pushed fix, exact-head wait, review, and ready-only fix with remaining budgets; leave its orchestration unchanged and prove it with a seam test. packages/nax/src/cli/bot.ts:67-71 lacks readyOnly in BotFixOptions, :148-177 always calls the cycle, :185-205 contains the ready-pass printer, and :230-241 registers fix flags. Add --ready-only using direct runBotFix, reuse readiness reporting, return 0 for held/readied ready-pass, retain existing error/refusal behavior, and document recovery after --no-rereview. packages/nax/src/bot/post.ts:62-80 defines the artifact quality; persistArtifact starts at :202 and postSummary calls renderReviewSummary at :322. packages/nax/src/bot/review-run.ts:35-48 has a separately typed posted quality; widen these and packages/nax/src/bot/render-comments.ts:22-51 ReviewSummaryInput quality, and normalize all artifact/result/summary outputs by scope. Do not widen PrReviewVerdict or confuse quality not-reviewed with the pre-existing not-reviewed outcome union. Imports/consumers include the bot barrel (packages/nax/src/bot/index.ts:50,93), CLI summary, fix-cycle result, and post summary. Existing seams and fixtures: packages/nax/test/integration/bot/fix-ready-only.test.ts:15-74 uses makeBotFixEnv/makeBotFixDeps/makeTestRuntime and already verifies no session, setup, push probe, saved fix or summary on ready-only, plus trust and exact-head refusal. Extend existing fix-input, fix-cycle, review-run-scope/incremental, CLI bot-fix and render-comments tests. Update integration bot/fix-graph.test.ts, fix-report.test.ts, fix-report-workflow.test.ts, fix-ready-coverage.test.ts, fix-report-head-gates.test.ts, fix-run.test.ts and fix-ready-only.test.ts, plus unit bot/fix-report.test.ts. A pushed-head unit fixture should now observe call order [head] and the pushed-head hold; fixtures aimed at other gates must have no blocking agreed finding. Risks: changing expected mark-ready calls, dropping old review selection compatibility, stale/newest conversation artifacts bypassing findings, and using the pushing fix result rather than the cycle's ready result. Keep explicit head mismatch precedence.\n\nUS-002 — Reviewer restoration is a safety boundary. packages/nax/src/review/reviewer-guard/snapshot-ignore-rules.ts:76-107 currently enumerates known/added files, removes all added ignore files, then restores snapshot ignore blobs. Restore known rules first, then check each new file's containing directory, not the .gitignore itself (a new * rule can hide itself). packages/nax/src/review/reviewer-guard/deps.ts:7-15 exposes _snapshotDeps.git returning exitCode; its git/gitRaw wrappers at :27-35 normally throw or collapse nonzero exits, so use the raw seam for explicit check-ignore status classification. Exit 0 alone permits keeping the file; 1 and all errors remove/report it. Preserve known === null failure handling and snapshot-time known ignored files. packages/nax/src/review/reviewer-guard/guard.ts:86-113 currently includes refs/stash in the touched predicate and reverted event. Split the event payload and trigger conditions, preserving the independent restore-incomplete warning and nonthrowing guard lifecycle. Do not alter ref/stash restoration or concurrent-turn bookkeeping (:39-84). Existing tests packages/nax/test/unit/review/reviewer-guard/snapshot.test.ts:21-50 already create temporary real git repos and restore _snapshotDeps; extend these existing tests for ignored directories, malicious planted rules and check-ignore exit 128. Despite their unit directory, the real git cases are integration assertions. Update guard.test.ts stub-report event assertions. Risks: checking before restoring trusted rules lets hostile ignore changes hide mutations; changing known-null semantics weakens recovery; reporting only ref movement as reverted misstates what was restored.\n\nUS-003 — Fix prompt/setup and CI detail. packages/nax/src/prompts/builders/bot-pr-fix-builder.ts:30-48 selects mode-specific instructions and :80 renders How to work. Add one shared constant only in the fix arm; repair/prepare instructions remain unchanged. packages/nax/src/bot/path-policy.ts:3-26,37-74 is the existing protected-path authority (including agent config, .gitlab-ci.yml, .husky, .env variants, .npmrc and key basenames); this story teaches that boundary, does not weaken or replace enforcement. packages/nax/src/bot/fix-run.ts:259-289 installs and converts PRE_RUN_FAILED into setup-failed. Keep install failures terminal. Only after successful install in a fresh checkout, run reviewBuildSteps with a distinct catch so build PRE_RUN_FAILED warns and continues, rather than entering the install-failure path. Ready-only returns before any setup; in-place still installs but does not build. packages/nax/src/bot/checks.ts:232-246 already selects only the root gate named build, converts list commands to steps, and uses the review build timeout; reuse it, not a parallel build detector. packages/nax/src/bot/review-run.ts:164-181 is the review-side install/build precedent. packages/nax/src/workflow/ci-wait.ts:125-145 already parses GitHub failing names into failureDetail, but terminalPoll at :312-316 discards them; pending-failure history already preserves that detail at :371. Change only the terminal failure result; GitLab retains its fallback. Consumers include bot readiness, workflow publish/promote, and review CI reporting. Extend existing unit prompts/bot-pr-fix-builder.test.ts, unit workflow/ci-wait.test.ts and integration bot/fix-run.test.ts, fix-setup-failed.test.ts and in-place-fix.test.ts. Stub through _botFixDeps.runPreRunSteps and _ciWaitDeps.run; drive waitForChecks itself for failing-check naming rather than stubbing its return. Risks: swallowing non-PRE_RUN_FAILED errors, building after a failed install or in-place, and accidentally changing repair policy or CI waiting semantics.\n\nUS-004 — Noise suppression only. packages/nax/src/runtime/packages.ts:124-128 normalizes .nax-wt/<id> to an empty override key, but resolve at :177-209 warns on the raw relative key. Use the override key solely for warning eligibility; preserve the worktree's actual packageDir/cwd and cached view behavior. packages/nax/src/logger/logger.ts:63-74 currently logs initialized warnOrDefer with warn, while pre-init warnings deduplicate by stage/message; Logger.warnOnce already exists at :336-346 and is per-instance/run. Route only the initialized branch through it. packages/nax/src/execution/run-cost-reconcile.ts:21-34 currently warns for any positive delta; add exported COST_RECONCILE_EPSILON_USD = 1e-9 and retain the exact Math.max return without rounding. Consumers include runner totals and crash/live cost reporting, which must not change. Existing tests: unit runtime/packages.test.ts (resolve a real package for warning-positive fixture), unit logger/warn-or-defer.test.ts (rename repetition assertion), unit execution/run-cost-reconcile.test.ts; use existing config loader fixtures for two-load removed-key integration. Risks: suppressing real package warnings, introducing process-global warning deduplication across runs, and changing returned money values instead of only the warning threshold. This story's logger edit is independent of US-006's config warning site.\n\nUS-005 — Agent-facing text only, no command execution or sandbox-policy changes. packages/nax-agent/src/tools/run-command-surface.ts:85-95 always advertises files examples and :129-144 builds the schema. Its only source caller is packages/nax-agent/src/tools/run-command.ts:25,347-361; placeholdersOf already exists at :257 and supports QualityCommandSpec lists. Compute takesFiles in createRunCommandTool across declared spec placeholders and pass the boolean downward, avoiding a reverse import/runtime cycle from surface to execution. Keep command key ordering, required fields, exec/argv advertisement and substitution validation unchanged. packages/nax-agent/src/tools/run-command.ts:175-244 explicitly rejects undeclared values and handles heterogeneous lists; the description must match that behavior, not relax it. packages/nax-agent/src/sandbox/messages.ts:21-22 owns tempRootsPhrase and :36-49 sandboxSentence with sharedTmp default true and platform-specific notes. Extend only the confined-temp phrase, retaining its original prefix. Bash and RunCommand descriptions both consume the shared sentence; no duplicated Bash-only text is needed. Existing tests include test/unit/tools/run-command-runner.test.ts, run-command-list.test.ts, run-command-substitute.test.ts and test/unit/sandbox/messages.test.ts. run-command-list.test.ts:5-40 already anchors heterogeneous substitution and rejection of extraneous values; add schema assertions through createRunCommandTool to an existing suite. No new public package export or API snapshot change is intended for these internal helper signature changes. Risks: accidentally computing any-placeholder rather than files, missing a placeholder in one command-list entry, changing enums, or implying /tmp is forbidden for sharedTmp true. Show regressions fail on old code per package instructions.\n\nUS-006 — Prompt affordances, warning wiring, env defaults, neutral rtk markers. packages/nax/src/prompts/builders/rectifier-builder-helpers.ts:470-547 defines FailingTestRectificationOptions and currently maps failing files to run-test whenever any scoped template and command name exist (:532-536). Gate files substitution on the actual {{files}} substring and collapse an unscopable template into one run-check line without values. Preserve full-suite command block, no-template fallback and test-edit instructions. Existing code currently encloses per-file generation in opts.testCommand; construct fixtures accordingly while meeting the stated scoped-template behavior. packages/nax/src/config/config-guards.ts:253-261 has the warn-only command-chain helper; add exported warnScopedTestCommand beside it using raw config-safe access and command-list handling. packages/nax/src/config/loader.ts:190-215 finalizes merged root config, strips removed keys and invokes warnQualityCommandChains before safeParse; invoke the new warning directly after that call via defaultConfigWarn. Do not reject configurations or scan per-package files. Equality and no-placeholder predicates must retain their exact warning messages; ACs do not demand a particular combined warning count when both predicates hold. packages/nax/src/quality/runner.ts:217-240 copies process env, strips names, calls withAgentOutputEnv, then applies opts.env at spawn. Add exported withNoColorEnv at this site, preserving explicit base values (including empty strings), stripped-name absence and final caller override precedence; do not change withAgentOutputEnv or Bash env. Use _qualityRunnerDeps.spawn (:94-103). packages/nax/src/execution/interceptors/rtk/index.ts:100-111 matches trailing hints and :202-204 removes them; replace them with neutral markers while preserving hint-free output byte-for-byte and never leaking recall commands. Git/Bash interception consumers must receive markers too, not just direct interceptor tests. Existing tests to extend: unit prompts/builders/rectifier-builder-helpers.test.ts, config/config-guards.test.ts, config loader suites, quality runner suites, execution/interceptors/rtk.test.ts and tools/git-interception-rtk.test.ts and tools/bash-intercept.test.ts. Update exact output assertions to include compacted markers and preserve not-contain rtk recall assertions. Risks: reintroducing stripped secret names via defaults, overwriting caller color settings, hiding multiple failures behind repeated full-suite commands, trimming output without hints, or teaching agents rtk commands. No dependency on US-005 is needed: each side fixes its own contract independently.\n\nUS-007 — Additive telemetry and residual attribution. packages/nax/src/runtime/middleware/cost.ts:122-251 builds successful CostEvent rows and :257-305 builds separately typed CostErrorEvent rows; stamp both. packages/nax/src/runtime/cost-aggregator.ts:6-155 defines CostEvent and :158 onward defines the distinct CostErrorEvent interface; add optional build strings to both carriers as required to emit typed error rows (the spec names CostEvent but error row compilation also needs its own fields). Preserve cost/tokens/usageMissing/auth/rates/pricing and error-code semantics, and existing skip behavior for zero-spend complete events. OperationSummaryEvent is not a cost row. packages/nax/src/runtime/in-flight-usage.ts:170-175 matches scopeId to dispatch scopeId or callId; :177-195 currently returns before iterating when the error has no recorded spend. Move attribution before that return: apply storyId/stage to every matching ended entry without its own storyId, then retain the existing finite-positive-cost/token-usage rule and most-recent-ended clear behavior. Do not assign across unrelated scopes or overwrite an entry's existing story. toPartialCostEvent at :227-263 must stamp the build while retaining copied token objects and residual stage/story attribution. packages/nax/src/chat/chat-ledger.ts:25-57 builds chat rows independently of the dispatch subscriber and must stamp them too. packages/nax/src/version.ts:31-66 already supplies NAX_VERSION and NAX_COMMIT (build define, source git fallback, dev sentinel); import those constants, never derive commits from the consumer worktree or bump releases. Optional fields keep older JSONL readers and fixtures compatible; no backfill is possible/required and no artifact rewrite is needed. Existing middleware cost, cost-dispatch-error, cost-rate-provenance and cost-auth suites use named-field/object matching; unit runtime/in-flight-usage.test.ts:11-21 imports real stream and dispatch buses and both tracker/subscriber, supporting direct event-order and no-double-count regression cases. Extend the real ledger fixture and persisted-row assertions in packages/nax/test/unit/chat/turn-runner.test.ts:89-118,177-183,274-285; no separate chat-ledger.test.ts exists or is required. Risks: only stamping successful rows, missing separate error typing, dropping interrupted-session spend, clearing before attribution, attributing only the latest entry rather than every matching ended entry, and corrupting rule-6 spend deduplication.\n\nImplementation and verification: exactly the seven bounded stories below, each pending with no dependencies or new files. Each story includes test creation/updates in existing suites, not a separate testing story. Use strict isolated TDD for US-002's anti-tampering restoration boundary, three-session-tdd-lite for US-001's cross-module readiness wiring, and tdd-simple for US-003 through US-007's bounded existing-site changes. References to sandbox text, trusted setup or usage telemetry do not by themselves make an unchanged permission/session implementation a security-critical change. Run targeted bun:test paths from the relevant package with explicit timeouts; never bare bun test or bun run nax. Automatic pipeline gates handle lint/typecheck/tests; coverage commands are not acceptance criteria and must not be run inside NAX_SANDBOXED=1. No migration command is needed: CLI gains an opt-in flag, review quality gains a reporting-only union member, loadLatestReview gets an optional argument with unchanged default, and cost metadata remains optional for historical rows. Downstream review-quality consumers must accept not-reviewed; update exact log/output tests for deliberately changed behavior, not loosen assertions. Expected completion is the specified runtime behavior with regression tests that fail on the baseline and preserve existing trusted checks, head gating, ref restoration rulings, env stripping, placeholder validation and cost reconciliation rules.\n\nRefine-pass adversarial audit — All 76 numbered spec ACs remain in the same story at the same ordinal positions: US-001 1-19, US-002 1-10, US-003 1-9, US-004 1-7, US-005 1-6, US-006 1-16 and US-007 1-9. The two additional acceptance entries (US-001 #20 and US-006 #17) enumerate the failure table's minor/thread/comment no-hold and already-set NO_COLOR cases; other non-spec hardening stays in suggestedCriteria. Concrete enumeration/checklist follows.\nUS-001: 1 pushed-head hold after successful head wait; 2 no mark-ready argv for that push; 3 important f-1 hold and count; 4 critical hold; 5 minor plus thread still mark ready; 6 seven findings show five keys and +2 more; 7 non-draft still gets blocking-finding reason; 8 real runBotFix graph cannot ready its own pushed abc1234 head; 9 latest conversation-only artifact cannot hide older full-review f-9; 10 codeOnly returns older code artifact; 11 default loader returns newer artifact; 12 ready-only CLI calls fix once and never cycle; 13 held ready-pass logs reason and exits 0; 14 no-rereview is forwarded and pushing result is not readied; 15 cycle's fix is not readied while its ready result is; 16 conversation-only artifact quality is not-reviewed; 17 posted result also not-reviewed; 18 full approved artifact stays approved; 19 summary prints quality not-reviewed.\nUS-002: 1 ignored .venv ignore file survives; 2 it is absent from paths; 3 unignored sub ignore file is removed/reported; 4 root rules restored and .venv ignore kept with planted files still reverted; 5 check-ignore exit 128 removes/reports; 6 known root ignore edit is still listed; 7 refs-only report warns refs-left and not reverted; 8 stash-only report warns refs-left; 9 path-only report warns reverted and not refs-left; 10 empty report logs neither.\nUS-003: 1 fix text forbids .nax/.github/.gitlab; 2 impossible item remains unchanged and is named in concerns with DONE_WITH_CONCERNS; 3 repair and prepare omit that rule; 4 fresh checkout runs build as second pre-run call after install in worktree; 5 in-place installs only; 6 ready-only does no setup; 7 build PRE_RUN_FAILED warns with command and fix continues; 8 other build Error propagates; 9 terminal GitHub failure names lint.\nUS-004: 1 worktree root uses root configuration without warning; 2 real package before hydrate still warns; 3 identical initialized config warning emits once; 4 distinct messages emit twice; 5 two loads emit removed-key warning once; 6 floating-point delta is quiet and exact max returned; 7 material positive delta warns and returns max.\nUS-005: 1 files-bearing template retains files examples; 2 placeholder-free templates advertise omit-values exactly; 3 command enum still unchanged; 4 list member files placeholder retains examples; 5 confined temp phrase names TMPDIR instead of unwritable /tmp; 6 shared temp phrase remains without that prohibition.\nUS-006: 1 files template produces run-test/files; 2 no-files template produces no run-test; 3 that template yields one run-check line without values; 4 missing placeholder warning exactly once in its case; 5 identical test/testScoped warning; 6 list with files member is quiet; 7 absent scoped command is quiet; 8 real loadConfig emits no-placeholder warning; 9 unset color variables get NO_COLOR=1/FORCE_COLOR=0; 10 existing FORCE_COLOR=1 stays; 11 stripped NO_COLOR is absent; 12 caller NO_COLOR empty override wins; 13 hidden-count hint yields count marker; 14 full-diff hint yields generic marker; 15 full-output hint yields generic marker; 16 plain output retains trailing whitespace/newline unchanged. AC13-16 now explicitly assert postProcess(...).output, matching its existing object result rather than inventing a string-returning interface; expected bytes and unchanged regression qualifier are preserved.\nUS-007: 1 successful row stamps version/commit constants; 2 error row stamps same constants; 3 partial row stamps constants; 4 drained chat ledger row stamps constants; 5 positive usage plus cancelled c1 then matching no-spend error inherits US-003/run; 6 partial row retains that story; 7 already-attributed US-001 is kept despite matching US-003 event; 8 unmatched scope leaves all story IDs unchanged; 9 matching positive-estimate dispatch error still clears that stream as before. The positive-usage/no-recorded-cost fixture clarification makes AC5 exercise the residual path rather than accidentally clearing it or producing a zero-spend invisible entry.\nTrailing regression anchors retained include US-001 default loader behavior, US-002 planted files still reverted and known root ignore still listed, US-004 real package still warns, US-005 command enum still unchanged, US-006 hint-free output unchanged byte-for-byte, and US-007 already-attributed story retained, unmatched scopes unchanged and recorded-spend clearing as before. Every criterion is observable via a returned patch/result/schema, spy call, emitted log, file content or residual state; there are no build/lint/typecheck gates as ACs. Negative paths already exist in each story: US-001 #1-4/7-9/13, US-002 #3-5/10, US-003 #2/7-8, US-004 #1/3/6, US-005 #2/6, US-006 #2-7/11/16 and US-007 #7-9. All five failure-table rows are covered: build PRE_RUN_FAILED by US-003 #7, other build errors by #8, check-ignore errors by US-002 #5, nonblocking agreed items by US-001 #5/#20, and existing color env values by US-006 #10/#17.\nCodebase-fit corrections: createRunCommandTool takes ReadonlyMap, so description examples denote map entries; no object overload is proposed (packages/nax-agent/src/tools/run-command.ts:347-351). postProcess returns an object (packages/nax/src/execution/interceptors/rtk/index.ts:202-204). PackageRegistry.resolve returns a worktree-identity view using root config, not registry.repo() object identity (packages/nax/src/runtime/packages.ts:205-208). Existing real chat ledger tests are in unit/chat/turn-runner.test.ts, not an invented ledger test file. US-001 contextFiles now prioritizes the spec-listed fix-steps.ts interface instead of the extra fix-run.ts file; fix-run.ts and review-run.ts remain explicitly named implementation reads. All other context lists contain the critical spec-recommended paths within the five-file limit. No file to be created is listed as context, and no new files are required.\nRouting was reduced to the lightest supported scope: US-001 remains complex/lite because its readiness/artifact/CLI/reporting wiring spans modules; US-002 remains medium/strict because malicious ignore rules must not evade restoration; US-003-007 are medium/simple-TDD existing-site changes. No story adds authentication, credentials, session management or new permissions; incidental text/telemetry references alone do not justify heavier routing. Every dependencies array remains [] exactly as the binding structure requires; all seven IDs/workdirs are unchanged. Every story has a regression anchor, and no helper/file/dependency or cross-story integration story was invented.\nAll nine feature exclusions are preserved verbatim in the top-level array, in spec order: 1 failed-CI-log fetching/repair; 2 GitLab failing-check names; 3 branch/tag/stash restoration; 4 unexplained zero-call tool-audit sessions; 5 new time/step-limit error code; 6 build fields in prompt/tool audit headers; 7 workspace builds without a root build gate; 8 user-authored rtk wrapping; 9 per-package scoped-test warnings. Adjacent story scopes echo these boundaries in US-002, US-003, US-006 and US-007. None is converted into a new requirement or hoisted from a story-local deferral. Description algorithms remain verbatim, with concrete-interface clarifications where the spec uses shorthand; no description contradicts its ACs or excludes its own CLI/output/helper/test work.",
+  "outOfScope": [
+    "Fetching failed CI job logs (`gh run view --log-failed`, `glab ci trace`) and repairing from them; a red CI only names its failing checks.",
+    "Naming failing checks for GitLab pipelines; GitLab keeps \"a check failed\".",
+    "Restoring branches, tags or stash entries a reviewer moved; ruling R15 stands, they are only reported.",
+    "The 136 tool-audit sessions with zero recorded calls; no root cause is known yet.",
+    "A distinct error code for a session that hit its time or step limit; the dispatch error row keeps today's `errorCode`.",
+    "`naxVersion` / `naxCommit` in prompt-audit and tool-audit headers; cost rows and the `run.start` log line identify the build.",
+    "Building workspace packages when the project declares no root `build` gate; adding one is a project config change.",
+    "Wrapping user-authored command strings with rtk (ruling R10).",
+    "A per-package `testScoped` warning from `.nax/mono/<pkg>/config.json`; the warning reads the loaded root config."
+  ],
+  "routingProfile": "native-codex-ds"
+}
