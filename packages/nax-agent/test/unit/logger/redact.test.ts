@@ -2,6 +2,30 @@ import { describe, expect, test } from "bun:test";
 import { redactEntry, redactSecrets, SECRET_VALUE_PATTERNS } from "#src/internal/redact";
 
 describe("redactSecrets", () => {
+  describe("US-002 sk- left boundary", () => {
+    test.each([
+      ["AC-1", "test:task-abcdefghijklmnopqrst"],
+      ["AC-2", "chat-task-abcdefghijklmnopq/workflow"],
+      ["AC-3", "disk-0123456789abcdefgh"],
+      ["AC-4", "my_sk-0123456789abcdefgh"],
+    ])("%s leaves an identifier containing sk- unchanged", (_ac, input) => {
+      expect(redactSecrets(input)).toBe(input);
+    });
+
+    test.each([
+      ["AC-5", "sk-aaaaaaaaaaaaaaaaaaaa"],
+      ["AC-6", "key: sk-aaaaaaaaaaaaaaaaaaaa"],
+      ["AC-7", '"sk-aaaaaaaaaaaaaaaaaaaa"'],
+      ["AC-8", "token=sk-proj-aaaaaaaaaaaaaaaaaaaa"],
+      ["AC-9", "(sk-aaaaaaaaaaaaaaaaaaaa)"],
+      ["AC-10", "line one\nsk-aaaaaaaaaaaaaaaaaaaa"],
+      ["AC-11", "keys/sk-aaaaaaaaaaaaaaaaaaaa"],
+      ["AC-12", "a,sk-aaaaaaaaaaaaaaaaaaaa"],
+    ])("%s redacts a key after a valid left boundary", (_ac, input) => {
+      expect(redactSecrets(input)).not.toContain("aaaaaaaaaaaaaaaaaaaa");
+    });
+  });
+
   describe("US-002 vendor secret values", () => {
     test("AC-1: redacts a GitLab personal access token", () => {
       expect(redactSecrets("push failed: glpat-ABCDEFGHIJKLMNOPqrst12")).toBe("push failed: [REDACTED]");

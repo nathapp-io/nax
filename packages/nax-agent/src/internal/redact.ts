@@ -41,7 +41,7 @@ export interface SecretValuePattern {
 }
 
 export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
-  { kind: "openai", re: /sk-[A-Za-z0-9_-]{16,}/g },
+  { kind: "openai", re: /(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/g },
   { kind: "github", re: /ghp_[A-Za-z0-9]{16,}/g },
   { kind: "github", re: /gh[opsu]_[A-Za-z0-9]{16,}/g },
   // LOG-1: GitHub fine-grained PATs — gh[opsu]_ above never matches "github_pat_"
