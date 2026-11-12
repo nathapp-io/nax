@@ -312,7 +312,8 @@ function bindToHead(poll: Poll, expectedSha?: string): Poll {
 function terminalPoll(poll: Poll): CiWaitResult | undefined {
   if (poll.state === "unavailable") return { outcome: "unavailable", detail: poll.detail };
   if (poll.state === "green") return { outcome: "green", detail: "all checks passed" };
-  if (poll.state === "failed" && !poll.pending) return { outcome: "failed", detail: "a check failed" };
+  if (poll.state === "failed" && !poll.pending)
+    return { outcome: "failed", detail: poll.failureDetail ?? "a check failed" };
   if (poll.state === "conflicting") {
     getSafeLogger()?.info("workflow", `CI wait: ${poll.detail} — CI cannot start`, { storyId: RUN_SCOPE });
     return { outcome: "conflicting", detail: poll.detail };
