@@ -41,7 +41,11 @@ export interface SecretValuePattern {
 }
 
 export const SECRET_VALUE_PATTERNS: readonly SecretValuePattern[] = [
-  { kind: "openai", re: /sk-[A-Za-z0-9_-]{16,}/g },
+  // Issue #2882: no left boundary let the "sk-" inside ordinary words like
+  // "task-"/"disk-" start a match ("test:task-... -> test:ta[REDACTED]").
+  // Real keys follow a non-word char (space, '=', quote, line start), so a
+  // negative lookbehind over [A-Za-z0-9_-] keeps them matched.
+  { kind: "openai", re: /(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/g },
   { kind: "github", re: /ghp_[A-Za-z0-9]{16,}/g },
   { kind: "github", re: /gh[opsu]_[A-Za-z0-9]{16,}/g },
   // LOG-1: GitHub fine-grained PATs — gh[opsu]_ above never matches "github_pat_"

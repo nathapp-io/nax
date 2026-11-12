@@ -35,6 +35,23 @@ describe("redactSecrets", () => {
       const input = "see glpat-short and AIzaShort and ask_live_x";
       expect(redactSecrets(input)).toBe(input);
     });
+
+    // Issue #2882: the sk- pattern had no left boundary, so the "sk-" inside
+    // ordinary words like "task-"/"disk-" started a match and the rest of the
+    // word got masked ("test:task-abcdefghijklmnopqrst" -> "test:ta[REDACTED]").
+    test.each(["test:task-abcdefghijklmnopqrst", "disk-abcdefghijklmnopqrstuv"])(
+      "leaves words containing sk- unredacted: %s",
+      (input) => {
+        expect(redactSecrets(input)).toBe(input);
+      },
+    );
+
+    test("still redacts real sk- keys at line start, after = and inside quotes", () => {
+      const key = "sk-abcdefghijklmnopqrstUVwx";
+      expect(redactSecrets(key)).toBe("[REDACTED]");
+      expect(redactSecrets(`OPENAI_KEY=${key}`)).toBe(`OPENAI_KEY=[REDACTED]`);
+      expect(redactSecrets(`key "${key}" leaked`)).toBe(`key "[REDACTED]" leaked`);
+    });
   });
 
   test("masks values of known secret keys", () => {
