@@ -2,6 +2,10 @@
  * US-012 AC-1..AC-15: on an ACP brain `/skills`, `/mcp` and `/agents` step aside, a slash line that
  * is not a built-in goes to the agent as typed, `/help` and the slash menu list built-ins only, and
  * the other built-ins behave as on a native host.
+ *
+ * US-005 pins both `/help` listings exactly: on an ACP brain the built-in rows, one empty line and
+ * the keyboard block; on a native host with no catalog the same text, because an empty catalog has
+ * no summary line to insert and joining an absent line would leave a second blank row.
  */
 import { describe, expect, test } from "bun:test";
 import { type ChatHost, type ChatHostState, createChatAskController } from "@/chat";
@@ -13,14 +17,15 @@ import {
   type ResourceCatalog,
   type SkillResource,
 } from "@/resources";
+import { CHAT_KEYBOARD_HELP } from "@/tui/chat/help-text";
 import { COMMAND_DESCRIPTIONS, COMMANDS, parseSlashCommand, runSlashCommand } from "@/tui/chat/slash-commands";
 import { slashMenuItems } from "@/tui/chat/slash-menu";
 
 const ORIGIN = { kind: "claude-project" } as const;
 const NATIVE_MODEL = "openai/gpt-6";
 const ACP_MODEL = "acp:codex";
-/** US-004: what `/help` names after the built-in commands — the chat's own steering key. */
-const STEER_HINT = "ctrl+s  steer the running turn (or interrupt and send)";
+/** The rows every `/help` starts with, in the order the slash menu lists them. */
+const BUILTIN_ROWS = COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`);
 
 const review: CommandResource = {
   kind: "command",
@@ -79,10 +84,17 @@ function stateOf(model: string): ChatHostState {
   };
 }
 
-function makeHost(model: string): ChatHost {
+/** What a case changes about the host it is handed; the catalog is the fixture's by default. */
+interface HostOptions {
+  /** Build the host with no resource catalog at all, the way one opened without resources is. */
+  readonly withoutCatalog?: boolean;
+}
+
+/** A chat host on one model, with the fixture catalog unless `withoutCatalog` is set. */
+function makeHost(model: string, options: HostOptions = {}): ChatHost {
   return {
     repoRoot: "/repo",
-    catalog: makeCatalog(),
+    ...(options.withoutCatalog === true ? {} : { catalog: makeCatalog() }),
     models: [model],
     asks: createChatAskController({ mode: "guarded", answer: () => {} }),
     current: () => stateOf(model),
@@ -137,15 +149,14 @@ describe("runSlashCommand on an ACP brain", () => {
     expect(outcome).toEqual({ kind: "send", message: "/review  a.ts   b.ts" });
   });
 
-  test("AC-7 /help lists the built-ins and no catalog command or skill", async () => {
+  test("AC-6 AC-7 /help lists exactly the built-ins, an empty line and the keyboard block", async () => {
     const { shown } = await run(makeHost(ACP_MODEL), "/help");
-    // US-004: the built-in lines, then the one key that is not a command — ctrl+s steers the
-    // running turn, or interrupts it and sends the draft.
-    expect(shown).toEqual([
-      [...COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`), STEER_HINT].join("\n"),
-    ]);
-    expect(shown[0]).not.toContain("/review");
-    expect(shown[0]).not.toContain("/brainstorming");
+    // No catalog command or skill appears: the listing is the built-in rows alone, then the
+    // chat's own keys. Built from the exported block so the composition is what is pinned here.
+    expect(shown).toEqual([[...BUILTIN_ROWS, "", CHAT_KEYBOARD_HELP].join("\n")]);
+    // One keyboard block on both paths (never a shortened ACP variant): the whole nine-row
+    // block follows the single empty row.
+    expect((shown[0] ?? "").split("\n").slice(BUILTIN_ROWS.length + 1)).toHaveLength(9);
   });
 
   test("AC-8 /model with no argument still opens the model picker", async () => {
@@ -166,6 +177,16 @@ describe("runSlashCommand on an ACP brain", () => {
 });
 
 describe("runSlashCommand on a native brain", () => {
+  test("AC-5 /help with no catalog has no summary line and ends with the keyboard block", async () => {
+    const { shown } = await run(makeHost(NATIVE_MODEL, { withoutCatalog: true }), "/help");
+    const text = shown[0] ?? "";
+    expect(text.split("\n").filter((line) => line.includes("commands ·"))).toEqual([]);
+    expect(text).toEndWith(CHAT_KEYBOARD_HELP);
+    // An empty catalog has no summary to join: exactly one blank row separates the two blocks,
+    // so a leaked `undefined` (which would print a second one) is caught here.
+    expect(text).toBe([...BUILTIN_ROWS, "", CHAT_KEYBOARD_HELP].join("\n"));
+  });
+
   test("AC-11 /skills shows the skills listing", async () => {
     const { outcome, shown } = await run(makeHost(NATIVE_MODEL), "/skills");
     expect(outcome).toBeUndefined();

@@ -178,6 +178,34 @@ const harness = async (options: MountOptions = {}) => {
 };
 
 describe("ChatApp full-screen layout", () => {
+  test("a narrow footer preserves the interrupt shortcut and cost", async () => {
+    const ui = mount({
+      state: {
+        model: "opencode-go/deepseek-v4.1-flash",
+        sandbox: { kind: "available", backend: "srt", network: "open" },
+      },
+    });
+    await ui.resize(40, 20);
+    await ui.start();
+    const footer = ui.rows().at(-1) ?? "";
+    expect(footer).toContain("esc to interrupt");
+    expect(footer).toContain("$0.00");
+    expect(Bun.stringWidth(footer)).toBeLessThanOrEqual(40);
+    await ui.settle();
+  });
+
+  test("idle footer offers command discovery on a narrow terminal", async () => {
+    const ui = mount({
+      state: {
+        model: "opencode-go/deepseek-v4.1-flash",
+        sandbox: { kind: "available", backend: "srt", network: "open" },
+      },
+    });
+    await ui.resize(40, 20);
+    expect(ui.rows().at(-1)).toContain("/ commands");
+    expect(ui.rows().at(-1)).toContain("$0.00");
+  });
+
   test("US-006 AC-2 welcome counts sit directly below the header at 120x36", async () => {
     const ui = mount();
     await ui.resize(120, 36);

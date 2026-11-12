@@ -23,7 +23,6 @@ import { askCardModel } from "./ask-card";
 import { bottomBlocked, bottomRowsFor, menuRowsFor, viewportActive } from "./bottom-region";
 import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
 import {
-  footerModel,
   formatTokens,
   headerLines,
   IDLE_STATUS,
@@ -31,7 +30,6 @@ import {
   reduceTurnStatus,
   type TurnStatus,
   WORKING_TICK_MS,
-  workingLine,
 } from "./chat-status";
 import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
 import { FixedRow } from "./FixedRow";
@@ -71,6 +69,7 @@ import {
 } from "./slash-commands";
 import { slashMenuItemsForModel, slashMenuQueryState } from "./slash-menu";
 import { slashSink } from "./slash-sink";
+import { fittedFooterModel as footerModel, fittedWorkingLine as workingLine } from "./status-layout";
 import { StyledLineView } from "./styled-line";
 import { TranscriptViewport } from "./TranscriptViewport";
 import { type ChatTheme, resolveChatTheme } from "./theme";
@@ -495,7 +494,7 @@ export function ChatApp({
   const escHint = escHintText(escLayer(turnRunning));
   // The working line is drawn from the turn status alone, so its presence is unchanged; only
   // its text takes the layer's hint, and `esc to interrupt` stays when the layer has none.
-  const working = workingLine(status, nowMs, theme.glyphs, escHint);
+  const working = workingLine(status, nowMs, theme.glyphs, escHint, size.columns);
   // The image draft lives beside the prompt, not inside it: this hook reads the clipboard on
   // ctrl+v, takes a pasted image path and writes the placeholder back through the handle.
   const imageAttach = useImageAttach({
@@ -1178,6 +1177,7 @@ export function ChatApp({
   const lines = layoutTranscript(entries, layoutOptions);
   const header = headerLines({ state, version, cwd, home, width: columns, glyphs: theme.glyphs });
   const footer = footerModel({
+    width: columns,
     jobs,
     tasks,
     state,

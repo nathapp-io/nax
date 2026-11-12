@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { displayWidth, plainText, type Span, type StyledLine } from "@/tui/chat/styled-line";
-import { cutSpans, mergeSpans, spansWidth, wrap, wrapSpans } from "@/tui/chat/wrap";
+import { cutSpans, elideSpansEnd, mergeSpans, spansWidth, wrap, wrapSpans } from "@/tui/chat/wrap";
 
 const STAR = "* ";
 const WIDTH = 12;
@@ -64,6 +64,31 @@ describe("cutSpans", () => {
     const cut = cutSpans(spans, 4);
     expect(textOf(cut)).toBe("abcd");
     expect(cut[0].bold).toBe(true);
+  });
+});
+
+describe("elideSpansEnd", () => {
+  const marker: Span = { text: "…", color: "muted" };
+
+  test("keeps a line that already fits, without a marker", () => {
+    expect(textOf(elideSpansEnd([{ text: "abc" }], 10, marker))).toBe("abc");
+  });
+
+  test("reserves the marker's columns and drops the blank columns the cut leaves behind", () => {
+    const elided = elideSpansEnd([{ text: "abc " }, { text: "def" }], 5, marker);
+    expect(textOf(elided)).toBe("abc…");
+    expect(elided.at(-1)).toEqual(marker);
+  });
+
+  test("cuts a marker wider than the whole line to the line", () => {
+    const ascii: Span = { text: "...", color: "muted" };
+    expect(textOf(elideSpansEnd([{ text: "abcdef" }], 2, ascii))).toBe("..");
+  });
+
+  test("keeps the styles of the clusters it keeps", () => {
+    const elided = elideSpansEnd([{ text: "abc", bold: true }, { text: "def" }], 5, marker);
+    expect(elided[0].bold).toBe(true);
+    expect(textOf(elided)).toBe("abcd…");
   });
 });
 
