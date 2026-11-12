@@ -74,6 +74,34 @@ describe("sandbox messages", () => {
   });
 });
 
+// US-005: a confined session's sentence names $TMPDIR as the writable temp
+// root, but /tmp is the path an agent reaches for first -- and under the
+// sandbox it is not writable. Naming the non-writable path in the same phrase
+// is what stops that first attempt. The shared-temp wording is untouched: that
+// session CAN write /tmp, so the clause would contradict its own policy.
+describe("US-005 — the confined temp phrase names /tmp", () => {
+  test("AC-5: sharedTmp=false says $TMPDIR rather than /tmp", () => {
+    expect(sandboxSentence("open", false)).toContain(
+      "this run's temp directory ($TMPDIR) rather than /tmp, which is not writable",
+    );
+  });
+
+  // The brief keeps the pre-change phrase as a PREFIX of the new one, so the
+  // extension is read as a clause about the same temp root rather than a
+  // second, separate sentence.
+  test("AC-5 boundary: the old phrase stays a prefix of the new one", () => {
+    const sentence = sandboxSentence("open", false);
+    expect(sentence).toContain("this run's temp directory ($TMPDIR) rather than /tmp, which is not writable");
+    expect(sentence.indexOf("($TMPDIR)")).toBeLessThan(sentence.indexOf("package-manager caches"));
+  });
+
+  test("AC-6: sharedTmp=true keeps the system temp directories and never mentions /tmp", () => {
+    const sentence = sandboxSentence("open", true);
+    expect(sentence).toContain("the system temp directories");
+    expect(sentence).not.toContain("rather than /tmp");
+  });
+});
+
 // US-006: on macOS srt refuses every setuid program and kills a non-setuid copy
 // of /bin/ps, so a test that shells out to ps fails for a reason that has
 // nothing to do with the test itself. The note is darwin-only: on Linux ps

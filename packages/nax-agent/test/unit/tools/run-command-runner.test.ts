@@ -3,6 +3,7 @@
  * tool never imports nax's quality runner; the caller supplies one.
  */
 import { describe, expect, test } from "bun:test";
+import type { CodingTool } from "#src/tools/index";
 import { createRunCommandTool, type DeclaredCommandRequest } from "#src/tools/run-command";
 import { withTempDir } from "#test/helpers/index";
 
@@ -35,6 +36,72 @@ describe("RunCommand — declared-command runner port", () => {
       expect(result.isError).toBe(true);
       expect(result.content).toBe("exit 1\nno declared-command runner is configured for this session");
     });
+  });
+});
+
+// US-005: the values description promised `{ files: "a.test.ts" }` to every
+// project, including one whose scoped test template declares no `{{files}}`
+// (e.g. `npx turbo test --filter=[HEAD^1]`). The model then sent a value no
+// declared command accepts, and `substituteCommandSpec` refused it. The
+// description now advertises files only when some declared template uses it.
+describe("RunCommand — the values description follows the declared placeholders", () => {
+  const tool = (entries: [string, string | string[]][]): CodingTool =>
+    createRunCommandTool(new Map<string, string | string[]>(entries));
+
+  /** One property of the schema, read through descriptors so nothing is cast. */
+  const propertyValue = (built: CodingTool, field: string): unknown => {
+    const properties: unknown = built.inputSchema.properties;
+    if (typeof properties !== "object" || properties === null) throw new Error("expected inputSchema.properties");
+    return Object.getOwnPropertyDescriptor(properties, field)?.value;
+  };
+
+  /** One field of a schema property (`description`, `enum`, ...), likewise. */
+  const fieldOf = (entry: unknown, field: string): unknown => {
+    if (typeof entry !== "object" || entry === null) throw new Error(`expected a schema property holding ${field}`);
+    return Object.getOwnPropertyDescriptor(entry, field)?.value;
+  };
+
+  const valuesDescription = (built: CodingTool): unknown => fieldOf(propertyValue(built, "values"), "description");
+
+  const NO_PLACEHOLDER_DESCRIPTION = "None of the declared commands take placeholders: omit values.";
+
+  test("AC-1: a {{files}} template keeps the files examples", () => {
+    const built = tool([
+      ["test", "bun test"],
+      ["testScoped", "bun test {{files}}"],
+    ]);
+    const description = valuesDescription(built);
+    expect(typeof description).toBe("string");
+    expect(description).toContain('{ files: "a.test.ts" }');
+    expect(description).not.toBe(NO_PLACEHOLDER_DESCRIPTION);
+  });
+
+  test("AC-2: no template declares a placeholder, so the description says to omit values", () => {
+    const built = tool([
+      ["test", "npx turbo test"],
+      ["testScoped", "npx turbo test --filter=[HEAD^1]"],
+    ]);
+    expect(valuesDescription(built)).toBe(NO_PLACEHOLDER_DESCRIPTION);
+  });
+
+  test("AC-3: the command enum is unchanged by the values wording", () => {
+    const built = tool([
+      ["test", "npx turbo test"],
+      ["testScoped", "npx turbo test --filter=[HEAD^1]"],
+    ]);
+    expect(fieldOf(propertyValue(built, "command"), "enum")).toEqual(["test", "testScoped"]);
+  });
+
+  test("AC-4: a command list's {{files}} entry keeps the files examples", () => {
+    const built = tool([["check", ["tsc --noEmit", "bun test {{files}}"]]]);
+    const description = valuesDescription(built);
+    expect(typeof description).toBe("string");
+    expect(description).toContain('{ files: "a.test.ts" }');
+  });
+
+  test("a list where no entry declares a placeholder also says to omit values", () => {
+    const built = tool([["check", ["tsc --noEmit", "biome check"]]]);
+    expect(valuesDescription(built)).toBe(NO_PLACEHOLDER_DESCRIPTION);
   });
 });
 
