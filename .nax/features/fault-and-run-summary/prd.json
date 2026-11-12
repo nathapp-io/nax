@@ -3,7 +3,7 @@
   "feature": "fault-and-run-summary",
   "branchName": "feat/fault-and-run-summary",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T06:37:22.235Z",
+  "updatedAt": "2026-11-12T06:44:15.145Z",
   "userStories": [
     {
       "id": "US-001",
@@ -152,14 +152,17 @@
         "sessions"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The production change is one existing policy value; manager retry/swap ordering already exists, while the fresh-session retry/abort regressions retain the mandatory session-security strategy."
+        "reasoning": "The production change is one existing policy value; manager retry/swap ordering already exists, while the fresh-session retry/abort regressions retain the mandatory session-security strategy.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/agents/retry/failure-policy.ts",
@@ -178,7 +181,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "94598a302cf1648f052caf9ceb16a356dd231e60"
     },
     {
       "id": "US-004",
