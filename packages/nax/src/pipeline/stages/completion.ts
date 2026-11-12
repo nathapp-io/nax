@@ -59,6 +59,14 @@ function logHighMemoryCheckpoint(logger: ReturnType<typeof getLogger>, ctx: Pipe
   });
 }
 
+function completionText(ctx: PipelineContext, title: string, cost: number): { message: string; progress: string } {
+  const gateOpen = ctx.workflowEndState === "complete-gate-open";
+  return {
+    message: gateOpen ? "Story closed gate-open" : "Story passed",
+    progress: `${title} — Cost: $${cost.toFixed(4)}${ctx.stories.length > 1 ? " (batched)" : ""}${gateOpen ? " — closed gate-open" : ""}`,
+  };
+}
+
 export const completionStage: PipelineStage = {
   name: "completion",
   enabled: () => true,
@@ -141,20 +149,15 @@ export const completionStage: PipelineStage = {
 
       const costPerStory = sessionCost / ctx.stories.length;
       const errorCostPerStory = sessionSpend.errorCostUsd / ctx.stories.length;
-      const gateOpen = ctx.workflowEndState === "complete-gate-open";
-      logger.info("completion", gateOpen ? "Story closed gate-open" : "Story passed", {
+      const text = completionText(ctx, completedStory.title, costPerStory);
+      logger.info("completion", text.message, {
         storyId: completedStory.id,
         cost: costPerStory,
       });
 
       // Log progress.
       if (ctx.featureDir) {
-        await appendProgress(
-          ctx.featureDir,
-          completedStory.id,
-          "passed",
-          `${completedStory.title} — Cost: $${costPerStory.toFixed(4)}${isBatch ? " (batched)" : ""}${gateOpen ? " — closed gate-open" : ""}`,
-        );
+        await appendProgress(ctx.featureDir, completedStory.id, "passed", text.progress);
       }
 
       // Emit story:completed event — hooks + reporter subscribers handle the rest.

@@ -107,6 +107,18 @@ async function runPreRunStepsOrFail(opts: {
   }
 }
 
+async function outputHeadlessHeader(options: RunnerExecutionOptions, prd: PRD): Promise<void> {
+  if (!options.headless || options.formatterMode === "json") return;
+  const { outputRunHeader } = await import("./lifecycle/headless-formatter");
+  await outputRunHeader({
+    feature: options.feature,
+    totalStories: prd.userStories.length,
+    pendingStories: prd.userStories.filter((s) => s.status === "pending").length,
+    workdir: options.workdir,
+    formatterMode: options.formatterMode,
+  });
+}
+
 /**
  * Execute the main execution phase via unified executor.
  *
@@ -128,17 +140,7 @@ export async function runExecutionPhase(
   let totalCost = 0;
   const allStoryMetrics: StoryMetrics[] = [];
 
-  // Output run header in headless mode
-  if (options.headless && options.formatterMode !== "json") {
-    const { outputRunHeader } = await import("./lifecycle/headless-formatter");
-    await outputRunHeader({
-      feature: options.feature,
-      totalStories: prd.userStories.length,
-      pendingStories: prd.userStories.filter((s) => s.status === "pending").length,
-      workdir: options.workdir,
-      formatterMode: options.formatterMode,
-    });
-  }
+  await outputHeadlessHeader(options, prd);
 
   // Status write point 1: run started
   options.statusWriter.setPrd(prd);

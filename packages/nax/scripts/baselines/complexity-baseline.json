@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-11T12:57:50.877Z",
+  "updatedAt": "2026-11-12T06:58:50.012Z",
   "limit": 20,
   "byFile": {
     "scripts/analyze-adversarial-convergence.ts": { "collectStats": 27 },
@@ -66,7 +66,7 @@
     "src/metrics/tracker.ts": { "deriveContextMetrics": 40 },
     "src/operations/verify-scoped.ts": { "execute": 24 },
     "src/pipeline/runner.ts": { "runPipeline": 27 },
-    "src/pipeline/stages/completion.ts": { "execute": 31 },
+    "src/pipeline/stages/completion.ts": { "execute": 28 },
     "src/pipeline/stages/context.ts": { "runV2Path": 45, "runV1Path": 33 },
     "src/pipeline/stages/queue-check.ts": { "processQueueCommands": 41 },
     "src/pipeline/stages/routing.ts": { "execute": 37 },

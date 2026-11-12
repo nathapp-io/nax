@@ -211,6 +211,20 @@ export interface PipelineSuccessResult {
   prdDirty: boolean;
 }
 
+function successStoryDeltas(
+  ctx: PipelineHandlerContext,
+  pipelineResult: PipelineRunResult,
+): {
+  storiesCompletedDelta: number;
+  storiesGateOpenDelta: number;
+} {
+  const gateOpen = pipelineResult.context.workflowEndState === "complete-gate-open";
+  return {
+    storiesCompletedDelta: gateOpen ? 0 : ctx.storiesToExecute.length,
+    storiesGateOpenDelta: gateOpen ? ctx.storiesToExecute.length : 0,
+  };
+}
+
 export async function handlePipelineSuccess(
   ctx: PipelineHandlerContext,
   pipelineResult: PipelineRunResult,
@@ -223,9 +237,7 @@ export async function handlePipelineSuccess(
     ctx.allStoryMetrics.push(...pipelineResult.context.storyMetrics);
   }
 
-  const gateOpen = pipelineResult.context.workflowEndState === "complete-gate-open";
-  const storiesCompletedDelta = gateOpen ? 0 : ctx.storiesToExecute.length;
-  const storiesGateOpenDelta = gateOpen ? ctx.storiesToExecute.length : 0;
+  const { storiesCompletedDelta, storiesGateOpenDelta } = successStoryDeltas(ctx, pipelineResult);
   for (const completedStory of ctx.storiesToExecute) {
     const now = Date.now();
     logger?.info("story.complete", "Story completed successfully", {

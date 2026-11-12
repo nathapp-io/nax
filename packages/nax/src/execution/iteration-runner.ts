@@ -34,6 +34,10 @@ export interface IterationResult {
   subStoryCount?: number;
 }
 
+function gateOpenDelta(result: { storiesGateOpenDelta?: number }): number {
+  return result.storiesGateOpenDelta ?? 0;
+}
+
 /** Every story uses the workflow stages. */
 async function selectPipeline(): Promise<PipelineStage[]> {
   const stages = await import("../pipeline/stages");
@@ -75,7 +79,7 @@ export async function runIteration(
     return {
       prd,
       storiesCompletedDelta: dryRunResult.storiesCompletedDelta,
-      storiesGateOpenDelta: dryRunResult.storiesGateOpenDelta ?? 0,
+      storiesGateOpenDelta: gateOpenDelta(dryRunResult),
       costDelta: 0,
       prdDirty: dryRunResult.prdDirty,
     };
@@ -247,7 +251,7 @@ export async function runIteration(
     iterResult = {
       prd: r.prd,
       storiesCompletedDelta: r.storiesCompletedDelta,
-      storiesGateOpenDelta: r.storiesGateOpenDelta ?? 0,
+      storiesGateOpenDelta: gateOpenDelta(r),
       costDelta: r.costDelta,
       prdDirty: r.prdDirty,
       finalAction: pipelineResult.finalAction,
