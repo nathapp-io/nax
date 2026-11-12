@@ -1,0 +1,335 @@
+{
+  "project": "nax-monorepo",
+  "feature": "review-rulings",
+  "branchName": "feat/review-rulings",
+  "createdAt": "2026-11-13T00:00:00.000Z",
+  "updatedAt": "2026-11-12T10:20:33.255Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Refresh story briefs with settled rulings and scope before reviews",
+      "description": "**Goal** — Give implementers and story reviewers current advisor rulings and the story's scope boundaries.\n\n**Motivation** — The implementer correctly committed nothing, and every re-review still answered NOT_ADDRESSED (\"The fix diff is empty\") until the 5-round cap, where the residual advisor ruled \"Already ruled in D-2\".\n\n**Approach** — `rulingsForStory(decisions, storyId)` keeps today's pre-flight and carry lines and adds, in ledger order, two kinds of decisions whose `storyId` equals the story: an `implementer-question` decision with an `answer` action renders `Advisor answer <id>: <text>`; a `residual` decision with a `waive` or `defer` action renders `Residual ruling <id> (<type>): <reason>`. A `hold` is left out: it means a human still decides, so it is not a settled ruling.\n`WorkflowBriefInput` gains an optional `outOfScope?: readonly string[]`, rendered as a `## Out of scope` section (one bullet per item, after \"Rulings in force\") and omitted when absent or empty. `writeBrief` passes `sc.story.outOfScope ?? []`. A new `refreshBrief(sc)` in `workflow/brief.ts` calls `writeBrief(sc)` and turns a throw into a warning (`Could not refresh the story brief - the review reads the previous one`); the error is rethrown instead when `sc.runSignal?.aborted` is true. `buildStoryEnv` (`workflow/stage-env.ts`) calls `refreshBrief(sc)` at the start of its `storyReview` and `reReview` steps, before the review runs. The story review and re-review prompts each gain one paragraph: the brief's \"Rulings in force\" and \"Out of scope\" sections are settled; do not report a finding a ruling already decides or whose fix needs out-of-scope work; to disagree with a ruling, report a `minor` finding that names the ruling id.\n\n**Scope** — In: workflow/rulings.ts, workflow/brief.ts, workflow/stage-env.ts, the brief builder and both story review prompt builders, plus their existing tests. Out: US-002's narrower field, parser and early advisor routing; US-003's residual prompt; US-004–US-006's repair review/evidence. Initial story-start writeBrief remains unchanged; the refresh fallback belongs only before reviews. The new hold omission applies to residual holds, preserving existing pre-flight hold lines.\n\n**Interface** — `rulingsForStory(decisions, storyId)`; `readonly outOfScope?: readonly string[]`; `refreshBrief(sc)` in `workflow/brief.ts`. Keep existing input/return contracts otherwise. Update existing stage-env review fixtures that now execute brief writes; `_workflowDeps.readTrustedDecisions`, `_workflowDeps.resolveFeatureSpec` and `_workflowDeps.loadProjectContextOverride` can keep these local.",
+      "acceptanceCriteria": [
+        "[unit] rulingsForStory given an implementer-question decision D-2 with storyId US-1 and action { type: 'answer', text: 'Keep the lstat walk' } returns, for US-1, a list including 'Advisor answer D-2: Keep the lstat walk'.",
+        "[unit] rulingsForStory given a residual decision D-3 with storyId US-1 and action { type: 'waive', reason: 'Already ruled in D-2' } returns, for US-1, a list including 'Residual ruling D-3 (waive): Already ruled in D-2'.",
+        "[unit] rulingsForStory given a residual decision D-4 with storyId US-1 and action { type: 'hold', reason: 'needs a human' } returns, for US-1, a list with no entry mentioning D-4.",
+        "[unit] rulingsForStory given an implementer-question answer decision with storyId US-2 returns, for US-1, a list that does not include that decision's text.",
+        "[unit] rulingsForStory given, in ledger order, a pre-flight hold D-1 applying to US-1 and an implementer-question answer D-2 for US-1 returns the pre-flight line first and the Advisor answer D-2 line second.",
+        "[unit] buildWorkflowBrief with outOfScope: ['No run lease or lock'] returns text with a '## Out of scope' heading followed by the bullet '- No run lease or lock'.",
+        "[unit] buildWorkflowBrief with outOfScope: [], and again with outOfScope absent, returns text without a '## Out of scope' heading.",
+        "[integration] writeBrief for a story whose outOfScope is ['No run lease or lock'] writes a brief file whose text includes '- No run lease or lock' under '## Out of scope'.",
+        "[unit] buildWorkflowStoryReviewPrompt output states that the brief's 'Rulings in force' and 'Out of scope' sections are settled and that a finding they already decide is not reported.",
+        "[unit] buildWorkflowStoryReviewPrompt output tells the reviewer to report a disagreement with a ruling as a minor finding that names the ruling id.",
+        "[unit] buildWorkflowReReviewPrompt output states that the brief's 'Rulings in force' and 'Out of scope' sections are settled and that a finding they already decide is not reported.",
+        "[integration] Through buildStoryEnv, with _workflowDeps.readTrustedDecisions stubbed to return an implementer-question answer D-2 for the story, the brief file read at the moment the stubbed _workflowDeps.callOp receives the workflow-story-review op includes 'Advisor answer D-2'.",
+        "[integration] Through buildStoryEnv, with the same readTrustedDecisions stub returning answer D-2 for the story, the brief file read at the moment the stubbed _workflowDeps.callOp receives the workflow-re-review op includes 'Advisor answer D-2'.",
+        "[integration] Through buildStoryEnv, when _workflowDeps.loadProjectContextOverride throws during the refresh before the story review, the stubbed _workflowDeps.callOp still receives the workflow-story-review op.",
+        "[integration] When _workflowDeps.loadProjectContextOverride throws during the refresh before the story review, a warning with the message 'Could not refresh the story brief - the review reads the previous one' is logged.",
+        "[unit] refreshBrief rethrows the error when the step context's run signal is aborted and writeBrief throws.",
+        "[integration] Given an existing brief, when its refresh throws before a review without an aborted run signal, the review reads the previous brief's contents."
+      ],
+      "tags": [
+        "workflow",
+        "review",
+        "advisor",
+        "prompts"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Six small additive edits reuse trusted-decision loading, brief sections and existing review wrappers; ordinary TDD through injected callOp and file fixtures is sufficient without a new protocol or graph abstraction."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/rulings.ts",
+        "packages/nax/src/workflow/brief.ts",
+        "packages/nax/src/prompts/builders/workflow-implementer-builder.ts",
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/prompts/builders/workflow-story-review-builder.ts"
+      ],
+      "suggestedCriteria": [
+        "rulingsForStory returns 'Residual ruling D-5 (defer): Wait for branch review' for a residual defer decision D-5 owned by the requested story.",
+        "buildWorkflowReReviewPrompt tells the reviewer to report a disagreement with a ruling as a minor finding naming the ruling id.",
+        "Both story review prompts tell the reviewer not to report a finding whose fix needs out-of-scope work."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/stage-env.test.ts",
+          "reason": "tests that drive the `storyReview` or `reReview` step built by `buildStoryEnv` now also run `refreshBrief`, which writes the brief; their fixtures may stub `_workflowDeps.readTrustedDecisions`, `_workflowDeps.resolveFeatureSpec` and `_workflowDeps.loadProjectContextOverride` so the refresh stays local, and an assertion on the exact warnings logged may include the refresh warning."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Send no-op fixes and narrower story residuals to the advisor",
+      "description": "**Goal** — End nonconverging story fix loops early using existing residual adjudication.\n\n**Motivation** — 24 of 144 re-reviews in the window judged an empty or no-op fix.\n\n**Approach** — The re-review reply may carry `\"narrower\": true` on a finding entry: what remains is the same problem as the finding, in a narrower form. The prompt also asks that a residual `issue` name a concrete scenario that still fails. `parseReReviewReply` copies `narrower: true` onto the verdict entry only when the entry is PARTIAL (it describes a residual). `StoryLoopSteps` gains an optional `fixDiffEmpty?(fixBase: string): Promise<boolean>`; `buildStoryEnv` wires it to \"HEAD equals `fixBase` and `listUncommitted` is empty\". In the story loop's re-review branch:\n\n- when the fix turn did not fail (no `implementer session failed` finding is pending from it) and `fixDiffEmpty` is wired and resolves `true`, the re-review is not called, the ledger gets the note `fix round r<N> changed nothing: <ids> go to the advisor` (ids joined by `, `), and the pass routes to the advisor. A failed fix turn keeps today's path: the re-review runs and the next round retries;\n- otherwise the re-review runs as today; after absorbing it, if any asked finding that is still open carries `narrower`, the pass routes to the advisor.\n\n\"Routes to the advisor\" means `evaluateStep` returns the existing `capped` exit whatever the round, so the existing `residual` node adjudicates every open non-gate finding in one batched call. The flag lives on the node-local `LoopState` copy only, so the graph's `produces` keys do not change. A `fixDiffEmpty` that throws counts as \"not empty\" (the re-review runs). The branch re-review (`feature-steps.ts`) parses the same reply and ignores `narrower`.\n\n**Scope** — In: ReReviewVerdict in operations/workflow-types.ts, parseReReviewReply, workflow-re-review-builder.ts, StoryLoopSteps, story-steps.ts and stage-env.ts wiring. Out: US-001's settled-context paragraph must be preserved rather than replaced; US-003's residual reply evidence; US-004–US-006's repair review. The branch-level re-review does not act on `narrower`; only the story loop routes on it. No warm-memory residual advisor; the residual batch stays a stateless call. No new verdict value, re-review status or advisor question kind. No schema rule requires a failing scenario in a residual; the prompt asks for it.\n\n**Interface** — `readonly narrower?: true` on `ReReviewVerdict.verdicts[]`; `fixDiffEmpty?(fixBase: string): Promise<boolean>` on `StoryLoopSteps`. Preserve residual id/text absorption and existing fallback paths when the optional step is absent, false or throws. Tests must enter through runStoryLoop for advisor routing and through buildStoryEnv on temporary git repositories for live no-op detection.",
+      "acceptanceCriteria": [
+        "[unit] parseReReviewReply given an entry {\"id\": \"F1\", \"verdict\": \"PARTIAL\", \"narrower\": true, \"residual\": {\"issue\": \"x\"}} for open id F1 returns a verdict entry with narrower true.",
+        "[unit] parseReReviewReply given a PARTIAL entry for F1 with no narrower field returns a verdict entry without a narrower key.",
+        "[unit] parseReReviewReply given an ADDRESSED entry for F1 with narrower: true returns a verdict entry without a narrower key.",
+        "[unit] parseReReviewReply given a NOT_ADDRESSED entry for F1 with narrower: true returns a verdict entry without a narrower key.",
+        "[unit] buildWorkflowReReviewPrompt output describes the narrower: true field as 'the same problem as the finding, in a narrower form'.",
+        "[unit] buildWorkflowReReviewPrompt output asks that a residual issue name a concrete scenario that still fails.",
+        "[integration] runStoryLoop with one open review finding F1, maxFixRounds 3, and steps.fixDiffEmpty resolving true after the first fix round never calls steps.reReview.",
+        "[integration] In the no-op run with F1 and maxFixRounds 3, advisor.ruleResidual is called once with items containing F1.",
+        "[integration] In the no-op run with F1 and maxFixRounds 3, the outcome's rounds is 1.",
+        "[integration] In a run with two open review findings F1 and F2 and steps.fixDiffEmpty resolving true after the first fix round, the ledger receives a note containing 'fix round r1 changed nothing: F1, F2 go to the advisor'.",
+        "[integration] runStoryLoop with one open finding and steps.fixDiffEmpty resolving false calls steps.reReview after the first fix round.",
+        "[integration] runStoryLoop with one open finding and no steps.fixDiffEmpty calls steps.reReview after the first fix round.",
+        "[integration] runStoryLoop with one open finding and steps.fixDiffEmpty rejecting with an error calls steps.reReview after the first fix round.",
+        "[integration] runStoryLoop with one open finding whose first fix turn fails (the implementer step returns a failure) and steps.fixDiffEmpty resolving true calls steps.reReview after that round.",
+        "[integration] runStoryLoop with one open finding whose first fix turn fails (the implementer step returns a failure) and steps.fixDiffEmpty resolving true runs a second fix round, preserving the existing retry path.",
+        "[integration] runStoryLoop with maxFixRounds 3 whose first re-review returns a PARTIAL verdict with narrower: true for F1 runs no second fix round.",
+        "[integration] runStoryLoop with maxFixRounds 3 whose first re-review returns a PARTIAL verdict with narrower: true for F1 calls advisor.ruleResidual with items containing F1 carrying the residual issue text.",
+        "[integration] runStoryLoop with maxFixRounds 3 whose first re-review returns a PARTIAL verdict without narrower for F1 runs a second fix round.",
+        "[integration] runStoryLoop whose first re-review returns PARTIAL narrower for F1 and NOT_ADDRESSED for F2 calls advisor.ruleResidual with items containing both F1 and F2.",
+        "[integration] buildStoryEnv on a temporary git repository whose HEAD equals the given base and whose worktree is clean returns a steps.fixDiffEmpty(base) that resolves true.",
+        "[integration] buildStoryEnv on a temporary git repository with one commit after the given base returns a steps.fixDiffEmpty(base) that resolves false.",
+        "[integration] buildStoryEnv on a temporary git repository whose HEAD equals the given base and which has one modified tracked file returns a steps.fixDiffEmpty(base) that resolves false."
+      ],
+      "tags": [
+        "workflow",
+        "review",
+        "advisor",
+        "state-machine"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Changes parsing, optional git-backed step wiring and node-local graph routing with failed-fix retry and residual-absorption invariants across modules."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/operations/workflow-replies.ts",
+        "packages/nax/src/prompts/builders/workflow-re-review-builder.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/stage-env.ts"
+      ],
+      "suggestedCriteria": [
+        "parseReReviewReply omits narrower when a PARTIAL entry supplies narrower: false or a non-boolean value.",
+        "A branch re-review with a PARTIAL narrower verdict follows the existing branch fix-round policy rather than the story loop's early advisor route.",
+        "buildStoryEnv.steps.fixDiffEmpty(base) resolves false when HEAD equals base but the repository has an untracked non-nax-owned file."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Ask residual advisors to record the files they read",
+      "description": "**Goal** — Make residual advisor read evidence explicit in the existing batch reply contract.\n\n**Motivation** — All 5 residual rulings record `inspectedFiles: 0`.\n\n**Approach** — The residual block's reply example in `advisor-batch-builder.ts` gains `\"inspectedFiles\": [\"path\"]` (added in the residual block only; the shared `ANSWER_FIELDS` and the pre-flight reply stay as they are), and the residual block says: read the file each item names before you rule, and list every file you opened in `inspectedFiles`. `validateAdvisorReply` and `decisionDraftFor` already carry `inspectedFiles` onto the decision.\n\n**Scope** — In: the residual block in prompts/builders/advisor-batch-builder.ts and its existing prompt tests. Out: US-001/US-002's review context and routing; US-004–US-006's repair review; shared ANSWER_FIELDS and preflight reply changes; new validation or persistence mechanisms. No warm-memory residual advisor; the residual batch stays a stateless call.\n\n**Interface** — The residual answer example adds `\"inspectedFiles\": [\"path\"]`; existing `validateAdvisorReply` and `decisionDraftFor` remain the integration contract.",
+      "acceptanceCriteria": [
+        "[unit] buildAdvisorBatchPrompt for kind residual returns a reply example whose answer object includes \"inspectedFiles\": [\"path\"].",
+        "[unit] buildAdvisorBatchPrompt for kind residual tells the advisor to read the file each item names before it rules.",
+        "[unit] buildAdvisorBatchPrompt for kind residual tells the advisor to list every file it opened in inspectedFiles.",
+        "[unit] buildAdvisorBatchPrompt for kind preflight returns text without inspectedFiles."
+      ],
+      "tags": [
+        "advisor",
+        "prompts",
+        "evidence"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single-source-file additive prompt change; validator and decision persistence already support the requested evidence field."
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/advisor-batch-builder.ts",
+        "packages/nax/src/operations/advise.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Review committing gate repairs through a shared repair-review helper",
+      "description": "**Goal** — Add one evidence-only re-review of a successful gate repair's committed diff and provide the reusable helper for CI repairs.\n\n**Motivation** — A gate repair or CI repair commits after the branch re-review; 3 finish-advisor holds cite \"a complete review of an earlier tree does not cover a later unreviewed repair diff\".\n\n**Approach** — Shared repair-review design, with this story implementing the interface, record, helper and gate-repair integration; US-005 supplies the CI caller and US-006 supplies live wiring and approval rendering:\n\n`FeatureSteps` gains an optional `repairReview?(findings: readonly WorkflowFinding[], base: string): Promise<ReviewOutcome<ReReviewVerdict>>`, wired in `buildFeatureEnv` to `runBranchReReview(fc, { ...spec, findings, fixBase: base })`. In `gateRepairStep` and `ciRepairStep`, when `repairReview` is wired and the round has findings: read `env.steps.head()` before `branchFix`; after a `branchFix` with no `failure`, read it again; when it moved, call `repairReview(findings, before)` once and append one line to `rec.repairReviews`. The repair session (`branchFix`) always runs as today, whatever the `head()` reads return:\n\n- ran: `<kind> r<N> reviewed: <id> addressed|PARTIAL|NOT addressed, ...` and, when the verdict has new findings, `; new: [<severity>] <file>: <issue>` per finding (`[<severity>] <issue>` when the finding has no file) joined by `; `;\n- not ran: `<kind> r<N> review skipped: <why>`.\n\n`<kind>` is `gate repair` or `CI repair`. When HEAD did not move, nothing is reviewed and no line is added. A `head()` throw (before or after the repair) skips the review with the ledger note `<kind> r<N> review skipped: could not read HEAD`. The review reuses the branch re-review prompt and its `package-branch-fix.diff` artifact path, which it overwrites; that is accepted.\nThe steps above live in one helper, `reviewRepairDiff(env, { kind, round, findings, run })` in a new `workflow/repair-review.ts`, which `gateRepairStep` and `ciRepairStep` both call around their `branchFix`.\n`WorkflowFeatureRecord` gains `repairReviews?: readonly string[]`; the `gate-repair` and `ci-repair` nodes add `repairReviews` to `produces`.\nFindings of a repair review are evidence for the approval advisor; they open no new fix round.\n\n**Scope** — In: optional FeatureSteps.repairReview, optional WorkflowFeatureRecord.repairReviews, the new helper, gateRepairStep and the gate-repair produces declaration. The helper returns the repairReviews patch and writes ledger notes while letting the caller retain its BranchFixOutcome and existing round behavior. Out: US-005's ciRepairStep/ci-repair graph edits; US-006's buildFeatureEnv wiring and repairEvidence formatting. A repair review's findings open no fix round; they are evidence for the approval advisor only. Folding the finish advisor's spot-check questions into the branch-review prompt.\n\n**Interface** — `repairReview?(findings: readonly WorkflowFinding[], base: string): Promise<ReviewOutcome<ReReviewVerdict>>`; `repairReviews?: readonly string[]`; `reviewRepairDiff(env, { kind, round, findings, run })` in `packages/nax/src/workflow/repair-review.ts`. History is appended in order from the current record. If repairReview is absent, retain today's repair behavior without head reads or a repairReviews patch. If the repair session fails or commits nothing, no review and no line. A skipped review outcome such as timeout/unparseable reply gets the exact skipped line. A HEAD read failure must not suppress the repair, and gets the exact skipped ledger note while preserving the round result. Update the existing feature-graph test's gate-repair expectedProduces to [\"gateRepairRounds\", \"repairReviews\"].",
+      "acceptanceCriteria": [
+        "[unit] gateRepairStep with a wired steps.repairReview, one gate repair finding, and steps.head resolving h1 before the repair and h2 after it calls steps.repairReview once with findings [G1] and base h1.",
+        "[unit] When that review verdict marks G1 addressed with no new findings, gateRepairStep's patch has repairReviews equal to ['gate repair r1 reviewed: G1 addressed'].",
+        "[unit] When the review verdict marks G1 not addressed and has one new finding of severity important at src/a.ts with issue 'leaks a handle', the patch's repairReviews equals ['gate repair r1 reviewed: G1 NOT addressed; new: [important] src/a.ts: leaks a handle'].",
+        "[unit] When the review verdict marks G1 addressed and has one new finding of severity minor with issue naming and no file, the patch's repairReviews equals ['gate repair r1 reviewed: G1 addressed; new: [minor] naming'].",
+        "[unit] When the review verdict carries a residual for G1, the patch's repairReviews equals ['gate repair r1 reviewed: G1 PARTIAL'].",
+        "[unit] When steps.repairReview resolves { ran: false, why: 'timeout' } (any why, including an unparseable reply, is rendered verbatim), the patch's repairReviews equals ['gate repair r1 review skipped: timeout'].",
+        "[unit] When steps.head resolves the same sha before and after the repair, steps.repairReview is not called.",
+        "[unit] When steps.head resolves the same sha before and after the repair, the patch has no repairReviews key.",
+        "[unit] When steps.branchFix returns a failure, steps.repairReview is not called.",
+        "[unit] When steps.head rejects before the repair, steps.branchFix is still called once.",
+        "[unit] When steps.head rejects before the repair, steps.repairReview is not called.",
+        "[unit] When steps.head rejects before the repair, the ledger gets the note 'gate repair r1 review skipped: could not read HEAD'.",
+        "[unit] When steps.head resolves h1 before the repair and rejects after it, steps.repairReview is not called.",
+        "[unit] When the record already has repairReviews: ['gate repair r1 reviewed: G1 addressed'], a second round's patch has repairReviews with the earlier line first and the new gate repair r2 line second.",
+        "[unit] gateRepairStep without steps.repairReview never calls steps.head.",
+        "[unit] gateRepairStep without steps.repairReview returns a patch without a repairReviews key.",
+        "[unit] FEATURE_GRAPH's gate-repair node lists repairReviews in produces.",
+        "[unit] When steps.branchFix returns a failure, gateRepairStep returns a patch without a repairReviews key.",
+        "[unit] When steps.head resolves h1 before the repair and rejects after it, the ledger gets the note 'gate repair r1 review skipped: could not read HEAD'.",
+        "[unit] When a before- or after-repair HEAD read throws, gateRepairStep returns its gateRepairRounds patch with the spent round number as today."
+      ],
+      "tags": [
+        "workflow",
+        "repair",
+        "review",
+        "evidence"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Introduces a shared callback-based orchestration helper and optional persisted evidence across repair execution, failure handling and graph output contracts."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/feature-machine.ts",
+        "packages/nax/src/workflow/types.ts",
+        "packages/nax/src/workflow/feature-graph.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/repair-review.ts"
+      ],
+      "suggestedCriteria": [
+        "A gate repair review returning new findings leaves the feature's reviewOpen unchanged and starts no additional fix round.",
+        "gateRepairStep with no gateRepairFindings calls neither steps.head nor steps.repairReview."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-graph.test.ts",
+          "reason": "`expectedProduces[\"gate-repair\"]` becomes `[\"gateRepairRounds\", \"repairReviews\"]`, because the gate repair node now records its repair review."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Reuse repair-diff review for CI repairs",
+      "description": "**Goal** — Apply the shared repair-review behavior to successful committing CI repairs.\n\n**Motivation** — A gate repair or CI repair commits after the branch re-review; 3 finish-advisor holds cite \"a complete review of an earlier tree does not cover a later unreviewed repair diff\".\n\n**Approach** — Call US-004's `reviewRepairDiff` from `ciRepairStep` with kind `CI repair`, and add `repairReviews` to the `ci-repair` node's `produces`. The behaviour mirrors US-004 for the CI step.\n\nIn `gateRepairStep` and `ciRepairStep`, when `repairReview` is wired and the round has findings: read `env.steps.head()` before `branchFix`; after a `branchFix` with no `failure`, read it again; when it moved, call `repairReview(findings, before)` once and append one line to `rec.repairReviews`. The repair session (`branchFix`) always runs as today, whatever the `head()` reads return:\n\n- ran: `<kind> r<N> reviewed: <id> addressed|PARTIAL|NOT addressed, ...` and, when the verdict has new findings, `; new: [<severity>] <file>: <issue>` per finding (`[<severity>] <issue>` when the finding has no file) joined by `; `;\n- not ran: `<kind> r<N> review skipped: <why>`.\n\n`<kind>` is `gate repair` or `CI repair`. When HEAD did not move, nothing is reviewed and no line is added. A `head()` throw (before or after the repair) skips the review with the ledger note `<kind> r<N> review skipped: could not read HEAD`. The review reuses the branch re-review prompt and its `package-branch-fix.diff` artifact path, which it overwrites; that is accepted.\nThe steps above live in one helper, `reviewRepairDiff(env, { kind, round, findings, run })` in a new `workflow/repair-review.ts`, which `gateRepairStep` and `ciRepairStep` both call around their `branchFix`.\nFindings of a repair review are evidence for the approval advisor; they open no new fix round.\n\n**Scope** — In: CI caller integration in workflow/ci-repair-steps.ts, the ci-repair produces declaration and existing CI repair tests. Out: US-004 owns the helper, optional contracts and gate-repair integration; US-006 owns live reviewer wiring and approval evidence rendering. A repair review's findings open no fix round; they are evidence for the approval advisor only. Preserve branchFix's repair:true, optional prUrl, ciRound, existing concerns history, failure/auto-commit/dirty notes and pending CI finding clearing.\n\n**Interface** — Reuse `reviewRepairDiff(env, { kind, round, findings, run })` with `kind: \"CI repair\"` and the existing `repairReview?(findings: readonly WorkflowFinding[], base: string): Promise<ReviewOutcome<ReReviewVerdict>>`. Without repairReview, retain today's behavior. A failed repair or unchanged HEAD adds no review line; failed HEAD reads never block branchFix and retain the round result. Update expectedProduces[\"ci-repair\"] to [\"ciRepairRounds\", \"ciRepairFindings\", \"ciRepairConcerns\", \"repairReviews\"].",
+      "acceptanceCriteria": [
+        "[unit] ciRepairStep with a wired steps.repairReview, one CI finding, and steps.head moving from h1 to h2 calls steps.repairReview once with findings [C1] and base h1.",
+        "[unit] In that case, with a verdict marking C1 addressed and no new findings, the patch's repairReviews equals ['CI repair r1 reviewed: C1 addressed'].",
+        "[unit] ciRepairStep with a wired steps.repairReview and steps.head rejecting before the repair still calls steps.branchFix once.",
+        "[unit] When steps.head rejects before the CI repair, the ledger gets the note 'CI repair r1 review skipped: could not read HEAD'.",
+        "[unit] ciRepairStep without steps.repairReview returns a patch without a repairReviews key.",
+        "[unit] FEATURE_GRAPH's ci-repair node lists repairReviews in produces.",
+        "[unit] When a CI repair session returns a failure, steps.repairReview is not called.",
+        "[unit] When a CI repair session returns a failure, ciRepairStep adds no repairReviews entry.",
+        "[unit] When HEAD is unchanged across a successful CI repair, steps.repairReview is not called.",
+        "[unit] When HEAD is unchanged across a successful CI repair, ciRepairStep adds no repairReviews entry.",
+        "[unit] When steps.head rejects before the CI repair, steps.repairReview is not called.",
+        "[unit] When steps.head rejects after the CI repair, steps.repairReview is not called.",
+        "[unit] When steps.head rejects after the CI repair, the ledger gets the note 'CI repair r1 review skipped: could not read HEAD'.",
+        "[unit] When a before- or after-repair HEAD read throws, ciRepairStep returns its ciRepairRounds patch with the spent round number as today.",
+        "[unit] When the CI repair review resolves { ran: false, why: 'unparseable reply' }, the patch appends 'CI repair r1 review skipped: unparseable reply' to repairReviews."
+      ],
+      "tags": [
+        "workflow",
+        "ci",
+        "repair",
+        "review"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Reuses the upstream helper at a second repair site with established graph/test patterns, while preserving CI-specific session options and concern patches."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-repair-steps.ts",
+        "packages/nax/src/workflow/repair-review.ts",
+        "packages/nax/src/workflow/feature-graph.ts"
+      ],
+      "suggestedCriteria": [
+        "A CI repair's repairReviews patch preserves existing gate-repair and earlier CI-review lines before the new CI repair line.",
+        "ciRepairStep without steps.repairReview makes no steps.head calls.",
+        "A CI repair review returning new findings leaves the feature's reviewOpen unchanged and starts no additional fix round."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-graph.test.ts",
+          "reason": "`expectedProduces[\"ci-repair\"]` becomes `[\"ciRepairRounds\", \"ciRepairFindings\", \"ciRepairConcerns\", \"repairReviews\"]`, because the CI repair node now records its repair review."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Wire live repair reviews and expose their results to approval",
+      "description": "**Goal** — Run the existing branch re-review operation for repairs and show its evidence to the approval advisor.\n\n**Motivation** — A gate repair or CI repair commits after the branch re-review; 3 finish-advisor holds cite \"a complete review of an earlier tree does not cover a later unreviewed repair diff\".\n\n**Approach** — `FeatureSteps` gains an optional `repairReview?(findings: readonly WorkflowFinding[], base: string): Promise<ReviewOutcome<ReReviewVerdict>>`, wired in `buildFeatureEnv` to `runBranchReReview(fc, { ...spec, findings, fixBase: base })`.\nThe review reuses the branch re-review prompt and its `package-branch-fix.diff` artifact path, which it overwrites; that is accepted.\n`repairEvidence(record)` keeps its lines, but a round line ends `the repair diff was reviewed` when `repairReviews` has an entry for that kind containing ` reviewed: ` (a `review skipped` entry keeps `the repair diff was not re-reviewed`), and every `repairReviews` entry follows the round lines. The approval advisor already reads `repairEvidence` (`finalize.ts`).\nFindings of a repair review are evidence for the approval advisor; they open no new fix round.\n\n**Scope** — In: wire steps.repairReview in workflow/feature-env.ts and render history in workflow/repair-evidence.ts, with tests through the real operation seam. Out: US-004 owns the optional interface, history record, helper and gate caller; US-005 owns the CI caller. Do not add finalize.ts control flow or new rounds. A repair review's findings open no fix round; they are evidence for the approval advisor only. Folding the finish advisor's spot-check questions into the branch-review prompt. Missing repairReviews keeps existing evidence lines unchanged; summaries stay gate first, then CI, followed by all review-history entries in their stored order.\n\n**Interface** — `repairReview?(findings: readonly WorkflowFinding[], base: string): Promise<ReviewOutcome<ReReviewVerdict>>`; `runBranchReReview(fc, { ...spec, findings, fixBase: base })`; `repairEvidence(record)`. US-004 supplies the optional interface; this story only wires it. The live step must reach `_workflowDeps.callOp` with `workflow-re-review` and the supplied finding ids as openIds, preserving existing review timeout/model/tool-error handling.",
+      "acceptanceCriteria": [
+        "[unit] repairEvidence for a record with gateRepairRounds 1 and repairReviews: ['gate repair r1 reviewed: G1 addressed'] returns ['Gate repair: 1 round(s) after the final gates went red; the repair diff was reviewed', 'gate repair r1 reviewed: G1 addressed'].",
+        "[unit] repairEvidence for a record with gateRepairRounds 1 and repairReviews: ['gate repair r1 review skipped: timeout'] returns ['Gate repair: 1 round(s) after the final gates went red; the repair diff was not re-reviewed', 'gate repair r1 review skipped: timeout'].",
+        "[unit] repairEvidence for a record with ciRepairRounds 1 and repairReviews: ['CI repair r1 reviewed: C1 addressed'] returns ['CI repair: 1 round(s) after CI failed on the PR; the repair diff was reviewed', 'CI repair r1 reviewed: C1 addressed'].",
+        "[integration] buildFeatureEnv returns a steps.repairReview that, called with findings [G1] and base h1, makes the stubbed _workflowDeps.callOp receive the workflow-re-review op with openIds ['G1'].",
+        "[unit] repairEvidence for an older record with gateRepairRounds 1, ciRepairRounds 2 and no repairReviews returns ['Gate repair: 1 round(s) after the final gates went red; the repair diff was not re-reviewed', 'CI repair: 2 round(s) after CI failed on the PR; the repair diff was not re-reviewed'], preserving the existing round-summary strings and gate-before-CI order unchanged."
+      ],
+      "tags": [
+        "workflow",
+        "review",
+        "advisor",
+        "evidence"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two focused source changes reuse an established reviewer operation and approval-evidence consumer; optional history preserves old-record behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/repair-evidence.ts",
+        "packages/nax/src/workflow/feature-env.ts",
+        "packages/nax/src/workflow/branch-review.ts"
+      ],
+      "suggestedCriteria": [
+        "repairEvidence for a record with gate and CI repair rounds emits both round summaries before all repairReviews entries, preserving the entries' stored order.",
+        "repairEvidence retains 'the repair diff was not re-reviewed' for a kind that has only skipped entries even when the other repair kind has a reviewed entry."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Enhancement closing #2878, entirely within packages/nax; no changes to nax-agent, nax-agent-acp or nax-ai are required. The codebase-memory MCP tools were unavailable, so discovery used direct source reads and text search. This is an extension of the existing workflow and advisor, not a new execution architecture. Preserve the binding six-story structure and dependency edges: US-002 follows US-001; US-005 and US-006 independently follow US-004.\n\nUS-001 source and integration findings: packages/nax/src/workflow/rulings.ts:5 currently iterates trusted decisions in ledger order but its early appliesTo check at :8 excludes own-story answers/residuals unless they happen to have appliesTo. Retain that filter for existing preflight supersede/hold and carry lines, while selecting new implementer-question answer and residual waive/defer lines by exact storyId; do not accidentally exclude preflight holds when omitting residual holds. packages/nax/src/workflow/brief.ts:66 loads trusted decisions through _workflowDeps.readTrustedDecisions on every write and :113 assembles the brief concurrently from spec, dependency records, rules, project override and memory. Its existing loadSpec at :40 swallows resolution/read errors, and loadDecisions at :66 already logs its own fallback; do not broaden US-001 into changing those policies. A propagated loadProjectContextOverride error is a practical seam to exercise refresh failure. Add refreshBrief around writeBrief without weakening initial-stage writeBrief error handling. packages/nax/src/workflow/stage.ts:51 currently writes the brief only at story start or when a resumed brief is missing. packages/nax/src/workflow/stage-env.ts:49 builds StepContext and :121/:124 wire storyReview/reReview through timing and tool-error reporting; await refreshBrief at the start of both wrappers, preserving those wrappers and propagating an abort-associated refresh error. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:19 defines WorkflowBriefInput and :74 builds sections; insert nonempty outOfScope immediately after Rulings in force at :100. packages/nax/src/prd/types.ts:200 already has story.outOfScope and packages/nax/src/prd/index.ts:164 already invokes propagation; packages/nax/src/prd/out-of-scope.ts:218 merges feature and story exclusions. No PRD schema/loader change is needed. Add the settled-rulings paragraph to both story-specific prompts, packages/nax/src/prompts/builders/workflow-story-review-builder.ts:36 and workflow-re-review-builder.ts:4, including minor disagreements naming the ruling id and suppression of out-of-scope fixes.\n\nUS-002 source and state-machine findings: packages/nax/src/operations/workflow-types.ts:61 owns ReReviewVerdict; workflow/types.ts re-exports operation contracts, so modify the owning type rather than introduce a second verdict. packages/nax/src/operations/workflow-replies.ts:155 maps openIds to one verdict each, using residualOf and safe missing-id defaults. Preserve PARTIAL residual validation, duplicate/unknown-id handling, addressed/note semantics and newFindings parsing; narrower is optional literal true and belongs on the entry, not inside residual. packages/nax/src/workflow/re-review-absorb.ts:56 already updates the original id with residual text and drops duplicate residual restatements; it need not change. Story orchestration is injected via StoryLoopSteps at packages/nax/src/workflow/story-loop.ts:36. packages/nax/src/workflow/story-steps.ts:50 defines the mutable node-local LoopState; absorbTurn records implementer session failures in pendingSession; :218 handles review/re-review; :357 computes passExit; :363 evaluates and persists; :396 adjudicates all open non-gate items; :411 runs fix rounds. Add the advisor-route flag only to the node-local copy and consume it in evaluateStep, not in StoryLoopState, persisted records or graph output keys. STORY_GRAPH at packages/nax/src/workflow/story-graph.ts:50 already sends capped to residual; no node, transition, verdict or question-kind addition is needed. For narrower routing, correlate verdict ids with asked findings still open after absorption, then route all open non-gate findings, not just the narrower one. Inspect pendingSession before evaluateStep clears it: a failed fix must not be mistaken for intentional no-op work. Preserve existing gate/suite short-circuits, retries and round accounting. packages/nax/src/workflow/stage-env.ts:136 already wires head/uncommitted with repo-root git helpers. packages/nax/src/workflow/git.ts:69 readHead throws on git errors; :105 listUncommitted includes staged, unstaged and untracked paths but deliberately excludes nax-owned paths. Wire fixDiffEmpty using those helpers and the supplied fixBase; this means HEAD identity, not net-diff equality. Catch a failed emptiness probe only at the optional probe boundary and continue to re-review. The branch machine uses the same parser, but its branch-level handling must ignore narrower.\n\nUS-003 findings: packages/nax/src/prompts/builders/advisor-batch-builder.ts:17 defines ANSWER_FIELDS shared by residual and preflight; :31 residualBlock and :51 preflightBlock are separate. Append inspectedFiles only inside the residual answer example and add the read/list instructions there. Do not alter shared ANSWER_FIELDS, preflight examples, the stateless batch model or tool grants. packages/nax/src/operations/advise.ts:53 filters inspectedFiles and :62 validateAdvisorReply already copies them at :96. packages/nax/src/advisor/service-helpers.ts:67 decisionDraftFor copies them at :92; packages/nax/src/advisor/batch.ts:109 validates batch answers and :118 drafts stateless decisions. These are read-only integration seams, not new implementation work.\n\nUS-004/US-005 source and graph findings: FeatureSteps is at packages/nax/src/workflow/feature-machine.ts:26 and already exposes branchFix, branchReReview and head. WorkflowFeatureRecord at packages/nax/src/workflow/types.ts:220 is the persisted graph record; optional gate/CI repair fields begin at :280. Add optional repairReview and repairReviews for backward compatibility. packages/nax/src/workflow/feature-steps.ts:356 gateRepairStep generates G ids, respects lowered caps/empty findings and calls branchFix with repair:true; packages/nax/src/workflow/ci-repair-steps.ts:210 ciRepairStep generates C ids and additionally forwards prUrl and ciRound, clears pending CI findings, and appends concerns at :246. Both must preserve existing session options, failure/auto-commit/dirty ledger messages, concerns, round patches and cap behavior. US-004 creates the sole new source file packages/nax/src/workflow/repair-review.ts with reviewRepairDiff(env, { kind, round, findings, run }); US-005 reuses it. Design the run callback/result so callers retain the original BranchFixOutcome and can merge the optional review-history patch without running branchFix twice. The helper must use the current record history supplied by the step, not accidentally append to stale env.record after a resume/second round. A failed before-HEAD read cannot prevent run; successful repair with changed HEAD and wired review gets exactly one review. No HEAD reads are introduced when review is absent or the round has no findings. Same HEAD or session failure produces neither a review nor a review-history line. HEAD read failures produce the exact skipped ledger note and must never be presented as completed reviews. Do not treat review findings as fresh branch findings, mutate reviewOpen, spend branch ids, add fix rounds or re-enter adjudication. packages/nax/src/workflow/feature-graph.ts:75 and :84 declare the gate-repair/ci-repair node produces lists; add repairReviews in the corresponding story or the graph output contract will reject the patch. The existing transitions back to final-gates remain unchanged.\n\nUS-006 live consumer findings: packages/nax/src/workflow/feature-env.ts:39 builds FeatureEnv, :69 wires existing branchFix routing and :89 wires branchReReview. Add repairReview through the existing tool-error/operation path to runBranchReReview(fc, { ...spec, findings, fixBase: base }). packages/nax/src/workflow/branch-review.ts:318 already creates package-branch-fix.diff and calls workflowReReviewOp with openIds at :337; reuse that behavior, timeout, model selection and artifact overwrite. No fresh reviewer transport is needed. packages/nax/src/workflow/repair-evidence.ts:11 currently emits only gate and CI round summaries, both unreviewed. Switch each kind's wording when its history contains a matching ' reviewed: ' entry, then append every history entry after all round summaries in original history order. This intentionally uses any reviewed entry for that kind, not a new latest-round policy. packages/nax/src/workflow/finalize.ts:264 already spreads repairEvidence into advisor evidence, so no finish-advisor redesign is needed.\n\nExisting tests and implementation strategy: use bun:test and the _workflowDeps/step injection seams, restore stubs after each test and use repository helpers for contexts, temporary directories, scripted callOp and feature-machine harnesses. packages/nax/test/unit/workflow/rulings.test.ts:22 pins existing appliesTo/carry/preflight output; its current expected list must remain unchanged. brief.test.ts:25 already exercises writeBrief with real temp files, and brief-rules-index.test.ts:123 covers additive rendering and existing rules/memory behavior. packages/nax/test/unit/prompts/workflow-builders.test.ts:34 covers briefs, :120 story review and :183/:299 re-review, including a pinned residual substring; add narrower outside that substring. packages/nax/test/unit/workflow/stage-env.test.ts:35 sets up isolated fixtures; review-driving tests now write a refreshed brief, so stub readTrustedDecisions, resolveFeatureSpec and loadProjectContextOverride as appropriate and account for the new warning in exact-warning assertions. packages/nax/test/unit/operations/workflow-replies.test.ts:235 covers PARTIAL and :284 rejects residuals on other verdicts. packages/nax/test/unit/workflow/story-loop.test.ts:56 has injected steps without fixDiffEmpty, so those existing runs must keep today's path; :456 exercises residual id preservation. Reuse story-loop-graph.test.ts and existing related suites if needed rather than overgrowing one file. Test no-op/narrower routes through runStoryLoop and advisor.ruleResidual, not just an internal exit string; test production fixDiffEmpty with temporary git repos. packages/nax/test/unit/prompts/advisor-batch-builder.test.ts:20/:43 cover residual/preflight contracts via substrings. packages/nax/test/unit/workflow/feature-steps-repair-routing.test.ts:53/:61 pin exact branchFix options. feature-steps-ci-repair.test.ts and ci-repair-steps-evidence.test.ts cover repair rounds, concerns and side effects. packages/nax/test/unit/workflow/feature-graph.test.ts:57 pins produces; change gate and CI expected arrays in their respective stories. packages/nax/test/unit/workflow/feature-env.test.ts:35 provides the real wiring seam with stubbed callOp and git, and :212/:256 cover repair routing. packages/nax/test/unit/workflow/repair-evidence.test.ts:17 pins old records without repairReviews; those outputs remain unchanged. Verify new review histories through step patches and ledger notes, plus live wiring through workflow-re-review openIds. All tests are part of implementation, not separate stories.\n\nRisks and migration: optional interfaces/fields make older fixtures, graph-only environments and persisted records work without migration; missing steps preserve old behavior and missing repairReviews preserves old evidence text. The main risks are filtering own-story rulings through appliesTo by mistake; swallowing aborts during refresh; classifying failed fixes as no-ops; routing unknown/already-addressed narrower ids; losing residual text or other open items; reading HEAD in old optional-step environments; suppressing repairs on git-read errors; overwriting rather than appending history; dropping CI concerns/options; and mismatching graph produces. Repair review adds one LLM call per successful committing repair and overwrites the accepted package-branch-fix.diff artifact. It is evidence only, not a deterministic approval gate. Preserve stateless residual batching and all existing permission/agent-resolution behavior. No dependency, config, schema, release/version or data backfill work is planned. Read docs/architecture/ARCHITECTURE.md and applicable .nax/rules before source edits; use package-local focused Bun tests, never bare bun test or bun run nax. Quality gates are pipeline responsibilities; do not run coverage inside a sandboxed nax session.\n\nRefine audit: all 67 numbered spec acceptance criteria are retained in their original stories. Preservation map by spec AC number to PRD array ordinal: US-001 1-16 -> 1-16; US-002 1-13 -> 1-13, 14 -> 14 and 15, 15 -> 16 and 17, 16 -> 18, 17 -> 19, 18 -> 20, 19 -> 21, 20 -> 22; US-003 1-4 -> 1-4; US-004 1-17 -> 1-17; US-005 1-6 -> 1-6; US-006 1-4 -> 1-4. Splits separate observable assertions without losing failed-fix retries or residual issue text. The any-why/unparseable-reply qualifier in US-004 is retained. Additional failure-table criteria retain existing round/retry behavior. US-006 now makes old-record evidence compatibility a mandatory concrete return-value assertion. Every story has a negative-path acceptance criterion: ignored/failed refresh inputs, failed/absent no-op probes, preflight exclusion of the residual-only field, failed/skipped repairs, or skipped-review evidence. All six feature exclusions are preserved verbatim, all context arrays match the spec's recommended inputs (including US-005's upstream-created helper), and binding ids, workdirs and dependencies are unchanged. US-001 uses medium/tdd-simple because its existing-seam additions require no new execution abstraction; US-002 and US-004 retain complex routing for graph-state integration and shared repair orchestration respectively.",
+  "outOfScope": [
+    "The branch-level re-review does not act on `narrower`; only the story loop routes on it.",
+    "No warm-memory residual advisor; the residual batch stays a stateless call.",
+    "No new verdict value, re-review status or advisor question kind.",
+    "A repair review's findings open no fix round; they are evidence for the approval advisor only.",
+    "Folding the finish advisor's spot-check questions into the branch-review prompt.",
+    "No schema rule requires a failing scenario in a residual; the prompt asks for it."
+  ],
+  "routingProfile": "native-codex-ds"
+}
