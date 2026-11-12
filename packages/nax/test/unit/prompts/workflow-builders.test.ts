@@ -311,6 +311,52 @@ ${WORKFLOW_REPLY_CONTRACT}`);
   });
 });
 
+/**
+ * US-001: the story brief tells both reviewers what the advisor and the PRD already settled, so a
+ * ruling the implementer obeyed is not reported again as an unaddressed finding.
+ */
+describe("US-001 — the brief's rulings and scope reach the reviewers", () => {
+  const reviewInput = { briefPath: "/b.md", reportPath: "/r.md", packagePath: "/p.diff", concerns: [] };
+
+  test("AC-6: outOfScope renders as an Out of scope section, one bullet per item, after the rulings", () => {
+    const text = buildWorkflowBrief({ ...brief, outOfScope: ["No run lease or lock", "No schema change"] });
+    expect(text).toContain("## Out of scope");
+    expect(text).toContain("- No run lease or lock");
+    expect(text).toContain("- No schema change");
+    expect(text.indexOf("## Out of scope")).toBeGreaterThan(text.indexOf("## Rulings in force"));
+  });
+
+  test("AC-7: an empty outOfScope renders no Out of scope heading", () => {
+    expect(buildWorkflowBrief({ ...brief, outOfScope: [] })).not.toContain("## Out of scope");
+  });
+
+  test("AC-7: an absent outOfScope renders no Out of scope heading", () => {
+    expect(buildWorkflowBrief(brief)).not.toContain("## Out of scope");
+  });
+
+  test("AC-9: the story review treats the brief's rulings and scope as settled", () => {
+    const text = buildWorkflowStoryReviewPrompt(reviewInput);
+    expect(text).toContain('"Rulings in force" and "Out of scope" sections are settled');
+    expect(text).toContain("do not report a finding that a ruling already decides");
+  });
+
+  test("AC-10: the story review reports a disagreement with a ruling as a minor finding naming its id", () => {
+    expect(buildWorkflowStoryReviewPrompt(reviewInput)).toContain('report a "minor" finding that names the ruling id');
+  });
+
+  test("AC-11: the re-review treats the brief's rulings and scope as settled", () => {
+    const text = buildWorkflowReReviewPrompt({
+      briefPath: "/b.md",
+      reportPath: "/r.md",
+      packagePath: "/p-2.diff",
+      findings: [{ id: "F1", kind: "quality", severity: "important", issue: "leak" }],
+    });
+    expect(text).toContain('"Rulings in force" and "Out of scope" sections are settled');
+    expect(text).toContain("do not report a finding that a ruling already decides");
+    expect(text).toContain('report a "minor" finding that names the ruling id');
+  });
+});
+
 // US-003: the two warm-session prompts the workflow sends around an interrupted turn.
 const continueInput = {
   storyId: "US-005",

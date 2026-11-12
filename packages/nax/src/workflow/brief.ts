@@ -1,6 +1,7 @@
 /** Story brief (spec §6 step 1): requirements, spec excerpts, rulings, red-base warnings. */
 import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { AdviceDecision } from "@/advisor";
 import { getLogger } from "@/logger";
 import { buildWorkflowBrief, toRulesIndexEntry, type WorkflowBriefInput } from "@/prompts";
@@ -139,9 +140,28 @@ export async function writeBrief(sc: StepContext): Promise<void> {
     ...(memoryIndex !== undefined ? { memoryIndex } : {}),
     ...(sc.constitution ? { constitution: sc.constitution } : {}),
     rulings: rulingsForStory(decisions, sc.story.id),
+    outOfScope: sc.story.outOfScope ?? [],
     redBaseDependencies: redBase,
     reportPath: sc.reportPath,
   });
   await mkdir(sc.storyDir, { recursive: true });
   await Bun.write(sc.briefPath, text);
+}
+
+/**
+ * US-001: rewrite the brief before a review, so an advisor answer or residual ruling recorded
+ * mid-loop is in it. A refresh that fails costs nothing visible — the previous brief is still on
+ * disk and the review reads that — so it is a warning, not a step failure. An abort is different:
+ * the throw is the abort's own and the caller's abort path must see it.
+ */
+export async function refreshBrief(sc: StepContext): Promise<void> {
+  try {
+    await writeBrief(sc);
+  } catch (err) {
+    if (sc.runSignal?.aborted) throw err;
+    getLogger().warn("workflow", "Could not refresh the story brief - the review reads the previous one", {
+      storyId: sc.story.id,
+      error: errorMessage(err),
+    });
+  }
 }

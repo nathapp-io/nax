@@ -9,7 +9,7 @@ import type { PipelineContext } from "@/pipeline/types";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
 import { createLiveWorkflowAdvisor, dependentsOf } from "./advisor-live";
-import { specPathFor } from "./brief";
+import { refreshBrief, specPathFor } from "./brief";
 import { costLimitReached } from "./cost-limit";
 import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
@@ -119,10 +119,18 @@ export async function buildStoryEnv(
     gates: timed("gates", addTiming, () => runStoryGates(sc)),
     fullSuite: timed("full-suite", addTiming, () => runWorkflowSuiteGate(sc)),
     storyReview: timed("story-review", addTiming, (concerns, gates) =>
-      toolErrors("story-review", () => runStoryReview(sc, concerns, gates)),
+      toolErrors("story-review", async () => {
+        // US-001: the brief is rewritten here, so a ruling the loop recorded after the story
+        // started is in the copy the reviewer reads. A failed refresh leaves the previous one.
+        await refreshBrief(sc);
+        return runStoryReview(sc, concerns, gates);
+      }),
     ),
     reReview: timed("re-review", addTiming, (round, findings, fixBase) =>
-      toolErrors(`re-review r${round}`, () => runReReview(sc, round, findings, fixBase)),
+      toolErrors(`re-review r${round}`, async () => {
+        await refreshBrief(sc);
+        return runReReview(sc, round, findings, fixBase);
+      }),
     ),
     // nax#2550: both throw on a git failure. The story loop does not catch them, so the stage closes the
     // story gate-open rather than fix against a base or a dirty list that git never reported.

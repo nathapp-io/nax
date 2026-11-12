@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeStepContext, makeTempDir, makeTestStory } from "@test/helpers";
-import { specExcerpts, writeBrief } from "@/workflow/brief";
+import { refreshBrief, specExcerpts, writeBrief } from "@/workflow/brief";
 import { newStoryRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 
@@ -90,6 +90,65 @@ describe("writeBrief", () => {
     const text = await Bun.file(sc.briefPath).text();
     expect(text).toContain("Rulings in force");
     expect(text).toContain("Carried from US-1 (D-4): Keep lock order");
+  });
+
+  test("AC-8: writes the story's out of scope list under its own heading", async () => {
+    const root = makeTempDir("wf-brief-scope-");
+    dirs.push(root);
+    const runDir = join(root, "run");
+    _workflowDeps.resolveFeatureSpec = async () => ({ specSource: null });
+    const sc = makeStepContext({
+      story: makeTestStory({ id: "US-002", acceptanceCriteria: ["pays"], outOfScope: ["No run lease or lock"] }),
+      projectDir: root,
+      runDir,
+      storyDir: join(runDir, "US-002"),
+      briefPath: join(runDir, "US-002", "brief.md"),
+      reportPath: join(runDir, "US-002", "report.md"),
+    });
+    await writeBrief(sc);
+    const text = await Bun.file(sc.briefPath).text();
+    expect(text).toContain("## Out of scope");
+    expect(text.indexOf("- No run lease or lock")).toBeGreaterThan(text.indexOf("## Out of scope"));
+  });
+});
+
+/**
+ * US-001: the brief is rewritten before each review, so a mid-loop ruling reaches the reviewer.
+ * A refresh that fails must not cost the review — the previous brief is still on disk — unless
+ * the run is aborting, where the error is the abort's own.
+ */
+describe("refreshBrief (US-001)", () => {
+  /** A step context in a temp dir whose refresh fails; `aborted` decides what the failure means. */
+  function brokenRefresh(aborted: boolean): { sc: ReturnType<typeof makeStepContext> } {
+    const root = makeTempDir("wf-brief-refresh-");
+    dirs.push(root);
+    const runDir = join(root, "run");
+    const controller = new AbortController();
+    if (aborted) controller.abort();
+    _workflowDeps.resolveFeatureSpec = async () => ({ specSource: null });
+    _workflowDeps.loadProjectContextOverride = async () => {
+      throw new Error("context file gone");
+    };
+    return {
+      sc: makeStepContext({
+        projectDir: root,
+        runDir,
+        storyDir: join(runDir, "US-001"),
+        briefPath: join(runDir, "US-001", "brief.md"),
+        reportPath: join(runDir, "US-001", "report.md"),
+        runSignal: controller.signal,
+      }),
+    };
+  }
+
+  test("AC-16: rethrows the write failure when the run signal is aborted", async () => {
+    const { sc } = brokenRefresh(true);
+    await expect(refreshBrief(sc)).rejects.toThrow("context file gone");
+  });
+
+  test("a write failure without an abort is contained, not thrown at the step", async () => {
+    const { sc } = brokenRefresh(false);
+    await expect(refreshBrief(sc)).resolves.toBeUndefined();
   });
 });
 

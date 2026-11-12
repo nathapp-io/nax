@@ -1,5 +1,6 @@
 /** A5 workflow mode: the story review prompt (spec §6 step 4) and the JSON retries shared with the re-review. */
 
+import { WORKFLOW_SETTLED_RULINGS_RULE } from "./workflow-implementer-builder";
 import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./workflow-quality-checklist";
 
 /**
@@ -54,6 +55,8 @@ export function buildWorkflowStoryReviewPrompt(input: {
 For each acceptance criterion, verify the current code implements it correctly. Use the diff to find the changed paths, not as the only source of truth. Follow each criterion's data and contract to where it is declared or stored (schema, migrations, DTOs, shared types), including code an earlier story created that this diff does not touch: a limit the story accepts must fit the storage and contracts it writes to. Read a file before you flag it.
 
 ${naxCheckedBlock(input.gates ?? {}, input.e2eGate === true)}
+
+${WORKFLOW_SETTLED_RULINGS_RULE}
 
 ${WORKFLOW_QUALITY_CHECKLIST}
 
