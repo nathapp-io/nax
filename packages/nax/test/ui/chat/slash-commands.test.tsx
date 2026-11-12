@@ -418,7 +418,9 @@ describe("agents command", () => {
       ]),
     });
     await ui.line("/help");
-    expect(ui.lastFrame()).toContain("1 commands · 0 skills");
+    // US-005: one catalog command is `1 command`, not `1 commands`.
+    expect(ui.lastFrame()).toContain("1 command · 0 skills");
+    expect(ui.lastFrame()).not.toContain("1 commands");
     expect(ui.lastFrame()).toContain("type / to search");
   });
 

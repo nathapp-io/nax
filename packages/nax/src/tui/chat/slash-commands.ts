@@ -213,12 +213,10 @@ function acpDispatch(
 function formatHelp(host: ChatHost, brain: ChatAcpModel | undefined): string {
   const builtins = COMMANDS.map((name) => `/${name}  ${COMMAND_DESCRIPTIONS[name]}`);
   if (brain) return [...builtins, "", CHAT_KEYBOARD_HELP].join("\n");
-  return [
-    ...builtins,
-    resourceHelp(host.catalog?.commands.length ?? 0, host.catalog?.skills.length ?? 0),
-    "",
-    CHAT_KEYBOARD_HELP,
-  ].join("\n");
+  // An empty catalog has no summary: joining an undefined line would leave a second blank row
+  // between the commands and the keys, so the absent line is dropped before the join.
+  const summary = resourceHelp(host.catalog?.commands.length ?? 0, host.catalog?.skills.length ?? 0);
+  return [...builtins, ...(summary === undefined ? [] : [summary]), "", CHAT_KEYBOARD_HELP].join("\n");
 }
 
 /** `/jobs` opens the jobs picker, ignoring any argument, when the host has jobs or tasks. */

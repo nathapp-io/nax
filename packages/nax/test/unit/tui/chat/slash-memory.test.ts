@@ -14,6 +14,7 @@ import { describe, expect, test } from "bun:test";
 import type { MemorySyncResult, RenderedMemoryIndex } from "@nathapp/nax-agent";
 import { type ChatHost, type ChatHostState, createChatAskController } from "@/chat";
 import { formatMemoryStatus, type MemoryHost, type MemoryStatus } from "@/memory";
+import { CHAT_KEYBOARD_HELP } from "@/tui/chat/help-text";
 import {
   COMMAND_DESCRIPTIONS,
   COMMANDS,
@@ -220,14 +221,16 @@ describe("runSlashCommand for /memory", () => {
 describe("runSlashCommand for /help with the memory built-in", () => {
   test("AC-21 inserts only the memory row, between jobs and quit", async () => {
     const { shown } = await run(makeHost({ memory: makeMemory() }), "/help");
+    const quitRow = PREVIOUS_HELP_ROWS.indexOf("/quit  Quit nax chat");
     const expected = [
-      ...PREVIOUS_HELP_ROWS.slice(0, PREVIOUS_HELP_ROWS.indexOf("/quit  Quit nax chat")),
+      ...PREVIOUS_HELP_ROWS.slice(0, quitRow),
       "/memory  Show memory notes and sync status",
-      "/quit  Quit nax chat",
-      // US-004: the chat's steering key is the listing's last line, after every command.
-      "ctrl+s  steer the running turn (or interrupt and send)",
-    ];
-    expect(shown[0]).toStartWith(expected.slice(0, -1).join("\n"));
-    expect(shown[0]).toEndWith(expected.at(-1) ?? "");
+      ...PREVIOUS_HELP_ROWS.slice(quitRow),
+      // US-005: this host has no catalog, so no summary row is inserted at all — exactly one
+      // blank row separates the command rows from the keyboard block.
+      "",
+      CHAT_KEYBOARD_HELP,
+    ].join("\n");
+    expect(shown).toEqual([expected]);
   });
 });
