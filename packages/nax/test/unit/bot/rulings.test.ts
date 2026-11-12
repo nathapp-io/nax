@@ -345,9 +345,48 @@ describe("readSettledKeys", () => {
     ],
   });
 
+  /** A bot finding thread whose newest reply is `body` by `author` (default: an authorized writer). */
+  const ruledFinding = (resolved: boolean, body: string, author = "alice"): PrThread => {
+    const base = findingThread(resolved);
+    return { ...base, comments: [...base.comments, comment("7", body, author)] };
+  };
+
   test("a resolved own finding thread settles its key; an open one does not", async () => {
     expect(await readSettledKeys(input([findingThread(true)]))).toEqual(new Set([findingKey]));
     expect(await readSettledKeys(input([findingThread(false)]))).toEqual(new Set());
+  });
+
+  // B1: `recordFindingRulings` applies an authorized non-confirming ruling whether or not the thread was
+  // resolved (resolution is presentation only). Reading resolution alone let a waiver the recorder honoured
+  // hold readiness forever after a failed resolve.
+  test("B1: an authorized waiver settles its finding thread even while the thread is unresolved", async () => {
+    expect(await readSettledKeys(input([ruledFinding(false, "waive: by design")]))).toEqual(new Set([findingKey]));
+    expect(await readSettledKeys(input([ruledFinding(false, "override: out of scope")]))).toEqual(
+      new Set([findingKey]),
+    );
+    expect(await readSettledKeys(input([ruledFinding(false, "fixed abc1234 — gone")]))).toEqual(new Set([findingKey]));
+  });
+
+  test("B1: an unauthorized waiver settles nothing", async () => {
+    access.mockImplementation(async () => false);
+    expect(await readSettledKeys(input([ruledFinding(false, "waive: by design")]))).toEqual(new Set());
+    expect(await readSettledKeys(input([ruledFinding(false, "waive: by design", "outsider")]))).toEqual(new Set());
+  });
+
+  // B5: a resolved thread said nothing about a later authorized ruling. A writer who reconfirms the finding
+  // reopened outstanding work, so resolution alone must not settle it.
+  test("B5: an authorized reconfirmation reopens a resolved finding thread", async () => {
+    expect(await readSettledKeys(input([ruledFinding(true, "confirm")]))).toEqual(new Set());
+    expect(await readSettledKeys(input([ruledFinding(true, "verified")]))).toEqual(new Set());
+  });
+
+  test("B5: a waiver after a reconfirmation settles the finding again", async () => {
+    const base = findingThread(true);
+    const threadWithBoth: PrThread = {
+      ...base,
+      comments: [...base.comments, comment("7", "confirm"), comment("8", "waive: by design")],
+    };
+    expect(await readSettledKeys(input([threadWithBoth]))).toEqual(new Set([findingKey]));
   });
 
   test("a finding thread someone else opened settles nothing", async () => {

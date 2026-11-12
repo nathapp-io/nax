@@ -411,6 +411,42 @@ describe("tool-written .gitignore files inside ignored directories (nax#1439)", 
     expect(report.failures).toEqual([]);
   });
 
+  // B6: the parking name was predictable, so a file already sitting there was overwritten by the rename
+  // and then deleted with the parked .gitignore — silently, with no path or failure reported.
+  test("B6: a file already at the parking name is preserved, never overwritten", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "kept by a tool\n");
+    const report = await restoreRepoSnapshot(snap);
+    expect(await readFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "utf8")).toBe("kept by a tool\n");
+    expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(true);
+    expect(report.paths).toEqual([]);
+    expect(report.failures).toEqual([]);
+  });
+
+  test("B6: the parking name stays collision-safe when the .gitignore is removed", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await writeFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "kept by a tool\n");
+    _snapshotDeps.git = async (args, cwd) =>
+      args[0] === "check-ignore"
+        ? { stdout: "", stderr: "fatal: index unreadable", exitCode: 128 }
+        : deps.git(args, cwd);
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(false);
+      expect(await readFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "utf8")).toBe("kept by a tool\n");
+      expect(report.paths).toContain(".venv/.gitignore");
+      expect(report.failures).toEqual([]);
+    } finally {
+      _snapshotDeps.git = deps.git;
+    }
+  });
+
   test("AC-3: an added .gitignore in a directory the snapshot rules ignore is removed and reported", async () => {
     const d = await toolRepo();
     const snap = await takeRepoSnapshot(d);

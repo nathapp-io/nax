@@ -9,6 +9,8 @@ import {
   type BotReviewArtifact,
   readyStep,
 } from "@/bot";
+import { _rulingsDeps } from "@/bot/rulings";
+import { withNaxBotMarker } from "@/forge";
 import { markReadyArgv } from "@/workflow/promote";
 
 const HEAD = "abc1234def";
@@ -32,6 +34,8 @@ const threadItem: AgreedItem = {
 const commentItem: AgreedItem = { kind: "comment", key: "c-1", issue: "please rename", reason: "reasonable" };
 /** What the PR read reports as settled; each test sets the keys it needs. */
 const settled = { current: new Set<string>() };
+/** The reconciliation spy, so one case can re-run the real read (B1). */
+let settledSpy: ReturnType<typeof spyOn<typeof _fixReportDeps, "readSettledKeys">>;
 
 /** A draft PR at `HEAD` whose readiness review agreed on `agreed`. */
 function draftEnv(agreed: readonly AgreedItem[] = []): BotFixEnv {
@@ -52,7 +56,7 @@ beforeEach(() => {
   spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue({ login: "bot" });
   spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([]);
   spyOn(_fixReportDeps, "listPrComments").mockResolvedValue([]);
-  spyOn(_fixReportDeps, "readSettledKeys").mockImplementation(async () => settled.current);
+  settledSpy = spyOn(_fixReportDeps, "readSettledKeys").mockImplementation(async () => settled.current);
 });
 afterEach(() => mock.restore());
 
@@ -226,6 +230,86 @@ describe("readyStep open-finding hold reconciled with the PR now", () => {
     expect(result.patch).toEqual({
       markedReady: false,
       readyHeld: "1 open critical/important finding(s) in the bot review of abc1234: f-9",
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  // B1: `recordFindingRulings` applies an authorized waiver whether or not the thread was resolved, so the
+  // readiness read must too — otherwise one failed presentation-only resolve holds the PR forever.
+  test("B1: an echoed waiver on an unresolved finding thread lifts the hold", async () => {
+    settledSpy.mockRestore();
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([
+      {
+        id: "n1",
+        replyTo: "c1",
+        resolved: false,
+        outdated: false,
+        comments: [
+          {
+            id: "c1",
+            body: withNaxBotMarker("leaks the token", "f-9"),
+            author: "bot",
+            authorId: 7,
+            kind: "thread",
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "c2",
+            body: "waive: by design",
+            author: "alice",
+            authorId: 8,
+            kind: "thread",
+            createdAt: "2026-01-01T00:01:00Z",
+          },
+        ],
+      },
+    ]);
+    spyOn(_rulingsDeps, "hasWriteAccess").mockResolvedValue(true);
+    const env = reconciledEnv(conversationOnly);
+    const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    expect(await readyStep(env, readyPass)).toEqual({ patch: { markedReady: true }, exit: "report" });
+    expect(run).toHaveBeenCalledWith(markReadyArgv(env.ref.forge, env.info.url), { cwd: env.repoRoot });
+  });
+
+  // B5: a resolved thread used to settle unconditionally. A writer who reconfirms the finding reopened
+  // outstanding work, so the hold must stand.
+  test("B5: a reconfirmed finding on a resolved thread still holds readiness", async () => {
+    settledSpy.mockRestore();
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([
+      {
+        id: "n1",
+        replyTo: "c1",
+        resolved: true,
+        outdated: false,
+        comments: [
+          {
+            id: "c1",
+            body: withNaxBotMarker("leaks the token", "f-9"),
+            author: "bot",
+            authorId: 7,
+            kind: "thread",
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "c2",
+            body: "confirm",
+            author: "alice",
+            authorId: 8,
+            kind: "thread",
+            createdAt: "2026-01-01T00:01:00Z",
+          },
+        ],
+      },
+    ]);
+    spyOn(_rulingsDeps, "hasWriteAccess").mockResolvedValue(true);
+    const env = reconciledEnv(conversationOnly);
+    const run = spyOn(env.forge, "run");
+    expect(await readyStep(env, readyPass)).toEqual({
+      patch: {
+        markedReady: false,
+        readyHeld: "1 open critical/important finding(s) in the bot review of abc1234: f-9",
+      },
+      exit: "report",
     });
     expect(run).not.toHaveBeenCalled();
   });

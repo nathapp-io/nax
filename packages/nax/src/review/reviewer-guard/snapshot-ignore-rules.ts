@@ -19,7 +19,8 @@
  */
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { _snapshotDeps, git, gitRaw } from "./deps";
+import { NaxError } from "@/errors";
+import { _snapshotDeps, git, gitRaw, STAGE } from "./deps";
 
 const IGNORE_FILE = ".gitignore";
 const IGNORE_PATHSPEC = `:(top,glob)**/${IGNORE_FILE}`;
@@ -29,6 +30,8 @@ const CHUNK = 500;
  * rule file, so the classification below sees the snapshot-time rules and nothing else.
  */
 const HOLD_SUFFIX = ".nax-restore-hold";
+/** Bounded search for a free parking name; a directory holding 100 of them is not worth more renames. */
+const MAX_HOLD_ATTEMPTS = 100;
 
 /** One snapshot-tree entry: its git object type ("commit" = gitlink) and blob id. */
 export interface TreeEntry {
@@ -163,6 +166,10 @@ async function removeAddedIgnoreFiles(
  * Move every added .gitignore aside, so no added rule can influence the classification. One that cannot
  * be moved is removed instead and reported: a live rule could hide the reviewer's work, so this fails
  * toward restoring the tree.
+ *
+ * The parking name is reserved, never assumed free (B6): `rename` overwrites silently, so a file already
+ * sitting at `<path>.nax-restore-hold` (a tool's own, or a leftover of an interrupted restore) was
+ * destroyed by the parking move and then removed with the parked rule — with no path or failure reported.
  */
 async function parkAddedIgnoreFiles(
   ctx: IgnoreRuleRestore,
@@ -172,8 +179,8 @@ async function parkAddedIgnoreFiles(
 ): Promise<Map<string, string>> {
   const parked = new Map<string, string>();
   for (const path of added) {
-    const held = `${path}${HOLD_SUFFIX}`;
     try {
+      const held = await reserveHoldPath(ctx.toplevel, path);
       await _snapshotDeps.rename(join(ctx.toplevel, path), join(ctx.toplevel, held));
       parked.set(path, held);
     } catch (err) {
@@ -183,6 +190,30 @@ async function parkAddedIgnoreFiles(
     }
   }
   return parked;
+}
+
+/** The first `<path>.nax-restore-hold[.N]` no file occupies, so parking never overwrites anything. */
+async function reserveHoldPath(toplevel: string, path: string): Promise<string> {
+  for (let attempt = 0; attempt < MAX_HOLD_ATTEMPTS; attempt++) {
+    const candidate = `${path}${HOLD_SUFFIX}${attempt === 0 ? "" : `.${attempt}`}`;
+    if (!(await isOccupied(join(toplevel, candidate)))) return candidate;
+  }
+  throw new NaxError(
+    `[${STAGE}] ${MAX_HOLD_ATTEMPTS} restore-hold names are taken by ${path}`,
+    "REVIEWER_GUARD_RESTORE_HOLD",
+    { stage: STAGE, path },
+  );
+}
+
+/** A path exists, or cannot be shown to be absent — anything but ENOENT/ENOTDIR counts as occupied. */
+async function isOccupied(absolutePath: string): Promise<boolean> {
+  try {
+    await _snapshotDeps.lstat(absolutePath);
+    return true;
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    return code !== "ENOENT" && code !== "ENOTDIR";
+  }
 }
 
 /** Put a tool-written .gitignore back where it was; a failed move is reported, never silent. */

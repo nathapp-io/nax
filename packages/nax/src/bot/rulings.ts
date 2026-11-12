@@ -38,6 +38,7 @@ import {
   type CallerRulingsReport,
   planCallerRulings,
 } from "./caller-rulings";
+import { isConfirmingRuling, latestFindingRuling } from "./finding-rulings";
 import { writerCheck } from "./writers";
 
 export const MAX_RULING_ITEMS = 20;
@@ -394,20 +395,34 @@ export async function recordPrRulings(input: RecordRulingsInput): Promise<Record
 export type SettlementReadInput = Omit<RecordRulingsInput, "readModel" | "callerRulings">;
 
 /**
- * A finding thread the bot opened that is now closed. The recorder settles indexed items only; a bot
- * review finding is settled by the later review that reports it fixed or withdrawn, or by a writer who
- * resolves its thread — neither rewrites the immutable artifact that listed it as open.
+ * A finding thread the bot opened that is not an indexed item. `recordFindingRulings` owns these: the
+ * newest authorized writer ruling decides, and thread resolution is presentation on top of it. Reading
+ * resolution alone disagreed with the recorder twice:
+ *
+ * - an authorized non-confirming ruling (waive, override, fixed) settles the finding whether or not the
+ *   thread was resolved, so a waiver whose presentation-only resolve failed still lifts the hold (B1);
+ * - a confirmed or verified ruling reconfirms outstanding work, so a resolved thread does not settle a
+ *   finding an authorized writer has since reconfirmed (B5).
+ *
+ * Without an authorized ruling, resolution alone settles the thread, as before. Only own openers count,
+ * and an indexed item is skipped: its ruling echo settles it, never a bare thread resolution.
  */
-function resolvedFindingKeys(threads: readonly PrThread[], login: string): string[] {
-  return threads.flatMap((thread) => {
-    if (!thread.resolved) return [];
+async function settledFindingKeys(
+  threads: readonly PrThread[],
+  login: string,
+  canRule: (comment: PrComment) => Promise<boolean>,
+): Promise<string[]> {
+  const settled: string[] = [];
+  for (const thread of threads) {
     const first = thread.comments[0];
-    if (first === undefined || first.author !== login) return [];
-    // An indexed item is settled by its ruling echo, never by a bare thread resolution.
-    if (parseItemOpener(first.body) !== null) return [];
+    if (first === undefined || first.author !== login) continue;
+    if (parseItemOpener(first.body) !== null) continue;
     const key = parseNaxBotMarker(first.body)?.key;
-    return key ? [key] : [];
-  });
+    if (key === undefined) continue;
+    const ruling = await latestFindingRuling({ login, isWriter: canRule }, thread);
+    if (ruling === null ? thread.resolved : !isConfirmingRuling(ruling.keyword)) settled.push(key);
+  }
+  return settled;
 }
 
 /**
@@ -420,6 +435,11 @@ function resolvedFindingKeys(threads: readonly PrThread[], login: string): strin
  */
 export async function readSettledKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
   const read = readItemThreads(input.threads, input.comments, input.login);
-  const settled = await settleItemThreads(read, permissionReader(input));
-  return new Set([...settled.settled.map(({ key }) => key), ...resolvedFindingKeys(input.threads, input.login)]);
+  // One reader for both: an author's write access is looked up once per login.
+  const canRule = permissionReader(input);
+  const [settled, findings] = await Promise.all([
+    settleItemThreads(read, canRule),
+    settledFindingKeys(input.threads, input.login, canRule),
+  ]);
+  return new Set([...settled.settled.map(({ key }) => key), ...findings]);
 }
