@@ -63,8 +63,9 @@ const expectedProduces: Record<NodeId, string[]> = {
   "final-gates": ["finalGates", "finalGateFindings", "gateRepairFindings"],
   // US-004: the gate repair also records the evidence-only review of its committed diff.
   "gate-repair": ["gateRepairRounds", "repairReviews"],
-  // US-005: `ci-repair` also records the concerns its replies raised.
-  "ci-repair": ["ciRepairRounds", "ciRepairFindings", "ciRepairConcerns"],
+  // US-005: `ci-repair` also records the concerns its replies raised, and the evidence-only review
+  // of its committed diff (the same line `gate-repair` records).
+  "ci-repair": ["ciRepairRounds", "ciRepairFindings", "ciRepairConcerns", "repairReviews"],
   publish: [
     "outcome",
     "ci",
