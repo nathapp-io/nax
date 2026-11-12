@@ -244,6 +244,18 @@ describe("readyStep open-finding hold reconciled with the PR now", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
+  test("an unreadable PR state holds a withdrawn finding too (fail closed)", async () => {
+    const env = reconciledEnv(withdrawnReview);
+    spyOn(_fixReportDeps, "listReviewThreads").mockRejectedValue(new Error("offline"));
+    const run = spyOn(env.forge, "run");
+    const result = await readyStep(env, readyPass);
+    expect(result.patch).toEqual({
+      markedReady: false,
+      readyHeld: "1 open critical/important finding(s) in the bot review of abc1234: f-9",
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+
   test("only the settled keys are released; the rest still hold", async () => {
     settled.current = new Set(["f-9"]);
     const env: BotFixEnv = {

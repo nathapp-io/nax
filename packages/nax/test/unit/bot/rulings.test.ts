@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger } from "@test/helpers";
-import { _rulingsDeps, type RecordRulingsInput, readSettledKeys, recordPrRulings } from "@/bot/rulings";
+import {
+  _rulingsDeps,
+  type RecordRulingsInput,
+  readConfirmedKeys,
+  readSettledKeys,
+  recordPrRulings,
+} from "@/bot/rulings";
 import { withNaxBotMarker } from "@/forge";
 import type { PrComment, PrInfo, PrThread } from "@/forge/pr-types";
 import { renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
@@ -405,5 +411,55 @@ describe("readSettledKeys", () => {
     expect(edit).not.toHaveBeenCalled();
     expect(tick).not.toHaveBeenCalled();
     expect(readModel).not.toHaveBeenCalled();
+  });
+});
+
+// B5: a withdrawal releases a finding only while no authorized writer has reconfirmed it, so this read must
+// name exactly the findings whose newest authorized ruling confirms them, and nothing a bare resolve or a
+// non-confirming ruling could suggest.
+describe("readConfirmedKeys", () => {
+  const findingKey = "f-1a2b3c4d";
+  const withReply = (resolved: boolean, body?: string): PrThread => ({
+    id: "finding-thread",
+    replyTo: "2",
+    resolved,
+    outdated: false,
+    comments: [
+      comment("5", withNaxBotMarker("leaks the token", findingKey)),
+      ...(body === undefined ? [] : [comment("6", body, "alice")]),
+    ],
+  });
+
+  test("an authorized confirm or verified ruling confirms the finding", async () => {
+    expect(await readConfirmedKeys(input([withReply(false, "confirm")]))).toEqual(new Set([findingKey]));
+    expect(await readConfirmedKeys(input([withReply(true, "verified")]))).toEqual(new Set([findingKey]));
+  });
+
+  test("an unauthorized confirm confirms nothing", async () => {
+    access.mockImplementation(async () => false);
+    expect(await readConfirmedKeys(input([withReply(false, "confirm")]))).toEqual(new Set());
+  });
+
+  test("a resolved thread with no ruling confirms nothing", async () => {
+    expect(await readConfirmedKeys(input([withReply(true)]))).toEqual(new Set());
+    expect(await readConfirmedKeys(input([withReply(false)]))).toEqual(new Set());
+  });
+
+  test("a waive ruling confirms nothing", async () => {
+    expect(await readConfirmedKeys(input([withReply(false, "waive: by design")]))).toEqual(new Set());
+  });
+
+  test("a waiver newer than a confirm confirms nothing", async () => {
+    const base = withReply(false, "confirm");
+    const later: PrThread = { ...base, comments: [...base.comments, comment("7", "waive: by design", "alice")] };
+    expect(await readConfirmedKeys(input([later]))).toEqual(new Set());
+  });
+
+  test("a thread someone else opened confirms nothing", async () => {
+    const other: PrThread = {
+      ...withReply(false),
+      comments: [comment("5", withNaxBotMarker("x", findingKey), "alice"), comment("6", "confirm", "alice")],
+    };
+    expect(await readConfirmedKeys(input([other]))).toEqual(new Set());
   });
 });
