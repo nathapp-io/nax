@@ -21,8 +21,11 @@ export function classifyHttpError(status: number | undefined): ProtocolErrorKind
 
 /** Recover only the known SDK error prefixes, not arbitrary leading numbers. */
 export function statusFromSdkMessage(message: string | undefined): number | undefined {
-  const match = message?.match(/^([45]\d\d):? (\{|status code)/);
-  return match === undefined || match === null ? undefined : Number(match[1]);
+  const sdkMatch = message?.match(/^([45]\d\d):? (\{|status code)/);
+  if (sdkMatch !== undefined && sdkMatch !== null) return Number(sdkMatch[1]);
+
+  const providerMatch = message?.match(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79} API error \(([45]\d\d)\): /);
+  return providerMatch === undefined || providerMatch === null ? undefined : Number(providerMatch[1]);
 }
 
 /**
@@ -292,7 +295,7 @@ export class ProtocolSetupError extends Error {
 export function classifyThrown(cause: unknown): ProtocolError {
   const message = cause instanceof Error ? cause.message : String(cause);
   if (cause instanceof ProtocolSetupError) return { kind: "bad-request", message, cause };
-  const status = thrownStatus(cause);
+  const status = thrownStatus(cause) ?? statusFromSdkMessage(message);
   if (status === undefined) return { kind: "transport", message, cause };
 
   const retryAfter = parseRetryAfter(thrownHeaders(cause));

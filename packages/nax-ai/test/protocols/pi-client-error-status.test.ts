@@ -14,7 +14,7 @@ async function collect(events: AsyncIterable<ProtocolEvent>): Promise<ProtocolEv
   return result;
 }
 
-function fakeProtocol(message: string, response?: PiResponse) {
+function fakeProtocol(message: string, response?: PiResponse, thrown?: Error) {
   const deps: PiDeps = {
     resolveModel: async () => ({
       id: "test",
@@ -29,6 +29,7 @@ function fakeProtocol(message: string, response?: PiResponse) {
       maxTokens: 1024,
     }),
     stream: vi.fn<PiDeps["stream"]>(async function* (_model, _context, _options, onResponse) {
+      if (thrown !== undefined) throw thrown;
       if (response !== undefined) onResponse(response);
       yield {
         type: "error",
@@ -70,6 +71,7 @@ describe("createPiProtocol SDK error status recovery", () => {
     ['408 {"error":{}}', "bad-request", 408],
     ['409 {"error":{}}', "bad-request", 409],
     ["401 Unauthorized", "transport", undefined],
+    ['opencode-go API error (400): {"type":"invalid_request_error"}', "bad-request", 400],
   ] as const)("classifies %s as %s with status %s", async (message, kind, status) => {
     const { protocol } = fakeProtocol(message);
     const events = await collect(protocol.stream(REQUEST));
@@ -86,6 +88,24 @@ describe("createPiProtocol SDK error status recovery", () => {
     if (status === undefined && events[0]?.type === "error") {
       expect(events[0].error).not.toHaveProperty("status");
     }
+  });
+
+  it("classifies a thrown provider API error through the pi stream seam", async () => {
+    const { protocol } = fakeProtocol(
+      "",
+      undefined,
+      new Error('opencode-go API error (400): {"type":"invalid_request_error"}'),
+    );
+    const events = await collect(protocol.stream(REQUEST));
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "error",
+      error: {
+        kind: "bad-request",
+        message: 'opencode-go API error (400): {"type":"invalid_request_error"}',
+        status: 400,
+      },
+    });
   });
 
   it("keeps the observed 200 and retry-after over the SDK status", async () => {
