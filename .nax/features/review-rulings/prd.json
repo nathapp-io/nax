@@ -3,7 +3,7 @@
   "feature": "review-rulings",
   "branchName": "feat/review-rulings",
   "createdAt": "2026-11-13T00:00:00.000Z",
-  "updatedAt": "2026-11-12T10:49:01.662Z",
+  "updatedAt": "2026-11-12T11:04:47.497Z",
   "userStories": [
     {
       "id": "US-001",
@@ -109,14 +109,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Changes parsing, optional git-backed step wiring and node-local graph routing with failed-fix retry and residual-absorption invariants across modules."
+        "reasoning": "Changes parsing, optional git-backed step wiring and node-local graph routing with failed-fix retry and residual-absorption invariants across modules.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-steps.ts",
@@ -134,7 +137,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bd3f172cd7b119174af26c34084ea63b6df59c0b"
     },
     {
       "id": "US-003",
