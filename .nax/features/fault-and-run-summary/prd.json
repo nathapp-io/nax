@@ -3,7 +3,7 @@
   "feature": "fault-and-run-summary",
   "branchName": "feat/fault-and-run-summary",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T06:50:43.933Z",
+  "updatedAt": "2026-11-12T07:11:57.872Z",
   "userStories": [
     {
       "id": "US-001",
@@ -273,14 +273,17 @@
         "sessions"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module result/state propagation through pipeline, executor and runner, including terminal session cleanup; session handling requires the strict security override."
+        "reasoning": "Cross-module result/state propagation through pipeline, executor and runner, including terminal session cleanup; session handling requires the strict security override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/stage.ts",
@@ -293,7 +296,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "116265e810dd25911402857b4bf69ce95d4d3ded"
     },
     {
       "id": "US-006",
