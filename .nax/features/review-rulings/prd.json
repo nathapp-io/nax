@@ -3,7 +3,7 @@
   "feature": "review-rulings",
   "branchName": "feat/review-rulings",
   "createdAt": "2026-11-13T00:00:00.000Z",
-  "updatedAt": "2026-11-12T10:20:33.255Z",
+  "updatedAt": "2026-11-12T10:49:01.662Z",
   "userStories": [
     {
       "id": "US-001",
@@ -35,14 +35,17 @@
         "prompts"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Six small additive edits reuse trusted-decision loading, brief sections and existing review wrappers; ordinary TDD through injected callOp and file fixtures is sufficient without a new protocol or graph abstraction."
+        "reasoning": "Six small additive edits reuse trusted-decision loading, brief sections and existing review wrappers; ordinary TDD through injected callOp and file fixtures is sufficient without a new protocol or graph abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/rulings.ts",
@@ -63,7 +66,11 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8836e5ef0f6879768eaeb533e91e3a8c2feddd04"
     },
     {
       "id": "US-002",
@@ -124,7 +131,10 @@
         "buildStoryEnv.steps.fixDiffEmpty(base) resolves false when HEAD equals base but the repository has an untracked non-nax-owned file."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -156,7 +166,10 @@
         "packages/nax/src/operations/advise.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -220,7 +233,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -278,7 +294,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -319,7 +338,10 @@
         "repairEvidence retains 'the repair diff was not re-reviewed' for a kind that has only skipped entries even when the other repair kind has a reviewed entry."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Enhancement closing #2878, entirely within packages/nax; no changes to nax-agent, nax-agent-acp or nax-ai are required. The codebase-memory MCP tools were unavailable, so discovery used direct source reads and text search. This is an extension of the existing workflow and advisor, not a new execution architecture. Preserve the binding six-story structure and dependency edges: US-002 follows US-001; US-005 and US-006 independently follow US-004.\n\nUS-001 source and integration findings: packages/nax/src/workflow/rulings.ts:5 currently iterates trusted decisions in ledger order but its early appliesTo check at :8 excludes own-story answers/residuals unless they happen to have appliesTo. Retain that filter for existing preflight supersede/hold and carry lines, while selecting new implementer-question answer and residual waive/defer lines by exact storyId; do not accidentally exclude preflight holds when omitting residual holds. packages/nax/src/workflow/brief.ts:66 loads trusted decisions through _workflowDeps.readTrustedDecisions on every write and :113 assembles the brief concurrently from spec, dependency records, rules, project override and memory. Its existing loadSpec at :40 swallows resolution/read errors, and loadDecisions at :66 already logs its own fallback; do not broaden US-001 into changing those policies. A propagated loadProjectContextOverride error is a practical seam to exercise refresh failure. Add refreshBrief around writeBrief without weakening initial-stage writeBrief error handling. packages/nax/src/workflow/stage.ts:51 currently writes the brief only at story start or when a resumed brief is missing. packages/nax/src/workflow/stage-env.ts:49 builds StepContext and :121/:124 wire storyReview/reReview through timing and tool-error reporting; await refreshBrief at the start of both wrappers, preserving those wrappers and propagating an abort-associated refresh error. packages/nax/src/prompts/builders/workflow-implementer-builder.ts:19 defines WorkflowBriefInput and :74 builds sections; insert nonempty outOfScope immediately after Rulings in force at :100. packages/nax/src/prd/types.ts:200 already has story.outOfScope and packages/nax/src/prd/index.ts:164 already invokes propagation; packages/nax/src/prd/out-of-scope.ts:218 merges feature and story exclusions. No PRD schema/loader change is needed. Add the settled-rulings paragraph to both story-specific prompts, packages/nax/src/prompts/builders/workflow-story-review-builder.ts:36 and workflow-re-review-builder.ts:4, including minor disagreements naming the ruling id and suppression of out-of-scope fixes.\n\nUS-002 source and state-machine findings: packages/nax/src/operations/workflow-types.ts:61 owns ReReviewVerdict; workflow/types.ts re-exports operation contracts, so modify the owning type rather than introduce a second verdict. packages/nax/src/operations/workflow-replies.ts:155 maps openIds to one verdict each, using residualOf and safe missing-id defaults. Preserve PARTIAL residual validation, duplicate/unknown-id handling, addressed/note semantics and newFindings parsing; narrower is optional literal true and belongs on the entry, not inside residual. packages/nax/src/workflow/re-review-absorb.ts:56 already updates the original id with residual text and drops duplicate residual restatements; it need not change. Story orchestration is injected via StoryLoopSteps at packages/nax/src/workflow/story-loop.ts:36. packages/nax/src/workflow/story-steps.ts:50 defines the mutable node-local LoopState; absorbTurn records implementer session failures in pendingSession; :218 handles review/re-review; :357 computes passExit; :363 evaluates and persists; :396 adjudicates all open non-gate items; :411 runs fix rounds. Add the advisor-route flag only to the node-local copy and consume it in evaluateStep, not in StoryLoopState, persisted records or graph output keys. STORY_GRAPH at packages/nax/src/workflow/story-graph.ts:50 already sends capped to residual; no node, transition, verdict or question-kind addition is needed. For narrower routing, correlate verdict ids with asked findings still open after absorption, then route all open non-gate findings, not just the narrower one. Inspect pendingSession before evaluateStep clears it: a failed fix must not be mistaken for intentional no-op work. Preserve existing gate/suite short-circuits, retries and round accounting. packages/nax/src/workflow/stage-env.ts:136 already wires head/uncommitted with repo-root git helpers. packages/nax/src/workflow/git.ts:69 readHead throws on git errors; :105 listUncommitted includes staged, unstaged and untracked paths but deliberately excludes nax-owned paths. Wire fixDiffEmpty using those helpers and the supplied fixBase; this means HEAD identity, not net-diff equality. Catch a failed emptiness probe only at the optional probe boundary and continue to re-review. The branch machine uses the same parser, but its branch-level handling must ignore narrower.\n\nUS-003 findings: packages/nax/src/prompts/builders/advisor-batch-builder.ts:17 defines ANSWER_FIELDS shared by residual and preflight; :31 residualBlock and :51 preflightBlock are separate. Append inspectedFiles only inside the residual answer example and add the read/list instructions there. Do not alter shared ANSWER_FIELDS, preflight examples, the stateless batch model or tool grants. packages/nax/src/operations/advise.ts:53 filters inspectedFiles and :62 validateAdvisorReply already copies them at :96. packages/nax/src/advisor/service-helpers.ts:67 decisionDraftFor copies them at :92; packages/nax/src/advisor/batch.ts:109 validates batch answers and :118 drafts stateless decisions. These are read-only integration seams, not new implementation work.\n\nUS-004/US-005 source and graph findings: FeatureSteps is at packages/nax/src/workflow/feature-machine.ts:26 and already exposes branchFix, branchReReview and head. WorkflowFeatureRecord at packages/nax/src/workflow/types.ts:220 is the persisted graph record; optional gate/CI repair fields begin at :280. Add optional repairReview and repairReviews for backward compatibility. packages/nax/src/workflow/feature-steps.ts:356 gateRepairStep generates G ids, respects lowered caps/empty findings and calls branchFix with repair:true; packages/nax/src/workflow/ci-repair-steps.ts:210 ciRepairStep generates C ids and additionally forwards prUrl and ciRound, clears pending CI findings, and appends concerns at :246. Both must preserve existing session options, failure/auto-commit/dirty ledger messages, concerns, round patches and cap behavior. US-004 creates the sole new source file packages/nax/src/workflow/repair-review.ts with reviewRepairDiff(env, { kind, round, findings, run }); US-005 reuses it. Design the run callback/result so callers retain the original BranchFixOutcome and can merge the optional review-history patch without running branchFix twice. The helper must use the current record history supplied by the step, not accidentally append to stale env.record after a resume/second round. A failed before-HEAD read cannot prevent run; successful repair with changed HEAD and wired review gets exactly one review. No HEAD reads are introduced when review is absent or the round has no findings. Same HEAD or session failure produces neither a review nor a review-history line. HEAD read failures produce the exact skipped ledger note and must never be presented as completed reviews. Do not treat review findings as fresh branch findings, mutate reviewOpen, spend branch ids, add fix rounds or re-enter adjudication. packages/nax/src/workflow/feature-graph.ts:75 and :84 declare the gate-repair/ci-repair node produces lists; add repairReviews in the corresponding story or the graph output contract will reject the patch. The existing transitions back to final-gates remain unchanged.\n\nUS-006 live consumer findings: packages/nax/src/workflow/feature-env.ts:39 builds FeatureEnv, :69 wires existing branchFix routing and :89 wires branchReReview. Add repairReview through the existing tool-error/operation path to runBranchReReview(fc, { ...spec, findings, fixBase: base }). packages/nax/src/workflow/branch-review.ts:318 already creates package-branch-fix.diff and calls workflowReReviewOp with openIds at :337; reuse that behavior, timeout, model selection and artifact overwrite. No fresh reviewer transport is needed. packages/nax/src/workflow/repair-evidence.ts:11 currently emits only gate and CI round summaries, both unreviewed. Switch each kind's wording when its history contains a matching ' reviewed: ' entry, then append every history entry after all round summaries in original history order. This intentionally uses any reviewed entry for that kind, not a new latest-round policy. packages/nax/src/workflow/finalize.ts:264 already spreads repairEvidence into advisor evidence, so no finish-advisor redesign is needed.\n\nExisting tests and implementation strategy: use bun:test and the _workflowDeps/step injection seams, restore stubs after each test and use repository helpers for contexts, temporary directories, scripted callOp and feature-machine harnesses. packages/nax/test/unit/workflow/rulings.test.ts:22 pins existing appliesTo/carry/preflight output; its current expected list must remain unchanged. brief.test.ts:25 already exercises writeBrief with real temp files, and brief-rules-index.test.ts:123 covers additive rendering and existing rules/memory behavior. packages/nax/test/unit/prompts/workflow-builders.test.ts:34 covers briefs, :120 story review and :183/:299 re-review, including a pinned residual substring; add narrower outside that substring. packages/nax/test/unit/workflow/stage-env.test.ts:35 sets up isolated fixtures; review-driving tests now write a refreshed brief, so stub readTrustedDecisions, resolveFeatureSpec and loadProjectContextOverride as appropriate and account for the new warning in exact-warning assertions. packages/nax/test/unit/operations/workflow-replies.test.ts:235 covers PARTIAL and :284 rejects residuals on other verdicts. packages/nax/test/unit/workflow/story-loop.test.ts:56 has injected steps without fixDiffEmpty, so those existing runs must keep today's path; :456 exercises residual id preservation. Reuse story-loop-graph.test.ts and existing related suites if needed rather than overgrowing one file. Test no-op/narrower routes through runStoryLoop and advisor.ruleResidual, not just an internal exit string; test production fixDiffEmpty with temporary git repos. packages/nax/test/unit/prompts/advisor-batch-builder.test.ts:20/:43 cover residual/preflight contracts via substrings. packages/nax/test/unit/workflow/feature-steps-repair-routing.test.ts:53/:61 pin exact branchFix options. feature-steps-ci-repair.test.ts and ci-repair-steps-evidence.test.ts cover repair rounds, concerns and side effects. packages/nax/test/unit/workflow/feature-graph.test.ts:57 pins produces; change gate and CI expected arrays in their respective stories. packages/nax/test/unit/workflow/feature-env.test.ts:35 provides the real wiring seam with stubbed callOp and git, and :212/:256 cover repair routing. packages/nax/test/unit/workflow/repair-evidence.test.ts:17 pins old records without repairReviews; those outputs remain unchanged. Verify new review histories through step patches and ledger notes, plus live wiring through workflow-re-review openIds. All tests are part of implementation, not separate stories.\n\nRisks and migration: optional interfaces/fields make older fixtures, graph-only environments and persisted records work without migration; missing steps preserve old behavior and missing repairReviews preserves old evidence text. The main risks are filtering own-story rulings through appliesTo by mistake; swallowing aborts during refresh; classifying failed fixes as no-ops; routing unknown/already-addressed narrower ids; losing residual text or other open items; reading HEAD in old optional-step environments; suppressing repairs on git-read errors; overwriting rather than appending history; dropping CI concerns/options; and mismatching graph produces. Repair review adds one LLM call per successful committing repair and overwrites the accepted package-branch-fix.diff artifact. It is evidence only, not a deterministic approval gate. Preserve stateless residual batching and all existing permission/agent-resolution behavior. No dependency, config, schema, release/version or data backfill work is planned. Read docs/architecture/ARCHITECTURE.md and applicable .nax/rules before source edits; use package-local focused Bun tests, never bare bun test or bun run nax. Quality gates are pipeline responsibilities; do not run coverage inside a sandboxed nax session.\n\nRefine audit: all 67 numbered spec acceptance criteria are retained in their original stories. Preservation map by spec AC number to PRD array ordinal: US-001 1-16 -> 1-16; US-002 1-13 -> 1-13, 14 -> 14 and 15, 15 -> 16 and 17, 16 -> 18, 17 -> 19, 18 -> 20, 19 -> 21, 20 -> 22; US-003 1-4 -> 1-4; US-004 1-17 -> 1-17; US-005 1-6 -> 1-6; US-006 1-4 -> 1-4. Splits separate observable assertions without losing failed-fix retries or residual issue text. The any-why/unparseable-reply qualifier in US-004 is retained. Additional failure-table criteria retain existing round/retry behavior. US-006 now makes old-record evidence compatibility a mandatory concrete return-value assertion. Every story has a negative-path acceptance criterion: ignored/failed refresh inputs, failed/absent no-op probes, preflight exclusion of the residual-only field, failed/skipped repairs, or skipped-review evidence. All six feature exclusions are preserved verbatim, all context arrays match the spec's recommended inputs (including US-005's upstream-created helper), and binding ids, workdirs and dependencies are unchanged. US-001 uses medium/tdd-simple because its existing-seam additions require no new execution abstraction; US-002 and US-004 retain complex routing for graph-state integration and shared repair orchestration respectively.",
