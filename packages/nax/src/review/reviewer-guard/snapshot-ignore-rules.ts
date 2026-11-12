@@ -19,19 +19,18 @@
  */
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { NaxError } from "@/errors";
-import { _snapshotDeps, git, gitRaw, STAGE } from "./deps";
+import { _snapshotDeps, git, gitRaw } from "./deps";
 
 const IGNORE_FILE = ".gitignore";
 const IGNORE_PATHSPEC = `:(top,glob)**/${IGNORE_FILE}`;
 const CHUNK = 500;
 /**
- * Suffix an added `.gitignore` is parked under while the classification runs. git does not read it as a
- * rule file, so the classification below sees the snapshot-time rules and nothing else.
+ * Prefix of the private directory an added `.gitignore` is parked in while the classification runs. git
+ * reads only files named `.gitignore`, so the parked file (`HELD_NAME`) is not a rule file and the
+ * classification below sees the snapshot-time rules and nothing else.
  */
-const HOLD_SUFFIX = ".nax-restore-hold";
-/** Bounded search for a free parking name; a directory holding 100 of them is not worth more renames. */
-const MAX_HOLD_ATTEMPTS = 100;
+const HOLD_DIR_PREFIX = ".nax-restore-hold-";
+const HELD_NAME = "held";
 
 /** One snapshot-tree entry: its git object type ("commit" = gitlink) and blob id. */
 export interface TreeEntry {
@@ -137,7 +136,7 @@ async function resetKnownIgnoreFiles(
  * Remove the .gitignore files the reviewer added, except one inside a directory the SNAPSHOT-time rules
  * ignore (nax#1439): it can only affect already-ignored paths, so it hides nothing from the comparison.
  *
- * Every added file is parked under `HOLD_SUFFIX` before any of them is classified. Otherwise one added
+ * Every added file is parked in a private directory before any of them is classified. Otherwise one added
  * rule file decides another's fate: a reviewer-written `sub/.gitignore` holding `*` makes `sub/.cache`
  * look ignored, so `sub/.cache/.gitignore` would be kept and its `*` would hide the reviewer's own
  * `sub/.cache/planted.txt` from the comparison. Parked, git reads only the restored rules.
@@ -156,7 +155,7 @@ async function removeAddedIgnoreFiles(
       await unparkIgnoreFile(ctx, path, held, failures);
       continue;
     }
-    await ctx.remove(join(ctx.toplevel, held)).catch((err) => failures.push(`remove ${path}: ${errorMessage(err)}`));
+    await discardParked(ctx, path, held, failures);
     removed.add(path);
   }
   return [...removed];
@@ -167,9 +166,11 @@ async function removeAddedIgnoreFiles(
  * be moved is removed instead and reported: a live rule could hide the reviewer's work, so this fails
  * toward restoring the tree.
  *
- * The parking name is reserved, never assumed free (B6): `rename` overwrites silently, so a file already
- * sitting at `<path>.nax-restore-hold` (a tool's own, or a leftover of an interrupted restore) was
- * destroyed by the parking move and then removed with the parked rule — with no path or failure reported.
+ * Each file is parked in a directory this restore creates exclusively (`mkdtemp`), never at a name it
+ * looked up (B6): a lookup-then-`rename` sequence overwrites silently whatever appears at the
+ * destination between the two, and the cleanup then deleted it with the parked rule. Nothing but this
+ * restore knows the private directory, so the move has no destination to collide with, and cleanup
+ * removes only the file it parked and the directory it made (`rmdir` fails on any other content).
  */
 async function parkAddedIgnoreFiles(
   ctx: IgnoreRuleRestore,
@@ -179,12 +180,15 @@ async function parkAddedIgnoreFiles(
 ): Promise<Map<string, string>> {
   const parked = new Map<string, string>();
   for (const path of added) {
+    let holdDir: string | undefined;
     try {
-      const held = await reserveHoldPath(ctx.toplevel, path);
-      await _snapshotDeps.rename(join(ctx.toplevel, path), join(ctx.toplevel, held));
+      holdDir = await _snapshotDeps.mkdtemp(join(ctx.toplevel, dirname(path), HOLD_DIR_PREFIX));
+      const held = join(holdDir, HELD_NAME);
+      await _snapshotDeps.rename(join(ctx.toplevel, path), held);
       parked.set(path, held);
     } catch (err) {
       failures.push(`park ${path}: ${errorMessage(err)}`);
+      if (holdDir !== undefined) await removeHoldDir(holdDir, path, failures);
       await ctx.remove(join(ctx.toplevel, path)).catch((e) => failures.push(`remove ${path}: ${errorMessage(e)}`));
       removed.add(path);
     }
@@ -192,38 +196,27 @@ async function parkAddedIgnoreFiles(
   return parked;
 }
 
-/** The first `<path>.nax-restore-hold[.N]` no file occupies, so parking never overwrites anything. */
-async function reserveHoldPath(toplevel: string, path: string): Promise<string> {
-  for (let attempt = 0; attempt < MAX_HOLD_ATTEMPTS; attempt++) {
-    const candidate = `${path}${HOLD_SUFFIX}${attempt === 0 ? "" : `.${attempt}`}`;
-    if (!(await isOccupied(join(toplevel, candidate)))) return candidate;
-  }
-  throw new NaxError(
-    `[${STAGE}] ${MAX_HOLD_ATTEMPTS} restore-hold names are taken by ${path}`,
-    "REVIEWER_GUARD_RESTORE_HOLD",
-    { stage: STAGE, path },
-  );
+/** Remove the private parking directory this restore made; non-empty (someone else's content) is reported. */
+async function removeHoldDir(holdDir: string, path: string, failures: string[]): Promise<void> {
+  await _snapshotDeps.rmdir(holdDir).catch((err) => failures.push(`remove hold dir of ${path}: ${errorMessage(err)}`));
 }
 
-/** A path exists, or cannot be shown to be absent — anything but ENOENT/ENOTDIR counts as occupied. */
-async function isOccupied(absolutePath: string): Promise<boolean> {
-  try {
-    await _snapshotDeps.lstat(absolutePath);
-    return true;
-  } catch (err) {
-    const code = (err as { code?: string } | null)?.code;
-    return code !== "ENOENT" && code !== "ENOTDIR";
-  }
+/** Delete the parked file and then its private directory. */
+async function discardParked(ctx: IgnoreRuleRestore, path: string, held: string, failures: string[]): Promise<void> {
+  await ctx.remove(held).catch((err) => failures.push(`remove ${path}: ${errorMessage(err)}`));
+  await removeHoldDir(dirname(held), path, failures);
 }
 
 /** Put a tool-written .gitignore back where it was; a failed move is reported, never silent. */
 async function unparkIgnoreFile(ctx: IgnoreRuleRestore, path: string, held: string, failures: string[]): Promise<void> {
   try {
-    await _snapshotDeps.rename(join(ctx.toplevel, held), join(ctx.toplevel, path));
+    await _snapshotDeps.rename(held, join(ctx.toplevel, path));
   } catch (err) {
     failures.push(`restore ${path}: ${errorMessage(err)}`);
-    await ctx.remove(join(ctx.toplevel, held)).catch((e) => failures.push(`remove ${path}: ${errorMessage(e)}`));
+    await discardParked(ctx, path, held, failures);
+    return;
   }
+  await removeHoldDir(dirname(held), path, failures);
 }
 
 /** True when the directory holding this repo-relative .gitignore is itself ignored, read from the raw seam. */

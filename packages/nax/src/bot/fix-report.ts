@@ -35,7 +35,7 @@ import type { BotReviewArtifact } from "./post";
 import { waitForPrHead } from "./pr-head-wait";
 import { safeText } from "./render";
 import { rulingModelReader } from "./ruling-reader";
-import { type RecordRulingsOutcome, readSettledKeys, recordPrRulings } from "./rulings";
+import { type RecordRulingsOutcome, readConfirmedKeys, readSettledKeys, recordPrRulings } from "./rulings";
 import { workflowPrReadiness } from "./workflow-ready";
 
 const SHORT_SHA_LENGTH = 7;
@@ -57,6 +57,7 @@ export const _fixReportDeps = {
   listPrComments,
   recordPrRulings,
   readSettledKeys,
+  readConfirmedKeys,
   readHeadGateNames,
 };
 
@@ -335,30 +336,26 @@ function withdrawnKeys(env: BotFixEnv): ReadonlySet<string> {
 
 /**
  * Drop the keys the PR as it is now has closed: a durable ruling or a resolved thread settles a finding
- * after the artifact was written, and `--ready-only` exists to recover from exactly that. An unreadable
- * PR state settles nothing, so the hold stands (fail closed).
+ * after the artifact was written, and `--ready-only` exists to recover from exactly that. A withdrawal
+ * releases a finding only while no authorized writer has reconfirmed it since (B5). An unreadable PR
+ * state settles nothing, so the hold stands (fail closed).
  */
 async function openKeys(env: BotFixEnv, keys: readonly string[]): Promise<readonly string[]> {
+  if (keys.length === 0) return keys;
   const withdrawn = withdrawnKeys(env);
-  const live = keys.filter((key) => !withdrawn.has(key));
-  if (live.length === 0) return live;
   try {
     const { info, user, threads, comments } = await readPrState(env);
-    const settled = await _fixReportDeps.readSettledKeys({
-      ref: env.ref,
-      info,
-      login: user.login,
-      threads,
-      comments,
-      deps: env.forge,
-      cwd: env.repoRoot,
-    });
+    const input = { ref: env.ref, info, login: user.login, threads, comments, deps: env.forge, cwd: env.repoRoot };
+    const [settled, confirmed] = await Promise.all([
+      _fixReportDeps.readSettledKeys(input),
+      withdrawn.size === 0 ? new Set<string>() : _fixReportDeps.readConfirmedKeys(input),
+    ]);
     env.ctx.callCtx.runtime.signal.throwIfAborted();
-    return live.filter((key) => !settled.has(key));
+    return keys.filter((key) => (withdrawn.has(key) ? confirmed.has(key) : !settled.has(key)));
   } catch (error) {
     env.ctx.callCtx.runtime.signal.throwIfAborted();
     getLogger()?.warn("bot-fix", "Could not read the PR rulings", { pr: env.ref.number, error: errorMessage(error) });
-    return live;
+    return keys;
   }
 }
 

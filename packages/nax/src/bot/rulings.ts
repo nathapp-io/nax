@@ -413,16 +413,34 @@ async function settledFindingKeys(
   canRule: (comment: PrComment) => Promise<boolean>,
 ): Promise<string[]> {
   const settled: string[] = [];
+  for (const { key, thread, ruling } of await ownFindingThreads(threads, login, canRule)) {
+    if (ruling === null ? thread.resolved : !isConfirmingRuling(ruling.keyword)) settled.push(key);
+  }
+  return settled;
+}
+
+interface FindingThreadRuling {
+  readonly key: string;
+  readonly thread: PrThread;
+  readonly ruling: Awaited<ReturnType<typeof latestFindingRuling>>;
+}
+
+/** The finding threads the bot opened that are not indexed items, each with its newest authorized ruling. */
+async function ownFindingThreads(
+  threads: readonly PrThread[],
+  login: string,
+  canRule: (comment: PrComment) => Promise<boolean>,
+): Promise<FindingThreadRuling[]> {
+  const found: FindingThreadRuling[] = [];
   for (const thread of threads) {
     const first = thread.comments[0];
     if (first === undefined || first.author !== login) continue;
     if (parseItemOpener(first.body) !== null) continue;
     const key = parseNaxBotMarker(first.body)?.key;
     if (key === undefined) continue;
-    const ruling = await latestFindingRuling({ login, isWriter: canRule }, thread);
-    if (ruling === null ? thread.resolved : !isConfirmingRuling(ruling.keyword)) settled.push(key);
+    found.push({ key, thread, ruling: await latestFindingRuling({ login, isWriter: canRule }, thread) });
   }
-  return settled;
+  return found;
 }
 
 /**
@@ -442,4 +460,17 @@ export async function readSettledKeys(input: SettlementReadInput): Promise<Reado
     settledFindingKeys(input.threads, input.login, canRule),
   ]);
   return new Set([...settled.settled.map(({ key }) => key), ...findings]);
+}
+
+/**
+ * The finding keys whose newest authorized writer ruling reconfirms them (`confirm`, `verified`). A newer
+ * review may withdraw a finding on a commenter's say-so, but an authorized reconfirmation outranks that
+ * (B5), so the readiness hold keeps these open whatever a withdrawal event says. Resolution alone never
+ * confirms.
+ */
+export async function readConfirmedKeys(input: SettlementReadInput): Promise<ReadonlySet<string>> {
+  const found = await ownFindingThreads(input.threads, input.login, permissionReader(input));
+  return new Set(
+    found.filter(({ ruling }) => ruling !== null && isConfirmingRuling(ruling.keyword)).map(({ key }) => key),
+  );
 }

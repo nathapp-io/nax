@@ -186,25 +186,62 @@ describe("readyStep open-finding hold reconciled with the PR now", () => {
     expect(run).toHaveBeenCalledWith(markReadyArgv(env.ref.forge, env.info.url), { cwd: env.repoRoot });
   });
 
-  test("a newer review's finding-withdrawn event lifts the hold without re-reading rulings", async () => {
-    const review: BotReviewArtifact = {
-      ...conversationOnly,
-      events: [
-        {
-          type: "finding-withdrawn",
-          key: "f-9",
-          threadId: "n1",
-          finding: "leaks",
-          reason: "wrong",
-          disagreedBy: ["alice"],
-        },
-      ],
-    };
-    const env = reconciledEnv(review);
+  const withdrawnReview: BotReviewArtifact = {
+    ...conversationOnly,
+    events: [
+      {
+        type: "finding-withdrawn",
+        key: "f-9",
+        threadId: "n1",
+        finding: "leaks",
+        reason: "wrong",
+        disagreedBy: ["alice"],
+      },
+    ],
+  };
+
+  test("a newer review's finding-withdrawn event lifts the hold when no one reconfirmed it", async () => {
+    const env = reconciledEnv(withdrawnReview);
     const run = spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
     expect(await readyStep(env, readyPass)).toEqual({ patch: { markedReady: true }, exit: "report" });
     expect(run).toHaveBeenCalledTimes(1);
-    expect(_fixReportDeps.readSettledKeys).not.toHaveBeenCalled();
+  });
+
+  // B5: the withdrawal used to drop the key before any ruling was read, so a writer's later `confirm`
+  // never reached the hold.
+  test("B5: a withdrawal followed by an authorized reconfirmation still holds readiness", async () => {
+    settledSpy.mockRestore();
+    const comment = (id: string, body: string, author: string, authorId: number, minute: number) => ({
+      id,
+      body,
+      author,
+      authorId,
+      kind: "thread" as const,
+      createdAt: `2026-01-01T00:0${minute}:00Z`,
+    });
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([
+      {
+        id: "n1",
+        replyTo: "c1",
+        resolved: false,
+        outdated: false,
+        comments: [
+          comment("c1", withNaxBotMarker("leaks the token", "f-9"), "bot", 7, 0),
+          comment("c2", "confirm", "alice", 8, 1),
+        ],
+      },
+    ]);
+    spyOn(_rulingsDeps, "hasWriteAccess").mockResolvedValue(true);
+    const env = reconciledEnv(withdrawnReview);
+    const run = spyOn(env.forge, "run");
+    expect(await readyStep(env, readyPass)).toEqual({
+      patch: {
+        markedReady: false,
+        readyHeld: "1 open critical/important finding(s) in the bot review of abc1234: f-9",
+      },
+      exit: "report",
+    });
+    expect(run).not.toHaveBeenCalled();
   });
 
   test("only the settled keys are released; the rest still hold", async () => {

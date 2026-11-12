@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NaxError } from "@/errors";
@@ -445,6 +445,46 @@ describe("tool-written .gitignore files inside ignored directories (nax#1439)", 
     } finally {
       _snapshotDeps.git = deps.git;
     }
+  });
+
+  // B6: a file that appears at the old predictable parking name AFTER any lookup (here: just before the
+  // park rename) used to be overwritten by the rename and deleted with the parked rule.
+  test("B6: a destination created after the lookup survives the park and the removal", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    const realRename = _snapshotDeps.rename;
+    _snapshotDeps.rename = async (from, to) => {
+      await writeFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "created mid-restore\n");
+      await realRename(from, to);
+    };
+    _snapshotDeps.git = async (args, cwd) =>
+      args[0] === "check-ignore"
+        ? { stdout: "", stderr: "fatal: index unreadable", exitCode: 128 }
+        : deps.git(args, cwd);
+    try {
+      const report = await restoreRepoSnapshot(snap);
+      expect(await readFile(join(d, ".venv", ".gitignore.nax-restore-hold"), "utf8")).toBe("created mid-restore\n");
+      expect(existsSync(join(d, ".venv", ".gitignore"))).toBe(false);
+      expect(report.paths).toContain(".venv/.gitignore");
+      expect(report.failures).toEqual([]);
+    } finally {
+      _snapshotDeps.rename = realRename;
+      _snapshotDeps.git = deps.git;
+    }
+  });
+
+  test("B6: no private parking directory is left behind after a restore", async () => {
+    const d = await toolRepo();
+    const snap = await takeRepoSnapshot(d);
+    await mkdir(join(d, ".venv"), { recursive: true });
+    await writeFile(join(d, ".venv", ".gitignore"), "*\n");
+    await mkdir(join(d, "sub"), { recursive: true });
+    await writeFile(join(d, "sub", ".gitignore"), "*\n");
+    await restoreRepoSnapshot(snap);
+    const leftovers = [...(await readdir(join(d, ".venv"))), ...(await readdir(join(d, "sub")))];
+    expect(leftovers.filter((name) => name.startsWith(".nax-restore-hold"))).toEqual([]);
   });
 
   test("AC-3: an added .gitignore in a directory the snapshot rules ignore is removed and reported", async () => {
