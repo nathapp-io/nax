@@ -309,8 +309,13 @@ export async function runHelper(
   }
 
   // Redact first, truncate second. The other order can cut a secret in half and
-  // leave a fragment no redaction pattern can recognise.
-  const stderr = redactSecrets(run.stderr).slice(0, AUTH_HELPER_STDERR_MAX_BYTES);
+  // leave a fragment no redaction pattern can recognise. Helper stderr is an
+  // untrusted diagnostic channel: a real key may be concatenated to identifier
+  // text, so scrub sk-shaped values here even when the shared redactor's left
+  // boundary correctly treats the same text as an ordinary identifier.
+  const stderr = redactSecrets(run.stderr)
+    .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[REDACTED]")
+    .slice(0, AUTH_HELPER_STDERR_MAX_BYTES);
 
   if (run.trip === "cap") {
     return {
