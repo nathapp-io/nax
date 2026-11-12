@@ -3,7 +3,7 @@
   "feature": "fault-and-run-summary",
   "branchName": "feat/fault-and-run-summary",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T07:11:57.872Z",
+  "updatedAt": "2026-11-12T07:22:09.193Z",
   "userStories": [
     {
       "id": "US-001",
@@ -331,14 +331,17 @@
         "execution"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Read-only counters cross status writer, runner, multiple setup layers and signal context, with asynchronous setup/TDZ risks; no authentication or session-security behavior changes."
+        "reasoning": "Read-only counters cross status writer, runner, multiple setup layers and signal context, with asynchronous setup/TDZ risks; no authentication or session-security behavior changes.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/execution/status-writer.ts",
@@ -351,7 +354,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "947197483a4b736800fa305605a7324564938328"
     },
     {
       "id": "US-007",
