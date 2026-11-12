@@ -187,6 +187,15 @@ describe("the gate repair's review of its own diff (US-004)", () => {
     expect(h.ledger).toContain("gate repair r1 review skipped: could not read HEAD");
   });
 
+  // F1: the note is about the read, not about the session — a failed repair reports both.
+  test("AC-12: an unreadable HEAD before the repair still says so when the repair session fails too", async () => {
+    const h = harness({ heads: [new Error("git rev-parse failed")], fix: SESSION_FAILED });
+    const patch = await h.patch();
+    expect(h.ledger).toContain("gate repair r1 review skipped: could not read HEAD");
+    expect(patch).toHaveProperty("gateRepairRounds", 1);
+    expect("repairReviews" in patch).toBe(false);
+  });
+
   test("AC-13: a HEAD read that fails after the repair reviews nothing", async () => {
     const h = harness({ heads: ["h1", new Error("git rev-parse failed")] });
     await featureSteps.gateRepairStep(h.env, h.env.record);

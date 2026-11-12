@@ -141,16 +141,19 @@ async function noteSkippedHead(env: FeatureEnv, input: RepairReviewInput): Promi
  * read, no record line. Otherwise HEAD is read before the repair and again after it; a repair that
  * failed, or that moved nothing, is not reviewed and adds no line. Only a moved HEAD is reviewed,
  * once, and its verdict appends one line to the record's `repairReviews`.
+ *
+ * The HEAD note and the session failure are independent facts: a repair that failed under an
+ * unreadable HEAD writes both, so the ledger never hides why nothing was reviewed.
  */
 export async function reviewRepairDiff(env: FeatureEnv, input: RepairReviewInput): Promise<RepairReviewResult> {
   const review = env.steps.repairReview;
   if (review === undefined || input.findings.length === 0) return { outcome: await input.run(), patch: {} };
   const before = await readHead(env);
   const outcome = await input.run();
+  // The note is about the read, so it is written whatever the session did — including a failure.
+  if (before === undefined) return { outcome, patch: await noteSkippedHead(env, input) };
   // A failed session reviews nothing: there is no reply to hold a review against.
   if (outcome.failure) return { outcome, patch: {} };
-  // One unreadable HEAD — either side of the repair — skips the review, and never the repair.
-  if (before === undefined) return { outcome, patch: await noteSkippedHead(env, input) };
   const after = await readHead(env);
   if (after === undefined) return { outcome, patch: await noteSkippedHead(env, input) };
   // A repair that committed nothing leaves the reviewed tree as it was: nothing new to review.
