@@ -3,7 +3,7 @@
   "feature": "bot-and-prompt",
   "branchName": "feat/bot-and-prompt",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T13:25:09.266Z",
+  "updatedAt": "2026-11-12T13:35:30.102Z",
   "userStories": [
     {
       "id": "US-001",
@@ -129,14 +129,17 @@
         "logging"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Localized existing guard changes, but ignore-rule restoration prevents reviewer mutations from evading the comparison; this is security-sensitive session isolation and requires strict TDD."
+        "reasoning": "Localized existing guard changes, but ignore-rule restoration prevents reviewer mutations from evading the comparison; this is security-sensitive session isolation and requires strict TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/review/reviewer-guard/snapshot-ignore-rules.ts",
@@ -162,7 +165,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9f65dbdb98f6a59bbe44bd6406e052a2de846a2a"
     },
     {
       "id": "US-003",
