@@ -17,7 +17,7 @@ import { ledgerCannotVerify } from "./gate-timing";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { absorbInterrupt, type InterruptOrigin } from "./interrupt-continue";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
-import { runNoWorkLadder } from "./no-work";
+import { producedWork, runNoWorkLadder } from "./no-work";
 import { absorbReReviewVerdict } from "./re-review-absorb";
 import { runReportCheck } from "./report-check";
 import { describeFindings, startStep } from "./run-log";
@@ -337,6 +337,9 @@ export async function implementStep(env: StoryLoopEnv, state: StoryLoopState): P
   const result = await runNoWorkLadder(env, first, (turn) => implementTurn(env, turn));
   await absorbTurn(env, s, result.outcome, { stepUps: result.stepUps, limit: "implement" });
   if (result.closed) closeAs = { state: "complete-gate-open", reason: "no work produced" };
+  else if (result.outcome.failure && !env.aborted?.() && !(await producedWork(env)) && !env.aborted?.()) {
+    closeAs = { state: "complete-gate-open", reason: `implementer dispatch failed: ${result.outcome.failure}` };
+  }
   return {
     patch: {
       pendingSession: s.pendingSession,
@@ -346,7 +349,7 @@ export async function implementStep(env: StoryLoopEnv, state: StoryLoopState): P
       lastTurn: s.lastTurn,
       closeAs,
     },
-    exit: result.closed ? "no-work" : "worked",
+    exit: closeAs ? "no-work" : "worked",
   };
 }
 

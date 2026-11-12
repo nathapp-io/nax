@@ -10,6 +10,7 @@ import { defaultWorkflowAdvisor, type WorkflowAdvisor } from "@/workflow/advisor
 import type { ImplementOutcome, ImplementTurn } from "@/workflow/implement";
 import { newStoryRecord } from "@/workflow/result";
 import { runStoryLoop, type StoryLoopEnv, type StoryLoopSteps } from "@/workflow/story-loop";
+import { implementStep, initialStoryState } from "@/workflow/story-steps";
 import type { GateRunResult, StoryReviewVerdict, WorkflowStoryRecord } from "@/workflow/types";
 
 const GREEN: GateRunResult = {
@@ -168,6 +169,107 @@ function harness(opts: HarnessOptions = {}) {
     workCalls: () => workCounter.calls,
   };
 }
+
+describe("failed first dispatch", () => {
+  const failure = 'Agent "native" failed: Bad Request';
+  const failed: ImplementOutcome = { failure, autoCommitted: false };
+
+  test("AC-1–3: explicit no work closes gate-open with the dispatch reason", async () => {
+    const h = harness({ outcomes: [failed], work: [false] });
+    const result = await implementStep(h.env, initialStoryState(h.env));
+    expect(result.exit).toBe("no-work");
+    expect(result.patch?.closeAs).toEqual({
+      state: "complete-gate-open",
+      reason: `implementer dispatch failed: ${failure}`,
+    });
+  });
+
+  test.each([
+    { name: "work produced", work: [true] },
+    { name: "no evidence check", work: undefined },
+    { name: "evidence check throws", work: "throws" },
+  ] satisfies { name: string; work: HarnessOptions["work"] }[])(
+    "AC-4–7,16: $name keeps the session finding and proceeds",
+    async ({ work }) => {
+      const h = harness({ outcomes: [failed], work });
+      const result = await implementStep(h.env, initialStoryState(h.env));
+      expect(result.exit).toBe("worked");
+      expect(result.patch?.pendingSession).toEqual(
+        expect.arrayContaining([expect.objectContaining({ issue: `implementer session failed: ${failure}` })]),
+      );
+    },
+  );
+
+  test("AC-8: an aborted run does not close for dispatch failure", async () => {
+    const h = harness({ outcomes: [failed], work: [false] });
+    const env = { ...h.env, aborted: () => true };
+    const result = await implementStep(env, initialStoryState(env));
+    expect(result.patch?.closeAs?.reason?.startsWith("implementer dispatch failed:")).not.toBe(true);
+  });
+
+  test("an abort during the evidence check prevents the dispatch close", async () => {
+    const h = harness({ outcomes: [failed] });
+    let aborted = false;
+    h.env.steps.workProduced = async () => {
+      aborted = true;
+      return false;
+    };
+    const env = { ...h.env, aborted: () => aborted };
+    const result = await implementStep(env, initialStoryState(env));
+    expect(result.exit).toBe("worked");
+    expect(result.patch?.closeAs).toBeUndefined();
+  });
+
+  test("AC-9: a successful reply is not a dispatch failure", async () => {
+    const h = harness({ outcomes: [doneTurn], work: [false] });
+    const result = await implementStep(h.env, initialStoryState(h.env));
+    expect(result.patch?.closeAs?.reason?.startsWith("implementer dispatch failed:")).not.toBe(true);
+  });
+
+  test("AC-10–13: the loop closes before gates and review without fix rounds", async () => {
+    const h = harness({ outcomes: [{ failure: "Bad Request", autoCommitted: false }], work: [false] });
+    const outcome = await runStoryLoop(h.env);
+    expect(h.gateSteps).not.toContain("gates");
+    expect(h.gateSteps).not.toContain("story-review");
+    expect(outcome).toMatchObject({ state: "complete-gate-open", rounds: 0 });
+  });
+
+  test.each([
+    { name: "work produced", work: [true] },
+    { name: "check rejects", work: "throws" },
+  ] satisfies { name: string; work: HarnessOptions["work"] }[])(
+    "AC-14–15,17: $name runs gates and passes the session finding to the fix",
+    async ({ work }) => {
+      const h = harness({ outcomes: [{ failure: "Bad Request", autoCommitted: false }, doneTurn], work });
+      await runStoryLoop(h.env);
+      expect(h.gateSteps).toContain("gates");
+      const fix = h.turns.find((turn) => turn.kind === "fix");
+      expect(fix?.findings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ issue: "implementer session failed: Bad Request" })]),
+      );
+    },
+  );
+
+  test("a failure in a fix turn retains the session finding despite no work evidence", async () => {
+    const h = harness({
+      outcomes: [{ failure: "first", autoCommitted: false }, { failure: "fix failed", autoCommitted: false }, doneTurn],
+      work: [true, false],
+    });
+    await runStoryLoop(h.env);
+    const fixes = h.turns.filter((turn) => turn.kind === "fix");
+    expect(fixes[1]?.findings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ issue: "implementer session failed: fix failed" })]),
+    );
+    expect(h.workCalls()).toBe(1);
+  });
+
+  test("a failed restart uses the ladder's last outcome", async () => {
+    const h = harness({ outcomes: [noWorkTurn, failed], work: [false, false] });
+    const outcome = await runStoryLoop(h.env);
+    expect(outcome.reason).toBe(`implementer dispatch failed: ${failure}`);
+    expect(h.gateSteps).toEqual([]);
+  });
+});
 
 describe("no-work ladder (US-002)", () => {
   test("AC-1: a no-work first turn gets a warm restart before the gates", async () => {
