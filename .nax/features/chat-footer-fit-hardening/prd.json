@@ -3,7 +3,7 @@
   "feature": "chat-footer-fit-hardening",
   "branchName": "feat/chat-footer-fit-hardening",
   "createdAt": "2026-11-11T00:00:00.000Z",
-  "updatedAt": "2026-11-12T04:06:19.225Z",
+  "updatedAt": "2026-11-12T04:20:39.059Z",
   "userStories": [
     {
       "id": "US-001",
@@ -234,14 +234,17 @@
         "working-row"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Two pure source functions gain a trailing optional parameter and delegation while reusing existing elapsed-time and width helpers; standard compatibility and malformed-time tests suffice."
+        "reasoning": "Two pure source functions gain a trailing optional parameter and delegation while reusing existing elapsed-time and width helpers; standard compatibility and malformed-time tests suffice.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/chat-status.ts",
@@ -277,7 +280,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b82416defffd51b5bb6263389f550ebf14f8e169"
     },
     {
       "id": "US-005",
