@@ -23,6 +23,9 @@ const UNAVAILABLE: SandboxState = { kind: "unavailable", backend: "srt", reason:
 const GAP = 2;
 /** The marker the last resort ends a cut left side with, from the Unicode glyph set. */
 const ELLIPSIS = "…";
+/** What step 8 shortens the sandbox warning to, and the warning it replaces. */
+const SHORT_WARNING = "sandbox n/a";
+const LONG_WARNING = "sandbox unavailable";
 const WIDEST = 120;
 const NARROWEST = 10;
 
@@ -128,14 +131,23 @@ describe("fittedFooterModel drops a sandbox that is off before the mode", () => 
   });
 
   test("AC-5 an overlay's own escape key stays ahead of the mode at 40 columns", () => {
-    const { left } = fittedWithSandbox({ width: 40, sandbox: "absent", hint: "layer", layerHint: "esc to deny" });
-    expect(left.startsWith("⏵ guarded")).toBe(true);
+    const footer = fittedWithSandbox({ width: 40, sandbox: "absent", hint: "layer", layerHint: "esc to deny" });
+    // The absent sandbox's `sandbox off` segment goes (step 6) before the mode, so the overlay's
+    // key, the mode and the cost are all drawn; only step 6 makes that fit at 40 columns.
+    expect({ left: footer.left, right: footer.right }).toEqual({ left: "⏵ guarded · esc to deny", right: "$0.42" });
   });
 });
 
 describe("fittedFooterModel elides the last resort instead of cutting it", () => {
   test("AC-6 at 24 columns nothing is left on the right of an unavailable sandbox", () => {
-    expect(fittedWithSandbox({ width: 24, sandbox: "unavailable" }).right).toBe("");
+    const footer = fittedWithSandbox({ width: 24, sandbox: "unavailable" });
+    // The row the empty right side leaves behind is the short warning, marked: a bare cut of the
+    // long warning would end mid-word and the pre-story fitter drew no marker at all.
+    expect({ left: footer.left, right: footer.right }).toEqual({
+      left: `esc to interrupt · sand${ELLIPSIS}`,
+      right: "",
+    });
+    expect(footer.footer.stripWidth).toBe(0);
   });
 
   test("AC-7 at 24 columns the left side ends with the theme's ellipsis within the row", () => {
@@ -147,7 +159,8 @@ describe("fittedFooterModel elides the last resort instead of cutting it", () =>
   test("AC-11 a width of 0 leaves one column of left, marked", () => {
     const { footer, left } = fittedWithSandbox({ width: 0, sandbox: "available" });
     expect(spansWidth(footer.left)).toBeLessThanOrEqual(1);
-    expect(left.length).toBeGreaterThan(0);
+    // One column is the marker's alone: the pre-story cut drew the first cluster of the footer.
+    expect(left).toBe(ELLIPSIS);
   });
 
   test("a three-column ASCII marker on a two-column row is bounded to the row", () => {
@@ -175,6 +188,23 @@ describe("fittedFooterModel fits every hint, mode and sandbox state", () => {
     expect(overflows).toEqual([]);
   });
 
+  test("AC-8 an unavailable sandbox keeps its warning, whole or short, or is marked as cut", () => {
+    // Fitting inside the width must not be bought by dropping the warning: it is drawn whole
+    // where the row affords it, in short form at step 8, and as the marked head of an elision.
+    const lost: string[] = [];
+    for (const width of WIDTHS) {
+      for (const hint of HINTS) {
+        if (hint === "quit") continue;
+        for (const mode of MODES) {
+          const { left } = fittedWithSandbox({ width, hint, sandbox: "unavailable", state: { mode } });
+          const keepsWarning = left.includes(LONG_WARNING) || left.includes(SHORT_WARNING) || left.endsWith(ELLIPSIS);
+          if (!keepsWarning) lost.push(`${hint}/${mode} at ${width}: ${JSON.stringify(left)}`);
+        }
+      }
+    }
+    expect(lost).toEqual([]);
+  });
+
   test("AC-9 the left side never ends in a space, and never in a space before the ellipsis", () => {
     const trailing: string[] = [];
     for (const width of WIDTHS) {
@@ -195,6 +225,11 @@ describe("fittedFooterModel normalises the width it is given", () => {
     const fractional = fittedWithSandbox({ width: 40.9, sandbox: "unavailable" });
     const whole = fittedWithSandbox({ width: 40, sandbox: "unavailable" });
     expect({ left: fractional.left, right: fractional.right }).toEqual({ left: whole.left, right: whole.right });
+    // …and what both are is the 40-column row steps 6–9 produce, not the pre-story cut of it.
+    expect({ left: fractional.left, right: fractional.right }).toEqual({
+      left: `esc to interrupt · ${SHORT_WARNING}`,
+      right: "$0.42",
+    });
   });
 
   test("AC-13 every finite width below 1 or between two columns fits as its normalised width", () => {
@@ -208,5 +243,9 @@ describe("fittedFooterModel normalises the width it is given", () => {
       })
       .map(({ width, normalised }) => `${width} differs from ${normalised}`);
     expect(mismatches).toEqual([]);
+    // Normalisation feeds the whole pipeline, so the anchored widths land on its own answers: the
+    // short warning at 40 columns, and the marker alone on the one-column floor.
+    expect(fittedWithSandbox({ width: 40.9, sandbox: "unavailable" }).left).toBe(`esc to interrupt · ${SHORT_WARNING}`);
+    expect(fittedWithSandbox({ width: 0.999, sandbox: "unavailable" }).left).toBe(ELLIPSIS);
   });
 });
