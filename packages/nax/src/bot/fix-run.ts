@@ -14,7 +14,7 @@ import { runPreRunSteps } from "../execution/lifecycle/pre-run-steps";
 import { botRunDir } from "../workflow/paths";
 import { _workflowDeps } from "../workflow/step-context";
 import { initBotInteractionChain } from "./chat-asks";
-import { type BotChecks, resolveBotChecks } from "./checks";
+import { type BotChecks, resolveBotChecks, reviewBuildSteps } from "./checks";
 import { botCostEnv } from "./cost";
 import { checkPushAccess, loadLatestReview } from "./fix-input";
 import { readyStep, replyStep, reportStep } from "./fix-report";
@@ -256,6 +256,28 @@ async function recordFixRulings(
   }
 }
 
+/**
+ * US-003: a fresh checkout is built after its install, so the checks the fix runs can import the
+ * workspace packages a build produces. A build that stops with `PRE_RUN_FAILED` is a warning — the
+ * fix still runs, and its own gates report the checkout's real state. Anything else (a spawn failure,
+ * an unrelated error) propagates rather than reading as a setup warning.
+ */
+async function runFixBuild(env: BotFixEnv): Promise<void> {
+  const steps = reviewBuildSteps(env.checks);
+  if (steps.length === 0) return;
+  try {
+    await _botFixDeps.runPreRunSteps({ steps, workdir: env.checkout.worktree });
+  } catch (error) {
+    if (!(error instanceof NaxError) || error.code !== "PRE_RUN_FAILED") throw error;
+    const command = typeof error.context?.command === "string" ? error.context.command : "unknown";
+    getLogger()?.warn("bot-fix", "Fix build step failed", {
+      pr: env.ref.number,
+      command,
+      error: errorMessage(error),
+    });
+  }
+}
+
 async function initialFixState(env: BotFixEnv, outputDir: string, input: BotFixInput): Promise<BotFixState> {
   if (input.readyOnly) return { step: "ready", timings: {}, readyOnly: true, outcome: "ready-pass" };
   let initial: BotFixState = env.checkout.inPlace
@@ -275,6 +297,8 @@ async function initialFixState(env: BotFixEnv, outputDir: string, input: BotFixI
           outcome: "setup-failed",
           setupFailed: "in-place checkout not clean after setup",
         };
+    } else {
+      await runFixBuild(env);
     }
   } catch (error) {
     if (!(error instanceof NaxError) || error.code !== "PRE_RUN_FAILED") throw error;
