@@ -1,0 +1,357 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-footer-fit-hardening",
+  "branchName": "feat/chat-footer-fit-hardening",
+  "createdAt": "2026-11-11T00:00:00.000Z",
+  "updatedAt": "2026-11-12T03:09:26.899Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Role-tagged footer segments",
+      "description": "**Goal** — Add the role-tagged footerSegments model while preserving every legacy footerModel output.\n\n**Motivation** — The fitter is coupled to display text.\n\n**Approach** — Target: `export function footerSegments(input: Parameters<typeof footerModel>[0]): { left: readonly FooterSegment[]; right: readonly FooterSegment[] }`, where `export interface FooterSegment { readonly role: FooterRole; readonly span: Span }` and `export type FooterRole = \"mode\" | \"gesture\" | \"gestureExtra\" | \"sandbox\" | \"strip\" | \"model\" | \"context\" | \"cost\"`. A segment's `span.text` never carries a leading ` · ` separator; the fitter joins segments with ` · `.\n\n`footerModel`: Target: same signature and same output for every input; its `right` plain text equals the `footerSegments` `right` texts joined with ` · `. Its `left` is not re-derived from `footerSegments`, because the idle `/ commands` gesture exists only in the fitted footer.\n\nHow hints split into segments:\n\n| hint | `gesture` | `gestureExtra` |\n| --- | --- | --- |\n| `idle` | `/ commands` | `shift+tab to cycle` |\n| `background` | `esc to interrupt` | `ctrl+b to background` |\n| `backgroundTmux` | `esc to interrupt` | `ctrl+b ctrl+b to background` |\n| any other | the existing hint text | none |\n\nFor the `quit` hint, `footerSegments` returns `left` as a single `gesture` segment with the warning quit text and the usual `right` (strip, model, context, cost), as `footerModel` does today. The pipeline treats it like any other hint.\n\nReuse the existing mode, sandbox, cost, model, context and strip producers while adapting separator-bearing legacy spans at this semantic boundary. Keep contextSpan(state, status): Span | undefined unchanged. Preserve order, styles, status-based context, optional jobs/tasks, copiedChars/layerHint, glyph defaults, and the legacy span shapes used by existing tests. Fixture defaults, unless an acceptance criterion says otherwise: mode `guarded`, model `opencode-go/deepseek-v4.1-flash`, `costUsd: 0.42`, no jobs, no tasks, no `contextTokens`, no `contextWindow`, Unicode glyphs, and a `TurnStatus` spread over `IDLE_STATUS`.\n\n**Scope** — In: packages/nax/src/tui/chat/chat-status.ts exports and compatible composition; create packages/nax/test/unit/tui/chat/footer-segments.test.ts. Out: fitter pipeline/render seam (US-002/003), workingLine changes (US-004), help changes (US-005). Retiring the unfitted `footerModel` export, which only tests call once `ChatApp` renders through `fittedFooterModel`, is deferred.\n\n**Interface** —\n```typescript\nexport type FooterRole = \"mode\" | \"gesture\" | \"gestureExtra\" | \"sandbox\" | \"strip\" | \"model\" | \"context\" | \"cost\";\nexport interface FooterSegment { readonly role: FooterRole; readonly span: Span }\nexport function footerSegments(input: Parameters<typeof footerModel>[0]): { left: readonly FooterSegment[]; right: readonly FooterSegment[] }\n```\nThe footerModel input and return signatures stay unchanged; return shape is { left: StyledLine; right: StyledLine; stripWidth: number }.",
+      "acceptanceCriteria": [
+        "[unit] footerSegments with hint busy and sandbox available returns left with roles [\"mode\", \"gesture\"].",
+        "[unit] footerSegments with hint busy and sandbox available returns right with roles [\"model\", \"cost\"].",
+        "[unit] footerSegments with costUsd: 0.42 returns a cost segment whose text is exactly $0.42, with no leading ` · `.",
+        "[unit] footerSegments with hint idle returns a gesture segment / commands followed by a gestureExtra segment shift+tab to cycle.",
+        "[unit] footerSegments with hint background returns a gesture segment esc to interrupt followed by a gestureExtra segment ctrl+b to background.",
+        "[unit] footerSegments with hint backgroundTmux returns a gestureExtra segment ctrl+b ctrl+b to background.",
+        "[unit] footerSegments with sandbox unavailable ends left with a sandbox segment whose span is { text: \"sandbox unavailable\", color: \"warning\" }.",
+        "[unit] footerSegments with one job returns right beginning with a strip segment whose text equals formatJobStrip(jobs, []).",
+        "[unit] footerSegments with no jobs and one task { command: \"bun test\" } returns right beginning with a strip segment whose text equals formatJobStrip([], tasks).",
+        "[unit] footerSegments with status.contextTokens 1200 returns a context segment between model and cost.",
+        "[unit] footerSegments with hint quit returns left as one gesture segment press ctrl-c again to quit.",
+        "[unit] footerSegments with hint quit returns right with roles [\"model\", \"cost\"].",
+        "[unit] For hints busy, expanded, clear and quit, with sandbox available, unavailable and absent, and with zero or one job, the plain text of footerModel's right equals the footerSegments right texts joined with ` · `.",
+        "[unit] footerModel with hint idle, sandbox available and the shared fixture defaults returns { left: [{ text: \"⏵ guarded\", color: \"muted\" }, { text: \" · \", color: \"muted\" }, { text: \"shift+tab to cycle\", color: \"muted\" }], right: [{ text: \"deepseek-v4.1-flash\" }, { text: \" · $0.42\", color: \"muted\" }], stripWidth: 0 }, preserving the existing unfitted span shapes and idle gesture."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "chat",
+        "footer"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded semantic model addition in one source module with existing pure producers, but compatibility includes legacy text, styles and span grouping. Write segment and compatibility tests first.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/context-span.ts",
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+        "packages/nax/test/unit/tui/chat/chat-status-tasks.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/footer-segments.test.ts"
+      ],
+      "suggestedCriteria": [
+        "footerModel returns the same complete left, right and stripWidth values as the baseline for idle, background and backgroundTmux hints with available, unavailable and disabled sandboxes.",
+        "footerSegments returns only segment texts without a leading ` · ` for both sides when jobs, tasks and contextTokens are present."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/chat-status.ts",
+          "reason": "adds `footerSegments`, `FooterSegment` and `FooterRole`; `footerModel` may be re-expressed over the segments but its output must not change."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6c3ec8d0bb6e59f7c10d9014924e659ab8e35699"
+    },
+    {
+      "id": "US-002",
+      "title": "Fit footer segments through right-side and extra-hint drops",
+      "description": "**Goal** — Rewrite fittedFooterModel to consume footerSegments and implement the first five ordered fitting steps, proving the semantic seam reaches the mounted screen.\n\n**Motivation** — Changing `HINT_TEXT.idle` or the span order in `rightLine`/`leftLine` breaks the fitting with no error.\n\n**Approach** — Target: same signature and return shape `{ left: StyledLine; right: StyledLine; stripWidth: number }`, computed from `footerSegments` by the drop pipeline below. Neither the source text nor the span index of any segment may influence the result.\n\n`fittedFooterModel` starts from every segment of `footerSegments` and applies these steps in order. It stops at the first state where `width(left) + width(right) + (right empty ? 0 : 2) <= width`:\n\n1. Drop `model`.\n2. Drop `context`.\n3. Replace the `strip` segment with the job summary `N active (ctrl+g)` (N = jobs + tasks). `stripWidth` becomes the summary's width.\n4. Drop the job summary (`stripWidth` 0).\n5. Drop `gestureExtra`.\n\nSelect drops by FooterRole, not text equality or span offsets. Join retained segments with ` · `, never with separators pre-attached to values. Measuring display width is still required; the prohibition concerns using display strings/indices to infer roles or decide semantic transformations. Check the unmodified state first, then each cumulative step, rather than enumerating independent left/right combinations. Retain existing width-fit behavior for inputs beyond these first five steps while leaving the specified new left-side behavior to US-003.\n\nFor the `quit` hint, `footerSegments` returns `left` as a single `gesture` segment with the warning quit text and the usual `right` (strip, model, context, cost), as `footerModel` does today. The pipeline treats it like any other hint.\n\n`ChatApp.tsx` currently imports `fittedFooterModel as footerModel` and `fittedWorkingLine as workingLine`. The implementer may import them under their own names. This is not required.\n\n`packages/nax/src/tui/chat/use-jobs-opener.ts`: `footerStripHit({ x, y, footerRow, columns, rightWidth, stripWidth })`. Its caller in `useJobsOpener` passes `spansWidth(footer.right)` and `footer.stripWidth` from the footer the screen renders.\n\nPreserve that fitted-footer render and hit-test connection. With footerSegments stubbed to left gesture STUB-GESTURE and right cost STUB-COST, the last row of a mounted 80x20 ChatApp must show both. Mount a real available-sandbox running turn at 40x20 and check the final row rather than matching the header. Existing fittedFooterModel cases in test/unit/tui/chat/status-layout.test.ts stay as written, including the width-fit invariant over 10–120 columns. Fixture defaults, unless an acceptance criterion says otherwise: mode `guarded`, model `opencode-go/deepseek-v4.1-flash`, `costUsd: 0.42`, no jobs, no tasks, no `contextTokens`, no `contextWindow`, Unicode glyphs, and a `TurnStatus` spread over `IDLE_STATUS`.\n\n**Scope** — In: rewrite packages/nax/src/tui/chat/status-layout.ts fittedFooterModel; preserve or adjust ChatApp wiring as needed; add footer-fit-pipeline.test.ts and chat-app-narrow-footer.test.tsx. Out: segment production (US-001), new left-side steps 6–10/short warning/ellipsis matrix (US-003), working-row delegation (US-004), help (US-005). US-002 only: the job strip is not elided segment by segment; it is replaced whole by the job summary, then dropped. The header's model elision at narrow widths (`deepseek…` at 40 columns, `…` at 30) is not changed by this feature, even though the fitted footer drops the model on the assumption that the header shows it.\n\n**Interface** —\n```typescript\nfittedFooterModel(input: Parameters<typeof footerModel>[0] & { readonly width: number }): { left: StyledLine; right: StyledLine; stripWidth: number }\n```\nUnchanged integration primitives: `spansWidth(spans: readonly Span[]): number`, `cutSpans(spans: readonly Span[], columns: number): StyledLine`. Consume the US-001 export `footerSegments(input: Parameters<typeof footerModel>[0]): { left: readonly FooterSegment[]; right: readonly FooterSegment[] }`.",
+      "acceptanceCriteria": [
+        "[unit] fittedFooterModel at width 40, hint busy, sandbox available returns left ⏵ guarded · esc to interrupt.",
+        "[unit] fittedFooterModel at width 40, hint busy, sandbox available returns right $0.42.",
+        "[unit] fittedFooterModel at width 40, hint background, sandbox available returns { left: \"⏵ guarded · esc to interrupt\", right: \"$0.42\" } in plain text.",
+        "[unit] fittedFooterModel at width 60, hint background, sandbox available returns left ⏵ guarded · esc to interrupt · ctrl+b to background.",
+        "[unit] fittedFooterModel at width 40, hint idle, sandbox available returns { left: \"⏵ guarded · / commands\", right: \"$0.42\" } in plain text.",
+        "[unit] fittedFooterModel at width 60, hint busy, sandbox available, one job { kind: \"run\", target: \"feat\", progress: { passed: 1, total: 3 } } returns right run feat 1/3 · $0.42.",
+        "[unit] fittedFooterModel at width 60, hint busy, sandbox available, one job { kind: \"run\", target: \"feat\", progress: { passed: 1, total: 3 } } returns stripWidth equal to the display width of run feat 1/3.",
+        "[unit] fittedFooterModel at width 60, hint busy, sandbox available, two run jobs with 20-character targets and one task { command: \"bun test\" } returns right 3 active (ctrl+g) · $0.42.",
+        "[unit] fittedFooterModel at width 60, hint busy, sandbox available, two run jobs with 20-character targets and one task returns stripWidth equal to the display width of 3 active (ctrl+g).",
+        "[unit] fittedFooterModel at width 36, hint busy, sandbox available, three run jobs returns { stripWidth: 0, right: \"$0.42\" } with right measured as plain text.",
+        "[unit] fittedFooterModel at width 45, hint busy, sandbox available, status.contextTokens 1200 returns { left: \"⏵ guarded · esc to interrupt\", right: \"$0.42\" } in plain text.",
+        "[unit] fittedFooterModel at width 30, hint background, sandbox available returns a left whose plain text has no ctrl+b.",
+        "[unit] fittedFooterModel with hint layer, layerHint shift+tab to cycle and sandbox available at width 40 returns a left containing shift+tab to cycle and not / commands.",
+        "[unit] fittedFooterModel with hint quit, sandbox available at width 40 returns { left: \"press ctrl-c again to quit\", right: \"$0.42\" } in plain text.",
+        "[integration] With footerSegments stubbed to return left of one gesture segment STUB-GESTURE and right of one cost segment STUB-COST, mounting ChatApp at 80x20 renders a last row containing STUB-GESTURE and STUB-COST.",
+        "[integration] Mounting ChatApp at 40x20 with sandbox available and a running turn renders a last row containing esc to interrupt and $0.00, at most 40 columns wide."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "chat",
+        "footer",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Rewrites one pure fitter over the upstream segment API; ChatApp already renders its result and forwards it to hit testing, so existing Ink mounting and spies can verify the seam without a new integration architecture or multi-session isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/status-layout.ts",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/use-jobs-opener.ts",
+        "packages/nax/src/tui/chat/wrap.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/footer-fit-pipeline.test.ts",
+        "packages/nax/test/ui/chat/chat-app-narrow-footer.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When a stubbed footerSegments supplies a gestureExtra with arbitrary text, fittedFooterModel drops that segment before eliding the primary gesture at a width requiring step 5.",
+        "When the fitted job strip becomes 3 active (ctrl+g), footerStripHit returns true for the first and last displayed summary cells and false for the neighboring cells."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/status-layout.ts",
+          "reason": "`fittedFooterModel` is rewritten over `footerSegments`; its signature and return shape stay the same."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/status-layout.test.ts",
+          "reason": "the existing `fittedFooterModel` cases stay as written; the width-fit invariant over 10–120 columns remains."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Preserve cost and sandbox warnings with bounded end-elision",
+      "description": "**Goal** — Complete the footer drop pipeline so unavailable/off sandboxes retain cost at 40 columns and every last-resort cut is ellipsized without overflow or trailing spaces.\n\n**Motivation** — At 40 columns, `busy` with `sandbox unavailable` renders `esc to interrupt · sandbox unavailable` and no cost.\n\n**Approach** — `fittedFooterModel` starts from every segment of `footerSegments` and applies these steps in order. It stops at the first state where `width(left) + width(right) + (right empty ? 0 : 2) <= width`:\n\n1. Drop `model`.\n2. Drop `context`.\n3. Replace the `strip` segment with the job summary `N active (ctrl+g)` (N = jobs + tasks). `stripWidth` becomes the summary's width.\n4. Drop the job summary (`stripWidth` 0).\n5. Drop `gestureExtra`.\n6. Drop a `sandbox off` segment. The header still states `sandbox off`; the warning `sandbox unavailable` is never dropped here.\n7. Drop `mode`.\n8. Replace a `sandbox unavailable` segment with its short form `sandbox n/a`, keeping its warning color.\n9. Drop `cost`.\n10. Last resort: `right` is empty, and `left` is the remaining segments joined and elided at the end to `width` with `glyphs.ellipsis`.\n\nSteps 1–5 are supplied by US-002; extend them cumulatively, checking the initial state and every following state, not a cross-product of variants. Neither the source text nor the span index of any segment may influence the result. Determine sandbox kind from input.state.sandbox and select spans by role; do not detect warning/off by comparing displayed strings. Always recompute stripWidth from the retained strip/summary, or zero when dropped.\n\nFor the `quit` hint, `footerSegments` returns `left` as a single `gesture` segment with the warning quit text and the usual `right` (strip, model, context, cost), as `footerModel` does today. The pipeline treats it like any other hint.\n\nThe footer must never render wider than `width`.\n\n| Condition | Behaviour |\n| --- | --- |\n| `width` below 1 or not an integer | Treated as `Math.max(1, Math.floor(width))`, as today. |\n| Remaining segments wider than `width` after step 9 | Step 10 elides with `glyphs.ellipsis`; never a bare cut. |\n\n`ChatGlyphs.ellipsis` (`\"…\"` Unicode, `\"...\"` ASCII). Use spansWidth and cutSpans unchanged, reserving the marker's display width before cutting; on a budget smaller than the ASCII marker, bound the marker to the budget. Separators belong only between retained segments; plain-text left must never end in a space. Fixture defaults, unless an acceptance criterion says otherwise: mode `guarded`, model `opencode-go/deepseek-v4.1-flash`, `costUsd: 0.42`, no jobs, no tasks, no `contextTokens`, no `contextWindow`, Unicode glyphs, and a `TurnStatus` spread over `IDLE_STATUS`.\n\nExpected results at 40 columns with `costUsd: 0.42`:\n\n| hint | sandbox | left | right |\n| --- | --- | --- | --- |\n| `busy` | available | `⏵ guarded · esc to interrupt` | `$0.42` |\n| `busy` | unavailable | `esc to interrupt · sandbox n/a` | `$0.42` |\n| `busy` | off | `⏵ guarded · esc to interrupt` | `$0.42` |\n| `background` | available | `⏵ guarded · esc to interrupt` | `$0.42` |\n| `idle` | available | `⏵ guarded · / commands` | `$0.42` |\n\nAdd the full integer-width 10–120 matrix, named hints and sandbox states specified in the criteria, including guarded/full for the width invariant. Extend the US-002 mounted-screen file with the real unavailable-sandbox running-turn case.\n\n**Scope** — In: packages/nax/src/tui/chat/status-layout.ts steps 6–10 and width normalization; create footer-fit-left.test.ts and extend upstream chat-app-narrow-footer.test.tsx. Out: redefining semantic segments (US-001), replacing established steps 1–5 or their render seam (US-002), workingLine width behavior (US-004), help (US-005). The header's model elision at narrow widths (`deepseek…` at 40 columns, `…` at 30) is not changed by this feature, even though the fitted footer drops the model on the assumption that the header shows it. Contrast and color across terminal themes are not measured or changed.\n\n**Interface** —\n```typescript\nfittedFooterModel(input: Parameters<typeof footerModel>[0] & { readonly width: number }): { left: StyledLine; right: StyledLine; stripWidth: number }\n```\nKeep the existing input/return shape and the useJobsOpener rendered-footer contract unchanged.",
+      "acceptanceCriteria": [
+        "[unit] fittedFooterModel at width 40, hint busy, sandbox unavailable returns left esc to interrupt · sandbox n/a.",
+        "[unit] fittedFooterModel at width 40, hint busy, sandbox unavailable returns right $0.42.",
+        "[unit] fittedFooterModel at width 40, hint busy, sandbox unavailable returns a left in which the span whose text includes sandbox n/a has color warning.",
+        "[unit] fittedFooterModel at width 40, hint busy, sandbox absent returns { left: \"⏵ guarded · esc to interrupt\", right: \"$0.42\" } in plain text.",
+        "[unit] fittedFooterModel at width 40, hint layer, layerHint esc to deny, sandbox absent returns a left beginning ⏵ guarded.",
+        "[unit] fittedFooterModel at width 24, hint busy, sandbox unavailable returns an empty right.",
+        "[unit] fittedFooterModel at width 24, hint busy, sandbox unavailable returns a left whose plain text is at most 24 columns wide and ends with ….",
+        "[unit] For every width from 10 to 120, every hint in idle, busy, background, backgroundTmux, expanded, clear, copied and quit, modes guarded and full, and sandbox available, unavailable and absent, fittedFooterModel's left width plus right width plus the 2-column gap (counted only when right is non-empty) is at most the width.",
+        "[unit] For every width from 10 to 120, every hint in idle, busy, background, backgroundTmux, expanded, clear, copied and quit, and sandbox available, unavailable and absent, the plain text of fittedFooterModel's left never ends with a space.",
+        "[unit] fittedFooterModel at width 40.9 returns the same left and right as at width 40 for hint busy, sandbox unavailable.",
+        "[unit] fittedFooterModel at width 0, hint busy, sandbox available returns a left whose plain text is at most 1 column wide.",
+        "[integration] Mounting ChatApp at 40x20 with sandbox unavailable and a running turn renders a last row containing sandbox n/a and $0.00, at most 40 columns wide.",
+        "[unit] fittedFooterModel with hint busy and sandbox unavailable returns the same left and right for each finite width that is below 1 or non-integer as for Math.max(1, Math.floor(width)), including negative widths and fractional widths."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "chat",
+        "footer",
+        "layout"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends an established segment pipeline with deterministic transformations, bounded elision and a mounted regression, without a new subsystem or contract; exercise the matrix and failure cases before implementation."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/status-layout.ts",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/wrap.ts",
+        "packages/nax/src/tui/chat/theme.ts",
+        "packages/nax/test/ui/chat/chat-app-narrow-footer.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/footer-fit-left.test.ts"
+      ],
+      "suggestedCriteria": [
+        "fittedFooterModel at width 40, hint busy, sandbox { kind: \"disabled\" } returns plain-text left ⏵ guarded · esc to interrupt and right $0.42.",
+        "fittedFooterModel with ASCII glyphs at widths 1, 2, 3 and 12 never exceeds the normalized display-column budget, and an elided left ends in a fitting prefix of the ASCII ellipsis."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/status-layout.ts",
+          "reason": "adds pipeline steps 6–10 to `fittedFooterModel`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Centralize width-aware working-row composition",
+      "description": "**Goal** — Give workingLine width-aware compact output based on elapsedMs and make fittedWorkingLine an explicit five-argument delegate.\n\n**Motivation** — `fittedWorkingLine` re-derives the seconds with its own `Date.parse` and lacks `elapsedMs`'s non-finite `nowMs` guard.\n\n**Approach** — `workingLine` Target: `workingLine(status, nowMs, glyphs, escHint = ESC_INTERRUPT, width?: number)`. When `width` is given and the full line is wider, it returns the spinner, verb and ` (Ns)` built from `elapsedMs`. If that is still wider than `width`, the end is elided with `glyphs.ellipsis`.\n\n`fittedWorkingLine` Target: `fittedWorkingLine(status: TurnStatus, now: number, glyphs: ChatGlyphs, hint: string | undefined, width: number): StyledLine | undefined`, with explicit parameters instead of the `Parameters<typeof workingLine>` tuple spread. It returns `workingLine(status, now, glyphs, hint, width)`. The narrow working row drops the token count and the esc hint; the footer carries the esc action.\n\n| Condition | Behaviour |\n| --- | --- |\n| `nowMs` or `startedAt` not finite in `workingLine` | Elapsed is 0 seconds, via `elapsedMs`. |\n\nCompose the full and compact rows from explicit frame/verb/elapsed components instead of removing an assumed final span. Reuse elapsedMs's existing missing/unparseable start, non-finite now and backward-clock guards. Preserve full output when width is omitted or the full row fits, including custom escHint, usage/estimated tokens, phase/tool title, colors and empty-spinner behavior; idle still returns undefined. Reuse spansWidth and cutSpans unchanged for display-column measurement and reserve the theme ellipsis when compact output still exceeds width. Fixture defaults, unless an acceptance criterion says otherwise: mode `guarded`, model `opencode-go/deepseek-v4.1-flash`, `costUsd: 0.42`, no jobs, no tasks, no `contextTokens`, no `contextWindow`, Unicode glyphs, and a `TurnStatus` spread over `IDLE_STATUS`.\n\nThe existing `fittedWorkingLine` calls pass five positional arguments; they stay valid under the explicit-parameter signature and keep asserting `Thinking...`, `12s` and the 40-column width. `ChatApp.tsx` currently imports `fittedFooterModel as footerModel` and `fittedWorkingLine as workingLine`. The implementer may import them under their own names. This is not required. Do not change production caller argument order.\n\n**Scope** — In: workingLine optional trailing width in packages/nax/src/tui/chat/chat-status.ts; fittedWorkingLine delegation in status-layout.ts; create working-line-fit.test.ts and retain existing status-layout working-row assertions. Out: footer segment production (US-001), footer drop pipeline and sandbox fitting (US-002/003), help output (US-005).\n\n**Interface** —\n```typescript\nworkingLine(status, nowMs, glyphs, escHint = ESC_INTERRUPT, width?: number)\nfittedWorkingLine(status: TurnStatus, now: number, glyphs: ChatGlyphs, hint: string | undefined, width: number): StyledLine | undefined\n```\nworkingLine retains its existing TurnStatus, number, ChatGlyphs and string parameter types and StyledLine | undefined return type, adding only the optional trailing width.",
+      "acceptanceCriteria": [
+        "[unit] workingLine with width 40, status { ...IDLE_STATUS, running: true, phase: \"thinking\", startedAt: \"2026-11-11T00:00:00Z\", streamedChars: 40 } and nowMs 12 seconds after startedAt returns a line whose plain text ends with (12s) and is at most 40 columns wide.",
+        "[unit] workingLine with no width, status { ...IDLE_STATUS, running: true, phase: \"thinking\", startedAt: \"2026-11-11T00:00:00Z\", streamedChars: 40 } and nowMs 12 seconds after startedAt returns a line whose plain text contains ↓ ~10 tokens and esc to interrupt.",
+        "[unit] workingLine with width 12, status { ...IDLE_STATUS, running: true, phase: \"thinking\", startedAt: \"2026-11-11T00:00:00Z\" }, Unicode glyphs and nowMs 12 seconds later returns a line whose plain text is at most 12 columns wide and ends with ….",
+        "[unit] workingLine with width 40, status { ...IDLE_STATUS, running: true, phase: \"thinking\", startedAt: \"2026-11-11T00:00:00Z\" } and nowMs NaN returns a line whose plain text contains (0s).",
+        "[unit] workingLine with width 40, status { ...IDLE_STATUS, running: true, phase: \"thinking\", startedAt: \"now\" } and nowMs 5000 returns a line whose plain text contains (0s).",
+        "[unit] workingLine with width 40, status { ...IDLE_STATUS, running: true, phase: \"thinking\", startedAt: \"2026-11-11T00:00:10Z\" } and nowMs at 2026-11-11T00:00:00Z returns a line whose plain text contains (0s).",
+        "[unit] fittedWorkingLine(status, now, glyphs, undefined, 12) returns the same plain text as workingLine(status, now, glyphs, undefined, 12) for status { ...IDLE_STATUS, running: true, phase: \"thinking\", startedAt: \"2026-11-11T00:00:00Z\" } with now 12 seconds after startedAt."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "chat",
+        "working-row"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two pure source functions gain a trailing optional parameter and delegation while reusing existing elapsed-time and width helpers; standard compatibility and malformed-time tests suffice."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/status-layout.ts",
+        "packages/nax/src/tui/chat/wrap.ts",
+        "packages/nax/test/unit/tui/chat/status-layout.test.ts",
+        "packages/nax/test/unit/tui/chat/chat-status.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/working-line-fit.test.ts"
+      ],
+      "suggestedCriteria": [
+        "workingLine with a width equal to the full line's display width returns the same StyledLine as when width is omitted.",
+        "workingLine with width 40, a running thinking status and nowMs Infinity or -Infinity returns compact output containing (0s).",
+        "workingLine(IDLE_STATUS, 0, glyphs, undefined, 12) returns undefined.",
+        "workingLine with ASCII glyphs at width 12 returns no more than 12 display columns and ends with ... when the compact line requires elision."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/chat-status.ts",
+          "reason": "`workingLine` gains the optional trailing `width` parameter; callers that omit it get the unchanged full line."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/status-layout.ts",
+          "reason": "`fittedWorkingLine` takes explicit parameters and delegates to `workingLine`."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/status-layout.test.ts",
+          "reason": "the existing `fittedWorkingLine` calls pass five positional arguments; they stay valid under the explicit-parameter signature and keep asserting `Thinking...`, `12s` and the 40-column width."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-005",
+      "title": "Complete keyboard help and pluralize resource summaries",
+      "description": "**Goal** — Document the existing keyboard controls and make /help omit empty resource summaries and use singular nouns where appropriate.\n\n**Motivation** — With no catalog it prints `0 commands · 0 skills — type / to search; /skills for details`, and with one command it prints `1 commands`.\n\n**Approach** — Target `CHAT_KEYBOARD_HELP`, joined with `\\n`:\n\n```text\nKeyboard\nenter  send · shift+enter / alt+enter  newline\npgup/pgdn  scroll page · shift+up/down  scroll line · home/end  top/latest\nctrl+o  expand/collapse details · ctrl+g  jobs\nshift+tab  cycle mode · ctrl+t  cycle reasoning effort\nctrl+v  paste image · esc  close overlay or interrupt turn\nctrl+b  move the running command to the background (ctrl+b ctrl+b in tmux)\nctrl+c  quit when idle; interrupt when running (again to quit)\nctrl+s  steer the running turn (or interrupt and send)\n```\n\nTarget `resourceHelp(commands: number, skills: number): string | undefined`:\n\n- Both counts are 0: returns `undefined`, and `formatHelp` omits the line.\n- Otherwise: `<commands> command(s) · <skills> skill(s) — type / to search; /skills for details`, singular when the count is 1, for example `1 command · 2 skills — …`.\n\nThe help changes have no failure paths.\n\nKeep built-in command order/descriptions and one blank line before the shared keyboard block on both native and ACP paths. Do not insert an undefined summary into Array.join, which would leave an extra blank line. Native nonempty catalogs get the count summary, not expanded resource descriptions. Existing key handlers are context, not modifications: TranscriptViewport owns home/end and shift arrows; useChatKeys owns ctrl+b and ctrl+t/shift+tab; ChatApp owns ctrl+v.\n\nRestore exact-equality assertions on the full help text. In packages/nax/test/unit/tui/chat/slash-commands-acp.test.ts, replace the ACP help case's toStartWith/toContain/toEndWith checks with exact equality against the built-in lines, an empty line, and the target CHAT_KEYBOARD_HELP. In packages/nax/test/unit/tui/chat/slash-memory.test.ts, replace the help-command case's toStartWith/toEndWith checks with exact equality against the full expected help text, ending with the target CHAT_KEYBOARD_HELP; retain memory's position between jobs and quit. In packages/nax/test/ui/chat/slash-commands.test.tsx, the case help summarizes catalog commands and points to search currently asserts 1 commands · 0 skills; the new invariant is the singular 1 command · 0 skills. Create the assigned unit and mounted-screen files as well.\n\n**Scope** — In: help-text.ts text/resourceHelp return type; slash-commands.ts formatHelp omission; specified exact-output and catalog UI regression updates; create help-text.test.ts and chat-help-summary.test.tsx. Out: footer segments/fitting (US-001/002/003), working-row composition (US-004), changing keyboard handlers. A separate `/keys` command or a shorter keyboard block on the ACP path is not part of this feature; `/help` keeps one keyboard block on both paths.\n\n**Interface** —\n```typescript\nresourceHelp(commands: number, skills: number): string | undefined\n```\nCHAT_KEYBOARD_HELP remains an exported newline-joined string; formatHelp remains the existing internal composer used by runSlashCommand.",
+      "acceptanceCriteria": [
+        "[unit] CHAT_KEYBOARD_HELP equals exactly: Keyboard\nenter  send · shift+enter / alt+enter  newline\npgup/pgdn  scroll page · shift+up/down  scroll line · home/end  top/latest\nctrl+o  expand/collapse details · ctrl+g  jobs\nshift+tab  cycle mode · ctrl+t  cycle reasoning effort\nctrl+v  paste image · esc  close overlay or interrupt turn\nctrl+b  move the running command to the background (ctrl+b ctrl+b in tmux)\nctrl+c  quit when idle; interrupt when running (again to quit)\nctrl+s  steer the running turn (or interrupt and send)",
+        "[unit] resourceHelp(0, 0) returns undefined.",
+        "[unit] resourceHelp(1, 2) returns 1 command · 2 skills — type / to search; /skills for details.",
+        "[unit] resourceHelp(3, 1) returns 3 commands · 1 skill — type / to search; /skills for details.",
+        "[unit] runSlashCommand with /help on a host whose catalog is absent shows text with no line containing commands · and ending with the target CHAT_KEYBOARD_HELP.",
+        "[unit] runSlashCommand with /help on an ACP brain host shows exactly the built-in command lines, an empty line, and the target CHAT_KEYBOARD_HELP, joined with newlines.",
+        "[integration] Submitting /help in a mounted ChatApp whose catalog has one command and no skills shows 1 command · 0 skills — type / to search in the transcript."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "chat",
+        "help"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two small production changes with existing slash-command and mounted-screen patterns; exact-output regressions and pluralization tests are standard, with no changes to ACP transport or input handling."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/help-text.ts",
+        "packages/nax/src/tui/chat/slash-commands.ts",
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/ChatApp.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/help-text.test.ts",
+        "packages/nax/test/ui/chat/chat-help-summary.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "resourceHelp(1, 1) returns 1 command · 1 skill — type / to search; /skills for details.",
+        "resourceHelp(0, 1) returns 0 commands · 1 skill — type / to search; /skills for details.",
+        "runSlashCommand with /help on a native host with an empty catalog shows exactly the built-in lines, one empty line and CHAT_KEYBOARD_HELP, joined with newlines."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/tui/chat/help-text.ts",
+          "reason": "`CHAT_KEYBOARD_HELP` becomes the nine-line target block and `resourceHelp` returns `string | undefined`."
+        },
+        {
+          "path": "packages/nax/src/tui/chat/slash-commands.ts",
+          "reason": "`formatHelp` omits the resource line when `resourceHelp` returns `undefined`."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/slash-commands-acp.test.ts",
+          "reason": "the ACP help case uses `toStartWith`/`toContain`/`toEndWith`. Replace it with exact equality against the built-in lines, an empty line, and the target `CHAT_KEYBOARD_HELP`."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/slash-memory.test.ts",
+          "reason": "the help-command case uses `toStartWith`/`toEndWith`. Replace it with exact equality against the full expected help text, ending with the target `CHAT_KEYBOARD_HELP`."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/slash-commands.test.tsx",
+          "reason": "the case \"help summarizes catalog commands and points to search\" asserts `1 commands · 0 skills`. The new invariant is the singular `1 command · 0 skills`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "Goal and baseline: harden the existing React/Ink chat status and help presentation within @nathapp/nax only. The specification identifies fix/chat-tui-narrow-footer-help at 6c3ec8d0b as the baseline; direct inspection confirms the described implementations are present, but Git history was not independently queried. The audit documents the prior 40-column available-sandbox result and fitted-strip click contract (docs/reviews/20261111-nax-chat-tui-ux-audit.md:16, docs/reviews/20261111-nax-chat-tui-ux-audit.md:32), narrow working row (docs/reviews/20261111-nax-chat-tui-ux-audit.md:34), and catalog-summary approach (docs/reviews/20261111-nax-chat-tui-ux-audit.md:46). No codebase-memory tools are exposed in this host, so exploration used direct reads, Glob and Grep within the supplied repository root. This PRD changes no runtime source itself.\n\nShared fixture contract for every implementation agent: unless a criterion overrides it, use mode guarded, model opencode-go/deepseek-v4.1-flash, meta.costUsd 0.42, no jobs, no tasks, no contextTokens, no contextWindow, Unicode glyphs, and a TurnStatus spread over IDLE_STATUS. An absent sandbox is sandbox off, not available; an explicit disabled sandbox also renders off in the existing code. UI running-turn criteria explicitly use cost $0.00. Measure terminal display columns, not string length; reserve a two-column inter-side gap only when the right side is non-empty.\n\nUS-001 source model and compatibility: packages/nax/src/tui/chat/chat-status.ts:167 defines FooterHint and :169 the private HINT_TEXT. Existing background hints combine two gestures in one string; idle currently contains only shift+tab to cycle. modeSpan is at :208, hintSpan at :218, sandboxSpan at :224, leftLine at :232, and costSpan at :247. sandboxSpan and costSpan currently embed leading separators. footerModel at :306 composes the legacy StyledLine arrays and returns stripWidth; its quit path deliberately suppresses mode/sandbox (:240). rightLine at :293 adds shortModel, optional context, and cost. The new FooterRole/FooterSegment/footerSegments API must expose separator-free semantic spans while preserving the complete existing footerModel output, including colors and observable span grouping. In particular, do not derive legacy idle left from new segments: / commands belongs only in the fitted footer. packages/nax/src/tui/chat/context-span.ts:52 returns a context span with a leading separator and percentage-dependent color; its interface is unchanged. Normalize that producer's separator at the chat-status semantic boundary rather than adding separator stripping or text matching to the fitter. Prefer constructing separator-free values from shared producers over reconstructing roles from legacy arrays. formatJobStrip at chat-status.ts:285 remains the existing whole-strip formatter; FooterJob (:252) and FooterTask (:275) remain unchanged. Existing job targets are already abbreviated by jobPart (:262), and the formatter limits shown entries to two with a remainder count. No new per-job fitting is requested.\n\nUS-002 and US-003 fitter and production path: packages/nax/src/tui/chat/status-layout.ts:9 currently calls legacy footerModel, finds idle text by exact equality (:15), removes the model by index and strips separators with a regex (:23), extracts cost as the last span (:29), tries a nested left/right variant search (:42), then cuts compact.slice(2) without an ellipsis (:48). Replace this with ordered, cumulative transformations of FooterSegment collections: initial full state, then drop model, drop context, replace strip with total jobs+tasks summary, drop summary, drop gestureExtra, drop off sandbox, drop mode, shorten unavailable sandbox retaining warning style, drop cost, then empty-right end-elision. Stop after the first fit, including the initial state; do not use the current cross-product search because it changes priorities. Identify segments by role, and decide sandbox off/unavailable from input.state.sandbox, not text equality. Joined sides must insert separators only between retained segments, preventing leading/trailing residue. stripWidth must always measure the actual retained strip or summary without its surrounding separator, and be zero when neither remains. US-002 owns steps 1–5 and the seam; US-003 extends that same algorithm with steps 6–10 and final hardening. Preserve the existing basic width bound while staging these dependent stories, without pulling US-003's new left-side expectations into US-002.\n\nProduction wiring is already correct structurally: packages/nax/src/tui/chat/ChatApp.tsx:72 imports fittedFooterModel as footerModel and fittedWorkingLine as workingLine; :1179 passes columns, jobs, tasks, state, status, hint, layerHint, copiedChars and theme glyphs to the footer fitter. At :1202 that exact fitted footer is passed to useJobsOpener, and :1364 renders footer.left/footer.right in the final one-row box. Alias renaming is optional, not a requirement. The US-002 seam test must stub the real footerSegments export and mount ChatApp to prove these new segments reach the rendered last row; testing only the fitter is insufficient. No direct legacy-footer render path should be introduced. packages/nax/src/tui/chat/use-jobs-opener.ts:37 computes the clickable strip from rightWidth and stripWidth; :92 measures the same rendered footer.right with spansWidth. Keep this public contract unchanged or clicks will drift when the summary replaces the strip or metadata disappears.\n\nWidth and elision risks: packages/nax/src/tui/chat/wrap.ts:102 spansWidth measures the combined span text, including cross-style graphemes; :321 cutSpans drops whole clusters but does not append an ellipsis. Reuse these unchanged primitives, budgeting the ellipsis before cutting and preserving styles. packages/nax/src/tui/chat/theme.ts:172 uses Unicode … and :204 ASCII ..., so reserve display width rather than assuming one character, and bound the marker itself on extremely small ASCII budgets. Remove trailing separator whitespace without indiscriminately rewriting semantic segment text. The required footer width normalization for finite inputs is Math.max(1, Math.floor(width)); width 40.9 must match 40 and width 0 must fit one column. The prose's phrase not an integer does not define a useful finite result for NaN/Infinity under that exact expression; no new non-finite-footer-width behavior is mandated here. In contrast, non-finite working-row nowMs is explicitly specified. The full matrix must cover every integer width 10–120, eight named hints, two modes for the width bound, and three sandbox states. Cost must survive at 40 columns for available, unavailable and off sandboxes; unavailable is shortened to sandbox n/a rather than removed before cost. At 24 columns the remaining unavailable warning/gesture must be elided and right must be empty.\n\nUS-004 working row: packages/nax/src/tui/chat/chat-status.ts:348 elapsedMs already returns zero for missing/unparseable startedAt, non-finite nowMs and backward clocks. spinnerFrame (:357), workingVerb (:367), workingTokens (:388), workingDetail (:395), and workingLine (:409) compose the correct full row. Move width-aware compact construction into workingLine using that same elapsed value and explicit spinner/verb components, not by assuming the detail is the last span. Omitted width must preserve every existing full-row output and custom esc hint. Only when the full line exceeds width should the row discard tokens/esc and use (Ns); if that still exceeds width, elide the end with theme glyphs. packages/nax/src/tui/chat/status-layout.ts:53 currently derives seconds with Date.parse (:58), omits the non-finite-now guard, and slices off the presumed last detail span (:60). Replace it with an explicitly typed five-argument delegate. ChatApp.tsx:497 already supplies those five arguments. Preserve this specified positional API despite the general architectural preference for options objects. US-001 and US-004 both touch chat-status.ts; US-002/003/004 touch status-layout.ts. Their required dependency lists remain unchanged, so avoid overwriting adjacent independent edits when integrating.\n\nUS-005 help: packages/nax/src/tui/chat/help-text.ts:2 has an eight-line keyboard block and :13 always returns plural resource counts, including 0 commands · 0 skills. packages/nax/src/tui/chat/slash-commands.ts:213 formatHelp builds built-in lines in COMMANDS order; ACP already skips resource summaries (:215), while native unconditionally inserts resourceHelp (:218). With resourceHelp returning undefined for 0/0, conditionally include the line rather than leaving an extra empty entry: Array.join would otherwise introduce an unintended extra blank line. Both paths must retain exactly one blank separator and the identical nine-line keyboard block after built-ins when resources are absent. No separate /keys or protocol-specific shortened block. Existing handlers substantiate all additions: TranscriptViewport.tsx:86 maps pgup/pgdn, home/end and shift arrows; useChatKeys.ts:152 and :173 implement moveForeground/ctrl+b; :175 and :177 handle ctrl+t and shift+tab; ChatApp.tsx:516 implements ctrl+v clipboard attachment. These handlers are read-only context; this feature changes discoverability, not input dispatch or permissions.\n\nExisting tests and regression anchors: packages/nax/test/unit/tui/chat/chat-status.test.ts:399 covers formatJobStrip; :441 onward pins legacy footer left text, colors and some exact span shapes; :504 onward covers right metadata and context colors; :608 onward pins full working-line tokens, custom escape hints, phases, spinner frames and elapsed edge cases. Keep these expectations unchanged. packages/nax/test/unit/tui/chat/chat-status-tasks.test.ts:30 covers mixed job/task formatting, wide commands and normalization; :66 covers legacy stripWidth. packages/nax/test/unit/tui/chat/status-layout.test.ts:30 samples widths 10,20,40,60,80,120 with wide names/warnings, :43 preserves quit, :47 overlay escape, :59 click boundaries, and :86 calls fittedWorkingLine with five positional arguments and checks Thinking..., 12s and width 40. Retain those existing cases verbatim while adding the full 10–120 matrix in the new US-003 file. packages/nax/test/unit/tui/chat/slash-commands-acp.test.ts:139 currently uses partial help assertions; replace them with full equality against built-ins, blank line and keyboard block. packages/nax/test/unit/tui/chat/slash-memory.test.ts:220 has the analogous partial native help assertion and no catalog; restore full equality without losing memory's position between jobs and quit. packages/nax/test/ui/chat/slash-commands.test.tsx:393 has the existing one-command/no-skills mounted help case; its :421 expectation must change from 1 commands to 1 command. packages/nax/test/ui/chat/footer-tasks.test.tsx:119 verifies real task changes reach the footer.\n\nTest implementation approach: create exactly the new unit/UI files assigned by the specification and keep existing files as regression anchors; none of the requested new files currently exists. Use bun:test for units and ink-testing-library with React act for mounted screen checks. packages/nax/test/helpers/chat-picker.tsx:69 provides mountChatPicker through @test/helpers, a typed host with deferred send, current-state overrides, :105 rows, :118 submit, :148 event emission and :154 finish; reuse its exported helpers where appropriate. Its rows helper trimEnds, so assert trailing-space invariants on raw pure-model plainText, not this sanitized UI view. The established resize technique is packages/nax/test/ui/chat/slash-commands.test.tsx:83: define stdout columns/rows then emit resize in act. Use actual 80x20 and 40x20 screens, last-row assertions, explicit available/unavailable sandbox fixtures, and a running turn held by an event-driven promise; do not infer footer success from matching header or transcript text. Stub/spy on footerSegments without replacing unrelated chat-status exports and restore mocks after tests; prefer existing seams/spies over persistent module mocks that contaminate other tests. Follow repository test helper and mocking conventions.\n\nArchitecture, delivery, migration and risks: read docs/architecture/ARCHITECTURE.md before source edits; :148–149 record function/parameter limits and :145 file-size guidance. chat-status.ts is already 564 lines, close to its 600 hard cap; keep the new abstraction compact and share pure helpers without growing unrelated status reducers or headers. No dependency, schema, persistent-state, release, package-version or cross-package changes are needed. Preserve footerModel's export/signature/output, fitter return shape, formatJobStrip, contextSpan, wrap and theme interfaces, and five-argument production working-row call sites. resourceHelp's local return-type widening requires its only production caller formatHelp to omit undefined; search found no other src consumer. Implement the mandatory order US-001 → US-002 → US-003, with US-004 and US-005 independently runnable as specified. All stories produce source changes plus their own tests. No access-control behavior changes are involved: sandbox roles are display-only and token counts are usage metrics, so the security test-strategy override does not apply. Use targeted package-scoped tests during implementation; root scripts are not the story workdir defaults. Never bare bun test or bun run nax. Pipeline lint/typecheck/tests are validation, not acceptance criteria; never run coverage within a sandboxed nax session. Done means all specified behavioral criteria hold and legacy unfitted/footer/working-line regression anchors remain unchanged, with no changes to header model elision, terminal contrast, or keyboard semantics.\n\nRefine-pass adversarial audit: all 55 numbered spec criteria are retained in their original stories and original order. The enumeration below maps each spec number to the same-numbered acceptanceCriteria entry; additions follow, never replace, those entries. US-001: 1 busy/available left roles; 2 busy/available right roles; 3 separator-free $0.42 cost; 4 idle gesture split; 5 background gesture split; 6 tmux extra gesture; 7 unavailable sandbox span text and warning color; 8 one-job strip equals formatJobStrip; 9 one-task strip equals formatJobStrip; 10 context between model/cost; 11 quit single gesture; 12 quit right model/cost; 13 legacy-right/segment-right plain-text equality across the specified hints, sandbox states and job counts. US-002: 1 busy/available left at 40; 2 cost at 40; 3 background left/right at 40; 4 background extra retained at 60; 5 idle left/right at 40; 6 one-job right at 60; 7 one-job stripWidth; 8 three-active summary right at 60; 9 summary stripWidth; 10 summary dropped/stripWidth zero at 36; 11 context removed at 45; 12 no partial ctrl+b at 30; 13 layer text matching idle remains a layer hint, not / commands; 14 quit left/cost at 40; 15 stubbed footerSegments reaches the mounted 80x20 last row; 16 available-sandbox running turn at 40x20 retains escape and $0.00 within 40 columns. US-003: 1 unavailable short-warning left at 40; 2 unavailable cost at 40; 3 short warning color; 4 absent sandbox left/cost at 40; 5 absent-sandbox layer keeps mode; 6 empty right at 24; 7 bounded left with ellipsis at 24; 8 full widths/hints/modes/sandbox width matrix including the gap only when right is non-empty; 9 full widths/hints/sandbox no-trailing-space matrix; 10 width 40.9 equals 40; 11 width zero fits one column; 12 unavailable-sandbox running mounted row retains warning/cost within 40 columns. US-004: 1 width-40 compact elapsed suffix; 2 omitted-width tokens and escape remain; 3 width-12 Unicode end-elision; 4 NaN now gives zero elapsed; 5 unparseable start gives zero elapsed; 6 backward clock gives zero elapsed; 7 five-argument delegate equals workingLine under the identical running-status fixture. US-005: 1 exact nine-line keyboard block; 2 empty catalog summary undefined; 3 singular command/plural skills; 4 plural commands/singular skill; 5 absent catalog suppresses summary and retains keyboard ending; 6 exact ACP built-ins/blank/keyboard output; 7 mounted singular catalog summary. No deprecated file-content tags were present. No qualifying clause was removed: in particular US-003.8 retains the conditional gap, US-001.3 retains the separator exclusion, and all width limits, exact fixture inputs and no-width/five-argument comparisons remain.\n\nAudit corrections: clarified US-001.7 to assert FooterSegment.span rather than suggesting text/color live on FooterSegment itself. Added US-001.14 as an explicit concrete regression assertion for the unchanged legacy idle StyledLine arrays and stripWidth; equality between two mutable producers alone would not protect the baseline. US-003.13 explicitly binds the failure-table normalization behavior to finite widths with a busy/unavailable fixture. US-002 is medium/tdd-simple after rechecking ChatApp.tsx:72, :1179, :1202 and :1365: production fitter wiring already exists, so a pure fitter rewrite plus an existing-style mounted seam does not justify complex/multi-session routing. All stories now use medium/tdd-simple for bounded package-local runtime changes.\n\nNegative-path audit: US-001.7 preserves an unavailable sandbox as a warning rather than treating it as available; US-002.12 drops an unfit extra gesture and .13 prevents a non-idle text collision from activating idle behavior; US-003.6–7 and .10–11 cover exhausted/invalid-width budgets; US-004.4–6 cover malformed timing and clock rollback; US-005.2 and .5 cover empty/absent catalogs and .6 preserves ACP catalog suppression. These are observable absence/fallback conditions even where no exception is appropriate; no invented failure API is needed. Regression anchors also include US-002.13–14 (layer and quit), US-003.5 (mode retained when it fits), US-004.2 and .7 (old full output and caller compatibility), and US-005.6 (built-in help composition). Every criterion is observable as returned semantic data, StyledLine text/style/display width, or the mounted final row/transcript.\n\nContext/dependency/scope audit: each story includes all source files in its spec Context Files section, within the five-file cap. Extra test context in US-001/004 is existing regression context; US-003 reads chat-app-narrow-footer.test.tsx only after its upstream US-002 dependency creates it. No story lists its own new test outputs as context. Existing production/test paths were rechecked; new tests are explicitly required outputs, not invented call sites or dependencies. The fixed dependencies remain exactly [], [US-001], [US-002], [], []; all IDs resolve and none can be merged, renamed or removed. Re-read status-layout.ts:9–60, chat-status.ts:164–329 and :348–423, help-text.ts:2–15 and slash-commands.ts:213–222 against descriptions: no description requires legacy footerModel idle to gain / commands, step 6 never removes an unavailable warning, workingLine only compacts an overflowing full row, and help omission removes the line rather than emitting an extra blank entry. Scope includes each required source/test modification without moving later-story implementation into earlier stories.\n\nExclusion audit: all five feature-level items remain verbatim in outOfScope: header model elision, deferred legacy footer export retirement, no /keys or shorter ACP keyboard block, no contrast/color measurement, and the explicitly US-002-only whole-strip replacement limitation. That final item appears in the spec before Stories and therefore stays top-level with its US-002 qualifier intact; it is also echoed in US-002 Scope. Relevant header/retirement/help/theme boundaries remain echoed in the adjacent stories' Scope Out sections. There are no story-local out-of-scope blocks in the spec to hoist or restore.",
+  "outOfScope": [
+    "The header's model elision at narrow widths (`deepseek…` at 40 columns, `…` at 30) is not changed by this feature, even though the fitted footer drops the model on the assumption that the header shows it.",
+    "Retiring the unfitted `footerModel` export, which only tests call once `ChatApp` renders through `fittedFooterModel`, is deferred.",
+    "A separate `/keys` command or a shorter keyboard block on the ACP path is not part of this feature; `/help` keeps one keyboard block on both paths.",
+    "Contrast and color across terminal themes are not measured or changed.",
+    "US-002 only: the job strip is not elided segment by segment; it is replaced whole by the job summary, then dropped."
+  ],
+  "routingProfile": "native-codex-ds"
+}
