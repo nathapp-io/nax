@@ -3,7 +3,7 @@
   "feature": "bot-and-prompt",
   "branchName": "feat/bot-and-prompt",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T13:51:54.428Z",
+  "updatedAt": "2026-11-12T14:06:47.982Z",
   "userStories": [
     {
       "id": "US-001",
@@ -241,14 +241,17 @@
         "cost"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Three localized condition/call changes reuse existing normalization and per-run warnOnce; no new abstraction or security behavior."
+        "reasoning": "Three localized condition/call changes reuse existing normalization and per-run warnOnce; no new abstraction or security behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/runtime/packages.ts",
@@ -274,7 +277,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4eb033c695a267a883de2bf6ce9dcb7429686d7e"
     },
     {
       "id": "US-005",
