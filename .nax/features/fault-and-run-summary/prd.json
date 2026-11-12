@@ -3,7 +3,7 @@
   "feature": "fault-and-run-summary",
   "branchName": "feat/fault-and-run-summary",
   "createdAt": "2026-11-12T00:00:00.000Z",
-  "updatedAt": "2026-11-12T07:22:09.193Z",
+  "updatedAt": "2026-11-12T07:33:05.410Z",
   "userStories": [
     {
       "id": "US-001",
@@ -391,14 +391,17 @@
         "reporting"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Four production files add and consume a boolean using existing publish/patch/verdict patterns; the end-report seam already forwards passed, so no new abstraction or security-sensitive behavior requires heavier isolation."
+        "reasoning": "Four production files add and consume a boolean using existing publish/patch/verdict patterns; the end-report seam already forwards passed, so no new abstraction or security-sensitive behavior requires heavier isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/finalize.ts",
@@ -411,7 +414,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "18f4a807293699c9aa2016c2f9b6a5e15717ebbf"
     },
     {
       "id": "US-008",
