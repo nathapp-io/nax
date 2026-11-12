@@ -681,6 +681,7 @@
         "nextFindingId": 3,
         "outcome": "ready",
         "passed": true,
+        "pushFailed": false,
         "reasons": [],
         "repoGates": {
           "failing": [],
@@ -736,6 +737,7 @@
       "nextFindingId": 3,
       "outcome": "ready",
       "passed": true,
+      "pushFailed": false,
       "reasons": [],
       "repoGates": {
         "failing": [],

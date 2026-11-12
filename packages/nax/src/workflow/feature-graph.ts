@@ -104,6 +104,7 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
         "storyStates",
         "head",
         "passed",
+        "pushFailed",
         "flaggedDecisions",
         "ciRepairFindings",
         // US-005: the checks a decided repair targets.

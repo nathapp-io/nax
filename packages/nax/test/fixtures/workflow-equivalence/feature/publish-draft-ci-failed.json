@@ -428,6 +428,7 @@
         "nextFindingId": 1,
         "outcome": "draft",
         "passed": true,
+        "pushFailed": false,
         "reasons": ["CI failed on the branch"],
         "repoGates": {
           "failing": [],
@@ -481,6 +482,7 @@
       "nextFindingId": 1,
       "outcome": "draft",
       "passed": true,
+      "pushFailed": false,
       "reasons": ["CI failed on the branch"],
       "repoGates": {
         "failing": [],

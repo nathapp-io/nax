@@ -15,6 +15,21 @@ afterEach(() => {
 });
 
 describe("feature machine graph wiring", () => {
+  test("persists a rejected push and clears it on a successful resumed publish", async () => {
+    const failed = makeFeatureMachineHarness({
+      published: { outcome: "local-only", ci: "skipped", reasons: ["push failed"], pushFailed: true },
+    });
+    const first = await runFeatureMachine(failed.env);
+    expect(first).toMatchObject({ step: "done", pushFailed: true, passed: false });
+    expect(failed.updates.at(-1)).toMatchObject({ pushFailed: true, passed: false });
+    const resumed = makeFeatureMachineHarness(
+      { published: { outcome: "pushed", ci: "green", reasons: [] } },
+      { record: { ...first, step: "publish" } },
+    );
+    const second = await runFeatureMachine(resumed.env);
+    expect(second).toMatchObject({ step: "done", pushFailed: false, passed: true });
+    expect(resumed.updates.at(-1)).toMatchObject({ pushFailed: false, passed: true });
+  });
   test("delegates graph and record to the engine and returns its result", async () => {
     const { env } = makeFeatureMachineHarness({});
     const result = { ...env.record, outcome: "draft" as const };
