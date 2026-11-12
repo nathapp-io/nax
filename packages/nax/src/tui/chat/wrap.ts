@@ -323,6 +323,31 @@ export function wrap(spans: readonly Span[], width: number, prefix: readonly Spa
   return lines.map((line, index) => mergeSpans([...(index === 0 ? bounded : continuation), ...spansOf(line)]));
 }
 
+/** The line without the blank columns it ends in, so a marker never follows one. */
+function trimEndBlanks(line: StyledLine): StyledLine {
+  const kept = [...line];
+  for (let end = kept.length; end > 0; end -= 1) {
+    const text = kept[end - 1].text.replace(/ +$/, "");
+    if (text === "") continue;
+    kept[end - 1] = { ...kept[end - 1], text };
+    return kept.slice(0, end);
+  }
+  return [];
+}
+
+/**
+ * The line elided at its end to `columns` display columns, marked with `marker`: whole
+ * clusters are dropped from the right, the blank columns a cut leaves behind go with them,
+ * and the marker's own width is reserved before the cut so it always fits. A marker wider
+ * than the whole line — the ASCII one on a three-column terminal — is itself cut to it.
+ */
+export function elideSpansEnd(spans: readonly Span[], columns: number, marker: Span): StyledLine {
+  if (spansWidth(spans) <= columns) return mergeSpans([...spans]);
+  const markerWidth = spansWidth([marker]);
+  if (markerWidth > columns) return cutSpans([marker], columns);
+  return [...trimEndBlanks(cutSpans(spans, columns - markerWidth)), marker];
+}
+
 /** Keep at most `columns` columns of `spans`, dropping whole clusters from the right. */
 export function cutSpans(spans: readonly Span[], columns: number): StyledLine {
   if (spansWidth(spans) <= columns) return mergeSpans([...spans]);

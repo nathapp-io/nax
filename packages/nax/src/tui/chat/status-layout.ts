@@ -1,7 +1,8 @@
-import { type footerModel, GLYPHS, workingLine } from "./chat-status";
+import { type footerModel, GLYPHS, type TurnStatus, workingLine } from "./chat-status";
 import { type FooterRole, type FooterSegment, footerSegments } from "./footer-segments";
 import type { Span, StyledLine } from "./styled-line";
-import { cutSpans, spansWidth } from "./wrap";
+import type { ChatGlyphs } from "./theme";
+import { elideSpansEnd, spansWidth } from "./wrap";
 
 /** The columns between the left and right sides of the row. */
 const GAP = 2;
@@ -137,32 +138,6 @@ function drawn(state: FooterState): { left: StyledLine; right: StyledLine; strip
   return { left: joinedLine(state.left), right: joinedLine(state.right), stripWidth: stripWidthOf(state.right) };
 }
 
-/** The line without the blank columns it ends in, so a marker never follows one. */
-function trimmedEnd(line: StyledLine): StyledLine {
-  const kept = [...line];
-  for (let end = kept.length; end > 0; end -= 1) {
-    const text = kept[end - 1].text.replace(/ +$/, "");
-    if (text === "") continue;
-    kept[end - 1] = { ...kept[end - 1], text };
-    return kept.slice(0, end);
-  }
-  return [];
-}
-
-/**
- * The left side elided at its end to `width` columns, marked with the theme's ellipsis: the last
- * resort never leaves a half-drawn keybinding. The marker's own width is reserved before the
- * cut, and a marker wider than the whole row — the ASCII one on a three-column terminal — is
- * itself cut to it.
- */
-function endElided(line: StyledLine, width: number, marker: string): StyledLine {
-  if (spansWidth(line) <= width) return line;
-  const marked: Span = { text: marker, color: MARKER_COLOR };
-  const markerWidth = spansWidth([marked]);
-  if (markerWidth > width) return cutSpans([marked], width);
-  return [...trimmedEnd(cutSpans(line, width - markerWidth)), marked];
-}
-
 /**
  * Fit before Ink lays out the row, keeping gestures ahead of duplicated model metadata.
  *
@@ -185,16 +160,21 @@ export function fittedFooterModel(input: FooterInput & { readonly width: number 
   }
   const last = states[states.length - 1];
   const glyphs = input.glyphs ?? GLYPHS;
-  return { left: endElided(joinedLine(last.left), width, glyphs.ellipsis), right: [], stripWidth: 0 };
+  const marker: Span = { text: glyphs.ellipsis, color: MARKER_COLOR };
+  return { left: elideSpansEnd(joinedLine(last.left), width, marker), right: [], stripWidth: 0 };
 }
 
-/** A narrow working row keeps its phase and time; the footer carries the active escape hint. */
+/**
+ * A narrow working row keeps its phase and time; the footer carries the active escape hint.
+ * The seconds and their guards are `workingLine`'s own, so the two rows can never disagree
+ * about the elapsed time.
+ */
 export function fittedWorkingLine(
-  ...[status, now, glyphs, hint, width]: [...Parameters<typeof workingLine>, number]
+  status: TurnStatus,
+  now: number,
+  glyphs: ChatGlyphs,
+  hint: string | undefined,
+  width: number,
 ): StyledLine | undefined {
-  const line = workingLine(status, now, glyphs, hint);
-  if (line === undefined || spansWidth(line) <= width) return line;
-  const started = Date.parse(status.startedAt ?? "");
-  const seconds = Number.isFinite(started) ? Math.max(0, Math.floor((now - started) / 1000)) : 0;
-  return cutSpans([...line.slice(0, -1), { text: ` (${seconds}s)`, color: "muted" }], width);
+  return workingLine(status, now, glyphs, hint, width);
 }

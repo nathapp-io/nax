@@ -19,6 +19,7 @@ import { oneLine, resolveWidth } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
 import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
 import { toolTitle } from "./tool-card";
+import { elideSpansEnd, spansWidth } from "./wrap";
 
 /** What the turn is doing. Only meaningful while `running`. */
 export type TurnPhase = "thinking" | "writing" | "tool" | "approval" | "compacting" | "retrying";
@@ -419,9 +420,11 @@ function workingTokens(status: TurnStatus): string {
   return `${UP_ARROW} ${formatTokens(status.inputTokens)} ${DOWN_ARROW} ${formatTokens(status.outputTokens)}${suffix} tokens`;
 }
 
-function workingDetail(status: TurnStatus, elapsed: number, escHint: string): string {
-  const seconds = Math.floor(elapsed / MILLIS_PER_SECOND);
-  return ` (${seconds}s${SEPARATOR}${workingTokens(status)}${SEPARATOR}${escHint})`;
+/** The measurement behind the verb: the seconds, and — with the room for it — the tokens and the way out. */
+function workingDetail(status: TurnStatus, elapsed: number, escHint?: string): string {
+  const seconds = `${Math.floor(elapsed / MILLIS_PER_SECOND)}s`;
+  const rest = escHint === undefined ? "" : `${SEPARATOR}${workingTokens(status)}${SEPARATOR}${escHint}`;
+  return ` (${seconds}${rest})`;
 }
 
 /** What esc does on the top layer, when nothing is drawn over the turn. */
@@ -430,24 +433,30 @@ const ESC_INTERRUPT = HINT_PARTS.busy.gesture;
 /**
  * The line the screen shows while a turn runs: a spinner frame and what the turn is doing,
  * in the accent colour, then a muted measurement of the time and the tokens. Undefined
- * when no turn runs, so the screen reserves no row for it. `escHint` is the esc layer's hint
- * text; it takes the place of `esc to interrupt`, so the line names what esc would do now.
+ * when no turn runs, so the screen reserves no row for it. `escHint` takes the place of
+ * `esc to interrupt`, so the line names what esc would do now. A `width` fits the row to a
+ * narrow screen from the same frame, verb and seconds: the tokens and the esc hint go — the
+ * footer carries the action — and a row still too wide is elided at its end with the theme's
+ * ellipsis. Omitted, the row is drawn whole.
  */
 export function workingLine(
   status: TurnStatus,
   nowMs: number,
   glyphs: ChatGlyphs,
   escHint: string = ESC_INTERRUPT,
+  width?: number,
 ): StyledLine | undefined {
   if (!status.running) return undefined;
   const elapsed = elapsedMs(status, nowMs);
   const frame = spinnerFrame(elapsed, glyphs);
-  return [
-    // A glyph set with no frames says nothing rather than leaving a stray column.
-    ...(frame === "" ? [] : [{ text: `${frame} `, color: "accent" as const }]),
-    { text: workingVerb(status, glyphs), color: "accent" },
-    { text: workingDetail(status, elapsed, escHint), color: "muted" },
-  ];
+  // A glyph set with no frames says nothing rather than leaving a stray column.
+  const head: StyledLine = frame === "" ? [] : [{ text: `${frame} `, color: "accent" }];
+  const verb: StyledLine = [...head, { text: workingVerb(status, glyphs), color: "accent" }];
+  const full: StyledLine = [...verb, { text: workingDetail(status, elapsed, escHint), color: "muted" }];
+  if (width === undefined || spansWidth(full) <= width) return full;
+  const compact: StyledLine = [...verb, { text: workingDetail(status, elapsed), color: "muted" }];
+  if (spansWidth(compact) <= width) return compact;
+  return elideSpansEnd(compact, width, { text: glyphs.ellipsis, color: "muted" });
 }
 
 const HEADER_TITLE = "nax chat";
