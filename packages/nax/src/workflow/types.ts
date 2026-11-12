@@ -281,6 +281,14 @@ export interface WorkflowFeatureRecord {
   /** nax#2548: repair rounds run for final gates the branch fix turned red. Absent when none ran. */
   readonly gateRepairRounds?: number;
   /**
+   * US-004: the evidence-only review of each repair round's committed diff, one line per round that
+   * had one, in round order — `<kind> r<N> reviewed: <verdicts>` or `<kind> r<N> review skipped: <why>`.
+   * Absent when no repair diff was reviewed (no wired review, an unmoved HEAD, a failed repair
+   * session) and on records written before this field existed. `repairEvidence` renders it for the
+   * approval advisor; it never opens a fix round.
+   */
+  readonly repairReviews?: readonly string[];
+  /**
    * US-006: the failed CI checks of the published PR, as the repair findings the next CI repair
    * round targets. Absent when no repair was decided.
    */

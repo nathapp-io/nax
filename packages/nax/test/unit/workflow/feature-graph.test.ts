@@ -61,7 +61,8 @@ const expectedProduces: Record<NodeId, string[]> = {
   "branch-rereview": ["reReviewSkipped", "reviewOpen", "nextFindingId", "minors", "newMinors", "fixTargets"],
   adjudicate: ["rulings"],
   "final-gates": ["finalGates", "finalGateFindings", "gateRepairFindings"],
-  "gate-repair": ["gateRepairRounds"],
+  // US-004: the gate repair also records the evidence-only review of its committed diff.
+  "gate-repair": ["gateRepairRounds", "repairReviews"],
   // US-005: `ci-repair` also records the concerns its replies raised.
   "ci-repair": ["ciRepairRounds", "ciRepairFindings", "ciRepairConcerns"],
   publish: [

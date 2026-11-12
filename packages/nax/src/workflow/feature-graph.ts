@@ -77,7 +77,8 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
     "gate-repair": {
       kind: "agent",
       commits: true,
-      produces: ["gateRepairRounds"],
+      // US-004: the repair's committed diff is re-reviewed once, and the verdict is a record line.
+      produces: ["gateRepairRounds", "repairReviews"],
       transitions: [{ to: "final-gates" }],
       run: gateRepairStep,
     },

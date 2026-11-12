@@ -19,6 +19,7 @@ import { ledgerCannotVerify } from "./gate-timing";
 import { ledgerText } from "./ledger";
 import { postItemThreadsAfterPublish } from "./publish-item-threads";
 import { absorbReReviewVerdict } from "./re-review-absorb";
+import { reviewRepairDiff } from "./repair-review";
 import { type RestatedMinor, splitRestatedMinors } from "./restated-minors";
 import { describeFindings } from "./run-log";
 import type {
@@ -376,12 +377,20 @@ export async function gateRepairStep(
     NO_MIRROR,
   );
   const log = featureStep(roundLabel("gate-repair", round), true, false, env.steps.modelFor?.("branch-fix"));
-  const out = await env.steps.branchFix(findings, { repair: true });
+  // US-004: the repair commits after the branch re-review, so its own diff gets one evidence-only
+  // review. The repair session runs exactly as it always did, whatever the HEAD reads return.
+  const { outcome: out, patch } = await reviewRepairDiff(env, {
+    kind: "gate repair",
+    round,
+    findings,
+    history: rec.repairReviews ?? [],
+    run: () => env.steps.branchFix(findings, { repair: true }),
+  });
   log.done(`${list.join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
   if (out.failure) await env.sink.ledger(ledgerText.note(`gate repair session failed: ${out.failure}`), NO_MIRROR);
   if (out.autoCommitted) await env.sink.ledger(ledgerText.note("auto-committed the gate repair's edits"));
   if (out.dirty) await env.sink.ledger(ledgerText.note("gate repair left uncommitted edits: the auto-commit failed"));
-  return { patch: { gateRepairRounds: round } };
+  return { patch: { gateRepairRounds: round, ...patch } };
 }
 
 /**
