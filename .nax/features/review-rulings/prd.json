@@ -3,7 +3,7 @@
   "feature": "review-rulings",
   "branchName": "feat/review-rulings",
   "createdAt": "2026-11-13T00:00:00.000Z",
-  "updatedAt": "2026-11-12T11:09:25.046Z",
+  "updatedAt": "2026-11-12T11:29:07.601Z",
   "userStories": [
     {
       "id": "US-001",
@@ -212,14 +212,17 @@
         "evidence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Introduces a shared callback-based orchestration helper and optional persisted evidence across repair execution, failure handling and graph output contracts."
+        "reasoning": "Introduces a shared callback-based orchestration helper and optional persisted evidence across repair execution, failure handling and graph output contracts.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/feature-steps.ts",
@@ -244,7 +247,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ffcaf7f24b05d50c07537f65d9fecfd6e786f2b9"
     },
     {
       "id": "US-005",
