@@ -89,6 +89,10 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
       ),
     branchReReview: (findings, fixBase) =>
       toolErrors("branch-rereview", () => runBranchReReview(fc, { ...spec, findings, fixBase })),
+    // US-006: the repair review is that same re-review over the repair's own committed diff, so a
+    // repair's verdict is evidence for the approval advisor and never opens a fix round.
+    repairReview: (findings, base) =>
+      toolErrors("repair-review", () => runBranchReReview(fc, { ...spec, findings, fixBase: base })),
     adjudicate: (items) =>
       adjudicateResidual(
         live,

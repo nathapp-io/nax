@@ -260,7 +260,8 @@ export function approvalEvidence(
     baseCommitLine(r.seed),
     inventoryLine(changed),
     ...minorLines(minorsLeft),
-    // nax#2548 / US-008: a repair commits after the re-review, so its diff reaches the PR unreviewed.
+    // nax#2548 / US-008 / US-006: a repair commits after the re-review, so what became of its own
+    // diff — and what that review found — is evidence the advisor needs before it rules.
     ...repairEvidence(r),
   ];
 }

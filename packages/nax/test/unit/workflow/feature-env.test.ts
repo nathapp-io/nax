@@ -304,6 +304,46 @@ describe("buildFeatureEnv CI repair prompt (US-004)", () => {
   });
 });
 
+// US-006: the repair review is the live branch re-review over the repair's own committed diff. This
+// goes through the real `buildFeatureEnv` seam, so the op, its openIds and the base the package is
+// built from are the production ones.
+describe("buildFeatureEnv repair review wiring (US-006)", () => {
+  const findings = [{ id: "G1", kind: "gate", severity: "important", issue: "lint failed" }] as const;
+  const VERDICT = { verdicts: [{ id: "G1", addressed: true, note: "lint is clean now" }], newFindings: [] };
+
+  /** Every dispatch's op name and input, plus every git range the re-review package was built from. */
+  function dispatched(): { ops: string[]; inputs: unknown[]; ranges: string[] } {
+    const ops: string[] = [];
+    const inputs: unknown[] = [];
+    const ranges: string[] = [];
+    _workflowDeps.git = async (args) => {
+      const range = args.find((arg) => arg.endsWith("..HEAD"));
+      if (range !== undefined) ranges.push(range);
+      return { stdout: "", exitCode: 0 };
+    };
+    _workflowDeps.callOp = makeScriptedCallOp((op, input) => {
+      ops.push(op.name);
+      inputs.push(input);
+      return VERDICT;
+    });
+    return { ops, inputs, ranges };
+  }
+
+  const setupWithReport = () =>
+    setup((runDir) => ({ outputDir: join(runDir, "out"), reportPath: join(runDir, "feature-report.md") }));
+
+  test("AC-4: repairReview([G1], 'h1') dispatches workflow-re-review with openIds ['G1'] over h1..HEAD", async () => {
+    const { ops, inputs, ranges } = dispatched();
+    const { env } = setupWithReport();
+    assertDefined(env.steps.repairReview, "steps.repairReview");
+    const outcome = await env.steps.repairReview(findings, "h1");
+    expect(ops).toEqual(["workflow-re-review"]);
+    expect(inputs[0]).toMatchObject({ openIds: ["G1"], timeoutMs: expect.any(Number) });
+    expect(ranges).toContain("h1..HEAD");
+    expect(outcome).toEqual({ ran: true, verdict: VERDICT });
+  });
+});
+
 // US-008: the production seam. The publish step reads the failed CI checks of the PR it opened, and
 // the reader is the real forge reader — so these go through `buildFeatureEnv(...).steps`.
 describe("buildFeatureEnv CI failure reader (US-008)", () => {
