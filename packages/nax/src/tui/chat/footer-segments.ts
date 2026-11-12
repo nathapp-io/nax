@@ -55,8 +55,8 @@ function segmentOf(role: FooterRole, span: Span | undefined): readonly FooterSeg
  */
 function hintSegments(hint: FooterHint, copiedChars: number, layerHint: string): readonly FooterSegment[] {
   const { gesture, extra } = hintSpans(hint, copiedChars, layerHint);
-  const performed: FooterSegment = { role: "gesture", span: gesture };
-  return extra === undefined ? [performed] : [performed, { role: "gestureExtra", span: extra }];
+  const gestureSegment: FooterSegment = { role: "gesture", span: gesture };
+  return extra === undefined ? [gestureSegment] : [gestureSegment, { role: "gestureExtra", span: extra }];
 }
 
 function leftSegments(input: FooterInput, glyphs: ChatGlyphs): readonly FooterSegment[] {
