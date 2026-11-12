@@ -331,6 +331,7 @@ describe("classifyThrown", () => {
     const error = classifyThrown(cause);
     expect(error.kind).toBe("transport");
     expect(error.message).toBe("socket hang up");
+    expect(error).not.toHaveProperty("status");
     expect(error.cause).toBe(cause);
   });
 
