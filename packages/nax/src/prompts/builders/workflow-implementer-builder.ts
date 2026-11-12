@@ -46,6 +46,11 @@ export interface WorkflowBriefInput {
   readonly projectContextOverride?: string;
   readonly constitution?: string;
   readonly rulings: readonly string[];
+  /**
+   * US-001: `story.outOfScope` — what this story must not implement. Rendered after "Rulings in
+   * force" so the implementer and both reviewers see the same boundary, and omitted when empty.
+   */
+  readonly outOfScope?: readonly string[];
   readonly redBaseDependencies: readonly { readonly storyId: string; readonly reason: string }[];
   readonly reportPath: string;
 }
@@ -97,6 +102,7 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
       }`,
     ),
     section("Rulings in force", list(input.rulings, "")),
+    section("Out of scope", list(input.outOfScope ?? [], "")),
     redBase,
     section("Story context", input.storyContext),
     input.rulesIndex ? buildRulesIndexSection(input.rulesIndex) : "",
@@ -130,6 +136,14 @@ export const REPAIR_VERIFICATION_RULE =
  */
 export const GATE_INTEGRITY_RULE =
   "Make a red gate green only by fixing the code or tests it checks. Never create, delete or edit files only to satisfy a gate's precondition, and never change the gate's command or the quality config to make it pass. If no code defect explains the failure (for example, the gate output says it is turned green outside the code), leave it red and reply BLOCKED with the reason in \"concerns\".";
+
+/**
+ * US-001: the brief's rulings and scope are settled context, not open questions. Both story
+ * reviewers carry this, so a ruling the implementer obeyed is not re-raised as an unaddressed
+ * finding — the loop that could never converge on a waived trade-off.
+ */
+export const WORKFLOW_SETTLED_RULINGS_RULE =
+  'The brief\'s "Rulings in force" and "Out of scope" sections are settled: do not report a finding that a ruling already decides, or whose fix needs work the brief lists as out of scope. To disagree with a ruling, report a "minor" finding that names the ruling id.';
 
 export const WORKFLOW_REPLY_CONTRACT = `End your reply with exactly one fenced json block:
 

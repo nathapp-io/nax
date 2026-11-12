@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   cleanupTempDir,
   type DeepPartial,
+  makeAdviceDecision,
   makeMockCallContext,
   makeMockRuntime,
   makeNaxConfig,
@@ -10,7 +11,7 @@ import {
   makeTempDir,
   makeTestContext,
 } from "@test/helpers";
-import type { Advisor, QuestionDraft } from "@/advisor";
+import type { AdviceDecision, Advisor, QuestionDraft } from "@/advisor";
 import type { NaxConfig } from "@/config";
 import { _workflowResumeDeps } from "@/execution";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
@@ -434,5 +435,202 @@ describe("buildStoryEnv — evidence and interrupt steps (US-005)", () => {
     expect(await env.steps.workProduced?.()).toBe(false);
     await Bun.write(sc.reportPath, "# report\n");
     expect(await env.steps.workProduced?.()).toBe(true);
+  });
+});
+
+/**
+ * US-002: the live no-op detector the loop reads. It answers from real git, so the tests below run
+ * against a temporary repository rather than stubbing the reads that make the answer true.
+ */
+describe("buildStoryEnv — fixDiffEmpty (US-002)", () => {
+  const realGit = _workflowDeps.git;
+
+  beforeEach(() => {
+    _workflowDeps.git = realGit;
+  });
+
+  /** A committed repository plus the `buildStoryEnv` context that points at it. */
+  async function gitSetup() {
+    const dir = makeTempDir("wf-env-git-");
+    const outputDir = makeTempDir("wf-env-git-out-");
+    dirs.push(dir, outputDir);
+    const run = async (...args: string[]): Promise<string> => {
+      const proc = Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+      const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      return out.trim();
+    };
+    await run("init", "-q");
+    await run("config", "user.email", "t@t");
+    await run("config", "user.name", "t");
+    await Bun.write(join(dir, "a.txt"), "one\n");
+    await run("add", ".");
+    await run("commit", "-qm", "seed");
+    const config = makeNaxConfig({
+      outputDir,
+      execution: { costLimit: 5 },
+      workflow: { maxFixRounds: 4 },
+    });
+    const runtime = makeMockRuntime({ config, workdir: dir });
+    const ctx = makeTestContext({
+      config,
+      rootConfig: config,
+      runtime,
+      projectDir: dir,
+      workdir: dir,
+      prd: { ...makeTestContext().prd, feature: "feat" },
+    });
+    return { ctx, dir, run };
+  }
+
+  test("AC-20: HEAD at the base with a clean tree is an empty fix diff", async () => {
+    const { ctx, dir, run } = await gitSetup();
+    const base = await run("rev-parse", "HEAD");
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(dir).toBe(ctx.projectDir);
+    expect(await env.steps.fixDiffEmpty?.(base)).toBe(true);
+  });
+
+  test("AC-21: a commit after the base is not an empty fix diff", async () => {
+    const { ctx, dir, run } = await gitSetup();
+    const base = await run("rev-parse", "HEAD");
+    await Bun.write(join(dir, "a.txt"), "one\ntwo\n");
+    await run("commit", "-qam", "fix: two");
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.fixDiffEmpty?.(base)).toBe(false);
+  });
+
+  test("AC-22: an uncommitted edit at the base is not an empty fix diff", async () => {
+    const { ctx, dir, run } = await gitSetup();
+    const base = await run("rev-parse", "HEAD");
+    await Bun.write(join(dir, "a.txt"), "one\nedited\n");
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    expect(await env.steps.fixDiffEmpty?.(base)).toBe(false);
+  });
+});
+
+/**
+ * US-001: both review steps rewrite the brief first, so an advisor answer or residual ruling the
+ * loop recorded after the story started is in the brief the reviewer reads. A refresh that fails
+ * leaves the previous brief in place and the review runs anyway.
+ */
+describe("buildStoryEnv — the brief is refreshed before each review (US-001)", () => {
+  const original = { ..._workflowDeps };
+  let logs: LogEntry[] = [];
+
+  beforeEach(() => {
+    resetLogger();
+    logs = [];
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+  });
+
+  afterEach(() => {
+    Object.assign(_workflowDeps, original);
+    resetLogger();
+  });
+
+  /** The answer the advisor recorded after the story started, for `storyId`. */
+  const answerFor = (storyId: string) =>
+    makeAdviceDecision({
+      id: "D-2",
+      kind: "implementer-question",
+      storyId,
+      action: { type: "answer", text: "Keep the lstat walk" },
+    });
+
+  const REVIEW_VERDICT = { spec: "pass", quality: "approved", findings: [], cannotVerify: [], inspectedFiles: [] };
+
+  /** Keep the refresh local: no spec, no rules, no project-context override, no git. */
+  function stubRefreshDeps(decisions: AdviceDecision[]): void {
+    _workflowDeps.readTrustedDecisions = async () => decisions;
+    _workflowDeps.resolveFeatureSpec = async () => ({ specSource: null });
+    _workflowDeps.loadProjectContextOverride = async () => undefined;
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+  }
+
+  /**
+   * Run `step` with `callOp` recording the brief's text at the moment each op arrives. The op reads
+   * the same file the reviewer would, so this is what the reviewer sees.
+   */
+  async function briefAtEachOp(
+    sc: { briefPath: string },
+    step: () => Promise<unknown>,
+  ): Promise<{ ops: string[]; briefs: Record<string, string> }> {
+    const ops: string[] = [];
+    const briefs: Record<string, string> = {};
+    _workflowDeps.callOp = makeScriptedCallOp(async (op) => {
+      ops.push(op.name);
+      briefs[op.name] = await Bun.file(sc.briefPath).text();
+      return op.name === "workflow-re-review"
+        ? { verdicts: [{ id: "F1", addressed: true, note: "" }], newFindings: [] }
+        : REVIEW_VERDICT;
+    });
+    await step();
+    return { ops, briefs };
+  }
+
+  test("AC-12: the story review reads a brief carrying the story's advisor answer", async () => {
+    const { ctx } = setup();
+    const { sc, env } = await buildStoryEnv(ctx, makeMockCallContext());
+    stubRefreshDeps([answerFor(ctx.story.id)]);
+    const { ops, briefs } = await briefAtEachOp(sc, () => env.steps.storyReview([], {}));
+    expect(ops).toContain("workflow-story-review");
+    expect(briefs["workflow-story-review"]).toContain("Advisor answer D-2");
+  });
+
+  test("AC-13: the re-review reads a brief carrying the story's advisor answer", async () => {
+    const { ctx } = setup();
+    const { sc, env } = await buildStoryEnv(ctx, makeMockCallContext());
+    stubRefreshDeps([answerFor(ctx.story.id)]);
+    const finding = { id: "F1", kind: "spec" as const, severity: "important" as const, issue: "AC-1 untested" };
+    const { ops, briefs } = await briefAtEachOp(sc, () => env.steps.reReview(1, [finding], "fix-base"));
+    expect(ops).toContain("workflow-re-review");
+    expect(briefs["workflow-re-review"]).toContain("Advisor answer D-2");
+  });
+
+  test("AC-14: a refresh that throws still lets the story review run", async () => {
+    const { ctx } = setup();
+    const { sc, env } = await buildStoryEnv(ctx, makeMockCallContext());
+    stubRefreshDeps([]);
+    _workflowDeps.loadProjectContextOverride = async () => {
+      throw new Error("context file gone");
+    };
+    const { ops } = await briefAtEachOp(sc, () => env.steps.storyReview([], {}));
+    expect(ops).toContain("workflow-story-review");
+  });
+
+  test("AC-15: a failed refresh logs the warning naming the previous brief", async () => {
+    const { ctx } = setup();
+    const { env } = await buildStoryEnv(ctx, makeMockCallContext());
+    stubRefreshDeps([]);
+    _workflowDeps.loadProjectContextOverride = async () => {
+      throw new Error("context file gone");
+    };
+    _workflowDeps.callOp = makeScriptedCallOp(() => REVIEW_VERDICT);
+    await env.steps.storyReview([], {});
+    const warning = logs.find(
+      (e) => e.message === "Could not refresh the story brief - the review reads the previous one",
+    );
+    expect(warning?.level).toBe("warn");
+    expect(warning?.data?.storyId).toBe(ctx.story.id);
+  });
+
+  test("AC-17: a failed refresh leaves the previous brief for the review to read", async () => {
+    const { ctx } = setup();
+    const { sc, env } = await buildStoryEnv(ctx, makeMockCallContext());
+    // The answer the would-be refresh carries in, and the previous brief it can no longer replace.
+    stubRefreshDeps([answerFor(ctx.story.id)]);
+    await Bun.write(join(sc.storyDir, "brief.md"), "# Brief: the previous one\n");
+    let refreshAttempts = 0;
+    _workflowDeps.loadProjectContextOverride = async () => {
+      refreshAttempts += 1;
+      throw new Error("context file gone");
+    };
+    const { briefs } = await briefAtEachOp(sc, () => env.steps.storyReview([], {}));
+    // The refresh really ran and failed before the review: what follows is the fallback, not a
+    // review that simply never tried to rewrite the brief.
+    expect(refreshAttempts).toBe(1);
+    expect(briefs["workflow-story-review"]).toBe("# Brief: the previous one\n");
+    expect(briefs["workflow-story-review"]).not.toContain("Advisor answer D-2");
   });
 });

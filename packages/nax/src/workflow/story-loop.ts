@@ -54,6 +54,13 @@ export interface StoryLoopSteps {
   uncommitted(): Promise<string[]>;
   costExceeded(): boolean;
   /**
+   * US-002: did the fix round leave the tree exactly where `fixBase` found it — HEAD still there and
+   * nothing uncommitted? True skips the re-review and sends the open findings to the residual advisor,
+   * because no reviewer could see progress on an unchanged diff. Absent, false or throwing all read as
+   * "the diff is not empty", so the re-review runs as it always did.
+   */
+  fixDiffEmpty?(fixBase: string): Promise<boolean>;
+  /**
    * US-002: did the story leave any work evidence behind? Absent means "work produced", so the
    * no-work guard never fires for a caller that has not wired it.
    */

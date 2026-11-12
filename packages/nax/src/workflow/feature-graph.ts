@@ -77,7 +77,8 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
     "gate-repair": {
       kind: "agent",
       commits: true,
-      produces: ["gateRepairRounds"],
+      // US-004: the repair's committed diff is re-reviewed once, and the verdict is a record line.
+      produces: ["gateRepairRounds", "repairReviews"],
       transitions: [{ to: "final-gates" }],
       run: gateRepairStep,
     },
@@ -86,8 +87,9 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
     "ci-repair": {
       kind: "agent",
       commits: true,
-      // US-005: the reply's concerns join the round and the findings it already records.
-      produces: ["ciRepairRounds", "ciRepairFindings", "ciRepairConcerns"],
+      // US-005: the reply's concerns join the round and the findings it already records, and the
+      // review of the repair's committed diff is a `repairReviews` line like the gate repair's.
+      produces: ["ciRepairRounds", "ciRepairFindings", "ciRepairConcerns", "repairReviews"],
       transitions: [{ to: "final-gates" }],
       run: ciRepairStep,
     },

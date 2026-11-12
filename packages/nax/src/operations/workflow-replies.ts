@@ -168,6 +168,8 @@ export function parseReReviewReply(output: string, openIds: readonly string[]): 
       addressed: entry.verdict === "ADDRESSED",
       note: typeof entry.note === "string" ? entry.note : "",
       ...(residual ? { residual } : {}),
+      // US-002: only a PARTIAL entry describes a remainder, so the flag means nothing on another verdict.
+      ...(entry.verdict === "PARTIAL" && entry.narrower === true ? { narrower: true as const } : {}),
     };
   });
   return { verdicts, newFindings: drafts(parsed.newFindings) };

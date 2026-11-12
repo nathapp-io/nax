@@ -31,6 +31,13 @@ export interface FeatureSteps {
     opts?: { readonly prUrl?: string; readonly repair?: true; readonly ciRound?: number },
   ): Promise<BranchFixOutcome>;
   branchReReview(findings: readonly WorkflowFinding[], fixBase: string): Promise<ReviewOutcome<ReReviewVerdict>>;
+  /**
+   * US-004: the evidence-only re-review of a repair's committed diff, run once per repair round whose
+   * repair moved HEAD. Optional: absent means a repair's diff goes unreviewed with no HEAD read and no
+   * record line, exactly as it did before the step existed. Wired by `buildFeatureEnv` (US-006) to the
+   * branch re-review over `fixBase`; its verdict is evidence for the approval advisor, never a fix round.
+   */
+  repairReview?(findings: readonly WorkflowFinding[], base: string): Promise<ReviewOutcome<ReReviewVerdict>>;
   adjudicate(items: readonly WorkflowFinding[]): Promise<readonly WorkflowRuling[]>;
   publish(record: WorkflowFeatureRecord): Promise<PublishOutcome>;
   /** Optional durable PR items; absent preserves the original graph behavior. */

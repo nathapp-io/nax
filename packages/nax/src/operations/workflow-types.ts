@@ -64,6 +64,12 @@ export interface ReReviewVerdict {
     readonly addressed: boolean;
     readonly note: string;
     readonly residual?: ReReviewResidual;
+    /**
+     * US-002: what remains of this finding is the same problem in a narrower form, so another fix
+     * round cannot converge on it and the story loop sends the finding to the residual advisor.
+     * `true` only on a PARTIAL entry — a residual is the only verdict that describes a remainder.
+     */
+    readonly narrower?: true;
   }[];
   readonly newFindings: readonly WorkflowFindingDraft[];
 }

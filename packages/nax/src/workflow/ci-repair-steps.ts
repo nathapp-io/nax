@@ -6,7 +6,9 @@
  * 600-line limit; they must not import it (it imports them back — `bun run check:import-cycles`).
  *
  * US-005 extends this module with the repair targets and concerns; US-006 adds the checks still
- * failing after the last round.
+ * failing after the last round. The repair commits after the branch re-review, so its own diff is
+ * re-reviewed once by US-004's `reviewRepairDiff` (kind `CI repair`) and recorded as one
+ * `repairReviews` line — evidence for the approval advisor, never a new fix round.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { FailedCheck } from "@/forge";
@@ -16,6 +18,7 @@ import type { FeatureEnv, FeatureSteps } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
 import type { PublishOutcome } from "./finalize";
 import { ledgerText } from "./ledger";
+import { reviewRepairDiff } from "./repair-review";
 import type { CiCheckRef, CiRemainingCheck, WorkflowFeatureRecord, WorkflowFindingDraft } from "./types";
 
 /**
@@ -230,12 +233,22 @@ export async function ciRepairStep(
     NO_MIRROR,
   );
   const log = featureStep(roundLabel("ci-repair", round), true, false, env.steps.modelFor?.("branch-fix"));
-  const out = await env.steps.branchFix(findings, {
-    repair: true,
-    ...(rec.url ? { prUrl: rec.url } : {}),
-    // US-004: the round reaches the session, so it builds the CI repair's brief — and labels the
-    // section it appends to the report with the round it is repairing.
-    ciRound: round,
+  // US-005: the repair commits after the branch re-review, so its own diff gets one evidence-only
+  // review — the same helper the gate repair uses. The session runs as it always did, whatever the
+  // HEAD reads return, and its verdict opens no fix round: it is evidence for the approval advisor.
+  const { outcome: out, patch } = await reviewRepairDiff(env, {
+    kind: "CI repair",
+    round,
+    findings,
+    history: rec.repairReviews ?? [],
+    run: () =>
+      env.steps.branchFix(findings, {
+        repair: true,
+        ...(rec.url ? { prUrl: rec.url } : {}),
+        // US-004: the round reaches the session, so it builds the CI repair's brief — and labels the
+        // section it appends to the report with the round it is repairing.
+        ciRound: round,
+      }),
   });
   log.done(`${list.join(" ")}${out.failure ? ` (session failed: ${out.failure})` : ""}`);
   if (out.failure) await env.sink.ledger(ledgerText.note(`CI repair session failed: ${out.failure}`), NO_MIRROR);
@@ -245,7 +258,7 @@ export async function ciRepairStep(
   // round labels the entry, and every earlier round's entry stays: the history is the point.
   const concerns = out.reply?.concerns?.trim() ?? "";
   const raised = await noteConcerns(env, round, concerns, rec.ciRepairConcerns ?? []);
-  return { patch: { ciRepairRounds: round, ciRepairFindings: undefined, ...raised } };
+  return { patch: { ciRepairRounds: round, ciRepairFindings: undefined, ...raised, ...patch } };
 }
 
 /**

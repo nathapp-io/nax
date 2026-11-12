@@ -36,12 +36,12 @@ function residualBlock(input: AdvisorBatchPromptInput): string {
   const heading = input.items.some((i) => i.options.some((o) => o.type === "defer"))
     ? "## The story reached its fix-round cap"
     : "## Open items after the branch fix";
-  return `${heading}\n${input.summary}\n\nRule on each open item below. ${parkGuidance(input.items)}\n\n${items}${gates}
+  return `${heading}\n${input.summary}\n\nRule on each open item below. ${parkGuidance(input.items)} Read the file each item names before you rule, and list every file you opened in inspectedFiles.\n\n${items}${gates}
 
 ## Reply
 End your reply with exactly one fenced JSON block, one answer per item id:
 \`\`\`json
-{"answers": [{"itemId": "Q-...", ${ANSWER_FIELDS}}], "diagnoses": {"<gate>": "..."}}
+{"answers": [{"itemId": "Q-...", ${ANSWER_FIELDS}, "inspectedFiles": ["path"]}], "diagnoses": {"<gate>": "..."}}
 \`\`\`
 Include "instruction" for carry, "reason" for waive/defer/hold. "rationale" is always required.`;
 }

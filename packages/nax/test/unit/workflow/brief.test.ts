@@ -1,15 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { utimes } from "node:fs/promises";
+import { readdir, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { cleanupTempDir, makeStepContext, makeTempDir, makeTestStory } from "@test/helpers";
-import { specExcerpts, writeBrief } from "@/workflow/brief";
+import { _briefDeps, refreshBrief, specExcerpts, writeBrief } from "@/workflow/brief";
 import { newStoryRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 
 const dirs: string[] = [];
 const original = { ..._workflowDeps };
+const originalBriefDeps = { ..._briefDeps };
 afterEach(async () => {
   Object.assign(_workflowDeps, original);
+  Object.assign(_briefDeps, originalBriefDeps);
   await Promise.all(dirs.map(cleanupTempDir));
   dirs.length = 0;
 });
@@ -90,6 +92,100 @@ describe("writeBrief", () => {
     const text = await Bun.file(sc.briefPath).text();
     expect(text).toContain("Rulings in force");
     expect(text).toContain("Carried from US-1 (D-4): Keep lock order");
+  });
+
+  test("AC-8: writes the story's out of scope list under its own heading", async () => {
+    const root = makeTempDir("wf-brief-scope-");
+    dirs.push(root);
+    const runDir = join(root, "run");
+    _workflowDeps.resolveFeatureSpec = async () => ({ specSource: null });
+    const sc = makeStepContext({
+      story: makeTestStory({ id: "US-002", acceptanceCriteria: ["pays"], outOfScope: ["No run lease or lock"] }),
+      projectDir: root,
+      runDir,
+      storyDir: join(runDir, "US-002"),
+      briefPath: join(runDir, "US-002", "brief.md"),
+      reportPath: join(runDir, "US-002", "report.md"),
+    });
+    await writeBrief(sc);
+    const text = await Bun.file(sc.briefPath).text();
+    expect(text).toContain("## Out of scope");
+    expect(text.indexOf("- No run lease or lock")).toBeGreaterThan(text.indexOf("## Out of scope"));
+  });
+});
+
+/**
+ * US-001: the brief is rewritten before each review, so a mid-loop ruling reaches the reviewer.
+ * A refresh that fails must not cost the review — the previous brief is still on disk — unless
+ * the run is aborting, where the error is the abort's own.
+ */
+describe("refreshBrief (US-001)", () => {
+  /** A step context in a temp dir with a working refresh; `aborted` decides what a failure means. */
+  function briefContext(aborted = false): { sc: ReturnType<typeof makeStepContext> } {
+    const root = makeTempDir("wf-brief-refresh-");
+    dirs.push(root);
+    const runDir = join(root, "run");
+    const controller = new AbortController();
+    if (aborted) controller.abort();
+    _workflowDeps.resolveFeatureSpec = async () => ({ specSource: null });
+    return {
+      sc: makeStepContext({
+        projectDir: root,
+        runDir,
+        storyDir: join(runDir, "US-001"),
+        briefPath: join(runDir, "US-001", "brief.md"),
+        reportPath: join(runDir, "US-001", "report.md"),
+        runSignal: controller.signal,
+      }),
+    };
+  }
+
+  /** Make the refresh fail where `writeBrief` reads the run's project-context file. */
+  function failRefresh(): void {
+    _workflowDeps.loadProjectContextOverride = async () => {
+      throw new Error("context file gone");
+    };
+  }
+
+  function brokenRefresh(aborted: boolean): { sc: ReturnType<typeof makeStepContext> } {
+    const context = briefContext(aborted);
+    failRefresh();
+    return context;
+  }
+
+  test("AC-16: rethrows the write failure when the run signal is aborted", async () => {
+    const { sc } = brokenRefresh(true);
+    await expect(refreshBrief(sc)).rejects.toThrow("context file gone");
+  });
+
+  test("a write failure without an abort is contained, not thrown at the step", async () => {
+    const { sc } = brokenRefresh(false);
+    await expect(refreshBrief(sc)).resolves.toBeUndefined();
+  });
+
+  test("F2: a brief write that fails part-way leaves the previous brief whole", async () => {
+    const { sc } = briefContext();
+    await Bun.write(sc.briefPath, "# Brief: the previous one\n");
+    const written: string[] = [];
+    _briefDeps.write = async (path: string, text: string) => {
+      written.push(path);
+      // A write that lands a few bytes and then fails — what a full disk or a killed process does.
+      await Bun.write(path, text.slice(0, 8));
+      throw new Error("disk full");
+    };
+    await expect(refreshBrief(sc)).resolves.toBeUndefined();
+    // The failure never touched the brief itself: it landed on a sibling temporary file...
+    expect(written[0]).not.toBe(sc.briefPath);
+    expect(await Bun.file(sc.briefPath).text()).toBe("# Brief: the previous one\n");
+    // ...which is removed, so a failed refresh leaves nothing half-written behind.
+    expect(await readdir(sc.storyDir)).toEqual(["brief.md"]);
+  });
+
+  test("F2: a successful refresh replaces the brief and leaves no temporary file", async () => {
+    const { sc } = briefContext();
+    await refreshBrief(sc);
+    expect(await Bun.file(sc.briefPath).text()).toContain("# Brief: US-001");
+    expect(await readdir(sc.storyDir)).toEqual(["brief.md"]);
   });
 });
 

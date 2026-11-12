@@ -327,6 +327,61 @@ describe("parseReReviewReply", () => {
     const v = parseReReviewReply(JSON.stringify({ findings: [], newFindings: [] }), ["F1"]);
     expect(v?.verdicts).toEqual([{ id: "F1", addressed: false, note: "(no verdict returned)" }]);
   });
+
+  // US-002: `narrower` marks a residual that is the same problem in a smaller form, which the story
+  // loop routes to the residual advisor instead of spending another fix round on it.
+  test("a PARTIAL entry with narrower: true carries the flag (US-002 AC-1)", () => {
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [{ id: "F1", verdict: "PARTIAL", narrower: true, residual: { issue: "x" } }],
+        newFindings: [],
+      }),
+      ["F1"],
+    );
+    expect(v?.verdicts[0]).toEqual({
+      id: "F1",
+      addressed: false,
+      note: "",
+      residual: { issue: "x" },
+      narrower: true,
+    });
+  });
+
+  test("a PARTIAL entry with no narrower field carries no flag (US-002 AC-2)", () => {
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [{ id: "F1", verdict: "PARTIAL", residual: { issue: "x" } }],
+        newFindings: [],
+      }),
+      ["F1"],
+    );
+    expect(v?.verdicts[0]?.residual?.issue).toBe("x");
+    expect(v?.verdicts[0]).not.toHaveProperty("narrower");
+  });
+
+  test("an ADDRESSED entry with narrower: true drops the flag (US-002 AC-3)", () => {
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [{ id: "F1", verdict: "ADDRESSED", narrower: true, note: "" }],
+        newFindings: [],
+      }),
+      ["F1"],
+    );
+    expect(v?.verdicts[0]?.addressed).toBe(true);
+    expect(v?.verdicts[0]).not.toHaveProperty("narrower");
+  });
+
+  test("a NOT_ADDRESSED entry with narrower: true drops the flag (US-002 AC-4)", () => {
+    const v = parseReReviewReply(
+      JSON.stringify({
+        findings: [{ id: "F1", verdict: "NOT_ADDRESSED", narrower: true, note: "" }],
+        newFindings: [],
+      }),
+      ["F1"],
+    );
+    expect(v?.verdicts[0]?.addressed).toBe(false);
+    expect(v?.verdicts[0]).not.toHaveProperty("narrower");
+  });
 });
 
 describe("parseBranchReviewReply", () => {
