@@ -159,7 +159,8 @@ export function buildVerdict(rec: WorkflowFeatureRecord): WorkflowVerdict | unde
   if (!rec.outcome) return undefined;
   const openItems = buildOpenItems(rec);
   return {
-    workflowPassed: rec.passed === true && !openItems.some((i) => BLOCKING_KINDS.has(i.kind)),
+    workflowPassed:
+      rec.passed === true && rec.pushFailed !== true && !openItems.some((i) => BLOCKING_KINDS.has(i.kind)),
     outcome: rec.outcome,
     reasons: rec.reasons,
     openItems,

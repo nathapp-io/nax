@@ -63,6 +63,32 @@ describe("isPublishableBranch", () => {
 });
 
 describe("publish (P4-R3, P4-R11)", () => {
+  test("rejected push logs the rejection at error level", async () => {
+    wire();
+    _featureDeps.commitAndPush = async () => {
+      throw new Error("remote: error: GH013: Repository rule violations found");
+    };
+    const logs: LogEntry[] = [];
+    resetLogger();
+    initLogger({ level: "silent" });
+    addSink((entry) => logs.push(entry));
+    try {
+      await publish(withMode(makeFeatureContext(), "push"), input());
+      expect(logs.find((entry) => entry.message === "Push failed — the feature ends local-only")).toMatchObject({
+        level: "error",
+        data: { error: "remote: error: GH013: Repository rule violations found" },
+      });
+    } finally {
+      resetLogger();
+    }
+  });
+
+  test.each(["none", "push"] as const)("%s successful or disabled publish has no pushFailed key", async (mode) => {
+    wire({ ci: "green" });
+    const out = await publish(withMode(makeFeatureContext(), mode), input());
+    expect(out).not.toHaveProperty("pushFailed");
+    expect(out.outcome).toBe(mode === "none" ? "local-only" : "pushed");
+  });
   test("happy path: push, draft PR, CI green, advisor approves -> promoted, ready", async () => {
     const calls = wire({ ci: "green" });
     const asked: string[] = [];

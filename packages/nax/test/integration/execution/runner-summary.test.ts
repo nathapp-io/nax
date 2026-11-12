@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   cleanupTempDir,
+  makeDoneStory,
+  makeFeatureMachineHarness,
   makeMockRuntime,
   makeNaxConfig,
   makePluginRegistry,
@@ -25,6 +27,7 @@ import { RunStateKeeper } from "@/runstate";
 import { createNoOpCostAggregator } from "@/runtime";
 import { SessionManager } from "@/session";
 import { _gitDeps } from "@/utils/git";
+import { publishStep } from "@/workflow/feature-steps";
 
 withDepsRestore(_runnerDeps);
 withDepsRestore(_runnerCompletionDeps);
@@ -94,10 +97,20 @@ describe("runner summary", () => {
     };
     _gitDeps.spawn = makeSpawn().spawn;
     _endPhaseDeps.resolveBranch = async () => "feature/summary";
+    const harness = makeFeatureMachineHarness(
+      { published: { outcome: "local-only", ci: "skipped", reasons: ["push failed"], pushFailed: true } },
+      { stories: [makeDoneStory("US-001")] },
+    );
+    const patch = (await publishStep(harness.env, harness.env.record)).patch;
+    expect(patch?.passed).toBe(false);
+    let closedPassed: boolean | undefined;
+    const stop = pipelineEventBus.on("run:completed", (event) => {
+      closedPassed = event.workflowPassed;
+    });
     _runnerCompletionDeps.runWorkflowFeature = async () => ({
-      passed: false,
-      outcome: "draft",
-      reasons: ["gate open"],
+      passed: patch?.passed === true,
+      outcome: "local-only",
+      reasons: ["push failed"],
     });
     _workflowEndReportDeps.readSummary = async () => null;
     _workflowEndReportDeps.saveDuration = async () => true;
@@ -118,8 +131,15 @@ describe("runner summary", () => {
       expect(dispatched).toEqual(["US-001", "US-002"]);
       expect(result.storiesCompleted).toBe(1);
       expect(summary).toHaveLength(1);
-      expect(summary[0]?.data).toMatchObject({ storiesCompleted: 1, storiesGateOpen: 1, storiesPassed: 2 });
+      expect(summary[0]?.data).toMatchObject({
+        storiesCompleted: 1,
+        storiesGateOpen: 1,
+        storiesPassed: 2,
+        success: false,
+      });
+      expect(closedPassed).toBe(false);
     } finally {
+      stop();
       await runtime.close();
       cleanupTempDir(workdir);
     }

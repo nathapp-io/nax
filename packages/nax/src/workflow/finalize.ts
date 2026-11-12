@@ -40,6 +40,7 @@ export interface PublishInput {
 
 export interface PublishOutcome {
   readonly outcome: FeatureOutcome;
+  readonly pushFailed?: true;
   readonly ci: FeatureCiState;
   readonly url?: string;
   readonly reasons: readonly string[];
@@ -102,7 +103,7 @@ async function pushBranch(fc: FeatureContext): Promise<string | null> {
     return null;
   } catch (err) {
     if (fc.runSignal?.aborted) throw err;
-    getSafeLogger()?.warn("workflow", "Push failed — the feature ends local-only", {
+    getSafeLogger()?.error("workflow", "Push failed — the feature ends local-only", {
       storyId: "_run",
       error: errorMessage(err),
     });
@@ -440,7 +441,12 @@ async function pushMode(plan: PublishPlan): Promise<PublishOutcome> {
   const ledger = await ledgerCommit(plan.fc);
   const pushFailed = await pushBranch(plan.fc);
   if (pushFailed) {
-    return { outcome: "local-only", ci: "skipped", reasons: [...plan.base, ...ledgerReasons(ledger), pushFailed] };
+    return {
+      outcome: "local-only",
+      pushFailed: true,
+      ci: "skipped",
+      reasons: [...plan.base, ...ledgerReasons(ledger), pushFailed],
+    };
   }
   const ci = await waitForCi(plan.fc, plan.forge);
   if (plan.fc.runSignal?.aborted) throw abortedError();
@@ -475,7 +481,12 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   const ledgerReason = ledgerReasons(ledger);
   const pushFailed = await pushBranch(fc);
   if (pushFailed) {
-    return { outcome: "local-only", ci: "skipped", reasons: [...plan.base, ...ledgerReason, pushFailed] };
+    return {
+      outcome: "local-only",
+      pushFailed: true,
+      ci: "skipped",
+      reasons: [...plan.base, ...ledgerReason, pushFailed],
+    };
   }
 
   const body = await bodyFacts(fc, input);

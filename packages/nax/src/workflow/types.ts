@@ -310,6 +310,8 @@ export interface WorkflowFeatureRecord {
   readonly reasons: readonly string[];
   readonly url?: string;
   readonly passed?: boolean;
+  /** Whether the latest publish attempted and failed to push. */
+  readonly pushFailed?: boolean;
   /**
    * US-005: the ids of the feature's trusted ledger decisions flagged for a human
    * (`needsHumanConfirm`), in ledger order, collected after publish. Absent when
