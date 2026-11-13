@@ -3,7 +3,7 @@
   "feature": "ci-starved-checks",
   "branchName": "feat/ci-starved-checks",
   "createdAt": "2026-10-22T00:00:00Z",
-  "updatedAt": "2026-11-13T05:50:18.538Z",
+  "updatedAt": "2026-11-13T06:03:24.533Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,14 +32,17 @@
         "github"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "One additive helper module with standard URL parsing and injected command I/O; no polling or cross-module policy changes."
+        "reasoning": "One additive helper module with standard URL parsing and injected command I/O; no polling or cross-module policy changes.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/forge/job-steps.ts",
@@ -57,7 +60,11 @@
         "isStarvedJob returns false for conclusion success even when runner_name is empty and steps is []."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7febb903fc292e70a5ae19eb120169d49224b96f"
     },
     {
       "id": "US-002",
@@ -130,7 +137,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -176,7 +186,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -221,7 +234,10 @@
         "ciAllowsReady(\"starved\", { waiveStarved: false }) returns false."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -288,7 +304,10 @@
         }
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -328,7 +347,10 @@
         "packages/nax/test/unit/cli/workflow-status-live.test.ts"
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -395,7 +417,10 @@
         "A ready-only waiver pass posts the waiver record but no fix-summary comment."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -454,7 +479,10 @@
         "When a waived promotion succeeds, the posted waiver's headSha equals the exact expectedSha passed to the single CI wait."
       ],
       "workdir": "packages/nax",
-      "workdirSource": "stated"
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "Enhancement closing #2889, entirely within packages/nax; no changes to nax-agent, nax-agent-acp, nax-ai, dependencies, release versions or configuration schema are needed. Graph-first navigation was unavailable because this session exposes no codebase-memory MCP tools; discovery used direct repository reads and text search. The supplied spec matches the inspected baseline. Architecture guidance is docs/architecture/ARCHITECTURE.md:17 (injected external calls), :145 (600-line source / 800-line test limits), and :126 (package boundaries). Use Bun, strict TypeScript, bun:test, injectable forge calls, named constants, and leaf imports to avoid orchestration cycles. No implementation or validation command is needed for this PRD-writing task.\n\nUS-001/US-002: packages/nax/src/forge/types.ts:15 defines ForgeRunResult and :23 defines the injected ForgeDeps.run contract. packages/nax/src/forge/job-steps.ts:60 constructs the hostname-qualified Actions job API argv; :65 catches command/JSON failures and treats missing steps as unknown. Mirror that fail-soft I/O pattern, but do not reuse failed-step classification or add a runner_id requirement: starvation requires conclusion cancelled, runner_name empty or null, and an actual empty steps array. New ci-starved.ts owns URL recognition, job reads, POST reruns, CI_STARVED_RERUN_LIMIT=2, immutable ledger decisions and deadline decisions. The URL supplies host/repository/job id; non-Actions links must fail closed, not fall through to a guessed GitHub endpoint.\n\npackages/nax/src/workflow/ci-wait.ts:22 defines the current six-outcome union, :24 the result, :35 the strict-green readiness function, :45 the runner/clock/sleep/scheduler seam, :67 the Poll union, :81 GH_FAILED including cancel, :102 GhCheck, :107 ghChecks, :124 classifyGh, :199 githubWaiting, :219 checksArgv, :225 pollOnce, :303 bindToHead, :312 terminalPoll, :330 errorRun, :362 checkHistory and :390 waitForChecks. The wait currently immediately returns failed only once pending checks settle. Preserve that ordering: only a would-be terminal GitHub failure gets job classification; mixed failed/pending timeout and error-history behavior must not acquire job reads. Extend parsed checks with state/link and carry ghChecks on failed/waiting polls. Call decideStarved at one site and starvedAtDeadline at one site, leaving loop complexity below the ratchet. Count rounds per wait, not per job, copy ledger sets rather than mutating EMPTY_STARVED_LEDGER, and distinguish old cancelled job ids from fresh rerun attempts. An old cancelled id already rerun must be ignored for job reads and round spending while other real failures still win. Only checks rerun by this wait can become starved at deadline; IN_PROGRESS work must remain pending. Do not accidentally use ledger names alone to waive a newly unrelated check or let a green/empty poll satisfy a vacuous deadline predicate.\n\nHead binding is essential: githubWaiting currently only reads green/waiting polls (ci-wait.ts:199); ghHeadSha already supplies a fail-open headRefOid-only auxiliary read at :445. A would-be failed GitHub poll with expectedSha must read the head before any job read or POST; mismatch ends unavailable immediately with the existing sha8 wording. packages/nax/src/workflow/ci-wait.ts:414 currently reconstructs results as {outcome, detail}; change the return plumbing so starvedChecks survives both classification and deadline returns, while other outcomes omit it. Progress logging already uses workflow stage and storyId _run, and the wait's finally cancels heartbeat scheduling; preserve both on every new return path. New info/warn rerun lines should also be safe with no logger. packages/nax/src/workflow/ci-wait.ts:468 readChecksOnce and :492 verdictForHead are explicitly separate; they keep today's classifications and head-binding behavior even though shared checks argv adds link. No GitLab job I/O is introduced.\n\nTests: packages/nax/test/unit/workflow/ci-wait.test.ts:19 provides a scripted runner and virtual clock, :65 and :326 pin the old checks argv. Change only their field list to name,state,bucket,link; add no new tests to that 765-line file. Put all new wait tests in test/unit/workflow/ci-wait-starved.test.ts and restore _ciWaitDeps after each test. Existing ci-wait-sha.test.ts and ci-wait-read-once.test.ts are important regression coverage. Use a stub scheduler/clock and routed gh pr checks / gh pr view / gh api responses, not real sleeps or real forge calls.\n\nUS-003: packages/nax/src/workflow/types.ts:158 is FeatureCiState, also consumed by pr-body.ts:40, approval.ts:21 and cli/workflow.ts:63; add starved without changing existing serialized values. approval.ts:59 owns ciReason and :121 readinessReasons composes it; add the starved-specific prefix/fallback rather than embedding a prefix in the wait's detail. finalize.ts:60 DETAILED_CI_STATES and :71 ciDetailFields decide which details survive the publish record; :347 finishPr bases readiness on advisor approval plus no deterministic reasons; :408 waitForCi binds the pushed head and is shared by publishing modes. Opt this caller into reruns and preserve the starved detail through draft records and PR reasons. ci-repair-steps.ts:111 ciRepairPlan already requires out.outcome=draft and out.ci=failed before reading failures; leave the guard intact and demonstrate that starvation never reads repair logs or plans an agent. finalize-ci.test.ts:77 pins the wait options: add rerunStarved:true and otherwise preserve the object. Existing finalize-ci-gate.test.ts and feature-steps-ci-repair-decision.test.ts cover related integration.\n\nUS-004: the only CI ready rule remains ciAllowsReady; its optional waiveStarved boolean allows only starved in addition to green. workflow-ready.ts:36 workflowPrReadiness currently checks index presence, publication completeness, open items, confirmed advisor work, coverage and then CI (:63). Pass the optional waiver only into that last CI rule; do not bypass any item, coverage, trust, review, gate or head checks. Tests live in test/unit/bot/workflow-ready.test.ts and workflow-ready-coverage.test.ts. This is a narrow explicit readiness exception, not a new forge authorization mechanism, role check or credential flow.\n\nUS-005: bot/coverage-record.ts:16 defines a strict heading/count grammar, :24 renders code-span lines and :49 rejects inconsistent tails; mirror its record discipline while adding a final Reason line. forge/marker.ts:19 withNaxBotMarker wraps a visible nax bot header plus the v1 identity marker, :27 ownComments filters by current login, and :48 stripNaxBotMarkers removes markers but not the visible header. forge/marker-grammar.ts:2 TOP_LEVEL_MARKER_KEYS currently has five entries; append w-ci-waiver so comment discovery can see it, and update test/unit/forge/threads-comments.test.ts's pinned list. ownComments does not sort; latestCiWaiver must choose the newest created comment that actually parses, falling back past malformed newer own comments, never accepting another account's marker. workflow/pr-body-safe.ts:25 neutralise breaks references and mentions; use it on posted reasons without capping the record or applying the 300-character input limit to an already neutralised/rendered string. Validate raw CLI reasons before I/O: trimmed nonempty, single-line, <=300 characters, no <!--; throw NaxError with CI_WAIVER_REASON_INVALID. A check name's comma must not split its identity; semicolons join names in prose, each record check gets its own line, backticks become apostrophes and empty names become (unnamed check).\n\nUS-006: workflow/live-status.ts:18 LiveStatus and :58 readLiveStatus already fetch PR, current login, threads and comments concurrently; :76 falls back to the run record without an item index. Parse the newest own waiver from those same comments, without extra forge writes or changing fallback behavior. cli/workflow.ts:53 WorkflowStatusReport, :101 buildReport and :126 printPlain own reporting. The live report already filters the CI open item when a PR is no longer draft (inside buildReport). Add ciWaiver only on a live, non-draft report; plain output must put the CI line before the supplementary-items early return. Do not fabricate ci=green or erase unrelated unresolved items just to display a waiver. Existing tests are test/unit/workflow/live-status.test.ts and test/unit/cli/workflow-status-live.test.ts (fixture :98 supplies item index comments) plus workflow-status.test.ts. Status is observational: preserve the record's CI and established live-read eligibility/fallback semantics, only reporting the durable exception where the spec permits it.\n\nUS-007: cli/bot.ts:69 BotFixOptions, :153 botFixCommand, :160 fixCyclePass, :194 readinessSummary, :208 readyOnlyPass and :268 fix registration are the CLI integration points. Validate even an explicitly empty string (check undefined, not truthiness) before either fix orchestration call and any forge call; forward only a validated trimmed reason, conditionally spread so absent payloads remain identical. bot/fix-run.ts:86 BotFixInput, :111 BOT_FIX_GRAPH and :433 env construction thread the reason into BotFixEnv (fix-steps.ts:88); BotFixState at fix-steps.ts:37 carries the recorded ciWaived checks/reason. fix-cycle.ts:24 derives its input from BotFixInput and :35/:64 forwards input to both fix and later ready-only passes, so ensure the option survives the existing spread chain without introducing an option into review semantics. The ready node at fix-run.ts:199 must declare ciWaived in produces: step-graph/run.ts:77 rejects even undefined undeclared patch keys.\n\nbot/fix-report.ts is 556 lines, so put waiver decision and comment posting in new bot/ci-waiver-ready.ts and keep its caller thin. fix-report.ts:153 waitForCi opts into reruns; :221 workflowReadyHold currently returns string|undefined, :257 writeEvidence persists workflow evidence, :273 readyHeadHold protects the plain path, :379 readyStep marks ready only after all guards, and :506 renderFixSummary formats public reporting. readyStep returns StepResult<BotFixState>, so its readiness and waiver fields belong under result.patch, unlike runBotFix's flattened BotFixResult. readinessSummary is private to cli/bot.ts; assert its text through the emitted botFixCommand ready-pass output rather than adding an export solely for testing. Change workflowReadyHold to an optional-held/ciWaived object. On workflow PRs post waiver after evidence succeeds and before the final head re-read; on plain PRs after readyHeadHold. Both must post before mark-ready and stop on comment failure. The new helper catches its own post error and returns the precise waiver-specific hold so workflowReadyHold's generic rulings catch never masks it. Preserve _fixReportDeps.postPrComment observability through injected calls. Keep all existing review, finding, configured-head-gate, pushed-head, cancellation, and mark-ready failure guards. ready-only remains summary-comment-free; full fix summaries and CLI readiness summaries report successful waiver readiness. Existing seam tests include test/integration/bot/fix-report-workflow.test.ts:50 setup, test/helpers/bot-fix.ts, test/unit/bot/fix-report.test.ts, test/unit/cli/bot-fix.test.ts and bot-fix-cycle.test.ts. Assert outer botFixCommand/runBotFix wiring as well as readyStep order, not just helper behavior.\n\nUS-008: cli/workflow-promote.ts:46 WorkflowPromoteOptions, :152 ciGreen, :173 PromoteTarget, :186 ForgeAction, :194 forgeWrite, :259 promoteActions, :289 promote, :316 checkLine and :332 workflowPromoteCommand are integration points. Existing headSha (:118) reads git HEAD; retain that exact expectedSha as PromoteTarget.headSha and retain the single CI result used by ci-green, rather than re-reading it for the waiver. Validate the reason before loadRunVerdict in promote, hence before resolveOutputDir or waitForChecks. ciGreen remains one poll (timeoutMs=0,pollMs=0) and never passes rerunStarved. A dry run may read/check but cannot post a comment or rerun a job. Only the flag adds the ordered waiver action; green CI skips its write, failed CI still refuses, comment failure stops ready and record. workflow/promote.ts supplies commentArgv/markReadyArgv and forgeWrite centralizes nonzero-write errors. cli/workflow.ts:207 registers promote and must forward the conditionally present option. commentArgv is an argv builder, not an external runner: assert the generated argv reaches forgeDeps.forge.run. Invalid reason errors are printed through errorMessage using the current CLI error format; the NaxError code is asserted on parseWaiverReason, not assumed to appear literally in stderr or the JSON error string. Shared test/helpers/workflow-promote-fixture.ts:97 accepts a stub CiWaitResult and :50 detects forge writes; extend via existing tests or focused new tests to assert ordering, parsed record, dry-run safety and exact error output.\n\nCompatibility/migration: additive outcome and optional fields only; absent starvedChecks/rerunStarved/waiveStarved/ciWaiver/ciWaived must be omitted, not materialized as undefined, false or null. No persisted schema migration or backfill is required; old comments and run records continue to parse and report unchanged. The live waiver comment is the durable exception, not a synthetic green CI result. Strict-green stays the default in publish, promote and bot ready; actual failures and unreadable jobs cannot be waived. New API writes increase permissions/rate-limit exposure but go through existing forge seams and fail closed for readiness; no credentials or access-control policy is added. Biggest risks are GitHub's stale rerun job identity, head races, incorrectly rewriting pending/error deadline priorities, losing optional result fields in wrappers, trusting malformed/public comments, truncating record reasons, import cycles, and enlarging near-limit files. Dependencies are exactly the binding graph; US-001 and US-005 can start independently. US-006 and US-008 both touch cli/workflow.ts without a binding dependency between them, so keep their additive edits isolated and re-read current files before editing. Tests are implemented within each code story, not as additional stories; do not run bare bun test or coverage inside a sandboxed nax session.\n\nRefine-pass audit: enumerated all 91 numbered source-spec criteria and retained each in its original story and original ordinal block: US-001 AC1-13; US-002 AC1-18; US-003 AC1-6; US-004 AC1-6; US-005 AC1-17; US-006 AC1-5; US-007 AC1-15; US-008 AC1-11. No trailing command-count, no-read, no-write, no-ready, same-case, record-boundary or starts/ends-with-letter qualifier was dropped. The record-line assertion is clarified to compare the record after removing the full standard wrapper: forge/marker.ts:19 adds the visible header, whereas :48 stripNaxBotMarkers removes only the identity marker. Do not change that shared wrapper behavior. The readyStep assertions now use its actual StepResult.patch envelope, and the promote comment assertion observes the argv builder's output at the runner. Existing CLI errors print errorMessage, so tests must not invent a requirement that an internal NaxError code is printed verbatim.\n\nAll nine failure-table rows have acceptance criteria: missing/non-Actions links (US-002 AC19); nonzero/malformed/missing-steps job reads (US-001 AC7/8/14 and US-002 AC6/20); failed rerun request and warning (US-002 AC11/12); stale rerun identity without another round (US-002 AC10); GitLab cancellation (US-002 AC17); bot waiver-post failure on both PR paths (US-007 AC9/15); promotion write failure stops ready and record (US-008 AC7/13); invalid reason validation before I/O (US-005 AC2-5/16, US-007 AC16, US-008 AC1/12); invalid newest own record falls back (US-005 AC13). Every story has a negative-path acceptance criterion. Regression behavior is explicitly protected by unchanged pending/GitLab/failure outcomes, publish option values, the default strict-green matrix, the five original marker keys/order, absent status fields, the no-waiver green readyStep patch, and promotion's four original actions.\n\nAll 12 source Out of Scope items remain verbatim in the top-level list. All spec-recommended context files are included within the five-file limit; the only not-yet-existing context files are outputs of declared upstream dependencies. All eight binding ids/workdirs/dependency arrays remain unchanged and every dependency exists. New test paths are scoped story outputs rather than additional stories. Promote routing is medium/tdd-simple because it extends two existing CLI modules using existing forgeWrite/action patterns; complex/lite remains justified only for the CI wait state machine and bot fix's multi-module dual-path write ordering. No authentication, forge authorization, role, credential or agent permission resolution policy is added.",
