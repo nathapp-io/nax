@@ -3,7 +3,7 @@
   "feature": "gate-config-route",
   "branchName": "feat/gate-config-route",
   "createdAt": "2026-11-13T15:53:10.616Z",
-  "updatedAt": "2026-11-13T16:55:40.350Z",
+  "updatedAt": "2026-11-13T17:18:09.753Z",
   "userStories": [
     {
       "id": "US-001",
@@ -237,14 +237,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Coordinates live operation contexts, protected-path evidence, authorized writes and resumed persistence; security-sensitive command application wiring needs strict isolation."
+        "reasoning": "Coordinates live operation contexts, protected-path evidence, authorized writes and resumed persistence; security-sensitive command application wiring needs strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/stage-env.ts",
@@ -264,7 +267,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7925e8c1e90b3ccea6ed9a58026eaa1701923762"
     },
     {
       "id": "US-005",
