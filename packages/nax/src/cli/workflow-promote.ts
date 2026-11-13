@@ -20,13 +20,20 @@
  * is read through `forgeDeps.forge.run` rather than `readHead` (`src/workflow/git.ts`) for the same
  * reason, and `src/cli/workflow.ts` is imported type-only, which is erased. US-003's `ciAllowsReady`
  * comes from the same leaf, for the same reason: the CI rule is one rule, read from one place.
+ *
+ * US-008 adds `--waive-starved <reason>`: a human's reason is validated before the run is even
+ * loaded, the `ci-green` check passes for a `starved` CI when one is given (and says which checks it
+ * waived), and with `--yes` a `waiver` action records the decision on the PR between `comment` and
+ * `ready`. The waiver is a write like any other, so a forge that refuses it stops the promotion
+ * before the PR is readied. Promote itself never re-runs a job: it is one poll, and a report.
  */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { detectForge, type ForgeDeps, type ForgeKind, type ForgeRunResult } from "@/forge";
 import { validateFeatureName } from "@/utils/feature-name";
-import { ciAllowsReady } from "../workflow/ci-wait";
+import { type CiWaitResult, ciAllowsReady } from "../workflow/ci-wait";
+import { parseWaiverReason, renderCiWaiver } from "../workflow/ci-waiver";
 import {
   checkEntriesAgainstItems,
   type DecisionEntry,
@@ -50,6 +57,11 @@ export interface WorkflowPromoteOptions {
   /** The promotion itself: with both checks passed, run the four actions. */
   readonly yes: boolean;
   readonly json: boolean;
+  /**
+   * US-008: a human's reason for accepting a CI whose checks never got a runner. Validated before
+   * the run is loaded; absent means a starved CI is a refusal like every other non-green outcome.
+   */
+  readonly waiveStarved?: string;
 }
 
 export interface PromoteCheck {
@@ -59,9 +71,9 @@ export interface PromoteCheck {
   readonly detail: string;
 }
 
-/** One forge write `--yes` performs, in order (US-005). */
+/** One forge write `--yes` performs, in order (US-005; `waiver` joined it between `comment` and `ready` in US-008). */
 export interface PromoteAction {
-  readonly name: "tick" | "comment" | "ready" | "record";
+  readonly name: "tick" | "comment" | "waiver" | "ready" | "record";
   readonly status: "done" | "skipped";
 }
 
@@ -148,6 +160,10 @@ function itemsRuled(loaded: LoadedRun, found: FoundSidecar | null, entries: read
  * `ci-green`: the pushed head's checks passed. Anything else — including a mismatch — is a refusal.
  * US-003: the decision is the one CI rule (`ciAllowsReady`), so promote cannot disagree with the
  * workflow's own publish about what "ready" means.
+ *
+ * US-008: a `starved` CI passes when the caller gave a waiver reason, and the check's detail says
+ * which checks were waived — the same reason the `waiver` action records. The wait itself is
+ * returned with the check, so the action renders the result the check judged rather than guessing.
  */
 async function ciGreen(input: {
   readonly forgeDeps: WorkflowForgeDeps;
@@ -155,16 +171,26 @@ async function ciGreen(input: {
   readonly url: string;
   readonly dir: string;
   readonly expectedSha: string;
-}): Promise<PromoteCheck> {
+  readonly waiveStarved?: string;
+}): Promise<{ readonly check: PromoteCheck; readonly result: CiWaitResult }> {
+  // A one-poll check with no interval, and no `rerunStarved`: promote reports, it does not re-run.
   const result = await input.forgeDeps.waitForChecks(input.forge, input.url, {
     cwd: input.dir,
     timeoutMs: PROMOTE_TIMEOUT_MS,
     pollMs: PROMOTE_POLL_MS,
     expectedSha: input.expectedSha,
   });
-  return ciAllowsReady(result.outcome)
-    ? { name: "ci-green", passed: true, detail: "" }
-    : { name: "ci-green", passed: false, detail: `ci ${result.outcome}: ${result.detail}` };
+  return { check: ciCheck(result, input.waiveStarved), result };
+}
+
+/** The `ci-green` check for one wait: the waiver widens the rule for `starved` alone. */
+function ciCheck(result: CiWaitResult, waiveStarved: string | undefined): PromoteCheck {
+  const waived = waiveStarved !== undefined && result.outcome === "starved";
+  if (!ciAllowsReady(result.outcome, { waiveStarved: waived })) {
+    return { name: "ci-green", passed: false, detail: `ci ${result.outcome}: ${result.detail}` };
+  }
+  const checks = (result.starvedChecks ?? []).join("; ");
+  return { name: "ci-green", passed: true, detail: waived ? `waived: ${checks}` : "" };
 }
 
 const allPassed = (checks: readonly PromoteCheck[]): boolean => checks.every((check) => check.passed);
@@ -180,10 +206,14 @@ interface PromoteTarget {
   readonly found: FoundSidecar | null;
   readonly entries: readonly DecisionEntry[];
   readonly prRulings: PrRulingsReport;
+  /** The CI wait `ci-green` judged (US-008): a waiver names the checks it accepts. */
+  readonly ci: CiWaitResult;
+  /** The pushed head that wait was bound to — the exact commit the waiver record names. */
+  readonly headSha: string;
 }
 
-/** The three actions that are a forge command; `record` writes to disk instead. */
-type ForgeAction = "tick" | "comment" | "ready";
+/** The actions that are a forge command; `record` writes to disk instead. */
+type ForgeAction = "tick" | "comment" | "waiver" | "ready";
 
 /** The action line the failure names, and what the forge said: its stderr, or its bare exit code. */
 function stopped(action: ForgeAction, result: ForgeRunResult): NaxError {
@@ -222,6 +252,19 @@ async function readyAction(target: PromoteTarget): Promise<PromoteAction> {
   return { name: "ready", status: "done" };
 }
 
+/**
+ * `waiver`: the durable record of an accepted starved CI, posted before the PR is readied (US-008).
+ * It names the head the checks belong to, every check no runner ever picked up, and the human's
+ * reason — the parts `parseCiWaiver` reads back. A green CI waived nothing, so the action is
+ * `skipped`; it still appears, because `--waive-starved` was given.
+ */
+async function waiverAction(target: PromoteTarget, reason: string): Promise<PromoteAction> {
+  if (target.ci.outcome !== "starved") return { name: "waiver", status: "skipped" };
+  const body = renderCiWaiver({ headSha: target.headSha, checks: target.ci.starvedChecks ?? [], reason });
+  await forgeWrite(target, "waiver", commentArgv(target.forge, target.url, body));
+  return { name: "waiver", status: "done" };
+}
+
 /** A run with no local sidecar gets the merged entries and the outcome this promotion produced. */
 function promotedSidecar(target: PromoteTarget, now: Date): DecisionsSidecar {
   return {
@@ -253,14 +296,17 @@ async function recordAction(target: PromoteTarget): Promise<PromoteAction> {
 }
 
 /**
- * The four actions, in the spec's order, each awaited before the next starts: a failure throws out of
- * here, so the actions after it never run — `ready` is never issued for a body that was not ticked.
+ * The forge actions, in the spec's order, each awaited before the next starts: a failure throws out
+ * of here, so the actions after it never run — `ready` is never issued for a body that was not
+ * ticked, nor for a waiver the forge refused. `waiver` appears only when `--waive-starved` was
+ * given (US-008), between the evidence comment and the mark-ready.
  */
-async function promoteActions(target: PromoteTarget): Promise<PromoteAction[]> {
+async function promoteActions(target: PromoteTarget, waiveStarved: string | undefined): Promise<PromoteAction[]> {
   const entries = target.entries;
   const actions: PromoteAction[] = [];
   actions.push(await tickAction(target, entries));
   actions.push(await commentAction(target, entries));
+  if (waiveStarved !== undefined) actions.push(await waiverAction(target, waiveStarved));
   actions.push(await readyAction(target));
   actions.push(await recordAction(target));
   return actions;
@@ -288,6 +334,9 @@ function reportOf(input: {
 /** The whole command, in the spec's order: every refusal happens before a check runs. */
 async function promote(opts: WorkflowPromoteOptions, forgeDeps: WorkflowForgeDeps): Promise<WorkflowPromoteReport> {
   validateFeatureName(opts.feature);
+  // US-008: the reason is the caller's input, not the run's, so it is refused before the run is read
+  // and before any forge call — a bad reason must not cost a poll, let alone a write.
+  const waiveStarved = opts.waiveStarved === undefined ? undefined : parseWaiverReason(opts.waiveStarved);
   const loaded = await loadRunVerdict(opts.dir, opts.feature, forgeDeps.resolveOutputDir);
   const url = draftUrl(loaded, opts.feature);
   const forge = await draftForge(forgeDeps, opts.dir, url);
@@ -303,18 +352,34 @@ async function promote(opts: WorkflowPromoteOptions, forgeDeps: WorkflowForgeDep
     items: loaded.openItems,
     local: found?.sidecar.decisions ?? [],
   });
-  const checks = [
-    itemsRuled(loaded, found, rulings.entries),
-    await ciGreen({ forgeDeps, forge, url, dir: opts.dir, expectedSha }),
-  ];
-  const target: PromoteTarget = { opts, loaded, url, forge, forgeDeps, found, ...rulings };
+  const ci = await ciGreen({
+    forgeDeps,
+    forge,
+    url,
+    dir: opts.dir,
+    expectedSha,
+    ...(waiveStarved === undefined ? {} : { waiveStarved }),
+  });
+  const checks = [itemsRuled(loaded, found, rulings.entries), ci.check];
+  const target: PromoteTarget = {
+    opts,
+    loaded,
+    url,
+    forge,
+    forgeDeps,
+    found,
+    ...rulings,
+    ci: ci.result,
+    headSha: expectedSha,
+  };
   if (!opts.yes || !allPassed(checks)) return reportOf({ target, checks, promoted: false, actions: [] });
-  return reportOf({ target, checks, promoted: true, actions: await promoteActions(target) });
+  return reportOf({ target, checks, promoted: true, actions: await promoteActions(target, waiveStarved) });
 }
 
-/** `pass  <name>` / `FAIL  <name>  <detail>` — a passing check has no detail to print. */
+/** `pass  <name>` / `pass  <name>  <detail>` / `FAIL  <name>  <detail>` — a passing check with no detail prints nothing more. */
 function checkLine(check: PromoteCheck): string {
-  return check.passed ? `pass  ${check.name}` : `FAIL  ${check.name}  ${check.detail}`;
+  if (!check.passed) return `FAIL  ${check.name}  ${check.detail}`;
+  return check.detail === "" ? `pass  ${check.name}` : `pass  ${check.name}  ${check.detail}`;
 }
 
 /** `tick  done` / `comment  skipped` — one line per action, in the order the actions ran. */

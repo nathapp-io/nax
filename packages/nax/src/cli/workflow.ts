@@ -229,12 +229,19 @@ export function registerWorkflowCommand(
     .description("Check a draft run and report whether its PR can be promoted")
     .requiredOption("-f, --feature <name>", "Feature name")
     .option("--yes", "Promote for real once every check passes", false)
+    .option("--waive-starved <reason>", "Accept a CI whose checks never got a runner, and record why")
     .option("-d, --dir <path>", "Project directory", process.cwd())
     .option("--json", "Emit one machine-readable JSON document", false)
-    .action((o: { dir: string; feature: string; yes?: boolean; json?: boolean }) =>
+    .action((o: { dir: string; feature: string; yes?: boolean; waiveStarved?: string; json?: boolean }) =>
       guarded(deps, () =>
         workflowPromoteCommand(
-          { dir: o.dir, feature: o.feature, yes: o.yes === true, json: o.json === true },
+          {
+            dir: o.dir,
+            feature: o.feature,
+            yes: o.yes === true,
+            ...(o.waiveStarved === undefined ? {} : { waiveStarved: o.waiveStarved }),
+            json: o.json === true,
+          },
           deps,
           forgeDeps,
         ),

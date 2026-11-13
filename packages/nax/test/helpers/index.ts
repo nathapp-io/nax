@@ -248,6 +248,7 @@ export {
   PROMOTE_SIDECAR_NAME,
   PROMOTE_URL,
   type PromoteCheckCall,
+  type PromoteCheckOptions,
   type PromoteFixture,
   type PromoteFixtureOptions,
   prWrites,

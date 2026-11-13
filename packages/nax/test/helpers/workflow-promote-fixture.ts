@@ -59,6 +59,9 @@ export function prWrites(calls: readonly (readonly string[])[]): (readonly strin
   return calls.filter((call) => PR_WRITE_ARGV.some((prefix) => prefix.every((word, i) => call[i] === word)));
 }
 
+/** The options object `waitForChecks` takes, as `WorkflowForgeDeps` declares it. */
+export type PromoteCheckOptions = Parameters<WorkflowForgeDeps["waitForChecks"]>[2];
+
 /** One `waitForChecks` call, as the command made it. */
 export interface PromoteCheckCall {
   readonly forge: ForgeKind;
@@ -114,6 +117,14 @@ export interface PromoteFixture {
   readonly forgeCalls: readonly (readonly string[])[];
   /** Every `waitForChecks` call, in order. */
   readonly checkCalls: readonly PromoteCheckCall[];
+  /**
+   * Every options object `waitForChecks` was given, exactly as the command built it (US-008). Kept
+   * beside `checkCalls` rather than inside it, so a test can assert a key the caller must *not*
+   * pass — `rerunStarved` — which the field-by-field view drops and an equality test would not.
+   */
+  readonly checkOptions: readonly PromoteCheckOptions[];
+  /** Every directory the command asked `resolveOutputDir` about — empty before a run is loaded. */
+  readonly resolveOutputDirCalls: readonly string[];
   /** Runs `nax workflow promote -f auth -d <dir>` plus `argv`, through the registered group. */
   run(argv?: readonly string[]): Promise<void>;
   /** The run's newest sidecar on disk, or null. */
@@ -129,6 +140,8 @@ interface Recorded {
   readonly codes: number[];
   readonly forgeCalls: string[][];
   readonly checkCalls: PromoteCheckCall[];
+  readonly checkOptions: PromoteCheckOptions[];
+  readonly resolved: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -288,6 +301,7 @@ function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOpti
     readText: async () => null,
   };
   const waitForChecks: WorkflowForgeDeps["waitForChecks"] = async (forgeKind, prRef, options) => {
+    recorded.checkOptions.push(options);
     recorded.checkCalls.push({
       forge: forgeKind,
       prRef,
@@ -298,11 +312,16 @@ function forgeDepsFor(recorded: Recorded, body: string, opts: PromoteFixtureOpti
     });
     return opts.ci ?? PROMOTE_GREEN;
   };
+  const resolveOutputDir: WorkflowForgeDeps["resolveOutputDir"] = async (dir) => {
+    recorded.resolved.push(dir);
+    return _workflowForgeDeps.resolveOutputDir(dir);
+  };
   return {
     ..._workflowForgeDeps,
     forge,
     now: () => PROMOTE_NOW,
     waitForChecks,
+    resolveOutputDir,
   };
 }
 
@@ -313,7 +332,15 @@ function harness(
   sidecarPath: string | undefined,
   opts: PromoteFixtureOptions,
 ): PromoteFixture {
-  const recorded: Recorded = { out: [], err: [], codes: [], forgeCalls: [], checkCalls: [] };
+  const recorded: Recorded = {
+    out: [],
+    err: [],
+    codes: [],
+    forgeCalls: [],
+    checkCalls: [],
+    checkOptions: [],
+    resolved: [],
+  };
   const deps: WorkflowCliDeps = {
     log: (text) => recorded.out.push(text),
     logErr: (text) => recorded.err.push(text),
@@ -331,6 +358,8 @@ function harness(
     codes: recorded.codes,
     forgeCalls: recorded.forgeCalls,
     checkCalls: recorded.checkCalls,
+    checkOptions: recorded.checkOptions,
+    resolveOutputDirCalls: recorded.resolved,
     async run(argv = []) {
       const program = new Command();
       registerWorkflowCommand(program, deps, forgeDeps);
@@ -345,6 +374,8 @@ function harness(
       recorded.codes.length = 0;
       recorded.forgeCalls.length = 0;
       recorded.checkCalls.length = 0;
+      recorded.checkOptions.length = 0;
+      recorded.resolved.length = 0;
     },
   };
 }
