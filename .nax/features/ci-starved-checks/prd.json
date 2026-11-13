@@ -3,7 +3,7 @@
   "feature": "ci-starved-checks",
   "branchName": "feat/ci-starved-checks",
   "createdAt": "2026-10-22T00:00:00Z",
-  "updatedAt": "2026-11-13T07:40:40.011Z",
+  "updatedAt": "2026-11-13T07:55:33.725Z",
   "userStories": [
     {
       "id": "US-001",
@@ -346,14 +346,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Read-only additive status projection through two existing modules with established forge fixtures and no new I/O."
+        "reasoning": "Read-only additive status projection through two existing modules with established forge fixtures and no new I/O.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/live-status.ts",
@@ -366,7 +369,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "47115c7f1e5bc7f449c6734e4953c8c37ece33a5"
     },
     {
       "id": "US-007",
