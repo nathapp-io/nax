@@ -1,8 +1,21 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { makeBotFixDeps, makeBotFixDraftEnv, makeTestRuntime } from "@test/helpers";
-import { _botFixDeps, _fixReportDeps, type BotFixEnv, type BotFixState, readyStep, runBotFix } from "@/bot";
+import {
+  _botFixDeps,
+  _fixCycleDeps,
+  _fixReportDeps,
+  type BotFixEnv,
+  type BotFixInput,
+  type BotFixResult,
+  type BotFixState,
+  type BotReviewResult,
+  readyStep,
+  renderFixSummary,
+  runBotFix,
+  runBotFixCycle,
+} from "@/bot";
 import type { RecordRulingsOutcome } from "@/bot/rulings";
-import { NAX_WORKFLOW_PR_MARKER, type PrComment, withNaxBotMarker } from "@/forge";
+import { NAX_WORKFLOW_PR_MARKER, type PrComment, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import type { CiWaitResult } from "@/workflow/ci-wait";
 import { parseCiWaiver } from "@/workflow/ci-waiver";
 
@@ -237,5 +250,150 @@ describe("readyStep starved CI waiver", () => {
       reason: STARVATION,
     });
     expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** The summary the full fix pass publishes before it holds the draft (F1). */
+function heldSummary(env: BotFixEnv): PrComment {
+  return {
+    id: "9",
+    kind: "comment",
+    author: env.user.login,
+    body: renderFixSummary(
+      {
+        step: "report",
+        timings: {},
+        outcome: "pushed",
+        pushedSha: HEAD,
+        markedReady: false,
+        readyHeld: `pushed ${HEAD.slice(0, 7)}; a bot review of the pushed head decides readiness`,
+      },
+      [],
+      env.repoRoot,
+    ),
+    createdAt: "",
+  };
+}
+
+/** A forge comment store: posting appends, editing replaces the stored body in place. */
+function commentStore(env: BotFixEnv, initial: readonly PrComment[]) {
+  const store: PrComment[] = [...initial];
+  spyOn(_fixReportDeps, "postPrComment").mockImplementation(async (_ref, body) => {
+    const comment: PrComment = {
+      id: `c${store.length + 1}`,
+      kind: "comment",
+      author: env.user.login,
+      body,
+      createdAt: "",
+    };
+    store.push(comment);
+    return { id: comment.id };
+  });
+  spyOn(_fixReportDeps, "editComment").mockImplementation(async (_ref, stored, body) => {
+    const at = store.findIndex((comment) => comment.id === stored.id);
+    const found = store[at];
+    if (found !== undefined) store[at] = { ...found, body };
+  });
+  spyOn(_fixReportDeps, "listPrComments").mockImplementation(async () => [...store]);
+  return store;
+}
+
+function summaryOf(store: readonly PrComment[]): string {
+  return store.filter((comment) => parseNaxBotMarker(comment.body)?.key === "fix-summary").at(-1)?.body ?? "";
+}
+
+describe("the fix summary names the waiver", () => {
+  test("F1 a ready-only pass rewrites the summary the fix left behind", async () => {
+    const env = draftEnv(NAX_WORKFLOW_PR_MARKER);
+    const store = commentStore(env, [heldSummary(env)]);
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([item.thread]);
+    spyOn(_fixReportDeps, "recordPrRulings").mockResolvedValue(settled);
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(starved);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+    const out = await readyStep({ ...env, waiveStarved: STARVATION }, { ...state, readyOnly: true });
+    expect(out.patch.markedReady).toBe(true);
+    const body = summaryOf(store);
+    expect(body).toContain(
+      "Marked ready with a CI waiver: 1 check(s) never got a runner: x. Reason: runner starvation",
+    );
+    expect(body).not.toContain("Kept as draft:");
+    // The rest of the summary survives: only the readiness lines are replaced.
+    expect(body).toContain(`Pushed ${HEAD.slice(0, 7)}:`);
+  });
+
+  test("F1 the full cycle leaves a summary that names the waiver", async () => {
+    const env = draftEnv(NAX_WORKFLOW_PR_MARKER);
+    const runtime = makeTestRuntime({ config: env.config });
+    runtimes.push(runtime);
+    Object.assign(_botFixDeps, makeBotFixDeps(env, runtime), {
+      recordPrRulings: mock(async () => {}),
+      forge: env.forge,
+    });
+    const store = commentStore(env, []);
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([item.thread]);
+    spyOn(_fixReportDeps, "recordPrRulings").mockResolvedValue(settled);
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(starved);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+    // The fix pass the cycle opens with: it pushes, holds the draft and publishes its summary.
+    const pushed: BotFixResult = {
+      outcome: "pushed",
+      pushedSha: HEAD,
+      step: "done",
+      timings: {},
+      markedReady: false,
+      readyHeld: `pushed ${HEAD.slice(0, 7)}; a bot review of the pushed head decides readiness`,
+      limitUsd: 5,
+      spentUsd: 0,
+    };
+    const runFix = mock(async (input: BotFixInput) => {
+      if (input.readyOnly !== true) {
+        await _fixReportDeps.postPrComment(
+          env.ref,
+          renderFixSummary(pushed, [], env.repoRoot),
+          env.forge,
+          env.repoRoot,
+        );
+        return pushed;
+      }
+      return runBotFix(input);
+    });
+    const posted: BotReviewResult = {
+      outcome: "posted",
+      intent: "pass",
+      quality: "changes",
+      staticMode: false,
+      checksSource: "config",
+      artifactPath: "/review.json",
+      earlierAnswered: 0,
+      inlineFindings: 0,
+      threadsAnswered: 0,
+      commentsAnswered: 0,
+      offLine: 0,
+      failed: 0,
+    };
+
+    const cycle = await runBotFixCycle(
+      { dir: "/repo", pr: 42, profiles: [], interactive: false, rereview: true, waiveStarved: STARVATION },
+      {
+        ..._fixCycleDeps,
+        runBotFix: runFix,
+        runBotReview: async () => posted,
+        gitToplevel: async () => "/repo",
+        resolvePrRef: async () => env.ref,
+        waitForPrHead: async () => true,
+      },
+    );
+    expect(cycle.ready).toMatchObject({ markedReady: true });
+    const body = summaryOf(store);
+    expect(body).toContain(
+      "Marked ready with a CI waiver: 1 check(s) never got a runner: x. Reason: runner starvation",
+    );
+    expect(body).not.toContain("Kept as draft:");
   });
 });

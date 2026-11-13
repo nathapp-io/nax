@@ -28,7 +28,13 @@ import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sideca
 import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
-import { type CiWaiverReady, recordCiWaiver } from "./ci-waiver-ready";
+import {
+  type CiWaiverReady,
+  FIX_SUMMARY_KEY,
+  nameWaiverInSummary,
+  readinessLines,
+  recordCiWaiver,
+} from "./ci-waiver-ready";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { readHeadGateNames } from "./head-gates";
@@ -149,10 +155,8 @@ export async function replyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
 
 /**
  * The CI wait for this PR: the head the fix pushed, or the reviewed head when nothing was pushed.
- * The wait is the workflow's own, so bot fix and `nax workflow promote` read the same CI.
- *
- * US-007: `rerunStarved` re-runs a job no runner picked up before the wait reports it starved, so
- * the waiver is only ever asked for a check the runner really cannot start.
+ * The wait is the workflow's own, so bot fix and `nax workflow promote` read the same CI. US-007:
+ * `rerunStarved` re-runs a job no runner picked up before the wait reports it starved.
  */
 async function waitForCi(env: BotFixEnv, state: Pick<BotFixState, "pushedSha">): Promise<CiWaitResult> {
   const timeouts = resolveWorkflowConfig(env.config).timeouts;
@@ -223,10 +227,7 @@ function ownCoverage(comments: readonly PrComment[], login: string): CoverageRec
   return own === undefined ? undefined : (parseCoverageRecord(own.comment.body) ?? undefined);
 }
 
-/**
- * The workflow readiness reads. `ciWaived` is set only when the pass posted a waiver record and the
- * PR is therefore ready under it.
- */
+/** The workflow readiness reads; `ciWaived` is set only when the pass posted a waiver record. */
 async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<CiWaiverReady> {
   try {
     const expectedSha = state.pushedSha ?? env.info.headSha;
@@ -437,6 +438,15 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
     return { patch: { markedReady: false, readyHeld: `could not mark ready: ${detail}` }, exit: "report" };
   }
   const waived = readiness.ciWaived;
+  // US-007: a ready-only pass runs no `report` node, so the waiver is named in the summary the fix
+  // published — after readiness succeeded, so the comment never claims a release that did not happen.
+  if (waived !== undefined && state.readyOnly === true)
+    await nameWaiverInSummary({
+      env,
+      lines: readinessLines({ markedReady: true, ciWaived: waived }),
+      list: _fixReportDeps.listPrComments,
+      edit: _fixReportDeps.editComment,
+    });
   return { patch: { markedReady: true, ...(waived === undefined ? {} : { ciWaived: waived }) }, exit: "report" };
 }
 
@@ -541,19 +551,10 @@ export function renderFixSummary(state: BotFixState, details: readonly string[] 
   if (state.repairSkippedForCost) lines.push("Repair turn skipped: cost limit reached.");
   if (state.fixFailure !== undefined)
     lines.push(`Fix session: ${safeText(stripLocalPaths(state.fixFailure, repoRoot), MAX_FAILURE_LENGTH)}`);
-  // Why the PR is still a draft — a workflow PR, or a CI that is not green — or that it is ready.
-  // The reason carries the CI wait's own detail, which is forge output: it is neutralised and
-  // capped like the fix failure above, so a hostile or noisy detail cannot inject into the comment.
-  if (state.readyHeld !== undefined) lines.push(`Kept as draft: ${safeText(state.readyHeld, MAX_FAILURE_LENGTH)}`);
-  if (state.markedReady === true) lines.push("Marked ready.");
-  // US-007: the acceptance is named here too, so a reader of the fix comment knows why a starved
-  // check did not stop the release. Check names and the reason are forge and CLI text: both are
-  // neutralised and capped like every other untrusted line in this comment.
-  if (state.ciWaived !== undefined)
-    lines.push(
-      `Marked ready with a CI waiver: ${state.ciWaived.checks.length} check(s) never got a runner: ${safeText(state.ciWaived.checks.join("; "), MAX_FAILURE_LENGTH)}. Reason: ${safeText(state.ciWaived.reason, MAX_FAILURE_LENGTH)}`,
-    );
-  return withNaxBotMarker(lines.join("\n"), "fix-summary");
+  // Why the PR is still a draft, or what released it. Untrusted text is neutralised in
+  // `readinessLines`, which also rewrites exactly these lines when a waiver readies the PR (US-007).
+  lines.push(...readinessLines(state));
+  return withNaxBotMarker(lines.join("\n"), FIX_SUMMARY_KEY);
 }
 
 function outOfItemDetail(env: BotFixEnv, state: BotFixState): string | undefined {
@@ -583,7 +584,7 @@ export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<St
   const outOfItem = outOfItemDetail(env, state);
   if (outOfItem !== undefined) lines.push(outOfItem);
   const body = renderFixSummary(state, lines, env.repoRoot);
-  const own = env.own.find(({ key }) => key === "fix-summary");
+  const own = env.own.find(({ key }) => key === FIX_SUMMARY_KEY);
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);
   return { patch: {}, exit: "done" };

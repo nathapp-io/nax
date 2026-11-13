@@ -10,13 +10,27 @@
  * Only a `starved` outcome is ever waived. `failed`, `pending`, `conflicting`, `no-checks` and
  * `unavailable` each have a verdict of their own and keep the draft.
  *
- * The comment write is injected (`post`) so the caller's own `_fixReportDeps` seam still observes
- * the post, and a test that stubs that seam sees the waiver exactly like the evidence comment.
+ * The comment writes are injected (`post`, `list`, `edit`) so the caller's own `_fixReportDeps` seam
+ * still observes them, and a test that stubs that seam sees the waiver exactly like the evidence
+ * comment. This module also owns the readiness lines of the fix summary: the same lines render a
+ * fresh summary and rewrite the one an earlier fix published, so the comment cannot claim a draft
+ * the waiver has released.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { ownComments, type PrComment, stripNaxBotMarkers, withNaxBotMarker } from "@/forge";
+import { getLogger } from "@/logger";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import { type CiWaiver, renderCiWaiver } from "../workflow/ci-waiver";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
+import { safeText } from "./render";
+
+/** The own-comment identity of the fix summary this module may have to keep truthful. */
+export const FIX_SUMMARY_KEY = "fix-summary";
+/** Longest untrusted readiness text kept; the same cap the summary's other forge text takes. */
+const READY_TEXT_MAX = 500;
+const DRAFT_PREFIX = "Kept as draft: ";
+const READY_LINE = "Marked ready.";
+const READY_HEAD = "Marked ready";
 
 /** The waiver a ready pass recorded; absent from the state when the pass waived nothing. */
 export type CiWaiverRecord = NonNullable<BotFixState["ciWaived"]>;
@@ -24,6 +38,15 @@ export type CiWaiverRecord = NonNullable<BotFixState["ciWaived"]>;
 /** The comment writer the caller hands in, so its `_fixReportDeps` seam still sees the post. */
 export type CiWaiverPost = (
   ref: BotFixEnv["ref"],
+  body: string,
+  deps: BotFixEnv["forge"],
+  cwd: string,
+) => Promise<unknown>;
+
+type ListComments = (ref: BotFixEnv["ref"], deps: BotFixEnv["forge"], cwd: string) => Promise<readonly PrComment[]>;
+type EditComment = (
+  ref: BotFixEnv["ref"],
+  comment: Pick<PrComment, "id" | "kind">,
   body: string,
   deps: BotFixEnv["forge"],
   cwd: string,
@@ -42,6 +65,14 @@ export interface CiWaiverReady {
   readonly ciWaived?: CiWaiverRecord;
 }
 
+export interface CiWaiverSummaryInput {
+  readonly env: BotFixEnv;
+  /** The readiness lines the updated summary must end with, as `readinessLines` renders them. */
+  readonly lines: readonly string[];
+  readonly list: ListComments;
+  readonly edit: EditComment;
+}
+
 /**
  * Post the waiver of a starved CI, and report the record it wrote. The head is the exact execution
  * head and the checks are CI's own starved list, so the record names what nobody could judge.
@@ -57,4 +88,59 @@ export async function recordCiWaiver({ env, state, ci, post }: CiWaiverReadyInpu
     return { held: `could not record the CI waiver: ${errorMessage(error)}` };
   }
   return { ciWaived: { checks: waiver.checks, reason: waiver.reason } };
+}
+
+/**
+ * The readiness tail of a fix summary: why the PR is still a draft, or what released it. The draft
+ * hold and the check names are forge text, so both are neutralised and capped here — one place for
+ * the comment that is rendered and the comment that is rewritten.
+ */
+export function readinessLines(state: Pick<BotFixState, "markedReady" | "readyHeld" | "ciWaived">): string[] {
+  const lines: string[] = [];
+  if (state.readyHeld !== undefined) lines.push(`${DRAFT_PREFIX}${safeText(state.readyHeld, READY_TEXT_MAX)}`);
+  if (state.markedReady === true) lines.push(READY_LINE);
+  const waived = state.ciWaived;
+  if (waived !== undefined)
+    lines.push(
+      `${READY_HEAD} with a CI waiver: ${waived.checks.length} check(s) never got a runner: ${safeText(waived.checks.join("; "), READY_TEXT_MAX)}. Reason: ${safeText(waived.reason, READY_TEXT_MAX)}`,
+    );
+  return lines;
+}
+
+/** A summary line a later readiness answer replaces rather than repeats. */
+function isReadinessLine(line: string): boolean {
+  return line.startsWith(DRAFT_PREFIX) || line.startsWith(READY_HEAD);
+}
+
+/** Drop the blank tail `stripNaxBotMarkers` leaves, so the rewritten body keeps its shape. */
+function withoutTrailingBlanks(lines: readonly string[]): string[] {
+  const kept = [...lines];
+  while (kept.length > 0 && kept[kept.length - 1] === "") kept.pop();
+  return kept;
+}
+
+/**
+ * US-007: a ready-only pass runs no `report` node — that node needs a fix outcome — so the summary
+ * the earlier fix published is the only comment that can name the waiver. Its readiness lines are
+ * replaced by the ones this pass produced, and a PR with no own summary simply keeps what it had:
+ * this is reporting, so a failed edit never decides readiness.
+ */
+export async function nameWaiverInSummary({ env, lines, list, edit }: CiWaiverSummaryInput): Promise<void> {
+  try {
+    const comments = await list(env.ref, env.forge, env.repoRoot);
+    const own = ownComments(comments, env.user.login).find(({ key }) => key === FIX_SUMMARY_KEY);
+    if (own === undefined) return;
+    const kept = withoutTrailingBlanks(
+      stripNaxBotMarkers(own.comment.body)
+        .split("\n")
+        .filter((line) => !isReadinessLine(line)),
+    );
+    const body = withNaxBotMarker([...kept, ...lines].join("\n"), FIX_SUMMARY_KEY);
+    await edit(env.ref, own.comment, body, env.forge, env.repoRoot);
+  } catch (error) {
+    getLogger()?.warn("bot-fix", "Could not name the CI waiver in the fix summary", {
+      pr: env.ref.number,
+      error: errorMessage(error),
+    });
+  }
 }
