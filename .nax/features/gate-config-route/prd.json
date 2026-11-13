@@ -3,7 +3,7 @@
   "feature": "gate-config-route",
   "branchName": "feat/gate-config-route",
   "createdAt": "2026-11-13T15:53:10.616Z",
-  "updatedAt": "2026-11-13T16:12:08.655Z",
+  "updatedAt": "2026-11-13T16:28:24.694Z",
   "userStories": [
     {
       "id": "US-001",
@@ -98,14 +98,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Bounded pure-rule module with a git reader, but the allowlist authorizes shell-executed configuration across a protected-write boundary, requiring strict security TDD."
+        "reasoning": "Bounded pure-rule module with a git reader, but the allowlist authorizes shell-executed configuration across a protected-write boundary, requiring strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/advisor/types.ts",
@@ -126,7 +129,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7f0a9be3a3c9e1f6403088cc9b17bca36b54f69b"
     },
     {
       "id": "US-003",
