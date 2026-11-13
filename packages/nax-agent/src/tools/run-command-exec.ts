@@ -93,9 +93,10 @@ async function launchExec(req: {
       stripEnvVars: req.stripEnvVars,
       ...(req.mergedEnv !== undefined ? { env: req.mergedEnv } : {}),
       ...(req.signal !== undefined ? { signal: req.signal } : {}),
-      // US-008: the key is present only for an exact `true` on the call, so
-      // every other request stays byte-identical to what US-002 shipped -- and
+      // US-008: `unwrapped` is present only for an exact `true` on the call, and
       // the launcher, not this branch, decides what "unwrapped" means.
+      // `unsandboxedOffered` is always sent (#2890): it only picks the
+      // launcher's next-step sentence and grants nothing.
       ...(req.unwrapped ? { unwrapped: true } : {}),
       unsandboxedOffered: req.unsandboxedOffered,
     });
