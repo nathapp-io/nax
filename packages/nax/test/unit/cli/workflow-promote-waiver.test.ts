@@ -35,6 +35,10 @@ const STARVED: CiWaitResult = {
   starvedChecks: ["x"],
 };
 const FAILED: CiWaitResult = { outcome: "failed", detail: "CI failed: x" };
+/** A starved wait that named no check: the shape no waiver record may certify (M16). */
+const STARVED_NO_CHECKS: CiWaitResult = { outcome: "starved", detail: "0 check(s) never got a runner" };
+/** The head the PR reports after a push during the waiver write. */
+const MOVED_HEAD = "f".repeat(40);
 /** Every reason `parseWaiverReason` refuses: empty, multiline, over-length and marker-bearing. */
 const INVALID_REASONS: readonly string[] = ["", "a\nb", "x".repeat(301), "runner <!--holding--> starvation"];
 
@@ -246,6 +250,62 @@ describe("nax workflow promote --yes: the waiver action", () => {
       await fx.run(["--yes", "--json"]);
       expect(actionNames(emittedJson(fx.out))).toEqual(["tick", "comment", "ready", "record"]);
       expect(fx.codes).toEqual([0]);
+    });
+  });
+
+  test("B4: a head that moves while the waiver is written stops the promotion before ready", async () => {
+    await withTempDir(async (dir) => {
+      // The stub pushes while the waiver comment is being written: every head read after the post
+      // reports the new commit, exactly as a competing push would.
+      let waived = false;
+      const fx = await makePromoteFixture(dir, {
+        ci: STARVED,
+        onRun: (argv) => {
+          if (parseCiWaiver(payloadOf(argv)) !== null) {
+            waived = true;
+            return undefined;
+          }
+          if (!argv.includes("headRefOid")) return undefined;
+          return { stdout: JSON.stringify({ headRefOid: waived ? MOVED_HEAD : PROMOTE_HEAD }) };
+        },
+      });
+      const before = await Bun.file(writtenSidecar(fx)).text();
+      await fx.run(["--waive-starved", STARVATION, "--yes", "--json"]);
+      expect(emittedError(fx.out)).toBe(
+        `promote stopped at waiver: the PR head changed to ${MOVED_HEAD.slice(0, 7)}; the waiver names ${PROMOTE_HEAD.slice(0, 7)}`,
+      );
+      expect(fx.codes).toEqual([1]);
+      expect(writeFor(fx.forgeCalls, ["gh", "pr", "ready"])).toBeUndefined();
+      expect(await Bun.file(writtenSidecar(fx)).text()).toBe(before);
+      expect((await fx.sidecar())?.outcome).toBe("pending");
+    });
+  });
+
+  test("B4: a head that cannot be re-read stops the promotion too", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir, {
+        ci: STARVED,
+        onRun: (argv) => (argv.includes("headRefOid") ? { exitCode: 1, stderr: "rate limited" } : undefined),
+      });
+      await fx.run(["--waive-starved", STARVATION, "--yes"]);
+      expect(fx.err).toEqual([
+        "promote stopped at waiver: the PR head could not be re-read, so the waiver cannot be tied to it",
+      ]);
+      expect(fx.codes).toEqual([1]);
+      expect(writeFor(fx.forgeCalls, ["gh", "pr", "ready"])).toBeUndefined();
+    });
+  });
+
+  test("M16: a starved CI that named no check is not waived", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await makePromoteFixture(dir, { ci: STARVED_NO_CHECKS });
+      await fx.run(["--waive-starved", STARVATION, "--yes", "--json"]);
+      const check = checkOf(emittedJson(fx.out), "ci-green");
+      expect(check.passed).toBe(false);
+      expect(check.detail).toStartWith("ci starved:");
+      expect(fx.codes).toEqual([2]);
+      expect(waiverArgv(fx)).toBeUndefined();
+      expect(prWrites(fx.forgeCalls)).toEqual([]);
     });
   });
 });

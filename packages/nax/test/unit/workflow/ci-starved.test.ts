@@ -12,6 +12,11 @@ function stubRun(result: ForgeRunResult, capture?: (cmd: string[], opts: { cwd: 
   };
 }
 
+/** A runner that throws instead of answering: a spawn failure, not a command result. */
+const throwingRun: CiRun = async () => {
+  throw new Error("spawn failed");
+};
+
 describe("actionsJobOf", () => {
   test("extracts an Actions job URL", () => {
     expect(actionsJobOf("https://github.com/o/r/actions/runs/43/job/131317856040")).toEqual(JOB);
@@ -43,6 +48,9 @@ describe("isStarvedJob", () => {
   ])("fails closed for an unreadable/malformed job reply: %j", async (result) => {
     expect(await isStarvedJob(JOB, CWD, stubRun(result))).toBe(false);
   });
+  test("fails closed when the runner throws instead of answering", async () => {
+    expect(await isStarvedJob(JOB, CWD, throwingRun)).toBe(false);
+  });
   test("runs the job read through the supplied runner", async () => {
     let called: { cmd: string[]; cwd: string } | undefined;
     const run = stubRun(
@@ -73,6 +81,9 @@ describe("rerunJob", () => {
   });
   test("returns false for a failed request", async () => {
     expect(await rerunJob(JOB, CWD, stubRun({ exitCode: 1, stdout: "", stderr: "failed" }))).toBe(false);
+  });
+  test("returns false when the runner throws instead of answering", async () => {
+    expect(await rerunJob(JOB, CWD, throwingRun)).toBe(false);
   });
 });
 

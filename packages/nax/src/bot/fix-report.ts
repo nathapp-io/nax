@@ -398,7 +398,9 @@ async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
 
 /**
  * The plain-PR readiness reads: the CI wait, the head re-read and — on a waived starved CI — the
- * durable waiver comment, posted after the head re-read and before the PR is readied (US-007).
+ * durable waiver comment. The waiver is posted after the first head re-read and before the PR is
+ * readied, and the head is read once more after it: the comment can name only one head, so a push
+ * while it was being written must not release a head nothing classified (US-007).
  */
 async function plainReadyHold(env: BotFixEnv, state: BotFixState): Promise<CiWaiverReady> {
   const ci = await waitForCi(env, state);
@@ -407,7 +409,10 @@ async function plainReadyHold(env: BotFixEnv, state: BotFixState): Promise<CiWai
     return { held: `CI ${ci.outcome}: ${ci.detail}` };
   const held = await readyHeadHold(env, state);
   if (held !== undefined) return { held };
-  return recordCiWaiver({ env, state, ci, post: _fixReportDeps.postPrComment });
+  const waiver = await recordCiWaiver({ env, state, ci, post: _fixReportDeps.postPrComment });
+  if (waiver.held !== undefined || waiver.ciWaived === undefined) return waiver;
+  const moved = await readyHeadHold(env, state);
+  return moved === undefined ? waiver : { held: moved };
 }
 
 /** Only durable workflow rulings and exact-head green CI can release a workflow draft. */

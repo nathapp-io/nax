@@ -43,7 +43,7 @@ import {
   sidecarFileName,
   writeSidecar,
 } from "../workflow/decisions-sidecar";
-import { readPrState } from "../workflow/pr-state";
+import { readPrHeadSha, readPrState } from "../workflow/pr-state";
 import { commentArgv, editBodyArgv, evidenceComment, markReadyArgv, tickChecklist } from "../workflow/promote";
 import { type PrRulingsReport, readPromoteRulings } from "../workflow/promote-rulings";
 import { type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
@@ -96,6 +96,10 @@ const PROMOTE_TIMEOUT_MS = 0;
 const PROMOTE_POLL_MS = 0;
 const NOT_PUBLISHED = "not published";
 const READY_LINE = "ready to promote; rerun with --yes";
+/** A short sha in a hold message: enough to name the commit, not the whole forty characters. */
+const SHORT_SHA_LENGTH = 7;
+/** What a `starved` wait with no check names cannot become: a waiver record over nothing. */
+const NO_STARVED_CHECKS = "the CI wait named no starved checks";
 
 function invalid(message: string, context: Record<string, unknown> = {}): NaxError {
   return new NaxError(message, PROMOTE_INVALID, { stage: "workflow", ...context });
@@ -183,14 +187,16 @@ async function ciGreen(input: {
   return { check: ciCheck(result, input.waiveStarved), result };
 }
 
-/** The `ci-green` check for one wait: the waiver widens the rule for `starved` alone. */
+/** The `ci-green` check for one wait: the waiver widens the rule for `starved` alone, and only for a
+ * result that names the checks it accepts. A `starved` wait that named no check has nothing to waive,
+ * so it stays refused rather than passing beside an empty record (US-008). */
 function ciCheck(result: CiWaitResult, waiveStarved: string | undefined): PromoteCheck {
-  const waived = waiveStarved !== undefined && result.outcome === "starved";
+  const checks = result.starvedChecks ?? [];
+  const waived = waiveStarved !== undefined && result.outcome === "starved" && checks.length > 0;
   if (!ciAllowsReady(result.outcome, { waiveStarved: waived })) {
     return { name: "ci-green", passed: false, detail: `ci ${result.outcome}: ${result.detail}` };
   }
-  const checks = (result.starvedChecks ?? []).join("; ");
-  return { name: "ci-green", passed: true, detail: waived ? `waived: ${checks}` : "" };
+  return { name: "ci-green", passed: true, detail: waived ? `waived: ${checks.join("; ")}` : "" };
 }
 
 const allPassed = (checks: readonly PromoteCheck[]): boolean => checks.every((check) => check.passed);
@@ -218,6 +224,26 @@ type ForgeAction = "tick" | "comment" | "waiver" | "ready";
 /** The action line the failure names, and what the forge said: its stderr, or its bare exit code. */
 function stopped(action: ForgeAction, result: ForgeRunResult): NaxError {
   return invalid(`promote stopped at ${action}: ${result.stderr.trim() || `exit ${result.exitCode}`}`);
+}
+
+/** A promotion that refuses at `waiver` for a reason of its own, not a forge refusal. */
+function waiverStopped(detail: string): NaxError {
+  return invalid(`promote stopped at waiver: ${detail}`);
+}
+
+/**
+ * B4, the bot path's head-hold rule for promote: the waiver names `target.headSha`, so the PR is
+ * only readied while it still holds that head. A head that moved during the comment writes ends the
+ * promotion at `waiver`; an unreadable one does too, since an unknown head cannot be tied to the
+ * record this action just wrote.
+ */
+async function holdWaivedHead(target: PromoteTarget): Promise<void> {
+  const head = await readPrHeadSha(target.forge, target.url, target.forgeDeps.forge, target.opts.dir);
+  if (head === undefined) throw waiverStopped("the PR head could not be re-read, so the waiver cannot be tied to it");
+  if (head === target.headSha) return;
+  throw waiverStopped(
+    `the PR head changed to ${head.slice(0, SHORT_SHA_LENGTH)}; the waiver names ${target.headSha.slice(0, SHORT_SHA_LENGTH)}`,
+  );
 }
 
 /** Runs one forge write. A non-zero exit stops the promotion there; the later actions never run. */
@@ -257,11 +283,19 @@ async function readyAction(target: PromoteTarget): Promise<PromoteAction> {
  * It names the head the checks belong to, every check no runner ever picked up, and the human's
  * reason — the parts `parseCiWaiver` reads back. A green CI waived nothing, so the action is
  * `skipped`; it still appears, because `--waive-starved` was given.
+ *
+ * The record names one head, so the PR head is read once more after the write and the promotion
+ * stops at `waiver` when it moved: a push during the comment would otherwise release a head whose
+ * checks nobody classified or waived (B4). An unreadable head stops it too — promote cannot tell
+ * whether the waiver still describes the PR, and a durable record outlives the run.
  */
 async function waiverAction(target: PromoteTarget, reason: string): Promise<PromoteAction> {
   if (target.ci.outcome !== "starved") return { name: "waiver", status: "skipped" };
-  const body = renderCiWaiver({ headSha: target.headSha, checks: target.ci.starvedChecks ?? [], reason });
+  const checks = target.ci.starvedChecks ?? [];
+  if (checks.length === 0) throw waiverStopped(NO_STARVED_CHECKS);
+  const body = renderCiWaiver({ headSha: target.headSha, checks, reason });
   await forgeWrite(target, "waiver", commentArgv(target.forge, target.url, body));
+  await holdWaivedHead(target);
   return { name: "waiver", status: "done" };
 }
 

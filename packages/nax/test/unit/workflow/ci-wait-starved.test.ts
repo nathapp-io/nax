@@ -54,8 +54,10 @@ interface Wire {
   readonly job?: (jobId: string) => ForgeRunResult;
   /** The `gh api -X POST …/jobs/<id>/rerun` reply. */
   readonly rerun?: (jobId: string) => ForgeRunResult;
-  /** The head `gh pr view --json headRefOid` reports, when the wait asks for it. */
+  /** The head every `gh pr view` reports, when the wait asks for it. */
   readonly headRefOid?: string;
+  /** The heads the `gh pr view` reads report in order (the last repeats), for a head that moves. */
+  readonly heads?: readonly string[];
   /** A head read that fails, to pin the fail-open contract. */
   readonly head?: ForgeRunResult;
 }
@@ -78,12 +80,14 @@ const rerunArgv = (jobId: string): string[] => [
 ];
 
 /**
- * The `gh pr view` reply: `githubWaiting` asks for mergeability, the starved head binding asks for
- * the head only. A scripted `head` stands in for a head read that fails.
+ * The `gh pr view` reply: `githubWaiting` asks for mergeability and the head together, so a waiting
+ * poll carries the head it reports — as it does in production — and the starved head binding asks
+ * for that head alone. A scripted `head` stands in for a head read that fails.
  */
-function viewReply(cmd: string[], spec: Wire): ForgeRunResult {
-  if (cmd[5] !== "headRefOid") return r('{"mergeable":"MERGEABLE"}');
-  return spec.head ?? r(JSON.stringify({ headRefOid: spec.headRefOid }));
+function viewReply(cmd: string[], spec: Wire, nextHead: () => string | undefined): ForgeRunResult {
+  const head = nextHead();
+  if (cmd[5] !== "headRefOid") return r(JSON.stringify({ mergeable: "MERGEABLE", headRefOid: head }));
+  return spec.head ?? r(JSON.stringify({ headRefOid: head }));
 }
 
 /** The `gh api` reply: a job read, or — for a `-X POST` request — a re-run of that job. */
@@ -100,11 +104,18 @@ function wire(spec: Wire) {
   const rerunCalls: string[][] = [];
   let clock = 0;
   let poll = 0;
+  let headRead = 0;
   const nextPoll = (): ForgeRunResult => {
     const reply = spec.polls[Math.min(poll, spec.polls.length - 1)];
     poll++;
     if (reply === undefined) throw new Error("no poll scripted");
     return reply;
+  };
+  const heads = spec.heads ?? (spec.headRefOid === undefined ? [] : [spec.headRefOid]);
+  const nextHead = (): string | undefined => {
+    const sha = heads[Math.min(headRead, heads.length - 1)];
+    headRead++;
+    return sha;
   };
   _ciWaitDeps.now = () => clock;
   _ciWaitDeps.schedule = () => () => {};
@@ -113,7 +124,7 @@ function wire(spec: Wire) {
   };
   _ciWaitDeps.run = async (cmd) => {
     calls.push(cmd);
-    if (cmd[0] === "gh" && cmd[2] === "view") return viewReply(cmd, spec);
+    if (cmd[0] === "gh" && cmd[2] === "view") return viewReply(cmd, spec, nextHead);
     if (cmd[0] === "gh" && cmd[1] === "api") return apiReply(cmd, spec, (rerun) => rerunCalls.push(rerun));
     return nextPoll();
   };
@@ -121,6 +132,7 @@ function wire(spec: Wire) {
     calls,
     rerunCalls,
     jobReads: () => calls.filter((cmd) => cmd[0] === "gh" && cmd[1] === "api" && !cmd.includes("-X")),
+    headReads: () => calls.filter((cmd) => cmd[0] === "gh" && cmd[2] === "view" && cmd[5] === "headRefOid"),
   };
 }
 
@@ -301,6 +313,25 @@ describe("waitForChecks starved deadline", () => {
     // No round ran, so the deadline rule has nothing to starve (US-002) and re-runs nothing.
     expect(rerunCalls).toEqual([]);
   });
+
+  test("B3: a deadline poll for another head is unavailable, never a waiverable starved", async () => {
+    // The re-run happens at head a; the queued poll at the deadline reports head b.
+    const { rerunCalls, headReads } = wire({
+      polls: [
+        checks([cancelled("e2e", "1")]),
+        checks([{ name: "e2e", bucket: "pending", state: "QUEUED", link: JOB_URL("1") }]),
+      ],
+      heads: ["aaaaaaaa5678", "bbbbbbbb1234"],
+    });
+    const out = await waitForChecks("github", "b", {
+      ...DEADLINE,
+      rerunStarved: true,
+      expectedSha: "aaaaaaaa5678",
+    });
+    expect(out).toEqual({ outcome: "unavailable", detail: "checks report bbbbbbbb but HEAD is aaaaaaaa" });
+    expect(rerunCalls).toEqual([rerunArgv("1")]);
+    expect(headReads()).toHaveLength(1);
+  });
 });
 
 describe("waitForChecks starved head binding", () => {
@@ -325,5 +356,24 @@ describe("waitForChecks starved head binding", () => {
     const out = await waitForChecks("github", "b", { ...OPTS, expectedSha: "aaaaaaaa5678" });
     expect(out.outcome).toBe("starved");
     expect(jobReads()).toEqual([jobArgv("11")]);
+  });
+
+  test("M4: a failure kept from the error-poll limit is not bound to the head", async () => {
+    // A failing poll is observed, then the forge goes unreadable until CI_ERROR_POLL_LIMIT. The
+    // terminal is that earlier observation, not this poll's, so a moved head must not rewrite it.
+    const { headReads } = wire({
+      polls: [
+        checks([
+          { name: "e2e", bucket: "fail", state: "FAILURE" },
+          { name: "slow", bucket: "pending" },
+        ]),
+        r("", 1, "gh: rate limited"),
+      ],
+      headRefOid: "bbbbbbbb1234",
+    });
+    const out = await waitForChecks("github", "b", { ...OPTS, expectedSha: "aaaaaaaa5678" });
+    expect(out.outcome).toBe("failed");
+    expect(out.detail).toBe("CI failed: e2e; 1 still pending");
+    expect(headReads()).toEqual([]);
   });
 });

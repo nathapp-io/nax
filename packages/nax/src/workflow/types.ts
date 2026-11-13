@@ -345,9 +345,9 @@ export interface WorkflowFeatureRecord {
    */
   readonly approval?: ApprovalOutcome;
   /**
-   * US-001 (nax#2569): the CI wait's own `detail` for the three states whose reason is built from it
-   * (`conflicting`, `no-checks`, `unavailable`). Absent for every other state, and on records written
-   * before this field existed.
+   * US-001 (nax#2569): the CI wait's own `detail` for the four states whose reason is built from it
+   * (`conflicting`, `no-checks`, `unavailable` and, since ci-starved-checks US-003, `starved`).
+   * Absent for every other state, and on records written before the field existed.
    */
   readonly ciDetail?: string;
   /** US-001 (nax#2569): each story's end state as `publish` saw it. Absent on older records. */

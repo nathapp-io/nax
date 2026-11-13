@@ -248,7 +248,9 @@ async function writeRulings(
   return path;
 }
 
-const draftPrView = (body: string): string => JSON.stringify({ isDraft: true, body, url: PROMOTE_URL });
+/** The draft `pr view` answer: the head it reports is the sha `git rev-parse HEAD` answers too. */
+const draftPrView = (body: string): string =>
+  JSON.stringify({ isDraft: true, body, url: PROMOTE_URL, headRefOid: PROMOTE_HEAD });
 
 /** New read-only API answers; existing detection/view/write answers remain untouched. */
 function emptyPrReads(cmd: readonly string[]): Partial<ForgeRunResult> {

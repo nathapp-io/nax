@@ -135,6 +135,13 @@ describe("parseCiWaiver", () => {
     const waiver = parseCiWaiver(renderCiWaiver({ headSha: HEAD, checks: ["a`b"], reason: "r" }));
     expect(waiver?.checks).toEqual(["a'b"]);
   });
+
+  test("M10 writes a line break inside a check name as a space, so the parts still agree", () => {
+    // The name comes from the forge's check list, so a break in it would split one check over two
+    // lines and the declared count would no longer match the lines read back.
+    const waiver = parseCiWaiver(renderCiWaiver({ headSha: HEAD, checks: ["a\nb", "c\r\nd"], reason: "r" }));
+    expect(waiver?.checks).toEqual(["a b", "c d"]);
+  });
 });
 
 describe("latestCiWaiver", () => {

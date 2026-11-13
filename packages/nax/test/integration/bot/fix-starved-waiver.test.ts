@@ -15,7 +15,7 @@ import {
   runBotFixCycle,
 } from "@/bot";
 import type { RecordRulingsOutcome } from "@/bot/rulings";
-import { NAX_WORKFLOW_PR_MARKER, type PrComment, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
+import { NAX_BOT_HEADER, NAX_WORKFLOW_PR_MARKER, type PrComment, parseNaxBotMarker, withNaxBotMarker } from "@/forge";
 import type { CiWaitResult } from "@/workflow/ci-wait";
 import { parseCiWaiver } from "@/workflow/ci-waiver";
 
@@ -160,12 +160,39 @@ describe("readyStep starved CI waiver", () => {
     const s = plainFixture();
     const out = await readyStep({ ...s.env, waiveStarved: STARVATION }, state);
     expect(out.patch).toEqual({ markedReady: true, ciWaived: { checks: ["x"], reason: STARVATION } });
-    expect(s.order).toEqual(["ci", "read", "post", "ready"]);
+    // The head is read before the waiver write and once more after it (B2).
+    expect(s.order).toEqual(["ci", "read", "post", "read", "ready"]);
     expect(parseCiWaiver(s.post.mock.calls[0]?.[1] ?? "")).toEqual({
       headSha: HEAD,
       checks: ["x"],
       reason: STARVATION,
     });
+  });
+
+  test("B2 the plain path holds the draft when the head moves during the waiver write", async () => {
+    const s = plainFixture();
+    const moved = { ...s.env.info, headSha: "f".repeat(40) };
+    let posted = false;
+    spyOn(_fixReportDeps, "readPrInfo").mockImplementation(async () => (posted ? moved : s.env.info));
+    s.post.mockImplementation(async () => {
+      posted = true;
+      return { id: "waiver" };
+    });
+    const out = await readyStep({ ...s.env, waiveStarved: STARVATION }, state);
+    expect(out.patch).toEqual({ markedReady: false, readyHeld: "PR head changed since this execution" });
+    expect(out.exit).toBe("report");
+    expect(s.run).not.toHaveBeenCalled();
+  });
+
+  test("M12 a starved CI that named no check is never recorded as a waiver", async () => {
+    const s = plainFixture({ outcome: "starved", detail: "0 check(s) never got a runner" });
+    const out = await readyStep({ ...s.env, waiveStarved: STARVATION }, state);
+    expect(out.patch).toEqual({
+      markedReady: false,
+      readyHeld: "could not record the CI waiver: the CI wait named no starved checks",
+    });
+    expect(s.post).not.toHaveBeenCalled();
+    expect(s.run).not.toHaveBeenCalled();
   });
 
   test("AC-9 the workflow path keeps the draft when the waiver cannot be recorded", async () => {
@@ -302,6 +329,11 @@ function summaryOf(store: readonly PrComment[]): string {
   return store.filter((comment) => parseNaxBotMarker(comment.body)?.key === "fix-summary").at(-1)?.body ?? "";
 }
 
+/** The visible header `withNaxBotMarker` writes: a rewrite must leave exactly one (M15). */
+function headerCount(body: string): number {
+  return body.split(NAX_BOT_HEADER).length - 1;
+}
+
 describe("the fix summary names the waiver", () => {
   test("F1 a ready-only pass rewrites the summary the fix left behind", async () => {
     const env = draftEnv(NAX_WORKFLOW_PR_MARKER);
@@ -322,6 +354,29 @@ describe("the fix summary names the waiver", () => {
     expect(body).not.toContain("Kept as draft:");
     // The rest of the summary survives: only the readiness lines are replaced.
     expect(body).toContain(`Pushed ${HEAD.slice(0, 7)}:`);
+    // M15: the visible header is not stacked, once per rewrite.
+    expect(headerCount(body)).toBe(1);
+  });
+
+  test("M15 a second rewrite does not stack another visible header", async () => {
+    const env = draftEnv(NAX_WORKFLOW_PR_MARKER);
+    const store = commentStore(env, [heldSummary(env)]);
+    spyOn(_fixReportDeps, "readPrInfo").mockResolvedValue(env.info);
+    spyOn(_fixReportDeps, "readCurrentUser").mockResolvedValue(env.user);
+    spyOn(_fixReportDeps, "listReviewThreads").mockResolvedValue([item.thread]);
+    spyOn(_fixReportDeps, "recordPrRulings").mockResolvedValue(settled);
+    spyOn(_fixReportDeps, "waitForChecks").mockResolvedValue(starved);
+    spyOn(env.forge, "run").mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+    await readyStep({ ...env, waiveStarved: STARVATION }, { ...state, readyOnly: true });
+    const first = summaryOf(store);
+    await readyStep({ ...env, waiveStarved: STARVATION }, { ...state, readyOnly: true });
+    const second = summaryOf(store);
+    expect(headerCount(first)).toBe(1);
+    expect(headerCount(second)).toBe(1);
+    expect(second).toContain(
+      "Marked ready with a CI waiver: 1 check(s) never got a runner: x. Reason: runner starvation",
+    );
   });
 
   test("F1 the full cycle leaves a summary that names the waiver", async () => {

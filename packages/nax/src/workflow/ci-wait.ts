@@ -413,6 +413,27 @@ function nonGreenChecks(checks: readonly GhCheck[] | undefined): readonly GhChec
   return (checks ?? []).filter((check) => !GH_OK.has(check.bucket));
 }
 
+/**
+ * The deadline's `starved` verdict, bound to the head like a green or a failed one (US-002). A
+ * waiting GitHub poll carries the head `githubWaiting` read, so a deadline poll for another head
+ * ends `unavailable` instead of exposing a waivable verdict for checks that are not this head's.
+ * An unreadable head leaves the poll as it is (fail open, as for green), and a deadline the
+ * starvation rule does not apply to is `undefined`, so today's `pending` stands.
+ */
+function starvedAtDeadlineBound(input: {
+  readonly poll: Poll;
+  readonly ledger: StarvedLedger;
+  readonly expectedSha?: string;
+}): CiWaitResult | undefined {
+  const starved =
+    "ghChecks" in input.poll ? starvedAtDeadline(nonGreenChecks(input.poll.ghChecks), input.ledger) : undefined;
+  if (starved === undefined || input.expectedSha === undefined) return starved;
+  const sha = "sha" in input.poll ? input.poll.sha : undefined;
+  return sha !== undefined && sha !== input.expectedSha
+    ? { outcome: "unavailable", detail: headMismatchDetail(sha, input.expectedSha) }
+    : starved;
+}
+
 /** The verdict when the deadline is reached: a head mismatch, then today's order, with starved replacing pending. */
 function deadlineVerdict(input: {
   readonly poll: Poll;
@@ -420,12 +441,12 @@ function deadlineVerdict(input: {
   readonly history: ReturnType<typeof checkHistory>;
   readonly errors: ReturnType<typeof errorRun>;
   readonly timeoutMs: number;
+  readonly expectedSha?: string;
 }): CiWaitResult {
   if ("mismatch" in input.poll && input.poll.mismatch) return { outcome: "unavailable", detail: input.poll.mismatch };
   const settled = input.history.failingTimeout() ?? input.errors.timeout();
   if (settled !== undefined) return settled;
-  const starved =
-    "ghChecks" in input.poll ? starvedAtDeadline(nonGreenChecks(input.poll.ghChecks), input.ledger) : undefined;
+  const starved = starvedAtDeadlineBound({ poll: input.poll, ledger: input.ledger, expectedSha: input.expectedSha });
   return starved ?? input.history.timeout(input.timeoutMs);
 }
 
@@ -481,7 +502,16 @@ export async function waitForChecks(
       ledger = settled.ledger;
       if (settled.result) return end(settled.result);
       if (_ciWaitDeps.now() + opts.pollMs > deadline) {
-        return end(deadlineVerdict({ poll, ledger, history, errors, timeoutMs: opts.timeoutMs }));
+        return end(
+          deadlineVerdict({
+            poll,
+            ledger,
+            history,
+            errors,
+            timeoutMs: opts.timeoutMs,
+            ...(opts.expectedSha === undefined ? {} : { expectedSha: opts.expectedSha }),
+          }),
+        );
       }
       // Both sides of the wait: `_ciWaitDeps.now` may move during a slow forge call or during the
       // wait itself, and the heartbeat has to hold either way (each `say` resets the clock).

@@ -62,9 +62,10 @@ async function classifyFailure(
     readonly run: CiRun;
   },
   failed: CiWaitResult,
+  bindHead: boolean,
 ): Promise<{ readonly ledger: StarvedLedger; readonly result?: CiWaitResult }> {
   const { wait, poll, ledger, run } = input;
-  const mismatch = await headMismatch(wait, run);
+  const mismatch = bindHead ? await headMismatch(wait, run) : undefined;
   if (mismatch !== undefined) return { ledger, result: { outcome: "unavailable", detail: mismatch } };
   const decision = await decideStarved({
     checks: "ghChecks" in poll ? (poll.ghChecks ?? []) : [],
@@ -84,6 +85,11 @@ async function classifyFailure(
 /**
  * One poll's terminal result, or `undefined` while the wait keeps polling, plus the ledger it leaves
  * behind. Only a would-be `failed` GitHub poll is classified (US-002); every other poll is today's.
+ *
+ * The head binding belongs to a poll that reported the checks, so it asks only when this poll is the
+ * `failed` one. A `failed` terminal synthesised from an earlier failing poll at the error-poll limit
+ * (`checkHistory.onErrorLimit`) replays that observation, not this poll's verdict: it keeps today's
+ * `failed` outcome even when the head has moved since (spec, Out of Scope).
  */
 export async function settlePoll(input: {
   readonly wait: WaitContext;
@@ -95,5 +101,5 @@ export async function settlePoll(input: {
   const { terminal } = input;
   if (terminal?.outcome !== "failed" || input.wait.forge !== "github")
     return { ledger: input.ledger, result: terminal };
-  return await classifyFailure(input, terminal);
+  return await classifyFailure(input, terminal, input.poll.state === "failed");
 }

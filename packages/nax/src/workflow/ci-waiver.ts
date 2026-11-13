@@ -29,6 +29,8 @@ const HEADING = /^CI waiver at ([0-9A-Fa-f]{40}): (\d+) check\(s\) never got a r
 const CHECK_LINE = /^- `(.*)`$/;
 const REASON_PREFIX = "Reason: ";
 const UNNAMED_CHECK = "(unnamed check)";
+/** A line break would end the record line early, so a check name carrying one is written flat. */
+const LINE_BREAK = /[\r\n]+/g;
 /** A line break would end the record line early, and a marker comment would be read as the comment's own. */
 const REASON_LINE_BREAK = /[\r\n]/;
 const REASON_MARKER = "<!--";
@@ -63,9 +65,11 @@ function heading(headSha: string, count: number): string {
  * One check line. The name sits in a code span so GitHub neither links nor mentions anything in it,
  * which is also why a backtick inside the name cannot be escaped within one: it is written as `'`
  * and does not round-trip. An empty name still has to occupy its line, or the count would disagree.
+ * A line break would end the record line early — the name comes from the forge's check list, not a
+ * literal — so one is written as a space and the record keeps one line per check.
  */
 function checkLine(name: string): string {
-  const written = name === "" ? UNNAMED_CHECK : name.replaceAll("`", "'");
+  const written = name === "" ? UNNAMED_CHECK : name.replaceAll("`", "'").replaceAll(LINE_BREAK, " ");
   return `- \`${written}\``;
 }
 

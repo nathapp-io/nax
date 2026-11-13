@@ -17,7 +17,7 @@
  * the waiver has released.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { ownComments, type PrComment, stripNaxBotMarkers, withNaxBotMarker } from "@/forge";
+import { NAX_BOT_HEADER, ownComments, type PrComment, stripNaxBotMarkers, withNaxBotMarker } from "@/forge";
 import { getLogger } from "@/logger";
 import type { CiWaitResult } from "../workflow/ci-wait";
 import { type CiWaiver, renderCiWaiver } from "../workflow/ci-waiver";
@@ -31,6 +31,8 @@ const READY_TEXT_MAX = 500;
 const DRAFT_PREFIX = "Kept as draft: ";
 const READY_LINE = "Marked ready.";
 const READY_HEAD = "Marked ready";
+/** What a `starved` result with no check names cannot become: a waiver with nothing in it. */
+const NO_STARVED_CHECKS = "the CI wait named no starved checks";
 
 /** The waiver a ready pass recorded; absent from the state when the pass waived nothing. */
 export type CiWaiverRecord = NonNullable<BotFixState["ciWaived"]>;
@@ -76,12 +78,16 @@ export interface CiWaiverSummaryInput {
 /**
  * Post the waiver of a starved CI, and report the record it wrote. The head is the exact execution
  * head and the checks are CI's own starved list, so the record names what nobody could judge.
- * Nothing is waived without a reason, and no other outcome is waived at all.
+ * Nothing is waived without a reason, and no other outcome is waived at all. A `starved` result that
+ * named no check is not a record either: a waiver over an empty list certifies nothing, so the pass
+ * holds rather than writing one (US-007).
  */
 export async function recordCiWaiver({ env, state, ci, post }: CiWaiverReadyInput): Promise<CiWaiverReady> {
   const reason = env.waiveStarved;
   if (reason === undefined || ci.outcome !== "starved") return {};
-  const waiver: CiWaiver = { headSha: state.pushedSha ?? env.info.headSha, checks: ci.starvedChecks ?? [], reason };
+  const checks = ci.starvedChecks ?? [];
+  if (checks.length === 0) return { held: `could not record the CI waiver: ${NO_STARVED_CHECKS}` };
+  const waiver: CiWaiver = { headSha: state.pushedSha ?? env.info.headSha, checks, reason };
   try {
     await post(env.ref, renderCiWaiver(waiver), env.forge, env.repoRoot);
   } catch (error) {
@@ -120,6 +126,21 @@ function withoutTrailingBlanks(lines: readonly string[]): string[] {
 }
 
 /**
+ * The summary body a rewrite keeps. `stripNaxBotMarkers` removes only the identity marker, so the
+ * visible header `withNaxBotMarker` writes back is dropped here as well — otherwise every rewrite
+ * adds one more `**nax bot**` line to the public comment. Only the leading header goes: the same
+ * words inside the summary's own text are the author's.
+ */
+function bodyWithoutHeader(body: string): string[] {
+  const lines = stripNaxBotMarkers(body).split("\n");
+  const first = lines.findIndex((line) => line.trim() !== "");
+  if (first === -1 || lines[first]?.trim() !== NAX_BOT_HEADER) return lines;
+  const rest = lines.slice(first + 1);
+  const start = rest.findIndex((line) => line.trim() !== "");
+  return start === -1 ? [] : rest.slice(start);
+}
+
+/**
  * US-007: a ready-only pass runs no `report` node — that node needs a fix outcome — so the summary
  * the earlier fix published is the only comment that can name the waiver. Its readiness lines are
  * replaced by the ones this pass produced, and a PR with no own summary simply keeps what it had:
@@ -130,11 +151,7 @@ export async function nameWaiverInSummary({ env, lines, list, edit }: CiWaiverSu
     const comments = await list(env.ref, env.forge, env.repoRoot);
     const own = ownComments(comments, env.user.login).find(({ key }) => key === FIX_SUMMARY_KEY);
     if (own === undefined) return;
-    const kept = withoutTrailingBlanks(
-      stripNaxBotMarkers(own.comment.body)
-        .split("\n")
-        .filter((line) => !isReadinessLine(line)),
-    );
+    const kept = withoutTrailingBlanks(bodyWithoutHeader(own.comment.body).filter((line) => !isReadinessLine(line)));
     const body = withNaxBotMarker([...kept, ...lines].join("\n"), FIX_SUMMARY_KEY);
     await edit(env.ref, own.comment, body, env.forge, env.repoRoot);
   } catch (error) {
