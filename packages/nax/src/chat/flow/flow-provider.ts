@@ -50,23 +50,16 @@ const BRANCH_CHANGED_MESSAGE = "[chat] the branch changed while the card was ope
 /** Nothing was pushed: the branch or the origin the push would resolve is no longer the one carded. */
 const PUSH_TARGET_MOVED_MESSAGE =
   "[chat] the branch or origin being pushed changed while the card was open; nothing was pushed";
-/**
- * The push ran against a branch a concurrent commit advanced, so what origin now
- * holds may not be the carded commit. Nothing was sent to koda, and the message
- * says so plainly rather than claiming the approved commit reached origin.
- */
-const PUSHED_OTHER_COMMIT_MESSAGE =
-  "[chat] the branch moved while it was pushed, so the commit on origin may not be the one you approved; " +
-  "koda was not called and no flow exists";
 /** Nothing was pushed: the turn was cancelled between the card and the push. */
 const CANCELLED_MESSAGE = "[chat] the turn was cancelled; nothing was pushed";
 /**
- * Anything that can break a card line or move the cursor: a committed file name is
- * the one carded value the request rules do not exclude control characters from.
- * `\p{Cc}` is the Unicode "control" category — C0 and C1 alike, without writing the
- * code points into the source.
+ * Anything that can break a card line, reorder what is printed after it or move the
+ * cursor. `\p{Cc}` is the Unicode control category (C0 and C1) and `\p{Cf}` the
+ * format category, which is where the bidirectional overrides live (U+202A–U+202E,
+ * U+2066–U+2069, U+200E/U+200F, U+061C). A committed file name is the one carded
+ * value the request rules let carry them.
  */
-const CARD_CONTROL_CHARS = /\p{Cc}/gu;
+const CARD_ESCAPED_CHARS = /[\p{Cc}\p{Cf}]/gu;
 /** A `\uXXXX` escape is four hexadecimal digits. */
 const UNICODE_ESCAPE_DIGITS = 4;
 
@@ -160,13 +153,14 @@ function failure(content: string): ToolResult {
 }
 
 /**
- * One carded value as the card shows it: control characters escaped, so a value
- * that carries a newline or an escape sequence — a committed file name is the one
- * that can — cannot forge an extra card line or move the cursor while the user
- * reads what they are approving. The request body keeps the literal value.
+ * One carded value as the card shows it: control and format characters escaped, so
+ * a value carrying a newline, a bidirectional override or an escape sequence — a
+ * committed file name is the one that can — cannot forge an extra card line,
+ * reorder the text around it or move the cursor while the user reads what they are
+ * approving. The request body keeps the literal value.
  */
 function cardText(value: string): string {
-  return value.replace(CARD_CONTROL_CHARS, (char) => {
+  return value.replace(CARD_ESCAPED_CHARS, (char) => {
     const code = char.charCodeAt(0).toString(16).padStart(UNICODE_ESCAPE_DIGITS, "0");
     return `\\u${code}`;
   });
@@ -349,10 +343,13 @@ async function createFlow(
  *
  * The card described one commit, so the branch must still be on it — and the
  * tree must still be clean — before anything leaves the machine. The target the
- * push will resolve is verified separately, and the pushed commit is verified
- * again after the push, because `commitAndPush` pushes `refs/heads/<branch>` by
- * name: a commit another process lands in that window would otherwise reach
- * origin and get a flow created for it.
+ * push will resolve is verified separately, and the push itself names the carded
+ * commit (`sourceSha`): `commitAndPush` then runs
+ * `git push --set-upstream origin <sha>:refs/heads/<branch>`, so a commit another
+ * process lands on that branch in the window reaches origin only if it is the one
+ * the user approved. A post-push branch-tip read would not add anything to that —
+ * it cannot undo a push, and it would fail a correct push whenever an unrelated
+ * commit lands afterwards.
  */
 async function afterAllow(
   state: FlowRepoReady,
@@ -366,8 +363,8 @@ async function afterAllow(
   if (target !== undefined) return target;
   await _flowProviderDeps.commitAndPush(options.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
     skipCommit: true,
+    sourceSha: state.sha,
   });
-  if ((await _flowProviderDeps.headSha(options.repoRoot)) !== state.sha) return failure(PUSHED_OTHER_COMMIT_MESSAGE);
   return await createFlow(state, input, options);
 }
 

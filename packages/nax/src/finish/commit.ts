@@ -19,6 +19,9 @@ export const _finishGitDeps = { git: gitWithTimeout };
  */
 export const PUSH_TIMEOUT_MS = 120_000;
 
+/** Where a branch lives on the remote; koda's flow branch and nax's publish path both push here. */
+const BRANCH_REF_PREFIX = "refs/heads/";
+
 export interface SyncOutcome {
   /** True when the fixes produced a new commit. */
   committed: boolean;
@@ -118,18 +121,28 @@ export async function commitFixes(
  * The push is unconditional — even with nothing new to commit the local
  * branch may be ahead of its remote (nax's own run commits, or per-round
  * checkpoint commits), and the PR must reflect HEAD.
+ *
+ * `sourceSha` binds the push to one commit: the refspec becomes
+ * `<sourceSha>:refs/heads/<branch>`, so what reaches the remote is that object
+ * whatever the local branch points at when the push runs. A caller that showed
+ * the user a specific commit — an approval card naming a sha — passes it, because
+ * a name-addressed push resolves `refs/heads/<branch>` at push time and a
+ * concurrent commit would otherwise be what gets published. Such a push cannot
+ * set the branch's upstream (git derives it from a local branch refspec), so a
+ * branch that had none still has none afterwards.
  */
 export async function commitAndPush(
   repoRoot: string,
   branch: string,
   message: string,
-  opts: { skipHooks?: boolean; skipCommit?: boolean; excludeDir?: string } = {},
+  opts: { skipHooks?: boolean; skipCommit?: boolean; excludeDir?: string; sourceSha?: string } = {},
 ): Promise<SyncOutcome> {
   const { committed, shaAfter } = opts.skipCommit
     ? { committed: false, shaAfter: null }
     : await commitFixes(repoRoot, message, opts);
 
-  const push = await _finishGitDeps.git(["push", "--set-upstream", "origin", branch], repoRoot, PUSH_TIMEOUT_MS);
+  const source = opts.sourceSha === undefined ? branch : `${opts.sourceSha}:${BRANCH_REF_PREFIX}${branch}`;
+  const push = await _finishGitDeps.git(["push", "--set-upstream", "origin", source], repoRoot, PUSH_TIMEOUT_MS);
   if (push.exitCode !== 0) {
     throw new NaxError(
       `git push of "${branch}" failed: ${push.stderr.trim() || `exit ${push.exitCode}`}`,
@@ -138,6 +151,7 @@ export async function commitAndPush(
         stage: "finish-git",
         repoRoot,
         branch,
+        ...(opts.sourceSha === undefined ? {} : { sourceSha: opts.sourceSha }),
         committed,
       },
     );

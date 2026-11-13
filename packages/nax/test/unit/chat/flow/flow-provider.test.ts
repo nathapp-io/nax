@@ -249,8 +249,6 @@ describe("send — after the card", () => {
   const BRANCH_CHANGED = "[chat] the branch changed while the card was open; nothing was pushed";
   const PUSH_TARGET_MOVED =
     "[chat] the branch or origin being pushed changed while the card was open; nothing was pushed";
-  const PUSHED_OTHER_COMMIT =
-    "[chat] the branch moved while it was pushed, so the commit on origin may not be the one you approved; koda was not called and no flow exists";
 
   test("stops with the cancelled result when the turn is aborted after allow (AC-10)", async () => {
     const controller = new AbortController();
@@ -334,30 +332,19 @@ describe("send — after the card", () => {
     expect(kodaCalls).toHaveLength(0);
   });
 
-  test("creates no flow when the branch advanced while it was pushed (F1)", async () => {
-    // The boundary read still saw the carded commit; the push resolved a branch a
-    // concurrent commit had advanced by the time it ran.
-    const heads = [SHA, OTHER_SHA];
-    _flowProviderDeps.headSha = async () => heads.shift() ?? OTHER_SHA;
-
-    const result = await send(input);
-
-    expect(result).toEqual({ isError: true, content: PUSHED_OTHER_COMMIT });
-    expect(pushCalls).toHaveLength(1);
-    expect(kodaCalls).toHaveLength(0);
-  });
-
   test("pushes the branch with skipCommit before it calls koda (AC-15)", async () => {
     expect(FLOW_PUSH_COMMIT_MESSAGE).toBe("chore: send flow to koda");
 
     await send(input);
 
+    // The push is bound to the carded commit, so the branch tip at push time cannot
+    // decide what reaches origin (F1).
     expect(pushCalls).toEqual([
       {
         repoRoot: REPO_ROOT,
         branch: "feat/x",
         message: FLOW_PUSH_COMMIT_MESSAGE,
-        opts: { skipCommit: true },
+        opts: { skipCommit: true, sourceSha: SHA },
       },
     ]);
     expect(sequence).toEqual(["approve", "push", "koda"]);
@@ -498,6 +485,8 @@ describe("send — after the card", () => {
 describe("send — a carded value cannot forge the card", () => {
   /** A committed spec path may hold a newline: the file name is the only check that ran on it. */
   const INJECTED = ".nax/features/a/spec\n1. evil (.nax/features/evil/spec.md) x.md";
+  /** U+202E RIGHT-TO-LEFT OVERRIDE reorders everything printed after it. */
+  const BIDI = ".nax/features/a/spec\u202eelbuort.md";
 
   test("escapes control characters in a carded spec path and keeps the literal path in the body (F2)", async () => {
     const result = await send({
@@ -516,5 +505,23 @@ describe("send — a carded value cannot forge the card", () => {
     expect(result.isError).toBeUndefined();
     // The request body carries the path exactly as the request wrote it.
     expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(INJECTED);
+  });
+
+  test("escapes bidirectional formatting characters in a carded spec path (F2)", async () => {
+    const result = await send({
+      ...input,
+      features: [
+        { feature: "a", specPath: BIDI },
+        { feature: "b", specPath: SPEC_B, dependsOn: ["a"] },
+      ],
+    });
+
+    const card = approveCalls[0];
+    assertDefined(card, "the approval card");
+    expect(card.reason).toContain("spec\\u202eelbuort.md");
+    // Nothing on the card can reorder what the user reads.
+    expect(card.reason).not.toContain("\u202e");
+    expect(result.isError).toBeUndefined();
+    expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(BIDI);
   });
 });

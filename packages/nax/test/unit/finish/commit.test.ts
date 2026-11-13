@@ -231,4 +231,49 @@ describe("commitAndPush", () => {
 
     await expect(commitAndPush("/repo", "feat/x", "fix: push fails")).rejects.toThrow(NaxError);
   });
+
+  test("pushes the bound commit to the branch ref when sourceSha is given (F1)", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("moved\n");
+      if (call.args[0] === "status") return ok("");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+
+    await commitAndPush("/repo", "feat/x", "chore: send flow to koda", { skipCommit: true, sourceSha: "0123abcd" });
+
+    const pushCall = calls.find((c) => c.args[0] === "push");
+    expect(pushCall?.args).toEqual(["push", "--set-upstream", "origin", "0123abcd:refs/heads/feat/x"]);
+  });
+
+  test("a branch that moved to another commit does not change what is pushed (F1)", async () => {
+    // `rev-parse` every call: the branch has been advanced between the caller's
+    // check and this push. The refspec carries the approved commit, so the pushed
+    // object is the same either way.
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("advanced-while-the-card-was-open\n");
+      if (call.args[0] === "status") return ok("");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+
+    await commitAndPush("/repo", "feat/x", "chore: send flow to koda", { skipCommit: true, sourceSha: "approved" });
+
+    const pushCall = calls.find((c) => c.args[0] === "push");
+    expect(pushCall?.args.at(-1)).toBe("approved:refs/heads/feat/x");
+  });
+
+  test("the plain push still names the branch when no sourceSha is given", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("sha\n");
+      if (call.args[0] === "status") return ok("");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+
+    await commitAndPush("/repo", "feat/x", "fix: still the branch");
+
+    const pushCall = calls.find((c) => c.args[0] === "push");
+    expect(pushCall?.args).toEqual(["push", "--set-upstream", "origin", "feat/x"]);
+  });
 });
