@@ -315,9 +315,11 @@ async function launchIntercepted({
           spec: { kind: "shell", shell, command: intercepted.command },
           root: ctx.root,
           ...common,
-          // US-003: the key is present only for an exact `true` on the call, so
-          // every other request stays byte-identical to what US-002 shipped.
+          // US-003: `unwrapped` is present only for an exact `true` on the call.
+          // `unsandboxedOffered` is always sent (#2890): it only picks the
+          // launcher's next-step sentence and grants nothing.
           ...(unwrapped ? { unwrapped: true } : {}),
+          unsandboxedOffered: opts.unsandboxedCommands === true,
         })
       : { ...(await _bashToolDeps.runArgv({ argv: executed, ...common })), executed, sandbox: undefined };
   if (!intercepted.rewritten || (backgroundLaunch !== undefined && isForeground?.() !== true)) {

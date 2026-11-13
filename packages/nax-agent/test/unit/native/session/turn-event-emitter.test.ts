@@ -103,6 +103,23 @@ describe("createTurnEventEmitter", () => {
     expect(second.input).toHaveProperty("apiKey", "[REDACTED]");
   });
 
+  test("#2890: tool_result carries the sandbox status only when one is given", () => {
+    const { events, sink } = collector();
+    const emitter = createTurnEventEmitter(sink);
+    emitter.toolCall(readCall("c1"), undefined);
+    emitter.toolCall(readCall("c2"), undefined);
+    emitter.toolResult(buildToolResult({ toolCallId: "c1", content: "x" }), "sandboxed");
+    emitter.toolResult(buildToolResult({ toolCallId: "c2", content: "y" }));
+    expect(events[2]).toEqual({
+      type: "tool_result",
+      callId: "c1",
+      isError: false,
+      preview: "x",
+      sandbox: "sandboxed",
+    });
+    expect("sandbox" in (events[3] ?? {})).toBe(false);
+  });
+
   test("a repeated call id is answered once per call", () => {
     const { events, sink } = collector();
     const emitter = createTurnEventEmitter(sink);

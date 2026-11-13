@@ -70,8 +70,12 @@ export function defaultSummary(input: unknown): string {
   return cutToByteCap(json, EMBEDDER_SUMMARY_BYTES);
 }
 
-function toolError(message: string, tool: string): NaxError {
-  return new NaxError(message, "AGENT_SESSION_TOOL_ERROR", { stage: "agent-session", tool });
+function toolError(message: string, tool: string, sandbox?: "sandboxed" | "unsandboxed"): NaxError {
+  return new NaxError(message, "AGENT_SESSION_TOOL_ERROR", {
+    stage: "agent-session",
+    tool,
+    ...(sandbox !== undefined ? { sandbox } : {}),
+  });
 }
 
 function summaryFor(tool: EmbedderTool, input: unknown): string {
@@ -187,8 +191,8 @@ async function runCodingTool(
     if (outcome.kind === "denied") {
       return { answer: `Denied: ${outcome.reason}`, denied: { reason: outcome.reason, breach: outcome.breach } };
     }
-    if (outcome.kind === "error") throw toolError(outcome.content, request.name);
-    return { answer: outcome.content };
+    if (outcome.kind === "error") throw toolError(outcome.content, request.name, outcome.sandbox);
+    return { answer: outcome.content, ...(outcome.sandbox !== undefined ? { sandbox: outcome.sandbox } : {}) };
   } finally {
     deps.setCurrentCallId(undefined);
   }

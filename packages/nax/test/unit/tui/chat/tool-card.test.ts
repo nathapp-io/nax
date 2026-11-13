@@ -125,6 +125,24 @@ describe("toolCardModel identity", () => {
   });
 });
 
+describe("toolCardModel sandbox marker (#2890)", () => {
+  test.each([
+    { name: "Bash", input: { command: "ls" } },
+    { name: "RunCommand", input: { argv: ["bun", "test"] } },
+  ])("$name carries the status the result reported", ({ name, input }) => {
+    expect(okCard({ name, input, sandbox: "sandboxed" }).sandbox).toBe("sandboxed");
+    expect(okCard({ name, input, sandbox: "unsandboxed" }).sandbox).toBe("unsandboxed");
+  });
+
+  test("a Bash card without a reported status has no marker", () => {
+    expect("sandbox" in okCard({ name: "Bash", input: { command: "ls" } })).toBe(false);
+  });
+
+  test("a tool that is not Bash or Exec never shows the marker", () => {
+    expect("sandbox" in okCard({ name: "Read", sandbox: "sandboxed" })).toBe(false);
+  });
+});
+
 describe("toolCardModel arg", () => {
   test.each(PATH_TOOLS)("uses the path of a %s call", (name, path) => {
     expect(card({ name, input: { path } }).arg).toBe(path);

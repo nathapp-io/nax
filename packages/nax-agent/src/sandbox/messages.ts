@@ -4,7 +4,23 @@
  * always know whether it is sandboxed and what it may write (spec S5).
  */
 
-export const LIKELY_SANDBOX_DENIAL = /Operation not permitted|Read-only file system/;
+/**
+ * srt's proxy refusals: the HTTP proxy answers `CONNECT tunnel failed, response
+ * 403` and the socat bridge prints `E CONNECT <host>:<port>: Forbidden`.
+ */
+export const LIKELY_NETWORK_DENIAL = /CONNECT tunnel failed, response 403|\bE CONNECT \S+: Forbidden\b/;
+
+/** An AF_UNIX or TCP connect the sandbox refuses (docker prints `socket: operation not permitted`). */
+export const LIKELY_SOCKET_DENIAL = /\b(socket|connect): operation not permitted/i;
+
+/**
+ * Case-insensitive: docker prints `socket: operation not permitted` in lower
+ * case (an AF_UNIX connect the sandbox refuses), coreutils in title case.
+ */
+export const LIKELY_SANDBOX_DENIAL = new RegExp(
+  `operation not permitted|read-only file system|${LIKELY_NETWORK_DENIAL.source}`,
+  "i",
+);
 
 function describeNetwork(network: "open" | readonly string[]): string {
   if (network === "open") return "network access is unrestricted";
@@ -79,4 +95,30 @@ export function denialHintLine(writeRoots: readonly string[], sharedTmp = false)
     `note: this command ran in the nax sandbox; that failure may be a sandbox denial -- writable roots: ${writeRoots.join(", ")}.` +
     tempClause
   );
+}
+
+/** Network refusals name the network policy, not the writable roots. */
+export function networkDenialHintLine(network: "open" | readonly string[]): string {
+  return `note: this command ran in the nax sandbox; that failure may be a sandbox network denial -- ${describeNetwork(network)}.`;
+}
+
+/** The sandbox blocks local sockets; the writable-roots hint would send the agent at the wrong fix. */
+export function socketDenialHintLine(): string {
+  return "note: this command ran in the nax sandbox; the sandbox blocks local sockets such as /var/run/docker.sock.";
+}
+
+/** US-2890: states where a FAILED wrapped command ran, so the model never has to guess. */
+export const SANDBOX_STATUS_LINE = "[nax] this command ran INSIDE the sandbox (unsandboxed was not requested).";
+
+const NEXT_STEP_OFFERED =
+  "[nax] If this needs the network, a local socket or a device, re-run with `unsandboxed: true` and an " +
+  "`unsandboxedReason`; the user may be asked to approve.";
+
+const NEXT_STEP_NOT_OFFERED =
+  "[nax] This session cannot run commands outside the sandbox. Ask the user to run it, or to enable " +
+  "`allowUnsandboxedCommands`.";
+
+/** The next step that matches what this session really offers. */
+export function unsandboxedNextStepLine(unsandboxedOffered: boolean): string {
+  return unsandboxedOffered ? NEXT_STEP_OFFERED : NEXT_STEP_NOT_OFFERED;
 }

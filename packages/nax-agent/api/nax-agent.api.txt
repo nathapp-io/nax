@@ -682,7 +682,9 @@ type InterceptOutcome
 type InterceptRequest
 type InterceptResult
 LEASE_FRESHNESS_MS
+LIKELY_NETWORK_DENIAL
 LIKELY_SANDBOX_DENIAL
+LIKELY_SOCKET_DENIAL
 LOOP_EVENTS
 LOOP_HANDLER_TIMEOUT_MS
 type LaunchRequest
@@ -761,6 +763,7 @@ type RunCommandExecOptions
 type RunCommandToolOptions
 SANDBOXED_ENV
 SANDBOX_GLOB_CHARS
+SANDBOX_STATUS_LINE
 SCRATCHPAD_DIR
 SECRET_VALUE_PATTERNS
 SPILL_DIR
@@ -774,6 +777,7 @@ type SandboxPolicy
 type SandboxPolicyInput
 type SandboxRecord
 type SandboxState
+type SandboxStatus
 type SandboxWrapRequest
 type SecretSpan
 type SecretValuePattern
@@ -1015,6 +1019,7 @@ narrowGrants
 nativeSessionId
 nativeSessionStateOf
 naxCredentialStore
+networkDenialHintLine
 newSessionKey
 normalizeCommandSpec
 normalizeExec
@@ -1092,6 +1097,8 @@ runTempRoots
 runTmpRoot
 sandboxBackendFor
 sandboxSentence
+sandboxStatusField
+sandboxStatusOf
 sanitizeProviderTools
 saveTranscript
 scratchpadListTool
@@ -1107,6 +1114,7 @@ sessionTranscriptFor
 setAgentLogger
 shellQuoteArg
 shouldCompact
+socketDenialHintLine
 spawnDetached
 spillRelativePath
 spinTerminalNotice
@@ -1133,6 +1141,7 @@ truncationDirectionFor
 turnRetryDelayMs
 turnRetryFitsBudget
 unregisterToolAuditSink
+unsandboxedNextStepLine
 unsandboxedSentence
 usageBeat
 validateProviderId

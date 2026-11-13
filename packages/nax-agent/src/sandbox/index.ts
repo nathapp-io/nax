@@ -9,9 +9,15 @@ export {
 } from "./launcher.ts";
 export {
   denialHintLine,
+  LIKELY_NETWORK_DENIAL,
   LIKELY_SANDBOX_DENIAL,
+  LIKELY_SOCKET_DENIAL,
+  networkDenialHintLine,
   rawBashRefusalReason,
+  SANDBOX_STATUS_LINE,
   sandboxSentence,
+  socketDenialHintLine,
+  unsandboxedNextStepLine,
   unsandboxedSentence,
 } from "./messages.ts";
 export { buildSandboxPolicy, type SandboxPolicyInput } from "./policy-builder.ts";
@@ -36,6 +42,7 @@ export {
 export { sessionSandboxFrom } from "./session-sandbox.ts";
 export { _sessionTmpDeps, runTmpRoot, sessionTmpDir, sessionTmpDirUnder } from "./session-tmp.ts";
 export { _srtBackendDeps, createSrtBackend } from "./srt-backend.ts";
+export { type SandboxStatus, sandboxStatusField, sandboxStatusOf } from "./status.ts";
 export type {
   CommandLauncher,
   LaunchRequest,

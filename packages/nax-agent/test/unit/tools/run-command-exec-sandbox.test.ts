@@ -64,6 +64,36 @@ describe("Exec through the launcher", () => {
     expect(seen[0]?.argv).toEqual(["/bin/sh", "-c", "export NAX_SANDBOXED=1; 'bun' '--version'"]);
     expect(seen[0]?.cwd).toBe(join(root, "packages", "app"));
   });
+
+  test.each([true, false])(
+    "#2890: a denied wrapped Exec carries the next step for exec.unsandboxedCommands=%s",
+    async (offered) => {
+      _launcherDeps.runArgv = async () => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: "dial unix /var/run/docker.sock: socket: operation not permitted",
+        timedOut: false,
+      });
+      const result = await runExecBranch({ argv: ["bun", "--version"], target: "package" }, ctx(), {
+        exec: {
+          repoRoot: root,
+          packageWorkdir: join(root, "packages", "app"),
+          allowScripts: false,
+          patterns: ["bun *"],
+          unsandboxedCommands: offered,
+          launcher: createCommandLauncher({
+            state: { kind: "available", backend: "srt", network: "open" },
+            backend: makeFakeSandboxBackend(),
+            policyFor,
+          }),
+        },
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("[nax] this command ran INSIDE the sandbox");
+      expect(result.content.includes("re-run with `unsandboxed: true`")).toBe(offered);
+      expect(result.content.includes("allowUnsandboxedCommands")).toBe(!offered);
+    },
+  );
 });
 
 // US-003: the Exec branch's description carries the sandbox sentence. Under a

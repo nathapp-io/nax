@@ -116,7 +116,14 @@ export type SessionEventBody =
     }
   | { readonly type: "stream_reset"; readonly round: number; readonly attempt: number }
   | { readonly type: "tool_call"; readonly callId: string; readonly name: string; readonly input: unknown }
-  | { readonly type: "tool_result"; readonly callId: string; readonly isError: boolean; readonly preview: string }
+  | {
+      readonly type: "tool_result";
+      readonly callId: string;
+      readonly isError: boolean;
+      readonly preview: string;
+      /** Bash/Exec only: where the command ran. Absent when the call was not a launched command (or the backend cannot say). */
+      readonly sandbox?: "sandboxed" | "unsandboxed";
+    }
   | {
       readonly type: "approval_requested";
       readonly requestId: string;

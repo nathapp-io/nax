@@ -56,7 +56,7 @@ export interface TurnEventEmitter {
   deltaSink(round: number): StreamDeltaSink | undefined;
   /** `recordedInput` is a `before_tool` rewrite when there is one; otherwise the model's `call.input` is reported. */
   toolCall(call: ToolCall, recordedInput: unknown): void;
-  toolResult(result: ToolResultMessage): void;
+  toolResult(result: ToolResultMessage, sandbox?: "sandboxed" | "unsandboxed"): void;
   /** Answers every outstanding `tool_call` with an error result. Called from the turn's catch block. */
   flushUnanswered(): void;
 }
@@ -137,7 +137,7 @@ export function createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEve
       outstanding.set(call.id, (outstanding.get(call.id) ?? 0) + 1);
       emit({ type: "tool_call", callId: call.id, name: call.name, input });
     },
-    toolResult(result) {
+    toolResult(result, sandbox) {
       const count = outstanding.get(result.toolCallId) ?? 0;
       if (count === 0) return;
       if (count === 1) outstanding.delete(result.toolCallId);
@@ -147,6 +147,7 @@ export function createTurnEventEmitter(sink: TurnEventSink | undefined): TurnEve
         callId: result.toolCallId,
         isError: result.isError === true,
         preview: toolResultPreview(result.content),
+        ...(sandbox !== undefined ? { sandbox } : {}),
       });
     },
     flushUnanswered() {

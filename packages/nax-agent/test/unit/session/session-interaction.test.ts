@@ -217,6 +217,17 @@ describe("createSessionInteractionHandler", () => {
     expect(failed.slot.callId).toBeUndefined();
   });
 
+  test("#2890: the runtime's sandbox status reaches an answer and a thrown tool error", async () => {
+    const ok = harness({ kind: "ok", content: "exit 0", sandbox: "sandboxed" });
+    expect(await createSessionInteractionHandler(ok.deps).onInteraction(codingTool("Bash"))).toEqual({
+      answer: "exit 0",
+      sandbox: "sandboxed",
+    });
+    const failed = harness({ kind: "error", content: "exit 1", sandbox: "unsandboxed" });
+    const err = await thrown(createSessionInteractionHandler(failed.deps).onInteraction(codingTool("Bash")));
+    expect(err.context).toMatchObject({ sandbox: "unsandboxed" });
+  });
+
   test("an embedder tool runs with the session id, call id and turn signal", async () => {
     const { tool, seen } = embedder();
     const h = harness({ kind: "ok", content: "" }, [tool]);

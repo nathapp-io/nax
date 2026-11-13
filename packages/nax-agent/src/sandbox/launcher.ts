@@ -15,7 +15,16 @@ import { errorMessage } from "#src/infra/errors";
 import { getSafeLogger, NaxError } from "#src/infra/index";
 import { runArgv } from "#src/internal/argv-exec";
 import { quoteArgvForShell } from "./argv-quote.ts";
-import { denialHintLine, LIKELY_SANDBOX_DENIAL } from "./messages.ts";
+import {
+  denialHintLine,
+  LIKELY_NETWORK_DENIAL,
+  LIKELY_SANDBOX_DENIAL,
+  LIKELY_SOCKET_DENIAL,
+  networkDenialHintLine,
+  SANDBOX_STATUS_LINE,
+  socketDenialHintLine,
+  unsandboxedNextStepLine,
+} from "./messages.ts";
 import type {
   CommandLauncher,
   LaunchRequest,
@@ -106,6 +115,7 @@ async function ensureTmpDir(tmpDir: string): Promise<boolean> {
 interface LaunchEnv {
   readonly tmpDir?: string;
   readonly sharedTmp: boolean;
+  readonly network: "open" | readonly string[];
 }
 
 async function runUnwrapped(req: LaunchRequest, sandbox: SandboxRecord, env: LaunchEnv): Promise<LaunchResult> {
@@ -122,6 +132,21 @@ async function runUnwrapped(req: LaunchRequest, sandbox: SandboxRecord, env: Lau
     ...(req.onOutput !== undefined ? { onOutput: req.onOutput } : {}),
   });
   return { ...result, executed: argv, sandbox };
+}
+
+/**
+ * Which hint a denied stderr gets. Network and socket refusals are what
+ * `unsandboxed` can fix; a write denial (or any other EPERM, `kill 1` among
+ * them) is not, so it gets the hint but no next step.
+ */
+function denialHint(
+  stderr: string,
+  policy: SandboxPolicy,
+  env: LaunchEnv,
+): { readonly line: string; readonly escapable: boolean } {
+  if (LIKELY_NETWORK_DENIAL.test(stderr)) return { line: networkDenialHintLine(env.network), escapable: true };
+  if (LIKELY_SOCKET_DENIAL.test(stderr)) return { line: socketDenialHintLine(), escapable: true };
+  return { line: denialHintLine(policy.writeRoots, env.sharedTmp), escapable: false };
 }
 
 async function runWrapped(
@@ -164,10 +189,16 @@ async function runWrapped(
       ...(req.releaseDeadline !== undefined ? { releaseDeadline: req.releaseDeadline } : {}),
       ...(req.onOutput !== undefined ? { onOutput: req.onOutput } : {}),
     });
-    const denied = result.exitCode !== 0 && LIKELY_SANDBOX_DENIAL.test(result.stderr);
+    const failed = result.exitCode !== 0;
+    const denied = failed && LIKELY_SANDBOX_DENIAL.test(result.stderr);
+    const hint = denied ? denialHint(result.stderr, policy, env) : undefined;
     const violations = backend.annotate(commandId, result.stderr);
     const extra = [
-      ...(denied ? [denialHintLine(policy.writeRoots, env.sharedTmp)] : []),
+      ...(hint !== undefined ? [hint.line] : []),
+      // A failed wrapped command always says where it ran; the next step is
+      // added only for a denial the escape can fix (network, local socket).
+      ...(failed ? [SANDBOX_STATUS_LINE] : []),
+      ...(hint?.escapable === true ? [unsandboxedNextStepLine(req.unsandboxedOffered === true)] : []),
       ...(violations !== "" ? [violations] : []),
     ];
     return {
@@ -193,6 +224,7 @@ export function createCommandLauncher(opts: CommandLauncherOptions): CommandLaun
     // A confined session's denial hint points at $TMPDIR instead of /tmp; a
     // shared-temp session's hint must not contradict the policy it runs under.
     sharedTmp: state.kind !== "available" || state.sharedTmp !== false,
+    network: state.kind === "available" ? state.network : "open",
   };
   return {
     state,

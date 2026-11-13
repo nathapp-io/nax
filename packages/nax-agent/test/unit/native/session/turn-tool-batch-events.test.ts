@@ -5,6 +5,7 @@
  * ask_human and the synthetic answers (terminate, cancel) emit nothing.
  */
 import { describe, expect, test } from "bun:test";
+import { NaxError } from "#src/infra/nax-error";
 import { ASK_HUMAN_TOOL_NAME } from "#src/native/session/ask-human";
 import type { TranscriptMessage } from "#src/native/session/compaction";
 import { createInvalidCallBudget } from "#src/native/session/handle-invalid-tool-call";
@@ -85,6 +86,35 @@ describe("runToolBatch tool events (S3-3)", () => {
       { type: "tool_call", callId: "c2", name: "Read", input: { path: "b.ts" } },
       { type: "tool_result", callId: "c2", isError: false, preview: "body of b.ts" },
     ]);
+  });
+
+  test("#2890: the handler's sandbox status rides the tool_result, on an answer and on a thrown tool error", async () => {
+    const events: TurnEvent[] = [];
+    const opts: SendTurnOpts = {
+      interactionHandler: {
+        onInteraction: async (req) => {
+          if (req.kind === "coding-tool" && req.input?.path === "b.ts") {
+            throw new NaxError("exit 1", "AGENT_SESSION_TOOL_ERROR", { sandbox: "unsandboxed" });
+          }
+          return { answer: "ok", sandbox: "sandboxed" };
+        },
+      },
+    };
+    await runToolBatch(args(events, { opts }));
+    expect(events[1]).toEqual({
+      type: "tool_result",
+      callId: "c1",
+      isError: false,
+      preview: "ok",
+      sandbox: "sandboxed",
+    });
+    expect(events[3]).toEqual({
+      type: "tool_result",
+      callId: "c2",
+      isError: true,
+      preview: "exit 1",
+      sandbox: "unsandboxed",
+    });
   });
 
   test("the reported input is the before_tool rewrite the transcript records", async () => {
