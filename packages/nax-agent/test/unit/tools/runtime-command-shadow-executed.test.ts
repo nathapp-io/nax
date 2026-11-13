@@ -120,6 +120,38 @@ describe("runtime.callTool — executed argv reaches the command shadow (US-003)
     expect(args[2]).toEqual({ executed: ["bun", "test", "--no-scripts"], cwd: "/repo/packages/app" });
   });
 
+  test.each([
+    { wrapped: true, status: "sandboxed" },
+    { wrapped: false, status: "unsandboxed" },
+  ])(
+    "#2890: an audit sandbox record (wrapped=$wrapped) becomes the outcome status $status",
+    async ({ wrapped, status }) => {
+      const rt = createCodingToolRuntime({
+        policy: compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root),
+        extraTools: [
+          execTool(async () => ({
+            content: "exit 0",
+            audit: { executed: ["bun", "test"], sandbox: { backend: "srt", wrapped, argv: ["/bin/sh"] } },
+          })),
+        ],
+        commandShadow: recorder().shadow,
+      });
+      const outcome = await rt.callTool("RunCommand", { argv: ["bun", "test"] });
+      expect(outcome).toMatchObject({ kind: "ok", sandbox: status });
+      expect(JSON.stringify(outcome)).not.toContain("/bin/sh");
+    },
+  );
+
+  test("#2890: no audit sandbox record leaves the outcome without a status key", async () => {
+    const rt = createCodingToolRuntime({
+      policy: compileToolPolicy([{ tool: "Exec", patterns: ["*"] }], root),
+      extraTools: [execTool(async () => ({ content: "exit 0", audit: { executed: ["bun", "test"] } }))],
+      commandShadow: recorder().shadow,
+    });
+    const outcome = await rt.callTool("RunCommand", { argv: ["bun", "test"] });
+    expect("sandbox" in outcome).toBe(false);
+  });
+
   test("audit.cwd reaches the shadow only: the tool-audit ledger row has no cwd key", async () => {
     const recorded: ToolCallRecord[] = [];
     const rt = createCodingToolRuntime({

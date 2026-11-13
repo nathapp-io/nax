@@ -15,7 +15,7 @@ import type { CommandShadow } from "#src/command-safety/index";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { getSafeLogger } from "#src/infra/index";
 import { type AskResolver, headlessAskResolver } from "#src/permissions/index";
-import type { SandboxRecord } from "../sandbox/index.ts";
+import { type SandboxRecord, type SandboxStatus, sandboxStatusOf } from "../sandbox/index.ts";
 import { deleteTool } from "./delete.ts";
 import { editTool } from "./edit.ts";
 import { gitTool } from "./git.ts";
@@ -65,6 +65,8 @@ export type CodingToolOutcome =
   | {
       readonly kind: "ok" | "error";
       readonly content: string;
+      /** Bash/Exec: where the command ran, from the audit record. Absent otherwise. */
+      readonly sandbox?: SandboxStatus;
       /** Records the final model-facing content when shaping was deferred. */
       readonly finalizeAudit?: (content: string) => void;
     }
@@ -494,9 +496,11 @@ export function createCodingToolRuntime(opts: {
               },
               result.resultBytesPreTruncation,
             );
-          if (context?.deferModelTruncation === true) return { kind, content, finalizeAudit: record };
+          const sandbox = sandboxStatusOf(result.audit?.sandbox);
+          const status = sandbox !== undefined ? { sandbox } : {};
+          if (context?.deferModelTruncation === true) return { kind, content, ...status, finalizeAudit: record };
           record(content);
-          return { kind, content };
+          return { kind, content, ...status };
         } catch (err) {
           const rawContent = err instanceof Error ? err.message : String(err);
           const content = await shapeToolResult(rawContent, policyIdentity, context);

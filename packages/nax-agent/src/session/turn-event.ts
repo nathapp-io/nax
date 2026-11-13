@@ -40,6 +40,8 @@ export type TurnEvent =
       readonly preview: string;
       /** UTF-8 byte length of the full result before the preview cap (S4b spec 7.4). Absent when unknown. */
       readonly resultBytes?: number;
+      /** Bash/Exec only: where the command ran. Absent when the call was not a launched command (or the backend cannot say). */
+      readonly sandbox?: "sandboxed" | "unsandboxed";
     }
   /** A running tool's liveness beat (an ACP heartbeat); carries no content. Not a session event. */
   | { readonly type: "tool_progress"; readonly callId: string }

@@ -776,6 +776,7 @@ type SandboxPolicy
 type SandboxPolicyInput
 type SandboxRecord
 type SandboxState
+type SandboxStatus
 type SandboxWrapRequest
 type SecretSpan
 type SecretValuePattern
@@ -1095,6 +1096,7 @@ runTempRoots
 runTmpRoot
 sandboxBackendFor
 sandboxSentence
+sandboxStatusOf
 sanitizeProviderTools
 saveTranscript
 scratchpadListTool

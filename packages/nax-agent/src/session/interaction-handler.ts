@@ -34,6 +34,8 @@ export type AdapterInteraction =
 
 export interface AdapterInteractionResponse {
   answer: string;
+  /** Bash/Exec: where the command ran; rides the `tool_result` event. Absent for every other call. */
+  sandbox?: "sandboxed" | "unsandboxed";
   /** Completes deferred coding-tool audit with the final model-facing content. */
   finalizeAudit?: (content: string) => void;
   /**

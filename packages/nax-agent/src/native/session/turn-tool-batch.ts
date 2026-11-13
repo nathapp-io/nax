@@ -18,6 +18,7 @@
  */
 
 import type { ToolCall, ToolDefinition } from "@nathapp/nax-ai";
+import { NaxError } from "#src/infra/nax-error";
 import type { SpinBreaker } from "#src/infra/spin-breaker/index";
 import type { InteractionExchange, SendTurnOpts } from "#src/session/session-types";
 import { ASK_HUMAN_TOOL_NAME } from "./ask-human.ts";
@@ -29,6 +30,13 @@ import { buildToolResult } from "./tool-result.ts";
 import { handleAskHumanCall } from "./turn-ask-human.ts";
 import type { TurnEventEmitter } from "./turn-event-emitter.ts";
 import type { TurnDeps } from "./turn-types.ts";
+
+/** A failed Bash/Exec throws; the sandbox status it ran under rides the error's context. */
+function thrownSandboxStatus(err: unknown): "sandboxed" | "unsandboxed" | undefined {
+  if (!(err instanceof NaxError)) return undefined;
+  const status = err.context?.sandbox;
+  return status === "sandboxed" || status === "unsandboxed" ? status : undefined;
+}
 
 export interface ToolBatchResult {
   readonly messages: readonly NativeTranscriptMessage[];
@@ -289,7 +297,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         denied: answer?.denied,
       });
       messages.push(result);
-      turnEvents.toolResult(result);
+      turnEvents.toolResult(result, answer?.sandbox);
       // The breaker observed the call through the seam, i.e. with whatever
       // input a handler rewrote in place — so the result has to be noted
       // against that same input, or the key misses and result-based
@@ -313,7 +321,7 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
         isError: patch.isError ?? true,
       });
       messages.push(failed);
-      turnEvents.toolResult(failed);
+      turnEvents.toolResult(failed, thrownSandboxStatus(err));
     }
   }
 
