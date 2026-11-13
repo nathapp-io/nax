@@ -1,6 +1,5 @@
 /** A5 workflow mode — story-loop state and artifact shapes. */
 export type {
-  BranchReviewSlice,
   BranchReviewVerdict,
   GateName,
   ImplementerReply,

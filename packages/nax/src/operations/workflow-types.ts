@@ -76,26 +76,9 @@ export interface ReReviewVerdict {
 
 export type MinorTriageDecision = "fix-now" | "leave";
 
-/**
- * US-007: one slice of the whole-branch review, as it ran. `inspectedFiles` is what that session
- * listed (empty when it did not run), and `why` says why it did not.
- */
-export interface BranchReviewSlice {
-  readonly files: readonly string[];
-  readonly inspectedFiles: readonly string[];
-  readonly ran: boolean;
-  readonly why?: string;
-}
-
 /** The whole-branch review (spec §7 step 2): the story-review verdict plus one triage per deferred minor. */
 export interface BranchReviewVerdict extends StoryReviewVerdict {
   readonly minorTriage: readonly { readonly id: string; readonly decision: MinorTriageDecision }[];
-  /**
-   * US-007: one entry per review slice, in order, when the review ran as more than one session.
-   * Absent on a single-slice review — and on every record written before slicing existed — so its
-   * presence alone means the branch was reviewed in parts.
-   */
-  readonly slices?: readonly BranchReviewSlice[];
   readonly diffParts?: readonly { readonly part: string; readonly files: readonly string[] }[];
 
   /**

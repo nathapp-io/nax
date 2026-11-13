@@ -1,15 +1,6 @@
 /**
- * US-008: the whole-branch review runs as sequential fresh slices. The package and its required set
- * are built once, each slice gets its own session and its own review timeout, and the verdicts merge
- * into one — with `slices` only when the review really was sliced.
- *
- * `_workflowDeps.git` feeds the package writer the branch's changed files; `_workflowDeps.callOp`
- * answers each slice; `_branchReviewDeps` is the package writer and the required-set classifier, so
- * a failure the real code paths would swallow (the classifier logs a resolver failure and widens the
- * required set) can still be scripted as a hard throw.
- *
- * What each slice received is recorded and asserted AFTER the run: an assertion inside the `callOp`
- * stub would reject the dispatch, and the review's own failure handling would swallow it.
+ * Whole-branch review dispatch and failure handling. The scripted op records inputs after dispatch
+ * so assertions are not swallowed by the review's own failure handling.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -54,7 +45,7 @@ const facts = {
   gateFindings: [],
 };
 
-/** Ten files in `a/`, then ten in `b/`: at the default `sliceFiles` 15 that is one slice per directory. */
+/** Ten files in each of two directories. */
 const DIR_A = Array.from({ length: 10 }, (_, i) => `a/f${i + 1}.ts`);
 const DIR_B = Array.from({ length: 10 }, (_, i) => `b/f${i + 1}.ts`);
 
@@ -115,7 +106,7 @@ function abortSignal(signal: AbortSignal | undefined): Promise<void> {
   });
 }
 
-/** A two-slice run: twenty changed files across `a/` and `b/`, sliceFiles 15 by default. */
+/** Twenty changed files across two directories. */
 function twoSliceContext(over: Partial<FeatureContext> = {}): FeatureContext {
   const ctx = fc(over);
   stubBranchChanges([...DIR_A, ...DIR_B]);

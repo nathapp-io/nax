@@ -103,9 +103,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "workflow.timeouts.reviewMs": "Timeout for each review phase in milliseconds (default 1800000)",
   "workflow.timeouts.ciWaitMs": "Max time to wait for CI in milliseconds (default 1200000)",
   "workflow.timeouts.ciPollMs": "Interval between CI status polls in milliseconds (default 30000)",
-  "workflow.review": "The branch review's reading limits in workflow mode",
-  "workflow.review.sliceFiles":
-    "Changed files one branch-review session is given before the review is split into slices (default 15); each slice is its own fresh session and the verdicts merge",
+  "workflow.review": "The branch review's coverage retry budget in workflow mode",
   "workflow.review.coverageRetries":
     "Coverage re-prompts the branch review gets when its reply leaves a required file unread (default 3); this budget is separate from the JSON-shape retry and stops early once a retry covers no more files. 0 disables it",
   "workflow.interruptRetry":

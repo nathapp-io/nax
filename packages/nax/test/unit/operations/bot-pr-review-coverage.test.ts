@@ -200,7 +200,7 @@ describe("runPrReview coverage budget wiring (US-003)", () => {
   let calls: unknown[];
 
   beforeEach(() => {
-    const config = structuredClone(makeNaxConfig({ workflow: { review: { sliceFiles: 15, coverageRetries: 1 } } }));
+    const config = structuredClone(makeNaxConfig({ workflow: { review: { coverageRetries: 1 } } }));
     ctx = {
       config,
       workflow: resolveWorkflowConfig(config),

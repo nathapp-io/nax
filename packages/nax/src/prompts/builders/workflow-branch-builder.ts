@@ -23,7 +23,6 @@ export interface BranchReviewPromptInput {
   readonly range: string;
   readonly requiredFiles?: readonly string[];
   readonly diffParts?: readonly DiffPart[];
-  readonly slice?: { readonly index: number; readonly count: number; readonly otherFiles: number };
   readonly stories: readonly {
     readonly id: string;
     readonly state: string;
@@ -119,10 +118,7 @@ function requiredFilesBlock(input: BranchReviewPromptInput): string {
   const files = input.requiredFiles;
   if (!files || files.length === 0) return "";
   const fileLines = files.map((file) => `- ${file}`).join("\n");
-  const sliceLine = input.slice
-    ? `This is review slice ${input.slice.index} of ${input.slice.count}. Other slices review the other ${input.slice.otherFiles} changed file(s); read any of them only to check a contract with your files.\n`
-    : "";
-  return `\n## Files you must review (${files.length})\n${fileLines}\n${sliceLine}nax compares your inspectedFiles with this list. A file on it that you do not read or diff is reported unread, and an unread file keeps the PR a draft. Repo gates passing is not a review of a file, and neither is a story review: read each one.\n`;
+  return `\n## Files you must review (${files.length})\n${fileLines}\nnax compares your inspectedFiles with this list. A file on it that you do not read or diff is reported unread, and an unread file keeps the PR a draft. Repo gates passing is not a review of a file, and neither is a story review: read each one.\n`;
 }
 
 const REVIEW_JSON =
