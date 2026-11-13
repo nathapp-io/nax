@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { _gitDeps, gitSpawnEnv, gitWithTimeout, hardenedGitArgv, hardenedGitEnv } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeSpawn, makeTempDir, withDepsRestore } from "#test/helpers/index";
+import { cleanupTempDir, makeSpawn, makeSpawnResult, makeTempDir, withDepsRestore } from "#test/helpers/index";
 
 describe("hardenedGitEnv", () => {
   test("adds the hardened entries from index 0 when none are set", () => {
@@ -170,6 +170,63 @@ describe("gitWithTimeout environment overlay", () => {
     });
 
     expect(result).toEqual({ stdout: "", stderr: "authentication failed", exitCode: 1 });
+  });
+});
+
+describe("gitWithTimeout abort signal (#2895)", () => {
+  withDepsRestore(_gitDeps);
+
+  /** A git that never answers until it is killed, and the handle to observe the kill. */
+  function hangingGit() {
+    const proc = makeSpawnResult({ hang: true, killResolvesExited: true });
+    _gitDeps.spawn = makeSpawn(() => proc).spawn;
+    return proc;
+  }
+
+  test("aborting during the run kills the child and marks the result aborted", async () => {
+    const proc = hangingGit();
+    const controller = new AbortController();
+    const pending = gitWithTimeout(["push"], "/repo", 60_000, undefined, undefined, undefined, controller.signal);
+
+    controller.abort();
+    const result = await pending;
+
+    expect(proc.killed).toBe(true);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.aborted).toBe(true);
+  });
+
+  test("a signal that is already aborted kills the child at once", async () => {
+    const proc = hangingGit();
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await gitWithTimeout(["push"], "/repo", 60_000, undefined, undefined, undefined, controller.signal);
+
+    expect(proc.killed).toBe(true);
+    expect(result.aborted).toBe(true);
+  });
+
+  test("an abort returns even when the killed git's pipes never close", async () => {
+    // `git push` hands its pipes to `git-remote-https`, which a kill of the parent does not reach.
+    const proc = makeSpawnResult({ hang: true, killResolvesExited: true, stdoutStall: true, stderrStall: true });
+    _gitDeps.spawn = makeSpawn(() => proc).spawn;
+    const controller = new AbortController();
+    const pending = gitWithTimeout(["push"], "/repo", 60_000, undefined, undefined, undefined, controller.signal);
+
+    controller.abort();
+    const result = await pending;
+
+    expect(proc.killed).toBe(true);
+    expect(result).toEqual({ stdout: "", stderr: "", exitCode: 1, aborted: true });
+  });
+
+  test("without a signal the result carries no aborted field", async () => {
+    _gitDeps.spawn = makeSpawn(() => "").spawn;
+
+    const result = await gitWithTimeout(["status"], "/repo");
+
+    expect(Object.hasOwn(result, "aborted")).toBe(false);
   });
 });
 

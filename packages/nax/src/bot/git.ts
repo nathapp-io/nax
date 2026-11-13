@@ -1,6 +1,6 @@
 import type { InjectedForgeIdentity } from "@/forge";
 import { injectedForgeIdentity } from "@/forge";
-import { gitWithTimeout } from "@/utils/git";
+import { gitWithTimeout, NO_TERMINAL_PROMPT } from "@/utils/git";
 
 /** Bot git never runs hooks: a PR head can supply them through a relative core.hooksPath. */
 export const BOT_GIT_HOOKS_OFF = ["-c", "core.hooksPath=/dev/null"] as const;
@@ -28,13 +28,6 @@ const BOT_GIT_NETWORK_VERBS: ReadonlySet<string> = new Set(["fetch", "push"]);
 
 /** Read by `NAX_BOT_CREDENTIAL_HELPER` from the spawned git's environment. */
 const BOT_GIT_TOKEN_ENV = "NAX_FORGE_GIT_TOKEN";
-
-/**
- * Turning the terminal prompt off makes a rejected credential fail at once
- * instead of blocking on a terminal that is not there — the caller's existing
- * error path then reports git's own message.
- */
-const NO_TERMINAL_PROMPT = { GIT_TERMINAL_PROMPT: "0" } as const;
 
 /**
  * The credential prefix for one authenticated fetch/push: an empty helper entry

@@ -8,7 +8,7 @@
 
 import { gitlinkSafeAdd, hasStagedChanges } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
-import { gitWithTimeout } from "../utils/git";
+import { gitWithTimeout, NO_TERMINAL_PROMPT } from "../utils/git";
 import { redactUrlUserinfo } from "../utils/redact-url";
 import { relativeInsideRoot } from "./safe-path";
 
@@ -198,12 +198,23 @@ function boundPush(destination: string): { argv: string[]; config: GitConfigEntr
  * that URL without recursively applying Git's URL rewrites (see boundPush).
  * Its transport (SSH, a credential-bearing HTTPS URL) still authenticates. The URL
  * is never put in an error message or context, because it may carry a credential.
+ *
+ * `signal` kills the push when aborted; the push then fails like any other (the
+ * caller decides whether a failure after its own abort is a cancel). The git
+ * terminal prompt is always off, so missing credentials fail at once.
  */
 export async function commitAndPush(
   repoRoot: string,
   branch: string,
   message: string,
-  opts: { skipHooks?: boolean; skipCommit?: boolean; excludeDir?: string; sourceSha?: string; remote?: string } = {},
+  opts: {
+    skipHooks?: boolean;
+    skipCommit?: boolean;
+    excludeDir?: string;
+    sourceSha?: string;
+    remote?: string;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<SyncOutcome> {
   const { committed, shaAfter } = opts.skipCommit
     ? { committed: false, shaAfter: null }
@@ -213,14 +224,16 @@ export async function commitAndPush(
   const bound = opts.remote === undefined ? undefined : boundPush(opts.remote);
   const pushArgs = bound?.argv ?? ["push", "--set-upstream", DEFAULT_PUSH_REMOTE];
   // Parameters 4 and 5 are `maxBytes` and `argvOverride`; the bound destination's
-  // configuration is the environment overlay, deliberately off argv (see boundPush).
+  // configuration is part of the environment overlay, deliberately off argv (see boundPush).
   const push = await _finishGitDeps.git(
     [...pushArgs, source],
     repoRoot,
     PUSH_TIMEOUT_MS,
     undefined,
     undefined,
-    bound === undefined ? undefined : configOverlay(bound.config),
+    // Every finish push is non-interactive: a credential prompt would block on the terminal.
+    { ...NO_TERMINAL_PROMPT, ...(bound === undefined ? {} : configOverlay(bound.config)) },
+    opts.signal,
   );
   if (push.exitCode !== 0) {
     // git quotes the destination it failed on, credentials included, so its own

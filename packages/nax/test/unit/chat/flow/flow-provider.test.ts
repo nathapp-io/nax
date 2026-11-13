@@ -59,7 +59,7 @@ interface PushCall {
   readonly repoRoot: string;
   readonly branch: string;
   readonly message: string;
-  readonly opts: unknown;
+  readonly opts: Parameters<(typeof _flowProviderDeps)["commitAndPush"]>[3];
 }
 
 interface KodaCall {
@@ -282,6 +282,40 @@ describe("send — after the card", () => {
 
     expect(result).toEqual({ isError: true, content: "[chat] the turn was cancelled; nothing was pushed" });
     expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("hands the turn's signal to the push (#2895)", async () => {
+    const controller = new AbortController();
+
+    await send(input, controller.signal);
+
+    expect(pushCalls[0]?.opts?.signal).toBe(controller.signal);
+  });
+
+  test("an abort during the push returns the cancelled result and creates nothing (#2895)", async () => {
+    const controller = new AbortController();
+    _flowProviderDeps.commitAndPush = async () => {
+      controller.abort();
+      throw new Error('git push of "feat/x" failed: git-remote-https died of signal 9');
+    };
+
+    const result = await send(input, controller.signal);
+
+    expect(result).toEqual({ isError: true, content: "[chat] the turn was cancelled; nothing was pushed" });
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("a push failure with no abort still propagates as the push failure (#2895)", async () => {
+    const controller = new AbortController();
+    _flowProviderDeps.commitAndPush = async () => {
+      throw new Error('git push of "feat/x" failed: could not read Username');
+    };
+
+    const result = await send(input, controller.signal);
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("could not read Username");
     expect(kodaCalls).toHaveLength(0);
   });
 
