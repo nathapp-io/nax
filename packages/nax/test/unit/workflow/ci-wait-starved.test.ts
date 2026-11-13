@@ -77,12 +77,35 @@ const rerunArgv = (jobId: string): string[] => [
   `repos/o/r/actions/jobs/${jobId}/rerun`,
 ];
 
+/**
+ * The `gh pr view` reply: `githubWaiting` asks for mergeability, the starved head binding asks for
+ * the head only. A scripted `head` stands in for a head read that fails.
+ */
+function viewReply(cmd: string[], spec: Wire): ForgeRunResult {
+  if (cmd[5] !== "headRefOid") return r('{"mergeable":"MERGEABLE"}');
+  return spec.head ?? r(JSON.stringify({ headRefOid: spec.headRefOid }));
+}
+
+/** The `gh api` reply: a job read, or — for a `-X POST` request — a re-run of that job. */
+function apiReply(cmd: string[], spec: Wire, onRerun: (cmd: string[]) => void): ForgeRunResult {
+  const jobId = /actions\/jobs\/(\d+)/.exec(cmd.join(" "))?.[1] ?? "";
+  if (!cmd.includes("-X")) return (spec.job ?? (() => STARVED_JOB))(jobId);
+  onRerun(cmd);
+  return (spec.rerun ?? (() => r("{}")))(jobId);
+}
+
 /** A scripted forge with a virtual clock: one reply per poll, and per job read / re-run. */
 function wire(spec: Wire) {
   const calls: string[][] = [];
   const rerunCalls: string[][] = [];
   let clock = 0;
   let poll = 0;
+  const nextPoll = (): ForgeRunResult => {
+    const reply = spec.polls[Math.min(poll, spec.polls.length - 1)];
+    poll++;
+    if (reply === undefined) throw new Error("no poll scripted");
+    return reply;
+  };
   _ciWaitDeps.now = () => clock;
   _ciWaitDeps.schedule = () => () => {};
   _ciWaitDeps.sleep = async (ms) => {
@@ -90,25 +113,9 @@ function wire(spec: Wire) {
   };
   _ciWaitDeps.run = async (cmd) => {
     calls.push(cmd);
-    if (cmd[0] === "gh" && cmd[2] === "view") {
-      // `githubWaiting` asks for mergeability; the head read asks for the head only.
-      if (cmd[5] === "headRefOid" && spec.head !== undefined) return spec.head;
-      return cmd[5] === "headRefOid"
-        ? r(JSON.stringify({ headRefOid: spec.headRefOid }))
-        : r('{"mergeable":"MERGEABLE"}');
-    }
-    if (cmd[0] === "gh" && cmd[1] === "api") {
-      const jobId = /actions\/jobs\/(\d+)/.exec(cmd.join(" "))?.[1] ?? "";
-      if (cmd.includes("-X")) {
-        rerunCalls.push(cmd);
-        return (spec.rerun ?? (() => r("{}")))(jobId);
-      }
-      return (spec.job ?? (() => STARVED_JOB))(jobId);
-    }
-    const reply = spec.polls[Math.min(poll, spec.polls.length - 1)];
-    poll++;
-    if (reply === undefined) throw new Error("no poll scripted");
-    return reply;
+    if (cmd[0] === "gh" && cmd[2] === "view") return viewReply(cmd, spec);
+    if (cmd[0] === "gh" && cmd[1] === "api") return apiReply(cmd, spec, (rerun) => rerunCalls.push(rerun));
+    return nextPoll();
   };
   return {
     calls,
