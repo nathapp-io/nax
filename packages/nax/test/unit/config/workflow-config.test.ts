@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { makeNaxConfig } from "@test/helpers";
 import { FIELD_DESCRIPTIONS } from "@/cli/config-descriptions";
-import { NaxConfigSchema, resolveWorkflowConfig, WORKFLOW_DEFAULTS } from "@/config";
+import { NaxConfigSchema, resolveWorkflowConfig, WORKFLOW_DEFAULTS, WORKFLOW_ITEM_PUBLISH_DEFAULTS } from "@/config";
 import { pinRootOnlyKeysRaw } from "@/config/root-only-keys";
 
 describe("workflow config", () => {
@@ -17,6 +17,7 @@ describe("workflow config", () => {
       preflight: true,
       publish: "pr",
       review: { coverageRetries: 3 },
+      itemPublish: { writeGapMs: 1000, retryBackoffMs: 60000, maxRetries: 2, maxWaitMs: 300000 },
       interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 },
       timeouts: {
         implementMs: 3_600_000,
@@ -115,6 +116,46 @@ describe("workflow config", () => {
     expect(out).toMatchObject({ execution: { mode: "workflow" }, workflow: { maxFixRounds: 3 } });
     expect(warnings.some((w) => w.includes("execution.mode is root-only"))).toBe(true);
     expect(warnings.some((w) => w.includes("workflow is root-only"))).toBe(true);
+  });
+});
+
+// US-001 (item-publish-pacing): the post-publish item-thread pacer's four pacing knobs.
+describe("workflow.itemPublish", () => {
+  const DEFAULTS = { writeGapMs: 1000, retryBackoffMs: 60000, maxRetries: 2, maxWaitMs: 300000 };
+
+  test("AC-1: an absent block parses to the defaults, and WORKFLOW_ITEM_PUBLISH_DEFAULTS is the same object", () => {
+    expect(NaxConfigSchema.parse({}).workflow.itemPublish).toEqual(DEFAULTS);
+    expect(WORKFLOW_ITEM_PUBLISH_DEFAULTS).toEqual(DEFAULTS);
+  });
+
+  test("AC-2: a partial itemPublish keeps the other three keys at their defaults", () => {
+    const parsed = NaxConfigSchema.parse({ workflow: { itemPublish: { maxRetries: 5 } } });
+    expect(parsed.workflow.itemPublish).toEqual({ ...DEFAULTS, maxRetries: 5 });
+  });
+
+  test("AC-3: itemPublish.writeGapMs: -1 fails schema validation", () => {
+    expect(NaxConfigSchema.safeParse({ workflow: { itemPublish: { writeGapMs: -1 } } }).success).toBe(false);
+  });
+
+  test.each(["writeGapMs", "retryBackoffMs", "maxRetries", "maxWaitMs"])(
+    "%s rejects a negative and a fractional value",
+    (key) => {
+      expect(NaxConfigSchema.safeParse({ workflow: { itemPublish: { [key]: -1 } } }).success).toBe(false);
+      expect(NaxConfigSchema.safeParse({ workflow: { itemPublish: { [key]: 1.5 } } }).success).toBe(false);
+    },
+  );
+
+  test("every itemPublish key has a non-empty CLI description", () => {
+    for (const key of [
+      "workflow.itemPublish",
+      "workflow.itemPublish.writeGapMs",
+      "workflow.itemPublish.retryBackoffMs",
+      "workflow.itemPublish.maxRetries",
+      "workflow.itemPublish.maxWaitMs",
+    ]) {
+      expect(FIELD_DESCRIPTIONS[key]).toBeString();
+      expect(FIELD_DESCRIPTIONS[key].trim().length).toBeGreaterThan(0);
+    }
   });
 });
 

@@ -1091,6 +1091,12 @@ The `workflow` block configures workflow mode, the only execution mode. It is ro
       "maxAttempts": 1,
       "budgetMultiplier": 0.5
     },
+    "itemPublish": {
+      "writeGapMs": 1000,
+      "retryBackoffMs": 60000,
+      "maxRetries": 2,
+      "maxWaitMs": 300000
+    },
     "timeouts": {
       "implementMs": 3600000,
       "fixMs": 3600000,
@@ -1114,6 +1120,10 @@ The `workflow` block configures workflow mode, the only execution mode. It is ro
 | `preflight` | `true` | Run the workflow preflight checks before implementing |
 | `interruptRetry.maxAttempts` | `1` | Max continue turns after an implementer turn hits its step limit (minimum 0). `0` turns the continue off |
 | `interruptRetry.budgetMultiplier` | `0.5` | Each continue turn's budget as a fraction of the limit that was hit; greater than 0 and at most 1 |
+| `itemPublish.writeGapMs` | `1000` | Milliseconds to wait before every item-thread write except the first of the publish (minimum 0). Bounds how fast a publish may post |
+| `itemPublish.retryBackoffMs` | `60000` | Milliseconds to wait before retrying an item-thread write the forge rejected with a rate limit or an HTTP 422 (minimum 0). No other error is retried |
+| `itemPublish.maxRetries` | `2` | Retries per item-thread write after such a rejection (minimum 0); `0` retries nothing |
+| `itemPublish.maxWaitMs` | `300000` | Total milliseconds of pacing one publish may spend on gaps and back-offs (minimum 0). A paced write whose wait would exceed it is refused; the item index write is always still tried |
 | `publish` | `"pr"` | `pr`: push, open or promote the PR, and wait for CI. `push`: push and wait for CI, but open no PR. `none`: push nothing and stay local. nax never merges |
 | `timeouts.implementMs` | `3600000` | Timeout for the implement phase |
 | `timeouts.fixMs` | `3600000` | Timeout for each fix phase |

@@ -22,6 +22,24 @@ const WorkflowReviewConfigSchema = z
 /** The parsed defaults of `workflow.review`; read as `workflow.review ?? WORKFLOW_REVIEW_DEFAULTS`. */
 export const WORKFLOW_REVIEW_DEFAULTS: NonNullable<WorkflowConfig["review"]> = WorkflowReviewConfigSchema.parse({});
 
+/**
+ * US-001 (item-publish-pacing): the pacing of the post-publish item-thread writes. Split out so
+ * `WORKFLOW_ITEM_PUBLISH_DEFAULTS` is the parsed form of exactly this object, and a consumer holding
+ * a hand-built `workflow` block (which omits `itemPublish`) reads the same numbers.
+ */
+const WorkflowItemPublishConfigSchema = z
+  .object({
+    writeGapMs: z.number().int().min(0).default(1000),
+    retryBackoffMs: z.number().int().min(0).default(60000),
+    maxRetries: z.number().int().min(0).default(2),
+    maxWaitMs: z.number().int().min(0).default(300000),
+  })
+  .prefault({});
+
+/** The parsed defaults of `workflow.itemPublish`; read as `workflow.itemPublish ?? WORKFLOW_ITEM_PUBLISH_DEFAULTS`. */
+export const WORKFLOW_ITEM_PUBLISH_DEFAULTS: NonNullable<WorkflowConfig["itemPublish"]> =
+  WorkflowItemPublishConfigSchema.parse({});
+
 export const WorkflowConfigObjectSchema = z.object({
   models: z
     .object({
@@ -37,6 +55,7 @@ export const WorkflowConfigObjectSchema = z.object({
   preflight: z.boolean().default(true),
   publish: z.enum(["pr", "push", "none"]).default("pr"),
   review: WorkflowReviewConfigSchema,
+  itemPublish: WorkflowItemPublishConfigSchema,
   // US-003: an implementer turn that hits its step limit gets a continue turn on the same warm
   // session, at `budgetMultiplier` of the limit it hit. `maxAttempts: 0` turns the continue off.
   interruptRetry: z
