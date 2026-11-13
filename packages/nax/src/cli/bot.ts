@@ -2,6 +2,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { type Command, Option } from "commander";
 import type {
   BotFixCycleResult,
+  BotFixState,
   loadBotDecisions,
   loadCallerRulings,
   runBotFix,
@@ -72,6 +73,8 @@ export interface BotFixOptions extends Omit<BotReviewOptions, "full" | "rulings"
   readonly fresh?: boolean;
   /** Run only the readiness pass on a review of the current head (US-001). */
   readonly readyOnly?: boolean;
+  /** Accept a CI whose checks never got a runner; the reason is recorded before the PR is readied (US-007). */
+  readonly waiveStarved?: string;
 }
 type BotInput = Parameters<typeof runBotFix>[0];
 const SHORT_SHA_LENGTH = 7;
@@ -151,9 +154,21 @@ function callerRulingsSummary(
 }
 
 export async function botFixCommand(options: BotFixOptions, deps: BotCliDeps = _botCliDeps): Promise<number> {
-  return withBotInput(options, deps, async (input) =>
-    options.readyOnly === true ? readyOnlyPass(input, options, deps) : fixCyclePass(input, options, deps),
-  );
+  return withBotInput(options, deps, async (raw) => {
+    const input = await withWaiver(raw, options.waiveStarved);
+    return options.readyOnly === true ? readyOnlyPass(input, options, deps) : fixCyclePass(input, options, deps);
+  });
+}
+
+/**
+ * US-007: the waiver reason is validated before any fix or forge call, so an empty, multiline,
+ * over-long or marker-holding one fails the command instead of reaching a PR. The validator is
+ * loaded on invocation like the rest of the orchestration this file only reaches lazily.
+ */
+async function withWaiver(input: BotInput, raw: string | undefined): Promise<BotInput> {
+  if (raw === undefined) return input;
+  const { parseWaiverReason } = await import("../workflow/ci-waiver");
+  return { ...input, waiveStarved: parseWaiverReason(raw) };
 }
 
 /** The default pass: one fix, then its post-push review and ready-only pass. */
@@ -190,8 +205,14 @@ function fixSummary(outcome: "nothing" | "pushed", sha?: string): string {
   return sha ? `nothing to fix; pushed advisor ledger ${sha.slice(0, SHORT_SHA_LENGTH)}` : "nothing to fix";
 }
 
-/** How the ready pass reads to a human: readied, held for a reason, or not a draft at all. */
-function readinessSummary(state: { readonly markedReady?: boolean; readonly readyHeld?: string }): string {
+/** How the ready pass reads to a human: waived, readied, held for a reason, or not a draft at all. */
+function readinessSummary(state: {
+  readonly markedReady?: boolean;
+  readonly readyHeld?: string;
+  readonly ciWaived?: BotFixState["ciWaived"];
+}): string {
+  if (state.ciWaived !== undefined)
+    return `Marked ready with a CI waiver: ${state.ciWaived.checks.length} check(s) never got a runner.`;
   if (state.markedReady) return "Marked ready.";
   if (state.readyHeld !== undefined) return `Kept as draft: ${state.readyHeld}`;
   return "not a draft";
@@ -270,6 +291,10 @@ export function registerBotCommand(program: Command, deps: BotCliDeps = _botCliD
     .option("--decisions <path>", "Caller decisions file, applied to the post-push re-review only")
     .option("--no-rereview", "Skip post-push review and ready pass (--decisions is then unused)")
     .option("--ready-only", "Run only the readiness pass on a review of the current head (no fix session)")
+    .option(
+      "--waive-starved <reason>",
+      "Accept a CI whose checks never got a runner; the reason is recorded on the PR before it is marked ready",
+    )
     .option("--fresh", "Discard the saved fix", false)
     .action(async (pr: string, options: Omit<BotFixOptions, "pr">) => {
       deps.exit(await botFixCommand({ ...options, pr }, deps));

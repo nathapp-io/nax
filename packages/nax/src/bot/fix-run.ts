@@ -91,6 +91,8 @@ export interface BotFixInput {
   readonly readyOnly?: boolean;
   readonly fresh?: boolean;
   readonly costLimitUsd?: number;
+  /** The reason `nax bot fix --waive-starved` already validated (US-007). */
+  readonly waiveStarved?: string;
   readonly dir: string;
   readonly pr: number;
   readonly profiles: readonly string[];
@@ -198,7 +200,7 @@ export const BOT_FIX_GRAPH: StepGraph<BotFixState, BotFixEnv, BotFixStep> = defi
     },
     ready: {
       kind: "forge",
-      produces: ["markedReady", "readyHeld"],
+      produces: ["markedReady", "readyHeld", "ciWaived"],
       exits: ["report"],
       transitions: [{ to: "done", when: (state) => state.readyOnly === true }, { to: "report" }],
       run: (env, state) => _botFixDeps.readyStep(env, state),
@@ -445,6 +447,7 @@ async function fixCheckout(input: BotFixInput, prepared: PreparedFix): Promise<B
       model: input.model,
       forge: deps.forge,
       cost: botCostEnv(config, runtime, input.costLimitUsd),
+      ...(input.waiveStarved === undefined ? {} : { waiveStarved: input.waiveStarved }),
     };
     await recordFixRulings(env, items.comments);
     try {
