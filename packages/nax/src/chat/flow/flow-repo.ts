@@ -17,6 +17,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { headSha } from "@/finish";
 import { gitWithTimeout, isPublishableBranch } from "@/utils/git";
+import { redactUrlUserinfo } from "@/utils/redact-url";
 import type { FlowSendFeature } from "./flow-input";
 
 /** The message a detached HEAD fails with. */
@@ -182,9 +183,12 @@ async function remoteOrFailure(repoRoot: string): Promise<string | FlowRepoFailu
   const raw = origin.stdout.trim();
   const remoteUrl = normalizeGitHubRemote(raw);
   if (remoteUrl !== null) return remoteUrl;
+  // The remote is echoed back so the user can see what nax read, but its userinfo
+  // is not: an HTTPS origin pasted with a token in front of the host would
+  // otherwise put that token into the chat transcript.
   return {
     ok: false,
-    message: `[chat] the origin remote "${raw}" is not a GitHub remote; koda can only send a flow for a GitHub repository`,
+    message: `[chat] the origin remote "${redactUrlUserinfo(raw)}" is not a GitHub remote; koda can only send a flow for a GitHub repository`,
   };
 }
 

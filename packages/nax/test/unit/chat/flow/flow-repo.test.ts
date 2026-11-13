@@ -389,6 +389,24 @@ describe("readFlowRepoState — the origin remote", () => {
 
     expect(failureOf(await readFlowRepoState(REPO_ROOT, [SPEC]))).toContain("https://gitlab.com/o/r.git");
   });
+
+  // A remote pasted with a token in front of the host is refused (koda accepts the
+  // plain HTTPS form only), and the refusal is shown to the model and kept in the
+  // transcript — so the credential must not travel with it.
+  test.each([
+    ["a credential-bearing GitHub origin", "https://x-access-token:example-secret@github.com/o/r.git"],
+    ["a credential-bearing GitLab origin", "https://x-access-token:example-secret@gitlab.com/o/r.git"],
+  ])("names %s without its credential (B1)", async (_label, remote) => {
+    healthyGit((args) => (args[0] === "remote" ? ok(`${remote}\n`) : undefined));
+    stubTree();
+
+    const message = failureOf(await readFlowRepoState(REPO_ROOT, [SPEC]));
+
+    expect(message).toContain("is not a GitHub remote");
+    expect(message).not.toContain("example-secret");
+    expect(message).not.toContain("x-access-token");
+    expect(message).toContain("https://***@");
+  });
 });
 
 describe("readFlowRepoState — the spec paths", () => {
