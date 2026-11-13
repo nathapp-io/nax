@@ -102,6 +102,7 @@ export { timeoutRetry } from "./builders/timeout-retry-builder";
 // A5 workflow mode — story brief and implementer-session prompts (spec §6).
 export type { BranchReviewPromptInput } from "./builders/workflow-branch-builder";
 export {
+  buildBranchDiffPartsNote,
   buildBranchPackageReadingNote,
   buildWorkflowBranchCoverageRetry,
   buildWorkflowBranchFixPrompt,
