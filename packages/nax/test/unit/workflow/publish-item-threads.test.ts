@@ -146,6 +146,20 @@ describe("postItemThreadsAfterPublish", () => {
       true,
     );
   });
+  // Fix round 1 (F1): recording the note is best effort, so a ledger failure must not discard the
+  // outcome the step resolved — that outcome is the only thing that says whether the index landed.
+  test("a throwing ledger write warns and still returns the step's outcome", async () => {
+    const h = harness();
+    const missing = { posted: 2, closed: 1, skipped: 0, failed: 0, indexWritten: false, indexMissing: true };
+    h.env.steps.postItemThreads = async () => missing;
+    h.env.sink.ledger = async () => {
+      throw new Error("ledger unavailable");
+    };
+    await expect(postItemThreadsAfterPublish(h.env, h.env.record, published, HEAD)).resolves.toEqual(missing);
+    expect(
+      logs.some((entry) => entry.level === "warn" && String(entry.data?.error).includes("ledger unavailable")),
+    ).toBe(true);
+  });
 });
 
 describe("publishStep item-thread seam", () => {
@@ -220,6 +234,25 @@ describe("publishStep item-thread seam", () => {
       indexMissing: true,
     });
     expect((await publishStep(h.env, earlier)).patch).toHaveProperty("itemIndexMissing", true);
+  });
+  // Fix round 1 (F1): the note is best effort, so a ledger failure cannot cost the record the index
+  // state this publish resolved.
+  test("a throwing item-thread ledger note leaves itemIndexMissing in the patch", async () => {
+    const h = harness();
+    h.env.steps.postItemThreads = async () => ({
+      posted: 1,
+      closed: 0,
+      skipped: 0,
+      failed: 0,
+      indexWritten: false,
+      indexMissing: true,
+    });
+    // Only the item-thread note fails; publishStep's own feature line still gets through.
+    h.env.sink.ledger = async (line) => {
+      if (line.includes("Item threads:")) throw new Error("ledger unavailable");
+    };
+    const out = await publishStep(h.env, h.env.record);
+    expect(out.patch).toHaveProperty("itemIndexMissing", true);
   });
   test("AC-20 initial PR read failure preserves publish outcome", async () => {
     const h = harness();

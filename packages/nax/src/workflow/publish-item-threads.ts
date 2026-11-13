@@ -20,6 +20,27 @@ async function changedFiles(env: FeatureEnv, seed: string | null): Promise<reado
 }
 
 /**
+ * The note this step leaves in the ledger, best effort: it says what the publish posted, but it is
+ * not the publish. A ledger failure is a warning, never a reason to discard the step's outcome —
+ * that outcome is the only thing that says whether the settle-worthy index landed on the PR.
+ */
+async function noteItemThreads(env: FeatureEnv, feature: string, outcome: ItemThreadsOutcome): Promise<void> {
+  try {
+    await env.sink.ledger(
+      ledgerText.note(
+        `Item threads: posted=${outcome.posted}, closed=${outcome.closed}, skipped=${outcome.skipped}, failed=${outcome.failed}`,
+      ),
+      { mirror: false },
+    );
+  } catch (error) {
+    getLogger()?.warn("item-threads", "[item-threads] Could not record the item-thread ledger note", {
+      feature,
+      error: errorMessage(error),
+    });
+  }
+}
+
+/**
  * Four arguments intentionally mirror the publish seam specified by the workflow contract.
  *
  * US-003: the step's outcome is returned, because only it says whether this publish left the PR with
@@ -52,25 +73,24 @@ export async function postItemThreadsAfterPublish(
       ...(s.reason !== undefined ? { reason: s.reason } : {}),
     })),
   };
+  let outcome: ItemThreadsOutcome;
   try {
-    const outcome = await post({
+    outcome = await post({
       ...identity,
       record,
       url: out.url,
       head,
       changedFiles: await changedFiles(env, rec.seed),
     });
-    await env.sink.ledger(
-      ledgerText.note(
-        `Item threads: posted=${outcome.posted}, closed=${outcome.closed}, skipped=${outcome.skipped}, failed=${outcome.failed}`,
-      ),
-      { mirror: false },
-    );
-    return outcome;
   } catch (error) {
     getLogger()?.warn("item-threads", "[item-threads] Publish item-thread step failed", {
       feature: identity.feature,
       error: errorMessage(error),
     });
+    return;
   }
+  // Fix round 1 (F1): the note is written *after* the step's outcome is in hand, so its own failure
+  // cannot turn a resolved outcome into "nothing to report".
+  await noteItemThreads(env, identity.feature, outcome);
+  return outcome;
 }
