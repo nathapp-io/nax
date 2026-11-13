@@ -27,19 +27,27 @@ export interface KodaFlowConnection {
 const AUTHORIZATION_HEADER = "authorization";
 
 /**
- * The `authorization` header's value in any letter case, or `undefined` when the
- * block holds no such header or its value is empty or whitespace.
+ * The configured headers with HTTP's case-insensitive names folded to lowercase and
+ * the last value winning — exactly the fold `createKodaClient` applies before it
+ * sends them. Deciding presence any other way would answer a different question from
+ * the one the request answers: a block holding `Authorization: Bearer k` and then
+ * `authorization: ""` reaches koda with an empty credential, so it must read as no
+ * connection here rather than as a usable one that fails only after the push.
  *
  * `headers` is typed optional here on purpose: `MemoryKodaConfig.headers` is
  * required by the interface but a `NaxConfig` assembled without the schema (a test
  * override, a hand-written partial) can leave it out at runtime.
  */
-function authorizationValue(headers: Readonly<Record<string, string>> | undefined): string | undefined {
-  for (const [name, value] of Object.entries(headers ?? {})) {
-    if (name.toLowerCase() !== AUTHORIZATION_HEADER) continue;
-    return value.trim().length > 0 ? value : undefined;
-  }
-  return undefined;
+function foldedHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> {
+  const folded: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers ?? {})) folded[name.toLowerCase()] = value;
+  return folded;
+}
+
+/** Whether the folded `authorization` value can authenticate a request: present and not blank. */
+function hasAuthorization(folded: Readonly<Record<string, string>>): boolean {
+  const value = folded[AUTHORIZATION_HEADER];
+  return value !== undefined && value.trim().length > 0;
 }
 
 /**
@@ -57,6 +65,6 @@ export function kodaFlowConnection(config: Pick<NaxConfig, "memory">): KodaFlowC
   const url = koda?.url;
   if (url === undefined || url.trim().length === 0) return undefined;
   const headers = koda?.headers;
-  if (authorizationValue(headers) === undefined) return undefined;
+  if (!hasAuthorization(foldedHeaders(headers))) return undefined;
   return { url, headers: headers ?? {} };
 }

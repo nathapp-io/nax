@@ -64,4 +64,21 @@ describe("kodaFlowConnection", () => {
 
     expect(kodaFlowConnection(config)).toEqual({ url, headers });
   });
+
+  test("returns undefined when a later authorization header is blank, as the client folds it", () => {
+    for (const value of ["", "   "]) {
+      const config = makeNaxConfig({
+        memory: { koda: { url, headers: { Authorization: bearer, authorization: value } } },
+      });
+
+      expect(kodaFlowConnection(config)).toBeUndefined();
+    }
+  });
+
+  test("returns the connection when the last authorization header is the usable one", () => {
+    const headers = { authorization: "", Authorization: bearer };
+    const config = makeNaxConfig({ memory: { koda: { url, headers } } });
+
+    expect(kodaFlowConnection(config)).toEqual({ url, headers });
+  });
 });
