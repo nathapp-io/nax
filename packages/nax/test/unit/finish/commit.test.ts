@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertCaughtInstanceOf, withDepsRestore } from "@test/helpers";
+import { assertCaughtInstanceOf, assertDefined, withDepsRestore } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { _finishGitDeps, commitAndPush, commitFixes, PUSH_TIMEOUT_MS } from "@/finish";
 
@@ -294,6 +294,7 @@ describe("commitAndPush", () => {
     // A fresh alias is rewritten once into the verified URL; that replacement is
     // not itself rewritten. An explicit pushurl also bypasses pushInsteadOf.
     const bound = calls[0]?.args.at(-2);
+    assertDefined(bound, "the process-local push remote");
     expect(bound).toMatch(/^nax-bound-/);
     expect(calls[0]?.args).toEqual([
       "-c",
