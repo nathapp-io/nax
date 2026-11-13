@@ -165,6 +165,18 @@ describe("readBaseScripts", () => {
     stubGit({ stdout: manifest({ scripts: { build: "tsc", broken: 3 } }), exitCode: 0 });
     expect(await readBaseScripts("/repo", "abc123", "apps/admin")).toEqual({ build: "tsc" });
   });
+
+  // M2: `scripts[name] = value` on an ordinary object writes the prototype slot for `__proto__`, so a
+  // package that really declares that script would lose it before the rule ever saw it.
+  test("keeps a script named __proto__ as an own key the candidate rule can offer", async () => {
+    stubGit({ stdout: '{"scripts":{"__proto__":"bun test --isolate"}}', exitCode: 0 });
+    const scripts = await readBaseScripts("/repo", "abc123", "apps/admin");
+    expect(Object.entries(scripts)).toEqual([["__proto__", "bun test --isolate"]]);
+    expect(configChangeCandidates({ redGates: ["scoped"], scripts })).toEqual([
+      { key: "testScoped", to: "bun test --isolate", script: "__proto__" },
+      { key: "testScoped", to: "bun test --isolate {{files}}", script: "__proto__" },
+    ]);
+  });
 });
 
 describe("renderCommandSpec", () => {

@@ -9,9 +9,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import { makeStoryLoopAdvisor, makeStoryLoopHarness, storyLoopFixtures } from "@test/helpers";
+import { NaxError } from "@/errors";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { ConfigChangeAnswer, ImplementerQuestionFacts, ImplementerQuestionRequest } from "@/workflow/advisor";
-import type { ConfigChangeOutcome } from "@/workflow/config-change";
+import { CONFIG_CHANGE_ROLLBACK_FAILED, type ConfigChangeOutcome } from "@/workflow/config-change";
 import type { ImplementOutcome, ImplementTurn } from "@/workflow/implement";
 import type { StoryLoopState } from "@/workflow/story-loop";
 import { runStoryLoop } from "@/workflow/story-loop";
@@ -309,6 +310,37 @@ describe("a refused config change keeps the loop's existing path (US-005)", () =
       { round: 1, key: "testScoped", to: TO, applied: false, reason: "write-failed", decisionId: "D-3" },
     ]);
     expect(result.patch.lastTurn).toEqual({ status: "BLOCKED", fallback: false, stepUps: 0 });
+  });
+
+  // B2: `CONFIG_CHANGE_ROLLBACK_FAILED` says the tree may still hold the attempted change. Reading it
+  // as an ordinary write-failed refusal recorded a clean state the run does not have, and let the loop
+  // keep spending rounds on a config it cannot trust; it must reach the story's error containment.
+  test("B2: a rollback that did not complete propagates instead of reading as a refusal", async () => {
+    const rollback = new NaxError(
+      "Config change rollback could not restore the config file's original bytes: .nax/mono/apps/admin/config.json",
+      CONFIG_CHANGE_ROLLBACK_FAILED,
+      { stage: "workflow" },
+    );
+    const made = makeProbe({
+      reply: (turn) => (turn.kind === "fix" ? BLOCKED : OK),
+      answer: PICKED,
+      facts: async () => FACTS,
+      apply: async () => {
+        throw rollback;
+      },
+    });
+    const state: StoryLoopState = {
+      ...initialStoryState(made.h.env),
+      step: "fix",
+      open: [OPEN_GATE],
+      gates: RED_SCOPED,
+      suite: SUITE_GREEN,
+    };
+
+    await expect(fixStep(made.h.env, state)).rejects.toBe(rollback);
+    // Nothing was recorded as a refusal, and no ledger line claims the tree is clean.
+    expect(made.h.configRecords).toEqual([]);
+    expect(made.h.ledger.filter((line) => line.includes("config change"))).toEqual([]);
   });
 
   test("an env with no applier never reads a picked change as applied", async () => {

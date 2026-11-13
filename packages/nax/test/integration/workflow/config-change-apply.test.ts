@@ -32,6 +32,12 @@ const CONFIG_BODY = {
 };
 const CONFIG_TEXT = `${JSON.stringify(CONFIG_BODY, null, 2)}\n`;
 
+/** A config snapshot staged before the run: the same commands, bytes unlike HEAD's. */
+const STAGED_TEXT = `${JSON.stringify(CONFIG_BODY, null, 4)}\n`;
+
+/** The working tree's own snapshot, distinct from both HEAD's and the index's. */
+const WORKTREE_TEXT = `${JSON.stringify(CONFIG_BODY, null, 1)}\n`;
+
 const dirs: string[] = [];
 const origDeps = {
   git: _configChangeDeps.git,
@@ -147,6 +153,23 @@ const configText = (dir: string): Promise<string> => fileText(dir, CONFIG_REL);
 const headSha = (dir: string): Promise<string> => git(dir, "rev-parse", "HEAD");
 const headPaths = (dir: string): Promise<string> => git(dir, "show", "--name-only", "--format=", "HEAD");
 const headSubject = (dir: string): Promise<string> => git(dir, "log", "-1", "--format=%s");
+
+/** The file the commit would record for a path — `:path` for the index, `HEAD:path` for the commit. */
+const blobText = (dir: string, spec: string): Promise<string> => git(dir, "show", spec).then((text) => text.trimEnd());
+
+/** Route one git subcommand to a rejected promise, leaving every other call on real git. */
+function rejectGit(subcommand: string): void {
+  _configChangeDeps.git = async (args, cwd) => {
+    if (args[0] === subcommand) throw new Error(`git ${subcommand}: spawn failed`);
+    return origDeps.git(args, cwd);
+  };
+}
+
+/** Route one git subcommand to a non-zero exit, leaving every other call on real git. */
+function failGit(subcommand: string): void {
+  _configChangeDeps.git = async (args, cwd) =>
+    args[0] === subcommand ? { stdout: "", stderr: "hook failed", exitCode: 1 } : origDeps.git(args, cwd);
+}
 
 /** The command a package view selects for the scoped gate — what the gate ops read. */
 function selectedCommand(view: PackageView | undefined): string | string[] | undefined {
@@ -335,6 +358,78 @@ describe("applyConfigChange — a failure after the write restores the file", ()
     } finally {
       chmodSync(configPath, 0o644);
     }
+  });
+
+  // B1: the transaction's own `git add` replaces the path's index entry. A rollback that reset the
+  // entry to HEAD would destroy a snapshot staged before the run, and restoring the working-tree
+  // bytes would not bring it back — HEAD, index and working tree can all differ.
+  test("B1: a failed commit restores both config snapshots — the staged one and the working tree's", async () => {
+    const f = await makeRepo();
+    // Stage a snapshot of the config that HEAD does not have, then leave a third version on disk.
+    await Bun.write(join(f.dir, CONFIG_REL), STAGED_TEXT);
+    await git(f.dir, "add", "--", CONFIG_REL);
+    await Bun.write(join(f.dir, CONFIG_REL), WORKTREE_TEXT);
+    await Bun.write(join(f.dir, "a.txt"), "one\ntwo\n");
+    await git(f.dir, "add", "--", "a.txt");
+    failGit("commit");
+
+    const result = await applyConfigChange(input(f));
+    expect(result.outcome).toMatchObject({ applied: false, reason: "commit-failed" });
+    // The staged config survives in the index, byte for byte, and so does the worktree's own copy.
+    expect(await blobText(f.dir, `:${CONFIG_REL}`)).toBe(STAGED_TEXT.trimEnd());
+    expect(await configText(f.dir)).toBe(WORKTREE_TEXT);
+    expect(await blobText(f.dir, `HEAD:${CONFIG_REL}`)).toBe(CONFIG_TEXT.trimEnd());
+    // The unrelated staged edit is untouched, and the config path is exactly what it was: staged and
+    // modified relative to that staged copy.
+    expect(await git(f.dir, "diff", "--cached", "--name-only")).toBe(`${CONFIG_REL}\na.txt`);
+    expect(await git(f.dir, "status", "--porcelain", "--", CONFIG_REL)).toBe(`MM ${CONFIG_REL}`);
+  });
+
+  // B3: a rejected git promise is the same answer as a non-zero exit. Only the exit code used to be
+  // handled, so a thrown `git add` / `git commit` escaped after the write and the refresh, leaving the
+  // attempted change in the tree while the loop read it as a plain write-failed refusal.
+  test("B3: a rejected git add rolls back like a failing add", async () => {
+    const f = await makeRepo();
+    const before = await configText(f.dir);
+    rejectGit("add");
+
+    const result = await applyConfigChange(input(f));
+    expect(result.outcome).toMatchObject({ applied: false, reason: "commit-failed" });
+    expect(await configText(f.dir)).toBe(before);
+    expect(await git(f.dir, "status", "--porcelain", "--", CONFIG_REL)).toBe("");
+    expect(await headSubject(f.dir)).toBe("seed");
+  });
+
+  test("B3: a rejected git commit rolls back file, index and cache like a failing commit", async () => {
+    const f = await makeRepo();
+    const before = await configText(f.dir);
+    const { registry, refreshes } = countingRegistry(f.registry);
+    rejectGit("commit");
+
+    const result = await applyConfigChange(input(f, { registry }));
+    expect(result.outcome).toMatchObject({ applied: false, reason: "commit-failed" });
+    expect(await configText(f.dir)).toBe(before);
+    expect(await git(f.dir, "status", "--porcelain", "--", CONFIG_REL)).toBe("");
+    expect(await headSubject(f.dir)).toBe("seed");
+    expect(refreshes).toEqual(["apps/admin", "apps/admin"]);
+    expect(await resolvedCommand(f)).toBe(OLD_COMMAND);
+  });
+
+  test("B3: a rejected post-commit rev-parse still reports the change as applied", async () => {
+    const f = await makeRepo();
+    rejectGit("rev-parse");
+
+    const result = await applyConfigChange(input(f));
+    // The commit landed and is in history; only its sha is missing, so this is not a refusal.
+    expect(result.outcome).toEqual({
+      applied: true,
+      key: "testScoped",
+      from: OLD_COMMAND,
+      to: NEW_COMMAND,
+      commit: "",
+    });
+    expect(await headSubject(f.dir)).toBe(SUBJECT);
+    expect(JSON.parse(await configText(f.dir)).quality.commands.testScoped).toBe(NEW_COMMAND);
   });
 
   test("AC-18: a config that stops resolving is refused as invalid-config", async () => {

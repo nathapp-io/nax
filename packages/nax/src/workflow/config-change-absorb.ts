@@ -17,7 +17,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
 import type { ConfigChangeAnswer, ImplementerQuestionFacts, ImplementerQuestionRequest } from "./advisor";
-import type { ConfigChangeOutcome, ConfigChangeRefusal } from "./config-change";
+import { type ConfigChangeOutcome, type ConfigChangeRefusal, isRollbackFailure } from "./config-change";
 import { ledgerText } from "./ledger";
 import type { StoryLoopEnv } from "./story-loop";
 import type { ConfigChangeRecord, GateName, GateRunResult, GateState, ImplementerReply } from "./types";
@@ -100,8 +100,10 @@ export interface ConfigAnswerInput {
  * Apply the change the advisor picked and record what became of it: the story record's entry, the
  * ledger line, and — for a refusal — the note the loop keeps with the implementer's concern.
  *
- * Nothing here throws. A refused change leaves the loop on its existing path, and a transaction that
- * throws is the same refusal as a failed write, so it can never escape `fixStep`.
+ * A refused change leaves the loop on its existing path, and a transaction that throws is the same
+ * refusal as a failed write — with one exception it must not swallow: a rollback that did not
+ * complete (`CONFIG_CHANGE_ROLLBACK_FAILED`) is rethrown, so it reaches the story's error containment
+ * instead of being recorded as a refusal the tree does not justify.
  */
 export async function absorbConfigChange(input: ConfigAnswerInput): Promise<ConfigAnswerResult> {
   const change = input.answer;
@@ -125,6 +127,11 @@ function isConfigChange(answer: string | ConfigChangeAnswer | null): answer is C
  * The transaction's outcome, or the refusal that says nax wrote nothing. A throw is logged and read as
  * `write-failed`: the applier rolls its own writes back, and a caller that reported success here would
  * claim a config the gates never see.
+ *
+ * The one exception is {@link isRollbackFailure}: that error means the rollback did *not* complete, so
+ * the tree may still hold the attempted config. It is propagated — the story's error containment
+ * closes the story gate-open — because recording a `write-failed` refusal there would report a clean
+ * tree the run does not have, and let the loop keep spending rounds on a config it cannot trust.
  */
 async function changeOutcome(env: StoryLoopEnv, change: ConfigChangeAnswer): Promise<ConfigChangeOutcome> {
   const step = env.steps.applyConfigChange;
@@ -132,6 +139,7 @@ async function changeOutcome(env: StoryLoopEnv, change: ConfigChangeAnswer): Pro
   try {
     return await step(change);
   } catch (err) {
+    if (isRollbackFailure(err)) throw err;
     getLogger().warn("workflow", "Config change could not be applied; the gates keep their command", {
       storyId: env.storyId,
       error: errorMessage(err),
