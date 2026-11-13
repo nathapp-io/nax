@@ -84,7 +84,7 @@ export async function reopenReraisedItems(
         if (last && !pending) pendingReopens.push({ key: item.key, commentId: last.id });
         // Persist invalidation before any boundary-changing notice. Failure stops the notice write.
         const indexed = await writeItemIndex({ ...read.index, keys, pendingReopens }, context);
-        if (!indexed) {
+        if (!indexed.written) {
           failed++;
           continue;
         }

@@ -10,7 +10,12 @@ import { NaxError } from "@/errors";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import type { ItemPublishConfig } from "@/workflow/item-publish-pacer";
-import { _itemPublishPacerDeps, createItemPublishPacer, isRetryableRejection } from "@/workflow/item-publish-pacer";
+import {
+  _itemPublishPacerDeps,
+  createItemPublishPacer,
+  isDefiniteRejection,
+  isRetryableRejection,
+} from "@/workflow/item-publish-pacer";
 
 const RATE_LIMIT =
   "gh: You have exceeded a secondary rate limit and have been temporarily blocked from content creation.";
@@ -81,6 +86,31 @@ describe("isRetryableRejection", () => {
     expect(
       isRetryableRejection(new NaxError("[forge] Cannot write", "FORGE_COMMENT_WRITE_FAILED", { stage: "forge" })),
     ).toBe(false);
+  });
+});
+
+// B1: `isRetryableRejection` answers "may I repeat this write?"; this answers "did it land?". The two
+// differ exactly where the publish needs them to: a 4xx the retry policy does not repeat is still a
+// refusal, and an index the forge refused is an index the PR does not have.
+describe("isDefiniteRejection", () => {
+  test.each([
+    ["a secondary rate limit message", RATE_LIMIT],
+    ["an HTTP 422 validation failure", "gh: Validation Failed (HTTP 422)"],
+    ["an HTTP 429", "gh: HTTP 429"],
+    ["an HTTP 404 the retry policy does not repeat", "gh: Not Found (HTTP 404)"],
+  ])("B1: returns true for %s — the forge answered and refused, so nothing landed", (_label, stderr) => {
+    expect(isDefiniteRejection(rejection(stderr))).toBe(true);
+  });
+
+  test("B1: returns false when the write may have landed", () => {
+    expect(isDefiniteRejection(rejection("gh: HTTP 502: Bad Gateway"))).toBe(false);
+    expect(isDefiniteRejection(rejection("gh: error connecting to api.github.com"))).toBe(false);
+    expect(
+      isDefiniteRejection(
+        new NaxError("[forge] Invalid write response", "FORGE_RESPONSE_UNPARSEABLE", { stage: "forge" }),
+      ),
+    ).toBe(false);
+    expect(isDefiniteRejection(new Error(RATE_LIMIT))).toBe(false);
   });
 });
 

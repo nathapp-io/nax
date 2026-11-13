@@ -45,18 +45,40 @@ const BUDGET_SPENT = "ITEM_PUBLISH_BUDGET_SPENT";
 const RETRY_WARN = "[item-threads] Write rejected; retrying after back-off";
 
 /**
- * The forge rejections a retry cannot duplicate: the write was refused, so nothing landed.
- * A 5xx, a timeout, an auth failure or an unparseable reply may mean it did land, and
- * `runForgeWrite` must never repeat a write that may have completed.
+ * The refusals a retry cannot duplicate, and the edges of this pacer's retry policy — deliberately
+ * narrower than `isDefiniteRejection`, which asks the same stderr a different question.
  */
 const RETRYABLE_STDERR = ["rate limit", "http 429", "http 422"];
+/** An HTTP status the forge answered with: the request failed and the forge said so. */
+const REFUSED_STATUS = /http 4\d\d/;
 
-export function isRetryableRejection(error: unknown): boolean {
-  if (!(error instanceof NaxError) || error.code !== "FORGE_COMMENT_WRITE_FAILED") return false;
+/**
+ * The stderr of a write the forge *refused*: it answered, and answered no. Shared by the two
+ * questions asked of a rejection below, because both need the same first fact — the forge's own
+ * refusal — before they differ on what it means.
+ */
+function refusedStderr(error: unknown): string | undefined {
+  if (!(error instanceof NaxError) || error.code !== "FORGE_COMMENT_WRITE_FAILED") return undefined;
   const stderr = error.context?.stderr;
-  if (typeof stderr !== "string") return false;
+  if (typeof stderr !== "string") return undefined;
   const lower = stderr.toLowerCase();
-  return RETRYABLE_STDERR.some((needle) => lower.includes(needle));
+  return lower.includes("rate limit") || REFUSED_STATUS.test(lower) ? lower : undefined;
+}
+
+/** Whether a retry may repeat this write: it was refused, so no comment was created. */
+export function isRetryableRejection(error: unknown): boolean {
+  const stderr = refusedStderr(error);
+  return stderr !== undefined && RETRYABLE_STDERR.some((needle) => stderr.includes(needle));
+}
+
+/**
+ * Whether the forge refused the write, so nothing landed. A 5xx, a timeout, an auth failure or an
+ * unparseable reply is *not* a refusal: those may have landed, and nothing should be concluded
+ * from them. The publish reads a failed index write with this — a refusal proves the PR has no
+ * index, where an unconfirmed write proves nothing either way.
+ */
+export function isDefiniteRejection(error: unknown): boolean {
+  return refusedStderr(error) !== undefined;
 }
 
 interface PacerState {

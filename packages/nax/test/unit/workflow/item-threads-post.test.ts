@@ -73,6 +73,8 @@ interface HarnessOptions {
   indexStdout?: string;
   /** Pacing rejections the pacer may retry: a NaxError, so `isRetryableRejection` sees it. */
   reject?: readonly Rejection[];
+  /** The readback that follows a failed index write fails too, so the PR cannot be consulted. */
+  indexReadFails?: boolean;
 }
 
 const rejection = (stderr: string): NaxError =>
@@ -108,6 +110,7 @@ function harness(options: HarnessOptions = {}) {
   const indexComment = (body: string) => ({ id: 9, user: { login: "bot" }, body, created_at: "t" });
   /** The issue-comment read: a write that landed shows up here even when its reply was unparseable. */
   const indexComments = () => {
+    if (options.indexReadFails === true && indexAttempted) throw new Error("comments unreadable");
     const body = indexAttempted ? (options.indexAfterWrite ?? options.indexBody) : options.indexBody;
     return ok(body === undefined ? [] : [indexComment(body)]);
   };
@@ -482,5 +485,25 @@ describe("postItemThreads item-publish pacing", () => {
     expect(h.writes).toHaveLength(3);
     expect(sleeps.filter((ms) => ms === 60_000)).toHaveLength(2);
     expect(logs.some((entry) => entry.message === BUDGET_SPENT)).toBe(false);
+  });
+  // B1: a readback that fails says nothing about the index, so the failed write's own evidence has
+  // to decide. Every index write here was *refused* by the forge, and nothing can have landed.
+  test("B1 reports a refused index write as missing even when the readback fails", async () => {
+    const h = harness({
+      reject: [{ match: "key=w-index", times: Number.POSITIVE_INFINITY, stderr: RATE_LIMIT }],
+      indexReadFails: true,
+    });
+    const result = await postItemThreads(input({ pacing: pacing({ maxRetries: 2 }) }), h.deps);
+    expect(result).toMatchObject({ indexWritten: false, indexMissing: true });
+    expect(h.indexWrites).toHaveLength(3);
+  });
+  // B1: the other half of the same rule. A write that may have landed plus an unreadable PR leaves
+  // the index unknown; claiming it present would clear a genuine earlier warning at run end.
+  test("B1 leaves the index unconfirmed when the write may have landed and the readback fails", async () => {
+    const h = harness({ indexStdout: "not-json", indexReadFails: true });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toMatchObject({ indexWritten: false });
+    expect(result).not.toHaveProperty("indexMissing");
+    expect(h.indexWrites).toHaveLength(1);
   });
 });

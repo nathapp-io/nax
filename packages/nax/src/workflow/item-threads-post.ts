@@ -21,7 +21,7 @@ import { _featureDeps } from "./feature-deps";
 import { createItemPublishPacer, type ItemPublishConfig, type ItemPublishPacer } from "./item-publish-pacer";
 import { type ReadItemThreads, readItemThreads } from "./item-thread-state";
 import { isPostable, itemKey, renderItemOpener } from "./item-threads";
-import { type IndexContext, maintainItemIndex } from "./item-threads-index";
+import { type IndexContext, type IndexWriteFailure, maintainItemIndex } from "./item-threads-index";
 import { type ReopenContext, reopenReraisedItems } from "./item-threads-reopen";
 import { buildOpenItems } from "./open-items";
 import type { OpenItem, WorkflowFeatureRecord } from "./types";
@@ -44,8 +44,12 @@ export interface ItemThreadsOutcome {
   readonly failed: number;
   /** US-002: this publish's final index write succeeded. */
   readonly indexWritten: boolean;
-  /** US-002: the PR has no `w-index` comment after this publish, and none was created by it. */
-  readonly indexMissing: boolean;
+  /**
+   * US-002/B1: true only when the PR is *known* to have no `w-index` comment after this publish.
+   * Absent when the publish cannot tell — an index write that may have landed and a readback that
+   * then failed — so the record keeps any earlier answer instead of clearing it with a `false`.
+   */
+  readonly indexMissing?: boolean;
 }
 
 interface PostingContext {
@@ -117,23 +121,28 @@ function stopThreads(rest: readonly OpenItem[], owned: ReadonlySet<string>): num
 /**
  * Whether this publish leaves the PR with no index comment at all. A failed write alone cannot say
  * so: `gh` can accept an index and still answer with a reply this code cannot parse, which records
- * no posted name. Absence is therefore read back off the PR instead of inferred, and a read that
- * itself fails reports the index present rather than claiming the PR has none.
+ * no posted name. Absence is therefore read back off the PR instead of inferred.
+ *
+ * A readback that fails leaves the write's own evidence, and only a refusal is evidence: the forge
+ * answered and refused it, so nothing landed and the PR has no index to find. A write that may have
+ * landed proves nothing either way, so the answer is `undefined` — neither a confirmed presence nor
+ * a licence to clear an earlier `itemIndexMissing`.
  */
 async function indexIsMissing(options: {
   readonly feature: string;
   readonly read: ReadItemThreads;
   readonly indexed: boolean;
+  readonly failure: IndexWriteFailure | undefined;
   readonly context: MaintenanceContext;
-}): Promise<boolean> {
-  const { feature, read, indexed, context } = options;
+}): Promise<boolean | undefined> {
+  const { feature, read, indexed, failure, context } = options;
   if (indexed || read.indexComment !== undefined || context.postedIndex !== undefined) return false;
   try {
     const comments = await listPrComments(context.ref, context.deps, context.cwd);
     return !ownComments(comments, context.login).some(({ key }) => key === "w-index");
   } catch (error) {
-    warn({ feature }, "[item-threads] Cannot confirm the index state; reporting it present", error);
-    return false;
+    warn({ feature }, "[item-threads] Cannot confirm the index state; reading the failed write instead", error);
+    return failure === "refused" ? true : undefined;
   }
 }
 
@@ -205,19 +214,22 @@ export async function postItemThreads(
     pendingReopens: reopen.pendingReopens,
     settled: keys.filter((key) => settled.has(key)).length,
   });
+  const indexMissing = await indexIsMissing({
+    feature: input.feature,
+    read: snapshot.read,
+    indexed: index.indexed,
+    failure: index.indexFailure,
+    context: maintenance,
+  });
   return {
     ...outcome,
     closed: index.closed,
     failed: outcome.failed + index.failed,
     indexWritten: index.indexed,
-    // Only ever a PR that ends the publish with no index comment: an index created by a pre-notice
-    // write is on the PR, a stale one still accepts bot commands, and an ambiguous failed write is
-    // confirmed against the PR before anything is claimed missing.
-    indexMissing: await indexIsMissing({
-      feature: input.feature,
-      read: snapshot.read,
-      indexed: index.indexed,
-      context: maintenance,
-    }),
+    // Only ever a PR that ends the publish with a known answer: an index created by a pre-notice
+    // write is on the PR, a stale one still accepts bot commands, a refused write proves none was
+    // created, and an unconfirmed one states no key at all rather than a `false` nobody can stand
+    // behind (B1).
+    ...(indexMissing === undefined ? {} : { indexMissing }),
   };
 }

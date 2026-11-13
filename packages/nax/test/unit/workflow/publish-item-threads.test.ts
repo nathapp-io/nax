@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeDoneStory, makeFeatureMachineHarness } from "@test/helpers";
+import { NaxError } from "@/errors";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { _featureDeps } from "@/workflow/feature-deps";
 import type { FeatureEnv } from "@/workflow/feature-machine";
 import { publishStep } from "@/workflow/feature-steps";
 import type { PublishOutcome } from "@/workflow/finalize";
+import { _itemPublishPacerDeps } from "@/workflow/item-publish-pacer";
 import { itemKey } from "@/workflow/item-threads";
 import { type ItemThreadsInput, postItemThreads } from "@/workflow/item-threads-post";
 import { buildOpenItems } from "@/workflow/open-items";
@@ -14,6 +16,44 @@ const URL = "https://github.com/o/r/pull/7";
 const HEAD = "a".repeat(40);
 const published: PublishOutcome = { outcome: "draft", url: URL, ci: "pending", reasons: ["wait"] };
 const result = { posted: 0, closed: 0, skipped: 0, failed: 0, indexWritten: true, indexMissing: false };
+const RATE_LIMIT =
+  "gh: You have exceeded a secondary rate limit and have been temporarily blocked from content creation.";
+const INDEX_REFUSAL = new NaxError(
+  "[forge] Cannot write o/r#7: content creation is rate limited",
+  "FORGE_COMMENT_WRITE_FAILED",
+  {
+    stage: "forge",
+    stderr: RATE_LIMIT,
+  },
+);
+
+/**
+ * B1: a PR with no items, whose every index write the forge refuses and whose readback after such a
+ * write fails too — the shape a scoped probe found the publish reading as "index present".
+ */
+function refusedIndexForge(state: { attempted: boolean }) {
+  const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
+  const carries = (cmd: readonly string[], needle: string) => cmd.some((arg) => arg.includes(needle));
+  const threads = { nodes: [], pageInfo: { hasNextPage: false } };
+  return {
+    readText: async () => null,
+    run: async (cmd: string[], _opts?: { cwd: string }) => {
+      if (carries(cmd, "key=w-index")) {
+        state.attempted = true;
+        throw INDEX_REFUSAL;
+      }
+      if (cmd[0] === "git") return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
+      // The readback that follows the failed write fails too, so the PR cannot be consulted.
+      if (carries(cmd, "/issues/7/comments?per_page=") && state.attempted) throw new Error("comments unreadable");
+      if (cmd.includes("POST")) return ok({ id: 1 });
+      if (cmd.includes("user")) return ok({ login: "bot", id: 1 });
+      if (cmd.includes("graphql")) return ok({ data: { repository: { pullRequest: { reviewThreads: threads } } } });
+      if (carries(cmd, "?per_page=")) return ok([]);
+      return ok({ head: { sha: HEAD, ref: "feature" }, base: { ref: "main" }, user: { login: "author" } });
+    },
+  };
+}
+
 function harness(out: PublishOutcome = published) {
   const base = makeFeatureMachineHarness(
     { published: out },
@@ -269,6 +309,43 @@ describe("publishStep item-thread seam", () => {
     expect(calls).toBe(1);
     expect(out.patch).toMatchObject({ outcome: "draft", url: URL, ci: "pending", reasons: ["wait"] });
     expect(logs.some((entry) => entry.message.includes("Initial PR read failed"))).toBe(true);
+  });
+  // B1: an outcome that could not confirm the index says nothing either way. Writing `false` from it
+  // would clear the warning an earlier publish raised, so the patch states no key at all.
+  test("B1 an outcome that cannot confirm the index leaves the record's earlier answer", async () => {
+    const h = harness();
+    h.env.steps.postItemThreads = async () => ({
+      posted: 0,
+      closed: 0,
+      skipped: 0,
+      failed: 1,
+      indexWritten: false,
+    });
+    const earlier = { ...h.env.record, itemIndexMissing: true };
+    const out = await publishStep(h.env, earlier);
+    expect(out.patch).not.toHaveProperty("itemIndexMissing");
+    expect({ ...earlier, ...out.patch }.itemIndexMissing).toBe(true);
+  });
+  // B1, end to end: the publish's own index write is refused by the forge, the readback that would
+  // confirm it fails, and the record must still say the PR has no index — the warning the review
+  // found the failed readback erasing.
+  test("B1 a refused index write reaches the record as itemIndexMissing when the readback fails", async () => {
+    const h = harness();
+    const realSleep = _itemPublishPacerDeps.sleep;
+    const realForge = _featureDeps.forge;
+    _itemPublishPacerDeps.sleep = async () => {};
+    const state = { attempted: false };
+    _featureDeps.forge = refusedIndexForge(state);
+    h.env.steps.postItemThreads = postItemThreads;
+    try {
+      const earlier = { ...h.env.record, itemIndexMissing: false, reviewOpen: [], cannotVerify: [] };
+      const out = await publishStep(h.env, earlier);
+      expect(state.attempted).toBe(true);
+      expect(out.patch).toHaveProperty("itemIndexMissing", true);
+    } finally {
+      _itemPublishPacerDeps.sleep = realSleep;
+      _featureDeps.forge = realForge;
+    }
   });
 });
 

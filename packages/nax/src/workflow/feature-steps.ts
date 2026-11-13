@@ -476,10 +476,11 @@ export async function publishStep(
         out.pushFailed !== true &&
         featurePassed({ ...(rec.finalGates ? { finalGates: rec.finalGates } : {}), stories: env.facts.stories }),
       ...(flagged.length > 0 || rec.flaggedDecisions !== undefined ? { flaggedDecisions: flagged } : {}),
-      // US-003: only an outcome says whether this publish left the PR without an index. No outcome
-      // (no step, nothing posted, the step threw) puts no key here, so an earlier `true` survives —
-      // and the spread never states the key as `undefined`, which the graph runner rejects.
-      ...(threads ? { itemIndexMissing: threads.indexMissing } : {}),
+      // US-003/B1: only an outcome says whether this publish left the PR without an index, and only
+      // a settled outcome says so either way. No outcome (no step, nothing posted, the step threw),
+      // and an outcome that could not confirm the index, put no key here, so an earlier `true`
+      // survives — and the spread never states the key as `undefined`, which the graph runner rejects.
+      ...(threads?.indexMissing === undefined ? {} : { itemIndexMissing: threads.indexMissing }),
       // US-006: the repair targets, only when there is a repair to make.
       ...(ciPlan ? { ciRepairFindings: ciPlan.findings, ciRepairTargets: ciPlan.targets } : {}),
       // US-006: the checks still red once the repair allowance is spent, and nothing to repair.
