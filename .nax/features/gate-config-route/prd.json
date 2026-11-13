@@ -3,7 +3,7 @@
   "feature": "gate-config-route",
   "branchName": "feat/gate-config-route",
   "createdAt": "2026-11-13T15:53:10.616Z",
-  "updatedAt": "2026-11-13T16:28:24.694Z",
+  "updatedAt": "2026-11-13T16:55:40.350Z",
   "userStories": [
     {
       "id": "US-001",
@@ -174,14 +174,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "The transaction spans git, file restoration, two config caches and registry views, but reuses existing commitLedger and hydration patterns rather than redesigning architecture; protected command writes still require strict security TDD."
+        "reasoning": "The transaction spans git, file restoration, two config caches and registry views, but reuses existing commitLedger and hydration patterns rather than redesigning architecture; protected command writes still require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/config-change.ts",
@@ -204,7 +207,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "4a9a422006a9fafc54bd7c0f13911278a0227ab6"
     },
     {
       "id": "US-004",
