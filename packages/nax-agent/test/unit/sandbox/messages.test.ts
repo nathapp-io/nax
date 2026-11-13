@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { denialHintLine, LIKELY_SANDBOX_DENIAL, rawBashRefusalReason, sandboxSentence } from "#src/sandbox/index";
+import {
+  denialHintLine,
+  LIKELY_NETWORK_DENIAL,
+  LIKELY_SANDBOX_DENIAL,
+  LIKELY_SOCKET_DENIAL,
+  rawBashRefusalReason,
+  sandboxSentence,
+  unsandboxedNextStepLine,
+} from "#src/sandbox/index";
 
 describe("sandbox messages", () => {
   test("network phrasing for open, none and an allow-list", () => {
@@ -71,6 +79,22 @@ describe("sandbox messages", () => {
     expect(LIKELY_SANDBOX_DENIAL.test("sh: /x: Operation not permitted")).toBe(true);
     expect(LIKELY_SANDBOX_DENIAL.test("cannot create /x: Read-only file system")).toBe(true);
     expect(LIKELY_SANDBOX_DENIAL.test("No such file or directory")).toBe(false);
+  });
+
+  test("#2890: the next step says the user MAY be asked, since a raw posture asks nothing", () => {
+    expect(unsandboxedNextStepLine(true)).toContain("the user may be asked to approve");
+  });
+
+  test("#2890: the socat refusal is case-sensitive and a server 403 never matches", () => {
+    expect(LIKELY_NETWORK_DENIAL.test("socat E CONNECT gitlab.com:22: Forbidden")).toBe(true);
+    expect(LIKELY_NETWORK_DENIAL.test("e connect gitlab.com:22: forbidden")).toBe(false);
+    expect(LIKELY_NETWORK_DENIAL.test("The requested URL returned error: 403")).toBe(false);
+  });
+
+  test("#2890: socket refusals are recognised in lower case", () => {
+    expect(LIKELY_SOCKET_DENIAL.test("dial unix /var/run/docker.sock: socket: operation not permitted")).toBe(true);
+    expect(LIKELY_SOCKET_DENIAL.test("connect: Operation not permitted")).toBe(true);
+    expect(LIKELY_SOCKET_DENIAL.test("kill: (1) - Operation not permitted")).toBe(false);
   });
 
   test("#2890: denial detection is case-insensitive and covers srt network refusals", () => {

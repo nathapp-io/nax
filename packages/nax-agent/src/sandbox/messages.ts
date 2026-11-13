@@ -8,7 +8,10 @@
  * srt's proxy refusals: the HTTP proxy answers `CONNECT tunnel failed, response
  * 403` and the socat bridge prints `E CONNECT <host>:<port>: Forbidden`.
  */
-export const LIKELY_NETWORK_DENIAL = /CONNECT tunnel failed, response 403|E CONNECT \S+: Forbidden/i;
+export const LIKELY_NETWORK_DENIAL = /CONNECT tunnel failed, response 403|\bE CONNECT \S+: Forbidden\b/;
+
+/** An AF_UNIX or TCP connect the sandbox refuses (docker prints `socket: operation not permitted`). */
+export const LIKELY_SOCKET_DENIAL = /\b(socket|connect): operation not permitted/i;
 
 /**
  * Case-insensitive: docker prints `socket: operation not permitted` in lower
@@ -99,12 +102,17 @@ export function networkDenialHintLine(network: "open" | readonly string[]): stri
   return `note: this command ran in the nax sandbox; that failure may be a sandbox network denial -- ${describeNetwork(network)}.`;
 }
 
+/** The sandbox blocks local sockets; the writable-roots hint would send the agent at the wrong fix. */
+export function socketDenialHintLine(): string {
+  return "note: this command ran in the nax sandbox; the sandbox blocks local sockets such as /var/run/docker.sock.";
+}
+
 /** US-2890: states where a FAILED wrapped command ran, so the model never has to guess. */
 export const SANDBOX_STATUS_LINE = "[nax] this command ran INSIDE the sandbox (unsandboxed was not requested).";
 
 const NEXT_STEP_OFFERED =
   "[nax] If this needs the network, a local socket or a device, re-run with `unsandboxed: true` and an " +
-  "`unsandboxedReason`; the user will be asked to approve.";
+  "`unsandboxedReason`; the user may be asked to approve.";
 
 const NEXT_STEP_NOT_OFFERED =
   "[nax] This session cannot run commands outside the sandbox. Ask the user to run it, or to enable " +

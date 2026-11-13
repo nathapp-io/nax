@@ -19,8 +19,10 @@ import {
   denialHintLine,
   LIKELY_NETWORK_DENIAL,
   LIKELY_SANDBOX_DENIAL,
+  LIKELY_SOCKET_DENIAL,
   networkDenialHintLine,
   SANDBOX_STATUS_LINE,
+  socketDenialHintLine,
   unsandboxedNextStepLine,
 } from "./messages.ts";
 import type {
@@ -132,6 +134,21 @@ async function runUnwrapped(req: LaunchRequest, sandbox: SandboxRecord, env: Lau
   return { ...result, executed: argv, sandbox };
 }
 
+/**
+ * Which hint a denied stderr gets. Network and socket refusals are what
+ * `unsandboxed` can fix; a write denial (or any other EPERM, `kill 1` among
+ * them) is not, so it gets the hint but no next step.
+ */
+function denialHint(
+  stderr: string,
+  policy: SandboxPolicy,
+  env: LaunchEnv,
+): { readonly line: string; readonly escapable: boolean } {
+  if (LIKELY_NETWORK_DENIAL.test(stderr)) return { line: networkDenialHintLine(env.network), escapable: true };
+  if (LIKELY_SOCKET_DENIAL.test(stderr)) return { line: socketDenialHintLine(), escapable: true };
+  return { line: denialHintLine(policy.writeRoots, env.sharedTmp), escapable: false };
+}
+
 async function runWrapped(
   req: LaunchRequest,
   backend: SandboxBackend,
@@ -174,16 +191,14 @@ async function runWrapped(
     });
     const failed = result.exitCode !== 0;
     const denied = failed && LIKELY_SANDBOX_DENIAL.test(result.stderr);
-    const networkDenied = denied && LIKELY_NETWORK_DENIAL.test(result.stderr);
+    const hint = denied ? denialHint(result.stderr, policy, env) : undefined;
     const violations = backend.annotate(commandId, result.stderr);
     const extra = [
-      ...(denied
-        ? [networkDenied ? networkDenialHintLine(env.network) : denialHintLine(policy.writeRoots, env.sharedTmp)]
-        : []),
+      ...(hint !== undefined ? [hint.line] : []),
       // A failed wrapped command always says where it ran; the next step is
-      // added only when the failure looks like a denial the escape could fix.
+      // added only for a denial the escape can fix (network, local socket).
       ...(failed ? [SANDBOX_STATUS_LINE] : []),
-      ...(denied ? [unsandboxedNextStepLine(req.unsandboxedOffered === true)] : []),
+      ...(hint?.escapable === true ? [unsandboxedNextStepLine(req.unsandboxedOffered === true)] : []),
       ...(violations !== "" ? [violations] : []),
     ];
     return {

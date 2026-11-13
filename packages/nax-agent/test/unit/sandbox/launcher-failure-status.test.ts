@@ -4,6 +4,7 @@ import {
   networkDenialHintLine,
   SANDBOX_STATUS_LINE,
   type SandboxPolicy,
+  socketDenialHintLine,
   unsandboxedNextStepLine,
 } from "#src/sandbox/index";
 import { cleanupTempDir, makeFakeSandboxBackend, makeTempDir } from "#test/helpers/index";
@@ -36,7 +37,7 @@ async function runFailing(command: string, extra: { unsandboxedOffered?: boolean
 describe("failed wrapped command status (#2890)", () => {
   test("lowercase 'operation not permitted' gets the denial hint and the status line", async () => {
     const r = await runFailing("echo 'dial unix /var/run/docker.sock: socket: operation not permitted' >&2; exit 1");
-    expect(r.stderr).toContain("that failure may be a sandbox denial -- writable roots:");
+    expect(r.stderr).toContain(socketDenialHintLine());
     expect(r.stderr).toContain(SANDBOX_STATUS_LINE);
     expect(r.sandbox.denialHint).toBe(true);
   });
@@ -52,11 +53,51 @@ describe("failed wrapped command status (#2890)", () => {
     expect(r.sandbox.denialHint).toBe(true);
   });
 
+  const DOCKER = "dial unix /var/run/docker.sock: socket: operation not permitted";
+
+  test("a socket refusal gets its own hint, not the writable-roots hint", async () => {
+    const r = await runFailing(`echo '${DOCKER}' >&2; exit 1`);
+    expect(r.stderr).toContain(socketDenialHintLine());
+    expect(r.stderr).not.toContain("writable roots");
+    expect(r.sandbox.denialHint).toBe(true);
+  });
+
+  test("a plain EPERM keeps the denial hint and status line but gets no next step", async () => {
+    const r = await runFailing("echo 'kill: (1) - Operation not permitted' >&2; exit 1", { unsandboxedOffered: true });
+    expect(r.stderr).toContain("writable roots");
+    expect(r.stderr).toContain(SANDBOX_STATUS_LINE);
+    expect(r.stderr).not.toContain(unsandboxedNextStepLine(true));
+    expect(r.stderr).not.toContain(unsandboxedNextStepLine(false));
+  });
+
+  test("a read-only file system write denial gets no next step", async () => {
+    const r = await runFailing("echo 'cannot create /x: Read-only file system' >&2; exit 1", {
+      unsandboxedOffered: true,
+    });
+    expect(r.stderr).not.toContain("unsandboxed: true");
+  });
+
+  test("a network refusal gets the next step", async () => {
+    const r = await runFailing("echo 'socat E CONNECT gitlab.com:22: Forbidden' >&2; exit 1", {
+      unsandboxedOffered: true,
+    });
+    expect(r.stderr).toContain(unsandboxedNextStepLine(true));
+  });
+
+  test("a real server 403 is not a network denial", async () => {
+    const r = await runFailing("echo 'The requested URL returned error: 403' >&2; exit 22", {
+      unsandboxedOffered: true,
+    });
+    expect(r.sandbox.denialHint).toBeUndefined();
+    expect(r.stderr).not.toContain("note: this command ran");
+    expect(r.stderr).not.toContain("unsandboxed: true");
+  });
+
   test("next step offers unsandboxed only when the session advertises it", async () => {
-    const offered = await runFailing("echo 'x: operation not permitted' >&2; exit 1", { unsandboxedOffered: true });
+    const offered = await runFailing(`echo '${DOCKER}' >&2; exit 1`, { unsandboxedOffered: true });
     expect(offered.stderr).toContain(unsandboxedNextStepLine(true));
     expect(offered.stderr).toContain("`unsandboxed: true`");
-    const notOffered = await runFailing("echo 'x: operation not permitted' >&2; exit 1");
+    const notOffered = await runFailing(`echo '${DOCKER}' >&2; exit 1`);
     expect(notOffered.stderr).toContain(unsandboxedNextStepLine(false));
     expect(notOffered.stderr).not.toContain("unsandboxed: true");
     expect(notOffered.stderr).toContain("allowUnsandboxedCommands");

@@ -11,10 +11,12 @@ export {
   denialHintLine,
   LIKELY_NETWORK_DENIAL,
   LIKELY_SANDBOX_DENIAL,
+  LIKELY_SOCKET_DENIAL,
   networkDenialHintLine,
   rawBashRefusalReason,
   SANDBOX_STATUS_LINE,
   sandboxSentence,
+  socketDenialHintLine,
   unsandboxedNextStepLine,
   unsandboxedSentence,
 } from "./messages.ts";

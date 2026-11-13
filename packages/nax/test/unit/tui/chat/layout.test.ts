@@ -560,13 +560,27 @@ describe("layoutTranscript: tool cards", () => {
   test("#2890: a sandboxed Bash card ends its header with a muted sandboxed marker", () => {
     const line = headerOf([okEntry({ name: "Bash", input: { command: "ls" }, sandbox: "sandboxed" })]);
     expect(plainText(line)).toBe(`${theme.glyphs.bullet} Bash(ls) sandboxed`);
-    expect(spanWith(line, "sandboxed").color).toBe("muted");
+    expect(spanWith(line, " sandboxed").color).toBe("muted");
   });
 
   test("#2890: an unsandboxed Exec card ends its header with a muted unsandboxed marker", () => {
     const line = headerOf([okEntry({ name: "RunCommand", input: { argv: ["bun", "test"] }, sandbox: "unsandboxed" })]);
     expect(plainText(line).endsWith(" unsandboxed")).toBe(true);
-    expect(spanWith(line, "unsandboxed").color).toBe("muted");
+    expect(spanWith(line, " unsandboxed").color).toBe("muted");
+  });
+
+  test("#2890: a narrow header keeps the marker and never starts a row with a lone space", () => {
+    const entry = okEntry({ name: "Bash", input: { command: "echo aaaaaaaaaaaa bbbbbbbbbbbb" }, sandbox: "sandboxed" });
+    const lines = layout([entry], { width: NARROW_WIDTH });
+    expect(texts(lines).join("\n")).toContain("sandboxed");
+    for (const line of lines) expect(line[0]?.text).not.toBe(" ");
+    for (const line of lines.slice(1, 2))
+      expect(
+        line
+          .map((span) => span.text)
+          .join("")
+          .trim(),
+      ).not.toBe("");
   });
 
   test("#2890: a Bash card with no reported status draws no marker", () => {

@@ -199,7 +199,7 @@ function skillLines(entry: Extract<TranscriptEntry, { kind: "skill" }>, context:
 function toolHeader(model: ToolCardModel, context: LayoutContext): readonly StyledLine[] {
   const bullet = styled(context.theme.glyphs.bullet, { color: BULLET_COLORS[model.tone] });
   const argument = model.arg === undefined ? [] : [styled(`(${oneLine(sanitizeText(model.arg))})`, { bold: true })];
-  const marker = model.sandbox === undefined ? [] : [styled(SPACE), styled(model.sandbox, { color: "muted" })];
+  const marker = model.sandbox === undefined ? [] : [styled(`${SPACE}${model.sandbox}`, { color: "muted" })];
   return prefixedLine(
     [styled(oneLine(sanitizeText(model.title))), ...argument, ...marker],
     [bullet, styled(SPACE)],
