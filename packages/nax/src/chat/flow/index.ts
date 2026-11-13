@@ -31,6 +31,7 @@ export {
   type FlowRepoFailure,
   type FlowRepoReady,
   type FlowRepoState,
+  isFlowTreeDirty,
   normalizeGitHubRemote,
   readFlowRepoState,
 } from "./flow-repo";

@@ -4,14 +4,18 @@
  * koda reads the specs at the sha it is sent, creates a branch per feature and
  * refuses a repository it cannot recognise, so everything it needs is read here
  * first: the checked-out branch, a clean working tree, the head sha, a GitHub
- * origin and every spec path present at HEAD. The first failure is returned, in
- * that order, as one `[chat]` message — nothing is pushed and no card is shown.
+ * origin and every spec path present at that sha. The first failure is returned,
+ * in that order, as one `[chat]` message — nothing is pushed and no card is
+ * shown.
  *
- * The tool never commits: a dirty tree is a failure, untracked spec files
- * included. Git is reached only through `_flowRepoDeps`, which tests replace.
+ * The tool never commits, so an untracked spec is a failure too — and the
+ * clean-tree check asks git for untracked files explicitly, because a repository
+ * configured with `status.showUntrackedFiles=no` would otherwise report one as
+ * clean. Git is reached only through `_flowRepoDeps`, which tests replace.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { headSha, isDirty } from "@/finish";
+import { NaxError } from "@/errors";
+import { headSha } from "@/finish";
 import { gitWithTimeout, isPublishableBranch } from "@/utils/git";
 import type { FlowSendFeature } from "./flow-input";
 
@@ -58,7 +62,43 @@ export const _flowRepoDeps: {
   git: FlowGit;
   isDirty: (repoRoot: string) => Promise<boolean>;
   headSha: (repoRoot: string) => Promise<string | null>;
-} = { git: gitWithTimeout, isDirty, headSha };
+} = { git: gitWithTimeout, isDirty: isFlowTreeDirty, headSha };
+
+/**
+ * The status argv the clean-tree check issues.
+ *
+ * `--untracked-files` is passed explicitly rather than left to git's default:
+ * `status.showUntrackedFiles` may be configured to `no`, and then a bare
+ * `git status --porcelain` reports a tree holding an untracked spec as clean —
+ * the one state this check exists to catch. An explicit flag overrides that
+ * config, and `normal` (git's own default) is enough: an untracked directory is
+ * reported as a single entry, so the answer stays cheap on a large tree.
+ */
+const STATUS_ARGV = ["status", "--porcelain", "--untracked-files=normal"];
+
+/**
+ * Whether the working tree has any change at all — a modified tracked file or an
+ * untracked one, which counts because nothing here commits, and which counts
+ * whatever the repository's `status.showUntrackedFiles` is set to.
+ *
+ * This is `_flowRepoDeps.isDirty`'s default rather than `@/finish`'s `isDirty`,
+ * which cannot make that guarantee without changing every other caller of it.
+ *
+ * @param repoRoot - The repository to read
+ * @returns True when anything is uncommitted
+ * @throws NaxError `FLOW_REPO_STATUS_FAILED` when git cannot read the tree
+ */
+export async function isFlowTreeDirty(repoRoot: string): Promise<boolean> {
+  const status = await _flowRepoDeps.git(STATUS_ARGV, repoRoot);
+  if (status.exitCode !== 0) {
+    throw new NaxError(
+      `[chat-flow] git status failed in "${repoRoot}": ${status.stderr.trim() || `exit ${status.exitCode}`}`,
+      "FLOW_REPO_STATUS_FAILED",
+      { stage: "chat-flow", repoRoot },
+    );
+  }
+  return status.stdout.trim().length > 0;
+}
 
 /** The repository state a flow send may push from. */
 export interface FlowRepoReady {
@@ -148,12 +188,19 @@ async function remoteOrFailure(repoRoot: string): Promise<string | FlowRepoFailu
   };
 }
 
-/** The failure message for a spec path missing at HEAD, or `undefined` when they are all there. */
-async function specFailure(repoRoot: string, specPaths: readonly string[]): Promise<string | undefined> {
+/**
+ * The failure message for a spec path missing from `sha`, or `undefined` when they
+ * are all there.
+ *
+ * The paths are resolved against the sha the result carries, not against `HEAD`:
+ * another process may commit between the two reads, and koda reads each spec at
+ * the sha it is sent — so a spec `HEAD` has just gained is still unreadable there.
+ */
+async function specFailure(repoRoot: string, sha: string, specPaths: readonly string[]): Promise<string | undefined> {
   for (const specPath of specPaths) {
-    const present = await gitAnswer(["cat-file", "-e", `HEAD:${specPath}`], repoRoot);
+    const present = await gitAnswer(["cat-file", "-e", `${sha}:${specPath}`], repoRoot);
     if (present === null) {
-      return `[chat] the spec file "${specPath}" is not committed at HEAD; commit it before sending a flow`;
+      return `[chat] the spec file "${specPath}" is not committed at the sent commit; commit it before sending a flow`;
     }
   }
   return undefined;
@@ -163,7 +210,7 @@ async function specFailure(repoRoot: string, specPaths: readonly string[]): Prom
  * Read the repository state a flow is sent from, failing on the first check.
  *
  * @param repoRoot - The chat's repository root
- * @param specPaths - Every spec path the request names, checked at HEAD
+ * @param specPaths - Every spec path the request names, checked at the sha the result carries
  * @returns The branch, sha and normalised remote, or a `[chat]` message
  */
 export async function readFlowRepoState(repoRoot: string, specPaths: readonly string[]): Promise<FlowRepoState> {
@@ -181,7 +228,7 @@ export async function readFlowRepoState(repoRoot: string, specPaths: readonly st
   const remoteUrl = await remoteOrFailure(repoRoot);
   if (typeof remoteUrl !== "string") return remoteUrl;
 
-  const specs = await specFailure(repoRoot, specPaths);
+  const specs = await specFailure(repoRoot, sha, specPaths);
   if (specs !== undefined) return { ok: false, message: specs };
 
   return { ok: true, branch: name, sha, remoteUrl };

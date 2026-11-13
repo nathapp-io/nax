@@ -6,12 +6,14 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { withDepsRestore } from "@test/helpers";
+import { join } from "node:path";
+import { assertCaughtInstanceOf, withDepsRestore, withTempDir } from "@test/helpers";
 import {
   _flowRepoDeps,
   checkFlowBranch,
   type FlowRepoState,
   type FlowSendFeature,
+  isFlowTreeDirty,
   normalizeGitHubRemote,
   readFlowRepoState,
 } from "@/chat/flow";
@@ -83,6 +85,31 @@ function features(): FlowSendFeature[] {
   ];
 }
 
+/**
+ * Run one git command in `dir` for a fixture, isolated from the developer's own
+ * git configuration so a global `status.showUntrackedFiles` cannot decide what
+ * the test sees. Only fixture setup goes through it; the code under test never
+ * spawns.
+ */
+function runGit(dir: string, args: string[]): number {
+  return Bun.spawnSync(["git", ...args], {
+    cwd: dir,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    stdout: "ignore",
+    stderr: "ignore",
+  }).exitCode;
+}
+
+/** What one git command in `dir` prints, under the same isolation as `runGit`. */
+function gitStdout(dir: string, args: string[]): string {
+  const result = Bun.spawnSync(["git", ...args], {
+    cwd: dir,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    stderr: "ignore",
+  });
+  return result.stdout.toString().trim();
+}
+
 describe("normalizeGitHubRemote", () => {
   test("returns the lower-cased HTTPS form for an scp-style SSH remote (AC-1)", () => {
     expect(normalizeGitHubRemote("git@github.com:O/R.git")).toBe("https://github.com/o/r");
@@ -138,12 +165,12 @@ describe("readFlowRepoState — the successful read", () => {
     expect(calls.map((call) => call.args)).toEqual([
       ["symbolic-ref", "--short", "HEAD"],
       ["remote", "get-url", "origin"],
-      ["cat-file", "-e", `HEAD:${SPEC}`],
+      ["cat-file", "-e", `${SHA}:${SPEC}`],
     ]);
     expect(calls.every((call) => call.workdir === REPO_ROOT)).toBe(true);
   });
 
-  test("checks every spec path at HEAD, in the order the request lists them", async () => {
+  test("checks every spec path at the sha the result carries, in the order the request lists them", async () => {
     const calls = healthyGit();
     stubTree();
 
@@ -151,9 +178,31 @@ describe("readFlowRepoState — the successful read", () => {
 
     expect(state.ok).toBe(true);
     expect(calls.filter((call) => call.args[0] === "cat-file").map((call) => call.args[2])).toEqual([
-      `HEAD:${SPEC}`,
-      `HEAD:${OTHER_SPEC}`,
+      `${SHA}:${SPEC}`,
+      `${SHA}:${OTHER_SPEC}`,
     ]);
+  });
+
+  test("never asks about HEAD, which may have moved since the sha was read (F2)", async () => {
+    const calls = healthyGit();
+    stubTree();
+
+    await readFlowRepoState(REPO_ROOT, [SPEC]);
+
+    expect(calls.filter((call) => call.args.join(" ").includes("HEAD:"))).toEqual([]);
+  });
+
+  test("fails when a spec exists at the moved HEAD but not at the sha the result carries (F2)", async () => {
+    // HEAD now points at a later commit that added the spec; the sha read a moment
+    // earlier does not have it, so a HEAD-based check would pass a spec koda cannot read.
+    healthyGit((args) =>
+      args[0] === "cat-file" && args[2] === `${SHA}:${SPEC}` ? failed("fatal: Not a valid object name") : undefined,
+    );
+    stubTree();
+
+    const message = failureOf(await readFlowRepoState(REPO_ROOT, [SPEC]));
+
+    expect(message).toContain(SPEC);
   });
 
   test("accepts an https origin with a .git suffix", async () => {
@@ -239,6 +288,83 @@ describe("readFlowRepoState — the working tree", () => {
   });
 });
 
+/**
+ * The production clean-tree check, exercised against a real repository: the
+ * user's `status.showUntrackedFiles` must not be able to hide an untracked spec.
+ */
+describe("isFlowTreeDirty — the production clean-tree check", () => {
+  test("counts an untracked file when git is configured not to show untracked files (AC-8, F1)", async () => {
+    await withTempDir(async (dir) => {
+      expect(runGit(dir, ["init", "-q", "."])).toBe(0);
+      expect(runGit(dir, ["config", "status.showUntrackedFiles", "no"])).toBe(0);
+      await Bun.write(join(dir, SPEC), "# spec\n");
+
+      // The argv a bare `git status --porcelain` issues sees nothing here: this is
+      // exactly the configuration the check must not inherit.
+      expect(gitStdout(dir, ["status", "--porcelain"])).toBe("");
+      expect(await isFlowTreeDirty(dir)).toBe(true);
+    });
+  });
+
+  test("reports a clean tree for a repository with nothing in it (AC-8)", async () => {
+    await withTempDir(async (dir) => {
+      expect(runGit(dir, ["init", "-q", "."])).toBe(0);
+
+      expect(await isFlowTreeDirty(dir)).toBe(false);
+    });
+  });
+
+  test("reports a clean tree for a repository whose only change is committed (AC-8)", async () => {
+    await withTempDir(async (dir) => {
+      runGit(dir, ["init", "-q", "."]);
+      runGit(dir, ["config", "user.email", "nax@example.com"]);
+      runGit(dir, ["config", "user.name", "nax"]);
+      await Bun.write(join(dir, SPEC), "# spec\n");
+      expect(runGit(dir, ["add", "--", SPEC])).toBe(0);
+      expect(runGit(dir, ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "spec"])).toBe(0);
+
+      expect(await isFlowTreeDirty(dir)).toBe(false);
+    });
+  });
+
+  test("asks git for untracked files explicitly, in the repository root (F1)", async () => {
+    const calls = stubGit(() => ok());
+
+    await isFlowTreeDirty(REPO_ROOT);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args).toEqual(["status", "--porcelain", "--untracked-files=normal"]);
+    expect(calls[0]?.workdir).toBe(REPO_ROOT);
+  });
+
+  test("throws with the repository and git's answer when status fails (AC-9)", async () => {
+    stubGit((args) => (args[0] === "status" ? failed("fatal: index file corrupt") : ok()));
+
+    const caught: unknown = await isFlowTreeDirty(REPO_ROOT).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    assertCaughtInstanceOf(caught, Error, "isFlowTreeDirty rejection");
+    expect(caught.message).toContain("index file corrupt");
+    expect(caught.message).toContain(REPO_ROOT);
+  });
+
+  test("reports the unreadable state through readFlowRepoState with the production check in place (AC-9, F1)", async () => {
+    stubGit((args) => {
+      if (args[0] === "symbolic-ref") return ok("feat/x\n");
+      if (args[0] === "status") return failed("fatal: index file corrupt");
+      return ok();
+    });
+    _flowRepoDeps.headSha = async () => SHA;
+
+    const message = failureOf(await readFlowRepoState(REPO_ROOT, [SPEC]));
+
+    expect(message.startsWith("[chat] could not read the repository state: ")).toBe(true);
+    expect(message).toContain("index file corrupt");
+  });
+});
+
 describe("readFlowRepoState — the head sha", () => {
   test("fails with the no-commits message on an unborn branch (AC-10)", async () => {
     healthyGit();
@@ -265,8 +391,8 @@ describe("readFlowRepoState — the origin remote", () => {
 });
 
 describe("readFlowRepoState — the spec paths", () => {
-  test("fails with a message naming the one spec path absent at HEAD (AC-13)", async () => {
-    healthyGit((args) => (args[2] === `HEAD:${OTHER_SPEC}` ? failed("fatal: Not a valid object name") : undefined));
+  test("fails with a message naming the one spec path absent at the sha (AC-13)", async () => {
+    healthyGit((args) => (args[2] === `${SHA}:${OTHER_SPEC}` ? failed("fatal: Not a valid object name") : undefined));
     stubTree();
 
     const message = failureOf(await readFlowRepoState(REPO_ROOT, [SPEC, OTHER_SPEC]));
