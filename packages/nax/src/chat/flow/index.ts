@@ -23,6 +23,14 @@ export {
   type FlowHeld,
 } from "./flow-koda";
 export {
+  _flowProviderDeps,
+  createFlowProvider,
+  FLOW_PROVIDER_ID,
+  FLOW_PUSH_COMMIT_MESSAGE,
+  FLOW_SEND_INPUT_SCHEMA,
+  type FlowProviderOptions,
+} from "./flow-provider";
+export {
   _flowRepoDeps,
   checkFlowBranch,
   type FlowBranchFeature,
