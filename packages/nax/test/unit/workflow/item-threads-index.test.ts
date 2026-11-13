@@ -9,8 +9,10 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { readinessReasons } from "@/workflow/approval";
 import { runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
-import { _itemPublishPacerDeps } from "@/workflow/item-publish-pacer";
+import { _itemPublishPacerDeps, createItemPublishPacer } from "@/workflow/item-publish-pacer";
+import { readItemThreads } from "@/workflow/item-thread-state";
 import { itemKey, parseItemIndex, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
+import { type IndexContext, writeItemIndex } from "@/workflow/item-threads-index";
 import { type ItemThreadsInput, postItemThreads } from "@/workflow/item-threads-post";
 import { buildOpenItems } from "@/workflow/open-items";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
@@ -161,6 +163,46 @@ function gitlabHarness(indexAuthor = "bot") {
   };
   return { deps, writes, reads };
 }
+
+describe("writeItemIndex uncertain writes", () => {
+  test.each(["unparseable", "timeout", "server-error"] as const)(
+    "D-3 retains an earlier %s outcome across later pre-notice and final refusals",
+    async (failure) => {
+      const h = harness();
+      let calls = 0;
+      const deps: ForgeDeps = {
+        ...h.deps,
+        run: async () => {
+          calls++;
+          if (calls === 1) {
+            if (failure === "unparseable") return { exitCode: 0, stdout: "not-json", stderr: "" };
+            if (failure === "server-error") return { exitCode: 1, stdout: "", stderr: "gh: HTTP 502" };
+            throw new NaxError("[forge] Request timed out", "FORGE_TIMEOUT", { stage: "forge" });
+          }
+          return { exitCode: 1, stdout: "", stderr: RATE_LIMIT };
+        },
+      };
+      const context: IndexContext = {
+        ref: { forge: "github", host: "github.com", repo: "o/r", number: 7 },
+        read: readItemThreads([], [], "bot"),
+        login: "bot",
+        deps,
+        cwd: "/repo",
+        info: { headSha: HEAD },
+        pacer: createItemPublishPacer({ writeGapMs: 0, retryBackoffMs: 0, maxRetries: 0, maxWaitMs: 0 }),
+      };
+      expect(await writeItemIndex({ keys: [] }, context)).toEqual({ written: false, failure: "unconfirmed" });
+      expect(context.postedIndex).toBeUndefined();
+      expect(context.indexWriteUnconfirmed).toBe(true);
+      // Another pre-notice write and the final write are both refused. Neither settles the first write.
+      for (let later = 0; later < 2; later++) {
+        expect(await writeItemIndex({ keys: [] }, context)).toEqual({ written: false, failure: "refused" });
+        expect(context.indexWriteUnconfirmed).toBe(true);
+      }
+      expect(calls).toBe(3);
+    },
+  );
+});
 
 describe("postItemThreads index and closing", () => {
   test("AC-11/12 GitLab edits a replied own index without posting a new note", async () => {
