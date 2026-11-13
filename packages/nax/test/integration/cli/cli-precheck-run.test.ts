@@ -15,6 +15,7 @@ import {
   makePRD,
   makeStory,
   makeTempDir,
+  withDepsRestore,
 } from "@test/helpers";
 import type { NaxConfig } from "@/config";
 import { DEFAULT_CONFIG } from "@/config";
@@ -22,6 +23,17 @@ import { run } from "@/execution";
 import type { NaxStatusFile } from "@/execution/status-file";
 import type { PRD } from "@/prd/types";
 import { EXIT_CODES, runPrecheck } from "@/precheck";
+import { _checkAgentsDeps } from "@/precheck/checks-agents";
+
+// multi-agent-health probes every installed agent binary with `<agent> --version`
+// (5s deadline each), so its cost depends on which agents this machine happens to
+// have and how fast their CLIs boot — ~1.5s here, which is most of a 5s per-test
+// budget. It is an always-passing informational warning that no test in this file
+// asserts on, so probe nothing and keep the budget for the precheck itself.
+withDepsRestore(_checkAgentsDeps, ["getAgentVersions"]);
+beforeEach(() => {
+  _checkAgentsDeps.getAgentVersions = async () => [];
+});
 
 // Requires real claude binary — skipped by default, run with FULL=1.
 const skipInCI = fullTest;
