@@ -1,7 +1,9 @@
 import { appendFile, readdir, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import type { ToolCallRecord } from "@nathapp/nax-agent";
 import { NaxError } from "@/errors";
 import { ALWAYS_EXCLUDED } from "@/review";
+import { TOOL_READ_CREDIT_MAX_BYTES } from "./review-tool-reads";
 import { _workflowDeps } from "./step-context";
 
 export const DIFF_PART_MAX_BYTES = 32_000;
@@ -11,6 +13,33 @@ const CONTINUATION = "\\ continued: ";
 
 export type DiffPartText = { text: string; files: readonly string[] };
 export type DiffPart = { path: string; files: readonly string[] };
+
+/** Changed files whose every diff part was shown whole by an audited Read call. */
+export function toolReadParts(calls: readonly ToolCallRecord[], parts: readonly DiffPart[]): string[] {
+  const readPaths = new Set<string>();
+  for (const call of calls) {
+    if (
+      call.tool === "Read" &&
+      call.outcome === "ok" &&
+      call.truncated === false &&
+      call.resultBytes <= TOOL_READ_CREDIT_MAX_BYTES &&
+      call.input.offset === undefined &&
+      call.input.limit === undefined &&
+      typeof call.input.path === "string"
+    ) {
+      readPaths.add(call.input.path);
+    }
+  }
+  const holdingParts = new Map<string, string[]>();
+  for (const part of parts) {
+    for (const file of part.files) {
+      const paths = holdingParts.get(file) ?? [];
+      paths.push(part.path);
+      holdingParts.set(file, paths);
+    }
+  }
+  return [...holdingParts].filter(([, paths]) => paths.every((path) => readPaths.has(path))).map(([file]) => file);
+}
 
 export const _branchDiffPartsDeps = {
   list: (directory: string): Promise<string[]> => readdir(directory),
