@@ -3,7 +3,7 @@
   "feature": "ci-starved-checks",
   "branchName": "feat/ci-starved-checks",
   "createdAt": "2026-10-22T00:00:00Z",
-  "updatedAt": "2026-11-13T06:30:44.774Z",
+  "updatedAt": "2026-11-13T06:48:04.759Z",
   "userStories": [
     {
       "id": "US-001",
@@ -167,14 +167,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive state propagation across existing publish/reason helpers; the repair exclusion already exists and needs a behavioral regression guard."
+        "reasoning": "Additive state propagation across existing publish/reason helpers; the repair exclusion already exists and needs a behavioral regression guard.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/approval.ts",
@@ -193,7 +196,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0f036e13ca1407c1c3c55ff4f27b6f5f21973c0d"
     },
     {
       "id": "US-004",
