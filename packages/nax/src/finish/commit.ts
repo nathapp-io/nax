@@ -11,7 +11,7 @@ import { NaxError } from "../errors";
 import { gitWithTimeout } from "../utils/git";
 import { relativeInsideRoot } from "./safe-path";
 
-export const _finishGitDeps = { git: gitWithTimeout };
+export const _finishGitDeps = { git: gitWithTimeout, randomUUID: () => crypto.randomUUID() };
 
 /**
  * Push can legitimately outrun the 10s default in `@/utils/git`; a gate that
@@ -118,6 +118,30 @@ export async function commitFixes(
 }
 
 /**
+ * Bind a URL without letting Git rewrite it again. Git rewrites each explicit
+ * pushurl once with insteadOf and ignores pushInsteadOf for explicit pushurls.
+ * A fresh opaque alias is the only rewrite input; our exact-match rule wins over
+ * configured prefixes. Its replacement is the verified URL, which is NOT rewritten
+ * recursively. All settings are process-local (-c); authentication config remains
+ * available and no temporary remote is persisted to the repository.
+ */
+function boundPushArgs(destination: string): string[] {
+  const remote = `nax-bound-${_finishGitDeps.randomUUID()}`;
+  const alias = `${remote}://push`;
+  return [
+    "-c",
+    `remote.${remote}.url=${alias}`,
+    "-c",
+    `remote.${remote}.pushurl=${alias}`,
+    "-c",
+    `url.${destination}.insteadOf=${alias}`,
+    "push",
+    "--set-upstream",
+    remote,
+  ];
+}
+
+/**
  * Commit any outstanding fixes and push the branch to `origin`.
  *
  * The push is unconditional — even with nothing new to commit the local
@@ -136,10 +160,10 @@ export async function commitFixes(
  * `remote` binds the destination: a caller that verified where a push goes passes
  * the URL it verified, rather than naming `origin` and letting git resolve the
  * remote again — a remote's push URL can differ from its fetch URL (`pushurl`) and
- * can be rewritten between the check and the push. The URL is used verbatim so the
- * transport it was configured with (SSH, a credential-bearing HTTPS URL) still
- * authenticates; it is never put in an error message or an error context, because
- * a configured push URL may carry a credential.
+ * can be rewritten between the check and the push. A process-local alias binds
+ * that URL without recursively applying Git's URL rewrites (see boundPushArgs).
+ * Its transport (SSH, a credential-bearing HTTPS URL) still authenticates. The URL
+ * is never put in an error message or context, because it may carry a credential.
  */
 export async function commitAndPush(
   repoRoot: string,
@@ -152,8 +176,9 @@ export async function commitAndPush(
     : await commitFixes(repoRoot, message, opts);
 
   const source = opts.sourceSha === undefined ? branch : `${opts.sourceSha}:${BRANCH_REF_PREFIX}${branch}`;
-  const destination = opts.remote ?? DEFAULT_PUSH_REMOTE;
-  const push = await _finishGitDeps.git(["push", "--set-upstream", destination, source], repoRoot, PUSH_TIMEOUT_MS);
+  const pushArgs =
+    opts.remote === undefined ? ["push", "--set-upstream", DEFAULT_PUSH_REMOTE] : boundPushArgs(opts.remote);
+  const push = await _finishGitDeps.git([...pushArgs, source], repoRoot, PUSH_TIMEOUT_MS);
   if (push.exitCode !== 0) {
     throw new NaxError(
       `git push of "${branch}" failed: ${push.stderr.trim() || `exit ${push.exitCode}`}`,

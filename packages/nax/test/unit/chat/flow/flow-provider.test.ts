@@ -373,6 +373,21 @@ describe("send — after the card", () => {
     expect(kodaCalls).toHaveLength(1);
   });
 
+  test.each([
+    "http://user:token@github.com/o/r.git",
+    "HTTP://user:token@github.com/o/r.git",
+    "http://github.com/o/r.git",
+  ])("rejects unencrypted push destination %s (F4)", async (url) => {
+    _flowProviderDeps.readFlowPushUrl = async () => ({ ok: true, url });
+
+    const result = await send(input);
+
+    expect(result).toEqual({ isError: true, content: PUSH_TARGET_MOVED });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+    expect(result.content).not.toContain("token");
+  });
+
   test("stops before pushing when the push destination is another repository (F1)", async () => {
     _flowProviderDeps.readFlowPushUrl = async () => ({ ok: true, url: "git@github.com:someone/else.git" });
 

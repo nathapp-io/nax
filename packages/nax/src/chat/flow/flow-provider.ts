@@ -54,8 +54,8 @@ const DECLINED_MESSAGE =
   "[chat] the user declined sending the flow to koda; do not retry with different arguments unless the user asks";
 /** Nothing was pushed: the commit the card described is no longer the one the branch is on. */
 const BRANCH_CHANGED_MESSAGE = "[chat] the branch changed while the card was open; nothing was pushed";
-/** HTTP(S) URLs, with any `user:token@` in front of the host removed so the repository can be read. */
-const HTTPS_USERINFO_PREFIX = /^https?:\/\/[^/@]+@/i;
+/** HTTPS only: stripping userinfo must never upgrade HTTP during verification. */
+const HTTPS_USERINFO_PREFIX = /^https:\/\/[^/@]+@/i;
 
 /** Nothing was pushed: the branch or the origin the push would resolve is no longer the one carded. */
 const PUSH_TARGET_MOVED_MESSAGE =
@@ -395,10 +395,10 @@ async function createFlow(
  * push will resolve is verified separately, the destination the push is addressed
  * to is resolved and checked against the carded repository, and the push itself
  * names the carded commit (`sourceSha`) and that verified destination (`remote`):
- * `commitAndPush` then runs
- * `git push --set-upstream <verified push URL> <sha>:refs/heads/<branch>`, so
- * neither a commit another process lands on the branch nor a remote repointed
- * after the check can decide what is pushed or where. A post-push branch-tip read
+ * `commitAndPush` binds that URL through a process-local alias that prevents a
+ * second URL rewrite, and pushes `<sha>:refs/heads/<branch>`. Neither a commit
+ * another process lands on the branch nor a remote or URL rewrite changed after
+ * the check can decide what is pushed or where. A post-push branch-tip read
  * would not add anything to that — it cannot undo a push, and it would fail a
  * correct push whenever an unrelated commit lands afterwards.
  */

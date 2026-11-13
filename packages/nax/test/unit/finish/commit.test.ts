@@ -6,7 +6,7 @@ import { _finishGitDeps, commitAndPush, commitFixes, PUSH_TIMEOUT_MS } from "@/f
 type GitCall = { args: string[]; workdir: string; timeoutMs?: number };
 type GitResult = { stdout: string; stderr: string; exitCode: number };
 
-withDepsRestore(_finishGitDeps, ["git"]);
+withDepsRestore(_finishGitDeps, ["git", "randomUUID"]);
 
 /** Records every call so a test can assert argv shape and per-call timeout. */
 function makeGitStub(handler: (call: GitCall) => GitResult) {
@@ -291,17 +291,30 @@ describe("commitAndPush", () => {
       remote: "git@github.com:o/r.git",
     });
 
-    const pushCall = calls.find((c) => c.args[0] === "push");
-    // The destination is the URL that was verified, in the transport it was configured
-    // with — SSH here — so a repointed `origin` cannot redirect the push.
-    expect(pushCall?.args).toEqual(["push", "--set-upstream", "git@github.com:o/r.git", "0123abcd:refs/heads/feat/x"]);
+    // A fresh alias is rewritten once into the verified URL; that replacement is
+    // not itself rewritten. An explicit pushurl also bypasses pushInsteadOf.
+    const bound = calls[0]?.args.at(-2);
+    expect(bound).toMatch(/^nax-bound-/);
+    expect(calls[0]?.args).toEqual([
+      "-c",
+      `remote.${bound}.url=${bound}://push`,
+      "-c",
+      `remote.${bound}.pushurl=${bound}://push`,
+      "-c",
+      `url.git@github.com:o/r.git.insteadOf=${bound}://push`,
+      "push",
+      "--set-upstream",
+      bound,
+      "0123abcd:refs/heads/feat/x",
+    ]);
+    expect(calls[0]?.timeoutMs).toBe(PUSH_TIMEOUT_MS);
   });
 
   test("a push failure names the branch, never the remote a credential may sit in (F1)", async () => {
     const { git } = makeGitStub((call) => {
       if (call.args[0] === "rev-parse") return ok("sha\n");
       if (call.args[0] === "status") return ok("");
-      if (call.args[0] === "push") return fail("remote rejected");
+      if (call.args.includes("push")) return fail("remote rejected");
       return ok();
     });
     _finishGitDeps.git = git;
