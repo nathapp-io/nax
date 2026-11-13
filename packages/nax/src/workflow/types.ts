@@ -13,6 +13,7 @@ export type {
   WorkflowFindingKind,
   WorkflowSeverity,
 } from "@/operations";
+export type { ConfigChangeRefusal } from "./config-change";
 
 import type {
   GateName,
@@ -21,6 +22,8 @@ import type {
   WorkflowFindingDraft,
   WorkflowSeverity,
 } from "@/operations";
+import type { QualityCommandKey } from "../advisor";
+import type { ConfigChangeRefusal } from "./config-change";
 
 export type GateState = "green" | "red" | "skipped";
 
@@ -51,6 +54,21 @@ export interface WorkflowRuling {
   readonly coercedFrom?: "defer";
 }
 
+/**
+ * US-004 (gate-config-route, #2897/#2898): one config change a story's loop recorded — applied or
+ * refused — as `result.json` and `nax workflow status` keep it. `from` is the command the key held
+ * before the change; `reason` names why a change was refused and is absent when it was applied.
+ */
+export interface ConfigChangeRecord {
+  readonly round: number;
+  readonly key: QualityCommandKey;
+  readonly from?: string;
+  readonly to: string;
+  readonly applied: boolean;
+  readonly reason?: ConfigChangeRefusal;
+  readonly decisionId: string;
+}
+
 export interface WorkflowStoryRecord {
   /** HEAD before the pending fix, retained until its re-review completes. */
   readonly fixBase?: string;
@@ -73,6 +91,13 @@ export interface WorkflowStoryRecord {
   readonly tokensByRole?: Readonly<Record<string, RoleTokens>>;
   readonly startedAt: string;
   readonly endedAt?: string;
+  /**
+   * US-004 (gate-config-route): every config change this story's loop recorded, oldest first,
+   * appended through the story env's `recordConfigChange` sink — never through the shallow `update`
+   * patch, which would drop an earlier one. Absent until a change is recorded, and on records
+   * written before the field existed.
+   */
+  readonly configChanges?: readonly ConfigChangeRecord[];
 }
 
 export interface WorkflowResultFile {

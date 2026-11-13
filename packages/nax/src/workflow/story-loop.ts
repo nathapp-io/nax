@@ -11,7 +11,8 @@
  */
 import { NaxError } from "@/errors";
 import { type GraphState, runStepGraph, type StepGraphHooks, type StepGraphRunOptions } from "@/step-graph";
-import type { WorkflowAdvisor } from "./advisor";
+import type { ConfigChangeAnswer, ImplementerQuestionFacts, WorkflowAdvisor } from "./advisor";
+import type { ConfigChangeOutcome } from "./config-change";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import type { LedgerWriteOptions } from "./ledger";
 import type { StepModel } from "./run-log";
@@ -19,6 +20,7 @@ import { STORY_GRAPH } from "./story-graph";
 import type { ReviewOutcome } from "./story-review";
 import { initialStoryState } from "./story-steps";
 import type {
+  ConfigChangeRecord,
   GateName,
   GateRunResult,
   GateState,
@@ -80,10 +82,29 @@ export interface StoryLoopSteps {
   reportExists?(): Promise<boolean>;
   /** The model a step will run on, for its start line (nax#2491 P6). Optional: absent names none. */
   modelFor?(step: "implementer" | "story-review" | "re-review", turn?: ImplementTurn): StepModel | undefined;
+  /**
+   * US-004 (gate-config-route, #2897/#2898): what the implementer-question advisor may act on for
+   * these red gates — the paths no session may write, the commands the gates run today, and the
+   * config changes nax's rule allows. Optional so a caller that never asks an advisor still compiles;
+   * absent means the advisor is asked without facts (its menu is then `answer` and `hold` only).
+   */
+  configFacts?(redGates: readonly GateName[]): Promise<ImplementerQuestionFacts>;
+  /**
+   * US-004: apply the config change the advisor picked. The wiring swaps the reloaded config and
+   * the refreshed package view into the story's own step context, so the story's later gates run the
+   * changed command. Optional: absent means no change is ever applied, and the run keeps today's.
+   */
+  applyConfigChange?(change: ConfigChangeAnswer): Promise<ConfigChangeOutcome>;
 }
 export interface StoryLoopSink {
   update(patch: Partial<WorkflowStoryRecord>): Promise<void>;
   ledger(text: string, options?: LedgerWriteOptions): Promise<void>;
+  /**
+   * US-004 (gate-config-route): append one config change to the story record and persist it.
+   * Appending — rather than the shallow `update` patch — is what keeps an earlier change, including
+   * one a resumed record already carried, when a second is recorded. Optional for existing callers.
+   */
+  recordConfigChange?(entry: ConfigChangeRecord): Promise<void>;
 }
 export interface StoryLoopEnv {
   readonly storyId: string;

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeLogger, makeNaxConfig } from "@test/helpers";
-import { createConfigLoader, pickSelector } from "@/config";
-import { _packagesDeps, createPackageRegistry, packageOverrideKey } from "@/runtime/packages";
+import { createConfigLoader, pickSelector, qualityConfigSelector } from "@/config";
+import { _packagesDeps, createPackageRegistry, type PackageView, packageOverrideKey } from "@/runtime/packages";
 
 const minConfig = makeNaxConfig({ routing: { strategy: "keyword" } });
 const routingSel = pickSelector("routing-pkg-test", "routing");
@@ -369,6 +369,33 @@ describe("PackageRegistry — unknown package key is loud (#2069)", () => {
     await registry.hydrate(["apps/web-ui"], async () => null);
     registry.resolve(undefined);
     expect(warnings).toEqual([]);
+  });
+});
+
+// US-004 (gate-config-route, #2897): the gate ops read their command through
+// `packageView.select(...)`, so a changed `.nax/mono/<pkg>/config.json` only reaches
+// the next gate if `refresh` returns a NEW view carrying the new values — a reloaded
+// config object alone would leave the cached view, and its selected commands, stale.
+describe("PackageRegistry.refresh (US-004)", () => {
+  const scopedCommand = (view: PackageView): string | string[] | undefined =>
+    view.select(qualityConfigSelector).quality.commands.testScoped;
+
+  test("AC-1: a changed override file's new command is what the refreshed view selects", async () => {
+    // Stands in for the package's config file: `refresh` re-reads it, `hydrate` had it already.
+    let testScoped = "bun test {{files}}";
+    const override = async (_root: string, dir: string) =>
+      dir === "apps/admin" ? makeNaxConfig({ quality: { commands: { testScoped } } }) : null;
+    const loader = createConfigLoader(makeNaxConfig({ quality: { commands: { testScoped } } }));
+    const registry = createPackageRegistry(loader, "/repo");
+    await registry.hydrate(["apps/admin"], override);
+    expect(scopedCommand(registry.resolve("apps/admin"))).toBe("bun test {{files}}");
+
+    testScoped = "bun test --isolate {{files}}";
+    const refreshed = await registry.refresh("apps/admin", override);
+
+    expect(scopedCommand(refreshed)).toBe("bun test --isolate {{files}}");
+    // The later resolve() is the one a subsequent gate op performs.
+    expect(scopedCommand(registry.resolve("apps/admin"))).toBe("bun test --isolate {{files}}");
   });
 });
 
