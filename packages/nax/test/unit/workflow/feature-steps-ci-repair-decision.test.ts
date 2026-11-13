@@ -15,6 +15,7 @@ import { NaxError } from "@/errors";
 import type { FailedCheck } from "@/forge";
 import { markdownFence } from "@/utils/markdown-fence";
 import type { FeatureLimits } from "@/workflow/branch-fix-rounds";
+import { ciRepairPlan } from "@/workflow/ci-repair-steps";
 import type { FeatureEnv, FeatureSteps } from "@/workflow/feature-machine";
 import { FEATURE_STEPS, newFeatureRecord } from "@/workflow/feature-record";
 import { ciRepairDecision, publishStep } from "@/workflow/feature-steps";
@@ -40,6 +41,14 @@ const DRAFT_FAILED: PublishOutcome = {
 
 const READY: PublishOutcome = { outcome: "ready", ci: "green", url: PR_URL, reasons: [] };
 const PENDING: PublishOutcome = { outcome: "draft", ci: "pending", url: PR_URL, reasons: ["CI still pending"] };
+/** US-003: a starved CI never failed — its checks never got a runner — so it is not a repair either. */
+const STARVED: PublishOutcome = {
+  outcome: "draft",
+  ci: "starved",
+  url: PR_URL,
+  ciDetail: "1 check(s) never got a runner: e2e; re-run them, or accept with --waive-starved <reason>",
+  reasons: ["CI starved: 1 check(s) never got a runner: e2e; re-run them, or accept with --waive-starved <reason>"],
+};
 
 /** One failed check, with the url the finding points at. */
 const E2E: FailedCheck = { name: "e2e", url: "u", excerpt: "boom" };
@@ -215,6 +224,24 @@ describe("the CI repair decision after publish (US-006)", () => {
     await publishStep(h.env, h.env.record);
     expect(h.reads).toEqual([]);
     // The control: the same seams with a failed CI do read.
+    expect(await readsOf({ checks: [E2E], limits: LIMITS })).toBe(1);
+  });
+
+  // US-003: a starved CI never got a runner, so it never failed — there is nothing to repair, and the
+  // repair guard stays `ci === "failed"` alone. The draft, its CI state and its detail stand as published.
+  test("AC-6: a starved draft is not a repair and reads no CI logs", async () => {
+    const h = harness({ published: STARVED, checks: [E2E], limits: LIMITS });
+    expect(await ciRepairPlan(h.env, h.env.record, STARVED, HEAD)).toBeUndefined();
+    expect(h.reads).toEqual([]);
+    const out = await publishStep(h.env, h.env.record);
+    expect(out.exit).toBeUndefined();
+    expect(out.patch).toMatchObject({ outcome: "draft", ci: "starved", url: PR_URL });
+    expect(out.patch.ciRepairFindings).toBeUndefined();
+    // The premise: the CI logs were never read, and the starved detail is recorded as it was reported.
+    expect(h.reads).toEqual([]);
+    expect(h.ledger).not.toContain("CI failed: e2e (repairing)");
+    expect(out.patch.ciDetail).toBe(STARVED.ciDetail);
+    // The control: the same seams with a failed CI do read, and do repair.
     expect(await readsOf({ checks: [E2E], limits: LIMITS })).toBe(1);
   });
 

@@ -18,12 +18,16 @@ import { defaultForgeDeps, type ForgeKind, type ForgeRunResult } from "@/forge";
 import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
 import { cancellableDelay } from "@/utils/bun-deps";
+import { EMPTY_STARVED_LEDGER, type StarvedLedger, starvedAtDeadline } from "./ci-starved";
+import { headMismatchDetail, readHeadSha, settlePoll, type WaitContext } from "./ci-wait-starved";
 
-export type CiWaitOutcome = "green" | "failed" | "pending" | "conflicting" | "no-checks" | "unavailable";
+export type CiWaitOutcome = "green" | "failed" | "pending" | "conflicting" | "no-checks" | "unavailable" | "starved";
 
 export interface CiWaitResult {
   readonly outcome: CiWaitOutcome;
   readonly detail: string;
+  /** Present exactly when `outcome` is `"starved"`: the checks no runner ever picked up (US-002). */
+  readonly starvedChecks?: readonly string[];
 }
 
 /**
@@ -31,9 +35,15 @@ export interface CiWaitResult {
  * still pending blocks too (strict green, ruled 2026-10-21). Every readiness decision asks this
  * one function, so the workflow's own publish and `nax workflow promote` cannot disagree about
  * whether CI is done (`nax bot fix` joins them in US-005).
+ *
+ * US-004: `waiveStarved` is the one explicit exception. A check that never got a runner has no
+ * verdict CI can reach on its own, so a human (`--waive-starved <reason>`) may accept it. The
+ * option widens the rule for `starved` alone — `failed`, `pending`, `conflicting`, `no-checks`
+ * and `unavailable` stay blocked, and no run waives CI without being asked to.
  */
-export function ciAllowsReady(outcome: CiWaitOutcome): boolean {
-  return outcome === "green";
+export function ciAllowsReady(outcome: CiWaitOutcome, options?: { readonly waiveStarved?: boolean }): boolean {
+  if (outcome === "green") return true;
+  return outcome === "starved" && options?.waiveStarved === true;
 }
 
 /** Consecutive unreadable polls (CLI error, spawn failure, unparseable output) that end the wait (nax#2550). */
@@ -64,7 +74,7 @@ const RUN_SCOPE = "_run";
 /** The heartbeat's stand-in when no summary has been logged yet (a CLI error, no checks reported). */
 const NO_SUMMARY = "no CI status yet";
 
-type Poll =
+export type Poll =
   | {
       readonly state: "green" | "failed" | "waiting";
       readonly summary?: string;
@@ -75,6 +85,8 @@ type Poll =
       readonly checks?: string;
       readonly sha?: string;
       readonly mismatch?: string;
+      /** The poll's parsed checks, for the starved rules (US-002); GitHub polls only. */
+      readonly ghChecks?: readonly GhCheck[];
     }
   | { readonly state: "error" | "conflicting" | "unavailable"; readonly detail: string };
 
@@ -99,16 +111,28 @@ function cliError(r: ForgeRunResult): Poll {
   return { state: "error", detail: r.stderr.trim() || `exit ${r.exitCode}` };
 }
 
-interface GhCheck {
+export interface GhCheck {
   readonly name: string;
   readonly bucket: string;
+  /** GitHub's own state (`QUEUED`, `IN_PROGRESS`, `CANCELLED`…) — the deadline rule reads it. */
+  readonly state: string;
+  /** The check's target URL; for an Actions check it is the job URL (US-002). */
+  readonly link?: string;
+}
+
+/** One parsed check; `link` is spread in only when GitHub reported one, so a payload without it is unchanged. */
+function ghCheck(value: unknown): GhCheck {
+  const check = isRecord(value) ? value : {};
+  return {
+    name: typeof check.name === "string" ? check.name : "",
+    bucket: typeof check.bucket === "string" ? check.bucket : "pending",
+    state: typeof check.state === "string" ? check.state : "",
+    ...(typeof check.link === "string" ? { link: check.link } : {}),
+  };
 }
 
 function ghChecks(value: readonly unknown[]): GhCheck[] {
-  return value.map((c) => ({
-    name: isRecord(c) && typeof c.name === "string" ? c.name : "",
-    bucket: isRecord(c) && typeof c.bucket === "string" ? c.bucket : "pending",
-  }));
+  return value.map(ghCheck);
 }
 
 /** `3/15 passed, 12 pending`, plus the failing names — `passed` is the set `classifyGh` calls green. */
@@ -139,13 +163,14 @@ function classifyGh(r: ForgeRunResult): Poll {
       state: "failed",
       summary,
       checks: listed,
+      ghChecks: checks,
       pending,
       failureDetail: `CI failed: ${failed.map((c) => c.name).join(", ")}; ${pending} still pending`,
     };
   }
   return checks.every((c) => GH_OK.has(c.bucket))
-    ? { state: "green", summary, checks: listed }
-    : { state: "waiting", summary, checks: listed };
+    ? { state: "green", summary, checks: listed, ghChecks: checks }
+    : { state: "waiting", summary, checks: listed, ghChecks: checks };
 }
 
 /** GitLab can expose the commit on either pipeline object. */
@@ -218,7 +243,7 @@ async function githubWaiting(poll: Poll, prRef: string, cwd: string): Promise<Po
 
 function checksArgv(forge: ForgeKind, prRef: string): string[] {
   return forge === "github"
-    ? ["gh", "pr", "checks", prRef, "--json", "name,state,bucket"]
+    ? ["gh", "pr", "checks", prRef, "--json", "name,state,bucket,link"]
     : ["glab", "mr", "view", prRef, "--output", "json"];
 }
 
@@ -302,11 +327,7 @@ async function waitWithHeartbeat(
 /** Only a would-be green poll is held back; absent SHAs preserve the auxiliary read's fail-open contract. */
 function bindToHead(poll: Poll, expectedSha?: string): Poll {
   if (poll.state !== "green" || !expectedSha || !poll.sha || poll.sha === expectedSha) return poll;
-  return {
-    ...poll,
-    state: "waiting",
-    mismatch: `checks report ${poll.sha.slice(0, 8)} but HEAD is ${expectedSha.slice(0, 8)}`,
-  };
+  return { ...poll, state: "waiting", mismatch: headMismatchDetail(poll.sha, expectedSha) };
 }
 
 function terminalPoll(poll: Poll): CiWaitResult | undefined {
@@ -387,6 +408,48 @@ function checkHistory() {
   };
 }
 
+/** The latest poll's checks the wait would not call green; the starved deadline rule reads only these. */
+function nonGreenChecks(checks: readonly GhCheck[] | undefined): readonly GhCheck[] {
+  return (checks ?? []).filter((check) => !GH_OK.has(check.bucket));
+}
+
+/**
+ * The deadline's `starved` verdict, bound to the head like a green or a failed one (US-002). A
+ * waiting GitHub poll carries the head `githubWaiting` read, so a deadline poll for another head
+ * ends `unavailable` instead of exposing a waivable verdict for checks that are not this head's.
+ * An unreadable head leaves the poll as it is (fail open, as for green), and a deadline the
+ * starvation rule does not apply to is `undefined`, so today's `pending` stands.
+ */
+function starvedAtDeadlineBound(input: {
+  readonly poll: Poll;
+  readonly ledger: StarvedLedger;
+  readonly expectedSha?: string;
+}): CiWaitResult | undefined {
+  const starved =
+    "ghChecks" in input.poll ? starvedAtDeadline(nonGreenChecks(input.poll.ghChecks), input.ledger) : undefined;
+  if (starved === undefined || input.expectedSha === undefined) return starved;
+  const sha = "sha" in input.poll ? input.poll.sha : undefined;
+  return sha !== undefined && sha !== input.expectedSha
+    ? { outcome: "unavailable", detail: headMismatchDetail(sha, input.expectedSha) }
+    : starved;
+}
+
+/** The verdict when the deadline is reached: a head mismatch, then today's order, with starved replacing pending. */
+function deadlineVerdict(input: {
+  readonly poll: Poll;
+  readonly ledger: StarvedLedger;
+  readonly history: ReturnType<typeof checkHistory>;
+  readonly errors: ReturnType<typeof errorRun>;
+  readonly timeoutMs: number;
+  readonly expectedSha?: string;
+}): CiWaitResult {
+  if ("mismatch" in input.poll && input.poll.mismatch) return { outcome: "unavailable", detail: input.poll.mismatch };
+  const settled = input.history.failingTimeout() ?? input.errors.timeout();
+  if (settled !== undefined) return settled;
+  const starved = starvedAtDeadlineBound({ poll: input.poll, ledger: input.ledger, expectedSha: input.expectedSha });
+  return starved ?? input.history.timeout(input.timeoutMs);
+}
+
 export async function waitForChecks(
   forge: ForgeKind,
   prRef: string,
@@ -396,12 +459,23 @@ export async function waitForChecks(
     readonly pollMs: number;
     readonly signal?: AbortSignal;
     readonly expectedSha?: string;
+    /** Re-run starved jobs, at most `CI_STARVED_RERUN_LIMIT` rounds; absent means do not. */
+    readonly rerunStarved?: boolean;
   },
 ): Promise<CiWaitResult> {
   const startedAt = _ciWaitDeps.now();
   const deadline = startedAt + opts.timeoutMs;
   const history = checkHistory();
   const errors = errorRun(forge);
+  const wait: WaitContext = {
+    forge,
+    prRef,
+    cwd: opts.cwd,
+    expectedSha: opts.expectedSha,
+    rerun: opts.rerunStarved === true,
+  };
+  /** The wait's own bookkeeping: which rounds it spent and which jobs it re-ran (US-002). */
+  let ledger: StarvedLedger = EMPTY_STARVED_LEDGER;
   let cancelHeartbeat = (): void => {};
   const progress = progressLog(() => {
     // Every info line starts a fresh deadline. A fixed interval could skip a
@@ -410,25 +484,34 @@ export async function waitForChecks(
     cancelHeartbeat = _ciWaitDeps.schedule(() => progress.heartbeatIfDue(startedAt), CI_WAIT_HEARTBEAT_MS);
   });
   progress.start(prRef, opts.timeoutMs, opts.pollMs);
-  /** Every terminal return, and only a terminal return, says how it ended. */
-  const end = (outcome: CiWaitOutcome, detail: string): CiWaitResult => {
-    progress.done(outcome, startedAt);
-    return { outcome, detail };
+  /** Every terminal return, and only a terminal return, says how it ended — with the result's own fields. */
+  const end = (result: CiWaitResult): CiWaitResult => {
+    progress.done(result.outcome, startedAt);
+    return result;
   };
   // Independent of polling and of any single sleep: a slow forge call cannot
   // suppress the heartbeat, and the schedule is cancelled on every return path.
   try {
     for (;;) {
-      if (opts.signal?.aborted) return end("pending", "aborted");
+      if (opts.signal?.aborted) return end({ outcome: "pending", detail: "aborted" });
       const poll = bindToHead(await pollOnce(forge, prRef, opts.cwd), opts.expectedSha);
       history.note(poll);
       if ("summary" in poll) progress.note(poll.summary);
       const terminal = terminalPoll(poll) ?? history.onErrorLimit(errors.note(poll));
-      if (terminal) return end(terminal.outcome, terminal.detail);
+      const settled = await settlePoll({ wait, poll, ledger, terminal, run: _ciWaitDeps.run });
+      ledger = settled.ledger;
+      if (settled.result) return end(settled.result);
       if (_ciWaitDeps.now() + opts.pollMs > deadline) {
-        if ("mismatch" in poll && poll.mismatch) return end("unavailable", poll.mismatch);
-        const timeout = history.failingTimeout() ?? errors.timeout() ?? history.timeout(opts.timeoutMs);
-        return end(timeout.outcome, timeout.detail);
+        return end(
+          deadlineVerdict({
+            poll,
+            ledger,
+            history,
+            errors,
+            timeoutMs: opts.timeoutMs,
+            ...(opts.expectedSha === undefined ? {} : { expectedSha: opts.expectedSha }),
+          }),
+        );
       }
       // Both sides of the wait: `_ciWaitDeps.now` may move during a slow forge call or during the
       // wait itself, and the heartbeat has to hold either way (each `say` resets the clock).
@@ -438,19 +521,6 @@ export async function waitForChecks(
     }
   } finally {
     cancelHeartbeat();
-  }
-}
-
-/** The PR's current head, for a GitHub red read; `undefined` when it cannot be read (fail open, as green does). */
-async function ghHeadSha(prRef: string, cwd: string): Promise<string | undefined> {
-  try {
-    const r = await _ciWaitDeps.run(["gh", "pr", "view", prRef, "--json", "headRefOid"], { cwd });
-    const parsed = r.exitCode === 0 ? parseJson(r.stdout) : { ok: false as const };
-    return parsed.ok && isRecord(parsed.value) && typeof parsed.value.headRefOid === "string"
-      ? parsed.value.headRefOid
-      : undefined;
-  } catch {
-    return undefined;
   }
 }
 
@@ -500,12 +570,9 @@ async function verdictForHead(
     readonly sha?: string;
   },
 ): Promise<CiWaitResult> {
-  const sha = poll.sha ?? (forge === "github" ? await ghHeadSha(prRef, opts.cwd) : undefined);
+  const sha = poll.sha ?? (forge === "github" ? await readHeadSha(prRef, opts.cwd, _ciWaitDeps.run) : undefined);
   if (sha !== undefined && sha !== opts.expectedSha) {
-    return {
-      outcome: "unavailable",
-      detail: `checks report ${sha.slice(0, 8)} but HEAD is ${opts.expectedSha.slice(0, 8)}`,
-    };
+    return { outcome: "unavailable", detail: headMismatchDetail(sha, opts.expectedSha) };
   }
   return poll.state === "green"
     ? { outcome: "green", detail: onceDetail(poll, "all checks passed") }

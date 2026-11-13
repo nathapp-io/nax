@@ -28,6 +28,13 @@ import { type DecisionEntry, sidecarKindFor } from "../workflow/decisions-sideca
 import { isOpenItemKind, parseItemOpener } from "../workflow/item-threads";
 import { safeCode } from "../workflow/pr-body-safe";
 import { evidenceComment, markReadyArgv } from "../workflow/promote";
+import {
+  type CiWaiverReady,
+  FIX_SUMMARY_KEY,
+  nameWaiverInSummary,
+  readinessLines,
+  recordCiWaiver,
+} from "./ci-waiver-ready";
 import { COVERAGE_RECORD_KEY, type CoverageRecord, parseCoverageRecord } from "./coverage-record";
 import type { BotFixEnv, BotFixState } from "./fix-steps";
 import { readHeadGateNames } from "./head-gates";
@@ -148,7 +155,8 @@ export async function replyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
 
 /**
  * The CI wait for this PR: the head the fix pushed, or the reviewed head when nothing was pushed.
- * The wait is the workflow's own, so bot fix and `nax workflow promote` read the same CI.
+ * The wait is the workflow's own, so bot fix and `nax workflow promote` read the same CI. US-007:
+ * `rerunStarved` re-runs a job no runner picked up before the wait reports it starved.
  */
 async function waitForCi(env: BotFixEnv, state: Pick<BotFixState, "pushedSha">): Promise<CiWaitResult> {
   const timeouts = resolveWorkflowConfig(env.config).timeouts;
@@ -158,6 +166,7 @@ async function waitForCi(env: BotFixEnv, state: Pick<BotFixState, "pushedSha">):
     pollMs: timeouts.ciPollMs,
     signal: env.ctx.callCtx.runtime.signal,
     expectedSha: state.pushedSha ?? env.info.headSha,
+    rerunStarved: true,
   });
 }
 
@@ -218,11 +227,12 @@ function ownCoverage(comments: readonly PrComment[], login: string): CoverageRec
   return own === undefined ? undefined : (parseCoverageRecord(own.comment.body) ?? undefined);
 }
 
-async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<string | undefined> {
+/** The workflow readiness reads; `ciWaived` is set only when the pass posted a waiver record. */
+async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<CiWaiverReady> {
   try {
     const expectedSha = state.pushedSha ?? env.info.headSha;
     const initial = await readReadyRulings(env);
-    if (initial.info.headSha !== expectedSha) return "PR head changed since this execution";
+    if (initial.info.headSha !== expectedSha) return { held: "PR head changed since this execution" };
     // Green here only bypasses the CI check for the initial item-only decision.
     const items = workflowPrReadiness({
       outcome: initial.outcome,
@@ -230,27 +240,38 @@ async function workflowReadyHold(env: BotFixEnv, state: BotFixState): Promise<st
       coverage: ownCoverage(initial.comments, initial.user.login),
       headSha: initial.info.headSha,
     });
-    if (!items.ready) return items.reason;
+    if (!items.ready) return { held: items.reason };
     const ci = await waitForCi(env, { pushedSha: expectedSha });
     env.ctx.callCtx.runtime.signal.throwIfAborted();
     // Rulings and index membership can change without a push while CI runs.
     const { info, user, comments, outcome } = await readReadyRulings(env);
-    if (info.headSha !== expectedSha) return "PR head changed since this execution";
+    if (info.headSha !== expectedSha) return { held: "PR head changed since this execution" };
     const ready = workflowPrReadiness({
       outcome,
       ci,
       coverage: ownCoverage(comments, user.login),
       headSha: info.headSha,
+      // US-007: only an explicit `--waive-starved` widens the strict-green rule, and only for `starved`.
+      ...(env.waiveStarved === undefined ? {} : { waiveStarved: true }),
     });
-    if (!ready.ready) return ready.reason;
+    if (!ready.ready) return { held: ready.reason };
     const evidence = await writeEvidence(env, outcome, ownComments(comments, user.login));
-    if (evidence) return evidence;
+    if (evidence) return { held: evidence };
+    // The waiver is durable before the head is re-read and the PR is readied.
+    const waiver = await recordCiWaiver({
+      env,
+      state: { pushedSha: expectedSha },
+      ci,
+      post: _fixReportDeps.postPrComment,
+    });
+    if (waiver.held !== undefined) return { held: waiver.held };
     const fresh = await _fixReportDeps.readPrInfo(env.ref, env.forge, env.repoRoot);
-    if (fresh.headSha !== expectedSha) return "PR head changed since this execution";
+    if (fresh.headSha !== expectedSha) return { held: "PR head changed since this execution" };
+    return waiver;
   } catch (error) {
     env.ctx.callCtx.runtime.signal.throwIfAborted();
     getLogger()?.warn("bot-fix", "Could not read PR rulings", { pr: env.ref.number, error: errorMessage(error) });
-    return "rulings could not be read";
+    return { held: "rulings could not be read" };
   }
 }
 
@@ -375,6 +396,25 @@ async function openFindingHold(env: BotFixEnv): Promise<string | undefined> {
   return `${keys.length} open critical/important finding(s) in the bot review of ${head}: ${listed}${hidden > 0 ? `, +${hidden} more` : ""}`;
 }
 
+/**
+ * The plain-PR readiness reads: the CI wait, the head re-read and — on a waived starved CI — the
+ * durable waiver comment. The waiver is posted after the first head re-read and before the PR is
+ * readied, and the head is read once more after it: the comment can name only one head, so a push
+ * while it was being written must not release a head nothing classified (US-007).
+ */
+async function plainReadyHold(env: BotFixEnv, state: BotFixState): Promise<CiWaiverReady> {
+  const ci = await waitForCi(env, state);
+  env.ctx.callCtx.runtime.signal.throwIfAborted();
+  if (!ciAllowsReady(ci.outcome, env.waiveStarved === undefined ? undefined : { waiveStarved: true }))
+    return { held: `CI ${ci.outcome}: ${ci.detail}` };
+  const held = await readyHeadHold(env, state);
+  if (held !== undefined) return { held };
+  const waiver = await recordCiWaiver({ env, state, ci, post: _fixReportDeps.postPrComment });
+  if (waiver.held !== undefined || waiver.ciWaived === undefined) return waiver;
+  const moved = await readyHeadHold(env, state);
+  return moved === undefined ? waiver : { held: moved };
+}
+
 /** Only durable workflow rulings and exact-head green CI can release a workflow draft. */
 export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<StepResult<BotFixState>> {
   if (
@@ -392,25 +432,27 @@ export async function readyStep(env: BotFixEnv, state: BotFixState): Promise<Ste
   if (!env.info.draft) return { patch: { markedReady: false }, exit: "report" };
   const headGates = await headGateHold(env);
   if (headGates) return { patch: { markedReady: false, readyHeld: headGates }, exit: "report" };
-  if (hasNaxWorkflowMarker(env.info.body)) {
-    const readyHeld = await workflowReadyHold(env, state);
-    if (readyHeld) return { patch: { markedReady: false, readyHeld }, exit: "report" };
-  } else {
-    const ci = await waitForCi(env, state);
-    env.ctx.callCtx.runtime.signal.throwIfAborted();
-    if (!ciAllowsReady(ci.outcome)) {
-      return { patch: { markedReady: false, readyHeld: `CI ${ci.outcome}: ${ci.detail}` }, exit: "report" };
-    }
-    const readyHeld = await readyHeadHold(env, state);
-    if (readyHeld) return { patch: { markedReady: false, readyHeld }, exit: "report" };
-  }
+  const readiness = hasNaxWorkflowMarker(env.info.body)
+    ? await workflowReadyHold(env, state)
+    : await plainReadyHold(env, state);
+  if (readiness.held !== undefined) return { patch: { markedReady: false, readyHeld: readiness.held }, exit: "report" };
   env.ctx.callCtx.runtime.signal.throwIfAborted();
   const result = await env.forge.run(markReadyArgv(env.ref.forge, env.info.url), { cwd: env.repoRoot });
   if (result.exitCode !== 0) {
     const detail = result.stderr.trim() || `exit code ${result.exitCode}`;
     return { patch: { markedReady: false, readyHeld: `could not mark ready: ${detail}` }, exit: "report" };
   }
-  return { patch: { markedReady: true }, exit: "report" };
+  const waived = readiness.ciWaived;
+  // US-007: a ready-only pass runs no `report` node, so the waiver is named in the summary the fix
+  // published — after readiness succeeded, so the comment never claims a release that did not happen.
+  if (waived !== undefined && state.readyOnly === true)
+    await nameWaiverInSummary({
+      env,
+      lines: readinessLines({ markedReady: true, ciWaived: waived }),
+      list: _fixReportDeps.listPrComments,
+      edit: _fixReportDeps.editComment,
+    });
+  return { patch: { markedReady: true, ...(waived === undefined ? {} : { ciWaived: waived }) }, exit: "report" };
 }
 
 /** Why every red gate is not the fix's: CI's verdict on the same head decides (nax#2631). */
@@ -514,12 +556,10 @@ export function renderFixSummary(state: BotFixState, details: readonly string[] 
   if (state.repairSkippedForCost) lines.push("Repair turn skipped: cost limit reached.");
   if (state.fixFailure !== undefined)
     lines.push(`Fix session: ${safeText(stripLocalPaths(state.fixFailure, repoRoot), MAX_FAILURE_LENGTH)}`);
-  // Why the PR is still a draft — a workflow PR, or a CI that is not green — or that it is ready.
-  // The reason carries the CI wait's own detail, which is forge output: it is neutralised and
-  // capped like the fix failure above, so a hostile or noisy detail cannot inject into the comment.
-  if (state.readyHeld !== undefined) lines.push(`Kept as draft: ${safeText(state.readyHeld, MAX_FAILURE_LENGTH)}`);
-  if (state.markedReady === true) lines.push("Marked ready.");
-  return withNaxBotMarker(lines.join("\n"), "fix-summary");
+  // Why the PR is still a draft, or what released it. Untrusted text is neutralised in
+  // `readinessLines`, which also rewrites exactly these lines when a waiver readies the PR (US-007).
+  lines.push(...readinessLines(state));
+  return withNaxBotMarker(lines.join("\n"), FIX_SUMMARY_KEY);
 }
 
 function outOfItemDetail(env: BotFixEnv, state: BotFixState): string | undefined {
@@ -549,7 +589,7 @@ export async function reportStep(env: BotFixEnv, state: BotFixState): Promise<St
   const outOfItem = outOfItemDetail(env, state);
   if (outOfItem !== undefined) lines.push(outOfItem);
   const body = renderFixSummary(state, lines, env.repoRoot);
-  const own = env.own.find(({ key }) => key === "fix-summary");
+  const own = env.own.find(({ key }) => key === FIX_SUMMARY_KEY);
   if (own) await _fixReportDeps.editComment(env.ref, own.comment, body, env.forge, env.repoRoot);
   else await _fixReportDeps.postPrComment(env.ref, body, env.forge, env.repoRoot);
   return { patch: {}, exit: "done" };

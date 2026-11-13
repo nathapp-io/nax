@@ -9,6 +9,7 @@ import {
   readCurrentUser,
   resolvePrRef,
 } from "@/forge";
+import { type CiWaiver, latestCiWaiver } from "./ci-waiver";
 import { readItemThreads, type SettledItems, settleItemThreads } from "./item-thread-state";
 import { itemKey } from "./item-threads";
 import { readPrState } from "./pr-state";
@@ -19,6 +20,8 @@ export type LiveStatus =
   | {
       readonly source: "live";
       readonly isDraft: boolean;
+      /** The newest own `w-ci-waiver` record that parses, spread in only when the PR carries one. */
+      readonly ciWaiver?: CiWaiver;
       /** Item ids whose thread carries a ruling that closes the item. */
       readonly settled: readonly { readonly id: string; readonly disposition: string }[];
       /** Item ids that are confirmed advisor items with no fix-closing reply. */
@@ -75,7 +78,14 @@ export async function readLiveStatus(input: {
     const read = readItemThreads(threads, comments, user.login);
     if (!read.index) return { source: "run-record", error: "no nax item index on this PR" };
     const state = await settleItemThreads(read, (comment) => canRule(ref, comment, { deps, cwd }));
-    return { source: "live", isDraft: pr.isDraft, ...partition(items, state) };
+    // Same login and comment list, read once: the waiver is reported only on this live path.
+    const ciWaiver = latestCiWaiver(comments, user.login);
+    return {
+      source: "live",
+      isDraft: pr.isDraft,
+      ...(ciWaiver ? { ciWaiver } : {}),
+      ...partition(items, state),
+    };
   } catch (error) {
     return { source: "run-record", error: failureMessage(error) };
   }

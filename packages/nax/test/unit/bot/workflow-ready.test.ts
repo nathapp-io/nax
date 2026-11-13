@@ -129,3 +129,42 @@ describe("workflowPrReadiness with confirmed advisor work", () => {
     expect(workflowPrReadiness({ outcome, ci: green })).toEqual({ ready: true });
   });
 });
+
+/** US-004: a starved CI — checks that never got a runner — can be released only by an explicit waiver. */
+const starved = {
+  outcome: "starved" as const,
+  detail: "1 check(s) never got a runner: build; re-run them, or accept with --waive-starved <reason>",
+  starvedChecks: ["build"],
+};
+
+describe("workflowPrReadiness with a starved CI (US-004)", () => {
+  test("AC-5 readies a settled PR when the starved CI is waived", () => {
+    expect(workflowPrReadiness({ outcome: complete, ci: starved, waiveStarved: true })).toEqual({ ready: true });
+  });
+
+  test("AC-6 holds a settled PR whose starved CI is not waived", () => {
+    const result = workflowPrReadiness({ outcome: complete, ci: starved });
+    expect(result.ready).toBe(false);
+    expect(result.ready ? "" : result.reason).toStartWith("CI starved:");
+  });
+
+  test("AC-6 names the starved checks so the reader knows what to re-run", () => {
+    const result = workflowPrReadiness({ outcome: complete, ci: starved });
+    expect(result.ready ? "" : result.reason).toContain("1 check(s) never got a runner: build");
+  });
+
+  test("AC-5 the waiver never overrides another readiness condition", () => {
+    const open = { ...item, kept: [] };
+    const outcome: RecordRulingsOutcome = { ...empty, index: { keys: [item.key] }, open: [open] };
+    expect(workflowPrReadiness({ outcome, ci: starved, waiveStarved: true })).toEqual({
+      ready: false,
+      reason: "1 open item(s): B3",
+    });
+  });
+
+  test("AC-5 the waiver does not allow a failed CI", () => {
+    expect(
+      workflowPrReadiness({ outcome: complete, ci: { outcome: "failed", detail: "test red" }, waiveStarved: true }),
+    ).toEqual({ ready: false, reason: "CI failed: test red" });
+  });
+});

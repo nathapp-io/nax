@@ -17,6 +17,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import { prNumberFromUrl } from "@/forge";
 import type { FeatureCiState, FeatureOutcome, FeatureStep, OpenItem } from "@/workflow";
+import type { CiWaiver } from "@/workflow/ci-waiver";
 import { readLiveStatus } from "../workflow/live-status";
 import { buildVerdict, CI_ITEM_ID } from "../workflow/open-items";
 import { fillStoryStates, type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
@@ -65,6 +66,8 @@ export interface WorkflowStatusReport {
   readonly workflowPassed?: boolean;
   readonly reasons: readonly string[];
   readonly openItems: readonly OpenItem[];
+  /** Set only by a live read of a PR that is no longer a draft; absent otherwise. */
+  readonly ciWaiver?: CiWaiver;
   /** #2578: items a finisher rules on that `openItems` does not hold; they never change the exit code. */
   readonly supplementaryItems: readonly OpenItem[];
 }
@@ -112,6 +115,7 @@ async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForg
     source: "live",
     outcome: live.isDraft ? "draft" : "ready",
     settledItems: live.settled,
+    ...(live.ciWaiver && !live.isDraft ? { ciWaiver: live.ciWaiver } : {}),
     openItems: report.openItems.filter((item) => !settled.has(item.id) && (live.isDraft || item.id !== CI_ITEM_ID)),
   };
 }
@@ -123,12 +127,29 @@ function exitCodeFor(report: WorkflowStatusReport): number {
 
 const itemLine = (item: OpenItem): string => `- [${item.kind}] ${item.id} — ${item.issue}`;
 
+/** Short-sha length for display; the full 40-hex head is only in the `w-ci-waiver` record itself. */
+const SHORT_SHA = 7;
+
+/**
+ * The one plain line a waived PR adds. It names the head the waiver was taken at, so a reader can
+ * tell it apart from a green CI, and every check that never got a runner, so the waiver's scope is
+ * visible without opening the comment.
+ */
+function waiverLine(waiver: CiWaiver): string {
+  const checks = waiver.checks.join("; ");
+  return (
+    `CI: passed with waiver at ${waiver.headSha.slice(0, SHORT_SHA)}: ` +
+    `${waiver.checks.length} check(s) never got a runner (${checks}): ${waiver.reason}`
+  );
+}
+
 function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps): void {
   const outcome = report.outcome ?? NOT_PUBLISHED;
   deps.log(`${report.feature}: ${outcome}${report.url ? ` ${report.url}` : ""}`);
   if (report.liveError !== undefined) deps.log(`(run record only: ${report.liveError})`);
   if (report.openItems.length === 0) deps.log(NO_ITEMS);
   for (const item of report.openItems) deps.log(itemLine(item));
+  if (report.ciWaiver) deps.log(waiverLine(report.ciWaiver));
   if (report.supplementaryItems.length === 0) return;
   deps.log(SUPPLEMENTARY_HEADING);
   for (const item of report.supplementaryItems) deps.log(itemLine(item));
@@ -208,12 +229,19 @@ export function registerWorkflowCommand(
     .description("Check a draft run and report whether its PR can be promoted")
     .requiredOption("-f, --feature <name>", "Feature name")
     .option("--yes", "Promote for real once every check passes", false)
+    .option("--waive-starved <reason>", "Accept a CI whose checks never got a runner, and record why")
     .option("-d, --dir <path>", "Project directory", process.cwd())
     .option("--json", "Emit one machine-readable JSON document", false)
-    .action((o: { dir: string; feature: string; yes?: boolean; json?: boolean }) =>
+    .action((o: { dir: string; feature: string; yes?: boolean; waiveStarved?: string; json?: boolean }) =>
       guarded(deps, () =>
         workflowPromoteCommand(
-          { dir: o.dir, feature: o.feature, yes: o.yes === true, json: o.json === true },
+          {
+            dir: o.dir,
+            feature: o.feature,
+            yes: o.yes === true,
+            ...(o.waiveStarved === undefined ? {} : { waiveStarved: o.waiveStarved }),
+            json: o.json === true,
+          },
           deps,
           forgeDeps,
         ),

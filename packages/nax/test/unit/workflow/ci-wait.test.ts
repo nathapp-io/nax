@@ -62,7 +62,7 @@ describe("waitForChecks (github)", () => {
   test("every check passes -> green, with the gh argv", async () => {
     const { calls } = script([gh(["pass", "skipping"])]);
     expect((await waitForChecks("github", "feat/x", OPTS)).outcome).toBe("green");
-    expect(calls[0]).toEqual(["gh", "pr", "checks", "feat/x", "--json", "name,state,bucket"]);
+    expect(calls[0]).toEqual(["gh", "pr", "checks", "feat/x", "--json", "name,state,bucket,link"]);
   });
 
   test("any failed or cancelled check -> failed", async () => {
@@ -323,7 +323,7 @@ describe("US-002 conflict and missing CI", () => {
     });
     expect(sleeps).toEqual([]);
     expect(calls).toEqual([
-      ["gh", "pr", "checks", "feat/x", "--json", "name,state,bucket"],
+      ["gh", "pr", "checks", "feat/x", "--json", "name,state,bucket,link"],
       ["gh", "pr", "view", "feat/x", "--json", "mergeable,mergeStateStatus,baseRefName,headRefOid"],
     ]);
     const conflict = logs.find((e) => e.message === "CI wait: PR has merge conflicts with main — CI cannot start");

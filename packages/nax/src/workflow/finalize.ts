@@ -50,8 +50,8 @@ export interface PublishOutcome {
    */
   readonly approval?: ApprovalOutcome;
   /**
-   * US-001 (nax#2569): the CI wait's `detail` for `conflicting`, `no-checks` and `unavailable` — the
-   * three states whose reason is built from it. Absent for every other state.
+   * US-001 (nax#2569): the CI wait's `detail` for `conflicting`, `no-checks`, `unavailable` and
+   * (US-003) `starved` — the states whose reason is built from it. Absent for every other state.
    */
   readonly ciDetail?: string;
 }
@@ -61,6 +61,9 @@ const DETAILED_CI_STATES: ReadonlySet<FeatureCiState> = new Set<FeatureCiState>(
   "conflicting",
   "no-checks",
   "unavailable",
+  // US-003: a starved CI keeps the wait's detail, which names the checks that never ran and the two
+  // ways out (`--waive-starved <reason>`); a fixed sentence would drop both.
+  "starved",
 ]);
 
 /**
@@ -421,6 +424,9 @@ async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitRe
     timeoutMs: fc.workflow.timeouts.ciWaitMs,
     pollMs: fc.workflow.timeouts.ciPollMs,
     ...(fc.runSignal ? { signal: fc.runSignal } : {}),
+    // US-003: a check whose job never got a runner is re-run (boundedly) rather than repaired. The
+    // re-run is opt-in per caller: `nax workflow promote` is a one-poll check and passes nothing.
+    rerunStarved: true,
   });
 }
 

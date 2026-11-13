@@ -14,9 +14,20 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { gitSpawnEnv } from "@nathapp/nax-agent/internal";
-import { assertDefined, cleanupTempDir, makeTempDir } from "@test/helpers";
+import { assertDefined, cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import { precheckCommand } from "@/commands/precheck";
 import { EXIT_CODES } from "@/precheck";
+import { _checkAgentsDeps } from "@/precheck/checks-agents";
+
+// multi-agent-health probes every installed agent binary with `<agent> --version`
+// (5s deadline each), so its cost depends on which agents this machine happens to
+// have and how fast their CLIs boot — ~1.5s here, which is most of a 5s per-test
+// budget. It is an always-passing informational warning that no test in this file
+// asserts on, so probe nothing and keep the budget for the command itself.
+withDepsRestore(_checkAgentsDeps, ["getAgentVersions"]);
+beforeEach(() => {
+  _checkAgentsDeps.getAgentVersions = async () => [];
+});
 
 // Fixtures live in the OS temp dir, never inside the nax working tree: a
 // fixture whose `git init` failed would otherwise resolve to nax's own repo and

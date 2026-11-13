@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempDir, makeTempDir, waitForFile } from "@test/helpers";
+import { cleanupTempDir, makeTempDir, waitForCondition } from "@test/helpers";
 import {
   _clipboardImageDeps,
   CLIPBOARD_READ_TIMEOUT_MS,
@@ -13,6 +14,13 @@ const original = { ..._clipboardImageDeps };
 /** The real runner, captured before any test replaces the seam. */
 const defaultRun = _clipboardImageDeps.run;
 
+/**
+ * The bound for the child whose pid the AC-13 test has to observe: far above a
+ * loaded machine's spawn latency, so the child is scheduled and publishes its pid
+ * before the run kills it, and far below the 5 s it sleeps.
+ */
+const PID_ANNOUNCE_TIMEOUT_MS = 500;
+
 /** Liveness probe: signal 0 delivers nothing, it only reports whether `pid` exists. */
 function isAlive(pid: number): boolean {
   try {
@@ -24,16 +32,34 @@ function isAlive(pid: number): boolean {
 }
 
 /**
- * The pid a child writes about itself, read with a bounded wait. `NaN` when the
- * file never appears or holds no number — the caller's `strays` cleanup skips it
- * (an unusable pid must never reach `process.kill`, which would signal pid 0's
- * whole process group).
+ * The pid a child writes about itself, read with a bounded wait on the pid
+ * *content*, not on the file's existence. The shell creates a redirect's target
+ * before it writes into it, so a file that exists can still be empty; reading it
+ * then yields no number, which is the shape this helper flaked on. `NaN` when no
+ * pid appears within the wait — the caller's `strays` cleanup skips it (an
+ * unusable pid must never reach `process.kill`, which would signal pid 0's whole
+ * process group).
  */
 async function announcedPid(path: string): Promise<number> {
+  let pid = Number.NaN;
   try {
-    await waitForFile(path);
-    return Number((await Bun.file(path).text()).trim());
+    await waitForCondition(() => {
+      pid = readPid(path);
+      return Number.isInteger(pid) && pid > 1;
+    });
   } catch {
+    // No usable pid ever appeared: report `NaN`, so the assertion below names it.
+    return Number.NaN;
+  }
+  return pid;
+}
+
+/** The pid `path` holds, or `NaN` while the child has not published one yet. */
+function readPid(path: string): number {
+  try {
+    return Number(readFileSync(path, "utf8").trim());
+  } catch {
+    // Not created yet; `waitForCondition` retries.
     return Number.NaN;
   }
 }
@@ -241,9 +267,13 @@ describe("the default runner", () => {
 
     // ...and the child must be dead, not merely abandoned: a child that reports
     // its own pid is gone by the time `run` resolves. (`sleep 5` cannot be
-    // observed this way — its pid never leaves the runner.)
+    // observed this way — its pid never leaves the runner.) The bound is the
+    // generous `PID_ANNOUNCE_TIMEOUT_MS`, not the 50 ms above: this child has to
+    // be scheduled and publish its pid before the run kills it, so the bound has
+    // to clear a loaded machine's spawn latency. That `run` kills it at the bound
+    // is what the assertion below and the first assertion pin.
     const pidFile = join(dir, "child.pid");
-    const pending = defaultRun(["sh", "-c", `echo $$ > '${pidFile}'; sleep 5`], 50);
+    const pending = defaultRun(["sh", "-c", `echo $$ > '${pidFile}'; sleep 5`], PID_ANNOUNCE_TIMEOUT_MS);
     // Read and register the pid *before* asserting anything about the run, so a
     // failing assertion below still leaves afterEach a pid it can kill. Without
     // this order a broken kill plus a failing run assertion leaks the child.

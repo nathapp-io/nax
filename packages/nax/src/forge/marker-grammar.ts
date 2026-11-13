@@ -1,5 +1,12 @@
 /** Leaf marker grammar shared by ownership helpers and forge readers. */
-export const TOP_LEVEL_MARKER_KEYS = ["summary", "w-index", "w-evidence", "fix-summary", "w-coverage"] as const;
+export const TOP_LEVEL_MARKER_KEYS = [
+  "summary",
+  "w-index",
+  "w-evidence",
+  "fix-summary",
+  "w-coverage",
+  "w-ci-waiver",
+] as const;
 
 const MARKER_KEY_PATTERN = "[A-Za-z0-9._:-]{1,128}";
 export const markerPattern = (): RegExp => new RegExp(`<!-- nax-bot:v1 key=(${MARKER_KEY_PATTERN}) -->`, "g");

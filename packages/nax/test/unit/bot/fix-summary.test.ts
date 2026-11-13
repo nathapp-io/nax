@@ -194,6 +194,18 @@ describe("renderFixSummary", () => {
     const body = renderFixSummary({ ...state, outcome: "pushed", markedReady: true });
     expect(body.split("\n")).toContain("Marked ready.");
   });
+  test("US-007 AC-13: names the CI waiver that readied the PR", () => {
+    const body = renderFixSummary({
+      ...state,
+      outcome: "pushed",
+      markedReady: true,
+      ciWaived: { checks: ["a", "b"], reason: "r" },
+    });
+    expect(body.split("\n")).toContain("Marked ready with a CI waiver: 2 check(s) never got a runner: a; b. Reason: r");
+  });
+  test("US-007: a summary with no waiver says nothing about one", () => {
+    expect(renderFixSummary({ ...state, outcome: "pushed", markedReady: true })).not.toContain("CI waiver");
+  });
 });
 
 describe("repair declarations and summary", () => {

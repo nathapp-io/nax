@@ -74,6 +74,8 @@ export interface BotFixState extends GraphState<BotFixStep> {
   readonly markedReady?: boolean;
   /** Why the PR stayed a draft (US-005): a workflow PR, or a CI that is not green. */
   readonly readyHeld?: string;
+  /** The CI waiver the ready pass recorded before readying the PR (US-007). */
+  readonly ciWaived?: { readonly checks: readonly string[]; readonly reason: string };
   readonly reusedFix?: string;
   readonly fixSha?: string;
   readonly fixFailure?: string;
@@ -105,6 +107,8 @@ export interface BotFixEnv {
   readonly user: CurrentUser;
   readonly threads: readonly PrThread[];
   readonly own: readonly OwnComment[];
+  /** The validated `--waive-starved` reason; absent means this pass may not waive a starved CI (US-007). */
+  readonly waiveStarved?: string;
 }
 
 const PUSH_TIMEOUT_MS = 120_000;

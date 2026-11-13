@@ -21,6 +21,10 @@ export interface PrState {
 
 /** The fields `gh pr view` is asked for; GitLab returns its own three regardless. */
 const GITHUB_FIELDS = "isDraft,body,url";
+/** The field `gh pr view` reports the head sha in; `readPrHeadSha` asks for it alone. */
+const GITHUB_HEAD_FIELD = "headRefOid";
+/** GitLab's MR object carries its head sha as `sha`, the field `readPrInfo` reads too. */
+const GITLAB_HEAD_FIELD = "sha";
 const PR_READ_FAILED = "WORKFLOW_PR_READ_FAILED";
 /** How much of an unparseable stdout is quoted back, so a huge answer cannot flood a log line. */
 const DETAIL_SLICE = 200;
@@ -97,4 +101,32 @@ export async function readPrState(forge: ForgeKind, prRef: string, deps: ForgeDe
     body: text(fields.body) ?? text(fields.description) ?? "",
     ...(url === undefined ? {} : { url }),
   };
+}
+
+/** The head sha a forge's `view` answer carries, when it carries one. */
+function headOf(forge: ForgeKind, fields: Record<string, unknown>): string | undefined {
+  return text(fields[forge === "github" ? GITHUB_HEAD_FIELD : GITLAB_HEAD_FIELD]);
+}
+
+/**
+ * The PR/MR's head sha as the forge reports it now, read with the same view command `readPrState`
+ * uses. `undefined` on a non-zero exit, an unusable answer or no sha at all — never a guess: a
+ * caller about to release a head it has not checked must read an unknown head as a hold.
+ */
+export async function readPrHeadSha(
+  forge: ForgeKind,
+  prRef: string,
+  deps: ForgeDeps,
+  cwd: string,
+): Promise<string | undefined> {
+  try {
+    const result = await deps.run(viewArgv(forge, prRef, GITHUB_HEAD_FIELD), { cwd });
+    if (result.exitCode !== 0) return undefined;
+    const out = result.stdout.trim();
+    const parsed: unknown = out === "" ? undefined : JSON.parse(out);
+    return isRecord(parsed) ? headOf(forge, parsed) : undefined;
+  } catch {
+    // An unreadable or unparseable answer is an unknown head, exactly as a missing one is.
+    return undefined;
+  }
 }

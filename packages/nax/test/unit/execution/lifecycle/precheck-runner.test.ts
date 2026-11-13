@@ -25,12 +25,14 @@ import { InteractionChain } from "@/interaction/chain";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "@/interaction/types";
 import type { PRD } from "@/prd/types";
 import { _precheckDeps } from "@/precheck";
+import { _checkAgentsDeps } from "@/precheck/checks-agents";
 import { _deps as _cliDeps } from "@/precheck/checks-blockers";
 
 let tmpDir: string;
 let origNaxPrecheck: string | undefined;
 
 withDepsRestore(_cliDeps, ["spawn"]);
+withDepsRestore(_checkAgentsDeps, ["getAgentVersions"]);
 
 beforeEach(() => {
   tmpDir = makeTempDir("nax-precheck-runner-test-");
@@ -39,6 +41,11 @@ beforeEach(() => {
   // stub it so these tests exercise runPrecheckValidation's own branches
   // rather than the environment's.
   _cliDeps.spawn = makeSpawn(() => ({ exitCode: 0 })).spawn;
+  // multi-agent-health probes every installed agent's binary with `<agent> --version`
+  // (each with a 5s deadline) and costs ~1.5s per test here, while it is an
+  // always-passing informational warning that nothing in this file asserts on. The
+  // suite's 5s per-test budget is spent on real precheck work, so probe no binaries.
+  _checkAgentsDeps.getAgentVersions = async () => [];
 });
 
 afterEach(() => {

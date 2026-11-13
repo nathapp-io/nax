@@ -38,6 +38,8 @@ export function workflowPrReadiness(input: {
   ci: CiWaitResult;
   coverage?: CoverageRecord;
   headSha?: string;
+  /** US-004: accept a CI whose checks never got a runner; never a CI that failed or is still running. */
+  readonly waiveStarved?: boolean;
 }): WorkflowPrReadiness {
   const { outcome, ci } = input;
   if (!outcome) return { ready: false, reason: "rulings could not be read" };
@@ -60,6 +62,7 @@ export function workflowPrReadiness(input: {
   if (confirmedWork.length) return confirmedWorkHold(confirmedWork);
   const hold = input.coverage ? coverageHold(input.coverage, input.headSha) : undefined;
   if (hold) return hold;
-  if (!ciAllowsReady(ci.outcome)) return { ready: false, reason: `CI ${ci.outcome}: ${ci.detail}` };
+  if (!ciAllowsReady(ci.outcome, { waiveStarved: input.waiveStarved }))
+    return { ready: false, reason: `CI ${ci.outcome}: ${ci.detail}` };
   return { ready: true };
 }

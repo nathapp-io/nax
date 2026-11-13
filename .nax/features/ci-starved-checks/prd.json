@@ -1,0 +1,532 @@
+{
+  "project": "nax-monorepo",
+  "feature": "ci-starved-checks",
+  "branchName": "feat/ci-starved-checks",
+  "createdAt": "2026-10-22T00:00:00Z",
+  "updatedAt": "2026-11-13T09:08:50.275Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Read and re-run a starved GitHub Actions job",
+      "description": "**Goal** — Add the injectable Actions-job helpers used by the CI wait to identify and re-run runner-starved jobs.\n\n**Motivation** — Re-running is usually enough.\n\n**Approach** — Add `packages/nax/src/workflow/ci-starved.ts` with `CiRun`, `ActionsJob`, `actionsJobOf`, `isStarvedJob`, `rerunJob` and `CI_STARVED_RERUN_LIMIT` (2). Each helper takes the `run` it calls, so the CI wait can pass `_ciWaitDeps.run`.\n\nFor each check in the `cancel` bucket whose `link` is an Actions job URL it runs `gh api --hostname <host> repos/<owner>/<repo>/actions/jobs/<jobId>` and calls the job **starved** when `conclusion` is `cancelled`, `runner_name` is empty or null, and `steps` is an empty array. A check in the `fail` bucket is never starved. A check whose job cannot be read is not starved (fail closed: it stays a failure).\n\nThe rerun API is `gh api --hostname <host> -X POST repos/<owner>/<repo>/actions/jobs/<jobId>/rerun`. A cancelled check has no `link`, or its `link` is not an Actions job URL: Not starved; the check stays a failure. The job read exits non-zero, prints unparseable JSON, or the reply has no `steps` array: Not starved; the check stays a failure. Mirror readJobSteps's fail-soft command/JSON handling, using the supplied runner for every external call. No existing source file needs modification in this story.\n\n**Scope** — In: URL recognition, fail-closed job reads, boolean POST result, limit constant and helper tests. Out: poll classification, ledger, deadline and logs (US-002); readiness consumers (US-003/004/007/008); waiver records (US-005). GitLab: a cancelled GitLab job or pipeline is never classed as starved and is never re-run. Re-running a starved job outside a CI wait, as a command of its own. A config key for the re-run limit: `CI_STARVED_RERUN_LIMIT` is a constant, as `CI_ERROR_POLL_LIMIT` is.\n\n**Interface** —\n```ts\nexport const CI_STARVED_RERUN_LIMIT = 2;\n/** The forge runner, declared here so this module needs no import from ci-wait.ts. */\nexport type CiRun = (cmd: string[], opts: { cwd: string }) => Promise<ForgeRunResult>;\nexport interface ActionsJob { readonly host: string; readonly repo: string; readonly jobId: string }\n/** `undefined` for any link that is not `https://<host>/<owner>/<repo>/actions/runs/<n>/job/<n>`. */\nexport function actionsJobOf(link: string): ActionsJob | undefined;\n/** True only for a cancelled job with no runner and no steps; any read failure is false. */\nexport function isStarvedJob(job: ActionsJob, cwd: string, run: CiRun): Promise<boolean>;\n/** True when the re-run request exited 0. */\nexport function rerunJob(job: ActionsJob, cwd: string, run: CiRun): Promise<boolean>;\n```",
+      "acceptanceCriteria": [
+        "[unit] actionsJobOf(\"https://github.com/o/r/actions/runs/43/job/131317856040\") returns { host: \"github.com\", repo: \"o/r\", jobId: \"131317856040\" }.",
+        "[unit] actionsJobOf(\"https://github.com/o/r/pull/12/checks\") returns undefined.",
+        "[unit] actionsJobOf(\"\") returns undefined.",
+        "[unit] isStarvedJob returns true when the stubbed job read prints {\"conclusion\":\"cancelled\",\"runner_name\":\"\",\"steps\":[]}.",
+        "[unit] isStarvedJob returns true when the job reply has runner_name null, conclusion cancelled and steps [].",
+        "[unit] isStarvedJob returns false for a cancelled job whose reply has runner_name \"GitHub Actions 1000033956\" and one step.",
+        "[unit] isStarvedJob returns false when the job read exits 1.",
+        "[unit] isStarvedJob returns false when the job read prints text that is not JSON.",
+        "[unit] isStarvedJob runs [\"gh\", \"api\", \"--hostname\", \"github.com\", \"repos/o/r/actions/jobs/131317856040\"] through the run it is given.",
+        "[unit] rerunJob runs [\"gh\", \"api\", \"--hostname\", \"github.com\", \"-X\", \"POST\", \"repos/o/r/actions/jobs/131317856040/rerun\"] through the run it is given.",
+        "[unit] rerunJob returns true when that command exits 0.",
+        "[unit] rerunJob returns false when that command exits 1.",
+        "[unit] CI_STARVED_RERUN_LIMIT is 2.",
+        "[unit] isStarvedJob returns false when a cancelled job reply has no steps array."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "ci",
+        "github"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One additive helper module with standard URL parsing and injected command I/O; no polling or cross-module policy changes.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
+      },
+      "contextFiles": [
+        "packages/nax/src/forge/job-steps.ts",
+        "packages/nax/src/forge/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/ci-starved.ts",
+        "packages/nax/test/unit/workflow/ci-starved.test.ts"
+      ],
+      "suggestedCriteria": [
+        "actionsJobOf returns the enterprise hostname and repository for a valid HTTPS Actions job URL on a non-github.com host.",
+        "actionsJobOf returns undefined for an HTTP URL, a nonnumeric run id or a nonnumeric job id.",
+        "isStarvedJob returns false when the runner throws instead of returning a command result.",
+        "rerunJob returns false when the runner throws instead of returning a command result.",
+        "isStarvedJob returns false for conclusion success even when runner_name is empty and steps is []."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7febb903fc292e70a5ae19eb120169d49224b96f"
+    },
+    {
+      "id": "US-002",
+      "title": "Classify and boundedly re-run starved checks in the CI wait",
+      "description": "**Goal** — Make waitForChecks distinguish GitHub runner starvation from failure, issue at most two opt-in rerun rounds, and return a head-bound starved verdict when recovery cannot finish.\n\n**Motivation** — A starved runner is reported as a CI failure.\n\n**Approach** — The classification lives in the CI wait, so every caller of `waitForChecks` sees the same outcome. The GitHub checks read asks for one more field, `link`, which for an Actions check is the job URL `https://<host>/<owner>/<repo>/actions/runs/<runId>/job/<jobId>`; each parsed GitHub check carries its `state` and `link`. Only when a poll would end the wait as `failed` (a failed check and nothing pending) does the wait look at jobs. For each check in the `cancel` bucket whose `link` is an Actions job URL it runs `gh api --hostname <host> repos/<owner>/<repo>/actions/jobs/<jobId>` and calls the job **starved** when `conclusion` is `cancelled`, `runner_name` is empty or null, and `steps` is an empty array. A check in the `fail` bucket is never starved. A check whose job cannot be read is not starved (fail closed: it stays a failure).\n\nThe wait keeps, for its own lifetime, the number of re-run rounds it has issued and the set of job ids it has re-run. On a would-be `failed` poll:\n\n1. A cancelled check whose job id is one this wait already re-ran is a re-run GitHub has not reported yet. It gets no job read and is set aside; if any such check is set aside and every other failed check is starved, the poll is not terminal, the wait keeps polling, and no round is spent.\n2. Otherwise, if any failed check is not starved, the wait ends `failed`, exactly as today.\n3. If every failed check is starved, the caller passed `rerunStarved: true`, and fewer than `CI_STARVED_RERUN_LIMIT` rounds have run, the wait re-runs every starved job (`gh api --hostname <host> -X POST repos/<owner>/<repo>/actions/jobs/<jobId>/rerun`), records the job ids, logs one info line, and keeps polling. A re-run request that fails ends the wait `starved` at once.\n4. Otherwise the wait ends `starved`, with `starvedChecks` naming the checks.\n\nA starved verdict is bound to the head like a green one. When `expectedSha` is given, a would-be `failed` poll on GitHub also reads the PR head (`gh pr view <prRef> --json headRefOid`, as `githubWaiting` already does for green and waiting polls); when the head it reports differs from `expectedSha`, the wait does not classify or re-run anything and ends `unavailable` with `checks report <sha8> but HEAD is <sha8>`. A head that cannot be read leaves the poll as it is (fail open, as for green).\n\nAt the deadline, when at least one round ran and every non-green check of the latest poll is a check this wait re-ran (matched by name) that is either still in the `pending` bucket with a `state` other than `IN_PROGRESS`, or still reports a job id this wait re-ran, the wait ends `starved` instead of `pending`. Any other deadline is unchanged.\n\nAll of this lives in `packages/nax/src/workflow/ci-starved.ts`, behind two helpers that `waitForChecks` calls at exactly one site each: `decideStarved` where a GitHub poll would end the wait `failed`, and `starvedAtDeadline` where the deadline is reached. The wait's bookkeeping is an immutable `StarvedLedger` value that each `decideStarved` call returns anew. The GitHub `failed` and `waiting` polls carry the parsed checks (`ghChecks`) so both helpers can read `name`, `bucket`, `state` and `link`. `ci-wait.ts` is 513 lines against the 600-line limit, and `waitForChecks` must not gain branches that fail `check:complexity`. The new tests for the wait go in a new file, `packages/nax/test/unit/workflow/ci-wait-starved.test.ts`, because `ci-wait.test.ts` is 765 lines against the 800-line test limit.\n\nThe `starved` detail is the tail only; each surface adds its own `CI starved:` / `ci starved:` prefix, as it already does for `failed`. With no round run it is `<n> check(s) never got a runner: <a>; <b>; re-run them, or accept with --waive-starved <reason>`, and after `k` rounds it is `<n> check(s) never got a runner: <a>; <b> (re-run k time(s)); accept with --waive-starved <reason>`. When a re-run request fails it is `<n> check(s) never got a runner: <a>; <b> (the re-run request failed); accept with --waive-starved <reason>`. Check names are joined with `; ` because a check name may itself contain a comma.\n\nA re-run request that fails emits a `warn` line `CI wait: could not re-run <name>` with `storyId: \"_run\"` first, before returning starved. The successful round's info line is `CI wait: re-running <n> check(s) that never got a runner: <a>; <b> (round <k> of 2)` with the same run scope. Job reads and re-runs go through `_ciWaitDeps.run` too. `starvedChecks` is present exactly when `outcome` is `\"starved\"`. New optional fields are spread in only when set, so payloads without them are exactly today's. Update the two existing checks argv assertions at ci-wait.test.ts lines 65 and 326 only to append link; every other assertion keeps passing and no new tests are added there. Ensure the end-result wrapper preserves starvedChecks, and keep heartbeat cleanup and abort behavior.\n\n**Scope** — In: wait result/option/check extensions; helper-based decisions, immutable ledger, deadline, head binding and logs; new wait tests. Out: ciAllowsReady waiver policy (US-004), caller opt-in and publish reasons (US-003/007), durable waiver records (US-005), status/promote/bot CLI (US-006/007/008). GitLab: a cancelled GitLab job or pipeline is never classed as starved and is never re-run. `readChecksOnce` (the one-shot read behind `nax bot fix`'s gate baseline) keeps its current outcomes; a starved check there still reads as `failed`. A check still queued at the deadline that this wait never re-ran stays `pending`, as today. A failed check seen while other checks are still pending, at the deadline or at the error-poll limit, keeps today's `failed` outcome without a job read. A config key for the re-run limit: `CI_STARVED_RERUN_LIMIT` is a constant, as `CI_ERROR_POLL_LIMIT` is.\n\n**Interface** —\n```ts\nexport type CiWaitOutcome = \"green\" | \"failed\" | \"pending\" | \"conflicting\" | \"no-checks\" | \"unavailable\" | \"starved\";\nexport interface CiWaitResult { readonly outcome: CiWaitOutcome; readonly detail: string; readonly starvedChecks?: readonly string[] }\n// waitForChecks options: the existing cwd, timeoutMs, pollMs, signal?, expectedSha? plus\n// readonly rerunStarved?: boolean (absent means false).\ninterface GhCheck { readonly name: string; readonly bucket: string; readonly state: string; readonly link?: string }\nexport interface StarvedCheckView { readonly name: string; readonly bucket: string; readonly state: string; readonly link?: string }\nexport interface StarvedLedger { readonly rounds: number; readonly rerunJobIds: ReadonlySet<string>; readonly rerunNames: ReadonlySet<string> }\nexport const EMPTY_STARVED_LEDGER: StarvedLedger;\nexport type StarvedDecision =\n  | { readonly kind: \"failed\" }\n  | { readonly kind: \"continue\"; readonly ledger: StarvedLedger }\n  | { readonly kind: \"starved\"; readonly detail: string; readonly starvedChecks: readonly string[] };\nexport function decideStarved(input: {\n  readonly checks: readonly StarvedCheckView[];\n  readonly ledger: StarvedLedger;\n  readonly rerun: boolean;\n  readonly cwd: string;\n  readonly run: CiRun;\n}): Promise<StarvedDecision>;\n/** The `starved` result for the deadline rule, or undefined when the deadline is unchanged. */\nexport function starvedAtDeadline(checks: readonly StarvedCheckView[], ledger: StarvedLedger): CiWaitResult | undefined;\n```",
+      "acceptanceCriteria": [
+        "[unit] waitForChecks on GitHub reads checks with [\"gh\", \"pr\", \"checks\", <prRef>, \"--json\", \"name,state,bucket,link\"].",
+        "[unit] When the only non-green check is in the cancel bucket with an Actions job link and the job read reports a starved job, waitForChecks without rerunStarved returns outcome starved.",
+        "[unit] In the same case, the result's starvedChecks equals [<that check's name>].",
+        "[unit] In the same case, the result's detail is \"1 check(s) never got a runner: <name>; re-run them, or accept with --waive-starved <reason>\".",
+        "[unit] When one check is starved and another check is in the fail bucket, waitForChecks returns outcome failed.",
+        "[unit] When the cancelled check's job read exits non-zero, waitForChecks returns outcome failed.",
+        "[unit] With rerunStarved: true, a check starved under job 1 on the first poll and in the pass bucket on the second ends the wait green, with exactly one re-run command run, for job 1.",
+        "[unit] With rerunStarved: true, a check starved on every poll under a new job id each time (1, then 2, then 3) ends the wait starved after exactly two re-run commands, for jobs 1 and 2.",
+        "[unit] In the same case, the result's detail is \"1 check(s) never got a runner: <name> (re-run 2 time(s)); accept with --waive-starved <reason>\".",
+        "[unit] With rerunStarved: true, polls of job 1 starved, then job 1 still cancelled, then every check in the pass bucket end the wait green with exactly one re-run command run.",
+        "[unit] With rerunStarved: true, a re-run command that exits 1 ends the wait starved with detail \"1 check(s) never got a runner: <name> (the re-run request failed); accept with --waive-starved <reason>\".",
+        "[unit] In the same case, the wait logs a warn line \"CI wait: could not re-run <name>\" with data { storyId: \"_run\", … }.",
+        "[unit] With rerunStarved: true, the first re-run round logs an info line \"CI wait: re-running 1 check(s) that never got a runner: <name> (round 1 of 2)\" with data { storyId: \"_run\", … }.",
+        "[unit] When a re-run was issued and the poll at the deadline reports that check in the pending bucket with state QUEUED, the wait returns starved for that check.",
+        "[unit] When a re-run was issued and the poll at the deadline reports that check in the pending bucket with state IN_PROGRESS, the wait returns pending.",
+        "[unit] When no re-run was issued and a check is still QUEUED at the deadline, the wait returns pending.",
+        "[unit] On GitLab, a pipeline with status canceled ends the wait failed without running any gh api command.",
+        "[unit] With expectedSha aaa…, a starved poll whose PR head read reports bbb… ends the wait unavailable with detail \"checks report bbbbbbbb but HEAD is aaaaaaaa\", and no job read runs.",
+        "[unit] waitForChecks returns failed when a cancelled check has no link or its link is not an Actions job URL.",
+        "[unit] waitForChecks returns failed when a cancelled check's job read prints unparseable JSON or the reply has no steps array."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "ci",
+        "github",
+        "polling"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Stateful bounded reruns, stale GitHub job identity, SHA binding, deadline/error priorities and progress logging must integrate without changing one-shot reads or increasing loop complexity.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-wait.ts",
+        "packages/nax/src/workflow/ci-starved.ts",
+        "packages/nax/test/unit/workflow/ci-wait.test.ts",
+        "packages/nax/test/unit/workflow/ci-wait-sha.test.ts",
+        "packages/nax/test/unit/workflow/ci-wait-read-once.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/ci-wait-starved.test.ts"
+      ],
+      "suggestedCriteria": [
+        "After a rerun, a poll still reporting that cancelled job id issues neither another job read nor another POST.",
+        "When an already-rerun cancelled check and a real fail-bucket check coexist, waitForChecks returns failed rather than continuing or waiving the failure.",
+        "When multiple cancelled checks are starved, one rerun round POSTs each job once and names all checks without splitting commas in a check name.",
+        "When a rerun has occurred but an unrelated check is queued at the deadline, waitForChecks returns pending.",
+        "When a rerun has occurred and the latest deadline poll still reports only the old rerun cancelled job ids, waitForChecks returns starved naming those checks.",
+        "When the auxiliary head read cannot be read, a terminal cancelled poll still receives the same starved classification as a poll without expectedSha.",
+        "waitForChecks omits starvedChecks for every non-starved result."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/ci-wait.test.ts",
+          "reason": "the assertions at lines 65 and 326 pin the GitHub checks argv, whose `--json` field list is name,state,bucket; US-002 adds link, so the pinned field list becomes name,state,bucket,link and the argv is otherwise unchanged. Every other assertion in the file must keep passing, and no new test is added to this file (it is 765 of 800 lines)."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0dd49a50e7b1469894c811b8da51ca2d028080e6"
+    },
+    {
+      "id": "US-003",
+      "title": "Keep starved publish results as drafts without agent repair",
+      "description": "**Goal** — Preserve and explain runner starvation in workflow publish records while opting publish into reruns and excluding it from CI agent repair.\n\n**Motivation** — A starved check is not a failure to repair.\n\n**Approach** — Add `\"starved\"` to `FeatureCiState`, make `ciReason` return the prefixed detail for it, add it to `DETAILED_CI_STATES`, and pass `rerunStarved: true` from the publish's `waitForCi`.\n\n`ciReason` (`packages/nax/src/workflow/approval.ts`): target also returns `CI starved: <detail>` for `\"starved\"` with a detail, and `CI checks never got a runner` without one.\n\n`DETAILED_CI_STATES` (`packages/nax/src/workflow/finalize.ts`): target also holds `\"starved\"`, so the published record keeps the wait's detail.\n\nThe re-run is opt-in per caller. The run's publish (`waitForCi` in `packages/nax/src/workflow/finalize.ts`) and `nax bot fix` (`waitForCi` in `packages/nax/src/bot/fix-report.ts`) pass `rerunStarved: true`. `nax workflow promote` does not: it is a one-poll check and, without `--yes`, a report that must not write to the forge. This story changes only publish's caller.\n\n`ciRepairPlan` (`packages/nax/src/workflow/ci-repair-steps.ts`) — plans a repair only for `out.ci === \"failed\"`. Keep that guard unchanged; exercise it with a starved draft to prove no CI read or repair is planned. The strict-green rule (ruled 2026-10-21) stands: `pending`, `unavailable` and the new `starved` still block. What changes is that \"never ran\" is named, re-run, and can be accepted on the record.\n\nUpdate the existing assertion in `packages/nax/test/unit/workflow/finalize-ci.test.ts` at lines 77-79: its pinned options object gains `rerunStarved: true` and is otherwise unchanged. New optional fields are spread in only when set, so payloads without them are exactly today's. Test publish through `_featureDeps.waitForChecks`, including returned draft outcome, CI state, retained detail and readiness reason.\n\n**Scope** — In: feature CI union, starved reason/fallback, detail retention, publish rerun opt-in and no-repair regression. Out: wait implementation (US-002), optional readiness exception (US-004), waiver comments/commands/status (US-005/006/007/008). The run's own publish never waives: a starved CI keeps the draft until a human runs `nax bot fix --waive-starved` or `nax workflow promote --waive-starved`.\n\n**Interface** —\n```ts\nexport type FeatureCiState = \"green\" | \"failed\" | \"pending\" | \"skipped\" | \"conflicting\" | \"no-checks\" | \"unavailable\" | \"starved\";\nexport function ciReason(ci: FeatureCiState | undefined, detail?: string): string | undefined;\n```",
+      "acceptanceCriteria": [
+        "[unit] ciReason(\"starved\", \"1 check(s) never got a runner: x; re-run them, or accept with --waive-starved <reason>\") returns \"CI starved: 1 check(s) never got a runner: x; re-run them, or accept with --waive-starved <reason>\".",
+        "[unit] ciReason(\"starved\") returns \"CI checks never got a runner\".",
+        "[unit] readinessReasons with ci: starved and a detail returns a list that holds ciReason(\"starved\", <that detail>).",
+        "[integration] publish calls the stubbed _featureDeps.waitForChecks with options that include rerunStarved: true, preserving the existing cwd, timeoutMs, pollMs, signal and expectedSha values unchanged.",
+        "[integration] When the stubbed _featureDeps.waitForChecks returns outcome starved with detail d, publish returns outcome draft, ci starved and ciDetail d.",
+        "[unit] Regression guard: ciRepairPlan for a draft publish outcome whose ci is starved returns undefined and runs no CI read."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "ci",
+        "publish"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Additive state propagation across existing publish/reason helpers; the repair exclusion already exists and needs a behavioral regression guard.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/approval.ts",
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/src/workflow/ci-repair-steps.ts",
+        "packages/nax/src/workflow/types.ts",
+        "packages/nax/test/unit/workflow/finalize-ci.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/finalize-ci.test.ts",
+          "reason": "the assertion at lines 77-79 pins the publish's CI wait options to cwd, timeoutMs, pollMs, signal and expectedSha; US-003 makes the publish also pass rerunStarved true, so the pinned options object gains `rerunStarved: true` and is otherwise unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0f036e13ca1407c1c3c55ff4f27b6f5f21973c0d"
+    },
+    {
+      "id": "US-004",
+      "title": "Allow an explicit starved-only CI readiness waiver",
+      "description": "**Goal** — Extend the shared CI readiness rule with an explicit starved-only exception and thread it through workflowPrReadiness.\n\n**Motivation** — Nothing can release the PR.\n\n**Approach** — The waiver is one rule extension and one record. `ciAllowsReady(outcome, { waiveStarved: true })` also allows `starved`; it never allows `failed`, `pending`, `conflicting`, `no-checks` or `unavailable`.\n\nAdd the `waiveStarved` option to `ciAllowsReady` and to `workflowPrReadiness`.\n\n`workflowPrReadiness` input (`packages/nax/src/bot/workflow-ready.ts`) — Baseline: `{ outcome?; ci: CiWaitResult; coverage?; headSha? }` — Target: the same plus `readonly waiveStarved?: boolean`, passed through to `ciAllowsReady`.\n\nWithout `waiveStarved` both functions behave as today; the existing tests pin that. Keep all workflow item, index, confirmed-work and coverage checks ahead of the shared CI decision; the option only changes which CI outcomes pass, never another readiness condition. New optional fields are spread in only when set, so payloads without them are exactly today's.\n\n**Scope** — In: shared predicate and workflow readiness option, with a matrix proving true only for green or explicitly waived starved. Out: reason validation and durable records (US-005), waiver posting, CLI flags and ready commands (US-007/008), publish state propagation (US-003), live status (US-006). The run's own publish never waives: a starved CI keeps the draft until a human runs `nax bot fix --waive-starved` or `nax workflow promote --waive-starved`.\n\n**Interface** —\n```ts\nciAllowsReady(outcome: CiWaitOutcome, options?: { readonly waiveStarved?: boolean }): boolean\n```\n`workflowPrReadiness` retains its existing return union and existing input fields; add `readonly waiveStarved?: boolean` to its input object.",
+      "acceptanceCriteria": [
+        "[unit] ciAllowsReady(\"starved\") returns false.",
+        "[unit] ciAllowsReady(\"starved\", { waiveStarved: true }) returns true.",
+        "[unit] ciAllowsReady(\"green\", { waiveStarved: true }) returns true.",
+        "[unit] ciAllowsReady with { waiveStarved: true } returns false for each outcome in [\"failed\", \"pending\", \"conflicting\", \"no-checks\", \"unavailable\"].",
+        "[unit] workflowPrReadiness with every item settled, ci outcome starved and waiveStarved: true returns { ready: true }.",
+        "[unit] workflowPrReadiness with every item settled and ci outcome starved without waiveStarved returns { ready: false } whose reason starts with \"CI starved:\".",
+        "[unit] Without a waiveStarved option, ciAllowsReady returns true for green and false for each existing non-green outcome failed, pending, conflicting, no-checks and unavailable, preserving the existing strict-green rule."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "ci",
+        "readiness"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small optional policy extension in two existing helpers; no authentication, role, permission or credential mechanism changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/ci-wait.ts",
+        "packages/nax/src/bot/workflow-ready.ts",
+        "packages/nax/test/unit/bot/workflow-ready.test.ts",
+        "packages/nax/test/unit/bot/workflow-ready-coverage.test.ts"
+      ],
+      "suggestedCriteria": [
+        "workflowPrReadiness still returns ready:false for an open workflow item when waiveStarved:true and CI is starved.",
+        "workflowPrReadiness still returns ready:false for uncovered required files at the current head when waiveStarved:true and CI is starved.",
+        "ciAllowsReady(\"starved\", { waiveStarved: false }) returns false."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "685476a67d7dde4ecea89c8be0085e62b7bfece4"
+    },
+    {
+      "id": "US-005",
+      "title": "Validate and render durable CI waiver records",
+      "description": "**Goal** — Add a strict, own-comment CI waiver record and reusable reason validation.\n\n**Motivation** — The only escape was `gh pr ready` by hand, which leaves `nax workflow status` at `outcome: draft` and no record of why a merged PR carries a check that never ran.\n\n**Approach** — A caller that readies a PR under a waiver first posts a `w-ci-waiver` comment (`renderCiWaiver`) and marks the PR ready only when that post succeeded. `nax workflow status` reads the newest own `w-ci-waiver` comment that parses (`latestCiWaiver`) on the live read and reports it. The record mirrors the `w-coverage` record (`packages/nax/src/bot/coverage-record.ts`): a heading with a declared count, one code-span line per check, and here one `Reason:` line; a body whose parts disagree reads as no record. This story supplies the record helpers; callers and posting are other stories.\n\nAdd `packages/nax/src/workflow/ci-waiver.ts` (`CI_WAIVER_KEY`, `CI_WAIVER_REASON_MAX`, `parseWaiverReason`, `renderCiWaiver`, `parseCiWaiver`, `latestCiWaiver`) and add `w-ci-waiver` to `TOP_LEVEL_MARKER_KEYS`.\n\n### File Format — the `w-ci-waiver` comment\n\n`renderCiWaiver({ headSha: <40-hex sha>, checks: [\"nax-agent: glob (Node 22.19.0, macos-latest)\"], reason: \"runner starvation, re-run passed\" })` returns `withNaxBotMarker(record, \"w-ci-waiver\")` where `record` is:\n\n```\nCI waiver at 7c98673abc0123456789abcdef0123456789abcd: 1 check(s) never got a runner\n- `nax-agent: glob (Node 22.19.0, macos-latest)`\nReason: runner starvation, re-run passed\n```\n\n- The heading is `CI waiver at <40-hex sha>: <n> check(s) never got a runner`.\n- One code-span check line per check (`- ` then the name in backticks); a backtick inside a name is written as `'`, and an empty name is written as `(unnamed check)`.\n- The last line is `Reason: ` followed by `neutralise(reason)`.\n\n`parseCiWaiver` strips the markers, finds the heading, reads the check lines under it, then the `Reason: ` line. It returns `null` when there is no heading, when the number of check lines differs from the declared count, when the `Reason: ` line is missing, or when any non-blank line follows it.\n\nThe newest own `w-ci-waiver` comment does not parse: `latestCiWaiver` skips it and returns the next newest that parses.\n\n`--waive-starved` with an empty, multi-line or over-300-character reason, or one holding `<!--`: `NaxError` `CI_WAIVER_REASON_INVALID`; exit 1 before any forge call. The helper validates and throws; CLI exit behavior belongs to US-007/008. Respect 300-character round-trip reasons: do not use capped inline rendering or revalidate an already neutralised record as raw input. For the record-line assertion, remove the standard withNaxBotMarker wrapper (its visible **nax bot** header, surrounding blank lines and trailing identity marker) before comparing the heading, check and Reason lines. stripNaxBotMarkers alone leaves the visible header; do not change that shared helper or omit the required wrapper to make this comparison pass. Append `\"w-ci-waiver\"` as the sixth, last entry in `TOP_LEVEL_MARKER_KEYS`, updating the exact pinned list at threads-comments.test.ts line 72.\n\n**Scope** — In: reason parser, marker-key recognition, record renderer/parser, newest valid own-comment selection and helper tests. Out: CI polling (US-001/002), ready predicate (US-004), command validation/writes (US-007/008), status reporting (US-006). `latestCiWaiver` reads only comments by the current forge login, as the item index does; a waiver posted by another account is not shown. A check name containing a backtick does not round-trip through the waiver record: the backtick is written as `'`.\n\n**Interface** —\n```ts\nexport const CI_WAIVER_KEY = \"w-ci-waiver\";\nexport const CI_WAIVER_REASON_MAX = 300;\nexport interface CiWaiver { readonly headSha: string; readonly checks: readonly string[]; readonly reason: string }\n/** The trimmed reason; throws NaxError CI_WAIVER_REASON_INVALID for an empty, multi-line, over-long or `<!--`-holding one. */\nexport function parseWaiverReason(raw: string): string;\n/** The marked comment body: the record, wrapped by withNaxBotMarker(…, CI_WAIVER_KEY). */\nexport function renderCiWaiver(waiver: CiWaiver): string;\nexport function parseCiWaiver(body: string): CiWaiver | null;\n/** The newest comment by `login` with marker key `w-ci-waiver` that parses; null when none does. */\nexport function latestCiWaiver(comments: readonly PrComment[], login: string): CiWaiver | null;\n```",
+      "acceptanceCriteria": [
+        "[unit] parseWaiverReason(\"  runner starvation  \") returns \"runner starvation\".",
+        "[unit] parseWaiverReason(\"\") throws a NaxError with code CI_WAIVER_REASON_INVALID.",
+        "[unit] parseWaiverReason(\"   \") throws a NaxError with code CI_WAIVER_REASON_INVALID.",
+        "[unit] parseWaiverReason(\"a\\nb\") throws a NaxError with code CI_WAIVER_REASON_INVALID.",
+        "[unit] parseWaiverReason of a 301-character string throws a NaxError with code CI_WAIVER_REASON_INVALID; of a 300-character string it returns the string.",
+        "[unit] renderCiWaiver for one check returns a body that ends with \"<!-- nax-bot:v1 key=w-ci-waiver -->\".",
+        "[unit] In the same case, the body's record lines, with the standard visible nax-bot header and identity marker stripped, are the heading, one check line and the Reason: line, in that order.",
+        "[unit] parseCiWaiver(renderCiWaiver(w)) returns w for w with a 40-hex head, the check \"nax-agent: glob (Node 22.19.0, macos-latest)\" and the reason \"runner starvation, re-run passed\".",
+        "[unit] parseCiWaiver(renderCiWaiver(w)) returns w for a 300-character reason of words that starts and ends with a letter.",
+        "[unit] parseCiWaiver returns null for a body with no Reason: line.",
+        "[unit] parseCiWaiver returns null for a body whose heading declares 2 checks over one check line.",
+        "[unit] latestCiWaiver over two own w-ci-waiver comments returns the one created later.",
+        "[unit] latestCiWaiver returns the older own waiver when the newest own w-ci-waiver comment does not parse.",
+        "[unit] latestCiWaiver returns null when the only w-ci-waiver comment is by another login.",
+        "[unit] TOP_LEVEL_MARKER_KEYS equals [\"summary\", \"w-index\", \"w-evidence\", \"fix-summary\", \"w-coverage\", \"w-ci-waiver\"], including w-ci-waiver as the sixth, last entry while preserving the five existing keys and their order.",
+        "[unit] parseWaiverReason(\"ok <!-- x -->\") throws a NaxError with code CI_WAIVER_REASON_INVALID.",
+        "[unit] parseCiWaiver(renderCiWaiver({ headSha, checks: [\"\"], reason: \"r\" })) returns checks [\"(unnamed check)\"]."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "ci",
+        "forge",
+        "records"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A bounded record grammar and validated CLI reason reuse existing marker and own-comment helpers; no new authorization or credential behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/coverage-record.ts",
+        "packages/nax/src/forge/marker.ts",
+        "packages/nax/src/forge/marker-grammar.ts",
+        "packages/nax/src/workflow/pr-body-safe.ts",
+        "packages/nax/test/unit/forge/threads-comments.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/ci-waiver.ts",
+        "packages/nax/test/unit/workflow/ci-waiver.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseCiWaiver returns null when any nonblank line follows the Reason: line.",
+        "parseCiWaiver returns null when the heading has a head other than a 40-hex SHA.",
+        "renderCiWaiver emits a Reason line with issue references and mentions neutralised, so #123 and @name do not remain live references.",
+        "parseWaiverReason rejects a reason containing a carriage-return line break with CI_WAIVER_REASON_INVALID.",
+        "latestCiWaiver returns null when no own marked comment parses."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/forge/threads-comments.test.ts",
+          "reason": "the assertion at line 72 pins `TOP_LEVEL_MARKER_KEYS` to the five current keys; US-005 appends `\"w-ci-waiver\"`, so the pinned list gains it as a sixth, last entry."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5b821ed48f1b361dc8d232b73288212d208dcee4"
+    },
+    {
+      "id": "US-006",
+      "title": "Report durable CI waivers in live workflow status",
+      "description": "**Goal** — Expose a ready PR's durable CI waiver in live workflow status JSON and plain output.\n\n**Motivation** — The only escape was `gh pr ready` by hand, which leaves `nax workflow status` at `outcome: draft` and no record of why a merged PR carries a check that never ran.\n\n**Approach** — `readLiveStatus` reads `latestCiWaiver` from the comments it already lists; `nax workflow status` puts it in `--json` as `ciWaiver` and prints the waiver line, only when the live PR is not a draft.\n\n`LiveStatus` live arm (`packages/nax/src/workflow/live-status.ts`): target adds `readonly ciWaiver?: CiWaiver`.\n\n`WorkflowStatusReport` (`packages/nax/src/cli/workflow.ts`): target adds `readonly ciWaiver?: CiWaiver`; `printPlain` adds the waiver line.\n\n`nax workflow status`: when the live read finds a waiver and the PR is no longer a draft, `--json` carries `ciWaiver: { headSha, checks, reason }` and the plain output adds `CI: passed with waiver at <sha7>: <n> check(s) never got a runner (<a>; <b>): <reason>`.\n\nNew optional fields (`starvedChecks`, `rerunStarved`, `waiveStarved`, `ciWaiver`, `ciWaived`) are spread in only when set, so payloads without them are exactly today's. Reuse the current login and comment list fetched alongside PR state; preserve no-item-index fallback, existing live-read eligibility and unrelated open-item reporting. Filter ciWaiver out of the public report when the PR remains a draft; do not rewrite the historical record or fabricate green CI. Place the plain waiver line before the supplementary-items early return. Exercise readLiveStatus and workflowStatusCommand, not only render helpers.\n\n**Scope** — In: live waiver read, optional report field, ready-PR plain line and absence regressions. Out: record grammar (US-005), posting/waiving/readiness commands (US-007/008), polling outcomes (US-002). `nax workflow status` shows a waiver only on a live read; a status that falls back to the run record (for example a PR with no item index) does not show it. `latestCiWaiver` reads only comments by the current forge login, as the item index does; a waiver posted by another account is not shown.\n\n**Interface** — Add `readonly ciWaiver?: CiWaiver` to both the live arm of `LiveStatus` and `WorkflowStatusReport`; `CiWaiver` is the interface exported by US-005. Existing command signatures and fallback arm stay unchanged.",
+      "acceptanceCriteria": [
+        "[integration] readLiveStatus over a PR whose comments hold the item index and an own w-ci-waiver comment returns a live status whose ciWaiver equals that comment parsed by parseCiWaiver.",
+        "[integration] workflowStatusCommand with json: true for a ready PR carrying an own waiver prints a report whose ciWaiver holds the waiver's headSha, checks and reason.",
+        "[integration] The plain workflowStatusCommand output for the same PR includes \"CI: passed with waiver at <sha7>: 1 check(s) never got a runner (<name>): <reason>\".",
+        "[integration] workflowStatusCommand with json: true for a PR with no waiver comment prints a report with no ciWaiver key.",
+        "[integration] workflowStatusCommand with json: true for a PR that is still a draft and carries an own waiver prints a report with no ciWaiver key."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "ci",
+        "cli",
+        "status"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Read-only additive status projection through two existing modules with established forge fixtures and no new I/O.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/live-status.ts",
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/src/workflow/ci-waiver.ts",
+        "packages/nax/test/unit/workflow/live-status.test.ts",
+        "packages/nax/test/unit/cli/workflow-status-live.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "47115c7f1e5bc7f449c6734e4953c8c37ece33a5"
+    },
+    {
+      "id": "US-007",
+      "title": "Waive starved CI safely through nax bot fix",
+      "description": "**Goal** — Add validated --waive-starved support to full and ready-only bot fix passes, recording the waiver before readiness and reporting it.\n\n**Motivation** — Nothing can release the PR.\n\n**Approach** — Add the CLI option, validate it, and thread the reason through `BotFixInput` into `BotFixEnv`. The ready pass's CI wait re-runs starved jobs. A `starved` outcome with a reason posts the waiver comment and then marks the PR ready, on both the workflow-PR path and the plain-PR path; `workflowReadyHold` returns the waiver it recorded, and `ready.produces` declares `ciWaived`. The decision and the comment write live in `packages/nax/src/bot/ci-waiver-ready.ts`. The fix summary comment and the command's summary line name the waiver.\n\n`nax bot fix <pr> --waive-starved <reason>`: also accepted with `--ready-only`. The reason is validated by `parseWaiverReason` before any fix or forge call; an invalid reason prints the error on stderr and exits 1. When the ready pass's CI wait ends `starved`, the pass posts the waiver comment, then marks the PR ready. On the full fix path (not `--ready-only`, which posts no fix summary) the fix summary comment adds `Marked ready with a CI waiver: <n> check(s) never got a runner: <a>; <b>. Reason: <reason>`, and the command's own summary line reads `Marked ready with a CI waiver: <n> check(s) never got a runner.` When CI is green the flag changes nothing. When any check really failed the pass keeps the draft as today.\n\nOn the workflow path the waiver comment is posted after `writeEvidence` and before the final PR head re-read; on the plain path after `readyHeadHold`; on both, before the mark-ready command. `ci-waiver-ready.ts` catches its own post error and returns it as the `could not record the CI waiver: <error>` hold, so the catch in `workflowReadyHold` never sees it. The file is 556 lines against the 600-line limit, so the waiver decision and its comment write live in the new `packages/nax/src/bot/ci-waiver-ready.ts`, and `fix-report.ts` only calls it.\n\nA caller that readies a PR under a waiver first posts a `w-ci-waiver` comment (`renderCiWaiver`) and marks the PR ready only when that post succeeded. Use the exact execution head (`state.pushedSha ?? env.info.headSha`) and the CI result's starvedChecks for the record; pass the already-validated reason and do not waive any other CI outcome. `ciAllowsReady(outcome, { waiveStarved: true })` also allows `starved`; it never allows `failed`, `pending`, `conflicting`, `no-checks` or `unavailable`. `workflowPrReadiness` receives the optional waiveStarved flag, preserving item and coverage conditions. `waitForCi` in fix-report.ts passes `rerunStarved: true`. Preserve the existing review/findings/head-gate/head-race/cancellation checks and the _fixReportDeps seams; inject the comment writer into the new helper so outer readyStep tests still observe it.\n\n`BotFixOptions` (`packages/nax/src/cli/bot.ts`), `BotFixInput` (`packages/nax/src/bot/fix-run.ts`), `BotFixEnv` (`packages/nax/src/bot/fix-steps.ts`): target each adds `readonly waiveStarved?: string` (the validated reason). The `env` object built in `runBotFix` (`fix-run.ts`) copies it from the input. `BotFixState` (`packages/nax/src/bot/fix-steps.ts`): target adds `readonly ciWaived?: { readonly checks: readonly string[]; readonly reason: string }`. `BOT_FIX_GRAPH.ready.produces` target is `[\"markedReady\", \"readyHeld\", \"ciWaived\"]` — `assertPatchDeclared` rejects any undeclared key. `readinessSummary` target prints `Marked ready with a CI waiver: <n> check(s) never got a runner.` when `ciWaived` is set.\n\nNew optional fields (`starvedChecks`, `rerunStarved`, `waiveStarved`, `ciWaiver`, `ciWaived`) are spread in only when set, so payloads without them are exactly today's. Treat undefined as absent, not an empty string: empty, multiline, over-300-character or <!---holding reasons must fail before orchestration. Without `--waive-starved` the ready pass is today's; the existing bot fix tests pin that path. Use botFixCommand and runBotFix as outer triggers with `_fixReportDeps.waitForChecks` stubbed, in addition to focused readyStep tests on both PR paths. readyStep's return is StepResult<BotFixState>: assert markedReady, readyHeld and ciWaived under result.patch; runBotFix's BotFixResult exposes those state fields directly. Observe the private readinessSummary through botFixCommand's emitted ready-pass line rather than exporting it solely for tests. When a fixture sets state.pushedSha, set state.readyOnly:true to reach the ready-pass checks instead of the existing pushed-head hold.\n\n**Scope** — In: bot CLI registration/early validation, full-cycle and ready-only propagation, ready wait opt-in, extracted helper, durable comment-before-ready sequencing, graph output and reports. Out: CI classification (US-002), shared rule (US-004), record helpers (US-005), workflow promote (US-008), status (US-006). `readChecksOnce` (the one-shot read behind `nax bot fix`'s gate baseline) keeps its current outcomes; a starved check there still reads as `failed`.\n\n**Interface** —\n```ts\n// BotFixOptions, BotFixInput and BotFixEnv each add:\nreadonly waiveStarved?: string;\n// BotFixState adds:\nreadonly ciWaived?: { readonly checks: readonly string[]; readonly reason: string };\n// workflowReadyHold target:\nworkflowReadyHold(env, state): Promise<{ readonly held?: string; readonly ciWaived?: BotFixState[\"ciWaived\"] }>\n```",
+      "acceptanceCriteria": [
+        "[integration] botFixCommand with waiveStarved: \"\" returns 1 without calling runBotFixCycle or runBotFix.",
+        "[integration] botFixCommand with readyOnly: true and waiveStarved: \"runner starvation\" calls runBotFix with waiveStarved: \"runner starvation\".",
+        "[integration] botFixCommand without readyOnly and with waiveStarved: \"runner starvation\" calls runBotFixCycle with waiveStarved: \"runner starvation\".",
+        "[integration] runBotFix with readyOnly: true and waiveStarved: \"runner starvation\" on a workflow draft whose items are all settled, with _fixReportDeps.waitForChecks returning starved for check x, posts a comment that parseCiWaiver reads as { headSha: <PR head>, checks: [\"x\"], reason: \"runner starvation\" } and returns markedReady: true.",
+        "[unit] The ready pass's CI wait calls the stubbed _fixReportDeps.waitForChecks with options that include rerunStarved: true.",
+        "[unit] On a workflow PR whose items are all settled, with a stubbed CI wait returning starved for x and env.waiveStarved \"runner starvation\", readyStep posts the waiver comment before it runs the mark-ready command.",
+        "[unit] In the same case, readyStep returns a StepResult whose patch has markedReady: true and ciWaived { checks: [\"x\"], reason: \"runner starvation\" }.",
+        "[unit] On a PR without the workflow marker, with the same stubbed CI wait and env.waiveStarved, readyStep posts the waiver comment and returns a StepResult whose patch has markedReady: true.",
+        "[unit] On the workflow path, when posting the waiver comment throws boom, readyStep returns a StepResult whose patch has markedReady: false with readyHeld \"could not record the CI waiver: boom\", without running the mark-ready command.",
+        "[unit] With a stubbed CI wait returning starved and no env.waiveStarved, readyStep returns a StepResult whose patch has markedReady: false with readyHeld starting \"CI starved:\".",
+        "[unit] With a stubbed CI wait returning failed and env.waiveStarved set, readyStep posts no waiver comment.",
+        "[unit] With a stubbed CI wait returning green and env.waiveStarved set, readyStep returns a StepResult whose patch has markedReady: true and posts no waiver comment.",
+        "[unit] renderFixSummary for a state with markedReady: true and ciWaived { checks: [\"a\", \"b\"], reason: \"r\" } includes the line \"Marked ready with a CI waiver: 2 check(s) never got a runner: a; b. Reason: r\".",
+        "[unit] readinessSummary for a state with markedReady: true and ciWaived with two checks returns \"Marked ready with a CI waiver: 2 check(s) never got a runner.\", observable in botFixCommand's ready-pass output.",
+        "[unit] On the plain-PR path, when posting the waiver comment throws boom, readyStep returns a StepResult whose patch has markedReady: false with readyHeld \"could not record the CI waiver: boom\", without running the mark-ready command.",
+        "[integration] botFixCommand rejects an empty, multiline, over-300-character or <!---holding waiver reason with exit 1 before any fix or forge call, reporting the parseWaiverReason validation error on stderr (the thrown NaxError has code CI_WAIVER_REASON_INVALID).",
+        "[unit] With no env.waiveStarved and otherwise-ready green CI, readyStep returns { patch: { markedReady: true }, exit: \"report\" } unchanged, with no ciWaived key or waiver comment."
+      ],
+      "tags": [
+        "feature",
+        "bot",
+        "workflow",
+        "ci",
+        "cli",
+        "readiness"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-004",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module CLI/input/environment/state propagation and two guarded readiness paths require durable write ordering, specific failure holds and declared step-graph outputs; existing forge access checks remain unchanged.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/bot.ts",
+        "packages/nax/src/bot/fix-run.ts",
+        "packages/nax/src/bot/fix-report.ts",
+        "packages/nax/src/bot/fix-steps.ts",
+        "packages/nax/src/workflow/ci-waiver.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/bot/ci-waiver-ready.ts",
+        "packages/nax/test/integration/bot/fix-starved-waiver.test.ts",
+        "packages/nax/test/unit/cli/bot-fix-waiver.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the workflow PR head changes during the waiver write, the final head re-read holds readiness rather than running mark-ready.",
+        "On a workflow PR, the observed successful write order is evidence, waiver comment, final head read, mark-ready.",
+        "When the waiver flag is absent, botFixCommand passes no waiveStarved key to runBotFixCycle or runBotFix.",
+        "runBotFixCycle preserves waiveStarved through its post-push ready-only runBotFix call.",
+        "A ready-only waiver pass posts the waiver record but no fix-summary comment."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "559d0b9638cf24f8c953507927dc9834d68e202b"
+    },
+    {
+      "id": "US-008",
+      "title": "Waive starved CI through workflow promote without rerunning jobs",
+      "description": "**Goal** — Add a validated starved-only workflow promotion waiver with visible dry-run checks and a durable comment action before ready.\n\n**Motivation** — Nothing can release the PR.\n\n**Approach** — Add the CLI option; validate it before the run is loaded; `PromoteTarget` keeps the CI result; the `ci-green` check passes a `starved` CI when the reason is given; a passing check prints its detail when it has one; `--yes` adds the `waiver` action between `comment` and `ready`.\n\n`nax workflow promote -f <feature> [--yes] --waive-starved <reason>`: the reason is validated before the run is loaded; an invalid reason prints the error and exits 1. The `ci-green` check passes for a `starved` CI with `detail` `waived: <a>; <b>` and prints `pass  ci-green  waived: <a>; <b>`. With `--yes` the actions are `tick`, `comment`, `waiver`, `ready`, `record`; `waiver` posts the waiver comment and is `skipped` when CI was green. Without the flag there is no `waiver` action and a starved CI fails the check: `FAIL  ci-green  ci starved: <detail>`.\n\nThe re-run is opt-in per caller. The run's publish (`waitForCi` in `packages/nax/src/workflow/finalize.ts`) and `nax bot fix` (`waitForCi` in `packages/nax/src/bot/fix-report.ts`) pass `rerunStarved: true`. `nax workflow promote` does not: it is a one-poll check and, without `--yes`, a report that must not write to the forge.\n\n`WorkflowPromoteOptions` (`packages/nax/src/cli/workflow-promote.ts`): target adds `readonly waiveStarved?: string`. `PromoteTarget` (`packages/nax/src/cli/workflow-promote.ts`): target adds `readonly ci: CiWaitResult` (the wait `ciGreen` read) and `readonly headSha: string` (the `expectedSha` that wait was bound to), so the `waiver` action can name the checks and the head.\n\n`PromoteAction[\"name\"]` and `ForgeAction` (`packages/nax/src/cli/workflow-promote.ts`): target each adds `\"waiver\"`; the action order is `tick`, `comment`, `waiver`, `ready`, `record`, and `waiver` appears only when `--waive-starved` was given.\n\n`checkLine` (`packages/nax/src/cli/workflow-promote.ts`) — Target: a passing check prints `pass  <name>` when its detail is empty and `pass  <name>  <detail>` otherwise; a failing check is unchanged.\n\nA caller that readies a PR under a waiver first posts a `w-ci-waiver` comment (`renderCiWaiver`) and marks the PR ready only when that post succeeded. Render from the retained CI result's starvedChecks and retained headSha, use `commentArgv` for the target PR, and execute through `forgeWrite` so failures stop the ordered action list. Posting the waiver comment fails in `nax workflow promote --yes`: The promotion stops at `waiver` (`promote stopped at waiver: <stderr>`); `ready` and `record` never run. When CI is green the flag changes nothing except a skipped waiver action in a real promotion. Actual failures are never waived.\n\nValidate with `parseWaiverReason` before resolveOutputDir/loadRunVerdict/waitForChecks; invalid empty, multiline, over-300-character or <!---holding reasons surface CI_WAIVER_REASON_INVALID and return 1 before forge calls. Thread the optional option through the promote command registration in cli/workflow.ts and conditionally spread new optional fields. Without `--waive-starved` the promote checks, plain lines and actions are today's (no `waiver` action); the existing promote tests pin that path. Use workflowPromoteCommand/registered CLI with `forgeDeps.waitForChecks` stubbed, and assert parsed comment content, dry-run no-write behavior and action error ordering.\n\n**Scope** — In: promote CLI option/early reason validation, retained head/CI, waived check detail, conditional waiver action and failure stop. Out: wait classification (US-002), predicate/record helpers (US-004/005), bot fix (US-007), status (US-006). `nax workflow promote` never re-runs a job; only the run's publish and `nax bot fix` do.\n\n**Interface** —\n```ts\n// WorkflowPromoteOptions adds:\nreadonly waiveStarved?: string;\n// PromoteTarget adds:\nreadonly ci: CiWaitResult;\nreadonly headSha: string;\n// PromoteAction[\"name\"] target:\n\"tick\" | \"comment\" | \"waiver\" | \"ready\" | \"record\"\n// ForgeAction target:\n\"tick\" | \"comment\" | \"waiver\" | \"ready\"\n```",
+      "acceptanceCriteria": [
+        "[integration] workflowPromoteCommand with waiveStarved: \"a\\nb\" returns 1 and calls neither forgeDeps.resolveOutputDir nor forgeDeps.waitForChecks.",
+        "[integration] workflowPromoteCommand calls the stubbed forgeDeps.waitForChecks with options that have no rerunStarved key.",
+        "[integration] With every item ruled, a stubbed CI wait returning starved for check x and waiveStarved: \"runner starvation\", the report's ci-green check has passed: true and detail \"waived: x\".",
+        "[integration] In the same case without yes, no forge write command runs and the plain output includes \"pass  ci-green  waived: x\".",
+        "[integration] In the same case with yes: true, the report's action names are tick, comment, waiver, ready, record in that order, and waiver has status done.",
+        "[integration] In the same case with yes: true, the waiver action sends the argv constructed by commentArgv for the PR through forgeDeps.forge.run, with a body that parseCiWaiver reads as { headSha: <PR head>, checks: [\"x\"], reason: \"runner starvation\" }.",
+        "[integration] When the waiver write exits 1 with stderr denied, the command returns 1 with the error \"promote stopped at waiver: denied\", and the mark-ready command never runs.",
+        "[integration] With yes: true, waiveStarved set and a stubbed CI wait returning green, the waiver action has status skipped and no waiver comment is posted.",
+        "[integration] With yes: true, no waiveStarved and a green CI, the report's action names are tick, comment, ready, record.",
+        "[integration] With a stubbed CI wait returning starved and no waiveStarved, the ci-green check fails with detail starting \"ci starved:\".",
+        "[integration] With waiveStarved set and a stubbed CI wait returning failed, the ci-green check fails with detail starting \"ci failed:\".",
+        "[integration] workflowPromoteCommand rejects an empty, multiline, over-300-character or <!---holding waiver reason with exit 1 and reports the parseWaiverReason validation error before any forge call (the thrown NaxError has code CI_WAIVER_REASON_INVALID).",
+        "[integration] When the waiver action fails, the promotion does not run the record action."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "ci",
+        "cli",
+        "promote"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-004",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two existing CLI modules gain an option and one action using the established ciGreen, forgeWrite and ordered-action patterns; injected forge fixtures make ordinary single-session TDD sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/workflow-promote.ts",
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/src/workflow/promote.ts",
+        "packages/nax/src/workflow/ci-waiver.ts",
+        "packages/nax/test/helpers/workflow-promote-fixture.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/workflow-promote-waiver.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When two starved check names include commas, the passing ci-green detail joins the complete names with semicolon-space.",
+        "When a valid reason has surrounding whitespace, the posted waiver record uses the trimmed reason.",
+        "When ci-green passes with no detail, plain output remains exactly pass  ci-green.",
+        "When a waived promotion succeeds, the posted waiver's headSha equals the exact expectedSha passed to the single CI wait."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "49bc7bba461a32528631fb711fddb20e1ef0ea06"
+    }
+  ],
+  "analysis": "Enhancement closing #2889, entirely within packages/nax; no changes to nax-agent, nax-agent-acp, nax-ai, dependencies, release versions or configuration schema are needed. Graph-first navigation was unavailable because this session exposes no codebase-memory MCP tools; discovery used direct repository reads and text search. The supplied spec matches the inspected baseline. Architecture guidance is docs/architecture/ARCHITECTURE.md:17 (injected external calls), :145 (600-line source / 800-line test limits), and :126 (package boundaries). Use Bun, strict TypeScript, bun:test, injectable forge calls, named constants, and leaf imports to avoid orchestration cycles. No implementation or validation command is needed for this PRD-writing task.\n\nUS-001/US-002: packages/nax/src/forge/types.ts:15 defines ForgeRunResult and :23 defines the injected ForgeDeps.run contract. packages/nax/src/forge/job-steps.ts:60 constructs the hostname-qualified Actions job API argv; :65 catches command/JSON failures and treats missing steps as unknown. Mirror that fail-soft I/O pattern, but do not reuse failed-step classification or add a runner_id requirement: starvation requires conclusion cancelled, runner_name empty or null, and an actual empty steps array. New ci-starved.ts owns URL recognition, job reads, POST reruns, CI_STARVED_RERUN_LIMIT=2, immutable ledger decisions and deadline decisions. The URL supplies host/repository/job id; non-Actions links must fail closed, not fall through to a guessed GitHub endpoint.\n\npackages/nax/src/workflow/ci-wait.ts:22 defines the current six-outcome union, :24 the result, :35 the strict-green readiness function, :45 the runner/clock/sleep/scheduler seam, :67 the Poll union, :81 GH_FAILED including cancel, :102 GhCheck, :107 ghChecks, :124 classifyGh, :199 githubWaiting, :219 checksArgv, :225 pollOnce, :303 bindToHead, :312 terminalPoll, :330 errorRun, :362 checkHistory and :390 waitForChecks. The wait currently immediately returns failed only once pending checks settle. Preserve that ordering: only a would-be terminal GitHub failure gets job classification; mixed failed/pending timeout and error-history behavior must not acquire job reads. Extend parsed checks with state/link and carry ghChecks on failed/waiting polls. Call decideStarved at one site and starvedAtDeadline at one site, leaving loop complexity below the ratchet. Count rounds per wait, not per job, copy ledger sets rather than mutating EMPTY_STARVED_LEDGER, and distinguish old cancelled job ids from fresh rerun attempts. An old cancelled id already rerun must be ignored for job reads and round spending while other real failures still win. Only checks rerun by this wait can become starved at deadline; IN_PROGRESS work must remain pending. Do not accidentally use ledger names alone to waive a newly unrelated check or let a green/empty poll satisfy a vacuous deadline predicate.\n\nHead binding is essential: githubWaiting currently only reads green/waiting polls (ci-wait.ts:199); ghHeadSha already supplies a fail-open headRefOid-only auxiliary read at :445. A would-be failed GitHub poll with expectedSha must read the head before any job read or POST; mismatch ends unavailable immediately with the existing sha8 wording. packages/nax/src/workflow/ci-wait.ts:414 currently reconstructs results as {outcome, detail}; change the return plumbing so starvedChecks survives both classification and deadline returns, while other outcomes omit it. Progress logging already uses workflow stage and storyId _run, and the wait's finally cancels heartbeat scheduling; preserve both on every new return path. New info/warn rerun lines should also be safe with no logger. packages/nax/src/workflow/ci-wait.ts:468 readChecksOnce and :492 verdictForHead are explicitly separate; they keep today's classifications and head-binding behavior even though shared checks argv adds link. No GitLab job I/O is introduced.\n\nTests: packages/nax/test/unit/workflow/ci-wait.test.ts:19 provides a scripted runner and virtual clock, :65 and :326 pin the old checks argv. Change only their field list to name,state,bucket,link; add no new tests to that 765-line file. Put all new wait tests in test/unit/workflow/ci-wait-starved.test.ts and restore _ciWaitDeps after each test. Existing ci-wait-sha.test.ts and ci-wait-read-once.test.ts are important regression coverage. Use a stub scheduler/clock and routed gh pr checks / gh pr view / gh api responses, not real sleeps or real forge calls.\n\nUS-003: packages/nax/src/workflow/types.ts:158 is FeatureCiState, also consumed by pr-body.ts:40, approval.ts:21 and cli/workflow.ts:63; add starved without changing existing serialized values. approval.ts:59 owns ciReason and :121 readinessReasons composes it; add the starved-specific prefix/fallback rather than embedding a prefix in the wait's detail. finalize.ts:60 DETAILED_CI_STATES and :71 ciDetailFields decide which details survive the publish record; :347 finishPr bases readiness on advisor approval plus no deterministic reasons; :408 waitForCi binds the pushed head and is shared by publishing modes. Opt this caller into reruns and preserve the starved detail through draft records and PR reasons. ci-repair-steps.ts:111 ciRepairPlan already requires out.outcome=draft and out.ci=failed before reading failures; leave the guard intact and demonstrate that starvation never reads repair logs or plans an agent. finalize-ci.test.ts:77 pins the wait options: add rerunStarved:true and otherwise preserve the object. Existing finalize-ci-gate.test.ts and feature-steps-ci-repair-decision.test.ts cover related integration.\n\nUS-004: the only CI ready rule remains ciAllowsReady; its optional waiveStarved boolean allows only starved in addition to green. workflow-ready.ts:36 workflowPrReadiness currently checks index presence, publication completeness, open items, confirmed advisor work, coverage and then CI (:63). Pass the optional waiver only into that last CI rule; do not bypass any item, coverage, trust, review, gate or head checks. Tests live in test/unit/bot/workflow-ready.test.ts and workflow-ready-coverage.test.ts. This is a narrow explicit readiness exception, not a new forge authorization mechanism, role check or credential flow.\n\nUS-005: bot/coverage-record.ts:16 defines a strict heading/count grammar, :24 renders code-span lines and :49 rejects inconsistent tails; mirror its record discipline while adding a final Reason line. forge/marker.ts:19 withNaxBotMarker wraps a visible nax bot header plus the v1 identity marker, :27 ownComments filters by current login, and :48 stripNaxBotMarkers removes markers but not the visible header. forge/marker-grammar.ts:2 TOP_LEVEL_MARKER_KEYS currently has five entries; append w-ci-waiver so comment discovery can see it, and update test/unit/forge/threads-comments.test.ts's pinned list. ownComments does not sort; latestCiWaiver must choose the newest created comment that actually parses, falling back past malformed newer own comments, never accepting another account's marker. workflow/pr-body-safe.ts:25 neutralise breaks references and mentions; use it on posted reasons without capping the record or applying the 300-character input limit to an already neutralised/rendered string. Validate raw CLI reasons before I/O: trimmed nonempty, single-line, <=300 characters, no <!--; throw NaxError with CI_WAIVER_REASON_INVALID. A check name's comma must not split its identity; semicolons join names in prose, each record check gets its own line, backticks become apostrophes and empty names become (unnamed check).\n\nUS-006: workflow/live-status.ts:18 LiveStatus and :58 readLiveStatus already fetch PR, current login, threads and comments concurrently; :76 falls back to the run record without an item index. Parse the newest own waiver from those same comments, without extra forge writes or changing fallback behavior. cli/workflow.ts:53 WorkflowStatusReport, :101 buildReport and :126 printPlain own reporting. The live report already filters the CI open item when a PR is no longer draft (inside buildReport). Add ciWaiver only on a live, non-draft report; plain output must put the CI line before the supplementary-items early return. Do not fabricate ci=green or erase unrelated unresolved items just to display a waiver. Existing tests are test/unit/workflow/live-status.test.ts and test/unit/cli/workflow-status-live.test.ts (fixture :98 supplies item index comments) plus workflow-status.test.ts. Status is observational: preserve the record's CI and established live-read eligibility/fallback semantics, only reporting the durable exception where the spec permits it.\n\nUS-007: cli/bot.ts:69 BotFixOptions, :153 botFixCommand, :160 fixCyclePass, :194 readinessSummary, :208 readyOnlyPass and :268 fix registration are the CLI integration points. Validate even an explicitly empty string (check undefined, not truthiness) before either fix orchestration call and any forge call; forward only a validated trimmed reason, conditionally spread so absent payloads remain identical. bot/fix-run.ts:86 BotFixInput, :111 BOT_FIX_GRAPH and :433 env construction thread the reason into BotFixEnv (fix-steps.ts:88); BotFixState at fix-steps.ts:37 carries the recorded ciWaived checks/reason. fix-cycle.ts:24 derives its input from BotFixInput and :35/:64 forwards input to both fix and later ready-only passes, so ensure the option survives the existing spread chain without introducing an option into review semantics. The ready node at fix-run.ts:199 must declare ciWaived in produces: step-graph/run.ts:77 rejects even undefined undeclared patch keys.\n\nbot/fix-report.ts is 556 lines, so put waiver decision and comment posting in new bot/ci-waiver-ready.ts and keep its caller thin. fix-report.ts:153 waitForCi opts into reruns; :221 workflowReadyHold currently returns string|undefined, :257 writeEvidence persists workflow evidence, :273 readyHeadHold protects the plain path, :379 readyStep marks ready only after all guards, and :506 renderFixSummary formats public reporting. readyStep returns StepResult<BotFixState>, so its readiness and waiver fields belong under result.patch, unlike runBotFix's flattened BotFixResult. readinessSummary is private to cli/bot.ts; assert its text through the emitted botFixCommand ready-pass output rather than adding an export solely for testing. Change workflowReadyHold to an optional-held/ciWaived object. On workflow PRs post waiver after evidence succeeds and before the final head re-read; on plain PRs after readyHeadHold. Both must post before mark-ready and stop on comment failure. The new helper catches its own post error and returns the precise waiver-specific hold so workflowReadyHold's generic rulings catch never masks it. Preserve _fixReportDeps.postPrComment observability through injected calls. Keep all existing review, finding, configured-head-gate, pushed-head, cancellation, and mark-ready failure guards. ready-only remains summary-comment-free; full fix summaries and CLI readiness summaries report successful waiver readiness. Existing seam tests include test/integration/bot/fix-report-workflow.test.ts:50 setup, test/helpers/bot-fix.ts, test/unit/bot/fix-report.test.ts, test/unit/cli/bot-fix.test.ts and bot-fix-cycle.test.ts. Assert outer botFixCommand/runBotFix wiring as well as readyStep order, not just helper behavior.\n\nUS-008: cli/workflow-promote.ts:46 WorkflowPromoteOptions, :152 ciGreen, :173 PromoteTarget, :186 ForgeAction, :194 forgeWrite, :259 promoteActions, :289 promote, :316 checkLine and :332 workflowPromoteCommand are integration points. Existing headSha (:118) reads git HEAD; retain that exact expectedSha as PromoteTarget.headSha and retain the single CI result used by ci-green, rather than re-reading it for the waiver. Validate the reason before loadRunVerdict in promote, hence before resolveOutputDir or waitForChecks. ciGreen remains one poll (timeoutMs=0,pollMs=0) and never passes rerunStarved. A dry run may read/check but cannot post a comment or rerun a job. Only the flag adds the ordered waiver action; green CI skips its write, failed CI still refuses, comment failure stops ready and record. workflow/promote.ts supplies commentArgv/markReadyArgv and forgeWrite centralizes nonzero-write errors. cli/workflow.ts:207 registers promote and must forward the conditionally present option. commentArgv is an argv builder, not an external runner: assert the generated argv reaches forgeDeps.forge.run. Invalid reason errors are printed through errorMessage using the current CLI error format; the NaxError code is asserted on parseWaiverReason, not assumed to appear literally in stderr or the JSON error string. Shared test/helpers/workflow-promote-fixture.ts:97 accepts a stub CiWaitResult and :50 detects forge writes; extend via existing tests or focused new tests to assert ordering, parsed record, dry-run safety and exact error output.\n\nCompatibility/migration: additive outcome and optional fields only; absent starvedChecks/rerunStarved/waiveStarved/ciWaiver/ciWaived must be omitted, not materialized as undefined, false or null. No persisted schema migration or backfill is required; old comments and run records continue to parse and report unchanged. The live waiver comment is the durable exception, not a synthetic green CI result. Strict-green stays the default in publish, promote and bot ready; actual failures and unreadable jobs cannot be waived. New API writes increase permissions/rate-limit exposure but go through existing forge seams and fail closed for readiness; no credentials or access-control policy is added. Biggest risks are GitHub's stale rerun job identity, head races, incorrectly rewriting pending/error deadline priorities, losing optional result fields in wrappers, trusting malformed/public comments, truncating record reasons, import cycles, and enlarging near-limit files. Dependencies are exactly the binding graph; US-001 and US-005 can start independently. US-006 and US-008 both touch cli/workflow.ts without a binding dependency between them, so keep their additive edits isolated and re-read current files before editing. Tests are implemented within each code story, not as additional stories; do not run bare bun test or coverage inside a sandboxed nax session.\n\nRefine-pass audit: enumerated all 91 numbered source-spec criteria and retained each in its original story and original ordinal block: US-001 AC1-13; US-002 AC1-18; US-003 AC1-6; US-004 AC1-6; US-005 AC1-17; US-006 AC1-5; US-007 AC1-15; US-008 AC1-11. No trailing command-count, no-read, no-write, no-ready, same-case, record-boundary or starts/ends-with-letter qualifier was dropped. The record-line assertion is clarified to compare the record after removing the full standard wrapper: forge/marker.ts:19 adds the visible header, whereas :48 stripNaxBotMarkers removes only the identity marker. Do not change that shared wrapper behavior. The readyStep assertions now use its actual StepResult.patch envelope, and the promote comment assertion observes the argv builder's output at the runner. Existing CLI errors print errorMessage, so tests must not invent a requirement that an internal NaxError code is printed verbatim.\n\nAll nine failure-table rows have acceptance criteria: missing/non-Actions links (US-002 AC19); nonzero/malformed/missing-steps job reads (US-001 AC7/8/14 and US-002 AC6/20); failed rerun request and warning (US-002 AC11/12); stale rerun identity without another round (US-002 AC10); GitLab cancellation (US-002 AC17); bot waiver-post failure on both PR paths (US-007 AC9/15); promotion write failure stops ready and record (US-008 AC7/13); invalid reason validation before I/O (US-005 AC2-5/16, US-007 AC16, US-008 AC1/12); invalid newest own record falls back (US-005 AC13). Every story has a negative-path acceptance criterion. Regression behavior is explicitly protected by unchanged pending/GitLab/failure outcomes, publish option values, the default strict-green matrix, the five original marker keys/order, absent status fields, the no-waiver green readyStep patch, and promotion's four original actions.\n\nAll 12 source Out of Scope items remain verbatim in the top-level list. All spec-recommended context files are included within the five-file limit; the only not-yet-existing context files are outputs of declared upstream dependencies. All eight binding ids/workdirs/dependency arrays remain unchanged and every dependency exists. New test paths are scoped story outputs rather than additional stories. Promote routing is medium/tdd-simple because it extends two existing CLI modules using existing forgeWrite/action patterns; complex/lite remains justified only for the CI wait state machine and bot fix's multi-module dual-path write ordering. No authentication, forge authorization, role, credential or agent permission resolution policy is added.",
+  "outOfScope": [
+    "GitLab: a cancelled GitLab job or pipeline is never classed as starved and is never re-run.",
+    "`readChecksOnce` (the one-shot read behind `nax bot fix`'s gate baseline) keeps its current outcomes; a starved check there still reads as `failed`.",
+    "A check still queued at the deadline that this wait never re-ran stays `pending`, as today.",
+    "A failed check seen while other checks are still pending, at the deadline or at the error-poll limit, keeps today's `failed` outcome without a job read.",
+    "`nax workflow promote` never re-runs a job; only the run's publish and `nax bot fix` do.",
+    "The run's own publish never waives: a starved CI keeps the draft until a human runs `nax bot fix --waive-starved` or `nax workflow promote --waive-starved`.",
+    "Re-running a starved job outside a CI wait, as a command of its own.",
+    "`nax workflow status` shows a waiver only on a live read; a status that falls back to the run record (for example a PR with no item index) does not show it.",
+    "`latestCiWaiver` reads only comments by the current forge login, as the item index does; a waiver posted by another account is not shown.",
+    "A check name containing a backtick does not round-trip through the waiver record: the backtick is written as `'`.",
+    "Updating the nax-finish skill (repository `nax-toolkit-skills`) to offer `--waive-starved` is a manual follow-up outside this run.",
+    "A config key for the re-run limit: `CI_STARVED_RERUN_LIMIT` is a constant, as `CI_ERROR_POLL_LIMIT` is."
+  ],
+  "routingProfile": "native-codex-ds"
+}

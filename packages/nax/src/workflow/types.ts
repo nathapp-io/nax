@@ -155,7 +155,19 @@ export interface RepoGateSummary {
   readonly failing: readonly string[];
 }
 
-export type FeatureCiState = "green" | "failed" | "pending" | "skipped" | "conflicting" | "no-checks" | "unavailable";
+/**
+ * The CI states a feature record can carry. `starved` (US-002) is a check whose job never got a
+ * runner: `CiWaitOutcome` is assigned into this type, so the two must agree.
+ */
+export type FeatureCiState =
+  | "green"
+  | "failed"
+  | "pending"
+  | "skipped"
+  | "conflicting"
+  | "no-checks"
+  | "unavailable"
+  | "starved";
 export type FeatureOutcome = "ready" | "draft" | "local-only" | "pushed";
 
 /** A story loop's deferred minor, numbered for the branch review's triage (P4-R7, P4-R8). */
@@ -333,9 +345,9 @@ export interface WorkflowFeatureRecord {
    */
   readonly approval?: ApprovalOutcome;
   /**
-   * US-001 (nax#2569): the CI wait's own `detail` for the three states whose reason is built from it
-   * (`conflicting`, `no-checks`, `unavailable`). Absent for every other state, and on records written
-   * before this field existed.
+   * US-001 (nax#2569): the CI wait's own `detail` for the four states whose reason is built from it
+   * (`conflicting`, `no-checks`, `unavailable` and, since ci-starved-checks US-003, `starved`).
+   * Absent for every other state, and on records written before the field existed.
    */
   readonly ciDetail?: string;
   /** US-001 (nax#2569): each story's end state as `publish` saw it. Absent on older records. */
