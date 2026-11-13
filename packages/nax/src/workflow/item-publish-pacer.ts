@@ -143,9 +143,26 @@ async function runPaced<T>(
 
 export function createItemPublishPacer(config: ItemPublishConfig): ItemPublishPacer {
   const state: PacerState = { waitedMs: 0, spent: false, started: false };
+  /** The last queued write, settled either way: a refused write must not stall the queue. */
+  let tail: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Run one write at a time. A gap only spaces writes that follow one another, so two writes
+   * started together would otherwise sleep together and then hit the forge together — the very
+   * burst this pacer exists to prevent — and both would read the same `waitedMs`.
+   */
+  function enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = tail.then(task);
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   return {
-    write: (action, options = {}) => runPaced(state, config, action, options, false),
-    writeReserved: (action, options = {}) => runPaced(state, config, action, options, true),
+    write: (action, options = {}) => enqueue(() => runPaced(state, config, action, options, false)),
+    writeReserved: (action, options = {}) => enqueue(() => runPaced(state, config, action, options, true)),
     get spent() {
       return state.spent;
     },

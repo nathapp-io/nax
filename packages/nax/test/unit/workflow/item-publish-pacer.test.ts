@@ -5,6 +5,7 @@
  * of spending them; the only real time here is the logger's.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { waitForCondition } from "@test/helpers";
 import { NaxError } from "@/errors";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
@@ -321,5 +322,55 @@ describe("createItemPublishPacer — logging", () => {
     const warns = logs.filter((entry) => entry.level === "warn" && entry.message === RETRY_WARN);
     expect(warns).toHaveLength(1);
     expect(warns[0].data).not.toHaveProperty("itemId");
+  });
+});
+
+// F1: a gap only spaces writes if the previous one has finished, so one pacer runs its writes
+// one at a time even when its caller does not await them.
+describe("createItemPublishPacer — concurrent writes are serialized", () => {
+  test("F1: one action at a time, each still paying its gap, in call order", async () => {
+    const pacer = createItemPublishPacer(config({ writeGapMs: 25, maxWaitMs: 300 }));
+    const events: string[] = [];
+    const gate = Promise.withResolvers<void>();
+    const run = (label: string, block: boolean) =>
+      pacer.write(async () => {
+        events.push(`start:${label}`);
+        if (block) await gate.promise;
+        events.push(`end:${label}`);
+        return label;
+      });
+
+    const writes = [run("1", true), run("2", false), run("3", false)];
+    await waitForCondition(() => events.includes("start:1"));
+    // The first write holds the pacer until its action settles; the other two are queued.
+    expect(events).toEqual(["start:1"]);
+
+    gate.resolve();
+    expect(await Promise.all(writes)).toEqual(["1", "2", "3"]);
+    expect(events).toEqual(["start:1", "end:1", "start:2", "end:2", "start:3", "end:3"]);
+    // One gap before each write after the first, paid in order.
+    expect(sleeps).toEqual([25, 25]);
+  });
+
+  test("F1: concurrent writes account the budget in order, so a later gap is refused", async () => {
+    const pacer = createItemPublishPacer(config({ writeGapMs: 25, maxWaitMs: 30 }));
+    const write = (label: string) =>
+      pacer.write(async () => {
+        return label;
+      });
+
+    const results = await Promise.allSettled([write("a"), write("b"), write("c")]);
+    expect(results.map((result) => (result.status === "fulfilled" ? result.value : result.status))).toEqual([
+      "a",
+      "b",
+      "rejected",
+    ]);
+    expect(sleeps).toEqual([25]);
+    expect(pacer.spent).toBe(true);
+
+    const refused = results[2];
+    if (refused.status !== "rejected") throw new Error("the third concurrent write should have been refused");
+    if (!(refused.reason instanceof NaxError)) throw new Error(`expected a NaxError, got ${refused.reason}`);
+    expect(refused.reason.code).toBe(BUDGET_SPENT);
   });
 });
