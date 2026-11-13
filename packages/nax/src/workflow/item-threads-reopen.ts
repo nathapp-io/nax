@@ -11,12 +11,15 @@ import {
   writerCheck,
 } from "@/forge";
 import { getLogger } from "@/logger";
+import type { ItemPublishPacer } from "./item-publish-pacer";
 import type { ItemThread, ReadItemThreads } from "./item-thread-state";
 import { closedKey, type ItemIndex, REOPENED_BY_RERAISE, renderItemReopened, reopenKey } from "./item-threads";
 import { reviewedIndex, writeItemIndex } from "./item-threads-index";
 import type { ItemThreadsInput } from "./item-threads-post";
 
 export interface ReopenContext {
+  /** The publish's pacer: the notice and unresolve writes are paced, the index write is reserved. */
+  readonly pacer: ItemPublishPacer;
   readonly ref: PrRef;
   readonly read: ReadItemThreads;
   readonly login: string;
@@ -86,9 +89,9 @@ export async function reopenReraisedItems(
           continue;
         }
         const body = withNaxBotMarker(renderItemReopened(input.head ?? context.info.headSha), reopenKey(item.key));
-        await replyToThread(ref, item.thread, body, deps, cwd);
+        await context.pacer.write(() => replyToThread(ref, item.thread, body, deps, cwd), { itemId: item.itemId });
       }
-      await unresolveThread(ref, item.thread, deps, cwd);
+      await context.pacer.write(() => unresolveThread(ref, item.thread, deps, cwd), { itemId: item.itemId });
     } catch (error) {
       failed++;
       getLogger()?.warn("item-threads", "[item-threads] Reopen write failed", {

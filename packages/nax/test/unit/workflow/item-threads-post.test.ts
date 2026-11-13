@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { NaxError } from "@/errors";
 import type { ForgeDeps } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
 import type { LogEntry } from "@/logger";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { describeUnread } from "@/workflow/approval";
 import { newFeatureRecord } from "@/workflow/feature-record";
-import { itemKey, parseItemFiles, renderItemOpener } from "@/workflow/item-threads";
+import { _itemPublishPacerDeps, type ItemPublishConfig } from "@/workflow/item-publish-pacer";
+import { itemKey, parseItemFiles, renderItemIndex, renderItemOpener } from "@/workflow/item-threads";
 import type { ItemThreadsInput } from "@/workflow/item-threads-post";
 import { postItemThreads } from "@/workflow/item-threads-post";
 import type { OpenItem } from "@/workflow/types";
@@ -50,40 +52,86 @@ function prReply(gitlab = false) {
     : { head: { sha: "head", ref: "feature" }, base: { ref: "main" }, user: { login: "author" } };
 }
 
-function harness(options: { gitlab?: boolean; failures?: number; threadsFail?: boolean; own?: string } = {}) {
+interface Rejection {
+  /** Matched as a substring of any argument, like the assertions' `field`. */
+  readonly match: string;
+  /** How many matching writes are rejected before the rest succeed. */
+  readonly times: number;
+  readonly stderr: string;
+}
+
+interface HarnessOptions {
+  gitlab?: boolean;
+  failures?: number;
+  threadsFail?: boolean;
+  own?: string;
+  /** An own `w-index` comment already on the PR. */
+  indexBody?: string;
+  /** Raw stdout for the index write, for a reply `gh` prints but cannot parse. */
+  indexStdout?: string;
+  /** Pacing rejections the pacer may retry: a NaxError, so `isRetryableRejection` sees it. */
+  reject?: readonly Rejection[];
+}
+
+const rejection = (stderr: string): NaxError =>
+  new NaxError(`[forge] Cannot write o/r#7: ${stderr}`, "FORGE_COMMENT_WRITE_FAILED", { stage: "forge", stderr });
+
+function harness(options: HarnessOptions = {}) {
   const writes: string[][] = [];
+  const indexWrites: string[][] = [];
   const reads: string[][] = [];
+  const rejections = (options.reject ?? []).map((r) => ({ ...r, left: r.times }));
   let failures = options.failures ?? 0;
   const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
-  const post = (cmd: string[]) => {
+  const reject = (cmd: string[]) => {
+    const hit = rejections.find((r) => r.left > 0 && cmd.some((arg) => arg.includes(r.match)));
+    if (!hit) return;
+    hit.left--;
+    throw rejection(hit.stderr);
+  };
+  const indexReply = (cmd: string[]) => {
+    indexWrites.push(cmd);
+    reject(cmd);
+    if (options.indexStdout !== undefined) return { exitCode: 0, stdout: options.indexStdout, stderr: "" };
+    return ok({ id: 99 });
+  };
+  const postReply = (cmd: string[]) => {
     writes.push(cmd);
+    reject(cmd);
     if (failures-- > 0) throw new Error("post rejected");
     return ok(options.gitlab ? { id: "discussion", notes: [{ id: 1 }] } : { id: 1 });
+  };
+  const indexComment = () => ({ id: 9, user: { login: "bot" }, body: options.indexBody ?? "", created_at: "t" });
+  const readReply = (cmd: string[]) => {
+    if (cmd[0] === "git")
+      return {
+        exitCode: 0,
+        stdout: options.gitlab ? "git@gitlab.com:o/r.git" : "git@github.com:o/r.git",
+        stderr: "",
+      };
+    if (cmd.includes("user")) return ok({ login: "bot", username: "bot", id: 1 });
+    if (cmd.includes("graphql")) {
+      if (options.threadsFail) throw new Error("threads unreadable");
+      return ok(threadReply(options.own));
+    }
+    // Only the issue-comment read carries the index; a review summary is not editable.
+    if (cmd.some((arg) => arg.includes("/issues/7/comments?per_page=")))
+      return ok(options.indexBody ? [indexComment()] : []);
+    if (cmd.some((arg) => arg.includes("?per_page="))) return ok([]);
+    return ok(prReply(options.gitlab));
   };
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (cmd, opts) => {
       cwds.push(opts.cwd);
       // These tests assert item-opener mechanics; index writes have their own suite.
-      if (cmd.some((arg) => arg.includes("key=w-index"))) return ok({ id: 99 });
-      if (cmd.includes("POST")) return post(cmd);
+      if (cmd.some((arg) => arg.includes("key=w-index"))) return indexReply(cmd);
+      if (cmd.includes("POST")) return postReply(cmd);
       reads.push(cmd);
-      if (cmd[0] === "git")
-        return {
-          exitCode: 0,
-          stdout: options.gitlab ? "git@gitlab.com:o/r.git" : "git@github.com:o/r.git",
-          stderr: "",
-        };
-      if (cmd.includes("user")) return ok({ login: "bot", username: "bot", id: 1 });
-      if (cmd.includes("graphql")) {
-        if (options.threadsFail) throw new Error("threads unreadable");
-        return ok(threadReply(options.own));
-      }
-      if (cmd.some((arg) => arg.includes("?per_page="))) return ok([]);
-      return ok(prReply(options.gitlab));
+      return readReply(cmd);
     },
   };
-  return { deps, writes, reads };
+  return { deps, writes, indexWrites, reads };
 }
 const field = (cmd: string[] | undefined, name: string) => {
   const query = cmd?.find((arg) => arg.includes("?"))?.split("?")[1];
@@ -93,11 +141,31 @@ const field = (cmd: string[] | undefined, name: string) => {
     undefined
   );
 };
-const outcome = (posted = 0, failed = 0, skipped = 0) => ({ posted, closed: 0, skipped, failed });
+/**
+ * The expected outcome: `indexWritten`/`indexMissing` default to a written index, and the two cases
+ * that expect otherwise (an unreadable PR, an unwritable index) pass the pair.
+ */
+const outcome = (
+  posted = 0,
+  failed = 0,
+  skipped = 0,
+  index: { readonly indexWritten: boolean; readonly indexMissing: boolean } = {
+    indexWritten: true,
+    indexMissing: false,
+  },
+) => ({ posted, closed: 0, skipped, failed, ...index });
+const UNWRITTEN = { indexWritten: false, indexMissing: true } as const;
+const realSleep = _itemPublishPacerDeps.sleep;
+let sleeps: number[];
 let logs: LogEntry[];
 let removeSink: () => void;
 beforeEach(() => {
   cwds.length = 0;
+  sleeps = [];
+  // The pacer's only timer: recording it keeps the default gap out of the suite's wall clock.
+  _itemPublishPacerDeps.sleep = async (ms) => {
+    sleeps.push(ms);
+  };
   logs = [];
   initLogger({ level: "warn", suppressConsole: true });
   removeSink = addSink((entry) => {
@@ -105,6 +173,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  _itemPublishPacerDeps.sleep = realSleep;
   expect(cwds.every((cwd) => cwd === "/repo")).toBe(true);
   removeSink();
   resetLogger();
@@ -210,7 +279,7 @@ describe("postItemThreads", () => {
   });
   test("AC-11 initial thread read failure aborts posting and warns", async () => {
     const h = harness({ threadsFail: true });
-    expect(await postItemThreads(input(), h.deps)).toEqual(outcome(0, 1));
+    expect(await postItemThreads(input(), h.deps)).toEqual(outcome(0, 1, 0, UNWRITTEN));
     expect(h.writes).toEqual([]);
     expect(logs.some((entry) => entry.level === "warn")).toBe(true);
   });
@@ -245,7 +314,7 @@ describe("postItemThreads", () => {
   });
   test("invalid PR URL fails closed before forge I/O", async () => {
     const h = harness();
-    expect(await postItemThreads(input({ url: "invalid" }), h.deps)).toEqual(outcome(0, 1));
+    expect(await postItemThreads(input({ url: "invalid" }), h.deps)).toEqual(outcome(0, 1, 0, UNWRITTEN));
     expect(h.reads).toEqual([]);
     expect(h.writes).toEqual([]);
   });
@@ -265,5 +334,134 @@ describe("postItemThreads", () => {
     expect(await postItemThreads(input({ record }), h.deps)).toEqual(outcome(1));
     expect(h.writes).toHaveLength(1);
     expect(parseItemFiles(field(h.writes[0], "body") ?? "")).toEqual(["a.ts"]);
+  });
+});
+
+const RATE_LIMIT =
+  "gh: You have exceeded a secondary rate limit and have been temporarily blocked from content creation.";
+const VALIDATION_422 = "gh: Validation Failed (HTTP 422)";
+const BUDGET_SPENT = "[item-threads] Pacing budget spent; skipping remaining threads";
+
+const pacing = (over: Partial<ItemPublishConfig> = {}): ItemPublishConfig => ({
+  writeGapMs: 1000,
+  retryBackoffMs: 60_000,
+  maxRetries: 2,
+  maxWaitMs: 300_000,
+  ...over,
+});
+
+/** Postable items with no file and no line: every thread for them is a file-level post. */
+const fileLevelRecord = (count: number) => ({
+  ...input().record,
+  reviewOpen: [],
+  cannotVerify: Array.from({ length: count }, (_, i) => `check ${i + 1} manually`),
+});
+
+describe("postItemThreads item-publish pacing", () => {
+  test("US-002 AC-1 retries a rejected file-level post after one pacing back-off", async () => {
+    const h = harness({ reject: [{ match: "pulls/7/comments", times: 1, stderr: VALIDATION_422 }] });
+    const source = input({ pacing: pacing(), record: fileLevelRecord(1) });
+    expect(await postItemThreads(source, h.deps)).toEqual(outcome(1));
+    expect(h.writes).toHaveLength(2);
+    expect(sleeps.filter((ms) => ms === 60_000)).toEqual([60_000]);
+  });
+  test("US-002 AC-2 retries a rate-limited index write and reports it written", async () => {
+    const h = harness({ reject: [{ match: "key=w-index", times: 1, stderr: RATE_LIMIT }] });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toEqual(outcome(1));
+    expect(h.indexWrites).toHaveLength(2);
+  });
+  test("US-002 AC-3 waits writeGapMs between consecutive thread posts", async () => {
+    const h = harness();
+    const source = input({ pacing: pacing({ writeGapMs: 1000 }), record: fileLevelRecord(3) });
+    await postItemThreads(source, h.deps);
+    expect(h.writes).toHaveLength(3);
+    // The three thread posts precede the index write, so the first two waits are thread gaps.
+    expect(sleeps.slice(0, 2)).toEqual([1000, 1000]);
+    expect(h.indexWrites).toHaveLength(1);
+  });
+  test("US-002 AC-4 stops after the refused gap and names the threads it skipped", async () => {
+    const h = harness();
+    const source = input({ pacing: pacing({ maxWaitMs: 0, writeGapMs: 1 }), record: fileLevelRecord(3) });
+    const result = await postItemThreads(source, h.deps);
+    expect(result).toMatchObject({ posted: 1, failed: 2 });
+    // The refused gap means neither later item reaches the forge.
+    expect(h.writes).toHaveLength(1);
+    const spent = logs.filter((entry) => entry.message === BUDGET_SPENT);
+    expect(spent).toHaveLength(1);
+    expect(spent[0]?.data?.skipped).toBe(2);
+  });
+  test("US-002 AC-5 still writes the index after the threads were skipped", async () => {
+    const h = harness();
+    const source = input({ pacing: pacing({ maxWaitMs: 0, writeGapMs: 1 }), record: fileLevelRecord(3) });
+    const result = await postItemThreads(source, h.deps);
+    expect(result).toMatchObject({ indexWritten: true, indexMissing: false });
+    expect(h.indexWrites).toHaveLength(1);
+  });
+  test("US-002 AC-6 reports a missing index after maxRetries + 1 failed index posts", async () => {
+    const h = harness({ reject: [{ match: "key=w-index", times: Number.POSITIVE_INFINITY, stderr: RATE_LIMIT }] });
+    const result = await postItemThreads(input({ pacing: pacing({ maxRetries: 2 }) }), h.deps);
+    expect(result).toMatchObject({ indexWritten: false, indexMissing: true });
+    expect(h.indexWrites).toHaveLength(3);
+  });
+  test("US-002 AC-7 a failed edit of an own index leaves the index present but unwritten", async () => {
+    const h = harness({
+      indexBody: withNaxBotMarker(renderItemIndex({ keys: [] }), "w-index"),
+      reject: [{ match: "key=w-index", times: Number.POSITIVE_INFINITY, stderr: RATE_LIMIT }],
+    });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toMatchObject({ indexWritten: false, indexMissing: false });
+    expect(h.indexWrites).toHaveLength(3);
+    expect(h.indexWrites.every((cmd) => cmd.includes("PATCH"))).toBe(true);
+  });
+  test("US-002 AC-8 does not retry an unparseable index write", async () => {
+    const h = harness({ indexStdout: "not-json" });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toMatchObject({ indexWritten: false, indexMissing: true });
+    expect(h.indexWrites).toHaveLength(1);
+  });
+  test("US-002 AC-9 an unreadable PR reports one failure and no index", async () => {
+    const h = harness({ threadsFail: true });
+    expect(await postItemThreads(input(), h.deps)).toEqual({
+      posted: 0,
+      closed: 0,
+      skipped: 0,
+      failed: 1,
+      indexWritten: false,
+      indexMissing: true,
+    });
+    expect(h.writes).toEqual([]);
+    expect(h.indexWrites).toEqual([]);
+  });
+  test("US-002 AC-11 absent pacing reads the workflow defaults", async () => {
+    const h = harness();
+    const source = input({ record: fileLevelRecord(2) });
+    expect(source.pacing).toBeUndefined();
+    await postItemThreads(source, h.deps);
+    expect(h.writes).toHaveLength(2);
+    expect(sleeps).toEqual([1000, 1000]);
+  });
+  test("US-002 AC-14 falls back from a rejected inline post with no back-off", async () => {
+    const h = harness({ reject: [{ match: "line=9", times: 1, stderr: VALIDATION_422 }] });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toEqual(outcome(1));
+    expect(h.writes).toHaveLength(2);
+    expect(field(h.writes[0], "line")).toBe("9");
+    expect(field(h.writes[1], "subject_type")).toBe("file");
+    expect(field(h.writes[1], "path")).toBe("a.ts");
+    // The 422 is permanent, so the inline attempt takes the file post's gap but never a back-off.
+    expect(sleeps).not.toContain(60_000);
+  });
+  test("US-002 AC-15 counts an item failed once the file-level retries are spent", async () => {
+    const h = harness({
+      reject: [{ match: "pulls/7/comments", times: Number.POSITIVE_INFINITY, stderr: VALIDATION_422 }],
+    });
+    const source = input({ pacing: pacing({ maxRetries: 2 }), record: fileLevelRecord(1) });
+    const result = await postItemThreads(source, h.deps);
+    expect(result).toMatchObject({ posted: 0, failed: 1, indexWritten: true });
+    // One post and two retries; the budget permitted both back-offs, so nothing was cut short.
+    expect(h.writes).toHaveLength(3);
+    expect(sleeps.filter((ms) => ms === 60_000)).toHaveLength(2);
+    expect(logs.some((entry) => entry.message === BUDGET_SPENT)).toBe(false);
   });
 });

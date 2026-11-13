@@ -13,7 +13,7 @@ import { postItemThreadsAfterPublish } from "@/workflow/publish-item-threads";
 const URL = "https://github.com/o/r/pull/7";
 const HEAD = "a".repeat(40);
 const published: PublishOutcome = { outcome: "draft", url: URL, ci: "pending", reasons: ["wait"] };
-const result = { posted: 0, closed: 0, skipped: 0, failed: 0 };
+const result = { posted: 0, closed: 0, skipped: 0, failed: 0, indexWritten: true, indexMissing: false };
 function harness(out: PublishOutcome = published) {
   const base = makeFeatureMachineHarness(
     { published: out },
@@ -210,7 +210,14 @@ test("publish preserves item-thread failure counts in its ledger", async () => {
   h.env.sink.ledger = async (line) => {
     lines.push(line);
   };
-  h.env.steps.postItemThreads = async () => ({ posted: 2, closed: 1, skipped: 3, failed: 4 });
+  h.env.steps.postItemThreads = async () => ({
+    posted: 2,
+    closed: 1,
+    skipped: 3,
+    failed: 4,
+    indexWritten: true,
+    indexMissing: false,
+  });
   await publishStep(h.env, h.env.record);
   expect(lines.some((line) => line.includes("Item threads: posted=2, closed=1, skipped=3, failed=4"))).toBe(true);
 });

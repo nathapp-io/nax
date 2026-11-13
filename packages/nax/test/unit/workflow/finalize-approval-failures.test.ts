@@ -347,7 +347,7 @@ function stepHarness(out: WithLegacyPushedHead) {
       changedFiles: async () => ["file.ts"],
       postItemThreads: async (input) => {
         inputs.push(input);
-        return { posted: 0, closed: 0, skipped: 0, failed: 0 };
+        return { posted: 0, closed: 0, skipped: 0, failed: 0, indexWritten: true, indexMissing: false };
       },
     },
   };

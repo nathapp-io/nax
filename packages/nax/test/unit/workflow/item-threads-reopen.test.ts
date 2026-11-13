@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { recordPrRulings } from "@/bot/rulings";
 import { workflowPrReadiness } from "@/bot/workflow-ready";
+import { NaxError } from "@/errors";
 import { type ForgeDeps, listPrComments, listReviewThreads, withNaxBotMarker as marked, readPrInfo } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import type { Disposition } from "@/workflow/decisions-sidecar";
 import { newFeatureRecord } from "@/workflow/feature-record";
+import { _itemPublishPacerDeps } from "@/workflow/item-publish-pacer";
 import { readItemThreads } from "@/workflow/item-thread-state";
 import {
   closedKey,
@@ -35,7 +37,13 @@ interface Options {
   author?: string;
   permission?: "write" | "read" | "reject";
   fail?: "reply" | "unresolve" | "index";
+  /** A write matching this kind is rejected once with a retryable rejection, then succeeds. */
+  retry?: "reply" | "unresolve" | "index";
 }
+const RATE_LIMIT =
+  "gh: You have exceeded a secondary rate limit and have been temporarily blocked from content creation.";
+const retryMatch = { reply: "key=wo-", unresolve: "unresolveReviewThread", index: "key=w-index" } as const;
+
 function rejectWrite(cmd: readonly string[], failure: Options["fail"]): void {
   const replyFailed = failure === "reply" && cmd.some((arg) => arg.includes("key=wo-"));
   const unresolveFailed = failure === "unresolve" && cmd.some((arg) => arg.includes("unresolveReviewThread"));
@@ -70,6 +78,8 @@ function harness(options: Options = {}) {
   const writes: string[][] = [];
   const permissions: string[][] = [];
   const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
+  let retriesLeft = 1;
+  const retryAt = options.retry === undefined ? undefined : retryMatch[options.retry];
   const comment = (body: string, author: string, id: number) => ({
     databaseId: id,
     body,
@@ -87,45 +97,57 @@ function harness(options: Options = {}) {
       ? [comment("pending reply", options.author, 13), comment("another reply", options.author, 14)]
       : []),
   ];
+  const writeReply = (cmd: string[]) => {
+    writes.push(cmd);
+    if (retriesLeft > 0 && retryAt !== undefined && cmd.some((arg) => arg.includes(retryAt))) {
+      retriesLeft--;
+      throw new NaxError(`[forge] Cannot write o/r#7: ${RATE_LIMIT}`, "FORGE_COMMENT_WRITE_FAILED", {
+        stage: "forge",
+        stderr: RATE_LIMIT,
+      });
+    }
+    rejectWrite(cmd, options.fail);
+    const body = cmd.find((arg) => arg.startsWith("body=") && arg.includes("key=wo-"));
+    if (body) comments.push(comment(body.slice("body=".length), "bot", 15));
+    return ok({ id: 1 });
+  };
+  const threadsReply = () => ({
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            nodes: [
+              {
+                id: "T",
+                isResolved: options.resolved ?? !options.notice,
+                isOutdated: false,
+                comments: { nodes: comments },
+              },
+            ],
+            pageInfo: { hasNextPage: false },
+          },
+        },
+      },
+    },
+  });
+  const readReply = (cmd: string[]) => {
+    if (cmd[0] === "git") return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
+    if (cmd.includes("user")) return ok({ login: "bot", id: 1 });
+    if (cmd.some((arg) => arg.includes("/permission"))) {
+      permissions.push(cmd);
+      return ok(permissionReply(options.permission));
+    }
+    if (cmd.includes("graphql")) return ok(threadsReply());
+    if (cmd.some((arg) => arg.includes("/reviews?"))) return ok([]);
+    if (cmd.some((arg) => arg.includes("?per_page="))) return ok(indexComments(options));
+    return ok({ head: { sha: HEAD, ref: "feature" }, base: { ref: "main" }, user: { login: "author" } });
+  };
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (cmd) => {
-      if (cmd.includes("POST") || cmd.includes("PATCH") || cmd.some((arg) => arg.startsWith("query=mutation"))) {
-        writes.push(cmd);
-        rejectWrite(cmd, options.fail);
-        const body = cmd.find((arg) => arg.startsWith("body=") && arg.includes("key=wo-"));
-        if (body) comments.push(comment(body.slice("body=".length), "bot", 15));
-        return ok({ id: 1 });
-      }
-      if (cmd[0] === "git") return { exitCode: 0, stdout: "git@github.com:o/r.git", stderr: "" };
-      if (cmd.includes("user")) return ok({ login: "bot", id: 1 });
-      if (cmd.some((arg) => arg.includes("/permission"))) {
-        permissions.push(cmd);
-        return ok(permissionReply(options.permission));
-      }
-      if (cmd.includes("graphql"))
-        return ok({
-          data: {
-            repository: {
-              pullRequest: {
-                reviewThreads: {
-                  nodes: [
-                    {
-                      id: "T",
-                      isResolved: options.resolved ?? !options.notice,
-                      isOutdated: false,
-                      comments: { nodes: comments },
-                    },
-                  ],
-                  pageInfo: { hasNextPage: false },
-                },
-              },
-            },
-          },
-        });
-      if (cmd.some((arg) => arg.includes("/reviews?"))) return ok([]);
-      if (cmd.some((arg) => arg.includes("?per_page="))) return ok(indexComments(options));
-      return ok({ head: { sha: HEAD, ref: "feature" }, base: { ref: "main" }, user: { login: "author" } });
+      const write =
+        cmd.includes("POST") || cmd.includes("PATCH") || cmd.some((arg) => arg.startsWith("query=mutation"));
+      return write ? writeReply(cmd) : readReply(cmd);
     },
   };
   const input: ItemThreadsInput = {
@@ -142,14 +164,18 @@ function harness(options: Options = {}) {
 }
 let logs: LogEntry[];
 let remove: () => void;
+const realSleep = _itemPublishPacerDeps.sleep;
 beforeEach(() => {
   logs = [];
+  // The publish pacer's only timer: resolving at once keeps the default gap out of the suite.
+  _itemPublishPacerDeps.sleep = async () => undefined;
   initLogger({ level: "warn", suppressConsole: true });
   remove = addSink((entry) => {
     logs.push(entry);
   });
 });
 afterEach(() => {
+  _itemPublishPacerDeps.sleep = realSleep;
   remove();
   resetLogger();
 });
@@ -283,6 +309,12 @@ describe("postItemThreads re-raised rulings", () => {
     expect(h.writes[1]).toBe(h.replies()[0]);
     expect(h.writes[2]).toBe(h.unresolves()[0]);
     expect(h.writes[3]?.join(" ")).toContain("key=w-index");
+  });
+  test("US-002 AC-13 retries a rejected reopen reply and reopens the item", async () => {
+    const h = harness({ disposition: "fixed", retry: "reply" });
+    expect(await postItemThreads(h.input, h.deps)).toMatchObject({ failed: 0 });
+    expect(h.replies()).toHaveLength(2);
+    expect(h.unresolves()).toHaveLength(1);
   });
   test.each(["waived", "confirmed", "overridden"] as const)("AC-5 preserves %s", async (disposition) => {
     const h = harness({ disposition });
