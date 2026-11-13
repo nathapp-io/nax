@@ -22,6 +22,7 @@ import { buildFlowInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
 import type { KodaFlowConnection } from "./flow-connection";
 import {
+  FLOW_COST_CAP_DECIMALS,
   FLOW_MAX_COST_CAP_USD,
   FLOW_MAX_FEATURES,
   type FlowSendFeature,
@@ -72,6 +73,8 @@ const CANCELLED_MESSAGE = "[chat] the turn was cancelled; nothing was pushed";
 const CARD_ESCAPED_CHARS = /[\p{Cc}\p{Cf}]/gu;
 /** A `\uXXXX` escape is four hexadecimal digits. */
 const UNICODE_ESCAPE_DIGITS = 4;
+/** The highest code point a bare `\uXXXX` escape can name; above it the braced form is used. */
+const MAX_BASIC_PLANE_CODE_POINT = 0xffff;
 
 export interface FlowProviderOptions {
   /** The chat's repository root: what is pushed and what koda is told about. */
@@ -93,7 +96,10 @@ const FEATURES_DESCRIPTION =
 const ROLES_DESCRIPTION =
   "The two model strings koda passes to its review steps (for example acp:codex), each matching " +
   "^[A-Za-z0-9._:/\\[\\]=,-]{1,200}$. They are model strings, not nax alias names: nax sends them as given.";
-const COST_DESCRIPTION = `koda's billing ceiling for the flow in USD: a JSON number greater than 0 and at most ${FLOW_MAX_COST_CAP_USD}.`;
+const COST_DESCRIPTION =
+  `koda's billing ceiling for the flow in USD: a JSON number (not a numeric string) greater than 0 and at most ` +
+  `${FLOW_MAX_COST_CAP_USD}. koda compares the number's string form, so its decimal form carries at most ` +
+  `${FLOW_COST_CAP_DECIMALS} decimal places — 5 and 5.25 pass, 1.23456 does not.`;
 
 /** The `nax-flow__send` request, mirroring the checks `parseFlowSendInput` enforces at runtime. */
 export const FLOW_SEND_INPUT_SCHEMA = {
@@ -164,6 +170,20 @@ function failure(content: string): ToolResult {
 }
 
 /**
+ * One code point as a readable escape: `\uXXXX` inside the basic plane, and the
+ * braced `\u{XXXXX}` form above it. The regex matches a whole code point, not a
+ * UTF-16 code unit, so reading only the first unit would render every
+ * supplementary-plane character that shares a high surrogate — U+1D173 and
+ * U+1D174 among the format characters — as the same escape, and two distinct
+ * paths would look identical on the card.
+ */
+function unicodeEscape(char: string): string {
+  const codePoint = char.codePointAt(0) ?? 0;
+  const hex = codePoint.toString(16).padStart(UNICODE_ESCAPE_DIGITS, "0");
+  return codePoint > MAX_BASIC_PLANE_CODE_POINT ? `\\u{${hex}}` : `\\u${hex}`;
+}
+
+/**
  * One carded value as the card shows it: control and format characters escaped, so
  * a value carrying a newline, a bidirectional override or an escape sequence — a
  * committed file name is the one that can — cannot forge an extra card line,
@@ -171,10 +191,7 @@ function failure(content: string): ToolResult {
  * approving. The request body keeps the literal value.
  */
 function cardText(value: string): string {
-  return value.replace(CARD_ESCAPED_CHARS, (char) => {
-    const code = char.charCodeAt(0).toString(16).padStart(UNICODE_ESCAPE_DIGITS, "0");
-    return `\\u${code}`;
-  });
+  return value.replace(CARD_ESCAPED_CHARS, unicodeEscape);
 }
 
 /** The card's first line: the repository, the branch and the commit it was read at. */
@@ -226,6 +243,11 @@ function createBody(state: FlowRepoReady, input: FlowSendInput): FlowCreateBody 
     roles: input.roles,
     costCapUsd: input.costCapUsd,
   };
+}
+
+/** Whether the turn was cancelled. Read through a call so a check made earlier cannot narrow a later one. */
+function cancelled(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 /** Whether the branch no longer holds the commit the card described, or gained changes since. */
@@ -408,12 +430,16 @@ async function afterAllow(
   options: FlowProviderOptions,
   signal?: AbortSignal,
 ): Promise<ToolResult> {
-  if (signal?.aborted === true) return failure(CANCELLED_MESSAGE);
+  if (cancelled(signal)) return failure(CANCELLED_MESSAGE);
   if (await branchMoved(state, options.repoRoot)) return failure(BRANCH_CHANGED_MESSAGE);
   const target = await pushTargetFailure(state, input, options.repoRoot);
   if (target !== undefined) return target;
   const destination = await pushDestination(state, options.repoRoot);
   if (!destination.ok) return destination.result;
+  // The checks above are asynchronous, so the turn can be cancelled while they run —
+  // and they are the last thing between the card and the push. Asking once more here
+  // is what keeps an already-cancelled turn from pushing and creating a flow.
+  if (cancelled(signal)) return failure(CANCELLED_MESSAGE);
   await _flowProviderDeps.commitAndPush(options.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
     skipCommit: true,
     sourceSha: state.sha,

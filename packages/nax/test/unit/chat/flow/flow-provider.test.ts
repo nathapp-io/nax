@@ -157,6 +157,17 @@ describe("createFlowProvider", () => {
     expect(FLOW_SEND_INPUT_SCHEMA.properties.costCapUsd.type).toBe("number");
   });
 
+  test("describes the cost cap's decimal limit, not only its range (M1)", () => {
+    // The brief asks the schema to describe the input constraints, and the runtime
+    // rejects a fifth decimal from `String(value)`, which the range alone does not say.
+    const description = FLOW_SEND_INPUT_SCHEMA.properties.costCapUsd.description;
+
+    expect(description).toContain("greater than 0");
+    expect(description).toContain("at most 1000");
+    expect(description).toContain("at most 4 decimal places");
+    expect(description).toContain("not a numeric string");
+  });
+
   test("takes its instructions from buildFlowInstructions (AC-2)", async () => {
     const instructions = await createFlowProvider(options).instructions?.(REPO_ROOT);
 
@@ -265,6 +276,22 @@ describe("send — after the card", () => {
     reply = async () => {
       controller.abort();
       return "allow";
+    };
+
+    const result = await send(input, controller.signal);
+
+    expect(result).toEqual({ isError: true, content: "[chat] the turn was cancelled; nothing was pushed" });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("stops when the turn is cancelled during the pre-push reads (AC-10, B3)", async () => {
+    // The reads between the card and the push are asynchronous, so a cancelled turn
+    // can reach the push boundary after the one check at the top of afterAllow.
+    const controller = new AbortController();
+    _flowProviderDeps.readFlowPushUrl = async () => {
+      controller.abort();
+      return { ok: true, url: PUSH_URL };
     };
 
     const result = await send(input, controller.signal);
@@ -582,5 +609,28 @@ describe("send — a carded value cannot forge the card", () => {
     expect(card.reason).not.toContain("\u202e");
     expect(result.isError).toBeUndefined();
     expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(BIDI);
+  });
+
+  test("gives each supplementary-plane format character its own escape (M2)", async () => {
+    // U+1D173 and U+1D174 are both format characters with the same UTF-16 high
+    // surrogate (D834), so escaping the first code unit alone rendered them
+    // identically — two distinct paths a user could not tell apart on the card.
+    const withFormat = (mark: string) => ({
+      ...input,
+      features: [
+        { feature: "a", specPath: `.nax/features/a/spec${mark}.md` },
+        { feature: "b", specPath: SPEC_B, dependsOn: ["a"] },
+      ],
+    });
+
+    await send(withFormat("\u{1d173}"));
+    await send(withFormat("\u{1d174}"));
+
+    const [first, second] = approveCalls;
+    assertDefined(first, "the first approval card");
+    assertDefined(second, "the second approval card");
+    expect(first.reason).toContain("spec\\u{1d173}.md");
+    expect(second.reason).toContain("spec\\u{1d174}.md");
+    expect(first.reason).not.toBe(second.reason);
   });
 });
