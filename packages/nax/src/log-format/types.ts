@@ -108,6 +108,12 @@ export interface WorkflowSummaryView {
   publish?: { outcome: string; url?: string; reasons: readonly string[] } | undefined;
   /** US-005: the rulings flagged for a human, plus the command that lists them. Absent when none. */
   flagged?: { ids: readonly string[]; hint: string } | undefined;
+  /**
+   * US-003: the PR was published with no nax item index, so every bot command refuses it. Present
+   * only when the run's record says so, and `hint` names the command that settles the PR's items
+   * without one.
+   */
+  itemIndexMissing?: { hint: string } | undefined;
 }
 
 /**

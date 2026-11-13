@@ -109,7 +109,10 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
         preflight: preflightFile,
       }),
     postItemThreads: (input) =>
-      postItemThreads({ ...input, projectDir: fc.projectDir, feature: fc.feature }, _featureDeps.forge),
+      postItemThreads(
+        { ...input, projectDir: fc.projectDir, feature: fc.feature, pacing: fc.workflow.itemPublish },
+        _featureDeps.forge,
+      ),
     head: () => readHead(fc.projectDir),
     changedFiles: (base) => changedFilesSince(fc.projectDir, base),
     // US-008: the real CI reader, so the publish step can read the failed checks of the PR it opened.

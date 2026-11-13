@@ -339,6 +339,13 @@ export interface WorkflowFeatureRecord {
    */
   readonly flaggedDecisions?: readonly string[];
   /**
+   * US-003: the PR this run published has no nax item index, so every bot command will refuse it
+   * (`no nax item index on this PR`). Written by `publish` from the item-thread step's outcome —
+   * `true` when that publish ended with no index, `false` when a later publish wrote one — and
+   * absent when the thread step returned no outcome at all, which says nothing either way.
+   */
+  readonly itemIndexMissing?: boolean;
+  /**
    * US-001 (nax#2569): the advisor's approval outcome, decision id included. Absent when the advisor
    * was never asked — a deterministic reason already kept the PR a draft — and on records written
    * before this field existed.

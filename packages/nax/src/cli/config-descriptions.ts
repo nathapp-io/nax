@@ -106,6 +106,16 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "workflow.review": "The branch review's coverage retry budget in workflow mode",
   "workflow.review.coverageRetries":
     "Coverage re-prompts the branch review gets when its reply leaves a required file unread (default 3); this budget is separate from the JSON-shape retry and stops early once a retry covers no more files. 0 disables it",
+  "workflow.itemPublish":
+    "Pacing of the post-publish item-thread writes, so a publish of many threads stays under the forge's secondary rate limits",
+  "workflow.itemPublish.writeGapMs":
+    "Milliseconds to wait before every item-thread write except the first of the publish (default 1000, minimum 0); the gap of the first write is not paid",
+  "workflow.itemPublish.retryBackoffMs":
+    "Milliseconds to wait before retrying an item-thread write the forge rejected with a rate limit or an HTTP 422 (default 60000, minimum 0); every other error is not retried",
+  "workflow.itemPublish.maxRetries":
+    "Retries per item-thread write after a retryable rejection (default 2, minimum 0); 0 retries the write once and lets the rejection through, and one write may override it",
+  "workflow.itemPublish.maxWaitMs":
+    "Total milliseconds of pacing one publish may spend on gaps and back-offs (default 300000, minimum 0); a paced write whose wait would exceed it is refused, while the item index write is always still tried",
   "workflow.interruptRetry":
     "What nax does when an implementer turn hits its step limit: it sends a continue turn on the same warm session, so the work already on disk is not lost",
   "workflow.interruptRetry.maxAttempts":

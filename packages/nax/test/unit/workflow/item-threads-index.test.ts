@@ -2,13 +2,17 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { featureMachineFixtures, makeFeatureMachineHarness } from "@test/helpers";
 import { recordPrRulings } from "@/bot/rulings";
 import { workflowPrReadiness } from "@/bot/workflow-ready";
+import { NaxError } from "@/errors";
 import type { ForgeDeps, PrComment, PrThread } from "@/forge";
 import { withNaxBotMarker } from "@/forge";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { readinessReasons } from "@/workflow/approval";
 import { runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
+import { _itemPublishPacerDeps, createItemPublishPacer } from "@/workflow/item-publish-pacer";
+import { readItemThreads } from "@/workflow/item-thread-state";
 import { itemKey, parseItemIndex, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
+import { type IndexContext, writeItemIndex } from "@/workflow/item-threads-index";
 import { type ItemThreadsInput, postItemThreads } from "@/workflow/item-threads-post";
 import { buildOpenItems } from "@/workflow/open-items";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
@@ -16,6 +20,8 @@ import type { WorkflowFeatureRecord } from "@/workflow/types";
 const HEAD = "a".repeat(40);
 const BASE = "b".repeat(40);
 const OLD = "c".repeat(40);
+const RATE_LIMIT =
+  "gh: You have exceeded a secondary rate limit and have been temporarily blocked from content creation.";
 const finding = { id: "B1", kind: "spec", severity: "important", issue: "leak" } as const;
 const oldItem = { id: "old", kind: "finding", issue: "obsolete" } as const;
 const oldKey = itemKey(oldItem);
@@ -36,6 +42,8 @@ interface HarnessOptions {
   threads?: boolean;
   closedAuthor?: string;
   fail?: string;
+  /** A write matching this substring is rejected once with a retryable rejection, then succeeds. */
+  retry?: string;
 }
 const comment = (body: string, author: string, id: number) => ({
   databaseId: id,
@@ -71,11 +79,22 @@ function indexSnapshot(options: HarnessOptions) {
 function harness(options: HarnessOptions = {}) {
   const writes: string[][] = [];
   const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
+  let retriesLeft = 1;
+  const retryable = (cmd: string[]) => {
+    if (retriesLeft <= 0 || options.retry === undefined) return false;
+    if (!cmd.some((a) => a.includes(options.retry ?? ""))) return false;
+    retriesLeft--;
+    throw new NaxError(`[forge] Cannot write o/r#7: ${RATE_LIMIT}`, "FORGE_COMMENT_WRITE_FAILED", {
+      stage: "forge",
+      stderr: RATE_LIMIT,
+    });
+  };
   const deps: ForgeDeps = {
     readText: async () => null,
     run: async (cmd) => {
       if (cmd.includes("POST") || cmd.includes("PATCH") || cmd.some((a) => a.startsWith("query=mutation"))) {
         writes.push(cmd);
+        retryable(cmd);
         if (options.fail && cmd.some((a) => a.includes(options.fail ?? ""))) throw new Error("write rejected");
         return ok({ id: 1 });
       }
@@ -98,14 +117,18 @@ function harness(options: HarnessOptions = {}) {
 }
 let logs: LogEntry[];
 let remove: () => void;
+const realSleep = _itemPublishPacerDeps.sleep;
 beforeEach(() => {
   logs = [];
+  // The publish pacer's only timer: resolving at once keeps the default gap out of the suite.
+  _itemPublishPacerDeps.sleep = async () => undefined;
   initLogger({ level: "warn", suppressConsole: true });
   remove = addSink((entry) => {
     logs.push(entry);
   });
 });
 afterEach(() => {
+  _itemPublishPacerDeps.sleep = realSleep;
   remove();
   resetLogger();
 });
@@ -140,6 +163,46 @@ function gitlabHarness(indexAuthor = "bot") {
   };
   return { deps, writes, reads };
 }
+
+describe("writeItemIndex uncertain writes", () => {
+  test.each(["unparseable", "timeout", "server-error"] as const)(
+    "D-3 retains an earlier %s outcome across later pre-notice and final refusals",
+    async (failure) => {
+      const h = harness();
+      let calls = 0;
+      const deps: ForgeDeps = {
+        ...h.deps,
+        run: async () => {
+          calls++;
+          if (calls === 1) {
+            if (failure === "unparseable") return { exitCode: 0, stdout: "not-json", stderr: "" };
+            if (failure === "server-error") return { exitCode: 1, stdout: "", stderr: "gh: HTTP 502" };
+            throw new NaxError("[forge] Request timed out", "FORGE_TIMEOUT", { stage: "forge" });
+          }
+          return { exitCode: 1, stdout: "", stderr: RATE_LIMIT };
+        },
+      };
+      const context: IndexContext = {
+        ref: { forge: "github", host: "github.com", repo: "o/r", number: 7 },
+        read: readItemThreads([], [], "bot"),
+        login: "bot",
+        deps,
+        cwd: "/repo",
+        info: { headSha: HEAD },
+        pacer: createItemPublishPacer({ writeGapMs: 0, retryBackoffMs: 0, maxRetries: 0, maxWaitMs: 0 }),
+      };
+      expect(await writeItemIndex({ keys: [] }, context)).toEqual({ written: false, failure: "unconfirmed" });
+      expect(context.postedIndex).toBeUndefined();
+      expect(context.indexWriteUnconfirmed).toBe(true);
+      // Another pre-notice write and the final write are both refused. Neither settles the first write.
+      for (let later = 0; later < 2; later++) {
+        expect(await writeItemIndex({ keys: [] }, context)).toEqual({ written: false, failure: "refused" });
+        expect(context.indexWriteUnconfirmed).toBe(true);
+      }
+      expect(calls).toBe(3);
+    },
+  );
+});
 
 describe("postItemThreads index and closing", () => {
   test("AC-11/12 GitLab edits a replied own index without posting a new note", async () => {
@@ -337,6 +400,13 @@ describe("postItemThreads index and closing", () => {
     expect(h.writes[1]).toContain(`body=${marked("No longer open in the run at aaaaaaa.", `wc-${oldKey}`)}`);
     expect(h.writes[1]).toContain("repos/o/r/pulls/7/comments/10/replies");
     expect(h.writes[2]).toContain("id=T");
+  });
+  test("US-002 AC-12 retries a rejected closing reply and counts it closed", async () => {
+    const h = harness({ threads: true, retry: "/replies" });
+    expect(await postItemThreads(input(), h.deps)).toMatchObject({ closed: 1, failed: 0 });
+    const replies = h.writes.filter((cmd) => cmd.some((a) => a.includes("/replies")));
+    expect(replies).toHaveLength(2);
+    expect(h.writes).toHaveLength(4);
   });
   test("AC-9 an own closed reply prevents a duplicate, a foreign marker does not", async () => {
     const h = harness({ threads: true, closedAuthor: "bot" });

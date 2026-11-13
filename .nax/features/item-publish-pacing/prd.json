@@ -1,0 +1,314 @@
+{
+  "project": "nax-monorepo",
+  "feature": "item-publish-pacing",
+  "branchName": "feat/item-publish-pacing",
+  "createdAt": "2026-11-13T12:03:05.859Z",
+  "updatedAt": "2026-11-13T13:32:38.151Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add configurable item-publish pacing and safe rejection retries",
+      "description": "**Goal** — Add the workflow.itemPublish configuration and a publish-scoped forge-write pacer with injected waits, rejection-only retries, and a reserved index-write path.\n\n**Motivation** — In run `2026-11-12T06-12-29`, stage `item-threads`, posts went out about every 0.5 s.\n\n**Approach** — The pacer has two entry points, each taking an optional `itemId` that labels its log lines:\n\n- `write(action, options?)` — for thread posts, reopen writes and closing writes. `options` is `{ itemId?: string; retries?: number }`; `retries` overrides `maxRetries` for that one write. It refuses a required gap or back-off that would exceed the waiting budget; a write that needs no wait always runs.\n- `writeReserved(action, options?)` — for every index write: the final one in `maintainItemIndex` and the pre-notice one `reopenReraisedItems` makes through `writeItemIndex`. It ignores the budget, so the index is always tried, and is still bounded by `maxRetries`. Its gap and back-off waits still add to the total, but it never refuses and never sets `spent`, so a publish with reopen notices can wait past `maxWaitMs` by those index writes.\n\nComposition of the four settings, in the order they apply to one write:\n\n1. **Gap.** Before every write except the first of the publish, the pacer waits `writeGapMs`.\n2. **Attempt.** The action runs once.\n3. **Retry.** If the action threw a retryable rejection (below) and fewer than `maxRetries` retries were made for this write, the pacer waits `retryBackoffMs` and goes back to step 2. Otherwise the error propagates.\n4. **Budget.** The budget is `maxWaitMs` of total waiting per publish; every gap and back-off wait counts against it. For `write`, a wait that would take the total past `maxWaitMs` is not taken: before an attempt (a gap), `write` throws `NaxError` `ITEM_PUBLISH_BUDGET_SPENT` without running the action; before a retry (a back-off), `write` rethrows the last rejection. Either case sets `spent` to true. A write that needs no wait always runs. `writeReserved` never refuses for the budget and never sets `spent`.\n\nA **retryable rejection** is a `NaxError` with code `FORGE_COMMENT_WRITE_FAILED` whose `context.stderr` contains, case-insensitively, `rate limit`, `HTTP 429` or `HTTP 422`. Every other error is not retried: a `FORGE_RESPONSE_UNPARSEABLE` reply, a timeout, an HTTP 5xx or an auth failure may mean the write landed, and `runForgeWrite` must never repeat a write that may have completed.\n\n`gh api` without `--include` shows no response headers, so a `retry-after` value is never available. The back-off is always `retryBackoffMs`.\n\nThe pacer's waits go through an injectable `sleep` on its deps object, so tests drive it without real time.\n\nThe pacer is a forge-write pacer inside the workflow publish step, not an agent dispatch retry; the `RetryStrategy` rule (`.nax/rules/retry-strategy.md`) governs dispatch tiers and does not apply to it.\n\nConfig target: an `itemPublish` object with `.prefault({})` and integer fields `writeGapMs` (min 0, default `1000`), `retryBackoffMs` (min 0, default `60000`), `maxRetries` (min 0, default `2`), `maxWaitMs` (min 0, default `300000`). `WorkflowConfig.itemPublish` is optional, like `review`, and `WORKFLOW_ITEM_PUBLISH_DEFAULTS` is exported as the parsed defaults, like `WORKFLOW_REVIEW_DEFAULTS`.\n\n**Scope** — In: schemas-workflow.ts, runtime-types-workflow.ts, the new pacer module, config exports as needed, config-descriptions.ts, configuration guide, and tests for this behavior. Add descriptions for workflow.itemPublish and its four leaves; add the four itemPublish.* rows to docs/guides/configuration.md with defaults and bounds. Update the pinned workflow-config.test.ts default object only by adding itemPublish. Out: integrating the pacer into publishing (US-002), persisting/reporting missing indexes (US-003), and offline status decisions (US-004). Do not change runForgeWrite or retry forge writes globally. Reading a `retry-after` header: `gh api` is called without `--include`, so no header is available. Aborting the run during a pacing wait: the pacer's sleep takes no abort signal, so a run aborted during the post-publish thread step finishes its waits first.\n\n**Interface** — New module: packages/nax/src/workflow/item-publish-pacer.ts.\n```typescript\nexport interface ItemPublishConfig {\n  readonly writeGapMs: number;\n  readonly retryBackoffMs: number;\n  readonly maxRetries: number;\n  readonly maxWaitMs: number;\n}\n\nexport const _itemPublishPacerDeps = {\n  sleep: (ms: number): Promise<void> => cancellableDelay(ms),\n};\n\nexport interface ItemPublishPacer {\n  write<T>(action: () => Promise<T>, options?: { itemId?: string; retries?: number }): Promise<T>;\n  writeReserved<T>(action: () => Promise<T>, options?: { itemId?: string }): Promise<T>;\n  /** True once a write was refused, or had a retry cut short, for the budget. */\n  readonly spent: boolean;\n}\n\nexport function isRetryableRejection(error: unknown): boolean;\nexport function createItemPublishPacer(config: ItemPublishConfig): ItemPublishPacer;\n```\n\nA retry emits a warn line `[item-threads] Write rejected; retrying after back-off` with the write's itemId when given and attempt equal to the retry number. Exhaustion propagates the original rejection; nonretryable errors propagate immediately.",
+      "acceptanceCriteria": [
+        "[unit] Parsing a config with no workflow.itemPublish block yields workflow.itemPublish equal to { writeGapMs: 1000, retryBackoffMs: 60000, maxRetries: 2, maxWaitMs: 300000 }, and WORKFLOW_ITEM_PUBLISH_DEFAULTS equals the same object.",
+        "[unit] Parsing workflow.itemPublish: { maxRetries: 5 } yields maxRetries: 5 with the other three keys at their defaults.",
+        "[unit] Parsing workflow.itemPublish.writeGapMs: -1 fails schema validation.",
+        "[unit] isRetryableRejection returns true for a NaxError with code FORGE_COMMENT_WRITE_FAILED and context.stderr 'gh: You have exceeded a secondary rate limit and have been temporarily blocked from content creation.'.",
+        "[unit] isRetryableRejection returns true for a FORGE_COMMENT_WRITE_FAILED error whose stderr is 'gh: Validation Failed (HTTP 422)'.",
+        "[unit] isRetryableRejection returns true for a FORGE_COMMENT_WRITE_FAILED error whose stderr is 'gh: HTTP 429'.",
+        "[unit] isRetryableRejection returns false for a FORGE_COMMENT_WRITE_FAILED error whose stderr is 'gh: HTTP 502: Bad Gateway'.",
+        "[unit] isRetryableRejection returns false for a NaxError with code FORGE_RESPONSE_UNPARSEABLE, and for a plain Error.",
+        "[unit] With _itemPublishPacerDeps.sleep stubbed, a pacer created with writeGapMs: 1000 runs its first write with no sleep and sleeps 1000 ms before its second write.",
+        "[unit] A write whose action throws a retryable rejection once and then resolves 'ok' resolves 'ok', after one sleep of retryBackoffMs, with the action called twice.",
+        "[unit] A write whose action always throws a retryable rejection, with maxRetries: 2, rejects with that rejection after the action was called 3 times.",
+        "[unit] A write whose action throws a FORGE_RESPONSE_UNPARSEABLE error rejects with that error after one call and no back-off sleep.",
+        "[unit] With writeGapMs: 10, retryBackoffMs: 100, maxWaitMs: 100, maxRetries: 2 and an action that always throws a retryable rejection, the first write rejects with that rejection after 2 calls (one 100 ms back-off; a second back-off would exceed the budget), and spent is then true.",
+        "[unit] Given the pacer from the previous criterion (writeGapMs:10, retryBackoffMs:100, maxWaitMs:100, maxRetries:2) after its first write spent the 100 ms wait budget and set spent:true, a second write (whose 10 ms gap would exceed the budget) rejects with NaxError code ITEM_PUBLISH_BUDGET_SPENT without calling its action.",
+        "[unit] A pacer created with maxWaitMs: 0 runs its first write (no wait needed) and resolves its result.",
+        "[unit] After the budget is spent (spent true), writeReserved still runs its action, and when that action throws a retryable rejection once and then resolves, writeReserved resolves after one back-off sleep and spent stays true.",
+        "[unit] A retried write called with { itemId: '_run:cv1' } logs a warn line '[item-threads] Write rejected; retrying after back-off' with itemId: '_run:cv1' and an attempt field equal to the retry number.",
+        "[unit] A write called with { retries: 0 } whose action throws a retryable rejection rejects after one call with no back-off sleep, even though the pacer's maxRetries is 2."
+      ],
+      "tags": [
+        "workflow",
+        "config",
+        "pacing",
+        "retry"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Introduces a stateful generic write abstraction with shared wait accounting, budget refusal, reserved writes, safe error classification, and schema/default integration; not an authentication or permission change.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-workflow.ts",
+        "packages/nax/src/config/runtime-types-workflow.ts",
+        "packages/nax/src/forge/comments.ts",
+        "packages/nax/src/utils/bun-deps.ts",
+        "docs/guides/configuration.md"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/item-publish-pacer.ts",
+        "packages/nax/test/unit/workflow/item-publish-pacer.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Parsing each workflow.itemPublish setting rejects fractional values and accepts zero.",
+        "isRetryableRejection returns false when FORGE_COMMENT_WRITE_FAILED has absent or non-string stderr.",
+        "isRetryableRejection recognizes mixed-case RATE LIMIT, http 429, and http 422 stderr text.",
+        "A normal write permits a wait that makes cumulative waiting exactly maxWaitMs without setting spent.",
+        "writeReserved that takes cumulative waiting past maxWaitMs leaves a previously false spent value false."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/workflow-config.test.ts",
+          "reason": "the assertion at line 11 pins the parsed `workflow` defaults with `toEqual`; US-001 adds the `itemPublish` block, so the pinned object gains `itemPublish: { writeGapMs: 1000, retryBackoffMs: 60000, maxRetries: 2, maxWaitMs: 300000 }` and is otherwise unchanged."
+        },
+        {
+          "path": "packages/nax/src/cli/config-descriptions.ts",
+          "reason": "`FIELD_DESCRIPTIONS` gains rows for `workflow.itemPublish`, `workflow.itemPublish.writeGapMs`, `workflow.itemPublish.retryBackoffMs`, `workflow.itemPublish.maxRetries` and `workflow.itemPublish.maxWaitMs`, each one line on what it bounds, matching the existing `workflow.review.coverageRetries` rows."
+        },
+        {
+          "path": "docs/guides/configuration.md",
+          "reason": "the `workflow` config table gains four rows, `itemPublish.writeGapMs`, `itemPublish.retryBackoffMs`, `itemPublish.maxRetries` and `itemPublish.maxWaitMs`, each with its default and one line on what it bounds."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8e089f6c4c058a4e92a282877cfd23cbb1398b05"
+    },
+    {
+      "id": "US-002",
+      "title": "Pace item threads and reserve every index write",
+      "description": "**Goal** — Route all post-publish item-thread forge writes through one pacer and report whether the final index was written or the index is missing.\n\n**Motivation** — Items `_run:cv41` to `_run:cv52` each failed once with `[forge] Cannot write nathapp-io/nax#2884: gh: Validation Failed (HTTP 422)`, right after 40 identical posts to the same anchor had succeeded, and the `w-index` write then failed with `You have exceeded a secondary rate limit and have been temporarily blocked from content creation`.\n\n**Approach** — One pacer per publish. `postItemThreads` creates it from the new `workflow.itemPublish` config block and routes every forge write of the publish through it: the thread posts in `postItem`, the reopen writes in `reopenReraisedItems`, the index write in `writeItemIndex`, and the closing reply and resolve writes in `maintainItemIndex`. Reads (`resolvePrRef`, `readPrInfo`, `listReviewThreads`, `listPrComments`, `readCurrentUser`) are not content creation and are not paced.\n\n`postItem` keeps its inline-then-file fallback. The inline attempt goes through `write` with `retries: 0`: GitHub answers a line outside the diff with HTTP 422, which is permanent, so the inline attempt never waits on a back-off and the fallback runs at once. The file-level attempts (the fallback and an item with no line) use the configured `maxRetries`.\n\nA file-level post that GitHub rejects with a permanent 422 still costs up to `maxRetries` back-offs: 422 is retried because `gh` hides whether it was throttling, so two such items can spend the default budget and skip the threads after them.\n\n`postItemThreads` stops posting threads when the pacer's `spent` is true after a thread's post failed: the item whose gap was refused, and every later postable item it does not own yet, count as failed and are not sent to the forge. `attempt` keeps catching every error, so the stop is decided by reading `spent`, not by the error code.\n\nUse normal write for individual thread posts, reopen replies/unresolve writes, and obsolete closing replies/resolve writes. Use writeReserved for every call to writeItemIndex, including the pre-notice invalidation and the final index in maintainItemIndex. Preserve shared mutable postedIndex on the same maintenance context so a pre-notice creation is reused by the final write. Reserved waits count but cannot refuse an index attempt or set spent; normal gap/back-off budget rules remain those of US-001. Do not retry a compound closure/reopen sequence as one action. The inline-to-file transition can incur writeGapMs but must never incur retryBackoffMs for the inline attempt.\n\nOutcome target: `{ posted; closed; skipped; failed; indexWritten: boolean; indexMissing: boolean }`. `indexWritten` is true when this publish's final index write succeeded. `indexMissing` is true only when the PR has no `w-index` comment after the publish: the snapshot read no index comment, no index was posted during this publish (the reopen pre-notice write included), and the final write failed. A failed edit of an existing index sets `indexWritten: false` but `indexMissing: false`: the old index is stale, and bot commands still accept the PR. The initial-read-failure sentinel is specifically `{ posted: 0, closed: 0, skipped: 0, failed: 1, indexWritten: false, indexMissing: true }` as required by AC 9. Preserve existing warning/failure handling, durable invalidation-before-notice, and index-before-closure ordering. When a failed thread post spends the budget, emit one warn line `[item-threads] Pacing budget spent; skipping remaining threads` with skipped equal to the refused/remaining postable unowned item count.\n\n**Scope** — In: item-threads-post.ts, item-threads-index.ts, item-threads-reopen.ts, feature-env.ts, their behavior tests and affected outcome stubs. The feature environment passes `fc.workflow.itemPublish` as `pacing`. Update the publish-item-threads.test.ts stubs at the current result declaration and final step stub, and finalize-approval-failures.test.ts's outcome stub, adding indexWritten:true,indexMissing:false and changing nothing else. Extend the item-threads-post.test.ts outcome helper with those defaulted fields; install and restore immediate sleep stubs in the existing post/index/reopen suites, preserving all other assertions. Extend the integration initial-read-failure expectation with false/true respectively and test real environment config wiring. Out: building the pacer/config (US-001), feature-record propagation and summary formatting (US-003), and status sidecar handling (US-004). Pacing or retrying forge writes outside the post-publish item-thread step, for example `nax bot fix` replies, `nax workflow promote` writes and the PR open/edit at publish. Wording-level dedupe of cannot-verify items (#2886 item 2): #2891's whole-diff branch review removed the repeated review passes that restated them.\n\n**Interface** — `ItemThreadsInput` adds optional `pacing?: ItemPublishConfig`; absent reads as `WORKFLOW_ITEM_PUBLISH_DEFAULTS`. `PostingContext`, `IndexContext` and `ReopenContext` each gain `readonly pacer: ItemPublishPacer`; every forge write in those modules runs through it.\n```typescript\n// Additions to the existing interfaces; retain their other fields.\n// ItemThreadsInput\nreadonly pacing?: ItemPublishConfig;\n// ItemThreadsOutcome\nreadonly indexWritten: boolean;\nreadonly indexMissing: boolean;\n// PostingContext, IndexContext and ReopenContext\nreadonly pacer: ItemPublishPacer;\n```\n`maintainItemIndex(input, keys, context, options)` returns `{ closed: number; failed: number; indexed: boolean }`; `postItemThreads` reports `indexWritten` from `indexed`.\n\nUS-001 seam: consume createItemPublishPacer with ForgeDeps writes that produce retryable NaxError rejections. US-003 consumes indexMissing, not the inverse of indexWritten.",
+      "acceptanceCriteria": [
+        "[integration] postItemThreads with a postable file-level item and forge deps whose first thread post fails with stderr 'gh: Validation Failed (HTTP 422)' and then succeeds, and _itemPublishPacerDeps.sleep stubbed, posts that thread (outcome posted includes it) after one back-off sleep of pacing.retryBackoffMs.",
+        "[integration] postItemThreads with forge deps whose w-index write fails once with a secondary-rate-limit stderr and then succeeds returns indexWritten: true and failed: 0.",
+        "[integration] postItemThreads sleeps pacing.writeGapMs between consecutive thread posts: with three postable items and writeGapMs: 1000, the stubbed sleep sees at least two calls of 1000 ms before the index write.",
+        "[integration] postItemThreads with maxWaitMs: 0, writeGapMs: 1 and three postable file-level items posts the first thread, counts the second (whose gap was refused) and the third as failed, does not call the forge for either, and logs one warn line '[item-threads] Pacing budget spent; skipping remaining threads' with skipped: 2.",
+        "[integration] postItemThreads with maxWaitMs: 0, writeGapMs: 1 and three postable items still attempts the w-index write after skipping the threads, and returns indexWritten: true when that write succeeds.",
+        "[integration] postItemThreads on a PR with no index comment, whose w-index post always fails with a retryable rejection, returns indexWritten: false and indexMissing: true after maxRetries + 1 index write calls.",
+        "[integration] postItemThreads on a PR that already has an own w-index comment, whose edit of it always fails, returns indexWritten: false and indexMissing: false.",
+        "[integration] postItemThreads whose w-index write fails with a non-retryable FORGE_RESPONSE_UNPARSEABLE error returns indexWritten: false after exactly one index write call.",
+        "[integration] postItemThreads whose initial PR read fails returns { posted: 0, closed: 0, skipped: 0, failed: 1, indexWritten: false, indexMissing: true }.",
+        "[integration] The feature environment's postItemThreads step, built from a config with workflow.itemPublish.writeGapMs: 7, passes pacing.writeGapMs: 7 to postItemThreads (stub the forge deps and observe the stubbed sleep receive 7 between two thread posts).",
+        "[integration] postItemThreads with no pacing in its input uses WORKFLOW_ITEM_PUBLISH_DEFAULTS (the stubbed sleep sees 1000 ms between two thread posts).",
+        "[integration] A closing reply in maintainItemIndex that fails once with a retryable rejection and then succeeds is counted in closed, not in failed.",
+        "[integration] A reopen reply in reopenReraisedItems that fails once with a retryable rejection and then succeeds reopens the item (it is not counted in failed).",
+        "[integration] postItemThreads for an item with file and line whose inline post fails with stderr 'gh: Validation Failed (HTTP 422)' calls the file-level postItemComment next with no back-off sleep between the two, and counts the item as posted when that succeeds.",
+        "[integration] When a file-level thread post remains rejected after maxRetries retries and the wait budget permits those retries, postItemThreads counts that item as failed."
+      ],
+      "tags": [
+        "workflow",
+        "forge",
+        "integration",
+        "pacing"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Coordinates one shared pacer and mutable index state across posting, reopening, closure, and environment wiring, preserving ownership and partial-failure behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/item-threads-post.ts",
+        "packages/nax/src/workflow/item-threads-index.ts",
+        "packages/nax/src/workflow/item-threads-reopen.ts",
+        "packages/nax/src/workflow/feature-env.ts",
+        "packages/nax/src/workflow/item-publish-pacer.ts"
+      ],
+      "suggestedCriteria": [
+        "When a reopen pre-notice creates the first w-index successfully but the final index edit fails, postItemThreads returns indexWritten:false and indexMissing:false.",
+        "When the pacing budget is spent, postItemThreads does not include later owned or non-postable items in its failed count or budget-warning skipped count.",
+        "When a reopen invalidation index write exhausts its retries, reopenReraisedItems does not post the corresponding reopen notice.",
+        "When the final index write fails, maintainItemIndex does not send obsolete-thread closing replies or resolve writes."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/publish-item-threads.test.ts",
+          "reason": "the stub outcomes at line 16 (an untyped `result` the typed step returns at line 36) and line 213 must satisfy `ItemThreadsOutcome`, which gains the required `indexWritten` field; each gains `indexWritten: true, indexMissing: false` and is otherwise unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/workflow/publish-item-threads.test.ts",
+          "reason": "the assertion at line 65 pins the step's result for a failed initial read as `{ posted: 0, closed: 0, skipped: 0, failed: 1 }`; it gains `indexWritten: false, indexMissing: true` and is otherwise unchanged. The file also hosts the new test that the feature environment passes `workflow.itemPublish` as `pacing`."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/item-threads-post.test.ts",
+          "reason": "the `outcome` helper at line 96 builds the expected `postItemThreads` result for 15 `toEqual` assertions; it gains `indexWritten: true, indexMissing: false` (parameters, defaulting to those values, where a case expects the index unwritten). The file also gains a `beforeEach` that stubs `_itemPublishPacerDeps.sleep` to resolve at once and an `afterEach` that restores it, because `postItemThreads` without `pacing` now waits the default 1000 ms gap between writes. Every other assertion is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/item-threads-index.test.ts",
+          "reason": "gains a `beforeEach` that stubs `_itemPublishPacerDeps.sleep` to resolve at once and an `afterEach` that restores it, because `postItemThreads` without `pacing` now waits the default gap between writes. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/item-threads-reopen.test.ts",
+          "reason": "gains a `beforeEach` that stubs `_itemPublishPacerDeps.sleep` to resolve at once and an `afterEach` that restores it, because `postItemThreads` without `pacing` now waits the default gap between writes. No assertion changes."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/finalize-approval-failures.test.ts",
+          "reason": "the stub outcome at line 350 is typed `ItemThreadsOutcome`, which gains the required `indexWritten` field; the stub gains `indexWritten: true, indexMissing: false` and is otherwise unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "a516fe9856fd2998b78872a08601e92fd279a43f"
+    },
+    {
+      "id": "US-003",
+      "title": "Persist missing-index state and surface it at run end",
+      "description": "**Goal** — Propagate the post-publish thread outcome into the feature record and end-of-run summary so a genuinely missing item index has an actionable warning.\n\n**Motivation** — On PR #2884, 12 of 52 thread posts and the index write were rejected by GitHub's content-creation limit, the run reported nothing beyond `warn` log lines, and every bot command then refused the PR (`no nax item index on this PR`).\n\n**Approach** — `postItemThreadsAfterPublish(env, rec, out, head)` returns `Promise<ItemThreadsOutcome | undefined>` — `undefined` when it posted nothing (no post step, no URL, an outcome other than draft or ready, no identity, or the step threw). Retain its best-effort warning and ledger behavior; return the resolved step outcome rather than discarding it.\n\n`WorkflowFeatureRecord` adds optional `itemIndexMissing?: boolean`. Every `publishStep` whose thread step returned an outcome writes it from the outcome's `indexMissing`, so a later publish that writes the index clears an earlier `true`. A publish whose thread step returned nothing does not put the key in its patch. Build that patch with a conditional spread, never an explicit undefined value; this preserves earlier recorded evidence when the thread step did not return an outcome. Add itemIndexMissing to the publish node's allowed produced fields in feature-graph.ts.\n\n`WorkflowSummaryView` adds optional `itemIndexMissing?: { hint: string } | undefined`. `buildWorkflowRunSummary` emits the key only when the record field is true, with hint `nax workflow record -f demo` for feature demo and `nax workflow record` without a feature name. The `Workflow summary:` end-report line contains `item index not written; bot commands will refuse this PR (nax workflow record -f demo)` for that view. Missing/false record fields add no summary key or warning.\n\nThe index write fails after its retries and the PR has no index: `indexWritten: false`, `indexMissing: true`; the record gets `itemIndexMissing: true`; the run summary and `nax workflow status` show the missing index. The edit of an existing index fails after its retries: `indexWritten: false`, `indexMissing: false`; nothing is reported beyond today's `warn` line. This story persists indexMissing, not !indexWritten; US-004 implements the status surface.\n\n**Scope** — In: return-value propagation in publish-item-threads.ts; conditional record patch in feature-steps.ts; optional field in workflow/types.ts; feature-graph.ts produces declaration; optional view field in log-format/types.ts; run-summary.ts and execution/workflow-end-report.ts rendering; behavior tests. In feature-graph.test.ts, add only itemIndexMissing to expectedProduces.publish and keep the remaining pinned list unchanged. Exercise the seam using env.steps.postItemThreads stubs resolving true/false indexMissing or throwing. Out: pacing and index inventory calculation (US-001/US-002), workflow status output and sidecar settling (US-004). Editing the PR body to report a missing index: the body is written before the threads, and a further write would go into the same rate limit. A command that re-posts a missing item index on an existing PR.\n\n**Interface**\n```typescript\nexport async function postItemThreadsAfterPublish(\n  env: FeatureEnv,\n  rec: WorkflowFeatureRecord,\n  out: PublishOutcome,\n  head: string | undefined,\n): Promise<ItemThreadsOutcome | undefined>;\n\n// WorkflowFeatureRecord addition\nreadonly itemIndexMissing?: boolean;\n// WorkflowSummaryView addition\nitemIndexMissing?: { hint: string } | undefined;\n```\nPreserve the public four-argument seam. A publish skipped by local-only/no identity/no URL/no step, or a caught step exception, must not clear an earlier itemIndexMissing record value.",
+      "acceptanceCriteria": [
+        "[unit] postItemThreadsAfterPublish returns the outcome its postItemThreads step resolved, and returns undefined when the publish outcome is local-only.",
+        "[unit] publishStep whose env.steps.postItemThreads stub resolves indexMissing: true returns a patch with itemIndexMissing: true.",
+        "[unit] publishStep whose env.steps.postItemThreads stub resolves indexMissing: false returns a patch with itemIndexMissing: false, so a record that held true from an earlier publish reads false after it.",
+        "[unit] publishStep whose env.steps.postItemThreads stub throws returns a patch with no itemIndexMissing key.",
+        "[unit] The publish node of the feature graph accepts itemIndexMissing in its patch: running the graph's publish node with a stub that resolves indexMissing: true leaves itemIndexMissing: true on the record.",
+        "[unit] buildWorkflowRunSummary for a record with itemIndexMissing: true and feature demo returns itemIndexMissing: { hint: 'nax workflow record -f demo' }.",
+        "[unit] buildWorkflowRunSummary with no feature name, for a record with itemIndexMissing: true, returns itemIndexMissing: { hint: 'nax workflow record' }.",
+        "[unit] buildWorkflowRunSummary for a record with no itemIndexMissing, or with itemIndexMissing: false, returns a view with no itemIndexMissing key.",
+        "[unit] The end-report Workflow summary: line for a view with itemIndexMissing: { hint: 'nax workflow record -f demo' } contains 'item index not written; bot commands will refuse this PR (nax workflow record -f demo)'."
+      ],
+      "tags": [
+        "workflow",
+        "persistence",
+        "reporting"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Although several files change, this story uses existing best-effort publish, graph-patch, and conditional-summary patterns for additive field plumbing; single-session TDD can verify true/false/omitted propagation and output without introducing a new abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/publish-item-threads.ts",
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/feature-graph.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/execution/workflow-end-report.ts"
+      ],
+      "suggestedCriteria": [
+        "When a record already has itemIndexMissing:true and the thread step is absent, executing the graph's publish node preserves itemIndexMissing:true.",
+        "When the thread outcome is indexWritten:false,indexMissing:false because the old index remains, publishStep writes itemIndexMissing:false."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-graph.test.ts",
+          "reason": "`expectedProduces.publish` (lines 57-86) pins the `publish` node's produced fields and line 109 compares them with `toEqual`; US-003 adds `itemIndexMissing` to the node, so the pinned list gains `\"itemIndexMissing\"` and is otherwise unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "82f40e320a25ca3916b3b141bca2043ee4ef4b6e"
+    },
+    {
+      "id": "US-004",
+      "title": "Show missing indexes and recorded rulings in workflow status",
+      "description": "**Goal** — Make workflow status surface missing-index records and apply the newest recorded decisions when its live PR read fails.\n\n**Motivation** — After `nax workflow record` wrote 65 decisions, `nax workflow status --json` still reported all 52 items open with `settledItems: []`, because a failed live read returns the run record alone.\n\n**Approach** — Sidecar settling on a run-record fallback: an entry settles an open or supplementary item when its `id` matches and `sidecarKindFor(item)` equals the entry's `kind`; any other entry is ignored. Each settled item is listed in `settledItems` with the entry's `disposition` and removed from `openItems` or `supplementaryItems`, whichever held it. A `confirmed` advisor entry settles its item: offline there is no thread to show a fix reply, so the recorded ruling stands. When the sidecar's `outcome` is `promoted` or `verified-ready`, the report's outcome is `ready` and the `CI_ITEM_ID` item is removed from `openItems`, as the live read does for a ready PR.\n\n`WorkflowStatusReport` adds optional `itemIndexMissing?: true` (present only when the record's field is `true`) and optional `decisions?: string` (the sidecar path relative to the project directory); `settledItems` is also filled from the sidecar on a run-record fallback. Surface the recorded missing-index flag independently of whether the live read succeeds. False/absent flags produce no JSON key. The plain output includes `item index not written; settle items with nax workflow record -f <feature>` with the actual feature name.\n\nRead-only integration: `newestSidecar(runDir): Promise<{ path; sidecar } | null>` (throws when the newest file does not parse), `DecisionsSidecar { decisions: readonly DecisionEntry[]; outcome: SidecarOutcome; ... }`, `DecisionEntry { id; kind; disposition; reason; sha? }`, `SidecarOutcome = \"pending\" | \"promoted\" | \"verified-ready\" | \"abandoned\"`. `readLiveStatus(...)` returns `{ source: \"run-record\"; error }` when the live read fails. Read newestSidecar only on that failed-live path, use loaded.runDir from loadRunVerdict, and keep successful live status authoritative. Apply pending/abandoned decisions without changing the record's draft outcome; promoted/verified-ready change only the report outcome to ready and remove the CI item. The report continues using today's ready-and-no-open-items exit rule; supplementary items do not block.\n\nFailure handling: The live read fails and the newest sidecar does not parse: `nax workflow status` reports the run record alone, with `liveError` and no `decisions` key, as today. The live read fails and a sidecar entry names an id that is not an open or supplementary item, or whose `kind` does not match the item: That entry is ignored; the other entries still settle their items. Do not call the strict record/promote entry validator to apply a status sidecar: one unknown/mismatched entry must not reject valid neighbors. Do not fall back to an older sidecar when the newest one is invalid.\n\n**Scope** — In: cli/workflow.ts reportFor/buildReport/printPlain and WorkflowStatusReport; the new workflow-status-sidecar.test.ts public-command scenarios using existing loader, sidecar, and forge dependency seams. Preserve the existing status tests unchanged: a live read that succeeds, or a run with no sidecar and no true missing-index record flag, yields today's report with no decisions or itemIndexMissing key. Out: creating/changing decisions sidecar persistence or validation, publish pacing/index tracking (US-001/US-002), and missing-index record/summary propagation (US-003). Showing a CI waiver on a run-record fallback in `nax workflow status`: only the live read shows a waiver, as today. Changing `source` in `nax workflow status --json`: a run-record fallback still reports `source: \"run-record\"` when sidecar decisions are applied.\n\n**Interface**\n```typescript\n// WorkflowStatusReport additions\nreadonly itemIndexMissing?: true;\nreadonly decisions?: string;\n// Existing settledItems shape is retained\nreadonly settledItems: readonly { id: string; disposition: string }[];\n```\nUse relative leaf imports in cli/workflow.ts to avoid its documented workflow-barrel import cycle. The command remains read-only; no new field is written back to result.json or the PR.",
+      "acceptanceCriteria": [
+        "[integration] workflowStatusCommand --json for a draft run whose live read fails, with a newest sidecar holding a waived decision for open item _run:cv1, reports settledItems containing { id: '_run:cv1', disposition: 'waived' } and an openItems list without _run:cv1.",
+        "[integration] workflowStatusCommand --json for a draft run whose live read fails, with a newest sidecar present, keeps source: 'run-record' and liveError, and has decisions equal to the sidecar path relative to the project directory.",
+        "[integration] workflowStatusCommand --json for a draft run whose live read fails, with a sidecar whose outcome is promoted, reports outcome: 'ready'.",
+        "[integration] workflowStatusCommand --json for a draft run whose live read fails reports outcome: 'ready' when the newest sidecar's outcome is verified-ready; with pending or abandoned it keeps the record's outcome: 'draft'.",
+        "[integration] When workflowStatusCommand's live read fails, a newest-sidecar entry that settles a supplementary item removes it from supplementaryItems and lists it in settledItems.",
+        "[integration] When workflowStatusCommand's live read fails, a newest-sidecar decision whose id is neither an open nor a supplementary item is ignored: the report still settles the other entries and the command exits as it would without that entry.",
+        "[integration] A live read that fails and a newest sidecar that does not parse yield the run-record report with liveError and no decisions key.",
+        "[integration] workflowStatusCommand --json for a run whose record has itemIndexMissing: true reports itemIndexMissing: true.",
+        "[integration] The plain output for a run whose record has itemIndexMissing: true includes the line 'item index not written; settle items with nax workflow record -f <feature>' with the feature name filled in.",
+        "[integration] A run whose live read succeeds ignores any sidecar: settledItems comes from the live read alone and the report has no decisions key.",
+        "[integration] For a draft run whose live read fails, whose open items are a cannot-verify item and the CI item, and whose promoted sidecar settles the cannot-verify item, workflowStatusCommand reports no open items (the CI item is removed because the outcome is ready) and exits 0.",
+        "[integration] When workflowStatusCommand's live read fails, a newest-sidecar entry whose kind is finding for an open item of kind cannot-verify does not settle that item.",
+        "[integration] When workflowStatusCommand's live read fails, a confirmed newest-sidecar entry of kind advisor for an open advisor item settles it: the item is listed in settledItems with disposition confirmed and removed from openItems.",
+        "[integration] A run whose record has itemIndexMissing: false reports no itemIndexMissing key."
+      ],
+      "tags": [
+        "workflow",
+        "cli",
+        "status",
+        "sidecar"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Extends one existing read-only CLI report using existing sidecar/loader APIs and deterministic id/kind filtering, with an adjacent command-level test file; no new persistence or security mechanism.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/src/workflow/decisions-sidecar.ts",
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/src/workflow/live-status.ts",
+        "packages/nax/src/workflow/run-verdict.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/cli/workflow-status-sidecar.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the newest sidecar is malformed and an older sidecar is readable, workflowStatusCommand applies neither sidecar and reports no decisions key.",
+        "When a live read succeeds for a run with itemIndexMissing:true, workflowStatusCommand still reports itemIndexMissing:true from the record.",
+        "When a live read fails with no sidecar present and no missing-index flag, workflowStatusCommand returns the existing record-only report with liveError and no decisions or itemIndexMissing keys."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "2dd8b04a5f75d014ff97411c5da6ee777fef013a"
+    }
+  ],
+  "analysis": "Goal and scope: close #2886 by pacing and selectively retrying post-publish item-thread writes, preserving an attempt to write the bot-required w-index, making a genuinely missing index visible in persisted workflow results and human-facing reports, and using recorded decisions when the live status read fails. The binding implementation order is US-001 -> US-002 -> US-003 -> US-004, all with workdir packages/nax. US-001 also updates the repository-root configuration guide as explicitly required by the spec; retain its binding package workdir. No other workspace package, transport, agent dispatch policy, release version, or permission logic needs modification. This is an enhancement of existing TypeScript/Bun code, not a greenfield subsystem. Graph navigation tools are unavailable in this session; discovery used direct reads and text searches at the supplied repository root. These findings cite inspected source locations, rather than relying only on the spec's baseline line numbers.\n\nUS-001 architecture and files: packages/nax/src/config/schemas-workflow.ts:16-23 provides the nested Zod .prefault({}) and parsed WORKFLOW_REVIEW_DEFAULTS pattern. WorkflowConfigObjectSchema starts at :25 and includes review at :40; add the itemPublish schema there with nonnegative integer writeGapMs=1000, retryBackoffMs=60000, maxRetries=2, maxWaitMs=300000. packages/nax/src/config/runtime-types-workflow.ts:40 defines WorkflowConfig and :65 its optional review field: itemPublish must likewise remain optional for hand-built configurations. Export WORKFLOW_ITEM_PUBLISH_DEFAULTS as the parsed schema defaults, not a second hand-maintained object. packages/nax/src/config/index.ts:167-169 re-exports workflow defaults; expose the new default through the same public config boundary if consumers use that barrel. Avoid a runtime config/workflow import cycle when sharing ItemPublishConfig: type-only imports are erased, and schema/default ownership stays in config. packages/nax/src/cli/config-descriptions.ts:106-108 holds the existing workflow.review descriptions; add the block and four leaf descriptions. docs/guides/configuration.md:1071 starts the Workflow section and :1114 is in its config key table; add four documented default/bound rows there. packages/nax/test/unit/config/workflow-config.test.ts:11 pins the entire parsed workflow object with toEqual: add only the new default block to that object and retain all existing fields.\n\nCreate packages/nax/src/workflow/item-publish-pacer.ts and packages/nax/test/unit/workflow/item-publish-pacer.test.ts. Use NaxError from the existing error boundary (packages/nax/src/errors.ts:7-9) and getLogger's structured warn convention already used in packages/nax/src/workflow/item-threads-post.ts:51-55. The new ITEM_PUBLISH_BUDGET_SPENT is an error code string, not a reason to alter shared agent errors. packages/nax/src/forge/comments.ts:32-48 is deliberately a single-attempt runForgeWrite: a nonzero exit creates FORGE_COMMENT_WRITE_FAILED with trimmed context.stderr, while an invalid success body creates FORGE_RESPONSE_UNPARSEABLE. Leave this shared layer unchanged: all seven helpers already call it, and global retry there could duplicate uncertain writes and broaden the scope to bot/promote operations. Classify only NaxError FORGE_COMMENT_WRITE_FAILED whose stderr contains rate limit, HTTP 429, or HTTP 422 case-insensitively. Other 4xx/auth errors, 5xx, timeouts, plain errors, and unparseable successes do not qualify. The 422 policy deliberately accepts wasted retries on permanent file-level validation failures because gh hides the detail. Inject sleep through _itemPublishPacerDeps using cancellableDelay (packages/nax/src/utils/bun-deps.ts:72); packages/nax/src/workflow/ci-wait.ts:20 and :55 show the existing delay dependency seam. No real clock or network is needed to test the pacer. Gap is once at entry to each write after the first; retries repeat only the action after back-off, not the gap. Track cumulative requested waits, not action execution duration. Refuse a normal wait only when total + wait exceeds maxWaitMs, allow equality and no-wait actions, set spent on budget refusal, and retain the original rejection when refusing a retry. Reserved writes count their waits but never set spent, never refuse for budget, and remain retry-bounded.\n\nUS-002 write ownership and integration: packages/nax/src/workflow/item-threads-post.ts:27-41 defines ItemThreadsInput/Outcome; add optional pacing and required indexWritten/indexMissing. :66-81 implements inline, same-file fallback, then anchor fallback; retain that ordering and existing behavior, wrapping inline in write with retries:0 and file-level calls in normal write. Inline fallback has no back-off, although it still observes the normal inter-write gap. :85-104 deliberately completes ownership reads before any write: preserve that duplicate-prevention property and leave all readers unpaced. :106-147 creates the ownership set, iterates postable/non-CI items, then reopens and maintains the index. Create exactly one pacer per invocation and pass it in PostingContext, IndexContext, and ReopenContext; do not give each helper a separate budget. attempt at :58 catches every error, so use pacer.spent after a failed post to stop later postable/unowned thread posts. Count the current failed item exactly once, count only later postable/unowned items as additional failures, retain skipped accounting for non-postable/owned items, and emit the single budget warning with its skipped count.\n\npackages/nax/src/workflow/item-threads-index.ts:10-19 holds mutable postedIndex alongside the ownership snapshot. writeItemIndex at :49-60 edits read.indexComment or a newly postedIndex, otherwise posts and stores the comment id. Every such index write must use writeReserved, including the pre-notice call made by reopenReraisedItems. maintainItemIndex at :62-93 currently writes the index before obsolete closing replies/resolves and refuses closures after an index failure. Preserve that ordering and failure behavior, return indexed with closed/failed, and wrap each closing forge action individually in normal write. packages/nax/src/workflow/item-threads-reopen.ts:78-93 persists pending reopen invalidation through writeItemIndex before posting a notice and unresolving. Preserve the durable pre-notice ordering and share the same maintenance object between reopen and final index maintenance so postedIndex survives the pre-notice call. Wrap replyToThread and unresolveThread individually, not an entire multi-write sequence that could replay an already completed action. indexWritten reflects only the final index write. indexMissing distinguishes no index from a stale one: an initial index comment or any successful pre-notice creation prevents missing=true even if the final edit fails. The initial-read failure is explicitly required to return indexWritten:false,indexMissing:true, despite an incomplete snapshot. packages/nax/src/workflow/feature-env.ts:111-112 currently captures projectDir/feature but no pacing; add pacing:fc.workflow.itemPublish without losing those identity overrides. packages/nax/src/workflow/feature-machine.ts:44 already types its optional step as Promise<ItemThreadsOutcome>, so adding required outcome fields reaches all stubs.\n\nUS-002 tests and compatibility: packages/nax/test/unit/workflow/item-threads-post.test.ts:52-85 has a ForgeDeps harness and :96 an outcome helper; extend that helper with default indexWritten:true,indexMissing:false and parameters for unwritten cases, retaining the other existing assertions. Its :100-119 logger hooks can also install/restore the injected sleep. Add immediate sleep seams to the existing item-threads-index.test.ts and item-threads-reopen.test.ts suites without changing their assertions. Update the result stubs in packages/nax/test/unit/workflow/publish-item-threads.test.ts:16 and :213 and packages/nax/test/unit/workflow/finalize-approval-failures.test.ts:350 with indexWritten:true,indexMissing:false. packages/nax/test/integration/workflow/publish-item-threads.test.ts:55-65 asserts the real environment step and initial-read-failure result; extend only that expected result and add the configured pacing observation there. Integration scenarios should invoke real postItemThreads with stubbed ForgeDeps.run and injected sleep, exercising NaxError creation by the real forge helpers rather than bypassing the seam. Keep all waits virtual and restore mutable dependencies after each test. Existing GitHub/GitLab anchoring, ownership, reopen, and reviewed-head behavior must remain intact.\n\nUS-003 propagation: packages/nax/src/workflow/publish-item-threads.ts:22-29 currently returns Promise<void> and guards no step/no URL/non-PR outcomes; :31-35 guards identity; :50-67 awaits the post, writes a ledger note, and swallows failures. Return the actual ItemThreadsOutcome on success and undefined for every existing no-op/error path without turning this best-effort reporting step into a failed publish. packages/nax/src/workflow/feature-steps.ts:431-486 currently discards that return value at :441; capture it and conditionally spread itemIndexMissing:outcome.indexMissing into the patch. Do not infer it from indexWritten:false, because a stale index remains usable by bot commands. A successful later publish writes false to clear a previous true, while an absent outcome preserves the old record field. Add optional itemIndexMissing?:boolean to packages/nax/src/workflow/types.ts:231's WorkflowFeatureRecord, and add it to the publish node's produces list in packages/nax/src/workflow/feature-graph.ts:95-117. The spec's rationale about undefined patches is imprecise relative to the current runner: packages/nax/src/step-graph/run.ts:75-82 rejects undeclared keys, including explicitly undefined keys; :140-153 deletes a declared key whose patch value is undefined. Either way, conditional omission is mandatory here to preserve earlier evidence. No change to the generic graph runner is needed. packages/nax/test/unit/workflow/feature-graph.test.ts:57-86 pins produces and :109 compares the lists: add only itemIndexMissing.\n\npackages/nax/src/workflow/run-summary.ts:73-77's ciRemainingOf and :79-113's conditional view construction are the reporting patterns to extend. packages/nax/src/log-format/types.ts:82-111 owns WorkflowSummaryView; add optional itemIndexMissing?:{hint:string}|undefined, including the key only for record true. The hint is nax workflow record -f <feature>, or nax workflow record without a feature. packages/nax/src/execution/workflow-end-report.ts:33-51 builds the Workflow summary: log message and :61-63 logs both the text and structured view. Add the exact required missing-index phrase there; existing lines must remain unchanged when the flag is absent/false. Its view is also passed to the headless footer at :253-255. packages/nax/src/log-format/workflow-summary.ts:36-72 is a separate footer renderer; the explicit AC targets the Workflow summary: end-report line, so do not replace that obligation with a footer-only change. Extend the existing publish-item-threads, feature-graph, run-summary, and execution/workflow-end-report unit suites; inspected summary fixtures are at packages/nax/test/unit/workflow/run-summary.test.ts:15-47 and packages/nax/test/unit/execution/workflow-end-report.test.ts:35-49.\n\nUS-004 status architecture: packages/nax/src/cli/workflow.ts:53-73 defines the JSON report; :85-102's reportFor builds the record-only fields and :105-122's buildReport selects the live/fallback branch. Surface itemIndexMissing:true only when record.itemIndexMissing===true, irrespective of live-read success; never emit false or undefined-valued keys. Only the failed live-read branch applies newestSidecar(loaded.runDir), adding relative(dir,found.path) as decisions while preserving source:run-record and liveError. Leave today's eligibility for live reads and the successful live branch unchanged. packages/nax/src/workflow/live-status.ts:63-92 returns a run-record fallback both on read errors and on a missing w-index (:78); this module need not change. packages/nax/src/workflow/run-verdict.ts:24-35's LoadedRun already includes runDir, openItems, and supplementaryItems; its loader :83-107 fills story states and returns the authoritative items. Do not invent a second result-file discovery path. packages/nax/src/workflow/decisions-sidecar.ts:32-51 defines entry/sidecar types, :147-149 maps ruling to advisor, and :274-279 loads only the newest sidecar or throws for an invalid newest one. Reuse newestSidecar and sidecarKindFor by relative leaf imports to respect the import-cycle warning in packages/nax/src/cli/workflow.ts:9-13. Read-only references such as forge/comments.ts, live-status.ts, decisions-sidecar.ts, bun-deps.ts, and run-verdict.ts are integration context, not instructions to broaden mutations.\n\nFor the fallback, match decisions by id plus sidecarKindFor(item)===entry.kind against both open and supplementary items. Settled entries contribute only {id,disposition} and are removed from the corresponding list. Ignore unmatched/mismatched entries individually; do not reuse checkEntriesAgainstItems (packages/nax/src/workflow/decisions-sidecar.ts:164-181), which throws on mismatches and is intentionally stricter for record/promote callers. A confirmed advisor decision settles offline, unlike live-status partition at :39-43, where an advisor may still await a fix-closing reply. For promoted or verified-ready, set report outcome ready and remove CI_ITEM_ID from openItems (packages/nax/src/workflow/open-items.ts:16 defines _run:ci). Pending and abandoned leave the record verdict alone. Malformed newest sidecars degrade to the existing record report with liveError, no decisions, and no attempt to apply an older file. Preserve the exit rule in packages/nax/src/cli/workflow.ts:126-128: only ready with no open items exits 0; supplementary items never block. printPlain at :154-166 must print the missing-index line before its early return for no supplementary items. Do not show an offline CI waiver or change source to a new value.\n\nCreate packages/nax/test/unit/cli/workflow-status-sidecar.test.ts as specified, even though its public-command scenarios are tagged integration. Existing adjacent tests supply fixtures: packages/nax/test/unit/cli/workflow-status.test.ts:22-69 captures CLI output and writes result files in withTempDir; packages/nax/test/unit/cli/workflow-status-live.test.ts:37-49 builds draft records and :120-145 stubs forge responses. Keep existing successful-live and no-sidecar report shapes unchanged. New tests should write real decisions sidecars/results in a temporary run directory, inject offline or successful forge responses, call workflowStatusCommand, and inspect JSON/plain output and return codes.\n\nRisks and migration: default pacing introduces real publish latency and retry waits; all affected tests must stub sleep. maxWaitMs bounds cumulative ordinary waiting, not total wall-clock publish time: reserved index writes may exceed it and closing writes after an index may then refuse. Permanent file-level 422s intentionally burn the budget; inline 422s must not. Shared write-level retries must not replay a compound successful notice or closure sequence. Missing-versus-stale index and the pre-notice postedIndex state are the main correctness traps. Optional config and persisted fields make old configuration/result records readable without a schema-version bump or backfill; hand-built workflow blocks need parsed-default fallback. Required outcome fields do require coordinated updates to typed/untyped stubs in US-002 before downstream consumption in US-003. Status must be read-only and fail soft for sidecar read/parse failure without changing record/promote validation semantics. No repair command or historical re-publication is included. Failure-handling rows are covered by US-001's retry/logging/nonretry/budget ACs, US-002's inline fallback, exhausted-thread/index retry, skip and missing/stale index ACs, US-003's record/summary ACs, and US-004's malformed-sidecar and unknown/mismatched-entry ACs. Use bun:test and dependency seams; package-scoped targeted tests during implementation, with normal pipeline gates rather than quality-gate acceptance criteria. Never run bare bun test or bun run nax; do not run coverage inside a sandboxed nax session.\n\nRefinement audit: all 55 explicitly numbered spec criteria remain in their original stories and original ordinal positions (US-001 1-18, US-002 1-14, US-003 1-9, US-004 1-14); the additional US-002 criterion 15 is the explicit exhausted-thread-post failure-table behavior. All regression qualifiers and all nine verbatim feature exclusions are retained. Each story already has negative-path and backward-compatibility assertions. Clarified that the retry-success thread scenario is file-level, made inherited test setup explicit, and restricted sidecar-settlement criteria explicitly to failed live reads. Removed blanket spent-refusal wording that conflicted with the no-wait rule. Reassessed US-003 as medium/tdd-simple: its many file edits are straightforward additive field propagation through existing seams rather than a new abstraction. US-001 and US-002 remain complex/lite for the new stateful pacer and its multi-module integration; US-004 remains medium/simple. Context selections prioritize the spec's existing sources and US-001's configuration guide within five paths; config-descriptions stays required in scope even though it is the sixth recommended reference. Binding story ids, package workdirs, dependency chain, and produced files are unchanged.",
+  "outOfScope": [
+    "Wording-level dedupe of cannot-verify items (#2886 item 2): #2891's whole-diff branch review removed the repeated review passes that restated them.",
+    "Editing the PR body to report a missing index: the body is written before the threads, and a further write would go into the same rate limit.",
+    "Pacing or retrying forge writes outside the post-publish item-thread step, for example `nax bot fix` replies, `nax workflow promote` writes and the PR open/edit at publish.",
+    "Reading a `retry-after` header: `gh api` is called without `--include`, so no header is available.",
+    "A command that re-posts a missing item index on an existing PR.",
+    "Aborting the run during a pacing wait: the pacer's sleep takes no abort signal, so a run aborted during the post-publish thread step finishes its waits first.",
+    "Showing a CI waiver on a run-record fallback in `nax workflow status`: only the live read shows a waiver, as today.",
+    "Changing `source` in `nax workflow status --json`: a run-record fallback still reports `source: \"run-record\"` when sidecar decisions are applied.",
+    "Updating the nax-finish skill (repository `nax-toolkit-skills`) to mention the missing-index line is a manual follow-up outside this run."
+  ],
+  "routingProfile": "native-codex-ds"
+}

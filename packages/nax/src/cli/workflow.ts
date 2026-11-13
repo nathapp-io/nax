@@ -18,6 +18,13 @@ import type { Command } from "commander";
 import { prNumberFromUrl } from "@/forge";
 import type { FeatureCiState, FeatureOutcome, FeatureStep, OpenItem } from "@/workflow";
 import type { CiWaiver } from "@/workflow/ci-waiver";
+import {
+  type DecisionEntry,
+  type DecisionsSidecar,
+  newestSidecar,
+  type SidecarOutcome,
+  sidecarKindFor,
+} from "../workflow/decisions-sidecar";
 import { readLiveStatus } from "../workflow/live-status";
 import { buildVerdict, CI_ITEM_ID } from "../workflow/open-items";
 import { fillStoryStates, type LoadedRun, loadRunVerdict } from "../workflow/run-verdict";
@@ -70,11 +77,28 @@ export interface WorkflowStatusReport {
   readonly ciWaiver?: CiWaiver;
   /** #2578: items a finisher rules on that `openItems` does not hold; they never change the exit code. */
   readonly supplementaryItems: readonly OpenItem[];
+  /**
+   * US-004: the record says `publish` ended with no item index on the PR, so every bot command will
+   * refuse it. Present only when the record's own field is `true` — never `false` — so an older
+   * record and a publish that wrote an index read exactly as they did before.
+   */
+  readonly itemIndexMissing?: true;
+  /**
+   * US-004: the decisions sidecar a failed live read was settled from, relative to the project
+   * directory. Absent whenever the report is the live read's own, which never consults a sidecar.
+   */
+  readonly decisions?: string;
 }
 
 const NOT_PUBLISHED = "not published";
 const NO_ITEMS = "No open items.";
 const SUPPLEMENTARY_HEADING = "Also to verify (not blocking):";
+
+/** The sidecar outcomes that say the PR itself is where it should be, so the report reads ready. */
+const READY_SIDECAR_OUTCOMES: readonly SidecarOutcome[] = ["promoted", "verified-ready"];
+
+const missingIndexLine = (feature: string): string =>
+  `item index not written; settle items with nax workflow record -f ${feature}`;
 
 /**
  * The report of the newest readable run. The run, its record and the open items all come from
@@ -94,10 +118,75 @@ function reportFor(dir: string, feature: string, loaded: LoadedRun): WorkflowSta
     ...(verdict ? { outcome: verdict.outcome, workflowPassed: verdict.workflowPassed } : {}),
     ...(record.ci === undefined ? {} : { ci: record.ci }),
     ...(record.url === undefined ? {} : { url: record.url }),
+    ...(record.itemIndexMissing === true ? { itemIndexMissing: true as const } : {}),
     reasons: record.reasons,
     openItems: loaded.openItems,
     supplementaryItems: loaded.supplementaryItems,
   };
+}
+
+/**
+ * US-004: the items a sidecar's entries settle. An entry settles an item when its `id` matches and
+ * `sidecarKindFor(item)` is the entry's `kind`; every other entry is ignored. `status` reports, so
+ * it filters — unlike `record`, which refuses a file it is about to write, one stale entry here
+ * must not reject the valid neighbours beside it.
+ */
+function settledBy(
+  entries: readonly DecisionEntry[],
+  items: readonly OpenItem[],
+): { id: string; disposition: string }[] {
+  const byId = new Map(items.map((item) => [item.id, item] as const));
+  return entries.flatMap((entry) => {
+    const item = byId.get(entry.id);
+    return item !== undefined && sidecarKindFor(item) === entry.kind
+      ? [{ id: entry.id, disposition: entry.disposition }]
+      : [];
+  });
+}
+
+/**
+ * US-004: the fields a run's newest sidecar adds to a failed live read's report. `promoted` and
+ * `verified-ready` claim the PR is where it should be, so the report reads ready and drops the CI
+ * item exactly as the live read of a ready PR does; `pending` and `abandoned` settle items and
+ * leave the record's own outcome alone. A `confirmed` advisor entry settles its item: offline there
+ * is no thread to show a fix reply on, so the recorded ruling stands.
+ */
+function sidecarOverlay(
+  report: WorkflowStatusReport,
+  found: { readonly path: string; readonly sidecar: DecisionsSidecar },
+  dir: string,
+): WorkflowStatusReport {
+  const settled = settledBy(found.sidecar.decisions, [...report.openItems, ...report.supplementaryItems]);
+  const gone = new Set(settled.map((item) => item.id));
+  const ready = READY_SIDECAR_OUTCOMES.includes(found.sidecar.outcome);
+  return {
+    ...report,
+    decisions: relative(dir, found.path),
+    settledItems: settled,
+    openItems: report.openItems.filter((item) => !gone.has(item.id) && !(ready && item.id === CI_ITEM_ID)),
+    supplementaryItems: report.supplementaryItems.filter((item) => !gone.has(item.id)),
+    ...(ready ? { outcome: "ready" as const } : {}),
+  };
+}
+
+/**
+ * US-004: a failed live read is settled from the run's newest sidecar. A file that wears the sidecar
+ * name but does not parse leaves the report alone — never an older sidecar, and never an error:
+ * `status` reports what the run's records say, and `record` is the command that refuses a broken
+ * file. Read only on this path, so a live read stays authoritative.
+ */
+async function withSidecar(
+  report: WorkflowStatusReport,
+  loaded: LoadedRun,
+  dir: string,
+): Promise<WorkflowStatusReport> {
+  try {
+    const found = await newestSidecar(loaded.runDir);
+    return found === null ? report : sidecarOverlay(report, found, dir);
+  } catch {
+    // no readable sidecar: the report is the run record's own, exactly as it was before US-004
+    return report;
+  }
 }
 
 /** The verdict of the newest readable run, or the error that says why there is none. */
@@ -108,7 +197,7 @@ async function buildReport(dir: string, feature: string, forgeDeps: WorkflowForg
   const needsLiveStatus = outcome === "draft" || (outcome === "ready" && report.openItems.length > 0);
   if (!needsLiveStatus || !url || prNumberFromUrl(url) === null) return report;
   const live = await readLiveStatus({ url, cwd: dir, deps: forgeDeps.forge, items: report.openItems });
-  if (live.source === "run-record") return { ...report, liveError: live.error };
+  if (live.source === "run-record") return withSidecar({ ...report, liveError: live.error }, loaded, dir);
   const settled = new Set(live.settled.map((item) => item.id));
   return {
     ...report,
@@ -147,6 +236,7 @@ function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps): void {
   const outcome = report.outcome ?? NOT_PUBLISHED;
   deps.log(`${report.feature}: ${outcome}${report.url ? ` ${report.url}` : ""}`);
   if (report.liveError !== undefined) deps.log(`(run record only: ${report.liveError})`);
+  if (report.itemIndexMissing === true) deps.log(missingIndexLine(report.feature));
   if (report.openItems.length === 0) deps.log(NO_ITEMS);
   for (const item of report.openItems) deps.log(itemLine(item));
   if (report.ciWaiver) deps.log(waiverLine(report.ciWaiver));

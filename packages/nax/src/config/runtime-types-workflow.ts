@@ -36,6 +36,22 @@ export interface WorkflowInterruptRetryConfig {
 /** What `publish()` does after the final gates: `pr` opens or promotes a PR, `push` only pushes, `none` stays local. */
 export type WorkflowPublishMode = "pr" | "push" | "none";
 
+/**
+ * US-001 (item-publish-pacing): the pacing of the post-publish item-thread writes. Structurally the
+ * same four fields as the pacer's `ItemPublishConfig` (`src/workflow/item-publish-pacer.ts`), which
+ * declares them itself so the pacer does not depend on the config layer.
+ */
+export interface WorkflowItemPublishConfig {
+  /** Wait before every paced write except the first of the publish. */
+  readonly writeGapMs: number;
+  /** Wait before retrying a write the forge rejected with a rate-limit or 422 rejection. */
+  readonly retryBackoffMs: number;
+  /** Retries per write; overridable for one write through the pacer's `retries` option. */
+  readonly maxRetries: number;
+  /** Total waiting the paced (`write`) path may spend in one publish. */
+  readonly maxWaitMs: number;
+}
+
 /** `workflow` block. Read only when `execution.mode === "workflow"`. */
 export interface WorkflowConfig {
   models: WorkflowModelsConfig;
@@ -65,6 +81,11 @@ export interface WorkflowConfig {
   review?: {
     readonly coverageRetries: number;
   };
+  /**
+   * US-001 (item-publish-pacing): the post-publish item-thread pacing. Optional so a hand-built
+   * config reads as `WORKFLOW_ITEM_PUBLISH_DEFAULTS`.
+   */
+  itemPublish?: WorkflowItemPublishConfig;
 }
 
 export type ExecutionMode = "pipeline" | "workflow";

@@ -58,6 +58,7 @@ export type { MemoryConfig, MemoryKodaConfig, MemoryMcpConfig } from "./runtime-
 export type {
   ExecutionMode,
   WorkflowConfig,
+  WorkflowItemPublishConfig,
   WorkflowModelsConfig,
   WorkflowPublishMode,
   WorkflowTimeoutsConfig,
@@ -164,6 +165,7 @@ export {
   ExecutionModeSchema,
   resolveWorkflowConfig,
   WORKFLOW_DEFAULTS,
+  WORKFLOW_ITEM_PUBLISH_DEFAULTS,
   WORKFLOW_REVIEW_DEFAULTS,
   WorkflowConfigObjectSchema,
 } from "./schemas-workflow";

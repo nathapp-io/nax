@@ -113,6 +113,9 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
         "ciRepairTargets",
         // US-006: the checks still red once the repair allowance is spent.
         "ciRemaining",
+        // US-003: the PR this publish left with no item index (present only when the thread step
+        // returned an outcome), so the end of the run can say bot commands will refuse it.
+        "itemIndexMissing",
         "endedAt",
       ],
       exits: ["ci-repair"],

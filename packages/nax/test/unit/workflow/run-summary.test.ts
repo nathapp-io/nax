@@ -211,6 +211,39 @@ describe("buildWorkflowRunSummary", () => {
     });
   });
 
+  // US-003: a PR published with no item index refuses every bot command, so the summary names it —
+  // with the command that settles the PR's items without one.
+  describe("the missing item index (US-003)", () => {
+    const timing = { storiesDurationMs: 100, featureWorkflowDurationMs: 40 };
+
+    /** The fixture's record with `itemIndexMissing` as the publish recorded it. */
+    function withMissing(itemIndexMissing: boolean | undefined): WorkflowResultFile {
+      const file = resultFile();
+      const rec = file.featureWorkflow;
+      if (!rec) throw new Error("fixture has a feature record");
+      return { ...file, featureWorkflow: { ...rec, itemIndexMissing } };
+    }
+
+    test("AC-6 a feature's missing index hints at the command with -f", () => {
+      expect(buildWorkflowRunSummary(withMissing(true), timing, "demo")?.itemIndexMissing).toEqual({
+        hint: "nax workflow record -f demo",
+      });
+    });
+
+    test("AC-7 no feature name: the bare command", () => {
+      expect(buildWorkflowRunSummary(withMissing(true), timing)?.itemIndexMissing).toEqual({
+        hint: "nax workflow record",
+      });
+    });
+
+    test("AC-8 no itemIndexMissing, or false: no itemIndexMissing key", () => {
+      // The control: the same fixture with the field set does carry the key.
+      expect(buildWorkflowRunSummary(withMissing(true), timing, "demo")).toHaveProperty("itemIndexMissing");
+      expect(buildWorkflowRunSummary(withMissing(undefined), timing, "demo")).not.toHaveProperty("itemIndexMissing");
+      expect(buildWorkflowRunSummary(withMissing(false), timing, "demo")).not.toHaveProperty("itemIndexMissing");
+    });
+  });
+
   describe("branch review skipped (L3)", () => {
     test("no branch section, and the view says the review was skipped", () => {
       const file = resultFile();

@@ -15,6 +15,8 @@ export interface WorkflowTiming {
 
 /** US-005: how the end-of-run surfaces point a human at the flagged decisions. */
 const FLAGGED_LIST_COMMAND = "nax advisor list";
+/** US-003: how they settle a published PR's items when its index write never landed. */
+const RECORD_COMMAND = "nax workflow record";
 
 function rolesOf(result: WorkflowResultFile): WorkflowSummaryView["roles"] {
   const total: Readonly<Record<string, RoleTokens>> = [
@@ -52,6 +54,23 @@ function flaggedHint(feature?: string): string {
   return feature ? `${FLAGGED_LIST_COMMAND} -f ${feature}` : FLAGGED_LIST_COMMAND;
 }
 
+/** US-003: the command that settles a PR's items from the run record, for a PR with no index. */
+function recordHint(feature?: string): string {
+  return feature ? `${RECORD_COMMAND} -f ${feature}` : RECORD_COMMAND;
+}
+
+/**
+ * US-003: the record's missing index, as the view states it. Only `true` is surfaced — a `false` is a
+ * later publish that wrote the index, and an absent field is a record that never reached the thread
+ * step, which says nothing a human could act on.
+ */
+function itemIndexMissingOf(
+  rec: WorkflowFeatureRecord | undefined,
+  feature?: string,
+): NonNullable<WorkflowSummaryView["itemIndexMissing"]> | undefined {
+  return rec?.itemIndexMissing === true ? { hint: recordHint(feature) } : undefined;
+}
+
 /**
  * US-005: the ids the record flagged for a human. Only a non-empty list is surfaced — an empty one
  * says nothing the missing section does not, and records written before the field have none at all.
@@ -86,6 +105,7 @@ export function buildWorkflowRunSummary(
   const finalGates = rec?.finalGates ?? rec?.repoGates;
   const flagged = flaggedOf(rec, feature);
   const ciRemaining = ciRemainingOf(rec);
+  const itemIndexMissing = itemIndexMissingOf(rec, feature);
   return {
     ...timing,
     roles: rolesOf(result),
@@ -109,6 +129,8 @@ export function buildWorkflowRunSummary(
       ? { publish: { outcome: rec.outcome, ...(rec.url ? { url: rec.url } : {}), reasons: rec.reasons } }
       : {}),
     ...(flagged ? { flagged } : {}),
+    // US-003: the published PR has no item index, so the bot commands will refuse it.
+    ...(itemIndexMissing ? { itemIndexMissing } : {}),
   };
 }
 
