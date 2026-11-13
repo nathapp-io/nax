@@ -3,7 +3,7 @@
   "feature": "branch-review-whole-diff",
   "branchName": "feat/branch-review-whole-diff",
   "createdAt": "2026-11-13T00:00:00.000Z",
-  "updatedAt": "2026-11-13T03:21:14.264Z",
+  "updatedAt": "2026-11-13T03:30:24.357Z",
   "userStories": [
     {
       "id": "US-001",
@@ -153,14 +153,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "One additive pure helper filters existing audit records and aggregates holding-part sets; it neither opens sessions nor changes authentication, permissions or session lifecycle."
+        "reasoning": "One additive pure helper filters existing audit records and aggregates holding-part sets; it neither opens sessions nor changes authentication, permissions or session lifecycle.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/workflow/review-tool-reads.ts",
@@ -179,7 +182,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d9274dee45bc338427f7caaa7477b2e222d1cb6b"
     },
     {
       "id": "US-004",
