@@ -3,7 +3,7 @@
   "feature": "ci-starved-checks",
   "branchName": "feat/ci-starved-checks",
   "createdAt": "2026-10-22T00:00:00Z",
-  "updatedAt": "2026-11-13T06:03:24.533Z",
+  "updatedAt": "2026-11-13T06:30:44.774Z",
   "userStories": [
     {
       "id": "US-001",
@@ -102,14 +102,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Stateful bounded reruns, stale GitHub job identity, SHA binding, deadline/error priorities and progress logging must integrate without changing one-shot reads or increasing loop complexity."
+        "reasoning": "Stateful bounded reruns, stale GitHub job identity, SHA binding, deadline/error priorities and progress logging must integrate without changing one-shot reads or increasing loop complexity.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/ci-wait.ts",
@@ -140,7 +143,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0dd49a50e7b1469894c811b8da51ca2d028080e6"
     },
     {
       "id": "US-003",
