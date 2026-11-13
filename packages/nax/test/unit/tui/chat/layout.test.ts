@@ -557,6 +557,23 @@ describe("layoutTranscript: tool cards", () => {
     for (const line of lines.slice(1, 2)) expect(plainText(line).startsWith(" ".repeat(GUTTER))).toBe(true);
   });
 
+  test("#2890: a sandboxed Bash card ends its header with a muted sandboxed marker", () => {
+    const line = headerOf([okEntry({ name: "Bash", input: { command: "ls" }, sandbox: "sandboxed" })]);
+    expect(plainText(line)).toBe(`${theme.glyphs.bullet} Bash(ls) sandboxed`);
+    expect(spanWith(line, "sandboxed").color).toBe("muted");
+  });
+
+  test("#2890: an unsandboxed Exec card ends its header with a muted unsandboxed marker", () => {
+    const line = headerOf([okEntry({ name: "RunCommand", input: { argv: ["bun", "test"] }, sandbox: "unsandboxed" })]);
+    expect(plainText(line).endsWith(" unsandboxed")).toBe(true);
+    expect(spanWith(line, "unsandboxed").color).toBe("muted");
+  });
+
+  test("#2890: a Bash card with no reported status draws no marker", () => {
+    const line = headerOf([okEntry({ name: "Bash", input: { command: "ls" } })]);
+    expect(plainText(line)).toBe(`${theme.glyphs.bullet} Bash(ls)`);
+  });
+
   test("keeps a reply's bullet line unchanged beside a tool card", () => {
     expect(texts(layout([okEntry({ preview: "a\nb" }), replyEntry("done")]))).toEqual([
       `${theme.glyphs.bullet} Read(src/a.ts)`,

@@ -15,7 +15,7 @@ import type { CommandShadow } from "#src/command-safety/index";
 import type { BashApprovalMode } from "#src/config/bash-approval";
 import { getSafeLogger } from "#src/infra/index";
 import { type AskResolver, headlessAskResolver } from "#src/permissions/index";
-import { type SandboxRecord, type SandboxStatus, sandboxStatusOf } from "../sandbox/index.ts";
+import { type SandboxRecord, type SandboxStatus, sandboxStatusField } from "../sandbox/index.ts";
 import { deleteTool } from "./delete.ts";
 import { editTool } from "./edit.ts";
 import { gitTool } from "./git.ts";
@@ -65,7 +65,6 @@ export type CodingToolOutcome =
   | {
       readonly kind: "ok" | "error";
       readonly content: string;
-      /** Bash/Exec: where the command ran, from the audit record. Absent otherwise. */
       readonly sandbox?: SandboxStatus;
       /** Records the final model-facing content when shaping was deferred. */
       readonly finalizeAudit?: (content: string) => void;
@@ -470,14 +469,11 @@ export function createCodingToolRuntime(opts: {
           const kind = result.isError === true ? "error" : "ok";
           const content = await shapeToolResult(result.content, policyIdentity, context);
           // Two cuts can hide content from the model, and either one alone under-reports:
-          // the tool's own (Read caps itself at the same ceilings, so the policy is a
-          // no-op on its already-cut body) and the policy's (which also cuts by line
-          // length and count, not only bytes). `applyModelTruncationPolicy` returns its
-          // input unchanged when no stage cut it, so an identity check is the one signal
-          // that covers every policy stage — and it works for the deferred path too,
-          // where `record` is handed the final content instead. The row states
-          // completeness rather than leaving it to be inferred, which is why both are
-          // ORed rather than one overwriting the other.
+          // the tool's own (Read caps itself at the same ceilings) and the policy's (which
+          // also cuts by line length and count, not only bytes).
+          // `applyModelTruncationPolicy` returns its input unchanged when no stage cut it,
+          // so an identity check covers every policy stage, the deferred path too (where
+          // `record` is handed the final content). Both are ORed, not overwritten.
           const toolTruncated = result.truncated === true;
           const record = (finalContent: string) =>
             logCall(
@@ -496,11 +492,10 @@ export function createCodingToolRuntime(opts: {
               },
               result.resultBytesPreTruncation,
             );
-          const sandbox = sandboxStatusOf(result.audit?.sandbox);
-          const status = sandbox !== undefined ? { sandbox } : {};
-          if (context?.deferModelTruncation === true) return { kind, content, ...status, finalizeAudit: record };
+          const where = sandboxStatusField(result.audit?.sandbox);
+          if (context?.deferModelTruncation === true) return { kind, content, ...where, finalizeAudit: record };
           record(content);
-          return { kind, content, ...status };
+          return { kind, content, ...where };
         } catch (err) {
           const rawContent = err instanceof Error ? err.message : String(err);
           const content = await shapeToolResult(rawContent, policyIdentity, context);

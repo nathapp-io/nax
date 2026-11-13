@@ -42,7 +42,12 @@ function toolCall(
 }
 
 function toolResult(
-  options: EventOptions & { readonly callId?: string; readonly isError?: boolean; readonly preview?: string } = {},
+  options: EventOptions & {
+    readonly callId?: string;
+    readonly isError?: boolean;
+    readonly preview?: string;
+    readonly sandbox?: "sandboxed" | "unsandboxed";
+  } = {},
 ): SessionEvent {
   return {
     ...base(options),
@@ -50,6 +55,7 @@ function toolResult(
     callId: options.callId ?? "c1",
     isError: options.isError ?? false,
     preview: options.preview ?? "",
+    ...(options.sandbox !== undefined ? { sandbox: options.sandbox } : {}),
   };
 }
 
@@ -161,6 +167,16 @@ describe("reduceTranscript tool results", () => {
   test("marks the matching entry ok and keeps the result's preview", () => {
     const entries = reduce(toolCall({ callId: "c1" }), toolResult({ callId: "c1", isError: false, preview: "x" }));
     expect(entries[0]).toMatchObject({ kind: "tool", status: "ok", preview: "x" });
+  });
+
+  test.each(["sandboxed", "unsandboxed"] as const)("#2890: keeps the result's sandbox status %s", (sandbox) => {
+    const entries = reduce(toolCall({ callId: "c1" }), toolResult({ callId: "c1", sandbox }));
+    expect(entries[0]).toMatchObject({ kind: "tool", sandbox });
+  });
+
+  test("#2890: a result without a sandbox status leaves the entry without the key", () => {
+    const entries = reduce(toolCall({ callId: "c1" }), toolResult({ callId: "c1" }));
+    expect("sandbox" in (entries[0] ?? {})).toBe(false);
   });
 
   test("ends the matching entry at the result's at", () => {

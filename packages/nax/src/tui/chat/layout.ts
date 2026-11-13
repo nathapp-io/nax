@@ -199,7 +199,12 @@ function skillLines(entry: Extract<TranscriptEntry, { kind: "skill" }>, context:
 function toolHeader(model: ToolCardModel, context: LayoutContext): readonly StyledLine[] {
   const bullet = styled(context.theme.glyphs.bullet, { color: BULLET_COLORS[model.tone] });
   const argument = model.arg === undefined ? [] : [styled(`(${oneLine(sanitizeText(model.arg))})`, { bold: true })];
-  return prefixedLine([styled(oneLine(sanitizeText(model.title))), ...argument], [bullet, styled(SPACE)], context);
+  const marker = model.sandbox === undefined ? [] : [styled(SPACE), styled(model.sandbox, { color: "muted" })];
+  return prefixedLine(
+    [styled(oneLine(sanitizeText(model.title))), ...argument, ...marker],
+    [bullet, styled(SPACE)],
+    context,
+  );
 }
 
 /** The colour a summary line takes; a plain line keeps the terminal's own. */

@@ -28,6 +28,8 @@ export interface ToolCardModel {
   readonly title: string;
   readonly arg?: string;
   readonly tone: "running" | "success" | "danger";
+  /** Bash/Exec only: where the command ran, when the result said. The layout draws it as a muted marker. */
+  readonly sandbox?: "sandboxed" | "unsandboxed";
   readonly summary: readonly CardLine[];
   readonly diff: readonly DiffLine[];
   /** Lines withheld while collapsed; 0 when expanded or nothing is withheld. */
@@ -55,6 +57,8 @@ const TITLES: ReadonlyMap<string, string> = new Map([
   [AGENT_RUN_TOOL, "Agent"],
   [SKILL_LOAD_TOOL, "Skill"],
 ]);
+/** The only tools whose card says where the command ran: Bash and the Exec branch of RunCommand. */
+const COMMAND_TOOLS: ReadonlySet<string> = new Set(["Bash", "RunCommand"]);
 const FAILED = "failed";
 /** What an ok card says when its tool reported no text of its own. */
 const DONE = "Done";
@@ -372,6 +376,7 @@ export function toolCardModel(entry: ToolEntry, options: { expanded: boolean }):
     title: toolTitle(entry.name),
     ...(arg === undefined ? {} : { arg }),
     tone,
+    ...(COMMAND_TOOLS.has(entry.name) && entry.sandbox !== undefined ? { sandbox: entry.sandbox } : {}),
     summary: summary.shown,
     diff: diff.shown,
     hiddenLines: summary.hidden + diff.hidden,

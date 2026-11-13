@@ -45,6 +45,8 @@ export type TranscriptEntry =
       status: "running" | "ok" | "error";
       open?: boolean;
       preview?: string;
+      /** Bash/Exec: where the command ran, as the result reported it; absent when it did not say. */
+      sandbox?: "sandboxed" | "unsandboxed";
       /** The model a top-level agent call runs on, when the host named it. */
       model?: string;
       /** Where that model came from — `override`, `inherited`, `agent file`, … — when named. */
@@ -201,7 +203,13 @@ function applyToolResult(
   const status: ToolChild["status"] = event.isError ? "error" : "ok";
   const tool = findTool(entries, (entry) => entry.turnId === event.turnId && entry.callId === event.callId);
   if (tool) {
-    return replaceIn(entries, tool.index, { ...tool.entry, status, preview: event.preview, endedAt: event.at });
+    return replaceIn(entries, tool.index, {
+      ...tool.entry,
+      status,
+      preview: event.preview,
+      endedAt: event.at,
+      ...(event.sandbox !== undefined ? { sandbox: event.sandbox } : {}),
+    });
   }
   const parent = findChildParent(entries, event);
   if (!parent) return entries;

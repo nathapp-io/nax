@@ -12,3 +12,9 @@ export function sandboxStatusOf(record: SandboxRecord | undefined): SandboxStatu
   if (record === undefined) return undefined;
   return record.wrapped ? "sandboxed" : "unsandboxed";
 }
+
+/** The `{ sandbox }` field of a tool outcome or event, or nothing when the record says nothing. */
+export function sandboxStatusField(record: SandboxRecord | undefined): { readonly sandbox?: SandboxStatus } {
+  const sandbox = sandboxStatusOf(record);
+  return sandbox === undefined ? {} : { sandbox };
+}
