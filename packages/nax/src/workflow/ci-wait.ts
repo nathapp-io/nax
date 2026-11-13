@@ -35,9 +35,15 @@ export interface CiWaitResult {
  * still pending blocks too (strict green, ruled 2026-10-21). Every readiness decision asks this
  * one function, so the workflow's own publish and `nax workflow promote` cannot disagree about
  * whether CI is done (`nax bot fix` joins them in US-005).
+ *
+ * US-004: `waiveStarved` is the one explicit exception. A check that never got a runner has no
+ * verdict CI can reach on its own, so a human (`--waive-starved <reason>`) may accept it. The
+ * option widens the rule for `starved` alone — `failed`, `pending`, `conflicting`, `no-checks`
+ * and `unavailable` stay blocked, and no run waives CI without being asked to.
  */
-export function ciAllowsReady(outcome: CiWaitOutcome): boolean {
-  return outcome === "green";
+export function ciAllowsReady(outcome: CiWaitOutcome, options?: { readonly waiveStarved?: boolean }): boolean {
+  if (outcome === "green") return true;
+  return outcome === "starved" && options?.waiveStarved === true;
 }
 
 /** Consecutive unreadable polls (CLI error, spawn failure, unparseable output) that end the wait (nax#2550). */
