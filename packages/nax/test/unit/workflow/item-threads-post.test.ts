@@ -67,6 +67,8 @@ interface HarnessOptions {
   own?: string;
   /** An own `w-index` comment already on the PR. */
   indexBody?: string;
+  /** An own `w-index` comment the PR carries only once an index write was attempted: a write that landed. */
+  indexAfterWrite?: string;
   /** Raw stdout for the index write, for a reply `gh` prints but cannot parse. */
   indexStdout?: string;
   /** Pacing rejections the pacer may retry: a NaxError, so `isRetryableRejection` sees it. */
@@ -82,6 +84,7 @@ function harness(options: HarnessOptions = {}) {
   const reads: string[][] = [];
   const rejections = (options.reject ?? []).map((r) => ({ ...r, left: r.times }));
   let failures = options.failures ?? 0;
+  let indexAttempted = false;
   const ok = (value: unknown) => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: "" });
   const reject = (cmd: string[]) => {
     const hit = rejections.find((r) => r.left > 0 && cmd.some((arg) => arg.includes(r.match)));
@@ -91,6 +94,7 @@ function harness(options: HarnessOptions = {}) {
   };
   const indexReply = (cmd: string[]) => {
     indexWrites.push(cmd);
+    indexAttempted = true;
     reject(cmd);
     if (options.indexStdout !== undefined) return { exitCode: 0, stdout: options.indexStdout, stderr: "" };
     return ok({ id: 99 });
@@ -101,7 +105,12 @@ function harness(options: HarnessOptions = {}) {
     if (failures-- > 0) throw new Error("post rejected");
     return ok(options.gitlab ? { id: "discussion", notes: [{ id: 1 }] } : { id: 1 });
   };
-  const indexComment = () => ({ id: 9, user: { login: "bot" }, body: options.indexBody ?? "", created_at: "t" });
+  const indexComment = (body: string) => ({ id: 9, user: { login: "bot" }, body, created_at: "t" });
+  /** The issue-comment read: a write that landed shows up here even when its reply was unparseable. */
+  const indexComments = () => {
+    const body = indexAttempted ? (options.indexAfterWrite ?? options.indexBody) : options.indexBody;
+    return ok(body === undefined ? [] : [indexComment(body)]);
+  };
   const readReply = (cmd: string[]) => {
     if (cmd[0] === "git")
       return {
@@ -115,8 +124,7 @@ function harness(options: HarnessOptions = {}) {
       return ok(threadReply(options.own));
     }
     // Only the issue-comment read carries the index; a review summary is not editable.
-    if (cmd.some((arg) => arg.includes("/issues/7/comments?per_page=")))
-      return ok(options.indexBody ? [indexComment()] : []);
+    if (cmd.some((arg) => arg.includes("/issues/7/comments?per_page="))) return indexComments();
     if (cmd.some((arg) => arg.includes("?per_page="))) return ok([]);
     return ok(prReply(options.gitlab));
   };
@@ -414,10 +422,21 @@ describe("postItemThreads item-publish pacing", () => {
     expect(h.indexWrites).toHaveLength(3);
     expect(h.indexWrites.every((cmd) => cmd.includes("PATCH"))).toBe(true);
   });
-  test("US-002 AC-8 does not retry an unparseable index write", async () => {
+  test("US-002 AC-8 does not retry an unparseable index write, and confirms the absence", async () => {
     const h = harness({ indexStdout: "not-json" });
     const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
     expect(result).toMatchObject({ indexWritten: false, indexMissing: true });
+    expect(h.indexWrites).toHaveLength(1);
+    // A failed write cannot say whether it landed, so the absence is read back off the PR.
+    expect(h.reads.filter((cmd) => cmd.some((a) => a.includes("/issues/7/comments?per_page=")))).toHaveLength(2);
+  });
+  test("US-002 AC-8 an unparseable reply from an index write that landed is not missing", async () => {
+    const h = harness({
+      indexStdout: "not-json",
+      indexAfterWrite: withNaxBotMarker(renderItemIndex({ keys: [] }), "w-index"),
+    });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toMatchObject({ indexWritten: false, indexMissing: false });
     expect(h.indexWrites).toHaveLength(1);
   });
   test("US-002 AC-9 an unreadable PR reports one failure and no index", async () => {
