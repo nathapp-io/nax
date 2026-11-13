@@ -16,7 +16,14 @@ import { relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import { prNumberFromUrl } from "@/forge";
-import type { FeatureCiState, FeatureOutcome, FeatureStep, OpenItem } from "@/workflow";
+import type {
+  ConfigChangeRecord,
+  FeatureCiState,
+  FeatureOutcome,
+  FeatureStep,
+  OpenItem,
+  WorkflowResultFile,
+} from "@/workflow";
 import type { CiWaiver } from "@/workflow/ci-waiver";
 import {
   type DecisionEntry,
@@ -88,6 +95,12 @@ export interface WorkflowStatusReport {
    * directory. Absent whenever the report is the live read's own, which never consults a sidecar.
    */
   readonly decisions?: string;
+  /**
+   * US-006: every config change the run's stories recorded, flattened with the story it belongs to
+   * (round, key, `from`, `to`, `applied`, `reason`, `decisionId` kept as recorded). Present only when
+   * a story recorded one — an old record and a run that changed nothing read exactly as before.
+   */
+  configChanges?: readonly ({ storyId: string } & ConfigChangeRecord)[];
 }
 
 const NOT_PUBLISHED = "not published";
@@ -101,6 +114,17 @@ const missingIndexLine = (feature: string): string =>
   `item index not written; settle items with nax workflow record -f ${feature}`;
 
 /**
+ * US-006: every config change the run's stories recorded, in the order `result.json` holds them
+ * (story order, then each story's own round order), each flattened with the story it belongs to.
+ * The records stay whole, so a consumer keeps the round, both values, the verdict and the decision.
+ */
+function recordedConfigChanges(result: WorkflowResultFile): ({ storyId: string } & ConfigChangeRecord)[] {
+  return Object.values(result.stories).flatMap((story) =>
+    (story.configChanges ?? []).map((change) => ({ storyId: story.storyId, ...change })),
+  );
+}
+
+/**
  * The report of the newest readable run. The run, its record and the open items all come from
  * `loadRunVerdict` (US-002 moved that loading out of this file); the verdict is rebuilt here only
  * for the two fields it owns, which the run's loader does not carry.
@@ -108,6 +132,7 @@ const missingIndexLine = (feature: string): string =>
 function reportFor(dir: string, feature: string, loaded: LoadedRun): WorkflowStatusReport {
   const { record } = loaded;
   const verdict = buildVerdict(fillStoryStates(record, loaded.result));
+  const configChanges = recordedConfigChanges(loaded.result);
   return {
     source: "run-record",
     settledItems: [],
@@ -122,6 +147,7 @@ function reportFor(dir: string, feature: string, loaded: LoadedRun): WorkflowSta
     reasons: record.reasons,
     openItems: loaded.openItems,
     supplementaryItems: loaded.supplementaryItems,
+    ...(configChanges.length === 0 ? {} : { configChanges }),
   };
 }
 
@@ -232,6 +258,22 @@ function waiverLine(waiver: CiWaiver): string {
   );
 }
 
+/**
+ * US-006: the one plain line a recorded config change adds, in the wording the ledger uses for the
+ * same event (see `config-change-absorb`), prefixed with the story it belongs to. A refused change
+ * names its reason and the value that was never written; an applied one names both values.
+ */
+function configChangeLine(entry: { readonly storyId: string } & ConfigChangeRecord): string {
+  const key = `quality.commands.${entry.key}`;
+  const decision = `(advisor ${entry.decisionId})`;
+  if (!entry.applied) {
+    const reason = entry.reason === undefined ? "" : ` (${entry.reason})`;
+    return `${entry.storyId} config change refused${reason}: ${key} -> "${entry.to}" ${decision}`;
+  }
+  const was = entry.from === undefined ? "" : ` "${entry.from}"`;
+  return `${entry.storyId} config change applied: ${key}${was} -> "${entry.to}" ${decision}`;
+}
+
 function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps): void {
   const outcome = report.outcome ?? NOT_PUBLISHED;
   deps.log(`${report.feature}: ${outcome}${report.url ? ` ${report.url}` : ""}`);
@@ -239,6 +281,7 @@ function printPlain(report: WorkflowStatusReport, deps: WorkflowCliDeps): void {
   if (report.itemIndexMissing === true) deps.log(missingIndexLine(report.feature));
   if (report.openItems.length === 0) deps.log(NO_ITEMS);
   for (const item of report.openItems) deps.log(itemLine(item));
+  for (const change of report.configChanges ?? []) deps.log(configChangeLine(change));
   if (report.ciWaiver) deps.log(waiverLine(report.ciWaiver));
   if (report.supplementaryItems.length === 0) return;
   deps.log(SUPPLEMENTARY_HEADING);

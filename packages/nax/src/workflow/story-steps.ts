@@ -14,6 +14,7 @@ import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
 import { adjudicateResidual } from "./adjudicate";
 import { isFlaggedRuling } from "./advisor";
+import { stopOnUnchangedBlock } from "./blocked-stop";
 import { deriveEndState } from "./close";
 import { absorbConfigChange, implementerQuestion } from "./config-change-absorb";
 import { ledgerCannotVerify } from "./gate-timing";
@@ -467,8 +468,20 @@ function passExit(open: readonly WorkflowFinding[], s: LoopState, maxFixRounds: 
 /** One loop pass: gates -> suite -> report check -> review, then persist the pass's record patch. */
 export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Promise<StepResult<StoryLoopState>> {
   const s = new LoopState(state);
+  // US-006: the pass before this one, read before `evaluate` replaces it with the new gate run.
+  const previous = state.gates;
   const open = [...(await evaluate(env, s)), ...s.pendingSession];
   s.pendingSession = [];
+  // US-006: a round that ended BLOCKED and left the same gates red cannot converge, so the residual
+  // node adjudicates now — the same `capped` exit the cost and no-op rules take.
+  const blocked = await stopOnUnchangedBlock(env, {
+    round: s.round,
+    lastTurn: state.lastTurn,
+    previous,
+    current: s.gates,
+    open,
+  });
+  if (blocked) s.advisorRoute = true;
   await env.sink.update({
     openFindings: open,
     // Retire the fix base with its re-reviewed findings, never leaving stale findings without their base.

@@ -29,8 +29,11 @@ const NOT_WRITTEN: ConfigChangeRefusal = "write-failed";
  * The red gates of the story's last gate run — `gates.states` only. The full-suite result is
  * deliberately not read: a red `full-suite` gate is nobody's command to change (`testScoped` runs the
  * scoped gate), and offering it would hand the advisor a change that cannot lift the red.
+ *
+ * This is the one definition of "which gates are red", so US-006's early stop compares two passes
+ * through it too (see `blocked-stop.ts`) rather than walking the states a second way.
  */
-function redGateNamesOf(gates: GateRunResult | undefined): GateName[] {
+export function redGateNamesOf(gates: GateRunResult | undefined): GateName[] {
   const states: Readonly<Partial<Record<GateName, GateState>>> = gates?.states ?? {};
   const red: GateName[] = [];
   for (const [gate, state] of Object.entries(states) as [GateName, GateState | undefined][]) {
