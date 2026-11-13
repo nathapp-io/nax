@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { withDepsRestore } from "@test/helpers";
+import { assertCaughtInstanceOf, withDepsRestore } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { _finishGitDeps, commitAndPush, commitFixes, PUSH_TIMEOUT_MS } from "@/finish";
 
@@ -275,5 +275,50 @@ describe("commitAndPush", () => {
 
     const pushCall = calls.find((c) => c.args[0] === "push");
     expect(pushCall?.args).toEqual(["push", "--set-upstream", "origin", "feat/x"]);
+  });
+
+  test("pushes to the resolved remote URL when one is given (F1)", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("moved\n");
+      if (call.args[0] === "status") return ok("");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+
+    await commitAndPush("/repo", "feat/x", "chore: send flow to koda", {
+      skipCommit: true,
+      sourceSha: "0123abcd",
+      remote: "git@github.com:o/r.git",
+    });
+
+    const pushCall = calls.find((c) => c.args[0] === "push");
+    // The destination is the URL that was verified, in the transport it was configured
+    // with — SSH here — so a repointed `origin` cannot redirect the push.
+    expect(pushCall?.args).toEqual(["push", "--set-upstream", "git@github.com:o/r.git", "0123abcd:refs/heads/feat/x"]);
+  });
+
+  test("a push failure names the branch, never the remote a credential may sit in (F1)", async () => {
+    const { git } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("sha\n");
+      if (call.args[0] === "status") return ok("");
+      if (call.args[0] === "push") return fail("remote rejected");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+    const credential = "https://x-access-token:secret-token@github.com/o/r.git";
+
+    const caught = await commitAndPush("/repo", "feat/x", "chore: send flow to koda", {
+      skipCommit: true,
+      sourceSha: "0123abcd",
+      remote: credential,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    assertCaughtInstanceOf(caught, NaxError, "the push rejection");
+
+    expect(caught.message).toContain('git push of "feat/x" failed');
+    expect(caught.message).not.toContain("secret-token");
+    expect(JSON.stringify(caught.context)).not.toContain("secret-token");
   });
 });

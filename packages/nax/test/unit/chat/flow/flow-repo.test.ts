@@ -15,6 +15,7 @@ import {
   type FlowSendFeature,
   isFlowTreeDirty,
   normalizeGitHubRemote,
+  readFlowPushUrl,
   readFlowRepoState,
 } from "@/chat/flow";
 
@@ -399,6 +400,46 @@ describe("readFlowRepoState — the spec paths", () => {
 
     expect(message).toContain(OTHER_SPEC);
     expect(message).not.toContain(SPEC);
+  });
+});
+
+describe("readFlowPushUrl", () => {
+  test("returns the URL the origin remote pushes to (F1)", async () => {
+    const calls = stubGit(() => ok("git@github.com:o/r.git\n"));
+
+    expect(await readFlowPushUrl(REPO_ROOT)).toEqual({ ok: true, url: "git@github.com:o/r.git" });
+    expect(calls[0]?.args).toEqual(["remote", "get-url", "--push", "origin"]);
+  });
+
+  test("reads the push URL, which can differ from the fetch URL (F1)", async () => {
+    stubGit((args) =>
+      args.includes("--push") ? ok("https://github.com/fork/r.git\n") : ok("git@github.com:o/r.git\n"),
+    );
+
+    expect(await readFlowPushUrl(REPO_ROOT)).toEqual({ ok: true, url: "https://github.com/fork/r.git" });
+  });
+
+  test("returns a failure message when git cannot read the push URL (F1)", async () => {
+    stubGit(() => failed("fatal: No such remote 'origin'"));
+
+    expect(await readFlowPushUrl(REPO_ROOT)).toEqual({
+      ok: false,
+      message: "[chat] could not read the push destination of the origin remote",
+    });
+  });
+
+  test("treats a throwing git call as unreadable (F1)", async () => {
+    _flowRepoDeps.git = async () => {
+      throw new Error("git is not on PATH");
+    };
+
+    expect((await readFlowPushUrl(REPO_ROOT)).ok).toBe(false);
+  });
+
+  test("treats an empty answer as unreadable (F1)", async () => {
+    stubGit(() => ok("   \n"));
+
+    expect((await readFlowPushUrl(REPO_ROOT)).ok).toBe(false);
   });
 });
 

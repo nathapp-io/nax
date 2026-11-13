@@ -29,7 +29,14 @@ import {
   parseFlowSendInput,
 } from "./flow-input";
 import { createKodaFlow, type FlowCreateBody, type FlowCreateOutcome } from "./flow-koda";
-import { checkFlowBranch, type FlowRepoReady, isFlowTreeDirty, readFlowRepoState } from "./flow-repo";
+import {
+  checkFlowBranch,
+  type FlowRepoReady,
+  isFlowTreeDirty,
+  normalizeGitHubRemote,
+  readFlowPushUrl,
+  readFlowRepoState,
+} from "./flow-repo";
 
 /** The provider id; the tool the brain sees is `nax-flow__send`. */
 export const FLOW_PROVIDER_ID = "nax-flow";
@@ -47,6 +54,9 @@ const DECLINED_MESSAGE =
   "[chat] the user declined sending the flow to koda; do not retry with different arguments unless the user asks";
 /** Nothing was pushed: the commit the card described is no longer the one the branch is on. */
 const BRANCH_CHANGED_MESSAGE = "[chat] the branch changed while the card was open; nothing was pushed";
+/** HTTP(S) URLs, with any `user:token@` in front of the host removed so the repository can be read. */
+const HTTPS_USERINFO_PREFIX = /^https?:\/\/[^/@]+@/i;
+
 /** Nothing was pushed: the branch or the origin the push would resolve is no longer the one carded. */
 const PUSH_TARGET_MOVED_MESSAGE =
   "[chat] the branch or origin being pushed changed while the card was open; nothing was pushed";
@@ -134,18 +144,19 @@ export const FLOW_SEND_INPUT_SCHEMA = {
 
 /**
  * The seam every collaborator of the run goes through: the repository read, the
- * post-allow re-check, the push and the koda create. The defaults are nax's own
- * helpers, and `isDirty` defaults to the flow module's own tree check so the
- * pre-card and post-allow reads ask the same question — untracked files count,
- * because nothing here commits.
+ * push destination, the post-allow re-check, the push and the koda create. The
+ * defaults are nax's own helpers, and `isDirty` defaults to the flow module's own
+ * tree check so the pre-card and post-allow reads ask the same question —
+ * untracked files count, because nothing here commits.
  */
 export const _flowProviderDeps: {
   readFlowRepoState: typeof readFlowRepoState;
+  readFlowPushUrl: typeof readFlowPushUrl;
   headSha: (repoRoot: string) => Promise<string | null>;
   isDirty: (repoRoot: string) => Promise<boolean>;
   commitAndPush: typeof commitAndPush;
   createKodaFlow: typeof createKodaFlow;
-} = { readFlowRepoState, headSha, isDirty: isFlowTreeDirty, commitAndPush, createKodaFlow };
+} = { readFlowRepoState, readFlowPushUrl, headSha, isDirty: isFlowTreeDirty, commitAndPush, createKodaFlow };
 
 /** A failed run: one `[chat]` line, never a throw. */
 function failure(content: string): ToolResult {
@@ -252,6 +263,44 @@ async function pushTargetFailure(
 }
 
 /**
+ * The repository a push URL targets, tolerating a credential in it.
+ *
+ * A configured push URL routinely carries its own authentication — an SSH address
+ * whose user is part of the address, or an HTTPS URL with a token in front of the
+ * host — and neither stops the URL naming the carded repository. Only the
+ * repository identity is compared here; the URL itself is used verbatim, so its
+ * transport keeps working.
+ */
+function pushRepositoryOf(pushUrl: string): string | null {
+  return normalizeGitHubRemote(pushUrl) ?? normalizeGitHubRemote(pushUrl.replace(HTTPS_USERINFO_PREFIX, "https://"));
+}
+
+/** The verified destination the push is addressed to, or the result that stops the send. */
+type PushDestination =
+  | { readonly ok: true; readonly url: string }
+  | { readonly ok: false; readonly result: ToolResult };
+
+/**
+ * Where this push will actually go, and whether it is still the carded repository.
+ *
+ * A remote's push URL can differ from the fetch URL the card and the koda body were
+ * built from (`remote.origin.pushurl`, `url.<base>.pushInsteadOf`), so it is read on
+ * its own and compared with the carded repository: pushing a flow's branch somewhere
+ * the card did not name would send koda to read a repository that never received it.
+ * The URL is then handed to the push itself, so git does not resolve `origin` a
+ * second time.
+ *
+ * @param state - The repository state the card was built from
+ * @param repoRoot - The repository to read
+ */
+async function pushDestination(state: FlowRepoReady, repoRoot: string): Promise<PushDestination> {
+  const read = await _flowProviderDeps.readFlowPushUrl(repoRoot);
+  if (!read.ok) return { ok: false, result: failure(read.message) };
+  if (pushRepositoryOf(read.url) !== state.remoteUrl) return { ok: false, result: failure(PUSH_TARGET_MOVED_MESSAGE) };
+  return { ok: true, url: read.url };
+}
+
+/**
  * koda's relative flow link, joined onto the origin its web UI is served from.
  * A koda under a path prefix would need a configured web root; that is out of scope.
  */
@@ -343,13 +392,15 @@ async function createFlow(
  *
  * The card described one commit, so the branch must still be on it — and the
  * tree must still be clean — before anything leaves the machine. The target the
- * push will resolve is verified separately, and the push itself names the carded
- * commit (`sourceSha`): `commitAndPush` then runs
- * `git push --set-upstream origin <sha>:refs/heads/<branch>`, so a commit another
- * process lands on that branch in the window reaches origin only if it is the one
- * the user approved. A post-push branch-tip read would not add anything to that —
- * it cannot undo a push, and it would fail a correct push whenever an unrelated
- * commit lands afterwards.
+ * push will resolve is verified separately, the destination the push is addressed
+ * to is resolved and checked against the carded repository, and the push itself
+ * names the carded commit (`sourceSha`) and that verified destination (`remote`):
+ * `commitAndPush` then runs
+ * `git push --set-upstream <verified push URL> <sha>:refs/heads/<branch>`, so
+ * neither a commit another process lands on the branch nor a remote repointed
+ * after the check can decide what is pushed or where. A post-push branch-tip read
+ * would not add anything to that — it cannot undo a push, and it would fail a
+ * correct push whenever an unrelated commit lands afterwards.
  */
 async function afterAllow(
   state: FlowRepoReady,
@@ -361,9 +412,12 @@ async function afterAllow(
   if (await branchMoved(state, options.repoRoot)) return failure(BRANCH_CHANGED_MESSAGE);
   const target = await pushTargetFailure(state, input, options.repoRoot);
   if (target !== undefined) return target;
+  const destination = await pushDestination(state, options.repoRoot);
+  if (!destination.ok) return destination.result;
   await _flowProviderDeps.commitAndPush(options.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
     skipCommit: true,
     sourceSha: state.sha,
+    remote: destination.url,
   });
   return await createFlow(state, input, options);
 }

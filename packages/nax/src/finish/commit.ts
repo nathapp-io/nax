@@ -21,6 +21,8 @@ export const PUSH_TIMEOUT_MS = 120_000;
 
 /** Where a branch lives on the remote; koda's flow branch and nax's publish path both push here. */
 const BRANCH_REF_PREFIX = "refs/heads/";
+/** The remote a push names when the caller did not resolve the destination itself. */
+const DEFAULT_PUSH_REMOTE = "origin";
 
 export interface SyncOutcome {
   /** True when the fixes produced a new commit. */
@@ -130,19 +132,28 @@ export async function commitFixes(
  * concurrent commit would otherwise be what gets published. Such a push cannot
  * set the branch's upstream (git derives it from a local branch refspec), so a
  * branch that had none still has none afterwards.
+ *
+ * `remote` binds the destination: a caller that verified where a push goes passes
+ * the URL it verified, rather than naming `origin` and letting git resolve the
+ * remote again — a remote's push URL can differ from its fetch URL (`pushurl`) and
+ * can be rewritten between the check and the push. The URL is used verbatim so the
+ * transport it was configured with (SSH, a credential-bearing HTTPS URL) still
+ * authenticates; it is never put in an error message or an error context, because
+ * a configured push URL may carry a credential.
  */
 export async function commitAndPush(
   repoRoot: string,
   branch: string,
   message: string,
-  opts: { skipHooks?: boolean; skipCommit?: boolean; excludeDir?: string; sourceSha?: string } = {},
+  opts: { skipHooks?: boolean; skipCommit?: boolean; excludeDir?: string; sourceSha?: string; remote?: string } = {},
 ): Promise<SyncOutcome> {
   const { committed, shaAfter } = opts.skipCommit
     ? { committed: false, shaAfter: null }
     : await commitFixes(repoRoot, message, opts);
 
   const source = opts.sourceSha === undefined ? branch : `${opts.sourceSha}:${BRANCH_REF_PREFIX}${branch}`;
-  const push = await _finishGitDeps.git(["push", "--set-upstream", "origin", source], repoRoot, PUSH_TIMEOUT_MS);
+  const destination = opts.remote ?? DEFAULT_PUSH_REMOTE;
+  const push = await _finishGitDeps.git(["push", "--set-upstream", destination, source], repoRoot, PUSH_TIMEOUT_MS);
   if (push.exitCode !== 0) {
     throw new NaxError(
       `git push of "${branch}" failed: ${push.stderr.trim() || `exit ${push.exitCode}`}`,

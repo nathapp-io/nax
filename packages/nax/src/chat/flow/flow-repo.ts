@@ -257,3 +257,33 @@ export function checkFlowBranch(branch: string, features: readonly FlowBranchFea
     `would take the checked-out branch "${branch}"; rename the feature or the branch`
   );
 }
+
+/** The URL a push to `origin` actually goes to. */
+export interface FlowPushUrlReady {
+  readonly ok: true;
+  /** The configured push URL: a URL or an SCP-style address, in whatever transport it was set up with. */
+  readonly url: string;
+}
+
+/** The push destination, or why it could not be read. */
+export type FlowPushUrlState = FlowPushUrlReady | FlowRepoFailure;
+
+/** The message a push destination that git will not report fails with. */
+const UNREADABLE_PUSH_URL_MESSAGE = "[chat] could not read the push destination of the origin remote";
+
+/**
+ * The URL a push to `origin` goes to.
+ *
+ * A remote may carry its own `remote.origin.pushurl`, and `url.<base>.pushInsteadOf`
+ * can rewrite the destination, so the push address is not the fetch address: it is
+ * asked for separately, and it is what a push must be addressed to if the carded
+ * repository is the repository being pushed.
+ *
+ * @param repoRoot - The repository to read
+ * @returns The push URL as git reports it, or a `[chat]` message when it will not
+ */
+export async function readFlowPushUrl(repoRoot: string): Promise<FlowPushUrlState> {
+  const answer = await gitAnswer(["remote", "get-url", "--push", "origin"], repoRoot);
+  const url = answer?.stdout.trim() ?? "";
+  return url.length === 0 ? { ok: false, message: UNREADABLE_PUSH_URL_MESSAGE } : { ok: true, url };
+}

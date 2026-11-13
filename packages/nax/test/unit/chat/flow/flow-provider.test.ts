@@ -23,13 +23,22 @@ import {
 import { NaxError } from "@/errors";
 import { buildFlowInstructions } from "@/prompts";
 
-withDepsRestore(_flowProviderDeps, ["readFlowRepoState", "headSha", "isDirty", "commitAndPush", "createKodaFlow"]);
+withDepsRestore(_flowProviderDeps, [
+  "readFlowRepoState",
+  "readFlowPushUrl",
+  "headSha",
+  "isDirty",
+  "commitAndPush",
+  "createKodaFlow",
+]);
 
 const REPO_ROOT = "/fixture/repo";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const OTHER_SHA = "fedcba9876543210fedcba9876543210fedcba98";
 const SPEC_A = ".nax/features/a/spec.md";
 const SPEC_B = ".nax/features/b/spec.md";
+/** The push destination, as a repository with an SSH `origin` resolves it. */
+const PUSH_URL = "git@github.com:o/r.git";
 
 const connection: KodaFlowConnection = {
   url: "https://koda.example/api",
@@ -97,6 +106,7 @@ beforeEach(() => {
   sequence = [];
   reply = async () => "allow";
   _flowProviderDeps.readFlowRepoState = async () => ready();
+  _flowProviderDeps.readFlowPushUrl = async () => ({ ok: true, url: PUSH_URL });
   _flowProviderDeps.headSha = async () => SHA;
   _flowProviderDeps.isDirty = async () => false;
   _flowProviderDeps.commitAndPush = async (repoRoot, branch, message, opts) => {
@@ -337,17 +347,51 @@ describe("send — after the card", () => {
 
     await send(input);
 
-    // The push is bound to the carded commit, so the branch tip at push time cannot
-    // decide what reaches origin (F1).
+    // The push is bound to the carded commit and to the resolved push destination,
+    // so neither the branch tip nor a repointed `origin` can decide what is pushed
+    // or where it goes (F1).
     expect(pushCalls).toEqual([
       {
         repoRoot: REPO_ROOT,
         branch: "feat/x",
         message: FLOW_PUSH_COMMIT_MESSAGE,
-        opts: { skipCommit: true, sourceSha: SHA },
+        opts: { skipCommit: true, sourceSha: SHA, remote: PUSH_URL },
       },
     ]);
     expect(sequence).toEqual(["approve", "push", "koda"]);
+  });
+
+  test("pushes to the remote's push URL, keeping the transport it was configured with (F1)", async () => {
+    const credential = "https://x-access-token:tok@github.com/o/r.git";
+    _flowProviderDeps.readFlowPushUrl = async () => ({ ok: true, url: credential });
+
+    await send(input);
+
+    // A push URL carrying a credential still targets the carded repository, and it
+    // is the credential-bearing URL that is used, so authentication keeps working.
+    expect(pushCalls[0]?.opts).toEqual({ skipCommit: true, sourceSha: SHA, remote: credential });
+    expect(kodaCalls).toHaveLength(1);
+  });
+
+  test("stops before pushing when the push destination is another repository (F1)", async () => {
+    _flowProviderDeps.readFlowPushUrl = async () => ({ ok: true, url: "git@github.com:someone/else.git" });
+
+    const result = await send(input);
+
+    expect(result).toEqual({ isError: true, content: PUSH_TARGET_MOVED });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("stops when the push destination cannot be read (F1)", async () => {
+    const message = "[chat] could not read the push destination of the origin remote";
+    _flowProviderDeps.readFlowPushUrl = async () => ({ ok: false, message });
+
+    const result = await send(input);
+
+    expect(result).toEqual({ isError: true, content: message });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
   });
 
   test("carries the push failure and never calls koda (AC-16)", async () => {
