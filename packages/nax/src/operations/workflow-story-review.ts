@@ -9,6 +9,7 @@ import {
   reviewerCommandsSection,
 } from "@/prompts";
 import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
+import { reviewerCommandLines } from "./reviewer-command-lines";
 import type { RunOperation } from "./types";
 import { parseStoryReviewReply } from "./workflow-replies";
 import type { StoryReviewVerdict } from "./workflow-types";
@@ -32,9 +33,9 @@ export const workflowStoryReviewOp: RunOperation<WorkflowReviewInput, StoryRevie
   tools: [...WORKFLOW_REVIEW_TOOLS],
   model: (input, ctx) => input.model ?? ctx.config.workflow?.models?.storyReview ?? ctx.config.review?.semantic?.model,
   timeoutMs: (input) => input.timeoutMs + STEP_TIMEOUT_MARGIN_MS,
-  build(input) {
+  build(input, ctx) {
     return {
-      instructions: reviewerCommandsSection(),
+      instructions: reviewerCommandsSection(reviewerCommandLines(ctx.config, ctx.packageView)),
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: input.prompt, overridable: false },
     };

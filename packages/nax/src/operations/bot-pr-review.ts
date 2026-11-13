@@ -13,6 +13,7 @@ import {
 import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
 import { missingTriage, parsePrReviewReply } from "./bot-pr-review-reply";
 import type { PrReviewVerdict } from "./bot-types";
+import { reviewerCommandLines } from "./reviewer-command-lines";
 import type { RunOperation } from "./types";
 import { unreadFiles } from "./workflow-review-coverage";
 import { REVIEWER_VERIFY_TOOLS } from "./workflow-story-review";
@@ -107,8 +108,8 @@ export const botPrReviewOp: BotReviewOperation = {
   tools: [...REVIEWER_VERIFY_TOOLS],
   model: (input) => input.model,
   timeoutMs: (input) => input.timeoutMs + STEP_TIMEOUT_MARGIN_MS,
-  build: (input) => ({
-    instructions: reviewerCommandsSection(),
+  build: (input, ctx) => ({
+    instructions: reviewerCommandsSection(reviewerCommandLines(ctx.config, ctx.packageView)),
     role: { id: "role", content: "", overridable: false },
     task: { id: "task", content: input.prompt, overridable: false },
   }),

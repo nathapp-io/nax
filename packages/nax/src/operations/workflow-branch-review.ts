@@ -11,6 +11,7 @@ import {
 } from "@/prompts";
 import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
 import type { DiffPart } from "@/workflow/branch-diff-parts";
+import { reviewerCommandLines } from "./reviewer-command-lines";
 import type { RunOperation } from "./types";
 import { parseBranchReviewReply } from "./workflow-replies";
 import { unreadFiles } from "./workflow-review-coverage";
@@ -67,9 +68,9 @@ export const workflowBranchReviewOp: RunOperation<
   model: (input, ctx) =>
     input.model ?? ctx.config.workflow?.models?.branchReview ?? ctx.config.finish?.reviewers?.quality ?? undefined,
   timeoutMs: (input) => input.timeoutMs + STEP_TIMEOUT_MARGIN_MS,
-  build(input) {
+  build(input, ctx) {
     return {
-      instructions: reviewerCommandsSection(),
+      instructions: reviewerCommandsSection(reviewerCommandLines(ctx.config, ctx.packageView)),
       role: { id: "role", content: "", overridable: false },
       task: { id: "task", content: input.prompt, overridable: false },
     };
