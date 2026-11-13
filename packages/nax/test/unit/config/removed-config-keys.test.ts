@@ -113,6 +113,7 @@ describe("branch review sliceFiles removal", () => {
   test("US-006 AC-3: project loading retains only coverageRetries", async () => {
     const root = await writeProjectConfig({ workflow: { review: { sliceFiles: 20, coverageRetries: 2 } } });
     const config = await loadConfig(root);
+    assertDefined(config.workflow, "loaded workflow config");
     expect(config.workflow.review).toEqual({ coverageRetries: 2 });
   });
 });

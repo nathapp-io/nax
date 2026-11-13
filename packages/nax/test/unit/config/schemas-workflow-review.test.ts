@@ -28,11 +28,8 @@ describe("workflow.review defaults (US-002)", () => {
 });
 
 describe("workflow.review CLI descriptions (AC-14)", () => {
-  test.each(["workflow.review", "workflow.review.coverageRetries"])(
-    "AC-14: %s has a non-empty description",
-    (key) => {
-      expect(FIELD_DESCRIPTIONS[key]).toBeString();
-      expect(FIELD_DESCRIPTIONS[key].trim().length).toBeGreaterThan(0);
-    },
-  );
+  test.each(["workflow.review", "workflow.review.coverageRetries"])("AC-14: %s has a non-empty description", (key) => {
+    expect(FIELD_DESCRIPTIONS[key]).toBeString();
+    expect(FIELD_DESCRIPTIONS[key].trim().length).toBeGreaterThan(0);
+  });
 });
