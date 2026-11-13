@@ -3,7 +3,7 @@
   "feature": "item-publish-pacing",
   "branchName": "feat/item-publish-pacing",
   "createdAt": "2026-11-13T12:03:05.859Z",
-  "updatedAt": "2026-11-13T12:29:18.657Z",
+  "updatedAt": "2026-11-13T12:59:18.924Z",
   "userStories": [
     {
       "id": "US-001",
@@ -117,14 +117,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Coordinates one shared pacer and mutable index state across posting, reopening, closure, and environment wiring, preserving ownership and partial-failure behavior."
+        "reasoning": "Coordinates one shared pacer and mutable index state across posting, reopening, closure, and environment wiring, preserving ownership and partial-failure behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/item-threads-post.ts",
@@ -169,7 +172,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a516fe9856fd2998b78872a08601e92fd279a43f"
     },
     {
       "id": "US-003",
