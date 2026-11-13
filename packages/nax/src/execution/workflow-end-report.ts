@@ -48,6 +48,10 @@ function summaryLine(view: WorkflowSummaryView): string {
   if (view.publish) parts.push(`publish ${view.publish.outcome}`);
   // US-005: a ruling that changed an acceptance criterion must not go unnoticed at run end.
   if (view.flagged) parts.push(`flagged ${view.flagged.ids.length} (${view.flagged.hint})`);
+  // US-003: a PR published without an item index refuses every bot command, so the line says why and
+  // names the command that settles its items.
+  if (view.itemIndexMissing)
+    parts.push(`item index not written; bot commands will refuse this PR (${view.itemIndexMissing.hint})`);
   return `Workflow summary: ${parts.join("; ")}`;
 }
 

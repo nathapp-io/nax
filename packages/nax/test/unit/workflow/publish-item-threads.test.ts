@@ -87,6 +87,17 @@ describe("postItemThreadsAfterPublish", () => {
       });
     },
   );
+  // US-003: the publish needs the outcome, not only the side effects, so the record can say the
+  // index the PR now lacks. Nothing posted means nothing to report, hence undefined.
+  test("AC-1 returns the outcome the step resolved, and undefined when nothing was posted", async () => {
+    const h = harness();
+    const missing = { posted: 1, closed: 0, skipped: 2, failed: 3, indexWritten: false, indexMissing: true };
+    h.env.steps.postItemThreads = async () => missing;
+    await expect(postItemThreadsAfterPublish(h.env, h.env.record, published, HEAD)).resolves.toEqual(missing);
+    await expect(
+      postItemThreadsAfterPublish(h.env, h.env.record, { ...published, outcome: "local-only" }, HEAD),
+    ).resolves.toBeUndefined();
+  });
   test.each(["local-only", "pushed"] as const)("AC-12 %s does not post or read changed files", async (outcome) => {
     const h = harness();
     await postItemThreadsAfterPublish(h.env, h.env.record, { ...published, outcome }, HEAD);
@@ -153,6 +164,8 @@ describe("publishStep item-thread seam", () => {
     await publishStep(h.env, h.env.record);
     expect(h.inputs).toHaveLength(1);
   });
+  // US-003: `itemIndexMissing` is the one key the modes differ on — it comes from the step's
+  // outcome, so a mode that returns no outcome cannot state it. Everything else stays identical.
   test("AC-17 defined, absent and throwing steps leave the same publish patch", async () => {
     const patches: NonNullable<Awaited<ReturnType<typeof publishStep>>["patch"]>[] = [];
     for (const mode of ["defined", "absent", "throws"]) {
@@ -168,8 +181,45 @@ describe("publishStep item-thread seam", () => {
       patches.push(patch);
       if (mode === "defined") expect(h.inputs).toHaveLength(1);
     }
-    expect(patches[1]).toEqual(patches[0]);
-    expect(patches[2]).toEqual(patches[0]);
+    const { itemIndexMissing, ...withThreads } = patches[0] ?? {};
+    expect(itemIndexMissing).toBe(false);
+    expect(patches[1]).toEqual(withThreads);
+    expect(patches[2]).toEqual(withThreads);
+  });
+  // US-003: the publish records whether the PR it just published has an item index, so a genuinely
+  // missing index is actionable at run end instead of only a `warn` line in the log.
+  test.each([
+    { ac: "AC-2", indexMissing: true, indexWritten: false },
+    { ac: "AC-3", indexMissing: false, indexWritten: true },
+  ])("$ac indexMissing $indexMissing reaches the patch, over the record it patches", async ({ ac, ...outcome }) => {
+    const h = harness();
+    h.env.steps.postItemThreads = async () => ({ posted: 0, closed: 0, skipped: 0, failed: 1, ...outcome });
+    // An earlier publish recorded the opposite, so the patch has to write this one's answer.
+    const earlier = { ...h.env.record, itemIndexMissing: !outcome.indexMissing };
+    const out = await publishStep(h.env, earlier);
+    expect(out.patch?.itemIndexMissing).toBe(outcome.indexMissing);
+    expect({ ...earlier, ...out.patch }.itemIndexMissing).toBe(outcome.indexMissing);
+  });
+  test("AC-4 a throwing step leaves no itemIndexMissing key in the patch", async () => {
+    const h = harness();
+    h.env.steps.postItemThreads = async () => {
+      throw new Error("post failed");
+    };
+    // An earlier publish recorded a missing index; this one reports nothing, so it must not clear it.
+    const earlier = { ...h.env.record, itemIndexMissing: true };
+    const thrown = await publishStep(h.env, earlier);
+    expect(thrown.patch).not.toHaveProperty("itemIndexMissing");
+    expect({ ...earlier, ...thrown.patch }.itemIndexMissing).toBe(true);
+    // The control: the same environment, whose step resolves an outcome, does carry the key.
+    h.env.steps.postItemThreads = async () => ({
+      posted: 0,
+      closed: 0,
+      skipped: 0,
+      failed: 0,
+      indexWritten: false,
+      indexMissing: true,
+    });
+    expect((await publishStep(h.env, earlier)).patch).toHaveProperty("itemIndexMissing", true);
   });
   test("AC-20 initial PR read failure preserves publish outcome", async () => {
     const h = harness();

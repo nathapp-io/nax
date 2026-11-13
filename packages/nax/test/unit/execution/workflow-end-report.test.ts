@@ -108,6 +108,27 @@ describe("reportWorkflowRun", () => {
     expect(logs.find((e) => e.message.startsWith("Workflow summary:"))?.message).toContain("CI still failing: e2e");
   });
 
+  // US-003: a PR published without an item index refuses every bot command, so run end says so and
+  // names the command that settles its items without one.
+  test("AC-9 the line names the missing item index and the command that settles it", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({
+      ...view,
+      itemIndexMissing: { hint: "nax workflow record -f demo" },
+    });
+    await reportWorkflowRun({ ...opts, feature: "demo" }, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).toContain(
+      "item index not written; bot commands will refuse this PR (nax workflow record -f demo)",
+    );
+  });
+
+  test("a run whose PR has an index says nothing about it", async () => {
+    _workflowEndReportDeps.readSummary = async () => ({ ...view, itemIndexMissing: undefined });
+    await reportWorkflowRun({ ...opts, feature: "demo" }, timing);
+    const line = logs.find((e) => e.message.startsWith("Workflow summary:"));
+    expect(line?.message).not.toContain("item index not written");
+  });
+
   test("no result.json: nothing logged, nothing returned", async () => {
     _workflowEndReportDeps.readSummary = async () => null;
     expect(await reportWorkflowRun(opts, timing)).toBeUndefined();

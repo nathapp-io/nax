@@ -3,6 +3,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
 import type { FeatureEnv } from "./feature-machine";
 import type { PublishOutcome } from "./finalize";
+import type { ItemThreadsOutcome } from "./item-threads-post";
 import { ledgerText } from "./ledger";
 import type { WorkflowFeatureRecord } from "./types";
 
@@ -18,13 +19,19 @@ async function changedFiles(env: FeatureEnv, seed: string | null): Promise<reado
   }
 }
 
-/** Four arguments intentionally mirror the publish seam specified by the workflow contract. */
+/**
+ * Four arguments intentionally mirror the publish seam specified by the workflow contract.
+ *
+ * US-003: the step's outcome is returned, because only it says whether this publish left the PR with
+ * an item index. `undefined` — the answer for every publish that posted nothing, and for a step that
+ * threw — is not "no index": it is "nothing to report", and the record keeps what it already held.
+ */
 export async function postItemThreadsAfterPublish(
   env: FeatureEnv,
   rec: WorkflowFeatureRecord,
   out: PublishOutcome,
   head: string | undefined,
-): Promise<void> {
+): Promise<ItemThreadsOutcome | undefined> {
   const post = env.steps.postItemThreads;
   if (!post || !out.url || (out.outcome !== "draft" && out.outcome !== "ready")) return;
   const identity = env.itemThreadsIdentity;
@@ -59,6 +66,7 @@ export async function postItemThreadsAfterPublish(
       ),
       { mirror: false },
     );
+    return outcome;
   } catch (error) {
     getLogger()?.warn("item-threads", "[item-threads] Publish item-thread step failed", {
       feature: identity.feature,

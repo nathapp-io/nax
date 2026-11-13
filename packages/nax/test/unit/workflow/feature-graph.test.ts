@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { makeFeatureMachineHarness } from "@test/helpers";
 import { type StepKind, validateStepGraph } from "@/step-graph";
 import { FEATURE_GRAPH } from "@/workflow/feature-graph";
+import { runFeatureMachine } from "@/workflow/feature-machine";
 import type { FeatureStep } from "@/workflow/types";
 
 const NODE_IDS = [
@@ -83,6 +84,8 @@ const expectedProduces: Record<NodeId, string[]> = {
     "ciRepairTargets",
     // US-006: the checks still red once the repair allowance is spent.
     "ciRemaining",
+    // US-003: the PR this publish left with no item index.
+    "itemIndexMissing",
     "endedAt",
   ],
 };
@@ -120,6 +123,32 @@ describe("FEATURE_GRAPH", () => {
       NODE_IDS.filter((id) => nodeFor(id).commits === true).toSorted((left, right) => left.localeCompare(right)),
     ).toEqual(["branch-fix", "ci-repair", "gate-repair", "publish"]);
     expect(FEATURE_GRAPH.costStopProduces).toEqual(["costLimited"]);
+  });
+
+  // US-003: the publish node's patch carries whether the PR it published has an item index, so the
+  // node has to declare it — the runner rejects a patch key the node does not produce.
+  test("AC-5 the publish node accepts itemIndexMissing and the record keeps it", async () => {
+    const { env } = makeFeatureMachineHarness({});
+    const final = await runFeatureMachine({
+      ...env,
+      record: { ...env.record, step: "publish" },
+      itemThreadsIdentity: { projectDir: "/repo", feature: "demo" },
+      steps: {
+        ...env.steps,
+        head: async () => "a".repeat(40),
+        changedFiles: async () => ["file.ts"],
+        postItemThreads: async () => ({
+          posted: 1,
+          closed: 0,
+          skipped: 0,
+          failed: 0,
+          indexWritten: false,
+          indexMissing: true,
+        }),
+      },
+    });
+    expect(final.itemIndexMissing).toBe(true);
+    expect(final.step).toBe("done");
   });
 
   test("cost stop returns its patch and exact ledger arguments only when there is work", async () => {
