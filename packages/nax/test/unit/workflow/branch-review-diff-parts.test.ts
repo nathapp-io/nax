@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { cleanupTempDir, makeFeatureContext, makeScriptedCallOp, makeTempDir } from "@test/helpers";
 import { NaxError } from "@/errors";
 import { workflowBranchReviewOp } from "@/operations";
@@ -80,7 +80,7 @@ test("one whole-diff session carries all files and parts and records metadata", 
   expect(inputField(calls[0].input, "diffParts")).toEqual(parts);
   for (const part of parts) expect(inputField(calls[0].input, "prompt")).toContain(part.path);
   if (!out.ran) throw new Error(out.why);
-  expect(out.verdict.diffParts).toEqual(parts.map((p) => ({ part: p.path.split("/").pop(), files: p.files })));
+  expect(out.verdict.diffParts).toEqual(parts.map((p) => ({ part: basename(p.path), files: p.files })));
   expect(out.verdict).not.toHaveProperty("slices");
 });
 
