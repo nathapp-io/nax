@@ -9,9 +9,11 @@
  * every error it builds.
  *
  * Presence is exactly what `createKodaClient` needs: a url and an `authorization`
- * header with a non-blank value, matched case-insensitively because HTTP header
- * names are. `memory.enabled`, `memory.provider` and `memory.koda.project` play no
- * part — koda resolves the repository from the remote URL it is sent.
+ * header with a non-blank value. Both are decided the way the client decides them —
+ * header names folded to lowercase, last value winning — so what is selected here and
+ * what a request sends cannot disagree. `memory.enabled`, `memory.provider` and
+ * `memory.koda.project` play no part — koda resolves the repository from the remote
+ * URL it is sent.
  */
 import { memoryConfigOf, type NaxConfig } from "@/config";
 
