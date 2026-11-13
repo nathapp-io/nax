@@ -12,6 +12,7 @@ import type {
   ResidualRequest,
   WorkflowAdvisor,
 } from "./advisor";
+import { renderCommandSpec } from "./config-change";
 import type { GateName, WorkflowFinding, WorkflowRuling } from "./types";
 
 /** The ledger/log scope for work that belongs to no single story. */
@@ -81,11 +82,6 @@ function findingEvidence(f: WorkflowFinding): string {
   return `[${f.severity}/${f.kind}]${ac}${where} ${f.issue}${fix}`;
 }
 
-/** "bun test" as is; a multi-command gate as its commands joined with ` && ` (US-002 owns the shared renderer). */
-function renderCommand(spec: string | readonly string[]): string {
-  return typeof spec === "string" ? spec : spec.join(" && ");
-}
-
 /** What the advisor is told about a command the story's config leaves to detection. */
 const UNSET_COMMAND = "(unset: nax detects a default)";
 
@@ -96,8 +92,8 @@ const UNSET_COMMAND = "(unset: nax detects a default)";
 function configEvidence(facts: ImplementerQuestionFacts): AdviceEvidence[] {
   const protectedPaths = facts.protectedPaths.map((p) => `Protected (no session can write): ${p}`);
   const commands = QUALITY_COMMAND_KEYS.map((key) => {
-    const spec = facts.commands[key];
-    return `quality.commands.${key}: ${spec === undefined ? UNSET_COMMAND : renderCommand(spec)}`;
+    const command = renderCommandSpec(facts.commands[key]) ?? UNSET_COMMAND;
+    return `quality.commands.${key}: ${command}`;
   });
   return [
     ...(protectedPaths.length > 0 ? [{ source: "config" as const, text: protectedPaths.join("\n") }] : []),
