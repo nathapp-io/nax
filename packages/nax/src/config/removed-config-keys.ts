@@ -95,6 +95,8 @@ const STORY_ISOLATION_HINT =
  * per leaf under it.
  */
 export const REMOVED_CONFIG_KEYS: Readonly<Record<string, string>> = {
+  "workflow.review.sliceFiles":
+    "the branch review is no longer split into slices; it reads the whole branch diff in one session",
   curator: CURATOR_REMOVED_HINT,
   "quality.testing": TESTING_POLICY_HINT,
   "prompts.behavioralGuardrails": PIPELINE_ONLY_KEY_HINT,

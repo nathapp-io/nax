@@ -9,13 +9,12 @@ import { ConfiguredModelSchema } from "./schemas-model";
 export const ExecutionModeSchema = z.enum(["pipeline", "workflow"]);
 
 /**
- * US-002 (nax#2858): the branch review's slice size and its own coverage retry budget. Split out so
+ * US-002 (nax#2858): the branch review's coverage retry budget. Split out so
  * `WORKFLOW_REVIEW_DEFAULTS` is the parsed form of exactly this object, and a consumer holding a
  * hand-built `workflow` block (which omits `review`) reads the same numbers.
  */
 const WorkflowReviewConfigSchema = z
   .object({
-    sliceFiles: z.number().int().min(1).default(15),
     coverageRetries: z.number().int().min(0).default(3),
   })
   .prefault({});

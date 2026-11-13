@@ -1,15 +1,6 @@
 /**
- * US-008: the whole-branch review runs as sequential fresh slices. The package and its required set
- * are built once, each slice gets its own session and its own review timeout, and the verdicts merge
- * into one — with `slices` only when the review really was sliced.
- *
- * `_workflowDeps.git` feeds the package writer the branch's changed files; `_workflowDeps.callOp`
- * answers each slice; `_branchReviewDeps` is the package writer and the required-set classifier, so
- * a failure the real code paths would swallow (the classifier logs a resolver failure and widens the
- * required set) can still be scripted as a hard throw.
- *
- * What each slice received is recorded and asserted AFTER the run: an assertion inside the `callOp`
- * stub would reject the dispatch, and the review's own failure handling would swallow it.
+ * Whole-branch review dispatch and failure handling. The scripted op records inputs after dispatch
+ * so assertions are not swallowed by the review's own failure handling.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
@@ -54,7 +45,7 @@ const facts = {
   gateFindings: [],
 };
 
-/** Ten files in `a/`, then ten in `b/`: at the default `sliceFiles` 15 that is one slice per directory. */
+/** Ten files in each of two directories. */
 const DIR_A = Array.from({ length: 10 }, (_, i) => `a/f${i + 1}.ts`);
 const DIR_B = Array.from({ length: 10 }, (_, i) => `b/f${i + 1}.ts`);
 
@@ -115,7 +106,7 @@ function abortSignal(signal: AbortSignal | undefined): Promise<void> {
   });
 }
 
-/** A two-slice run: twenty changed files across `a/` and `b/`, sliceFiles 15 by default. */
+/** Twenty changed files across two directories. */
 function twoSliceContext(over: Partial<FeatureContext> = {}): FeatureContext {
   const ctx = fc(over);
   stubBranchChanges([...DIR_A, ...DIR_B]);
@@ -171,63 +162,6 @@ describe("runBranchReview — one slice", () => {
   });
 });
 
-describe("runBranchReview — two slices", () => {
-  test("twenty files call the op twice, one directory each (AC-4)", async () => {
-    const ctx = twoSliceContext();
-    const calls = scriptSlices((call) => verdict(call === 1 ? DIR_A : DIR_B));
-    const out = await runBranchReview(ctx, { seed: "seed0", facts });
-    expect(out.ran).toBe(true);
-    expect(calls.map((call) => call.requiredFiles)).toEqual([DIR_A, DIR_B]);
-  });
-
-  test("the second slice's prompt names the slice (AC-5)", async () => {
-    const ctx = twoSliceContext();
-    const calls = scriptSlices((call) => verdict(call === 1 ? DIR_A : DIR_B));
-    await runBranchReview(ctx, { seed: "seed0", facts });
-    const prompt = String(calls[1]?.prompt);
-    expect(prompt).toContain("This is review slice 2 of 2.");
-    expect(String(calls[0]?.prompt)).toContain("This is review slice 1 of 2.");
-  });
-
-  test("the first slice resolves before the second starts (AC-6)", async () => {
-    const ctx = twoSliceContext();
-    const order: string[] = [];
-    const firstResolved = { value: false };
-    scriptSlices(async (call) => {
-      order.push(`start:${call}`);
-      if (call === 1) {
-        await Promise.resolve();
-        await Promise.resolve();
-        firstResolved.value = true;
-        order.push("end:1");
-        return verdict(DIR_A);
-      }
-      order.push("end:2");
-      return verdict(DIR_B);
-    });
-    await runBranchReview(ctx, { seed: "seed0", facts });
-    expect(firstResolved.value).toBe(true);
-    expect(order).toEqual(["start:1", "end:1", "start:2", "end:2"]);
-  });
-
-  test("each slice carries the configured coverage retry budget (AC-7)", async () => {
-    const ctx = twoSliceContext();
-    const calls = scriptSlices((call) => verdict(call === 1 ? DIR_A : DIR_B));
-    await runBranchReview(ctx, { seed: "seed0", facts });
-    const budget = ctx.workflow.review?.coverageRetries;
-    expect(budget).toBeGreaterThan(0);
-    expect(calls.map((call) => call.coverageRetries)).toEqual([budget, budget]);
-  });
-
-  test("the merged verdict records both slices' files (AC-8)", async () => {
-    const ctx = twoSliceContext();
-    scriptSlices((call) => verdict(call === 1 ? DIR_A : DIR_B));
-    const out = await runBranchReview(ctx, { seed: "seed0", facts });
-    if (!out.ran) throw new Error("the branch review must run");
-    expect(out.verdict.slices?.map((slice) => slice.files)).toEqual([DIR_A, DIR_B]);
-  });
-});
-
 describe("runBranchReview — the package step", () => {
   test("a package writer that throws skips the review without running a slice (AC-9)", async () => {
     const ctx = fc();
@@ -262,89 +196,32 @@ describe("runBranchReview — the package step", () => {
   });
 });
 
-describe("runBranchReview — slice failures", () => {
-  test("a null slice does not stop the next one and the review still runs (AC-11)", async () => {
+describe("runBranchReview — session failures", () => {
+  test("unparseable replies skip the review", async () => {
     const ctx = twoSliceContext();
-    const calls = scriptSlices((call) => (call === 1 ? null : verdict(DIR_B)));
-    const out = await runBranchReview(ctx, { seed: "seed0", facts });
-    expect(calls.length).toBe(2);
-    expect(out.ran).toBe(true);
-  });
-
-  test("the null slice is recorded unran and its files stay unread (AC-12)", async () => {
-    const ctx = twoSliceContext();
-    scriptSlices((call) => (call === 1 ? null : verdict(DIR_B)));
-    const out = await runBranchReview(ctx, { seed: "seed0", facts });
-    if (!out.ran) throw new Error("the branch review must run");
-    expect(out.verdict.slices?.[0]).toMatchObject({ ran: false, why: "unparseable reply" });
-    expect(out.verdict.unreadFiles).toEqual(DIR_A);
-  });
-
-  test("both slices unparseable is not run, with the first slice's reason (AC-13)", async () => {
-    const ctx = twoSliceContext();
-    scriptSlices(() => null);
+    const calls = scriptSlices(() => null);
     expect(await runBranchReview(ctx, { seed: "seed0", facts })).toEqual({ ran: false, why: "unparseable reply" });
+    expect(calls.length).toBe(1);
   });
-
-  test("a slice rejecting while the run is aborting rejects and stops the loop (AC-14)", async () => {
+  test("abort propagates", async () => {
     const controller = new AbortController();
     const ctx = twoSliceContext({ runSignal: controller.signal });
     const calls = scriptSlices(() => {
       controller.abort();
-      throw new Error("aborted mid-slice");
+      throw new Error("aborted mid-review");
     });
-    await expect(runBranchReview(ctx, { seed: "seed0", facts })).rejects.toThrow("aborted mid-slice");
+    await expect(runBranchReview(ctx, { seed: "seed0", facts })).rejects.toThrow("aborted mid-review");
     expect(calls.length).toBe(1);
   });
-
-  test("a slice that throws is recorded and the next one still runs (AC-15)", async () => {
-    const ctx = twoSliceContext();
-    scriptSlices((call) => {
-      if (call === 1) throw new Error("boom");
-      return verdict(DIR_B);
-    });
-    const out = await runBranchReview(ctx, { seed: "seed0", facts });
-    if (!out.ran) throw new Error("the second slice must run");
-    expect(out.verdict.slices?.[0]).toMatchObject({ ran: false, why: "boom" });
-    expect(out.verdict.slices?.[1]?.ran).toBe(true);
-  });
-
-  test("a slice that hits its own review timeout is recorded, and the next one still runs (AC-16)", async () => {
+  test("review timeout skips the session", async () => {
     const base = makeFeatureContext();
     const ctx = twoSliceContext({
       workflow: { ...base.workflow, timeouts: { ...base.workflow.timeouts, reviewMs: 1 } },
     });
-    scriptSlices(async (call, _input, callCtx) => {
-      // Waiting on this slice's own signal, never on a fixed sleep: the first slice is out of time.
-      if (call === 1) {
-        await abortSignal(callCtx.signal);
-        return verdict(DIR_A);
-      }
-      return verdict(DIR_B);
+    scriptSlices(async (_call, _input, callCtx) => {
+      await abortSignal(callCtx.signal);
+      return verdict(DIR_A);
     });
-    const out = await runBranchReview(ctx, { seed: "seed0", facts });
-    if (!out.ran) throw new Error("the second slice must run");
-    expect(out.verdict.slices?.[0]?.why).toBe("timeout");
-    expect(out.verdict.slices?.[1]?.ran).toBe(true);
-  });
-
-  test("every slice failing is not run, with the first slice's reason (AC-19)", async () => {
-    const ctx = twoSliceContext();
-    scriptSlices((call) => {
-      if (call === 1) return null;
-      throw new Error("boom");
-    });
-    expect(await runBranchReview(ctx, { seed: "seed0", facts })).toEqual({ ran: false, why: "unparseable reply" });
-  });
-
-  test("a failed slice's files stay unread when the next slice covers only its own (AC-20)", async () => {
-    const ctx = twoSliceContext();
-    scriptSlices((call) => {
-      if (call === 1) throw new Error("boom");
-      return verdict(DIR_B);
-    });
-    const out = await runBranchReview(ctx, { seed: "seed0", facts });
-    if (!out.ran) throw new Error("the second slice must run");
-    expect(out.verdict.unreadFiles).toEqual(DIR_A);
+    expect(await runBranchReview(ctx, { seed: "seed0", facts })).toEqual({ ran: false, why: "timeout" });
   });
 });

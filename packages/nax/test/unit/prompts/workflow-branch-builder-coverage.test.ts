@@ -34,17 +34,6 @@ describe("branch review required-file coverage", () => {
     expect(buildWorkflowBranchReviewPrompt(base)).not.toContain("## Files you must review");
     expect(buildWorkflowBranchReviewPrompt({ ...base, requiredFiles: [] })).not.toContain("## Files you must review");
   });
-
-  test("AC-8/9: states slice context only when supplied", () => {
-    const sliced = buildWorkflowBranchReviewPrompt({
-      ...base,
-      requiredFiles: ["src/a.ts"],
-      slice: { index: 2, count: 3, otherFiles: 30 },
-    });
-    expect(sliced).toContain("This is review slice 2 of 3.");
-    expect(sliced).toContain("the other 30 changed file(s)");
-    expect(prompt.split("\n").some((line) => line.startsWith("This is review slice"))).toBe(false);
-  });
 });
 
 describe("branch package reading note", () => {

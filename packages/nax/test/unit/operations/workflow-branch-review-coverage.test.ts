@@ -141,6 +141,38 @@ describe("workflowBranchReviewOp coverage retry budget (US-002)", () => {
 });
 
 describe("workflowBranchReviewOp coverage retries through callOp (AC-15)", () => {
+  test("AC-11: retry names the diff part holding the unread file", async () => {
+    const prompts: string[] = [];
+    const handles: { id: string }[] = [];
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        assertDefined(req.executeHop, "req.executeHop");
+        const hop = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async (_agentName, handle, prompt): Promise<TurnResult> => {
+        prompts.push(prompt);
+        handles.push(handle);
+        return {
+          output: verdictJson(prompts.length === 1 ? [] : ["a.ts"]),
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+    const verdict = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "_run" },
+      workflowBranchReviewOp,
+      { ...input, requiredFiles: ["a.ts"], diffParts: [{ path: "/run/package-branch-part-02.diff", files: ["a.ts"] }] },
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("- a.ts (package-branch-part-02.diff)");
+    expect(handles[1]).toBe(handles[0]);
+    expect(verdict?.inspectedFiles).toEqual(["a.ts"]);
+  });
   test("AC-15: two coverage retries — the second named 2 of 3 — and the third reply is the verdict", async () => {
     const prompts: string[] = [];
     const handles: { id: string }[] = [];

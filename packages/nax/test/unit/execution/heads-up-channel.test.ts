@@ -29,10 +29,6 @@ describe("headsUpChannel", () => {
     const { headsUp } = headsUpChannel(ctx);
     assertDefined(headsUp, "headsUp");
 
-    // `HeadsUpChannel` returns `Promise<{ sent, reason? }>`, but Biome 2.x cannot infer a
-    // return type through a function-type alias, so it reads this call as synchronous.
-    // Same false positive as `src/advisor/service-helpers.ts` and `test/helpers/mock-agent-manager.ts`.
-    // biome-ignore lint/nursery/useAwaitThenable: false positive, see above
     const result = await headsUp("inspection required");
 
     expect(result).toEqual({ sent: false, reason: "no-interaction-channel" });
@@ -44,7 +40,6 @@ describe("headsUpChannel", () => {
     const { headsUp } = headsUpChannel(ctx);
     assertDefined(headsUp, "headsUp");
 
-    // biome-ignore lint/nursery/useAwaitThenable: false positive, see above
     const result = await headsUp("inspection required");
 
     expect(result).toEqual({ sent: true });

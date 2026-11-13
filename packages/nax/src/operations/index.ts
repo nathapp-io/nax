@@ -94,7 +94,6 @@ export { isCompleteBranchVerdict, normalizeReviewPath, unreadFiles } from "./wor
 export type { WorkflowReviewInput } from "./workflow-story-review";
 export { WORKFLOW_REVIEW_TOOLS, workflowStoryReviewOp } from "./workflow-story-review";
 export type {
-  BranchReviewSlice,
   BranchReviewVerdict,
   GateName,
   ImplementerReply,

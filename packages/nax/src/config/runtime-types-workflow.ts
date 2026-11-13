@@ -59,11 +59,10 @@ export interface WorkflowConfig {
   interruptRetry: WorkflowInterruptRetryConfig;
   timeouts: WorkflowTimeoutsConfig;
   /**
-   * US-002 (nax#2858): the branch review's slice size and its own coverage retry budget. Optional so
+   * US-002 (nax#2858): the branch review's coverage retry budget. Optional so
    * a hand-built config reads as `WORKFLOW_REVIEW_DEFAULTS`.
    */
   review?: {
-    readonly sliceFiles: number;
     readonly coverageRetries: number;
   };
 }

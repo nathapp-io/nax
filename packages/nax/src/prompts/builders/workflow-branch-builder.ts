@@ -1,4 +1,5 @@
 /** A5 workflow mode: the whole-branch review, its scoped re-review, and the one branch fix (spec §7 steps 2-4). */
+import type { DiffPart } from "@/workflow/branch-diff-parts";
 import { memoryReferenceSectionOf, memorySectionOf } from "./memory-builder";
 import {
   GATE_INTEGRITY_RULE,
@@ -21,7 +22,7 @@ export interface BranchReviewPromptInput {
   /** `<seed>..HEAD`: the commit range every changed file is read through (US-001). */
   readonly range: string;
   readonly requiredFiles?: readonly string[];
-  readonly slice?: { readonly index: number; readonly count: number; readonly otherFiles: number };
+  readonly diffParts?: readonly DiffPart[];
   readonly stories: readonly {
     readonly id: string;
     readonly state: string;
@@ -105,14 +106,19 @@ export function buildBranchPackageReadingNote(range: string): string {
 This package holds no diff, only the commit list, the --stat summary and the changed-file names. For each changed file run \`git diff ${range} -- <path>\`, or Read a file the branch added. Start with production source, then migrations and schema, then tests.`;
 }
 
+/** Instructions for a whole-branch diff delivered in bounded, ordered files. */
+export function buildBranchDiffPartsNote(parts: readonly DiffPart[]): string {
+  return `## How to read the diff
+The parts hold the whole branch diff with 10 lines of context:
+${parts.map((part) => `- ${part.path}`).join("\n")}
+Read every part whole and in order, with no \`offset\` or \`limit\`. Open a changed file itself only for context the diff does not show. List in inspectedFiles every file whose diff you read.`;
+}
+
 function requiredFilesBlock(input: BranchReviewPromptInput): string {
   const files = input.requiredFiles;
   if (!files || files.length === 0) return "";
   const fileLines = files.map((file) => `- ${file}`).join("\n");
-  const sliceLine = input.slice
-    ? `This is review slice ${input.slice.index} of ${input.slice.count}. Other slices review the other ${input.slice.otherFiles} changed file(s); read any of them only to check a contract with your files.\n`
-    : "";
-  return `\n## Files you must review (${files.length})\n${fileLines}\n${sliceLine}nax compares your inspectedFiles with this list. A file on it that you do not read or diff is reported unread, and an unread file keeps the PR a draft. Repo gates passing is not a review of a file, and neither is a story review: read each one.\n`;
+  return `\n## Files you must review (${files.length})\n${fileLines}\nnax compares your inspectedFiles with this list. A file on it that you do not read or diff is reported unread, and an unread file keeps the PR a draft. Repo gates passing is not a review of a file, and neither is a story review: read each one.\n`;
 }
 
 const REVIEW_JSON =
@@ -122,12 +128,18 @@ export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput):
   const preflight = input.preflightPath ? `\n- the pre-flight rulings: ${input.preflightPath}` : "";
   const gates = input.gateFindings.length > 0 ? renderWorkflowFindings(input.gateFindings) : NONE;
   const memory = memoryReferenceSectionOf(input.memoryIndex);
+  const parts = input.diffParts;
+  const hasParts = parts !== undefined && parts.length > 0;
+  const packageDescription = hasParts
+    ? "commits, --stat, changed files and the list of diff parts"
+    : "commits, --stat, changed files; no diff is inlined";
+  const readingNote = hasParts ? buildBranchDiffPartsNote(parts) : buildBranchPackageReadingNote(input.range);
   return `You are reviewing a whole feature branch. Every story was implemented and reviewed on its own already. Read:
 - the feature spec: ${input.specPath ?? "(no spec file found)"}
 - the PRD (stories and acceptance criteria): ${input.prdPath ?? "(no PRD for this change)"}${preflight}
-- the branch review package (commits, --stat, changed files; no diff is inlined): ${input.packagePath}
+- the branch review package (${packageDescription}): ${input.packagePath}
 
-${buildBranchPackageReadingNote(input.range)}
+${readingNote}
 ${requiredFilesBlock(input)}
 ## Stories
 ${storyLines(input)}
@@ -182,15 +194,24 @@ export function buildWorkflowBranchCoverageRetry(
   missing: readonly string[],
   staticMode = false,
   progress?: { attempt: number; max: number },
+  partsOf?: ReadonlyMap<string, readonly string[]>,
 ): string {
-  const read = staticMode
+  const fallback = staticMode
     ? "Read each of these with Read (commands are unavailable)"
     : `Read each of these with \`git diff ${range} -- <path>\` (or Read it, if the branch added it)`;
+  const read = partsOf
+    ? `Read whole the part named beside each file, without \`offset\` or \`limit\`; for files without a named part: ${fallback}`
+    : fallback;
   const budget = progress
     ? `\nThis is coverage retry ${progress.attempt} of ${progress.max}. Read all of them before you reply; a file you leave out stays unread and keeps the PR a draft.\n`
     : "";
   return `Your reply parsed, but its inspectedFiles does not cover every changed file. ${read}, and review it:
-${missing.map((path) => `- ${path}`).join("\n")}
+${missing
+  .map((path) => {
+    const names = partsOf?.get(path);
+    return `- ${path}${names?.length ? ` (${names.join(", ")})` : ""}`;
+  })
+  .join("\n")}
 ${budget}
 List in inspectedFiles every file you have read or diffed in this session, not only the new ones.
 Re-send the whole JSON object: the same findings, plus anything the files above turned up.`;

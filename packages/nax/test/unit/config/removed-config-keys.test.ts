@@ -95,6 +95,29 @@ afterEach(() => {
 // loadConfig — one removed rectification leaf
 // ─────────────────────────────────────────────────────────────────────────────
 
+describe("branch review sliceFiles removal", () => {
+  const hint = "the branch review is no longer split into slices; it reads the whole branch diff in one session";
+
+  test("US-006 AC-4: the removal hint explains whole-branch review", () => {
+    expect(REMOVED_CONFIG_KEYS["workflow.review.sliceFiles"]).toBe(hint);
+  });
+
+  test("US-006 AC-2: project loading warns about sliceFiles", async () => {
+    const root = await writeProjectConfig({ workflow: { review: { sliceFiles: 20, coverageRetries: 2 } } });
+    const { messages } = await captureWarnings(() => loadConfig(root));
+    expect(warningsFor(messages, "workflow.review.sliceFiles")).toEqual([
+      removalWarning("workflow.review.sliceFiles", hint),
+    ]);
+  });
+
+  test("US-006 AC-3: project loading retains only coverageRetries", async () => {
+    const root = await writeProjectConfig({ workflow: { review: { sliceFiles: 20, coverageRetries: 2 } } });
+    const config = await loadConfig(root);
+    assertDefined(config.workflow, "loaded workflow config");
+    expect(config.workflow.review).toEqual({ coverageRetries: 2 });
+  });
+});
+
 describe("stripRemovedConfigKeys via loadConfig — execution.rectification leaves", () => {
   test("AC-1: resolves without the removed abortOnNoProgress property", async () => {
     const root = await writeProjectConfig({ execution: { rectification: { abortOnNoProgress: false } } });
@@ -626,6 +649,7 @@ describe("stripKeysAtPaths", () => {
         "execution.storyIsolation",
         "execution.verificationTimeoutSeconds",
         "execution.worktreeDependencies",
+        "workflow.review.sliceFiles",
         // B3c-3: the dead tdd, autoMode and quality keys
         "autoMode.enabled",
         "tdd.maxRetries",
