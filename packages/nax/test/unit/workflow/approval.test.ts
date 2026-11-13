@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeAdviceDecision } from "@test/helpers";
+import { assertDefined, makeAdviceDecision } from "@test/helpers";
 import type { Advisor, QuestionDraft } from "@/advisor";
 import {
   askApproval,
@@ -77,8 +77,18 @@ describe("readinessReasons (spec §7.8, P4-R6)", () => {
     expect(readinessReasons({ ...READY, ci: "unavailable", ciDetail: "gh: 502" })).toEqual(["gh: 502"]);
   });
 
-  // US-003: strict green — a CI that is still pending is a reason, so the PR stays a draft.
+  // US-003: strict green — a starved CI never ran, so it blocks readiness with the wait's own detail.
+  test("AC-3: a starved CI with a detail is a readiness reason carrying it", () => {
+    const detail = "1 check(s) never got a runner: x; re-run them, or accept with --waive-starved <reason>";
+    const reasons = readinessReasons({ ...READY, ci: "starved", ciDetail: detail });
+    const ciSaid = ciReason("starved", detail);
+    assertDefined(ciSaid, "the starved CI reason");
+    expect(reasons).toContain(ciSaid);
+    expect(reasons).toEqual([`CI starved: ${detail}`]);
+  });
+
   test("AC-7: a pending CI is a readiness reason", () => {
+    // US-003: strict green — a CI that is still pending is a reason, so the PR stays a draft.
     expect(readinessReasons({ ...READY, ci: "pending" })).toEqual(["CI still pending after the wait"]);
     expect(readinessReasons({ ...READY, ci: "pending", ciDetail: "no CI result within 1200000ms" })).toEqual([
       "no CI result within 1200000ms",
@@ -115,6 +125,17 @@ describe("ciReason (US-001)", () => {
 
   test("AC-4: a pending CI with no detail falls back to its default sentence", () => {
     expect(ciReason("pending")).toBe("CI still pending after the wait");
+  });
+
+  // US-003: a check whose job never got a runner is not a failure to repair — the reason names what
+  // never ran and both ways out, so the wait's own detail is kept behind the `CI starved: ` prefix.
+  test("AC-1: a starved CI prefixes the wait's own detail", () => {
+    const detail = "1 check(s) never got a runner: x; re-run them, or accept with --waive-starved <reason>";
+    expect(ciReason("starved", detail)).toBe(`CI starved: ${detail}`);
+  });
+
+  test("AC-2: a starved CI with no detail says what never happened", () => {
+    expect(ciReason("starved")).toBe("CI checks never got a runner");
   });
 
   test.each(["green", "skipped"] as const)("AC-5/AC-6: %s blocks nothing", (ci) => {

@@ -74,8 +74,9 @@ test("AC-9/15/16: publish waits for pushed HEAD with configured timeout, cadence
     workflow: { ...base.workflow, timeouts: { ...base.workflow.timeouts, ciWaitMs: 1234, ciPollMs: 56 } },
   };
   await publish(fc, observed.input);
+  // US-003: the run's own publish opts into re-running starved jobs; every other option is unchanged.
   expect(observed.waits).toEqual([
-    { cwd: "/project", timeoutMs: 1234, pollMs: 56, signal: fc.runSignal, expectedSha: "aaa" },
+    { cwd: "/project", timeoutMs: 1234, pollMs: 56, signal: fc.runSignal, expectedSha: "aaa", rerunStarved: true },
   ]);
   expect(observed.gitCalls).toContainEqual({ args: ["rev-parse", "HEAD"], cwd: "/project" });
   expect(observed.order).toEqual(["push", "head"]);
@@ -98,6 +99,21 @@ test("AC-11: empty HEAD omits expectedSha", async () => {
   expect(observed.gitCalls).toContainEqual({ args: ["rev-parse", "HEAD"], cwd: "/repo" });
   expect(observed.waits).toHaveLength(1);
   expect(observed.waits[0]).not.toHaveProperty("expectedSha");
+});
+
+// US-003: a starved CI is not a failure to repair. The publish keeps the draft and retains the
+// wait's own detail, so the record says what never ran rather than only that CI was not green.
+test("AC-5: a starved CI wait keeps the PR a draft and retains the wait's detail", async () => {
+  const observed = wire();
+  const detail = "1 check(s) never got a runner: e2e; re-run them, or accept with --waive-starved <reason>";
+  _featureDeps.waitForChecks = async (_forge, _ref, opts) => {
+    observed.waits.push(opts);
+    return { outcome: "starved", detail, starvedChecks: ["e2e"] };
+  };
+  const result = await publish(makeFeatureContext(), observed.input);
+  expect(result).toMatchObject({ outcome: "draft", ci: "starved", ciDetail: detail });
+  expect(result.reasons).toContain(`CI starved: ${detail}`);
+  expect(observed.keepDraft()).toBe(true);
 });
 
 // US-001 (nax#2666): the advisor rules before the push, so a CI head mismatch is observed after its
