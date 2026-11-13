@@ -73,7 +73,7 @@ export { buildProjectContextSection } from "./builders/project-context-builder";
 export type { FailureRecord, RectifierTrigger } from "./builders/rectifier-builder";
 // Rectifier prompt builder — cross-domain rectification for TDD, verify, and review triggers.
 export { CONTRADICTION_ESCAPE_HATCH, RectifierPromptBuilder } from "./builders/rectifier-builder";
-export { reviewerCommandsSection } from "./builders/reviewer-commands-section";
+export { type ReviewerCommandEntry, reviewerCommandsSection } from "./builders/reviewer-commands-section";
 export type { ChangedFileRuleGroup, RulesIndexEntry } from "./builders/rules-index-builder";
 // US-003 (SPEC-lazy-rules-delivery) — the rules index section of a workflow brief.
 // US-005 and US-006 add the delivered-rule and changed-file sections here.

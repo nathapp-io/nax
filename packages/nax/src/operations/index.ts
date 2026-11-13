@@ -52,6 +52,7 @@ export {
 } from "./plan-fidelity";
 export type { PlanRefineInput } from "./plan-refine";
 export { _planRefineDeps, normalizeCreatedContextFiles, planRefineOp } from "./plan-refine";
+export { type ReviewerCommandLine, reviewerCommandLines } from "./reviewer-command-lines";
 export type { SelfHealSpec, SelfHealStep } from "./self-heal";
 export { makeSelfHealStep, runSelfHealChain } from "./self-heal";
 export type { MonoPackageConfig, RawSetupPlan, SetupPlan } from "./setup-generate";
