@@ -47,8 +47,28 @@ const DECLINED_MESSAGE =
   "[chat] the user declined sending the flow to koda; do not retry with different arguments unless the user asks";
 /** Nothing was pushed: the commit the card described is no longer the one the branch is on. */
 const BRANCH_CHANGED_MESSAGE = "[chat] the branch changed while the card was open; nothing was pushed";
+/** Nothing was pushed: the branch or the origin the push would resolve is no longer the one carded. */
+const PUSH_TARGET_MOVED_MESSAGE =
+  "[chat] the branch or origin being pushed changed while the card was open; nothing was pushed";
+/**
+ * The push ran against a branch a concurrent commit advanced, so what origin now
+ * holds may not be the carded commit. Nothing was sent to koda, and the message
+ * says so plainly rather than claiming the approved commit reached origin.
+ */
+const PUSHED_OTHER_COMMIT_MESSAGE =
+  "[chat] the branch moved while it was pushed, so the commit on origin may not be the one you approved; " +
+  "koda was not called and no flow exists";
 /** Nothing was pushed: the turn was cancelled between the card and the push. */
 const CANCELLED_MESSAGE = "[chat] the turn was cancelled; nothing was pushed";
+/**
+ * Anything that can break a card line or move the cursor: a committed file name is
+ * the one carded value the request rules do not exclude control characters from.
+ * `\p{Cc}` is the Unicode "control" category — C0 and C1 alike, without writing the
+ * code points into the source.
+ */
+const CARD_CONTROL_CHARS = /\p{Cc}/gu;
+/** A `\uXXXX` escape is four hexadecimal digits. */
+const UNICODE_ESCAPE_DIGITS = 4;
 
 export interface FlowProviderOptions {
   /** The chat's repository root: what is pushed and what koda is told about. */
@@ -139,15 +159,29 @@ function failure(content: string): ToolResult {
   return { isError: true, content };
 }
 
+/**
+ * One carded value as the card shows it: control characters escaped, so a value
+ * that carries a newline or an escape sequence — a committed file name is the one
+ * that can — cannot forge an extra card line or move the cursor while the user
+ * reads what they are approving. The request body keeps the literal value.
+ */
+function cardText(value: string): string {
+  return value.replace(CARD_CONTROL_CHARS, (char) => {
+    const code = char.charCodeAt(0).toString(16).padStart(UNICODE_ESCAPE_DIGITS, "0");
+    return `\\u${code}`;
+  });
+}
+
 /** The card's first line: the repository, the branch and the commit it was read at. */
 function cardedRepoLine(state: FlowRepoReady): string {
-  return `repo ${state.remoteUrl} on branch ${state.branch} at ${state.sha.slice(0, CARDED_SHA_CHARS)}`;
+  return `repo ${cardText(state.remoteUrl)} on branch ${cardText(state.branch)} at ${state.sha.slice(0, CARDED_SHA_CHARS)}`;
 }
 
 /** One feature line, with the dependencies it waits for when it has any. */
 function featureLine(feature: FlowSendFeature, index: number): string {
-  const line = `${index + 1}. ${feature.feature} (${feature.specPath})`;
-  return feature.dependsOn.length === 0 ? line : `${line} — after: ${feature.dependsOn.join(", ")}`;
+  const line = `${index + 1}. ${cardText(feature.feature)} (${cardText(feature.specPath)})`;
+  if (feature.dependsOn.length === 0) return line;
+  return `${line} — after: ${feature.dependsOn.map(cardText).join(", ")}`;
 }
 
 /** What the user is agreeing to, in one string: repository, features, roles, cap and koda's own approval. */
@@ -155,7 +189,7 @@ function cardReason(state: FlowRepoReady, input: FlowSendInput): string {
   return [
     cardedRepoLine(state),
     ...input.features.map(featureLine),
-    `reviewer ${input.roles.reviewer}, supervisor ${input.roles.supervisor}`,
+    `reviewer ${cardText(input.roles.reviewer)}, supervisor ${cardText(input.roles.supervisor)}`,
     `cost cap $${input.costCapUsd.toFixed(2)}`,
     BILLING_NOTE,
   ].join("\n");
@@ -195,6 +229,34 @@ async function branchMoved(state: FlowRepoReady, repoRoot: string): Promise<bool
   return await _flowProviderDeps.isDirty(repoRoot);
 }
 
+/** The spec paths the request names: what the repository read resolves at the sent commit. */
+function specPathsOf(input: FlowSendInput): readonly string[] {
+  return input.features.map((feature) => feature.specPath);
+}
+
+/**
+ * The state the push will actually resolve, read again at the push boundary.
+ *
+ * `branchMoved` answers the brief's narrower question — the commit and the tree.
+ * The push, though, resolves `refs/heads/<branch>` and `origin` by name at the
+ * moment it runs, so the branch that is about to be pushed, its commit, the
+ * origin it goes to and the specs at that commit are verified together here: a
+ * checkout moved to another branch holding the same commit, or a remote repointed
+ * while the card was open, fails with nothing pushed.
+ *
+ * @returns The `[chat]` result to stop with, or `undefined` when the target is still the carded one
+ */
+async function pushTargetFailure(
+  state: FlowRepoReady,
+  input: FlowSendInput,
+  repoRoot: string,
+): Promise<ToolResult | undefined> {
+  const now = await _flowProviderDeps.readFlowRepoState(repoRoot, specPathsOf(input));
+  if (!now.ok) return failure(now.message);
+  const unchanged = now.branch === state.branch && now.sha === state.sha && now.remoteUrl === state.remoteUrl;
+  return unchanged ? undefined : failure(PUSH_TARGET_MOVED_MESSAGE);
+}
+
 /**
  * koda's relative flow link, joined onto the origin its web UI is served from.
  * A koda under a path prefix would need a configured web root; that is out of scope.
@@ -228,7 +290,14 @@ function kodaMessageOf(message: string, status: number): string {
   return at === -1 ? message : message.slice(at + marker.length);
 }
 
-/** The message for an error code koda's contract classifies, or `undefined` for any other. */
+/**
+ * The message for an error code koda's contract classifies, or `undefined` for any other.
+ *
+ * A timeout or an unreachable host means no answer arrived, not that the create
+ * did not happen: koda may have applied it before the response was lost or the
+ * deadline expired. The message therefore says the outcome is unknown and sends
+ * the user to koda before any retry, which would otherwise create a second flow.
+ */
 function classifiedKodaMessage(code: string | undefined, message: string, branch: string): string | undefined {
   switch (code) {
     case "FLOW_KODA_UNEXPECTED_RESPONSE":
@@ -236,7 +305,10 @@ function classifiedKodaMessage(code: string | undefined, message: string, branch
       return `[chat] koda answered unexpectedly: ${message}; branch ${branch} stays pushed`;
     case "MEMORY_KODA_TIMEOUT":
     case "MEMORY_KODA_UNREACHABLE":
-      return `[chat] koda could not be reached: ${message}; branch ${branch} stays pushed and no flow was created`;
+      return (
+        `[chat] koda could not be reached: ${message}; branch ${branch} stays pushed and the create's outcome is ` +
+        "unknown — check koda for the flow before retrying, because a retry can create a duplicate"
+      );
     default:
       return undefined;
   }
@@ -276,7 +348,11 @@ async function createFlow(
  * Everything the allow buys: the re-check, the push, and the flow.
  *
  * The card described one commit, so the branch must still be on it — and the
- * tree must still be clean — before anything leaves the machine.
+ * tree must still be clean — before anything leaves the machine. The target the
+ * push will resolve is verified separately, and the pushed commit is verified
+ * again after the push, because `commitAndPush` pushes `refs/heads/<branch>` by
+ * name: a commit another process lands in that window would otherwise reach
+ * origin and get a flow created for it.
  */
 async function afterAllow(
   state: FlowRepoReady,
@@ -286,9 +362,12 @@ async function afterAllow(
 ): Promise<ToolResult> {
   if (signal?.aborted === true) return failure(CANCELLED_MESSAGE);
   if (await branchMoved(state, options.repoRoot)) return failure(BRANCH_CHANGED_MESSAGE);
+  const target = await pushTargetFailure(state, input, options.repoRoot);
+  if (target !== undefined) return target;
   await _flowProviderDeps.commitAndPush(options.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
     skipCommit: true,
   });
+  if ((await _flowProviderDeps.headSha(options.repoRoot)) !== state.sha) return failure(PUSHED_OTHER_COMMIT_MESSAGE);
   return await createFlow(state, input, options);
 }
 
@@ -306,10 +385,7 @@ async function send(
 ): Promise<ToolResult> {
   const parsed = parseFlowSendInput(request);
   if ("errors" in parsed) return inputFailure(parsed.errors);
-  const state = await _flowProviderDeps.readFlowRepoState(
-    options.repoRoot,
-    parsed.features.map((f) => f.specPath),
-  );
+  const state = await _flowProviderDeps.readFlowRepoState(options.repoRoot, specPathsOf(parsed));
   if (!state.ok) return failure(state.message);
   const branch = checkFlowBranch(state.branch, parsed.features);
   if (branch !== undefined) return failure(branch);

@@ -68,8 +68,8 @@ let sequence: string[];
 let options: FlowProviderOptions;
 
 /** A repository state a flow may be sent from. */
-function ready(branch = "feat/x", sha = SHA): FlowRepoReady {
-  return { ok: true, branch, sha, remoteUrl: "https://github.com/o/r" };
+function ready(branch = "feat/x", sha = SHA, remoteUrl = "https://github.com/o/r"): FlowRepoReady {
+  return { ok: true, branch, sha, remoteUrl };
 }
 
 /** The tool's run context; `signal` is the turn's cancellation. */
@@ -247,6 +247,10 @@ describe("send — after the card", () => {
   const DECLINED =
     "[chat] the user declined sending the flow to koda; do not retry with different arguments unless the user asks";
   const BRANCH_CHANGED = "[chat] the branch changed while the card was open; nothing was pushed";
+  const PUSH_TARGET_MOVED =
+    "[chat] the branch or origin being pushed changed while the card was open; nothing was pushed";
+  const PUSHED_OTHER_COMMIT =
+    "[chat] the branch moved while it was pushed, so the commit on origin may not be the one you approved; koda was not called and no flow exists";
 
   test("stops with the cancelled result when the turn is aborted after allow (AC-10)", async () => {
     const controller = new AbortController();
@@ -303,6 +307,43 @@ describe("send — after the card", () => {
 
     expect(result).toEqual({ isError: true, content: BRANCH_CHANGED });
     expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("stops before pushing when the checked-out branch changed at the same commit (F1)", async () => {
+    // The card was shown for feat/x; by the push boundary the repository is on
+    // another branch that happens to hold the same commit.
+    const states = [ready(), ready("feat/other")];
+    _flowProviderDeps.readFlowRepoState = async () => states.shift() ?? ready("feat/other");
+
+    const result = await send(input);
+
+    expect(result).toEqual({ isError: true, content: PUSH_TARGET_MOVED });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("stops before pushing when origin changed at the same commit (F1)", async () => {
+    const states = [ready(), ready("feat/x", SHA, "https://github.com/other/fork")];
+    _flowProviderDeps.readFlowRepoState = async () => states.shift() ?? ready();
+
+    const result = await send(input);
+
+    expect(result).toEqual({ isError: true, content: PUSH_TARGET_MOVED });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("creates no flow when the branch advanced while it was pushed (F1)", async () => {
+    // The boundary read still saw the carded commit; the push resolved a branch a
+    // concurrent commit had advanced by the time it ran.
+    const heads = [SHA, OTHER_SHA];
+    _flowProviderDeps.headSha = async () => heads.shift() ?? OTHER_SHA;
+
+    const result = await send(input);
+
+    expect(result).toEqual({ isError: true, content: PUSHED_OTHER_COMMIT });
+    expect(pushCalls).toHaveLength(1);
     expect(kodaCalls).toHaveLength(0);
   });
 
@@ -415,7 +456,7 @@ describe("send — after the card", () => {
   );
 
   test.each(["MEMORY_KODA_TIMEOUT", "MEMORY_KODA_UNREACHABLE"])(
-    "reports %s as koda being out of reach (AC-23)",
+    "reports %s as koda being out of reach, with the outcome unknown (AC-23/F3)",
     async (code) => {
       _flowProviderDeps.createKodaFlow = async () => {
         throw new NaxError("[memory] koda POST fleet/flows timed out after 30000ms", code, { stage: "memory" });
@@ -425,7 +466,9 @@ describe("send — after the card", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content.startsWith("[chat] koda could not be reached: ")).toBe(true);
-      expect(result.content.endsWith("branch feat/x stays pushed and no flow was created")).toBe(true);
+      expect(result.content).toContain("the create's outcome is unknown");
+      expect(result.content).toContain("check koda for the flow before retrying");
+      expect(result.content.endsWith("can create a duplicate")).toBe(true);
     },
   );
 
@@ -449,5 +492,29 @@ describe("send — after the card", () => {
     expect(result.content).toBe(
       `[chat] flow send failed: ${where === "git" ? "git rev-parse HEAD was killed" : "koda answered something else entirely"}`,
     );
+  });
+});
+
+describe("send — a carded value cannot forge the card", () => {
+  /** A committed spec path may hold a newline: the file name is the only check that ran on it. */
+  const INJECTED = ".nax/features/a/spec\n1. evil (.nax/features/evil/spec.md) x.md";
+
+  test("escapes control characters in a carded spec path and keeps the literal path in the body (F2)", async () => {
+    const result = await send({
+      ...input,
+      features: [
+        { feature: "a", specPath: INJECTED },
+        { feature: "b", specPath: SPEC_B, dependsOn: ["a"] },
+      ],
+    });
+
+    const card = approveCalls[0];
+    assertDefined(card, "the approval card");
+    // Six lines: the repository, one per feature, the roles, the cap and koda's own approval.
+    expect(card.reason.split("\n")).toHaveLength(6);
+    expect(card.reason).toContain("spec\\u000a1. evil");
+    expect(result.isError).toBeUndefined();
+    // The request body carries the path exactly as the request wrote it.
+    expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(INJECTED);
   });
 });
