@@ -3,7 +3,7 @@
   "feature": "gate-config-route",
   "branchName": "feat/gate-config-route",
   "createdAt": "2026-11-13T15:53:10.616Z",
-  "updatedAt": "2026-11-13T17:18:09.753Z",
+  "updatedAt": "2026-11-13T17:34:52.901Z",
   "userStories": [
     {
       "id": "US-001",
@@ -307,14 +307,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Changes shared turn absorption, failure containment and protected command application; original status/report/round invariants require strict security-path TDD."
+        "reasoning": "Changes shared turn absorption, failure containment and protected command application; original status/report/round invariants require strict security-path TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-steps.ts",
@@ -336,7 +339,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d2f0825ebafea6edd7235c8663ee519a3d60f591"
     },
     {
       "id": "US-006",
