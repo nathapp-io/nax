@@ -15,6 +15,7 @@ import type { StepResult } from "@/step-graph";
 import { adjudicateResidual } from "./adjudicate";
 import { isFlaggedRuling } from "./advisor";
 import { deriveEndState } from "./close";
+import { absorbConfigChange, implementerQuestion } from "./config-change-absorb";
 import { ledgerCannotVerify } from "./gate-timing";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { absorbInterrupt, type InterruptOrigin } from "./interrupt-continue";
@@ -154,10 +155,56 @@ async function implementTurn(env: StoryLoopEnv, turn: ImplementTurn): Promise<Im
 /**
  * US-008: the reply the next evaluate pass reads to decide whether a report turn is owed. A failure
  * or a turn with no reply clears it, so a stale DONE from an earlier round cannot repair a report
- * after a later turn blew up.
+ * after a later turn blew up. `configApplied` (US-005) marks a turn whose answer was a config change
+ * nax made, so nothing else is owed for it.
  */
-function recordLastTurn(s: LoopState, reply: ImplementerReply | undefined, fallback: boolean, stepUps: number): void {
-  s.lastTurn = reply === undefined ? undefined : { status: reply.status, fallback, stepUps };
+function recordLastTurn(
+  s: LoopState,
+  reply: ImplementerReply | undefined,
+  fallback: boolean,
+  stepUps: number,
+  configApplied?: boolean,
+): void {
+  s.lastTurn =
+    reply === undefined
+      ? undefined
+      : { status: reply.status, fallback, stepUps, ...(configApplied === true ? { configApplied: true } : {}) };
+}
+
+/**
+ * What one advisor question did to the round: run one more implementer turn with its answer, end the
+ * turn (a config change nax applied is the answer), or keep the loop's path with the refusal it left.
+ */
+type AdvisorEffect =
+  | { readonly kind: "answer"; readonly next: ImplementOutcome }
+  | { readonly kind: "ended" }
+  | { readonly kind: "concern"; readonly note?: string };
+
+/**
+ * US-005: the question and what its answer means. A string is still an answer to the implementer, so
+ * the round continues with one more turn; a config change nax applied ends the turn instead, and a
+ * refused one leaves its note for the concern the caller records.
+ */
+async function consultAdvisor(
+  env: StoryLoopEnv,
+  s: LoopState,
+  reply: ImplementerReply,
+  fallback: boolean,
+  origin: InterruptOrigin,
+): Promise<AdvisorEffect> {
+  const answer = await env.advisor.answerQuestion(await implementerQuestion(env, s.gates, reply));
+  if (typeof answer === "string") {
+    await env.sink.ledger(ledgerText.note(`implementer ${reply.status}: answered by the advisor`));
+    const turn: ImplementTurn = { kind: "answer", text: answer, stepUps: origin.stepUps, limit: origin.limit };
+    return { kind: "answer", next: await implementTurn(env, turn) };
+  }
+  const change = await absorbConfigChange({ env, round: s.round, answer });
+  if (change.kind !== "applied")
+    return { kind: "concern", ...(change.kind === "refused" ? { note: change.note } : {}) };
+  // The change was the answer, so the round spends no further implementer turn; the next gate run
+  // reads the reloaded command.
+  recordLastTurn(s, reply, fallback, origin.stepUps, true);
+  return { kind: "ended" };
 }
 
 async function absorbTurn(
@@ -197,23 +244,15 @@ async function absorbTurn(
     const needsAnswer = reply.status === "NEEDS_CONTEXT" || reply.status === "BLOCKED";
     if (needsAnswer && s.questions < MAX_IMPLEMENTER_QUESTIONS) {
       s.questions += 1;
-      const answer = await env.advisor.answerQuestion({
-        storyId: env.storyId,
-        status: reply.status as "NEEDS_CONTEXT" | "BLOCKED",
-        concerns: reply.concerns ?? "",
-      });
-      // Only a plain answer continues the round. A config-change answer is applied by a later story
-      // (US-005); until then it is treated as no answer, which is today's behaviour.
-      if (typeof answer === "string") {
-        await env.sink.ledger(ledgerText.note(`implementer ${reply.status}: answered by the advisor`));
-        current = await implementTurn(env, {
-          kind: "answer",
-          text: answer,
-          stepUps: origin.stepUps,
-          limit: origin.limit,
-        });
+      const effect = await consultAdvisor(env, s, reply, fallback, origin);
+      if (effect.kind === "answer") {
+        current = effect.next;
         continue;
       }
+      if (effect.kind === "ended") return;
+      await recordConcern(env, s, reply, effect.note);
+      recordLastTurn(s, reply, fallback, origin.stepUps);
+      return;
     }
     if (reply.status !== "DONE" || reply.interrupted) await recordConcern(env, s, reply);
     recordLastTurn(s, reply, fallback, origin.stepUps);
@@ -222,11 +261,12 @@ async function absorbTurn(
 }
 
 /** The story review is told; the ledger and run log keep it for whoever finishes the branch. */
-async function recordConcern(env: StoryLoopEnv, s: LoopState, reply: ImplementerReply): Promise<void> {
+async function recordConcern(env: StoryLoopEnv, s: LoopState, reply: ImplementerReply, note?: string): Promise<void> {
   const concern = `${reply.status}: ${reply.concerns ?? ""}`.trim();
-  s.concerns = [...s.concerns, concern];
+  const text = note === undefined ? concern : `${concern} (${note})`;
+  s.concerns = [...s.concerns, text];
   const marker = reply.interrupted ? " (interrupted)" : "";
-  await env.sink.ledger(ledgerText.note(`implementer${marker} ${concern}`));
+  await env.sink.ledger(ledgerText.note(`implementer${marker} ${text}`));
 }
 
 /** US-002: a fix turn that failed is re-reviewed as today — its round still has to be retried. */

@@ -161,8 +161,14 @@ export interface StoryLoopState extends GraphState<StoryNode> {
   /**
    * US-008: the reply and step-up the last absorbed turn ended with, and whether it was the interrupt
    * fallback. The evaluate pass reads it to decide whether the story is owed one report turn.
+   * US-005: `configApplied` marks the turn whose answer was a config change nax made.
    */
-  readonly lastTurn?: { readonly status: ImplementerStatus; readonly fallback: boolean; readonly stepUps: number };
+  readonly lastTurn?: {
+    readonly status: ImplementerStatus;
+    readonly fallback: boolean;
+    readonly stepUps: number;
+    readonly configApplied?: boolean;
+  };
   /** US-008: true once the story has spent its one report turn, so it never spends a second. */
   readonly reportTurnRan: boolean;
   /** Set by `close`; what `runStoryLoop` resolves to. */
