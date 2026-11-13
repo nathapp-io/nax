@@ -123,10 +123,10 @@ function stopThreads(rest: readonly OpenItem[], owned: ReadonlySet<string>): num
  * so: `gh` can accept an index and still answer with a reply this code cannot parse, which records
  * no posted name. Absence is therefore read back off the PR instead of inferred.
  *
- * A readback that fails leaves the write's own evidence, and only a refusal is evidence: the forge
- * answered and refused it, so nothing landed and the PR has no index to find. A write that may have
- * landed proves nothing either way, so the answer is `undefined` — neither a confirmed presence nor
- * a licence to clear an earlier `itemIndexMissing`.
+ * A readback that fails leaves the writes' own evidence: absence is known only if every index write
+ * was refused. A final refusal cannot disprove that an earlier pre-notice write landed. Any write
+ * that may have landed leaves the answer `undefined` — neither a confirmed presence nor a licence
+ * to clear an earlier `itemIndexMissing`.
  */
 async function indexIsMissing(options: {
   readonly feature: string;
@@ -142,7 +142,7 @@ async function indexIsMissing(options: {
     return !ownComments(comments, context.login).some(({ key }) => key === "w-index");
   } catch (error) {
     warn({ feature }, "[item-threads] Cannot confirm the index state; reading the failed write instead", error);
-    return failure === "refused" ? true : undefined;
+    return failure === "refused" && !context.indexWriteUnconfirmed ? true : undefined;
   }
 }
 
@@ -227,8 +227,8 @@ export async function postItemThreads(
     failed: outcome.failed + index.failed,
     indexWritten: index.indexed,
     // Only ever a PR that ends the publish with a known answer: an index created by a pre-notice
-    // write is on the PR, a stale one still accepts bot commands, a refused write proves none was
-    // created, and an unconfirmed one states no key at all rather than a `false` nobody can stand
+    // write is on the PR, a stale one still accepts bot commands, uniformly refused writes prove
+    // none was created, and an unconfirmed one states no key at all rather than a `false` nobody can stand
     // behind (B1).
     ...(indexMissing === undefined ? {} : { indexMissing }),
   };

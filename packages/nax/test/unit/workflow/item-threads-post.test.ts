@@ -7,7 +7,14 @@ import { addSink, initLogger, resetLogger } from "@/logger";
 import { describeUnread } from "@/workflow/approval";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { _itemPublishPacerDeps, type ItemPublishConfig } from "@/workflow/item-publish-pacer";
-import { itemKey, parseItemFiles, renderItemIndex, renderItemOpener } from "@/workflow/item-threads";
+import {
+  closedKey,
+  itemKey,
+  parseItemFiles,
+  renderItemClosed,
+  renderItemIndex,
+  renderItemOpener,
+} from "@/workflow/item-threads";
 import type { ItemThreadsInput } from "@/workflow/item-threads-post";
 import { postItemThreads } from "@/workflow/item-threads-post";
 import type { OpenItem } from "@/workflow/types";
@@ -26,7 +33,7 @@ const input = (over: Partial<ItemThreadsInput> = {}): ItemThreadsInput => ({
   ...over,
 });
 
-function threadReply(author?: string) {
+function threadReply(author?: string, closed = false) {
   const nodes = author
     ? [
         {
@@ -35,7 +42,21 @@ function threadReply(author?: string) {
           isOutdated: false,
           path: "a.ts",
           line: 9,
-          comments: { nodes: [{ databaseId: 1, author: { login: author }, body, createdAt: "t" }] },
+          comments: {
+            nodes: [
+              { databaseId: 1, author: { login: author }, body, createdAt: "t" },
+              ...(closed
+                ? [
+                    {
+                      databaseId: 2,
+                      author: { login: author },
+                      body: withNaxBotMarker(renderItemClosed("old-head"), closedKey(itemKey(item))),
+                      createdAt: "t",
+                    },
+                  ]
+                : []),
+            ],
+          },
         },
       ]
     : [];
@@ -65,6 +86,10 @@ interface HarnessOptions {
   failures?: number;
   threadsFail?: boolean;
   own?: string;
+  /** A closed item forces the pre-notice index write even without an existing index. */
+  closed?: boolean;
+  /** Raw reply from only the first index write, before later writes may be rejected. */
+  indexFirstStdout?: string;
   /** An own `w-index` comment already on the PR. */
   indexBody?: string;
   /** An own `w-index` comment the PR carries only once an index write was attempted: a write that landed. */
@@ -97,6 +122,8 @@ function harness(options: HarnessOptions = {}) {
   const indexReply = (cmd: string[]) => {
     indexWrites.push(cmd);
     indexAttempted = true;
+    if (indexWrites.length === 1 && options.indexFirstStdout !== undefined)
+      return { exitCode: 0, stdout: options.indexFirstStdout, stderr: "" };
     reject(cmd);
     if (options.indexStdout !== undefined) return { exitCode: 0, stdout: options.indexStdout, stderr: "" };
     return ok({ id: 99 });
@@ -124,7 +151,7 @@ function harness(options: HarnessOptions = {}) {
     if (cmd.includes("user")) return ok({ login: "bot", username: "bot", id: 1 });
     if (cmd.includes("graphql")) {
       if (options.threadsFail) throw new Error("threads unreadable");
-      return ok(threadReply(options.own));
+      return ok(threadReply(options.own, options.closed));
     }
     // Only the issue-comment read carries the index; a review summary is not editable.
     if (cmd.some((arg) => arg.includes("/issues/7/comments?per_page="))) return indexComments();
@@ -485,6 +512,36 @@ describe("postItemThreads item-publish pacing", () => {
     expect(h.writes).toHaveLength(3);
     expect(sleeps.filter((ms) => ms === 60_000)).toHaveLength(2);
     expect(logs.some((entry) => entry.message === BUDGET_SPENT)).toBe(false);
+  });
+  test.each([
+    { label: "failed readback", indexReadFails: true, landed: true, missing: undefined },
+    { label: "confirmed presence", indexReadFails: false, landed: true, missing: false },
+    { label: "confirmed absence", indexReadFails: false, landed: false, missing: true },
+  ])("D-3 preserves an unconfirmed pre-notice write with $label", async ({ indexReadFails, landed, missing }) => {
+    const h = harness({
+      own: "bot",
+      closed: true,
+      indexFirstStdout: "not-json",
+      indexAfterWrite: landed ? withNaxBotMarker(renderItemIndex({ keys: [] }), "w-index") : undefined,
+      reject: [{ match: "key=w-index", times: Number.POSITIVE_INFINITY, stderr: RATE_LIMIT }],
+      indexReadFails,
+    });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toMatchObject({ posted: 0, skipped: 1, failed: 2, indexWritten: false });
+    if (missing === undefined) expect(result).not.toHaveProperty("indexMissing");
+    else expect(result.indexMissing).toBe(missing);
+    // One unparseable pre-notice POST, then three refused final POST attempts; no notice is sent.
+    expect(h.indexWrites).toHaveLength(4);
+    expect(h.indexWrites.every((cmd) => cmd.includes("POST"))).toBe(true);
+    expect(h.writes).toEqual([]);
+    expect(h.reads.filter((cmd) => cmd.some((a) => a.includes("/issues/7/comments?per_page=")))).toHaveLength(2);
+  });
+  test("D-3 a successful final write confirms presence after an unconfirmed pre-notice write", async () => {
+    const h = harness({ own: "bot", closed: true, indexFirstStdout: "not-json", indexReadFails: true });
+    const result = await postItemThreads(input({ pacing: pacing() }), h.deps);
+    expect(result).toMatchObject({ failed: 1, indexWritten: true, indexMissing: false });
+    expect(h.indexWrites).toHaveLength(2);
+    expect(h.writes).toEqual([]);
   });
   // B1: a readback that fails says nothing about the index, so the failed write's own evidence has
   // to decide. Every index write here was *refused* by the forge, and nothing can have landed.

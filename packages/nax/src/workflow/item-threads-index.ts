@@ -11,6 +11,8 @@ import type { ItemThreadsInput } from "./item-threads-post";
 export interface IndexContext {
   /** Reuse an index created by the pre-notice write during this publish. */
   postedIndex?: { id: string; kind: "comment" };
+  /** Sticky evidence: a later refusal cannot disprove that an earlier index write landed. */
+  indexWriteUnconfirmed?: boolean;
   /** The publish's pacer: the index write is reserved, the closing writes are paced normally. */
   readonly pacer: ItemPublishPacer;
   readonly ref: PrRef;
@@ -74,7 +76,7 @@ export async function writeItemIndex(index: ItemIndex, context: IndexContext, se
   const body = withNaxBotMarker(renderItemIndex(index, settled), "w-index");
   // Reserved: a spent budget must never cost the PR its index, and persisting the invalidation
   // before a reopen notice has to outlive the thread posts' allowance.
-  return write(
+  const outcome = await write(
     "w-index",
     context.pacer,
     async () => {
@@ -87,6 +89,8 @@ export async function writeItemIndex(index: ItemIndex, context: IndexContext, se
     },
     { reserved: true },
   );
+  if (outcome.failure === "unconfirmed") context.indexWriteUnconfirmed = true;
+  return outcome;
 }
 
 export async function maintainItemIndex(
