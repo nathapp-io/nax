@@ -8,6 +8,11 @@ import { type MainDeps, main } from "#src/server/main";
 
 const CONFIG_PATH = "/home/u/.nax/config.json";
 const MODEL = "anthropic/claude-sonnet-5";
+/**
+ * How long one reply may take. `session/new` creates a real session and a reload re-reads the
+ * config, and the workspace gate runs every package's suite at once — a 1s poll cap failed there.
+ */
+const REPLY_TIMEOUT_MS = 15_000;
 
 let dir: string;
 beforeEach(() => {
@@ -72,7 +77,7 @@ function harness(argv: readonly string[], config: ReturnType<typeof memoryConfig
   const send = (id: number, method: string, params: unknown) =>
     stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
   const reply = async (id: number) => {
-    await waitForCondition(() => frames().some((f) => f.id === id));
+    await waitForCondition(() => frames().some((f) => f.id === id), REPLY_TIMEOUT_MS);
     return frames().find((f) => f.id === id);
   };
   return { deps, stdin, send, reply, out: () => Buffer.concat(chunks).toString("utf8"), err: () => errText.join("") };
