@@ -3,7 +3,7 @@
   "feature": "item-publish-pacing",
   "branchName": "feat/item-publish-pacing",
   "createdAt": "2026-11-13T12:03:05.859Z",
-  "updatedAt": "2026-11-13T12:59:18.924Z",
+  "updatedAt": "2026-11-13T13:18:07.296Z",
   "userStories": [
     {
       "id": "US-001",
@@ -198,14 +198,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Although several files change, this story uses existing best-effort publish, graph-patch, and conditional-summary patterns for additive field plumbing; single-session TDD can verify true/false/omitted propagation and output without introducing a new abstraction."
+        "reasoning": "Although several files change, this story uses existing best-effort publish, graph-patch, and conditional-summary patterns for additive field plumbing; single-session TDD can verify true/false/omitted propagation and output without introducing a new abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/publish-item-threads.ts",
@@ -228,7 +231,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "82f40e320a25ca3916b3b141bca2043ee4ef4b6e"
     },
     {
       "id": "US-004",
