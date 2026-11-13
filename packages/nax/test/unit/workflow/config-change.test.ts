@@ -128,6 +128,11 @@ describe("readBaseScripts", () => {
     });
   });
 
+  test("keeps the manifest's script key order, which decides what a duplicate value names", async () => {
+    stubGit({ stdout: manifest({ scripts: { zeta: "bun test", alpha: "bun run lint" } }), exitCode: 0 });
+    expect(Object.keys(await readBaseScripts("/repo", "abc123", "apps/admin"))).toEqual(["zeta", "alpha"]);
+  });
+
   test("reads the repo-root manifest when the story's package is the repo root", async () => {
     stubGit({ stdout: manifest({ scripts: { test: "bun test" } }), exitCode: 0 });
     expect(await readBaseScripts("/repo", "abc123", "")).toEqual({ test: "bun test" });
@@ -173,6 +178,14 @@ describe("renderCommandSpec", () => {
 
   test("returns undefined for a command the config does not declare", () => {
     expect(renderCommandSpec(undefined)).toBeUndefined();
+  });
+
+  test("keeps a string's own spacing, since the exact bytes are what a change writes", () => {
+    expect(renderCommandSpec("  biome check .  ")).toBe("  biome check .  ");
+  });
+
+  test("joins a list entry untouched, spacing included", () => {
+    expect(renderCommandSpec([" a", "b "])).toBe(" a && b ");
   });
 });
 

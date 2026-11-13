@@ -5,20 +5,23 @@
  * committed at the story's base commit, and the advisor only picks one of them.
  */
 import type { ProtectedPathsPolicy } from "@nathapp/nax-agent";
-import { renderCommandSpec as renderSpec } from "@nathapp/nax-agent/internal";
 import type { ConfigChangeCandidate, QualityCommandKey } from "@/advisor";
 import { gitWithTimeout } from "@/utils/git";
 import type { GateName } from "./types";
 
+/** How nax writes a list command as one line — what a human recognises and would type. */
+const COMMAND_JOINER = " && ";
+
 /**
- * One renderer for a declared command, shared with the rest of nax: a single string as is, a list as
- * its entries joined with ` && `, an undeclared command as `undefined`. It adapts the shared
- * implementation (`@nathapp/nax-agent/internal`) to the read-only list the workflow's facts carry, so
- * the workflow reads commands (evidence today, a change's `from` in US-003) through one implementation
- * instead of a second join that could disagree with what a gate actually runs.
+ * One line for a declared command: a string exactly as written, a list as its entries joined with
+ * ` && `, an undeclared command as `undefined`. The workflow needs the literal bytes — a candidate is
+ * compared against the key's current command and US-003 writes the chosen value into config — so no
+ * entry is trimmed. The shared `@nathapp/nax-agent/internal` renderer normalises instead (it trims
+ * entries and drops blanks), which is right for prompt surfaces and wrong for a value that has to match
+ * or be written verbatim.
  */
 export function renderCommandSpec(spec: string | readonly string[] | undefined): string | undefined {
-  return typeof spec === "string" || spec === undefined ? renderSpec(spec) : renderSpec([...spec]);
+  return typeof spec === "string" ? spec : spec?.join(COMMAND_JOINER);
 }
 
 /** The gate that went red, and the `quality.commands` key whose command it runs. */
