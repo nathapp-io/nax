@@ -8,6 +8,13 @@ import { restoreDeletedNaxPaths } from "./nax-path-restore";
 export { _gitDeps, GIT_TIMEOUT_MS, getGitRoot, gitWithTimeout } from "@nathapp/nax-agent/internal";
 
 /**
+ * Turning git's terminal prompt off makes a missing or rejected credential fail
+ * at once with git's own message, instead of blocking on a terminal that is not
+ * there (a `nax chat` TUI, a headless run). Every nax push overlays it.
+ */
+export const NO_TERMINAL_PROMPT = { GIT_TERMINAL_PROMPT: "0" } as const;
+
+/**
  * The branches nax never publishes from: the empty branch (a run with no
  * branch, or a detached HEAD) and the two conventional default-branch names.
  */

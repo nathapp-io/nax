@@ -9,6 +9,7 @@ type GitCall = {
   timeoutMs?: number;
   /** The process-local configuration overlay, as `gitWithTimeout` takes it. */
   env?: Readonly<Record<string, string>>;
+  signal?: AbortSignal;
 };
 type GitResult = { stdout: string; stderr: string; exitCode: number };
 
@@ -24,8 +25,15 @@ function makeGitStub(handler: (call: GitCall) => GitResult) {
     _maxBytes?: number,
     _argvOverride?: readonly string[],
     env?: Readonly<Record<string, string>>,
+    signal?: AbortSignal,
   ): Promise<GitResult> => {
-    const call = { args, workdir, timeoutMs, ...(env === undefined ? {} : { env }) };
+    const call = {
+      args,
+      workdir,
+      timeoutMs,
+      ...(env === undefined ? {} : { env }),
+      ...(signal === undefined ? {} : { signal }),
+    };
     calls.push(call);
     return handler(call);
   };
@@ -189,6 +197,39 @@ describe("commitAndPush", () => {
     expect(pushCall?.args).toEqual(["push", "--set-upstream", "origin", "feat/x"]);
   });
 
+  test("the push never prompts for credentials on the terminal (#2895)", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("sha\n");
+      if (call.args[0] === "status") return ok("");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+
+    await commitAndPush("/repo", "feat/x", "fix: terminal commit");
+    await commitAndPush("/repo", "feat/x", "fix: bound", { skipCommit: true, remote: "https://github.com/o/r.git" });
+
+    const pushes = calls.filter((c) => c.args[0] === "push");
+    expect(pushes).toHaveLength(2);
+    for (const push of pushes) expect(push.env?.GIT_TERMINAL_PROMPT).toBe("0");
+  });
+
+  test("hands the caller's signal to the push only (#2895)", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("sha\n");
+      if (call.args[0] === "status") return ok("");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+    const controller = new AbortController();
+
+    await commitAndPush("/repo", "feat/x", "fix: x", { signal: controller.signal });
+    await commitAndPush("/repo", "feat/x", "fix: x", { skipCommit: true });
+
+    const pushes = calls.filter((c) => c.args[0] === "push");
+    expect(pushes[0]?.signal).toBe(controller.signal);
+    expect(pushes[1]?.signal).toBeUndefined();
+  });
+
   test("uses PUSH_TIMEOUT_MS for the push call, not the default", async () => {
     const { git, calls } = makeGitStub((call) => {
       if (call.args[0] === "rev-parse") return ok("sha\n");
@@ -315,6 +356,7 @@ describe("commitAndPush", () => {
     // `-c key=value` arguments (B2), so the destination cannot decide where the
     // key ends.
     expect(calls[0]?.env).toEqual({
+      GIT_TERMINAL_PROMPT: "0",
       GIT_CONFIG_COUNT: "3",
       GIT_CONFIG_KEY_0: `remote.${bound}.url`,
       GIT_CONFIG_VALUE_0: `${bound}://push`,

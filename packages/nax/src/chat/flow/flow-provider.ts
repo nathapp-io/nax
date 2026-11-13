@@ -440,11 +440,18 @@ async function afterAllow(
   // and they are the last thing between the card and the push. Asking once more here
   // is what keeps an already-cancelled turn from pushing and creating a flow.
   if (cancelled(signal)) return failure(CANCELLED_MESSAGE);
-  await _flowProviderDeps.commitAndPush(options.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
-    skipCommit: true,
-    sourceSha: state.sha,
-    remote: destination.url,
-  });
+  try {
+    await _flowProviderDeps.commitAndPush(options.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
+      skipCommit: true,
+      sourceSha: state.sha,
+      remote: destination.url,
+      signal,
+    });
+  } catch (error) {
+    // An abort during the push kills git, so the failure is the cancel, not a push error.
+    if (cancelled(signal)) return failure(CANCELLED_MESSAGE);
+    throw error;
+  }
   return await createFlow(state, input, options);
 }
 

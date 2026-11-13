@@ -285,6 +285,40 @@ describe("send — after the card", () => {
     expect(kodaCalls).toHaveLength(0);
   });
 
+  test("hands the turn's signal to the push (#2895)", async () => {
+    const controller = new AbortController();
+
+    await send(input, controller.signal);
+
+    expect(pushCalls[0]?.opts?.signal).toBe(controller.signal);
+  });
+
+  test("an abort during the push returns the cancelled result and creates nothing (#2895)", async () => {
+    const controller = new AbortController();
+    _flowProviderDeps.commitAndPush = async () => {
+      controller.abort();
+      throw new Error('git push of "feat/x" failed: git-remote-https died of signal 9');
+    };
+
+    const result = await send(input, controller.signal);
+
+    expect(result).toEqual({ isError: true, content: "[chat] the turn was cancelled; nothing was pushed" });
+    expect(kodaCalls).toHaveLength(0);
+  });
+
+  test("a push failure with no abort still propagates as the push failure (#2895)", async () => {
+    const controller = new AbortController();
+    _flowProviderDeps.commitAndPush = async () => {
+      throw new Error('git push of "feat/x" failed: could not read Username');
+    };
+
+    const result = await send(input, controller.signal);
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("could not read Username");
+    expect(kodaCalls).toHaveLength(0);
+  });
+
   test("stops when the turn is cancelled during the pre-push reads (AC-10, B3)", async () => {
     // The reads between the card and the push are asynchronous, so a cancelled turn
     // can reach the push boundary after the one check at the top of afterAllow.

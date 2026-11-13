@@ -81,7 +81,9 @@ export async function gitWithTimeout(
    *  everyone else gets ["git", ...args] as before. */
   argvOverride?: readonly string[],
   envOverlay?: Readonly<Record<string, string>>,
-): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut?: boolean }> {
+  /** Aborting kills the git child; the result is then a non-zero exit with `aborted: true`. */
+  signal?: AbortSignal,
+): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut?: boolean; aborted?: boolean }> {
   const proc = _gitDeps.spawn(hardenedGitArgv(argvOverride ?? ["git", ...args]), {
     cwd: workdir,
     env: hardenedGitEnv(envOverlay === undefined ? process.env : { ...process.env, ...envOverlay }),
@@ -90,6 +92,16 @@ export async function gitWithTimeout(
   });
 
   let timedOut = false;
+  const kill = (): void => {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Process may have already exited
+    }
+  };
+  const onAbort = (): void => kill();
+  if (signal?.aborted) kill();
+  else signal?.addEventListener("abort", onAbort, { once: true });
   const timerId = setTimeout(() => {
     timedOut = true;
     try {
@@ -116,6 +128,7 @@ export async function gitWithTimeout(
 
   const exitCode = await proc.exited;
   clearTimeout(timerId);
+  signal?.removeEventListener("abort", onAbort);
 
   if (timedOut) {
     // Don't await the drain promises here — a SIGKILL'd process's pipes may
@@ -123,6 +136,12 @@ export async function gitWithTimeout(
     // output is discarded), so awaiting them could re-introduce a hang on
     // the very path this timeout exists to bound.
     return { stdout: "", stderr: "", exitCode: 1, timedOut: true };
+  }
+
+  if (signal?.aborted) {
+    // Same reason as the timeout: the kill reaches git, not a helper it spawned
+    // (`git push` hands its pipes to `git-remote-https`), so the pipes may stay open.
+    return { stdout: "", stderr: "", exitCode: 1, aborted: true };
   }
 
   const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
