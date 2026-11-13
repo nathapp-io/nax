@@ -9,6 +9,7 @@
 import { gitlinkSafeAdd, hasStagedChanges } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
 import { gitWithTimeout } from "../utils/git";
+import { redactUrlUserinfo } from "../utils/redact-url";
 import { relativeInsideRoot } from "./safe-path";
 
 export const _finishGitDeps = { git: gitWithTimeout, randomUUID: () => crypto.randomUUID() };
@@ -118,27 +119,60 @@ export async function commitFixes(
 }
 
 /**
+ * One process-local git configuration entry, as a key and its value separately.
+ * They travel through `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` rather than a
+ * `-c key=value` argument (see `boundPush` for why).
+ */
+type GitConfigEntry = readonly [key: string, value: string];
+
+/** A non-negative integer, the only shape `GIT_CONFIG_COUNT` may carry. */
+const NON_NEGATIVE_INT = /^\d+$/;
+
+/**
+ * An environment overlay applying `config` to one git process, appended after
+ * whatever `GIT_CONFIG_COUNT` the environment already carries so an existing
+ * entry is not displaced. Mirrors what `hardenedGitEnv` does for its own
+ * entries, which are appended after these.
+ */
+function configOverlay(config: readonly GitConfigEntry[]): Record<string, string> {
+  const existing = process.env.GIT_CONFIG_COUNT;
+  const start = existing !== undefined && NON_NEGATIVE_INT.test(existing) ? Number.parseInt(existing, 10) : 0;
+  const env: Record<string, string> = { GIT_CONFIG_COUNT: String(start + config.length) };
+  config.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${start + index}`] = key;
+    env[`GIT_CONFIG_VALUE_${start + index}`] = value;
+  });
+  return env;
+}
+
+/**
  * Bind a URL without letting Git rewrite it again. Git rewrites each explicit
  * pushurl once with insteadOf and ignores pushInsteadOf for explicit pushurls.
  * A fresh opaque alias is the only rewrite input; our exact-match rule wins over
  * configured prefixes. Its replacement is the verified URL, which is NOT rewritten
- * recursively. All settings are process-local (-c); authentication config remains
+ * recursively. All settings are process-local; authentication config remains
  * available and no temporary remote is persisted to the repository.
+ *
+ * The entries are passed through `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`, not
+ * through `-c key=value`: git splits a `-c` argument at its first `=`, and a
+ * credential-bearing HTTPS destination routinely contains one
+ * (`https://x-access-token:ab=c@github.com/o/r.git`). There the split lands
+ * inside the userinfo, so git rejects `url.https://x-access-token:ab` as an
+ * invalid key and prints that prefix — the credential — into its stderr, which
+ * the caller then sees. Key and value kept apart cannot be re-split, whatever
+ * the destination contains.
  */
-function boundPushArgs(destination: string): string[] {
+function boundPush(destination: string): { argv: string[]; config: GitConfigEntry[] } {
   const remote = `nax-bound-${_finishGitDeps.randomUUID()}`;
   const alias = `${remote}://push`;
-  return [
-    "-c",
-    `remote.${remote}.url=${alias}`,
-    "-c",
-    `remote.${remote}.pushurl=${alias}`,
-    "-c",
-    `url.${destination}.insteadOf=${alias}`,
-    "push",
-    "--set-upstream",
-    remote,
-  ];
+  return {
+    argv: ["push", "--set-upstream", remote],
+    config: [
+      [`remote.${remote}.url`, alias],
+      [`remote.${remote}.pushurl`, alias],
+      [`url.${destination}.insteadOf`, alias],
+    ],
+  };
 }
 
 /**
@@ -161,7 +195,7 @@ function boundPushArgs(destination: string): string[] {
  * the URL it verified, rather than naming `origin` and letting git resolve the
  * remote again — a remote's push URL can differ from its fetch URL (`pushurl`) and
  * can be rewritten between the check and the push. A process-local alias binds
- * that URL without recursively applying Git's URL rewrites (see boundPushArgs).
+ * that URL without recursively applying Git's URL rewrites (see boundPush).
  * Its transport (SSH, a credential-bearing HTTPS URL) still authenticates. The URL
  * is never put in an error message or context, because it may carry a credential.
  */
@@ -176,12 +210,23 @@ export async function commitAndPush(
     : await commitFixes(repoRoot, message, opts);
 
   const source = opts.sourceSha === undefined ? branch : `${opts.sourceSha}:${BRANCH_REF_PREFIX}${branch}`;
-  const pushArgs =
-    opts.remote === undefined ? ["push", "--set-upstream", DEFAULT_PUSH_REMOTE] : boundPushArgs(opts.remote);
-  const push = await _finishGitDeps.git([...pushArgs, source], repoRoot, PUSH_TIMEOUT_MS);
+  const bound = opts.remote === undefined ? undefined : boundPush(opts.remote);
+  const pushArgs = bound?.argv ?? ["push", "--set-upstream", DEFAULT_PUSH_REMOTE];
+  // Parameters 4 and 5 are `maxBytes` and `argvOverride`; the bound destination's
+  // configuration is the environment overlay, deliberately off argv (see boundPush).
+  const push = await _finishGitDeps.git(
+    [...pushArgs, source],
+    repoRoot,
+    PUSH_TIMEOUT_MS,
+    undefined,
+    undefined,
+    bound === undefined ? undefined : configOverlay(bound.config),
+  );
   if (push.exitCode !== 0) {
+    // git quotes the destination it failed on, credentials included, so its own
+    // words are redacted before they reach a tool result or a log line.
     throw new NaxError(
-      `git push of "${branch}" failed: ${push.stderr.trim() || `exit ${push.exitCode}`}`,
+      `git push of "${branch}" failed: ${redactUrlUserinfo(push.stderr.trim()) || `exit ${push.exitCode}`}`,
       "FINISH_GIT_PUSH_FAILED",
       {
         stage: "finish-git",

@@ -48,4 +48,28 @@ describe("commitAndPush — bound destination with real Git", () => {
       });
     },
   );
+
+  test("a destination containing an equals sign still binds and pushes (B2)", async () => {
+    await withTempDir(async (root) => {
+      // A pasted credential carries `=` (`…:ab=c@…`) and so does the local fixture
+      // path here: git splits a `-c` argument at its first `=`, so the old argv form
+      // died with "invalid key" and printed the credential's prefix. The key/value
+      // pair in the environment has no separator to lose.
+      const approved = join(root, "weird=dir", "approved.git");
+      await git(["init", "--bare", approved], root);
+      await git(["init", "-b", "feat/x"], root);
+      await git(
+        ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "initial"],
+        root,
+      );
+      await git(["remote", "add", "origin", approved], root);
+      const sha = await git(["rev-parse", "HEAD"], root);
+      const resolved = await git(["remote", "get-url", "--push", "origin"], root);
+      expect(resolved).toContain("=");
+
+      await commitAndPush(root, "feat/x", "unused", { skipCommit: true, sourceSha: sha, remote: resolved });
+
+      expect(await git(["--git-dir", approved, "rev-parse", "refs/heads/feat/x"], root)).toBe(sha);
+    });
+  });
 });

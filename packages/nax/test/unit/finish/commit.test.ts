@@ -3,16 +3,29 @@ import { assertCaughtInstanceOf, assertDefined, withDepsRestore } from "@test/he
 import { NaxError } from "@/errors";
 import { _finishGitDeps, commitAndPush, commitFixes, PUSH_TIMEOUT_MS } from "@/finish";
 
-type GitCall = { args: string[]; workdir: string; timeoutMs?: number };
+type GitCall = {
+  args: string[];
+  workdir: string;
+  timeoutMs?: number;
+  /** The process-local configuration overlay, as `gitWithTimeout` takes it. */
+  env?: Readonly<Record<string, string>>;
+};
 type GitResult = { stdout: string; stderr: string; exitCode: number };
 
 withDepsRestore(_finishGitDeps, ["git", "randomUUID"]);
 
-/** Records every call so a test can assert argv shape and per-call timeout. */
+/** Records every call so a test can assert argv shape, per-call timeout and the config overlay. */
 function makeGitStub(handler: (call: GitCall) => GitResult) {
   const calls: GitCall[] = [];
-  const git = async (args: string[], workdir: string, timeoutMs?: number): Promise<GitResult> => {
-    const call = { args, workdir, timeoutMs };
+  const git = async (
+    args: string[],
+    workdir: string,
+    timeoutMs?: number,
+    _maxBytes?: number,
+    _argvOverride?: readonly string[],
+    env?: Readonly<Record<string, string>>,
+  ): Promise<GitResult> => {
+    const call = { args, workdir, timeoutMs, ...(env === undefined ? {} : { env }) };
     calls.push(call);
     return handler(call);
   };
@@ -296,19 +309,47 @@ describe("commitAndPush", () => {
     const bound = calls[0]?.args.at(-2);
     assertDefined(bound, "the process-local push remote");
     expect(bound).toMatch(/^nax-bound-/);
-    expect(calls[0]?.args).toEqual([
-      "-c",
-      `remote.${bound}.url=${bound}://push`,
-      "-c",
-      `remote.${bound}.pushurl=${bound}://push`,
-      "-c",
-      `url.git@github.com:o/r.git.insteadOf=${bound}://push`,
-      "push",
-      "--set-upstream",
-      bound,
-      "0123abcd:refs/heads/feat/x",
-    ]);
+    expect(calls[0]?.args).toEqual(["push", "--set-upstream", bound, "0123abcd:refs/heads/feat/x"]);
     expect(calls[0]?.timeoutMs).toBe(PUSH_TIMEOUT_MS);
+    // The three settings travel as key/value pairs in the environment, never as
+    // `-c key=value` arguments (B2), so the destination cannot decide where the
+    // key ends.
+    expect(calls[0]?.env).toEqual({
+      GIT_CONFIG_COUNT: "3",
+      GIT_CONFIG_KEY_0: `remote.${bound}.url`,
+      GIT_CONFIG_VALUE_0: `${bound}://push`,
+      GIT_CONFIG_KEY_1: `remote.${bound}.pushurl`,
+      GIT_CONFIG_VALUE_1: `${bound}://push`,
+      GIT_CONFIG_KEY_2: "url.git@github.com:o/r.git.insteadOf",
+      GIT_CONFIG_VALUE_2: `${bound}://push`,
+    });
+  });
+
+  test("an equals sign in the destination cannot split the configuration key (B2)", async () => {
+    const { git, calls } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("moved\n");
+      if (call.args[0] === "status") return ok("");
+      return ok();
+    });
+    _finishGitDeps.git = git;
+    // A pasted token routinely carries `=` (`…:ab=c@…`), and git splits a `-c`
+    // argument at its first one, which is what made the read-only probe fail with
+    // "invalid key: url.https://x-access-token" and echo the credential's prefix.
+    const credential = "https://x-access-token:ab=c@github.com/o/r.git";
+
+    await commitAndPush("/repo", "feat/x", "chore: send flow to koda", {
+      skipCommit: true,
+      sourceSha: "0123abcd",
+      remote: credential,
+    });
+
+    const bound = calls[0]?.args.at(-2);
+    assertDefined(bound, "the process-local push remote");
+    // Nothing on argv is a key/value pair at all.
+    expect(calls[0]?.args).toEqual(["push", "--set-upstream", bound, "0123abcd:refs/heads/feat/x"]);
+    // The destination arrives whole, on the value side of a key that carries no `=`.
+    expect(calls[0]?.env?.GIT_CONFIG_KEY_2).toBe(`url.${credential}.insteadOf`);
+    expect(calls[0]?.env?.GIT_CONFIG_VALUE_2).toBe(`${bound}://push`);
   });
 
   test("a push failure names the branch, never the remote a credential may sit in (F1)", async () => {
@@ -334,5 +375,35 @@ describe("commitAndPush", () => {
     expect(caught.message).toContain('git push of "feat/x" failed');
     expect(caught.message).not.toContain("secret-token");
     expect(JSON.stringify(caught.context)).not.toContain("secret-token");
+  });
+
+  test("a push failure redacts the credential git quotes back in its own stderr (B2)", async () => {
+    const { git } = makeGitStub((call) => {
+      if (call.args[0] === "rev-parse") return ok("sha\n");
+      if (call.args[0] === "status") return ok("");
+      if (call.args.includes("push"))
+        return fail(
+          "fatal: unable to access 'https://x-access-token:ab=c@github.com/o/r.git/': The requested URL returned " +
+            "error: 403",
+        );
+      return ok();
+    });
+    _finishGitDeps.git = git;
+
+    const caught = await commitAndPush("/repo", "feat/x", "chore: send flow to koda", {
+      skipCommit: true,
+      sourceSha: "0123abcd",
+      remote: "https://x-access-token:ab=c@github.com/o/r.git",
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    assertCaughtInstanceOf(caught, NaxError, "the push rejection");
+
+    // git's own words are kept — the reason the push failed — with the userinfo gone.
+    expect(caught.message).toContain("The requested URL returned error: 403");
+    expect(caught.message).toContain("https://***@github.com/o/r.git/");
+    expect(caught.message).not.toContain("x-access-token");
+    expect(caught.message).not.toContain("ab=c");
   });
 });
