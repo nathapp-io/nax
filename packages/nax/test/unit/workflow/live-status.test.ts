@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { assertDefined } from "@test/helpers";
 import { type ForgeDeps, withNaxBotMarker } from "@/forge";
+import { type CiWaiver, parseCiWaiver, renderCiWaiver } from "@/workflow/ci-waiver";
 import { itemKey, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
 import type { LiveStatus } from "@/workflow/live-status";
 import type { OpenItem } from "@/workflow/types";
@@ -7,6 +9,11 @@ import type { OpenItem } from "@/workflow/types";
 const item: OpenItem = { id: "D-1", kind: "advisor", issue: "needs a change" };
 const url = "https://github.com/o/r/pull/7";
 const cwd = "/fake/repository";
+const waiver: CiWaiver = {
+  headSha: "7c98673abc0123456789abcdef0123456789abcd",
+  checks: ["nax-agent: glob (Node 22.19.0, macos-latest)"],
+  reason: "runner starvation, re-run passed",
+};
 type Options = {
   item?: OpenItem;
   echo?: "fixed" | "confirmed" | false;
@@ -18,6 +25,10 @@ type Options = {
   throws?: boolean;
   undetected?: boolean;
   isDraft?: boolean;
+  /** A `w-ci-waiver` comment posted alongside the item index. */
+  waiver?: CiWaiver;
+  /** The login that posted it; the current user unless overridden. */
+  waiverLogin?: string;
 };
 
 function readStage(argv: readonly string[]): Options["fail"] | "other" {
@@ -31,14 +42,22 @@ function readStage(argv: readonly string[]): Options["fail"] | "other" {
   return "other";
 }
 
-function indexComments(key: string, mode: Options["index"]) {
-  if (mode === "missing") return [];
+function indexComments(key: string, options: Options) {
+  if (options.index === "missing") return [];
+  const index = {
+    id: 9,
+    user: { login: "nax" },
+    created_at: "2026-10-13T09:12:00Z",
+    body: withNaxBotMarker(renderItemIndex({ keys: options.index === "empty" ? [] : [key] }), "w-index"),
+  };
+  if (!options.waiver) return [index];
   return [
+    index,
     {
-      id: 9,
-      user: { login: "nax" },
+      id: 11,
+      user: { login: options.waiverLogin ?? "nax" },
       created_at: "2026-10-13T09:12:00Z",
-      body: withNaxBotMarker(renderItemIndex({ keys: mode === "empty" ? [] : [key] }), "w-index"),
+      body: renderCiWaiver(options.waiver),
     },
   ];
 }
@@ -106,7 +125,7 @@ function fixture(options: Options = {}) {
           },
         },
       });
-    if (stage === "comments") return ok(indexComments(key, options.index));
+    if (stage === "comments") return ok(indexComments(key, options));
     if (stage === "reviews") return ok([]);
     throw new Error(`unexpected argv: ${argv.join(" ")}`);
   }
@@ -248,5 +267,17 @@ describe("readLiveStatus", () => {
     expect((await read({ item: finding, echo: "confirmed" }, [finding])).result).toEqual(
       live([{ id: "D-1", disposition: "confirmed" }]),
     );
+  });
+  test("AC-1: reports the own waiver comment the read already listed", async () => {
+    const parsed = parseCiWaiver(renderCiWaiver(waiver));
+    assertDefined(parsed, "waiver round-trip");
+    expect(parsed).toEqual(waiver);
+    const fx = await read({ waiver });
+    expect(fx.result).toEqual({ ...live([{ id: "D-1", disposition: "fixed" }]), ciWaiver: parsed });
+  });
+  test("ignores a waiver posted by another account", async () => {
+    const fx = await read({ waiver, waiverLogin: "bob" });
+    expect(fx.result).toEqual(live([{ id: "D-1", disposition: "fixed" }]));
+    expect(fx.result).not.toHaveProperty("ciWaiver");
   });
 });

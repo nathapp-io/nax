@@ -4,6 +4,7 @@ import { withTempDir } from "@test/helpers";
 import { type WorkflowCliDeps, workflowStatusCommand } from "@/cli/workflow";
 import { _workflowForgeDeps } from "@/cli/workflow-forge";
 import { type ForgeDeps, withNaxBotMarker } from "@/forge";
+import { type CiWaiver, renderCiWaiver } from "@/workflow/ci-waiver";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { itemKey, renderItemIndex, renderItemOpener, renderRulingEcho } from "@/workflow/item-threads";
 import type { OpenItem, WorkflowFeatureRecord } from "@/workflow/types";
@@ -12,6 +13,14 @@ const URL = "https://github.com/o/r/pull/7";
 const CV: OpenItem = { id: "_run:cv1", kind: "cannot-verify", issue: "manual check" };
 const ADVISOR: OpenItem = { id: "D-1", kind: "advisor", issue: "needs change" };
 const NOW = "2026-10-13T09:12:00Z";
+const WAIVER: CiWaiver = {
+  headSha: "7c98673abc0123456789abcdef0123456789abcd",
+  checks: ["nax-agent: glob (Node 22.19.0, macos-latest)"],
+  reason: "runner starvation, re-run passed",
+};
+const WAIVER_LINE =
+  "CI: passed with waiver at 7c98673: 1 check(s) never got a runner " +
+  "(nax-agent: glob (Node 22.19.0, macos-latest)): runner starvation, re-run passed";
 type Options = {
   isDraft?: boolean;
   cvRuled?: boolean;
@@ -20,6 +29,10 @@ type Options = {
   advisorRuling?: "fixed" | "confirmed";
   failure?: "missing-index" | "offline" | "undetected";
   record?: Partial<WorkflowFeatureRecord>;
+  /** A `w-ci-waiver` comment posted alongside the item index. */
+  waiver?: CiWaiver;
+  /** The login that posted it; the current user unless overridden. */
+  waiverLogin?: string;
 };
 
 function record(overrides: Partial<WorkflowFeatureRecord> = {}): WorkflowFeatureRecord {
@@ -88,13 +101,16 @@ function reviewThreadsResponse(options: Options) {
 
 function indexComments(options: Options) {
   if (options.failure === "missing-index") return [];
+  const index = {
+    id: 9,
+    user: { login: "nax" },
+    created_at: NOW,
+    body: withNaxBotMarker(renderItemIndex({ keys: [itemKey(CV), itemKey(ADVISOR)] }), "w-index"),
+  };
+  if (!options.waiver) return [index];
   return [
-    {
-      id: 9,
-      user: { login: "nax" },
-      created_at: NOW,
-      body: withNaxBotMarker(renderItemIndex({ keys: [itemKey(CV), itemKey(ADVISOR)] }), "w-index"),
-    },
+    index,
+    { id: 11, user: { login: options.waiverLogin ?? "nax" }, created_at: NOW, body: renderCiWaiver(options.waiver) },
   ];
 }
 
@@ -355,4 +371,66 @@ describe("workflowStatusCommand live overlay", () => {
       });
     },
   );
+  test("AC-2: a ready PR reports the waiver it carries", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { record: { outcome: "ready" }, waiver: WAIVER });
+      const { code, value } = await fx.report();
+      expectLive(value);
+      expect(value.ciWaiver).toEqual({
+        headSha: WAIVER.headSha,
+        checks: WAIVER.checks,
+        reason: WAIVER.reason,
+      });
+      expect(code).toBe(0);
+    });
+  });
+  test("AC-3: a ready PR prints the waiver line", async () => {
+    await withTempDir(async (dir) => {
+      const plain = await (await fixture(dir, { record: { outcome: "ready" }, waiver: WAIVER })).invoke(false);
+      expect(plain.out).toContain(WAIVER_LINE);
+      expect(plain.out).toEqual([
+        `auth: ready ${URL}`,
+        "No open items.",
+        WAIVER_LINE,
+        "Also to verify (not blocking):",
+        "- [cannot-verify] US-001:cv1 — Redis TTL",
+      ]);
+    });
+  });
+  test("AC-4: a ready PR with no waiver comment reports and prints none", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { record: { outcome: "ready" } });
+      const { value } = await fx.report();
+      expectLive(value);
+      expect(value).not.toHaveProperty("ciWaiver");
+      expect((await fx.invoke(false)).out.join("\n")).not.toContain("waiver");
+    });
+  });
+  test("AC-5: a PR that is still a draft hides the waiver it carries", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { isDraft: true, waiver: WAIVER });
+      const { value } = await fx.report();
+      expectLive(value);
+      expect(value.outcome).toBe("draft");
+      expect(value).not.toHaveProperty("ciWaiver");
+      expect((await fx.invoke(false)).out.join("\n")).not.toContain("waiver");
+    });
+  });
+  test("another account's waiver is not reported", async () => {
+    await withTempDir(async (dir) => {
+      const fx = await fixture(dir, { record: { outcome: "ready" }, waiver: WAIVER, waiverLogin: "bob" });
+      const { value } = await fx.report();
+      expectLive(value);
+      expect(value).not.toHaveProperty("ciWaiver");
+    });
+  });
+  test("a run-record fallback never reports a waiver", async () => {
+    await withTempDir(async (dir) => {
+      const { value } = await (
+        await fixture(dir, { failure: "missing-index", record: { outcome: "ready" }, waiver: WAIVER })
+      ).report();
+      expect(value.source).toBe("run-record");
+      expect(value).not.toHaveProperty("ciWaiver");
+    });
+  });
 });
