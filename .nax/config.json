@@ -177,9 +177,6 @@
     "timeoutSeconds": 1200,
     "mode": "refine"
   },
-  "curator": {
-    "enabled": true
-  },
   "context": {
     "v2": {
       "enabled": true,
