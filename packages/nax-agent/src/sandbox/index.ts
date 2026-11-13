@@ -9,9 +9,13 @@ export {
 } from "./launcher.ts";
 export {
   denialHintLine,
+  LIKELY_NETWORK_DENIAL,
   LIKELY_SANDBOX_DENIAL,
+  networkDenialHintLine,
   rawBashRefusalReason,
+  SANDBOX_STATUS_LINE,
   sandboxSentence,
+  unsandboxedNextStepLine,
   unsandboxedSentence,
 } from "./messages.ts";
 export { buildSandboxPolicy, type SandboxPolicyInput } from "./policy-builder.ts";

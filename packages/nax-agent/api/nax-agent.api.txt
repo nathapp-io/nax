@@ -682,6 +682,7 @@ type InterceptOutcome
 type InterceptRequest
 type InterceptResult
 LEASE_FRESHNESS_MS
+LIKELY_NETWORK_DENIAL
 LIKELY_SANDBOX_DENIAL
 LOOP_EVENTS
 LOOP_HANDLER_TIMEOUT_MS
@@ -761,6 +762,7 @@ type RunCommandExecOptions
 type RunCommandToolOptions
 SANDBOXED_ENV
 SANDBOX_GLOB_CHARS
+SANDBOX_STATUS_LINE
 SCRATCHPAD_DIR
 SECRET_VALUE_PATTERNS
 SPILL_DIR
@@ -1015,6 +1017,7 @@ narrowGrants
 nativeSessionId
 nativeSessionStateOf
 naxCredentialStore
+networkDenialHintLine
 newSessionKey
 normalizeCommandSpec
 normalizeExec
@@ -1133,6 +1136,7 @@ truncationDirectionFor
 turnRetryDelayMs
 turnRetryFitsBudget
 unregisterToolAuditSink
+unsandboxedNextStepLine
 unsandboxedSentence
 usageBeat
 validateProviderId

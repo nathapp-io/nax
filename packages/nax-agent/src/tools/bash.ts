@@ -318,6 +318,7 @@ async function launchIntercepted({
           // US-003: the key is present only for an exact `true` on the call, so
           // every other request stays byte-identical to what US-002 shipped.
           ...(unwrapped ? { unwrapped: true } : {}),
+          unsandboxedOffered: opts.unsandboxedCommands === true,
         })
       : { ...(await _bashToolDeps.runArgv({ argv: executed, ...common })), executed, sandbox: undefined };
   if (!intercepted.rewritten || (backgroundLaunch !== undefined && isForeground?.() !== true)) {

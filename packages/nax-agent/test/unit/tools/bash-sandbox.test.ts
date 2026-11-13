@@ -137,6 +137,20 @@ describe("Bash through the launcher", () => {
     expect(backend.calls[0]?.cwd).toBe(root);
   });
 
+  test.each([true, false])(
+    "#2890 run: a denied wrapped command carries the next step for unsandboxedCommands=%s",
+    async (offered) => {
+      const tool = createBashTool({
+        unsandboxedCommands: offered,
+        launcher: createCommandLauncher({ state: available, backend: makeFakeSandboxBackend(), policyFor }),
+      });
+      const r = await tool.run({ command: "echo 'socket: operation not permitted' >&2; exit 1" }, ctx());
+      expect(r.content).toContain("[nax] this command ran INSIDE the sandbox");
+      expect(r.content.includes("re-run with `unsandboxed: true`")).toBe(offered);
+      expect(r.content.includes("allowUnsandboxedCommands")).toBe(!offered);
+    },
+  );
+
   test("run: a wrap failure is a tool error naming the sandbox", async () => {
     const tool = createBashTool({
       launcher: createCommandLauncher({ state: available, backend: makeFakeSandboxBackend("throw"), policyFor }),

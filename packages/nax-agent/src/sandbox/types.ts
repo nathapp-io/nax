@@ -121,6 +121,12 @@ export interface LaunchRequest {
   readonly env?: Readonly<Record<string, string>>;
   /** Explicitly run this command outside the sandbox without changing launcher state. */
   readonly unwrapped?: true;
+  /**
+   * The session advertises `unsandboxed` to the model. Selects the next-step
+   * sentence on a failed wrapped command; it grants nothing (the runtime's
+   * ask is still the only gate).
+   */
+  readonly unsandboxedOffered?: boolean;
   /** Aborts the run: forwarded to runArgv, which SIGKILLs the process group. US-001. */
   readonly signal?: AbortSignal;
   /** Releases the deadline without cancelling the run. Forwarded to runArgv. */

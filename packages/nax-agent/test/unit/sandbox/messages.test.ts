@@ -72,6 +72,13 @@ describe("sandbox messages", () => {
     expect(LIKELY_SANDBOX_DENIAL.test("cannot create /x: Read-only file system")).toBe(true);
     expect(LIKELY_SANDBOX_DENIAL.test("No such file or directory")).toBe(false);
   });
+
+  test("#2890: denial detection is case-insensitive and covers srt network refusals", () => {
+    expect(LIKELY_SANDBOX_DENIAL.test("dial unix /var/run/docker.sock: socket: operation not permitted")).toBe(true);
+    expect(LIKELY_SANDBOX_DENIAL.test("CONNECT tunnel failed, response 403")).toBe(true);
+    expect(LIKELY_SANDBOX_DENIAL.test("socat E CONNECT gitlab.com:22: Forbidden")).toBe(true);
+    expect(LIKELY_SANDBOX_DENIAL.test("HTTP 403 Forbidden from the app")).toBe(false);
+  });
 });
 
 // US-005: a confined session's sentence names $TMPDIR as the writable temp

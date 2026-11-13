@@ -81,6 +81,8 @@ async function launchExec(req: {
   signal: AbortSignal | undefined;
   /** US-008: the call asked for exactly `unsandboxed: true`, so run outside the sandbox. */
   unwrapped: boolean;
+  /** The session advertises `unsandboxed`; only picks the launcher's next-step sentence. */
+  unsandboxedOffered: boolean;
 }): Promise<ArgvExecResult & { sandbox?: SandboxRecord }> {
   if (req.launcher !== undefined) {
     return await req.launcher.run({
@@ -95,6 +97,7 @@ async function launchExec(req: {
       // every other request stays byte-identical to what US-002 shipped -- and
       // the launcher, not this branch, decides what "unwrapped" means.
       ...(req.unwrapped ? { unwrapped: true } : {}),
+      unsandboxedOffered: req.unsandboxedOffered,
     });
   }
   return {
@@ -170,6 +173,7 @@ export async function runExecBranch(
       // approval. A `"true"` string is not an escape request: it is the ordinary
       // call it reads as.
       unwrapped: input.unsandboxed === true,
+      unsandboxedOffered: opts.exec.unsandboxedCommands === true,
     });
 
     // US-001: match Bash's framing so an aborted Exec is rendered as an
