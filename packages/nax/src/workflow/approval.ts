@@ -49,6 +49,8 @@ const NO_CHECKS_DEFAULT = "no CI check was reported";
 const UNAVAILABLE_DEFAULT = "CI status unavailable";
 /** US-003: the sentence `pending` uses when the CI wait reported no detail of its own. */
 const PENDING_DEFAULT = "CI still pending after the wait";
+/** US-002: a check whose job never got a runner, when the wait reported no detail of its own. */
+const STARVED_DEFAULT = "CI checks never got a runner";
 
 /**
  * US-001 (nax#2569): the reason one CI state contributes, or `undefined` when it blocks nothing. The
@@ -62,6 +64,8 @@ export function ciReason(ci: FeatureCiState | undefined, detail?: string): strin
   if (ci === "conflicting") return detail ?? CONFLICTING_DEFAULT;
   if (ci === "no-checks") return detail ?? NO_CHECKS_DEFAULT;
   if (ci === "unavailable") return detail ?? UNAVAILABLE_DEFAULT;
+  // Strict green: a starved CI never passed, so it blocks readiness like every other non-green state.
+  if (ci === "starved") return detail === undefined ? STARVED_DEFAULT : `CI starved: ${detail}`;
   return undefined;
 }
 
