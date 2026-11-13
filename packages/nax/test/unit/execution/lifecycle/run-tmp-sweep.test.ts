@@ -56,7 +56,12 @@ describe("sweepStaleRunTmpRoots", () => {
         await utimes(join(dir, name), 1, 1);
       }
       const parent = dirname(runTmpRoot("cur"));
-      _runTmpSweepDeps.readdir = (path) => saved.readdir(path === parent ? dir : path.replace(parent, dir));
+      // Enumeration order belongs to the filesystem, not to the sweep: CI's /tmp
+      // listed "b" before "a" and this test read that as a failure (#2894). Hand
+      // the sweep a deliberately unsorted listing so what it removes is pinned,
+      // never the order it happens to walk in.
+      _runTmpSweepDeps.readdir = async (path) =>
+        (await saved.readdir(path === parent ? dir : path.replace(parent, dir))).toReversed();
       _runTmpSweepDeps.lstat = (path) => lstat(path.replace(parent, dir));
       const remove = mock(async (path: string) => {
         if (path.endsWith("/a")) throw new Error("failed");
@@ -67,7 +72,10 @@ describe("sweepStaleRunTmpRoots", () => {
         expect(warn).toHaveBeenCalledTimes(1);
         expect(warn.mock.calls[0]?.[1]).toStartWith("Failed to sweep stale run temp dir");
       });
-      expect(remove.mock.calls).toEqual([[join(parent, "a")], [join(parent, "b")]]);
+      // Sorted: the sweep's contract is which stale roots it removes, not the
+      // order the filesystem hands them to it.
+      const removed = remove.mock.calls.map(([path]) => path).toSorted();
+      expect(removed).toEqual([join(parent, "a"), join(parent, "b")]);
     });
   });
 });
