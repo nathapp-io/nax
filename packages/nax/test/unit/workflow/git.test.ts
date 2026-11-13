@@ -232,6 +232,20 @@ function tempPackagePath(): string {
 }
 
 describe("writeBranchReviewPackage", () => {
+  test("reading note can be omitted without affecting changed files or static patch", async () => {
+    const path = tempPackagePath();
+    stubBranchGit("M\0src/a.ts\0");
+    await writeBranchReviewPackage("/repo", "seed0", path, { readingNote: false });
+    let text = await Bun.file(path).text();
+    expect(text).toContain("## Changed files (1)");
+    expect(text).not.toContain("## How to read the diff");
+    await writeBranchReviewPackage("/repo", "seed0", path);
+    text = await Bun.file(path).text();
+    expect(text).toContain("## How to read the diff");
+    await writeBranchReviewPackage("/repo", "seed0", path, { staticMode: true, readingNote: false });
+    text = await Bun.file(path).text();
+    expect(text).toContain("## Full patch");
+  });
   test("lists each changed file with its status letter and no diff body (AC-1)", async () => {
     const path = tempPackagePath();
     const calls = stubBranchGit("M\0src/a.ts\0A\0src/b.ts\0");

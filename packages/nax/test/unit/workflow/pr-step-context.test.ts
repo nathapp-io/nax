@@ -8,6 +8,7 @@ import type { DispatchAskWiring } from "@/interaction/dispatch-ask";
 import { workflowBranchReviewOp } from "@/operations";
 import type { BranchStepContext, PrStepContext, PrStepContextInput, PrStepRef } from "@/workflow";
 import { runBranchReview } from "@/workflow/branch-review";
+import { writeBranchReviewPackage } from "@/workflow/git";
 import { workflowRunDir } from "@/workflow/paths";
 import { _workflowDeps } from "@/workflow/step-context";
 
@@ -196,7 +197,20 @@ describe("buildPrStepContext", () => {
       const text = await Bun.file(packagePath).text();
       expect(text).toContain("change.txt");
       expect(text).toContain("## Changed files (1)\n- M change.txt");
-      expect(text).toContain(`git diff ${base}..HEAD -- <path>`);
+      expect(text).toContain("## Diff parts (1)");
+      expect(text).toContain("package-branch-part-01.diff: change.txt");
+      const optionPath = join(ctx.runDir, "options.diff");
+      await writeBranchReviewPackage(input.repoRoot, base, optionPath, { readingNote: false });
+      let optionText = await Bun.file(optionPath).text();
+      expect(optionText).toContain("## Changed files (1)");
+      expect(optionText).not.toContain("## How to read the diff");
+      await writeBranchReviewPackage(input.repoRoot, base, optionPath);
+      optionText = await Bun.file(optionPath).text();
+      expect(optionText).toContain("## How to read the diff");
+      await writeBranchReviewPackage(input.repoRoot, base, optionPath, { staticMode: true, readingNote: false });
+      optionText = await Bun.file(optionPath).text();
+      expect(optionText).toContain("## Full patch");
+      expect(optionText).toContain("+after");
     } finally {
       await dispose();
     }

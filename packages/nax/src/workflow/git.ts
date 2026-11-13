@@ -189,7 +189,7 @@ export async function writeBranchReviewPackage(
   projectDir: string,
   from: string,
   path: string,
-  options?: { staticMode: boolean },
+  options?: { staticMode?: boolean; readingNote?: boolean },
 ): Promise<string[]> {
   const range = `${from}..HEAD`;
   const pathspec = ["--", ".", ...ALWAYS_EXCLUDED];
@@ -207,7 +207,7 @@ export async function writeBranchReviewPackage(
       { stage: "workflow", from, path },
     );
   }
-  let reading = buildBranchPackageReadingNote(range);
+  let reading = options?.readingNote === false ? "" : buildBranchPackageReadingNote(range);
   if (options?.staticMode) {
     // PR attributes must not hide text deletions as binary; never run external diff/textconv drivers.
     const patch = await _workflowDeps.git(

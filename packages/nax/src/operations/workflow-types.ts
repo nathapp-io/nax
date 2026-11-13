@@ -96,6 +96,7 @@ export interface BranchReviewVerdict extends StoryReviewVerdict {
    * presence alone means the branch was reviewed in parts.
    */
   readonly slices?: readonly BranchReviewSlice[];
+  readonly diffParts?: readonly { readonly part: string; readonly files: readonly string[] }[];
 
   /**
    * The required files the reply's `inspectedFiles` list does not cover (US-002, nax#2622). Set by

@@ -234,25 +234,21 @@ describe("runBranchReview — tool-observed reads", () => {
     expect(order).toEqual(["slice", "audit"]);
   });
 
-  test("credit reaches across both slices of a sliced review", async () => {
-    // Nine files in each of two directories: at the default `sliceFiles` 15 that is two slices.
-    const first = Array.from({ length: 9 }, (_, i) => `a/f${i + 1}.ts`);
-    const second = Array.from({ length: 9 }, (_, i) => `b/f${i + 1}.ts`);
-    const ctx = context({}, [...first, ...second]);
-    stubAudit(ledger(ctx, [readCall("b/f1.ts")]));
-    const replies = [verdict(first), verdict(second.slice(1))];
+  test("direct and part reads share one audit load", async () => {
+    const ctx = context();
+    const part = { path: "/run/part.diff", files: ["src/c.ts"] };
+    _branchReviewDeps.writeBranchDiffParts = async () => [part];
+    const scanned = stubAudit(ledger(ctx, [readCall("src/b.ts"), readCall(part.path)]));
     let dispatched = 0;
     _workflowDeps.callOp = makeScriptedCallOp(() => {
-      const reply = replies[dispatched] ?? null;
-      dispatched += 1;
-      return reply;
+      dispatched++;
+      return verdict(["src/a.ts"]);
     });
-
     const out = await runBranchReview(ctx, { seed: "seed0", facts });
     if (!out.ran) throw new Error("the branch review must run");
-
-    expect(dispatched).toBe(2);
-    // Slice 2 left `b/f1.ts` out of its own list; the session's Read of it is what closes the gap.
+    expect(dispatched).toBe(1);
+    expect(scanned).toEqual([auditDirOf(ctx)]);
     expect(out.verdict.unreadFiles ?? []).toEqual([]);
+    expect(out.verdict.inspectedFiles).toEqual(["src/a.ts"]);
   });
 });
