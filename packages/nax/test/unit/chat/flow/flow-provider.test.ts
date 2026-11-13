@@ -59,7 +59,7 @@ interface PushCall {
   readonly repoRoot: string;
   readonly branch: string;
   readonly message: string;
-  readonly opts: unknown;
+  readonly opts: Parameters<(typeof _flowProviderDeps)["commitAndPush"]>[3];
 }
 
 interface KodaCall {
