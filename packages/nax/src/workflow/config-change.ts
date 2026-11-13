@@ -13,6 +13,7 @@ import type { ProtectedPathsPolicy } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { ConfigChangeCandidate, QualityCommandKey } from "@/advisor";
 import { loadConfigForPackage, type NaxConfig, PROJECT_NAX_DIR, packageConfigCache } from "@/config";
+import { NaxError } from "@/errors";
 import { getSafeLogger } from "@/logger";
 import type { PackageRegistry, PackageView } from "@/runtime";
 import { gitWithTimeout } from "@/utils/git";
@@ -248,7 +249,9 @@ export async function applyConfigChange(input: ApplyConfigChangeInput): Promise<
 
   const commit = await commitConfigPath(input.projectDir, path, commitSubject(input.change, input.packageDir));
   if (commit === null) {
-    await restoreAndRefresh({ ...input, path, originalBytes: written.originalBytes });
+    // `commitConfigPath` staged the new bytes before the commit failed, so the rollback has to take
+    // the path back out of the index as well — the working tree alone is not the whole change.
+    await restoreAndRefresh({ ...input, path, originalBytes: written.originalBytes, unstage: true });
     return refused("commit-failed");
   }
 
@@ -415,17 +418,23 @@ async function commitConfigPath(projectDir: string, path: string, message: strin
  * Put the file back and make the run agree with it again: the per-package cache is cleared (it holds
  * the config built from the reverted bytes) and the registry re-reads the restored override, so no
  * later gate runs the command the change tried to set.
+ *
+ * `unstage` is set when the caller had already staged the new bytes (the commit step): the path's
+ * index entry goes back to HEAD, which leaves the restored working-tree file clean and any unrelated
+ * staged edit untouched. Both rollback steps throw when they cannot be completed — a refusal must
+ * never stand in for a rollback that did not happen (see {@link rollbackFailed}).
  */
 async function restoreAndRefresh(
-  args: ApplyConfigChangeInput & { path: string; originalBytes: string },
+  args: ApplyConfigChangeInput & { path: string; originalBytes: string; unstage?: boolean },
 ): Promise<void> {
   await restoreConfigBytes(args.projectDir, args.path, args.originalBytes);
+  if (args.unstage === true) await unstageConfigPath(args.projectDir, args.path);
   packageConfigCache.clear();
   try {
     await args.registry.refresh(args.packageDir);
   } catch (err) {
-    // The refusal the caller needs is more important than this second failure: the file is back to
-    // its original bytes, so the next resolve() reads the original command.
+    // Not a rollback failure: the file is back to its original bytes. The refusal the caller needs
+    // still goes out, and a later resolve() re-reads the restored file.
     getSafeLogger()?.warn("workflow", "Config change restored, but the package registry did not refresh", {
       packageDir: args.packageDir,
       error: errorMessage(err),
@@ -433,16 +442,43 @@ async function restoreAndRefresh(
   }
 }
 
-/** Write the original bytes back. Deliberately not through the seam a failed write went through. */
+/**
+ * Write the original bytes back. Deliberately not through the seam a failed write went through, and
+ * loud when it cannot land: a caller that reported an ordinary refusal here would be claiming a
+ * clean tree it does not have.
+ */
 async function restoreConfigBytes(projectDir: string, path: string, originalBytes: string): Promise<void> {
   try {
     // `_configChangeDeps.writeFile` is exactly what failed in the write-failed case, possibly after
     // truncating the destination; the rollback must land whatever that writer does next.
     await Bun.write(join(projectDir, path), originalBytes);
   } catch (err) {
-    getSafeLogger()?.error("workflow", "Config change could not be rolled back", {
-      path,
-      error: errorMessage(err),
-    });
+    throw rollbackFailed(path, "restore the config file's original bytes", err);
   }
+}
+
+/** Reset the path's index entry to HEAD, leaving the working tree and every other staged path alone. */
+async function unstageConfigPath(projectDir: string, path: string): Promise<void> {
+  const step = "unstage the config file";
+  let reset: { stdout: string; stderr?: string; exitCode: number };
+  try {
+    reset = await _configChangeDeps.git(["reset", "-q", "--", path], projectDir);
+  } catch (err) {
+    throw rollbackFailed(path, step, err);
+  }
+  if (reset.exitCode !== 0) throw rollbackFailed(path, step, reset.stderr ?? reset.stdout);
+}
+
+/**
+ * A rollback that did not complete. Distinct from every `ConfigChangeRefusal` on purpose: those say
+ * "nothing changed", and this one says the opposite — the tree may still hold the new (or a
+ * half-written) config, so the caller must stop and say so rather than run on.
+ */
+function rollbackFailed(path: string, step: string, cause: unknown): NaxError {
+  return new NaxError(`Config change rollback could not ${step}: ${path}`, "CONFIG_CHANGE_ROLLBACK_FAILED", {
+    stage: "workflow",
+    path,
+    step,
+    cause,
+  });
 }

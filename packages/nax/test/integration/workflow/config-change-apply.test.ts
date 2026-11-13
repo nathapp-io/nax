@@ -6,6 +6,7 @@
  * (a throwing write, a commit that exits non-zero, a package config that stops validating).
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeNaxConfig, makeTempDir } from "@test/helpers";
 import { createConfigLoader, loadConfigForPackage, type NaxConfig, qualityConfigSelector } from "@/config";
@@ -299,6 +300,41 @@ describe("applyConfigChange — a failure after the write restores the file", ()
 
     await applyConfigChange(input(f));
     expect(await configText(f.dir)).toBe(before);
+  });
+
+  // F1: the change's own `git add` staged the new bytes. Restoring the working tree alone would
+  // leave them in the index, where the next commit in the run would sweep the change in.
+  test("F1: a failed commit also takes the config path back out of the index, keeping other staged edits", async () => {
+    const f = await makeRepo();
+    await Bun.write(join(f.dir, "a.txt"), "one\ntwo\n");
+    await git(f.dir, "add", "--", "a.txt");
+    _configChangeDeps.git = async (args, cwd) =>
+      args[0] === "commit" ? { stdout: "", stderr: "hook failed", exitCode: 1 } : origDeps.git(args, cwd);
+
+    const result = await applyConfigChange(input(f));
+    expect(result.outcome).toMatchObject({ applied: false, reason: "commit-failed" });
+    // Only the unrelated edit is still staged, and the config path is clean in index and worktree.
+    expect(await git(f.dir, "diff", "--cached", "--name-only")).toBe("a.txt");
+    expect(await git(f.dir, "status", "--porcelain", "--", CONFIG_REL)).toBe("");
+    expect(await git(f.dir, "status", "--porcelain", "--", "a.txt")).toBe("M  a.txt");
+  });
+
+  // F2: a rollback that cannot write the file leaves the tree in a state a plain refusal would hide.
+  test("F2: a rollback that cannot write the file throws instead of reporting an ordinary refusal", async () => {
+    const f = await makeRepo();
+    const configPath = join(f.dir, CONFIG_REL);
+    _configChangeDeps.writeFile = async (path) => {
+      await Bun.write(path, "{");
+      // The restore writes this same path, so make that impossible from here on.
+      chmodSync(configPath, 0o444);
+      throw new Error("EIO: write failed");
+    };
+
+    try {
+      await expect(applyConfigChange(input(f))).rejects.toMatchObject({ code: "CONFIG_CHANGE_ROLLBACK_FAILED" });
+    } finally {
+      chmodSync(configPath, 0o644);
+    }
   });
 
   test("AC-18: a config that stops resolving is refused as invalid-config", async () => {
