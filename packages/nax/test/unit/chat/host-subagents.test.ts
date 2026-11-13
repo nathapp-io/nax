@@ -563,3 +563,34 @@ describe("chat host bare-model dispatch (chat-dispatch-visibility US-002)", () =
     expect(h.nestedSessionOptions).toHaveLength(1);
   });
 });
+
+describe("chat host flow provider isolation (nax-flow-send US-004)", () => {
+  /** A koda connection and a nax entry: what the parent chat needs to compose `nax-flow`. */
+  const connected = {
+    agents: [reviewer],
+    naxEntry: ["bun", "/n.ts"],
+    kodaConnection: { url: "https://koda.example/api", headers: { Authorization: "Bearer agent-key" } },
+  };
+
+  test("AC-3 a subagent turn's nested backend never receives nax-flow", async () => {
+    const h = setup(connected);
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const parentIds = h.chatBackends.at(-1)?.toolProviders?.map((provider) => provider.id);
+    expect(parentIds).toContain("nax-flow");
+    await h.host.send("go", () => {});
+    expect(h.nestedBackends).toHaveLength(1);
+    const nestedIds = h.nestedBackends[0]?.toolProviders?.map((provider) => provider.id);
+    expect(nestedIds).not.toContain("nax-flow");
+    expect(nestedIds).toEqual(h.resources.toolProviders.map((provider) => provider.id));
+  });
+
+  test("AC-3 without a koda connection the parent chat composes no nax-flow either", async () => {
+    const h = setup({ agents: [reviewer], naxEntry: ["bun", "/n.ts"] });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    expect(h.chatBackends.at(-1)?.toolProviders?.map((provider) => provider.id)).not.toContain("nax-flow");
+    await h.host.send("go", () => {});
+    expect(h.nestedBackends[0]?.toolProviders?.map((provider) => provider.id)).toEqual(
+      h.resources.toolProviders.map((provider) => provider.id),
+    );
+  });
+});

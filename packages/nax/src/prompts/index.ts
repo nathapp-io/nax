@@ -45,6 +45,8 @@ export {
 export type { DecomposePromptInput } from "./builders/decompose-builder";
 // Decompose prompt builder — prompt assembly for nax plan / decompose operations.
 export { buildDecomposePromptSync } from "./builders/decompose-builder";
+// US-003 (nax-flow-send) — the fixed guidance the `nax-flow` provider carries.
+export { buildFlowInstructions } from "./builders/flow-builder";
 export { buildForgeReadInstructions } from "./builders/forge-read-builder";
 // Memory prompt builder — the protocol a session follows for the nax-memory tools,
 // the ## Memory index section the chat, ACP and subagent builders carry last, and the

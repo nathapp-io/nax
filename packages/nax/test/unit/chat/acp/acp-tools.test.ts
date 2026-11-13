@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { CodingTool, ProviderTool, ToolProvider, ToolRunContext } from "@nathapp/nax-agent";
 import { toEmbedderTools } from "@/agents/acp";
 import { ACP_CHAT_PROVIDER_IDS, chatAcpTools } from "@/chat/acp/acp-tools";
+import { createFlowProvider } from "@/chat/flow";
 import { createMemoryToolProvider, type MemoryHost } from "@/memory";
 import { buildChatAcpInstructions } from "@/prompts";
 import { buildChatAcpInstructions as builderExport } from "@/prompts/builders/chat-builder";
@@ -55,8 +56,8 @@ function unreadMemoryHost(): MemoryHost {
 }
 
 describe("ACP_CHAT_PROVIDER_IDS", () => {
-  test("names the workflow, jobs and memory providers", () => {
-    expect([...ACP_CHAT_PROVIDER_IDS]).toEqual(["nax-workflow", "nax-jobs", "nax-memory"]);
+  test("AC-6 names the workflow, jobs, flow and memory providers", () => {
+    expect([...ACP_CHAT_PROVIDER_IDS]).toEqual(["nax-workflow", "nax-jobs", "nax-flow", "nax-memory"]);
   });
 });
 
@@ -156,6 +157,16 @@ describe("chatAcpTools", () => {
   test("memory-chat US-010 AC-4: delivers the memory instructions naming nax-memory__search", async () => {
     const { instructions } = await chatAcpTools([createMemoryToolProvider(unreadMemoryHost())], "/repo");
     expect(instructions).toContain("nax-memory__search");
+  });
+
+  test("AC-7: delivers the nax-flow provider's tool as nax-flow__send", async () => {
+    const flow = createFlowProvider({
+      repoRoot: "/repo",
+      connection: { url: "https://koda.example/api", headers: { Authorization: "Bearer k" } },
+      approve: async () => "deny",
+    });
+    const { tools } = await chatAcpTools([flow], "/repo");
+    expect(tools.map((t) => t.name)).toEqual(["nax-flow__send"]);
   });
 });
 

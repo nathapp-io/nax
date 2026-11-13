@@ -1,0 +1,346 @@
+{
+  "project": "nax-monorepo",
+  "feature": "nax-flow-send",
+  "branchName": "feat/nax-flow-send",
+  "createdAt": "2026-11-04T00:00:00.000Z",
+  "updatedAt": "2026-11-13T04:37:35.789Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "The koda connection and the flow input",
+      "description": "**Goal** — Add the flow module's connection selector and strict input parser without changing existing production files.\n\n**Motivation** — The user wants one brainstorm to turn into ready PRs with as little of their attention as possible.\n\n**Approach** — Credential and connection (my call, departs from the source design):\n\nThe source design proposed a new `nax auth login koda` credential kind. This spec instead reuses the koda\nconnection nax already has: `memory.koda.url` (koda's API root including its `/api` prefix) and\n`memory.koda.headers` (the literal `Authorization: Bearer <agent key>` header). Reasons, from the code:\n\n- Both keys are already global-only (`KODA_GLOBAL_ONLY_KEYS` in `packages/nax/src/config/global-only-keys.ts`),\n  so a repository's `.nax/config.json` cannot point the key at another server.\n- Header values are carried literally, with no `${VAR}` expansion (`LITERAL_SUBTREE_PATHS` in\n  `packages/nax/src/config/dotenv.ts`), and `koda-http.ts` redacts them from every error.\n- The `nax auth` store is built for LLM providers: `StoredCredential` is a closed union of `api-key` and\n  `oauth`, `nax auth login` resolves the provider against pi's catalog, and unknown kinds are coerced to\n  `api-key`. A non-LLM kind would touch three packages for a key nax already stores once.\n- One koda, one agent key: a second home for the same key could drift from the first.\n\nThe connection is present when `memory.koda.url` is set and `memory.koda.headers` has an `authorization`\nheader (matched case-insensitively) with a non-empty value. `memory.enabled`, `memory.provider` and\n`memory.koda.project` play no part: koda resolves the repository from the remote URL.\n\nThe request:\n\nTool input (JSON schema, `additionalProperties: false`):\n\n```json\n{\n  \"features\": [\n    { \"feature\": \"nax-flow-send\", \"specPath\": \".nax/features/nax-flow-send/spec.md\" },\n    { \"feature\": \"nax-flow-docs\", \"specPath\": \".nax/features/nax-flow-docs/spec.md\", \"dependsOn\": [\"nax-flow-send\"] }\n  ],\n  \"roles\": { \"reviewer\": \"acp:codex\", \"supervisor\": \"acp:claude\" },\n  \"costCapUsd\": 5\n}\n```\n\nnax checks the input before the card, mirroring the koda checks that are cheap to repeat, so a bad request\nfails before anything is pushed (koda stays the authority and re-checks everything):\n\n- `features` has 1 to 20 entries; each `feature` matches `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`; names are unique.\n- each `specPath` is 1 to 300 characters, ends in `.md`, does not start with `/`, contains no NUL character\n  and has no `..` segment.\n- each `dependsOn` entry names a feature that appears earlier in the list, never itself, and appears once.\n- `roles.reviewer` and `roles.supervisor` each match `^[A-Za-z0-9._:/\\[\\]=,-]{1,200}$`. They are model\n  strings koda passes to its review steps (for example `acp:codex`), not nax alias names; nax does not\n  resolve `agent.modelAliases` (my call: koda's runner resolves models on its own machine).\n- `costCapUsd` is a JSON number (a numeric string is rejected, my call) greater than 0 and at most 1000 whose\n  `String()` form matches `^\\d+(\\.\\d{1,4})?$`, as koda tests it.\n- the input has no keys beyond `features`, `roles` and `costCapUsd`, and `features` is an array.\n\nnax checks and sends each `specPath` exactly as given; koda normalises it on its side.\n\n**Scope** — In: Create `packages/nax/src/chat/flow/` with a barrel, `flow-input.ts` and input types, and `flow-connection.ts`; add unit tests for the selectors and parser. Out: Repository/git checks and HTTP creation belong to US-002; the tool, JSON schema exposure, card and prompt belong to US-003; provider availability in chat belongs to US-004. A new `koda` credential kind in the `nax auth` store, and `nax auth login koda`, are not part of this feature; the connection is `memory.koda.url` plus `memory.koda.headers`. Resolving `agent.modelAliases` for the role models is not part of this feature; `roles` are sent as given. US-001 only: a `costCapUsd` written in exponent notation (for example `1e-7`) fails the `String()` rule like any other bad value and needs no separate check. No existing source files need modification.\n\n**Interface** — Add `kodaFlowConnection(config)` (the connection in \"Credential and connection\", or `undefined`) and `parseFlowSendInput(raw)` (the checks in \"The request\", returning the parsed input with every `dependsOn` defaulted to `[]`, or `{ errors: string[] }`). Export both functions and the shared types through `packages/nax/src/chat/flow/index.ts`.",
+      "acceptanceCriteria": [
+        "[unit] kodaFlowConnection returns the url and headers when memory.koda.url is https://koda.example/api and memory.koda.headers holds Authorization: Bearer k.",
+        "[unit] kodaFlowConnection returns undefined when memory.koda.url is unset.",
+        "[unit] kodaFlowConnection returns undefined when memory.koda.headers has no authorization header in any letter case.",
+        "[unit] kodaFlowConnection returns undefined when the authorization header value is empty or whitespace.",
+        "[unit] kodaFlowConnection returns the connection when the header name is spelled AUTHORIZATION.",
+        "[unit] parseFlowSendInput returns the parsed input, with each missing dependsOn set to an empty array, for two valid features, two role strings and costCapUsd 5.",
+        "[unit] parseFlowSendInput returns errors naming features when the list is empty.",
+        "[unit] parseFlowSendInput returns errors naming features when it is not an array.",
+        "[unit] parseFlowSendInput returns errors naming the extra key when the input has a key other than features, roles and costCapUsd.",
+        "[unit] parseFlowSendInput returns errors naming roles.supervisor when roles has no supervisor.",
+        "[unit] parseFlowSendInput returns errors naming features when the list has 21 entries.",
+        "[unit] parseFlowSendInput returns errors naming the feature when a feature starts with -.",
+        "[unit] parseFlowSendInput returns errors naming the duplicate when two features share a name.",
+        "[unit] parseFlowSendInput returns errors naming the specPath when it contains a .. segment.",
+        "[unit] parseFlowSendInput returns errors naming the specPath when it does not end in .md.",
+        "[unit] parseFlowSendInput returns errors naming the specPath when it starts with /.",
+        "[unit] parseFlowSendInput returns errors naming the specPath when it contains a NUL character.",
+        "[unit] parseFlowSendInput returns errors naming the dependency when dependsOn names a feature listed later.",
+        "[unit] parseFlowSendInput returns errors naming dependsOn when it lists the same feature twice.",
+        "[unit] parseFlowSendInput returns errors naming the role when roles.reviewer contains a space.",
+        "[unit] parseFlowSendInput returns errors naming costCapUsd when it is 0.",
+        "[unit] parseFlowSendInput returns errors naming costCapUsd when it is 1000.01.",
+        "[unit] parseFlowSendInput returns errors naming costCapUsd when it is 1.23456.",
+        "[unit] parseFlowSendInput returns errors naming costCapUsd when it is the string \"5\"."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "koda",
+        "validation",
+        "credentials"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Additive connection selector and pure validation across three small source files; selecting and preserving bearer credentials triggers the security override and strict three-session test isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-memory.ts",
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax/src/config/global-only-keys.ts",
+        "packages/nax/src/config/dotenv.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/flow/index.ts",
+        "packages/nax/src/chat/flow/flow-input.ts",
+        "packages/nax/src/chat/flow/flow-connection.ts",
+        "packages/nax/test/unit/chat/flow/flow-input.test.ts",
+        "packages/nax/test/unit/chat/flow/flow-connection.test.ts"
+      ],
+      "suggestedCriteria": [
+        "kodaFlowConnection returns the same url and literal header values when memory.enabled is false, memory.provider is local and memory.koda.project is absent.",
+        "parseFlowSendInput returns errors naming features[0].dependsOn when the first feature depends on itself.",
+        "parseFlowSendInput returns errors naming the dependency when dependsOn names a feature absent from the list.",
+        "parseFlowSendInput returns errors naming specPath when it is empty or longer than 300 characters.",
+        "parseFlowSendInput returns the original specPath when it contains a harmless ./ segment.",
+        "parseFlowSendInput returns errors rather than throwing when raw is null, an array or a primitive.",
+        "parseFlowSendInput accepts costCapUsd 1000 and 1.2345."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "02b677df7dec0b6bbec51e551c55c959455c2adb"
+    },
+    {
+      "id": "US-002",
+      "title": "Repository state and the koda call",
+      "description": "**Goal** — Add deterministic repository preflight, GitHub remote normalization, koda branch checks and the authenticated flow-create client.\n\n**Motivation** — The user wants one brainstorm to turn into ready PRs with as little of their attention as possible.\n\n**Approach** — The repository:\n\nAll read from the chat's repository root before the card by `readFlowRepoState(repoRoot, specPaths)`,\nwhich returns `{ ok: true, branch, sha, remoteUrl }` or `{ ok: false, message }`. The checks run in the order\nbelow and the first failure is returned:\n\n- the branch, from `git symbolic-ref --short HEAD`; a detached HEAD fails.\n- the branch must pass `isPublishableBranch` (`packages/nax/src/utils/git.ts`); `main`, `master` and the\n  empty name fail.\n- the working tree must be clean (`isDirty` from `@/finish` returns false): nothing new is committed by\n  this tool. Untracked files count, so a spec directory must be committed or ignored. When `isDirty` throws,\n  the result is `{ ok: false, message: \"[chat] could not read the repository state: <error message>\" }`.\n- the head sha, from `headSha` (`@/finish`); `null` (an unborn branch) fails with\n  `[chat] the branch has no commits`.\n- the remote URL, from `git remote get-url origin`, normalised to `https://github.com/<owner>/<repo>`\n  (lower-cased, no `.git` suffix, no trailing slash). Accepted forms: `https://github.com/o/r(.git)`,\n  `git@github.com:o/r(.git)` and `ssh://git@github.com/o/r(.git)`. Any other host fails, because koda's\n  `parseGitHubUrl` accepts GitHub HTTPS URLs only.\n- every `specPath` must exist at `HEAD` (`git cat-file -e HEAD:<specPath>`); koda reads each spec at the\n  sent sha and rejects a missing one only after the push.\n\nA second pure check, `checkFlowBranch(branch, features)`, mirrors koda's branch rules and returns an error\nmessage or `undefined`: the branch must match `^(?![-./])(?!.*\\.\\.)(?!.*//)(?!.*\\.lock$)(?!.*/$)[A-Za-z0-9._/@+-]{1,255}$`,\nand no feature at index 1 or later may be named so that `feat/<feature>` equals the branch.\n\n`readFlowRepoState` reaches git only through `_flowRepoDeps = { git, isDirty, headSha }` (in\n`flow-repo.ts`), whose defaults are `gitWithTimeout` (`@/utils/git`) and `isDirty`/`headSha` (`@/finish`);\ntests replace these members. No raw spawn, so the `check-git-spawn-env` gate holds.\n\nThe body nax sends to `POST <memory.koda.url>/fleet/flows` (the client path argument is `fleet/flows`, with no leading slash, because `createKodaClient` joins the root and the path with `/`):\n\n```json\n{\n  \"remoteUrl\": \"https://github.com/nathapp-io/nax\",\n  \"branch\": \"feat/nax-flow-send\",\n  \"specSha\": \"<40-hex head sha>\",\n  \"features\": [\n    { \"feature\": \"nax-flow-send\", \"specPath\": \".nax/features/nax-flow-send/spec.md\", \"dependsOn\": [] },\n    { \"feature\": \"nax-flow-docs\", \"specPath\": \".nax/features/nax-flow-docs/spec.md\", \"dependsOn\": [\"nax-flow-send\"] }\n  ],\n  \"roles\": { \"reviewer\": \"acp:codex\", \"supervisor\": \"acp:claude\" },\n  \"costCapUsd\": 5\n}\n```\n\nPOST the body above through `createKodaClient` (`@/memory`) built from the connection, with the new\nconstant `FLOW_KODA_REQUEST_TIMEOUT_MS = 30_000` (my call: koda's create calls GitHub for the branch\nhead and every spec file, so the memory client's 4 s deadline is too short).\n\n201: koda created the flow. Return `{ kind: \"created\", id, state, url }`, requiring string `data.id`, `data.state` and `data.url`. 202: koda's approval policy is holding the create itself (`data` is koda's approval request summary). Return `{ kind: \"held\", requestId }` from string `data.id`. Any other 2xx status, or a 201 whose `data` lacks a string `id`, `state` or `url`, or a 202 whose `data` lacks a string `id`: `createKodaFlow` throws `NaxError` code `FLOW_KODA_UNEXPECTED_RESPONSE`. Rethrow the client's `NaxError` unchanged.\n\nRead-only integration contracts:\n- `createKodaClient(input: CreateKodaClientInput): KodaClient` and `kodaStatusOf(error): number | undefined` — `packages/nax/src/memory/koda-http.ts`; `KodaResponse` is `{ status, data }`, where `data` is the envelope's `data`. A non-2xx status throws `NaxError` code `MEMORY_KODA_HTTP` whose message carries koda's `message`; transport failures throw `MEMORY_KODA_UNREACHABLE` or `MEMORY_KODA_TIMEOUT`.\n- `isDirty(repoRoot)`, `headSha(repoRoot)`, `commitAndPush(repoRoot, branch, message, { skipCommit })` — `packages/nax/src/finish/commit.ts`, exported from `@/finish`.\n- `isPublishableBranch(branch)` and `gitWithTimeout` — `packages/nax/src/utils/git.ts`.\n\n**Scope** — In: Add `flow-repo.ts` and `flow-koda.ts`, export their public helpers, types, seam and timeout through the upstream flow barrel, and add corresponding unit tests. Out: Input parsing/credential selection is supplied by US-001; card, post-approval recheck, push, result formatting and user-facing HTTP error mapping belong to US-003; parent-chat composition belongs to US-004. Committing the spec files is not part of this tool; it requires a clean tree and never runs `git commit`. Supporting non-GitHub remotes (GitLab, self-hosted) is not part of this feature; koda accepts GitHub only. A config key for the koda request timeout is not part of this feature; it is the named constant `FLOW_KODA_REQUEST_TIMEOUT_MS`. Granting the koda agent `fleet.flow.create` is a koda-side setup step, not part of this feature; a 403 is reported as a koda error. Existing memory, finish, git and forge implementations remain read only.\n\n**Interface** — Add `normalizeGitHubRemote(url)` (the HTTPS form or `null`), `readFlowRepoState(repoRoot, specPaths)` (the `{ ok }` union in \"The repository\"), `checkFlowBranch(branch, features)` and `createKodaFlow(connection, body)` (the POST through `createKodaClient` with `FLOW_KODA_REQUEST_TIMEOUT_MS`, returning the 201 or 202 outcome, throwing `FLOW_KODA_UNEXPECTED_RESPONSE` for any other answer, and rethrowing the client's `NaxError` unchanged). Git calls go through `_flowRepoDeps`. Export all of them from the flow barrel.",
+      "acceptanceCriteria": [
+        "[unit] normalizeGitHubRemote returns https://github.com/o/r for git@github.com:O/R.git.",
+        "[unit] normalizeGitHubRemote returns https://github.com/o/r for ssh://git@github.com/o/r.git.",
+        "[unit] normalizeGitHubRemote returns https://github.com/o/r for https://github.com/o/r/.",
+        "[unit] normalizeGitHubRemote returns null for https://gitlab.com/o/r.git.",
+        "[unit] With _flowRepoDeps.git answering branch feat/x, origin git@github.com:o/r.git and every cat-file successfully, _flowRepoDeps.isDirty false and _flowRepoDeps.headSha a 40-hex sha, readFlowRepoState returns { ok: true, branch: \"feat/x\", sha, remoteUrl: \"https://github.com/o/r\" }.",
+        "[unit] readFlowRepoState returns { ok: false, message: \"[chat] nax-flow__send needs a checked-out branch\" } when _flowRepoDeps.git fails symbolic-ref.",
+        "[unit] readFlowRepoState returns ok: false with a message naming main when the branch is main.",
+        "[unit] readFlowRepoState returns { ok: false, message: \"[chat] commit or stash your changes before sending a flow\" } when _flowRepoDeps.isDirty returns true.",
+        "[unit] readFlowRepoState returns ok: false with a message starting [chat] could not read the repository state:  when _flowRepoDeps.isDirty throws.",
+        "[unit] readFlowRepoState returns { ok: false, message: \"[chat] the branch has no commits\" } when _flowRepoDeps.headSha returns null.",
+        "[unit] readFlowRepoState returns { ok: false, message: \"[chat] the repository has no origin remote\" } when _flowRepoDeps.git fails remote get-url origin.",
+        "[unit] readFlowRepoState returns ok: false with a message naming https://gitlab.com/o/r.git when that is the origin.",
+        "[unit] readFlowRepoState returns ok: false with a message naming the path when _flowRepoDeps.git fails cat-file -e HEAD:<specPath> for one spec path.",
+        "[unit] readFlowRepoState returns the branch message, not the dirty-tree message, when the branch is main and the tree is dirty.",
+        "[unit] checkFlowBranch(\"feat/x\", features) returns undefined for features x then y.",
+        "[unit] checkFlowBranch returns a message naming the branch for feat//x.",
+        "[unit] checkFlowBranch(\"feat/y\", features) returns a message naming feature y when y is at index 1.",
+        "[unit] createKodaFlow with connection url https://koda.example/api posts the body to https://koda.example/api/fleet/flows through createKodaClient with timeout FLOW_KODA_REQUEST_TIMEOUT_MS, which equals 30000, and returns { kind: \"created\", id, state, url } for a 201 envelope.",
+        "[unit] createKodaFlow returns { kind: \"held\", requestId } for a 202 envelope whose data.id is the request id.",
+        "[unit] createKodaFlow rethrows the client's NaxError with code MEMORY_KODA_HTTP unchanged when koda answers 404.",
+        "[unit] createKodaFlow throws NaxError code FLOW_KODA_UNEXPECTED_RESPONSE for a 200 answer.",
+        "[unit] createKodaFlow throws NaxError code FLOW_KODA_UNEXPECTED_RESPONSE for a 201 answer whose data has no url.",
+        "[unit] readFlowRepoState returns ok: false with a [chat] message naming the branch when the checked-out branch is master or the empty name."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "koda",
+        "git",
+        "api",
+        "security"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Two additive helper modules and a barrel extension reuse established git and koda clients with explicit sequential checks and response unions; authenticated bearer transport still mandates the security override's strict three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax/src/finish/commit.ts",
+        "packages/nax/src/utils/git.ts",
+        "packages/nax/src/forge/detect.ts",
+        "packages/nax/src/chat/flow/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/flow/flow-repo.ts",
+        "packages/nax/src/chat/flow/flow-koda.ts",
+        "packages/nax/test/unit/chat/flow/flow-repo.test.ts",
+        "packages/nax/test/unit/chat/flow/flow-koda.test.ts"
+      ],
+      "suggestedCriteria": [
+        "normalizeGitHubRemote returns null for https://github.com.evil.example/o/r.git.",
+        "normalizeGitHubRemote returns https://github.com/o/r for https://github.com/O/R.git/.",
+        "checkFlowBranch returns a message naming the branch when it begins with -, . or /, contains .., ends with .lock or /, or exceeds 255 characters.",
+        "createKodaFlow throws FLOW_KODA_UNEXPECTED_RESPONSE when a 202 response lacks a string data.id.",
+        "createKodaFlow throws FLOW_KODA_UNEXPECTED_RESPONSE when a 201 response lacks a string data.id or data.state.",
+        "createKodaFlow rethrows the identical MEMORY_KODA_TIMEOUT or MEMORY_KODA_UNREACHABLE NaxError received from the client."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "24e01cb72703553ccbb9ffc93d7e0c5ed1baaf4d"
+    },
+    {
+      "id": "US-003",
+      "title": "The nax-flow__send tool and its card",
+      "description": "**Goal** — Expose the static flow-send provider with mandatory host approval, a commit-bound push/create sequence and exact tool-result reporting.\n\n**Motivation** — The user wants one brainstorm to turn into ready PRs with as little of their attention as possible.\n\n**Approach** — A new static provider, id `nax-flow`, `stages: [\"*\"]`, one tool with local name `send` (qualified name `nax-flow__send`). Its run checks the input, the branch rules and the repository through US-001 and US-002 before the card. The input JSON schema has `additionalProperties: false`, requires `features`, `roles` and numeric `costCapUsd`, and describes the US-001 constraints; runtime parsing remains authoritative. Features have `feature`, `specPath` and optional `dependsOn`; roles have required reviewer and supervisor strings. Preserve the ordered features, defaulted dependsOn arrays, literal specPaths and unresolved role model strings.\n\nThe card:\n\nOne `HostApprovalCard` through `ChatAskController.requestHostApproval`, shown in **every** chat mode\nincluding full (my call: `createHostJobs` skips its cards in full mode, so this tool must not reuse that\n`approve` wrapper; pushing and creating a record in another system is outward-facing):\n\n- `tool`: `nax-flow__send`\n- `signal`: the tool run's `ctx.signal`, so a cancelled turn closes the card as a deny\n- `summary`: `send a flow of <N> feature(s) to koda`\n- `command`: `git push --set-upstream origin <branch>`\n- `reason`, one string whose lines are joined with `\\n`, in this order:\n  1. `repo <remoteUrl> on branch <branch> at <sha first 8>`\n  2. one line per feature: `<i>. <feature> (<specPath>)` followed by ` — after: <a>, <b>` when it has dependencies\n  3. `reviewer <reviewer>, supervisor <supervisor>`\n  4. `cost cap $<costCapUsd with 2 decimals>`\n  5. `koda will ask you to approve this flow before anything billed starts`\n\nA deny returns `[chat] the user declined sending the flow to koda; do not retry with different arguments\nunless the user asks`, matching the jobs tools' wording.\n\nAfter allow:\n\n1. If `ctx.signal` is aborted, stop with nothing pushed. Then re-read the head sha and the working-tree state. If the sha differs from the carded one or the tree is\n   dirty, fail with nothing pushed: the card described a different commit.\n2. Push with `commitAndPush(repoRoot, branch, FLOW_PUSH_COMMIT_MESSAGE, { skipCommit: true })` (`@/finish`),\n   which runs `git push --set-upstream origin <branch>`. `FLOW_PUSH_COMMIT_MESSAGE` (value `\"chore: send flow to koda\"`,\n   exported from `flow-provider.ts` and the flow barrel) satisfies the required parameter; with `skipCommit` no\n   commit is made.\n3. POST the body above through `createKodaClient` (`@/memory`) built from the connection, with the new\n   constant `FLOW_KODA_REQUEST_TIMEOUT_MS = 30_000` (my call: koda's create calls GitHub for the branch\n   head and every spec file, so the memory client's 4 s deadline is too short).\n4. Report the outcome (see Failure Handling for the error rows):\n   - 201: koda created the flow. The result's first line is the JSON\n     `{\"flow\":\"<data.id>\",\"state\":\"<data.state>\",\"url\":\"<link>\"}`, where `<link>` is the origin of\n     `memory.koda.url` joined with koda's relative `data.url` (`/<project>/flows/<id>`); the second line is\n     `koda will ask you to approve this flow before anything billed starts.`\n   - 202: koda's approval policy is holding the create itself (`data` is koda's approval request summary).\n     The result is\n     `koda is holding the flow create for approval (request <data.id>); no flow exists until it is approved, and pushing new commits to the branch before then makes koda refuse it.`\n   - any other 2xx status, or a 201 whose `data` lacks a string `id`, `state` or `url`, or a 202 whose `data`\n     lacks a string `id`: `createKodaFlow` throws `NaxError` code `FLOW_KODA_UNEXPECTED_RESPONSE`.\n\nThe link assumes koda's web UI is served from the same origin as its API (true for a koda deployment behind\none proxy); a koda under a path prefix would need the web root configured, which is out of scope.\n\nThe tool's seams live in `_flowProviderDeps = { readFlowRepoState, headSha, isDirty, commitAndPush,\ncreateKodaFlow }` (in `flow-provider.ts`). `createFlowProvider(options: FlowProviderOptions)` takes\n`{ repoRoot, connection, approve: (card: HostApprovalCard) => Promise<\"allow\" | \"deny\"> }`.\n\nA spec review done in the chat is not sent as a claim: koda runs its own spec review.\n\nRequest body passed to `createKodaFlow(connection, body)`:\n```json\n{\n  \"remoteUrl\": \"https://github.com/nathapp-io/nax\",\n  \"branch\": \"feat/nax-flow-send\",\n  \"specSha\": \"<40-hex head sha>\",\n  \"features\": [\n    { \"feature\": \"nax-flow-send\", \"specPath\": \".nax/features/nax-flow-send/spec.md\", \"dependsOn\": [] },\n    { \"feature\": \"nax-flow-docs\", \"specPath\": \".nax/features/nax-flow-docs/spec.md\", \"dependsOn\": [\"nax-flow-send\"] }\n  ],\n  \"roles\": { \"reviewer\": \"acp:codex\", \"supervisor\": \"acp:claude\" },\n  \"costCapUsd\": 5\n}\n```\n\nInstructions:\n\nThe provider's instructions come from a new builder, `buildFlowInstructions()` in\n`packages/nax/src/prompts/builders/flow-builder.ts`, exported through `@/prompts` (the prompt-builder rule).\nThey tell the brain: use the tool only when the user asks to hand specs to koda; the branch must be clean\nand committed first, untracked files included; list features in dependency order; the user approves a card and then approves again in\nkoda.\n\nFailure Handling:\n\nEvery failure is a tool result with `isError: true` and content starting `[chat] `; no failure throws out\nof the tool.\n\nThe `send` run resolves to `ToolResult`, never a bare string: all text and JSON-line outcomes described here are its `content`; error results additionally have `isError: true`. Call `createKodaFlow(connection, body)` with the configured connection as the first argument and the assembled payload as the second argument.\n\n| Condition | Behaviour |\n|:--|:--|\n| no koda connection (`memory.koda.url` unset or no non-empty `authorization` header) | the `nax-flow` provider is not offered |\n| input fails a check in \"The request\" | error naming the field and the rule; no card, nothing pushed |\n| detached HEAD | error `[chat] nax-flow__send needs a checked-out branch`; no card |\n| branch is `main`, `master` or empty | error naming the branch; no card |\n| working tree is dirty | error `[chat] commit or stash your changes before sending a flow`; no card |\n| `git status` fails (`isDirty` throws) | error `[chat] could not read the repository state: <message>`; no card |\n| unborn branch (`headSha` returns `null`) | error `[chat] the branch has no commits`; no card |\n| branch fails koda's ref rule, or equals `feat/<feature>` for a feature at index 1 or later | error from `checkFlowBranch` naming the branch; no card |\n| origin is missing (`git remote get-url origin` fails) | error `[chat] the repository has no origin remote`; no card |\n| origin is not a GitHub remote | error naming the remote URL; no card |\n| a `specPath` is absent at HEAD | error naming the path; no card |\n| the user denies the card | the declined result in \"The card\"; nothing pushed |\n| head sha changed or tree became dirty while the card was open | error `[chat] the branch changed while the card was open; nothing was pushed` |\n| the turn is cancelled after allow (`ctx.signal` aborted) | error `[chat] the turn was cancelled; nothing was pushed` |\n| `git push` fails | error with the push failure; koda is not called |\n| koda answers non-2xx | error `[chat] koda did not create the flow (HTTP <status>): <koda message>; branch <branch> stays pushed`, where `<koda message>` is the client error's text after `answered <status>: ` |\n| koda answers an unexpected 2xx or a body missing fields (`FLOW_KODA_UNEXPECTED_RESPONSE`, or the client's `MEMORY_KODA_BAD_RESPONSE`) | error `[chat] koda answered unexpectedly: <message>; branch <branch> stays pushed` |\n| any other error thrown inside the tool (a git rejection, a rejecting `approve`, an unclassified koda error) | error `[chat] flow send failed: <message>` |\n| koda unreachable or timed out | error `[chat] koda could not be reached: <message>; branch <branch> stays pushed and no flow was created` |\n\n**Scope** — In: Implement `flow-provider.ts`, its exported `FlowProviderOptions`, `_flowProviderDeps` and `FLOW_PUSH_COMMIT_MESSAGE`; extend the flow barrel; add the flow prompt builder and its @/prompts barrel export; add tool and builder unit tests. Out: US-001 owns parsing and connection selection; US-002 owns repository reading, branch validation and actual HTTP response classification; US-004 owns installing the provider into parent chat and ACP delivery. The missing-connection row is enforced by US-004 composition, not by inventing a new optional connection argument here. Committing the spec files is not part of this tool; it requires a clean tree and never runs `git commit`. Resolving `agent.modelAliases` for the role models is not part of this feature; `roles` are sent as given. Polling or watching the flow after creation is not part of this feature; the result carries the flow's link and the flow lives in koda. Configuring a koda web root separate from the API origin is not part of this feature; the flow link uses the origin of `memory.koda.url`.\n\n**Interface** — `createFlowProvider(options: FlowProviderOptions)` takes `{ repoRoot, connection, approve: (card: HostApprovalCard) => Promise<\"allow\" | \"deny\"> }`. `HostApprovalCard { tool, summary, command?, reason, signal? }` and `ChatAskController.requestHostApproval(card): Promise<\"allow\" | \"deny\">` are from `packages/nax/src/chat/ask-controller.ts`. Use `ProviderTool` / `ToolProvider` / `ToolResult` from `@nathapp/nax-agent`. The provider's instructions are `buildFlowInstructions()` imported through `@/prompts`.",
+      "acceptanceCriteria": [
+        "[unit] createFlowProvider returns a provider with id nax-flow whose tools() yields exactly one tool, local name send.",
+        "[unit] The provider's instructions() returns the output of buildFlowInstructions().",
+        "[unit] buildFlowInstructions() returns text that names nax-flow__send and states that koda asks for its own approval before anything billed starts.",
+        "[unit] Running send with an input that fails parseFlowSendInput returns an isError result listing the errors and never calls approve.",
+        "[unit] Running send when _flowProviderDeps.readFlowRepoState returns { ok: false, message } returns an isError result with that message and never calls approve.",
+        "[unit] Running send on branch feat/y with feature y at index 1 returns the checkFlowBranch message as an isError result and never calls approve.",
+        "[unit] Running send with a valid input calls approve once with a card whose tool is nax-flow__send, summary is send a flow of 2 feature(s) to koda and command is git push --set-upstream origin feat/x.",
+        "[unit] For features a then b (b after a) at .nax/features/<name>/spec.md, reviewer acp:codex, supervisor acp:claude, cost cap 5 and sha beginning 0123456789abcdef, the card's reason equals \"repo https://github.com/o/r on branch feat/x at 01234567\\n1. a (.nax/features/a/spec.md)\\n2. b (.nax/features/b/spec.md) — after: a\\nreviewer acp:codex, supervisor acp:claude\\ncost cap $5.00\\nkoda will ask you to approve this flow before anything billed starts\", with the six lines joined by newline characters.",
+        "[unit] The card passed to approve carries the tool run's ctx.signal.",
+        "[unit] When ctx.signal is aborted after approve returns allow, send resolves to a ToolResult with isError: true and content exactly \"[chat] the turn was cancelled; nothing was pushed\", without calling commitAndPush.",
+        "[unit] When approve rejects, send resolves to an isError ToolResult whose content starts with \"[chat] flow send failed: \", without pushing.",
+        "[unit] When approve returns deny, send resolves to a ToolResult with isError: true and content exactly \"[chat] the user declined sending the flow to koda; do not retry with different arguments unless the user asks\", calling neither push nor koda.",
+        "[unit] When _flowProviderDeps.headSha read after allow returns a sha different from the carded one, send resolves to a ToolResult with isError: true and content exactly \"[chat] the branch changed while the card was open; nothing was pushed\", without pushing.",
+        "[unit] When _flowProviderDeps.isDirty returns true after allow, send resolves to the same branch-changed isError ToolResult with content exactly \"[chat] the branch changed while the card was open; nothing was pushed\", without pushing.",
+        "[unit] On allow send calls _flowProviderDeps.commitAndPush with the repo root, the branch, FLOW_PUSH_COMMIT_MESSAGE and { skipCommit: true } before calling _flowProviderDeps.createKodaFlow.",
+        "[unit] When _flowProviderDeps.commitAndPush throws, send returns an isError result carrying the push message and does not call createKodaFlow.",
+        "[unit] send passes _flowProviderDeps.createKodaFlow the connection and a body with remoteUrl, branch, specSha equal to the carded sha, the features with dependsOn arrays, roles and costCapUsd.",
+        "[unit] For a created outcome with id f1, state PENDING, url /sandbox/flows/f1 and connection url https://koda.example/api, the first line of the returned ToolResult.content is exactly `{\"flow\":\"f1\",\"state\":\"PENDING\",\"url\":\"https://koda.example/sandbox/flows/f1\"}`.",
+        "[unit] For a created outcome, the second line of the returned ToolResult.content is exactly \"koda will ask you to approve this flow before anything billed starts.\"",
+        "[unit] For a held outcome with request id r1, the returned ToolResult.content is exactly \"koda is holding the flow create for approval (request r1); no flow exists until it is approved, and pushing new commits to the branch before then makes koda refuse it.\"",
+        "[unit] When createKodaFlow throws MEMORY_KODA_HTTP status 404 with message \"[memory] koda POST /fleet/flows answered 404: repo not found\", send resolves to an isError ToolResult whose content is exactly \"[chat] koda did not create the flow (HTTP 404): repo not found; branch feat/x stays pushed\".",
+        "[unit] When createKodaFlow throws FLOW_KODA_UNEXPECTED_RESPONSE or MEMORY_KODA_BAD_RESPONSE, send returns an isError ToolResult whose content starts with \"[chat] koda answered unexpectedly: \" and ends with \"; branch feat/x stays pushed\".",
+        "[unit] When createKodaFlow throws MEMORY_KODA_TIMEOUT or MEMORY_KODA_UNREACHABLE, send returns an isError ToolResult whose content starts with \"[chat] koda could not be reached: \" and ends with \"branch feat/x stays pushed and no flow was created\".",
+        "[unit] When an unclassified git rejection or koda error occurs inside send, send resolves to an isError result with content [chat] flow send failed: <message> rather than throwing."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "koda",
+        "tools",
+        "approval",
+        "security"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The provider coordinates approval, cancellation, stale-state checks, push ordering and multiple external failure outcomes. Mandatory outward-facing approval is security-critical and requires strict test/implementation isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/src/chat/jobs/chain-tools.ts",
+        "packages/nax/src/chat/ask-controller.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/src/chat/flow/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/flow/flow-provider.ts",
+        "packages/nax/src/prompts/builders/flow-builder.ts",
+        "packages/nax/test/unit/chat/flow/flow-provider.test.ts",
+        "packages/nax/test/unit/prompts/builders/flow-builder.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the turn is cancelled while its approval card is pending, ChatAskController removes the card and send returns the declined result without calling push or koda.",
+        "When a valid approved input contains dependencies and role model strings, send preserves their order and exact spelling in the createKodaFlow request body.",
+        "When createKodaFlow throws MEMORY_KODA_HTTP with status 403, send returns the same HTTP failure format with the redacted koda message and the pushed branch name."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/prompts/index.ts",
+          "reason": "must export `buildFlowInstructions` so the provider imports it through the prompts barrel."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6110243cb6fc44ee8f21762ddb15103ac388906e"
+    },
+    {
+      "id": "US-004",
+      "title": "Offer the tool to the chat brain only",
+      "description": "**Goal** — Compose flow sending only into connected parent chats, deliver it to native and ACP brains, and preserve mandatory approval and subagent isolation.\n\n**Motivation** — The user wants one brainstorm to turn into ready PRs with as little of their attention as possible.\n\n**Approach** — Delivery:\n\n- A new static provider, id `nax-flow`, `stages: [\"*\"]`, one tool with local name `send` (qualified name\n  `nax-flow__send`).\n- Composed only for the parent chat, in `createHostJobs`, and only when the connection is present. Its\n  `approve` is `(card) => options.asks.requestHostApproval(card)`: a bound call (the method reads `this`) and\n  not the jobs wrapper that auto-allows in full mode. `createHostJobs` gains a `providers` field, `[nax-jobs\n  provider, nax-flow provider when present]`, and keeps `provider`. Because `createHostJobs` runs only when\n  the chat has both `resources` and a nax entry, the flow tool needs both too. It is never added to\n  `resources.toolProviders`, which is what subagents receive.\n- `ACP_CHAT_PROVIDER_IDS` (`packages/nax/src/chat/acp/acp-tools.ts`) gains `nax-flow`, so the ACP brain\n  receives it. `ACP_SUBAGENT_PROVIDER_IDS` (`acp-subagent-session.ts`) does not.\n- `packages/nax/src/chat/chat-host.ts` is at 599 lines against the 600-line limit. Its parent provider\n  list (line 212) changes from `...(hostJobs ? [hostJobs.provider] : [])` to `...(hostJobs?.providers ?? [])`,\n  a same-length edit, so the file stays at 599 lines.\n\nChanged:\n\n- `ACP_CHAT_PROVIDER_IDS`. Baseline (to locate the code only): `[\"nax-workflow\", \"nax-jobs\", \"nax-memory\"]`.\n  Target: `[\"nax-workflow\", \"nax-jobs\", \"nax-flow\", \"nax-memory\"]`.\n- `createHostJobs` (`packages/nax/src/chat/jobs/jobs-host.ts`). Target: its result adds\n  `providers: readonly ToolProvider[]` (the jobs provider, then the flow provider when the connection is\n  present) beside the unchanged `provider`; the chat host spreads `providers` where it spread `[provider]`.\n\nIn `createHostJobs`, compose `createFlowProvider` when `kodaFlowConnection(config)` returns a connection,\nwith `approve: (card) => options.asks.requestHostApproval(card)` (never the full-mode-skipping wrapper), and\nreturn it in the new `providers` field after the jobs provider. Change the chat host's parent list to spread\n`hostJobs?.providers`. Add `nax-flow` to `ACP_CHAT_PROVIDER_IDS`. Keep it out of `resources.toolProviders`\nand `ACP_SUBAGENT_PROVIDER_IDS`. `chat-host.ts` stays at 599 lines.\n\nConnection contract from US-001: The connection is present when `memory.koda.url` is set and `memory.koda.headers` has an `authorization` header (matched case-insensitively) with a non-empty value. `memory.enabled`, `memory.provider` and `memory.koda.project` play no part: koda resolves the repository from the remote URL. Empty or whitespace authorization is absent.\n\nExisting assertions and harness changes:\n- `packages/nax/test/unit/chat/acp/acp-tools.test.ts` — pins `ACP_CHAT_PROVIDER_IDS` to the three-id list; it must expect `[\"nax-workflow\", \"nax-jobs\", \"nax-flow\", \"nax-memory\"]`.\n- `packages/nax/test/helpers/chat-subagents.ts` — `SubagentHostOptions` gains optional `kodaConnection` (written into the config's `memory.koda` url and headers) and `naxEntry` (passed to `createChatHost`), so a subagent turn can run with the flow provider composed; existing callers pass neither and are unchanged. The new test lives in the host-subagents unit test file.\n\nSeams:\n- `[unit]` give `createChatHost` resources, a nax entry and a config whose `memory.koda.url` is set with an `authorization` header; start a native session; assert the open request's `toolProviders` contain `nax-flow` directly after `nax-jobs`.\n- `[unit]` in `host-subagents.test.ts`, with the `chat-subagents.ts` harness given `kodaConnection` and `naxEntry`, start the host, send a turn that runs a subagent, and assert `nestedBackends[0].toolProviders` ids do not include `nax-flow`.\n- `[unit]` with a koda connection, `_flowProviderDeps.readFlowRepoState` stubbed to `{ ok: true, branch: \"feat/x\", sha, remoteUrl }` and `_flowProviderDeps.headSha`/`isDirty` stubbed to the same sha and a clean tree, start the host in full mode and run its `nax-flow__send` tool with a valid input; assert the chat's `ChatAskController` has one pending host card whose `tool` is `nax-flow__send`.\n\n**Scope** — In: Modify jobs-host.ts, the single chat-host.ts parent-list expression, acp-tools.ts, the existing jobs-host/chat-host-jobs/acp-tools/host-subagents unit tests and the shared chat-subagents harness. Import the upstream flow module through its barrel. Retain `provider`, existing jobs approval semantics, lifecycle/guard behavior and no-connection provider order. Out: US-001 owns connection parsing; US-002 owns repository and endpoint code; US-003 owns provider implementation and prompt text. Offering `nax-flow__send` to native or ACP subagents, or to `nax agents run`, is not part of this feature. Do not modify ACP_SUBAGENT_PROVIDER_IDS or add flow to shared resources.toolProviders. A new `koda` credential kind in the `nax auth` store, and `nax auth login koda`, are not part of this feature; the connection is `memory.koda.url` plus `memory.koda.headers`.\n\n**Interface** — `createHostJobs` adds `providers: readonly ToolProvider[]` beside the unchanged `provider`. `createFlowProvider(options: FlowProviderOptions)` is supplied `{ repoRoot, connection, approve: (card: HostApprovalCard) => Promise<\"allow\" | \"deny\"> }`; pass `approve: (card) => options.asks.requestHostApproval(card)`. `ACP_CHAT_PROVIDER_IDS` becomes `[\"nax-workflow\", \"nax-jobs\", \"nax-flow\", \"nax-memory\"]`; `ACP_SUBAGENT_PROVIDER_IDS` is unchanged.",
+      "acceptanceCriteria": [
+        "[unit] createChatHost with resources, a nax entry and a koda connection passes an open request whose toolProviders contain nax-flow directly after nax-jobs.",
+        "[unit] createChatHost with resources and a nax entry but no memory.koda block passes toolProviders without nax-flow.",
+        "[unit] In host-subagents.test.ts, with the chat-subagents.ts harness given kodaConnection and naxEntry, a subagent turn's nestedBackends[0].toolProviders ids do not include nax-flow.",
+        "[unit] With a koda connection, the repository deps stubbed to a clean feat/x and the session in full mode, running the host's nax-flow__send with a valid input leaves one pending host card with tool nax-flow__send on the chat's ChatAskController.",
+        "[unit] createHostJobs with a koda connection returns providers whose ids are [\"nax-jobs\", \"nax-flow\"], and [\"nax-jobs\"] without one.",
+        "[unit] ACP_CHAT_PROVIDER_IDS equals [\"nax-workflow\", \"nax-jobs\", \"nax-flow\", \"nax-memory\"].",
+        "[unit] chatAcpTools given the nax-flow provider with default options returns a tool named nax-flow__send.",
+        "[unit] createHostJobs does not offer the nax-flow provider when memory.koda.url is unset or memory.koda.headers lacks a non-empty, non-whitespace authorization header matched case-insensitively.",
+        "[unit] createHostJobs returns provider identical to providers[0] with and without a koda connection, preserving the existing single-provider access for callers that still read provider."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "koda",
+        "acp",
+        "subagents",
+        "security"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing composition and ACP allow-list mechanisms need only localized wiring plus an optional harness extension, not a new abstraction; parent/subagent access isolation and mandatory full-mode approval require the security override's three-session isolation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-host.ts",
+        "packages/nax/src/chat/chat-host.ts",
+        "packages/nax/src/chat/acp/acp-tools.ts",
+        "packages/nax/src/chat/acp/acp-subagent-session.ts",
+        "packages/nax/src/chat/flow/index.ts"
+      ],
+      "suggestedCriteria": [
+        "createChatHost does not offer nax-flow when a koda connection exists but resources or naxEntry is absent.",
+        "When a connected chat starts in guarded mode, running nax-flow__send with valid input leaves exactly one pending host approval card.",
+        "When a connected host opens an ACP subagent, the delivered ACP tools do not contain nax-flow__send.",
+        "When a connected host is composed, resources.toolProviders retains its original provider ids and order."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/chat/acp/acp-tools.ts",
+          "reason": "`ACP_CHAT_PROVIDER_IDS` gains `nax-flow` between `nax-jobs` and `nax-memory`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/acp/acp-tools.test.ts",
+          "reason": "pins `ACP_CHAT_PROVIDER_IDS` to the three-id list; it must expect `[\"nax-workflow\", \"nax-jobs\", \"nax-flow\", \"nax-memory\"]`."
+        },
+        {
+          "path": "packages/nax/src/chat/jobs/jobs-host.ts",
+          "reason": "composes the flow provider for the parent chat when the connection is present."
+        },
+        {
+          "path": "packages/nax/src/chat/chat-host.ts",
+          "reason": "line 212 spreads `hostJobs?.providers ?? []` instead of `[hostJobs.provider]`, keeping the file at 599 lines."
+        },
+        {
+          "path": "packages/nax/test/helpers/chat-subagents.ts",
+          "reason": "`SubagentHostOptions` gains optional `kodaConnection` (written into the config's `memory.koda` url and headers) and `naxEntry` (passed to `createChatHost`), so a subagent turn can run with the flow provider composed; existing callers pass neither and are unchanged. The new test lives in the host-subagents unit test file."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5655db927f31e3719772abefa5fd36e75707e449"
+    }
+  ],
+  "analysis": "Repository exploration: codebase-memory MCP is not exposed in this session, so navigation used direct reads and text searches rooted at /Users/williamkhoo/workspace/subrina-coder/projects/nax/repos/nax-flow-send. The checked-in source spec is .nax/features/nax-flow-send/spec.md:1. This is an additive enhancement to the Bun/TypeScript @nathapp/nax package, not a greenfield project and not a cross-package auth change. The chat/flow directory does not exist yet. Implement exactly US-001 -> US-002 -> US-003 -> US-004, all with workdir packages/nax.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:15 identifies the injectable _deps, NaxError, constant and barrel conventions; docs/architecture/ARCHITECTURE.md:145 gives the 600-line source hard limit, 400-line soft limit, function-size guidance and test patterns. Use Bun-native runtime facilities, strict unknown-input validation, discriminated result unions, public module barrels and named constants. Tests use bun:test, existing @test/helpers, restored mutable dependency seams and event-driven waits rather than sleeps or live git/network calls. Source prompt text must live in src/prompts/builders and be consumed through @/prompts (packages/nax/src/prompts/index.ts:1). No nax-ai, nax-agent or nax-agent-acp source changes, new dependency, config migration, version bump or release is needed. All stories touch credential use, authenticated requests, approvals or provider access boundaries; use three-session-tdd under the security override. The bound method closure and separation of outward-facing approval from chat permission modes are intentional security decisions.\n\nUS-001 findings: packages/nax/src/config/schemas-memory.ts:110 defines MemoryKodaConfigSchema with optional url and project and literal header strings; :120 defines memory.enabled/provider and :143 exposes memoryConfigOf for optional memory config. Flow connectivity must read only url plus a case-insensitive, non-whitespace authorization value, independently of enabled, provider or project. The existing memory-provider validation requires project only when memory.provider is koda (schemas-memory.ts:186); do not import that requirement into flow availability. packages/nax/src/config/global-only-keys.ts:10 and :32 already protect koda url/headers against project-layer redirection; packages/nax/src/config/dotenv.ts:118 preserves memory.koda.headers literally. packages/nax/src/memory/koda-http.ts:57 defines CreateKodaClientInput with url, readonly headers and timeoutMs. Reuse these shapes without introducing a second credential store or changing config schema. Add flow-input.ts, flow-connection.ts and a flow barrel; the parser must enforce the exact feature, path, dependency, role and numeric constraints without coercing strings or normalizing paths/models. Include parser/connection tests under test/unit/chat/flow.\n\nUS-002 findings: packages/nax/src/finish/commit.ts:29 implements isDirty using git status --porcelain, including untracked files and throwing FINISH_GIT_STATUS_FAILED on nonzero status; :42 returns headSha or null. packages/nax/src/utils/git.ts:7 re-exports gitWithTimeout and :26 implements isPublishableBranch protecting empty/main/master. flow-repo.ts should use only _flowRepoDeps = { git, isDirty, headSha }, with git argv omitting the git executable. Read branch, publishability, cleanliness, sha, origin and committed specs sequentially; first failure wins. packages/nax/src/forge/detect.ts:53 is the existing origin-read precedent, but its :24 host classification intentionally accepts enterprise forge variants; do not reuse that permissiveness for flow's github.com-only normalizer. Preserve specPath byte-for-byte into git cat-file and the request. checkFlowBranch is a separate pure check after repository success and before the card.\n\nHTTP integration: packages/nax/src/memory/koda-http.ts:96 concatenates the root and path with '/', so post('fleet/flows', body), never post('/fleet/flows', body). :41 exposes the existing 4000ms memory deadline; do not change it. Build the flow client with FLOW_KODA_REQUEST_TIMEOUT_MS = 30_000. :43 defines KodaResponse as transport status plus the envelope's unknown data, :249 unwraps data, :278 preserves NaxError identity, :304 creates the client and :312 exposes kodaStatusOf using context.status. Its timeout covers the full response and its header redaction includes bearer tokens (koda-http.ts:121, :161, :269). packages/nax/src/memory/index.ts:16 already exports the client and status helper through @/memory. Add flow-koda.ts using that public boundary and a NaxError FLOW_KODA_UNEXPECTED_RESPONSE for unexpected 2xx or missing required string fields; do not swallow/re-wrap client errors. packages/nax/src/errors.ts:7 re-exports the existing extensible NaxError. Tests can drive the real client through _kodaClientDeps.fetch, inspecting exact URL/body/headers and timeout behavior without real network calls. Existing memory/koda-http.test.ts:67, :169, :233 and :280 cover request building, response errors, timeouts and redaction and are regression references, not files to rewrite.\n\nUS-003 findings: packages/nax/src/chat/jobs/jobs-provider.ts:142 shows the static ToolProvider shape (id, kind, stages, async instructions/tools) and ProviderTool inputSchema/run conventions. :17 shows the mutable collaborator seam; :99 shows additionalProperties:false. packages/nax/src/chat/jobs/chain-tools.ts:140 joins approval reasons with newlines, and :122 builds ToolResult errors. packages/nax/src/chat/ask-controller.ts:25 defines HostApprovalCard; :113 requestHostApproval creates one pending host card regardless of mode, denies an already-aborted signal and hooks abort cleanup. That method uses this, so callers must preserve binding. Flow needs an explicit try/catch across the entire run so validation, git, approval rejections and HTTP failures never escape as thrown tool errors; every error is isError:true with [chat] prefix. Validate input, read repository, check koda's ref rule, show one card, deny without side effects, then check abort and re-read sha/dirty before pushing. The card approves a specific commit, not billed execution. A later branch race after re-check is not eliminated atomically; send the carded sha and let koda remain authoritative. Do not add retries: push may already have happened and the endpoint has externally visible effects.\n\nPush and outcomes: packages/nax/src/finish/commit.ts:118 takes the required message argument and :124 bypasses committing with skipCommit:true; :128 pushes --set-upstream origin branch with its existing 120000ms push deadline. _flowProviderDeps must expose repository read, sha, dirty, push and create collaborators. Export FLOW_PUSH_COMMIT_MESSAGE = 'chore: send flow to koda' and the provider from the flow barrel. buildFlowInstructions belongs in a new prompts/builders/flow-builder.ts and is exported from prompts/index.ts beside existing builders (workflow-builder.ts:56 is the fixed jobs-instruction precedent). Treat 201 created and 202 held separately; a held request has no flow yet. Build the 201 link from the API origin plus the relative returned UI URL, not the /api root. No chat review claim is sent. Error mapping must distinguish HTTP status (strip the client's 'answered <status>: ' prefix), unexpected response/bad JSON, unreachable/timeout and generic failure. The specified unreachable/timeout text asserts no flow was created, though transport timeout can leave remote outcome uncertain; preserve the specified contract and do not invent polling or retries. Tests belong in flow-provider.test.ts and prompts/builders/flow-builder.test.ts, with every failure-table row represented in matching-story criteria.\n\nUS-004 findings: packages/nax/src/chat/jobs/jobs-host.ts:27 is the parent-only composition boundary, :49 auto-allows jobs cards in full mode and :54 constructs the existing jobs provider. Retain that jobs behavior and provider field unchanged; add providers:readonly ToolProvider[] ordered [jobs, optional flow], using kodaFlowConnection(config) and a separate approve:(card)=>options.asks.requestHostApproval(card). packages/nax/src/chat/chat-host.ts:169 only calls createHostJobs when both resources and naxEntry exist. :194 passes resources.toolProviders directly to createSubagentRuns, while :212 builds the parent provider list. Replace only ...(hostJobs ? [hostJobs.provider] : []) with ...(hostJobs?.providers ?? []) at :212; the verified file has 599 lines and must remain at 599. Never mutate resources.toolProviders. packages/nax/src/chat/acp/acp-tools.ts:18 currently allows workflow/jobs/memory and :46 filters supplied providers through the default chat allow-list; add nax-flow between jobs and memory. packages/nax/src/chat/acp/acp-subagent-session.ts:46 has the separate workflow/memory subagent allow-list and :52 derives the unattended list; neither gains flow. The parent's ACP mapper already forwards tools with approval:'never' (acp-tools.test.ts:77), so the provider's own mandatory host card is the essential approval boundary.\n\nDependents and regression path: createHostJobs is exported at packages/nax/src/chat/jobs/index.ts:14, consumed by chat-host.ts:40, and directly exercised by test/unit/chat/jobs/jobs-host.test.ts:49 and test/unit/chat/chat-host-chain.test.ts:74. Keeping provider plus all lifecycle/guard fields is backward compatible for those callers. Existing jobs-host.test.ts:85 pins full-mode bypass, :97 guarded cards and :109 dynamic mode changes; do not change these expectations when adding flow. test/unit/chat/chat-host-jobs.test.ts:39 provides an open-request capture fixture; :143 pins no-connection provider order, :157 covers resources-only and :174 entry-only hosts. Extend the fixture with connection input and add positive ordering, missing-connection and full-mode mandatory-card cases while preserving current jobs behavior. test/unit/chat/acp/acp-tools.test.ts:61 explicitly pins the old three-id list and must change to the four-id target; add delivery of nax-flow__send without changing unrelated filtered-provider tests. test/unit/chat/host-subagents.test.ts:104 captures nested backend provider ids. test/helpers/chat-subagents.ts:214 defines SubagentHostOptions, :314 constructs config and :468 calls createChatHost; add optional kodaConnection and naxEntry only, defaulting to existing behavior, then exercise a real scripted subagent turn with flow composed and assert nestedBackends[0] excludes it. The harness already records native/ACP backend and provider calls and restores seams in dispose (chat-subagents.ts:304, :438, :512).\n\nDelivery and risk summary: additive helpers first, then git/HTTP integration, then provider/mandatory card and prompt, finally parent-only composition and ACP exposure. New flow module files and their tests are outputs; previously created flow/index.ts is upstream context for later stories, not a newly authored output again. No existing production code changes until US-003's prompts barrel and US-004's three integration files. Primary risks are accidental enabling via memory provider/project settings, credential leakage or re-expansion, permissive remote parsing, altered spec paths, incorrect decimal coercion, approval bypass in full mode, lost method binding, stale-card pushes, misclassifying 202 as a flow, lost HTTP status/cause information, and native/ACP subagent leakage. Preserve every exact user-facing failure message and don't introduce behavior outside the spec. Validation is package scoped (targeted bun test <path> --timeout=30000; pipeline owns typecheck/lint/tests); never use bare bun test or bun run nax, and never run coverage inside NAX_SANDBOXED=1. This PRD itself does not require running application tests. Koda's live endpoint is external and remains the final validator and billed-start approver; granting fleet.flow.create is an operator setup step, not a code migration.\n\nRefine audit: manually enumerated and matched all 76 explicitly stated spec acceptance criteria, in story order (US-001: 24; US-002: 22; US-003: 23; US-004: 7), preserving the unchanged-client-error qualifier, no-side-effect clauses, denial retry restriction, defaulted dependencies, exact message punctuation, pending-create warning and default-options/full-mode qualifiers. The extra failure-table criteria remain in their matching stories; all four stories have negative cases. Tool outcomes are ToolResult objects, so string-output criteria now explicitly assert content, including the created and held terminal periods; createKodaFlow receives connection first and body second. All 10 feature-level exclusions remain verbatim and binding dependencies are unchanged. US-004 context now includes the upstream flow barrel, completing its five spec-recommended source files; the helper remains described as a modification, not a new output. US-002 and US-004 complexity is medium because they reuse existing mechanisms, while security-critical credential, authenticated transport and approval/access-boundary work still requires three-session-tdd. US-004 now explicitly protects the existing provider field identity and jobs-only full-mode approval bypass; flow remains carded in full mode. These regression anchors match packages/nax/src/chat/jobs/jobs-host.ts:27-34 and :49-53, and its existing unit tests at test/unit/chat/jobs/jobs-host.test.ts:83-107. No acceptance criteria were removed or reassigned.",
+  "outOfScope": [
+    "A new `koda` credential kind in the `nax auth` store, and `nax auth login koda`, are not part of this\n  feature; the connection is `memory.koda.url` plus `memory.koda.headers`.",
+    "Resolving `agent.modelAliases` for the role models is not part of this feature; `roles` are sent as given.",
+    "Committing the spec files is not part of this tool; it requires a clean tree and never runs `git commit`.",
+    "Supporting non-GitHub remotes (GitLab, self-hosted) is not part of this feature; koda accepts GitHub only.",
+    "Polling or watching the flow after creation is not part of this feature; the result carries the flow's\n  link and the flow lives in koda.",
+    "A config key for the koda request timeout is not part of this feature; it is the named constant\n  `FLOW_KODA_REQUEST_TIMEOUT_MS`.",
+    "Offering `nax-flow__send` to native or ACP subagents, or to `nax agents run`, is not part of this feature.",
+    "US-001 only: a `costCapUsd` written in exponent notation (for example `1e-7`) fails the `String()` rule like any other bad value and needs no separate check.",
+    "Configuring a koda web root separate from the API origin is not part of this feature; the flow link uses\n  the origin of `memory.koda.url`.",
+    "Granting the koda agent `fleet.flow.create` is a koda-side setup step, not part of this feature; a 403\n  is reported as a koda error."
+  ],
+  "routingProfile": "native-codex-ds"
+}

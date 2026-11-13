@@ -13,6 +13,7 @@ import {
   waitForCondition,
 } from "@test/helpers";
 import { type ChatResources, createChatHost, createChatStorage } from "@/chat";
+import { _flowProviderDeps } from "@/chat/flow";
 import { _jobRunnerDeps } from "@/chat/jobs/job-runner";
 import { writeJobRecord } from "@/chat/jobs/job-store";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
@@ -24,6 +25,7 @@ import { projectOutputDir } from "@/runtime";
 
 const originalRunner = { ..._jobRunnerDeps };
 const originalLaunch = { ..._jobsLaunchDeps };
+const originalFlow = { ..._flowProviderDeps };
 const hosts: ReturnType<typeof createChatHost>[] = [];
 const dirs: string[] = [];
 afterEach(async () => {
@@ -33,14 +35,30 @@ afterEach(async () => {
   }
   Object.assign(_jobRunnerDeps, originalRunner);
   Object.assign(_jobsLaunchDeps, originalLaunch);
+  Object.assign(_flowProviderDeps, originalFlow);
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
-function fixture(entry = true, agents = true, resourcesEnabled = true) {
+/** The `memory.koda` block a flow send needs: a koda API root and its bearer agent key. */
+const KODA = { url: "https://koda.example/api", headers: { Authorization: "Bearer agent-key" } } as const;
+/** The commit the stubbed repository read reports at. */
+const FLOW_SHA = "a".repeat(40);
+/** A request `parseFlowSendInput` accepts, so the tool reaches the card. */
+const FLOW_INPUT = {
+  features: [{ feature: "x", specPath: "specs/x.md" }],
+  roles: { reviewer: "acp:codex", supervisor: "acp:codex" },
+  costCapUsd: 5,
+};
+
+function fixture(entry = true, agents = true, resourcesEnabled = true, koda: typeof KODA | undefined = undefined) {
   const repoRoot = makeTempDir("host-jobs-");
   dirs.push(repoRoot);
   const now = () => new Date("2026-10-27T10:00:00Z");
-  const config = makeNaxConfig({ outputDir: join(repoRoot, "output"), execution: { approvalTimeout: 30_000 } });
+  const config = makeNaxConfig({
+    outputDir: join(repoRoot, "output"),
+    execution: { approvalTimeout: 30_000 },
+    ...(koda === undefined ? {} : { memory: { koda: { ...koda } } }),
+  });
   const logger = makeLogger();
   const meta: SessionMeta = {
     schemaVersion: 1,
@@ -306,5 +324,64 @@ describe("createChatHost jobs", () => {
     expect(cancel).not.toHaveBeenCalled();
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(f.jobs().owned()).toHaveLength(1);
+  });
+});
+
+/** The ids of the providers the parent chat's first open request carried. */
+function openProviderIds(f: ReturnType<typeof fixture>): readonly string[] {
+  return f.open.mock.calls[0]?.[0].toolProviders?.map((provider) => provider.id) ?? [];
+}
+
+/** The `send` tool of the nax-flow provider the parent chat opened with. */
+async function flowSendTool(f: ReturnType<typeof fixture>) {
+  const provider = f.open.mock.calls[0]?.[0].toolProviders?.find((entry) => entry.id === "nax-flow");
+  assertDefined(provider, "nax-flow provider");
+  const tools = await provider.tools(f.repoRoot);
+  const send = tools.find((entry) => entry.localName === "send");
+  assertDefined(send, "nax-flow__send");
+  return send;
+}
+
+describe("createChatHost flow provider", () => {
+  test("US-004 AC-1 a koda connection puts nax-flow directly after nax-jobs", async () => {
+    const f = fixture(true, true, true, KODA);
+    await f.start();
+    expect(openProviderIds(f)).toEqual([
+      ...f.resources.toolProviders.map((provider) => provider.id),
+      "nax-jobs",
+      "nax-flow",
+      "nax-tasks",
+      "nax-agents",
+    ]);
+  });
+  test("US-004 AC-2 without a memory.koda block the open request carries no nax-flow", async () => {
+    const f = fixture();
+    await f.start();
+    const ids = openProviderIds(f);
+    expect(ids).not.toContain("nax-flow");
+    expect(ids.slice(-3)).toEqual(["nax-jobs", "nax-tasks", "nax-agents"]);
+  });
+  test("US-004 AC-4 full mode running nax-flow__send leaves one pending host card", async () => {
+    const f = fixture(true, true, true, KODA);
+    // Only the repository reads are stubbed: the card itself is the host's real controller.
+    _flowProviderDeps.readFlowRepoState = async () => ({
+      ok: true,
+      branch: "feat/x",
+      sha: FLOW_SHA,
+      remoteUrl: "https://github.com/o/r",
+    });
+    _flowProviderDeps.headSha = async () => FLOW_SHA;
+    _flowProviderDeps.isDirty = async () => false;
+    await f.start("full");
+    const send = await flowSendTool(f);
+    const pending = send.run(FLOW_INPUT, toolContext(f.repoRoot));
+    await waitForCondition(() => f.host.asks.pending().length === 1);
+    expect(f.host.asks.pending()).toHaveLength(1);
+    const card = f.host.asks.pending()[0];
+    assertDefined(card, "flow card");
+    expect(card).toMatchObject({ tool: "nax-flow__send" });
+    // Deny, so the call ends without a push and the test leaves nothing pending.
+    f.host.asks.resolve(card.requestId, "deny");
+    expect(await pending).toMatchObject({ isError: true });
   });
 });
