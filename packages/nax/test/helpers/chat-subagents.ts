@@ -261,6 +261,13 @@ export interface SubagentHostOptions {
   readonly toolProviders?: readonly ToolProvider[];
   /** The host config's `agent.acpSubagents`, set beside `modelAliases`. */
   readonly acpSubagents?: AcpSubagentsConfig;
+  /**
+   * A koda connection, written into the config's `memory.koda` url and headers. With it
+   * (and `naxEntry`) the parent chat composes the `nax-flow` provider.
+   */
+  readonly kodaConnection?: { readonly url: string; readonly headers: Readonly<Record<string, string>> };
+  /** The nax entry passed to `createChatHost`; without it the host composes no jobs and no flow. */
+  readonly naxEntry?: readonly string[];
 }
 
 /** Per-send script switches; a test may change them between sends. */
@@ -314,6 +321,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
   const config = makeNaxConfig({
     outputDir: join(dir, "output"),
     ...(Object.keys(agentOverrides).length > 0 ? { agent: agentOverrides } : {}),
+    ...(options.kodaConnection === undefined ? {} : { memory: { koda: { ...options.kodaConnection } } }),
   });
   const storage = createSessionStorage({
     dir: join(dir, "sessions"),
@@ -474,6 +482,7 @@ export function makeSubagentHostHarness(options: SubagentHostOptions = {}): Suba
     now: () => NOW,
     logger: makeLogger(),
     resources,
+    ...(options.naxEntry === undefined ? {} : { naxEntry: options.naxEntry }),
   });
 
   return {

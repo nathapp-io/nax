@@ -2,9 +2,9 @@
  * The tools and tool instructions nax delivers to an ACP session.
  *
  * Which providers cross this boundary is an allow-list the caller supplies:
- * the chat brain gets the workflow, jobs and memory providers and keeps its own
- * file, shell, skill and MCP tooling, while an unattended subagent may also be
- * handed the skills provider (see `acp-subagent-session.ts`).
+ * the chat brain gets the workflow, jobs, flow and memory providers and keeps
+ * its own file, shell, skill and MCP tooling, while an unattended subagent may
+ * also be handed the skills provider (see `acp-subagent-session.ts`).
  */
 
 import {
@@ -16,7 +16,7 @@ import {
 import { toEmbedderTools } from "@/agents/acp";
 
 /** Provider ids delivered to an ACP chat brain. */
-export const ACP_CHAT_PROVIDER_IDS: readonly string[] = ["nax-workflow", "nax-jobs", "nax-memory"];
+export const ACP_CHAT_PROVIDER_IDS: readonly string[] = ["nax-workflow", "nax-jobs", "nax-flow", "nax-memory"];
 
 const CHAT_STAGE = "chat";
 

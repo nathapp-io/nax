@@ -209,7 +209,7 @@ class NativeChatHost implements ChatHost {
       });
       const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
       this.tasks = hostTasks.tasks;
-      const providers = [...resources.toolProviders, ...(hostJobs ? [hostJobs.provider] : []), hostTasks.provider];
+      const providers = [...resources.toolProviders, ...(hostJobs?.providers ?? []), hostTasks.provider];
       this.toolProviders = resources.catalog.agents.length
         ? [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
         : providers;

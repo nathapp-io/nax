@@ -32,7 +32,13 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
-async function compose(mode: () => ChatMode) {
+/** The `memory.koda` block a flow send needs; every field optional so an absent one can be tested. */
+interface KodaBlock {
+  readonly url?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+async function compose(mode: () => ChatMode, koda?: KodaBlock) {
   const repoRoot = makeTempDir("jobs-host-");
   dirs.push(repoRoot);
   await Bun.write(
@@ -50,7 +56,10 @@ async function compose(mode: () => ChatMode) {
     repoRoot,
     outputDir: join(repoRoot, "output"),
     naxEntry: ["bun", "/n.ts"],
-    config: makeNaxConfig({ outputDir: join(repoRoot, "output") }),
+    config: makeNaxConfig({
+      outputDir: join(repoRoot, "output"),
+      ...(koda === undefined ? {} : { memory: { koda: { ...koda } } }),
+    }),
     asks,
     mode,
     sessionId: () => "chat-jobs",
@@ -115,4 +124,62 @@ describe("createHostJobs approve", () => {
     expect(f.approve).toHaveBeenCalledTimes(1);
     expect(f.approve.mock.calls[0]?.[0]).toMatchObject({ tool: "nax-jobs__bot_review" });
   });
+});
+
+const KODA: KodaBlock = { url: "https://koda.example/api", headers: { Authorization: "Bearer agent-key" } };
+
+const providerIds = (composed: ReturnType<typeof createHostJobs>) => composed.providers.map((entry) => entry.id);
+
+/** Every `memory.koda` block that is not a usable connection, and which part is missing. */
+const ABSENT_KODA: { why: string; koda: KodaBlock }[] = [
+  { why: "memory.koda.url is unset", koda: { headers: { Authorization: "Bearer k" } } },
+  { why: "memory.koda.headers is absent", koda: { url: "https://koda.example/api" } },
+  {
+    why: "the authorization value is empty",
+    koda: { url: "https://koda.example/api", headers: { authorization: "" } },
+  },
+  {
+    why: "the authorization value is whitespace",
+    koda: { url: "https://koda.example/api", headers: { authorization: "  \t" } },
+  },
+  {
+    why: "no header is named authorization",
+    koda: { url: "https://koda.example/api", headers: { "x-agent-key": "Bearer k" } },
+  },
+];
+
+describe("createHostJobs providers", () => {
+  test("AC-5 with a koda connection offers nax-jobs then nax-flow", async () => {
+    const f = await compose(() => "guarded", KODA);
+    expect(providerIds(f.composed)).toEqual(["nax-jobs", "nax-flow"]);
+  });
+
+  test("AC-5 without a koda connection offers nax-jobs alone", async () => {
+    const f = await compose(() => "guarded");
+    expect(providerIds(f.composed)).toEqual(["nax-jobs"]);
+  });
+
+  test.each(ABSENT_KODA)("AC-8 offers no flow provider when $why", async ({ koda }) => {
+    const f = await compose(() => "guarded", koda);
+    expect(providerIds(f.composed)).toEqual(["nax-jobs"]);
+  });
+
+  test("AC-8 matches AUTHORIZATION in any letter case", async () => {
+    const f = await compose(() => "guarded", {
+      url: "https://koda.example/api",
+      headers: { AUTHORIZATION: "Bearer k" },
+    });
+    expect(providerIds(f.composed)).toEqual(["nax-jobs", "nax-flow"]);
+  });
+
+  test.each([
+    { when: "with", koda: KODA },
+    { when: "without", koda: undefined },
+  ] satisfies { when: string; koda: KodaBlock | undefined }[])(
+    "AC-9 provider is providers[0] $when a koda connection",
+    async ({ koda }) => {
+      const f = await compose(() => "guarded", koda);
+      expect(f.composed.provider).toBe(f.composed.providers[0]);
+    },
+  );
 });

@@ -1,7 +1,9 @@
+import type { ToolProvider } from "@nathapp/nax-agent";
 import type { NaxConfig } from "@/config";
 import type { Logger } from "@/logger";
 import type { ChatAskController } from "../ask-controller";
 import type { ChatMode } from "../chat-mode";
+import { createFlowProvider, kodaFlowConnection } from "../flow";
 import { type ChatChains, createChainController } from "./chain-controller";
 import { createJobRunner } from "./job-runner";
 import { createJobWriteGuard } from "./job-write-guard";
@@ -23,12 +25,29 @@ interface HostJobsOptions {
 
 export const _jobsHostDeps = { createJobsProvider };
 
+/** The jobs provider, then the flow provider when a koda connection exists. */
+function hostProviders(options: HostJobsOptions, provider: ToolProvider): readonly ToolProvider[] {
+  const connection = kodaFlowConnection(options.config);
+  if (connection === undefined) return [provider];
+  // The card goes to the controller itself, never to the jobs provider's mode-aware wrapper:
+  // pushing a branch and creating a flow in koda is outward-facing, so the user is asked in
+  // every chat mode, full included.
+  const flow = createFlowProvider({
+    repoRoot: options.repoRoot,
+    connection,
+    approve: (card) => options.asks.requestHostApproval(card),
+  });
+  return [provider, flow];
+}
+
 /** Compose repo-scoped jobs only for the parent chat, never for subagent providers. */
 export function createHostJobs(options: HostJobsOptions): {
   jobs: ReturnType<typeof createJobRunner>;
   chains: ChatChains;
   runAsks: ChatRunAsks;
   provider: ReturnType<typeof createJobsProvider>;
+  /** Every provider the parent chat opens with, in order; `provider` is its first entry. */
+  providers: readonly ToolProvider[];
   guard: ReturnType<typeof createJobWriteGuard>;
   close: () => void;
   sessionChanged: () => void;
@@ -72,6 +91,7 @@ export function createHostJobs(options: HostJobsOptions): {
     jobs,
     chains,
     provider,
+    providers: hostProviders(options, provider),
     runAsks,
     guard: createJobWriteGuard(jobs, options.repoRoot),
     close,
