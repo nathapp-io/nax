@@ -1,4 +1,8 @@
+import { appendFile, readdir, unlink } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import { NaxError } from "@/errors";
+import { ALWAYS_EXCLUDED } from "@/review";
+import { _workflowDeps } from "./step-context";
 
 export const DIFF_PART_MAX_BYTES = 32_000;
 export const DIFF_PART_MAX_LINES = 900;
@@ -6,6 +10,16 @@ export const DIFF_PART_MAX_LINE_CHARS = 1_900;
 const CONTINUATION = "\\ continued: ";
 
 export type DiffPartText = { text: string; files: readonly string[] };
+export type DiffPart = { path: string; files: readonly string[] };
+
+export const _branchDiffPartsDeps = {
+  list: (directory: string): Promise<string[]> => readdir(directory),
+  remove: (path: string): Promise<void> => unlink(path),
+  write: async (path: string, text: string, append: boolean): Promise<void> => {
+    if (append) await appendFile(path, text);
+    else await Bun.write(path, text);
+  },
+};
 type Section = { lines: string[]; file?: string };
 
 /** Lines retain their terminators so joining untouched sections preserves the input exactly. */
@@ -152,4 +166,70 @@ export function splitDiffIntoParts(diff: string): readonly DiffPartText[] {
   }
   flush();
   return result;
+}
+
+async function removeStaleParts(directory: string, stem: string): Promise<void> {
+  const names = await _branchDiffPartsDeps.list(directory);
+  for (const name of names) {
+    if (name.startsWith(`${stem}-part-`) && name.endsWith(".diff")) {
+      await _branchDiffPartsDeps.remove(join(directory, name));
+    }
+  }
+}
+
+/** Write the complete branch patch in bounded files beside the existing review package. */
+export async function writeBranchDiffParts(projectDir: string, from: string, packagePath: string): Promise<DiffPart[]> {
+  const path = resolve(packagePath);
+  const directory = dirname(path);
+  const stem = basename(path).replace(/\.diff$/, "");
+  const range = `${from}..HEAD`;
+  const diff = await _workflowDeps.git(
+    [
+      "-c",
+      "core.quotePath=false",
+      "diff",
+      "--text",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--no-renames",
+      "--unified=10",
+      range,
+      "--",
+      ".",
+      ...ALWAYS_EXCLUDED,
+    ],
+    projectDir,
+  );
+  if (diff.exitCode !== 0) {
+    throw new NaxError(
+      `[workflow] git diff failed for ${range}: ${diff.stderr?.trim() || `exit ${diff.exitCode}`}`,
+      "WORKFLOW_REVIEW_PACKAGE_FAILED",
+      { stage: "workflow", from, path },
+    );
+  }
+  const texts = splitDiffIntoParts(diff.stdout);
+  try {
+    await removeStaleParts(directory, stem);
+    const width = texts.length > 99 ? 3 : 2;
+    const parts: DiffPart[] = [];
+    for (const [index, text] of texts.entries()) {
+      const partPath = join(directory, `${stem}-part-${String(index + 1).padStart(width, "0")}.diff`);
+      await _branchDiffPartsDeps.write(partPath, text.text, false);
+      parts.push({ path: partPath, files: text.files });
+    }
+    const lines = parts.map((part) => `- ${part.path}: ${part.files.join(", ")}`);
+    await _branchDiffPartsDeps.write(
+      path,
+      `\n## Diff parts (${parts.length})\n${lines.length ? `${lines.join("\n")}\n` : ""}`,
+      true,
+    );
+    return parts;
+  } catch (cause) {
+    throw new NaxError(`[workflow] Failed writing diff parts for ${path}`, "WORKFLOW_REVIEW_PACKAGE_FAILED", {
+      stage: "workflow",
+      from,
+      path,
+      cause,
+    });
+  }
 }
