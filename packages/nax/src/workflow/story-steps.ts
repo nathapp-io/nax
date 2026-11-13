@@ -202,7 +202,9 @@ async function absorbTurn(
         status: reply.status as "NEEDS_CONTEXT" | "BLOCKED",
         concerns: reply.concerns ?? "",
       });
-      if (answer !== null) {
+      // Only a plain answer continues the round. A config-change answer is applied by a later story
+      // (US-005); until then it is treated as no answer, which is today's behaviour.
+      if (typeof answer === "string") {
         await env.sink.ledger(ledgerText.note(`implementer ${reply.status}: answered by the advisor`));
         current = await implementTurn(env, {
           kind: "answer",

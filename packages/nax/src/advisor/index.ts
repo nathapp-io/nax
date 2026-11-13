@@ -29,7 +29,14 @@ export {
   readDecisions,
   readTrustedDecisions,
 } from "./ledger";
-export { buildMenu, forcedConfirm, PREFLIGHT_OPTION_IDS, REQUIRED_TEXT_FIELD, toAction } from "./menus";
+export {
+  buildMenu,
+  forcedConfirm,
+  PREFLIGHT_OPTION_IDS,
+  QUALITY_COMMAND_KEYS,
+  REQUIRED_TEXT_FIELD,
+  toAction,
+} from "./menus";
 export {
   _advisorServiceDeps,
   type Advisor,

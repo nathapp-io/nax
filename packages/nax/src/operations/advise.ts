@@ -42,6 +42,7 @@ const REQUIRED: Record<AdviceActionType, "instruction" | "reason" | "newText" | 
   hold: "reason",
   answer: "instruction",
   carry: "instruction",
+  "config-change": "reason",
 };
 
 const CONFIDENCE = new Set(["high", "medium", "low"]);

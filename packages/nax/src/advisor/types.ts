@@ -9,9 +9,30 @@ export type AdviceQuestionKind =
   | "residual";
 
 export interface AdviceEvidence {
-  source: "finding" | "ac" | "spec" | "test-output" | "diff" | "agent-diagnosis" | "review-round" | "gate" | "decision";
+  source:
+    | "finding"
+    | "ac"
+    | "spec"
+    | "test-output"
+    | "diff"
+    | "agent-diagnosis"
+    | "review-round"
+    | "gate"
+    | "decision"
+    | "config";
   ref?: string;
   text: string;
+}
+
+/** A `quality.commands` key a config change may touch, one the gates actually read. */
+export type QualityCommandKey = "lint" | "typecheck" | "testScoped" | "test";
+
+/** One change the menu offers: the key, the value it becomes and the `package.json` script it came from. */
+export interface ConfigChangeCandidate {
+  key: QualityCommandKey;
+  to: string;
+  /** The `package.json` script name whose value `to` came from. */
+  script: string;
 }
 
 export type SupersedeTarget = { kind: "ac"; storyId: string; acId: string } | { kind: "spec"; section: string };
@@ -29,7 +50,8 @@ export type AdviceAction =
   | { type: "re-review"; phase: "spec" | "quality" }
   | { type: "hold"; reason: string }
   | { type: "answer"; text: string }
-  | { type: "carry"; instruction: string; toStories: string[] };
+  | { type: "carry"; instruction: string; toStories: string[] }
+  | { type: "config-change"; key: QualityCommandKey; to: string; script: string; reason: string };
 
 export type AdviceActionType = AdviceAction["type"];
 
@@ -42,6 +64,8 @@ export interface AdviceOptionFixed {
   updateAcs?: string[];
   /** A5 PR3: the stories a carry option sends its instruction to. */
   toStories?: string[];
+  /** The one config change a `config-change` option offers. */
+  configChange?: ConfigChangeCandidate;
 }
 
 export interface AdviceOption {
@@ -145,6 +169,6 @@ export type MenuFacts =
       reReviewUsed: boolean;
       reReviewPhase: "spec" | "quality";
     }
-  | { kind: "implementer-question" }
+  | { kind: "implementer-question"; configChanges?: readonly ConfigChangeCandidate[] }
   | { kind: "residual"; dependents: string[]; scope?: "story" | "branch" }
   | { kind: "preflight"; acRef?: { storyId: string; acId: string }; specSection?: string };

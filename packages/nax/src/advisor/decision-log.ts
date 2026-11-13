@@ -30,6 +30,8 @@ function actionText(action: AdviceAction): string {
       return `answer: ${action.text}`;
     case "carry":
       return `carry to ${action.toStories.join(", ")}: ${action.instruction}`;
+    case "config-change":
+      return `config-change quality.commands.${action.key} -> "${action.to}"`;
     default:
       return action.type;
   }

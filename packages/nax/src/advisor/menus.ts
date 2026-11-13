@@ -2,9 +2,26 @@
  * Closed option menus and deterministic guardrails for the A1 advisor (spec §4.3, §12).
  * Pure: no I/O, no clock. The advisor only ever picks one of these options.
  */
-import type { AdviceAction, AdviceActionType, AdviceOption, AdviceOptionFixed, AdvisorReply, MenuFacts } from "./types";
+import type {
+  AdviceAction,
+  AdviceActionType,
+  AdviceOption,
+  AdviceOptionFixed,
+  AdvisorReply,
+  ConfigChangeCandidate,
+  MenuFacts,
+  QualityCommandKey,
+} from "./types";
 
 const OPTION_IDS = "ABCDEFGHIJ";
+
+/** The `quality.commands` keys a config change may touch, in the order the advisor reads them. */
+export const QUALITY_COMMAND_KEYS = [
+  "lint",
+  "typecheck",
+  "testScoped",
+  "test",
+] as const satisfies readonly QualityCommandKey[];
 
 const LABELS: Record<AdviceActionType, string> = {
   fix: "Fix it, with the approach you describe",
@@ -20,6 +37,7 @@ const LABELS: Record<AdviceActionType, string> = {
   hold: "Hold: escalate to a human instead of proceeding",
   answer: "Answer the implementer's question (put the answer in instruction)",
   carry: "Load-bearing: carry an instruction into the dependent stories",
+  "config-change": "Change a nax command to a script the package declares",
 };
 
 /** Text field each action needs from the advisor's reply; null = none. */
@@ -37,6 +55,7 @@ export const REQUIRED_TEXT_FIELD: Record<AdviceActionType, "instruction" | "reas
   hold: "reason",
   answer: "instruction",
   carry: "instruction",
+  "config-change": "reason",
 };
 
 type Draft = { type: AdviceActionType; fixed?: AdviceOptionFixed; label?: string; id?: string };
@@ -143,6 +162,17 @@ function residualDrafts(f: Extract<MenuFacts, { kind: "residual" }>): Draft[] {
   ];
 }
 
+/** One option per allowed change, in candidate order: the advisor picks an id, it never names a command. */
+function configChangeDrafts(candidates: readonly ConfigChangeCandidate[] | undefined): Draft[] {
+  return (candidates ?? []).map(
+    (change): Draft => ({
+      type: "config-change",
+      fixed: { configChange: change },
+      label: `Change quality.commands.${change.key} to "${change.to}" (package.json script "${change.script}")`,
+    }),
+  );
+}
+
 function fixDrafts(pinnedAcs: string[] | undefined): Draft[] {
   if (!pinnedAcs || pinnedAcs.length === 0) return [{ type: "fix" }];
   return [
@@ -182,6 +212,7 @@ export function buildMenu(facts: MenuFacts): AdviceOption[] {
       return withIds([
         { type: "answer" },
         { type: "hold", label: "No answer: the implementer goes on to review with its concern" },
+        ...configChangeDrafts(facts.configChanges),
       ]);
     case "residual":
       return withIds(residualDrafts(facts));
@@ -221,6 +252,12 @@ export function toAction(option: AdviceOption, reply: AdvisorReply): AdviceActio
       return { type: "answer", text: text("instruction") };
     case "carry":
       return { type: "carry", instruction: text("instruction"), toStories: option.fixed?.toStories ?? [] };
+    case "config-change": {
+      // buildMenu always sets the candidate; an option built by hand without one offers no change at
+      // all (`to` empty), which the apply step can never match against the candidate rule.
+      const change = option.fixed?.configChange ?? { key: QUALITY_COMMAND_KEYS[0], to: "", script: "" };
+      return { type: "config-change", ...change, reason: text("reason") };
+    }
     case "retry-as-lite":
     case "approve":
       return { type: option.type };

@@ -40,6 +40,10 @@ describe("describeRuling", () => {
       { type: "carry", instruction: "use the helper", toStories: ["US-003", "US-004"] },
       "carry to US-003, US-004: use the helper",
     ],
+    [
+      { type: "config-change", key: "testScoped", to: "bun test --isolate {{files}}", script: "test", reason: "r" },
+      'config-change quality.commands.testScoped -> "bun test --isolate {{files}}"',
+    ],
   ];
   test.each(cases)("%j reads as %s", (action, text) => {
     expect(describeRuling(decision({ action }))).toBe(text);
