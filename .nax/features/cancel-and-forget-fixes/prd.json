@@ -1,0 +1,455 @@
+{
+  "project": "nax-monorepo",
+  "feature": "cancel-and-forget-fixes",
+  "branchName": "feat/cancel-and-forget-fixes",
+  "createdAt": "2026-11-14T03:12:44.466Z",
+  "updatedAt": "2026-11-14T03:12:44.466Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "gitWithTimeout kills git's whole process group",
+      "description": "**Goal** \u2014 Make gitWithTimeout stop git and its helpers on abort and timeout without changing its return contract.\n\n**Motivation** \u2014 a cancelled or timed-out push or fetch can keep doing network work after nax reported it cancelled.\n\n**Approach** \u2014 **#2900, group kill.** `gitWithTimeout` spawns git with `detached: true`, which makes the git pid the leader of a new process group, so a group kill reaches every helper git spawned. The kill does two things in order: `_gitDeps.killProcessGroup(proc.pid, \"SIGKILL\", { singleProcessFallback: false })`, then `proc.kill(\"SIGKILL\")` (each in its own try). The direct `proc.kill` still reaches git where groups do not exist (Windows, where `process.kill(-pid)` throws a non-`ESRCH` error that `killProcessGroup` reports as sent). It also keeps the existing `proc.killed` assertions true. `killProcessGroup` is the existing helper in `packages/nax-agent/src/internal/process-kill.ts`. It is reached through `_gitDeps`, so fake-spawn unit tests can observe it without sending real signals; the POSIX integration test deliberately signals only the real child process group it captures. Precedent: `argvExec` in `packages/nax-agent/src/internal/argv-exec.ts` spawns `detached: true` and kills through `_argvExecDeps.killProcessGroup`. The early returns on the timeout and abort paths (no awaiting of drain promises) stay as they are. A detached git has no controlling terminal (`setsid`). nax's push paths already set `GIT_TERMINAL_PROMPT=0` (`NO_TERMINAL_PROMPT` in `packages/nax/src/utils/git.ts`, used by `finish/commit.ts` and `bot/git.ts`), and a credential helper or askpass program needs no terminal. What is lost is a prompt ssh would read from `/dev/tty` itself (a key passphrase, a host-key confirmation): that call now fails at once instead of waiting on the terminal.\n\nFact for the test stories: `makeSpawnResult` in `packages/test-kit/src/bun/spawn.ts` reports `pid: 4242` unless told otherwise. A test that fakes `_gitDeps.spawn`, reaches a kill, and leaves `_gitDeps.killProcessGroup` at its default would send a real `SIGKILL` to process group 4242 on the machine running the tests. Five existing tests reach a kill through a faked spawn. Two are in `nax-agent`: `test/unit/internal/git-env.test.ts` (the `gitWithTimeout abort signal (#2895)` describe) and `test/unit/tools/git-commit.test.ts` (the hung `check-ignore`). Three are in `nax`: `test/unit/utils/git.test.ts` (`does not stall when git subprocess hangs`), `test/unit/bot/git.test.ts` (`AC-3 forwards the deadline and kills a hung git`) and `test/unit/review/runner.test.ts` (the `getUncommittedFilesImpl \u2014 BUG-1 pipe-drain regression` suite, which shrinks `_gitDeps.gitTimeoutMs` to 50). `_gitDeps` is one object, re-exported by `packages/nax/src/utils/git.ts`, so a patch through either path reaches it.\n\n**Scope** \u2014 In: packages/nax-agent git execution and its local fake-spawn safety updates; create test/integration/internal/git-exec-group-kill.test.ts using the real runtime spawn on POSIX. Modify test/unit/internal/git-env.test.ts and test/unit/tools/git-commit.test.ts to install/restorably record the new seam before any fake reaches a kill, preserving existing proc.killed and result assertions. Out: US-002 owns nax caller regressions and nax fake-spawn suites; no shared test-kit pid/preload change, application-exit cleanup, or terminal-preserving SSH redesign.\n\n**Interface** \u2014 `_gitDeps` also holds `killProcessGroup` (default: the `killProcessGroup` exported by `process-kill.ts`). The spawn options carry `detached: true`. The abort and timeout kill calls `_gitDeps.killProcessGroup(proc.pid, \"SIGKILL\", { singleProcessFallback: false })`, then `proc.kill(\"SIGKILL\")`. The signature and return shape of `gitWithTimeout` are unchanged.\n\n```typescript\nkillProcessGroup(pid, signal, opts?)\n```\n\nFailure handling: group-kill exceptions or unsupported process groups must not prevent direct proc.kill; each kill tolerates an exited process. Detached ssh requests requiring /dev/tty fail immediately rather than prompting. Preserve the concurrent drains and early timeout/abort returns; do not wait for a helper-held pipe to close.",
+      "acceptanceCriteria": [
+        "[unit] With _gitDeps.spawn faked to a hanging process and _gitDeps.killProcessGroup stubbed, gitWithTimeout([\"push\"], dir, 5_000, undefined, undefined, undefined, signal) spawns with options that include detached: true.",
+        "[unit] In the hanging push setup, aborting signal calls _gitDeps.killProcessGroup once with the fake's pid, \"SIGKILL\" and { singleProcessFallback: false }.",
+        "[unit] In the hanging push setup, aborting signal also calls the fake process's kill(\"SIGKILL\"), after the killProcessGroup call.",
+        "[unit] With a hanging fake spawn and a stubbed _gitDeps.killProcessGroup, a gitWithTimeout([\"fetch\"], dir, 20) timeout calls killProcessGroup once with the fake's pid, \"SIGKILL\" and { singleProcessFallback: false }, and resolves { stdout: \"\", stderr: \"\", exitCode: 1, timedOut: true }.",
+        "[unit] When the stubbed _gitDeps.killProcessGroup throws, an abort still calls the fake process's kill(\"SIGKILL\") and resolves with aborted: true.",
+        "[unit] A git call that exits 0 before any abort or timeout calls _gitDeps.killProcessGroup zero times.",
+        "[unit] _gitDeps.killProcessGroup is, by default, the killProcessGroup function exported by packages/nax-agent/src/internal/process-kill.ts.",
+        "[integration] On POSIX, with the real spawn, gitWithTimeout runs a git alias that starts a shell which starts sleep 3003 (e.g. -c alias.hang='!sh -c \"sleep 3003\"', giving the effective command argv [\"git\", \"-c\", ..., \"hang\"]; pass only the arguments after git as args, or pass full argv via argvOverride). Aborting its seventh-argument signal 200 ms after start leaves no process in the spawned git's process group alive within 2 s of the result. The test captures git's pid by wrapping _gitDeps.spawn around the real spawn, and reads group membership with ps -o pid=,pgid=.",
+        "When process groups are unavailable and killProcessGroup reports sent without killing git, aborting gitWithTimeout still calls proc.kill(\"SIGKILL\").",
+        "When the abort signal has fired and both `killProcessGroup` and `proc.kill` throw because git already exited, `gitWithTimeout` resolves `{ stdout: \"\", stderr: \"\", exitCode: 1, aborted: true }` rather than rejecting.",
+        "When git exits normally before any abort or timeout, gitWithTimeout resolves the process's stdout, stderr and exitCode unchanged, without adding timedOut or aborted fields."
+      ],
+      "tags": [
+        "bugfix",
+        "git",
+        "cancellation",
+        "process-lifecycle"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Existing process-group primitive and dependency-seam pattern; bounded execution change with local fake-signal safety and a POSIX integration regression."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/internal/git-exec.ts",
+        "packages/nax-agent/src/internal/process-kill.ts",
+        "packages/nax-agent/src/internal/argv-exec.ts",
+        "packages/test-kit/src/bun/spawn.ts",
+        "packages/nax-agent/test/unit/internal/git-env.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/integration/internal/git-exec-group-kill.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/test/unit/internal/git-env.test.ts",
+          "reason": "the `gitWithTimeout abort signal (#2895)` tests fake `_gitDeps.spawn` (pid 4242) and reach the kill; each must also replace `_gitDeps.killProcessGroup` with a recording stub (restored after the test), so no real `SIGKILL` reaches process group 4242. Their existing `proc.killed` and result assertions stay."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/tools/git-commit.test.ts",
+          "reason": "the test whose faked `check-ignore` hangs reaches the timeout kill through a faked spawn (pid 4242); it must also replace `_gitDeps.killProcessGroup` with a recording stub (restored after the test). Its existing assertions stay."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "nax's git callers reach the group kill",
+      "description": "**Goal** \u2014 Verify nax's existing git entry points reach the shared group kill and make their fake-spawn regressions safe.\n\n**Motivation** \u2014 A long `nax chat` session also gathers orphans.\n\n**Approach** \u2014 `gitWithTimeout` spawns git with `detached: true`, which makes the git pid the leader of a new process group, so a group kill reaches every helper git spawned. The kill does two things in order: `_gitDeps.killProcessGroup(proc.pid, \"SIGKILL\", { singleProcessFallback: false })`, then `proc.kill(\"SIGKILL\")` (each in its own try). The direct `proc.kill` still reaches git where groups do not exist (Windows, where `process.kill(-pid)` throws a non-`ESRCH` error that `killProcessGroup` reports as sent). It also keeps the existing `proc.killed` assertions true.\n\nFact for the test stories: `makeSpawnResult` in `packages/test-kit/src/bun/spawn.ts` reports `pid: 4242` unless told otherwise. A test that fakes `_gitDeps.spawn`, reaches a kill, and leaves `_gitDeps.killProcessGroup` at its default would send a real `SIGKILL` to process group 4242 on the machine running the tests. Five existing tests reach a kill through a faked spawn. Two are in `nax-agent`: `test/unit/internal/git-env.test.ts` (the `gitWithTimeout abort signal (#2895)` describe) and `test/unit/tools/git-commit.test.ts` (the hung `check-ignore`). Three are in `nax`: `test/unit/utils/git.test.ts` (`does not stall when git subprocess hangs`), `test/unit/bot/git.test.ts` (`AC-3 forwards the deadline and kills a hung git`) and `test/unit/review/runner.test.ts` (the `getUncommittedFilesImpl \u2014 BUG-1 pipe-drain regression` suite, which shrinks `_gitDeps.gitTimeoutMs` to 50). `_gitDeps` is one object, re-exported by `packages/nax/src/utils/git.ts`, so a patch through either path reaches it.\n\n**Scope** \u2014 In: packages/nax's botGit and captureWorkingTreeChanges paths and their existing tests. test/unit/bot/git.test.ts's AC-3 hung-git test must replace/restore killProcessGroup with a recording stub and keep killed/timedOut assertions. test/unit/utils/git.test.ts's hung subprocess test must stub the same seam, observe all three calls and preserve killCount of 3 because proc.kill still runs once per call. Each test in test/unit/review/runner.test.ts's BUG-1 pipe-drain regression suite must have the stub installed and restored in afterEach, retaining existing assertions. This binding story intentionally owns caller regression/safety changes even though US-001 supplies the production behavior; do not add artificial production abstractions merely to avoid its test-focused scope. Out: changing gitWithTimeout itself and nax-agent tests belong to US-001; do not alter credentials, the shared fake pid/preload, or application-exit cleanup.\n\n**Interface** \u2014 US-001 \u2192 US-002: `_gitDeps.killProcessGroup`, added by US-001, is called through nax's `botGit` and `captureWorkingTreeChanges`. `gitWithTimeout`'s signature and return shape remain unchanged; keep the same re-exported object, deadline forwarding, hooks-off argv and environment overlays.",
+      "acceptanceCriteria": [
+        "[unit] botGit([\"fetch\"], \"/repo\", 50) with _gitDeps.spawn faked to a hanging process and _gitDeps.killProcessGroup replaced by a recording stub calls the stub once with the fake's pid and \"SIGKILL\".",
+        "[unit] captureWorkingTreeChanges with every git call faked to hang and _gitDeps.killProcessGroup replaced by a recording stub calls the stub once per hung git call, with each fake's pid.",
+        "[unit] With a hanging fake spawn, a recording group-kill stub and proc.kill resolving the fake's exited promise, botGit([\"fetch\"], \"/repo\", 50) still resolves a result with timedOut: true and exitCode: 1.",
+        "[unit] In captureWorkingTreeChanges's existing three-hung-call setup with the group-kill seam stubbed, proc.kill still runs exactly three times, preserving the existing killCount assertion.",
+        "[unit] In the same three-hung-call setup, captureWorkingTreeChanges still resolves [], preserving its existing best-effort empty-on-failure result."
+      ],
+      "tags": [
+        "bugfix",
+        "git",
+        "cancellation",
+        "regression"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Binding caller-regression story updates existing shared-seam harnesses across three suites without altering credential or authentication behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/bot/git.ts",
+        "packages/nax/src/utils/git.ts",
+        "packages/nax/test/unit/bot/git.test.ts",
+        "packages/nax/test/unit/utils/git.test.ts",
+        "packages/nax/test/unit/review/runner.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/bot/git.test.ts",
+          "reason": "`AC-3 forwards the deadline and kills a hung git` fakes `_gitDeps.spawn` (pid 4242) and reaches the timeout kill; it must also replace `_gitDeps.killProcessGroup` with a recording stub (restored after the test). Its `killed` and `timedOut` assertions stay."
+        },
+        {
+          "path": "packages/nax/test/unit/utils/git.test.ts",
+          "reason": "`does not stall when git subprocess hangs (SIGKILL after timeout)` fakes `_gitDeps.spawn` (pid 4242) and reaches three timeout kills; it must also replace `_gitDeps.killProcessGroup` with a recording stub (restored after the test). Its `killCount` of 3 still holds, because `proc.kill` still runs once per call."
+        },
+        {
+          "path": "packages/nax/test/unit/review/runner.test.ts",
+          "reason": "the `getUncommittedFilesImpl \u2014 BUG-1 pipe-drain regression` suite fakes `_gitDeps.spawn` (pid 4242) with `_gitDeps.gitTimeoutMs` at 50 and reaches the timeout kill; each of its tests must also replace `_gitDeps.killProcessGroup` with a recording stub (restored in `afterEach`). Its existing assertions stay."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "A provider tool's cancel grace",
+      "description": "**Goal** \u2014 Allow an opt-in provider coding tool to return its own outcome during a bounded post-abort grace.\n\n**Motivation** \u2014 after Esc during the `nax-flow__send` push, the transcript says `abandoned: the turn ended`.\n\n**Approach** \u2014 **#2901 part 1, cancel grace.** This is opt-in per tool. `ProviderTool` gains `cancelGraceMs?: number`, and `adaptProviderTool` copies it onto the adapted `CodingTool` (`CodingTool.cancelGraceMs?: number`). `nativeBackend` builds a map from qualified tool name to grace for every provider tool that declares one, and passes it to `createSessionInteractionHandler` as `SessionInteractionDeps.cancelGraceByTool`. `runCodingTool` then composes the turn signal and the grace in this order:\n\n1. The signal is already aborted when the call arrives: answer the generic abandoned outcome at once and never call the tool (unchanged).\n2. The tool declares no grace (absent from the map): answer the generic abandoned outcome the moment the signal aborts (unchanged).\n3. The tool declares a grace: when the signal aborts, wait up to the grace for the tool's own outcome. If it settles in time, that outcome is the answer, with the same handling as an unaborted call: `denied` maps to a denial, `error` throws, `ok` answers. Otherwise answer the generic abandoned outcome, and ignore the late settlement.\n\nA declared grace is normalised before use: a non-finite value or one `<= 0` counts as no grace, and a value above `MAX_CANCEL_GRACE_MS = 10_000` counts as `10_000`. The grace timer is cleared on every settle path. Embedder tools (`invoke`) are unchanged.\n\n**Scope** \u2014 In: provider metadata, adaptation, native session-open wiring and coding-tool interaction cancellation, including timers and rejection cleanup. Extend existing provider-adapt, session-interaction and native-backend-providers regressions with fake-clock cases. Out: US-005 owns the concrete flow-send grace declaration, koda HTTP signal propagation and cancelled-create message; embedder grace and late transcript append are excluded.\n\n**Interface** \u2014 `ProviderTool` adds `readonly cancelGraceMs?: number`. `CodingTool` adds `readonly cancelGraceMs?: number`. `adaptProviderTool` carries the field only when declared; there is no key otherwise. `nativeBackend` passes `cancelGraceByTool` built from `providerTools.tools`.\n\n```typescript\nreadonly cancelGraceByTool?: ReadonlyMap<string, number>\nreadonly timers?: { readonly setTimeout: (fn: () => void, ms: number) => unknown; readonly clearTimeout: (id: unknown) => void }\n```\n\nThe timers default to the process globals. The module exports `MAX_CANCEL_GRACE_MS = 10_000`. The abandoned outcome is `{ kind: \"error\", content: 'Tool \"<name>\" was abandoned: the turn ended.' }`. Rejection within grace is handled exactly as the existing unaborted rejection; a late outcome or rejection is observed but ignored. Preserve existing policy denials, sandbox outcome metadata and current-call cleanup. Use a fake clock passed through SessionInteractionDeps.timers for the direct-handler timing criteria; show regressions fail before implementation without editing source in the test-writing session.",
+      "acceptanceCriteria": [
+        "[unit] adaptProviderTool(\"acme\", { localName: \"put\", ..., cancelGraceMs: 2_000 }) returns a tool whose cancelGraceMs is 2_000.",
+        "[unit] adaptProviderTool on a provider tool without cancelGraceMs returns a tool that has no cancelGraceMs key.",
+        "[unit] MAX_CANCEL_GRACE_MS exported from session-interaction.ts equals 10_000.",
+        "[unit] A handler from createSessionInteractionHandler with cancelGraceByTool mapping acme__put to 500, whose runtime's callTool resolves { kind: \"ok\", content: \"done\" } 50 ms after the request signal aborts, answers { answer: \"done\" } for an acme__put coding-tool request aborted mid-call.",
+        "[unit] In the 500 ms grace setup, with callTool resolving { kind: \"error\", content: \"[chat] nothing was pushed\" } 50 ms after the abort, onInteraction rejects with an error whose message is [chat] nothing was pushed.",
+        "[unit] In the 500 ms grace setup, with callTool resolving { kind: \"denied\", reason: \"no\", breach: false } 50 ms after the abort, onInteraction answers { answer: \"Denied: no\", denied: { reason: \"no\", breach: false } }.",
+        "[unit] In the 500 ms grace setup, with callTool resolving 1 s after the abort (past the 500 ms grace), onInteraction rejects with the message Tool \"acme__put\" was abandoned: the turn ended. once the fake clock passes 500 ms after the abort, and not before.",
+        "[unit] When the signal aborts mid-call for a coding-tool request whose tool is absent from cancelGraceByTool and whose callTool never settles, onInteraction rejects with Tool \"<name>\" was abandoned: the turn ended. without the fake clock advancing.",
+        "[unit] A request whose signal is already aborted when it arrives rejects with the abandoned message and never calls callTool, even when the tool's grace is 500.",
+        "[unit] When the signal aborts mid-call for a tool with a grace of NaN, 0 or -5 whose callTool never settles, onInteraction rejects with the abandoned message without the fake clock advancing.",
+        "[unit] A grace of 60_000 for a tool whose callTool never settles rejects with the abandoned message once the fake clock passes 10 s after the abort, and not before.",
+        "[unit] After a grace-path answer { answer: \"done\" }, the fake clock reports zero outstanding timers.",
+        "[unit] Criteria 4 to 12 above run on a fake clock passed as `SessionInteractionDeps.timers`, never on wall time: the 500 ms grace-expiry test (criterion 7), run on that clock, completes in under 100 ms of wall time.",
+        "[unit] Opening a session through nativeBackend with a static provider id acme whose tool put declares cancelGraceMs: 500 and whose run resolves { content: \"late\" } 50 ms after its signal aborts, then calling opened.turnOpts().interactionHandler.onInteraction for acme__put with a signal aborted mid-call, answers { answer: \"late\" }.",
+        "[unit] A tool with a 500 ms grace whose callTool rejects 1 s after the abort (past the grace) produces no unhandled rejection: the test's unhandled-rejection listener records nothing after the fake clock passes 1 s.",
+        "[unit] The same nativeBackend session open with a provider tool that declares no cancelGraceMs and never settles rejects with the abandoned message as soon as the signal aborts.",
+        "When a tool declares Infinity as its grace and callTool never settles, aborting onInteraction rejects with the abandoned message without advancing the fake clock.",
+        "When callTool rejects inside its declared grace after the signal aborts, onInteraction propagates that rejection as an unaborted call does today."
+      ],
+      "tags": [
+        "bugfix",
+        "session",
+        "tools",
+        "cancellation"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module session contract and cancellation state machine with tool denial semantics, timer cleanup and late rejection races; session/security override requires strict isolation."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/session/session-interaction.ts",
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/src/tools/provider-adapt.ts",
+        "packages/nax-agent/src/tools/provider-types.ts",
+        "packages/nax-agent/test/unit/session/native-backend-providers.test.ts"
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "A forget answered pending keeps its note",
+      "description": "**Goal** \u2014 Preserve a direct-mode note when a generic memory provider holds its forget pending, on immediate handover and queued delivery.\n\n**Motivation** \u2014 A forget the owner rejected silently loses the note from one checkout.\n\n**Approach** \u2014 **#2905, a koda-held forget.** Today, under `memory.writeMode: \"direct\"` (the CLI's mode comes from config; koda answers `202` whatever the local mode is), `forgetLocked` (`packages/nax-agent/src/memory/operations.ts`) deletes the note before the push. `handOverForget` and the drain's `applyPushed` (`delivery.ts`) then accept a `pending` answer without putting it back. The fix has two halves:\n\n- nax-agent (generic): a forget the provider answers `pending` leaves the note in the mirror. On the hand-over path, `handOverForget` writes `previous` back with `restoreForgotten` when `writeMode` is `direct`. On the drain path, the note was deleted when the entry was queued and the entry holds no copy, so `applyPushed` rewinds that scope's pull cursor with the existing `rewindPullCursor(store, scope)` when the entry's `writeMode` is `direct`. A `proposal` entry never deleted its note, so it does not rewind. `rewindPullCursor` lives in `sync-drain.ts`, which already imports `applyPushed` from `delivery.ts`, so calling it from `delivery.ts` would be an import cycle, which `check-import-cycles` fails. It moves to a new leaf module, `packages/nax-agent/src/memory/pull-cursor.ts`, whose only imports are types. `sync-drain.ts` re-exports it, so `internal.ts` and nax's `host-writes.ts` import it unchanged. The same sync's pull then re-reads the scope in full and brings the provider's active row back. A forget answered `deleted` is unchanged.\n\n**Scope** \u2014 In: generic memory operations, delivery, cursor-leaf extraction, handover/support extraction and immediate/queued regression tests. Out: US-006 owns koda approval records, refusal resolution and host/list pending markers; this story does not add remote approval markers to the on-disk index or write remote forgets into pending-forgets.jsonl.\n\n**Interface** \u2014 `handOverForget` and `applyPushed` implement the pending behavior above. `forgetMemoryNote`'s exported signature and behaviour for every answer other than `pending` under `direct` stay. `drainOutbox` and every other export keep their behaviour.\n\n```typescript\nrestoreForgotten(input, previous)\nrewindPullCursor(store, scope)\n```\n\n`operations.ts` is 599 lines against the 600-line source cap enforced by `bun run check:file-sizes`, so the forget hand-over needs room. For example, `forgetLocked`, `handOverForget` and `queuedForget` can move into a new `packages/nax-agent/src/memory/forget-handover.ts`. They share `refreshIndex` (`operations.ts`, not exported) and `FORGET_STATUS_BY_MODE` with code that stays. A new module that imports those back from `operations.ts`, while `operations.ts` imports it, is an import cycle, which `check-import-cycles` fails. Helpers both need can live in a third leaf module that imports neither (for example `packages/nax-agent/src/memory/operations-support.ts`).\n\nRestore the original note before refreshing the handover index, and remove the accepted request from the outbox normally. Preserve write-ahead enqueue order, mirror locks, refusal bookkeeping and proposal-mode behavior. New nax-agent relative source imports must name .ts files. Extend operations-forget and sync-drain/sync regressions with the existing real mirror, provider and clock helpers; demonstrate failure against old code.",
+      "acceptanceCriteria": [
+        "[unit] forgetMemoryNote with writeMode: \"direct\", a mirror holding note x, and a provider whose push resolves { id, status: \"pending\" } returns status: \"pending\" and leaves store.readNote(\"project\", \"x\") equal to the note as it was before the forget.",
+        "[unit] In the direct pending-forget setup, the outbox holds no entry for x after the call.",
+        "[unit] In the direct pending-forget setup, the memory index the call refreshes still lists x: the note is restored before the index is refreshed.",
+        "[unit] forgetMemoryNote with writeMode: \"direct\" and a provider answering { status: \"deleted\" } leaves store.readNote(\"project\", \"x\") returning null.",
+        "[unit] forgetMemoryNote with writeMode: \"proposal\" and a provider answering { status: \"pending\" } leaves note x in the mirror unchanged.",
+        "[unit] applyPushed for a direct-mode forget entry of scope project answered { status: \"pending\" } sets the store's sync-state cursor.project to null and leaves cursor.user unchanged.",
+        "[unit] applyPushed for a forget entry answered { status: \"deleted\" } deletes the note and leaves the sync-state cursor unchanged.",
+        "[unit] applyPushed for a forget entry whose writeMode is proposal, answered { status: \"pending\" }, leaves the sync-state cursor unchanged and the note in the mirror.",
+        "[integration] A sync whose drain pushes a queued direct forget of note x (deleted when queued) to a provider that answers pending, and whose provider pull serves x as active, ends with x in the mirror.",
+        "[unit] When the provider is reachable but push rejects a transient network Error during a direct-mode forget, forgetMemoryNote leaves the forget request queued in the outbox for retry, preserving the existing transient-failure behavior."
+      ],
+      "tags": [
+        "bugfix",
+        "memory",
+        "sync",
+        "data-integrity"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Two durable write paths require different recovery mechanisms, plus cycle-free extractions under hard file-size limits and a real-sync regression."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/operations.ts",
+        "packages/nax-agent/src/memory/delivery.ts",
+        "packages/nax-agent/src/memory/sync-drain.ts",
+        "packages/nax-agent/src/memory/refusal.ts",
+        "packages/nax-agent/test/unit/memory/operations-forget.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/forget-handover.ts",
+        "packages/nax-agent/src/memory/operations-support.ts",
+        "packages/nax-agent/src/memory/pull-cursor.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/memory/sync-drain.ts",
+          "reason": "`rewindPullCursor` is removed from this file's own body and re-exported from the new pull-cursor leaf module this story creates; `drainOutbox` and every other export keep their behaviour."
+        },
+        {
+          "path": "packages/nax-agent/src/memory/operations.ts",
+          "reason": "at 599 lines against the 600-line cap, it may hand `handOverForget` and `queuedForget` to the new forget hand-over module this story creates; `forgetMemoryNote`'s exported signature and behaviour for every answer other than `pending` under `direct` stay."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Flow send stops the koda create and says what happened",
+      "description": "**Goal** \u2014 Cancel the koda create with the turn signal and preserve flow send's precise cancellation outcome through its opt-in grace.\n\n**Motivation** \u2014 An Esc after the push and during `POST /fleet/flows` lets koda create the flow in the background while the chat says \"abandoned\".\n\n**Approach** \u2014 **#2901 part 2, the koda create.** `KodaClient.post` gains an optional third argument `{ signal?: AbortSignal }`, and `KodaClient.get` is unchanged. In `request`, a given signal that aborts before the answer ends the call with a `NaxError` coded `MEMORY_KODA_ABORTED`, and aborts the fetch through the existing `cancel` controller. A signal already aborted when `post` is called rejects with the same error and never calls `fetch`. An answer that arrived before the abort is returned as usual. `createKodaFlow(connection, body, signal?)` passes the signal to `client.post`. In `flow-provider.ts`, `afterAllow` passes its signal to `createFlow`, which passes it to `createKodaFlow`. When the create rejects with `MEMORY_KODA_ABORTED`, the result is the failure `[chat] the turn was cancelled during the koda request; branch <branch> stays pushed and koda may have created the flow; check koda's flows before sending again (a duplicate send is refused with 409)`. The send tool declares `cancelGraceMs: FLOW_SEND_CANCEL_GRACE_MS` (`5_000`), so this answer, and the existing `[chat] the turn was cancelled; nothing was pushed`, reach the transcript.\n\n**Scope** \u2014 In: optional POST cancellation, complete-answer race/cleanup, flow-koda and provider signal plumbing, the exact post-push cancellation message, 5000 ms send declaration and regression tests including new flow-provider-cancel.test.ts. Out: US-003 supplies session grace mechanics; US-006 owns memory forget approvals. Do not query koda to resolve a cancelled create, retry it, add grace to other tools, or append results after grace.\n\n**Interface** \u2014\n\n```typescript\npost(path: string, body: unknown, opts?: { readonly signal?: AbortSignal }): Promise<KodaResponse>\ncreateKodaFlow(connection: KodaFlowConnection, body: FlowCreateBody, signal?: AbortSignal): Promise<FlowCreateOutcome>\n```\n\nThe module exports `FLOW_SEND_CANCEL_GRACE_MS = 5_000`. `createFlow`, `afterAllow` and `sendTool` follow the approach above. Keep `KodaClient.get` unchanged. Abort the fetch using the existing cancel controller and race caller cancellation even if the fetch ignores its signal, covering response-body receipt as the existing timeout does. Keep MEMORY_KODA_TIMEOUT for a request without an external signal that exceeds timeoutMs, classified NaxErrors and secret/header redaction. Once created or held is received, a later abort does not replace that outcome. A failed cancelled push still reports nothing was pushed and never calls createKodaFlow. Preserve the approved-card branch identity and security checks. Extend koda-http.test.ts and flow-koda.test.ts using their dependency seams and demonstrate old-code failures.",
+      "acceptanceCriteria": [
+        "[unit] With _kodaClientDeps.fetch faked to answer 201 after 100 ms, createKodaClient(...).post(\"fleet/flows\", body, { signal }) with signal aborted at 10 ms rejects with a NaxError coded MEMORY_KODA_ABORTED.",
+        "[unit] In the delayed-201 abort setup, the RequestInit passed to the faked fetch carries a signal that is aborted once the call has rejected.",
+        "[unit] post(path, body, { signal }) with signal already aborted rejects MEMORY_KODA_ABORTED and calls the faked fetch zero times.",
+        "[unit] post(path, body, { signal }) whose faked fetch answers 201 before signal aborts resolves { status: 201, data }.",
+        "[unit] post(path, body) without a third argument, whose fetch answers after the client's timeoutMs, still rejects MEMORY_KODA_TIMEOUT.",
+        "[unit] createKodaFlow(connection, body, signal) calls the stubbed client's post with (\"fleet/flows\", body, { signal }).",
+        "[unit] The nax-flow__send tool from createFlowProvider(...).tools() has cancelGraceMs equal to FLOW_SEND_CANCEL_GRACE_MS, which equals 5_000.",
+        "[unit] Running the send tool through the _flowProviderDeps harness with an approved card, a commitAndPush that resolves, and a createKodaFlow stub, passes the run context's signal as createKodaFlow's third argument.",
+        "[unit] In the approved-card successful-push setup, with createKodaFlow rejecting a NaxError coded MEMORY_KODA_ABORTED, the tool result is the error [chat] the turn was cancelled during the koda request; branch <branch> stays pushed and koda may have created the flow; check koda's flows before sending again (a duplicate send is refused with 409), with <branch> the carded branch.",
+        "[unit] In the approved-card successful-push setup, with the signal aborted after createKodaFlow resolves { kind: \"created\", ... }, the tool result is the same created-flow content as with no abort.",
+        "[unit] In the approved-card setup, with commitAndPush rejecting while the signal is aborted, the tool result is still [chat] the turn was cancelled; nothing was pushed and createKodaFlow is never called.",
+        "When koda's held-flow answer arrives before the abort lands, flow send returns its normal held-create content rather than a cancelled-create error."
+      ],
+      "tags": [
+        "bugfix",
+        "chat",
+        "koda",
+        "cancellation",
+        "http"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Concurrent HTTP answer/abort/deadline handling across an approved outward-facing tool and a credential-bearing client; preserve approval and credential protections with strict TDD isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-http.ts",
+        "packages/nax/src/chat/flow/flow-koda.ts",
+        "packages/nax/src/chat/flow/flow-provider.ts",
+        "packages/nax/test/unit/chat/flow/flow-provider.test.ts",
+        "packages/nax/test/unit/memory/koda-http.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/flow/flow-provider-cancel.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Koda records and resolves a held forget",
+      "description": "**Goal** \u2014 Persist koda-held forget approvals, reconcile refusals without deleting active notes, and expose pending markers through the host and list.\n\n**Motivation** \u2014 two checkouts linked to the same koda project disagree until the first one is reset.\n\n**Approach** \u2014 - nax (koda): `KodaApproval` gains `kind?: \"save\" | \"forget\"`. An absent `kind`, and any `kind` value other than `\"forget\"`, reads as a save, so an existing file stays valid and an unknown value never makes the file unusable. An older nax that rewrites the file drops `kind`, which turns a forget record into a save record; that is accepted. `approvalOf` keeps it, and `record` replaces only the record with the same kind, scope and slug. `retire()` in `koda-provider.ts` records a `202` answer with `kind: \"forget\"` (approval id = `data.id` of the answer, client id = the request's `clientId`) before returning `pending`. A `202` without a string `data.id` is the provider's existing bad-response error. A `record` that rejects (for example `MEMORY_KODA_APPROVALS_READ_FAILED`) is logged as a warn and the forget still resolves `pending`. Koda has already opened the approval, so rejecting the push would queue a retry, and a retry's retire can answer `409`, which the provider reads as `deleted`. Without a record the note stays in the mirror unmarked, and the feed's tombstone still removes it if koda executes the forget. In `koda-pull.ts`, `resolveRecord` treats a forget record by koda's answer: open keeps it; executed drops it (the feed's retired-row tombstone removes the note); gone (`404`) drops it. Refused drops it when this page already carries the slug (the existing `where.pageSlugs` check, which a rewound full re-read hits) or when the mirror holds the slug. Otherwise refused restores koda's active row through the existing `rowRestoration`, or drops the record when koda has no active row. A refused forget never produces a tombstone. The memory host's `readForgetPendingKeys` adds `pendingForgetKey({ scope, slug })` for every koda forget record, so `forgetPendingKeys()` and `renderIndex()` both carry it: `nax memory list` marks the note `(forget pending)`, and so does the index `host.renderIndex()` renders for a session.\n\n**Scope** \u2014 In: approvals kind compatibility and replacement identity, recording remote retire approvals, forget-specific pull resolution, host composition and pending-key propagation, existing list behavior, and unit/integration regressions. US-004's put-back of a `pending` forget is what leaves the note in the mirror for this story's `(forget pending)` marker and refused-forget resolution. Out: US-004 owns generic operations/delivery restoration; US-005 owns HTTP and flow-create cancellation. Refused-proposal memory status, remote markers in the on-disk agent index, writing remote approvals into pending-forgets.jsonl and save-versus-pending-forget conflict handling remain excluded.\n\n**Interface** \u2014 `KodaApproval` adds `readonly kind?: \"save\" | \"forget\"`. `approvalOf`, `createKodaApprovals`, `retire`, `resolveRecord` and `refusedRecord` implement the approach above. `composeKoda` hands back the approvals store it creates alongside the provider, `MemoryParts` gains an optional `kodaApprovals?: KodaApprovals`, and `readForgetPendingKeys` adds the forget records' keys. That is more than the 9 lines `host.ts` has left, so `readForgetPendingKeys` and `pendingForgetKey` can move to a new `packages/nax/src/memory/host-forget-keys.ts`, with `pendingForgetKey` still exported from the `@/memory` barrel.\n\n`host.ts` is at 591 lines against the 600-line cap. `createMemoryHost`'s returned host keeps every member and its behaviour, except that `forgetPendingKeys()` now also holds koda forget records' keys. The barrel keeps exporting `pendingForgetKey`, now from wherever it lives. Records without kind must still be written without it, and unknown kind must normalize to save rather than invalidate the file. Keep file version 1 and atomic/serialized writes. Preserve existing save restoration and resolution budgets. For a refused forget, mirror possession is not a pending-save/clientId check. A restoration emitted on a page keeps its record until the mirror receives it; a non-holdable active row warns `koda approval was not resolved` and retains the record, never synthesizing a rejected tombstone.\n\nCreate host-forget-keys.ts and test/unit/memory/koda-pull-forget-approvals.test.ts. Extend koda-approvals.test.ts's exact persisted shapes only where kind was declared; absent kind stays absent. The existing koda-provider-forget-search.test.ts row `[\"a 202\", 202, \"pending\"]` still resolves pending and now receives one record call with kind forget; its double already supplies record, so alter it only if it asserted no call. Exercise host.renderIndex, forgetPendingKeys and CLI memory list, including a faked-transport forget -> list -> refused sync -> list integration flow. Use existing host-koda and koda-pull-approvals scaffolds rather than duplicating infrastructure. For the isolated approval-resolution criteria, pull the scope's last page and use an otherwise empty feed unless the criterion explicitly supplies a page note; refusal resolution must not remove notes already carried by the export feed. Save and forget records are distinguished for reconciliation only: nax does not acquire or exercise koda's approval authority.",
+      "acceptanceCriteria": [
+        "[unit] createKodaApprovals(...).record({ approvalId: \"apr_1\", kind: \"forget\", scope: \"project\", slug: \"x\", clientId: \"c_1\" }) followed by list() returns that entry with kind: \"forget\".",
+        "[unit] list() on a file whose entry has no kind field returns that entry with no kind (a save).",
+        "[unit] Recording a kind: \"forget\" entry for project/x after a save entry for project/x leaves both entries in list().",
+        "[unit] Recording a second kind: \"forget\" entry for project/x replaces the first forget entry for project/x.",
+        "[unit] The koda provider's push of a forget whose POST memory/notes/<id>/retire answers 202 with data.id \"apr_9\" calls approvals.record once with { approvalId: \"apr_9\", kind: \"forget\", scope, slug, clientId } from the request, and resolves status: \"pending\".",
+        "[unit] A forget whose retire answers 202 without a string data.id rejects with the provider's bad-response error and records nothing.",
+        "[unit] A forget whose retire answers 200 records nothing and resolves status: \"deleted\".",
+        "[unit] A pull at the scope's last page, with a forget record for x that GET approvals/<id> answers with an open status, keeps the record and restores no note.",
+        "[unit] A pull with a forget record for x answered executed drops the record.",
+        "[unit] A pull with an otherwise empty feed page and a forget record for x answered with a refused status, while the mirror holds x, drops the record and the page carries no note for x.",
+        "[unit] A pull with a forget record for x answered with a refused status, while the mirror does not hold x and koda's active-row lookup returns a holdable row for x, carries that row's note for x in the page and keeps the record.",
+        "[unit] A pull with a forget record for x answered with a refused status, while the mirror does not hold x and koda's lookup returns no active row, drops the record and the page carries no note for x.",
+        "[unit] No refused forget record produces a note whose status is rejected.",
+        "[unit] A pull with a forget record whose approval read answers 404 drops the record.",
+        "[unit] A pull whose page already carries a note for x, with a forget record for x answered with a refused status, drops the record and adds no second note for x to the page.",
+        "[unit] A pull with a forget record for x answered with a refused status, while the mirror does not hold x and koda's active row for x is not a note the mirror can hold, keeps the record, logs the warn koda approval was not resolved, and the page carries no note for x.",
+        "[unit] A forget whose retire answers 202 with data.id \"apr_9\" while approvals.record rejects MEMORY_KODA_APPROVALS_READ_FAILED resolves status: \"pending\" and logs one warn naming the slug and apr_9.",
+        "[unit] list() on a file whose entry has kind: \"later\" returns that entry read as a save, and the other entries of the file unchanged.",
+        "[unit] renderIndex() of a koda-backed memory host whose approvals store holds a forget record for project/x, with note x in the mirror, renders the x entry marked as forget pending, as it does for a local recorded forget.",
+        "[unit] forgetPendingKeys() of a koda-backed memory host whose approvals store holds a forget record for project/x and a save record for project/y returns a set containing project/x and not project/y.",
+        "[unit] nax memory list through a host whose forgetPendingKeys() returns project/x, with note x in the mirror, prints the x line ending in ' (forget pending)'.",
+        "[integration] With a faked koda transport, a nax memory forget x whose retire answers 202, followed by nax memory list, prints x with ' (forget pending)'. A sync whose approval read then answers a refused status, followed by nax memory list, prints x without the suffix."
+      ],
+      "tags": [
+        "bugfix",
+        "memory",
+        "koda",
+        "approvals",
+        "data-integrity"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Durable memory reconciliation spans approvals persistence, provider, pull and host composition with backward-compatible kind parsing; complex three-session-lite fits this data-integrity change without treating status tracking as an authentication or authorization implementation."
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-approvals.ts",
+        "packages/nax/src/memory/koda-provider.ts",
+        "packages/nax/src/memory/koda-pull.ts",
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/src/cli/memory.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/host-forget-keys.ts",
+        "packages/nax/test/unit/memory/koda-pull-forget-approvals.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/memory/koda-provider-forget-search.test.ts",
+          "reason": "the table row `[\"a 202\", 202, \"pending\"]` builds the provider with an approvals double that may not expect a `record` call; the row keeps answering `pending`; its approvals double already supplies `record`, and now receives one `record` call with `kind: \"forget\"`, so no change to the double is needed unless the test asserts the double was never called."
+        },
+        {
+          "path": "packages/nax/test/unit/memory/koda-approvals.test.ts",
+          "reason": "the assertions on the written file shape (`{ version: 1, approvals: [...] }` entries with exactly `approvalId`, `scope`, `slug`, `clientId`) gain `kind` where a record was made with one; a record made without `kind` is still written without it."
+        },
+        {
+          "path": "packages/nax/src/memory/host.ts",
+          "reason": "at 591 lines against the 600-line cap, it may hand `readForgetPendingKeys` and `pendingForgetKey` to the new host forget-keys module this story creates, and re-export `pendingForgetKey`; `createMemoryHost`'s returned host keeps every member and its behaviour, except that `forgetPendingKeys()` now also holds koda forget records' keys."
+        },
+        {
+          "path": "packages/nax/src/memory/index.ts",
+          "reason": "the barrel keeps exporting `pendingForgetKey`, now from wherever it lives."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "No files-placeholder warning for an orchestrator test command",
+      "description": "**Goal** \u2014 Suppress the misleading missing-{{files}} warning for declared turbo/nx test commands while preserving equality warnings.\n\n**Motivation** \u2014 every turbo/nx monorepo config gets a warning whose advice (\"add `{{files}}`\") cannot be followed: orchestrators take no test paths, and `resolveQualityTestCommands` never substitutes `{{files}}` into the root template in that mode.\n\n**Approach** \u2014 **#2908.** `isMonorepoOrchestratorCommand` moves from `packages/nax/src/test-runners/scoped-selection.ts` into a new leaf module, `packages/nax/src/test-runners/orchestrator-command.ts`, whose only import is `normalizeCommandSpec` and the `QualityCommandSpec` type from `@nathapp/nax-agent/internal`. `scoped-selection.ts` re-exports it, so every existing importer is unchanged. `warnScopedTestCommand` imports the leaf directly, by the relative path `../test-runners/orchestrator-command` (a value import of `@/test-runners/<file>` from `src/` is forbidden by `check-alias-internals` because `src/test-runners/index.ts` exists); importing `scoped-selection.ts` from config would pull `@/logger` and `verification/smart-runner` into config's import graph. After the equality check and before the `{{files}}` check, `warnScopedTestCommand` returns without a warning when `isMonorepoOrchestratorCommand(test)` is true for the declared `quality.commands.test`.\n\n**Scope** \u2014 In: moving the unchanged predicate to its leaf, retaining scoped-selection's use/re-export and inserting the warning early return in config-guards.ts without exceeding its 600-line cap (currently 593). Extend config-guards and predicate/re-export tests. Out: unrelated cancellation, memory and workflow stories; no reading review.commands.test, substituting files through root orchestrators, or changing RunCommand testScoped's package-filtered command.\n\n**Interface** \u2014\n\n```typescript\nisMonorepoOrchestratorCommand(command: QualityCommandSpec): boolean\nwarnScopedTestCommand(conf: Record<string, unknown>, warn?: (msg: string) => void): void\n```\n\n`isMonorepoOrchestratorCommand` is removed from scoped-selection.ts's own body and re-exported from the new leaf; every importer keeps importing it from here unchanged. Keep its every-command turbo/nx detection and identity, and keep equality as the highest-priority warning. Only quality.commands.test establishes the exemption: a turbo testScoped alone still warns when test is missing. The warning remains advisory, not a config rejection.",
+      "acceptanceCriteria": [
+        "[unit] isMonorepoOrchestratorCommand(\"npx turbo test\") imported from packages/nax/src/test-runners/orchestrator-command.ts returns true.",
+        "[unit] isMonorepoOrchestratorCommand imported from scoped-selection.ts is the same function as the one from orchestrator-command.ts.",
+        "[unit] warnScopedTestCommand({ quality: { commands: { test: \"npx turbo test\", testScoped: \"npx turbo test --filter=[HEAD^1]\" } } }, warn) never calls warn.",
+        "[unit] warnScopedTestCommand with test: \"nx affected -t test\" and testScoped: \"nx affected -t test --base=HEAD~1\" never calls warn.",
+        "[unit] warnScopedTestCommand with test: \"npx turbo test\" and testScoped: \"npx turbo test\" calls warn once with quality.commands.testScoped equals quality.commands.test, so every scoped run is the full suite.",
+        "[unit] warnScopedTestCommand with test: \"bun test\" and testScoped: \"bun test --bail\" still calls warn once with the {{files}} placeholder message.",
+        "[unit] warnScopedTestCommand with testScoped: \"npx turbo test --filter=[HEAD^1]\" and no test command still calls warn once with the {{files}} placeholder message."
+      ],
+      "tags": [
+        "bugfix",
+        "config",
+        "monorepo",
+        "test-runners"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small behavior change and compatibility-preserving leaf extraction across existing modules; clear precedence and import-graph constraints."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/config-guards.ts",
+        "packages/nax/src/test-runners/scoped-selection.ts",
+        "packages/nax/src/test-runners/index.ts",
+        "packages/nax/src/quality/command-resolver.ts",
+        "packages/nax/test/unit/config/config-guards.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/test-runners/orchestrator-command.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/test-runners/scoped-selection.ts",
+          "reason": "`isMonorepoOrchestratorCommand` is removed from this file's own body and re-exported from the new leaf module this story creates; every importer keeps importing it from here unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "The branch-review line counts triaged deferred minors",
+      "description": "**Goal** \u2014 Make branch review's step line explain the deferred-minor fix-now/leave decisions that cause branch-fix to run.\n\n**Motivation** \u2014 someone watching a run reads \"no findings\" and then sees a branch-fix session start with no reason given.\n\n**Approach** \u2014 **#2909.** `branchReviewStep` appends the deferred-minor triage to its `log.done` text whenever the record holds deferred minors, counted after this review's triage is applied: `; deferred minors: <n> fix-now, <m> leave`. Nothing else changes, including the `branch fix: N item(s)` ledger note, which stays `NO_MIRROR`.\n\n**Scope** \u2014 In: branchReviewStep in feature-steps.ts and its feature-machine-log regression harness. Count rec.minors after applying this verdict's minorTriage with unmentioned minors defaulting to leave; do not count newly reported review minors as deferred ones. Out: other stories' git, session, flow, memory and config changes; do not mirror the branch-fix ledger note or change review routing, finding assignment or fix policy.\n\n**Interface** \u2014\n\n```typescript\nMinorTriageDecision = \"fix-now\" | \"leave\"\n```\n\nKeep describeFindings unchanged. Append the exact suffix to log.done's existing text only for records with deferred minors and before the run-log formatter's elapsed-time suffix. Preserve no-deferred-minors and skipped-review behavior, review artifacts and the record patch. Reuse the existing structured workflow log sink and feature-machine environment; write regressions for clean findings, important findings, no deferred minors and omitted triage decisions before implementing.",
+      "acceptanceCriteria": [
+        "[unit] A feature-machine run whose branch review returns no findings and triages two of three deferred minors fix-now logs a branch-review: step line containing no findings; deferred minors: 2 fix-now, 1 leave.",
+        "[unit] A branch review with one important finding and one deferred minor triaged leave logs a step line ending, before the elapsed time, with ; deferred minors: 0 fix-now, 1 leave.",
+        "[unit] A branch review of a record with no deferred minors logs a step line with no deferred minors text.",
+        "[unit] Given one deferred minor that the review's minorTriage does not mention, branchReviewStep logs the suffix ; deferred minors: 0 fix-now, 1 leave, counting the omitted minor as leave.",
+        "[unit] When branchReviewStep receives a record with deferred minors but no seed, it still logs branch-review: skipped (no seed) followed only by the existing elapsed-time suffix, without appending deferred-minor triage."
+      ],
+      "tags": [
+        "bugfix",
+        "workflow",
+        "review",
+        "logging"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single production logging change using existing triage state and feature-machine log tests; no new dependencies or workflow transitions."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/run-log.ts",
+        "packages/nax/src/operations/workflow-types.ts",
+        "packages/nax/test/unit/workflow/feature-machine-log.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Existing-code bug-fix bundle, not greenfield. Refine-pass static audit: all 79 original spec acceptance criteria remain in their original stories, in their original order as each story's first 8/2/16/9/11/22/7/4 criteria respectively. Preservation inventory (numbers are the spec's original ordinals): US-001: 1 detached spawn, 2 abort group arguments, 3 ordered direct kill, 4 timeout kill and exact timeout result, 5 throwing-group fallback, 6 zero group kills on normal success, 7 default helper identity, 8 real POSIX alias/shell/sleep group disappearance within 2 s after a 200 ms abort with captured pid and ps membership. US-002: 1 botGit's hung fetch reaches seam, 2 captureWorkingTreeChanges reaches it once per hanging call. US-003: 1 declared grace copied, 2 absent own key omitted, 3 10000 cap, 4 delayed ok, 5 delayed error message, 6 delayed denial shape, 7 expiry at 500 ms and not before, 8 absent-grace immediate abandonment without clock advance, 9 pre-abort skips callTool even with grace, 10 NaN/zero/negative immediate behavior, 11 60000 capped at 10 seconds and not before, 12 no outstanding timer after answer, 13 injected fake clock and under-100-ms wall duration, 14 nativeBackend delayed provider answer, 15 late rejection causes no unhandled rejection, 16 nativeBackend no-grace abandonment. US-004: 1 original direct note restored with pending return, 2 accepted request removed from outbox, 3 restore before refreshed index, 4 deleted still removes note, 5 proposal pending unchanged, 6 direct pending rewinds project only, 7 deleted preserves cursor, 8 proposal pending preserves cursor and note, 9 drain then pull integration restores queued-deleted note. US-005: 1 aborted POST classified, 2 fetch signal aborted at rejection, 3 pre-abort never fetches, 4 earlier 201 preserved, 5 no-third-argument timeout preserved, 6 flow-koda forwards POST opts, 7 send's 5000 grace, 8 provider forwards turn signal third argument, 9 exact unknown-outcome cancellation with carded branch, 10 earlier created content unchanged, 11 cancelled failed push's existing text and no create. US-006: 1 forget-kind roundtrip, 2 absent kind stays absent/save, 3 save/forget coexist, 4 second forget replaces first, 5 retire 202 records response approval id and request clientId, 6 malformed 202 refuses with no record, 7 retire 200 unchanged, 8 open retained with no restoration, 9 executed dropped, 10 refused/mirrored dropped without added note, 11 refused/missing mirror restored with record kept, 12 refused/no active row dropped with no note, 13 no rejected tombstone for refused forget, 14 approval 404 dropped, 15 page-slug duplicate avoided, 16 unholdable active row keeps/warns/no note, 17 record failure warns slug/id but still pending, 18 unknown kind reads as save without changing other entries, 19 host index marker matches local forget marker, 20 only forget records add pending keys, 21 exact CLI suffix, 22 held-forget/list/refused-sync/list integration. US-007: 1 leaf turbo predicate, 2 function identity re-export, 3 turbo warning exempt, 4 nx warning exempt, 5 equality warning retained, 6 ordinary missing-placeholder warning retained, 7 missing root test still warns. US-008: 1 clean review with 2/1 deferred triage, 2 important finding with 0/1 suffix before elapsed time, 3 no deferred suffix when none, 4 omitted triage counted leave. Original qualifying clauses about unchanged notes/cursors/entries, existing cancellation text, no-abort content, local-marker equivalence, no second page note, fake-clock timing, signal pre-abort, and call ordering remain attached. All 13 feature exclusions remain verbatim in outOfScope; all eight binding workdirs and dependency arrays remain unchanged. Changes made by this audit clarify git args versus full argvOverride and the seventh signal argument, make mid-call abort explicit for no-grace/invalid-grace tests, express the native provider's delayed result as ToolResult { content: 'late' } rather than a raw string, distinguish direct pending cursor rewind from proposal mode, make already-exited kill and SSH-no-terminal outcomes observable, align US-001 context with the spec's spawn helper and US-006 context with its CLI surface, and add the required missing negative paths for transient forget delivery and skipped branch review. Existing caller timeout, direct-kill count and empty-result regressions are now explicit acceptance criteria. packages/nax-agent/src/internal/git-exec.ts:75 defines the actual positional interface; packages/nax-agent/src/memory/operations.ts:458 retains transient push failures in the outbox; packages/nax/src/memory/koda-pull.ts:351 and :365 resolve approvals only through the existing page-resolution flow; packages/nax/src/workflow/feature-steps.ts:132 logs skipped (no seed) without triage. Isolated koda-resolution fixtures use the last scope page and an empty feed unless a criterion supplies a note, so refusal resolution never filters valid export notes. US-006 uses three-session-tdd-lite: this story tracks remote memory approvals and does not implement authentication or authorization; session changes in US-003 and the credential-bearing client change in US-005 retain their mandatory strict strategy. This is a static preservation/code-fit audit, not a claim that runtime tests have been executed. Closes #2900, #2901, #2908 and #2909; #2905 is only partially addressed and must remain open. Exactly eight binding stories execute in packages/nax-agent or packages/nax. Dependency chains are US-001 -> US-002, US-003 -> US-005, and US-004 -> US-006; US-007 and US-008 are independent. Repository navigation used direct Read/Grep/Glob because codebase-memory MCP is unavailable in this host; findings below are source observations, not executed-test results. No implementation or validation commands were run while drafting this PRD.\n\nArchitecture and conventions: docs/architecture/ARCHITECTURE.md:141 defines the package direction and publication boundaries, and :155 lists the 600-line hard source cap, dependency seams, typed errors and concurrency conventions. nax-agent is Node-compatible source developed/tested with Bun, whereas nax is Bun-native. Keep spawning behind runtimeSpawn, use #src/ aliases in nax-agent and .ts extensions for its relative source imports, and cross the package boundary through named public exports or @nathapp/nax-agent/internal. Never import nax into nax-agent. Preserve public and internal entry identity when moving helpers. ProviderTool and CodingTool are already publicly re-exported (packages/nax-agent/src/index.ts:474 and :533); the grace properties are additive, not new unrelated public exports. Review the declaration snapshot if emitted API changes require it, but do not expose private seams from the root entry or bump package versions. Read the package rules and architecture index before implementing; run targeted bun tests with an explicit path, not bare bun test. Regression tests must demonstrably fail against old behavior. Use existing helpers instead of reimplementing fake clocks, loggers, spawns or temporary-directory fixtures. Quality gates belong to implementation validation, not acceptance criteria.\n\nUS-001/US-002 process lifecycle: packages/nax-agent/src/internal/git-exec.ts:35 defines the sole _gitDeps object; :75 defines gitWithTimeout; :87 spawns without detached; :95 defines the abort-only direct kill; :105 duplicates the direct kill on timeout; :134 and :142 return without awaiting pipe drains. Add killProcessGroup to this exact dependency object, spawn detached, and route both kill paths through group-then-direct SIGKILL in separate try blocks without changing arguments or result shapes. The existing helper at packages/nax-agent/src/internal/process-kill.ts:30 rejects unsafe pids, signals -pid, suppresses ESRCH single-pid fallback when requested, and reports non-ESRCH failures as sent. Therefore the explicit proc.kill must still run, including on Windows or after group-kill errors. packages/nax-agent/src/internal/argv-exec.ts:75 already exposes the equivalent group-kill seam and uses the runtime abstraction. packages/nax/src/utils/git.ts:5 imports and :8 re-exports the identical _gitDeps object, so nax tests can intercept it without new production wrappers. captureWorkingTreeChanges is at :349 and its calls forward timeoutRetryGitTimeoutMs at :358. packages/nax/src/bot/git.ts:58 forwards the timeout to gitWithTimeout at :74 while retaining hook suppression, authenticated argv and environment handling. Preserve those behaviors; no credentials need changing. NO_TERMINAL_PROMPT is at packages/nax/src/utils/git.ts:15. Detached git loses its controlling terminal; askpass and credential helpers remain usable, but ssh's own /dev/tty passphrase or host-key prompts now fail immediately. Do not expand into application-exit child cleanup.\n\nCritical test safety: packages/test-kit/src/bun/spawn.ts:150 sets a default fake pid of 4242. Never let a hanging fake spawn use the real new group-kill implementation: it could SIGKILL a real process group on the test machine. Patch and restore _gitDeps.killProcessGroup locally in all five existing kill-reaching suites as part of their owning stories; do not change the shared fake pid or global preload. Agent suites are packages/nax-agent/test/unit/internal/git-env.test.ts:176 (abort tests, including already-aborted and stalled-pipe paths) and packages/nax-agent/test/unit/tools/git-commit.test.ts:294 (hung check-ignore, shrinks timeout at :303). nax suites are packages/nax/test/unit/utils/git.test.ts:185 (three hangs, killCount remains 3 at :218), packages/nax/test/unit/bot/git.test.ts:35, and packages/nax/test/unit/review/runner.test.ts:403 (timeout override at :425 and restoration at :430). Preserve all existing proc.killed, killCount, timeout and non-stalling assertions. The new POSIX integration test is the intentional exception using a real spawn and group kill: wrap the runtime spawn to capture git pid, abort after 200 ms, inspect ps pid/pgid, allow at most 2 seconds for the group to disappear, skip where process groups are unsupported and ensure child/seam cleanup even after failure. Do not mistake the test fake pid for the captured real child pid.\n\nUS-003 native cancellation: packages/nax-agent/src/tools/provider-types.ts:20 holds ProviderTool; packages/nax-agent/src/tools/provider-adapt.ts:26 adapts metadata, currently only summary fields and run. Add cancelGraceMs to both ProviderTool and CodingTool and conditionally copy it so absent metadata does not add an undefined own key. packages/nax-agent/src/session/native-backend.ts:88 resolves adapted provider tools and :129 builds createSessionInteractionHandler; build the qualified-name grace map from providerTools.tools there, not from embedder tools. packages/nax-agent/src/session/session-interaction.ts:33 holds SessionInteractionDeps; :110 races work against immediate abort and removes its listener; :128 invoke handles embedders; :176 runCodingTool currently returns abandoned immediately and maps denied/error/ok at :194. Add an optional timer pair and cancelGraceByTool, with MAX_CANCEL_GRACE_MS=10000; only the coding-tool path changes. A pre-aborted request must never invoke runtime.callTool; grace starts at mid-call abort, not invocation. Finite positive grace is capped, all other values including Infinity mean immediate abandonment. Clear timers and abort listeners on every winning outcome/rejection, retain existing error/sandbox/denial handling and observe late rejected work to avoid unhandled rejection. Do not let cancellation relaxation bypass policy withholding or approvals. Existing unit scaffolds are packages/nax-agent/test/unit/session/session-interaction.test.ts:39 (handler/runtime harness), packages/nax-agent/test/unit/session/native-backend-providers.test.ts:52 (open backend, profile, provider and sandbox harness), and test/unit/tools/provider-adapt.test.ts. Reuse makeFakeClock and asynchronous settlement helpers; the direct handler cases must use injected fake time and the 500 ms deadline test must take under 100 ms wall time. Strict three-session TDD applies because session lifecycle and tool denial semantics are involved.\n\nUS-004 generic memory delivery: packages/nax-agent/src/memory/operations.ts has 599 lines. FORGET_STATUS_BY_MODE is at :98, refreshIndex at :217, forgetLocked at :440, handOverForget at :460 and the exported forgetMemoryNote at :504. The locked path durably enqueues before direct deletion, saves previous in memory and currently removes the outbox entry and refreshes without restoring a pending answer (:480). Restore previous on a direct pending response before index refresh while keeping successful delivery/outbox removal and deleted/proposal behavior. packages/nax-agent/src/memory/refusal.ts:54 already supplies the bookkeeping-protected restoreForgotten helper. Extract forget handover functions and shared support rather than exceeding the cap; shared runtime helpers must live in operations-support.ts, not be imported back from operations.ts. Type-only dependencies must not introduce runtime cycles. packages/nax-agent/src/memory/delivery.ts:44 applyPushed currently deletes a forget only for status deleted (:49), with no recovery on pending. Direct queued entries no longer hold their deleted note, so pending must rewind only that scope to null and allow sync's ensuing pull to restore active data. packages/nax-agent/src/memory/sync-drain.ts:20 imports applyPushed, :141 applies delivery before removing the entry and :170 defines rewindPullCursor; move the cursor helper to a types-only-import leaf and re-export it from sync-drain. Otherwise delivery -> sync-drain -> delivery would create a forbidden runtime import cycle. Existing downstream imports remain unchanged at packages/nax-agent/src/internal.ts:52 and packages/nax/src/memory/host-writes.ts:36. The existing forget harness at packages/nax-agent/test/unit/memory/operations-forget.test.ts:106 has a real store/outbox, provider mock, clock and logger; it is already 651 lines, so watch the 800-line test cap. Existing sync-drain/sync tests and integration memory suites cover scheduling and cursor preservation. This generic fix must land before koda marking/resolution.\n\nUS-005 HTTP and flow cancellation: packages/nax/src/memory/koda-http.ts:51 defines KodaClient with a two-argument post, :269 request races perform against a cancellable deadline, :258 perform includes response-body reading, :287 preserves classified NaxErrors and :291 aborts its controller in finally. Extend only post with optional opts.signal, leaving get unchanged. A caller abort must race the entire answer even when fetch ignores its signal, abort the existing controller, reject MEMORY_KODA_ABORTED rather than UNREACHABLE/TIMEOUT, never fetch when already aborted, and clean up without overriding an already-arrived answer. Preserve configured-header redaction and existing timeout classification; credentials in this module make strict TDD isolation appropriate. packages/nax/src/chat/flow/flow-koda.ts:122 creates a 30-second client and :128 posts fleet/flows without a signal; add the third optional signal and forward { signal }. packages/nax/src/chat/flow/flow-provider.ts:393 createFlow reports post-push failures, :425 afterAllow already threads signal through commitAndPush (:443) but :455 loses it before createFlow; :480 sendTool needs the 5000 ms declaration. Classify MEMORY_KODA_ABORTED into the exact unknown-outcome message, naming the carded branch and retaining created/held results that settled before abort. Keep the existing pre-push/failed-push cancellation text and never call create after a cancelled failed push. Do not claim a cancelled HTTP create definitely did not happen and do not retry or query koda for it. Existing seams and tests are packages/nax/test/unit/chat/flow/flow-provider.test.ts:26 (restored _flowProviderDeps), :108 (approved-card collaborators) and :522 (held create); memory/koda-http.test.ts and chat/flow/flow-koda.test.ts cover transport/deadline/body shape. Add flow-provider-cancel.test.ts and extend HTTP and flow-koda tests. US-003 supplies the provider grace contract that makes the tool's own error reach the transcript; this story must not implement a second interaction cancellation policy.\n\nUS-006 koda held-forget lifecycle: packages/nax/src/memory/koda-approvals.ts:76 defines KodaApproval, :152 approvalOf currently projects no kind, :239 withRecorded replaces on scope/slug only, and :299 record writes parsed entries through the atomic version-1 file. Add optional kind with save-compatible parsing: retain valid declared save/forget, omit absent kind, treat any unknown value as save without invalidating other records; compare normalized kind plus scope/slug for replacement. No version bump or rewrite migration is needed. An older binary drops kind and degrades forget records to saves; the spec explicitly accepts this compatibility limitation. Save and forget records for the same slug coexist and resolve independently; do not implement save-during-forget conflict handling. packages/nax/src/memory/koda-provider.ts:285 retire currently maps 202 directly to pending without validating or recording an approval. Record kind forget with the response data.id and request clientId before returning pending; malformed 202 fails with existing bad response, while record failures warn but still resolve pending because retrying an accepted retire can return 409 and falsely finalize deletion. Preserve existing save recording at :313 and HTTP retirement classification.\n\npackages/nax/src/memory/koda-pull.ts:281 restorableNote is specifically a pending-save generation check; it cannot decide whether a refused forget should restore a deleted active mirror note. :320 rowRestoration already validates provider rows against the mirror, warns and retains unholdable records. :361 refusedRecord and :376 resolveRecord should branch for forget: page slug or any mirror note means drop with no restoration, absent mirror plus holdable active row means emit restoration and keep until applied, no active row means drop without a rejected tombstone. Open keeps; executed and 404 drop; actual feed tombstones still retire executed notes. Keep resolution at the last page, its 20-record budget, scope filtering, duplicate suppression and durable restoration retention. Existing transport/real-approvals scaffold is packages/nax/test/unit/memory/koda-pull-approvals.test.ts:1; create the dedicated forget-approvals suite and retain existing save restoration behavior.\n\nHost propagation is already centralized: packages/nax/src/memory/host.ts has 591 lines; MemoryParts at :200 currently holds no approvals store, readForgetPendingKeys at :230 merges only outbox and pending-forgets.jsonl, composeKoda at :304 creates but hides approvals, composeMemory at :330 wraps only its provider, readIndex at :452 and returned forgetPendingKeys at :588 both use the same reader. Extract reader and pendingForgetKey to host-forget-keys.ts, add optional kodaApprovals to composition, and re-read records each call to include only kind forget. Preserve all host members, MCP closure, local pending markers and no-cache semantics. packages/nax/src/memory/index.ts:11 exports pendingForgetKey today; keep that barrel export (and compatibility re-export if needed). packages/nax/src/cli/memory.ts:98 reads the host's keys, :105 appends the existing suffix, and :165 uses them in list; a host fix should propagate without duplicating CLI decision logic. Extend koda-approvals, koda-provider-forget-search, host-koda and CLI memory tests. Existing unit and integration host-koda and koda-pull-sync tests provide fake transport and real mirror scaffolding for forget -> list -> refused sync -> list. Do not write koda approvals to local pending-forgets.jsonl, do not extend offline memory status and do not claim the on-disk agent index gains the remote marker.\n\nUS-007 orchestrator warning: packages/nax/src/test-runners/scoped-selection.ts:60 defines isMonorepoOrchestratorCommand via normalizeCommandSpec and every-entry turbo/nx detection; :101 uses it. Move that exact predicate to the new leaf, import it locally for continued use and re-export it from scoped-selection. Preserve existing entry points: packages/nax/src/test-runners/index.ts:48 exports it and packages/nax/src/quality/command-resolver.ts:17 consumes that barrel. Config must import the leaf by ../test-runners/orchestrator-command, not the alias deep path or scoped-selection; the latter would bring logger and verification/smart-runner into config's graph (scoped-selection.ts:14-16). packages/nax/src/config/config-guards.ts:294 warns, :308 establishes equality precedence and :313 checks placeholders; insert early orchestrator return between equality and placeholder checks, using declared commands.test only. File currently has 593 lines, so preserve its cap. Missing root test still warns; equal commands still warn even for orchestrators. Existing tests at packages/nax/test/unit/config/config-guards.test.ts:71 already anchor the missing-test turbo warning (:79). This story changes warning behavior, not root scoped execution or quality command resolution.\n\nUS-008 branch review: packages/nax/src/workflow/feature-steps.ts:128 branchReviewStep applies verdict triage map at :150 but logs only describeFindings at :157, then returns mapped deferred minors with default leave at :166. Compute the suffix from this review's resulting rec.minors triage, not pre-review values or newly found minors, and append only when there are deferred minors. Preserve no-seed/no-run skipped handling, artifact writing, finding IDs, quality floor and the existing branch-fix ledger NO_MIRROR call (:195). fixNowMinors at :57 and feature-graph.ts:138 consume those triaged records already; no routing/state-machine changes are required. packages/nax/test/unit/workflow/feature-machine-log.test.ts:31 captures structured log messages, :40 supplies a feature-machine environment, :80 filters run-log lines and :117 anchors the no-findings text. Extend that harness with deferred minors and partial triage, asserting the suffix before elapsed time.\n\nMigration and rollout: all new tool/HTTP fields are optional, old no-grace and get callers remain unchanged, moved helpers retain re-exports, git results preserve shape and approval files stay version 1. No new dependency or configuration flag is required. Principal risks are signaling unrelated processes in mocked tests, detached-ssh prompt changes, timer/listener leaks or unhandled late rejections, classifying cancel as a retryable transport failure, deletion on accepted-but-unrecorded remote approvals, premature dropping of restoration records, import cycles and size-cap violations. Preserve all explicit exclusions and exact user-facing messages. Mandatory failure-table cases are included in the corresponding story criteria, including unsupported groups, exited git, invalid/infinite grace, raw promise rejection during grace, malformed 202, unreadable record, refused unholdable active row, and lack of ssh controlling terminal.",
+  "outOfScope": [
+    "`nax memory status` reporting a refused koda proposal, whether a save or a forget: status reads only the outbox today, and a refused koda record is resolved without a report. This is a follow-up to #2905.",
+    "The `(forget pending)` marker in the on-disk `index.md` that nax-agent's `refreshIndex` writes, and `index-render.ts`'s own reads, for a koda-held forget: they read only the outbox and the local `pending-forgets.jsonl` record. `nax memory list` and `host.renderIndex()` (which read `readForgetPendingKeys`) do mark it.",
+    "Writing a koda-held forget into the mirror's `pending-forgets.jsonl` record: `nax memory approve <slug>` would then retire the note locally without koda's decision.",
+    "A save of a slug while a koda forget of it is pending: the two records coexist and each resolves on its own.",
+    "A cancel grace for embedder tools (`EmbedderTool`), or a grace that any tool other than `nax-flow__send` declares.",
+    "Appending a tool's late result to the transcript after its grace has passed.",
+    "Asking koda after a cancelled create whether the flow exists: the result says the outcome is unknown.",
+    "Mirroring the `branch fix: N item(s): ...` ledger note to the run log.",
+    "Reading `review.commands.test` in `warnScopedTestCommand`: only the declared `quality.commands.test` decides the orchestrator check.",
+    "Killing git when nax itself exits mid-call: a detached git no longer receives the terminal's SIGINT, and the timeout timer dies with nax, so a nax killed during `botGit` or `commitAndPush` can leave git and its helpers running (`argvExec` has the same trait).",
+    "Running scoped test files through an orchestrator at the repo root: `RunCommand testScoped` keeps running the package-filtered command.",
+    "Changing `makeSpawnResult`'s default pid in `packages/test-kit`, or installing a default `_gitDeps.killProcessGroup` stub in a test preload.",
+    "Keeping a terminal for git's ssh transport: a detached git cannot answer an ssh passphrase or host-key prompt on the terminal."
+  ],
+  "routingProfile": "native-codex-dsm"
+}
