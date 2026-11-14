@@ -65,7 +65,7 @@ describe("buildWorkflowBranchReviewPrompt", () => {
     expect(prompt).toContain("Reachability");
     expect(prompt).toContain(WORKFLOW_QUALITY_CHECKLIST);
     expect(prompt).toContain(WORKFLOW_ENUMERATION_INSTRUCTION);
-    expect(prompt).toContain('"minorTriage": [{"id": "M1", "decision": "fix-now|leave"}]');
+    expect(prompt).toContain('"minorTriage": [{"id": "M1", "decision": "promote|fix-now|leave"}]');
   });
 
   test("checks storage against every declared limit and gives the per-file diff command (nax#2486)", () => {

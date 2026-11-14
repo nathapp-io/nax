@@ -77,7 +77,7 @@ export interface ReReviewVerdict {
   readonly newFindings: readonly WorkflowFindingDraft[];
 }
 
-export type MinorTriageDecision = "fix-now" | "leave";
+export type MinorTriageDecision = "promote" | "fix-now" | "leave";
 
 /** The whole-branch review (spec §7 step 2): the story-review verdict plus one triage per deferred minor. */
 export interface BranchReviewVerdict extends StoryReviewVerdict {

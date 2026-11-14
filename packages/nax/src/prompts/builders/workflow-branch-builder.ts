@@ -122,7 +122,7 @@ function requiredFilesBlock(input: BranchReviewPromptInput): string {
 }
 
 const REVIEW_JSON =
-  '{"spec": "pass|fail", "quality": "approved|changes", "inspectedFiles": ["path"], "findings": [{"severity": "critical|important|minor", "kind": "spec|quality", "file": "path", "line": 0, "acId": "AC-3", "issue": "what is wrong", "observed": "verbatim excerpt", "suggestion": "how to fix"}], "cannotVerify": ["..."], "minorTriage": [{"id": "M1", "decision": "fix-now|leave"}]}';
+  '{"spec": "pass|fail", "quality": "approved|changes", "inspectedFiles": ["path"], "findings": [{"severity": "critical|important|minor", "kind": "spec|quality", "file": "path", "line": 0, "acId": "AC-3", "issue": "what is wrong", "observed": "verbatim excerpt", "suggestion": "how to fix"}], "cannotVerify": ["..."], "minorTriage": [{"id": "M1", "decision": "promote|fix-now|leave"}]}';
 
 export function buildWorkflowBranchReviewPrompt(input: BranchReviewPromptInput): string {
   const preflight = input.preflightPath ? `\n- the pre-flight rulings: ${input.preflightPath}` : "";
@@ -164,7 +164,7 @@ ${memory !== undefined ? `${memory}\n\n` : ""}## Your remit
 - Consistency and duplication across stories.
 - ${WORKFLOW_DESIGN_DECISIONS_ITEM}
 - Storage against contracts: for every field one story persists and another story reads, writes or validates, the column type and width (as the migration declares it, not only the schema) must hold every value the DTOs, acceptance criteria and API contracts accept.
-- Triage each deferred minor as "fix-now" (cheap and worth doing before the PR) or "leave". Its "minorTriage" entry is its whole verdict: do not repeat a deferred minor as a finding.
+- Triage each deferred minor: "promote" when it describes wrong behaviour a user or caller can reach (it is then fixed as a blocking finding), "fix-now" when it is a real defect or a breach of a project rule worth fixing before the PR, or "leave" when it is style, comment wording, formatting or duplication that no project rule names (it is listed in the PR body and not fixed). Its "minorTriage" entry is its whole verdict: do not repeat a deferred minor as a finding.
 Judge every changed file you read against the checklist below, as well as against the cross-story contracts.
 
 ${WORKFLOW_QUALITY_CHECKLIST}
@@ -249,13 +249,16 @@ export function buildWorkflowBranchFixPrompt(input: {
   ];
   const read = documents.length > 0 ? ` Read ${documents.join(" and ")} for what the feature must do.` : "";
   const memory = memorySectionOf(input.memoryIndex);
+  const blocking = input.findings.filter((f) => f.severity !== "minor");
+  const minors = input.findings.filter((f) => f.severity === "minor");
   return `You are fixing a feature branch after its whole-branch review. Fix every finding in this pass: a later pass, if any, only re-checks what is still open.${read}
 
 ## Findings to fix
-${renderWorkflowFindings(input.findings)}
-
+${renderWorkflowFindings(blocking)}
+${minors.length > 0 ? `\n## Minor findings to fix after those\n${renderWorkflowFindings(minors)}\n` : ""}
 ## How to work
-- Fix every finding above. Findings marked minor are cheap cleanups the reviewer chose to fix now.
+- Fix every finding above. Findings marked minor are cleanups the reviewer chose to fix now.
+- Fix the findings in the first list before the minor ones.
 - For a red repo gate, or a story that ended with a red gate: ${GATE_INTEGRITY_RULE}
 - Re-run the tests that cover what you changed, and add a test where a finding names a missing one (TDD: see it fail first).
 - Before you commit, run the full test command of every package you changed, not only the tests you touched: the final repo gates run every suite, and a fix that breaks an unrelated test there turns the branch red.

@@ -92,7 +92,16 @@ export interface WorkflowSummaryView {
   }[];
   verdictMismatches?: readonly { model: string; count: number }[];
   /** Absent when the feature workflow never ran. */
-  branch?: { found: number; fixed: number; left: number; minorsLeft: number; fixRounds?: number } | undefined;
+  branch?:
+    | {
+        found: number;
+        fixed: number;
+        left: number;
+        minorsLeft: number;
+        fixRounds?: number;
+        minors?: { found: number; promoted: number; fixNow: number; left: number };
+      }
+    | undefined;
   /** The feature workflow ran but its branch review did not. */
   branchReviewSkipped?: { minorsLeft: number } | undefined;
   finalGates?: "green" | "red" | undefined;

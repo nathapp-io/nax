@@ -114,13 +114,15 @@ export async function repoGatesStep(
 }
 
 /**
- * nax#2550: `quality: "changes"` with no blocking finding is not a clean review. Mirrors
- * `parseStoryReviewReply`, which adds a synthetic spec finding to `spec: "fail"` with none, so the
- * reviewer's verdict always leaves something for the fix pass and the adjudication to act on.
+ * nax#2550: `quality: "changes"` with no blocking finding is not a clean review. A promoted
+ * minor is already concrete work, so the synthetic finding is only needed when neither exists.
  */
 const QUALITY_CHANGES_ISSUE = "quality: reviewer reported changes without a finding";
-function withQualityFloor(verdict: BranchReviewVerdict): WorkflowFindingDraft[] {
-  const blocking = verdict.findings.filter(isBlocking);
+function withQualityFloor(
+  verdict: BranchReviewVerdict,
+  promoted: readonly WorkflowFindingDraft[],
+): WorkflowFindingDraft[] {
+  const blocking = [...verdict.findings.filter(isBlocking), ...promoted];
   if (verdict.quality !== "changes" || blocking.length > 0) return blocking;
   return [{ kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE }];
 }
@@ -151,13 +153,20 @@ export async function branchReviewStep(
   const triagedMinors = rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" }));
   const restated = splitRestatedMinors(out.verdict.findings, rec.minors);
   await noteRestated(env, restated.dropped);
-  const { findings, nextFindingId } = assign(rec, withQualityFloor(out.verdict));
+  const promoted: WorkflowFindingDraft[] = triagedMinors
+    .filter((m) => m.triage === "promote")
+    .map((m) => ({
+      kind: "quality",
+      severity: "important",
+      issue: `${m.storyId}: ${m.text}`,
+    }));
+  const { findings, nextFindingId } = assign(rec, withQualityFloor(out.verdict, promoted));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
   // #2496: written here, after assign(), so the file and result.json name findings the same way.
   await env.sink.artifact("branch-review.json", { ...out.verdict, cannotVerify, findings: [...findings, ...minors] });
   const deferredTriage =
     rec.minors.length > 0
-      ? `; deferred minors: ${triagedMinors.filter((m) => m.triage === "fix-now").length} fix-now, ${triagedMinors.filter((m) => m.triage === "leave").length} leave`
+      ? `; deferred minors: ${promoted.length > 0 ? `${promoted.length} promote, ` : ""}${triagedMinors.filter((m) => m.triage === "fix-now").length} fix-now, ${triagedMinors.filter((m) => m.triage === "leave").length} leave`
       : "";
   log.done(
     `spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}${deferredTriage}`,
@@ -182,7 +191,7 @@ export async function branchFixStep(
   const round = fixRoundsOf(rec) + 1;
   const toFix = isFollowUpRound(rec)
     ? roundTargets(rec)
-    : [...rec.reviewOpen, ...fixNowMinors(rec), ...rec.gateFindings];
+    : [...rec.reviewOpen, ...rec.gateFindings, ...fixNowMinors(rec)];
   if (toFix.length === 0) return { patch: {}, exit: "nothing-to-fix" };
   const max = limitsOf(env).maxBranchFixRounds;
   if (round > max) {

@@ -55,6 +55,16 @@ function branchOf(rec: WorkflowFeatureRecord): NonNullable<WorkflowSummaryView["
     fixed: Math.max(0, found - left),
     left,
     minorsLeft: minorsLeftOf(rec),
+    ...(rec.minors.length
+      ? {
+          minors: {
+            found: rec.minors.length,
+            promoted: rec.minors.filter((m) => m.triage === "promote").length,
+            fixNow: rec.minors.filter((m) => m.triage === "fix-now").length,
+            left: rec.minors.filter((m) => m.triage === "leave").length,
+          },
+        }
+      : {}),
     ...(rec.fixRounds ? { fixRounds: rec.fixRounds } : {}),
   };
 }

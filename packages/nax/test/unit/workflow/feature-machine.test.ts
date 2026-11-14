@@ -131,7 +131,7 @@ describe("runFeatureMachine", () => {
       },
     );
     const final = await runFeatureMachine(h.env);
-    expect(h.fixInputs[0]?.map((f) => f.id)).toEqual(["B3", "M1", "B1", "B2"]);
+    expect(h.fixInputs[0]?.map((f) => f.id)).toEqual(["B3", "B1", "B2", "M1"]);
     expect(h.fixInputs[0]?.find((f) => f.id === "B2")?.issue).toContain("US-002 ended with a red gate (red: lint)");
     expect(h.reReviewInputs[0]?.map((f) => f.id)).toEqual(["B3", "M1"]);
     expect(h.adjudicated[0]?.map((f) => f.id)).toEqual(["B3", "B4"]);

@@ -175,7 +175,8 @@ function triageOf(parsed: unknown): Map<string, MinorTriageDecision> {
   if (!isRecord(parsed) || !Array.isArray(parsed.minorTriage)) return triage;
   for (const entry of parsed.minorTriage) {
     if (!isRecord(entry) || typeof entry.id !== "string" || triage.has(entry.id)) continue;
-    if (entry.decision === "fix-now" || entry.decision === "leave") triage.set(entry.id, entry.decision);
+    if (entry.decision === "promote" || entry.decision === "fix-now" || entry.decision === "leave")
+      triage.set(entry.id, entry.decision);
   }
   return triage;
 }

@@ -68,6 +68,12 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
     lines.push(
       `  ${c.gray("Branch findings:")} ${b.found} found, ${b.fixed} fixed, ${b.left} left (minors left ${b.minorsLeft}${b.fixRounds ? `, fix rounds ${b.fixRounds}` : ""})`,
     );
+    if (b.minors) {
+      const m = b.minors;
+      lines.push(
+        `  ${c.gray("Deferred minors:")} ${m.found} found, ${m.promoted} promoted, ${m.fixNow} fix-now, ${m.left} left`,
+      );
+    }
   }
   if (view.branchReviewSkipped) {
     const left = view.branchReviewSkipped.minorsLeft;

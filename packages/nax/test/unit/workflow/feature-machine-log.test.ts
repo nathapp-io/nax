@@ -196,6 +196,26 @@ describe("feature machine run log", () => {
       );
     });
 
+    test("logs promoted, fix-now and left counts", async () => {
+      const env = envWith({
+        review: {
+          ...REVIEW,
+          minorTriage: [
+            { id: "M1", decision: "promote" },
+            { id: "M2", decision: "fix-now" },
+            { id: "M3", decision: "leave" },
+          ],
+        },
+      });
+      await runFeatureMachine({
+        ...env,
+        record: { ...env.record, minors: [deferredMinor("M1"), deferredMinor("M2"), deferredMinor("M3")] },
+      });
+      expect(lines().find((line) => line.startsWith("branch-review: "))).toMatch(
+        /; deferred minors: 1 promote, 1 fix-now, 1 leave {2}\S+$/,
+      );
+    });
+
     test("AC-2: logs triage after important findings and before elapsed time", async () => {
       const env = envWith({
         review: {
