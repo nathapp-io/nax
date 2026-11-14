@@ -348,3 +348,45 @@ describe("an offline forget and the sync that acknowledges it", () => {
     });
   });
 });
+
+/**
+ * US-004: the round trip for a forget the provider merely holds.
+ *
+ * A `direct` forget deletes its note when the request is queued, and the entry carries no copy
+ * of it — so the drain cannot put it back the way a hand-over does. The pull can: the provider
+ * still holds the row as active, and the drain sends the scope's pull back to the beginning so
+ * this run reads it in full. An incremental pull is modelled here — a page is served only to a
+ * cursor at the start of the sequence — because that is what makes the rewind load-bearing.
+ */
+describe("US-004: a queued direct forget the provider holds pending", () => {
+  test("AC-9: the sync's pull brings the provider's active row back into the mirror", async () => {
+    await withTempDir(async (dir) => {
+      const active = note({ id: REMOTE_ID, status: "active" });
+      const h = harness(dir, {
+        reachable: [false, true],
+        push: { id: REMOTE_ID, status: "pending" },
+        pull: (asked) => (asked.cursor === null ? { notes: [active], done: true } : { notes: [], done: true }),
+      });
+      await h.store.writeNote(note());
+      // An earlier pull already moved past this slug: only a pull from the beginning re-reads it.
+      await h.store.writeSyncState({
+        provider: "scripted",
+        cursor: { project: "page-9", user: null },
+        lastPullAt: STAMP,
+        lastError: null,
+      });
+
+      const forgotten = await h.forget({ writeMode: "direct" });
+      // Direct retires the note at once; the queue is what tells the provider later.
+      expect(forgotten).toEqual({ slug: SLUG, status: "deleted", delivered: false });
+      expect(await h.store.readNote("project", SLUG)).toBeNull();
+
+      const result = await h.sync();
+
+      expect(result).toEqual({ outcome: "synced", pushed: 1, rejected: 0, pulled: 1, skipped: 0 });
+      // The provider never carried the retire out, so the mirror keeps the note it holds.
+      expect(await h.store.readNote("project", SLUG)).toEqual(active);
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+});

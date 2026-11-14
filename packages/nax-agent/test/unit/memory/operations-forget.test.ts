@@ -199,7 +199,7 @@ async function lockNonce(h: Harness): Promise<string> {
 describe("forgetMemoryNote", () => {
   withDepsRestore(_memoryStoreDeps);
 
-  test("AC-1: a direct forget the provider answers deletes the note and resolves deleted", async () => {
+  test("AC-1 / US-004 AC-4: a direct forget the provider answers deletes the note and resolves deleted", async () => {
     await withTempDir(async (dir) => {
       const h = harness(dir, { push: { id: "mem_1", status: "deleted" } });
       await h.store.writeNote(note());
@@ -235,7 +235,7 @@ describe("forgetMemoryNote", () => {
     });
   });
 
-  test("AC-2: a proposal forget pushes the request and leaves the note in place", async () => {
+  test("AC-2 / US-004 AC-5: a proposal forget pushes the request and leaves the note in place", async () => {
     await withTempDir(async (dir) => {
       const h = harness(dir, { push: { id: "mem_1", status: "pending" } });
       const existing = note();
@@ -488,7 +488,7 @@ describe("forgetMemoryNote", () => {
     expect(pub.forgetMemoryNote).toBe(forgetMemoryNote);
   });
 
-  test("a transient push failure is queued under direct, and the note stays retired", async () => {
+  test("US-004 AC-10: a transient push failure is queued under direct, and the note stays retired", async () => {
     await withTempDir(async (dir) => {
       const h = harness(dir, { push: new Error("connection reset by peer") });
       await h.store.writeNote(note());
@@ -554,6 +554,48 @@ describe("forgetMemoryNote", () => {
         message: "memory forget could not restore the note",
         data: { slug: SLUG, error: MIRROR_READ_ONLY },
       });
+    });
+  });
+});
+
+/**
+ * US-004: a provider that holds the forget instead of carrying it out.
+ *
+ * `pending` is not a retire: the provider recorded the request and has not acted on it, so
+ * under `direct` the note the forget already deleted has to come back. The order is the
+ * assertion in AC-3 — the note is written before the index is rendered, so the index the
+ * next session reads still lists it.
+ */
+describe("US-004: a direct forget the provider holds pending", () => {
+  test("AC-1/AC-2: the note is put back exactly as it was, and nothing is left queued", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_1", status: "pending" } });
+      const existing = note();
+      await h.store.writeNote(existing);
+
+      const result = await h.forget();
+
+      // The provider answered, it just has not carried the retire out.
+      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: true });
+      // The answer is not a delete: the mirror keeps the note it had, field for field.
+      expect(await h.store.readNote("project", SLUG)).toEqual(existing);
+      expect(existsSync(join(h.store.paths.notesDir, `${SLUG}.md`))).toBe(true);
+      // Accepted, so the request comes off the queue: there is nothing left to replay.
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("AC-3: the note is restored before the index is refreshed, so the index still lists it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_1", status: "pending" } });
+      await h.store.writeNote(note());
+
+      await h.forget();
+
+      // A refresh that ran before the restore would render a mirror without the note.
+      const line = await indexLineFor(h, SLUG);
+      expect(line).toContain(SLUG);
+      expect(line.endsWith(" (forget pending)")).toBe(false);
     });
   });
 });

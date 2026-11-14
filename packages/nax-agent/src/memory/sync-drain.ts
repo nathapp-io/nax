@@ -21,6 +21,7 @@ import { applyPushed } from "./delivery.ts";
 import { isMemoryBadResponse, isMemoryPushRejected } from "./note.ts";
 import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
 import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
+import { rewindPullCursor } from "./pull-cursor.ts";
 import type { MemoryStore } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, raceTimeout, warnQuietly } from "./support.ts";
 import { MEMORY_OP_TIMEOUT_MS, MEMORY_PUSH_MAX_BAD_RESPONSES, type MemoryScope, type MemoryTimers } from "./types.ts";
@@ -162,16 +163,12 @@ async function dropSuperseded(outbox: MemoryOutbox, delivered: MemoryOutboxEntry
 /**
  * Start this scope's next pull from the beginning.
  *
- * A pull skips a held key, and the cursor moves past it; that is safe only while the held write
- * is still on its way. Once it is parked or discarded, the provider's copy of that note — which
- * an incremental pull would never send again — is the one the mirror must take, so the scope is
- * read in full. A direct forget deleted its note when it was queued; this brings it back.
+ * Re-exported from the leaf module that owns it: `delivery.ts` needs the same rewind for a
+ * `direct` forget the provider held pending, and importing it back from here would close a
+ * cycle, because this file imports `applyPushed` from there. Every importer of `rewindPullCursor`
+ * keeps this specifier.
  */
-export async function rewindPullCursor(store: MemoryStore, scope: MemoryScope): Promise<void> {
-  const state = await store.readSyncState();
-  const cursor = scope === "user" ? { ...state.cursor, user: null } : { ...state.cursor, project: null };
-  await store.writeSyncState({ ...state, cursor });
-}
+export { rewindPullCursor };
 
 /**
  * Step 3: deliver every queued write, oldest first.

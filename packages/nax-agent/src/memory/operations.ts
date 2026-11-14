@@ -41,8 +41,10 @@
  *
  * `forgetMemoryNote` is the other half, and it only retires a note the mirror holds: an absent
  * slug is a refusal. It declares its queue entry *before* touching the note, so the intent is
- * durable first; under `direct` the note then goes, kept aside for a refusal to put back, and
- * under `proposal` it stays, with the marker coming from the outbox alone.
+ * durable first; under `direct` the note then goes, kept aside for a refusal to put back — and
+ * for an answer that is not a retire at all — and under `proposal` it stays, with the marker
+ * coming from the outbox alone. It lives in `forget-handover.ts`, re-exported here, because its
+ * inputs, refusals and index refresh are what `operations-support.ts` holds for both halves.
  *
  * `approveMemoryNote` is the transition a proposal waits for: a pending note is rewritten in force
  * under the caller's clock and the index is regenerated from the mirror, a note already in force is
@@ -57,8 +59,6 @@
  */
 import { randomUUID } from "node:crypto";
 import { type AgentLogger, getLogger } from "#src/infra/agent-logger";
-import { NaxError } from "#src/infra/nax-error";
-import { refreshMemoryIndex } from "./index-render.ts";
 import {
   clockOf,
   type MirrorLockInput,
@@ -67,24 +67,28 @@ import {
   withMirrorLock,
 } from "./mirror-lock.ts";
 import { isMemoryPushRejected } from "./note.ts";
+import {
+  type MemoryOperationInput,
+  type MemorySaveInput,
+  type MemorySaveResult,
+  noteNotFound,
+  refreshIndex,
+  writeRefused,
+} from "./operations-support.ts";
 import { createMemoryOutbox, type MemoryOutbox } from "./outbox.ts";
-import type { MemoryProvider, MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
-import { discardRefused, restoreForgotten, restoreNote } from "./refusal.ts";
+import type { MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
+import { discardRefused, restoreNote } from "./refusal.ts";
 import type { MemoryStore } from "./store.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout } from "./support.ts";
 import {
   MEMORY_OP_TIMEOUT_MS,
   type MemoryNote,
   type MemoryNoteStatus,
-  type MemoryNoteWrite,
   type MemoryScope,
   type MemoryTimers,
-  type MemoryWriteRefusal,
   memoryNoteKey,
 } from "./types.ts";
-import { forgetReasonRefusal, validateMemoryNoteWrite } from "./validate.ts";
-
-const ERROR_STAGE = "memory";
+import { validateMemoryNoteWrite } from "./validate.ts";
 
 /** The status a write starts in: a proposal is not in force until it is approved. */
 const STATUS_BY_MODE = {
@@ -92,61 +96,19 @@ const STATUS_BY_MODE = {
   proposal: "pending",
 } as const satisfies Record<MemorySaveInput["writeMode"], MemoryNoteStatus>;
 
-/** The status a forget rests in with no provider answer: retired, or still awaiting approval. */
-const FORGET_STATUS_BY_MODE = {
-  direct: "deleted",
-  proposal: "pending",
-} as const satisfies Record<MemoryForgetInput["writeMode"], MemoryNoteStatus>;
-
-/** What every operation is given: the mirror it writes, the queue and the provider it talks to. */
-export interface MemoryOperationInput {
-  readonly store: MemoryStore;
-  readonly outbox: MemoryOutbox;
-  readonly provider: MemoryProvider;
-  /**
-   * Reported through when the save cannot be undone; the other outcomes say what
-   * became of the write in the result, so a delivered save has nothing to say.
-   */
-  readonly logger: AgentLogger;
-  /** The clock a note is stamped from; default `() => new Date()`. */
-  readonly now?: () => Date;
-  /** The timer seam the probe and the push race against; default the process globals. */
-  readonly timers?: MemoryTimers;
-  /** The liveness probe a lock holder is judged by; default `isProcessAlive`. */
-  readonly isAlive?: (pid: number) => boolean;
-}
-
-/** One save: the write to store, the mode it is stored in, and the label it is stored under. */
-export interface MemorySaveInput extends MemoryOperationInput {
-  readonly write: MemoryNoteWrite;
-  /** `direct` takes effect at once; `proposal` is held pending until it is approved. */
-  readonly writeMode: "direct" | "proposal";
-  /** The one-line label the note records as its `source` (`"nax-chat"`, `"nax-run"`, ...). */
-  readonly source: string;
-}
-
-/** What a save came to: the note's slug, the status it ended in, and whether a provider took it. */
-export interface MemorySaveResult {
-  readonly slug: string;
-  readonly status: MemoryNoteStatus;
-  readonly delivered: boolean;
-}
-
-/** One forget: the note to retire, why, and the mode it is retired in. */
-export interface MemoryForgetInput extends MemoryOperationInput {
-  readonly scope: MemoryScope;
-  readonly slug: string;
-  readonly reason: string;
-  /** `direct` retires the note at once; `proposal` asks for approval and leaves it in place. */
-  readonly writeMode: "direct" | "proposal";
-}
-
-/** What a forget came to: the slug it names, the status it ended in, and whether it was delivered. */
-export interface MemoryForgetResult {
-  readonly slug: string;
-  readonly status: MemoryNoteStatus;
-  readonly delivered: boolean;
-}
+/**
+ * The operations' input and result shapes live in `operations-support.ts`, with the refusals and
+ * the index refresh both this file and `forget-handover.ts` need; a helper in either of those two
+ * would put them in an import cycle. They are re-exported here so the module's public surface is
+ * unchanged.
+ */
+export type {
+  MemoryForgetInput,
+  MemoryForgetResult,
+  MemoryOperationInput,
+  MemorySaveInput,
+  MemorySaveResult,
+} from "./operations-support.ts";
 
 /**
  * One approval: the note to put in force, named by its scope and slug.
@@ -166,11 +128,6 @@ export interface MemoryApproveInput {
   readonly timers?: MemoryTimers;
   /** The liveness probe a lock holder is judged by; default `isProcessAlive`. */
   readonly isAlive?: (pid: number) => boolean;
-}
-
-/** The refusal a rejected write is thrown as: the validator's reason as the message, its field as context. */
-function writeRefused(refusal: MemoryWriteRefusal): NaxError {
-  return new NaxError(refusal.reason, "MEMORY_WRITE_REFUSED", { stage: ERROR_STAGE, field: refusal.field });
 }
 
 /** The note a write becomes: a fresh id, the mode's starting status and the caller's clock. */
@@ -206,17 +163,6 @@ function saveRequest(note: MemoryNote, writeMode: MemorySaveInput["writeMode"]):
  */
 async function recordDelivered(input: MemorySaveInput, note: MemoryNote, pushed: MemoryPushResult): Promise<void> {
   await input.store.writeNote({ ...note, id: pushed.id, status: pushed.status });
-}
-
-/**
- * Regenerate the indexes from what the store now holds, so the next session reads this write.
- *
- * The queue is read for the notes whose forget is still waiting: that marker is the outbox
- * speaking, and an index rendered without it would report a retire that is still in flight as
- * though it had never been asked for.
- */
-async function refreshIndex(input: { readonly store: MemoryStore; readonly outbox: MemoryOutbox }): Promise<void> {
-  await refreshMemoryIndex(input.store, { heldForgets: await input.outbox.heldKeys("forget") });
 }
 
 /** The undelivered answer: the write is on the queue, not delivered. */
@@ -373,131 +319,11 @@ async function queueWithoutMirror(input: MemorySaveInput): Promise<MemorySaveRes
   return await queueFenced(input, note, saveRequest(note, input.writeMode));
 }
 
-/** The note an operation names: the two fields the not-found refusal is spelled from. */
-interface MemoryNoteRef {
-  readonly scope: MemoryScope;
-  readonly slug: string;
-}
-
-/** The refusal a note this mirror does not hold — or one that is history — is thrown as. */
-function noteNotFound(input: MemoryNoteRef): NaxError {
-  return new NaxError(
-    `memory note "${memoryNoteKey(input.scope, input.slug)}" is not in this mirror`,
-    "MEMORY_NOTE_NOT_FOUND",
-    { stage: ERROR_STAGE, scope: input.scope, slug: input.slug },
-  );
-}
-
-/** The request one forget is pushed as: its own UUID keys the write, and the reason rides along. */
-function forgetRequest(input: MemoryForgetInput): MemoryWriteRequest {
-  const { scope, slug, writeMode, reason } = input;
-  return { kind: "forget", clientId: randomUUID(), scope, slug, writeMode, reason };
-}
-
-/** Queue a forget this operation could not deliver, and rebuild the index so its marker shows. */
-async function queuedForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
-  await refreshIndex(input);
-  return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
-}
-
 /**
- * The ordered half of a forget: join a sync that owns the mirror, or take the lock and decide
- * under it. Nothing is read from the mirror before the lock is held, so what a forget retires
- * and what the queue is asked about are both the mirror's current answer rather than a stale one.
+ * The forget half of these operations lives in `forget-handover.ts`: it is re-exported here so
+ * the module, and the barrel that imports it, keep every name they published before.
  */
-async function commitForget(input: MemoryForgetInput): Promise<MemoryForgetResult> {
-  const request = forgetRequest(input);
-  if (mirrorSyncInFlight(input.store)) return await queueFencedForget(input, request);
-  return await withMirrorLock(input, () => forgetLocked(input, request));
-}
-
-/**
- * The answer while a sync of this process owns the mirror: the request is queued, and the
- * mirror is only read.
- *
- * The note is still required — a forget of a slug the mirror does not hold is refused rather
- * than queued — but nothing is deleted and no index is rendered: an index built from a mirror
- * the sync is halfway through changing would publish its half-written state, and the sync's own
- * refresh is the one that counts.
- */
-async function queueFencedForget(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
-  if ((await input.store.readNote(input.scope, input.slug)) === null) throw noteNotFound(input);
-  await input.outbox.enqueue(request);
-  return { slug: input.slug, status: FORGET_STATUS_BY_MODE[input.writeMode], delivered: false };
-}
-
-/**
- * Retire the note and deliver the request, while the mirror's lock is held.
- *
- * The intent is declared on the queue *before* the note it names is touched. Under `direct`
- * this method deletes that note, and a delete no durable request records is a retire the
- * provider never hears about — the next pull restores the note and the agent's decision is
- * silently undone. Writing the entry first costs one file write and makes every later failure
- * recoverable: a failed delete leaves the entry to be replayed, a transient push failure
- * leaves it queued, and only a permanent refusal takes it back off (with the note put back,
- * under `direct`, because a refusal will never change).
- */
-async function forgetLocked(input: MemoryForgetInput, request: MemoryWriteRequest): Promise<MemoryForgetResult> {
-  const previous = await input.store.readNote(input.scope, input.slug);
-  if (previous === null) throw noteNotFound(input);
-  // Read before the entry goes on: the one this call is about to add cannot be "earlier work".
-  const waiting = (await input.outbox.heldKeys()).has(memoryNoteKey(input.scope, input.slug));
-  await input.outbox.enqueue(request);
-  if (input.writeMode === "direct") await input.store.deleteNote(input.scope, input.slug);
-  if (waiting) return await queuedForget(input);
-  return await handOverForget(input, previous, request);
-}
-
-/**
- * Ask the provider to forget the note this operation already queued.
- *
- * Anything short of an acceptance leaves the entry where it is: the entry is what makes the
- * retire durable, not this attempt. Acceptance and a permanent refusal both take it back off
- * — retrying a refusal would repeat it — and the refusal puts the note back under `direct`.
- */
-async function handOverForget(
-  input: MemoryForgetInput,
-  previous: MemoryNote,
-  request: MemoryWriteRequest,
-): Promise<MemoryForgetResult> {
-  const timers = input.timers ?? GLOBAL_MEMORY_TIMERS;
-  if (!(await providerAnswers(input.provider, timers))) return await queuedForget(input);
-  let answer: MemoryPushResult;
-  try {
-    answer = await raceTimeout(input.provider.push(request), MEMORY_OP_TIMEOUT_MS, timers);
-  } catch (error) {
-    if (!isMemoryPushRejected(error)) return await queuedForget(input);
-    // The refusal is the caller's answer; the entry and the note are put back regardless of
-    // whether removing it works, so a refused forget never leaves the note deleted.
-    await discardRefused(input, request.clientId);
-    if (input.writeMode === "direct") await restoreForgotten(input, previous);
-    throw error;
-  }
-  await input.outbox.remove(request.clientId);
-  await refreshIndex(input);
-  return { slug: input.slug, status: answer.status, delivered: true };
-}
-
-/**
- * Forget one note: retire it in the mirror and tell the provider, or queue the request.
- *
- * The reason is checked first, before the lock and before anything is written: a justification
- * that is empty, carries a line break or runs past `MEMORY_FORGET_REASON_MAX_CHARS` is refused
- * as `MEMORY_WRITE_REFUSED`, so no such text reaches the request the provider is pushed or the
- * entry a queued forget leaves in the mirror's outbox.
- *
- * A mirror another writer owns is not this forget's to change, so it is coordinated exactly as
- * a save is: this process's chain (`orderedByStore`) orders the forgets and saves of one mirror,
- * and the store's lock file orders them across processes. Without the lock a forget could delete
- * a note while another process's save restored or overwrote it, and the queue's order would
- * describe writes that never happened in that order. A permanent refusal is the one answer
- * undone, under `direct`, and it is rethrown; an absent slug is never queued.
- */
-export async function forgetMemoryNote(input: MemoryForgetInput): Promise<MemoryForgetResult> {
-  const refusal = forgetReasonRefusal(input.reason);
-  if (refusal !== null) throw writeRefused(refusal);
-  return await orderedByMirrorLocks(input.store, () => commitForget(input));
-}
+export { forgetMemoryNote } from "./forget-handover.ts";
 
 /** The statuses an approval may not bring into force: a note that is already history. */
 const RETIRED_STATUSES: ReadonlySet<MemoryNoteStatus> = new Set(["superseded", "rejected", "deleted"]);
