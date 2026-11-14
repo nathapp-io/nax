@@ -3,7 +3,7 @@
   "feature": "cancel-and-forget-fixes",
   "branchName": "feat/cancel-and-forget-fixes",
   "createdAt": "2026-11-14T03:12:44.466Z",
-  "updatedAt": "2026-11-14T04:04:58.719Z",
+  "updatedAt": "2026-11-14T04:23:33.361Z",
   "userStories": [
     {
       "id": "US-001",
@@ -208,14 +208,17 @@
         "data-integrity"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Two durable write paths require different recovery mechanisms, plus cycle-free extractions under hard file-size limits and a real-sync regression."
+        "reasoning": "Two durable write paths require different recovery mechanisms, plus cycle-free extractions under hard file-size limits and a real-sync regression.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/memory/operations.ts",
@@ -243,7 +246,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "e609e0f90c76839b5d9fe4112952dae00a046f4f"
     },
     {
       "id": "US-005",
