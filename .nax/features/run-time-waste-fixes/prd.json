@@ -3,7 +3,7 @@
   "feature": "run-time-waste-fixes",
   "branchName": "feat/run-time-waste-fixes",
   "createdAt": "2026-11-14T12:17:18.014Z",
-  "updatedAt": "2026-11-14T13:21:05.330Z",
+  "updatedAt": "2026-11-14T13:28:46.159Z",
   "userStories": [
     {
       "id": "US-001",
@@ -473,14 +473,17 @@
         "2920"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Changes triage contracts, concrete finding allocation and fix priorities across parsing, feature workflow, prompts and reporting."
+        "reasoning": "Changes triage contracts, concrete finding allocation and fix priorities across parsing, feature workflow, prompts and reporting.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/feature-steps.ts",
@@ -510,7 +513,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8b1b608aa9e7bda82ca21655a37d82fdfa818aee"
     },
     {
       "id": "US-008",
