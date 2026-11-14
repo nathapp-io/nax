@@ -27,6 +27,18 @@ describe("selectScopedTests", () => {
     smartRunnerConfig: { enabled: true, fallback: "import-grep" as const, testFilePatterns: ["**/*.test.ts"] },
   };
 
+  test.each([
+    ["pytest -q", "pytest -q", true],
+    [["a", "b"], ["a", "b"], true],
+    ["pytest -q", "pytest -q {{files}}", false],
+    [["a", "b"], ["b", "a"], false],
+  ])("compares the built scoped command to the suite", async (testCommand, testScopedTemplate, expected) => {
+    Object.assign(_scopedSelectionDeps, makeFakeDeps({ getChangedTestFiles: async () => ["tests/test_a.py"] }));
+    const result = await selectScopedTests({ ...baseInput, testCommand, testScopedTemplate });
+    expect(result.isFullSuite).toBe(expected);
+    expect(result.thresholdFallback).toBe(false);
+  });
+
   test("monorepo orchestrator command bypasses smart runner", async () => {
     const fakeDeps = makeFakeDeps({
       getChangedNonTestFiles: async () => {

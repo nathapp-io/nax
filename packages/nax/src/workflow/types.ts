@@ -28,6 +28,7 @@ import type { ConfigChangeRefusal } from "./config-change";
 export type GateState = "green" | "red" | "skipped";
 
 export interface GateRunResult {
+  readonly suiteCovered?: true;
   readonly red: boolean;
   readonly states: Readonly<Partial<Record<GateName, GateState>>>;
   readonly findings: readonly WorkflowFindingDraft[];

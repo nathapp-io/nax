@@ -47,10 +47,27 @@ const green = {
     durationMs: 1,
     passCount: 3,
     isFullSuite: false,
+    coversFullSuite: false,
   },
 } satisfies Record<string, Result>;
 
 describe("runStoryGates", () => {
+  test.each([true, false])("propagates suite coverage only when true: %s", async (coversFullSuite) => {
+    const scoped: VerifyScopedOutput = {
+      success: true,
+      status: "passed",
+      findings: [],
+      durationMs: 1,
+      passCount: 3,
+      isFullSuite: true,
+      coversFullSuite,
+    };
+    fake({ ...green, [verifyScopedOp.name]: scoped });
+    const result = await runStoryGates(sc());
+    expect("suiteCovered" in result).toBe(coversFullSuite);
+    if (coversFullSuite) expect(result.suiteCovered).toBe(true);
+  });
+
   test("all green", async () => {
     fake(green);
     const r = await runStoryGates(sc());

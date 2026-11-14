@@ -390,7 +390,12 @@ async function evaluate(env: StoryLoopEnv, s: LoopState): Promise<WorkflowFindin
   await env.sink.update({ gates: { ...s.gates.states } });
   if (s.gates.red) return [...s.assign(s.gates.findings), ...s.reviewOpen];
   await env.sink.update({ phase: "suite" });
-  s.suite = await env.steps.fullSuite();
+  if (s.gates.suiteCovered) {
+    s.suite = { red: false, states: { "full-suite": "green" }, findings: [] };
+    await env.sink.ledger(ledgerText.note("full-suite green (scoped gate ran the full-suite command; reused)"));
+  } else {
+    s.suite = await env.steps.fullSuite();
+  }
   s.suiteThisIteration = true;
   const suiteFindings = s.suite.red ? s.assign(s.suite.findings) : [];
   // Preserve the open review's fix base while suite failures bypass re-review before the cap.

@@ -72,6 +72,7 @@ function fakeDeps(overrides: Partial<VerifyScopedDeps> = {}): VerifyScopedDeps {
     }),
     parseTestOutput: () => ({ passed: 1, failed: 0, failures: [] }),
     testSummaryToFindings: () => [],
+    resolveFullSuiteCommand: async () => undefined,
     ...overrides,
   };
 }
