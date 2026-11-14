@@ -148,13 +148,20 @@ export async function branchReviewStep(
   const unread = out.verdict.unreadFiles ?? [];
   if (unread.length > 0) await env.sink.ledger(ledgerText.note(describeUnread(unread)));
   const triage = new Map(out.verdict.minorTriage.map((t) => [t.id, t.decision]));
+  const triagedMinors = rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" }));
   const restated = splitRestatedMinors(out.verdict.findings, rec.minors);
   await noteRestated(env, restated.dropped);
   const { findings, nextFindingId } = assign(rec, withQualityFloor(out.verdict));
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
   // #2496: written here, after assign(), so the file and result.json name findings the same way.
   await env.sink.artifact("branch-review.json", { ...out.verdict, cannotVerify, findings: [...findings, ...minors] });
-  log.done(`spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}`);
+  const deferredTriage =
+    rec.minors.length > 0
+      ? `; deferred minors: ${triagedMinors.filter((m) => m.triage === "fix-now").length} fix-now, ${triagedMinors.filter((m) => m.triage === "leave").length} leave`
+      : "";
+  log.done(
+    `spec ${out.verdict.spec}, quality ${out.verdict.quality} - ${describeFindings([...findings, ...minors])}${deferredTriage}`,
+  );
   return {
     patch: {
       reviewRan: true,
@@ -162,7 +169,7 @@ export async function branchReviewStep(
       ...(unread.length > 0 ? { reviewUnread: unread } : {}),
       reviewOpen: findings,
       nextFindingId,
-      minors: rec.minors.map((m) => ({ ...m, triage: triage.get(m.id) ?? "leave" })),
+      minors: triagedMinors,
       newMinors: [...rec.newMinors, ...minorIssues(restated.kept)],
     },
   };

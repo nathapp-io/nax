@@ -117,17 +117,22 @@ function heldOutcome(data: unknown): FlowHeld {
  *
  * @param connection - The koda API root and the headers carrying the agent key
  * @param body - The flow to create, as the request described it
+ * @param signal - The turn's cancellation; a signal already aborted sends nothing
  * @returns The created flow, or the approval request holding the create
  * @throws NaxError `FLOW_KODA_UNEXPECTED_RESPONSE` for an answer koda's contract
  *   does not define; the client's own error unchanged for everything else
  */
-export async function createKodaFlow(connection: KodaFlowConnection, body: FlowCreateBody): Promise<FlowCreateOutcome> {
+export async function createKodaFlow(
+  connection: KodaFlowConnection,
+  body: FlowCreateBody,
+  signal?: AbortSignal,
+): Promise<FlowCreateOutcome> {
   const client = _flowKodaDeps.createKodaClient({
     url: connection.url,
     headers: connection.headers,
     timeoutMs: FLOW_KODA_REQUEST_TIMEOUT_MS,
   });
-  const answer = await client.post(FLOW_KODA_CREATE_PATH, body);
+  const answer = await client.post(FLOW_KODA_CREATE_PATH, body, signal === undefined ? undefined : { signal });
   if (answer.status === 201) return createdOutcome(answer.data);
   if (answer.status === 202) return heldOutcome(answer.data);
   throw unexpected(answer.status, "; a flow create answers 201 or 202");

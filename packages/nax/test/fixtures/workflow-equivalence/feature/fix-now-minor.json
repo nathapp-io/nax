@@ -151,7 +151,7 @@
       },
       "kind": "log",
       "level": "info",
-      "message": "branch-review: spec pass, quality approved - no findings  <dur>"
+      "message": "branch-review: spec pass, quality approved - no findings; deferred minors: 1 fix-now, 0 leave  <dur>"
     },
     {
       "kind": "update",

@@ -113,16 +113,22 @@ export function warnQuietly(logger: AgentLogger, message: string, data: Record<s
  * of that error, not an alternative to it. A step that throws is reported and the rest still
  * runs: a mirror left missing a note it holds, because a queue file could not be removed, is
  * worse than an entry surviving to be refused again.
+ *
+ * It answers whether the step ran. A caller for which the step is the *only* thing standing
+ * between the write and a lost fact needs that answer: reporting the failure is not the same as
+ * recovering from it, and such a caller has a second route (the pull) to take instead.
  */
 export async function bookkeeping(
   logger: AgentLogger,
   message: string,
   data: Record<string, unknown>,
   step: () => Promise<void>,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await step();
+    return true;
   } catch (error) {
     warnQuietly(logger, message, { ...data, error: errorMessage(error) });
+    return false;
   }
 }

@@ -19,6 +19,13 @@
  * than the record it replaces and must sort after it in the oldest-first
  * resolution budget. Records keep the order they were made in.
  *
+ * A record also carries the `kind` of the write koda answered: a save (the
+ * default) or a forget. It is part of the identity, so a save and a held forget
+ * for one slug coexist and each is replaced only by a record of its own kind. An
+ * absent kind is written back absent, so an existing file stays valid, and any
+ * kind this build does not know reads as a save — never as a forget, because a
+ * value it cannot read must not make the file unusable.
+ *
  * `record` refuses an entry it could not read back — an empty `approvalId` or
  * `slug`, or a scope it does not know — and leaves the file exactly as it was,
  * warning once per refused entry. Writing it would make the whole file unusable,
@@ -63,15 +70,26 @@ const KODA_APPROVALS_VERSION = 1;
 /** The scopes a record may name. */
 const KODA_APPROVAL_SCOPES = ["project", "user"] as const satisfies readonly MemoryScope[];
 
-/** One save a `202` answered: the approval koda opened, and the note it was for. */
+/** The kind a save record carries, and the one a record with no kind is reconciled as. */
+const KODA_APPROVAL_KIND_SAVE = "save";
+/** The kind a forget's held approval carries: resolved by koda's answer, never as a save. */
+const KODA_APPROVAL_KIND_FORGET = "forget";
+
+/** One write a `202` answered: the approval koda opened, and the note it was for. */
 export interface KodaApproval {
   /** koda's id for the approval request. */
   readonly approvalId: string;
-  /** The scope of the note the save was for. */
+  /**
+   * The write the approval was opened for: a save (the default, and what a record with no kind
+   * reads as) or a forget. An absent kind is written without one, so a file an older nax reads
+   * stays valid; any kind this build does not know reads as a save.
+   */
+  readonly kind?: "save" | "forget";
+  /** The scope of the note the write was for. */
   readonly scope: MemoryScope;
-  /** The slug of the note the save was for. */
+  /** The slug of the note the write was for. */
   readonly slug: string;
-  /** The id the save gave koda for the pending note; the mirror's note carries the same id. */
+  /** The id the write gave koda for the pending note; the mirror's note carries the same id. */
   readonly clientId: string;
 }
 
@@ -123,6 +141,19 @@ function isScope(value: unknown): value is MemoryScope {
 }
 
 /**
+ * The kind a stored value reads as.
+ *
+ * An absent kind stays absent, so a record written before this field existed is still written
+ * back without one. Any other value the build does not recognise — including a `"save"` typed
+ * by a newer nax, and an unknown word — reads as a save: a file holding one is never unusable,
+ * and every `kind` other than `"forget"` is the save it has always meant.
+ */
+function kindOf(value: unknown): KodaApproval["kind"] {
+  if (value === undefined) return undefined;
+  return value === KODA_APPROVAL_KIND_FORGET ? KODA_APPROVAL_KIND_FORGET : KODA_APPROVAL_KIND_SAVE;
+}
+
+/**
  * A record read back from the file, or `undefined` when the entry is not one.
  *
  * `approvalId` and `slug` are the record's identity and the field a resolution
@@ -136,7 +167,9 @@ function approvalOf(value: unknown): KodaApproval | undefined {
   if (typeof entry.slug !== "string" || entry.slug === "") return undefined;
   if (typeof entry.clientId !== "string") return undefined;
   if (!isScope(entry.scope)) return undefined;
-  return { approvalId: entry.approvalId, scope: entry.scope, slug: entry.slug, clientId: entry.clientId };
+  const kind = kindOf(entry.kind);
+  const record = { approvalId: entry.approvalId, scope: entry.scope, slug: entry.slug, clientId: entry.clientId };
+  return kind === undefined ? record : { ...record, kind };
 }
 
 /** What a read found: usable records, no file at all, or a file that cannot be used. */
@@ -209,9 +242,15 @@ async function writeApprovals(path: string, approvals: readonly KodaApproval[]):
   }
 }
 
-/** Key of a record's identity: the scope and slug one approval request is open for. */
-function proposalKey(scope: MemoryScope, slug: string): string {
-  return `${scope}\u0000${slug}`;
+/**
+ * Key of a record's identity: the kind, scope and slug one approval request is open for.
+ *
+ * The kind is part of it so a held forget and a save for the same slug coexist: they are two
+ * different requests koda answers separately, and resolving one must not discard the other. A
+ * record with no kind keys as a save, so an older record is still replaced by a save of it.
+ */
+function proposalKey(entry: KodaApproval): string {
+  return `${entry.kind ?? KODA_APPROVAL_KIND_SAVE}\u0000${entry.scope}\u0000${entry.slug}`;
 }
 
 /**
@@ -228,10 +267,10 @@ function unreadableFile(path: string, read: ApprovalsRead): NaxError {
   );
 }
 
-/** `entry` replacing the record of the same scope and slug, kept in record order. */
+/** `entry` replacing the record of the same kind, scope and slug, kept in record order. */
 function withRecorded(approvals: readonly KodaApproval[], entry: KodaApproval): readonly KodaApproval[] {
-  const key = proposalKey(entry.scope, entry.slug);
-  return [...approvals.filter((existing) => proposalKey(existing.scope, existing.slug) !== key), entry];
+  const key = proposalKey(entry);
+  return [...approvals.filter((existing) => proposalKey(existing) !== key), entry];
 }
 
 /**

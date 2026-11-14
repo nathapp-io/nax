@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { getEventListeners } from "node:events";
 import { NaxError } from "@/errors";
 import {
   _kodaClientDeps,
@@ -382,6 +383,127 @@ describe("createKodaClient — header safety", () => {
     const error = await rejection(makeClient({ Authorization: "Bearer s3cr3t-key" }).get("projects/rs"));
 
     expect(JSON.stringify(error.context)).not.toContain("s3cr3t-key");
+  });
+});
+
+describe("createKodaClient — a caller's cancellation", () => {
+  /**
+   * Serve the request with an answer the test hands over itself: the answer is
+   * outstanding until `respond()`, which is how a request the caller aborts while
+   * the network still owes a 201 is reproduced without a fixed sleep.
+   */
+  function owedAnswer(body: unknown, status: number): { respond: () => void } {
+    let release: (() => void) | undefined;
+    stubFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(jsonAnswer(body, status));
+        }),
+    );
+    return { respond: () => release?.() };
+  }
+
+  test("rejects with MEMORY_KODA_ABORTED when the caller aborts before the answer arrives (AC-1)", async () => {
+    const owed = owedAnswer({ ret: 0, data: { id: "flow_1" } }, 201);
+    const controller = new AbortController();
+
+    const call = makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal });
+    // The 201 is still owed when the turn is cancelled, so the caller's abort must win.
+    controller.abort();
+    const error = await rejection(call);
+
+    expect(error.code).toBe("MEMORY_KODA_ABORTED");
+    expect(error.context?.path).toBe("fleet/flows");
+    // The answer arriving afterwards cannot revive the call.
+    owed.respond();
+  });
+
+  test("aborts the signal it passed to fetch once the call has rejected (AC-2)", async () => {
+    const owed = owedAnswer({ ret: 0, data: { id: "flow_1" } }, 201);
+    const controller = new AbortController();
+
+    const call = makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal });
+    controller.abort();
+    const error = await rejection(call);
+
+    expect(error.code).toBe("MEMORY_KODA_ABORTED");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.init.signal?.aborted).toBe(true);
+    owed.respond();
+  });
+
+  test("rejects a signal that is already aborted without calling fetch at all (AC-3)", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: {} }, 201));
+    const controller = new AbortController();
+    controller.abort();
+
+    const error = await rejection(makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal }));
+
+    expect(error.code).toBe("MEMORY_KODA_ABORTED");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("resolves an answer that arrives before the caller aborts (AC-4)", async () => {
+    stubFetch(() => jsonAnswer({ ret: 0, data: { id: "flow_1" } }, 201));
+    const controller = new AbortController();
+
+    const answer = await makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal });
+    controller.abort();
+
+    expect(answer).toEqual({ status: 201, data: { id: "flow_1" } });
+  });
+
+  test("releases the caller's abort handler once the call has settled (D-3)", async () => {
+    // A turn's signal outlives the call it bounds: a handler left attached would retain
+    // this request's path and body until the turn ended.
+    stubFetch(() => jsonAnswer({ ret: 0, data: { id: "flow_1" } }, 201));
+    const controller = new AbortController();
+
+    await makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal });
+
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+
+  test("releases the caller's abort handler once the call has failed (D-3)", async () => {
+    stubFetch(() => new Response("boom", { status: 500 }));
+    const controller = new AbortController();
+
+    const error = await rejection(makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal }));
+
+    expect(error.code).toBe("MEMORY_KODA_HTTP");
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+
+  test("keeps the deadline for a post with no signal of its own (AC-5)", async () => {
+    const owed = owedAnswer({ ret: 0, data: { id: "flow_1" } }, 201);
+    const timeoutMs = 20;
+
+    const error = await rejection(makeClient({}, timeoutMs).post("fleet/flows", { a: 1 }));
+
+    expect(error.code).toBe("MEMORY_KODA_TIMEOUT");
+    expect(error.context?.timeoutMs).toBe(timeoutMs);
+    owed.respond();
+  });
+
+  test("reports a transport rejection the caller's abort caused as the cancellation (AC-1)", async () => {
+    // A real fetch rejects with an AbortError once the request's own signal fires; that
+    // rejection is the cancellation, not an unreachable host.
+    stubFetch(
+      (call) =>
+        new Promise<Response>((_resolve, reject) => {
+          call.init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), {
+            once: true,
+          });
+        }),
+    );
+    const controller = new AbortController();
+
+    const call = makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal });
+    controller.abort();
+    const error = await rejection(call);
+
+    expect(error.code).toBe("MEMORY_KODA_ABORTED");
+    expect(calls).toHaveLength(1);
   });
 });
 

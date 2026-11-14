@@ -35,6 +35,15 @@ export interface ProviderTool {
    * every memory tool's note BODY, which is never shown on an approval line.
    */
   readonly summaryFields?: readonly string[];
+  /**
+   * US-003: how long this tool may take to return its OWN outcome after the
+   * turn is cancelled, so a provider tool can answer "nothing was pushed"
+   * instead of the generic abandoned message. Absent means none — the call is
+   * abandoned the moment the turn signal aborts. `session-interaction.ts`
+   * normalises it before use (non-finite or `<= 0` is none, and anything above
+   * `MAX_CANCEL_GRACE_MS` is that ceiling).
+   */
+  readonly cancelGraceMs?: number;
   run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>;
 }
 

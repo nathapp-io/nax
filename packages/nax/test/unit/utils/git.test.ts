@@ -9,7 +9,15 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { assertDefined, cleanupTempDir, makeLogger, makeSpawn, makeSpawnResult, makeTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeGroupKillRecorder,
+  makeLogger,
+  makeSpawn,
+  makeSpawnResult,
+  makeTempDir,
+} from "@test/helpers";
 import {
   _gitDeps,
   autoCommitIfDirty,
@@ -27,17 +35,20 @@ function mockSpawnOutput(output: string, exitCode = 0): typeof _gitDeps.spawn {
 }
 
 let origSpawn: typeof _gitDeps.spawn;
+let origKillProcessGroup: typeof _gitDeps.killProcessGroup;
 let origRetryTimeoutMs: number;
 let origGetSafeLogger: typeof _gitDeps.getSafeLogger;
 
 beforeEach(() => {
   origSpawn = _gitDeps.spawn;
+  origKillProcessGroup = _gitDeps.killProcessGroup;
   origRetryTimeoutMs = _gitDeps.timeoutRetryGitTimeoutMs;
   origGetSafeLogger = _gitDeps.getSafeLogger;
 });
 
 afterEach(() => {
   _gitDeps.spawn = origSpawn;
+  _gitDeps.killProcessGroup = origKillProcessGroup;
   _gitDeps.timeoutRetryGitTimeoutMs = origRetryTimeoutMs;
   _gitDeps.getSafeLogger = origGetSafeLogger;
   mock.restore();
@@ -128,6 +139,13 @@ function mockSequentialSpawn(outputs: string[]): typeof _gitDeps.spawn {
   return makeSpawn(() => outputs[callIdx++] ?? "").spawn;
 }
 
+/**
+ * The pids the three hung fakes report (US-002). Distinct so the group-kill
+ * assertion can tell each call apart; a real group kill for any of them would
+ * SIGKILL whatever holds that group on the machine running the tests.
+ */
+const HUNG_GIT_PIDS = [6101, 6102, 6103];
+
 describe("captureWorkingTreeChanges", () => {
   test("returns empty array when baseRef is undefined", async () => {
     const result = await captureWorkingTreeChanges("/tmp/repo", undefined);
@@ -195,12 +213,17 @@ describe("captureWorkingTreeChanges", () => {
     // "arms a timer, SIGKILLs on expiry, degrades to []", not the production
     // duration. Waiting the real 3s made this the slowest test in the suite.
     _gitDeps.timeoutRetryGitTimeoutMs = 50;
+    // US-002 AC-2: each fake git reports its own pid and the shared group kill is
+    // replaced by a recording stub — the real seam would SIGKILL whatever holds
+    // these process groups on the machine running the tests.
+    const groupKill = makeGroupKillRecorder();
+    let spawnIdx = 0;
     let killCount = 0;
     _gitDeps.spawn = makeSpawn(() => {
       // Real Bun.spawn behaviour: proc.kill() resolves the exited promise so
       // the await unblocks and the function returns the empty-on-failure
       // contract. kill is wrapped to count SIGKILLs (one per git call).
-      const proc = makeSpawnResult({ hang: true, killResolvesExited: true });
+      const proc = makeSpawnResult({ hang: true, killResolvesExited: true, pid: HUNG_GIT_PIDS[spawnIdx++] });
       const kill = proc.kill;
       proc.kill = (signalCode) => {
         killCount++;
@@ -208,6 +231,9 @@ describe("captureWorkingTreeChanges", () => {
       };
       return proc;
     }).spawn;
+    // The fakes report HUNG_GIT_PIDS: a real group kill would SIGKILL whatever
+    // holds those groups on the machine running the tests.
+    _gitDeps.killProcessGroup = groupKill.killProcessGroup;
 
     const start = Date.now();
     const result = await captureWorkingTreeChanges("/tmp/repo", "abc123");
@@ -216,7 +242,13 @@ describe("captureWorkingTreeChanges", () => {
     expect(elapsed).toBeLessThan(5_000);
     // All three git subprocesses must be killed on timeout (one per diff call).
     expect(killCount).toBe(3);
-    // Best-effort contract: hangs degrade to empty array.
+    // US-002 AC-2: the group kill reaches every hung git call, with its own pid.
+    expect(groupKill.count()).toBe(3);
+    expect([...groupKill.pids()].sort((a, b) => a - b)).toEqual([...HUNG_GIT_PIDS].sort((a, b) => a - b));
+    expect(groupKill.calls.every((call) => call.signal === "SIGKILL" && call.singleProcessFallback === false)).toBe(
+      true,
+    );
+    // Best-effort contract: hangs degrade to empty array (US-002 AC-5).
     expect(result).toEqual([]);
   });
 });

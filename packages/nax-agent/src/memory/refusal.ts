@@ -50,9 +50,16 @@ export async function restoreNote(
   await bookkeeping(input.logger, "memory save could not restore the previous note", data, restore);
 }
 
-/** Put a refused forget's note back; a failure is reported, never thrown, for the same reason. */
-export async function restoreForgotten(input: RefusalInput, previous: MemoryNote): Promise<void> {
+/**
+ * Put a refused forget's note back; a failure is reported, never thrown, for the same reason.
+ *
+ * It answers whether the note is back in the mirror. The caller needs that answer, not out of
+ * interest in the logging: the entry naming the note is already off the queue, so a write back
+ * that did not land leaves nothing local that knows about the note, and the pull is the only
+ * route left to it.
+ */
+export async function restoreForgotten(input: RefusalInput, previous: MemoryNote): Promise<boolean> {
   const data = { path: input.store.paths.notesDir, slug: previous.slug };
   const rewrite = () => input.store.writeNote(previous);
-  await bookkeeping(input.logger, "memory forget could not restore the note", data, rewrite);
+  return await bookkeeping(input.logger, "memory forget could not restore the note", data, rewrite);
 }

@@ -70,9 +70,10 @@ import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { createMcpPool, type McpPool } from "@/mcp";
+import { readForgetPendingKeys } from "./host-forget-keys";
 import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
 import { createHostWrites, type MemoryRejectedTarget } from "./host-writes";
-import { createKodaApprovals } from "./koda-approvals";
+import { createKodaApprovals, type KodaApprovals } from "./koda-approvals";
 import { createKodaClient, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
 import { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
 import { createMcpIdMap } from "./mcp-id-map";
@@ -131,10 +132,11 @@ export interface MemoryHost {
   discard?(target: MemoryRejectedTarget): Promise<number>;
   /**
    * Every note a forget still holds, keyed `"<scope>/<slug>"`: the mirror's own pending-forget
-   * record (a proposal forget, answered and recorded) plus the ones this mirror has queued and
-   * not yet delivered. Read now, never cached — a sync or an approval between two calls changes
-   * the answer. Optional so a hand-built host (a test double) stays valid; `createMemoryHost`
-   * always sets it.
+   * record (a proposal forget, answered and recorded), the ones this mirror has queued and not
+   * yet delivered, and the holds koda's approvals file records — a forget koda answered with a
+   * `202` and has not settled. Read now, never cached — a sync, an approval or a pull's
+   * resolution between two calls changes the answer. Optional so a hand-built host (a test
+   * double) stays valid; `createMemoryHost` always sets it.
    */
   forgetPendingKeys?(): Promise<ReadonlySet<string>>;
   /**
@@ -202,6 +204,8 @@ interface MemoryParts {
   readonly provider: MemoryProvider;
   /** The MCP pool the provider talks through; only an MCP-backed host owns one. */
   readonly pool?: McpPool;
+  /** koda's proposal record; only a koda-backed host composes one. */
+  readonly kodaApprovals?: KodaApprovals;
 }
 
 /** Slug order, as code points: the one order every note listing is served in. */
@@ -210,30 +214,12 @@ function bySlug(left: MemoryNote, right: MemoryNote): number {
 }
 
 /**
- * The key a pending forget is recorded by: `"<scope>/<slug>"`.
+ * The key a pending forget is recorded by, and the read of every note a forget still holds.
  *
- * nax-agent keys its own record with `memoryNoteKey`, which the package's entry does not
- * export; this is that one spelling, in one place, for both the host's key set and the
- * listing row that reads it.
+ * Declared in `host-forget-keys.ts` because this file is at its size cap, and re-exported here
+ * so `@/memory/host` keeps the member it always had.
  */
-export function pendingForgetKey(about: { readonly scope: MemoryScope; readonly slug: string }): string {
-  return `${about.scope}/${about.slug}`;
-}
-
-/**
- * The notes a forget still holds: the mirror's recorded ones and the queued ones, as one set.
- *
- * The two are different facts — a proposal forget is answered and written to the record while
- * the note stays in place, and a direct one is queued for the next sync — so a key can be in
- * either, both, or neither. Read on every call, because a sync or an approval retires them.
- */
-async function readForgetPendingKeys(parts: MemoryParts): Promise<ReadonlySet<string>> {
-  const [queued, recorded] = await Promise.all([parts.outbox.heldKeys("forget"), parts.store.readPendingForgets()]);
-  if (recorded.length === 0) return queued;
-  const keys = new Set(queued);
-  for (const entry of recorded) keys.add(pendingForgetKey(entry));
-  return keys;
-}
+export { pendingForgetKey } from "./host-forget-keys";
 
 /** What a warn is remembered by: the message plus the two fields that identify the note. */
 function warnKey(message: string, data?: Record<string, unknown>): string {
@@ -292,16 +278,22 @@ function composeMcp(input: CreateMemoryHostInput, dirs: MemoryDirs): { provider:
 }
 
 /**
- * The koda provider, the client that reaches it and the record of the saves it answered with a `202`.
+ * The koda provider, the client that reaches it and the record of the writes it answered with a `202`.
  *
  * koda owns the memories; the mirror stays the store every surface reads, so the provider is
  * handed the host's own reads — `readNote` and `readDecisions` over this mirror — and koda's
- * proposal records live beside it, in the project mirror directory.
+ * proposal records live beside it, in the project mirror directory. The record is handed back
+ * as well as to the provider, because the host's own reads ask it which slugs a forget koda
+ * holds still has in the mirror.
  *
  * Config load guarantees both the url and the project (`validateMemoryProvider`); a bypassed
  * load fails here, at host creation, rather than on the first write.
  */
-function composeKoda(input: CreateMemoryHostInput, dirs: MemoryDirs, store: MemoryStore): MemoryProvider {
+function composeKoda(
+  input: CreateMemoryHostInput,
+  dirs: MemoryDirs,
+  store: MemoryStore,
+): { provider: MemoryProvider; approvals: KodaApprovals } {
   const koda = memoryConfigOf(input.config).koda;
   if (koda?.url === undefined || koda.project === undefined) {
     throw new NaxError(
@@ -316,7 +308,7 @@ function composeKoda(input: CreateMemoryHostInput, dirs: MemoryDirs, store: Memo
     timeoutMs: MEMORY_KODA_REQUEST_TIMEOUT_MS,
   });
   const approvals = _memoryHostDeps.createKodaApprovals({ dir: dirs.projectDir, logger: input.logger });
-  return _memoryHostDeps.createKodaMemoryProvider({
+  const provider = _memoryHostDeps.createKodaMemoryProvider({
     client,
     project: koda.project,
     approvals,
@@ -324,6 +316,7 @@ function composeKoda(input: CreateMemoryHostInput, dirs: MemoryDirs, store: Memo
     readDecisions: () => store.readDecisions(),
     logger: input.logger,
   });
+  return { provider, approvals };
 }
 
 /** Resolve the directories and build the store, the outbox and the configured provider over them. */
@@ -337,7 +330,10 @@ async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts>
   const outbox = _memoryHostDeps.createMemoryOutbox({ dir: store.paths.outboxDir });
   const provider = memoryConfigOf(input.config).provider;
   if (provider === "mcp") return { dirs, store, outbox, ...composeMcp(input, dirs) };
-  if (provider === "koda") return { dirs, store, outbox, provider: composeKoda(input, dirs, store) };
+  if (provider === "koda") {
+    const { provider: kodaProvider, approvals } = composeKoda(input, dirs, store);
+    return { dirs, store, outbox, provider: kodaProvider, kodaApprovals: approvals };
+  }
   return { dirs, store, outbox, provider: _memoryHostDeps.createLocalMemoryProvider(store) };
 }
 

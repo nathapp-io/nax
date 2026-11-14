@@ -22,6 +22,19 @@ describe("namespacedToolName", () => {
   });
 });
 
+describe("adaptProviderTool cancel grace (US-003)", () => {
+  test("AC-1: a declared cancelGraceMs is carried onto the adapted tool", () => {
+    const adapted = adaptProviderTool("acme", { ...tool("put"), cancelGraceMs: 2_000 });
+    expect(adapted.cancelGraceMs).toBe(2_000);
+  });
+
+  test("AC-2: a provider tool without a grace adapts to a tool with no cancelGraceMs key", () => {
+    const adapted = adaptProviderTool("acme", tool("put"));
+    expect(Object.keys(adapted)).not.toContain("cancelGraceMs");
+    expect(adapted).not.toHaveProperty("cancelGraceMs");
+  });
+});
+
 describe("adaptProviderTool", () => {
   test("produces a CodingTool gated at tool-name level only", () => {
     const adapted = adaptProviderTool("rtk", tool("recall"));

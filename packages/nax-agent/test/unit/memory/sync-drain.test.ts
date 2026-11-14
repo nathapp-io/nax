@@ -31,6 +31,7 @@ import {
   syncMemory,
 } from "@nathapp/nax-agent";
 import type { MemorySyncInput } from "#src/memory/index";
+import { drainOutbox, type MemoryDrainInput } from "#src/memory/sync-drain";
 import {
   assertDefined,
   type MemoryProviderMock,
@@ -145,6 +146,22 @@ function pushed(provider: MemoryProviderMock): MemoryWriteRequest[] {
 async function recordedSyncState(path: string): Promise<MemorySyncState> {
   const parsed: MemorySyncState = JSON.parse(await readFile(path, "utf8"));
   return parsed;
+}
+
+/** The cursors a run finds on disk: one non-null per scope, so a rewind is visible. */
+const CURSOR_BEFORE: MemorySyncState = {
+  provider: "scripted",
+  cursor: { project: "page-7", user: "page-2" },
+  lastPullAt: STAMP,
+  lastError: null,
+};
+
+/** Step 3 alone, against this harness: the pull that follows it cannot mask what the drain did. */
+function drain(
+  h: Harness,
+  overrides: Partial<MemoryDrainInput> = {},
+): Promise<Awaited<ReturnType<typeof drainOutbox>>> {
+  return drainOutbox({ store: h.store, outbox: h.outbox, provider: h.provider, logger: h.logger, ...overrides });
 }
 
 describe("syncMemory step 3 (drain)", () => {
@@ -369,6 +386,77 @@ describe("syncMemory step 3 (drain)", () => {
       expect(await h.store.readNote("project", "replay-budget")).toEqual(newer);
       // The newer write is still waiting, so its copy of the note is the one the next run takes.
       expect(await h.outbox.list()).toEqual([queued]);
+    });
+  });
+});
+
+/**
+ * US-004: what a held forget leaves behind for the pull.
+ *
+ * A `direct` forget deleted its note when it was queued, and the incremental pull that follows
+ * would never send that note again — its cursor has already moved past it. So an answer that is
+ * not `deleted` sends the scope's pull back to the beginning, where the provider's still-active
+ * row is read in full. A `proposal` entry never deleted anything, so it leaves the cursor alone.
+ */
+describe("US-004: a forget the provider holds pending", () => {
+  /** A queued forget of `slug`, in the mode the test is about. */
+  async function queuedForget(h: Harness, writeMode: "direct" | "proposal", clientId = "client-f1"): Promise<void> {
+    await h.outbox.enqueue({ ...forgetRequest("replay-budget", clientId), writeMode });
+  }
+
+  test("AC-6: a direct pending forget rewinds this scope's cursor and leaves the other scope's alone", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_kept", status: "pending" } });
+      await h.store.writeSyncState(CURSOR_BEFORE);
+      await queuedForget(h, "direct");
+
+      const result = await drain(h);
+
+      expect(result).toMatchObject({ pushed: 1, rejected: 0 });
+      // Nothing was deleted, so the scope is read in full by the sync that follows.
+      const after = await h.store.readSyncState();
+      expect(after.cursor.project).toBeNull();
+      expect(after.cursor.user).toBe("page-2");
+      // The accepted request comes off the queue exactly as before.
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("AC-7: an answered `deleted` forget deletes the note and leaves the cursor alone", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_doomed", status: "deleted" } });
+      const doomed = note();
+      await h.store.writeNote(doomed);
+      await h.store.writeSyncState(CURSOR_BEFORE);
+      await queuedForget(h, "direct");
+
+      const result = await drain(h);
+
+      expect(result).toMatchObject({ pushed: 1, rejected: 0 });
+      // The retire happened: there is nothing for a pull to bring back.
+      expect(await h.store.readNote("project", "replay-budget")).toBeNull();
+      const after = await h.store.readSyncState();
+      expect(after.cursor).toEqual(CURSOR_BEFORE.cursor);
+      expect(await h.outbox.list()).toEqual([]);
+    });
+  });
+
+  test("AC-8: a proposal pending forget leaves the cursor alone and the note in the mirror", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_kept", status: "pending" } });
+      const kept = note();
+      await h.store.writeNote(kept);
+      await h.store.writeSyncState(CURSOR_BEFORE);
+      await queuedForget(h, "proposal");
+
+      const result = await drain(h);
+
+      expect(result).toMatchObject({ pushed: 1, rejected: 0 });
+      // A proposal never deleted the note, so there is nothing for the pull to restore.
+      expect(await h.store.readNote("project", "replay-budget")).toEqual(kept);
+      const after = await h.store.readSyncState();
+      expect(after.cursor).toEqual(CURSOR_BEFORE.cursor);
+      expect(await h.outbox.list()).toEqual([]);
     });
   });
 });

@@ -11,12 +11,15 @@
  * Scope: package-scoped (operates on `workdir` + the story's git ref).
  */
 
-import { normalizeCommandSpec, type QualityCommandSpec, replaceInCommandSpec } from "@nathapp/nax-agent/internal";
+import { type QualityCommandSpec, replaceInCommandSpec } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
 import { _smartRunnerDeps, MAX_GREP_TEST_FILES } from "../verification/smart-runner";
 import { DEFAULT_TEST_FILE_PATTERNS, globsToTestRegex } from "./conventions";
+import { isMonorepoOrchestratorCommand } from "./orchestrator-command";
 import type { ResolvedTestPatterns } from "./resolver";
+
+export { isMonorepoOrchestratorCommand };
 
 const DEFAULT_SMART_RUNNER_CONFIG = {
   enabled: true,
@@ -50,16 +53,6 @@ export function buildScopedCommand(
   return typeof baseCommand === "string"
     ? _scopedSelectionDeps.buildSmartTestCommand(testFiles, baseCommand)
     : baseCommand.map((command) => _scopedSelectionDeps.buildSmartTestCommand(testFiles, command));
-}
-
-/**
- * Monorepo orchestrators (turbo, nx) carry their own change-filter syntax
- * (e.g. `--filter=...[HEAD~1]`, `nx affected`). Smart-runner must not append
- * file paths to such commands — it would produce invalid syntax.
- */
-export function isMonorepoOrchestratorCommand(command: QualityCommandSpec): boolean {
-  const commands = normalizeCommandSpec(command);
-  return commands.length > 0 && commands.every((entry) => /\bturbo\b/.test(entry) || /\bnx\b/.test(entry));
 }
 
 export interface SelectScopedTestsInput {

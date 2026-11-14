@@ -22,6 +22,7 @@
  */
 import type { MemoryOutbox, MemoryOutboxEntry } from "./outbox.ts";
 import type { MemoryPushResult } from "./provider-types.ts";
+import { rewindPullCursor } from "./pull-cursor.ts";
 import type { MemoryStore } from "./store.ts";
 
 /** What applying a delivery needs: the mirror to write and the queue that says what is still coming. */
@@ -41,6 +42,13 @@ async function awaitingDelivery(outbox: MemoryOutbox, id: string): Promise<boole
  *
  * A `forget` deletes only on `deleted`: a proposal-mode forget the provider has merely
  * recorded is still pending, and the note it names stays until it is not.
+ *
+ * Any other answer to a `direct` forget means the note is gone from the mirror and still live
+ * on the provider: it was deleted when the request was queued, and the entry carries no copy
+ * of it to write back. The pull is the only route left, and it is an incremental one, so the
+ * scope's cursor goes back to the beginning — the provider's still-active row is sent again and
+ * the mirror takes it in full. A `proposal` entry never deleted anything, so it has nothing to
+ * recover and leaves the cursor exactly where it was.
  */
 export async function applyPushed(
   input: MemoryDeliveryInput,
@@ -48,7 +56,11 @@ export async function applyPushed(
   answer: MemoryPushResult,
 ): Promise<void> {
   if (entry.kind === "forget") {
-    if (answer.status === "deleted") await input.store.deleteNote(entry.scope, entry.slug);
+    if (answer.status === "deleted") {
+      await input.store.deleteNote(entry.scope, entry.slug);
+      return;
+    }
+    if (entry.writeMode === "direct") await rewindPullCursor(input.store, entry.scope);
     return;
   }
   const delivered = entry.note;

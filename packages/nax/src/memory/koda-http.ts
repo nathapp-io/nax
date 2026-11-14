@@ -50,7 +50,11 @@ export interface KodaResponse {
 /** The two calls the provider makes; both throw `NaxError` on any failure. */
 export interface KodaClient {
   get(path: string, query?: Readonly<Record<string, string | number | undefined>>): Promise<KodaResponse>;
-  post(path: string, body: unknown): Promise<KodaResponse>;
+  /**
+   * A post, optionally cancelled by the caller's own signal — the turn's, in the
+   * flow create. Without one the deadline is the only bound.
+   */
+  post(path: string, body: unknown, opts?: { readonly signal?: AbortSignal }): Promise<KodaResponse>;
 }
 
 /** What the host passes to `createKodaClient`. */
@@ -202,6 +206,47 @@ function timedOut(req: KodaRequest, timeoutMs: number): NaxError {
   });
 }
 
+/** The caller's own cancellation ended the call before koda answered it. */
+function aborted(req: KodaRequest): NaxError {
+  return new NaxError(
+    `[memory] koda ${req.method} ${req.path} was cancelled before it answered`,
+    "MEMORY_KODA_ABORTED",
+    { stage: STAGE, method: req.method, path: req.path },
+  );
+}
+
+/**
+ * A promise that rejects the moment the caller's signal aborts, so a fetch that
+ * ignores its own signal still cannot outlive the cancellation. Its handler is
+ * pushed onto `detach`: the race holds it only until the call settles, and the
+ * caller's signal is a turn's, which outlives every call it bounds — leaving the
+ * handler attached would retain this request's path, query and body until the turn
+ * ended. An abort after the call settled is silent for the same reason.
+ */
+function cancelledByCaller(req: KodaRequest, signal: AbortSignal, detach: (() => void)[]): Promise<never> {
+  return new Promise<never>((_resolve, reject) => {
+    const onAbort = () => reject(aborted(req));
+    signal.addEventListener("abort", onAbort, { once: true });
+    detach.push(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+/** Whether the caller cancelled. Read through a call so an earlier check cannot narrow a later one. */
+function cancelledBy(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+/** Every promise the call races: its own exchange, its deadline, and the caller's cancellation. */
+function racingOn(
+  req: KodaRequest,
+  signal: AbortSignal | undefined,
+  exchange: Promise<KodaResponse>,
+  expired: Promise<never>,
+  detach: (() => void)[],
+): Promise<KodaResponse>[] {
+  return signal === undefined ? [exchange, expired] : [exchange, expired, cancelledByCaller(req, signal, detach)];
+}
+
 function unreachable(req: KodaRequest, cause: unknown, headers: CreateKodaClientInput["headers"]): NaxError {
   return new NaxError(
     `[memory] koda ${req.method} ${req.path} unreachable: ${redact(errorMessage(cause), headers)}`,
@@ -274,7 +319,9 @@ async function perform(
 }
 
 /** Issue one request, bounded by a deadline that rejects even when the fetch ignores its signal. */
-async function request(input: CreateKodaClientInput, req: KodaRequest): Promise<KodaResponse> {
+async function request(input: CreateKodaClientInput, req: KodaRequest, signal?: AbortSignal): Promise<KodaResponse> {
+  // A call whose turn is already cancelled never reaches the network at all.
+  if (cancelledBy(signal)) throw aborted(req);
   const url = buildUrl(input.url, req.path, req.query);
   const cancel = new AbortController();
   const init = buildInit(req, input.headers, cancel.signal);
@@ -283,15 +330,26 @@ async function request(input: CreateKodaClientInput, req: KodaRequest): Promise<
     throw timedOut(req, input.timeoutMs);
   });
   expired.catch(() => {});
+  // The caller's cancellation aborts the exchange through the same controller the
+  // deadline uses, so the fetch and its body read are released rather than left running.
+  const cancelOn = () => cancel.abort();
+  signal?.addEventListener("abort", cancelOn, { once: true });
+  // Both handlers on the caller's signal are released once the call settles: the turn's
+  // signal outlives the call, so a handler left behind would retain this request.
+  const detach: (() => void)[] = [];
   try {
     // The whole exchange is raced, not just the header receipt: a body that never
     // finishes arriving must end the call too, and the abort below is what releases it.
-    return await Promise.race([perform(req, url, init, input.headers), expired]);
+    return await Promise.race(racingOn(req, signal, perform(req, url, init, input.headers), expired, detach));
   } catch (error) {
+    // A transport that reported the abort is still the cancellation, not an unreachable host.
+    if (cancelledBy(signal)) throw aborted(req);
     // A status failure and a bad envelope are already classified; only a transport rejection is unreachable.
     if (error instanceof NaxError) throw error;
     throw unreachable(req, error, input.headers);
   } finally {
+    signal?.removeEventListener("abort", cancelOn);
+    for (const release of detach) release();
     cancel.abort();
   }
 }
@@ -304,7 +362,7 @@ async function request(input: CreateKodaClientInput, req: KodaRequest): Promise<
 export function createKodaClient(input: CreateKodaClientInput): KodaClient {
   return {
     get: (path, query) => request(input, { method: "GET", path, query }),
-    post: (path, body) => request(input, { method: "POST", path, body }),
+    post: (path, body, opts) => request(input, { method: "POST", path, body }, opts?.signal),
   };
 }
 

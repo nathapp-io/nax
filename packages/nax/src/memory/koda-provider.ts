@@ -49,6 +49,7 @@ import type {
   MemoryScope,
   MemoryWriteRequest,
 } from "@nathapp/nax-agent";
+import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import type { KodaApprovals } from "./koda-approvals";
 import { type KodaClient, type KodaResponse, kodaStatusOf } from "./koda-http";
@@ -283,6 +284,11 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
    * so it resolves rather than throwing. The refusals that mean koda will never take this
    * write are translated; everything else, a `404` from anything else included, is transient
    * and reaches the outbox unchanged.
+   *
+   * A `202` means koda wrote no row and opened an approval instead: the retire is held, and the
+   * approval is recorded (`recordHeldForget`) so a later pull can resolve it. The held answer
+   * names the approval in `data.id`; one without it is a response this provider cannot use, and
+   * it records nothing — there is no record a pull could ever ask koda about.
    */
   async function retire(
     noteId: string,
@@ -291,7 +297,17 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
   ): Promise<MemoryNoteStatus> {
     try {
       const answer = await client.post(`memory/notes/${noteId}/retire`, retireBody(projectIdValue, request.reason));
-      return answer.status === 202 ? "pending" : "deleted";
+      if (answer.status !== 202) return "deleted";
+      const approvalId = stringField(answer.data, "id");
+      if (approvalId === undefined) {
+        throw badResponse(
+          project,
+          `POST memory/notes/${noteId}/retire answered a forget for "${request.slug}" without an approval id`,
+          answer.status,
+        );
+      }
+      await recordHeldForget(request, approvalId);
+      return "pending";
     } catch (error) {
       const status = kodaStatusOf(error);
       if (status !== undefined && RETIRED_WRITE_STATUSES.has(status)) return "deleted";
@@ -299,6 +315,34 @@ export function createKodaMemoryProvider(input: CreateKodaMemoryProviderInput): 
         throw refusedWrite(project, request.slug, "forget", error);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Record the approval koda opened for a held forget.
+   *
+   * A record that cannot be written is a warn, not a failure: koda has already opened the
+   * approval, so rejecting this push would queue the entry for a retry whose own retire can
+   * answer `409` — a status the provider reads as `deleted`, silently dropping a retire koda is
+   * still holding. Without the record the note simply stays in the mirror unmarked, and the
+   * feed's tombstone still removes it if koda executes the forget.
+   */
+  async function recordHeldForget(request: MemoryWriteRequest, approvalId: string): Promise<void> {
+    try {
+      await approvals.record({
+        approvalId,
+        kind: "forget",
+        scope: request.scope,
+        slug: request.slug,
+        clientId: request.clientId,
+      });
+    } catch (error) {
+      logger.warn(STAGE, "koda forget approval was not recorded", {
+        project,
+        slug: request.slug,
+        approvalId,
+        reason: errorMessage(error),
+      });
     }
   }
 

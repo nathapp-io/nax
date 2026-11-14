@@ -123,6 +123,37 @@ describe("createKodaFlow — the request", () => {
 
     expect(fetchCalls[0]?.url).toBe("https://koda.example/api/fleet/flows");
   });
+
+  test("passes a given signal to the client's post as { signal } (AC-6)", async () => {
+    const postCalls: unknown[][] = [];
+    _flowKodaDeps.createKodaClient = () => ({
+      get: async () => ({ status: 200, data: undefined }),
+      post: async (path, sentBody, opts) => {
+        postCalls.push([path, sentBody, opts]);
+        return { status: 201, data: { id: "flow_1", state: "created", url: "/nax/flows/flow_1" } };
+      },
+    });
+    const controller = new AbortController();
+
+    await createKodaFlow(connection, body, controller.signal);
+
+    expect(postCalls).toEqual([["fleet/flows", body, { signal: controller.signal }]]);
+  });
+
+  test("passes no options to post when the caller gave no signal (#2901)", async () => {
+    const postCalls: unknown[][] = [];
+    _flowKodaDeps.createKodaClient = () => ({
+      get: async () => ({ status: 200, data: undefined }),
+      post: async (path, sentBody, opts) => {
+        postCalls.push([path, sentBody, opts]);
+        return { status: 201, data: { id: "flow_1", state: "created", url: "/nax/flows/flow_1" } };
+      },
+    });
+
+    await createKodaFlow(connection, body);
+
+    expect(postCalls).toEqual([["fleet/flows", body, undefined]]);
+  });
 });
 
 describe("createKodaFlow — the outcome", () => {

@@ -140,6 +140,12 @@ export interface CodingTool {
    * to false, so a malformed Read or a failed GitCommit stays visible.
    */
   readonly routineErrors?: boolean;
+  /**
+   * US-003: how long this tool may take to return its own outcome after the
+   * turn aborts, before the session answers the generic abandoned outcome.
+   * Absent means none. `runCodingTool` normalises it before use.
+   */
+  readonly cancelGraceMs?: number;
   run(input: Record<string, unknown>, ctx: ToolRunContext): Promise<ToolResult>;
 }
 

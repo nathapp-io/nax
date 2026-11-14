@@ -305,6 +305,9 @@ describe("gitCommitTool — unresolved ignore status fails closed (Critical 1)",
       if (cmd.includes("check-ignore")) return makeSpawnResult({ hang: true, killResolvesExited: true });
       throw new Error(`unexpected spawn during timeout test: ${cmd.join(" ")}`);
     }).spawn;
+    // The fake reports pid 4242: a real group kill would SIGKILL whatever holds
+    // that group on this machine. Restored by withDepsRestore above.
+    _gitDeps.killProcessGroup = () => true;
 
     // Bounded: if the SIGKILL path ever stops resolving `exited`, this fails here
     // with a named message instead of stalling the file for the runner's timeout.

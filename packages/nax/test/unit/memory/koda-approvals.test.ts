@@ -315,6 +315,65 @@ describe("createKodaApprovals", () => {
     expect(warns()).toHaveLength(1);
   });
 
+  test("a forget record is what list resolves, its kind kept (US-006 AC-1)", async () => {
+    const approvals = createKodaApprovals({ dir, logger });
+    const forget: KodaApproval = { approvalId: "apr_1", kind: "forget", scope: "project", slug: "x", clientId: "c_1" };
+
+    await approvals.record(forget);
+
+    expect(await approvals.list()).toEqual([forget]);
+    expect(await readJson(approvalsPath())).toEqual({ version: 1, approvals: [forget] });
+  });
+
+  test("an entry with no kind is read with no kind, as a save (US-006 AC-2)", async () => {
+    await Bun.write(approvalsPath(), JSON.stringify({ version: 1, approvals: [APR_1] }));
+
+    const listed = await createKodaApprovals({ dir, logger }).list();
+
+    expect(listed).toEqual([APR_1]);
+    expect(Object.keys(listed[0] ?? {})).not.toContain("kind");
+  });
+
+  test("a forget recorded after a save for the same slug leaves both records (US-006 AC-3)", async () => {
+    const approvals = createKodaApprovals({ dir, logger });
+    const save: KodaApproval = { approvalId: "apr_save", scope: "project", slug: "x", clientId: "c_1" };
+    const forget: KodaApproval = {
+      approvalId: "apr_forget",
+      kind: "forget",
+      scope: "project",
+      slug: "x",
+      clientId: "c_2",
+    };
+
+    await approvals.record(save);
+    await approvals.record(forget);
+
+    expect(await approvals.list()).toEqual([save, forget]);
+  });
+
+  test("a second forget for the same slug replaces the first forget record (US-006 AC-4)", async () => {
+    const approvals = createKodaApprovals({ dir, logger });
+    const first: KodaApproval = {
+      approvalId: "apr_first",
+      kind: "forget",
+      scope: "project",
+      slug: "x",
+      clientId: "c_1",
+    };
+    const second: KodaApproval = { ...first, approvalId: "apr_second" };
+
+    await approvals.record(first);
+    await approvals.record(second);
+
+    expect(await approvals.list()).toEqual([second]);
+  });
+
+  test("a kind this build does not know is read as a save, and the other entries are unchanged (US-006 AC-18)", async () => {
+    await Bun.write(approvalsPath(), JSON.stringify({ version: 1, approvals: [{ ...APR_1, kind: "later" }, APR_2] }));
+
+    expect(await createKodaApprovals({ dir, logger }).list()).toEqual([{ ...APR_1, kind: "save" }, APR_2]);
+  });
+
   test.each([
     ["not json", "not json"],
     ["another version", JSON.stringify({ version: 2, approvals: [APR_1] })],

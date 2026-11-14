@@ -27,6 +27,7 @@ const NO_FORGE: PublishOutcome = {
   reasons: ["no forge (origin is not GitHub or GitLab)"],
 };
 const story: StorySummary = { id: "US-001", title: "t", state: "complete", rounds: 0, unreviewed: false, flagged: 0 };
+const deferredMinor = (id: string) => ({ id, storyId: "US-001", text: `minor ${id}`, triage: "leave" as const });
 
 let logs: LogEntry[] = [];
 beforeEach(() => {
@@ -172,13 +173,67 @@ describe("feature machine run log", () => {
     });
   });
 
+  describe("deferred-minor triage in the branch-review line (US-008)", () => {
+    test("AC-1: logs fix-now and leave counts for a clean review", async () => {
+      const env = envWith({
+        review: {
+          ...REVIEW,
+          spec: "pass",
+          quality: "approved",
+          findings: [],
+          minorTriage: [
+            { id: "M1", decision: "fix-now" },
+            { id: "M2", decision: "fix-now" },
+          ],
+        },
+      });
+      await runFeatureMachine({
+        ...env,
+        record: { ...env.record, minors: [deferredMinor("M1"), deferredMinor("M2"), deferredMinor("M3")] },
+      });
+      expect(lines().find((line) => line.startsWith("branch-review: "))).toMatch(
+        /^branch-review: spec pass, quality approved - no findings; deferred minors: 2 fix-now, 1 leave {2}/,
+      );
+    });
+
+    test("AC-2: logs triage after important findings and before elapsed time", async () => {
+      const env = envWith({
+        review: {
+          ...REVIEW,
+          quality: "approved",
+          findings: [draft("important", "issue")],
+          minorTriage: [{ id: "M1", decision: "leave" }],
+        },
+      });
+      await runFeatureMachine({ ...env, record: { ...env.record, minors: [deferredMinor("M1")] } });
+      expect(lines().find((line) => line.startsWith("branch-review: "))).toMatch(
+        /^branch-review: spec fail, quality approved - 1 important \(B1 issue\); deferred minors: 0 fix-now, 1 leave {2}\S+$/,
+      );
+    });
+
+    test("AC-3: omits the triage summary when there are no deferred minors", async () => {
+      const env = envWith({ review: { ...REVIEW, findings: [] } });
+      await runFeatureMachine(env);
+      expect(lines().find((line) => line.startsWith("branch-review: "))).not.toContain("deferred minors");
+    });
+
+    test("AC-4: counts omitted triage decisions as leave", async () => {
+      const env = envWith({ review: { ...REVIEW, quality: "approved", findings: [], minorTriage: [] } });
+      await runFeatureMachine({ ...env, record: { ...env.record, minors: [deferredMinor("M1")] } });
+      expect(lines().find((line) => line.startsWith("branch-review: "))).toMatch(
+        /; deferred minors: 0 fix-now, 1 leave {2}\S+$/,
+      );
+    });
+  });
+
   describe("branch review without a seed", () => {
-    test("still leaves exactly one info line in the log", async () => {
+    test("AC-5: still logs only the skipped result and elapsed time", async () => {
       const env = envWith({});
-      await runFeatureMachine({ ...env, record: { ...env.record, seed: null } });
+      await runFeatureMachine({ ...env, record: { ...env.record, seed: null, minors: [deferredMinor("M1")] } });
       const skipped = lines().filter((l) => l.startsWith("branch-review"));
       expect(skipped).toHaveLength(1);
-      expect(skipped[0]).toMatch(/^branch-review: skipped \(no seed\) {2}/);
+      expect(skipped[0]).toMatch(/^branch-review: skipped \(no seed\) {2}\S+$/);
+      expect(skipped[0]).not.toContain("deferred minors");
     });
   });
 });

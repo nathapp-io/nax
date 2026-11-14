@@ -90,6 +90,7 @@ export { makeFinalizeAdvisor, wireFinalize } from "./finalize";
 export { makeFinding } from "./finding";
 export { waitForFile } from "./fs";
 export { type GeminiAcpEnvDeps, stubGeminiAcpEnvDeps } from "./gemini-acp-deps";
+export { type GroupKillCall, type GroupKillRecorder, makeGroupKillRecorder } from "./group-kill";
 export { type MockInteractionChain, makeInteractionChain } from "./interaction-chain";
 export {
   type CLIInternals,

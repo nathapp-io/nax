@@ -16,7 +16,7 @@ import type { McpServerConfig, NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import * as memoryBarrel from "@/memory";
 import { _memoryHostDeps, createMemoryHost, type MemoryHost } from "@/memory";
-import { createKodaApprovals, type KodaApprovals } from "@/memory/koda-approvals";
+import { createKodaApprovals, type KodaApproval, type KodaApprovals } from "@/memory/koda-approvals";
 import { createKodaClient, type KodaClient, kodaStatusOf, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "@/memory/koda-http";
 import { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "@/memory/koda-provider";
 
@@ -57,6 +57,18 @@ function kodaConfig(): NaxConfig {
   });
 }
 
+/** The held forget US-006 marks the mirror's own note with. */
+const FORGET_RECORD: KodaApproval = {
+  approvalId: "apr_forget",
+  kind: "forget",
+  scope: "project",
+  slug: NOTE.slug,
+  clientId: "c_forget",
+};
+
+/** A save koda has not answered yet: a record with no kind, which is not a pending forget. */
+const SAVE_RECORD: KodaApproval = { approvalId: "apr_save", scope: "project", slug: "other", clientId: "c_save" };
+
 /** A client whose two calls are inert: the composition cases never let it reach the network. */
 function fakeClient(): KodaClient {
   return {
@@ -68,6 +80,11 @@ function fakeClient(): KodaClient {
 /** A proposal record with nothing in it. */
 function fakeApprovals(): KodaApprovals {
   return { list: async () => [], record: async () => {}, drop: async () => {} };
+}
+
+/** A proposal record holding `entries`, as a koda project's file would after a `202`. */
+function approvalsWith(entries: readonly KodaApproval[]): KodaApprovals {
+  return { list: async () => entries, record: async () => {}, drop: async () => {} };
 }
 
 /** A provider that is not the koda one: only the id matters to a composition case. */
@@ -260,6 +277,35 @@ describe("memory host koda composition", () => {
 
     await expect(host.close?.()).resolves.toBeUndefined();
     await expect(host.close?.()).resolves.toBeUndefined();
+  });
+
+  test("AC-19 the index marks a note a koda forget record holds as forget pending", async () => {
+    stubKodaFactories(fakeClient(), approvalsWith([FORGET_RECORD]));
+    const host = await open(kodaConfig());
+    const store = createMemoryStore({ projectDir: host.dirs.projectDir, userDir: host.dirs.userDir, logger });
+    await store.writeNote(NOTE);
+
+    const index = await host.renderIndex();
+    const line = index.text.split("\n").find((rendered) => rendered.includes(`] ${NOTE.slug} `));
+
+    assertDefined(line, "the rendered line for the mirror's note");
+    expect(line.endsWith("(forget pending)")).toBe(true);
+  });
+
+  test("AC-20 forgetPendingKeys holds a koda forget record's key and not a save record's", async () => {
+    stubKodaFactories(fakeClient(), approvalsWith([FORGET_RECORD, SAVE_RECORD]));
+    const host = await open(kodaConfig());
+    const store = createMemoryStore({ projectDir: host.dirs.projectDir, userDir: host.dirs.userDir, logger });
+    await store.writeNote(NOTE);
+
+    const member = host.forgetPendingKeys;
+    assertDefined(member, "the host's forgetPendingKeys");
+    const keys = await member();
+
+    expect({ forget: keys.has(`project/${NOTE.slug}`), save: keys.has(`project/${SAVE_RECORD.slug}`) }).toEqual({
+      forget: true,
+      save: false,
+    });
   });
 
   test("AC-18 a local configuration still reports providerId local", async () => {
