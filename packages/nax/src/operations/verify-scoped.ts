@@ -1,5 +1,5 @@
 import { errorMessage, type QualityCommandSpec, renderCommandSpec } from "@nathapp/nax-agent/internal";
-import { qualityConfigSelector, type NaxConfig } from "../config";
+import { type NaxConfig, qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 // Leaf import (not the execution barrel) to avoid the execution→operations cycle.
 import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
@@ -126,11 +126,12 @@ async function coversSuite(
   input: VerifyScopedInput,
   ctx: CallContext,
   deps: VerifyScopedDeps,
-  command: QualityCommandSpec,
+  run: { command: QualityCommandSpec; isFullSuite: boolean },
 ): Promise<boolean> {
+  if (!run.isFullSuite) return false;
   try {
     return equalTestCommands(
-      command,
+      run.command,
       await deps.resolveFullSuiteCommand(ctx.packageView.config, input.workdir, input.packagePrefix),
     );
   } catch (err) {
@@ -356,7 +357,7 @@ export const verifyScopedOp: DeterministicOperation<
         durationMs,
         passCount: parsed.passed,
         isFullSuite,
-        coversFullSuite: isFullSuite && (await coversSuite(input, ctx, deps, effectiveCommand)),
+        coversFullSuite: await coversSuite(input, ctx, deps, { command: effectiveCommand, isFullSuite }),
         scopeTestFallback,
       };
     }
