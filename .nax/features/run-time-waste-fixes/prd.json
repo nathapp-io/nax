@@ -3,7 +3,7 @@
   "feature": "run-time-waste-fixes",
   "branchName": "feat/run-time-waste-fixes",
   "createdAt": "2026-11-14T12:17:18.014Z",
-  "updatedAt": "2026-11-14T13:28:46.159Z",
+  "updatedAt": "2026-11-14T13:35:24.715Z",
   "userStories": [
     {
       "id": "US-001",
@@ -542,14 +542,17 @@
         "2919"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "This is defaulted boolean configuration and optional-argument forwarding through existing env/review/prompt seams; it introduces no scheduling change and is covered by schema and dispatch tests."
+        "reasoning": "This is defaulted boolean configuration and optional-argument forwarding through existing env/review/prompt seams; it introduces no scheduling change and is covered by schema and dispatch tests.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas-workflow.ts",
@@ -582,7 +585,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "049ad274b818ccc3b7a40c53d43eec829e0f29cd"
     },
     {
       "id": "US-009",
