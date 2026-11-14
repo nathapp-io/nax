@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { getEventListeners } from "node:events";
 import { NaxError } from "@/errors";
 import {
   _kodaClientDeps,
@@ -450,6 +451,27 @@ describe("createKodaClient — a caller's cancellation", () => {
     controller.abort();
 
     expect(answer).toEqual({ status: 201, data: { id: "flow_1" } });
+  });
+
+  test("releases the caller's abort handler once the call has settled (D-3)", async () => {
+    // A turn's signal outlives the call it bounds: a handler left attached would retain
+    // this request's path and body until the turn ended.
+    stubFetch(() => jsonAnswer({ ret: 0, data: { id: "flow_1" } }, 201));
+    const controller = new AbortController();
+
+    await makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal });
+
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+
+  test("releases the caller's abort handler once the call has failed (D-3)", async () => {
+    stubFetch(() => new Response("boom", { status: 500 }));
+    const controller = new AbortController();
+
+    const error = await rejection(makeClient().post("fleet/flows", { a: 1 }, { signal: controller.signal }));
+
+    expect(error.code).toBe("MEMORY_KODA_HTTP");
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
   });
 
   test("keeps the deadline for a post with no signal of its own (AC-5)", async () => {
