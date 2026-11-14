@@ -43,6 +43,13 @@ import {
 export const FLOW_PROVIDER_ID = "nax-flow";
 /** The commit message `commitAndPush` takes; with `skipCommit` nothing is committed, so it is never used. */
 export const FLOW_PUSH_COMMIT_MESSAGE = "chore: send flow to koda";
+/**
+ * How long `nax-flow__send` may keep working after the turn is cancelled, so its own
+ * outcome — nothing was pushed, or the branch is pushed and koda may have the flow —
+ * reaches the transcript instead of the generic abandoned message. The create has a
+ * 30 s deadline of its own, so this bounds only the answer's journey back.
+ */
+export const FLOW_SEND_CANCEL_GRACE_MS = 5_000;
 
 /** The qualified tool name, as the card names it. */
 const TOOL_NAME = "nax-flow__send";
@@ -365,6 +372,8 @@ function kodaMessageOf(message: string, status: number): string {
  */
 function classifiedKodaMessage(code: string | undefined, message: string, branch: string): string | undefined {
   switch (code) {
+    case "MEMORY_KODA_ABORTED":
+      return cancelledCreateMessage(branch);
     case "FLOW_KODA_UNEXPECTED_RESPONSE":
     case "MEMORY_KODA_BAD_RESPONSE":
       return `[chat] koda answered unexpectedly: ${message}; branch ${branch} stays pushed`;
@@ -377,6 +386,20 @@ function classifiedKodaMessage(code: string | undefined, message: string, branch
     default:
       return undefined;
   }
+}
+
+/**
+ * The message for a create the turn cancelled.
+ *
+ * The push already happened, so the branch is on the remote; the request may have
+ * been applied before the abort landed, so the outcome is unknown rather than
+ * nothing. A retry would create a second flow, which koda refuses with a 409.
+ */
+function cancelledCreateMessage(branch: string): string {
+  return (
+    `[chat] the turn was cancelled during the koda request; branch ${branch} stays pushed and koda may have ` +
+    "created the flow; check koda's flows before sending again (a duplicate send is refused with 409)"
+  );
 }
 
 /**
@@ -397,9 +420,11 @@ async function createFlow(
   state: FlowRepoReady,
   input: FlowSendInput,
   options: FlowProviderOptions,
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
   try {
-    const outcome = await _flowProviderDeps.createKodaFlow(options.connection, createBody(state, input));
+    // An answer already received is the outcome: a later abort cannot replace it.
+    const outcome = await _flowProviderDeps.createKodaFlow(options.connection, createBody(state, input), signal);
     return { content: outcomeContent(outcome, options.connection) };
   } catch (error) {
     const classified = kodaFailure(error, state.branch);
@@ -452,7 +477,9 @@ async function afterAllow(
     if (cancelled(signal)) return failure(CANCELLED_MESSAGE);
     throw error;
   }
-  return await createFlow(state, input, options);
+  // The turn's signal goes on to the create: an Esc past the push must cancel the
+  // request rather than let koda create a flow the transcript calls abandoned.
+  return await createFlow(state, input, options, signal);
 }
 
 /**
@@ -485,6 +512,10 @@ function sendTool(options: FlowProviderOptions): ProviderTool {
       "Hand a settled set of feature specs to koda as a flow: asks the user for explicit approval, then pushes " +
       "the current branch and creates the flow in koda.",
     inputSchema: FLOW_SEND_INPUT_SCHEMA,
+    // The push and the create both settle their own outcome after an Esc, so the
+    // transcript gets "nothing was pushed" or "the branch is pushed, check koda"
+    // rather than the generic abandoned message.
+    cancelGraceMs: FLOW_SEND_CANCEL_GRACE_MS,
     // No failure leaves the tool: an unclassified rejection — a git error, a rejecting
     // `approve` — is reported the way every other failure is, as a `[chat]` result.
     run: async (input, ctx) => {
