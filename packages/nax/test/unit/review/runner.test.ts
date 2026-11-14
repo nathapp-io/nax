@@ -7,7 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { makeConfigSlice, makeSpawn, makeSpawnResult } from "@test/helpers";
+import {
+  type GroupKillRecorder,
+  makeConfigSlice,
+  makeGroupKillRecorder,
+  makeSpawn,
+  makeSpawnResult,
+} from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { _qualityRunnerDeps as _runnerDeps } from "@/quality/runner";
 import { _reviewGitDeps as _deps, _reviewLintDeps as _lintDeps, runReview } from "@/review/runner";
@@ -409,9 +415,15 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
    */
   const TEST_GIT_TIMEOUT_MS = 50;
 
+  /** The pid the hung fake reports; asserted against the recorded group kill. */
+  const HUNG_GIT_PID = 5200;
+
   let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
   let originalSpawn: typeof _gitDeps.spawn;
+  let originalKillProcessGroup: typeof _gitDeps.killProcessGroup;
   let originalTimeout: number;
+  /** Recording stub for the group kill every hung fake spawn reaches (US-002). */
+  let groupKill: GroupKillRecorder;
 
   beforeEach(() => {
     // Capture the impl reference at test start — previous describe blocks mock
@@ -421,13 +433,21 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     // captured here, so this is robust to test-run order.
     originalGetUncommittedFiles = _deps.getUncommittedFiles;
     originalSpawn = _gitDeps.spawn;
+    originalKillProcessGroup = _gitDeps.killProcessGroup;
     originalTimeout = _gitDeps.gitTimeoutMs;
     _gitDeps.gitTimeoutMs = TEST_GIT_TIMEOUT_MS;
+    // These fakes report pid 4242 (makeSpawnResult's default) unless told
+    // otherwise, so a real group kill would SIGKILL whatever holds that group on
+    // the machine running the tests. Installed for every test in the suite,
+    // restored in afterEach.
+    groupKill = makeGroupKillRecorder();
+    _gitDeps.killProcessGroup = groupKill.killProcessGroup;
   });
 
   afterEach(() => {
     _deps.getUncommittedFiles = originalGetUncommittedFiles;
     _gitDeps.spawn = originalSpawn;
+    _gitDeps.killProcessGroup = originalKillProcessGroup;
     _gitDeps.gitTimeoutMs = originalTimeout;
     mock.restore();
   });
@@ -467,7 +487,7 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     let resolveExited: (code: number) => void = () => {};
     let killInvoked = false;
     _gitDeps.spawn = makeSpawn(() => {
-      const proc = makeSpawnResult();
+      const proc = makeSpawnResult({ pid: HUNG_GIT_PID });
       Object.defineProperty(proc, "exited", {
         value: new Promise<number>((r) => {
           resolveExited = r;
@@ -492,6 +512,10 @@ describe("getUncommittedFilesImpl — BUG-1 pipe-drain regression", () => {
     // "await proc.exited before draining stdout" pattern.
     expect(elapsed).toBeLessThan(1_000);
     expect(killInvoked).toBe(true);
+    // US-002: the hung git is killed through the shared process-group seam too,
+    // with the pid the fake reported. The direct kill above alone would leave
+    // everything git started running.
+    expect(groupKill.calls).toEqual([{ pid: HUNG_GIT_PID, signal: "SIGKILL", singleProcessFallback: false }]);
     expect(result).toEqual([]);
   });
 });

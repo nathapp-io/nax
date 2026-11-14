@@ -1,13 +1,36 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeSpawn } from "@test/helpers";
+import { type GroupKillRecorder, makeGroupKillRecorder, makeSpawn } from "@test/helpers";
 import * as bot from "@/bot";
 import { _savedFixDeps } from "@/bot/saved-fix";
 import { _gitDeps } from "@/utils/git";
 
-const original = _gitDeps.spawn;
+/**
+ * The pid the fake git reports. `makeSpawnResult`'s default (4242) belongs to
+ * whatever holds that process group on the machine running the tests, so the
+ * group kill is always driven through a recording stub here.
+ */
+const FAKE_GIT_PID = 8123;
+
+const originalSpawn = _gitDeps.spawn;
+const originalKillProcessGroup = _gitDeps.killProcessGroup;
 afterEach(() => {
-  _gitDeps.spawn = original;
+  _gitDeps.spawn = originalSpawn;
+  _gitDeps.killProcessGroup = originalKillProcessGroup;
 });
+
+/**
+ * A git that never exits until the SIGKILL resolves its `exited` promise — the
+ * shape real `Bun.spawn` has, so gitWithTimeout's timeout path settles. Returns
+ * the recorder that replaced the real `killProcessGroup` seam.
+ */
+function hangingGit(onKill: () => void): GroupKillRecorder {
+  const groupKill = makeGroupKillRecorder();
+  _gitDeps.spawn = makeSpawn(() => ({ hang: true, killResolvesExited: true, pid: FAKE_GIT_PID, onKill })).spawn;
+  // The fake reports FAKE_GIT_PID: a real group kill would SIGKILL whatever holds
+  // that group on the machine running the tests. Restored by afterEach above.
+  _gitDeps.killProcessGroup = groupKill.killProcessGroup;
+  return groupKill;
+}
 
 describe("botGit", () => {
   test("AC-1 barrel runner disables hooks and retains shared environment hardening", async () => {
@@ -32,17 +55,26 @@ describe("botGit", () => {
       "--porcelain",
     ]);
   });
+  test("US-002 AC-1 a hung fetch kills the process group with the fake git pid", async () => {
+    const groupKill = hangingGit(() => {});
+
+    await bot.botGit(["fetch"], "/repo", 50);
+
+    expect(groupKill.calls).toEqual([{ pid: FAKE_GIT_PID, signal: "SIGKILL", singleProcessFallback: false }]);
+  });
   test("AC-3 forwards the deadline and kills a hung git", async () => {
     let killed = false;
-    _gitDeps.spawn = makeSpawn(() => ({
-      hang: true,
-      killResolvesExited: true,
-      onKill: () => {
-        killed = true;
-      },
-    })).spawn;
+    // US-002 AC-3: a hanging fake spawn, a recording group-kill stub and a
+    // proc.kill that resolves `exited` still yield the timed-out result.
+    const groupKill = hangingGit(() => {
+      killed = true;
+    });
+
     expect(await bot.botGit(["fetch"], "/repo", 50)).toMatchObject({ timedOut: true, exitCode: 1 });
     expect(killed).toBe(true);
+    // US-002 AC-3: the group kill reaches the seam once and the direct kill still
+    // runs, so the call resolves the timed-out result rather than stalling.
+    expect(groupKill.count()).toBe(1);
   });
   test.each([
     ["AC-4 checkout", bot._checkoutDeps],
