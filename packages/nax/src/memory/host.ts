@@ -54,7 +54,6 @@ import {
   type MemoryNote,
   type MemoryNoteWrite,
   type MemoryOutbox,
-  type MemoryOutboxEntry,
   type MemoryProvider,
   type MemorySaveResult,
   type MemoryScope,
@@ -70,12 +69,14 @@ import { byCodePoint } from "@nathapp/nax-agent/internal";
 import { type MemoryConfig, memoryConfigOf, type NaxConfig } from "@/config";
 import { NaxError } from "@/errors";
 import { createMcpPool, type McpPool } from "@/mcp";
-import { readForgetPendingKeys } from "./host-forget-keys";
+import { kodaHeldForgetKeys, readForgetPendingKeys } from "./host-forget-keys";
 import { mergeRemoteFirst, searchRemote } from "./host-remote-search";
+import { type MemoryRejectedEntry, readStatus } from "./host-status";
 import { createHostWrites, type MemoryRejectedTarget } from "./host-writes";
 import { createKodaApprovals, type KodaApprovals } from "./koda-approvals";
 import { createKodaClient, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
-import { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
+import { createKodaMemoryProvider } from "./koda-provider";
+import { createKodaRefusals, type KodaRefusals, type MemoryKodaRefusal } from "./koda-refusals";
 import { createMcpIdMap } from "./mcp-id-map";
 import { createMcpMemoryProvider } from "./mcp-provider";
 import { type MemoryDirs, type MemoryLogger, memoryDirs } from "./paths";
@@ -95,6 +96,11 @@ export interface MemoryStatus {
   readonly rejected: number;
   /** Each rejected entry, oldest first, with the reason it carries — a parked forget's note is still live. */
   readonly rejectedEntries: readonly MemoryRejectedEntry[];
+  /**
+   * The proposals koda refused, oldest first — refusals a surface would otherwise never hear
+   * of. Only a koda-backed host reports them; the field is absent on every other host.
+   */
+  readonly kodaRefusals?: readonly MemoryKodaRefusal[];
   readonly notes: { readonly project: number; readonly user: number; readonly repo: number };
   readonly repoSkipped: number;
 }
@@ -174,6 +180,7 @@ export const _memoryHostDeps: {
   createMcpMemoryProvider: typeof createMcpMemoryProvider;
   createKodaClient: typeof createKodaClient;
   createKodaApprovals: typeof createKodaApprovals;
+  createKodaRefusals: typeof createKodaRefusals;
   createKodaMemoryProvider: typeof createKodaMemoryProvider;
   /** How long a remote search may run before the host gives up on it and answers from the mirror. */
   remoteSearchTimeoutMs: number;
@@ -192,12 +199,13 @@ export const _memoryHostDeps: {
   createMcpMemoryProvider,
   createKodaClient,
   createKodaApprovals,
+  createKodaRefusals,
   createKodaMemoryProvider,
   remoteSearchTimeoutMs: MEMORY_OP_TIMEOUT_MS,
 };
 
 /** The parts one host is composed from: the mirror, its queue and the provider behind it. */
-interface MemoryParts {
+export interface MemoryParts {
   readonly dirs: MemoryDirs;
   readonly store: MemoryStore;
   readonly outbox: MemoryOutbox;
@@ -206,6 +214,8 @@ interface MemoryParts {
   readonly pool?: McpPool;
   /** koda's proposal record; only a koda-backed host composes one. */
   readonly kodaApprovals?: KodaApprovals;
+  /** The report of the proposals koda refused; only a koda-backed host composes one. */
+  readonly kodaRefusals?: KodaRefusals;
 }
 
 /** Slug order, as code points: the one order every note listing is served in. */
@@ -277,24 +287,46 @@ function composeMcp(input: CreateMemoryHostInput, dirs: MemoryDirs): { provider:
   return { provider, pool };
 }
 
+/** koda's two records, composed together: they live in the same mirror directory. */
+interface KodaRecords {
+  readonly approvals: KodaApprovals;
+  readonly refusals: KodaRefusals;
+}
+
 /**
- * The koda provider, the client that reaches it and the record of the writes it answered with a `202`.
+ * koda's own two records: the proposals it has not answered, and the refusals it gave.
+ *
+ * They are built before the mirror store, because the approvals file is the store's
+ * held-forget source: a note koda holds a forget for is marked in the index the store
+ * renders, and the store reads that from this file rather than from a second copy.
+ */
+function composeKodaRecords(input: CreateMemoryHostInput, dirs: MemoryDirs): KodaRecords {
+  const seamInput = { dir: dirs.projectDir, logger: input.logger };
+  return {
+    approvals: _memoryHostDeps.createKodaApprovals(seamInput),
+    refusals: _memoryHostDeps.createKodaRefusals(seamInput),
+  };
+}
+
+/**
+ * The koda provider, the client that reaches it and the records of the writes it answered.
  *
  * koda owns the memories; the mirror stays the store every surface reads, so the provider is
- * handed the host's own reads — `readNote` and `readDecisions` over this mirror — and koda's
- * proposal records live beside it, in the project mirror directory. The record is handed back
+ * handed the host's own reads — `readNote` and `readDecisions` over this mirror — and the two
+ * records live beside it, in the project mirror directory. The approvals record is handed back
  * as well as to the provider, because the host's own reads ask it which slugs a forget koda
- * holds still has in the mirror.
+ * holds still has in the mirror. The refusals record goes to the provider alone: the pull
+ * writes it, and the status reads it through `MemoryParts`.
  *
  * Config load guarantees both the url and the project (`validateMemoryProvider`); a bypassed
  * load fails here, at host creation, rather than on the first write.
  */
-function composeKoda(
-  input: CreateMemoryHostInput,
-  dirs: MemoryDirs,
-  store: MemoryStore,
-): { provider: MemoryProvider; approvals: KodaApprovals } {
-  const koda = memoryConfigOf(input.config).koda;
+function composeKoda(input: {
+  readonly host: CreateMemoryHostInput;
+  readonly store: MemoryStore;
+  readonly records: KodaRecords;
+}): MemoryProvider {
+  const koda = memoryConfigOf(input.host.config).koda;
   if (koda?.url === undefined || koda.project === undefined) {
     throw new NaxError(
       '[memory] memory.provider "koda" needs memory.koda.url and memory.koda.project',
@@ -307,38 +339,54 @@ function composeKoda(
     headers: koda.headers ?? {},
     timeoutMs: MEMORY_KODA_REQUEST_TIMEOUT_MS,
   });
-  const approvals = _memoryHostDeps.createKodaApprovals({ dir: dirs.projectDir, logger: input.logger });
-  const provider = _memoryHostDeps.createKodaMemoryProvider({
+  return _memoryHostDeps.createKodaMemoryProvider({
     client,
     project: koda.project,
-    approvals,
-    readNote: (scope, slug) => store.readNote(scope, slug),
-    readDecisions: () => store.readDecisions(),
-    logger: input.logger,
+    approvals: input.records.approvals,
+    refusals: input.records.refusals,
+    readNote: (scope, slug) => input.store.readNote(scope, slug),
+    readDecisions: () => input.store.readDecisions(),
+    logger: input.host.logger,
   });
-  return { provider, approvals };
+}
+
+/** A koda host's composition: its records first, then the mirror, its queue and the provider. */
+async function composeKodaMemory(input: CreateMemoryHostInput, dirs: MemoryDirs): Promise<MemoryParts> {
+  const records = composeKodaRecords(input, dirs);
+  const store = _memoryHostDeps.createMemoryStore({
+    projectDir: dirs.projectDir,
+    userDir: dirs.userDir,
+    logger: input.logger,
+    heldForgets: () => kodaHeldForgetKeys(records.approvals),
+  });
+  const outbox = _memoryHostDeps.createMemoryOutbox({ dir: store.paths.outboxDir });
+  const provider = composeKoda({ host: input, store, records });
+  return { dirs, store, outbox, provider, kodaApprovals: records.approvals, kodaRefusals: records.refusals };
 }
 
 /** Resolve the directories and build the store, the outbox and the configured provider over them. */
 async function composeMemory(input: CreateMemoryHostInput): Promise<MemoryParts> {
   const dirs = await _memoryHostDeps.memoryDirs({ config: input.config, repoRoot: input.repoRoot });
+  const provider = memoryConfigOf(input.config).provider;
+  // koda's records come first: the mirror store reads its index's held forgets from them.
+  if (provider === "koda") return await composeKodaMemory(input, dirs);
   const store = _memoryHostDeps.createMemoryStore({
     projectDir: dirs.projectDir,
     userDir: dirs.userDir,
     logger: input.logger,
   });
   const outbox = _memoryHostDeps.createMemoryOutbox({ dir: store.paths.outboxDir });
-  const provider = memoryConfigOf(input.config).provider;
   if (provider === "mcp") return { dirs, store, outbox, ...composeMcp(input, dirs) };
-  if (provider === "koda") {
-    const { provider: kodaProvider, approvals } = composeKoda(input, dirs, store);
-    return { dirs, store, outbox, provider: kodaProvider, kodaApprovals: approvals };
-  }
   return { dirs, store, outbox, provider: _memoryHostDeps.createLocalMemoryProvider(store) };
 }
 
-/** Everything one host's reads are built from: where the mirror is, and the config that caps it. */
-interface HostInput {
+/**
+ * Everything one host's reads are built from: where the mirror is, and the config that caps it.
+ *
+ * Exported for `host-status.ts`, which is handed one and must not import this module at
+ * runtime: the import is type-only, so the two cannot join an initialisation cycle.
+ */
+export interface HostInput {
   readonly parts: MemoryParts;
   readonly config: MemoryConfig;
   readonly repoRoot: string;
@@ -352,7 +400,7 @@ interface HostInput {
  * holds, and how much of the team's it does not shadow — and the index wants the
  * merge of them, so one read answers both.
  */
-interface ProjectScope {
+export interface ProjectScope {
   /** The mirror's own project notes, in slug order. */
   readonly mirror: readonly MemoryNote[];
   /** The repository's notes whose slug the mirror does not hold, in slug order. */
@@ -362,7 +410,7 @@ interface ProjectScope {
 }
 
 /** One host's reads, closed over the composition and the repository they read from. */
-interface HostReads {
+export interface HostReads {
   /** The mirror's own notes of one scope, in slug order. */
   mirrorNotes(scope: MemoryScope): Promise<readonly MemoryNote[]>;
   /** The project scope as two sets, with how many repo notes were skipped. */
@@ -455,25 +503,13 @@ async function readIndex(reads: HostReads, input: HostInput): Promise<RenderedMe
   return renderMemoryIndex({ projectNotes, userNotes, decisions, heldForgets, maxBytes: input.config.indexBytes });
 }
 
-/** An outbox entry the provider refused, or a sync parked: what it was and why it stopped. */
-export interface MemoryRejectedEntry {
-  readonly kind: MemoryOutboxEntry["kind"];
-  readonly scope: MemoryOutboxEntry["scope"];
-  readonly slug: string;
-  readonly reason: string;
-}
-
-/** The rejected entries as the status reports them; an entry with no reason says so. */
-function rejectedEntries(entries: readonly MemoryOutboxEntry[]): MemoryRejectedEntry[] {
-  return entries
-    .filter((entry) => entry.state === "rejected")
-    .map(({ kind, scope, slug, reason }) => ({ kind, scope, slug, reason: reason ?? "no reason recorded" }));
-}
-
-/** How many outbox entries are in one state: still to deliver, or refused by the provider. */
-function countState(entries: readonly MemoryOutboxEntry[], state: "queued" | "rejected"): number {
-  return entries.filter((entry) => entry.state === state).length;
-}
+/**
+ * An outbox entry the provider refused, or a sync parked: what it was and why it stopped.
+ *
+ * Declared in `host-status.ts` because this file is at its size cap, and re-exported here so
+ * `@/memory` keeps the name it always exported.
+ */
+export type { MemoryRejectedEntry } from "./host-status";
 
 /**
  * One sync: the composition handed to feature 1's scheduler.
@@ -485,48 +521,6 @@ function countState(entries: readonly MemoryOutboxEntry[], state: "queued" | "re
 function syncParts(input: HostInput): Promise<MemorySyncResult> {
   const { store, outbox, provider } = input.parts;
   return _memoryHostDeps.syncMemory({ store, outbox, provider, logger: input.logger });
-}
-
-/**
- * The write mode the status reports.
- *
- * With the koda provider the mode is koda's answer for the calling agent (`GET .../memory/write-mode`),
- * never `memory.writeMode`, which the provider ignores. Status stays an offline read, so it says
- * koda decides rather than asking: a status that needs the network would hang or fail exactly when
- * the user is checking why a sync does not work.
- */
-function statusWriteMode(input: HostInput): MemoryStatus["writeMode"] {
-  return input.parts.provider.id.startsWith(MEMORY_KODA_PROVIDER_PREFIX) ? "koda" : input.config.writeMode;
-}
-
-/**
- * What the surfaces report about a host without calling one of its reads.
- *
- * The note counts are the mirror's own — a repo note is the repository's, and is
- * counted once by `repo` if the mirror's notes do not shadow it. `lastPullAt` and
- * `lastError` are whatever the last sync left in `sync.json`.
- */
-async function readStatus(reads: HostReads, input: HostInput): Promise<MemoryStatus> {
-  const [project, user, entries, sync] = await Promise.all([
-    reads.projectScope(),
-    reads.mirrorNotes("user"),
-    input.parts.outbox.list(),
-    input.parts.store.readSyncState(),
-  ]);
-  return {
-    enabled: true,
-    provider: input.parts.provider.id,
-    writeMode: statusWriteMode(input),
-    projectDir: input.parts.dirs.projectDir,
-    userDir: input.parts.dirs.userDir,
-    lastPullAt: sync.lastPullAt,
-    lastError: sync.lastError,
-    queued: countState(entries, "queued"),
-    rejected: countState(entries, "rejected"),
-    rejectedEntries: rejectedEntries(entries),
-    notes: { project: project.mirror.length, user: user.length, repo: project.unshadowed.length },
-    repoSkipped: project.skipped,
-  };
 }
 
 /**
