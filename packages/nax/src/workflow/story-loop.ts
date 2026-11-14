@@ -47,6 +47,7 @@ export interface StoryLoopSteps {
   storyReview(
     concerns: readonly string[],
     gates?: Readonly<Partial<Record<GateName, GateState>>>,
+    options?: { readonly suiteRunning?: boolean },
   ): Promise<ReviewOutcome<StoryReviewVerdict>>;
   reReview(
     round: number,
@@ -110,6 +111,8 @@ export interface StoryLoopSink {
 export interface StoryLoopEnv {
   readonly storyId: string;
   readonly maxFixRounds: number;
+  readonly parallelReview?: boolean;
+  readonly now?: () => number;
   readonly steps: StoryLoopSteps;
   readonly advisor: WorkflowAdvisor;
   readonly sink: StoryLoopSink;

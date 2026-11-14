@@ -103,7 +103,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "workflow.timeouts.reviewMs": "Timeout for each review phase in milliseconds (default 1800000)",
   "workflow.timeouts.ciWaitMs": "Max time to wait for CI in milliseconds (default 1200000)",
   "workflow.timeouts.ciPollMs": "Interval between CI status polls in milliseconds (default 30000)",
-  "workflow.review": "The branch review's coverage retry budget in workflow mode",
+  "workflow.review": "Review settings: coverageRetries and parallelWithSuite",
+  "workflow.review.parallelWithSuite":
+    "Run story review beside the full suite (default false); use only when suite outputs are gitignored, because the reviewer tree guard can remove non-ignored files changed during review.",
   "workflow.review.coverageRetries":
     "Coverage re-prompts the branch review gets when its reply leaves a required file unread (default 3); this budget is separate from the JSON-shape retry and stops early once a retry covers no more files. 0 disables it",
   "workflow.itemPublish":

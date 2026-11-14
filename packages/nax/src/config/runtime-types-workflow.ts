@@ -80,6 +80,7 @@ export interface WorkflowConfig {
    */
   review?: {
     readonly coverageRetries: number;
+    readonly parallelWithSuite: boolean;
   };
   /**
    * US-001 (item-publish-pacing): the post-publish item-thread pacing. Optional so a hand-built

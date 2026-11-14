@@ -1,5 +1,30 @@
 import { describe, expect, test } from "bun:test";
-import { buildWorkflowReviewJsonRetry, buildWorkflowVerdictMismatchRetry } from "@/prompts";
+import {
+  buildWorkflowReviewJsonRetry,
+  buildWorkflowStoryReviewPrompt,
+  buildWorkflowVerdictMismatchRetry,
+} from "@/prompts";
+
+const reviewInput = { briefPath: "brief", reportPath: "report", packagePath: "diff", concerns: [] };
+
+describe("running suite prompt", () => {
+  test("AC-8: reports the running suite after green gates", () => {
+    const prompt = buildWorkflowStoryReviewPrompt({
+      ...reviewInput,
+      gates: { lint: "green", typecheck: "green", scoped: "green" },
+      suiteRunning: true,
+    });
+    expect(prompt).toContain("scoped tests green, full suite still running.\n");
+  });
+  test("AC-9: tells the reviewer not to list the running suite", () => {
+    expect(buildWorkflowStoryReviewPrompt({ ...reviewInput, suiteRunning: true })).toContain(
+      "The full suite is still running while you review; nax records its result itself, so do not list it under cannotVerify.",
+    );
+  });
+  test("AC-10: absent suite is not run", () => {
+    expect(buildWorkflowStoryReviewPrompt(reviewInput)).toContain("full suite not run.\n");
+  });
+});
 
 describe("buildWorkflowVerdictMismatchRetry", () => {
   test("names spec and quality discrepancies and retains the JSON instruction", () => {

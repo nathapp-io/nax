@@ -16,7 +16,7 @@ describe("workflow config", () => {
       ciRepairRounds: 1,
       preflight: true,
       publish: "pr",
-      review: { coverageRetries: 3 },
+      review: { coverageRetries: 3, parallelWithSuite: false },
       itemPublish: { writeGapMs: 1000, retryBackoffMs: 60000, maxRetries: 2, maxWaitMs: 300000 },
       interruptRetry: { maxAttempts: 1, budgetMultiplier: 0.5 },
       timeouts: {

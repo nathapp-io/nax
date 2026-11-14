@@ -101,6 +101,15 @@ describe("runStoryReview", () => {
     expect(promptOf(seen[0])).toContain("lint not run");
   });
 
+  test("a running suite reaches the dispatched story review prompt", async () => {
+    const sc = makeSc();
+    const seen: unknown[] = [];
+    fakeOp(workflowStoryReviewOp.name, PASS, seen);
+    await runStoryReview(sc, [], { lint: "green" }, { suiteRunning: true });
+    expect(seen).toHaveLength(1);
+    expect(promptOf(seen[0])).toContain("full suite still running");
+  });
+
   test("a red lint gate reaches the prompt (AC-11)", async () => {
     const sc = makeSc();
     const seen: unknown[] = [];

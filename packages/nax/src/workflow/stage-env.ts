@@ -1,7 +1,7 @@
 /** Builds the StepContext and wires the real steps, sink and advisor into a StoryLoopEnv (Task 10's contract). */
 import { join } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import { resolveWorkflowConfig } from "@/config";
+import { resolveWorkflowConfig, WORKFLOW_REVIEW_DEFAULTS } from "@/config";
 import { _workflowResumeDeps, headsUpChannel } from "@/execution";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
@@ -153,12 +153,12 @@ export async function buildStoryEnv(
         limitSeconds: _timeoutFactsDeps.resolveFullSuiteTimeoutSeconds(current.config),
       };
     },
-    storyReview: timed("story-review", addTiming, (concerns, gates) =>
+    storyReview: timed("story-review", addTiming, (concerns, gates, options) =>
       toolErrors("story-review", async () => {
         // US-001: the brief is rewritten here, so a ruling the loop recorded after the story
         // started is in the copy the reviewer reads. A failed refresh leaves the previous one.
         await refreshBrief(current);
-        return runStoryReview(current, concerns, gates);
+        return runStoryReview(current, concerns, gates, options);
       }),
     ),
     reReview: timed("re-review", addTiming, (round, findings, fixBase) =>
@@ -191,6 +191,7 @@ export async function buildStoryEnv(
   const env: StoryLoopEnv = {
     storyId: ctx.story.id,
     maxFixRounds: workflow.maxFixRounds,
+    parallelReview: (workflow.review ?? WORKFLOW_REVIEW_DEFAULTS).parallelWithSuite === true,
     steps,
     advisor: createLiveWorkflowAdvisor({
       advisor: _workflowDeps.createAdvisor({

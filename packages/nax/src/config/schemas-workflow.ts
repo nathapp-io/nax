@@ -16,6 +16,7 @@ export const ExecutionModeSchema = z.enum(["pipeline", "workflow"]);
 const WorkflowReviewConfigSchema = z
   .object({
     coverageRetries: z.number().int().min(0).default(3),
+    parallelWithSuite: z.boolean().default(false),
   })
   .prefault({});
 
