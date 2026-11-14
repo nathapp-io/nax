@@ -261,6 +261,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   const story = ctx.story;
   const routing = ctx.routing;
   const agentResult = ctx.agentResult;
+  const gateOpen = ctx.workflowEndState === "complete-gate-open";
 
   // Calculate attempts (initial + escalations)
   // @design: BUG-067: priorFailures captures cross-tier attempts that story.escalations never records
@@ -274,7 +275,8 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
   // First pass success = succeeded with no tier escalation and no cross-tier
   // failures (BUG-067). The rectify term went with the rectify phase (US-002),
   // so the metric is the escalation-free, prior-failure-free case.
-  const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
+  const firstPassSuccess =
+    agentResult?.success === true && !gateOpen && escalationCount === 0 && priorFailureCount === 0;
 
   // Extract model name and agent from config
   const agentUsed = routing.agent ?? ctx.agentManager?.getDefault() ?? resolveDefaultAgent(ctx.config);
@@ -314,7 +316,7 @@ export async function collectStoryMetrics(ctx: PipelineContext, storyStartTime: 
     agentUsed,
     attempts,
     finalTier,
-    success: agentResult?.success || false,
+    success: agentResult?.success === true && !gateOpen,
     cost: costSnapshot !== undefined ? totalSpendUsd(costSnapshot) : 0,
     durationMs: agentResult?.durationMs || 0,
     firstPassSuccess,

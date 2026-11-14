@@ -104,6 +104,7 @@ describe("completionStage outcome reporting", () => {
     try {
       await completionStage.execute(ctx);
       expect(ctx.prd.userStories[0].status).toBe("passed");
+      if (state === "complete-gate-open") expect(ctx.storyMetrics?.[0]?.success).toBe(false);
       const messages = logs.filter((entry) => entry.stage === "completion").map((entry) => entry.message);
       expect(messages).toContain(message);
       if (state === "complete-gate-open") {
