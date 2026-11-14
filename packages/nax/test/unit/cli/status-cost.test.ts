@@ -72,6 +72,7 @@ const FIXED_REPORT: CostReportV1 = {
     totalStories: 1,
     storiesCompleted: 1,
     storiesFailed: 0,
+    storiesGateOpen: 0,
     totalCost: 0.5,
     avgCostPerStory: 0.5,
     stories: [{ storyId: "US-001", cost: 0.5, model: "claude-sonnet-4-5", attempts: 1 }],
@@ -401,6 +402,44 @@ describe("displayCostMetrics / displayLastRunMetrics / displayModelEfficiency", 
       await displayLastRunMetrics(workdir);
 
       expect(entries.some((e) => e.level === "warn")).toBe(false);
+    });
+
+    test("displayLastRunMetrics logs storiesGateOpen when the last run closed stories gate-open", async () => {
+      await seedMetrics(workdir, [
+        makeRunMetrics({ runId: "run-gate", feature: "feat-gate", totalStories: 2, storiesGateOpen: 1 }),
+      ]);
+
+      await displayLastRunMetrics(workdir);
+
+      const summary = entries.find((e) => e.message === "Last Run: feat-gate");
+      expect(summary).toBeDefined();
+      expect(summary?.data?.storiesGateOpen).toBe(1);
+    });
+
+    test("displayLastRunMetrics omits storiesGateOpen when the last run closed none gate-open", async () => {
+      await seedMetrics(workdir, [
+        makeRunMetrics({ runId: "run-clean", feature: "feat-clean", totalStories: 1, storiesGateOpen: 0 }),
+      ]);
+
+      await displayLastRunMetrics(workdir);
+
+      const summary = entries.find((e) => e.message === "Last Run: feat-clean");
+      expect(summary).toBeDefined();
+      // The key must be ABSENT, not present-as-undefined: a zero count is not
+      // worth a line in the human-readable output.
+      expect(summary !== undefined && "storiesGateOpen" in (summary.data ?? {})).toBe(false);
+    });
+
+    test("displayLastRunMetrics omits storiesGateOpen for a record written before the field existed", async () => {
+      const legacyRun = makeRunMetrics({ runId: "run-legacy", feature: "feat-legacy", totalStories: 1 });
+      expect("storiesGateOpen" in legacyRun).toBe(false);
+      await seedMetrics(workdir, [legacyRun]);
+
+      await displayLastRunMetrics(workdir);
+
+      const summary = entries.find((e) => e.message === "Last Run: feat-legacy");
+      expect(summary).toBeDefined();
+      expect(summary !== undefined && "storiesGateOpen" in (summary.data ?? {})).toBe(false);
     });
 
     test("displayModelEfficiency logs model and complexity breakdowns", async () => {

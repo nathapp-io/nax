@@ -45,6 +45,12 @@ export interface CostRunSummary {
   totalStories: number;
   storiesCompleted: number;
   storiesFailed: number;
+  /**
+   * Stories the last run closed `complete-gate-open` — counted in neither
+   * `storiesCompleted` nor `storiesFailed`, so without this the three numbers do
+   * not add up to `totalStories`. `0` for records written before #2879.
+   */
+  storiesGateOpen: number;
   totalCost: number;
   avgCostPerStory: number;
   stories: CostStory[];
@@ -141,6 +147,9 @@ function buildLastRun(runs: RunMetrics[]): CostRunSummary | null {
     totalStories,
     storiesCompleted: last.storiesCompleted,
     storiesFailed: last.storiesFailed,
+    // Absent on records written before #2879 — report an older run as having
+    // closed none gate-open rather than leaking `undefined` into the contract.
+    storiesGateOpen: last.storiesGateOpen ?? 0,
     totalCost,
     avgCostPerStory,
     stories,

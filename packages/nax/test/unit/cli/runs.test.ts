@@ -18,7 +18,7 @@ import { getLogger, initLogger, resetLogger } from "@/logger";
 const RUN_ID = "run-20260811-120000";
 
 /** A run log shaped exactly like the runner writes one. */
-function runLogLines(opts: { complete: boolean }): string {
+function runLogLines(opts: { complete: boolean; gateOpen?: number }): string {
   const lines: Record<string, unknown>[] = [
     {
       timestamp: "2026-08-11T12:00:00.000Z",
@@ -52,7 +52,16 @@ function runLogLines(opts: { complete: boolean }): string {
       level: "info",
       stage: "run.complete",
       message: "Feature execution completed",
-      data: { runId: RUN_ID, feature: "demo", totalStories: 4, storiesCompleted: 3, totalCost: 1.25 },
+      data: {
+        runId: RUN_ID,
+        feature: "demo",
+        totalStories: 4,
+        storiesCompleted: 3,
+        totalCost: 1.25,
+        // Omitted entirely when the caller asks for a pre-#2879 record — the
+        // key must be absent from the JSON, not present-as-undefined.
+        ...(opts.gateOpen !== undefined ? { storiesGateOpen: opts.gateOpen } : {}),
+      },
     });
   }
 
@@ -60,7 +69,7 @@ function runLogLines(opts: { complete: boolean }): string {
 }
 
 /** Seeds the run log under the OUTPUT dir (~/.nax/<project> in real use), not the workdir. */
-async function seedRunLog(outputDir: string, opts: { complete: boolean }): Promise<void> {
+async function seedRunLog(outputDir: string, opts: { complete: boolean; gateOpen?: number }): Promise<void> {
   const runsDir = join(outputDir, "features", "demo", "runs");
   await mkdir(runsDir, { recursive: true });
   await writeFile(join(runsDir, `${RUN_ID}.jsonl`), runLogLines(opts));
@@ -163,5 +172,63 @@ describe("nax runs — event lookup", () => {
     const row = entries.find((e) => e.message.trim() === RUN_ID);
     expect(row?.data?.status).toBe("in-progress");
     expect(row?.data?.totalStories).toBe(0);
+  });
+});
+
+/**
+ * `nax runs show` reports a gate-open count so a run whose "completed 1 / total 2"
+ * line does not add up explains itself. The count is a run-summary payload field
+ * (#2879); older records have no key, and a clean run's zero is not worth printing —
+ * so the key must be present only when the count is positive.
+ */
+describe("nax runs show — gate-open count in the run summary", () => {
+  let workdir: string;
+  let outputDir: string;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-runs-gate-open-");
+    outputDir = join(workdir, "out");
+  });
+
+  afterEach(() => {
+    resetLogger();
+    cleanupTempDir(workdir);
+  });
+
+  test("logs storiesGateOpen when the run-summary record carries a positive count", async () => {
+    await seedRunLog(outputDir, { complete: true, gateOpen: 2 });
+    const { entries } = captureLogger();
+
+    await runsShowCommand({ runId: RUN_ID, feature: "demo", workdir, outputDir });
+
+    const summary = entries.find((e) => e.message === "Run Summary");
+    expect(summary).toBeDefined();
+    expect(summary?.data?.storiesGateOpen).toBe(2);
+    // The decoy purge entry must not win the lookup: the key comes from the real
+    // summary payload, alongside the counts it explains.
+    expect(summary?.data?.totalStories).toBe(4);
+  });
+
+  test("omits storiesGateOpen when the run-summary record carries 0", async () => {
+    await seedRunLog(outputDir, { complete: true, gateOpen: 0 });
+    const { entries } = captureLogger();
+
+    await runsShowCommand({ runId: RUN_ID, feature: "demo", workdir, outputDir });
+
+    const summary = entries.find((e) => e.message === "Run Summary");
+    expect(summary).toBeDefined();
+    expect(summary !== undefined && "storiesGateOpen" in (summary.data ?? {})).toBe(false);
+    expect(summary?.data?.totalStories).toBe(4);
+  });
+
+  test("omits storiesGateOpen when the run-summary record has no such field", async () => {
+    await seedRunLog(outputDir, { complete: true });
+    const { entries } = captureLogger();
+
+    await runsShowCommand({ runId: RUN_ID, feature: "demo", workdir, outputDir });
+
+    const summary = entries.find((e) => e.message === "Run Summary");
+    expect(summary).toBeDefined();
+    expect(summary !== undefined && "storiesGateOpen" in (summary.data ?? {})).toBe(false);
   });
 });
