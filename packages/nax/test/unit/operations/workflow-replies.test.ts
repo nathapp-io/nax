@@ -166,16 +166,20 @@ describe("parseStoryReviewReply", () => {
     expect(parseBranchReviewReply(raw, [])?.findings).toEqual([expect.objectContaining({ kind: "spec" })]);
   });
 
-  test.each(["approved", "changes"])("blocking spec finding satisfies spec and quality %s", (quality) => {
-    const v = parseStoryReviewReply(
-      JSON.stringify({
-        spec: "fail",
-        quality,
-        findings: [{ severity: "important", kind: "spec", issue: "broken AC" }],
-      }),
+  test.each([
+    { spec: "fail", quality: "approved", expected: ["spec"] },
+    { spec: "pass", quality: "changes", expected: ["quality"] },
+    { spec: "fail", quality: "changes", expected: ["spec", "quality"] },
+  ])("important spec finding clears mismatch for $spec / $quality", ({ spec, quality, expected }) => {
+    const verdict = { spec, quality, findings: [] };
+    const withoutFinding = parseStoryReviewReply(JSON.stringify(verdict));
+    expect(withoutFinding?.mismatch).toEqual(expected);
+    const withFinding = parseStoryReviewReply(
+      JSON.stringify({ ...verdict, findings: [{ severity: "important", kind: "spec", issue: "broken AC" }] }),
     );
-    expect(v).not.toBeNull();
-    expect(v).not.toHaveProperty("mismatch");
+    expect(withFinding).not.toBeNull();
+    expect(withFinding?.findings).toEqual([{ severity: "important", kind: "spec", issue: "broken AC" }]);
+    expect(withFinding).not.toHaveProperty("mismatch");
   });
 
   test("quality changes with a blocking finding, or quality approved, adds nothing", () => {
