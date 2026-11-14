@@ -3,7 +3,7 @@
   "feature": "koda-refusals-and-held-index",
   "branchName": "feat/koda-refusals-and-held-index",
   "createdAt": "2026-11-14T06:20:12.637Z",
-  "updatedAt": "2026-11-14T06:38:02.191Z",
+  "updatedAt": "2026-11-14T06:55:08.187Z",
   "userStories": [
     {
       "id": "US-001",
@@ -101,14 +101,17 @@
         "reporting"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "A self-contained file-store addition using the existing atomic-write/seam pattern with explicit bounded-report algorithms and deterministic failure handling."
+        "reasoning": "A self-contained file-store addition using the existing atomic-write/seam pattern with explicit bounded-report algorithms and deterministic failure handling.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/koda-approvals.ts",
@@ -133,7 +136,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "89b8bce4802becca7095e1fe6399b7057cdf8fa6"
     },
     {
       "id": "US-003",
