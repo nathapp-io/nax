@@ -3,7 +3,7 @@
   "feature": "run-time-waste-fixes",
   "branchName": "feat/run-time-waste-fixes",
   "createdAt": "2026-11-14T12:17:18.014Z",
-  "updatedAt": "2026-11-14T12:54:35.622Z",
+  "updatedAt": "2026-11-14T13:01:22.942Z",
   "userStories": [
     {
       "id": "US-001",
@@ -257,14 +257,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Timeout markers and end-state wording are additive, the route is a small pure comparison, and env wiring reuses existing baseline/limit readers; actual graph routing is deferred to US-005."
+        "reasoning": "Timeout markers and end-state wording are additive, the route is a small pure comparison, and env wiring reuses existing baseline/limit readers; actual graph routing is deferred to US-005.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/gates.ts",
@@ -287,7 +290,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "7918dd569806eb6d288a5ff174f2504b4c20865f"
     },
     {
       "id": "US-005",
