@@ -335,7 +335,7 @@ describe("pullKodaPage — a held forget's record", () => {
     return { approvalId: "apr_1", kind: "forget", scope: "project", slug: SLUG, clientId: "c1", ...over };
   }
 
-  /** Every request this case made, as URLs. */
+  /** Every request this case made, in the order koda received them. */
   function urls(): readonly string[] {
     return calls.map((call) => call.url);
   }
@@ -444,7 +444,7 @@ describe("pullKodaPage — a held forget's record", () => {
     expect(lookedUp()).toBe(true);
   });
 
-  test.each(["rejected", "expired", "cancelled", "failed"] as const)(
+  test.each(["rejected", "expired", "cancelled", "failed"])(
     "a refused forget answered %s produces no rejected note (AC-13)",
     async (status) => {
       await approvals.record(forgetRecord());
