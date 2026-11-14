@@ -180,6 +180,9 @@ describe("gitWithTimeout abort signal (#2895)", () => {
   function hangingGit() {
     const proc = makeSpawnResult({ hang: true, killResolvesExited: true });
     _gitDeps.spawn = makeSpawn(() => proc).spawn;
+    // The fake reports pid 4242: a real group kill would SIGKILL whatever holds
+    // that group on this machine. Stubbed and restored by withDepsRestore above.
+    _gitDeps.killProcessGroup = () => true;
     return proc;
   }
 
@@ -211,6 +214,7 @@ describe("gitWithTimeout abort signal (#2895)", () => {
     // `git push` hands its pipes to `git-remote-https`, which a kill of the parent does not reach.
     const proc = makeSpawnResult({ hang: true, killResolvesExited: true, stdoutStall: true, stderrStall: true });
     _gitDeps.spawn = makeSpawn(() => proc).spawn;
+    _gitDeps.killProcessGroup = () => true;
     const controller = new AbortController();
     const pending = gitWithTimeout(["push"], "/repo", 60_000, undefined, undefined, undefined, controller.signal);
 
