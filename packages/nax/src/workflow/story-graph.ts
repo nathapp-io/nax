@@ -34,6 +34,7 @@ export const STORY_GRAPH: StepGraph<StoryLoopState, StoryLoopEnv, StoryNode> = d
       kind: "agent",
       produces: [
         "suiteThisIteration",
+        "timeoutAsked",
         "gates",
         "suite",
         "nextId",

@@ -38,6 +38,7 @@ const EXPECTED_PRODUCES: Record<NodeId, string[]> = {
   implement: ["pendingSession", "nextId", "questions", "concerns", "closeAs", "lastTurn"],
   evaluate: [
     "suiteThisIteration",
+    "timeoutAsked",
     "gates",
     "suite",
     "nextId",

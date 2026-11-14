@@ -150,6 +150,7 @@ export interface StoryLoopState extends GraphState<StoryNode> {
   readonly gates?: GateRunResult;
   readonly suite?: GateRunResult;
   readonly suiteThisIteration: boolean;
+  readonly timeoutAsked: boolean;
   /** Set by the graph's cost stop; read by `close` through `deriveEndState`. */
   readonly costLimited: boolean;
   /** The first fix round after a resume runs fresh. */

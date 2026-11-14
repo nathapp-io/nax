@@ -28,11 +28,19 @@ export interface ImplementerQuestionFacts {
   readonly candidates: readonly ConfigChangeCandidate[];
 }
 
+export interface GateTimeoutFacts {
+  readonly gates: readonly GateName[];
+  readonly baselineTimedOut: boolean;
+  readonly repeated: boolean;
+  readonly limitSeconds?: number;
+}
+
 export interface ImplementerQuestionRequest {
   readonly storyId: string;
-  readonly status: "NEEDS_CONTEXT" | "BLOCKED";
+  readonly status: "NEEDS_CONTEXT" | "BLOCKED" | "GATE_TIMEOUT";
   readonly concerns: string;
   readonly facts?: ImplementerQuestionFacts;
+  readonly timing?: GateTimeoutFacts;
 }
 
 /** A config change the advisor picked off the menu; the loop applies it, the advisor never names one. */

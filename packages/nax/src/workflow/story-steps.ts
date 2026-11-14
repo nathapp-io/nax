@@ -37,6 +37,7 @@ import type {
   WorkflowFindingDraft,
 } from "./types";
 import { recordVerdictMismatch } from "./verdict-mismatch";
+import { stopOnTimeout } from "./timeout-stop";
 
 export const WARM_ROUND_CAP = 3;
 export const MAX_IMPLEMENTER_QUESTIONS = 2;
@@ -136,6 +137,7 @@ export function initialStoryState(env: StoryLoopEnv): StoryLoopState {
     concerns: [],
     questions: 0,
     suiteThisIteration: false,
+    timeoutAsked: false,
     costLimited: false,
     firstAfterResume: resume !== null,
     open: [],
@@ -481,13 +483,26 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
   s.pendingSession = [];
   // US-006: a round that ended BLOCKED and left the same gates red cannot converge, so the residual
   // node adjudicates now — the same `capped` exit the cost and no-op rules take.
-  const blocked = await stopOnUnchangedBlock(env, {
-    round: s.round,
-    lastTurn: state.lastTurn,
-    previous,
-    current: s.gates,
-    open,
-  });
+  const timedOut = await stopOnTimeout(
+    env,
+    {
+      previous,
+      previousSuite: state.suiteThisIteration ? state.suite : undefined,
+      current: s.gates,
+      currentSuite: s.suiteThisIteration ? s.suite : undefined,
+    },
+    state.timeoutAsked,
+  );
+  if (timedOut) s.advisorRoute = true;
+  const blocked =
+    !timedOut &&
+    (await stopOnUnchangedBlock(env, {
+      round: s.round,
+      lastTurn: state.lastTurn,
+      previous,
+      current: s.gates,
+      open,
+    }));
   if (blocked) s.advisorRoute = true;
   await env.sink.update({
     openFindings: open,
@@ -501,6 +516,7 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
   return {
     patch: {
       suiteThisIteration: s.suiteThisIteration,
+      timeoutAsked: state.timeoutAsked || timedOut,
       gates: s.gates,
       suite: s.suite,
       nextId: s.nextId,
@@ -513,7 +529,7 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
       pendingSession: s.pendingSession,
       reportTurnRan: s.reportTurnRan,
     },
-    exit: passExit(open, s, env.maxFixRounds),
+    exit: timedOut ? "capped" : passExit(open, s, env.maxFixRounds),
   };
 }
 
