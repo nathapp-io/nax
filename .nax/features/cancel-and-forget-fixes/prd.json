@@ -3,7 +3,7 @@
   "feature": "cancel-and-forget-fixes",
   "branchName": "feat/cancel-and-forget-fixes",
   "createdAt": "2026-11-14T03:12:44.466Z",
-  "updatedAt": "2026-11-14T04:23:33.361Z",
+  "updatedAt": "2026-11-14T04:35:24.554Z",
   "userStories": [
     {
       "id": "US-001",
@@ -277,14 +277,17 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Concurrent HTTP answer/abort/deadline handling across an approved outward-facing tool and a credential-bearing client; preserve approval and credential protections with strict TDD isolation."
+        "reasoning": "Concurrent HTTP answer/abort/deadline handling across an approved outward-facing tool and a credential-bearing client; preserve approval and credential protections with strict TDD isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/koda-http.ts",
@@ -300,7 +303,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0d75a853461e2d26f9a59d9e9e10a04f0486d503"
     },
     {
       "id": "US-006",
