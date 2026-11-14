@@ -39,6 +39,7 @@ export interface StoryLoopSteps {
   implement(turn: ImplementTurn): Promise<ImplementOutcome>;
   gates(): Promise<GateRunResult>;
   fullSuite(): Promise<GateRunResult>;
+  timeoutFacts?(): Promise<{ baselineTimedOut: boolean; limitSeconds: number }>;
   /**
    * US-006 (nax#2527): `gates` is the states the loop already recorded, so the reviewer prompt
    * states what nax checked. Optional so a caller that never ran the gates still compiles.

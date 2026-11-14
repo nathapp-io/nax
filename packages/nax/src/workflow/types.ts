@@ -29,6 +29,7 @@ import type { ConfigChangeRefusal } from "./config-change";
 export type GateState = "green" | "red" | "skipped";
 
 export interface GateRunResult {
+  readonly timedOut?: readonly GateName[];
   readonly suiteCovered?: true;
   readonly red: boolean;
   readonly states: Readonly<Partial<Record<GateName, GateState>>>;
