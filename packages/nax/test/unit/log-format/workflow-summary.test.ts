@@ -33,6 +33,10 @@ const base = (over: Partial<RunSummary> = {}): RunSummary => ({
 const OPTS = { mode: "normal" as const, useColor: false };
 
 describe("formatWorkflowSummary", () => {
+  test("lists stories held on timeout", () => {
+    const view = { ...VIEW, stories: [{ id: "US-003", rounds: 0, maxRounds: 5, gateTimeouts: ["scoped"] }] };
+    expect(formatWorkflowSummary(view, { useColor: false })).toContain("Held on a gate timeout: US-003 (scoped)");
+  });
   const text = formatWorkflowSummary(VIEW, { useColor: false });
 
   test("AC-12: formats inconsistent verdict counts", () => {

@@ -1,9 +1,14 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
-import { configFactsFor } from "./config-change-absorb";
+import { absorbConfigChange, configFactsFor } from "./config-change-absorb";
 import { ledgerText } from "./ledger";
 import type { StoryLoopEnv } from "./story-loop";
 import type { GateName, GateRunResult } from "./types";
+
+/** Only results produced by this pass (including its residual suite) count at close. */
+export function timeoutGates(gates: GateRunResult | undefined, suite: GateRunResult | undefined): GateName[] {
+  return [...new Set([...(gates?.timedOut ?? []), ...(suite?.timedOut ?? [])])];
+}
 
 export interface GateTimeoutRouteInput {
   readonly previous: GateRunResult | undefined;
@@ -40,15 +45,19 @@ export async function stopOnTimeout(
   env: StoryLoopEnv,
   input: Omit<GateTimeoutRouteInput, "baselineTimedOut">,
   asked: boolean,
-): Promise<boolean> {
-  if (!(input.current?.timedOut?.length || input.currentSuite?.timedOut?.length)) return false;
+  round: number,
+): Promise<"none" | "capped" | "applied"> {
+  if (!(input.current?.timedOut?.length || input.currentSuite?.timedOut?.length)) return "none";
   const facts = await readTimeoutFacts(env);
   const route = gateTimeoutRoute({ ...input, baselineTimedOut: facts.baselineTimedOut });
-  if (!route) return false;
-  if (asked) return true;
+  if (!route) return "none";
+  if (asked) return "capped";
   const previous = [...(input.previous?.timedOut ?? []), ...(input.previousSuite?.timedOut ?? [])];
   const timing = { ...facts, gates: route.gates, repeated: route.gates.some((gate) => previous.includes(gate)) };
-  const config = route.gates.includes("scoped") ? await configFactsFor(env, ["scoped"]) : undefined;
+  const config =
+    route.gates.includes("scoped") && !route.gates.includes("full-suite")
+      ? await configFactsFor(env, ["scoped"])
+      : undefined;
   await env.sink.ledger(
     ledgerText.note(`gate timeout on ${route.gates.join(", ")} (${route.why}): no fix round, asked the advisor`),
   );
@@ -63,8 +72,9 @@ export async function stopOnTimeout(
     });
   } catch (err) {
     getLogger().warn("workflow", "Gate timeout advisor failed", { storyId: env.storyId, error: errorMessage(err) });
-    return true;
+    return "capped";
   }
   if (typeof answer === "string") await env.sink.ledger(ledgerText.note(`gate timeout advice: ${answer}`));
-  return true;
+  const result = await absorbConfigChange({ env, round, answer });
+  return result.kind === "applied" ? "applied" : "capped";
 }

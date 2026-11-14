@@ -47,6 +47,22 @@ function resultFile(): WorkflowResultFile {
   };
 }
 
+describe("timeout summary", () => {
+  test("carries timeout gates but omits them on older records", () => {
+    const file = resultFile();
+    const result = {
+      ...file,
+      stories: {
+        "US-003": { ...newStoryRecord("US-003", 5, "t"), gateTimeouts: ["scoped" as const] },
+        old: newStoryRecord("old", 5, "t"),
+      },
+    };
+    const stories = buildWorkflowRunSummary(result, { storiesDurationMs: 0, featureWorkflowDurationMs: 0 })?.stories;
+    expect(stories?.[0]).toMatchObject({ id: "US-003", gateTimeouts: ["scoped"] });
+    expect(stories?.[1]).not.toHaveProperty("gateTimeouts");
+  });
+});
+
 describe("buildWorkflowRunSummary mismatch counts", () => {
   const timing = { storiesDurationMs: 0, featureWorkflowDurationMs: 0 };
   test("AC-9: counts stories per model, sorted", () => {

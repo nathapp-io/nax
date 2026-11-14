@@ -78,6 +78,7 @@ export interface WorkflowStoryRecord {
   readonly storyId: string;
   readonly state?: WorkflowEndState;
   readonly reason?: string;
+  readonly gateTimeouts?: readonly GateName[];
   readonly round: number;
   readonly maxRounds: number;
   readonly phase: WorkflowPhase;

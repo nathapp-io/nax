@@ -51,7 +51,7 @@ const EXPECTED_PRODUCES: Record<NodeId, string[]> = {
     "pendingSession",
     "reportTurnRan",
   ],
-  residual: ["suite", "rulings"],
+  residual: ["suite", "suiteThisIteration", "rulings"],
   fix: ["round", "firstAfterResume", "fixBase", "pendingSession", "nextId", "questions", "concerns", "lastTurn"],
   close: ["outcome"],
 };

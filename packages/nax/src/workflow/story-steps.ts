@@ -1,14 +1,3 @@
-/**
- * The story loop's five steps and its working state (spec §6), moved out of `story-loop.ts`.
- *
- * A mechanical port: every helper keeps its body and its `LoopState` parameter, and each node
- * re-expresses the code between two of the loop's decision points. A node returns a patch of the
- * graph-state keys it changed and, where the loop chose a destination, an exit label. The story
- * record is still written by the nodes' own `sink.update` patches — the graph state is never
- * persisted, so `StoryLoopState` is in memory only.
- *
- * Spec: docs/specs/SPEC-step-graph-g3-story-port.md § State, § Node table, § Transitions.
- */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getLogger } from "@/logger";
 import type { StepResult } from "@/step-graph";
@@ -27,7 +16,7 @@ import { runReportCheck } from "./report-check";
 import { describeFindings, startStep } from "./run-log";
 import type { StoryLoopEnv, StoryLoopOutcome, StoryLoopState } from "./story-loop";
 import type { ReviewOutcome } from "./story-review";
-import { stopOnTimeout } from "./timeout-stop";
+import { stopOnTimeout, timeoutGates } from "./timeout-stop";
 import type {
   GateName,
   GateRunResult,
@@ -50,12 +39,7 @@ const FIX_FAILURE_PREFIX = "implementer session failed";
 
 const isBlocking = (f: WorkflowFindingDraft): boolean => f.severity !== "minor";
 
-/**
- * The node-local mutable working copy of the graph state. The helpers write to it exactly as they
- * wrote to the loop's own state; the node that owns it reads every key it declares in `produces`
- * back off it as its patch. The engine's own keys stay on the graph state, and `open`, `rulings`,
- * `firstAfterResume` and `closeAs` are node locals rather than fields of this copy.
- */
+/** Node-local working copy; the graph persists only declared patch keys. */
 class LoopState {
   round: number;
   reviewed: boolean;
@@ -73,11 +57,7 @@ class LoopState {
   costStop: boolean;
   lastTurn: StoryLoopState["lastTurn"];
   reportTurnRan: boolean;
-  /**
-   * US-002: this pass cannot converge (a fix round that changed nothing, or a narrower residual), so
-   * `evaluate` exits `capped` whatever the round and the residual node rules. Node-local on purpose:
-   * the graph's `produces` keys describe the record, and this decision never outlives the pass.
-   */
+  /** A non-converging pass routes directly to residual adjudication. */
   advisorRoute: boolean;
 
   constructor(state: StoryLoopState) {
@@ -412,7 +392,7 @@ async function evaluate(env: StoryLoopEnv, s: LoopState): Promise<WorkflowFindin
 }
 
 function redGateNames(s: LoopState): GateName[] {
-  const states = { ...(s.gates?.states ?? {}), ...(s.suite?.states ?? {}) };
+  const states = { ...(s.gates?.states ?? {}), ...(s.suiteThisIteration ? (s.suite?.states ?? {}) : {}) };
   return (Object.entries(states) as [GateName, string][]).filter(([, v]) => v === "red").map(([g]) => g);
 }
 
@@ -421,9 +401,11 @@ async function closeLoop(
   s: LoopState,
   { state, reason, rulings, unreviewed }: Omit<StoryLoopOutcome, "rounds">,
 ): Promise<StoryLoopOutcome> {
+  const gateTimeouts = timeoutGates(s.gates, s.suiteThisIteration ? s.suite : undefined);
   await env.sink.update({
     state,
     reason,
+    ...(gateTimeouts.length ? { gateTimeouts } : {}),
     unreviewed,
     phase: "closed",
     rulings: rulings.length,
@@ -477,25 +459,34 @@ function passExit(open: readonly WorkflowFinding[], s: LoopState, maxFixRounds: 
 /** One loop pass: gates -> suite -> report check -> review, then persist the pass's record patch. */
 export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Promise<StepResult<StoryLoopState>> {
   const s = new LoopState(state);
-  // US-006: the pass before this one, read before `evaluate` replaces it with the new gate run.
-  const previous = state.gates;
-  const open = [...(await evaluate(env, s)), ...s.pendingSession];
+  let previous = state.gates;
+  let previousSuite = state.suiteThisIteration ? state.suite : undefined;
+  let asked = state.timeoutAsked;
+  let open: WorkflowFinding[];
+  let timeout: "none" | "capped" | "applied";
+  do {
+    open = [...(await evaluate(env, s)), ...s.pendingSession];
+    timeout = await stopOnTimeout(
+      env,
+      {
+        previous,
+        previousSuite,
+        current: s.gates,
+        currentSuite: s.suiteThisIteration ? s.suite : undefined,
+      },
+      asked,
+      s.round,
+    );
+    if (timeout !== "none") asked = true;
+    if (timeout === "applied") {
+      previous = s.gates;
+      previousSuite = s.suiteThisIteration ? s.suite : undefined;
+    }
+  } while (timeout === "applied");
   s.pendingSession = [];
-  // US-006: a round that ended BLOCKED and left the same gates red cannot converge, so the residual
-  // node adjudicates now — the same `capped` exit the cost and no-op rules take.
-  const timedOut = await stopOnTimeout(
-    env,
-    {
-      previous,
-      previousSuite: state.suiteThisIteration ? state.suite : undefined,
-      current: s.gates,
-      currentSuite: s.suiteThisIteration ? s.suite : undefined,
-    },
-    state.timeoutAsked,
-  );
-  if (timedOut) s.advisorRoute = true;
+  if (timeout === "capped") s.advisorRoute = true;
   const blocked =
-    !timedOut &&
+    timeout === "none" &&
     (await stopOnUnchangedBlock(env, {
       round: s.round,
       lastTurn: state.lastTurn,
@@ -516,7 +507,7 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
   return {
     patch: {
       suiteThisIteration: s.suiteThisIteration,
-      timeoutAsked: state.timeoutAsked || timedOut,
+      timeoutAsked: asked,
       gates: s.gates,
       suite: s.suite,
       nextId: s.nextId,
@@ -529,7 +520,7 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
       pendingSession: s.pendingSession,
       reportTurnRan: s.reportTurnRan,
     },
-    exit: timedOut ? "capped" : passExit(open, s, env.maxFixRounds),
+    exit: timeout === "capped" ? "capped" : passExit(open, s, env.maxFixRounds),
   };
 }
 
@@ -537,7 +528,10 @@ export async function evaluateStep(env: StoryLoopEnv, state: StoryLoopState): Pr
 export async function residualStep(env: StoryLoopEnv, state: StoryLoopState): Promise<StepResult<StoryLoopState>> {
   const s = new LoopState(state);
   await env.sink.update({ phase: "residual" });
-  if (!s.gates?.red && !s.suiteThisIteration) s.suite = await env.steps.fullSuite();
+  if (!s.gates?.red && !s.suiteThisIteration) {
+    s.suite = await env.steps.fullSuite();
+    s.suiteThisIteration = true;
+  }
   const items = state.open.filter((f) => f.kind !== "gate");
   const rulings = await adjudicateResidual(
     env.advisor,
@@ -545,7 +539,7 @@ export async function residualStep(env: StoryLoopEnv, state: StoryLoopState): Pr
     env.sink.ledger,
     env.aborted,
   );
-  return { patch: { suite: s.suite, rulings } };
+  return { patch: { suite: s.suite, suiteThisIteration: s.suiteThisIteration, rulings } };
 }
 
 /** One fix round: the round is spent, the turn runs warm or fresh, and its outcome is absorbed. */
@@ -592,7 +586,13 @@ export async function closeStep(env: StoryLoopEnv, state: StoryLoopState): Promi
   const s = new LoopState(state);
   const end =
     state.closeAs ??
-    deriveEndState({ costStop: s.costStop, gates: s.gates, suite: s.suite, rulings: state.rulings.length });
+    deriveEndState({
+      costStop: s.costStop,
+      gates: s.gates,
+      suite: s.suiteThisIteration ? s.suite : undefined,
+      timedOut: timeoutGates(s.gates, s.suiteThisIteration ? s.suite : undefined),
+      rulings: state.rulings.length,
+    });
   const unreviewed = s.unreviewed || !s.reviewed;
   const outcome = await closeLoop(env, s, { ...end, rulings: state.rulings, unreviewed });
   return { patch: { outcome } };

@@ -126,6 +126,7 @@ export function buildWorkflowRunSummary(
       rounds: s.round,
       maxRounds: s.maxRounds,
       ...(s.state ? { state: s.state } : {}),
+      ...(s.gateTimeouts ? { gateTimeouts: s.gateTimeouts } : {}),
     })),
     ...(rec?.reviewRan ? { branch: branchOf(rec) } : {}),
     ...(rec && !rec.reviewRan ? { branchReviewSkipped: { minorsLeft: minorsLeftOf(rec) } } : {}),

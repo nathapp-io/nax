@@ -52,6 +52,12 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
   if (view.stories.length > 0) {
     lines.push(`  ${c.gray("Rounds:")} ${view.stories.map((s) => `${s.id} ${s.rounds}/${s.maxRounds}`).join(", ")}`);
   }
+  const held = view.stories.filter((s) => s.gateTimeouts?.length);
+  if (held.length) {
+    lines.push(
+      `  ${c.gray("Held on a gate timeout:")} ${held.map((s) => `${s.id} (${s.gateTimeouts?.join(", ")})`).join(", ")}`,
+    );
+  }
   lines.push(...mismatchLines(view, c));
   if (view.branch) {
     const b = view.branch;
