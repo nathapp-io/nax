@@ -3,7 +3,6 @@ import { makeNaxConfig, makePRD, makeStory } from "@test/helpers";
 import type { AgentRoutingConfig, AgentRoutingProfile } from "@/config";
 import { getLogger } from "@/logger";
 import { _persistPrdDeps, finalizeAndWritePrd } from "@/plan/strategies";
-import { _secretShapesDeps } from "@/prd/secret-shapes";
 import type { PRD } from "@/prd/types";
 
 const PROFILES: AgentRoutingProfile[] = [
@@ -80,14 +79,54 @@ function expectDistribution(data: Record<string, unknown>): void {
 }
 
 describe("finalizeAndWritePrd secret-shape advisory", () => {
+  const SUMMARY = "PRD story text has secret shapes";
+
   test("warns with metadata and writes the original criterion", async () => {
     const text = "example sk-aaaaaaaaaaaaaaaaaaaa";
     const prd = makePRD({ userStories: [makeStory({ acceptanceCriteria: [text] })] });
     const written = await persist(prd, ROUTING);
     expect(written.userStories[0]?.acceptanceCriteria).toEqual([text]);
-    expect(warn.mock.calls.filter((c) => c[1] === "PRD story text has a secret shape")).toEqual([
-      ["plan", "PRD story text has a secret shape", { storyId: "US-001", field: "acceptanceCriteria[0]" }],
+    expect(warn.mock.calls.filter((c) => c[1] === SUMMARY)).toEqual([
+      ["plan", SUMMARY, { count: 1, fields: ["US-001 acceptanceCriteria[0]"], kinds: ["openai"] }],
     ]);
+  });
+
+  test("AC-12: one summary warn per plan carries count, fields and distinct sorted kinds", async () => {
+    const prd = makePRD({
+      userStories: [
+        makeStory({ id: "US-002", description: "sk-aaaaaaaaaaaaaaaaaaaa" }),
+        makeStory({
+          id: "US-004",
+          title: "ghp_aaaaaaaaaaaaaaaaaaaa",
+          acceptanceCriteria: ["one", "two", "three", "sk-bbbbbbbbbbbbbbbbbbbb"],
+        }),
+      ],
+    });
+    await persist(prd, ROUTING);
+    expect(warn.mock.calls.filter((c) => c[1] === SUMMARY)).toEqual([
+      [
+        "plan",
+        SUMMARY,
+        {
+          count: 3,
+          fields: ["US-002 description", "US-004 title", "US-004 acceptanceCriteria[3]"],
+          kinds: ["github", "openai"],
+        },
+      ],
+    ]);
+  });
+
+  test("AC-13: structured-only shapes produce no secret-shape warning", async () => {
+    await persist(makePRD({ userStories: [makeStory({ description: "TOKEN=abcdefghijklmnop" })] }));
+    expect(warn.mock.calls.filter((c) => c[1].startsWith("PRD story text has secret shape"))).toEqual([]);
+  });
+
+  test("AC-14: the summary carries no matched text", async () => {
+    const secret = "sk-aaaaaaaaaaaaaaaaaaaa";
+    await persist(makePRD({ userStories: [makeStory({ description: secret })] }));
+    const summaries = warn.mock.calls.filter((c) => c[1] === SUMMARY);
+    expect(summaries).toHaveLength(1);
+    expect(JSON.stringify(summaries)).not.toContain(secret);
   });
 
   test("clean text produces no secret-shape warning", async () => {
@@ -102,29 +141,14 @@ describe("finalizeAndWritePrd secret-shape advisory", () => {
         makeStory({ id: "US-002", description: "ghp_aaaaaaaaaaaaaaaaaaaa" }),
       ],
     });
-    await persist(prd, ROUTING, new Set(["US-002"]));
-    expect(warn.mock.calls.filter((c) => c[1] === "PRD story text has a secret shape")).toEqual([
-      ["plan", "PRD story text has a secret shape", { storyId: "US-002", field: "description" }],
+    const written = await persist(prd, ROUTING, new Set(["US-002"]));
+    expect(written.userStories[0]?.title).toBe("ghp_aaaaaaaaaaaaaaaaaaaa");
+    expect(warn.mock.calls.filter((c) => c[1] === SUMMARY)).toEqual([
+      ["plan", SUMMARY, { count: 1, fields: ["US-002 description"], kinds: ["github"] }],
     ]);
   });
 
-  test("writes and warns once if the shared redactor throws", async () => {
-    const original = _secretShapesDeps.redactSecrets;
-    try {
-      _secretShapesDeps.redactSecrets = () => {
-        throw new Error("redactor failed");
-      };
-      const written = await persist(makePRD());
-      expect(written.userStories[0]?.title).toBe("Test story");
-      expect(warn.mock.calls.filter((c) => c[1] === "PRD secret-shape scan could not run")).toEqual([
-        ["plan", "PRD secret-shape scan could not run"],
-      ]);
-    } finally {
-      _secretShapesDeps.redactSecrets = original;
-    }
-  });
-
-  test("writes and warns once if the scan throws", async () => {
+  test("AC-15/AC-16: writes and warns once if the scan throws", async () => {
     _persistPrdDeps.findPrdSecretShapes = () => {
       throw new Error("scan failed");
     };
