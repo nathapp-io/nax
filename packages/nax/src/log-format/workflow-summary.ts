@@ -33,6 +33,13 @@ function roleLine(r: WorkflowSummaryView["roles"][number]): string {
   return `    ${r.role.padEnd(ROLE_WIDTH)} in ${count(r.inputTokens)}  out ${count(r.outputTokens)}  ${formatCost(r.costUsd)}  ${calls}${cache}`;
 }
 
+function mismatchLines(view: WorkflowSummaryView, c: ChalkLike): string[] {
+  if (!view.verdictMismatches?.length) return [];
+  return [
+    `  ${c.gray("Inconsistent review verdicts:")} ${view.verdictMismatches.map((m) => `${m.model} ${m.count}`).join(", ")}`,
+  ];
+}
+
 export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useColor?: boolean } = {}): string {
   const c: ChalkLike = options.useColor === false ? createNoopChalk() : chalk;
   const lines: string[] = [];
@@ -45,11 +52,7 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
   if (view.stories.length > 0) {
     lines.push(`  ${c.gray("Rounds:")} ${view.stories.map((s) => `${s.id} ${s.rounds}/${s.maxRounds}`).join(", ")}`);
   }
-  if (view.verdictMismatches?.length) {
-    lines.push(
-      `  ${c.gray("Inconsistent review verdicts:")} ${view.verdictMismatches.map((m) => `${m.model} ${m.count}`).join(", ")}`,
-    );
-  }
+  lines.push(...mismatchLines(view, c));
   if (view.branch) {
     const b = view.branch;
     lines.push(
