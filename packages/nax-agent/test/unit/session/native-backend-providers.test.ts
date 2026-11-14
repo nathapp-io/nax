@@ -5,6 +5,7 @@ import type {
   ProviderTool,
   SessionEventBody,
   ToolProvider,
+  ToolResult,
 } from "@nathapp/nax-agent";
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { getSafeLogger, setAgentLogger } from "#src/infra/agent-logger";
@@ -383,5 +384,85 @@ describe("nativeBackend discovered providers under the ask profile", () => {
     const { interact, approvals } = await openWith("ask", [provider()]);
     expect(await interact("skills__load")).toEqual({ answer: "loaded" });
     expect(approvals()).toEqual([]);
+  });
+});
+
+describe("nativeBackend provider tool cancel grace (US-003)", () => {
+  withDepsRestore(_sessionSandboxDeps);
+  withSessionSandboxSeam(_sessionSandboxDeps);
+
+  /** The message `runCodingTool` answers with when it abandons a call. */
+  const ABANDONED_PUT = 'Tool "acme__put" was abandoned: the turn ended.';
+
+  async function thrown(promise: Promise<unknown>): Promise<Error> {
+    try {
+      await promise;
+    } catch (err) {
+      if (err instanceof Error) return err;
+      throw err;
+    }
+    throw new Error("expected the handler to reject");
+  }
+
+  /**
+   * A static `acme` provider whose single `put` tool answers the turn signal
+   * itself. `cancelGraceMs` is the tool's declaration, copied by
+   * `adaptProviderTool` and handed to the handler by `nativeBackend`.
+   */
+  function acme(cancelGraceMs: number | undefined, run: ProviderTool["run"]): ToolProvider {
+    const tool: ProviderTool = {
+      localName: "put",
+      description: "put",
+      inputSchema: { type: "object" },
+      ...(cancelGraceMs !== undefined ? { cancelGraceMs } : {}),
+      run,
+    };
+    return { id: "acme", kind: "static", stages: ["*"], tools: async () => [tool] };
+  }
+
+  /**
+   * The AC's tool: it resolves `{ content: "late" }` 50 ms after its signal
+   * aborts. The delay is the tool's own work, not a test sleep — the assertion
+   * only needs it to land inside the 500 ms grace.
+   */
+  const answersLate: ProviderTool["run"] = (_input, ctx) =>
+    new Promise<ToolResult>((resolve) => {
+      const finish = (): void => {
+        setTimeout(() => resolve({ content: "late" }), 50);
+      };
+      if (ctx.signal?.aborted === true) finish();
+      else ctx.signal?.addEventListener("abort", finish, { once: true });
+    });
+
+  /** A tool that ignores its signal entirely. */
+  const neverSettles: ProviderTool["run"] = () => new Promise<ToolResult>(() => {});
+
+  async function interact(
+    providers: readonly ToolProvider[],
+  ): Promise<{ readonly pending: Promise<unknown>; readonly controller: AbortController }> {
+    stubSessionSandboxDeps(_sessionSandboxDeps);
+    const opened = await open({ model: MODEL, toolProviders: providers }, { profile: "full" });
+    const controller = new AbortController();
+    const pending = opened.turnOpts().interactionHandler?.onInteraction({
+      kind: "coding-tool",
+      name: "acme__put",
+      input: {},
+      toolCallId: "c1",
+      signal: controller.signal,
+    });
+    assertDefined(pending, "the opened backend's interaction handler");
+    return { pending, controller };
+  }
+
+  test("AC-14: a tool answering 50 ms after the abort is the answer inside its grace", async () => {
+    const { pending, controller } = await interact([acme(500, answersLate)]);
+    controller.abort();
+    expect(await pending).toEqual({ answer: "late" });
+  });
+
+  test("AC-16: a tool without a grace is abandoned the moment the signal aborts", async () => {
+    const { pending, controller } = await interact([acme(undefined, neverSettles)]);
+    controller.abort();
+    expect((await thrown(pending)).message).toBe(ABANDONED_PUT);
   });
 });

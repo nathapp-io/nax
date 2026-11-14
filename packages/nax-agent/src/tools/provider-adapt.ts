@@ -28,6 +28,11 @@ export function adaptProviderTool(providerId: string, tool: ProviderTool): Codin
     name: namespacedToolName(providerId, tool.localName),
     description: tool.description,
     inputSchema: tool.inputSchema,
+    // US-003: a declared cancel grace rides through so the session can let the
+    // tool answer its own cancellation. Absent stays absent — no key, so
+    // "declares no grace" is visible rather than a zero the session must
+    // interpret.
+    ...(tool.cancelGraceMs !== undefined ? { cancelGraceMs: tool.cancelGraceMs } : {}),
     // No path fields and no verb field: the grant lookup is the whole gate,
     // which is the honest expression for a tool whose arguments are not paths.
     // A declared summary field is carried through, summary-only — it names the

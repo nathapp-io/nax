@@ -14,7 +14,7 @@ import { transcriptModelIdentity } from "#src/native/session/transcript-identity
 import type { TranscriptDoc } from "#src/native/session/transcript-types";
 import type { TurnRetryConfig } from "#src/native/session/turn-retry";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
-import { resolveProviderTools } from "#src/tools/provider-advertise";
+import { type ResolvedProviderTools, resolveProviderTools } from "#src/tools/provider-advertise";
 import { AgentSessionError } from "./agent-session-errors.ts";
 import {
   type NativeBackendOptions,
@@ -49,6 +49,22 @@ function createAdapter(raw: NativeBackendOptions): NativeSessionAdapter {
     ...(raw.credentials !== undefined ? { credentials: raw.credentials } : {}),
     ...(owns ? { ownClient: true } : {}),
   });
+}
+
+/**
+ * US-003: the handler's cancel-grace deps — qualified tool name -> its declared
+ * grace, for every provider tool that declares one, and no key at all when
+ * none does. A tool absent from the map is abandoned the moment the turn
+ * aborts, which is the behaviour every non-grace tool keeps.
+ */
+function cancelGraceDeps(providerTools: ResolvedProviderTools | undefined): {
+  readonly cancelGraceByTool?: ReadonlyMap<string, number>;
+} {
+  const graces = new Map<string, number>();
+  for (const tool of providerTools?.tools ?? []) {
+    if (tool.cancelGraceMs !== undefined) graces.set(tool.name, tool.cancelGraceMs);
+  }
+  return graces.size > 0 ? { cancelGraceByTool: graces } : {};
 }
 
 function checkResumeModel(doc: TranscriptDoc, sessionId: string, model: string): void {
@@ -137,6 +153,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     embedderTools: new Map(ctx.tools.map((tool) => [tool.name, tool])),
     asks: ctx.asks,
     turnSignal: ctx.turnSignal,
+    ...cancelGraceDeps(providerTools),
     setCurrentCallId: (id) => {
       callId = id;
     },

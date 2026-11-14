@@ -23,6 +23,13 @@ import type { SessionAskPort } from "./session-backend.ts";
 export const EMBEDDER_SUMMARY_BYTES = 1024;
 
 /**
+ * Ceiling on a tool's declared post-abort grace (US-003). A tool that asks for
+ * longer is clamped: the turn is already cancelled, and a long grace would hold
+ * `close()` open on the person who pressed Esc.
+ */
+export const MAX_CANCEL_GRACE_MS = 10_000;
+
+/**
  * Redaction scans at most this many bytes of an embedder tool input; the
  * summary keeps far fewer. Same 16x pattern as `turn-event-emitter.ts`'s
  * `REDACTION_SCAN_BYTES` so the bound is comparable to a tool-call input.
@@ -41,7 +48,35 @@ export interface SessionInteractionDeps {
   /** The running turn's signal (a never-aborting one between turns). */
   readonly turnSignal: () => AbortSignal;
   readonly setCurrentCallId: (callId: string | undefined) => void;
+  /**
+   * US-003: qualified tool name -> the grace that tool may take after the turn
+   * aborts. Absent, or a name missing from the map, means the generic
+   * abandoned outcome the moment the signal aborts. A declared value is
+   * normalised before use: non-finite or `<= 0` is no grace, and anything
+   * above `MAX_CANCEL_GRACE_MS` is that ceiling.
+   */
+  readonly cancelGraceByTool?: ReadonlyMap<string, number>;
+  /** The timer seam the grace runs on. Defaults to the process globals. */
+  readonly timers?: {
+    readonly setTimeout: (fn: () => void, ms: number) => unknown;
+    readonly clearTimeout: (id: unknown) => void;
+  };
 }
+
+type SessionTimers = NonNullable<SessionInteractionDeps["timers"]>;
+
+/**
+ * Process-global timers. The grace arms a handle it must cancel on every
+ * settle path, which is the sanctioned reason to use `setTimeout` here rather
+ * than `Bun.sleep`: a sleep cannot be cleared, so a tool that answers promptly
+ * would still hold the turn for the whole grace.
+ */
+const PROCESS_TIMERS: SessionTimers = {
+  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+  // The handle is a number on Bun and a Timeout object on Node; the seam keeps
+  // it opaque, so this is the one place that recovers the concrete type.
+  clearTimeout: (id) => globalThis.clearTimeout(id as ReturnType<typeof globalThis.setTimeout>),
+};
 
 /** What the model sees of an embedder tool. The facade's handler runs it; this run is never reached. */
 export function embedderToolDescriptor(tool: EmbedderTool): CodingTool {
@@ -170,6 +205,79 @@ function toolCallContext(request: CodingToolRequest): ToolCallContext {
   };
 }
 
+/**
+ * A declared grace, normalised: non-finite or non-positive means the tool has
+ * none to offer, and anything above `MAX_CANCEL_GRACE_MS` is that ceiling.
+ */
+function normaliseCancelGrace(declared: number | undefined): number | undefined {
+  if (declared === undefined || !Number.isFinite(declared) || declared <= 0) return undefined;
+  return Math.min(declared, MAX_CANCEL_GRACE_MS);
+}
+
+/**
+ * Settle with `work`, or with `onExpire()` once `signal` has been aborted for
+ * `graceMs`. That window is a provider tool's chance to answer its own
+ * cancellation (US-003) — the outcome it returns still maps exactly as an
+ * unaborted call's does. A settlement after the window is observed and
+ * ignored, and its rejection handler is attached up front so a late rejection
+ * is never unhandled. The timer is cleared on every settle path.
+ */
+function raceCancelGrace<T>(options: {
+  readonly work: Promise<T>;
+  readonly signal: AbortSignal;
+  readonly graceMs: number;
+  readonly timers: SessionTimers;
+  readonly onExpire: () => T;
+}): Promise<T> {
+  const { work, signal, graceMs, timers, onExpire } = options;
+  return new Promise<T>((resolve, reject) => {
+    let timer: unknown;
+    let settled = false;
+    const settle = (answer: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", startGrace);
+      if (timer !== undefined) timers.clearTimeout(timer);
+      answer();
+    };
+    function startGrace(): void {
+      timer = timers.setTimeout(() => settle(() => resolve(onExpire())), graceMs);
+    }
+    work.then(
+      (value) => settle(() => resolve(value)),
+      (error: unknown) => settle(() => reject(error)),
+    );
+    if (signal.aborted) startGrace();
+    else signal.addEventListener("abort", startGrace, { once: true });
+  });
+}
+
+/**
+ * One coding-tool call, raced against the turn's abort: at once when the tool
+ * declares no grace, or within that grace when it does — which is how a
+ * provider tool returns its own outcome after the person pressed Esc.
+ */
+async function callTool(
+  deps: SessionInteractionDeps,
+  request: CodingToolRequest,
+  signal: AbortSignal,
+  abandoned: CodingToolOutcome,
+): Promise<CodingToolOutcome> {
+  const work = deps.runtime.callTool(request.name, request.input ?? {}, { ...toolCallContext(request), signal });
+  const graceMs = normaliseCancelGrace(deps.cancelGraceByTool?.get(request.name));
+  if (graceMs === undefined) return raceAbort(work, signal, () => abandoned);
+  return raceCancelGrace({ work, signal, graceMs, timers: deps.timers ?? PROCESS_TIMERS, onExpire: () => abandoned });
+}
+
+/** Map a tool outcome onto the handler's answer, denial or throw. */
+function answerFor(outcome: CodingToolOutcome, name: string): AdapterInteractionResponse {
+  if (outcome.kind === "denied") {
+    return { answer: `Denied: ${outcome.reason}`, denied: { reason: outcome.reason, breach: outcome.breach } };
+  }
+  if (outcome.kind === "error") throw toolError(outcome.content, name, outcome.sandbox);
+  return { answer: outcome.content, ...(outcome.sandbox !== undefined ? { sandbox: outcome.sandbox } : {}) };
+}
+
 async function runCodingTool(
   deps: SessionInteractionDeps,
   request: CodingToolRequest,
@@ -181,18 +289,8 @@ async function runCodingTool(
       kind: "error",
       content: `Tool "${request.name}" was abandoned: the turn ended.`,
     };
-    const outcome = signal.aborted
-      ? abandoned
-      : await raceAbort(
-          deps.runtime.callTool(request.name, request.input ?? {}, { ...toolCallContext(request), signal }),
-          signal,
-          () => abandoned,
-        );
-    if (outcome.kind === "denied") {
-      return { answer: `Denied: ${outcome.reason}`, denied: { reason: outcome.reason, breach: outcome.breach } };
-    }
-    if (outcome.kind === "error") throw toolError(outcome.content, request.name, outcome.sandbox);
-    return { answer: outcome.content, ...(outcome.sandbox !== undefined ? { sandbox: outcome.sandbox } : {}) };
+    // An already-aborted signal never reaches the tool, grace or no grace.
+    return answerFor(signal.aborted ? abandoned : await callTool(deps, request, signal, abandoned), request.name);
   } finally {
     deps.setCurrentCallId(undefined);
   }
