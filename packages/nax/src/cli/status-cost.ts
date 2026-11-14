@@ -81,6 +81,10 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
   // instead of re-deriving it here, so the human-readable path can't drift
   // from the `--json` path — see toCostReport in src/metrics/report.ts.
   const { lastRun: reportedLastRun } = toCostReport(runs, { now: () => new Date().toISOString(), project });
+  // Gate-open closures count in neither storiesCompleted nor storiesFailed, so a
+  // run whose numbers do not add up needs this to explain itself. Taken from the
+  // report mapper (0 for records written before #2879).
+  const storiesGateOpen = reportedLastRun?.storiesGateOpen ?? 0;
 
   logger.info("cli", `Last Run: ${lastRun.feature}`, {
     runId: lastRun.runId,
@@ -90,6 +94,10 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
     totalStories: lastRun.totalStories,
     storiesCompleted: lastRun.storiesCompleted,
     storiesFailed: lastRun.storiesFailed,
+    // Only when it explains a gap: a clean run's zero would be noise, and the
+    // key must be ABSENT (not present-as-zero) so an older record and a clean
+    // run read identically.
+    ...(storiesGateOpen > 0 ? { storiesGateOpen } : {}),
     totalCost: lastRun.totalCost,
     ...(lastRun.errorCostUsd !== undefined ? { errorCostUsd: lastRun.errorCostUsd } : {}),
     avgCostPerStory: reportedLastRun?.avgCostPerStory ?? 0,

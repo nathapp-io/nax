@@ -212,10 +212,14 @@ export async function runsShowCommand(options: RunsShowOptions): Promise<void> {
   });
 
   if (completeEvent) {
+    // The run-summary payload only carries storiesGateOpen from #2879 on, and a
+    // zero count is not worth a line — so the key appears only when positive.
+    const storiesGateOpen = completeEvent.data?.storiesGateOpen;
     logger.info("cli", "Run Summary", {
       totalStories: completeEvent.data?.totalStories,
       storiesCompleted: completeEvent.data?.storiesCompleted,
       storiesFailed: completeEvent.data?.storiesFailed,
+      ...(typeof storiesGateOpen === "number" && storiesGateOpen > 0 ? { storiesGateOpen } : {}),
       totalCost: completeEvent.data?.totalCost,
       totalDurationMs: completeEvent.data?.totalDurationMs,
     });

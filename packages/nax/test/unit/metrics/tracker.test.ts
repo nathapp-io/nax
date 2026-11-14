@@ -25,8 +25,9 @@ import {
   makeTestContext,
 } from "@test/helpers";
 import type { AgentFallbackRecord } from "@/agents/manager-types";
-import { deriveRunFallbackAggregates } from "@/metrics/aggregator";
+import { calculateAggregateMetrics, deriveRunFallbackAggregates } from "@/metrics/aggregator";
 import { collectBatchMetrics, collectStoryMetrics } from "@/metrics/tracker";
+import type { RunMetrics } from "@/metrics/types";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
 import type { StoryRouting } from "@/prd/types";
@@ -687,6 +688,62 @@ describe("collectStoryMetrics - the constant metric keys are gone (US-002)", () 
     const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
 
     expect(metrics.firstPassSuccess).toBe(true);
+  });
+});
+
+describe("collectStoryMetrics - workflow gate-open success (US-002)", () => {
+  test.each([
+    { state: "complete-gate-open" as const, success: false, firstPassSuccess: false },
+    { state: "complete" as const, success: true, firstPassSuccess: true },
+    { state: "complete-with-rulings" as const, success: true, firstPassSuccess: true },
+    { state: undefined, success: true, firstPassSuccess: true },
+  ])("uses agent success and workflow state for $state", async ({ state, success, firstPassSuccess }) => {
+    const story = makeStory({ attempts: 1, escalations: [], priorFailures: [] });
+    const ctx = makeCtx(story);
+    ctx.workflowEndState = state;
+
+    const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
+
+    expect(metrics.success).toBe(success);
+    expect(metrics.firstPassSuccess).toBe(firstPassSuccess);
+  });
+
+  test("pipeline-mode first pass retains escalation and prior-failure exclusions", async () => {
+    const story = makeStory({
+      priorFailures: [
+        { attempt: 1, modelTier: "fast", stage: "verify", summary: "failed", timestamp: STORY_START_TIME },
+      ],
+    });
+    const ctx = makeCtx(story);
+
+    const metrics = await collectStoryMetrics(ctx, STORY_START_TIME);
+
+    expect(metrics.firstPassSuccess).toBe(false);
+  });
+
+  test("aggregate first-pass rate includes only the complete workflow story", async () => {
+    const complete = makeCtx(makeStory({ id: "US-001", attempts: 1, escalations: [], priorFailures: [] }));
+    const gateOpen = makeCtx(makeStory({ id: "US-002", attempts: 1, escalations: [], priorFailures: [] }));
+    complete.workflowEndState = "complete";
+    gateOpen.workflowEndState = "complete-gate-open";
+    const stories = await Promise.all([
+      collectStoryMetrics(complete, STORY_START_TIME),
+      collectStoryMetrics(gateOpen, STORY_START_TIME),
+    ]);
+    const run: RunMetrics = {
+      runId: "run-1",
+      feature: "test",
+      startedAt: STORY_START_TIME,
+      completedAt: STORY_START_TIME,
+      totalCost: 0,
+      totalStories: 2,
+      storiesCompleted: 1,
+      storiesFailed: 0,
+      totalDurationMs: 0,
+      stories,
+    };
+
+    expect(calculateAggregateMetrics([run]).firstPassRate).toBe(0.5);
   });
 });
 

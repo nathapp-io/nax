@@ -262,6 +262,40 @@ describe("toCostReport — avgCostPerStory zero guard", () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-001 AC-1 / AC-2: lastRun.storiesGateOpen carries the gate-open count
+//
+// `RunMetrics.storiesGateOpen` is optional (#2879): a record written before the
+// field existed has no key at all. The public contract must still be a number,
+// so the mapper coalesces the absence to 0 — otherwise `--json` consumers get
+// `undefined` for older runs and cannot distinguish "no gate-open stories" from
+// "unknown".
+// ---------------------------------------------------------------------------
+
+describe("toCostReport — lastRun.storiesGateOpen", () => {
+  test("US-001 AC-1: lastRun.storiesGateOpen equals the last RunMetrics storiesGateOpen", () => {
+    const runs = [makeRun([makeStoryMetrics({ storyId: "US-A" })], { runId: "run-g", storiesGateOpen: 1 })];
+
+    const result = toCostReport(runs, fixedDeps);
+
+    expect(result.lastRun).not.toBeNull();
+    expect(result.lastRun?.storiesGateOpen).toBe(1);
+  });
+
+  test("US-001 AC-2: lastRun.storiesGateOpen is 0 when the last RunMetrics has no storiesGateOpen field", () => {
+    const legacyRun = makeRun([makeStoryMetrics({ storyId: "US-A" })], { runId: "run-legacy" });
+    // The helper builds a pre-#2879 record, so the key is genuinely absent
+    // rather than present-and-undefined.
+    expect("storiesGateOpen" in legacyRun).toBe(false);
+
+    const result = toCostReport([legacyRun], fixedDeps);
+
+    expect(result.lastRun).not.toBeNull();
+    expect(result.lastRun?.storiesGateOpen).toBe(0);
+    expect("storiesGateOpen" in (result.lastRun ?? {})).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC-11: no internal fields leak
 // ---------------------------------------------------------------------------
 

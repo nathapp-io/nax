@@ -227,6 +227,27 @@ function logAgentProfileAssignment(prd: PRD, args: PersistPrdArgs): void {
 }
 
 /**
+ * One metadata-only summary of every secret-shaped story string this plan is
+ * about to persist.
+ *
+ * Per-finding warnings were the problem: a feature with 37 secret-shaped fields
+ * logged 37 lines, which teaches users to skip the warning. The summary names
+ * which fields and which credential kinds, never the matched text — the point is
+ * that the planner should look, not that nax should write the credential into a
+ * second file.
+ */
+function warnOnPrdSecretShapes(prd: PRD, scope: ReadonlySet<string> | undefined): void {
+  const findings = _persistPrdDeps.findPrdSecretShapes(prd, scope);
+  if (findings.length === 0) return;
+  const kinds = [...new Set(findings.map((hit) => hit.kind))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  getLogger().warn("plan", "PRD story text has secret shapes", {
+    count: findings.length,
+    fields: findings.map((hit) => `${hit.storyId} ${hit.field}`),
+    kinds,
+  });
+}
+
+/**
  * Repair → canonicalize → finalize routing → write. Returns the path written.
  *
  * Context-free so callers that never build a `PlanModeContext`
@@ -356,9 +377,7 @@ export async function finalizeAndWritePrd(args: PersistPrdArgs): Promise<string>
   );
   logAgentProfileAssignment(finalized, args);
   try {
-    for (const hit of _persistPrdDeps.findPrdSecretShapes(finalized, args.scope)) {
-      getLogger().warn("plan", "PRD story text has a secret shape", { ...hit });
-    }
+    warnOnPrdSecretShapes(finalized, args.scope);
   } catch {
     // Avoid logging an exception that could contain the candidate story text.
     getLogger().warn("plan", "PRD secret-shape scan could not run");
