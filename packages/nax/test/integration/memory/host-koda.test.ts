@@ -22,9 +22,10 @@ import {
   makeNaxConfig,
   makeTempDir,
 } from "@test/helpers";
-import { type MemoryCliDeps, memoryStatusCommand } from "@/cli";
+import { type MemoryCliDeps, memoryForgetCommand, memoryListCommand, memoryStatusCommand } from "@/cli";
 import type { NaxConfig } from "@/config";
 import { createMemoryHost, type MemoryHost } from "@/memory";
+import { createKodaApprovals } from "@/memory/koda-approvals";
 import { _kodaClientDeps } from "@/memory/koda-http";
 import type { KodaMemoryItem } from "@/memory/koda-mapping";
 
@@ -76,6 +77,8 @@ const WRITABLE: Answer = () => jsonAnswer({ ret: 0, data: { mode: "direct" } });
 const PROJECT_ANSWER: Answer = () => jsonAnswer({ ret: 0, data: { id: PROJECT_ID } });
 const SAVED: Answer = () => jsonAnswer({ ret: 0, data: { id: "k7" } }, 201);
 const NO_HITS: Answer = () => jsonAnswer({ ret: 0, data: kodaListData([]) });
+/** koda has no such approval, which is the one status read that is a fact rather than an unknown. */
+const NO_APPROVAL: Answer = () => jsonAnswer({ ret: -1, message: "no such approval" }, 404);
 
 /** The routes a case may replace; every other request answers its happy default. */
 interface KodaRoute {
@@ -84,6 +87,8 @@ interface KodaRoute {
   readonly search?: Answer;
   readonly save?: Answer;
   readonly project?: Answer;
+  /** One approval's status, as `GET approvals/<id>` answers it. */
+  readonly approvals?: Answer;
 }
 
 /** Route the transport by path: the probe, the export feed, the search, a save, the project lookup. */
@@ -92,6 +97,7 @@ function stubKoda(route: KodaRoute = {}): void {
     if (call.init.method === "POST") return await (route.save ?? SAVED)();
     if (call.url.includes("/memory/write-mode")) return await (route.writeMode ?? WRITABLE)();
     if (call.url.includes("/memory/export")) return await (route.exportPage ?? EMPTY_PAGE)();
+    if (call.url.includes("/approvals/")) return await (route.approvals ?? NO_APPROVAL)();
     if (call.url.includes("/memory?")) return await (route.search ?? NO_HITS)();
     return await (route.project ?? PROJECT_ANSWER)();
   });
@@ -300,7 +306,60 @@ describe("a koda-backed memory host", () => {
     expect(code).toBe(0);
     expect(providerOf(out[0])).toBe(`koda:${PROJECT}`);
   });
+
+  test("US-006 AC-22 a held forget marks the note, and the refused sync unmarks it", async () => {
+    const out: string[] = [];
+    const deps: MemoryCliDeps = {
+      log: (msg) => out.push(msg),
+      logErr: () => {},
+      exit: () => {},
+      findProjectDir: () => null,
+      loadConfig: async () => kodaConfig(),
+      createMemoryHost,
+      readFile: async () => "",
+    };
+    // koda answers the lookup with the note's active row, holds the retire, and later refuses
+    // the approval it opened; the feed itself stays empty, so only the record moves.
+    stubKoda({
+      search: () => jsonAnswer({ ret: 0, data: kodaListData([noteRow()]) }),
+      save: () => jsonAnswer({ ret: 0, data: { id: "apr_9" } }, 202),
+      approvals: () => jsonAnswer({ ret: 0, data: { status: "rejected" } }),
+    });
+    const host = await open();
+    await writeMirrorNote(host, { ...LOCAL_NOTE, id: "local", slug: SLUG, description: "replay budget" });
+
+    const forgotten = await memoryForgetCommand(SLUG, { dir: repoRoot, reason: "stale" }, deps);
+    out.length = 0;
+    const marked = await memoryListCommand({ dir: repoRoot }, deps);
+
+    expect({ forget: forgotten, listed: marked }).toEqual({ forget: 0, listed: 0 });
+    expect(listingLineOf(out, SLUG).endsWith(" (forget pending)")).toBe(true);
+    // The marker comes from the forget record koda's answer left in the approvals file.
+    expect(await heldRecords(host)).toEqual([["forget", SLUG]]);
+
+    expect((await host.sync()).outcome).toBe("synced");
+    out.length = 0;
+    await memoryListCommand({ dir: repoRoot }, deps);
+
+    const unmarked = listingLineOf(out, SLUG);
+    expect(unmarked.endsWith(" (forget pending)")).toBe(false);
+    expect(unmarked).toContain(`project/${SLUG} `);
+    expect(await heldRecords(host)).toEqual([]);
+  });
 });
+
+/** The listing row `nax memory list` printed for one slug; fails when it printed none. */
+function listingLineOf(out: readonly string[], slug: string): string {
+  const line = out.find((row) => row.startsWith(`project/${slug} `));
+  assertDefined(line, `the listing row for project/${slug}`);
+  return line;
+}
+
+/** The `[kind, slug]` of every record koda's approvals file holds, read back from disk. */
+async function heldRecords(host: MemoryHost): Promise<readonly (readonly [string | undefined, string])[]> {
+  const approvals = createKodaApprovals({ dir: host.dirs.projectDir, logger: makeLogger() });
+  return (await approvals.list()).map((record) => [record.kind, record.slug] as const);
+}
 
 /** The `provider` field of a `--json` status document, or `undefined` when it names none. */
 function providerOf(document: string): unknown {

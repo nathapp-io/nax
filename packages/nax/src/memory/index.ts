@@ -8,7 +8,8 @@
 export type { MemoryNoteLine } from "./format";
 export { formatMemoryNoteLine, formatMemoryStatus, formatMemorySyncResult } from "./format";
 export type { CreateMemoryHostInput, MemoryHost, MemoryRejectedEntry, MemorySearchInput, MemoryStatus } from "./host";
-export { _memoryHostDeps, createMemoryHost, pendingForgetKey } from "./host";
+export { _memoryHostDeps, createMemoryHost } from "./host";
+export { pendingForgetKey } from "./host-forget-keys";
 export type { MemoryRejectedTarget } from "./host-writes";
 export type { KodaApproval, KodaApprovals } from "./koda-approvals";
 export { createKodaApprovals, KODA_APPROVALS_FILE } from "./koda-approvals";

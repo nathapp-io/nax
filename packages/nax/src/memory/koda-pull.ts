@@ -37,6 +37,14 @@
  * no such approval: nothing to restore, nothing to ask again. Every other failure learned
  * nothing, so the record stays for a later pull.
  *
+ * A forget koda held is the same record with `kind: "forget"`, resolved by koda's answer with
+ * one difference that decides everything below it: a refused forget deleted nothing. So the
+ * open and `executed` answers read as a save's do — the feed's retired-row tombstone removes
+ * the note if koda carries the forget out — and a refusal drops the record as soon as this page
+ * or the mirror holds the slug, restoring koda's active row only for one the mirror has lost.
+ * A refused forget never produces a tombstone: synthesizing one would delete a note its own
+ * refusal kept.
+ *
  * A refused record is forgotten only once nothing is left for a later pull to do. A record
  * whose slug needs no restoration goes now; one whose restoration this page carries stays,
  * because this module cannot apply a page — sync applies it after this returns, and a mirror
@@ -356,18 +364,51 @@ async function refusedRecord(where: ResolutionScope, record: KodaApproval): Prom
 }
 
 /**
+ * The record's fate once koda has refused its forget.
+ *
+ * A refused forget deleted nothing, so there is no tombstone to write and no pending note of
+ * this proposal's to find: mirror possession is the whole question, not a `clientId` and status
+ * match. A slug this page already carries — which a rewound full re-read produces — or one the
+ * mirror holds needs no restoring note, and the record goes. A slug the mirror no longer holds
+ * is put back from koda's active row, the same restoration a refused save uses; koda having no
+ * active row for it means there is nothing left to restore, so the record goes without one.
+ */
+async function refusedForget(where: ResolutionScope, record: KodaApproval): Promise<RecordResolution> {
+  if (where.pageSlugs.has(record.slug)) return { kind: "drop" };
+  if ((await where.input.readNote(where.scope, record.slug)) !== null) return { kind: "drop" };
+  try {
+    const row = await findActiveKodaNote({
+      client: where.input.client,
+      project: where.input.project,
+      scope: where.scope,
+      slug: record.slug,
+    });
+    if (row === null) return { kind: "drop" };
+    return rowRestoration(where, record, row);
+  } catch (error) {
+    warnApproval(where, record, errorMessage(error));
+    return { kind: "keep" };
+  }
+}
+
+/**
  * One record against koda's own answer about it.
  *
  * Only a status word decides anything. An open proposal keeps its record, `executed` drops
  * it because the row arrives through the feed, and a status this module does not know is
  * no fact to act on — the record stays, with a warn, rather than being forgotten on a guess.
+ *
+ * A refusal is read by the kind of write it refused: a save puts the slug's note back, and a
+ * forget — which never deleted anything — only has to make sure the mirror still holds it.
  */
 async function resolveRecord(where: ResolutionScope, record: KodaApproval): Promise<RecordResolution> {
   const answer = await readApproval(where, record);
   if (answer.kind === "unreadable") return { kind: "keep" };
   if (answer.kind === "gone") return { kind: "drop" };
   if (APPROVAL_OPEN_STATUSES.has(answer.status)) return { kind: "keep" };
-  if (APPROVAL_REFUSED_STATUSES.has(answer.status)) return await refusedRecord(where, record);
+  if (APPROVAL_REFUSED_STATUSES.has(answer.status)) {
+    return record.kind === "forget" ? await refusedForget(where, record) : await refusedRecord(where, record);
+  }
   if (answer.status === APPROVAL_EXECUTED_STATUS) return { kind: "drop" };
   warnApproval(where, record, `koda answered the status "${answer.status}"`);
   return { kind: "keep" };

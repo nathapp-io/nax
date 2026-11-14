@@ -330,6 +330,17 @@ describe("nax memory list", () => {
     expect(h.codes).toEqual([1]);
     expect(h.err).toEqual(["Error: cannot resolve repository root /r"]);
   });
+
+  test("US-006 AC-21: a row whose key the host reports as a pending forget ends with (forget pending)", async () => {
+    const h = harness({}, { forgetPendingKeys: async () => new Set(["project/staging-db"]) });
+
+    await runMemory(h, ["list"]);
+
+    const line = h.out.find((row) => row.startsWith("project/staging-db "));
+    assertDefined(line, "the staging-db row");
+    expect(line.endsWith(" (forget pending)")).toBe(true);
+    expect(h.out.filter((row) => row.endsWith(" (forget pending)"))).toHaveLength(1);
+  });
 });
 
 // ─── registration ────────────────────────────────────────────────────────────
