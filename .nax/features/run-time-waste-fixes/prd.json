@@ -3,7 +3,7 @@
   "feature": "run-time-waste-fixes",
   "branchName": "feat/run-time-waste-fixes",
   "createdAt": "2026-11-14T12:17:18.014Z",
-  "updatedAt": "2026-11-14T12:48:14.575Z",
+  "updatedAt": "2026-11-14T12:54:35.622Z",
   "userStories": [
     {
       "id": "US-001",
@@ -190,14 +190,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The loop already fixes only blocking findings; this adds a small ledger/record helper and standard optional summary aggregation, testable through the existing loop harness and pure formatters."
+        "reasoning": "The loop already fixes only blocking findings; this adds a small ledger/record helper and standard optional summary aggregation, testable through the existing loop harness and pure formatters.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/story-steps.ts",
@@ -218,7 +221,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "55cadc842223d1d8621558e72e8794207604c43f"
     },
     {
       "id": "US-004",
