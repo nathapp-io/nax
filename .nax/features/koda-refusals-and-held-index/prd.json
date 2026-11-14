@@ -3,7 +3,7 @@
   "feature": "koda-refusals-and-held-index",
   "branchName": "feat/koda-refusals-and-held-index",
   "createdAt": "2026-11-14T06:20:12.637Z",
-  "updatedAt": "2026-11-14T06:55:08.187Z",
+  "updatedAt": "2026-11-14T07:06:51.948Z",
   "userStories": [
     {
       "id": "US-001",
@@ -165,14 +165,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Only the existing pull/provider contract and resolution metadata change; restoration logic stays intact, and established fake-client/store seams support ordering tests plus one real-log retry case."
+        "reasoning": "Only the existing pull/provider contract and resolution metadata change; restoration logic stays intact, and established fake-client/store seams support ordering tests plus one real-log retry case.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/koda-refusals.ts",
@@ -191,7 +194,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9220117705d0e9b35dfae0defedd196191256af0"
     },
     {
       "id": "US-004",
