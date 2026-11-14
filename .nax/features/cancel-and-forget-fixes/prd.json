@@ -3,7 +3,7 @@
   "feature": "cancel-and-forget-fixes",
   "branchName": "feat/cancel-and-forget-fixes",
   "createdAt": "2026-11-14T03:12:44.466Z",
-  "updatedAt": "2026-11-14T04:35:24.554Z",
+  "updatedAt": "2026-11-14T04:58:54.820Z",
   "userStories": [
     {
       "id": "US-001",
@@ -344,14 +344,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Durable memory reconciliation spans approvals persistence, provider, pull and host composition with backward-compatible kind parsing; complex three-session-lite fits this data-integrity change without treating status tracking as an authentication or authorization implementation."
+        "reasoning": "Durable memory reconciliation spans approvals persistence, provider, pull and host composition with backward-compatible kind parsing; complex three-session-lite fits this data-integrity change without treating status tracking as an authentication or authorization implementation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/memory/koda-approvals.ts",
@@ -386,7 +389,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2c6511d8daf701b158647f31fcba842e51dea83b"
     },
     {
       "id": "US-007",
