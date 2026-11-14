@@ -3,7 +3,7 @@
   "feature": "cancel-and-forget-fixes",
   "branchName": "feat/cancel-and-forget-fixes",
   "createdAt": "2026-11-14T03:12:44.466Z",
-  "updatedAt": "2026-11-14T04:58:54.820Z",
+  "updatedAt": "2026-11-14T05:07:36.056Z",
   "userStories": [
     {
       "id": "US-001",
@@ -412,14 +412,17 @@
         "test-runners"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Small behavior change and compatibility-preserving leaf extraction across existing modules; clear precedence and import-graph constraints."
+        "reasoning": "Small behavior change and compatibility-preserving leaf extraction across existing modules; clear precedence and import-graph constraints.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/config-guards.ts",
@@ -441,7 +444,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f77294e172d3be4bf3c4a35e2845f2cdfa8355c8"
     },
     {
       "id": "US-008",
