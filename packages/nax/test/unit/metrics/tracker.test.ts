@@ -27,9 +27,9 @@ import {
 import type { AgentFallbackRecord } from "@/agents/manager-types";
 import { calculateAggregateMetrics, deriveRunFallbackAggregates } from "@/metrics/aggregator";
 import { collectBatchMetrics, collectStoryMetrics } from "@/metrics/tracker";
+import type { RunMetrics } from "@/metrics/types";
 import type { PipelineContext } from "@/pipeline/types";
 import type { PRD, UserStory } from "@/prd";
-import type { RunMetrics } from "@/metrics/types";
 import type { StoryRouting } from "@/prd/types";
 import { CostAggregator } from "@/runtime/cost-aggregator";
 
@@ -731,8 +731,15 @@ describe("collectStoryMetrics - workflow gate-open success (US-002)", () => {
       collectStoryMetrics(gateOpen, STORY_START_TIME),
     ]);
     const run: RunMetrics = {
-      runId: "run-1", feature: "test", startedAt: STORY_START_TIME, completedAt: STORY_START_TIME,
-      totalCost: 0, totalStories: 2, storiesCompleted: 1, storiesFailed: 0, totalDurationMs: 0,
+      runId: "run-1",
+      feature: "test",
+      startedAt: STORY_START_TIME,
+      completedAt: STORY_START_TIME,
+      totalCost: 0,
+      totalStories: 2,
+      storiesCompleted: 1,
+      storiesFailed: 0,
+      totalDurationMs: 0,
       stories,
     };
 
