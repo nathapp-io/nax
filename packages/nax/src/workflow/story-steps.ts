@@ -27,6 +27,7 @@ import { runReportCheck } from "./report-check";
 import { describeFindings, startStep } from "./run-log";
 import type { StoryLoopEnv, StoryLoopOutcome, StoryLoopState } from "./story-loop";
 import type { ReviewOutcome } from "./story-review";
+import { stopOnTimeout } from "./timeout-stop";
 import type {
   GateName,
   GateRunResult,
@@ -37,7 +38,6 @@ import type {
   WorkflowFindingDraft,
 } from "./types";
 import { recordVerdictMismatch } from "./verdict-mismatch";
-import { stopOnTimeout } from "./timeout-stop";
 
 export const WARM_ROUND_CAP = 3;
 export const MAX_IMPLEMENTER_QUESTIONS = 2;
