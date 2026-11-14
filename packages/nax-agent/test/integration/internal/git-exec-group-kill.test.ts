@@ -35,9 +35,16 @@ const HELPER_TIMEOUT_MS = 5_000;
 /** AC-8: the group must be empty within 2 s of the result. */
 const GROUP_EMPTY_DEADLINE_MS = 2_000;
 
-/** Every (pid, pgid) pair on the host, read the way AC-8 prescribes. */
+/**
+ * Every (pid, pgid) pair on the host, read the way AC-8 prescribes.
+ *
+ * `-A` is required: a bare `ps` selects only processes sharing the caller's
+ * EUID **and controlling terminal**, and the git under test is `detached`
+ * (setsid), so it has no terminal and would not be listed at all — the group
+ * would read as empty before the abort and the git pid as unknown.
+ */
 function processGroups(): Array<[number, number]> {
-  const listing = Bun.spawnSync(["ps", "-o", "pid=,pgid="], { stdout: "pipe", stderr: "pipe" });
+  const listing = Bun.spawnSync(["ps", "-A", "-o", "pid=,pgid="], { stdout: "pipe", stderr: "pipe" });
   const pairs: Array<[number, number]> = [];
   for (const line of listing.stdout.toString().split("\n")) {
     const [pidField, groupField] = line.trim().split(/\s+/);
@@ -55,9 +62,18 @@ function groupMembers(pgid: number): number[] {
     .map(([pid]) => pid);
 }
 
-/** The group `pid` belongs to, or 0 when `ps` no longer lists it. */
-function pgidOf(pid: number): number {
-  return processGroups().find(([listed]) => listed === pid)?.[1] ?? 0;
+/** The group `pid` belongs to, waited for so a single `ps` snapshot cannot race the spawn. */
+async function pgidOf(pid: number): Promise<number> {
+  let pgid = 0;
+  await waitForCondition(
+    () => {
+      pgid = processGroups().find(([listed]) => listed === pid)?.[1] ?? 0;
+      return pgid > 0;
+    },
+    HELPER_TIMEOUT_MS,
+    20,
+  );
+  return pgid;
 }
 
 /** Does a process group with this id still have a member? Needs no `ps`. */
@@ -128,7 +144,7 @@ describe("gitWithTimeout: aborting a real git kills its process group", () => {
 
   test.skipIf(!PS_AVAILABLE)("AC-8: nothing in the spawned git's process group survives the abort", async () => {
     const { gitPid, helperPid, controller, result } = await gitWithHangingAlias();
-    const pgid = pgidOf(gitPid);
+    const pgid = await pgidOf(gitPid);
     try {
       // detached: true makes the git pid the group leader (setsid).
       expect(pgid).toBe(gitPid);
