@@ -56,6 +56,7 @@ import { type KodaClient, type KodaResponse, kodaStatusOf } from "./koda-http";
 import { findActiveKodaNote } from "./koda-lookup";
 import { type KodaMemoryItem, kodaHitOf, parseKodaRecords } from "./koda-mapping";
 import { pullKodaPage } from "./koda-pull";
+import type { KodaRefusals } from "./koda-refusals";
 import type { MemoryLogger } from "./paths";
 
 const STAGE = "memory";
@@ -101,6 +102,11 @@ export interface CreateKodaMemoryProviderInput {
   /** The koda project **slug**: every route takes it in the path. */
   readonly project: string;
   readonly approvals: KodaApprovals;
+  /**
+   * The report of the proposals koda refused, which the pull records before it drops them
+   * (US-003). Absent, a pull logs nothing: the refusals are dropped exactly as before.
+   */
+  readonly refusals?: KodaRefusals;
   readonly readNote: (scope: MemoryScope, slug: string) => Promise<MemoryNote | null>;
   readonly readDecisions: () => Promise<readonly MemoryDecision[]>;
   readonly logger: MemoryLogger;
