@@ -11,11 +11,12 @@ import type { ImplementOutcome, ImplementTurn } from "./implement";
 import { absorbInterrupt, type InterruptOrigin } from "./interrupt-continue";
 import { type LedgerWriteOptions, ledgerText } from "./ledger";
 import { producedWork, runNoWorkLadder } from "./no-work";
-import { absorbReReviewVerdict } from "./re-review-absorb";
+import { absorbReReviewVerdict, reReviewSummary } from "./re-review-absorb";
 import { runReportCheck } from "./report-check";
 import { describeFindings, startStep } from "./run-log";
 import type { StoryLoopEnv, StoryLoopOutcome, StoryLoopState } from "./story-loop";
 import type { ReviewOutcome } from "./story-review";
+import { runSuiteReviewPass } from "./suite-review-pass";
 import { stopOnTimeout, timeoutGates } from "./timeout-stop";
 import type {
   GateName,
@@ -291,13 +292,15 @@ function carriesNarrower(open: readonly WorkflowFinding[], verdict: ReReviewVerd
   return open.some((f) => narrow.has(f.id));
 }
 
-async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
+async function review(env: StoryLoopEnv, s: LoopState, settled?: () => void): Promise<void> {
+  const suiteRunning = settled !== undefined;
   if (!s.reviewed) {
     const step = startStep(env.storyId, "story-review", { model: env.steps.modelFor?.("story-review") });
-    const out: ReviewOutcome<StoryReviewVerdict> = await env.steps.storyReview(s.concerns, {
-      ...s.gates?.states,
-      ...s.suite?.states,
-    });
+    const gates = { ...s.gates?.states, ...(suiteRunning ? {} : s.suite?.states) };
+    if (suiteRunning) delete gates["full-suite"];
+    const out: ReviewOutcome<StoryReviewVerdict> = suiteRunning
+      ? await env.steps.storyReview(s.concerns, gates, { suiteRunning: true }).finally(settled)
+      : await env.steps.storyReview(s.concerns, { ...gates, ...s.suite?.states });
     s.reviewed = true;
     if (!out.ran) {
       step.done(`skipped (${out.why})`);
@@ -343,22 +346,6 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
   step.done(reReviewSummary(asked, out.verdict, added));
 }
 
-/** US-004 (nax#2524): a PARTIAL verdict keeps its id open, so its line names the residual verdict. */
-function reReviewStatus(v: ReReviewVerdict["verdicts"][number] | undefined): string {
-  if (!v) return "no verdict";
-  if (v.residual) return "PARTIAL";
-  return v.addressed ? "addressed" : "NOT addressed";
-}
-
-function reReviewSummary(
-  asked: readonly WorkflowFinding[],
-  verdict: ReReviewVerdict,
-  added: readonly WorkflowFinding[],
-) {
-  const per = asked.map((f) => `${f.id} ${reReviewStatus(verdict.verdicts.find((x) => x.id === f.id))}`);
-  return added.length > 0 ? `${per.join(", ")}; new: ${describeFindings(added)}` : per.join(", ");
-}
-
 async function deferMinors(env: StoryLoopEnv, s: LoopState, drafts: readonly WorkflowFindingDraft[]): Promise<void> {
   for (const minor of drafts.filter((f) => !isBlocking(f))) {
     s.deferredMinors += 1;
@@ -373,6 +360,19 @@ async function evaluate(env: StoryLoopEnv, s: LoopState): Promise<WorkflowFindin
   s.gates = await env.steps.gates();
   await env.sink.update({ gates: { ...s.gates.states } });
   if (s.gates.red) return [...s.assign(s.gates.findings), ...s.reviewOpen];
+  if (env.parallelReview && env.resume === null && !s.reviewed && !s.gates.suiteCovered) {
+    s.reportTurnRan = await runReportCheck(env, s, (turn) => implementTurn(env, turn));
+    await env.sink.update({ phase: "suite" });
+    const result = await runSuiteReviewPass(
+      () => env.steps.fullSuite(),
+      (settled) => review(env, s, settled),
+      env.now ?? Date.now,
+    );
+    s.suite = result.suite;
+    s.suiteThisIteration = true;
+    await env.sink.update({ reviewOverlapMs: result.overlap });
+    return [...(s.suite.red ? s.assign(s.suite.findings) : []), ...s.reviewOpen];
+  }
   await env.sink.update({ phase: "suite" });
   if (s.gates.suiteCovered) {
     s.suite = { red: false, states: { "full-suite": "green" }, findings: [] };

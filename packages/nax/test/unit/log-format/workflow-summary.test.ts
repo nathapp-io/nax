@@ -32,6 +32,12 @@ const base = (over: Partial<RunSummary> = {}): RunSummary => ({
 });
 const OPTS = { mode: "normal" as const, useColor: false };
 
+test("formats review overlap", () => {
+  expect(formatWorkflowSummary({ ...VIEW, reviewOverlapMs: 300_000 }, { useColor: false })).toContain(
+    "Review overlap with the full suite: 5m 0s",
+  );
+});
+
 describe("formatWorkflowSummary", () => {
   test("lists stories held on timeout", () => {
     const view = { ...VIEW, stories: [{ id: "US-003", rounds: 0, maxRounds: 5, gateTimeouts: ["scoped"] }] };

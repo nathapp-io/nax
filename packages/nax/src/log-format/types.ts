@@ -80,6 +80,7 @@ export interface WorkflowRoleUsage {
 
 /** What the end-of-run summary shows for a workflow-mode run (nax#2491 P5). */
 export interface WorkflowSummaryView {
+  reviewOverlapMs?: number;
   storiesDurationMs: number;
   featureWorkflowDurationMs: number;
   roles: readonly WorkflowRoleUsage[];

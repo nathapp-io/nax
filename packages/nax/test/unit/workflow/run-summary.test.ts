@@ -47,6 +47,17 @@ function resultFile(): WorkflowResultFile {
   };
 }
 
+test("sums story review overlap and omits it when absent", () => {
+  const file = resultFile();
+  const timing = { storiesDurationMs: 0, featureWorkflowDurationMs: 0 };
+  expect(buildWorkflowRunSummary(file, timing)).not.toHaveProperty("reviewOverlapMs");
+  const stories = {
+    a: { ...newStoryRecord("a", 5, "t"), reviewOverlapMs: 100 },
+    b: { ...newStoryRecord("b", 5, "t"), reviewOverlapMs: 200 },
+  };
+  expect(buildWorkflowRunSummary({ ...file, stories }, timing)).toHaveProperty("reviewOverlapMs", 300);
+});
+
 describe("timeout summary", () => {
   test("carries timeout gates but omits them on older records", () => {
     const file = resultFile();

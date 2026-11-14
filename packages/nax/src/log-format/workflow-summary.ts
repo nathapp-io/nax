@@ -68,6 +68,9 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
   const lines: string[] = [];
   lines.push(c.bold(c.blue("  WORKFLOW")));
   lines.push(`  ${c.gray("Duration:")} ${formatDurationSplit(view.storiesDurationMs, view.featureWorkflowDurationMs)}`);
+  if (view.reviewOverlapMs) {
+    lines.push(`  ${c.gray("Review overlap with the full suite:")} ${formatDuration(view.reviewOverlapMs)}`);
+  }
   if (view.roles.length > 0) {
     lines.push(`  ${c.gray("Tokens and cost by role:")}`);
     lines.push(...view.roles.map(roleLine));

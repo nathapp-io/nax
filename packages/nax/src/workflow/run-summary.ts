@@ -127,7 +127,12 @@ export function buildWorkflowRunSummary(
   const ciRemaining = ciRemainingOf(rec);
   const itemIndexMissing = itemIndexMissingOf(rec, feature);
   const verdictMismatches = mismatchesOf(result);
+  const reviewOverlapMs = Object.values(result.stories).reduce(
+    (total, story) => total + (story.reviewOverlapMs ?? 0),
+    0,
+  );
   return {
+    ...(reviewOverlapMs ? { reviewOverlapMs } : {}),
     ...(verdictMismatches.length ? { verdictMismatches } : {}),
     ...timing,
     roles: rolesOf(result),

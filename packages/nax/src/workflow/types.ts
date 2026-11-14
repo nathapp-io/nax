@@ -73,6 +73,7 @@ export interface ConfigChangeRecord {
 }
 
 export interface WorkflowStoryRecord {
+  readonly reviewOverlapMs?: number;
   /** HEAD before the pending fix, retained until its re-review completes. */
   readonly fixBase?: string;
   readonly storyId: string;
