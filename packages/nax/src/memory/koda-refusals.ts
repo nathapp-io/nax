@@ -265,6 +265,28 @@ export function createKodaRefusals(input: {
     return file;
   }
 
+  /**
+   * Whether the store's own reader would take `entry` back, warning when it would not.
+   *
+   * `record` persists only what `refusalOf` accepts: the reader treats a file holding one
+   * entry it cannot read back as unusable, and the next `record` replaces that file with only
+   * its own entries — so an entry the reader would reject costs every refusal already logged.
+   * An empty `approvalId` or `slug` is a type-correct input a caller can still send, and
+   * US-003 builds the `status` word from koda's string, so this is a warn-and-skip rather
+   * than the approvals store's refusal to write at all: the log is a report, and one bad
+   * entry must not cost the others in the same call.
+   */
+  function storable(entry: KodaRefusal): boolean {
+    if (refusalOf(entry) !== undefined) return true;
+    logger.warn(STAGE, "koda refusal is not storable", {
+      path,
+      approvalId: entry.approvalId,
+      scope: entry.scope,
+      slug: entry.slug,
+    });
+    return false;
+  }
+
   /** Run `task` after every earlier mutation of this report has settled, whether it failed or not. */
   function serialised<T>(task: () => Promise<T>): Promise<T> {
     const result = queue.then(task, task);
@@ -284,10 +306,12 @@ export function createKodaRefusals(input: {
       return serialised(async () => {
         const file = await read();
         const at = now();
-        const stamped = withoutDuplicates(entries, file.refusals).map((entry) => ({
-          ...entry,
-          refusedAt: at.toISOString(),
-        }));
+        const stamped = withoutDuplicates(entries, file.refusals)
+          .map((entry) => ({ ...entry, refusedAt: at.toISOString() }))
+          .filter(storable);
+        // Nothing survived the store's own reader: the file is left as it was rather than
+        // rewritten with the same entries (or created empty).
+        if (stamped.length === 0) return;
         const kept = [...file.refusals, ...stamped]
           .filter((entry) => withinReport(entry.refusedAt, at))
           .slice(-KODA_REFUSALS_MAX);

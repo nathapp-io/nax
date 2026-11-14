@@ -341,6 +341,42 @@ describe("createKodaRefusals", () => {
     expect(await readJson()).toEqual({ version: 1, refusals: [{ ...APR_1, refusedAt: stamp() }] });
   });
 
+  test("an entry with an empty slug is not persisted, and the entries already logged survive (AC-22)", async () => {
+    const refusals = store();
+    await refusals.record([APR_1]);
+    const before = await Bun.file(refusalsPath()).text();
+
+    await refusals.record([{ ...APR_1, approvalId: "apr_2", slug: "" }]);
+
+    expect(await Bun.file(refusalsPath()).text()).toBe(before);
+    expect(ids(await refusals.list())).toEqual(["apr_1"]);
+    expect(warns()).toHaveLength(1);
+    expect(warns()[0]?.message).toBe("koda refusal is not storable");
+  });
+
+  test("an entry with an empty approvalId is skipped, and the storable entries of the same call are logged", async () => {
+    const refusals = store();
+    await refusals.record([{ ...APR_1, approvalId: "" }, APR_2]);
+
+    expect(ids(await refusals.list())).toEqual(["apr_2"]);
+    expect(warns()).toHaveLength(1);
+    expect(warns()[0]?.message).toBe("koda refusal is not storable");
+    expect(warns()[0]?.data).toMatchObject({ path: refusalsPath(), approvalId: "", slug: APR_1.slug });
+  });
+
+  test("a call whose every entry is unstorable writes nothing at all", async () => {
+    const writes: string[] = [];
+    _kodaRefusalsDeps.write = async (path, text) => {
+      writes.push(path);
+      await Bun.write(path, text);
+    };
+
+    await store().record([{ ...APR_1, slug: "" }]);
+
+    expect(writes).toEqual([]);
+    expect(await Bun.file(refusalsPath()).exists()).toBe(false);
+  });
+
   test("a read that fails with EACCES does not stop record writing the incoming entries (AC-23)", async () => {
     _kodaRefusalsDeps.read = async () => {
       throw fsError("EACCES");
