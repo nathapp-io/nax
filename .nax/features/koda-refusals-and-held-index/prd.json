@@ -1,0 +1,290 @@
+{
+  "project": "nax-monorepo",
+  "feature": "koda-refusals-and-held-index",
+  "branchName": "feat/koda-refusals-and-held-index",
+  "createdAt": "2026-11-14T06:20:12.637Z",
+  "updatedAt": "2026-11-14T07:23:23.024Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Carry held-forget sources through the store into on-disk indexes",
+      "description": "**Goal** — Add a provider-neutral held-forget source to the memory store and merge its keys into both on-disk MEMORY.md indexes.\n\n**Motivation** — The two index surfaces disagree.\n\n**Approach** — **Part 2, the held-forget source (nax-agent, store and index).** `createMemoryStore` gains an optional input `heldForgets?: () => Promise<ReadonlySet<string>>`, keys spelled `\"<scope>/<slug>\"` (the `memoryNoteKey` spelling). The store gains an optional member `readHeldForgetKeys?(): Promise<ReadonlySet<string>>`, set only when the input was given; it calls the source and, when the source throws, logs one warn through the store's logger and answers an empty set. `markedForgets` in `index-render.ts` merges `store.readHeldForgetKeys?.()` into the keys it already merges (the caller's held forgets and the `pending-forgets.jsonl` record). Every on-disk index write goes through `refreshMemoryIndex(store, …)` — the save and forget operations, `approve`, and `sync`'s `finish` — so the one merge covers them all. `readPendingForgets` is unchanged: the source never reaches `approve`'s `holdsRecordedForget` check.\n\n**File sizes.** `packages/nax-agent/src/memory/store.ts` is at 591 lines and `packages/nax/src/memory/host.ts` at 587, against a 600-line hard limit. US-001 moves `MemoryStorePaths`, `dirOrNull`, `memoryStorePaths` and the five file-name constants only `memoryStorePaths` uses (`INDEX_FILE`, `NOTES_DIR`, `DECISIONS_FILE`, `SYNC_STATE_FILE`, `PENDING_FORGETS_FILE`) from `store.ts` into a new leaf `store-paths.ts` (store.ts re-exports the type, so the package entry is unchanged). The move is behaviour-neutral and verified by `bun run typecheck` and `bun run lint` (`check:file-sizes`, `check:import-cycles`) in the story's package.\n\n`packages/nax-agent/src/memory/index.ts` — the barrel re-exports `MemoryStorePaths`; it may re-point that re-export to the new paths leaf. Every name it exports stays exported.\n\nFailure handling: Held-forget source throws → `readHeldForgetKeys()` warns once per call through the store's logger and answers an empty set; the index is still written. Store created without `heldForgets` → `readHeldForgetKeys` is absent and `markedForgets` merges nothing more.\n\n**Scope** — In: the store input/member, logger-backed failure wrapper, three-way held-key merge, paths extraction and store/index/approve regression tests. Out: koda host wiring (US-004), refusal persistence (US-002), pull reporting (US-003). Writing a koda-held forget into the mirror's `pending-forgets.jsonl` record: `nax memory approve <slug>` would retire the note locally without koda's decision.\n\n**Interface** — `createMemoryStore`'s input also takes `readonly heldForgets?: () => Promise<ReadonlySet<string>>`. `MemoryStore` gains the optional member `readHeldForgetKeys?(): Promise<ReadonlySet<string>>`. Every existing member is unchanged. `markedForgets(store, heldForgets)` — the result also holds every key `store.readHeldForgetKeys?.()` answers. The target factory signature is `createMemoryStore(input: { readonly projectDir: string; readonly userDir?: string | null; readonly logger: AgentLogger; readonly heldForgets?: () => Promise<ReadonlySet<string>> }): MemoryStore`.\n\nTest implementation: write failing tests first in the new store-held-forgets.test.ts using real temp stores, refreshMemoryIndex and approveMemoryNote, following the shared logger/temp-dir helpers. Assert the actual project and user files and the union of caller/local/source keys; prove the pending-forget record and local approve behavior stay separate.",
+      "acceptanceCriteria": [
+        "[unit] createMemoryStore({ projectDir, logger, heldForgets: async () => new Set([\"project/x\"]) }).readHeldForgetKeys() resolves a set containing \"project/x\".",
+        "[unit] createMemoryStore({ projectDir, logger }) without heldForgets returns a store whose readHeldForgetKeys is undefined.",
+        "[unit] When a store's heldForgets source rejects with an error, readHeldForgetKeys() resolves an empty set.",
+        "[unit] When a store's heldForgets source rejects with an error, readHeldForgetKeys() logs one warn at stage memory naming the error message, once per failed call.",
+        "[unit] When refreshMemoryIndex(store) reads a store holding project note x whose heldForgets source answers {\"project/x\"}, the project MEMORY.md x entry ends in ' (forget pending)'.",
+        "[unit] When refreshMemoryIndex(store) reads a store with a user directory holding user note u whose heldForgets source answers {\"user/u\"}, the user MEMORY.md u entry ends in ' (forget pending)'.",
+        "[unit] When refreshMemoryIndex(store, { heldForgets: new Set([\"project/a\"]) }) reads notes a, b and c, with pending-forgets.jsonl holding b and the store source answering {\"project/c\"}, all three entries end in ' (forget pending)'.",
+        "[unit] When refreshMemoryIndex(store) reads a store whose heldForgets source rejects, MEMORY.md is still written with no entry marked for that source.",
+        "[unit] Regression guard: a store whose heldForgets source answers {\"project/x\"} returns no entry for x from readPendingForgets().",
+        "[unit] Regression guard: approveMemoryNote on a store holding pending note x, with pending-forgets.jsonl empty and heldForgets answering {\"project/x\"}, puts x in force and does not delete it."
+      ],
+      "tags": [
+        "memory",
+        "store",
+        "index",
+        "nax-agent"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "An additive optional store port and existing index merge plus a bounded behavior-neutral paths extraction; no provider, authorization or filesystem-confinement redesign.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/memory/store.ts",
+        "packages/nax-agent/src/memory/index-render.ts",
+        "packages/nax-agent/src/memory/operations-support.ts",
+        "packages/nax-agent/test/unit/memory/store-pending-forgets.test.ts",
+        "packages/nax-agent/test/unit/memory/index-render.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/memory/store-paths.ts",
+        "packages/nax-agent/test/unit/memory/store-held-forgets.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/src/memory/index.ts",
+          "reason": "the barrel re-exports `MemoryStorePaths`; it may re-point that re-export to the new paths leaf. Every name it exports stays exported."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "cbca0742e507f6d76be37f72a0c1b7a73290202a"
+    },
+    {
+      "id": "US-002",
+      "title": "Persist a bounded, lenient koda refusal report",
+      "description": "**Goal** — Implement the checkout-local version-1 koda refusal log with deterministic dedupe, expiry, retention and non-throwing reporting failures.\n\n**Motivation** — Today neither is reported: a refused save's record is dropped once its slug is restored, and a refused forget's record is dropped once the mirror is shown to hold the note.\n\n**Approach** — **Part 1, the refusal log (nax, `packages/nax/src/memory/koda-refusals.ts`).** A new file in the project mirror directory, beside `koda-approvals.json`:\n\n```json\n{ \"version\": 1, \"refusals\": [\n  { \"approvalId\": \"apr_1\", \"kind\": \"forget\", \"scope\": \"project\", \"slug\": \"proposed-rule\",\n    \"status\": \"rejected\", \"refusedAt\": \"2026-11-14T05:00:00.000Z\" } ] }\n```\n\nEvery field is required. `kind` is `\"save\"` or `\"forget\"` (a refused record with no `kind` is logged as `\"save\"`). `status` is koda's own status word for the approval, one of `APPROVAL_REFUSED_STATUSES` (`rejected`, `expired`, `cancelled`, `failed`). `refusedAt` is the ISO time the pull logged it.\n\n`createKodaRefusals({ dir, logger, now? })` returns `{ list(): Promise<readonly KodaRefusal[]>, record(entries: readonly Omit<KodaRefusal, \"refusedAt\">[]): Promise<void> }`:\n\n- `record(entries)` composes in this order: (1) drop every incoming entry whose `approvalId` is already in the file (the existing entry and its `refusedAt` stay), and every incoming entry whose `approvalId` repeats an earlier one in the same call; (2) append the rest, stamped `refusedAt = now()`, after the existing entries; (3) drop every entry whose `refusedAt` is older than `KODA_REFUSAL_REPORT_MS` (7 days) before `now()`; (4) keep only the last `KODA_REFUSALS_MAX` (20) entries. The write is atomic (same-directory temporary file renamed into place, the `koda-approvals.ts` pattern, through a `_kodaRefusalsDeps` seam with `read`, `write`, `rename`). An empty incoming list writes nothing.\n- `list()` returns the file's entries, oldest first, whose `refusedAt` is within `KODA_REFUSAL_REPORT_MS` of `now()`. It never writes.\n- `now` defaults to `() => new Date()`.\n\nThe log is a report, not a record anything resolves from, so its failure handling is lenient (see Failure Handling): a missing file reads as no refusals; a file that is not a version-1 refusals file, or cannot be read, reads as no refusals with one warn per instance and is overwritten by the next `record`; a failed write warns and never throws.\n\nFailure Handling:\n- Refusals file missing: `list()` answers `[]`, no warn; `record` writes a new file.\n- Refusals file not JSON, wrong version, or an entry missing a field: `list()` answers `[]` and warns `koda refusals file is unusable` once per instance; the next `record` writes a file holding only the incoming entries.\n- Refusals file read fails (permission, I/O): Same as unusable: `[]`, one warn per instance; `record` writes over it.\n- Refusals write or rename fails: `record` warns `koda refusals were not recorded` with the path and the error, and resolves; the pull continues and still drops the approvals. The pull integration is implemented in US-003.\n\n`packages/nax/src/memory/index.ts` — the barrel gains the refusals exports (`createKodaRefusals`, `KodaRefusal`, `KodaRefusals`, `MemoryKodaRefusal`, `KODA_REFUSALS_FILE`, `KODA_REFUSALS_MAX`, `KODA_REFUSAL_REPORT_MS`); every name it exports today stays exported.\n\n**Scope** — In: new refusal types/store/constants, read/write/rename seam, barrel exports and file-store tests. Out: provider/pull consumption (US-003), host composition and status presentation (US-004), held-forget store port (US-001). A command to clear the refusal log by hand: entries expire after 7 days and the log keeps at most 20. Sharing the refusal log between checkouts: it lives in one checkout's mirror directory, as `koda-approvals.json` does. A temporary refusals file left behind by a failed write: the seam has no `unlink`, as in `koda-approvals.ts`.\n\n**Interface** — `createKodaRefusals({ dir, logger, now? })` returns `{ list(): Promise<readonly KodaRefusal[]>, record(entries: readonly Omit<KodaRefusal, \"refusedAt\">[]): Promise<void> }`. `MemoryKodaRefusal` is declared in `koda-refusals.ts` (US-002) as `Omit<KodaRefusal, \"approvalId\">` (`{ kind, scope, slug, status, refusedAt }`). `KODA_REFUSALS_FILE` names `koda-refusals.json`, `KODA_REFUSALS_MAX` is 20 and `KODA_REFUSAL_REPORT_MS` is 7 days. The injected `now` is a `() => Date`.\n\nTest implementation: use fake time and real temp files plus restored seam overrides, following koda-approvals.test.ts. Show the new tests fail before implementation; assert the raw version-1 file as well as list() for pruning/capping and atomic rename. Do not copy the approvals module's throwing mutation failures into this reporting store. The no-kind default applies to legacy source KodaApproval records projected by US-003; a persisted KodaRefusal must still contain its required kind field.",
+      "acceptanceCriteria": [
+        "[unit] When createKodaRefusals({ dir, logger, now }).record([{ approvalId: \"apr_1\", kind: \"forget\", scope: \"project\", slug: \"x\", status: \"rejected\" }]) completes, list() returns exactly one entry with those fields and refusedAt equal to now().toISOString().",
+        "[unit] When no refusals file exists in dir, list() resolves [] and logs no warn.",
+        "[unit] When record receives an approvalId already in the file, the file retains one entry for it with its original refusedAt.",
+        "[unit] When record receives apr_2 then apr_3, list() returns them in that order after any earlier entry.",
+        "[unit] list() omits an entry whose refusedAt is more than KODA_REFUSAL_REPORT_MS (7 days) before now(), and returns an entry exactly KODA_REFUSAL_REPORT_MS old.",
+        "[unit] When record completes, a later raw-file read contains no entry older than KODA_REFUSAL_REPORT_MS.",
+        "[unit] After recording 25 distinct entries, list() returns the last 20 recorded entries (KODA_REFUSALS_MAX).",
+        "[unit] Given one expired entry in the file, recording 21 new entries leaves list() and the raw file holding only the last 20 of the 21 new entries, not the expired one.",
+        "[unit] record([]) makes no _kodaRefusalsDeps.write call.",
+        "[unit] list() on a file that is not JSON resolves [].",
+        "[unit] When two list() calls of one instance read a non-JSON file, they log 'koda refusals file is unusable' once in total.",
+        "[unit] When record reads a non-JSON file, it writes a version-1 file holding only the incoming entries.",
+        "[unit] When _kodaRefusalsDeps.read rejects with EACCES, list() resolves [].",
+        "[unit] When _kodaRefusalsDeps.read rejects with EACCES, list() logs the warn 'koda refusals file is unusable'.",
+        "[unit] list() on a JSON file of version: 2, and on a version-1 file whose entry has no refusedAt, resolves [].",
+        "[unit] list() on a JSON file of version: 2, and on a version-1 file whose entry has no refusedAt, logs the warn 'koda refusals file is unusable'.",
+        "[unit] record([a, a]) with two incoming entries of one approvalId stores one entry for it.",
+        "[unit] When _kodaRefusalsDeps.rename rejects, record resolves without throwing.",
+        "[unit] When _kodaRefusalsDeps.rename rejects, record logs 'koda refusals were not recorded' naming the path and error.",
+        "[unit] When _kodaRefusalsDeps.rename rejects, record leaves the original file unchanged.",
+        "[unit] record writes through a temporary file in dir and renames it to koda-refusals.json: _kodaRefusalsDeps.write receives a path other than the final one and rename moves it there.",
+        "[unit] Failure handling: when record reads a wrong-version file or a version-1 file with an entry missing a required field, the replacement file holds only the incoming entries.",
+        "[unit] Failure handling: when _kodaRefusalsDeps.read fails with a permission or I/O error but publication succeeds, record overwrites the file with only the incoming entries.",
+        "[unit] When _kodaRefusalsDeps.write rejects, record resolves without throwing and logs the warn 'koda refusals were not recorded' naming the path and the error."
+      ],
+      "tags": [
+        "memory",
+        "koda",
+        "persistence",
+        "reporting"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A self-contained file-store addition using the existing atomic-write/seam pattern with explicit bounded-report algorithms and deterministic failure handling.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-approvals.ts",
+        "packages/nax/test/unit/memory/koda-approvals.test.ts",
+        "packages/nax/src/memory/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/koda-refusals.ts",
+        "packages/nax/test/unit/memory/koda-refusals.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When an incoming approvalId matches an expired entry still present in the raw file, record does not re-stamp that entry and the resulting log excludes it after expiry pruning.",
+        "When list() filters expired entries, the raw refusal file remains byte-for-byte unchanged."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/memory/index.ts",
+          "reason": "the barrel gains the refusals exports (`createKodaRefusals`, `KodaRefusal`, `KodaRefusals`, `MemoryKodaRefusal`, `KODA_REFUSALS_FILE`, `KODA_REFUSALS_MAX`, `KODA_REFUSAL_REPORT_MS`); every name it exports today stays exported."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "89b8bce4802becca7095e1fe6399b7057cdf8fa6"
+    },
+    {
+      "id": "US-003",
+      "title": "Record refused koda approvals before pull drops them",
+      "description": "**Goal** — Preserve a report of refused saves and forgets when the final-page pull safely drops their approval records.\n\n**Motivation** — The owner who refused a proposal in koda and the operator who made it on this checkout never see it in one place.\n\n**Approach** — **Part 1, the pull logs refusals (nax, `koda-pull.ts`).** `resolveRecord` already reads koda's status word for each record. A record it drops after a status in `APPROVAL_REFUSED_STATUSES` is a refusal; a record dropped for `executed` or a `404` is not. `RecordResolution`'s `drop` arm gains an optional `refusedStatus` carrying that word, and `resolveApprovals` returns the refused records alongside `dropped`. `resolutionOf` calls `input.refusals.record(...)` with those records **before** `input.approvals.drop(...)`: if the drop then fails, the next pull resolves the same records again and the `approvalId` dedupe keeps the log from growing. A refused record that is kept (a `restore`, or a `keep` after a failed lookup) is not logged yet; it is logged by the later pull that drops it, which reads the same refused status again. `CreateKodaMemoryProviderInput` gains an optional `refusals?: KodaRefusals`; with none, nothing is logged.\n\nEvery field is required. `kind` is `\"save\"` or `\"forget\"` (a refused record with no `kind` is logged as `\"save\"`). `status` is koda's own status word for the approval, one of `APPROVAL_REFUSED_STATUSES` (`rejected`, `expired`, `cancelled`, `failed`). `refusedAt` is the ISO time the pull logged it. The refusal store supplies refusedAt, not the pull.\n\nFailure Handling:\n- Refusals write or rename fails: `record` warns `koda refusals were not recorded` with the path and the error, and resolves; the pull continues and still drops the approvals.\n- `refusals` absent on the provider input: Nothing is logged; the pull behaves as before.\n- Approvals drop fails after the refusals were recorded: The next pull resolves the same records; the `approvalId` dedupe keeps one log entry each.\n\n**Scope** — In: optional provider input, refused-status propagation, refused-drop collection, record-before-drop ordering and final-page/retry regression tests. Out: refusal file-store implementation (US-002), host construction/status/index composition (US-004), nax-agent store changes (US-001). Logging a refusal for a record that a pull keeps (a `restore`, or a `keep` after a failed lookup): it is logged by the later pull that drops it. Logging an approval koda answered `executed` or `404`: neither is a refusal.\n\n**Interface** — `CreateKodaMemoryProviderInput` gains `readonly refusals?: KodaRefusals`. The target `RecordResolution` `drop` arm carries an optional `refusedStatus?: string`; its other arms remain `{ kind: \"keep\" }` and `{ kind: \"restore\"; note: MemoryNote }`. `resolutionOf` records the refused drops through `input.refusals?.record(...)`, then calls `input.approvals.drop(...)`. `KodaRefusals.record` accepts `entries: readonly Omit<KodaRefusal, \"refusedAt\">[]`.\n\nSeam: US-002 → US-003: `KodaRefusals.record` is consumed by the pull's `resolutionOf`; US-003 enters at `provider.pull` (`pullKodaPage`) with a faked client and asserts the captured `record` calls. Preserve the scope's last-page condition, check budget, existing restoration safety and approval-drop rejection behavior. Keep contract imports type-only where needed to avoid a runtime cycle. Test implementation: write failing tests first in koda-pull-refusals.test.ts using the existing forget-approval harness patterns; use a real createKodaRefusals for the two-pull drop-failure dedupe assertion and capture call order at record/drop boundaries.",
+      "acceptanceCriteria": [
+        "[unit] A pull at the scope's last page with save record apr_1 for x, whose GET approvals/apr_1 answers rejected and whose slug the page already carries, calls refusals.record once with [{ approvalId: \"apr_1\", kind: \"save\", scope, slug: \"x\", status: \"rejected\" }].",
+        "[unit] A pull with forget record apr_2 for x answered expired, while the mirror holds x, calls refusals.record with an entry carrying approvalId: \"apr_2\", kind: \"forget\", status: \"expired\".",
+        "[unit] A pull with a record answered executed and one whose approval read answers 404 calls refusals.record with no entry for either.",
+        "[unit] A pull with a forget record answered rejected whose resolution is restore (the page does not carry x, the mirror lacks x, and findActiveKodaNote finds an active row for x, so the page carries that row's note and the record is kept) calls refusals.record with no entry for it.",
+        "[unit] A pull with forget record apr_5 answered rejected whose page already carries a note for x drops the record.",
+        "[unit] A pull with forget record apr_5 answered rejected whose page already carries a note for x calls refusals.record with an entry for apr_5.",
+        "[unit] A pull with a refused record that is dropped calls refusals.record before approvals.drop.",
+        "[unit] A pull whose refusals.record resolves after warning still calls approvals.drop with the refused record's approvalId.",
+        "[unit] A pull through a provider created without refusals drops a refused record as before and does not throw.",
+        "[unit] Given a first pull whose approvals.drop rejects (that pull rejects) after refusals.record recorded refused record apr_1, a second pull resolving apr_1 refused again over a real createKodaRefusals store leaves list() with exactly one entry for apr_1.",
+        "[unit] A pull whose page is not the scope's last one (hasMore: true) calls refusals.record zero times."
+      ],
+      "tags": [
+        "memory",
+        "koda",
+        "pull",
+        "reconciliation"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Only the existing pull/provider contract and resolution metadata change; restoration logic stays intact, and established fake-client/store seams support ordering tests plus one real-log retry case.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/koda-refusals.ts",
+        "packages/nax/src/memory/koda-pull.ts",
+        "packages/nax/src/memory/koda-provider.ts",
+        "packages/nax/test/unit/memory/koda-pull-forget-approvals.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/memory/koda-pull-refusals.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a refused save approval lacks kind, the refusal recorded by the pull has kind: 'save'.",
+        "When a refused approval remains kept after a failed active-note lookup, the refusal log receives no entry for it until a later pull drops it."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9220117705d0e9b35dfae0defedd196191256af0"
+    },
+    {
+      "id": "US-004",
+      "title": "Compose refusal status and koda-held index keys in the host",
+      "description": "**Goal** — Wire the koda host to the refusal report and held-forget source so status and every index surface expose the same settled/refused and still-held facts.\n\n**Motivation** — A note waiting on a koda retire looks fully active in the file.\n\n**Approach** — **Part 1, status (nax, host).** `MemoryStatus` gains an optional `kodaRefusals?: readonly MemoryKodaRefusal[]`, set only by a koda-backed host from `refusals.list()`. `MemoryKodaRefusal` is declared in `koda-refusals.ts` (US-002) as `Omit<KodaRefusal, \"approvalId\">` (`{ kind, scope, slug, status, refusedAt }`); the status maps each `KodaRefusal` to it by dropping `approvalId`. `formatMemoryStatus` prints one line per entry after the `rejected:` lines: `refused by koda: <kind> <scope>/<slug> (<status>, <refusedAt>)`. `nax memory status --json` carries the field as is. Status stays a read: it never writes the log. A refusal never blocks `nax memory link` or `nax memory reset`, and `nax memory requeue` / `discard` never act on it (they act on outbox entries only).\n\n**Part 2, the koda host passes the source (nax, host).** `composeMemory` creates the koda approvals store before the mirror store when the provider is `koda`, and passes `heldForgets` reading the approvals store's `kind: \"forget\"` records as `pendingForgetKey(...)` keys. `host-forget-keys.ts` exports that read as `kodaHeldForgetKeys(approvals)` and `readForgetPendingKeys` reuses it, so the two index surfaces read one function. A local- or MCP-backed host passes no source.\n\n**File sizes.** `packages/nax-agent/src/memory/store.ts` is at 591 lines and `packages/nax/src/memory/host.ts` at 587, against a 600-line hard limit. US-004 moves `readStatus`, `statusWriteMode`, `countState`, `rejectedEntries` and the `MemoryRejectedEntry` interface from `host.ts` into a new leaf `host-status.ts` (host.ts re-exports `MemoryRejectedEntry`). `host.ts` exports the file-local types `HostInput`, `HostReads` and `MemoryParts` so `host-status.ts` imports them type-only (type-only imports are not counted by `check:import-cycles`). The move is behaviour-neutral and verified by `bun run typecheck` and `bun run lint` (`check:file-sizes`, `check:import-cycles`) in the story's package.\n\nIntegration targets:\n- `MemoryStatus` gains `readonly kodaRefusals?: readonly MemoryKodaRefusal[]`.\n- `formatMemoryStatus(status, index?)` prints one `refused by koda: …` line per `status.kodaRefusals` entry, after the `rejected:` lines.\n- `composeMemory` / `composeKoda`: `composeMemory` creates the approvals store (and the refusals store) first when the provider is `koda`, then the mirror store with `heldForgets`, then calls `composeKoda(input, dirs, store, approvals, refusals)`, which still passes `store.readNote` / `store.readDecisions` to the provider. In short: for `koda`, the approvals store is created first and passed as the mirror store's `heldForgets` source; a refusals store is created and passed to the provider as `refusals`; `MemoryParts` carries `kodaRefusals`. `_memoryHostDeps` gains `createKodaRefusals` (default the real factory), the seam a test stubs to see the store's arguments.\n- `packages/nax/src/memory/index.ts` — the barrel may re-point `MemoryRejectedEntry` to the new status leaf; every name it exports today stays exported.\n\nThe spec's multi-argument composeKoda call describes the required data flow; preserve that exact composition while using the repository's options-object convention if needed for the positional-parameter gate.\n\n**Scope** — In: koda-first store composition, shared kodaHeldForgetKeys read, refusal-store seam/provider wiring, host-status extraction, optional status projection, formatter output, host.sync integration and CLI JSON regression assertions. Out: generic store/index implementation (US-001), refusal store implementation (US-002) and pull resolution logic (US-003), except their consumption here. Reporting refusals from an MCP-backed or local-backed host: only the koda provider resolves approvals. Making a refused koda proposal block `nax memory link` or `nax memory reset`, or be acted on by `nax memory requeue` / `nax memory discard`: those act on outbox entries only. Keeping the refusal log across `nax memory reset`: `clearProjectMirror` keeps only `koda-approvals.json`, so a reset removes `koda-refusals.json` with the rest of the mirror; a refusal is a settled fact the reset's fresh pull does not need. Writing a koda-held forget into the mirror's `pending-forgets.jsonl` record: `nax memory approve <slug>` would retire the note locally without koda's decision.\n\n**Interface** — `MemoryStatus` gains `readonly kodaRefusals?: readonly MemoryKodaRefusal[]`. `MemoryKodaRefusal` is `Omit<KodaRefusal, \"approvalId\">` (`{ kind, scope, slug, status, refusedAt }`). `kodaHeldForgetKeys(approvals)` answers the `\"<scope>/<slug>\"` keys of `kind: \"forget\"` records. `MemoryParts` carries `kodaRefusals`; `_memoryHostDeps.createKodaRefusals` defaults to the real `createKodaRefusals` factory. The store is given `readonly heldForgets?: () => Promise<ReadonlySet<string>>` and the provider `readonly refusals?: KodaRefusals`.\n\nSeams and testing: US-001 → US-004: `createMemoryStore`'s `heldForgets` input is consumed by the koda host's `composeMemory`. US-004 AC 2 enters at `host.sync()` and asserts the on-disk `MEMORY.md`, not the store call. US-002, US-003 → US-004: `createKodaRefusals` and `CreateKodaMemoryProviderInput.refusals` are consumed by `composeKoda`. US-004 AC 6 enters at `host.sync()` with a refused approval and asserts `host.status()`.\n\n`packages/nax/test/integration/memory/host-koda.test.ts` — the `stubKoda` router pattern over `_kodaClientDeps.fetch` and the `US-006 AC-22` refused-sync case. Its helpers are file-local: the new `host-koda-refusals.test.ts` defines its own minimal router over `_kodaClientDeps.fetch`, routing on `/memory/write-mode`, `/memory/export` and `approvals/`, and does not import from this file. Stub write-mode as `{ mode: \"direct\" }` so sync reaches the pull. Use real stores/client/provider for pending/executed/rejected integration assertions. Add unit tests capturing pass-through createMemoryStore input and refusal factory/provider identity, extend format.test.ts for exact line placement, and exercise the CLI status --json path. Demonstrate regression failures before implementation.",
+      "acceptanceCriteria": [
+        "[unit] A koda-backed createMemoryHost, with _memoryHostDeps.createMemoryStore stubbed as a pass-through to the real factory capturing its input, passes heldForgets that answers {\"project/x\"} when approvals holds a kind: \"forget\" record for project/x and excludes project/y for a save record for project/y.",
+        "[integration] Given a koda host over a temp mirror holding project note x and a koda-approvals.json forget record for project/x, when the test-file router over _kodaClientDeps.fetch answers GET projects/<slug>/memory/write-mode with { mode: \"direct\" }, export with { items: [], hasMore: false }, and GET approvals/<id> with pending, host.sync() leaves an on-disk project MEMORY.md whose x entry ends in ' (forget pending)'.",
+        "[integration] Given the same host and transport with write-mode { mode: \"direct\" }, when host.sync() reads the approval as executed, MEMORY.md has no entry for x ending in ' (forget pending)'.",
+        "[unit] A local-backed createMemoryHost passes _memoryHostDeps.createMemoryStore no heldForgets source.",
+        "[unit] A koda-backed createMemoryHost calls _memoryHostDeps.createKodaRefusals once with dir equal to the host's dirs.projectDir.",
+        "[unit] A koda-backed createMemoryHost passes the store returned by _memoryHostDeps.createKodaRefusals to _memoryHostDeps.createKodaMemoryProvider as refusals.",
+        "[integration] Given a koda host whose approvals file holds forget record apr_1 for project/x and whose mirror holds x, when the router over _kodaClientDeps.fetch answers write-mode { mode: \"direct\" }, export { items: [], hasMore: false }, and GET approvals/apr_1 rejected, host.sync() leaves status().kodaRefusals containing exactly one entry { kind: \"forget\", scope: \"project\", slug: \"x\", status: \"rejected\" } with an ISO refusedAt.",
+        "[unit] status() of a koda-backed host whose refusal file is empty answers kodaRefusals: [].",
+        "[unit] status() of a local-backed host answers no kodaRefusals field.",
+        "[unit] Two status() calls on a koda-backed host with one logged refusal both report that refusal.",
+        "[unit] formatMemoryStatus with kodaRefusals [{ kind: \"forget\", scope: \"project\", slug: \"x\", status: \"rejected\", refusedAt: \"2026-11-14T05:00:00.000Z\" }] prints 'refused by koda: forget project/x (rejected, 2026-11-14T05:00:00.000Z)' after every 'rejected:' line and before the 'notes:' line.",
+        "[unit] formatMemoryStatus with no kodaRefusals field, or an empty one, prints no 'refused by koda:' line.",
+        "[cli] Regression guard: nax memory status --json through a host whose status() answers one kodaRefusals entry prints a JSON document whose kodaRefusals array holds that entry.",
+        "[unit] A koda-backed host's forgetPendingKeys() and its store's readHeldForgetKeys() answer the same koda forget keys for one approvals file holding forget records for project/x and user/u.",
+        "[unit] When a koda-backed host's refusal file is not JSON, host.status() resolves with kodaRefusals: [] rather than throwing."
+      ],
+      "tags": [
+        "memory",
+        "koda",
+        "host",
+        "status",
+        "index",
+        "cli"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integrates three upstream contracts across host composition, status extraction, shared key reads, formatter and real sync-to-file/status surfaces while preserving local/MCP compatibility.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/memory/host.ts",
+        "packages/nax/src/memory/host-forget-keys.ts",
+        "packages/nax/src/memory/format.ts",
+        "packages/nax/test/integration/memory/host-koda.test.ts",
+        "packages/nax/test/unit/memory/format.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/memory/host-status.ts",
+        "packages/nax/test/unit/memory/host-koda-refusals.test.ts",
+        "packages/nax/test/integration/memory/host-koda-refusals.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a koda-backed host maps a refusal into status().kodaRefusals, the reported entry has no approvalId property.",
+        "When an MCP-backed host is created, the mirror store receives no heldForgets source and status() has no kodaRefusals field.",
+        "When status() is called twice for an unchanged koda refusal file, that file's bytes remain unchanged and no transport request is made."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/src/memory/index.ts",
+          "reason": "the barrel may re-point `MemoryRejectedEntry` to the new status leaf; every name it exports today stays exported."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e0017b25ff1803d774d82b50e083df1c99f5824a"
+    }
+  ],
+  "analysis": "Goal and completion: close #2912 and the remaining expectations of #2905 after #2913 by reporting settled koda refusals in status and marking koda-held forgets in the mirror's on-disk MEMORY.md files. This is an enhancement of an existing TypeScript Bun-workspace memory subsystem, not a replacement provider. Completion requires all four binding stories and their behavioral tests; unit-only composition checks do not replace host.sync()-to-disk and host.sync()-to-status integration assertions. Navigation: codebase-memory MCP tools are unavailable in this session, so exploration used direct repository reads and text search. No implementation or validation commands were run while drafting this PRD.\n\nUS-001 findings: packages/nax-agent/src/memory/store.ts:116 defines MemoryStorePaths; :139 defines MemoryStore; :155 and :159 define dirOrNull and memoryStorePaths; :251 is createMemoryStore. The file is currently 591 lines, leaving inadequate room under the 600-line hard limit. Extract only the paths interface, two helpers, and the five path-only constants into store-paths.ts, preserving dir normalization, all path spellings and the store.ts type re-export. The memory barrel currently re-exports the store and paths type at packages/nax-agent/src/memory/index.ts:35, and the root public entry exports MemoryStorePaths at packages/nax-agent/src/index.ts:121, so existing package consumers must retain every name. The store already has sensitive pinned-directory confinement logic, but this change must leave it untouched: the new callback is a provider-neutral read-only reporting port, not a filesystem or authorization change. packages/nax-agent/src/memory/index-render.ts:125 already appends the exact ' (forget pending)' suffix. Its markedForgets at :200 currently merges only caller keys and readPendingForgets(), and returns early when the latter is empty; that early return must not bypass the new optional source. refreshMemoryIndex at :218 writes the project index and, when configured, the user index. packages/nax-agent/src/memory/operations-support.ts:106 routes operation refreshes through that function, and packages/nax-agent/src/memory/sync.ts:361 regenerates the index in finish using outbox-held forgets. packages/nax-agent/src/memory/operations.ts:362 approves a note; holdsRecordedForget at :374 deliberately checks only readPendingForgets(), and retireRecorded at :388 deletes only for that durable local pending-forget record. Never merge the external source into readPendingForgets or approval decisions. Existing tests to mirror: packages/nax-agent/test/unit/memory/store-pending-forgets.test.ts:21 uses makeLogger/withTempDir and real record files; packages/nax-agent/test/unit/memory/index-render.test.ts:73 exercises pure rendering, so the new store-held-forgets tests must also enter refreshMemoryIndex and inspect real files rather than assuming those pure tests exercise persistence. Runtime failure isolation belongs in the store's readHeldForgetKeys wrapper: one memory-stage warn per failed call, empty set, index still writable. Without the callback the optional member must be undefined, preserving hand-built stores and all existing providers.\n\nUS-002 findings: packages/nax/src/memory/koda-approvals.ts:127 exposes a read/write/rename seam; writeApprovals at :230 stages to a same-directory temporary file and renames it. createKodaApprovals at :285 supplies per-instance warn-once handling and serialized mutation behavior. packages/nax/test/unit/memory/koda-approvals.test.ts:42 saves/restores seams and uses temp directories; its atomic-publication assertions are at :125. Follow that module's structural pattern, not its failure semantics: approvals mutations reject unreadable-file and write failures to protect unresolved work, whereas the new refusal REPORT intentionally reads unusable/unreadable files as empty, may overwrite them, and warns rather than throws on writes. The new file is version 1 with a refusals array of required approvalId/kind/scope/slug/status/refusedAt fields; kind is save or forget, status is rejected/expired/cancelled/failed, and time is ISO. Its public status projection omits approvalId. Deduplicate against the complete existing file before expiry pruning, also deduplicate within the incoming batch, append in call order, prune entries strictly older than seven days, then retain the last 20. The exactly-seven-days-old boundary is inclusive. A duplicate preserves its original timestamp rather than extending visibility. record([]) must be a genuine no-write operation; list filters age without rewriting or consuming history. Export the specified factory, types and constants via packages/nax/src/memory/index.ts:14 while preserving all prior exports. Keep the new seam available from its leaf module for deterministic I/O-failure tests. US-001 and US-002 can run independently in their specified packages.\n\nUS-003 findings: packages/nax/src/memory/koda-provider.ts:99 owns CreateKodaMemoryProviderInput, and its provider passes that input to pullKodaPage. packages/nax/src/memory/koda-pull.ts:101 holds the refused status set; :404 reads the approval status and chooses save-versus-forget resolution; :424 resolves the scope's oldest records up to MEMORY_KODA_APPROVAL_CHECKS_MAX; :456 skips resolution for intermediate pages and drops resolved approval ids on the final page. Currently RecordResolution loses the refused status when returning drop. Add refusedStatus only to drops resulting from a refused status, and carry the corresponding records/status through ResolutionResult. Do not infer refusals from every dropped id: executed and HTTP 404 are normal non-refusal drops. refusedRecord and refusedForget may restore or keep records, and those must remain unreported until a subsequent pull safely drops them. The critical durability ordering is await refusals.record before approvals.drop; a later drop failure must still reject that provider pull and allow the next pull to retry without duplicate refusal entries. The real refusal store absorbs its own write/rename errors, so pull still drops approvals after a warned report failure; no generic change to approval-store failure behavior is needed. Missing refusal input remains supported. Avoid a runtime import cycle: koda-provider already imports koda-pull, so provider/refusal contracts used back from pull should be type-only; the refusal leaf should not import the pull's runtime merely to obtain its status set. Existing packages/nax/test/unit/memory/koda-pull-forget-approvals.test.ts:142 provides mirror/approval harness patterns, and :170 installs/restores _kodaClientDeps.fetch; packages/nax/test/unit/memory/koda-pull-approvals.test.ts covers save reconciliation. New tests should enter provider.pull (or its pullKodaPage implementation seam) and capture actual record/drop ordering, not test private helpers alone. US-003 depends on the US-002 refusal contract and uses a real refusal store for the drop-failure/retry case.\n\nUS-004 findings: packages/nax/src/memory/host.ts is currently 587 lines. MemoryStatus at :85 has only outbox rejections today. MemoryParts at :200 already carries optional kodaApprovals; composeKoda at :292 currently creates approvals after the mirror and passes that mirror's readNote/readDecisions to the provider. composeMemory at :323 must create koda approvals/refusals first, then build the mirror with the approvals-backed heldForgets callback, then compose the provider with the same stores. Extend _memoryHostDeps rather than bypassing its factories. Preserve koda config validation, existing read callbacks, MCP pool ownership/close, local behavior and non-koda factory behavior. Move readStatus (:509), statusWriteMode (:498), countState (:474), rejectedEntries (:467) and MemoryRejectedEntry (:459) into host-status.ts. Export HostInput (:341), HostReads (:365) and MemoryParts for type-only leaf imports; keep the MemoryRejectedEntry host re-export and all barrel exports. This extraction is behavior-neutral except for the additive kodaRefusals field. Type-only backreferences avoid counted runtime cycles. packages/nax/src/memory/host-forget-keys.ts:39 defines pendingForgetKey and :61 merges queued/local/koda-held forgets; replace its private koda record-reading duplication with exported kodaHeldForgetKeys(approvals), reused both here and by composeMemory. The callback must re-read approvals every time, not cache a snapshot; resolved approvals then disappear from the next refresh automatically. packages/nax/src/memory/format.ts:25 places rejected lines immediately before notes; insert refusal lines between them, preserving all existing status text and index separation. packages/nax/src/cli/memory.ts:130 already JSON.stringify()s the entire status, so --json should require a regression assertion, not a parallel representation. The shared formatter also serves chat. Status must map refusals to {kind, scope, slug, status, refusedAt}, dropping approvalId, and set [] only for koda, omitting the field entirely for local/MCP. Repeated status calls must not consume or write the log or call the remote API.\n\nUS-004 tests and composition risks: packages/nax/test/unit/memory/host-koda.test.ts:111 saves/restores _memoryHostDeps and :145 stubs koda factories; use that pattern in the new unit test and a pass-through real createMemoryStore to capture callback behavior. packages/nax/test/integration/memory/host-koda.test.ts:69 supplies JSON-envelope responses and :103 defines file-local stubKoda routes. The new integration file must define its own minimal router over _kodaClientDeps.fetch, not import file-local helpers from the sibling test. It must answer /memory/write-mode with {mode:'direct'} so host.sync actually reaches pull, /memory/export with an empty last page, and approvals/<id> with pending/executed/rejected as required. Use real host, client, approvals, refusal store and mirror, stubbing only transport. Existing packages/nax/test/unit/memory/format.test.ts:13 supplies the canonical status fixture and :45 covers formatter ordering; packages/nax/test/unit/cli/memory-read.test.ts is an existing CLI regression location. New expected files are precisely the spec's outputs; existing sibling tests may be extended without being listed as new files.\n\nCompatibility/migration and exclusions: all new inputs/members are optional. No migration of existing notes, outbox, pending-forgets or approvals files is needed. Older approval records with no kind still resolve as saves and must log kind:'save'. nax-agent must never import koda modules; nax supplies the generic callback through its public package boundary. The refusal log is checkout-local, bounded reporting only, not unresolved work. packages/nax/src/cli/memory-admin.ts:383 clearProjectMirror already preserves only KODA_APPROVALS_FILE at :385, so reset removes koda-refusals.json without a new keep rule. Do not make refusals block link/reset or give requeue/discard new targets. Refused history must remain separate from rejected outbox entries and from local pending-forget approval decisions. Avoid timestamp restamping on retry, expiry-before-dedupe, cap-before-prune, early-return source loss, accidental approvalId exposure and broad logging of executed/404/restore outcomes. Existing KodaApprovals failure guarantees must remain unchanged. No authentication, credential, session or permission-resolution behavior is modified by these reporting/index stories.\n\nImplementation conventions and validation: follow docs/architecture/ARCHITECTURE.md:145 (600-line hard source limit) and repository _deps, logger and type-only-cycle rules. Use Node-compatible APIs and explicit .ts relative source imports in nax-agent, and Bun-native read/write behind seams in nax. Keep generated agent instruction files untouched. Run package-scoped targeted bun tests, never bare bun test, and show regression tests failing on old code before implementing. Check the behavior-neutral extractions with package bun run typecheck and bun run lint, including file-size/import-cycle gates; public package entry names must remain intact. US-001 and US-002 are medium additive changes suited to tdd-simple; US-003 is also medium/tdd-simple because it extends existing resolution metadata and sequencing without redesigning restoration. US-004 remains complex/three-session-tdd-lite because host composition, the status extraction, shared key reads and user-facing/file-facing integration cross multiple modules. Dependency order is exactly US-001 and US-002 independently, then US-003 after US-002, then US-004 after all three.\n\nRefine-pass adversarial audit: re-read spec.md including all 48 numbered acceptance criteria and all nine feature exclusions, and rechecked current markedForgets/refreshMemoryIndex, approveLocked/holdsRecordedForget, resolveRecord/resolveApprovals/resolutionOf, composeMemory/composeKoda, readForgetPendingKeys, refusal-store reference patterns, readStatus, formatter and CLI JSON data flow. The draft weakened the explicit one-entry cardinality in US-002 AC-1 and US-004 AC-6; both now require exactly one entry. Clarified that the legacy no-kind fallback applies to KodaApproval projection, not permission to omit the required kind field from a stored KodaRefusal. Added an explicit malformed-refusal-file host.status failure case to US-004 rather than relying on empty/local cases as failure coverage. Reduced US-003 routing to medium/tdd-simple: its existing reconciliation state machine is not being redesigned. No story IDs, bound dependencies, workdirs, expected files or exclusions changed.\n\nComplete spec-AC preservation ledger (numbers after arrows are 1-based positions in each story's current acceptanceCriteria array; split assertions jointly retain the complete source criterion). US-001: spec 1 source result -> 1; 2 absent optional method -> 2; 3 empty result and memory-stage error warn -> 3,4; 4 project file suffix -> 5; 5 user file suffix -> 6; 6 caller/local/source union -> 7; 7 rejected source still writes without source markers -> 8; 8 pending-forget isolation regression -> 9; 9 approve puts pending x in force without deleting it -> 10. US-002: spec 1 exact singleton roundtrip and timestamp -> 1; 2 missing file result/no warn -> 2,3; 3 duplicate keeps original refusedAt -> 4; 4 append order after earlier entries -> 5; 5 strict-old exclusion/inclusive seven-day boundary -> 6; 6 physical expiry pruning -> 7; 7 last 20 of 25 -> 8; 8 expired old record plus 21 incoming leaves last 20 in list/raw file -> 9; 9 empty record makes no write -> 10; 10 invalid JSON result/once across two calls -> 11,12; 11 invalid JSON replacement -> 13; 12 EACCES result/warn -> 14,15; 13 version 2 or missing refusedAt result/warn -> 16,17; 14 duplicate incoming id -> 18; 15 rename rejection resolves/warns with path/keeps original unchanged -> 19,20,21; 16 same-directory temporary write and rename -> 22. US-003: spec 1 final-page save already carried by page and exact recorded fields -> 1; 2 expired forget with mirror possession -> 2; 3 executed/404 not logged -> 3; 4 restore preconditions, emitted note and retained record not logged -> 4; 5 page already carries x, drop plus log apr_5 -> 5,6; 6 record before drop -> 7; 7 warned record still drops -> 8; 8 provider without refusals behaves as before and does not throw -> 9; 9 first drop failure rejects, second refused pull with real store dedupes -> 10; 10 intermediate page makes zero record calls -> 11. US-004: spec 1 captured real-store source includes forget and excludes save -> 1; 2 transport router/direct write-mode/pending approval produces on-disk marker after sync -> 2; 3 same host/direct transport with executed removes marker -> 3; 4 local store has no source -> 4; 5 refusal factory called once with host project dir and returned store passed to provider -> 5,6; 6 direct transport/rejected approval after sync yields exact singleton refusal with ISO timestamp -> 7; 7 empty koda file reports [] -> 8; 8 local status omits field -> 9; 9 repeated status preserves report -> 10; 10 exact refusal text after all rejected lines and before notes -> 11; 11 absent/empty refusal array prints no line -> 12; 12 CLI JSON carries entry unchanged -> 13; 13 host/store agree for project and user forget records -> 14. All regression qualifiers survive: original timestamps, append-after-earlier order, raw-file pruning, original file unchanged on rename failure, page already carrying the slug, retained restoration record, same host/direct transport, as-before optional-input behavior and the first pull's rejection. No deprecated file-content tags occur.\n\nFailure-table audit: missing file, unusable JSON/version/required-field file, unreadable file and failed write/rename are represented by US-002 criteria 2-3,11-17,19-29; warned reporting failure still allowing approval drop and absent provider input are US-003 criteria 8-9; drop-failure retry is US-003 criterion 10; throwing held source and source absence are US-001 criteria 2-4,8. Each story now has an explicit negative/failure path, including US-004 criterion 15. Extra US-002 failure-table assertions remain in acceptanceCriteria; optional hardening remains in suggestedCriteria, and no numbered source criterion was moved there. Criteria observe returned sets/objects, rejected promises, captured record/drop/factory calls, logger calls or raw index/report files; none requires inaccessible private state or a quality gate. Description/AC comparison found no remaining contradictory flow or scope.\n\nContext and scope audit: US-001 retains all five spec context paths; US-002 retains both reference paths plus its existing barrel; US-003 retains all four spec context paths, including the refusal leaf produced by its upstream dependency; US-004 retains all five spec context paths. No story lists its own new output as context. All expected files are the spec's new files. Binding dependencies are exactly [], [], [US-002], [US-001,US-002,US-003], and all referenced IDs exist. US-001 protects optional-method and local-approve compatibility; US-003 protects executed/404/restore/intermediate-page and no-refusal-input behavior; US-004 protects local omission, empty formatting and CLI JSON passthrough. US-002 adds a new module without changing existing approvals semantics, and its barrel must preserve existing exports. All nine top-level outOfScope entries are verbatim: manual clear command; refusal-driven blocking/requeue/discard; logging retained records; logging executed/404; koda holds in pending-forgets; local/MCP refusal reporting; sharing across checkouts; retaining history across reset; temporary-file cleanup. Adjacent story Scope Out sections echo the applicable boundaries while leaving the explicitly scoped host wiring, formatter, CLI assertion and helper extractions in scope.",
+  "outOfScope": [
+    "A command to clear the refusal log by hand: entries expire after 7 days and the log keeps at most 20.",
+    "Making a refused koda proposal block `nax memory link` or `nax memory reset`, or be acted on by `nax memory requeue` / `nax memory discard`: those act on outbox entries only.",
+    "Logging a refusal for a record that a pull keeps (a `restore`, or a `keep` after a failed lookup): it is logged by the later pull that drops it.",
+    "Logging an approval koda answered `executed` or `404`: neither is a refusal.",
+    "Writing a koda-held forget into the mirror's `pending-forgets.jsonl` record: `nax memory approve <slug>` would retire the note locally without koda's decision.",
+    "Reporting refusals from an MCP-backed or local-backed host: only the koda provider resolves approvals.",
+    "Sharing the refusal log between checkouts: it lives in one checkout's mirror directory, as `koda-approvals.json` does.",
+    "Keeping the refusal log across `nax memory reset`: `clearProjectMirror` keeps only `koda-approvals.json`, so a reset removes `koda-refusals.json` with the rest of the mirror; a refusal is a settled fact the reset's fresh pull does not need.",
+    "A temporary refusals file left behind by a failed write: the seam has no `unlink`, as in `koda-approvals.ts`."
+  ],
+  "routingProfile": "native-codex-dsm"
+}

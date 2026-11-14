@@ -55,6 +55,14 @@
  * hold at all: a row it could not represent keeps the record and warns, and a tombstone is
  * built only for a lookup that found no row.
  *
+ * A record dropped *because* koda refused it is written to the refusal report first
+ * (`koda-refusals.ts`, US-003), before the approvals store drops it: a report of proposals the
+ * owner turned down that would otherwise vanish with the record. `executed` and `404` are not
+ * refusals and log nothing, and a refused record this pull keeps — a restoration, or a lookup
+ * that failed — is logged by the later pull that drops it, which reads the same refused word
+ * again. Recording before dropping is what makes a failed drop harmless: the next pull resolves
+ * the same records and the report's `approvalId` dedupe keeps one entry each.
+ *
  * Resolution happens on the scope's own last page because sync writes a page's notes to
  * the page's scope: a user-scope note on a project page would land in the project mirror.
  *
@@ -76,6 +84,7 @@ import {
   reconcileKodaNotes,
 } from "./koda-mapping";
 import type { CreateKodaMemoryProviderInput } from "./koda-provider";
+import { KODA_REFUSAL_STATUSES, type KodaRefusal } from "./koda-refusals";
 
 const STAGE = "memory";
 
@@ -97,8 +106,15 @@ export const MEMORY_KODA_APPROVAL_CHECKS_MAX = 20;
  */
 const APPROVAL_OPEN_STATUSES: ReadonlySet<string> = new Set(["pending", "approved"]);
 
-/** The statuses that refused a proposal: its slug is restored, and then the record goes. */
-const APPROVAL_REFUSED_STATUSES: ReadonlySet<string> = new Set(["rejected", "expired", "cancelled", "failed"]);
+/**
+ * The statuses that refused a proposal: its slug is restored, and then the record goes.
+ *
+ * Derived from the refusals module's own tuple rather than restated, because that module also
+ * declares what a logged refusal may carry (`KodaRefusal["status"]`). A word added there is then
+ * a word this pull recognises — restoring the slug and logging the refusal — instead of falling
+ * through to the unknown-status `keep` arm, where it would never be logged at all.
+ */
+const APPROVAL_REFUSED_STATUSES = KODA_REFUSAL_STATUSES;
 
 /** The status that settled a proposal by writing the row the feed carries: nothing to restore. */
 const APPROVAL_EXECUTED_STATUS = "executed";
@@ -215,7 +231,9 @@ interface ResolutionScope {
  * What one proposal record's resolution came to.
  *
  * - `drop` — the record is forgotten now: koda executed the proposal (the row arrives through
- *   the feed), no longer has it (`404`), or the slug needs no restoring note at all.
+ *   the feed), no longer has it (`404`), or the slug needs no restoring note at all. A drop that
+ *   is a refusal carries koda's own word in `refusedStatus`, which is what the pull logs
+ *   (US-003); a drop for `executed` or a `404` carries none, because neither is a refusal.
  * - `keep` — the record stays: the proposal is open, the answer was unusable, or an active row
  *   koda holds is one the mirror could never take.
  * - `restore` — the record stays *and* the page carries the note that settles the slug. Only
@@ -223,14 +241,18 @@ interface ResolutionScope {
  *   abandoned timeout never applied must not cost the slug its restoration (F1).
  */
 type RecordResolution =
-  | { readonly kind: "drop" }
+  | { readonly kind: "drop"; readonly refusedStatus?: KodaRefusal["status"] }
   | { readonly kind: "keep" }
   | { readonly kind: "restore"; readonly note: MemoryNote };
 
-/** What a last page's resolution came to: the notes it restores, and the approvals it forgets. */
+/**
+ * What a last page's resolution came to: the notes it restores, the approvals it forgets, and
+ * the refusals it drops — the entries the pull logs before those approvals go (US-003).
+ */
 interface ResolutionResult {
   readonly notes: readonly MemoryNote[];
   readonly dropped: readonly string[];
+  readonly refusals: readonly Omit<KodaRefusal, "refusedAt">[];
 }
 
 /** What one approval's status read came to: a status word, a proposal koda no longer has, or nothing usable. */
@@ -240,7 +262,7 @@ type ApprovalAnswer =
   | { readonly kind: "unreadable" };
 
 /** Nothing resolved: the answer of a page that is not its scope's last one. */
-const NO_RESOLUTION: ResolutionResult = { notes: [], dropped: [] };
+const NO_RESOLUTION: ResolutionResult = { notes: [], dropped: [], refusals: [] };
 
 /** The status word `data` carries, or `undefined` when the answer holds anything else. */
 function answerStatusOf(data: unknown): string | undefined {
@@ -406,12 +428,32 @@ async function resolveRecord(where: ResolutionScope, record: KodaApproval): Prom
   if (answer.kind === "unreadable") return { kind: "keep" };
   if (answer.kind === "gone") return { kind: "drop" };
   if (APPROVAL_OPEN_STATUSES.has(answer.status)) return { kind: "keep" };
-  if (APPROVAL_REFUSED_STATUSES.has(answer.status)) {
-    return record.kind === "forget" ? await refusedForget(where, record) : await refusedRecord(where, record);
-  }
+  const refused = refusedWordOf(answer.status);
+  if (refused !== undefined) return await refusedResolution(where, record, refused);
   if (answer.status === APPROVAL_EXECUTED_STATUS) return { kind: "drop" };
   warnApproval(where, record, `koda answered the status "${answer.status}"`);
   return { kind: "keep" };
+}
+
+/** koda's answer as a refusal word, or `undefined` when the word is not one a refusal carries. */
+function refusedWordOf(status: string): KodaRefusal["status"] | undefined {
+  return APPROVAL_REFUSED_STATUSES.find((word) => word === status);
+}
+
+/**
+ * A refused proposal's resolution, carrying koda's word when the record goes now.
+ *
+ * Only the pull that drops the record logs the refusal (US-003). A resolution that keeps it — a
+ * restoration the page has to apply first, or a lookup that failed — is logged by the later pull
+ * that finds nothing left to do, which reads the same refused word again.
+ */
+async function refusedResolution(
+  where: ResolutionScope,
+  record: KodaApproval,
+  status: KodaRefusal["status"],
+): Promise<RecordResolution> {
+  const resolution = record.kind === "forget" ? await refusedForget(where, record) : await refusedRecord(where, record);
+  return resolution.kind === "drop" ? { kind: "drop", refusedStatus: status } : resolution;
 }
 
 /**
@@ -430,10 +472,13 @@ async function resolveApprovals(
   const where: ResolutionScope = { input, scope, pageSlugs: new Set(pageNotes.map((note) => note.slug)) };
   const notes: MemoryNote[] = [];
   const dropped: string[] = [];
+  const refusals: Omit<KodaRefusal, "refusedAt">[] = [];
   for (const record of records.slice(0, MEMORY_KODA_APPROVAL_CHECKS_MAX)) {
     const resolution = await resolveRecord(where, record);
     if (resolution.kind === "drop") {
       dropped.push(record.approvalId);
+      const refusal = refusalOf(record, resolution.refusedStatus);
+      if (refusal !== undefined) refusals.push(refusal);
       continue;
     }
     if (resolution.kind === "keep") continue;
@@ -444,7 +489,27 @@ async function resolveApprovals(
     notes.push(resolution.note);
     where.pageSlugs.add(record.slug);
   }
-  return { notes, dropped };
+  return { notes, dropped, refusals };
+}
+
+/**
+ * The refusal a dropped record contributes, or `undefined` when the record was not refused.
+ *
+ * Every field is the record's own, and `kind` reads an absent one as a save — which is what the
+ * approvals record itself reads it as, so a refusal is logged as the write it was.
+ */
+function refusalOf(
+  record: KodaApproval,
+  status: KodaRefusal["status"] | undefined,
+): Omit<KodaRefusal, "refusedAt"> | undefined {
+  if (status === undefined) return undefined;
+  return {
+    approvalId: record.approvalId,
+    kind: record.kind ?? "save",
+    scope: record.scope,
+    slug: record.slug,
+    status,
+  };
 }
 
 /**
@@ -452,6 +517,11 @@ async function resolveApprovals(
  *
  * Only the last page resolves: an earlier page's answer is checkpointed and the next page
  * follows, so a resolution there would be paid for on every page of the feed.
+ *
+ * The refusals are recorded **before** the approvals are dropped (US-003): a drop that fails
+ * leaves them logged, and the next pull resolves the same records again — the report's
+ * `approvalId` dedupe keeps one entry each. Recording never throws, so a log that cannot be
+ * written costs the report, never the drop.
  */
 async function resolutionOf(
   input: CreateKodaMemoryProviderInput,
@@ -461,6 +531,7 @@ async function resolutionOf(
 ): Promise<ResolutionResult> {
   if (page.hasMore) return NO_RESOLUTION;
   const resolution = await resolveApprovals(input, scope, pageNotes);
+  if (resolution.refusals.length > 0) await input.refusals?.record(resolution.refusals);
   if (resolution.dropped.length > 0) await input.approvals.drop(resolution.dropped);
   return resolution;
 }

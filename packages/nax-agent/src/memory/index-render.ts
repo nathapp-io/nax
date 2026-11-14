@@ -193,17 +193,24 @@ export interface RefreshMemoryIndexOptions {
 }
 
 /**
- * The keys both renderings mark: the caller's held forgets plus the ones the mirror has
- * recorded. A proposal forget is answered long before anything acts on it, so the record
- * — not the caller — is what still knows about it; a key held by both is one mark.
+ * The keys both renderings mark: the caller's held forgets, the ones the mirror has recorded,
+ * and the ones the store's own source reports. A proposal forget is answered long before
+ * anything acts on it, so the record — not the caller — is what still knows about it; a source
+ * a scope outside this mirror feeds (koda's forget approvals) is the third reading, and a key
+ * held by more than one of them is one mark.
+ *
+ * The record stays what it was: the source's keys never reach `pending-forgets.jsonl`, or an
+ * approval would retire a note this mirror has no record of.
  */
 async function markedForgets(
   store: MemoryStore,
   heldForgets: ReadonlySet<string> | undefined,
 ): Promise<ReadonlySet<string>> {
   const recorded = await store.readPendingForgets();
-  if (recorded.length === 0) return heldForgets ?? NO_HELD_FORGETS;
+  const fromSource = (await store.readHeldForgetKeys?.()) ?? NO_HELD_FORGETS;
+  if (recorded.length === 0 && fromSource.size === 0) return heldForgets ?? NO_HELD_FORGETS;
   const keys = new Set(heldForgets ?? NO_HELD_FORGETS);
+  for (const key of fromSource) keys.add(key);
   for (const entry of recorded) keys.add(memoryNoteKey(entry.scope, entry.slug));
   return keys;
 }

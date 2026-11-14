@@ -16,10 +16,13 @@
  * because the key spelling is the one thing the CLI's listing and the index's renderer must
  * agree on: both ask a host for this set and mark a row whose key is in it.
  *
- * Internal to `src/memory/`: the host composes it, the barrel re-exports `pendingForgetKey`.
+ * Internal to `src/memory/`: the host composes it and re-exports `pendingForgetKey`. Both
+ * index surfaces read koda's records through `kodaHeldForgetKeys` here — the store's
+ * `heldForgets` source and the host's own key set — so a held note is marked the same way
+ * wherever a row is rendered.
  */
 import type { MemoryOutbox, MemoryScope, MemoryStore } from "@nathapp/nax-agent";
-import type { KodaApproval, KodaApprovals } from "./koda-approvals";
+import type { KodaApprovals } from "./koda-approvals";
 
 /** The parts of the host a pending-forget read needs: the queue, the record and koda's file. */
 export interface ForgetKeyParts {
@@ -43,15 +46,24 @@ export function pendingForgetKey(about: { readonly scope: MemoryScope; readonly 
 }
 
 /**
- * The forget records koda's approvals file holds, or none for a host that composes no record.
+ * The forget records koda's approvals file holds, as the index's key set.
  *
- * A file that cannot be used reads as no records: `list` never throws, because it writes
- * nothing and so loses nothing, and a listing must not fail because the file is unreadable.
+ * The one read both index surfaces use: the mirror store's `heldForgets` source and the
+ * host's own `forgetPendingKeys` call it, so a note a koda forget is holding is marked
+ * wherever a row is rendered. A host that composes no approvals record — a local- or
+ * MCP-backed one — holds nothing, and a file that cannot be used reads as no records:
+ * `list` never throws, because it writes nothing and so loses nothing, and a listing must
+ * not fail because the file is unreadable.
+ *
+ * @param approvals - koda's proposal record, or the `undefined` of a host that has none
  */
-async function forgetRecordsOf(parts: ForgetKeyParts): Promise<readonly KodaApproval[]> {
-  if (parts.kodaApprovals === undefined) return [];
-  const records = await parts.kodaApprovals.list();
-  return records.filter((record) => record.kind === "forget");
+export async function kodaHeldForgetKeys(approvals: KodaApprovals | undefined): Promise<ReadonlySet<string>> {
+  const keys = new Set<string>();
+  if (approvals === undefined) return keys;
+  for (const record of await approvals.list()) {
+    if (record.kind === "forget") keys.add(pendingForgetKey(record));
+  }
+  return keys;
 }
 
 /**
@@ -62,11 +74,11 @@ export async function readForgetPendingKeys(parts: ForgetKeyParts): Promise<Read
   const [queued, recorded, held] = await Promise.all([
     parts.outbox.heldKeys("forget"),
     parts.store.readPendingForgets(),
-    forgetRecordsOf(parts),
+    kodaHeldForgetKeys(parts.kodaApprovals),
   ]);
-  if (recorded.length === 0 && held.length === 0) return queued;
+  if (recorded.length === 0 && held.size === 0) return queued;
   const keys = new Set(queued);
   for (const entry of recorded) keys.add(pendingForgetKey(entry));
-  for (const entry of held) keys.add(pendingForgetKey(entry));
+  for (const key of held) keys.add(key);
   return keys;
 }

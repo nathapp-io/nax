@@ -68,6 +68,43 @@ describe("formatMemoryStatus", () => {
     expect(lines[outbox + 1]).toBe("rejected: forget project/gone (parked after 3 bad responses: x)");
   });
 
+  test("AC-11 names each koda refusal after the rejected lines and before the note counts", () => {
+    const lines = formatMemoryStatus({
+      ...STATUS,
+      rejected: 1,
+      rejectedEntries: [{ kind: "save", scope: "user", slug: "tone", reason: "koda said no" }],
+      kodaRefusals: [
+        { kind: "forget", scope: "project", slug: "x", status: "rejected", refusedAt: "2026-11-14T05:00:00.000Z" },
+      ],
+    }).split("\n");
+
+    const alleged = lines.indexOf("refused by koda: forget project/x (rejected, 2026-11-14T05:00:00.000Z)");
+    expect(alleged).toBe(lines.findIndex((line) => line.startsWith("rejected:")) + 1);
+    expect(lines[alleged + 1]).toBe("notes: 3 project, 1 user, 2 repo");
+  });
+
+  test("AC-11 one line per koda refusal, in the order the status reported them", () => {
+    const lines = formatMemoryStatus({
+      ...STATUS,
+      kodaRefusals: [
+        { kind: "forget", scope: "project", slug: "x", status: "rejected", refusedAt: "2026-11-14T05:00:00.000Z" },
+        { kind: "save", scope: "user", slug: "u", status: "expired", refusedAt: "2026-11-13T05:00:00.000Z" },
+      ],
+    }).split("\n");
+
+    expect(lines.filter((line) => line.startsWith("refused by koda:"))).toEqual([
+      "refused by koda: forget project/x (rejected, 2026-11-14T05:00:00.000Z)",
+      "refused by koda: save user/u (expired, 2026-11-13T05:00:00.000Z)",
+    ]);
+  });
+
+  test("AC-12 no koda refusal line without the field, or with an empty one", () => {
+    const absent = formatMemoryStatus(STATUS).split("\n");
+    const empty = formatMemoryStatus({ ...STATUS, kodaRefusals: [] }).split("\n");
+
+    expect([...absent, ...empty].filter((line) => line.startsWith("refused by koda:"))).toEqual([]);
+  });
+
   test("AC-15 reports the outbox counts", () => {
     const lines = formatMemoryStatus({ ...STATUS, queued: 2, rejected: 1 }).split("\n");
     expect(lines).toContain("outbox: 2 queued, 1 rejected");

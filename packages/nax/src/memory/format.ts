@@ -8,12 +8,15 @@
  * Two lines are conditional, because an empty line says less than no line: `last error`
  * appears only when the last sync left one, and `repo notes skipped` only when a repository
  * note was rejected. `last sync` is never dropped — `never` is a fact, and its absence would
- * read as "unknown".
+ * read as "unknown". `refused by koda` lines appear only when the host reported refusals,
+ * one per entry after the `rejected:` lines: the outbox refused a write, koda refused a
+ * proposal, and the two are different facts.
  *
  * Formatting is pure and total: nothing here reads a host, and no input makes it throw.
  */
 import type { MemoryNote, MemorySyncResult } from "@nathapp/nax-agent";
 import type { MemoryRejectedEntry, MemoryStatus } from "./host";
+import type { MemoryKodaRefusal } from "./koda-refusals";
 
 /**
  * A note as a listing row is printed: the six fields the line names. A whole `MemoryNote`
@@ -32,6 +35,7 @@ export function formatMemoryStatus(status: MemoryStatus, index?: string): string
     ...(status.lastError === null ? [] : [`last error: ${status.lastError}`]),
     `outbox: ${status.queued} queued, ${status.rejected} rejected`,
     ...status.rejectedEntries.map((entry) => `rejected: ${entryLabel(entry)} (${entry.reason})`),
+    ...(status.kodaRefusals ?? []).map((entry) => `refused by koda: ${refusalLabel(entry)}`),
     `notes: ${status.notes.project} project, ${status.notes.user} user, ${status.notes.repo} repo`,
     ...(status.repoSkipped > 0 ? [`repo notes skipped: ${status.repoSkipped}`] : []),
   ];
@@ -53,6 +57,11 @@ export function formatMemorySyncResult(result: MemorySyncResult): string {
 /** An outbox entry as the status and the sync line name it: `<kind> <scope>/<slug>`. */
 function entryLabel(entry: Pick<MemoryRejectedEntry, "kind" | "scope" | "slug">): string {
   return `${entry.kind} ${entry.scope}/${entry.slug}`;
+}
+
+/** A refused proposal as the status names it: the write, the note, koda's word and when it came. */
+function refusalLabel(entry: MemoryKodaRefusal): string {
+  return `${entryLabel(entry)} (${entry.status}, ${entry.refusedAt})`;
 }
 
 /** The run's own line, before any parked entry is named. */
