@@ -119,37 +119,67 @@ describe("parseStoryReviewReply", () => {
     expect(v?.cannotVerify).toEqual(["perf"]);
   });
 
-  test("spec fail with no blocking spec finding gets a synthetic one (Review Focus 1)", () => {
-    const v = parseStoryReviewReply(
-      JSON.stringify({ spec: "fail", quality: "approved", findings: [], cannotVerify: [] }),
-    );
+  test("spec failure without findings reports mismatch; branch keeps its floor", () => {
+    const raw = JSON.stringify({ spec: "fail", quality: "approved", findings: [] });
+    const v = parseStoryReviewReply(raw);
+    expect(v?.findings).toEqual([]);
+    expect(v?.mismatch).toEqual(["spec"]);
+    const branch = parseBranchReviewReply(raw, []);
+    expect(branch?.findings).toEqual([expect.objectContaining({ kind: "spec", severity: "important" })]);
+    expect(branch).not.toHaveProperty("mismatch");
+  });
+
+  test("minor spec finding remains alone; branch adds spec floor", () => {
+    const raw = JSON.stringify({
+      spec: "fail",
+      quality: "approved",
+      findings: [{ severity: "minor", kind: "spec", issue: "naming" }],
+    });
+    const v = parseStoryReviewReply(raw);
+    expect(v?.mismatch).toEqual(["spec"]);
     expect(v?.findings).toHaveLength(1);
-    expect(v?.findings[0]).toMatchObject({ kind: "spec", severity: "important" });
+    expect(parseBranchReviewReply(raw, [])?.findings).toEqual([
+      { severity: "minor", kind: "spec", issue: "naming" },
+      expect.objectContaining({ kind: "spec", severity: "important" }),
+    ]);
   });
 
-  test("spec fail with only a minor spec finding still gets the synthetic one", () => {
-    const v = parseStoryReviewReply(
-      JSON.stringify({
-        spec: "fail",
-        quality: "approved",
-        findings: [{ severity: "minor", kind: "spec", issue: "naming" }],
-      }),
-    );
-    expect(v?.findings.filter((f) => f.severity === "important")).toHaveLength(1);
-  });
-
-  test("quality changes with no blocking finding gets a synthetic quality one (nax#2550)", () => {
+  test("quality changes without blocking findings reports mismatch; branch retains floor", () => {
     for (const findings of [
       [],
       [{ severity: "minor", kind: "quality", issue: "naming" }],
-      // A blocking finding with no `issue` key is dropped, which must not leave the review clean.
-      [{ severity: "important", kind: "quality", description: "race in X" }],
+      [{ severity: "important", kind: "quality", description: "race" }],
     ]) {
-      const v = parseStoryReviewReply(JSON.stringify({ spec: "pass", quality: "changes", findings }));
-      expect(v?.findings.filter((f) => f.severity !== "minor")).toEqual([
+      const raw = JSON.stringify({ spec: "pass", quality: "changes", findings });
+      const v = parseStoryReviewReply(raw);
+      expect(v?.mismatch).toEqual(["quality"]);
+      expect(v?.findings.filter((f) => f.severity !== "minor")).toEqual([]);
+      expect(parseBranchReviewReply(raw, [])?.findings.filter((f) => f.severity !== "minor")).toEqual([
         expect.objectContaining({ kind: "quality", severity: "important" }),
       ]);
     }
+  });
+
+  test("both mismatches are ordered, but branch only adds the spec floor", () => {
+    const raw = JSON.stringify({ spec: "fail", quality: "changes", findings: [] });
+    expect(parseStoryReviewReply(raw)?.mismatch).toEqual(["spec", "quality"]);
+    expect(parseBranchReviewReply(raw, [])?.findings).toEqual([expect.objectContaining({ kind: "spec" })]);
+  });
+
+  test.each([
+    { spec: "fail", quality: "approved", expected: ["spec"] },
+    { spec: "pass", quality: "changes", expected: ["quality"] },
+    { spec: "fail", quality: "changes", expected: ["spec", "quality"] },
+  ])("important spec finding clears mismatch for $spec / $quality", ({ spec, quality, expected }) => {
+    const verdict = { spec, quality, findings: [] };
+    const withoutFinding = parseStoryReviewReply(JSON.stringify(verdict));
+    expect(withoutFinding?.mismatch).toEqual(expected);
+    const withFinding = parseStoryReviewReply(
+      JSON.stringify({ ...verdict, findings: [{ severity: "important", kind: "spec", issue: "broken AC" }] }),
+    );
+    expect(withFinding).not.toBeNull();
+    expect(withFinding?.findings).toEqual([{ severity: "important", kind: "spec", issue: "broken AC" }]);
+    expect(withFinding).not.toHaveProperty("mismatch");
   });
 
   test("quality changes with a blocking finding, or quality approved, adds nothing", () => {

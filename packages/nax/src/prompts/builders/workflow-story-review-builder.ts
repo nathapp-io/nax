@@ -1,5 +1,6 @@
 /** A5 workflow mode: the story review prompt (spec §6 step 4) and the JSON retries shared with the re-review. */
 
+import type { VerdictMismatch } from "@/operations/workflow-types";
 import { WORKFLOW_SETTLED_RULINGS_RULE } from "./workflow-implementer-builder";
 import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./workflow-quality-checklist";
 
@@ -13,7 +14,7 @@ export type WorkflowStoryGateStates = Readonly<
 >;
 
 /** The gates nax itself ran on the story before the review, and what it runs thereafter. */
-function naxCheckedBlock(gates: WorkflowStoryGateStates, e2eGate: boolean): string {
+function naxCheckedBlock(gates: WorkflowStoryGateStates, e2eGate: boolean, suiteRunning: boolean): string {
   const state = (name: keyof WorkflowStoryGateStates): string => gates[name] ?? "not run";
   const redSuite =
     gates["full-suite"] === "red"
@@ -24,8 +25,12 @@ function naxCheckedBlock(gates: WorkflowStoryGateStates, e2eGate: boolean): stri
   const e2e = e2eGate
     ? "\nnax runs the e2e suite as a repository gate on the host; do not list e2e journeys in cannotVerify."
     : "";
+  const suiteState = suiteRunning ? "still running" : state("full-suite");
+  const runningHint = suiteRunning
+    ? "\nThe full suite is still running while you review; nax records its result itself, so do not list it under cannotVerify."
+    : "";
   return `## What nax already checked
-nax ran these gates on this story before your review: lint ${state("lint")}, typecheck ${state("typecheck")}, scoped tests ${state("scoped")}, full suite ${state("full-suite")}.${redSuite}
+nax ran these gates on this story before your review: lint ${state("lint")}, typecheck ${state("typecheck")}, scoped tests ${state("scoped")}, full suite ${suiteState}.${runningHint}${redSuite}
 Do not list these gates in "cannotVerify": their results are stated here. Once every story is done nax runs the repository gates; nax records whether they ran and what they returned, so do not list the repository gates in "cannotVerify" either.
 If you have a shell tool, run this story's own test files with one scoped test command before you give the spec verdict.${e2e}`;
 }
@@ -40,6 +45,7 @@ export function buildWorkflowStoryReviewPrompt(input: {
   packagePath: string;
   concerns: readonly string[];
   gates?: WorkflowStoryGateStates;
+  suiteRunning?: boolean;
   /** US-009: the project declares a host-side e2e gate, so its journeys are not unverifiable. */
   e2eGate?: boolean;
 }): string {
@@ -54,7 +60,7 @@ export function buildWorkflowStoryReviewPrompt(input: {
 
 For each acceptance criterion, verify the current code implements it correctly. Use the diff to find the changed paths, not as the only source of truth. Follow each criterion's data and contract to where it is declared or stored (schema, migrations, DTOs, shared types), including code an earlier story created that this diff does not touch: a limit the story accepts must fit the storage and contracts it writes to. Read a file before you flag it.
 
-${naxCheckedBlock(input.gates ?? {}, input.e2eGate === true)}
+${naxCheckedBlock(input.gates ?? {}, input.e2eGate === true, input.suiteRunning === true)}
 
 ${WORKFLOW_SETTLED_RULINGS_RULE}
 
@@ -80,4 +86,13 @@ export function buildWorkflowReviewJsonRetry(): string {
 
 export function buildWorkflowReviewJsonRetryCondensed(): string {
   return 'Your reply was cut off. Re-send a shorter version: keep every finding but shorten "issue" and "suggestion" to one sentence each. Only the JSON object.';
+}
+
+export function buildWorkflowVerdictMismatchRetry(mismatch: readonly VerdictMismatch[]): string {
+  const messages: Record<VerdictMismatch, string> = {
+    spec: "You returned spec: fail but no critical or important spec finding. Either name the acceptance criterion that fails as a finding, or change the verdict to pass.",
+    quality:
+      "You returned quality: changes but no critical or important finding. Either name the defect as a finding, or change the verdict to approved.",
+  };
+  return [...mismatch.map((kind) => messages[kind]), buildWorkflowReviewJsonRetry()].join("\n");
 }

@@ -1,5 +1,5 @@
 import { errorMessage, type QualityCommandSpec, renderCommandSpec } from "@nathapp/nax-agent/internal";
-import { qualityConfigSelector } from "../config";
+import { type NaxConfig, qualityConfigSelector } from "../config";
 import type { QualityConfig } from "../config/selectors";
 // Leaf import (not the execution barrel) to avoid the execution→operations cycle.
 import { maybeRunNewPackageSetup } from "../execution/new-package-setup";
@@ -8,7 +8,7 @@ import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import { appendScratchEntry } from "../session/scratch-writer";
 import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
-import { parseTestOutput, selectScopedTests } from "../test-runners";
+import { equalTestCommands, parseTestOutput, selectScopedTests } from "../test-runners";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import { regression } from "../verification/runners";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";
@@ -49,10 +49,16 @@ export interface VerifyScopedOutput {
   readonly durationMs: number;
   readonly passCount: number;
   readonly isFullSuite: boolean;
+  readonly coversFullSuite: boolean;
   readonly scopeTestFallback?: boolean;
 }
 
 export interface VerifyScopedDeps {
+  resolveFullSuiteCommand: (
+    config: NaxConfig,
+    workdir: string,
+    packageDir: string | undefined,
+  ) => Promise<QualityCommandSpec | undefined>;
   selectScopedTests: (input: Parameters<typeof selectScopedTests>[0]) => Promise<SelectScopedTestsResult>;
   regression: (opts: VerificationGateOptions) => Promise<VerificationResult>;
   parseTestOutput: (output: string) => TestSummary;
@@ -69,6 +75,10 @@ export interface VerifyScopedDeps {
 }
 
 export const _verifyScopedDeps: VerifyScopedDeps = {
+  resolveFullSuiteCommand: async (config, workdir, packageDir) => {
+    const { resolveQualityTestCommands } = await import("../quality/command-resolver");
+    return (await resolveQualityTestCommands(config, workdir, packageDir)).testCommand;
+  },
   selectScopedTests,
   regression,
   parseTestOutput,
@@ -109,6 +119,27 @@ async function captureVerifyResult(
       storyId,
       error: errorMessage(err),
     });
+  }
+}
+
+async function coversSuite(
+  input: VerifyScopedInput,
+  ctx: CallContext,
+  deps: VerifyScopedDeps,
+  run: { command: QualityCommandSpec; isFullSuite: boolean },
+): Promise<boolean> {
+  if (!run.isFullSuite) return false;
+  try {
+    return equalTestCommands(
+      run.command,
+      await deps.resolveFullSuiteCommand(ctx.packageView.config, input.workdir, input.packagePrefix),
+    );
+  } catch (err) {
+    getLogger().warn("verify[scoped]", "Could not resolve full suite command — running suite separately", {
+      storyId: input.storyId,
+      error: errorMessage(err),
+    });
+    return false;
   }
 }
 
@@ -162,6 +193,7 @@ export const verifyScopedOp: DeterministicOperation<
         durationMs: 0,
         passCount: 0,
         isFullSuite: true,
+        coversFullSuite: false,
       };
     }
 
@@ -212,6 +244,7 @@ export const verifyScopedOp: DeterministicOperation<
         durationMs: 0,
         passCount: 0,
         isFullSuite: true,
+        coversFullSuite: false,
         scopeTestFallback: selection.scopeTestFallback,
       };
     }
@@ -324,6 +357,7 @@ export const verifyScopedOp: DeterministicOperation<
         durationMs,
         passCount: parsed.passed,
         isFullSuite,
+        coversFullSuite: await coversSuite(input, ctx, deps, { command: effectiveCommand, isFullSuite }),
         scopeTestFallback,
       };
     }
@@ -351,6 +385,7 @@ export const verifyScopedOp: DeterministicOperation<
         durationMs,
         passCount: parsed.passed,
         isFullSuite,
+        coversFullSuite: false,
         scopeTestFallback,
       };
     }
@@ -404,6 +439,7 @@ export const verifyScopedOp: DeterministicOperation<
       durationMs,
       passCount: parsed.passed,
       isFullSuite,
+      coversFullSuite: false,
       scopeTestFallback,
     };
   },

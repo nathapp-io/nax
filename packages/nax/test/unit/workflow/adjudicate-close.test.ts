@@ -170,6 +170,21 @@ describe("adjudicateResidual duplicate and unknown rulings (P3-R10)", () => {
 });
 
 describe("deriveEndState", () => {
+  test("timeout reason requires every red gate to have timed out", () => {
+    const scoped: GateRunResult = { red: true, states: { scoped: "red" }, findings: [] };
+    const mixed: GateRunResult = { red: true, states: { lint: "red", scoped: "red" }, findings: [] };
+    expect(deriveEndState({ costStop: false, gates: scoped, timedOut: ["scoped"], rulings: 0 })).toEqual({
+      state: "complete-gate-open",
+      reason: "gate timeout: scoped",
+    });
+    expect(deriveEndState({ costStop: false, gates: mixed, timedOut: ["scoped"], rulings: 0 }).reason).toBe(
+      "red: lint, scoped",
+    );
+    expect(deriveEndState({ costStop: false, gates: scoped, rulings: 0 }).reason).toBe("red: scoped");
+    expect(deriveEndState({ costStop: true, gates: scoped, timedOut: ["scoped"], rulings: 0 }).reason).toBe(
+      "cost-limit",
+    );
+  });
   const cases: [Parameters<typeof deriveEndState>[0], WorkflowEndState][] = [
     [{ costStop: false, gates: green, suite: green, rulings: 0 }, "complete"],
     [{ costStop: false, gates: green, suite: green, rulings: 2 }, "complete-with-rulings"],

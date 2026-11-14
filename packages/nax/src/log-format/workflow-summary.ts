@@ -33,11 +33,44 @@ function roleLine(r: WorkflowSummaryView["roles"][number]): string {
   return `    ${r.role.padEnd(ROLE_WIDTH)} in ${count(r.inputTokens)}  out ${count(r.outputTokens)}  ${formatCost(r.costUsd)}  ${calls}${cache}`;
 }
 
+function mismatchLines(view: WorkflowSummaryView, c: ChalkLike): string[] {
+  if (!view.verdictMismatches?.length) return [];
+  return [
+    `  ${c.gray("Inconsistent review verdicts:")} ${view.verdictMismatches.map((m) => `${m.model} ${m.count}`).join(", ")}`,
+  ];
+}
+
+function timeoutLines(view: WorkflowSummaryView, c: ChalkLike): string[] {
+  const held = view.stories.filter((s) => s.gateTimeouts?.length);
+  return held.length
+    ? [
+        `  ${c.gray("Held on a gate timeout:")} ${held.map((s) => `${s.id} (${s.gateTimeouts?.join(", ")})`).join(", ")}`,
+      ]
+    : [];
+}
+
+function branchLines(branch: WorkflowSummaryView["branch"], c: ChalkLike): string[] {
+  if (!branch) return [];
+  const lines = [
+    `  ${c.gray("Branch findings:")} ${branch.found} found, ${branch.fixed} fixed, ${branch.left} left (minors left ${branch.minorsLeft}${branch.fixRounds ? `, fix rounds ${branch.fixRounds}` : ""})`,
+  ];
+  if (branch.minors) {
+    const m = branch.minors;
+    lines.push(
+      `  ${c.gray("Deferred minors:")} ${m.found} found, ${m.promoted} promoted, ${m.fixNow} fix-now, ${m.left} left`,
+    );
+  }
+  return lines;
+}
+
 export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useColor?: boolean } = {}): string {
   const c: ChalkLike = options.useColor === false ? createNoopChalk() : chalk;
   const lines: string[] = [];
   lines.push(c.bold(c.blue("  WORKFLOW")));
   lines.push(`  ${c.gray("Duration:")} ${formatDurationSplit(view.storiesDurationMs, view.featureWorkflowDurationMs)}`);
+  if (view.reviewOverlapMs) {
+    lines.push(`  ${c.gray("Review overlap with the full suite:")} ${formatDuration(view.reviewOverlapMs)}`);
+  }
   if (view.roles.length > 0) {
     lines.push(`  ${c.gray("Tokens and cost by role:")}`);
     lines.push(...view.roles.map(roleLine));
@@ -45,12 +78,9 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
   if (view.stories.length > 0) {
     lines.push(`  ${c.gray("Rounds:")} ${view.stories.map((s) => `${s.id} ${s.rounds}/${s.maxRounds}`).join(", ")}`);
   }
-  if (view.branch) {
-    const b = view.branch;
-    lines.push(
-      `  ${c.gray("Branch findings:")} ${b.found} found, ${b.fixed} fixed, ${b.left} left (minors left ${b.minorsLeft}${b.fixRounds ? `, fix rounds ${b.fixRounds}` : ""})`,
-    );
-  }
+  lines.push(...timeoutLines(view, c));
+  lines.push(...mismatchLines(view, c));
+  lines.push(...branchLines(view.branch, c));
   if (view.branchReviewSkipped) {
     const left = view.branchReviewSkipped.minorsLeft;
     lines.push(`  ${c.gray("Branch findings:")} branch review skipped (minors left ${left})`);

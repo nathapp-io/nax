@@ -148,6 +148,7 @@ export {
   buildWorkflowReviewJsonRetry,
   buildWorkflowReviewJsonRetryCondensed,
   buildWorkflowStoryReviewPrompt,
+  buildWorkflowVerdictMismatchRetry,
 } from "./builders/workflow-story-review-builder";
 export type { ComposeInput } from "./compose";
 // Wave 1 composition utilities — slot-ordered assembly and serialisation.

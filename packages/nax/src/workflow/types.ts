@@ -18,6 +18,7 @@ export type { ConfigChangeRefusal } from "./config-change";
 import type {
   GateName,
   MinorTriageDecision,
+  StoryReviewVerdict,
   WorkflowFinding,
   WorkflowFindingDraft,
   WorkflowSeverity,
@@ -28,6 +29,8 @@ import type { ConfigChangeRefusal } from "./config-change";
 export type GateState = "green" | "red" | "skipped";
 
 export interface GateRunResult {
+  readonly timedOut?: readonly GateName[];
+  readonly suiteCovered?: true;
   readonly red: boolean;
   readonly states: Readonly<Partial<Record<GateName, GateState>>>;
   readonly findings: readonly WorkflowFindingDraft[];
@@ -70,11 +73,13 @@ export interface ConfigChangeRecord {
 }
 
 export interface WorkflowStoryRecord {
+  readonly reviewOverlapMs?: number;
   /** HEAD before the pending fix, retained until its re-review completes. */
   readonly fixBase?: string;
   readonly storyId: string;
   readonly state?: WorkflowEndState;
   readonly reason?: string;
+  readonly gateTimeouts?: readonly GateName[];
   readonly round: number;
   readonly maxRounds: number;
   readonly phase: WorkflowPhase;
@@ -83,6 +88,10 @@ export interface WorkflowStoryRecord {
   readonly openFindings: readonly WorkflowFinding[];
   readonly nextFindingId: number;
   readonly deferredMinors: number;
+  readonly verdictMismatch?: {
+    readonly kinds: NonNullable<StoryReviewVerdict["mismatch"]>;
+    readonly model?: string;
+  };
   readonly rulings: number;
   /** Rulings flagged for a human (hold, or needs confirmation), set at close. */
   readonly flagged?: number;

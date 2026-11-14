@@ -79,6 +79,31 @@ const facts = (over: Partial<ImplementerQuestionFacts> = {}): ImplementerQuestio
 const configEntries = (advisor: { asked: QuestionDraft[] }) =>
   advisor.asked[0]?.evidence.filter((e) => e.source === "config") ?? [];
 
+describe("timeout draft", () => {
+  test.each([
+    [
+      { gates: ["scoped" as const], baselineTimedOut: true, repeated: false, limitSeconds: 600 },
+      "Gate timeout facts: limit 600 s; run-start baseline timed out: yes; same gate timed out in the previous pass: no",
+    ],
+    [
+      { gates: ["scoped" as const], baselineTimedOut: false, repeated: true },
+      "Gate timeout facts: limit unknown; run-start baseline timed out: no; same gate timed out in the previous pass: yes",
+    ],
+  ])("describes timing facts", async (timing, text) => {
+    const advisor = fakeAdvisor({});
+    await createLiveWorkflowAdvisor({ advisor, feature: "f", dependents: [] }).answerQuestion({
+      storyId: "US-003",
+      status: "GATE_TIMEOUT",
+      concerns: "",
+      timing,
+    });
+    expect(advisor.asked[0]?.summary).toBe(
+      "nax stopped the fix loop for US-003: the scoped gate timed out and another fix round cannot change a slow or hanging command.",
+    );
+    expect(advisor.asked[0]?.evidence[0]).toEqual({ source: "gate", text });
+  });
+});
+
 describe("answerQuestion", () => {
   test("an advisor that throws -> null, never a throw (M4)", async () => {
     const advisor = fakeAdvisor({});

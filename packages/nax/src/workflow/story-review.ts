@@ -98,6 +98,7 @@ export async function runStoryReview(
   sc: StepContext,
   concerns: readonly string[],
   gates: Readonly<Partial<Record<GateName, GateState>>> = {},
+  options?: { readonly suiteRunning?: boolean },
 ): Promise<ReviewOutcome<StoryReviewVerdict>> {
   const packagePath = join(sc.storyDir, "package-0.diff");
   const prompt = buildWorkflowStoryReviewPrompt({
@@ -106,6 +107,7 @@ export async function runStoryReview(
     packagePath,
     concerns,
     gates,
+    suiteRunning: options?.suiteRunning,
     // US-009: the e2e gate runs on the host, so a journey it covers is not something the reviewer
     // could not verify — but only when the project declares that command.
     e2eGate: sc.config.quality?.commands?.e2e !== undefined,

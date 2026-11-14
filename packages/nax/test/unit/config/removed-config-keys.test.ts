@@ -114,7 +114,7 @@ describe("branch review sliceFiles removal", () => {
     const root = await writeProjectConfig({ workflow: { review: { sliceFiles: 20, coverageRetries: 2 } } });
     const config = await loadConfig(root);
     assertDefined(config.workflow, "loaded workflow config");
-    expect(config.workflow.review).toEqual({ coverageRetries: 2 });
+    expect(config.workflow.review).toEqual({ coverageRetries: 2, parallelWithSuite: false });
   });
 });
 

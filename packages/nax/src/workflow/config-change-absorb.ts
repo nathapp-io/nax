@@ -65,7 +65,7 @@ export async function implementerQuestion(
  * The facts, or `undefined` when there is nothing to offer or the read failed. A throwing facts step is
  * a warn and a facts-less question, never a failed round: the advisor still has an answer and a hold.
  */
-async function configFactsFor(
+export async function configFactsFor(
   env: StoryLoopEnv,
   redGates: readonly GateName[],
 ): Promise<ImplementerQuestionFacts | undefined> {

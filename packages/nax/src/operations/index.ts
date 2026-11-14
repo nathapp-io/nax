@@ -84,6 +84,7 @@ export type { WorkflowReReviewInput } from "./workflow-re-review";
 export { workflowReReviewOp } from "./workflow-re-review";
 export { workflowRepairOp } from "./workflow-repair";
 export {
+  isBranchQualityFloor,
   parseBranchReviewReply,
   parseImplementerReply,
   parseReReviewReply,
@@ -103,6 +104,7 @@ export type {
   ReReviewResidual,
   ReReviewVerdict,
   StoryReviewVerdict,
+  VerdictMismatch,
   WorkflowFinding,
   WorkflowFindingDraft,
   WorkflowFindingKind,

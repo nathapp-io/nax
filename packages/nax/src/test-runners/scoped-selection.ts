@@ -41,6 +41,11 @@ export function coerceSmartRunner(val: unknown) {
   return { ...DEFAULT_SMART_RUNNER_CONFIG, ...(val as Partial<typeof DEFAULT_SMART_RUNNER_CONFIG>) };
 }
 
+export function equalTestCommands(a: QualityCommandSpec, b: QualityCommandSpec | undefined): boolean {
+  if (typeof a === "string") return a === b;
+  return Array.isArray(b) && a.length === b.length && a.every((command, index) => command === b[index]);
+}
+
 export function buildScopedCommand(
   testFiles: string[],
   baseCommand: QualityCommandSpec,
@@ -102,12 +107,12 @@ export async function selectScopedTests(input: SelectScopedTestsInput): Promise<
     isMonorepoOrchestrator,
   });
 
-  const scoped = (files: string[]): SelectScopedTestsResult => ({
-    effectiveCommand: buildScopedCommand(files, input.testCommand, input.testScopedTemplate),
-    isFullSuite: false,
-    thresholdFallback: false,
-    isMonorepoOrchestrator,
-  });
+  const scoped = (files: string[]): SelectScopedTestsResult => {
+    const effectiveCommand = buildScopedCommand(files, input.testCommand, input.testScopedTemplate);
+    return equalTestCommands(effectiveCommand, input.testCommand)
+      ? fullSuite()
+      : { effectiveCommand, isFullSuite: false, thresholdFallback: false, isMonorepoOrchestrator };
+  };
 
   if (!smartCfg.enabled || !input.storyGitRef || isMonorepoOrchestrator) {
     return { effectiveCommand: input.testCommand, isFullSuite: true, thresholdFallback: false, isMonorepoOrchestrator };

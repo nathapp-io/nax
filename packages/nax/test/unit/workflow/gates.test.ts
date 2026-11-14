@@ -47,10 +47,43 @@ const green = {
     durationMs: 1,
     passCount: 3,
     isFullSuite: false,
+    coversFullSuite: false,
   },
 } satisfies Record<string, Result>;
 
 describe("runStoryGates", () => {
+  test.each(["timeout", "failed"] as const)("scoped %s records only timeouts", async (status) => {
+    const scoped: VerifyScopedOutput = {
+      success: false,
+      status,
+      findings: [],
+      durationMs: 1,
+      passCount: 0,
+      isFullSuite: false,
+      coversFullSuite: false,
+    };
+    fake({ ...green, [verifyScopedOp.name]: scoped });
+    const result = await runStoryGates(sc());
+    expect(result.states.scoped).toBe("red");
+    if (status === "timeout") expect(result.timedOut).toEqual(["scoped"]);
+    else expect("timedOut" in result).toBe(false);
+  });
+  test.each([true, false])("propagates suite coverage only when true: %s", async (coversFullSuite) => {
+    const scoped: VerifyScopedOutput = {
+      success: true,
+      status: "passed",
+      findings: [],
+      durationMs: 1,
+      passCount: 3,
+      isFullSuite: true,
+      coversFullSuite,
+    };
+    fake({ ...green, [verifyScopedOp.name]: scoped });
+    const result = await runStoryGates(sc());
+    expect("suiteCovered" in result).toBe(coversFullSuite);
+    if (coversFullSuite) expect(result.suiteCovered).toBe(true);
+  });
+
   test("all green", async () => {
     fake(green);
     const r = await runStoryGates(sc());
@@ -139,6 +172,8 @@ describe("runWorkflowSuiteGate", () => {
     const r = await runWorkflowSuiteGate(sc());
     expect(r.red).toBe(red);
     expect(r.states["full-suite"]).toBe(state);
+    if (status === "timeout" || status === "passed-on-timeout") expect(r.timedOut).toEqual(["full-suite"]);
+    else expect("timedOut" in r).toBe(false);
     if (red) expect(r.findings.length).toBeGreaterThan(0);
   });
 });

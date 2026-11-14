@@ -31,6 +31,16 @@ function rolesOf(result: WorkflowResultFile): WorkflowSummaryView["roles"] {
     .sort((a, b) => a.role.localeCompare(b.role));
 }
 
+function mismatchesOf(result: WorkflowResultFile): NonNullable<WorkflowSummaryView["verdictMismatches"]> {
+  const counts = new Map<string, number>();
+  for (const story of Object.values(result.stories)) {
+    if (!story.verdictMismatch) continue;
+    const model = story.verdictMismatch.model ?? "unknown";
+    counts.set(model, (counts.get(model) ?? 0) + 1);
+  }
+  return [...counts].map(([model, count]) => ({ model, count })).sort((a, b) => a.model.localeCompare(b.model));
+}
+
 /** Story minors nobody fixed, plus the ones the branch review itself raised. */
 function minorsLeftOf(rec: WorkflowFeatureRecord): number {
   return rec.minors.filter((m) => m.triage === "leave").length + rec.newMinors.length;
@@ -45,6 +55,16 @@ function branchOf(rec: WorkflowFeatureRecord): NonNullable<WorkflowSummaryView["
     fixed: Math.max(0, found - left),
     left,
     minorsLeft: minorsLeftOf(rec),
+    ...(rec.minors.length
+      ? {
+          minors: {
+            found: rec.minors.length,
+            promoted: rec.minors.filter((m) => m.triage === "promote").length,
+            fixNow: rec.minors.filter((m) => m.triage === "fix-now").length,
+            left: rec.minors.filter((m) => m.triage === "leave").length,
+          },
+        }
+      : {}),
     ...(rec.fixRounds ? { fixRounds: rec.fixRounds } : {}),
   };
 }
@@ -106,7 +126,14 @@ export function buildWorkflowRunSummary(
   const flagged = flaggedOf(rec, feature);
   const ciRemaining = ciRemainingOf(rec);
   const itemIndexMissing = itemIndexMissingOf(rec, feature);
+  const verdictMismatches = mismatchesOf(result);
+  const reviewOverlapMs = Object.values(result.stories).reduce(
+    (total, story) => total + (story.reviewOverlapMs ?? 0),
+    0,
+  );
   return {
+    ...(reviewOverlapMs ? { reviewOverlapMs } : {}),
+    ...(verdictMismatches.length ? { verdictMismatches } : {}),
     ...timing,
     roles: rolesOf(result),
     stories: Object.values(result.stories).map((s) => ({
@@ -114,6 +141,7 @@ export function buildWorkflowRunSummary(
       rounds: s.round,
       maxRounds: s.maxRounds,
       ...(s.state ? { state: s.state } : {}),
+      ...(s.gateTimeouts ? { gateTimeouts: s.gateTimeouts } : {}),
     })),
     ...(rec?.reviewRan ? { branch: branchOf(rec) } : {}),
     ...(rec && !rec.reviewRan ? { branchReviewSkipped: { minorsLeft: minorsLeftOf(rec) } } : {}),

@@ -38,6 +38,7 @@ const EXPECTED_PRODUCES: Record<NodeId, string[]> = {
   implement: ["pendingSession", "nextId", "questions", "concerns", "closeAs", "lastTurn"],
   evaluate: [
     "suiteThisIteration",
+    "timeoutAsked",
     "gates",
     "suite",
     "nextId",
@@ -50,7 +51,7 @@ const EXPECTED_PRODUCES: Record<NodeId, string[]> = {
     "pendingSession",
     "reportTurnRan",
   ],
-  residual: ["suite", "rulings"],
+  residual: ["suite", "suiteThisIteration", "rulings"],
   fix: ["round", "firstAfterResume", "fixBase", "pendingSession", "nextId", "questions", "concerns", "lastTurn"],
   close: ["outcome"],
 };

@@ -8,6 +8,7 @@ import type {
   ReReviewResidual,
   ReReviewVerdict,
   StoryReviewVerdict,
+  VerdictMismatch,
   WorkflowFindingDraft,
   WorkflowFindingKind,
   WorkflowSeverity,
@@ -23,6 +24,12 @@ const SPEC_FAIL_ISSUE =
   "Story review returned spec: fail without a blocking spec finding. Re-read the brief's acceptance criteria and the TDD-evidence rule, and fix what is missing.";
 const QUALITY_CHANGES_ISSUE =
   "Story review returned quality: changes without a blocking finding. Re-read the story diff for the quality problem the reviewer saw, and fix it.";
+const QUALITY_FLOOR = Symbol("branch quality floor");
+
+/** Distinguish the parser's floor from reviewer-authored findings, even with identical text. */
+export function isBranchQualityFloor(finding: WorkflowFindingDraft): boolean {
+  return Object.hasOwn(finding, QUALITY_FLOOR);
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -132,21 +139,15 @@ export function parseStoryReviewReply(output: string): StoryReviewVerdict | null
   if (parsed.spec !== "pass" && parsed.spec !== "fail") return null;
   if (parsed.quality !== "approved" && parsed.quality !== "changes") return null;
   const findings = drafts(parsed.findings);
-  const hasBlockingSpec = findings.some((f) => f.kind === "spec" && f.severity !== "minor");
-  const withSpecFloor =
-    parsed.spec === "fail" && !hasBlockingSpec
-      ? [...findings, { kind: "spec" as const, severity: "important" as const, issue: SPEC_FAIL_ISSUE }]
-      : findings;
-  // nax#2550 at story level: `quality: "changes"` with nothing blocking (no findings, only minors, or
-  // findings dropped for lacking an `issue`) is not a clean review, so the fix loop gets one to act on.
-  const withSynthetic =
-    parsed.quality === "changes" && !withSpecFloor.some((f) => f.severity !== "minor")
-      ? [...withSpecFloor, { kind: "quality" as const, severity: "important" as const, issue: QUALITY_CHANGES_ISSUE }]
-      : withSpecFloor;
+  const mismatch: VerdictMismatch[] = [];
+  if (parsed.spec === "fail" && !findings.some((f) => f.kind === "spec" && f.severity !== "minor"))
+    mismatch.push("spec");
+  if (parsed.quality === "changes" && !findings.some((f) => f.severity !== "minor")) mismatch.push("quality");
   return {
     spec: parsed.spec,
     quality: parsed.quality,
-    findings: withSynthetic,
+    findings,
+    ...(mismatch.length ? { mismatch } : {}),
     cannotVerify: strings(parsed.cannotVerify),
     inspectedFiles: strings(parsed.inspectedFiles),
   };
@@ -180,7 +181,8 @@ function triageOf(parsed: unknown): Map<string, MinorTriageDecision> {
   if (!isRecord(parsed) || !Array.isArray(parsed.minorTriage)) return triage;
   for (const entry of parsed.minorTriage) {
     if (!isRecord(entry) || typeof entry.id !== "string" || triage.has(entry.id)) continue;
-    if (entry.decision === "fix-now" || entry.decision === "leave") triage.set(entry.id, entry.decision);
+    if (entry.decision === "promote" || entry.decision === "fix-now" || entry.decision === "leave")
+      triage.set(entry.id, entry.decision);
   }
   return triage;
 }
@@ -189,6 +191,18 @@ function triageOf(parsed: unknown): Map<string, MinorTriageDecision> {
 export function parseBranchReviewReply(output: string, minorIds: readonly string[]): BranchReviewVerdict | null {
   const verdict = parseStoryReviewReply(output);
   if (!verdict) return null;
+  const { mismatch, ...branchVerdict } = verdict;
+  const findings = [...verdict.findings];
+  if (mismatch?.includes("spec")) findings.push({ kind: "spec", severity: "important", issue: SPEC_FAIL_ISSUE });
+  if (verdict.quality === "changes" && !findings.some((f) => f.severity !== "minor")) {
+    const floor: WorkflowFindingDraft = { kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE };
+    Object.defineProperty(floor, QUALITY_FLOOR, { value: true });
+    findings.push(floor);
+  }
   const triage = triageOf(tryParseLLMJson<unknown>(output));
-  return { ...verdict, minorTriage: minorIds.map((id) => ({ id, decision: triage.get(id) ?? "leave" })) };
+  return {
+    ...branchVerdict,
+    findings,
+    minorTriage: minorIds.map((id) => ({ id, decision: triage.get(id) ?? "leave" })),
+  };
 }

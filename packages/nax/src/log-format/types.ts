@@ -80,12 +80,29 @@ export interface WorkflowRoleUsage {
 
 /** What the end-of-run summary shows for a workflow-mode run (nax#2491 P5). */
 export interface WorkflowSummaryView {
+  reviewOverlapMs?: number;
   storiesDurationMs: number;
   featureWorkflowDurationMs: number;
   roles: readonly WorkflowRoleUsage[];
-  stories: readonly { id: string; rounds: number; maxRounds: number; state?: string }[];
+  stories: readonly {
+    id: string;
+    rounds: number;
+    maxRounds: number;
+    state?: string;
+    gateTimeouts?: readonly string[];
+  }[];
+  verdictMismatches?: readonly { model: string; count: number }[];
   /** Absent when the feature workflow never ran. */
-  branch?: { found: number; fixed: number; left: number; minorsLeft: number; fixRounds?: number } | undefined;
+  branch?:
+    | {
+        found: number;
+        fixed: number;
+        left: number;
+        minorsLeft: number;
+        fixRounds?: number;
+        minors?: { found: number; promoted: number; fixNow: number; left: number };
+      }
+    | undefined;
   /** The feature workflow ran but its branch review did not. */
   branchReviewSkipped?: { minorsLeft: number } | undefined;
   finalGates?: "green" | "red" | undefined;

@@ -35,6 +35,8 @@ const SUITE_SKIPPED = new Set(["skipped"]);
 
 interface OneGate {
   readonly state: GateState;
+  readonly suiteCovered?: true;
+  readonly timedOut?: true;
   readonly findings: readonly WorkflowFindingDraft[];
   /** Shown on the gates log line next to a green gate. */
   readonly note?: string;
@@ -80,10 +82,13 @@ function fromCheck(gate: GateName, out: LintCheckOutput | TypecheckCheckOutput):
 function combine(entries: readonly (readonly [GateName, OneGate])[]): GateRunResult {
   const states: Partial<Record<GateName, GateState>> = {};
   for (const [name, g] of entries) states[name] = g.state;
+  const timedOut = entries.filter(([, g]) => g.timedOut).map(([name]) => name);
   return {
+    ...(timedOut.length > 0 ? { timedOut } : {}),
     red: entries.some(([, g]) => g.state === "red"),
     states,
     findings: entries.flatMap(([, g]) => g.findings),
+    ...(entries.some(([, g]) => g.suiteCovered) ? { suiteCovered: true as const } : {}),
   };
 }
 
@@ -136,12 +141,19 @@ export async function runStoryGates(sc: StepContext): Promise<GateRunResult> {
       sessionScratchDir: sc.sessionScratchDir,
     });
     if (out.status === "passed") {
-      return { state: "green", findings: [], ...(out.passCount > 0 ? { note: `(${out.passCount} tests)` } : {}) };
+      return {
+        state: "green",
+        findings: [],
+        ...(out.coversFullSuite ? { suiteCovered: true } : {}),
+        ...(out.passCount > 0 ? { note: `(${out.passCount} tests)` } : {}),
+      };
     }
     if (out.status === "skipped") return { state: "skipped", findings: [] };
-    return out.findings.length > 0
-      ? { state: "red", findings: toDrafts("scoped", out.findings) }
-      : redWithoutDetail("scoped", `scoped gate ${out.status} with no parsed findings`);
+    const result: OneGate =
+      out.findings.length > 0
+        ? { state: "red", findings: toDrafts("scoped", out.findings) }
+        : redWithoutDetail("scoped", `scoped gate ${out.status} with no parsed findings`);
+    return out.status === "timeout" ? { ...result, timedOut: true } : result;
   });
   return finish(sc, [lint, typecheck, scoped]);
 }
@@ -157,11 +169,14 @@ export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResu
       resolvedTestPatterns: sc.resolvedTestPatterns,
     });
     if (SUITE_SKIPPED.has(out.status)) return { state: "skipped", findings: [] };
-    if (out.status === "passed-on-timeout") return redWithoutDetail("full-suite", SUITE_TIMED_OUT_ISSUE);
+    if (out.status === "passed-on-timeout")
+      return { ...redWithoutDetail("full-suite", SUITE_TIMED_OUT_ISSUE), timedOut: true };
     if (!SUITE_RED.has(out.status)) return { state: "green", findings: [] };
-    return out.findings.length > 0
-      ? { state: "red", findings: toDrafts("full-suite", out.findings) }
-      : redWithoutDetail("full-suite", `full suite ${out.status} with no parsed failures`);
+    const result: OneGate =
+      out.findings.length > 0
+        ? { state: "red", findings: toDrafts("full-suite", out.findings) }
+        : redWithoutDetail("full-suite", `full suite ${out.status} with no parsed failures`);
+    return out.status === "timeout" ? { ...result, timedOut: true } : result;
   });
   return finish(sc, [suite]);
 }

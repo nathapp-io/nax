@@ -10,12 +10,14 @@ export function deriveEndState(input: {
   costStop: boolean;
   gates?: GateRunResult;
   suite?: GateRunResult;
+  timedOut?: readonly GateName[];
   rulings: number;
 }): { state: WorkflowEndState; reason: string } {
   if (input.costStop) return { state: "complete-gate-open", reason: "cost-limit" };
   const red = [...redGates(input.gates), ...redGates(input.suite)];
   if (red.length > 0 || input.gates?.red || input.suite?.red) {
-    return { state: "complete-gate-open", reason: `red: ${red.join(", ") || "gate"}` };
+    const timeout = red.length > 0 && red.every((gate) => input.timedOut?.includes(gate));
+    return { state: "complete-gate-open", reason: `${timeout ? "gate timeout" : "red"}: ${red.join(", ") || "gate"}` };
   }
   if (input.rulings > 0) return { state: "complete-with-rulings", reason: `${input.rulings} ruling(s)` };
   return { state: "complete", reason: "clean" };

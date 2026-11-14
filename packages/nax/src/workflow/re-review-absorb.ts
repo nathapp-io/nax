@@ -6,7 +6,24 @@
  * id with the residual as its issue, and a new finding that only restates that residual at the same
  * file and line is dropped instead of filed as a second defect.
  */
+import { describeFindings } from "./run-log";
 import type { ReReviewResidual, ReReviewVerdict, WorkflowFinding, WorkflowFindingDraft } from "./types";
+
+/** A partial verdict keeps its id open in the log. */
+function reReviewStatus(v: ReReviewVerdict["verdicts"][number] | undefined): string {
+  if (!v) return "no verdict";
+  if (v.residual) return "PARTIAL";
+  return v.addressed ? "addressed" : "NOT addressed";
+}
+
+export function reReviewSummary(
+  asked: readonly WorkflowFinding[],
+  verdict: ReReviewVerdict,
+  added: readonly WorkflowFinding[],
+): string {
+  const per = asked.map((f) => `${f.id} ${reReviewStatus(verdict.verdicts.find((x) => x.id === f.id))}`);
+  return added.length > 0 ? `${per.join(", ")}; new: ${describeFindings(added)}` : per.join(", ");
+}
 
 export interface ReReviewAbsorption {
   /** `asked`, in order, minus every addressed finding; a residual replaces its finding's issue. */

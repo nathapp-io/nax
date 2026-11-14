@@ -4,11 +4,11 @@ import { NaxConfigSchema, WORKFLOW_REVIEW_DEFAULTS } from "@/config";
 
 describe("workflow.review defaults (US-002)", () => {
   test("AC-1: NaxConfigSchema.parse({}) fills the coverage retry default", () => {
-    expect(NaxConfigSchema.parse({}).workflow.review).toEqual({ coverageRetries: 3 });
+    expect(NaxConfigSchema.parse({}).workflow.review).toEqual({ coverageRetries: 3, parallelWithSuite: false });
   });
 
   test("AC-2: WORKFLOW_REVIEW_DEFAULTS is the parsed review object", () => {
-    expect(WORKFLOW_REVIEW_DEFAULTS).toEqual({ coverageRetries: 3 });
+    expect(WORKFLOW_REVIEW_DEFAULTS).toEqual({ coverageRetries: 3, parallelWithSuite: false });
   });
 
   test("AC-4: review.coverageRetries: -1 fails to parse", () => {
@@ -23,8 +23,23 @@ describe("workflow.review defaults (US-002)", () => {
 
   test("an explicit coverage retry budget is retained", () => {
     const parsed = NaxConfigSchema.parse({ workflow: { review: { coverageRetries: 1 } } });
-    expect(parsed.workflow.review).toEqual({ coverageRetries: 1 });
+    expect(parsed.workflow.review).toEqual({ coverageRetries: 1, parallelWithSuite: false });
   });
+});
+
+describe("parallel review configuration", () => {
+  test("AC-1 default is false", () => expect(NaxConfigSchema.parse({}).workflow.review.parallelWithSuite).toBe(false));
+  test("AC-2 accepts true", () =>
+    expect(
+      NaxConfigSchema.parse({ workflow: { review: { parallelWithSuite: true } } }).workflow.review.parallelWithSuite,
+    ).toBe(true));
+  test("AC-3 defaults include both fields", () =>
+    expect(WORKFLOW_REVIEW_DEFAULTS).toEqual({ coverageRetries: 3, parallelWithSuite: false }));
+  test("AC-4 describes the switch", () =>
+    expect(FIELD_DESCRIPTIONS["workflow.review.parallelWithSuite"]?.length).toBeGreaterThan(0));
+  test("AC-5 describes both keys", () => expect(FIELD_DESCRIPTIONS["workflow.review"]).toContain("parallelWithSuite"));
+  test("AC-13 rejects a string", () =>
+    expect(NaxConfigSchema.safeParse({ workflow: { review: { parallelWithSuite: "true" } } }).success).toBe(false));
 });
 
 describe("workflow.review CLI descriptions (AC-14)", () => {

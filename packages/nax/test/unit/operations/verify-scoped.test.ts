@@ -9,9 +9,10 @@ import { _verifyScopedDeps, verifyScopedOp } from "@/operations";
 import type { CallContext } from "@/operations/types";
 import type { PackageView } from "@/runtime";
 import type { ResolvedTestPatterns, SelectScopedTestsInput } from "@/test-runners";
+import { _scopedSelectionDeps, selectScopedTests } from "@/test-runners";
 
 function ctxWithQuality(
-  quality?: { commands?: { test?: string } },
+  quality?: { commands?: { test?: string; testScoped?: string } },
   opts: { hasOverride?: boolean; repoRoot?: string; overlay?: Partial<NaxConfig> } = {},
 ): CallContext {
   const config = makeNaxConfig(quality ? { quality: { commands: quality.commands } } : {});
@@ -65,9 +66,112 @@ function fakeDeps(overrides: Partial<VerifyScopedDeps> = {}): VerifyScopedDeps {
     }),
     parseTestOutput: () => ({ passed: 1, failed: 0, failures: [] }),
     testSummaryToFindings: () => [],
+    resolveFullSuiteCommand: async () => undefined,
     ...overrides,
   };
 }
+
+describe("verifyScopedOp suite coverage", () => {
+  const input = { workdir: "/tmp", storyId: "S", packagePrefix: "packages/app" };
+  const ctx = () => ctxWithQuality({ commands: { test: "pytest -q" } });
+  const selection = {
+    effectiveCommand: "pytest -q",
+    isFullSuite: true,
+    thresholdFallback: true,
+    isMonorepoOrchestrator: false,
+  };
+
+  test("identical scoped template defers without running regression", async () => {
+    const old = _scopedSelectionDeps.getChangedTestFiles;
+    _scopedSelectionDeps.getChangedTestFiles = async () => ["tests/test_a.py"];
+    let calls = 0;
+    try {
+      const deps = fakeDeps({
+        selectScopedTests,
+        regression: async () => {
+          calls++;
+          return { status: "SUCCESS", success: true, countsTowardEscalation: true };
+        },
+      });
+      const out = await verifyScopedOp.execute(
+        { ...input, storyGitRef: "base", regressionMode: "deferred" },
+        ctxWithQuality({ commands: { test: "pytest -q", testScoped: "pytest -q" } }),
+        deps,
+      );
+      expect(out.status).toBe("skipped");
+      expect(calls).toBe(0);
+    } finally {
+      _scopedSelectionDeps.getChangedTestFiles = old;
+    }
+  });
+
+  test("green full suite resolves the command with the package prefix", async () => {
+    let prefix: string | undefined;
+    const deps = {
+      ...fakeDeps({ selectScopedTests: async () => selection }),
+      resolveFullSuiteCommand: async (_config: unknown, _workdir: string, packageDir: string | undefined) => {
+        prefix = packageDir;
+        return "pytest -q";
+      },
+    };
+    const out = await verifyScopedOp.execute(input, ctx(), deps);
+    expect(out.coversFullSuite).toBe(true);
+    expect(prefix).toBe("packages/app");
+  });
+
+  test("compares the final zero-test fallback command", async () => {
+    let calls = 0;
+    const deps = {
+      ...fakeDeps({
+        selectScopedTests: async () => ({ ...selection, effectiveCommand: "pytest scoped", isFullSuite: false }),
+        regression: async () => ({
+          status: "SUCCESS" as const,
+          success: true,
+          countsTowardEscalation: true,
+          output: ++calls === 1 ? "empty" : "passed",
+        }),
+        parseTestOutput: (output) => ({ passed: output === "empty" ? 0 : 1, failed: 0, failures: [] }),
+      }),
+      resolveFullSuiteCommand: async () => "pytest -q",
+    };
+    const out = await verifyScopedOp.execute(input, ctx(), deps);
+    expect(calls).toBe(2);
+    expect(out.coversFullSuite).toBe(true);
+  });
+
+  test.each(["different", "undefined", "throws", "scoped", "timeout", "failed"])(
+    "does not claim coverage for %s",
+    async (scenario) => {
+      const deps = {
+        ...fakeDeps({
+          selectScopedTests: async () => ({ ...selection, isFullSuite: scenario !== "scoped" }),
+          regression: async () =>
+            scenario === "timeout"
+              ? { status: "TIMEOUT" as const, success: false, countsTowardEscalation: true }
+              : scenario === "failed"
+                ? { status: "TEST_FAILURE" as const, success: false, countsTowardEscalation: true, output: "failed" }
+                : { status: "SUCCESS" as const, success: true, countsTowardEscalation: true, output: "passed" },
+          parseTestOutput: () =>
+            scenario === "failed"
+              ? {
+                  passed: 0,
+                  failed: 1,
+                  failures: [{ file: "test.py", testName: "case", error: "failed", stackTrace: [] }],
+                }
+              : { passed: 1, failed: 0, failures: [] },
+          testSummaryToFindings: () => [mockFinding],
+        }),
+        resolveFullSuiteCommand: async () => {
+          if (scenario === "throws") throw new Error("resolver failed");
+          return scenario === "undefined" ? undefined : scenario === "different" ? "other" : "pytest -q";
+        },
+      };
+      const out = await verifyScopedOp.execute(input, ctx(), deps);
+      expect(out.coversFullSuite).toBe(false);
+      if (scenario === "throws") expect(out.status).toBe("passed");
+    },
+  );
+});
 
 describe("verifyScopedOp — AC2: DeterministicOperation shape", () => {
   test("kind is deterministic", () => {

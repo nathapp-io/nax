@@ -39,6 +39,7 @@ export interface StoryLoopSteps {
   implement(turn: ImplementTurn): Promise<ImplementOutcome>;
   gates(): Promise<GateRunResult>;
   fullSuite(): Promise<GateRunResult>;
+  timeoutFacts?(): Promise<{ baselineTimedOut: boolean; limitSeconds: number }>;
   /**
    * US-006 (nax#2527): `gates` is the states the loop already recorded, so the reviewer prompt
    * states what nax checked. Optional so a caller that never ran the gates still compiles.
@@ -46,6 +47,7 @@ export interface StoryLoopSteps {
   storyReview(
     concerns: readonly string[],
     gates?: Readonly<Partial<Record<GateName, GateState>>>,
+    options?: { readonly suiteRunning?: boolean },
   ): Promise<ReviewOutcome<StoryReviewVerdict>>;
   reReview(
     round: number,
@@ -109,6 +111,8 @@ export interface StoryLoopSink {
 export interface StoryLoopEnv {
   readonly storyId: string;
   readonly maxFixRounds: number;
+  readonly parallelReview?: boolean;
+  readonly now?: () => number;
   readonly steps: StoryLoopSteps;
   readonly advisor: WorkflowAdvisor;
   readonly sink: StoryLoopSink;
@@ -149,6 +153,7 @@ export interface StoryLoopState extends GraphState<StoryNode> {
   readonly gates?: GateRunResult;
   readonly suite?: GateRunResult;
   readonly suiteThisIteration: boolean;
+  readonly timeoutAsked: boolean;
   /** Set by the graph's cost stop; read by `close` through `deriveEndState`. */
   readonly costLimited: boolean;
   /** The first fix round after a resume runs fresh. */

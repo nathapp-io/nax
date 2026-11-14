@@ -104,13 +104,23 @@ function configEvidence(facts: ImplementerQuestionFacts): AdviceEvidence[] {
 /** The implementer-question draft: the concern first, then whatever facts the loop supplied. */
 function implementerQuestionDraft(feature: string, q: ImplementerQuestionRequest): QuestionDraft {
   const facts = q.facts;
+  const timing = q.timing;
+  const isTimeout = q.status === "GATE_TIMEOUT" && timing !== undefined;
+  const limit = timing?.limitSeconds === undefined ? "limit unknown" : `limit ${timing.limitSeconds} s`;
   return {
     kind: "implementer-question",
     feature,
     storyId: q.storyId,
-    summary: `The implementer for ${q.storyId} stopped with ${q.status} and needs an answer to continue.`,
+    summary: isTimeout
+      ? `nax stopped the fix loop for ${q.storyId}: the ${timing.gates.join(", ")} gate timed out and another fix round cannot change a slow or hanging command.`
+      : `The implementer for ${q.storyId} stopped with ${q.status} and needs an answer to continue.`,
     evidence: [
-      { source: "agent-diagnosis", text: q.concerns || "(no concern text)" },
+      isTimeout
+        ? {
+            source: "gate",
+            text: `Gate timeout facts: ${limit}; run-start baseline timed out: ${timing.baselineTimedOut ? "yes" : "no"}; same gate timed out in the previous pass: ${timing.repeated ? "yes" : "no"}`,
+          }
+        : { source: "agent-diagnosis", text: q.concerns || "(no concern text)" },
       ...(facts ? configEvidence(facts) : []),
     ],
     options: buildMenu({ kind: "implementer-question", configChanges: facts?.candidates }),

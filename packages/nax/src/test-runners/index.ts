@@ -45,6 +45,7 @@ export {
   _scopedSelectionDeps,
   buildScopedCommand,
   coerceSmartRunner,
+  equalTestCommands,
   isMonorepoOrchestratorCommand,
   selectScopedTests,
 } from "./scoped-selection";

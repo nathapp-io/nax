@@ -34,6 +34,7 @@ export const STORY_GRAPH: StepGraph<StoryLoopState, StoryLoopEnv, StoryNode> = d
       kind: "agent",
       produces: [
         "suiteThisIteration",
+        "timeoutAsked",
         "gates",
         "suite",
         "nextId",
@@ -56,7 +57,7 @@ export const STORY_GRAPH: StepGraph<StoryLoopState, StoryLoopEnv, StoryNode> = d
     },
     residual: {
       kind: "agent",
-      produces: ["suite", "rulings"],
+      produces: ["suite", "suiteThisIteration", "rulings"],
       transitions: [{ to: "close" }],
       run: residualStep,
     },
