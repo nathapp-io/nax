@@ -66,7 +66,7 @@ Give two verdicts:
 - **spec**: "pass" only if every acceptance criterion is implemented and covered by a test that would fail without it. Check the report's TDD evidence: missing evidence for an AC (other than an honest not-captured note), or a test that asserts nothing, is a spec failure. A report that says the failing run was not captured is not a spec failure when the test exercises the new code path. A failing run produced by reverting or stashing the implementation is a finding.
 - **quality**: "approved" or "changes" (correctness, error handling, edge cases, conventions of the surrounding code).
 
-Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before this story is done), "minor" (worth noting, not blocking). ${CANNOT_VERIFY_RULE}
+Severity: "critical" (wrong or unsafe behaviour), "important" (must fix before this story is done), "minor" (worth noting, not blocking). Wrong behaviour a user or caller can reach is critical or important, however small the fix. Every minor you list is handed to one fix pass after all stories are done, so a minor is an improvement worth that pass. Style, comment wording, formatting and duplication are findings only where a project rule or the convention of the surrounding code says so. ${CANNOT_VERIFY_RULE}
 
 List every file you opened in "inspectedFiles". A critical or important finding about what the code does carries "observed": a verbatim 1-3 line excerpt from the file that proves it; if you cannot quote one, it is minor or belongs in "cannotVerify". A finding about a missing or empty test names the AC and the test file you checked instead.
 
