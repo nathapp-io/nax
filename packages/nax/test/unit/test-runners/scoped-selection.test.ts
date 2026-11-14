@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { _scopedSelectionDeps, selectScopedTests } from "@/test-runners";
+import { _scopedSelectionDeps, isMonorepoOrchestratorCommand, selectScopedTests } from "@/test-runners";
+import { isMonorepoOrchestratorCommand as fromLeaf } from "@/test-runners/orchestrator-command";
+import { isMonorepoOrchestratorCommand as fromScopedSelection } from "@/test-runners/scoped-selection";
 
 function makeFakeDeps(overrides: Partial<typeof _scopedSelectionDeps> = {}) {
   return {
@@ -185,6 +187,15 @@ describe("selectScopedTests", () => {
     });
     expect(result.isFullSuite).toBe(true);
     expect(result.effectiveCommand).toBe("bun test");
+  });
+
+  test("AC-2: re-exports isMonorepoOrchestratorCommand as the very same function", () => {
+    // The predicate lives in the `orchestrator-command` leaf module so config
+    // guards can import it without dragging in `@/logger` and smart-runner.
+    // The re-export must be identity, not a wrapper — every existing importer
+    // keeps importing it from `@/test-runners` and must get that function.
+    expect(fromScopedSelection).toBe(fromLeaf);
+    expect(isMonorepoOrchestratorCommand).toBe(fromLeaf);
   });
 
   test("missing storyGitRef → base command", async () => {

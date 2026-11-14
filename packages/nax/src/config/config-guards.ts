@@ -15,6 +15,8 @@ import { MCP_RULE_TOOL, RESERVED_TOOL_NAMES } from "@nathapp/nax-agent";
 // not route through the `@/quality` barrel (config -> quality -> config cycle).
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
 import { NaxError } from "../errors";
+// Leaf import, like the `quality` one above: the barrel pulls `@/logger` in.
+import { isMonorepoOrchestratorCommand } from "../test-runners/orchestrator-command";
 import { collectCommandChainWarnings } from "./config-warnings";
 import { stripKeysAtPaths } from "./removed-config-keys";
 import { MCP_SERVER_ID_RE } from "./schemas-mcp";
@@ -309,6 +311,11 @@ export function warnScopedTestCommand(conf: Record<string, unknown>, warn?: (msg
     warn?.("quality.commands.testScoped equals quality.commands.test, so every scoped run is the full suite");
     return;
   }
+
+  // A turbo/nx orchestrator takes no test paths — it scopes through its own
+  // `--filter`/`affected` syntax — so "add {{files}}" cannot be followed. Only
+  // the DECLARED test command exempts; a turbo testScoped still warns.
+  if (test.length > 0 && isMonorepoOrchestratorCommand(test)) return;
 
   if (scoped.some((entry) => entry.includes(TEST_FILES_PLACEHOLDER))) return;
 

@@ -121,6 +121,63 @@ describe("warnScopedTestCommand (US-006)", () => {
       warnScopedTestCommand({ quality: { commands: { testScoped: "npx turbo test --filter=[HEAD^1]" } } }),
     ).not.toThrow();
   });
+
+  // US-007 — a turbo/nx orchestrator takes no test paths at all, so telling the
+  // user to "add {{files}}" is advice that cannot be followed. Only the
+  // declared `quality.commands.test` establishes the exemption; equality stays
+  // the highest-priority warning, so an orchestrator whose testScoped repeats
+  // the full-suite command still warns.
+
+  test("AC-3: is silent when the test command is a turbo orchestrator", () => {
+    expect(
+      warningsFor({
+        quality: { commands: { test: "npx turbo test", testScoped: "npx turbo test --filter=[HEAD^1]" } },
+      }),
+    ).toEqual([]);
+  });
+
+  test("AC-4: is silent when the test command is an nx orchestrator", () => {
+    expect(
+      warningsFor({
+        quality: { commands: { test: "nx affected -t test", testScoped: "nx affected -t test --base=HEAD~1" } },
+      }),
+    ).toEqual([]);
+  });
+
+  test("AC-5: an orchestrator testScoped equal to the test command still warns about equality", () => {
+    const messages = warningsFor({
+      quality: { commands: { test: "npx turbo test", testScoped: "npx turbo test" } },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("equals quality.commands.test");
+    expect(messages[0]).toContain("every scoped run is the full suite");
+  });
+
+  test("AC-6: a non-orchestrator test command keeps the {{files}} warning", () => {
+    const messages = warningsFor({ quality: { commands: { test: "bun test", testScoped: "bun test --bail" } } });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("declares no {{files}} placeholder");
+  });
+
+  test("AC-7: an orchestrator testScoped alone still warns when no test command is declared", () => {
+    const messages = warningsFor({
+      quality: { commands: { testScoped: "npx turbo test --filter=[HEAD^1]" } },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("declares no {{files}} placeholder");
+  });
+
+  test("keys the exemption off the declared test command, not the testScoped command", () => {
+    const messages = warningsFor({
+      quality: { commands: { test: "bun test", testScoped: "npx turbo test --filter=[HEAD^1]" } },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("declares no {{files}} placeholder");
+  });
 });
 
 describe("rejectRemovedPlanModes", () => {
