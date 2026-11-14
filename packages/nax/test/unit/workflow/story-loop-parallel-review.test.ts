@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { runStoryLoop } from "@/workflow/story-loop";
 import { failingReview, makeStoryLoopHarness, storyLoopFixtures } from "@test/helpers";
 import { newStoryRecord } from "@/workflow/result";
+import { runStoryLoop } from "@/workflow/story-loop";
 
 test("first review starts beside the pending suite with only pre-suite gates", async () => {
   let releaseSuite: (value: typeof storyLoopFixtures.SUITE_GREEN) => void = () => {};
