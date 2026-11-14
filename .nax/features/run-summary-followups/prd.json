@@ -3,7 +3,7 @@
   "feature": "run-summary-followups",
   "branchName": "feat/run-summary-followups",
   "createdAt": "2026-11-14T08:25:44.826Z",
-  "updatedAt": "2026-11-14T09:48:26.828Z",
+  "updatedAt": "2026-11-14T09:55:20.385Z",
   "userStories": [
     {
       "id": "US-001",
@@ -83,14 +83,17 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "A localized predicate correction in one production module uses an existing end-state field; existing collector and completion fixtures verify propagation without changing downstream implementations."
+        "reasoning": "A localized predicate correction in one production module uses an existing end-state field; existing collector and completion fixtures verify propagation without changing downstream implementations.",
+        "initialComplexity": "simple",
+        "modelTier": "fast",
+        "initialModelTier": "fast"
       },
       "contextFiles": [
         "packages/nax/src/metrics/tracker.ts",
@@ -108,7 +111,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9405e6974ac41cb111dbcd4b73f45d1aa2229867"
     },
     {
       "id": "US-003",
