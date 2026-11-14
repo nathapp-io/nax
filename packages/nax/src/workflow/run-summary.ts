@@ -31,6 +31,16 @@ function rolesOf(result: WorkflowResultFile): WorkflowSummaryView["roles"] {
     .sort((a, b) => a.role.localeCompare(b.role));
 }
 
+function mismatchesOf(result: WorkflowResultFile): NonNullable<WorkflowSummaryView["verdictMismatches"]> {
+  const counts = new Map<string, number>();
+  for (const story of Object.values(result.stories)) {
+    if (!story.verdictMismatch) continue;
+    const model = story.verdictMismatch.model ?? "unknown";
+    counts.set(model, (counts.get(model) ?? 0) + 1);
+  }
+  return [...counts].map(([model, count]) => ({ model, count })).sort((a, b) => a.model.localeCompare(b.model));
+}
+
 /** Story minors nobody fixed, plus the ones the branch review itself raised. */
 function minorsLeftOf(rec: WorkflowFeatureRecord): number {
   return rec.minors.filter((m) => m.triage === "leave").length + rec.newMinors.length;
@@ -106,7 +116,9 @@ export function buildWorkflowRunSummary(
   const flagged = flaggedOf(rec, feature);
   const ciRemaining = ciRemainingOf(rec);
   const itemIndexMissing = itemIndexMissingOf(rec, feature);
+  const verdictMismatches = mismatchesOf(result);
   return {
+    ...(verdictMismatches.length ? { verdictMismatches } : {}),
     ...timing,
     roles: rolesOf(result),
     stories: Object.values(result.stories).map((s) => ({

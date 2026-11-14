@@ -45,6 +45,11 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
   if (view.stories.length > 0) {
     lines.push(`  ${c.gray("Rounds:")} ${view.stories.map((s) => `${s.id} ${s.rounds}/${s.maxRounds}`).join(", ")}`);
   }
+  if (view.verdictMismatches?.length) {
+    lines.push(
+      `  ${c.gray("Inconsistent review verdicts:")} ${view.verdictMismatches.map((m) => `${m.model} ${m.count}`).join(", ")}`,
+    );
+  }
   if (view.branch) {
     const b = view.branch;
     lines.push(

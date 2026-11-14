@@ -84,6 +84,7 @@ export interface WorkflowSummaryView {
   featureWorkflowDurationMs: number;
   roles: readonly WorkflowRoleUsage[];
   stories: readonly { id: string; rounds: number; maxRounds: number; state?: string }[];
+  verdictMismatches?: readonly { model: string; count: number }[];
   /** Absent when the feature workflow never ran. */
   branch?: { found: number; fixed: number; left: number; minorsLeft: number; fixRounds?: number } | undefined;
   /** The feature workflow ran but its branch review did not. */

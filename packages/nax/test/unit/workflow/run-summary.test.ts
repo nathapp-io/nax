@@ -47,6 +47,33 @@ function resultFile(): WorkflowResultFile {
   };
 }
 
+describe("buildWorkflowRunSummary mismatch counts", () => {
+  const timing = { storiesDurationMs: 0, featureWorkflowDurationMs: 0 };
+  test("AC-9: counts stories per model, sorted", () => {
+    const file = resultFile();
+    const story = (id: string, model: string) => ({
+      ...newStoryRecord(id, 5, "t"),
+      verdictMismatch: { kinds: ["spec" as const, "quality" as const], model },
+    });
+    const result = { ...file, stories: { c: story("c", "m2"), a: story("a", "m1"), b: story("b", "m1") } };
+    expect(buildWorkflowRunSummary(result, timing)?.verdictMismatches).toEqual([
+      { model: "m1", count: 2 },
+      { model: "m2", count: 1 },
+    ]);
+  });
+  test("AC-10: missing model is unknown", () => {
+    const file = resultFile();
+    const result = {
+      ...file,
+      stories: { a: { ...newStoryRecord("a", 5, "t"), verdictMismatch: { kinds: ["spec" as const] } } },
+    };
+    expect(buildWorkflowRunSummary(result, timing)?.verdictMismatches).toEqual([{ model: "unknown", count: 1 }]);
+  });
+  test("AC-11: no mismatch omits field", () => {
+    expect(buildWorkflowRunSummary(resultFile(), timing)).not.toHaveProperty("verdictMismatches");
+  });
+});
+
 describe("buildWorkflowRunSummary", () => {
   const view = buildWorkflowRunSummary(resultFile(), { storiesDurationMs: 100, featureWorkflowDurationMs: 40 });
 

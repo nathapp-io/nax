@@ -18,6 +18,7 @@ export type { ConfigChangeRefusal } from "./config-change";
 import type {
   GateName,
   MinorTriageDecision,
+  StoryReviewVerdict,
   WorkflowFinding,
   WorkflowFindingDraft,
   WorkflowSeverity,
@@ -84,6 +85,10 @@ export interface WorkflowStoryRecord {
   readonly openFindings: readonly WorkflowFinding[];
   readonly nextFindingId: number;
   readonly deferredMinors: number;
+  readonly verdictMismatch?: {
+    readonly kinds: NonNullable<StoryReviewVerdict["mismatch"]>;
+    readonly model?: string;
+  };
   readonly rulings: number;
   /** Rulings flagged for a human (hold, or needs confirmation), set at close. */
   readonly flagged?: number;

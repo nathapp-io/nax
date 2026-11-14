@@ -35,6 +35,17 @@ const OPTS = { mode: "normal" as const, useColor: false };
 describe("formatWorkflowSummary", () => {
   const text = formatWorkflowSummary(VIEW, { useColor: false });
 
+  test("AC-12: formats inconsistent verdict counts", () => {
+    const view = {
+      ...VIEW,
+      verdictMismatches: [
+        { model: "m1", count: 2 },
+        { model: "m2", count: 1 },
+      ],
+    };
+    expect(formatWorkflowSummary(view, { useColor: false })).toContain("Inconsistent review verdicts: m1 2, m2 1");
+  });
+
   test("splits the duration into stories and feature workflow", () => {
     expect(text).toContain("stories 139m 53s + feature workflow 17m 35s");
   });

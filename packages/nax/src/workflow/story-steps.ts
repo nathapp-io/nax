@@ -36,6 +36,7 @@ import type {
   WorkflowFinding,
   WorkflowFindingDraft,
 } from "./types";
+import { recordVerdictMismatch } from "./verdict-mismatch";
 
 export const WARM_ROUND_CAP = 3;
 export const MAX_IMPLEMENTER_QUESTIONS = 2;
@@ -322,6 +323,7 @@ async function review(env: StoryLoopEnv, s: LoopState): Promise<void> {
       await env.sink.ledger(ledgerText.reviewSkipped(`story review: ${out.why}`), NO_MIRROR);
       return;
     }
+    await recordVerdictMismatch(env, out.verdict);
     await ledgerCannotVerify(env.sink, out.verdict.cannotVerify);
     await deferMinors(env, s, out.verdict.findings);
     s.reviewOpen = s.assign(out.verdict.findings.filter(isBlocking));
