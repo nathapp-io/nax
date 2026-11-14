@@ -1,0 +1,656 @@
+{
+  "project": "nax-monorepo",
+  "feature": "run-time-waste-fixes",
+  "branchName": "feat/run-time-waste-fixes",
+  "createdAt": "2026-11-14T12:17:18.014Z",
+  "updatedAt": "2026-11-14T12:38:21.264Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Reuse a scoped gate that ran the full-suite command",
+      "description": "**Goal** — A scoped gate that already ran the exact full-suite command counts as the suite, eliminating a duplicate suite run.\n\n**Motivation** — When `quality.commands.testScoped` resolves to the same command as `quality.commands.test`, the scoped gate runs the whole suite and the full-suite gate then runs it again on the same tree.\n\n**Approach** — **Suite reuse (#2917).** Two rules, both in the scoped path.\n\n1. `selectScopedTests` (`packages/nax/src/test-runners/scoped-selection.ts`) treats a scoped command that equals the full-suite command as no scoping at all. After `buildScopedCommand` builds the command for the selected files, if it is equal to `input.testCommand` (the same string, or lists of the same strings in the same order), the function returns the same result as its `fullSuite()` helper with no options: `isFullSuite: true`, `thresholdFallback: false`. In workflow mode `verifyScopedOp` runs with `regressionMode: \"deferred\"`, so its existing rule then skips the scoped gate and the full-suite gate runs the suite once.\n2. `verifyScopedOp` (`packages/nax/src/operations/verify-scoped.ts`) reports when a green scoped run was the full-suite command. `VerifyScopedOutput` gains `coversFullSuite: boolean`. It is `true` only when the run's `status` is `\"passed\"`, `isFullSuite` is `true`, and the command the run executed equals the command the full-suite gate would run. That command comes from a new dep, `VerifyScopedDeps.resolveFullSuiteCommand(config, workdir, packageDir)`, called with `input.packagePrefix` as its third argument and wired by default to `resolveQualityTestCommands(...).testCommand` (the resolver `fullSuiteGateOp` uses). Every other outcome sets `coversFullSuite: false`.\n\n`runStoryGates` (`packages/nax/src/workflow/gates.ts`) copies it onto the gate result as `suiteCovered: true` (the key is absent otherwise). In `evaluate` (`story-steps.ts`), a gate result with `suiteCovered` skips `env.steps.fullSuite()`: the pass records the suite as `{ red: false, states: { \"full-suite\": \"green\" }, findings: [] }`, sets `suiteThisIteration`, and writes the ledger note `full-suite green (scoped gate ran the full-suite command; reused)`.\n\n**Scope** — In: selection equality for strings/ordered lists, required operation output and resolver dep, conservative equality against the final command including threshold/zero-test fallback, gate propagation, loop reuse and fixture migration. Out: US-004 timeout facts, US-009 parallel scheduling; a monorepo orchestrator test command is not treated as covering the full suite unless the scoped gate ran exactly the command the full-suite gate resolves. Pipeline mode is untouched.\n\n**Interface** — `selectScopedTests(input: SelectScopedTestsInput): Promise<SelectScopedTestsResult>` (signature unchanged).\n```typescript\n// VerifyScopedOutput gains:\nreadonly coversFullSuite: boolean;\n// VerifyScopedDeps gains:\nresolveFullSuiteCommand: (config, workdir: string, packageDir: string | undefined) => Promise<QualityCommandSpec | undefined>;\n// GateRunResult gains:\nreadonly suiteCovered?: true;\n```\n`resolveFullSuiteCommand` throws or resolves `undefined`: `coversFullSuite` is `false`; the scoped result is otherwise unchanged and the full-suite gate runs. Use the package-merged config and the resolver fullSuiteGateOp uses. The final executed command may differ from the selection after the existing zero-test fallback. New seams follow _deps injection.\n\nUpdate the typed `green` fixture in `test/unit/workflow/gates.test.ts` with `coversFullSuite: false`, keeping assertions unchanged. Update `fakeDeps(): VerifyScopedDeps` in `test/unit/operations/verify-scoped.test.ts` and `verify-scoped-scratch.test.ts` with a `resolveFullSuiteCommand` resolving `undefined`. Add the loop-entry reuse tests in the new expected test file, alongside selection/operation/gate tests in their existing mirrored files.",
+      "acceptanceCriteria": [
+        "[unit] selectScopedTests with testCommand: \"pytest -q\", testScopedTemplate: \"pytest -q\" and one changed test file returns isFullSuite === true.",
+        "[unit] selectScopedTests with testCommand: \"pytest -q\", testScopedTemplate: \"pytest -q\" and one changed test file returns thresholdFallback === false.",
+        "[unit] selectScopedTests with testCommand: [\"a\", \"b\"], testScopedTemplate: [\"a\", \"b\"] and one changed test file returns isFullSuite === true.",
+        "[unit] selectScopedTests with testCommand: \"pytest -q\", testScopedTemplate: \"pytest -q {{files}}\" and one changed test file returns isFullSuite === false.",
+        "[unit] verifyScopedOp.execute with quality.commands.test and quality.commands.testScoped both \"pytest -q\", regressionMode: \"deferred\" and one changed test file returns status === \"skipped\".",
+        "[unit] verifyScopedOp.execute with quality.commands.test and quality.commands.testScoped both \"pytest -q\", regressionMode: \"deferred\" and one changed test file never calls deps.regression.",
+        "[unit] verifyScopedOp.execute whose selection returns isFullSuite: true with thresholdFallback: true, whose deps.regression succeeds and whose deps.resolveFullSuiteCommand resolves the command the run executed returns coversFullSuite === true.",
+        "[unit] verifyScopedOp.execute after a green full-suite scoped run calls deps.resolveFullSuiteCommand with input.packagePrefix as its third argument.",
+        "[unit] verifyScopedOp.execute whose selection returns isFullSuite: true with thresholdFallback: true, whose deps.regression succeeds and whose deps.resolveFullSuiteCommand resolves a different command returns coversFullSuite === false.",
+        "[unit] verifyScopedOp.execute whose selection returns isFullSuite: false and whose deps.regression succeeds returns coversFullSuite === false.",
+        "[unit] verifyScopedOp.execute whose selection returns isFullSuite: true with thresholdFallback: true and whose deps.regression returns status: \"TIMEOUT\" returns coversFullSuite === false.",
+        "[unit] verifyScopedOp.execute whose selection returns isFullSuite: true with thresholdFallback: true and whose deps.regression fails with parsed failures returns coversFullSuite === false.",
+        "[unit] verifyScopedOp.execute whose deps.resolveFullSuiteCommand resolves undefined after a green full-suite scoped run returns coversFullSuite === false.",
+        "[unit] verifyScopedOp.execute whose deps.resolveFullSuiteCommand throws after a green full-suite scoped run returns coversFullSuite === false.",
+        "[unit] verifyScopedOp.execute whose deps.resolveFullSuiteCommand throws after a green full-suite scoped run returns status === \"passed\".",
+        "[unit] runStoryGates(sc) whose verifyScopedOp output is status: \"passed\" with coversFullSuite: true returns a result with suiteCovered === true.",
+        "[unit] runStoryGates(sc) whose verifyScopedOp output is status: \"passed\" with coversFullSuite: false returns a result with no suiteCovered key.",
+        "[unit] runStoryLoop(env) whose steps.gates resolves { red: false, states: { scoped: \"green\" }, findings: [], suiteCovered: true } and whose review is clean never calls steps.fullSuite.",
+        "[unit] runStoryLoop(env) whose steps.gates resolves a green result with suiteCovered: true calls sink.ledger with `full-suite green (scoped gate ran the full-suite command; reused)`.",
+        "[unit] runStoryLoop(env) whose steps.gates resolves a green result with suiteCovered: true calls steps.storyReview with a gates argument whose \"full-suite\" value is \"green\".",
+        "[unit] runStoryLoop(env) whose steps.gates resolves a green result with suiteCovered: true and whose review is clean resolves with state === \"complete\".",
+        "[unit] runStoryLoop(env) whose steps.gates resolves a green result with no suiteCovered key calls steps.fullSuite exactly once in that pass."
+      ],
+      "tags": [
+        "workflow",
+        "performance",
+        "gates",
+        "2917"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Cross-module command provenance, fallback handling and loop reuse must agree without weakening suite coverage.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/test-runners/scoped-selection.ts",
+        "packages/nax/src/operations/verify-scoped.ts",
+        "packages/nax/src/workflow/gates.ts",
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/quality/command-resolver.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/story-loop-suite-reuse.test.ts"
+      ],
+      "suggestedCriteria": [
+        "selectScopedTests with testCommand: [\"a\", \"b\"] and testScopedTemplate: [\"b\", \"a\"] returns isFullSuite === false when selected test files exist.",
+        "verifyScopedOp.execute returns coversFullSuite === true when an initially scoped command runs zero tests and its successful full-suite fallback exactly matches deps.resolveFullSuiteCommand.",
+        "verifyScopedOp.execute returns coversFullSuite === false when a monorepo orchestrator succeeds but the full-suite resolver returns a different filtered command."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/gates.test.ts",
+          "reason": "the typed fixture `green` (`satisfies Record<string, Result>`) holds a `VerifyScopedOutput` literal without `coversFullSuite`, which no longer compiles once the field is required; the literal gains `coversFullSuite: false` and its assertions stay unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/verify-scoped.test.ts",
+          "reason": "the helper `fakeDeps(): VerifyScopedDeps` returns a full literal without `resolveFullSuiteCommand`, which no longer compiles once the dep is required; the literal gains a `resolveFullSuiteCommand` that resolves `undefined`."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/verify-scoped-scratch.test.ts",
+          "reason": "the helper `fakeDeps(): VerifyScopedDeps` returns a full literal without `resolveFullSuiteCommand`, which no longer compiles once the dep is required; the literal gains a `resolveFullSuiteCommand` that resolves `undefined`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "72d1a150ceb80df627f1c86d14325bae880ef913"
+    },
+    {
+      "id": "US-002",
+      "title": "Report story-review verdict mismatches and retry once",
+      "description": "**Goal** — Replace synthetic story findings with explicit mismatch facts and spend the existing reviewer retry on a concrete follow-up.\n\n**Motivation** — The implementer then gets a fix round with nothing concrete to fix.\n\n**Approach** — **Verdict mismatch (#2921).** `parseStoryReviewReply` stops adding synthetic findings. `StoryReviewVerdict` gains an optional field:\n```ts\nexport type VerdictMismatch = \"spec\" | \"quality\";\n// on StoryReviewVerdict:\nreadonly mismatch?: readonly VerdictMismatch[];\n```\n`\"spec\"` is listed when `spec` is `\"fail\"` and no finding has `kind: \"spec\"` with a severity other than `minor`. `\"quality\"` is listed when `quality` is `\"changes\"` and no finding of any kind has a severity other than `minor`. The order is `spec` then `quality`. The key is absent when neither holds.\n\nBranch review keeps today's behaviour. `parseBranchReviewReply` applies the two floors itself after calling `parseStoryReviewReply`, in today's order and with the same texts: the spec floor first, then the quality floor only when no finding with a severity other than `minor` remains after the spec floor. A reply with `spec: \"fail\"`, `quality: \"changes\"` and no findings therefore still gets one synthetic finding, the spec one. It returns no `mismatch` key.\n\n`workflowStoryReviewOp` (`packages/nax/src/operations/workflow-story-review.ts`) uses its one existing retry for the follow-up. Its retry `validate` rejects a parsed verdict that carries `mismatch`. Its `prompts.invalid` receives the last output: when that output parses to a verdict with `mismatch` it returns `buildWorkflowVerdictMismatchRetry(mismatch)`, otherwise `buildWorkflowReviewJsonRetry()` as today. `maxAttempts` stays 2 and `exhaustedFallback` is unchanged. Once the retry is spent, the op's own `parse` of the last reply is the result: a verdict that still carries `mismatch`, or `null` when the last reply does not parse. A reply that was first unparseable and then mismatched gets no third turn.\n\n`buildWorkflowVerdictMismatchRetry` is a new function in `packages/nax/src/prompts/builders/workflow-story-review-builder.ts`, exported from `@/prompts`:\n```ts\nexport function buildWorkflowVerdictMismatchRetry(mismatch: readonly VerdictMismatch[]): string;\n```\nFor `\"spec\"` it says: `You returned spec: fail but no critical or important spec finding. Either name the acceptance criterion that fails as a finding, or change the verdict to pass.` For `\"quality\"` it says: `You returned quality: changes but no critical or important finding. Either name the defect as a finding, or change the verdict to approved.` It ends with the same reply-shape instruction `buildWorkflowReviewJsonRetry` gives.\n\n**Scope** — In: parser/type/barrel changes, exact branch floors, retry prompt and callOp integration tests. Out: US-003 loop recording and model summaries; US-007 minor promotion and branch-fix priority. The re-review verdict shape and parser are unchanged. Branch review gets no follow-up turn.\n\n**Interface** — `parseStoryReviewReply(output: string): StoryReviewVerdict | null` and `parseBranchReviewReply(output: string, minorIds: readonly string[]): BranchReviewVerdict | null` keep their signatures; the new union/optional field and builder signature above are the target contracts.\n\nThe reviewer's follow-up reply is unparseable: the op returns `null`, the review is skipped as today (`unparseable reply`) and the story closes unreviewed. The reviewer's follow-up reply still carries a mismatch: the verdict is used with its findings; ledgering/recording is US-003. Keep the final parser permissive even though retry validation is stricter. Use the existing parse-retry seam; do not change the shared retry budget/dispatcher. Revise the three existing synthetic story-finding tests in test/unit/operations/workflow-replies.test.ts to assert no added finding and mismatch, and prove the same inputs still receive branch floors. New integration tests must enter through callOp(ctx, workflowStoryReviewOp, input) with scripted replies, asserting exact turn count, prompt and final result.",
+      "acceptanceCriteria": [
+        "[unit] parseStoryReviewReply of {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} returns findings equal to [].",
+        "[unit] parseStoryReviewReply of {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} returns mismatch equal to [\"spec\"].",
+        "[unit] parseStoryReviewReply of a spec: \"fail\" reply whose only finding is { severity: \"minor\", kind: \"spec\", issue: \"naming\" } returns mismatch equal to [\"spec\"].",
+        "[unit] parseStoryReviewReply of a spec: \"fail\" reply whose only finding is { severity: \"minor\", kind: \"spec\", issue: \"naming\" } returns exactly one finding.",
+        "[unit] parseStoryReviewReply of {\"spec\": \"pass\", \"quality\": \"changes\", \"findings\": []} returns mismatch equal to [\"quality\"].",
+        "[unit] parseStoryReviewReply of {\"spec\": \"fail\", \"quality\": \"changes\", \"findings\": []} returns mismatch equal to [\"spec\", \"quality\"].",
+        "[unit] parseStoryReviewReply of a spec: \"fail\" reply with one { severity: \"important\", kind: \"spec\" } finding returns a verdict with no mismatch key.",
+        "[unit] parseStoryReviewReply of a quality: \"changes\" reply with one { severity: \"important\", kind: \"spec\" } finding returns a verdict with no mismatch key.",
+        "[unit] parseBranchReviewReply of {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} returns exactly one finding, with kind: \"spec\" and severity: \"important\".",
+        "[unit] parseBranchReviewReply of {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} returns a verdict with no mismatch key.",
+        "[unit] parseBranchReviewReply of {\"spec\": \"pass\", \"quality\": \"changes\", \"findings\": []} returns exactly one finding, with kind: \"quality\" and severity: \"important\".",
+        "[unit] parseBranchReviewReply of {\"spec\": \"fail\", \"quality\": \"changes\", \"findings\": []} returns exactly one finding, with kind: \"spec\".",
+        "[unit] buildWorkflowVerdictMismatchRetry([\"spec\"]) imported from @/prompts returns text that includes You returned spec: fail but no critical or important spec finding.",
+        "[unit] buildWorkflowVerdictMismatchRetry([\"quality\"]) returns text that includes You returned quality: changes but no critical or important finding.",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against an agent whose first reply is {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} and whose second reply is {\"spec\": \"pass\", \"quality\": \"approved\", \"findings\": []} sends exactly two turns.",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against that fail-then-pass agent returns a verdict with spec === \"pass\".",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against an agent whose first reply is {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} sends a second turn whose prompt equals buildWorkflowVerdictMismatchRetry([\"spec\"]).",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against an agent that replies {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} twice returns a verdict with mismatch equal to [\"spec\"].",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against an agent whose first reply is not JSON and whose second reply is {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} sends exactly two turns.",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against an agent whose first reply is not JSON and whose second reply is {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} returns a verdict with mismatch equal to [\"spec\"].",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against an agent whose first reply is {\"spec\": \"fail\", \"quality\": \"approved\", \"findings\": []} and whose second reply is not JSON returns null.",
+        "[integration] callOp(ctx, workflowStoryReviewOp, input) against an agent whose first reply is not JSON sends a second turn whose prompt equals buildWorkflowReviewJsonRetry()."
+      ],
+      "tags": [
+        "workflow",
+        "review",
+        "prompts",
+        "2921"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Existing pure parsers, prompt builder and makeParseRetryStrategy already provide the required seams; localized policy changes need parser regressions and scripted callOp tests, not a new retry abstraction."
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/workflow-replies.ts",
+        "packages/nax/src/operations/workflow-story-review.ts",
+        "packages/nax/src/agents/retry/parse-retry.ts",
+        "packages/nax/src/prompts/builders/workflow-story-review-builder.ts",
+        "packages/nax/src/operations/workflow-types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/workflow/story-review-verdict-mismatch.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildWorkflowVerdictMismatchRetry([\"spec\", \"quality\"]) returns both specified correction sentences in spec-then-quality order followed by buildWorkflowReviewJsonRetry()'s reply-shape instruction.",
+        "parseBranchReviewReply preserves the existing synthetic spec issue text when spec fails with only a minor spec finding."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/workflow-replies.test.ts",
+          "reason": "the three tests \"spec fail with no blocking spec finding gets a synthetic one\", \"spec fail with only a minor spec finding still gets the synthetic one\" and \"quality changes with no blocking finding gets a synthetic quality one\" assert that `parseStoryReviewReply` adds an important finding; the new invariant is that it adds none and returns `mismatch` (`[\"spec\"]` or `[\"quality\"]`), while the same three inputs through `parseBranchReviewReply` still get the synthetic finding."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Keep review findings authoritative and report verdict mismatches",
+      "description": "**Goal** — Consume mismatch facts without opening empty fix rounds, and expose them by reviewer model.\n\n**Motivation** — Two stories opened a fix round on this finding alone.\n\n**Approach** — In the story loop the findings are the truth in both directions: a verdict with `mismatch` and only minor findings opens no fix round, and one with a blocking finding opens a fix round on that finding as today. For a verdict with `mismatch` the loop writes one ledger note per kind (`story review verdict inconsistent: spec fail without a blocking spec finding; findings kept` and `story review verdict inconsistent: quality changes without a blocking finding; findings kept`) and records it on the story record as `verdictMismatch: { kinds, model? }`, where `model` is `env.steps.modelFor?.(\"story-review\")?.model` and the key is absent when no model is known. The run summary counts mismatches per model: `WorkflowSummaryView.verdictMismatches` is a list of `{ model, count }` sorted by `model`, a record with no `model` counts under `unknown`, and `formatWorkflowSummary` prints `Inconsistent review verdicts: <model> <count>, <model> <count>`.\n\n**Scope** — In: new verdict-mismatch.ts ledger/record helper called by the loop, finding-based routing, minor preservation, optional story-record and summary/view/formatter changes. Out: US-002 parsing and follow-up policy, US-009 concurrency and overlap accounting. The re-review verdict shape and its parser are unchanged.\n\n**Interface**\n```typescript\n// WorkflowStoryRecord gains:\nreadonly verdictMismatch?: { readonly kinds: readonly VerdictMismatch[]; readonly model?: string };\n// WorkflowSummaryView gains:\nverdictMismatches?: readonly { model: string; count: number }[];\n```\nThe function shapes inside verdict-mismatch.ts are the implementer's choice. story-steps.ts only calls the new helper; preserve its hard line budget. Reuse the StoryReviewVerdict.mismatch type added by US-002 and existing sink.update/sink.ledger seams. Keep ledgerCannotVerify, blocking F-id assignment, deferred-minor counts and fix-base behavior. Count mismatched story records, not kinds, and omit the summary field if no record has a mismatch. No existing story-loop fixture carries mismatch, so legacy assertions and old result records stay unchanged. Add entrypoint tests through runStoryLoop(env) in the new test file and extend existing run-summary and log-format tests.",
+      "acceptanceCriteria": [
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with spec: \"fail\", findings: [] and mismatch: [\"spec\"] over green gates never calls steps.implement with a turn of kind: \"fix\".",
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with findings: [] and mismatch: [\"spec\"] over green gates resolves with state === \"complete\".",
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with mismatch: [\"spec\"] calls sink.ledger with `story review verdict inconsistent: spec fail without a blocking spec finding; findings kept`.",
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with mismatch: [\"quality\"] calls sink.ledger with `story review verdict inconsistent: quality changes without a blocking finding; findings kept`.",
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with mismatch: [\"spec\"] and whose steps.modelFor(\"story-review\") returns { agentName: \"native\", model: \"m1\" } calls sink.update with verdictMismatch equal to { kinds: [\"spec\"], model: \"m1\" }.",
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with mismatch: [\"spec\"] and whose env has no steps.modelFor calls sink.update with verdictMismatch equal to { kinds: [\"spec\"] }.",
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with mismatch: [\"spec\"] and one minor finding calls sink.update with deferredMinors === 1.",
+        "[unit] runStoryLoop(env) whose steps.storyReview resolves a verdict with mismatch: [\"spec\"] and one important quality finding runs a turn of kind: \"fix\" whose findings hold that one finding.",
+        "[unit] buildWorkflowRunSummary over a result with two story records carrying verdictMismatch.model: \"m1\" and one carrying verdictMismatch.model: \"m2\" returns verdictMismatches equal to [{ model: \"m1\", count: 2 }, { model: \"m2\", count: 1 }].",
+        "[unit] buildWorkflowRunSummary over a result whose one mismatched story record has no verdictMismatch.model returns verdictMismatches equal to [{ model: \"unknown\", count: 1 }].",
+        "[unit] buildWorkflowRunSummary over a result with no verdictMismatch on any story record returns a view with no verdictMismatches key.",
+        "[unit] formatWorkflowSummary of a view with verdictMismatches: [{ model: \"m1\", count: 2 }, { model: \"m2\", count: 1 }] returns text with the line `Inconsistent review verdicts: m1 2, m2 1`.",
+        "[unit] runStoryLoop(env) with green gates and a green suite whose steps.storyReview resolves { ran: false, why: \"unparseable reply\" } resolves with unreviewed === true, preserving the existing skipped-review outcome."
+      ],
+      "tags": [
+        "workflow",
+        "review",
+        "reporting",
+        "2921"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The loop already fixes only blocking findings; this adds a small ledger/record helper and standard optional summary aggregation, testable through the existing loop harness and pure formatters."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/log-format/types.ts",
+        "packages/nax/src/log-format/workflow-summary.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/verdict-mismatch.ts",
+        "packages/nax/test/unit/workflow/story-loop-verdict-mismatch.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildWorkflowRunSummary returns verdictMismatches sorted by model when story insertion order is m2 before m1.",
+        "buildWorkflowRunSummary counts one story with mismatch kinds [\"spec\", \"quality\"] as one inconsistency for its model."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Expose gate timeout facts and a pure timeout-stop rule",
+      "description": "**Goal** — Make scoped/suite timeout evidence and run-start baseline timing facts available to the loop, with a pure routing rule and timeout-aware end reason.\n\n**Motivation** — One story spent 2 h 15 min on four timeouts and four fix rounds after the run-start baseline had already timed out on the same suite.\n\n**Approach** — **Gate timeout facts (#2918, first part).** `GateRunResult` gains `timedOut?: readonly GateName[]`, absent when no gate timed out. `runStoryGates` lists `scoped` when `verifyScopedOp` returns `status: \"timeout\"`. `runWorkflowSuiteGate` lists `full-suite` when `fullSuiteGateOp` returns `\"passed-on-timeout\"` or `\"timeout\"`. The gate states and findings are unchanged.\n\nA new module `packages/nax/src/workflow/timeout-stop.ts` (the shape of `blocked-stop.ts`) holds the rule as a pure function:\n```ts\nexport interface GateTimeoutRouteInput {\n  readonly previous: GateRunResult | undefined;      // the gates of the pass before this one\n  readonly previousSuite: GateRunResult | undefined; // the suite the pass before this one ran, if it ran one\n  readonly current: GateRunResult | undefined;\n  readonly currentSuite: GateRunResult | undefined;  // the suite this pass ran, if it ran one\n  readonly baselineTimedOut: boolean;\n}\nexport interface GateTimeoutRoute {\n  readonly gates: readonly GateName[]; // every gate that timed out in the current pass\n  readonly why: \"baseline\" | \"repeated\";\n}\nexport function gateTimeoutRoute(input: GateTimeoutRouteInput): GateTimeoutRoute | null;\n```\nIt returns `null` when no gate timed out in the current pass. It returns `why: \"baseline\"` when `baselineTimedOut` is true. Otherwise it returns `why: \"repeated\"` when a gate that timed out in the current pass also timed out in the previous pass. Otherwise it returns `null`: a first timeout with a healthy baseline still gets one fix round, because a test the story made slow is code a fix agent can change.\n\n`StoryLoopSteps` gains an optional step `timeoutFacts?(): Promise<{ baselineTimedOut: boolean; limitSeconds: number }>`. `buildStoryEnv` (`packages/nax/src/workflow/stage-env.ts`) wires it: `baselineTimedOut` is true when `readRunBaseline(projectDir, feature)` returns `{ kind: \"no-baseline\", reason: \"timeout\" }`, and `limitSeconds` is `resolveFullSuiteTimeoutSeconds(config)`. The run-start capture already records a timed-out baseline that way; this step makes it visible to the story loop.\n\n`deriveEndState` (`packages/nax/src/workflow/close.ts`) gains an optional input `timedOut?: readonly GateName[]`. When at least one gate is red and every red gate is in `timedOut`, the reason is `gate timeout: <gates joined with \", \">` instead of `red: <gates>`. The state stays `complete-gate-open`.\n\n**Scope** — In: optional result markers, pure exported gateTimeoutRoute/types, injected baseline read and timeout resolver wiring, deriveEndState rule, direct unit and buildStoryEnv integration tests. Out: US-005 evaluate routing/advisor requests and state, US-006 config-change retry and close/summary propagation. The run-start baseline capture is not changed, and neither its duration nor a gate's last passing duration is recorded or shown to the advisor; only the baseline's existing timeout marker is read.\n\n**Interface** — The gateTimeoutRoute declarations above are binding. Add `readonly timedOut?: readonly GateName[]` on GateRunResult, the optional timeoutFacts step exactly as above, and `timedOut?: readonly GateName[]` to deriveEndState's options. Baseline reads and other new external seams use _deps. No timeout key appears for ordinary failure/green/skipped outcomes. Preserve cost-stop precedence and existing gate states/findings. timeoutFacts consumption/fail-soft behavior belongs to US-005. Mirror existing gates/adjudicate-close tests; create the pure-rule unit file and focused env integration file rather than growing the existing large stage-env test.",
+      "acceptanceCriteria": [
+        "[unit] runStoryGates(sc) whose verifyScopedOp output is status: \"timeout\" returns timedOut equal to [\"scoped\"].",
+        "[unit] runStoryGates(sc) whose verifyScopedOp output is status: \"failed\" returns a result with no timedOut key.",
+        "[unit] runWorkflowSuiteGate(sc) whose fullSuiteGateOp output is status: \"passed-on-timeout\" returns timedOut equal to [\"full-suite\"].",
+        "[unit] runWorkflowSuiteGate(sc) whose fullSuiteGateOp output is status: \"timeout\" returns timedOut equal to [\"full-suite\"].",
+        "[unit] runWorkflowSuiteGate(sc) whose fullSuiteGateOp output is status: \"failed\" returns a result with no timedOut key.",
+        "[unit] gateTimeoutRoute with current.timedOut: [\"scoped\"], previous.timedOut: [\"scoped\"] and baselineTimedOut: false returns { gates: [\"scoped\"], why: \"repeated\" }.",
+        "[unit] gateTimeoutRoute with current.timedOut: [\"scoped\"], previous: undefined and baselineTimedOut: true returns { gates: [\"scoped\"], why: \"baseline\" }.",
+        "[unit] gateTimeoutRoute with current.timedOut: [\"scoped\"], previous.timedOut: [\"scoped\"] and baselineTimedOut: true returns why === \"baseline\".",
+        "[unit] gateTimeoutRoute with current.timedOut: [\"scoped\"], a previous pass with no timedOut and baselineTimedOut: false returns null.",
+        "[unit] gateTimeoutRoute with current.timedOut: [\"scoped\"], previousSuite.timedOut: [\"full-suite\"], a previous gates result with no timedOut and baselineTimedOut: false returns null.",
+        "[unit] gateTimeoutRoute with currentSuite.timedOut: [\"full-suite\"], previousSuite.timedOut: [\"full-suite\"] and baselineTimedOut: false returns { gates: [\"full-suite\"], why: \"repeated\" }.",
+        "[unit] gateTimeoutRoute with no timedOut on current or currentSuite and baselineTimedOut: true returns null.",
+        "[unit] deriveEndState({ costStop: false, gates: { red: true, states: { scoped: \"red\" }, findings: [] }, timedOut: [\"scoped\"], rulings: 0 }) returns reason === \"gate timeout: scoped\".",
+        "[unit] deriveEndState with red lint and red scoped gates and timedOut: [\"scoped\"] returns reason === \"red: lint, scoped\".",
+        "[unit] deriveEndState with a red scoped gate and no timedOut returns reason === \"red: scoped\".",
+        "[integration] The steps.timeoutFacts step that buildStoryEnv wires resolves baselineTimedOut === true when the feature's run baseline file holds { kind: \"no-baseline\", reason: \"timeout\" }.",
+        "[integration] The steps.timeoutFacts step that buildStoryEnv wires resolves baselineTimedOut === false when the feature's run baseline file holds a captured baseline.",
+        "[integration] The steps.timeoutFacts step that buildStoryEnv wires resolves limitSeconds === 120 when the config sets execution.regressionGate.timeoutSeconds: 120."
+      ],
+      "tags": [
+        "workflow",
+        "gates",
+        "timeouts",
+        "2918"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Timeout markers and end-state wording are additive, the route is a small pure comparison, and env wiring reuses existing baseline/limit readers; actual graph routing is deferred to US-005."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/gates.ts",
+        "packages/nax/src/workflow/blocked-stop.ts",
+        "packages/nax/src/workflow/close.ts",
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/verification/test-baseline.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/timeout-stop.ts",
+        "packages/nax/test/unit/workflow/timeout-stop.test.ts",
+        "packages/nax/test/integration/workflow/timeout-facts.test.ts"
+      ],
+      "suggestedCriteria": [
+        "gateTimeoutRoute returns every gate timed out in the current pass when only one of those gates also timed out in the previous pass.",
+        "deriveEndState returns reason === \"cost-limit\" when costStop is true even if every red gate timed out.",
+        "The timeoutFacts step wired by buildStoryEnv resolves baselineTimedOut === false when readRunBaseline returns undefined."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-005",
+      "title": "Route repeated or baseline-matched timeouts to the advisor",
+      "description": "**Goal** — Stop spending fix rounds on repeated or baseline-matched timeouts and ask the advisor once with explicit timing/config facts.\n\n**Motivation** — The `gate-config-route` early stop (#2911) fires only when the implementer replies `BLOCKED`; these agents replied `DONE_WITH_CONCERNS`.\n\n**Approach** — **Gate timeout route (#2918, second part).** `StoryLoopState` gains `timeoutAsked: boolean` (initially false), produced by the `evaluate` node. After a pass, `evaluateStep` applies the rule before `stopOnUnchangedBlock`; when the rule fires, `stopOnUnchangedBlock` is not consulted for that pass.\n\nA suite result counts only for the pass that ran the suite. `evaluate` returns early on red gates and keeps the earlier pass's suite in its state, so `currentSuite` is passed only when this pass set `suiteThisIteration`, and `previousSuite` only when the previous pass did. `timeoutFacts` is read only when the current pass has a timed-out gate. When the rule fires:\n\n1. If `timeoutAsked` is false, nax asks the advisor itself through `env.advisor.answerQuestion`, and sets `timeoutAsked`. The request is an `ImplementerQuestionRequest` with `status: \"GATE_TIMEOUT\"`, `concerns` set to one sentence about the timeout whose wording is the implementer's choice, and a new `timing` field that carries the facts. When `scoped` is among the timed-out gates, `facts` come from `env.steps.configFacts([\"scoped\"])`; for a timeout of `full-suite` alone, `configFacts` is not called and the request has no `facts` (the #2911 rule offers no change for the full-suite command). It writes the ledger note `gate timeout on <gates> (<why>): no fix round, asked the advisor`.\n2. Downstream integration contract (US-006, not implemented by this story): A config change the advisor picks is applied through the existing `absorbConfigChange` transaction. When it is applied, `evaluateStep` runs the pass once more in the same node, with no implementer turn, so the gates read the changed command.\n3. A string answer is written to the ledger as `gate timeout advice: <text>` and no implementer turn runs. A `null` answer writes nothing more. A refused change keeps the ledger line `absorbConfigChange` already writes.\n4. In every case where no change was applied, and whenever the rule fires again after the advisor was already asked, the pass exits `capped`: the residual node rules and the story closes.\n\n**Scope** — In: call US-004 gateTimeoutRoute and timeoutFacts from evaluateStep; initialize/thread timeoutAsked and graph produces; request types; advice/null/exception handling; scoped-only config facts; skip blocked-stop when routed. The config-answer transaction and same-node rerun in item 2 are completed in US-006; do not duplicate that transaction or feed timeout advice back to an implementer. Out: US-006 live draft wording, config rerun, close record and summary; US-009 parallel execution. A gate timeout is not routed on the ground that the fix turn changed no file; a second consecutive timeout of the same gate already routes it.\n\n**Interface**\n```ts\n// packages/nax/src/workflow/advisor.ts\nexport interface GateTimeoutFacts {\n  readonly gates: readonly GateName[];\n  readonly baselineTimedOut: boolean;\n  readonly repeated: boolean;\n  readonly limitSeconds?: number; // absent when the timeoutFacts step is unwired or threw\n}\n// ImplementerQuestionRequest.status becomes \"NEEDS_CONTEXT\" | \"BLOCKED\" | \"GATE_TIMEOUT\",\n// and the request gains: readonly timing?: GateTimeoutFacts;\n```\nUse `gateTimeoutRoute(input: GateTimeoutRouteInput): GateTimeoutRoute | null` and `timeoutFacts?(): Promise<{ baselineTimedOut: boolean; limitSeconds: number }>` from US-004. Compute repeated independently of why (baseline can take routing precedence).\n\nFailure handling: `timeoutFacts` is unwired or throws: the rule runs with `baselineTimedOut: false`; `timing.limitSeconds` is absent. A warn is logged for a throw. `env.advisor.answerQuestion` throws for a `GATE_TIMEOUT` question: a warn is logged, no advice is recorded, and the pass exits `capped`. Keep new orchestration helpers in timeout-stop.ts and thin loop calls. New entrypoint tests must call runStoryLoop(env), not only the pure rule, and assert timeoutFacts/answerQuestion calls. Add timeoutAsked to EXPECTED_PRODUCES.evaluate in test/unit/workflow/story-graph.test.ts. The baseline/two-timeout scenarios below use explicit timedOut markers, not issue-text matching. A baseline case means first-pass red scoped timeout with timeoutFacts resolving { baselineTimedOut: true, limitSeconds: 600 }; a two-timeout case means red scoped timeouts on the first and second passes with timeoutFacts resolving { baselineTimedOut: false, limitSeconds: 600 }.",
+      "acceptanceCriteria": [
+        "[unit] The two-timeout case of runStoryLoop(env) runs exactly one turn of kind: \"fix\".",
+        "[unit] The two-timeout case calls advisor.answerQuestion exactly once.",
+        "[unit] The two-timeout case calls advisor.answerQuestion with status === \"GATE_TIMEOUT\".",
+        "[unit] The two-timeout case calls advisor.answerQuestion with timing equal to { gates: [\"scoped\"], baselineTimedOut: false, repeated: true, limitSeconds: 600 }.",
+        "[unit] The baseline case of runStoryLoop(env) runs no turn of kind: \"fix\".",
+        "[unit] The baseline case calls advisor.answerQuestion with timing equal to { gates: [\"scoped\"], baselineTimedOut: true, repeated: false, limitSeconds: 600 }.",
+        "[unit] The baseline case calls steps.timeoutFacts exactly once.",
+        "[unit] runStoryLoop(env) whose passes never carry timedOut never calls steps.timeoutFacts.",
+        "[unit] The baseline case with advisor.answerQuestion resolving null resolves with state === \"complete-gate-open\".",
+        "[unit] The baseline case calls sink.ledger with `gate timeout on scoped (baseline): no fix round, asked the advisor`.",
+        "[unit] The baseline case with advisor.answerQuestion resolving the string `raise the limit` calls sink.ledger with `gate timeout advice: raise the limit`.",
+        "[unit] The baseline case with advisor.answerQuestion resolving a string runs no turn of kind: \"answer\".",
+        "[unit] The baseline case with advisor.answerQuestion rejecting resolves with state === \"complete-gate-open\".",
+        "[unit] The baseline case with advisor.answerQuestion rejecting runs no turn of kind: \"fix\".",
+        "[unit] runStoryLoop(env) with a first-pass timedOut: [\"scoped\"] and steps.timeoutFacts rejecting runs one turn of kind: \"fix\" before any advisor.answerQuestion call.",
+        "[unit] The two-timeout case with steps.timeoutFacts rejecting calls advisor.answerQuestion with timing.repeated === true.",
+        "[unit] The two-timeout case with steps.timeoutFacts rejecting calls advisor.answerQuestion with a timing that has no limitSeconds key.",
+        "[unit] The baseline case calls steps.configFacts with [\"scoped\"].",
+        "[unit] runStoryLoop(env) whose first pass has green gates and a red suite with timedOut: [\"full-suite\"], with steps.timeoutFacts resolving { baselineTimedOut: true, limitSeconds: 600 }, never calls steps.configFacts.",
+        "[unit] runStoryLoop(env) whose first pass has green gates and a suite with timedOut: [\"full-suite\"], whose second pass has a red lint gate with no timedOut, and whose steps.timeoutFacts resolves { baselineTimedOut: false, limitSeconds: 600 } never calls advisor.answerQuestion with status: \"GATE_TIMEOUT\".",
+        "[unit] runStoryLoop(env) in that suite-timeout-then-red-lint case runs a second turn of kind: \"fix\".",
+        "[unit] The two-timeout case whose fix turn replied BLOCKED never calls sink.ledger with a text that starts fix round r1 blocked.",
+        "[unit] runStoryLoop(env) with two consecutive scoped timeouts and no steps.timeoutFacts calls advisor.answerQuestion with timing.baselineTimedOut === false.",
+        "[unit] runStoryLoop(env) logs a warn when steps.timeoutFacts throws while reading current-pass timeout facts."
+      ],
+      "tags": [
+        "workflow",
+        "timeouts",
+        "advisor",
+        "2918"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Changes cross-pass graph routing and one-shot advisor state with fail-soft timing reads and stale-suite exclusion."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/timeout-stop.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/story-graph.ts",
+        "packages/nax/src/workflow/advisor.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/story-loop-timeout-route.test.ts"
+      ],
+      "suggestedCriteria": [
+        "runStoryLoop(env) with a baseline-matched full-suite-only timeout calls advisor.answerQuestion with no facts key.",
+        "runStoryLoop(env) whose scoped configFacts throws still asks the timeout advisor without a facts key."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/story-graph.test.ts",
+          "reason": "`EXPECTED_PRODUCES.evaluate` lists the `evaluate` node's `produces` keys and is compared to the graph with a sorted equality check; the list gains `timeoutAsked`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-006",
+      "title": "Apply timeout advice config changes and explain held stories",
+      "description": "**Goal** — Apply advisor-selected timeout config changes without an implementer turn and carry final timeout causes into advisor drafts, records and summaries.\n\n**Motivation** — A fix agent cannot repair a slow or hanging command, so the gate times out again with the same limit.\n\n**Approach** — A suite result counts only for the pass that ran the suite. `evaluate` returns early on red gates and keeps the earlier pass's suite in its state, so `currentSuite` is passed only when this pass set `suiteThisIteration`, and `previousSuite` only when the previous pass did. `timeoutFacts` is read only when the current pass has a timed-out gate.\n\nA config change the advisor picks is applied through the existing `absorbConfigChange` transaction. When it is applied, `evaluateStep` runs the pass once more in the same node, with no implementer turn, so the gates read the changed command.\n\nA string answer is written to the ledger as `gate timeout advice: <text>` and no implementer turn runs. A `null` answer writes nothing more. A refused change keeps the ledger line `absorbConfigChange` already writes.\n\nIn every case where no change was applied, and whenever the rule fires again after the advisor was already asked, the pass exits `capped`: the residual node rules and the story closes.\n\n`closeStep` passes the timed-out gates of the last pass to `deriveEndState` and, when there are any, records them on the story record as `gateTimeouts`. The same rule as above applies: a suite's `timedOut` counts only when the last pass, or the residual node after it, ran the suite, so a suite result kept from an earlier pass adds nothing. The run summary carries them per story (`stories[].gateTimeouts`), and `formatWorkflowSummary` prints `Held on a gate timeout: <storyId> (<gates>), <storyId> (<gates>)`.\n\n`implementerQuestionDraft` (`packages/nax/src/workflow/advisor-live.ts`) builds the draft for `GATE_TIMEOUT` with the summary `nax stopped the fix loop for <storyId>: the <gates> gate timed out and another fix round cannot change a slow or hanging command.` Its first evidence item has `source: \"gate\"` and the text `Gate timeout facts: limit <n> s; run-start baseline timed out: <yes|no>; same gate timed out in the previous pass: <yes|no>`, with `limit unknown` in place of `limit <n> s` when `limitSeconds` is absent. The menu is unchanged (`answer`, `hold`, and the config changes in `facts`).\n\n**Scope** — In: complete US-005 timeout path with absorbConfigChange/same-node gate rerun, preserve timeoutAsked across that rerun, final/residual suite provenance, close-time record/reason, live advisor evidence and summary/view/formatter. Out: US-004 pure timeout rule and baseline capture, US-005 initial route/request behavior, US-009 concurrent review. The gate timeout limit (`execution.regressionGate.timeoutSeconds`) is not changed by nax, and the advisor is offered no change to it. The #2911 rule that a `full-suite` gate offers no config change stays; a full-suite timeout is asked without config candidates.\n\n**Interface** — Reuse `absorbConfigChange(input: ConfigAnswerInput): Promise<ConfigAnswerResult>` and the GateTimeoutFacts/request status contract from US-005.\n```typescript\n// WorkflowStoryRecord gains:\nreadonly gateTimeouts?: readonly GateName[];\n// WorkflowSummaryView.stories[] entries gain:\ngateTimeouts?: readonly string[];\n// deriveEndState input (from US-004):\ntimedOut?: readonly GateName[];\n```\nThe advisor's config change is refused or its write fails: the existing refusal ledger line is kept and the pass exits `capped`. Do not bypass transaction validation, config reload, recordConfigChange, rollback behavior or the new baseline route allowance. A second routed timeout after an applied change asks no second question. Use timeout-stop.ts for extracted orchestration to keep story-steps.ts below 600 lines. Residual may run a suite only when appropriate and must mark that run for timeout accounting, updating declared graph outputs if needed. Keep costStop precedence. Old/healthy records have no gateTimeouts key; do not rewrite saved results. A baseline case below means first-pass red scoped timeout with timeoutFacts resolving { baselineTimedOut: true, limitSeconds: 600 }. Test from runStoryLoop for transactions/closure, from createLiveWorkflowAdvisor.answerQuestion for drafts, and extend existing summary tests.",
+      "acceptanceCriteria": [
+        "[unit] The baseline case of runStoryLoop(env) with advisor.answerQuestion resolving a config change that steps.applyConfigChange applies calls steps.gates a second time with no implementer turn between the two calls.",
+        "[unit] The baseline case with an applied config change, a green second gate run, a green suite and a clean review resolves with state === \"complete\".",
+        "[unit] The baseline case with an applied config change and a second gate run that again carries timedOut: [\"scoped\"] calls advisor.answerQuestion exactly once in total.",
+        "[unit] The baseline case with an applied config change and a second gate run that again carries timedOut: [\"scoped\"] resolves with reason === \"gate timeout: scoped\".",
+        "[unit] The baseline case with a config change that steps.applyConfigChange refuses resolves with state === \"complete-gate-open\".",
+        "[unit] The baseline case with advisor.answerQuestion resolving null resolves with reason === \"gate timeout: scoped\".",
+        "[unit] The baseline case with advisor.answerQuestion resolving null calls sink.update with gateTimeouts equal to [\"scoped\"].",
+        "[unit] runStoryLoop(env) that closes complete after green gates never calls sink.update with a gateTimeouts key.",
+        "[unit] createLiveWorkflowAdvisor(input).answerQuestion with status: \"GATE_TIMEOUT\", storyId: \"US-003\" and timing.gates: [\"scoped\"] passes the advisor a draft whose summary equals nax stopped the fix loop for US-003: the scoped gate timed out and another fix round cannot change a slow or hanging command.",
+        "[unit] createLiveWorkflowAdvisor(input).answerQuestion with status: \"GATE_TIMEOUT\" and timing: { gates: [\"scoped\"], baselineTimedOut: true, repeated: false, limitSeconds: 600 } passes the advisor a draft whose first evidence item has source === \"gate\".",
+        "[unit] createLiveWorkflowAdvisor(input).answerQuestion with status: \"GATE_TIMEOUT\" and timing: { gates: [\"scoped\"], baselineTimedOut: true, repeated: false, limitSeconds: 600 } passes the advisor a draft whose first evidence item's text equals `Gate timeout facts: limit 600 s; run-start baseline timed out: yes; same gate timed out in the previous pass: no`.",
+        "[unit] createLiveWorkflowAdvisor(input).answerQuestion with status: \"GATE_TIMEOUT\" and timing: { gates: [\"scoped\"], baselineTimedOut: false, repeated: true } passes the advisor a draft whose first evidence item's text equals `Gate timeout facts: limit unknown; run-start baseline timed out: no; same gate timed out in the previous pass: yes`.",
+        "[unit] buildWorkflowRunSummary over a result whose story record US-003 carries gateTimeouts: [\"scoped\"] returns a stories entry for US-003 with gateTimeouts equal to [\"scoped\"].",
+        "[unit] buildWorkflowRunSummary over a result whose story record has no gateTimeouts returns a stories entry with no gateTimeouts key.",
+        "[unit] formatWorkflowSummary of a view whose stories hold { id: \"US-003\", gateTimeouts: [\"scoped\"] } returns text with the line `Held on a gate timeout: US-003 (scoped)`.",
+        "[unit] The baseline case whose steps.applyConfigChange throws a normal write error resolves with state === \"complete-gate-open\".",
+        "[unit] The baseline case whose steps.applyConfigChange throws a normal write error keeps absorbConfigChange's config change refused (write-failed) ledger line.",
+        "[unit] The baseline case logs a warn when advisor.answerQuestion rejects the GATE_TIMEOUT request."
+      ],
+      "tags": [
+        "workflow",
+        "timeouts",
+        "advisor",
+        "reporting",
+        "2918"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Reuses a transactional config answer to rerun a graph pass without a turn and carries final-pass timeout provenance through closure and reporting."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/config-change-absorb.ts",
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/advisor-live.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/log-format/workflow-summary.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/story-loop-timeout-config-change.test.ts"
+      ],
+      "suggestedCriteria": [
+        "runStoryLoop(env) that retains an earlier timed-out suite but closes after a later red lint pass records no full-suite entry in gateTimeouts.",
+        "runStoryLoop(env) records full-suite in gateTimeouts when the residual node itself runs a suite that times out.",
+        "createLiveWorkflowAdvisor(input).answerQuestion for a GATE_TIMEOUT question without facts offers no config-change option."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-007",
+      "title": "Promote deferred defects and fix blocking branch findings first",
+      "description": "**Goal** — Let branch review promote deferred minors into blocking findings and prioritize blocking work before fix-now minors.\n\n**Motivation** — Some were real defects filed too low, and a branch-fix session that hit its step limit had no order to work in.\n\n**Approach** — **Minors triage (#2920).** `MinorTriageDecision` becomes `\"promote\" | \"fix-now\" | \"leave\"`. The branch review prompt (`packages/nax/src/prompts/builders/workflow-branch-builder.ts`) states the three by consequence:\n\n`Triage each deferred minor: \"promote\" when it describes wrong behaviour a user or caller can reach (it is then fixed as a blocking finding), \"fix-now\" when it is a real defect or a breach of a project rule worth fixing before the PR, or \"leave\" when it is style, comment wording, formatting or duplication that no project rule names (it is listed in the PR body and not fixed). Its \"minorTriage\" entry is its whole verdict: do not repeat a deferred minor as a finding.`\n\nThe reply shape reads `\"decision\": \"promote|fix-now|leave\"`. `parseBranchReviewReply` accepts `promote`; an unknown or missing decision still reads as `leave`.\n\n`branchReviewStep` (`packages/nax/src/workflow/feature-steps.ts`) turns each promoted minor into a blocking finding `{ kind: \"quality\", severity: \"important\", issue: \"<storyId>: <text>\" }`, assigned a B id after the reviewer's own blocking findings. The minor stays in the record with `triage: \"promote\"`, so it is in neither the fix-now group nor the PR body's left-minors list. The branch quality floor (`withQualityFloor`) adds its synthetic finding only when the verdict has no blocking finding of its own and no minor was promoted: a promoted minor is the concrete item to fix. The step line adds the promoted count only when it is above zero: `deferred minors: 2 promote, 3 fix-now, 9 leave`, and `deferred minors: 3 fix-now, 9 leave` when none was promoted.\n\n`branchFixStep` orders round 1's items as review findings, then gate findings, then fix-now minors. `buildWorkflowBranchFixPrompt` renders findings with a severity other than `minor` under `## Findings to fix` and the minor ones under a second heading `## Minor findings to fix after those`, which is omitted when there is none. The \"How to work\" list gains `Fix the findings in the first list before the minor ones.`\n\nThe run summary's `branch` view gains `minors: { found, promoted, fixNow, left }`, counted from the record's `minors` list by triage (`left` is the `leave` count) and present only when that list is not empty. The existing `minorsLeft` keeps its meaning: the `leave` count plus the record's `newMinors`. `formatWorkflowSummary` prints `Deferred minors: 9 found, 2 promoted, 3 fix-now, 4 left`.\n\n**Scope** — In: shared triage union/parser, exact consequence prompt/reply shape, promotion and B IDs, step-level quality-floor guard, first-round branch-fix order and prompt partition, optional summary counts. Out: US-002 story parser/retry changes and relocation of branch parser floors; US-003 story mismatch metrics. Deferred minors triaged `leave` are not removed from the PR body, and the story reviewer's own severity wording (changed by #2922) is not edited again. Branch review gets no mismatch follow-up.\n\n**Interface**\n```typescript\nexport type MinorTriageDecision = \"promote\" | \"fix-now\" | \"leave\";\n// WorkflowSummaryView.branch gains:\nminors?: { found: number; promoted: number; fixNow: number; left: number };\n```\n`parseBranchReviewReply(output: string, minorIds: readonly string[]): BranchReviewVerdict | null` keeps its signature. Keep unknown/missing triage as leave. A promoted M item stays recorded as promote but reaches branch fix only as its B finding; preserve later-round target selection, re-review behavior and existing restatement filtering. The withQualityFloor change is at feature-step level and does not remove existing branch parser floors. Update test/unit/prompts/workflow-branch-builder.test.ts reply-shape expectation to promote|fix-now|leave and test/unit/workflow/feature-machine.test.ts first-round IDs from [B3,M1,B1,B2] to [B3,B1,B2,M1]. Add focused branch step tests in the new file and extend parser/prompt/summary tests.",
+      "acceptanceCriteria": [
+        "[unit] parseBranchReviewReply of a reply with minorTriage: [{ id: \"M1\", decision: \"promote\" }] and minorIds: [\"M1\"] returns minorTriage equal to [{ id: \"M1\", decision: \"promote\" }].",
+        "[unit] parseBranchReviewReply of a reply with minorTriage: [{ id: \"M1\", decision: \"drop\" }] and minorIds: [\"M1\"] returns minorTriage equal to [{ id: \"M1\", decision: \"leave\" }].",
+        "[unit] buildWorkflowBranchReviewPrompt returns text that includes the reply shape \"minorTriage\": [{\"id\": \"M1\", \"decision\": \"promote|fix-now|leave\"}].",
+        "[unit] buildWorkflowBranchReviewPrompt returns text that includes \"promote\" when it describes wrong behaviour a user or caller can reach.",
+        "[unit] buildWorkflowBranchReviewPrompt returns text that includes \"leave\" when it is style, comment wording, formatting or duplication that no project rule names.",
+        "[unit] branchReviewStep over a record with minors M1, M2, M3 (story US-001, texts a, b, c) and a verdict that has one important finding and triages them promote, fix-now, leave returns patch.reviewOpen with exactly two findings.",
+        "[unit] branchReviewStep in that one-important-finding and promote/fix-now/leave case returns a second patch.reviewOpen finding equal to { id: \"B2\", kind: \"quality\", severity: \"important\", issue: \"US-001: a\" }.",
+        "[unit] branchReviewStep in that case returns patch.minors whose triage values are [\"promote\", \"fix-now\", \"leave\"].",
+        "[unit] branchReviewStep in that case logs a branch-review step line that ends with ; deferred minors: 1 promote, 1 fix-now, 1 leave.",
+        "[unit] branchReviewStep over a verdict that triages two minors fix-now and one leave logs a branch-review step line that ends with ; deferred minors: 2 fix-now, 1 leave.",
+        "[unit] branchReviewStep over a verdict with quality: \"changes\", no finding of its own and one minor triaged promote returns patch.reviewOpen holding exactly one finding, the promoted one.",
+        "[unit] branchReviewStep over a verdict with quality: \"changes\", no finding of its own and no promoted minor returns patch.reviewOpen holding exactly one finding with the issue quality: reviewer reported changes without a finding.",
+        "[unit] branchFixStep on round 1 over a record with reviewOpen: [B3], gateFindings: [B1, B2] and one fix-now minor M1 calls steps.branchFix with ids in the order [\"B3\", \"B1\", \"B2\", \"M1\"].",
+        "[unit] branchFixStep on round 1 over a record whose minor M1 has triage: \"promote\" and whose reviewOpen holds its finding B2 calls steps.branchFix with exactly one item, id B2.",
+        "[unit] buildWorkflowBranchFixPrompt with one important finding B1 and one minor finding M1 returns text where the heading ## Findings to fix and B1 come before the heading ## Minor findings to fix after those and M1.",
+        "[unit] buildWorkflowBranchFixPrompt with only important findings returns text with zero occurrences of the heading ## Minor findings to fix after those.",
+        "[unit] buildWorkflowBranchFixPrompt returns text that includes Fix the findings in the first list before the minor ones.",
+        "[unit] buildWorkflowRunSummary over a feature record whose minors hold 2 promote, 3 fix-now and 4 leave items returns branch.minors equal to { found: 9, promoted: 2, fixNow: 3, left: 4 }.",
+        "[unit] buildWorkflowRunSummary over a feature record with an empty minors list returns a branch with no minors key.",
+        "[unit] buildWorkflowRunSummary over a feature record whose minors hold 2 promote and 4 leave items and whose newMinors holds 1 item returns branch.minorsLeft === 5.",
+        "[unit] formatWorkflowSummary of a view with branch.minors: { found: 9, promoted: 2, fixNow: 3, left: 4 } returns text with the line `Deferred minors: 9 found, 2 promoted, 3 fix-now, 4 left`."
+      ],
+      "tags": [
+        "workflow",
+        "branch-review",
+        "prompts",
+        "2920"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Changes triage contracts, concrete finding allocation and fix priorities across parsing, feature workflow, prompts and reporting."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/prompts/builders/workflow-branch-builder.ts",
+        "packages/nax/src/operations/workflow-replies.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/log-format/workflow-summary.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/feature-minor-promotion.test.ts"
+      ],
+      "suggestedCriteria": [
+        "parseBranchReviewReply assigns leave to a known minor whose triage entry has no decision.",
+        "A promoted deferred minor is absent from the PR body's left-minors list while a leave-triaged minor remains present."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prompts/workflow-branch-builder.test.ts",
+          "reason": "one test expects the reply shape text `\"minorTriage\": [{\"id\": \"M1\", \"decision\": \"fix-now|leave\"}]`; the shape now reads `\"decision\": \"promote|fix-now|leave\"`."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-machine.test.ts",
+          "reason": "one test expects the branch-fix input ids in the order `[\"B3\", \"M1\", \"B1\", \"B2\"]` (review findings, fix-now minors, gate findings); the new order is review findings, gate findings, fix-now minors, so the expectation becomes `[\"B3\", \"B1\", \"B2\", \"M1\"]`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-008",
+      "title": "Add the default-off parallel review switch and running-suite prompt",
+      "description": "**Goal** — Add default-off parallelWithSuite config and forward a running-suite hint to the story reviewer without changing scheduling yet.\n\n**Motivation** — Inside a story pass the full-suite gate and the story review run in sequence, yet the review does not read the suite result.\n\n**Approach** — **Review beside the suite (#2919).** `workflow.review` gains `parallelWithSuite: boolean`, default `false`. `packages/nax/src/cli/config-descriptions.ts` gains a description for it, and the `workflow.review` description is reworded to name both keys. `StoryLoopEnv` gains `parallelReview?: boolean` and `now?: () => number` (default `Date.now`). `buildStoryEnv` sets `parallelReview` to `(workflow.review ?? WORKFLOW_REVIEW_DEFAULTS).parallelWithSuite === true`, because a hand-built `workflow` block can omit `review`, and its `storyReview` step forwards the third argument to `runStoryReview`.\n\nThe review step is called with the gate states recorded so far (no `full-suite` key) and a new third argument `{ suiteRunning: true }`. `runStoryReview` passes it to `buildWorkflowStoryReviewPrompt`, whose gates line then ends `full suite still running.` followed by the sentence `The full suite is still running while you review; nax records its result itself, so do not list it under cannotVerify.`\n\nThe reviewer tree guard (`packages/nax/src/review/reviewer-guard/`) restores non-ignored paths that changed during a review turn. With the switch on, a suite that writes files git does not ignore can have them removed when the review ends. The config description says so; the switch is for suites whose outputs are gitignored.\n\n**Scope** — In: schema/runtime type/defaults/CLI descriptions, optional env fields and review options, buildStoryEnv forwarding, runStoryReview/builder prompt hint, compatibility fixture updates. The quoted call behavior is the interface this story enables; US-009 makes the concurrent loop call. Out: US-009 actual overlap scheduling/settlement/timing record and summary; US-003 mismatch recording. `workflow.review.parallelWithSuite` stays `false` by default, and no project config is edited by this feature. The reviewer tree guard is not changed.\n\n**Interface**\n```typescript\n// StoryLoopSteps.storyReview target:\nstoryReview(concerns, gates?, options?: { readonly suiteRunning?: boolean });\n// runStoryReview target:\nrunStoryReview(sc, concerns, gates?, options?: { readonly suiteRunning?: boolean });\n// StoryLoopEnv gains:\nreadonly parallelReview?: boolean;\nreadonly now?: () => number;\n// buildWorkflowStoryReviewPrompt input gains:\nsuiteRunning?: boolean;\n// WorkflowConfig[\"review\"] and WorkflowReviewConfigSchema target:\n// { coverageRetries, parallelWithSuite }\n```\nPreserve the existing return types and optional gates behavior. WORKFLOW_REVIEW_DEFAULTS becomes { coverageRetries: 3, parallelWithSuite: false }, derived from the same schema. No suiteRunning/no recorded full-suite state still renders full suite not run. Update three equality expectations in test/unit/config/schemas-workflow-review.test.ts, the default workflow.review in workflow-config.test.ts, and removed-config-keys.test.ts's project-loading review expectation; sliceFiles stays absent. Integration tests enter buildStoryEnv for sparse config fallback and dispatch through its steps.storyReview third argument; direct runStoryReview tests assert the resulting workflowStoryReviewOp prompt. Use the new focused env integration file rather than growing the large existing stage-env test.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({}).workflow.review.parallelWithSuite equals false.",
+        "[unit] NaxConfigSchema.parse({ workflow: { review: { parallelWithSuite: true } } }).workflow.review.parallelWithSuite equals true.",
+        "[unit] WORKFLOW_REVIEW_DEFAULTS equals { coverageRetries: 3, parallelWithSuite: false }.",
+        "[unit] FIELD_DESCRIPTIONS[\"workflow.review.parallelWithSuite\"] from packages/nax/src/cli/config-descriptions.ts is a non-empty string.",
+        "[unit] FIELD_DESCRIPTIONS[\"workflow.review\"] includes the key name parallelWithSuite.",
+        "[integration] buildStoryEnv over a config with workflow.review.parallelWithSuite: true returns an env with parallelReview === true.",
+        "[integration] buildStoryEnv over a config whose workflow block has no review key returns an env with parallelReview === false.",
+        "[unit] buildWorkflowStoryReviewPrompt with green lint, typecheck and scoped gates and suiteRunning: true returns text with the line ending scoped tests green, full suite still running.",
+        "[unit] buildWorkflowStoryReviewPrompt with suiteRunning: true returns text that includes The full suite is still running while you review; nax records its result itself, so do not list it under cannotVerify.",
+        "[unit] buildWorkflowStoryReviewPrompt with no suiteRunning and no recorded full-suite state returns text with the gates line ending full suite not run.",
+        "[unit] runStoryReview(sc, concerns, gates, { suiteRunning: true }) dispatches workflowStoryReviewOp with a prompt that includes full suite still running.",
+        "[integration] Calling steps.storyReview(concerns, gates, { suiteRunning: true }) on the env that buildStoryEnv returns dispatches workflowStoryReviewOp with a prompt that includes full suite still running.",
+        "[unit] NaxConfigSchema.safeParse({ workflow: { review: { parallelWithSuite: \"true\" } } }).success equals false."
+      ],
+      "tags": [
+        "workflow",
+        "config",
+        "review",
+        "2919"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "This is defaulted boolean configuration and optional-argument forwarding through existing env/review/prompt seams; it introduces no scheduling change and is covered by schema and dispatch tests."
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-workflow.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/workflow/story-review.ts",
+        "packages/nax/src/prompts/builders/workflow-story-review-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/workflow/parallel-review-env.test.ts"
+      ],
+      "suggestedCriteria": [
+        "FIELD_DESCRIPTIONS[\"workflow.review.parallelWithSuite\"] warns that suite outputs not ignored by git can be removed when review ends."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/schemas-workflow-review.test.ts",
+          "reason": "three equality expectations pin `workflow.review` to `{ coverageRetries: <n> }`; the object now also carries `parallelWithSuite: false`."
+        },
+        {
+          "path": "packages/nax/test/unit/config/workflow-config.test.ts",
+          "reason": "the expected default `workflow` object lists `review: { coverageRetries: 3 }`; it becomes `review: { coverageRetries: 3, parallelWithSuite: false }`."
+        },
+        {
+          "path": "packages/nax/test/unit/config/removed-config-keys.test.ts",
+          "reason": "the test \"project loading retains only coverageRetries\" expects `config.workflow.review` to equal `{ coverageRetries: 2 }`; the loaded object now also carries `parallelWithSuite: false`, and the removed key `sliceFiles` is still absent."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-009",
+      "title": "Run the first story review beside the full-suite gate",
+      "description": "**Goal** — Opt-in fresh-story first reviews overlap the full-suite gate, retain both outcomes and report measured overlap.\n\n**Motivation** — Full-suite gates took 11.3 h and story reviews 10.8 h; running the first review beside the suite saves the shorter of the two per pass, 4.6 h in this window.\n\n**Approach** — A pass is a parallel pass when `env.parallelReview` is true, `env.resume` is `null`, the story has not been reviewed yet, the gates are green and the gate result has no `suiteCovered`. A parallel pass runs in this order: the report check (`runReportCheck`) first, then `env.steps.fullSuite()` and the first story review together. The report check moves ahead of the suite in a parallel pass only, so a first pass whose suite turns red still spends the report turn when one is owed. Both the suite and the review are awaited to settlement before the pass goes on; if the review rejects (a run abort), the rejection is rethrown after the suite settles. The review step is called with the gate states recorded so far (no `full-suite` key) and a new third argument `{ suiteRunning: true }`. `runStoryReview` passes it to `buildWorkflowStoryReviewPrompt`, whose gates line then ends `full suite still running.` followed by the sentence `The full suite is still running while you review; nax records its result itself, so do not list it under cannotVerify.`\n\nAfter both settle, the pass returns the suite findings plus the review's open findings. A red suite before the round cap therefore opens a fix round that carries both. Every other pass (a re-review, a resumed story, a pass with `suiteCovered`) keeps today's order, including the rule that a red suite before the cap bypasses the re-review.\n\nThe pass measures the overlap with `env.now`: it reads the clock once before starting the two, once when the suite settles and once when the review settles, and the overlap is the smaller of the two elapsed times. It is recorded on the story record as `reviewOverlapMs`. The run summary sums it over the stories as `reviewOverlapMs` (absent when zero), and `formatWorkflowSummary` prints `Review overlap with the full suite: <formatDuration(ms)>`.\n\nThe reviewer tree guard (`packages/nax/src/review/reviewer-guard/`) restores non-ignored paths that changed during a review turn. With the switch on, a suite that writes files git does not ignore can have them removed when the review ends. The config description says so; the switch is for suites whose outputs are gitignored.\n\n**Scope** — In: new suite-review-pass.ts parallel helper, thin evaluate/review integration, report-before-launch on parallel passes, settled outcome absorption, overlap record and summary/view/formatter. Out: US-008 config/prompt plumbing; US-003 mismatch helper semantics; US-006 timeout/config-change policy. Re-reviews, resumed stories and branch review never run beside the suite. The reviewer tree guard is unchanged; no project config is edited.\n\n**Interface**\n```typescript\n// StoryLoopEnv seams from US-008:\nreadonly parallelReview?: boolean;\nreadonly now?: () => number; // default Date.now\n// StoryLoopSteps.storyReview uses its third argument:\n// options?: { readonly suiteRunning?: boolean }\n// WorkflowStoryRecord gains:\nreadonly reviewOverlapMs?: number;\n// WorkflowSummaryView gains:\nreviewOverlapMs?: number;\n```\nThe function shapes inside suite-review-pass.ts are the implementer's choice. Use _deps/injected callbacks for new seams and default the clock to Date.now. The story review rejects while the suite is still running: the rejection is rethrown after the suite settles. The suite step rejects while the story review is still running: the rejection is rethrown after the review settles. Attach settlement handlers to both tasks promptly and do not orphan either task on rejection. The story review is skipped (`ran: false`) in a parallel pass: the story is marked unreviewed as today; the suite result is used unchanged.\n\nReuse existing review absorption for deferred minors, mismatch recording via verdict-mismatch.ts, cannotVerify, finding IDs and review logging; the reviewer sees only gate states recorded before launch, even if an old suite object is retained. Set suiteThisIteration only for this pass's actual/reused suite. suiteCovered skips fullSuite and remains sequential with green suite state and no third review argument. Preserve default/unset sequential phase order and red-suite-before-cap re-review bypass. Use controllable promises and deterministic env.now values in runStoryLoop tests to prove start order, settlement barriers and exact overlap rather than elapsed wall-time assertions. Extend run-summary and log-format tests to assert optional sum/formatDuration output.",
+      "acceptanceCriteria": [
+        "[unit] runStoryLoop(env) with parallelReview: true, green gates and a steps.fullSuite promise still pending has called steps.storyReview before that promise resolves.",
+        "[unit] runStoryLoop(env) with parallelReview unset, green gates and a steps.fullSuite promise still pending has not called steps.storyReview before that promise resolves.",
+        "[unit] runStoryLoop(env) with parallelReview: true calls steps.storyReview with a third argument equal to { suiteRunning: true }.",
+        "[unit] runStoryLoop(env) with parallelReview: true calls steps.storyReview with a gates argument that has no \"full-suite\" key.",
+        "[unit] runStoryLoop(env) with parallelReview: true, a DONE first turn and steps.reportExists resolving false runs the turn of kind: \"report\" before the first steps.fullSuite call.",
+        "[unit] runStoryLoop(env) with parallelReview: true and a gate result carrying suiteCovered: true calls steps.storyReview with no third argument.",
+        "[unit] runStoryLoop(env) with parallelReview: true and a gate result carrying suiteCovered: true calls steps.storyReview with a gates argument whose \"full-suite\" value is \"green\".",
+        "[unit] runStoryLoop(env) with parallelReview: true, a red suite on the first pass and a review verdict with one important finding runs a first turn of kind: \"fix\" whose findings hold the suite finding.",
+        "[unit] runStoryLoop(env) in that red-suite case runs a first turn of kind: \"fix\" whose findings hold the review finding.",
+        "[unit] runStoryLoop(env) with parallelReview: true, a green suite and a clean review resolves with state === \"complete\".",
+        "[unit] runStoryLoop(env) with parallelReview: true, a green suite and a clean review calls steps.fullSuite exactly once.",
+        "[unit] runStoryLoop(env) with parallelReview: true, a green suite and a clean review calls steps.storyReview exactly once.",
+        "[unit] runStoryLoop(env) with parallelReview: true, on the pass after a fix round, has not called steps.reReview before that pass's steps.fullSuite promise resolves.",
+        "[unit] runStoryLoop(env) with parallelReview: true and a non-null env.resume whose reviewed is false has not called steps.storyReview before the steps.fullSuite promise resolves.",
+        "[unit] runStoryLoop(env) with parallelReview: true whose steps.storyReview rejects while steps.fullSuite is pending rejects only after the steps.fullSuite promise has settled.",
+        "[unit] runStoryLoop(env) with parallelReview: true whose steps.fullSuite rejects while steps.storyReview is pending rejects only after the steps.storyReview promise has settled.",
+        "[unit] runStoryLoop(env) with parallelReview: true whose steps.storyReview resolves { ran: false, why: \"timeout\" } and whose suite is green resolves with unreviewed === true.",
+        "[unit] runStoryLoop(env) with parallelReview: true and an env.now that returns 0 before the two start, 100 when the review settles and 300 when the suite settles calls sink.update with reviewOverlapMs === 100.",
+        "[unit] runStoryLoop(env) with parallelReview unset never calls sink.update with a reviewOverlapMs key.",
+        "[unit] buildWorkflowRunSummary over a result whose two story records carry reviewOverlapMs: 100 and reviewOverlapMs: 200 returns reviewOverlapMs === 300.",
+        "[unit] buildWorkflowRunSummary over a result with no reviewOverlapMs on any story record returns a view with no reviewOverlapMs key.",
+        "[unit] formatWorkflowSummary of a view with reviewOverlapMs: 300000 returns text with the line `Review overlap with the full suite: ` followed by the value of formatDuration(300000)."
+      ],
+      "tags": [
+        "workflow",
+        "performance",
+        "concurrency",
+        "review",
+        "2919"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003",
+        "US-006",
+        "US-008"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Concurrent suite/review settlement and shared pass bookkeeping need isolated promise-order tests and verification, but use existing injected steps and do not redesign the graph engine or security/session infrastructure."
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/report-check.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/log-format/workflow-summary.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/suite-review-pass.ts",
+        "packages/nax/test/unit/workflow/story-loop-parallel-review.test.ts"
+      ],
+      "suggestedCriteria": [
+        "runStoryLoop(env) with parallelReview: true records reviewOverlapMs === 100 when env.now returns 0 at launch, 100 at suite settlement and 300 at review settlement.",
+        "buildWorkflowRunSummary returns no reviewOverlapMs key when every story has reviewOverlapMs: 0.",
+        "runStoryLoop(env) with parallelReview: true and red ordinary gates does not launch either fullSuite or storyReview in that pass."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "Repository exploration and architecture: This is an enhancement of @nathapp/nax, not greenfield. All nine implementation stories are scoped to packages/nax and retain the spec's binding dependencies. The codebase-memory MCP server is unavailable in this tool set, so discovery used direct Read, Glob and Grep. No implementation or validation commands were run while drafting. The requested PRD is a planning artifact; no implementation story may author a file under .nax/. Read docs/architecture/ARCHITECTURE.md:19 for dependency injection, :26 for concurrency/testing, and :156 for hard limits: 600 source lines and 800 test lines. Use Bun-native APIs, strict TypeScript, existing barrel exports and _deps seams; do not introduce direct nax-ai imports, alter permissions, or change agent/session infrastructure. The feature fixes five sources of wasted work found across 34 runs (110.6 h), approximately 15 h total; the concurrency optimization remains opt-in. Pipeline mode is untouched (the current architecture documentation also describes workflow as the sole effective execution mode; do not revive or modify legacy mode behavior).\n\nStory loop and shared integration: packages/nax/src/workflow/story-loop.ts:37 declares the injected steps, :114 the environment, :145 the in-memory graph state and :188 runStoryLoop. packages/nax/src/workflow/story-steps.ts:311 currently absorbs the first review, :386 evaluates gates -> suite -> report -> review, :469 evaluates early-stop routing, :514 runs residual adjudication and :568 closes. This file is exactly 576 lines and has little headroom under 600. Put mismatch recording in new verdict-mismatch.ts (US-003), timeout policy and routing helpers in new timeout-stop.ts (US-004/005/006), and parallel settlement/measurement in new suite-review-pass.ts (US-009); leave thin calls in story-steps.ts rather than growing it past the limit. Existing helpers and phases must retain their semantics. packages/nax/src/workflow/story-graph.ts:32 lists evaluate's declared outputs, and :55 lists residual's; graph patches must agree with produces. Add timeoutAsked to the initial state and evaluate output in US-005. If residual changes suiteThisIteration to track that it actually ran a suite, declare that output too. Track current and previous suite provenance separately: evaluate resets suiteThisIteration and returns immediately on red ordinary gates while retaining a suite object from an older pass. That old object's timedOut must never trigger timeout routing or gateTimeouts for a new pass. Preserve existing cost-stop precedence, no-work guards, pending-session findings, report allowance, finding IDs, re-review fix-base retention and residual rulings. A config-induced retry is another gate pass in the same evaluate node, not another implementer round.\n\nUS-001 analysis: packages/nax/src/test-runners/scoped-selection.ts:91 owns selection; its fullSuite helper at :97 uses fallbackFullSuiteCommand and flags, while its scoped helper at :105 always declares isFullSuite false today. Compare QualityCommandSpec structurally and exactly: a string matches the same string; arrays match only arrays with the same strings in order. No trimming, shell normalization, command equivalence inference, or orchestrator-based coverage inference. Compare the built command against input.testCommand, then use fullSuite() without options when equal. packages/nax/src/operations/verify-scoped.ts:45/:55 define output/deps and :115 the operation. Its deferred skip requires !thresholdFallback and !isMonorepoOrchestrator; retain those conditions. The zero-test fallback around :294 changes effectiveCommand and isFullSuite after selection, so coversFullSuite must reflect the final executed command, not only the initial selection. Only passed + isFullSuite + exact full-suite resolver command equality yields true; every skip, failure and timeout returns false. Resolve against ctx.packageView.config with input.workdir and input.packagePrefix, not a root-only slice or the absolute directory as a package key. packages/nax/src/quality/command-resolver.ts:71 resolves review.commands.test precedence, package placeholders and orchestrator promotion. packages/nax/src/operations/full-suite-gate.ts:143 already consumes that resolver from the package-merged config. Missing/throwing resolution must fail safe to false without changing the successful scoped result. Do not add a second resolver policy or reuse by parsed pass count. packages/nax/src/workflow/gates.ts:83 combines gates and :116 runs them; propagate suiteCovered only when true. In evaluate synthesize the specified green suite result, set suiteThisIteration and emit the exact reuse ledger line so residual cannot repeat the suite. Required literal fixture migrations: test/unit/workflow/gates.test.ts:40 green gets coversFullSuite:false (existing assertions unchanged); fakeDeps in test/unit/operations/verify-scoped.test.ts and verify-scoped-scratch.test.ts gets resolveFullSuiteCommand resolving undefined. Existing selectScopedTests unit tests live at test/unit/test-runners/scoped-selection.test.ts:21. Operations and workflow gates import VerifyScopedOutput through src/operations/index.ts:75, so keep barrel types synchronized. This is a required internal type addition, not a persisted-result migration.\n\nUS-002/003 analysis: packages/nax/src/operations/workflow-types.ts:42 defines StoryReviewVerdict and :81 BranchReviewVerdict extends it; the dependency direction is operations -> consumed by workflow, never import workflow back into operations. packages/nax/src/operations/workflow-replies.ts:129 currently appends SPEC_FAIL_ISSUE then QUALITY_CHANGES_ISSUE and :189 branches by delegating to that parser. Remove floors only from the story parser, compute optional mismatch from sanitized original findings in spec/quality order, and reapply the exact existing texts and order inside the branch parser, removing mismatch from its returned shape. A dual fail/changes empty reply gets one spec floor in branch review, not two findings. The out-of-scope prose saying branch keeps both synthetic findings means preserve both floor rules; explicit US-002 AC12 determines the single-finding result. Existing story synthetic tests at test/unit/operations/workflow-replies.test.ts:122, :130 and :141 must be revised and paired with branch regression assertions. packages/nax/src/operations/workflow-story-review.ts:44 configures one retry (maxAttempts:2), :43 supplies the lenient final parse. packages/nax/src/agents/retry/parse-retry.ts:10 exposes invalid(lastOutput), and :67 reserves truncation prompts for unparseable output. Reject mismatch only in retry validation, not in the operation's final parser. packages/nax/src/operations/call-dispatch-run.ts:274 probes retry validity per turn and :464/:473 performs the final typed parse, explaining why an exhausted mismatch must still return a verdict despite exhaustedFallback:null. Exercise this through callOp with a scripted agent, not just by inspecting retry configuration; do not modify shared dispatch to force null on a parseable mismatch. An unparseable then mismatched reply still has exactly two turns. Add buildWorkflowVerdictMismatchRetry to the builder and src/prompts/index.ts:146 export block; export VerdictMismatch through src/operations/index.ts:98 and workflow/types.ts:2 where consumed. Keep prompt dependency boundaries: the story builder currently declares a structural gate-state type locally at :11, so import the new type from its owning operations type module or another permitted type-only route rather than a runtime workflow dependency. packages/nax/src/workflow/story-steps.ts:326 already filters by severity, so mismatch recording must not create findings or convert verdict labels into blocking work. Continue ledgerCannotVerify, minor deferral, assigning IDs and fixing real blocking findings even on mismatch. Persist the optional model from StepModel.model, not agentName. Count one mismatched story record per model, not one count per mismatch kind. Sort model rows, use unknown for absent model and omit the summary key if none. New module tests must also enter runStoryLoop so the producer-consumer seam is proven.\n\nUS-004/005/006 analysis: packages/nax/src/workflow/gates.ts:149 treats passed-on-timeout as red and preserves a specific timeout finding; add timeout facts without changing these states/findings. Its guarded wrapper :65 turns non-abort errors into ordinary red findings, not timeout markers. Read explicit status, never infer timeout by finding text. packages/nax/src/workflow/blocked-stop.ts:54 is the existing ledger-owning early stop; new gateTimeoutRoute must be pure and compare explicit timedOut sets across current and immediately previous passes, with baseline taking precedence. Return all current timed-out gates if any repeat, not just the intersection. packages/nax/src/verification/test-baseline.ts:56 defines the timeout sentinel and :109 reads it; baseline capture and files remain untouched. packages/nax/src/quality/gate-timeout.ts:26 is the limit SSOT. packages/nax/src/workflow/stage-env.ts:58 builds the env; :148 wires gates and suite through closures over mutable current, :152 wires storyReview, and configChangeSteps at :274 can reload that context. Wire timeoutFacts with injected external reads and the existing resolver, reading the feature's run-start baseline. Read timeoutFacts only on a pass with current timeout evidence; unwired/throwing means healthy/unknown baseline and no limitSeconds, warn on a throw. The first healthy-baseline timeout still gets one fix round. Routing precedes and replaces stopOnUnchangedBlock only when fired, irrespective of DONE_WITH_CONCERNS/BLOCKED. timeoutAsked is a per-story loop allowance independent of implementer question count; initialize false, persist through evaluate patches, and never ask again after applying a change and retrying.\n\nAdvisor path: packages/nax/src/workflow/advisor.ts:30 is ImplementerQuestionRequest and :48 WorkflowAdvisor; extend the question status union, not ImplementerStatus. Add GateTimeoutFacts and timing to this request. Only scoped timeout can gather configFacts([scoped]); a full-suite-only timeout must omit facts and make no configFacts call. packages/nax/src/workflow/advisor-live.ts:112 currently constructs a generic implementer draft; add the exact timeout summary and gate evidence first, retaining buildMenu and its approved answer/hold/config-change candidates. A timeout string answer is advice to ledger, never an answer turn to an implementer. Catch injected answerQuestion throws, warn, then cap. packages/nax/src/workflow/config-change-absorb.ts:113 applies and records config changes; reuse it, including its refusal ledger and rollback-failure propagation, rather than copying transactions or writing config in a new helper. Its :145 changeOutcome downgrades normal write throws to write-failed but deliberately rethrows failed rollback; do not swallow that exceptional existing containment behavior. An applied change re-evaluates without spending a fix turn; no change, a refusal/write failure or a second routed timeout exits capped to residual. close.ts:9 derives terminal state: cost limit still wins; name timeout only if every red gate is among timedOut. US-006 passes only last-pass/residual-run timeout facts into close and optionally records gateTimeouts. Retained older suite states must not contribute timeout markers. Existing test/unit/workflow/story-graph.test.ts EXPECTED_PRODUCES.evaluate must add timeoutAsked in US-005. Existing blocked-stop/config-change/no-op/residual tests provide regression coverage; new entrypoint tests must prove actual step/advisor calls, warning fallbacks, repeat prevention and no stale-suite route. New buildStoryEnv timeoutFacts integration tests can use temporary baseline artifacts; never edit this repository's .nax/ files.\n\nUS-007 analysis: packages/nax/src/operations/workflow-types.ts:77 and workflow/types.ts:203 share MinorTriageDecision across records, so extend the single union. workflow-replies.ts:178 triageOf accepts only two values today and branch parsing maps missing/unknown to leave. Keep known-id ordering and fallback. packages/nax/src/prompts/builders/workflow-branch-builder.ts:132 pins reply JSON and :177 contains old cheap triage wording; replace those with the specified three-consequence wording, leaving the story reviewer's severity wording untouched. packages/nax/src/workflow/feature-steps.ts:122 has a separate withQualityFloor, :128 branchReviewStep assigns B IDs after triaging, and :178 branchFixStep currently orders review, minors, gates. Allocate promoted concrete quality/important drafts after the reviewer's own blocking drafts, preserve triage:promote in the minor record, and do not include promoted minors in either fixNowMinors or left-minors. Update only the step-level quality floor for promoted concrete work; retain the branch parser floors required by US-002, rather than silently changing branch parser policy. feature-steps.ts also has restated-minor filtering and artifact writing; preserve that behavior and avoid duplicating a promoted item as both M and B. Round 1 input must be review -> gates -> fix-now minors; follow-up target selection is unchanged. Branch builder :230 renders fix input; partition by severity and omit the minor heading when empty. run-summary.ts:35 already computes minorsLeft as leave+newMinors, :40 counts B IDs excluding gate IDs; preserve those meanings while adding triage counts only for nonempty minors. Known fixture changes: workflow-branch-builder.test.ts reply shape and feature-machine.test.ts IDs [B3,B1,B2,M1]. Leave-minor PR publishing paths stay unchanged and must continue excluding promote via the existing leave predicate.\n\nUS-008/009 analysis: packages/nax/src/config/runtime-types-workflow.ts:81 has an optional review block with coverageRetries; schemas-workflow.ts:16 parses review using prefault and :23 derives WORKFLOW_REVIEW_DEFAULTS. Add a default-false boolean to that same schema/type, not a second defaults constant. Update cli/config-descriptions.ts:106 parent description and add a child description including the gitignored-output warning. buildStoryEnv must use (workflow.review ?? WORKFLOW_REVIEW_DEFAULTS).parallelWithSuite === true for sparse hand-built configs and forward the new third storyReview argument to runStoryReview's fourth parameter. story-review.ts:97 builds the review prompt and underReviewLimit at :21 returns ran:false for ordinary timeout/unparseable output but rethrows abort. Builder :17 constructs the gates line; when suiteRunning, do not fabricate a full-suite state and explicitly tell the reviewer not to list the running suite in cannotVerify. Existing equality anchors: schemas-workflow-review.test.ts:7/:11/:26, workflow-config.test.ts default object, and removed-config-keys.test.ts project-loading review object; preserve coverageRetries and continued removal of sliceFiles. US-008 is configuration/prompt plumbing only; actual overlap is US-009.\n\nConcurrency constraints: US-009 alone changes scheduling, and only with parallelReview true, resume null, first review not yet attempted, green ordinary gates and no suiteCovered. In that path runReportCheck before either async task; sequential path keeps suite-before-report behavior and red suite bypass of re-review before the cap. Await both to settlement, with rejection handlers attached promptly so the first failure cannot cause an unhandled rejection while waiting for the other; rethrow after the other settles, never orphan gate processes. Record elapsed times using exactly three env.now/Date.now reads: start and one per settled task; overlap is min(elapsed suite,elapsed review), not wall time, task sum or role timing sum. Absorb review findings/minors/mismatch/cannotVerify and skipped-review state as usual, and combine suite and review findings even if suite is red before the cap. Cached suiteCovered must remain sequential and render full-suite green. Re-reviews and any resumed story remain sequential. packages/nax/src/review/reviewer-guard/guard.ts:3/:85 and snapshot.ts:162/:204 restore non-ignored changes during review; do not weaken this security guard for concurrency. The opt-in assumes suite outputs are gitignored and warns that other outputs can be removed. This story changes orchestration only, not permissions, credentials, sessions or guard internals.\n\nReporting and compatibility: packages/nax/src/workflow/run-summary.ts:98 builds the pure view from result.json, packages/nax/src/log-format/types.ts:82 declares it and packages/nax/src/log-format/workflow-summary.ts:36 renders it using formatDuration from formatter. Extend these files progressively in US-003, US-006, US-007 and US-009. Story record fields verdictMismatch/gateTimeouts/reviewOverlapMs and summary fields are optional; omit absent facts and zero overlap, rather than introducing empty arrays/undefined keys into persisted records or prior-summary equality assertions. Existing schemaVersion:1 at workflow/types.ts:105 needs no migration/bump; older results remain readable and are never rewritten. Positive overlap sums across stories only. Gate timeout summary strings use story IDs and gate lists. Mismatch rows are sorted by model; deferred counts reflect the record's current triage list and leave+newMinors keeps its old meaning.\n\nTesting and execution plan: Reuse test/helpers/workflow-story-loop.ts:96 makeStoryLoopHarness scripting, makeStoryLoopAdvisor at :91, fixtures at :56, _workflowDeps and makeScriptedCallOp instead of mocking whole modules or reimplementing harnesses. Existing test/unit/workflow/story-loop-suite-first.test.ts:25 pins sequential phases and :48 pins the no-review-on-red-suite rule; keep these unchanged when opt-in is absent. Existing test/unit/workflow/stage-env.test.ts is 636 lines, so prefer focused new env integration files over pushing it past 800. Existing test/unit/operations/workflow-ops.test.ts:97 exercises review wiring and test/unit/workflow/gates.test.ts:53 covers exact result shape. Existing summary tests at test/unit/workflow/run-summary.test.ts:50 and test/unit/log-format/workflow-summary.test.ts are regression anchors for omitted fields. Unit-test pure selection/parser/timeout/end-state/formatting rules; integrate callOp retries and buildStoryEnv forwarding with fake agents and temporary files; test concurrency with controllable promises and a deterministic clock, never wall sleeps. New tests listed in expectedFiles are implementation deliverables, not standalone testing stories. Follow the nine-story binding order on one branch, allowing dependency-independent work only without conflicting edits; do not add dependencies. Run targeted Bun tests with explicit paths from packages/nax, and use existing package gates outside sandboxed pipeline execution; never bare bun test or bun run nax. Coverage is a separate outside-session CI concern, not an acceptance criterion. No package version bumps, dependency additions, root config edits or other workspace changes are needed.\n\nRefine self-audit: All 166 numbered spec acceptance criteria were enumerated and checked in their original stories. The first 22/22/12/18/22/15/21/12/22 entries of US-001 through US-009 respectively remain the spec criteria in order; additional failure-table criteria follow those entries, never replace them. In particular the packagePrefix third argument (US-001.8), unchanged green scoped status after a resolver throw (US-001.15), findings-kept ledger suffixes (US-003.3-4), scoped-only configFacts call (US-005.18-19), stale-suite negative regression (US-005.20-21), no implementer between reruns (US-006.1), exactly one advisor question in total (US-006.3), omitted heading when no minors (US-007.16), existing minorsLeft meaning (US-007.20), real env options forwarding (US-008.12), sequential fallback and both settlement barriers (US-009.2/13-16), and formatDuration value (US-009.22) are retained. Corrected US-006.11 to explicitly retain status GATE_TIMEOUT from its original shared precondition. Quoted exact ledger/summary strings are message content; sentence punctuation outside a quoted literal is not part of the expected message. The 16 feature exclusions are preserved verbatim and all nine binding dependency lists and five-file context lists match the spec. Every story has a negative path: resolver failure in US-001, unparseable retry in US-002, absent model/skipped review in US-003, non-timeout failure in US-004, timing/advisor throws in US-005, refused/write-failed config in US-006, unknown triage in US-007, missing review config/invalid boolean in US-008, and rejected/skipped parallel tasks in US-009. Explicit skipped-review and invalid-boolean regressions were appended during refinement. Routine parser/reporting/facts/config plumbing uses medium/tdd-simple in US-002/003/004/008; US-001/005/006/007/009 retain complex/three-session-tdd-lite because they coordinate provenance, routing, transactions or asynchronous pass state. No story changes security-critical session or permission policy. No new helpers are assumed to exist: the three new source modules and focused test outputs remain expectedFiles, never contextFiles.\n\nFixture interpretation for testability: Spec criteria often show partial objects. Supply all unrelated required fields from existing helpers while preserving the stated inputs: findings need a nonempty issue to survive toFindingDraft (workflow-replies.ts:75); branch parser calls pass the required minorIds argument, using [] when none are relevant; changed-file selection fixtures use a valid storyGitRef and injected changed-file results so the built-command equality path actually runs. Baseline fixture objects include their required capturedAt/source/entries fields. Summary tests call buildWorkflowRunSummary with a WorkflowResultFile containing the stated story or feature record, not a bare WorkflowFeatureRecord; branch-view tests set featureWorkflow.reviewRan:true. The B2 promotion example starts with nextFindingId:1 and one reviewer-owned blocking draft assigned B1; existing gate findings in the separate round-one priority example already have their stated B IDs. Formatter tests supply required unrelated view fields and disable color when checking exact lines. These fixture completions do not alter or weaken any specified assertion.",
+  "outOfScope": [
+    "A gate is not stopped early when its output stalls or repeats; that is tracked in #2923 and every gate still runs to its configured timeout.",
+    "Pipeline mode (`execution.mode: \"pipeline\"`) is not changed; it is frozen.",
+    "Branch review keeps both synthetic findings for a verdict without a blocking finding, and gets no follow-up turn; the branch half of that problem is tracked in #2924.",
+    "The re-review verdict shape and its parser are not changed.",
+    "The run-start baseline capture is not changed, and neither its duration nor a gate's last passing duration is recorded or shown to the advisor; only the baseline's existing timeout marker is read.",
+    "A gate timeout is not routed on the ground that the fix turn changed no file; a second consecutive timeout of the same gate already routes it.",
+    "The gate timeout limit (`execution.regressionGate.timeoutSeconds`) is not changed by nax, and the advisor is offered no change to it.",
+    "The #2911 rule that a `full-suite` gate offers no config change stays; a full-suite timeout is asked without config candidates.",
+    "The first gate timeout of a story with a healthy baseline still opens one fix round.",
+    "A monorepo orchestrator test command is not treated as covering the full suite unless the scoped gate ran exactly the command the full-suite gate resolves.",
+    "`workflow.review.parallelWithSuite` stays `false` by default, and no project config is edited by this feature.",
+    "The reviewer tree guard is not changed; with `parallelWithSuite` on, suite outputs that git does not ignore can be removed when the review ends.",
+    "Re-reviews, resumed stories and branch review never run beside the suite.",
+    "Deferred minors triaged `leave` are not removed from the PR body, and the story reviewer's own severity wording (changed by #2922) is not edited again.",
+    "Saved `result.json` files from earlier runs are not rewritten; the new record fields are absent on them.",
+    "No file under `.nax/` is created or edited by any story."
+  ],
+  "routingProfile": "native-codex-dsm"
+}
