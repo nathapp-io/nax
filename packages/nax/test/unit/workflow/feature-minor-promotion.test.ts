@@ -80,6 +80,48 @@ describe("deferred minor promotion", () => {
     expect(result.patch.reviewOpen?.[0]?.issue).toBe(issue);
   });
 
+  test.each([
+    ["pass", [], ["US-001: a"]],
+    ["fail", [], ["spec", "US-001: a"]],
+    ["pass", [{ kind: "quality", severity: "important", issue: "real defect" }], ["real defect", "US-001: a"]],
+  ] as const)(
+    "parsed review preserves real and spec findings with promotion (%s)",
+    async (spec, findings, expected) => {
+      const reply = JSON.stringify({
+        spec,
+        quality: "changes",
+        findings,
+        minorTriage: [{ id: "M1", decision: "promote" }],
+      });
+      const review = parseBranchReviewReply(reply, ["M1"]);
+      expect(review).not.toBeNull();
+      if (!review) throw new Error("missing verdict");
+      const h = makeFeatureMachineHarness({ review }, { record: record() });
+      const result = await branchReviewStep(h.env, h.env.record);
+      expect(result.patch.reviewOpen?.map((f) => (f.kind === "spec" ? f.kind : f.issue))).toEqual([...expected]);
+      expect(result.patch.reviewOpen?.map((f) => f.id)).toEqual(expected.map((_, i) => `B${i + 1}`));
+    },
+  );
+
+  test("parsed quality floor stays without promotion, and identical reviewer text stays with promotion", async () => {
+    const issue =
+      "Story review returned quality: changes without a blocking finding. Re-read the story diff for the quality problem the reviewer saw, and fix it.";
+    for (const promoted of [false, true]) {
+      const findings = promoted ? [{ kind: "quality", severity: "important", issue }] : [];
+      const reply = JSON.stringify({
+        spec: "pass",
+        quality: "changes",
+        findings,
+        minorTriage: [{ id: "M1", decision: promoted ? "promote" : "leave" }],
+      });
+      const review = parseBranchReviewReply(reply, ["M1"]);
+      if (!review) throw new Error("missing verdict");
+      const h = makeFeatureMachineHarness({ review }, { record: record() });
+      const result = await branchReviewStep(h.env, h.env.record);
+      expect(result.patch.reviewOpen?.map((f) => f.issue)).toEqual(promoted ? [issue, "US-001: a"] : [issue]);
+    }
+  });
+
   test("round one orders review, gates, then fix-now, excluding promoted minors", async () => {
     const rec = {
       ...record(),

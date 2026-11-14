@@ -8,6 +8,7 @@
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
+import { isBranchQualityFloor } from "@/operations";
 import type { StepResult } from "@/step-graph";
 import { describeUnread, featurePassed } from "./approval";
 import { dropKnownRestatements, nextBranchFixRound } from "./branch-fix-rounds";
@@ -122,7 +123,12 @@ function withQualityFloor(
   verdict: BranchReviewVerdict,
   promoted: readonly WorkflowFindingDraft[],
 ): WorkflowFindingDraft[] {
-  const blocking = [...verdict.findings.filter(isBlocking), ...promoted];
+  const blocking = [
+    ...verdict.findings.filter(
+      (finding) => isBlocking(finding) && !(promoted.length > 0 && isBranchQualityFloor(finding)),
+    ),
+    ...promoted,
+  ];
   if (verdict.quality !== "changes" || blocking.length > 0) return blocking;
   return [{ kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE }];
 }

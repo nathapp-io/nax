@@ -24,6 +24,12 @@ const SPEC_FAIL_ISSUE =
   "Story review returned spec: fail without a blocking spec finding. Re-read the brief's acceptance criteria and the TDD-evidence rule, and fix what is missing.";
 const QUALITY_CHANGES_ISSUE =
   "Story review returned quality: changes without a blocking finding. Re-read the story diff for the quality problem the reviewer saw, and fix it.";
+const QUALITY_FLOOR = Symbol("branch quality floor");
+
+/** Distinguish the parser's floor from reviewer-authored findings, even with identical text. */
+export function isBranchQualityFloor(finding: WorkflowFindingDraft): boolean {
+  return Object.hasOwn(finding, QUALITY_FLOOR);
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -189,7 +195,9 @@ export function parseBranchReviewReply(output: string, minorIds: readonly string
   const findings = [...verdict.findings];
   if (mismatch?.includes("spec")) findings.push({ kind: "spec", severity: "important", issue: SPEC_FAIL_ISSUE });
   if (verdict.quality === "changes" && !findings.some((f) => f.severity !== "minor")) {
-    findings.push({ kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE });
+    const floor: WorkflowFindingDraft = { kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE };
+    Object.defineProperty(floor, QUALITY_FLOOR, { value: true });
+    findings.push(floor);
   }
   const triage = triageOf(tryParseLLMJson<unknown>(output));
   return {
