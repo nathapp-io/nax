@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { makeTestPRD, makeTestStory } from "@test/helpers";
-import type { AdviceDecision, Advisor, BatchRequest, BatchResult, QuestionDraft } from "@/advisor";
+import type {
+  AdviceDecision,
+  Advisor,
+  BatchRequest,
+  BatchResult,
+  ConfigChangeCandidate,
+  QuestionDraft,
+} from "@/advisor";
+import type { ImplementerQuestionFacts } from "@/workflow/advisor";
 import {
   costIfWrongOf,
   createLiveWorkflowAdvisor,
@@ -58,6 +66,19 @@ const finding = (id: string) => ({
   line: 3,
 });
 
+const TEST_SCOPED: ConfigChangeCandidate = { key: "testScoped", to: "bun test --isolate {{files}}", script: "test" };
+
+const facts = (over: Partial<ImplementerQuestionFacts> = {}): ImplementerQuestionFacts => ({
+  protectedPaths: [],
+  commands: {},
+  candidates: [],
+  ...over,
+});
+
+/** The `source: "config"` evidence the asked question carries, in the order it carries it. */
+const configEntries = (advisor: { asked: QuestionDraft[] }) =>
+  advisor.asked[0]?.evidence.filter((e) => e.source === "config") ?? [];
+
 describe("answerQuestion", () => {
   test("an advisor that throws -> null, never a throw (M4)", async () => {
     const advisor = fakeAdvisor({});
@@ -99,6 +120,129 @@ describe("answerQuestion", () => {
         concerns: "x",
       }),
     ).toBeNull();
+  });
+});
+
+describe("answerQuestion config facts", () => {
+  test("facts with a candidate offer that config change on the menu (AC-9)", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    await live.answerQuestion({
+      storyId: "US-3",
+      status: "BLOCKED",
+      concerns: "scoped gate times out",
+      facts: facts({ candidates: [TEST_SCOPED] }),
+    });
+    const options = advisor.asked[0]?.options ?? [];
+    expect(options.map((o) => o.type)).toEqual(["answer", "hold", "config-change"]);
+    expect(options.filter((o) => o.type === "config-change").map((o) => o.fixed?.configChange)).toEqual([TEST_SCOPED]);
+  });
+
+  test("protected paths follow the concern as one config entry (AC-10)", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    await live.answerQuestion({
+      storyId: "US-3",
+      status: "BLOCKED",
+      concerns: "which config may I edit?",
+      facts: facts({ protectedPaths: [".nax/", "/home/u/.nax/"] }),
+    });
+    const evidence = advisor.asked[0]?.evidence ?? [];
+    expect(evidence[0]?.source).toBe("agent-diagnosis");
+    expect(evidence[0]?.text).toContain("which config may I edit?");
+    expect(evidence[1]?.source).toBe("config");
+    expect(evidence[1]?.text.split("\n")).toEqual([
+      "Protected (no session can write): .nax/",
+      "Protected (no session can write): /home/u/.nax/",
+    ]);
+  });
+
+  test("the read commands are given, in lint/typecheck/testScoped/test order (AC-11, AC-12)", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    await live.answerQuestion({
+      storyId: "US-3",
+      status: "BLOCKED",
+      concerns: "x",
+      facts: facts({ commands: { testScoped: "bun test {{files}}" } }),
+    });
+    const [entry] = configEntries(advisor);
+    expect(entry?.text).toContain("quality.commands.testScoped: bun test {{files}}");
+    expect(entry?.text.split("\n")).toEqual([
+      "quality.commands.lint: (unset: nax detects a default)",
+      "quality.commands.typecheck: (unset: nax detects a default)",
+      "quality.commands.testScoped: bun test {{files}}",
+      "quality.commands.test: (unset: nax detects a default)",
+    ]);
+  });
+
+  test("an array command is shown as its elements joined with && (AC-17)", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    await live.answerQuestion({
+      storyId: "US-3",
+      status: "BLOCKED",
+      concerns: "x",
+      facts: facts({ commands: { lint: ["biome check .", "tsc --noEmit"] } }),
+    });
+    expect(configEntries(advisor)[0]?.text).toContain("quality.commands.lint: biome check . && tsc --noEmit");
+  });
+
+  test("a config-change decision comes back as a typed answer (AC-13)", async () => {
+    const advisor = fakeAdvisor({
+      advise: () =>
+        decision({
+          id: "D-3",
+          kind: "implementer-question",
+          action: {
+            type: "config-change",
+            key: "testScoped",
+            to: "bun test --isolate {{files}}",
+            script: "test",
+            reason: "matches the package test script",
+          },
+        }),
+    });
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    expect(await live.answerQuestion({ storyId: "US-3", status: "BLOCKED", concerns: "x", facts: facts() })).toEqual({
+      kind: "config-change",
+      key: "testScoped",
+      to: "bun test --isolate {{files}}",
+      script: "test",
+      reason: "matches the package test script",
+      decisionId: "D-3",
+      needsHumanConfirm: false,
+    });
+  });
+
+  test("without facts the menu is exactly answer and hold (AC-14)", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    await live.answerQuestion({ storyId: "US-3", status: "BLOCKED", concerns: "x" });
+    expect(advisor.asked[0]?.options.map((o) => o.type)).toEqual(["answer", "hold"]);
+  });
+
+  test("without facts there is no config evidence (AC-15)", async () => {
+    const advisor = fakeAdvisor({});
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    await live.answerQuestion({ storyId: "US-3", status: "BLOCKED", concerns: "x" });
+    expect(configEntries(advisor)).toEqual([]);
+  });
+
+  test("an answer decision with facts present still returns the plain answer text (AC-16)", async () => {
+    const advisor = fakeAdvisor({
+      advise: () => decision({ kind: "implementer-question", action: { type: "answer", text: "Use Postgres." } }),
+    });
+    const live = createLiveWorkflowAdvisor({ advisor, feature: "f", storyId: "US-3", dependents: [] });
+    const answer = await live.answerQuestion({
+      storyId: "US-3",
+      status: "NEEDS_CONTEXT",
+      concerns: "Which DB?",
+      facts: facts({ candidates: [TEST_SCOPED] }),
+    });
+    expect(advisor.asked[0]?.options.map((o) => o.type)).toContain("config-change");
+    expect(typeof answer).toBe("string");
+    expect(answer).toBe("Use Postgres.");
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { AdvisorReply, MenuFacts } from "@/advisor";
-import { buildMenu, forcedConfirm, toAction } from "@/advisor";
+import type { AdvisorReply, ConfigChangeCandidate, MenuFacts } from "@/advisor";
+import { buildMenu, forcedConfirm, REQUIRED_TEXT_FIELD, toAction } from "@/advisor";
 
 const types = (facts: MenuFacts) => buildMenu(facts).map((o) => o.type);
 
@@ -150,6 +150,62 @@ describe("forcedConfirm", () => {
     expect(forcedConfirm({ type: "waive", reason: "x" }, reply(), "LOW")).toBe(false);
     expect(forcedConfirm({ type: "fix", instruction: "x" }, reply({ needsHumanConfirm: true }))).toBe(true);
     expect(forcedConfirm({ type: "fix", instruction: "x" }, reply())).toBe(false);
+  });
+});
+
+const TEST_SCOPED: ConfigChangeCandidate = { key: "testScoped", to: "bun test --isolate {{files}}", script: "test" };
+
+const configChangeOption = (menu: ReturnType<typeof buildMenu>) => {
+  const option = menu.find((o) => o.type === "config-change");
+  if (!option) throw new Error("expected a config-change option");
+  return option;
+};
+
+describe("config-change options on an implementer question", () => {
+  test("one candidate: answer, hold, then the config change (AC-1)", () => {
+    expect(types({ kind: "implementer-question", configChanges: [TEST_SCOPED] })).toEqual([
+      "answer",
+      "hold",
+      "config-change",
+    ]);
+  });
+
+  test("the option carries the candidate the advisor may not invent (AC-2)", () => {
+    const menu = buildMenu({ kind: "implementer-question", configChanges: [TEST_SCOPED] });
+    expect(configChangeOption(menu).fixed?.configChange).toEqual(TEST_SCOPED);
+  });
+
+  test("the label names the key, its new value and the package script (AC-3)", () => {
+    const menu = buildMenu({ kind: "implementer-question", configChanges: [TEST_SCOPED] });
+    expect(configChangeOption(menu).label).toBe(
+      'Change quality.commands.testScoped to "bun test --isolate {{files}}" (package.json script "test")',
+    );
+  });
+
+  test("no candidates: only answer and hold (AC-4)", () => {
+    expect(types({ kind: "implementer-question", configChanges: [] })).toEqual(["answer", "hold"]);
+  });
+
+  test("two candidates: one option each, after hold, in candidate order (AC-5)", () => {
+    const lint: ConfigChangeCandidate = { key: "lint", to: "biome check .", script: "check" };
+    const menu = buildMenu({ kind: "implementer-question", configChanges: [TEST_SCOPED, lint] });
+    expect(menu.map((o) => o.type)).toEqual(["answer", "hold", "config-change", "config-change"]);
+    expect(menu.slice(2).map((o) => o.fixed?.configChange?.key)).toEqual(["testScoped", "lint"]);
+  });
+
+  test("a config change requires a reason from the advisor (AC-6)", () => {
+    expect(REQUIRED_TEXT_FIELD["config-change"]).toBe("reason");
+  });
+
+  test("toAction merges the fixed candidate with the reply's reason (AC-8)", () => {
+    const menu = buildMenu({ kind: "implementer-question", configChanges: [TEST_SCOPED] });
+    expect(toAction(configChangeOption(menu), reply({ reason: "package script has --isolate" }))).toEqual({
+      type: "config-change",
+      key: "testScoped",
+      to: "bun test --isolate {{files}}",
+      script: "test",
+      reason: "package script has --isolate",
+    });
   });
 });
 

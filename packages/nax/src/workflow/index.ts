@@ -1,4 +1,4 @@
-export type { WorkflowAdvisor } from "./advisor";
+export type { ConfigChangeAnswer, ImplementerQuestionFacts, WorkflowAdvisor } from "./advisor";
 export { defaultWorkflowAdvisor } from "./advisor";
 export { runBranchFix } from "./branch-fix";
 export type { BranchStepContext, PrStepContext, PrStepRef } from "./branch-step-context";

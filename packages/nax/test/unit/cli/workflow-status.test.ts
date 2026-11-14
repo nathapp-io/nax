@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { makeAdviceDecision, withTempDir, writeTrustedDecision } from "@test/helpers";
 import { Command } from "commander";
 import { _workflowForgeDeps, registerWorkflowCommand, type WorkflowCliDeps, type WorkflowForgeDeps } from "@/cli";
-import type { WorkflowFeatureRecord, WorkflowResultFile } from "@/workflow";
+import type { ConfigChangeRecord, WorkflowFeatureRecord, WorkflowResultFile } from "@/workflow";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { newStoryRecord } from "@/workflow/result";
 
@@ -363,6 +363,130 @@ describe("nax workflow status supplementary items (#2578)", () => {
         "- [cannot-verify] US-001:cv1 — Redis TTL",
       ]);
       expect(h.codes).toEqual([2]);
+    });
+  });
+});
+
+/** The commands a recorded config change moved between, as `result.json` keeps them. */
+const FROM_TEST_SCOPED = "bun test {{files}}";
+const TO_TEST_SCOPED = "bun test --isolate {{files}}";
+
+/** US-006: one change nax applied for a story. */
+const APPLIED_CHANGE: ConfigChangeRecord = {
+  round: 1,
+  key: "testScoped",
+  from: FROM_TEST_SCOPED,
+  to: TO_TEST_SCOPED,
+  applied: true,
+  decisionId: "D-3",
+};
+
+/** US-006: one change nax refused, with the reason the refusal names. */
+const REFUSED_CHANGE: ConfigChangeRecord = {
+  round: 1,
+  key: "testScoped",
+  to: TO_TEST_SCOPED,
+  applied: false,
+  reason: "untracked",
+  decisionId: "D-3",
+};
+
+/** A story that finished, carrying the config changes its loop recorded. */
+const storyWith = (storyId: string, configChanges: readonly ConfigChangeRecord[]) => ({
+  [storyId]: { ...newStoryRecord(storyId, 3, NOW), state: "complete" as const, configChanges },
+});
+
+const DRAFT_WITH_ITEM = {
+  featureWorkflow: featureRecord({ outcome: "draft", url: "https://gh/pr/7", approval: HELD }),
+};
+
+describe("nax workflow status — recorded config changes (US-006)", () => {
+  test("AC-8: plain mode prints an applied change after the open-item lines", async () => {
+    await withTempDir(async (dir) => {
+      await writeResult(dir, "r1", { ...DRAFT_WITH_ITEM, stories: storyWith("US-007", [APPLIED_CHANGE]) });
+      const h = harness();
+      await run(h.deps, ["-f", FEATURE, "-d", dir]);
+      expect(h.out).toEqual([
+        "auth: draft https://gh/pr/7",
+        "- [advisor] D-1 — advisor held: x",
+        'US-007 config change applied: quality.commands.testScoped "bun test {{files}}" -> "bun test --isolate {{files}}" (advisor D-3)',
+      ]);
+    });
+  });
+
+  test("AC-9: plain mode prints a refused change with its reason and no replaced value", async () => {
+    await withTempDir(async (dir) => {
+      await writeResult(dir, "r1", { ...DRAFT_WITH_ITEM, stories: storyWith("US-007", [REFUSED_CHANGE]) });
+      const h = harness();
+      await run(h.deps, ["-f", FEATURE, "-d", dir]);
+      expect(h.out).toEqual([
+        "auth: draft https://gh/pr/7",
+        "- [advisor] D-1 — advisor held: x",
+        'US-007 config change refused (untracked): quality.commands.testScoped -> "bun test --isolate {{files}}" (advisor D-3)',
+      ]);
+    });
+  });
+
+  test("AC-10: --json lists one object per recorded change, every field kept", async () => {
+    await withTempDir(async (dir) => {
+      await writeResult(dir, "r1", {
+        ...DRAFT_WITH_ITEM,
+        stories: {
+          ...storyWith("US-007", [APPLIED_CHANGE, REFUSED_CHANGE]),
+          ...storyWith("US-008", [
+            { round: 2, key: "lint", from: "eslint .", to: "biome check .", applied: true, decisionId: "D-5" },
+          ]),
+        },
+      });
+      const h = harness();
+      await run(h.deps, ["-f", FEATURE, "--json", "-d", dir]);
+      expect(emittedJson(h.out).configChanges).toEqual([
+        {
+          storyId: "US-007",
+          round: 1,
+          key: "testScoped",
+          from: FROM_TEST_SCOPED,
+          to: TO_TEST_SCOPED,
+          applied: true,
+          decisionId: "D-3",
+        },
+        {
+          storyId: "US-007",
+          round: 1,
+          key: "testScoped",
+          to: TO_TEST_SCOPED,
+          applied: false,
+          reason: "untracked",
+          decisionId: "D-3",
+        },
+        {
+          storyId: "US-008",
+          round: 2,
+          key: "lint",
+          from: "eslint .",
+          to: "biome check .",
+          applied: true,
+          decisionId: "D-5",
+        },
+      ]);
+    });
+  });
+
+  test("AC-11: --json omits configChanges when no story recorded a change", async () => {
+    await withTempDir(async (dir) => {
+      await writeResult(dir, "r1", { ...DRAFT_WITH_ITEM, stories: storyWith("US-007", []) });
+      const h = harness();
+      await run(h.deps, ["-f", FEATURE, "--json", "-d", dir]);
+      expect("configChanges" in emittedJson(h.out)).toBe(false);
+    });
+  });
+
+  test("AC-11: an old record with no story rows omits configChanges too", async () => {
+    await withTempDir(async (dir) => {
+      await writeResult(dir, "r1", DRAFT_WITH_ITEM);
+      const h = harness();
+      await run(h.deps, ["-f", FEATURE, "--json", "-d", dir]);
+      expect("configChanges" in emittedJson(h.out)).toBe(false);
     });
   });
 });

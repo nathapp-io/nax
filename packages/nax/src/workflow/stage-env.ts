@@ -6,10 +6,19 @@ import { _workflowResumeDeps, headsUpChannel } from "@/execution";
 import { getLogger } from "@/logger";
 import type { CallContext } from "@/operations/types";
 import type { PipelineContext } from "@/pipeline/types";
+import type { PackageRegistry } from "@/runtime";
 import { resolveTestFilePatterns } from "@/test-runners";
 import { packageDirRelative } from "@/utils/paths";
+import { naxProtectedPaths } from "../agents/nax-protected-paths";
 import { createLiveWorkflowAdvisor, dependentsOf } from "./advisor-live";
 import { refreshBrief, specPathFor } from "./brief";
+import {
+  type ApplyConfigChangeResult,
+  applyConfigChange,
+  configChangeCandidates,
+  protectedPathList,
+  readBaseScripts,
+} from "./config-change";
 import { costLimitReached } from "./cost-limit";
 import { runStoryGates, runWorkflowSuiteGate } from "./gates";
 import { listUncommitted, readHead } from "./git";
@@ -58,7 +67,10 @@ export async function buildStoryEnv(
   // nax#2550: an unreadable HEAD throws here, into the stage's catch, which closes the story gate-open.
   // A story with no base would only fail later, in every diff and work check built on it.
   const base = ctx.storyGitRef ?? (await readHead(ctx.projectDir));
-  const sc: StepContext = {
+  // US-004 (gate-config-route): the story's step context lives in `current` so a config change can
+  // replace it mid-story — every step closure below reads `current`, never the snapshot, or the
+  // story's next gate would run the command the change just replaced.
+  let current: StepContext = {
     callCtx,
     story: ctx.story,
     config: ctx.config,
@@ -114,43 +126,56 @@ export async function buildStoryEnv(
       `${ctx.story.id} ${label}`,
       run,
     );
+  // US-004 (gate-config-route): the package identity a config change is applied to, and the
+  // registry a change re-reads. Both are fixed for the story; only the context is replaced.
+  const configSteps = configChangeSteps({
+    current: () => current,
+    replace: (next) => {
+      current = next;
+    },
+    packageDir: packageDirRelative(ctx.projectDir, ctx.workdir) ?? "",
+    registry: callCtx.runtime.packages,
+  });
   const steps: StoryLoopSteps = {
-    implement: timed("implement", addTiming, (turn) => toolErrors(turnLabel(turn), () => runImplementerTurn(sc, turn))),
-    gates: timed("gates", addTiming, () => runStoryGates(sc)),
-    fullSuite: timed("full-suite", addTiming, () => runWorkflowSuiteGate(sc)),
+    implement: timed("implement", addTiming, (turn) =>
+      toolErrors(turnLabel(turn), () => runImplementerTurn(current, turn)),
+    ),
+    gates: timed("gates", addTiming, () => runStoryGates(current)),
+    fullSuite: timed("full-suite", addTiming, () => runWorkflowSuiteGate(current)),
     storyReview: timed("story-review", addTiming, (concerns, gates) =>
       toolErrors("story-review", async () => {
         // US-001: the brief is rewritten here, so a ruling the loop recorded after the story
         // started is in the copy the reviewer reads. A failed refresh leaves the previous one.
-        await refreshBrief(sc);
-        return runStoryReview(sc, concerns, gates);
+        await refreshBrief(current);
+        return runStoryReview(current, concerns, gates);
       }),
     ),
     reReview: timed("re-review", addTiming, (round, findings, fixBase) =>
       toolErrors(`re-review r${round}`, async () => {
-        await refreshBrief(sc);
-        return runReReview(sc, round, findings, fixBase);
+        await refreshBrief(current);
+        return runReReview(current, round, findings, fixBase);
       }),
     ),
     // nax#2550: both throw on a git failure. The story loop does not catch them, so the stage closes the
     // story gate-open rather than fix against a base or a dirty list that git never reported.
-    head: () => readHead(sc.projectDir),
-    uncommitted: () => listUncommitted(sc.projectDir),
+    head: () => readHead(current.projectDir),
+    uncommitted: () => listUncommitted(current.projectDir),
     // US-002: a fix round that changed nothing is not worth a re-review. Both reads throw on a git
     // failure, which the loop reads as "not empty" — it re-reviews rather than skipping the round.
     fixDiffEmpty: async (fixBase) => {
-      const [head, dirty] = await Promise.all([readHead(sc.projectDir), listUncommitted(sc.projectDir)]);
+      const [head, dirty] = await Promise.all([readHead(current.projectDir), listUncommitted(current.projectDir)]);
       return head === fixBase && dirty.length === 0;
     },
-    workProduced: () => storyWorkEvidence(sc),
+    workProduced: () => storyWorkEvidence(current),
     // US-005: the evidence and fallback the interrupt path reads. `workSinceBase` throws on a git
     // failure like the checks above, and the continue turn says so in its prompt instead of claiming
     // nothing changed; `autoCommitDirty` is best effort and never throws.
-    workSinceBase: () => storyChangedFiles(sc),
-    autoCommitDirty: () => autoCommitTurnEdits(sc),
-    reportExists: () => Bun.file(sc.reportPath).exists(),
-    modelFor: storyModelFor(sc),
+    workSinceBase: () => storyChangedFiles(current),
+    autoCommitDirty: () => autoCommitTurnEdits(current),
+    reportExists: () => Bun.file(current.reportPath).exists(),
+    modelFor: storyModelFor(current),
     costExceeded: () => costLimitReached(costLimit, ctx.runtime),
+    ...configSteps,
   };
   const env: StoryLoopEnv = {
     storyId: ctx.story.id,
@@ -183,6 +208,12 @@ export async function buildStoryEnv(
         await upsertStoryRecord(runDir, header, record);
       },
       ledger: (text, options) => appendLedger(runDir, ctx.story.id, text, options),
+      // US-004: appended, never patched over. `update`'s shallow spread would replace an earlier
+      // list (including one a resumed record already carried) with this one entry.
+      recordConfigChange: async (entry) => {
+        record = { ...record, configChanges: [...(record.configChanges ?? []), entry] };
+        await upsertStoryRecord(runDir, header, record);
+      },
     },
     resume: resumeRecord,
     // US-005: the limits a story loop continues an interrupted turn under (US-006/US-007 read them).
@@ -212,7 +243,72 @@ export async function buildStoryEnv(
       });
     }
   };
-  return { sc, env, closeOnError };
+  return { sc: current, env, closeOnError };
+}
+
+/** Where a config change is applied and what it re-reads: fixed per story, unlike the context. */
+interface ConfigStepWiring {
+  /** The story's step context as it stands now — a change replaces it, so read it per call. */
+  readonly current: () => StepContext;
+  /** Swap in the context a change produced; every later step closes over the holder, not the value. */
+  readonly replace: (next: StepContext) => void;
+  /** The story's package dir relative to the repo root; `""` (or `"."`) is the repo root itself. */
+  readonly packageDir: string;
+  /** The run's package registry: a change re-reads the package's config through it. */
+  readonly registry: PackageRegistry;
+}
+
+/**
+ * US-004 (gate-config-route, #2897/#2898): the two config steps `buildStoryEnv` wires.
+ *
+ * `configFacts` is what the implementer-question advisor is told — the paths no session may write,
+ * the gate commands the story runs today, and the changes nax's rule allows for the red gates. The
+ * scripts behind the candidates are read at the story's BASE commit, so a session that edits the
+ * manifest mid-story cannot offer itself a new command.
+ *
+ * `applyConfigChange` runs US-003's transaction and, on success, swaps the reloaded config and the
+ * refreshed package view into the story's context. That swap is what makes the story's next gate
+ * run the changed command: the gate ops read theirs through `callCtx.packageView.select(...)`.
+ */
+function configChangeSteps(w: ConfigStepWiring): Required<Pick<StoryLoopSteps, "configFacts" | "applyConfigChange">> {
+  return {
+    configFacts: async (redGates) => {
+      const sc = w.current();
+      const commands = sc.config.quality.commands;
+      const facts = { protectedPaths: protectedPathList(naxProtectedPaths()), commands };
+      // The repo-root config is cached for the whole run, so a change there could only reach the
+      // next run: the rule offers nothing for that package.
+      if (w.packageDir === "" || w.packageDir === ".") return { ...facts, candidates: [] };
+      // A base manifest that is missing, unreadable or not JSON declares no scripts, which leaves
+      // the advisor `answer` and `hold` — the facts still say what the gates run today.
+      const scripts = await readBaseScripts(sc.projectDir, sc.base, w.packageDir);
+      return { ...facts, candidates: configChangeCandidates({ redGates, commands, scripts }) };
+    },
+    applyConfigChange: async (change) => {
+      const sc = w.current();
+      const result = await applyConfigChange({
+        projectDir: sc.projectDir,
+        packageDir: w.packageDir,
+        base: sc.base,
+        change,
+        currentConfig: sc.config,
+        registry: w.registry,
+      });
+      if (result.outcome.applied) w.replace(withChangedConfig(sc, result));
+      return result.outcome;
+    },
+  };
+}
+
+/**
+ * The story's step context after an applied change: the reloaded config, and a call context whose
+ * package view is the refreshed one. Both move together — a config without its view would leave the
+ * gates selecting from the view the change replaced.
+ */
+function withChangedConfig(sc: StepContext, changed: ApplyConfigChangeResult): StepContext {
+  const config = changed.config ?? sc.config;
+  const callCtx = changed.packageView ? { ...sc.callCtx, config, packageView: changed.packageView } : sc.callCtx;
+  return { ...sc, config, callCtx };
 }
 
 /**

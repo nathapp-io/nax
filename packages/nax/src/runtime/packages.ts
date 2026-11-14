@@ -38,6 +38,19 @@ export interface PackageRegistry {
   resolve(packageDir?: string): PackageView;
   repo(): PackageView;
   hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void>;
+  /**
+   * Re-read one package's override and resolve it again — the unconditional counterpart to
+   * `hydrate`, which skips a package it has already loaded.
+   *
+   * A run that changes a package's config file mid-flight (`applyConfigChange`,
+   * gate-config-route US-003) needs the new values to reach the gate ops, which read their
+   * command through `packageView.select(...)`. The package's cached views are dropped first, so
+   * the returned view — and any later `resolve` — reflects the file as it is now. The override
+   * key (not the identity key) is what gets hydrated, so a worktree-rooted package dir still
+   * finds its plain `<pkg>` override, and root-only pinning plus workflow mode apply exactly as
+   * they do in `hydrate`.
+   */
+  refresh(packageDir: string, loadOverride?: PackageOverrideLoader): Promise<PackageView>;
 }
 
 /**
@@ -225,9 +238,34 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
     // A pre-hydration resolve can have cached the same package through a
     // worktree path (`.nax-wt/<story>/<dir>`). Invalidate every identity
     // key that maps to this override, while preserving unrelated views.
+    dropCachedViews(dir);
+  }
+
+  /**
+   * Drop every cached view whose identity key maps to this OVERRIDE key — including the
+   * worktree aliases (`.nax-wt/<story>/<dir>`) that map onto it — while preserving unrelated
+   * views. Both hydrate and refresh go through here.
+   */
+  function dropCachedViews(overrideKey: string): void {
     for (const key of cache.keys()) {
-      if (toOverrideKey(key) === dir) cache.delete(key);
+      if (toOverrideKey(key) === overrideKey) cache.delete(key);
     }
+  }
+
+  /**
+   * Re-run one package's hydration unconditionally (US-003): `hydrate` treats an entry it has
+   * already merged as done, which is exactly what a config change must override. The override
+   * and its views go first, so a re-read that finds no override (or fails to validate) cannot
+   * leave the pre-refresh view behind for the next `resolve`.
+   */
+  async function refresh(packageDir: string, loadOverride?: PackageOverrideLoader): Promise<PackageView> {
+    const overrideKey = toOverrideKey(toRelativeKey(packageDir));
+    knownPackages.add(overrideKey);
+    mergedConfigs.delete(overrideKey);
+    overlays.delete(overrideKey);
+    dropCachedViews(overrideKey);
+    await hydratePackage(overrideKey, loadOverride);
+    return resolve(packageDir);
   }
 
   async function hydrate(packageDirs: readonly string[], loadOverride?: PackageOverrideLoader): Promise<void> {
@@ -271,6 +309,7 @@ export function createPackageRegistry(loader: ConfigLoader, repoRoot: string): P
       return resolve(undefined);
     },
     hydrate,
+    refresh,
   };
 }
 

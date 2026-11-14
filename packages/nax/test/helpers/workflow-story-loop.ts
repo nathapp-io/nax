@@ -12,6 +12,7 @@ import { newStoryRecord } from "@/workflow/result";
 import type { StoryLoopEnv, StoryLoopSteps } from "@/workflow/story-loop";
 import type { ReviewOutcome } from "@/workflow/story-review";
 import type {
+  ConfigChangeRecord,
   GateName,
   GateRunResult,
   GateState,
@@ -169,6 +170,11 @@ export interface StoryLoopHarness {
   /** Every re-review as the loop asked for it, in order. */
   readonly reReviews: ReReviewCall[];
   /**
+   * Every config change the loop recorded through `sink.recordConfigChange`, in order (US-005). Each
+   * one is also appended to `record()`, the way the story env's own sink appends it.
+   */
+  readonly configRecords: ConfigChangeRecord[];
+  /**
    * The record as the patches accumulated it. A resumed harness starts from an independent copy of
    * its `resume` record, so fields no patch rewrites (round, startedAt, timings) survive.
    */
@@ -183,6 +189,7 @@ export function makeStoryLoopHarness(script: StoryLoopScript = {}, over: StoryLo
   const updates: Partial<WorkflowStoryRecord>[] = [];
   const reviewGates: (Readonly<Partial<Record<GateName, GateState>>> | undefined)[] = [];
   const reReviews: ReReviewCall[] = [];
+  const configRecords: ConfigChangeRecord[] = [];
   const gates = [...(script.gates ?? [])];
   const suites = [...(script.suite ?? [])];
   const reviews = [...(script.review ?? [])];
@@ -230,8 +237,13 @@ export function makeStoryLoopHarness(script: StoryLoopScript = {}, over: StoryLo
       ledger: async (text) => {
         ledger.push(text);
       },
+      // US-005: appended, exactly as the story env's sink appends it — never the shallow `update` patch.
+      recordConfigChange: async (entry) => {
+        configRecords.push(entry);
+        record = { ...record, configChanges: [...(record.configChanges ?? []), entry] };
+      },
     },
     resume: over.resume ?? null,
   };
-  return { env, turns, ledger, updates, reviewGates, reReviews, record: () => record };
+  return { env, turns, ledger, updates, reviewGates, reReviews, configRecords, record: () => record };
 }

@@ -69,6 +69,26 @@ describe("validateAdvisorReply", () => {
     );
     expect(r).toEqual({ ok: false, error: "option A (fix) requires a non-empty instruction" });
   });
+  test("rejects a config-change option picked without a reason (AC-7)", () => {
+    const menu = buildMenu({
+      kind: "implementer-question",
+      configChanges: [{ key: "testScoped", to: "bun test --isolate {{files}}", script: "test" }],
+    });
+    const chosen = menu.find((o) => o.type === "config-change");
+    if (!chosen) throw new Error("expected a config-change option");
+    expect(
+      validateAdvisorReply(
+        {
+          optionId: chosen.id,
+          rationale: "r",
+          confidence: "high",
+          reversible: true,
+          needsHumanConfirm: false,
+        },
+        menu,
+      ),
+    ).toEqual({ ok: false, error: `option ${chosen.id} (config-change) requires a non-empty reason` });
+  });
   test("rejects a bad confidence or a missing rationale", () => {
     expect(
       validateAdvisorReply(

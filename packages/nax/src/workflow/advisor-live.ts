@@ -1,10 +1,18 @@
 /** A5 PR3: the real workflow advisor kinds behind PR2's WorkflowAdvisor seam (spec section 8). */
 import { errorMessage } from "@nathapp/nax-agent/internal";
-import type { AdviceDecision, Advisor, QuestionDraft } from "@/advisor";
-import { buildMenu } from "@/advisor";
+import type { AdviceDecision, AdviceEvidence, Advisor, QuestionDraft } from "@/advisor";
+import { buildMenu, QUALITY_COMMAND_KEYS } from "@/advisor";
 import { getSafeLogger } from "@/logger";
 import type { PRD } from "@/prd";
-import type { ResidualAnswer, ResidualRequest, WorkflowAdvisor } from "./advisor";
+import type {
+  ConfigChangeAnswer,
+  ImplementerQuestionFacts,
+  ImplementerQuestionRequest,
+  ResidualAnswer,
+  ResidualRequest,
+  WorkflowAdvisor,
+} from "./advisor";
+import { renderCommandSpec } from "./config-change";
 import type { GateName, WorkflowFinding, WorkflowRuling } from "./types";
 
 /** The ledger/log scope for work that belongs to no single story. */
@@ -74,21 +82,64 @@ function findingEvidence(f: WorkflowFinding): string {
   return `[${f.severity}/${f.kind}]${ac}${where} ${f.issue}${fix}`;
 }
 
+/** What the advisor is told about a command the story's config leaves to detection. */
+const UNSET_COMMAND = "(unset: nax detects a default)";
+
+/**
+ * What the advisor needs to rule a config change rather than name a path it cannot write (#2897):
+ * the protected paths, then today's gate commands in a fixed key order.
+ */
+function configEvidence(facts: ImplementerQuestionFacts): AdviceEvidence[] {
+  const protectedPaths = facts.protectedPaths.map((p) => `Protected (no session can write): ${p}`);
+  const commands = QUALITY_COMMAND_KEYS.map((key) => {
+    const command = renderCommandSpec(facts.commands[key]) ?? UNSET_COMMAND;
+    return `quality.commands.${key}: ${command}`;
+  });
+  return [
+    ...(protectedPaths.length > 0 ? [{ source: "config" as const, text: protectedPaths.join("\n") }] : []),
+    { source: "config" as const, text: commands.join("\n") },
+  ];
+}
+
+/** The implementer-question draft: the concern first, then whatever facts the loop supplied. */
+function implementerQuestionDraft(feature: string, q: ImplementerQuestionRequest): QuestionDraft {
+  const facts = q.facts;
+  return {
+    kind: "implementer-question",
+    feature,
+    storyId: q.storyId,
+    summary: `The implementer for ${q.storyId} stopped with ${q.status} and needs an answer to continue.`,
+    evidence: [
+      { source: "agent-diagnosis", text: q.concerns || "(no concern text)" },
+      ...(facts ? configEvidence(facts) : []),
+    ],
+    options: buildMenu({ kind: "implementer-question", configChanges: facts?.candidates }),
+  };
+}
+
+/** What an implementer-question decision answers: a config change the loop applies, or a string. */
+function implementerAnswer(decision: AdviceDecision): string | ConfigChangeAnswer | null {
+  const action = decision.action;
+  if (action.type === "answer") return action.text;
+  if (action.type !== "config-change") return null;
+  return {
+    kind: "config-change",
+    key: action.key,
+    to: action.to,
+    script: action.script,
+    reason: action.reason,
+    decisionId: decision.id,
+    needsHumanConfirm: decision.needsHumanConfirm,
+  };
+}
+
 export function createLiveWorkflowAdvisor(input: LiveAdvisorInput): WorkflowAdvisor {
   const { advisor, feature, storyId, dependents } = input;
   return {
     async answerQuestion(q) {
-      const draft: QuestionDraft = {
-        kind: "implementer-question",
-        feature,
-        storyId: q.storyId,
-        summary: `The implementer for ${q.storyId} stopped with ${q.status} and needs an answer to continue.`,
-        evidence: [{ source: "agent-diagnosis", text: q.concerns || "(no concern text)" }],
-        options: buildMenu({ kind: "implementer-question" }),
-      };
       try {
-        const { decision } = await advisor.advise(draft);
-        return decision?.action.type === "answer" ? decision.action.text : null;
+        const { decision } = await advisor.advise(implementerQuestionDraft(feature, q));
+        return decision ? implementerAnswer(decision) : null;
       } catch (err) {
         getSafeLogger()?.warn("workflow", "Advisor answer failed — the story keeps today's behaviour", {
           storyId: q.storyId,

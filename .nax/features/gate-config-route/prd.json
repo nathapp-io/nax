@@ -1,0 +1,422 @@
+{
+  "project": "nax-monorepo",
+  "feature": "gate-config-route",
+  "branchName": "feat/gate-config-route",
+  "createdAt": "2026-11-13T15:53:10.616Z",
+  "updatedAt": "2026-11-13T17:51:01.728Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Give the advisor config facts and fixed config-change options",
+      "description": "**Goal** — Extend implementer questions with protected-path/command facts and fixed config-change menu options while preserving string answers.\n\n**Motivation** — The advisor's question carries only the implementer's concern text; nothing tells it which paths are protected.\n\n**Approach** — **Advisor menu, not free text.** The advisor's menus already carry parameters the advisor never chooses (`AdviceOptionFixed`). nax builds one `config-change` option per allowed change and the advisor picks one by id and states a `reason`. The advisor cannot name a file, a key or a command that is not on the menu.\n\n`packages/nax/src/advisor/menus.ts`: `LABELS` gains `\"config-change\": \"Change a nax command to a script the package declares\"`; `REQUIRED_TEXT_FIELD[\"config-change\"]` is `\"reason\"`; `buildMenu` builds the implementer-question menu as `answer`, `hold`, then one `config-change` option per candidate, in candidate order, with `fixed.configChange` set and label `Change quality.commands.<key> to \"<to>\" (package.json script \"<script>\")`; `toAction` maps a `config-change` option to `{ type: \"config-change\", ...option.fixed.configChange, reason: reply.reason }`.\n\n`packages/nax/src/operations/advise.ts`: the `REQUIRED` mirror gains `\"config-change\": \"reason\"`. `packages/nax/src/advisor/decision-log.ts`: `actionText` gains a `config-change` case returning `config-change quality.commands.<key> -> \"<to>\"`. `AdviceEvidence.source` gains `\"config\"`.\n\nWhen `q.facts` is given, the question's evidence gains, after the concern entry, one `source: \"config\"` entry with one line per protected path (`Protected (no session can write): <path>`) and one `source: \"config\"` entry with one line per key in `lint`, `typecheck`, `testScoped`, `test` order (`quality.commands.<key>: <command>`, or `quality.commands.<key>: (unset: nax detects a default)`); the menu is built with `configChanges: q.facts.candidates`. When `q.facts` is absent no `facts`-derived evidence or option is added. A `config-change` decision returns a `ConfigChangeAnswer` from the action's fields plus the decision's `id` and `needsHumanConfirm`.\n\nA `config-change` decision whose `needsHumanConfirm` is true is not applied (refusal `needs-confirm`). That flag is set by the advisor or forced by `forcedConfirm` (`advisor/menus.ts`) when the reply's `confidence` is `\"low\"` or `reversible` is false; `forcedConfirm` is not changed, so a low-confidence or non-reversible pick is refused too. Any other `config-change` decision is applied by later stories, not this one.\n\n**Scope** — In: advisor types, menus, validation mirror, decision-log text, workflow advisor interface and live facts/result mapping; extend existing unit suites. Keep the existing absorbTurn caller type-safe by narrowing string results pending US-005. Out: computing candidates (US-002), writing/reloading config (US-003/US-004), loop application (US-005), early stop/status (US-006), residual-menu changes and restrictions on free-text answers. Feature boundary: Validating or rewriting advisor answer text that tells the implementer to edit a protected path (#2897's alternative fix): the advisor gets the facts, not a new restriction.\n\n**Interface** —\n```typescript\ntype QualityCommandKey = \"lint\" | \"typecheck\" | \"testScoped\" | \"test\";\ninterface ConfigChangeCandidate { key: QualityCommandKey; to: string; script: string }\n// AdviceAction gains:\ntype ConfigChangeAction = { type: \"config-change\"; key: QualityCommandKey; to: string; script: string; reason: string };\n// AdviceOptionFixed gains:\ninterface ConfigChangeFixed { configChange?: ConfigChangeCandidate }\n// MenuFacts implementer-question variant:\ntype ImplementerQuestionMenuFacts = { kind: \"implementer-question\"; configChanges?: readonly ConfigChangeCandidate[] };\ninterface ConfigChangeAnswer { kind: \"config-change\"; key: QualityCommandKey; to: string; script: string; reason: string; decisionId: string; needsHumanConfirm: boolean }\n// AC17 requires arrays at this boundary; this widens the prose's string-only commands declaration.\ninterface ImplementerQuestionFacts { protectedPaths: readonly string[]; commands: Readonly<Partial<Record<QualityCommandKey, string | readonly string[]>>>; candidates: readonly ConfigChangeCandidate[] }\n// WorkflowAdvisor method:\nanswerQuestion(q: { storyId: string; status: \"NEEDS_CONTEXT\" | \"BLOCKED\"; concerns: string; facts?: ImplementerQuestionFacts }): Promise<string | ConfigChangeAnswer | null>;\n```\nA string is still an answer. Render array facts as elements joined with ` && `, not JSON; the shared renderCommandSpec module is introduced by US-002, so do not create a forward dependency on that file here.",
+      "acceptanceCriteria": [
+        "[unit] buildMenu({ kind: 'implementer-question', configChanges: [{ key: 'testScoped', to: 'bun test --isolate {{files}}', script: 'test' }] }) returns three options with types answer, hold, config-change in that order.",
+        "[unit] The config-change option for { key: 'testScoped', to: 'bun test --isolate {{files}}', script: 'test' } has fixed.configChange equal to that candidate.",
+        "[unit] That config-change option has label 'Change quality.commands.testScoped to \"bun test --isolate {{files}}\" (package.json script \"test\")'.",
+        "[unit] buildMenu({ kind: 'implementer-question', configChanges: [] }) returns only answer and hold options.",
+        "[unit] Given two candidates, buildMenu returns two config-change options after hold in candidate order.",
+        "[unit] Reading REQUIRED_TEXT_FIELD['config-change'] yields 'reason'.",
+        "[unit] validateAdvisorReply rejects a reply that picks a config-change option with no reason.",
+        "[unit] toAction on the testScoped candidate option with reason 'package script has --isolate' returns { type: 'config-change', key: 'testScoped', to: 'bun test --isolate {{files}}', script: 'test', reason: 'package script has --isolate' }.",
+        "[unit] createLiveWorkflowAdvisor(...).answerQuestion with facts containing one candidate asks a question whose options include one config-change option carrying that candidate.",
+        "[unit] answerQuestion with facts.protectedPaths ['.nax/', '/home/u/.nax/'] asks a question whose evidence has the concern first followed by a source: 'config' entry containing 'Protected (no session can write): .nax/'.",
+        "[unit] answerQuestion with facts.commands { testScoped: 'bun test {{files}}' } asks a question with a source: 'config' evidence entry containing 'quality.commands.testScoped: bun test {{files}}'.",
+        "[unit] In the command evidence for facts.commands { testScoped: 'bun test {{files}}' }, the lint line is 'quality.commands.lint: (unset: nax detects a default)'.",
+        "[unit] Given a config-change decision with key testScoped, to 'bun test --isolate {{files}}', script 'test', reason 'matches the package test script', id 'D-3' and needsHumanConfirm false, answerQuestion returns { kind: 'config-change', key: 'testScoped', to: 'bun test --isolate {{files}}', script: 'test', reason: 'matches the package test script', decisionId: 'D-3', needsHumanConfirm: false }.",
+        "[unit] answerQuestion called without facts asks a question whose options are exactly answer and hold.",
+        "[unit] answerQuestion called without facts asks a question with no source: 'config' evidence entry.",
+        "[unit] An answer decision still makes answerQuestion return the answer text as a plain string.",
+        "[unit] answerQuestion with facts.commands { lint: ['biome check .', 'tsc --noEmit'] } produces config evidence containing 'quality.commands.lint: biome check . && tsc --noEmit'.",
+        "[unit] describeRuling for a config-change decision with key testScoped and to 'bun test --isolate {{files}}' returns 'config-change quality.commands.testScoped -> \"bun test --isolate {{files}}\"', exposing the actionText used in the run log through the existing public formatter."
+      ],
+      "tags": [
+        "feature",
+        "advisor",
+        "security",
+        "workflow"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Additive action fields, menu/validation map entries and live evidence/result mapping follow existing advisor patterns; strict security TDD remains required because fixed command parameters cross the protected-config authorization boundary.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/advisor/types.ts",
+        "packages/nax/src/advisor/menus.ts",
+        "packages/nax/src/operations/advise.ts",
+        "packages/nax/src/workflow/advisor.ts",
+        "packages/nax/src/workflow/advisor-live.ts"
+      ],
+      "suggestedCriteria": [
+        "When a config-change reply has confidence 'low', the resulting decision has needsHumanConfirm true.",
+        "When a config-change reply has reversible false, the resulting decision has needsHumanConfirm true."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0fbbe45d57618cf2ff2d4a75b7ea4bcaa6bde62a"
+    },
+    {
+      "id": "US-002",
+      "title": "Derive allowed command candidates from base-commit package scripts",
+      "description": "**Goal** — Implement the deterministic candidate rule, base-manifest reader and readable command/protected-path helpers in workflow/config-change.ts.\n\n**Motivation** — The owner ruled (2026-11-13) that no model decides whether a command is safe: `quality.commands` run through a shell outside the permission gate, so the allowed changes are fixed by a rule nax evaluates, and the advisor only chooses among them.\n\n**Approach** — **The rule.** For a story whose package dir `<pkg>` (its `workdir` relative to the repo root) is not the repo root, with story base commit `<base>` (`sc.base`):\n\n- The gate-to-key map is `GATE_COMMAND_KEY`: `lint` → `lint`, `typecheck` → `typecheck`, `scoped` → `testScoped`, `full-suite` → `test`.\n- The red gates are the gates whose state is `\"red\"` in the story loop's last gate run (`gates.states` only; the full-suite result `suite.states` is not read). With no red gate there are no candidates.\n- The candidate values come from the `scripts` object of `<pkg>/package.json` **as committed at `<base>`** (read with `git show <base>:<pkg>/package.json`), in the object's key order. For every script value `v`: the candidate `v`, and for the key `testScoped` only, also `v + \" {{files}}\"`. A candidate equal to the key's current command is dropped. A quality command is a string or a non-empty string array (`QualityCommandSpecSchema`); an array command is never equal to a candidate, and wherever a command is shown or stored as `from` it is rendered by `renderCommandSpec`: a string as is, an array as its elements joined with ` && `. Duplicates (same key and value) are kept once, the first script in key order wins.\n- The base commit is used so a session cannot add a script during this story and then have it offered.\n- A story whose package is the repo root gets no candidates: root config is cached for the whole run outside the package registry (`_rootConfigCache` in `config/loader.ts`, and `PackageRegistry.resolve(\"\")` returns `loader.current()`), so a change there could not reach the run's later gates.\n\nThe pure function emits candidates grouped in the supplied red-gate order. The story-env caller enforces the non-root eligibility before offering candidates. `readBaseScripts` returns `{}` on a missing/unreadable base manifest, non-zero or throwing git, invalid JSON, or no scripts object, so the advisor can retain answer/hold only. `protectedPathList` is `[policy.projectStateDir + \"/\", policy.credentialDir + \"/\", policy.trustStoreFile]`.\n\n**Scope** — In: new module, pure rule, base-commit reader, rendering, policy list, injected git dependency and its unit tests. Out: advisor-menu construction (US-001), tracked-file checks/writes/commits/cache reload (US-003), env wiring (US-004), loop/state/status (US-005/US-006); no working-tree scripts, edited flags or runner-run-script candidates. Feature boundaries: Config keys other than `quality.commands.lint`, `quality.commands.typecheck`, `quality.commands.testScoped` and `quality.commands.test`. Candidate forms other than a base-commit script value and, for `testScoped`, that value plus ` {{files}}`: no `<runner> run <script>` forms and no edited flags.\n\n**Interface** —\n```typescript\nconst GATE_COMMAND_KEY: Readonly<Record<GateName, QualityCommandKey>>;\nfunction configChangeCandidates(input: { redGates: readonly GateName[]; commands: Readonly<Partial<Record<QualityCommandKey, string | readonly string[]>>>; scripts: Readonly<Record<string, string>> }): ConfigChangeCandidate[];\nfunction readBaseScripts(projectDir: string, base: string, packageDir: string): Promise<Record<string, string>>;\nfunction renderCommandSpec(spec: string | readonly string[] | undefined): string | undefined;\nfunction protectedPathList(policy: ProtectedPathsPolicy): string[];\n```\n`script` is the `package.json` script name the value came from. `renderCommandSpec` returns a string as is, an array joined with ` && `, `undefined` as `undefined`. Create `_configChangeDeps` with git injectable here; US-003 extends it to `{ git, loadConfigForPackage, readFile, writeFile }`. Keep no-facts advisor behavior unchanged if consolidating array rendering into this helper.",
+      "acceptanceCriteria": [
+        "[unit] GATE_COMMAND_KEY maps lint to lint, typecheck to typecheck, scoped to testScoped and full-suite to test.",
+        "[unit] configChangeCandidates({ redGates: ['scoped'], commands: { testScoped: 'bun test {{files}}' }, scripts: { test: 'bun test --isolate' } }) returns [{ key: 'testScoped', to: 'bun test --isolate', script: 'test' }, { key: 'testScoped', to: 'bun test --isolate {{files}}', script: 'test' }].",
+        "[unit] configChangeCandidates with redGates ['lint'] and scripts { lint: 'biome check .' } returns [{ key: 'lint', to: 'biome check .', script: 'lint' }].",
+        "[unit] configChangeCandidates with commands { lint: 'biome check .' }, redGates ['lint'] and scripts { lint: 'biome check .' } returns [], dropping the candidate equal to the current command.",
+        "[unit] configChangeCandidates with redGates [] and scripts { test: 'bun test' } returns [].",
+        "[unit] configChangeCandidates with redGates ['lint'] and scripts { a: 'biome check .', b: 'biome check .' } returns one candidate naming script a.",
+        "[unit] configChangeCandidates with redGates ['lint', 'scoped'] returns lint candidates before testScoped candidates.",
+        "[unit] readBaseScripts('/repo', 'abc123', 'apps/admin') calls _configChangeDeps.git with ['show', 'abc123:apps/admin/package.json'] and cwd '/repo'.",
+        "[unit] readBaseScripts('/repo', 'abc123', 'apps/admin') returns the scripts object parsed from that git output.",
+        "[unit] readBaseScripts returns {} when the stubbed git call exits non-zero.",
+        "[unit] readBaseScripts returns {} when the stubbed git output is not JSON.",
+        "[unit] readBaseScripts returns {} when the parsed manifest has no scripts object.",
+        "[unit] protectedPathList for projectStateDir '.nax', credentialDir '/home/u/.nax' and trustStoreFile '/home/u/.nax/trust.json' returns ['.nax/', '/home/u/.nax/', '/home/u/.nax/trust.json'].",
+        "[unit] configChangeCandidates with redGates ['lint'], commands { lint: ['biome check .'] } and scripts { lint: 'biome check .' } returns [{ key: 'lint', to: 'biome check .', script: 'lint' }], because an array command is never equal to a candidate.",
+        "[unit] renderCommandSpec(['a', 'b']) returns 'a && b'.",
+        "[unit] renderCommandSpec('a') returns 'a'.",
+        "[unit] readBaseScripts returns {} when the base manifest is missing or unreadable, including when _configChangeDeps.git throws."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "security",
+        "config"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Bounded pure-rule module with a git reader, but the allowlist authorizes shell-executed configuration across a protected-write boundary, requiring strict security TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/advisor/types.ts",
+        "packages/nax/src/agents/nax-protected-paths.ts",
+        "packages/nax/src/workflow/git.ts",
+        "packages/nax/src/operations/workflow-types.ts",
+        "packages/nax/src/config/schemas-execution.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/workflow/config-change.ts",
+        "packages/nax/test/unit/workflow/config-change.test.ts"
+      ],
+      "suggestedCriteria": [
+        "renderCommandSpec(undefined) returns undefined.",
+        "When scripts are added or changed after the story base commit, readBaseScripts returns only the script values committed at that base."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7f0a9be3a3c9e1f6403088cc9b17bca36b54f69b"
+    },
+    {
+      "id": "US-003",
+      "title": "Apply, reload and commit an allowed package command change",
+      "description": "**Goal** — Add orchestrator-owned transactional config application and unconditional PackageRegistry.refresh.\n\n**Motivation** — Per-package config is resolved once per run, so even the hand edit (store-erp `d55cafb9`) only reached the next run.\n\n**Approach** — **The config file** is `.nax/mono/<pkg>/config.json`. The advisor never chooses it.\n\n**Who applies, with which signals.** A `config-change` decision whose `needsHumanConfirm` is true is not applied (refusal `needs-confirm`). That flag is set by the advisor or forced by `forcedConfirm` (`advisor/menus.ts`) when the reply's `confidence` is `\"low\"` or `reversible` is false; `forcedConfirm` is not changed, so a low-confidence or non-reversible pick is refused too. Any other `config-change` decision is applied.\n\n**Applying** (`applyConfigChange`, run by nax, never by a session), in order:\n\n1. Refuse `needs-confirm` when the decision needs confirmation; refuse `root-package` when `<pkg>` is the repo root.\n2. Recompute the candidates (same rule, same inputs) and refuse `not-offered` unless the change's key and value match one exactly.\n3. Refuse `untracked` unless the config file is tracked in git (`git ls-files --error-unmatch -- <file>` exits 0).\n4. Read the file, set `quality.commands.<key>` to the value without changing other keys (an absent `quality` or `commands` object is created), and write it back as 2-space-indented JSON with a trailing newline. A write that throws is refused `write-failed`.\n5. Clear the per-package config cache (`packageConfigCache.clear()`), resolve the story's config again with `loadConfigForPackage(projectDir, pkg, currentConfig)` (which keeps the run's `--profile` chain and root-only keys), and refresh the registry entry with `registry.refresh(pkg)`. If either throws, restore the file's original bytes, clear the cache and refresh again, and refuse `invalid-config`.\n6. Commit only that path: `git commit --no-verify -m \"chore(nax): set quality.commands.<key> for <pkg> (advisor <decisionId>)\" -- <file>`, mirroring `commitLedger`. If the commit fails, restore the original bytes, clear the cache and refresh again, and refuse `commit-failed`.\n7. Return the new resolved config and the refreshed package view.\n\n`PackageRegistry` gains `refresh(packageDir: string, loadOverride?: PackageOverrideLoader): Promise<PackageView>`, which re-runs the package's hydration unconditionally (re-reading its override), drops its cached views, and returns `resolve(packageDir)`. Preserve the existing override-key/worktree identity distinction and root-only/profile behavior. A file write throwing requires original bytes restored if the file changed. Resolving OR registry refresh throwing requires restoration, cache clear and registry refresh from original bytes. A failed application returns neither config nor packageView. Extend the US-002 dependency object for deterministic fault injection; no agent/model checks authorize this write.\n\n**Scope** — In: extend config-change.ts, refresh API/implementation, candidate revalidation, seven refusal reasons, JSON update/restore, profile-preserving reload, cache invalidation and single-path git commit; create integration tests and extend registry tests. Out: env context replacement and sink persistence (US-004), turn handling/ledger (US-005), early-stop/status (US-006), root config writes and session permission changes. Feature boundaries: A model (approver agent) judging whether a config change is safe: the allowed changes are fixed by the rule and the advisor only picks one. Config changes for a story whose package is the repo root (including every story of a single-package repo): the root config is cached for the whole run, so such a change could only reach the next run. Changing `RequestCapability` or the session write block on nax config.\n\n**Interface** —\n```typescript\ninterface ApplyConfigChangeInput { projectDir: string; packageDir: string /* \"\" for the repo root */; base: string; change: ConfigChangeAnswer; currentConfig: NaxConfig; registry: PackageRegistry }\ntype ApplyConfigChangeResult = { outcome: ConfigChangeOutcome; config?: NaxConfig; packageView?: PackageView };\ntype ConfigChangeOutcome = { applied: true; key: QualityCommandKey; from: string | undefined; to: string; commit: string } | { applied: false; key: QualityCommandKey; to: string; reason: ConfigChangeRefusal };\ntype ConfigChangeRefusal = \"needs-confirm\" | \"root-package\" | \"not-offered\" | \"untracked\" | \"invalid-config\" | \"write-failed\" | \"commit-failed\";\nfunction applyConfigChange(input: ApplyConfigChangeInput): Promise<ApplyConfigChangeResult>;\n// PackageRegistry gains:\nrefresh(packageDir: string, loadOverride?: PackageOverrideLoader): Promise<PackageView>;\nconst _configChangeDeps = { git, loadConfigForPackage, readFile, writeFile };\n```\n`config` and `packageView` present only when applied. Render `from` with renderCommandSpec (arrays joined with ` && `). Preserve the specified input signature: revalidation uses currentConfig, base scripts and the gate mapping for the selected key, without requiring a new redGates parameter; the caller constructs the real red-gate menu. Mirror commitLedger's single-path add/diff/commit pattern, never commit all staged edits.",
+      "acceptanceCriteria": [
+        "[integration] Given a temp git repo whose story base contains .nax/mono/apps/admin/config.json with quality.commands.testScoped 'bun test {{files}}' and apps/admin/package.json with script test 'bun test --isolate', applyConfigChange({ projectDir: repo, packageDir: 'apps/admin', base, change: { kind: 'config-change', key: 'testScoped', to: 'bun test --isolate {{files}}', script: 'test', reason: 'matches the package test script', decisionId: 'D-3', needsHumanConfirm: false }, currentConfig, registry }) returns an outcome with applied:true and from:'bun test {{files}}'.",
+        "[integration] After that application, the config file sets quality.commands.testScoped to 'bun test --isolate {{files}}', preserving its other keys unchanged.",
+        "[integration] After that application, HEAD's commit changes only .nax/mono/apps/admin/config.json.",
+        "[integration] After that application, HEAD's commit subject is 'chore(nax): set quality.commands.testScoped for apps/admin (advisor D-3)'.",
+        "[integration] After that application, an uncommitted edit to another repo file remains uncommitted.",
+        "[integration] After that application, the returned packageView selects quality.commands.testScoped equal to 'bun test --isolate {{files}}'.",
+        "[integration] applyConfigChange with needsHumanConfirm true returns an outcome containing applied:false and reason:'needs-confirm'.",
+        "[integration] When applyConfigChange refuses needs-confirm, the config file bytes are unchanged.",
+        "[integration] applyConfigChange for packageDir '' returns an outcome containing applied:false and reason:'root-package'.",
+        "[integration] When applyConfigChange refuses root-package, HEAD does not move.",
+        "[integration] When applyConfigChange refuses root-package, the root config bytes remain unchanged.",
+        "[integration] applyConfigChange for a value outside the recomputed candidates returns an outcome containing applied:false and reason:'not-offered'.",
+        "[integration] When applyConfigChange refuses not-offered, the config file bytes are unchanged.",
+        "[integration] applyConfigChange when the config file is not tracked in git returns an outcome containing applied:false and reason:'untracked'.",
+        "[integration] When applyConfigChange refuses untracked, the config file bytes are unchanged.",
+        "[integration] applyConfigChange when the stubbed git commit exits non-zero returns an outcome containing applied:false and reason:'commit-failed'.",
+        "[integration] When git commit fails, applyConfigChange restores the config file's original bytes.",
+        "[integration] applyConfigChange when the stubbed loadConfigForPackage throws returns an outcome containing applied:false and reason:'invalid-config'.",
+        "[integration] When loadConfigForPackage throws, applyConfigChange restores the config file's original bytes.",
+        "[integration] When loadConfigForPackage throws, applyConfigChange leaves HEAD unchanged.",
+        "[integration] applyConfigChange when the stubbed writeFile throws returns an outcome containing applied:false and reason:'write-failed'.",
+        "[integration] When writeFile changes the config file and then throws, applyConfigChange restores the file's original bytes.",
+        "[integration] applyConfigChange when registry.refresh throws for the new config returns an outcome containing applied:false and reason:'invalid-config'.",
+        "[integration] When registry.refresh throws for the new config, applyConfigChange restores the config file's original bytes.",
+        "[integration] When resolving the new config or refreshing the registry throws, applyConfigChange clears the package cache and refreshes the registry again after restoration.",
+        "[integration] When git commit fails, applyConfigChange clears the package cache and refreshes the registry again after restoration."
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "security",
+        "git",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The transaction spans git, file restoration, two config caches and registry views, but reuses existing commitLedger and hydration patterns rather than redesigning architecture; protected command writes still require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/config-change.ts",
+        "packages/nax/src/runtime/packages.ts",
+        "packages/nax/src/config/package-config.ts",
+        "packages/nax/src/config/package-config-cache.ts",
+        "packages/nax/src/workflow/git.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/workflow/config-change-apply.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When an unrelated path is already staged, an applied config change leaves that path staged and excludes it from the config commit.",
+        "When currentConfig commands.testScoped is an array, an applied outcome renders from as its elements joined with ' && '.",
+        "When the run uses a --profile chain and root-only CLI overrides, an applied change returns a config retaining that chain and those overrides.",
+        "When refresh updates a package, subsequent resolves of its cached worktree identities select the new command while unrelated package views retain their prior values.",
+        "When an existing tracked config omits quality or commands, an allowed application creates those objects and preserves unrelated keys."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4a9a422006a9fafc54bd7c0f13911278a0227ab6"
+    },
+    {
+      "id": "US-004",
+      "title": "Wire config facts, application and append-only recording into the story env",
+      "description": "**Goal** — Make buildStoryEnv provide config facts/application steps and append-only persistence, replacing the story's captured config/view so the next gates run the changed command.\n\n**Motivation** — Nothing in a run can change nax config.\n\n**Approach** — **Making the story use it.** Gate ops read their command through `callCtx.packageView.select(...)` (`operations/verify-scoped.ts`, `operations/lint-check.ts`), so the refreshed package view is what changes the gate command. `buildStoryEnv` passes `packageDirRelative(projectDir, workdir) ?? \"\"` as `packageDir` and `callCtx.runtime.packages` as `registry`. It holds the story's step context in a mutable holder (`let current: StepContext`), and every step closure reads `current`. After an applied change it replaces `current` with `{ ...current, config: newConfig, callCtx: { ...current.callCtx, config: newConfig, packageView: newView } }`. Later stories in the run resolve their config through the cleared cache and the refreshed registry. Only the gate path must observe the new command within the story (an AC pins it); whether other step closures (story review, the model lookup) read `current` is left to the builder.\n\n`configFacts` builds protected paths from protectedPathList(naxProtectedPaths()), renders the story's resolved quality command specs, reads scripts at the original sc.base using readBaseScripts, and calls configChangeCandidates for the supplied redGates with raw command specs (not rendered arrays). For the repo-root package return no candidates. A missing base scripts object still returns protectedPaths and commands, with candidates []. `applyConfigChange` delegates to US-003 with projectDir/packageDir/base/currentConfig/registry, replaces current only after success, and returns its outcome.\n\n`buildStoryEnv`'s sink appends the entry to the story record's `configChanges` (keeping earlier entries, including ones from a resumed prior record) and persists the record. The shallow `update` patch is not used for this field, so a second change never replaces the first. Introduce the shared record typing needed by this sink now; US-005 will produce records from turn outcomes. All new methods remain optional for existing env callers/harnesses.\n\n**Scope** — In: stage-env wiring, mutable current holder, optional step/sink contracts, minimal shared ConfigChangeRecord and optional WorkflowStoryRecord.configChanges fields, real next-gate integration tests, and the refresh behavior regression test specified here. Out: candidate algorithm/application transaction (US-002/US-003), absorbing advisor answers or writing outcome ledger entries (US-005), early-stop and CLI rendering (US-006); no root-package application or session write permission changes. Feature boundary: Config changes for a story whose package is the repo root (including every story of a single-package repo): the root config is cached for the whole run, so such a change could only reach the next run.\n\n**Interface** —\n```typescript\n// StoryLoopSteps gains:\nconfigFacts?(redGates: readonly GateName[]): Promise<ImplementerQuestionFacts>;\napplyConfigChange?(change: ConfigChangeAnswer): Promise<ConfigChangeOutcome>;\n// StoryLoopSink gains:\nrecordConfigChange?(entry: ConfigChangeRecord): Promise<void>;\ninterface ConfigChangeRecord { round: number; key: QualityCommandKey; from?: string; to: string; applied: boolean; reason?: ConfigChangeRefusal; decisionId: string }\n// WorkflowStoryRecord gains:\nconfigChanges?: readonly ConfigChangeRecord[];\n```\nUse the types exported by upstream stories; no file created in this story belongs in contextFiles. Preserve existing resume/token/timing/closeOnError behavior and the caller's package execution identity.",
+      "acceptanceCriteria": [
+        "[unit] PackageRegistry.refresh('apps/admin') after its override file changed returns a view whose quality.commands.testScoped is the new value, where resolve('apps/admin') before the call returned the old value.",
+        "[integration] With buildStoryEnv, after env.steps.applyConfigChange returns applied:true for testScoped, the next env.steps.gates() runs the scoped gate with the new command, observed by a verifyScopedOp call stub capturing ctx.packageView.select(...).quality.commands.testScoped.",
+        "[integration] buildStoryEnv's env.steps.configFacts(['scoped']) returns protectedPaths equal to protectedPathList(naxProtectedPaths()).",
+        "[integration] buildStoryEnv's env.steps.configFacts(['scoped']) returns commands.testScoped equal to the story's resolved testScoped command.",
+        "[integration] buildStoryEnv's env.steps.configFacts(['scoped']) returns the candidates configChangeCandidates gives for the story's base-commit scripts.",
+        "[integration] When the story's base manifest has no scripts, env.steps.configFacts(['scoped']) returns candidates:[] together with protectedPaths and commands.",
+        "[integration] Calling buildStoryEnv's sink.recordConfigChange twice keeps both entries in the persisted story record's configChanges in call order.",
+        "[integration] When the base manifest is missing, unreadable or not JSON, buildStoryEnv's configFacts returns candidates:[] while retaining protectedPaths and commands.",
+        "[integration] When those empty candidates are passed to the live advisor as facts.candidates, the asked implementer-question menu has answer and hold only.",
+        "[integration] When a prior resumable record already has configChanges, buildStoryEnv's sink.recordConfigChange appends the new entry to the persisted configChanges without removing the prior entries.",
+        "[integration] When env.steps.applyConfigChange returns applied:false, the next env.steps.gates() call passes the original quality.commands.testScoped through ctx.packageView.select(...) to verifyScopedOp."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "config",
+        "security",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Coordinates live operation contexts, protected-path evidence, authorized writes and resumed persistence; security-sensitive command application wiring needs strict isolation.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/stage-env.ts",
+        "packages/nax/src/workflow/call-context.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/config-change.ts",
+        "packages/nax/src/workflow/types.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/workflow/stage-env-config-change.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the story package is the repo root, configFacts returns candidates:[] while still returning protectedPaths and commands.",
+        "When a later story uses the changed package in the same run, its resolved config and package view select the changed command."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7925e8c1e90b3ccea6ed9a58026eaa1701923762"
+    },
+    {
+      "id": "US-005",
+      "title": "Apply advisor-selected changes during BLOCKED or NEEDS_CONTEXT turns",
+      "description": "**Goal** — Extend absorbTurn to collect red-gate facts, apply config-change answers, record every outcome and mark successful turns without spending another implementer turn.\n\n**Motivation** — The implementer proved the fix (272 pass / 0 fail in 4.9 s with `--isolate`) and replied `BLOCKED`, because nax config writes are denied to every session by design.\n\n**Approach** — The change is proposed and applied inside the round in which the implementer replies `BLOCKED` or `NEEDS_CONTEXT`. That is the only place where an applied change is followed by another gate run without changing the loop's state machine: `absorbTurn` (`packages/nax/src/workflow/story-steps.ts`) already continues the round after the advisor answers, and the next `evaluateStep` re-runs the gates. The residual path is not used: `residualStep` filters out gate items (`f.kind !== \"gate\"`) and is followed by `closeStep`, so a change ruled there would never be re-checked.\n\n**After an applied change, in the loop.** The turn ends without another implementer turn (the answer was the config change). `lastTurn` records the `BLOCKED` (or `NEEDS_CONTEXT`) reply with `configApplied: true`; the report check reads it as for any such turn. The round stays spent: a config-only round counts against `maxFixRounds`. The config commit moves HEAD, so `fixDiffEmpty` reads the round as not empty and a re-review runs when review findings are open.\n\n`absorbTurn` (reached through `implementStep` and `fixStep`) passes facts to the advisor when gates are red, applies a picked config change through `env.steps.applyConfigChange` and ends the turn without another implementer turn, and records each change through `env.sink.recordConfigChange`, the ledger and `lastTurn.configApplied`. The red gates are the gates whose state is `\"red\"` in the story loop's last gate run (`gates.states` only; the full-suite result `suite.states` is not read). With no red gate there are no candidates. Keep the existing question-count limit. If no gate run exists, no gates are red, or configFacts is absent, call answerQuestion with the original exact object and no facts key. A throwing configFacts is logged warn and the question is asked without facts.\n\nIf an application is refused, write the refusal ledger line, append an unapplied config-change record with its reason, and record the implementer's concern including the proposed command, then continue the existing loop path. If applyConfigChange throws, treat it as refused write-failed; do not let that throw escape fixStep. A string answer still triggers the existing answer turn; null still records the concern. Optional steps/sink are compatibility seams and must not turn a missing applier into a successful application.\n\nApplied ledger: `config change applied: quality.commands.<key> \"<from>\" -> \"<to>\" (advisor <decisionId>)`. Refused ledger: `config change refused (<reason>): quality.commands.<key> -> \"<to>\" (advisor <decisionId>)`. Carry from/to/key/round/applied/reason/decisionId into the sink record, preserving prior records through the append sink introduced by US-004.\n\n**Scope** — In: absorbTurn branching/facts/failure containment, outcome ledger and sink records, recordLastTurn and optional configApplied on the existing state carrier. Out: transaction and env implementation (US-003/US-004), evaluateStep early stop and CLI output (US-006); no residual config menu, graph key/produces changes, first-implement candidates or extra report turn. Feature boundaries: Offering or applying a config change at residual time, or adding gate items to the residual menu. Offering config changes before the story's first gate run (the first implement turn has no red gates, so no candidates).\n\n**Interface** —\n```typescript\n// StoryLoopState.lastTurn extends the existing carrier:\nlastTurn?: { readonly status: ImplementerStatus; readonly fallback: boolean; readonly stepUps: number; readonly configApplied?: boolean };\n// Consume the optional methods provided by US-004:\nconfigFacts?(redGates: readonly GateName[]): Promise<ImplementerQuestionFacts>;\napplyConfigChange?(change: ConfigChangeAnswer): Promise<ConfigChangeOutcome>;\nrecordConfigChange?(entry: ConfigChangeRecord): Promise<void>;\ninterface ConfigChangeRecord { round: number; key: QualityCommandKey; from?: string; to: string; applied: boolean; reason?: ConfigChangeRefusal; decisionId: string }\n// WorkflowStoryRecord field remains optional:\nconfigChanges?: readonly ConfigChangeRecord[];\n```\nThe shared record type/field already exists from US-004 and is consumed here. A successful application does not create a new concern. Preserve fallback and stepUps from the original reply, the report-check behavior for BLOCKED/NEEDS_CONTEXT and STORY_GRAPH's existing produces lists.",
+      "acceptanceCriteria": [
+        "[unit] Through fixStep, when the last gate run has scoped red and the implementer replies BLOCKED, the loop calls env.steps.configFacts with ['scoped'].",
+        "[unit] In that red-scoped fix round, answerQuestion receives the configFacts result as facts.",
+        "[unit] Through fixStep, when all gates.states entries are green and only suite.states has full-suite red, a BLOCKED reply calls answerQuestion with no facts key.",
+        "[unit] Through fixStep, when all gates.states entries are green and only suite.states has full-suite red, a BLOCKED reply does not call configFacts.",
+        "[unit] Through implementStep before any gate run, a BLOCKED reply calls answerQuestion with exactly { storyId, status, concerns }, with no facts key.",
+        "[unit] Through implementStep before any gate run, a BLOCKED reply does not call configFacts.",
+        "[unit] Through fixStep, when answerQuestion returns a ConfigChangeAnswer and applyConfigChange returns applied:true, the implementer is called once in that round with no answer turn following.",
+        "[unit] In that applied fix round, fixStep's patch has no new concern.",
+        "[unit] In that applied BLOCKED fix round, fixStep's patch.lastTurn has status:'BLOCKED' and configApplied:true.",
+        "[unit] In that applied fix round, the ledger contains 'config change applied: quality.commands.testScoped \"bun test {{files}}\" -> \"bun test --isolate {{files}}\" (advisor D-3)'.",
+        "[unit] In that applied round 1, env.sink.recordConfigChange is called once with { round: 1, key: 'testScoped', from: 'bun test {{files}}', to: 'bun test --isolate {{files}}', applied: true, decisionId: 'D-3' }.",
+        "[unit] Through fixStep, when applyConfigChange returns applied:false and reason:'untracked', the ledger contains 'config change refused (untracked): quality.commands.testScoped -> \"bun test --isolate {{files}}\" (advisor D-3)'.",
+        "[unit] In that untracked refusal case, the patch's recorded concern text contains 'bun test --isolate {{files}}'.",
+        "[unit] In that untracked refusal case, env.sink.recordConfigChange receives an entry with applied:false and reason:'untracked'.",
+        "[unit] Through fixStep, when applyConfigChange throws, env.sink.recordConfigChange receives reason:'write-failed'.",
+        "[unit] Through fixStep, when applyConfigChange throws, fixStep resolves instead of rejecting.",
+        "[unit] Through fixStep, when configFacts throws, answerQuestion is still called with no facts key.",
+        "[unit] Through fixStep, when configFacts throws, the workflow logger writes a warn line.",
+        "[unit] Through fixStep, when answerQuestion returns a string, the implementer runs one more turn with that text.",
+        "[unit] Through fixStep, when answerQuestion returns a string, applyConfigChange is not called.",
+        "[unit] Through fixStep, when the env has no configFacts step, a BLOCKED reply calls answerQuestion with no facts key."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "advisor",
+        "security",
+        "config"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Changes shared turn absorption, failure containment and protected command application; original status/report/round invariants require strict security-path TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/src/workflow/types.ts",
+        "packages/nax/src/workflow/config-change.ts",
+        "packages/nax/src/workflow/advisor.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/story-loop-config-change.test.ts"
+      ],
+      "suggestedCriteria": [
+        "Through fixStep, a NEEDS_CONTEXT reply followed by an applied config answer records lastTurn.status 'NEEDS_CONTEXT' and configApplied true without another implementer call.",
+        "When a config-only fix round applies a change, its round remains spent against maxFixRounds.",
+        "When an applied config change moves HEAD and review findings remain open, the next evaluation re-reviews rather than treating the round as an empty diff.",
+        "When a change is refused, lastTurn.configApplied is not true."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d2f0825ebafea6edd7235c8663ee519a3d60f591"
+    },
+    {
+      "id": "US-006",
+      "title": "Stop unchanged BLOCKED gate loops and show config-change outcomes in status",
+      "description": "**Goal** — Route unchanged BLOCKED gate failures to the existing residual exit early and expose recorded config-change outcomes in plain/JSON workflow status.\n\n**Motivation** — After `BLOCKED`, the loop went on to the next fix round.\n\n**Approach** — **Early stop (#2899).** `evaluateStep` reads the previous pass's red gates from `state.gates` (before the new gate run overwrites it). When `lastTurn.status` is `BLOCKED`, `lastTurn.configApplied` is not true, the previous pass had red gates, and the new pass's red gates are the same set, it sets `advisorRoute`, so `passExit` returns `\"capped\"` and the story goes to `residualStep` now. The carrier is the existing `lastTurn` key; no new graph state key is added.\n\nCompare only gates.states, not suite.states; compare sets rather than ordering or finding IDs. An applied config change, a changed red set, a DONE reply or no previous in-memory gate pass never triggers this additional early-stop rule. Keep existing cost/no-op/narrower residual rules and terminal residual behavior. Do not hydrate previous-pass gates from resumed records for this feature. Ledger line: `fix round r1 blocked with scoped unchanged: <open ids> go to the advisor`; with lint and scoped the gate text is `lint, scoped`. Name the current open finding IDs.\n\n`nax workflow status` (`packages/nax/src/cli/workflow.ts`): `WorkflowStatusReport` gains optional `configChanges?: readonly ({ storyId: string } & ConfigChangeRecord)[]`, present only when a story recorded one; `printPlain` prints one line per change after the open-item lines. Flatten story record changes without losing round, key, from, to, applied, reason or decisionId. Preserve all existing report fields, live-status overlay behavior, read-only behavior and exit-code semantics. An old record or no recorded changes omits configChanges entirely, not an empty array.\n\nApplied plain line: `US-007 config change applied: quality.commands.testScoped \"bun test {{files}}\" -> \"bun test --isolate {{files}}\" (advisor D-3)`. Refused plain line: `US-007 config change refused (untracked): quality.commands.testScoped -> \"bun test --isolate {{files}}\" (advisor D-3)`. Use each record's story ID and values, not hardcoded example constants.\n\n**Scope** — In: evaluateStep set comparison and advisorRoute/ledger wiring, optional report field/aggregation, plain status lines, blocked-stop unit tests and existing CLI suite extensions. Out: candidate/application/env/absorbTurn implementation (US-001–US-005), graph produces changes, resumed prior-pass reconstruction, run-summary additions and residual config menus. Feature boundaries: The early stop for the first fix round after a resume: a resumed story has no previous pass in memory, so its first pass is compared against nothing. A run-summary line for config changes: they appear in the ledger and in `nax workflow status` only.\n\n**Interface** —\n```typescript\n// WorkflowStatusReport gains:\nconfigChanges?: readonly ({ storyId: string } & ConfigChangeRecord)[];\n// Read existing StoryLoopState.lastTurn.configApplied and WorkflowStoryRecord.configChanges.\n// No additional graph state keys or STORY_GRAPH produces entries.\n```\nEvery new record and report field is optional and absent when empty. No migration of prior result.json records or change to schemaVersion is required.",
+      "acceptanceCriteria": [
+        "[unit] With maxFixRounds:3, when the pass before fix round 1 had scoped red, the turn ended BLOCKED with no config change applied, and the next pass has scoped red again, evaluateStep exits 'capped'.",
+        "[unit] In that unchanged-scoped case, the ledger contains 'fix round r1 blocked with scoped unchanged: <open ids> go to the advisor', naming the open finding IDs.",
+        "[unit] With lint and scoped both red before and after the BLOCKED round, the early-stop ledger line names the gates as 'lint, scoped'.",
+        "[unit] A fix round ending BLOCKED with lastTurn.configApplied:true followed by scoped still red exits 'open' while rounds remain.",
+        "[unit] A fix round ending BLOCKED with no change applied, scoped red before and lint red after, exits 'open' while rounds remain.",
+        "[unit] A fix round ending DONE with scoped red before and after exits 'open' while rounds remain.",
+        "[unit] A pass with no previous gate run, including the first pass of the story, never exits 'capped' from this early-stop rule.",
+        "[cli] nax workflow status in plain mode for a story with an applied config-change record prints 'US-007 config change applied: quality.commands.testScoped \"bun test {{files}}\" -> \"bun test --isolate {{files}}\" (advisor D-3)' after the open-item lines.",
+        "[cli] nax workflow status in plain mode for a refused change prints 'US-007 config change refused (untracked): quality.commands.testScoped -> \"bun test --isolate {{files}}\" (advisor D-3)'.",
+        "[cli] nax workflow status --json includes a configChanges array with one { storyId: 'US-007', round, key, from, to, applied, decisionId } object per recorded change.",
+        "[cli] nax workflow status --json omits configChanges when no story recorded a change."
+      ],
+      "tags": [
+        "feature",
+        "workflow",
+        "cli",
+        "observability"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A gate-set comparison reuses the existing advisorRoute/capped exit, and optional record flattening extends the existing CLI formatter; these bounded changes introduce no authorization logic or new state-machine abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/story-steps.ts",
+        "packages/nax/src/cli/workflow.ts",
+        "packages/nax/src/workflow/types.ts",
+        "packages/nax/src/workflow/story-loop.ts",
+        "packages/nax/test/unit/cli/workflow-status.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/workflow/story-loop-blocked-stop.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When the same red gate set appears in a different entry order after a BLOCKED round with no change applied, evaluateStep still exits 'capped'.",
+        "When only suite.states remains red and gates.states has no previous red entries, this early-stop rule does not route to 'capped'.",
+        "When a refused change is reported as JSON, its configChanges entry retains its refusal reason.",
+        "When buildReport overlays live forge status, existing recorded configChanges remain in the returned report."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1a28b20c32bd623440b3a59cf3e07c447afa2f77"
+    }
+  ],
+  "analysis": "Goal and authority: close #2897/#2898/#2899 by supplying advisor facts, offering only deterministic base-manifest command candidates, applying a selected change in the orchestrator, and stopping an unchanged BLOCKED gate loop. This is an enhancement entirely within packages/nax, not a new service or a permission-policy redesign. The binding implementation order is exactly US-001 -> US-002 -> US-003 -> US-004 -> US-005 -> US-006. Codebase-memory MCP is unavailable in this host; findings below come from direct reads and text search. No source changes or test execution were performed while drafting this PRD. Read docs/architecture/ARCHITECTURE.md:13 and the relevant focused conventions before implementation; use Bun, strict TypeScript, injected external dependencies, existing test helpers and package-scoped commands.\n\nAdvisor surface and downstream impact: packages/nax/src/advisor/types.ts:9 defines evidence sources, :18 the AdviceAction discriminated union, :38 fixed option parameters, and :120 MenuFacts. packages/nax/src/advisor/menus.ts:9 and :26 are exhaustive label and text-field maps, :45 assigns deterministic option IDs, :157 builds menus, :193 converts a fixed option plus reply text to an action, and :233 forces confirmation for low confidence, irreversible replies or an explicit flag. Keep forcedConfirm unchanged. packages/nax/src/operations/advise.ts:31 deliberately mirrors REQUIRED_TEXT_FIELD so operations imports advisor types rather than advisor runtime values; update both maps without introducing an import cycle. validateAdvisorReply at :63 already rejects off-menu option IDs and empty required fields, so the model must only choose an ID and reason, never construct a key, path or command. packages/nax/src/advisor/index.ts:40 already exports all types. packages/nax/src/advisor/decision-log.ts:13 formats actions through private actionText; exercise the new branch via describeRuling/decisionLine rather than requiring a new public API. packages/nax/src/workflow/advisor.ts:21 currently returns string|null, and packages/nax/src/workflow/advisor-live.ts:77 builds the question with concern evidence first and answer/hold only. Preserve plain-string answers, null/default hold, exception containment and no-facts exact shapes. US-001 widening the return union also affects the caller at packages/nax/src/workflow/story-steps.ts:198; keep intermediate stories type-safe by narrowing strings there, without implementing config application before US-005.\n\nCandidate authority and trust boundary: packages/nax/src/agents/nax-protected-paths.ts:21 supplies projectStateDir, credentialDir and trustStoreFile from the same live policy used by tools; display these facts without modifying policy or sessions. packages/nax/src/config/schemas-execution.ts:263 permits quality commands as strings or non-empty string arrays, with testScoped at :273. Do not equate a rendered array to a string candidate: equality uses the original command spec; rendering is for evidence/from only. Red-gate eligibility must read gates.states exclusively, not the existing merged gates/suite helper. Base scripts come from git show <sc.base>:<pkg>/package.json, never the working tree or current HEAD. All string script values are eligible, independent of their script name; only testScoped receives the additional literal suffix ' {{files}}'. Preserve red-gate order, script object key order and first-wins deduplication by key/value. Missing, malformed or unreadable base manifests fail closed to {}. The candidate module is new in US-002; US-001 must not import a not-yet-created module. There is a local spec type inconsistency: ImplementerQuestionFacts.commands is described as string-only but US-001 AC17 explicitly passes an array command. AC17 is authoritative: allow readonly string[] at the advisor facts boundary and render it with the stipulated join, while buildStoryEnv can supply normalized strings. Implement renderCommandSpec in US-002 and reuse/consolidate the renderer after that dependency exists rather than adding a forward dependency from US-001.\n\nConfig/cache architecture: packages/nax/src/config/package-config-cache.ts:30 exposes the existing whole-cache clear; packages/nax/src/config/loader.ts:312 has a separate root promise cache. packages/nax/src/config/package-config.ts:33 requires the current config to inherit the --profile chain and pins root-only keys; always use this helper on reload, not an unprofiled loadConfigForWorkdir call. packages/nax/src/runtime/packages.ts:36 defines PackageRegistry, :65 creates immutable views with selector memoization, :145 creates the registry caches, :173 resolves a view from mergedConfigs or loader.current(), :217 hydrates one override, and :233 skips already-hydrated packages. Add refresh in US-003 to bypass that skip and invalidate cached identity views for the same override, including worktree identities, while preserving unrelated package views and path identity. Root commands cannot be changed in this feature: the root loader cache and resolve('') behavior are outside this package-refresh route. US-003 must return both the newly resolved NaxConfig and new PackageView only after successful write, reload, refresh and commit. Merely clearing the loader cache leaves existing selectors stale.\n\nApplying and rollback: packages/nax/src/workflow/git.ts:42 commitLedger is the existing add/diff --cached/commit --no-verify -- <single path> pattern; mirror it without including unrelated staged or unstaged work. readHead at :67 reads a real SHA and throws on git failure. Revalidate before writing; use only .nax/mono/<pkg>/config.json, require tracked status, preserve all other JSON keys, serialize two spaces plus newline, and restore original bytes on write/reload/refresh/commit failure. Classify refusals exactly as specified, and never return a refreshed context as applied after a failed transaction. The prescribed ApplyConfigChangeInput has no redGates property: preserve its signature and revalidate the selected key/value against the deterministic base-script rule and current commands without trusting action text; the actual red-gate menu comes from US-004/US-005. Do not invent a new mandatory redGates argument or a model-provided file path. Do not silently replace the API with one requiring extra caller inputs or trust model-supplied script/path data. Rollback must clear the cache and refresh from restored bytes; recovery failure must not masquerade as successful application. Commit SHA reporting, partial writes, invalid JSON on disk, a refresh throwing after a load succeeded, unrelated staged files, and cache consistency after restoration are important test paths. Expose _configChangeDeps = { git, loadConfigForPackage, readFile, writeFile } for fault injection using Bun-native file implementations. This is security-sensitive because quality commands execute in a shell outside session permission checks: the fixed base-commit rule is the authorization, not advisor confidence or prose.\n\nStory environment and persistence: packages/nax/src/workflow/call-context.ts:11 resolves a package view and :39 captures it alongside config in CallContext. packages/nax/src/workflow/stage-env.ts:49 builds StepContext, currently const sc at :61; :96 loads prior records, :121 captures sc in gate closures, :161 creates the advisor, and :181 shallow-merges record patches. Replace step closure capture with a mutable current holder and replace its config plus nested callCtx.config/packageView only after application succeeds. packageDir is packageDirRelative(projectDir, workdir) ?? '', registry is callCtx.runtime.packages, and base remains sc.base. packages/nax/src/workflow/gates.ts:116 dispatches lint/typecheck/scoped via sc.callCtx; packages/nax/src/operations/verify-scoped.ts:131 explicitly selects qualityConfigSelector from ctx.packageView. The integration test must capture that actual op context on the next gates() call, not merely assert a changed file or ctx.config. Later stories must observe the cleared cache/refreshed registry. Preserve story/worktree path identity when wiring the returned view. Add sink.recordConfigChange as append-and-persist, not a shallow update of configChanges, so resumed and multiple entries survive. US-004 necessarily introduces the shared ConfigChangeRecord/optional WorkflowStoryRecord.configChanges typing required by its sink; US-005 consumes and completes recording behavior rather than duplicating the type.\n\nLoop mechanics: packages/nax/src/workflow/story-loop.ts:36 and :87 define injectable steps and sink; :124 defines in-memory state, and :153 has the existing lastTurn carrier. packages/nax/src/workflow/story-steps.ts:57 LoopState copies state; :159 records the absorbed reply; :163 absorbTurn handles both BLOCKED and NEEDS_CONTEXT under MAX_IMPLEMENTER_QUESTIONS=2; :343 evaluate overwrites gates before returning early on red; :417 passExit already prioritizes advisorRoute for non-empty findings; :426 evaluateStep owns pass routing; :463 residualStep deliberately excludes gate items; :479 fixStep spends the round before the turn. Add optional methods so existing harnesses and callers without new capabilities retain behavior. Query facts only when gates.states contains red entries. An applied config answer ends the turn, sets lastTurn.configApplied=true with the original reply status/fallback/stepUps, creates no new concern and still spends the round. Refusal records a concern including the proposal and a ledger/record entry. A thrown apply step becomes write-failed; a thrown facts step warns and omits the facts key entirely. A string answer retains the extra implementer answer turn. packages/nax/src/workflow/report-check.ts:38 owesReport only for DONE/DONE_WITH_CONCERNS: do not relabel a config-applied BLOCKED as DONE, or spend an artificial report turn. The config commit moves HEAD, so the existing fixDiffEmpty check at stage-env.ts:145 sees progress and the existing re-review path can run when findings are open.\n\nEarly-stop invariants: capture previous red names from state.gates before calling evaluate, then compare sets (not ordering, commands, findings or suite.states) with the new gates.states. Route only BLOCKED + configApplied !== true + a non-empty previous red set + unchanged new set. No additional graph state keys, no persisted previous-pass history and no special resume reconstruction. packages/nax/src/workflow/story-graph.ts:24 and :62 already produce lastTurn on implement/fix, and :33 declares evaluate outputs; these lists remain unchanged. Existing redGateNames in story-steps.ts merges suite states and is suitable for residual diagnoses, not for this new rule.\n\nStatus/backward compatibility: packages/nax/src/workflow/types.ts:54 defines WorkflowStoryRecord inside schemaVersion:1 artifacts; add only optional configChanges. packages/nax/src/cli/workflow.ts:54 defines WorkflowStatusReport, :84 reportFor reads LoadedRun.result and builds the report, :105 buildReport optionally overlays live forge state, and :146 printPlain prints open items, waiver and supplementary items. Flatten recorded changes with storyId, omit configChanges altogether when empty, print after open-item lines, and preserve exit codes, read-only behavior and live-report overlay fields. The CLI comment at :8 documents a runtime import cycle through the workflow barrel; use type-only barrel imports and leaf runtime imports as appropriate. No artifact schema migration, release bump, new dependencies, root config rewrite or nax-agent/nax-ai changes are required. The spec's 'Modifies: None' paragraph is a compatibility statement, not a ban on modifying the explicitly listed symbols. Historical docs/superpowers/specs/2026-11-13-gate-config-route-design.md:96 contains an older three-story design, root writes, tagged answer objects, persisted block history and run-summary output. The supplied spec's six-story structure, plain-string compatibility, no root changes, in-memory set comparison and status/ledger-only reporting supersede those details.\n\nExisting tests and verification approach: advisor menu/forced-confirm tests are packages/nax/test/unit/advisor/menus.test.ts:16 and :143 and menus-workflow-kinds.test.ts:14; reply validation is test/unit/operations/advise.test.ts:1; action logs are test/unit/advisor/decision-log.test.ts:1; live answer compatibility is test/unit/workflow/advisor-live.test.ts:61. Registry memoization/worktree behavior is test/unit/runtime/packages.test.ts:243 and packages-overlay.test.ts:1; profile preservation is test/integration/runtime/package-profile-registry.test.ts:51. Stage wiring/resume tests live in test/unit/workflow/stage-env.test.ts:71 and :266, with a real temporary git pattern and shared helper usage in test/integration/workflow/stage-env-work-produced.test.ts:9 and :48. Reuse @test/helpers makeStoryLoopHarness/makeStoryLoopAdvisor/storyLoopFixtures from test/helpers/workflow-story-loop.ts:1 and :87 for loop tests, instead of rebuilding fakes. Graph output keys are pinned by test/unit/workflow/story-graph.test.ts:36. Existing string answer behavior is also traced by story-loop-equivalence.test.ts:199; do not rewrite unchanged goldens. CLI tests test/unit/cli/workflow-status.test.ts:23 use a Commander harness and :46 writes schemaVersion:1 result fixtures; extend these and check workflow-status-live.test.ts for preservation through live overlays. Add exactly the new test modules declared in expectedFiles while extending existing suites for adjacent behavior. Use _deps stubs restored after each test; isolate temp git repos, assert HEAD/path changes and original bytes directly, and avoid live agents/global config. Run targeted path-qualified bun tests from packages/nax when outside a nax session; never bare bun test or bun run nax. Pipeline handles package typecheck/check:all/test; coverage is a separate outside-session gate, never run with NAX_SANDBOXED=1. Routing uses strict three-session-tdd for the command authorization and application/wiring paths because they cross a protected configuration trust boundary; the final deterministic early-stop/status story uses tdd-simple because it reuses existing routing and CLI patterns without modifying authorization.\n\nRefine-pass audit (spec criterion numbers -> revised acceptanceCriteria positions within the same story): US-001: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12, 13->13, 14->14, 15->15, 16->16, 17->17, 18->18. US-002: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8/9, 9->10, 10->11, 11->12, 12->13, 13->14, 14->15/16. US-003: 1->1, 2->2, 3->3/4, 4->5, 5->6, 6->7/8, 7->9/10, 8->12/13, 9->14/15, 10->16/17, 11->18/19/20, 12->21. US-004: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7. US-005: 1->1, 2->2, 3->3/4, 4->5/6, 5->7, 6->8, 7->9, 8->10, 9->11, 10->12, 11->13, 12->14, 13->15/16, 14->17/18, 15->19/20, 16->21. US-006: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11. All 78 original spec criteria remain in their binding stories; split assertions retain all values and regression qualifiers, including array inequality, other keys unchanged, pre-refresh old value, no facts key, plain-string answers, open IDs and output ordering. No deprecated file-content tags were present. US-001 criterion 18 now observes the private actionText branch through the existing public describeRuling function, without inventing an export. US-003 criterion 1 now spells the actual ApplyConfigChangeInput/change nesting explicitly.\n\nFailure-table enumeration is also preserved: base-manifest failures -> US-002 criteria 10-12/17 and US-004 criteria 6/8/9; needs-confirm -> US-003 7/8; root-package -> US-003 9-11; not-offered -> US-003 12/13; untracked -> US-003 14/15; write failure and partial restoration -> US-003 21/22; load or registry refresh failure -> US-003 18-20/23-25; commit failure -> US-003 16/17/26; configFacts throw -> US-005 17/18; apply step throw -> US-005 15/16. Each story has an explicit negative path. US-004 additionally pins refused applications retaining the original gate command and resumed records retaining earlier entries; these supply backward-compatibility assertions for mutable context replacement and append persistence. These mandatory refine checks are acceptance criteria rather than merely suggested tests. Other unrequested hardening remains suggestedCriteria.\n\nAll eleven top-level exclusions were checked individually and retained verbatim: no model safety judge, no other keys, no other candidate forms, no root-package writes, no residual config route, no pre-first-gate candidates, no answer-text policing, no RequestCapability/write-block change, no resumed prior-pass reconstruction, no run-summary line, and no pipeline-mode changes. Nearby descriptions now echo the relevant boundaries. No story-local exclusion was hoisted. Every contextFiles list contains the critical spec-recommended files within five entries; all paths exist now except config-change.ts in downstream contexts, which is explicitly created by US-002. All six binding dependency arrays remain unchanged and reference real IDs. Shared record typing remains in US-004 only as necessary to type its sink, with US-005 consuming it. Routing was lightened from complex to medium for additive advisor work, expert to complex for the existing-pattern transaction, and complex/lite to medium/tdd-simple for deterministic early-stop/status; strict security TDD remains on protected command authorization/application paths. No source files or public helpers are invented beyond the required outputs.",
+  "outOfScope": [
+    "A model (approver agent) judging whether a config change is safe: the allowed changes are fixed by the rule and the advisor only picks one.",
+    "Config keys other than `quality.commands.lint`, `quality.commands.typecheck`, `quality.commands.testScoped` and `quality.commands.test`.",
+    "Candidate forms other than a base-commit script value and, for `testScoped`, that value plus ` {{files}}`: no `<runner> run <script>` forms and no edited flags.",
+    "Config changes for a story whose package is the repo root (including every story of a single-package repo): the root config is cached for the whole run, so such a change could only reach the next run.",
+    "Offering or applying a config change at residual time, or adding gate items to the residual menu.",
+    "Offering config changes before the story's first gate run (the first implement turn has no red gates, so no candidates).",
+    "Validating or rewriting advisor answer text that tells the implementer to edit a protected path (#2897's alternative fix): the advisor gets the facts, not a new restriction.",
+    "Changing `RequestCapability` or the session write block on nax config.",
+    "The early stop for the first fix round after a resume: a resumed story has no previous pass in memory, so its first pass is compared against nothing.",
+    "A run-summary line for config changes: they appear in the ledger and in `nax workflow status` only.",
+    "Pipeline mode (frozen)."
+  ],
+  "routingProfile": "native-codex-ds"
+}
