@@ -17,6 +17,13 @@ export type { CreateKodaClientInput, KodaClient, KodaResponse } from "./koda-htt
 export { createKodaClient, kodaStatusOf, MEMORY_KODA_REQUEST_TIMEOUT_MS } from "./koda-http";
 export type { CreateKodaMemoryProviderInput } from "./koda-provider";
 export { createKodaMemoryProvider, MEMORY_KODA_PROVIDER_PREFIX } from "./koda-provider";
+export type { KodaRefusal, KodaRefusals, MemoryKodaRefusal } from "./koda-refusals";
+export {
+  createKodaRefusals,
+  KODA_REFUSAL_REPORT_MS,
+  KODA_REFUSALS_FILE,
+  KODA_REFUSALS_MAX,
+} from "./koda-refusals";
 export type { CreateMcpMemoryProviderInput } from "./mcp-provider";
 export { createMcpMemoryProvider, MEMORY_MCP_PROVIDER_PREFIX } from "./mcp-provider";
 export type { MemoryDirs, MemoryLogger } from "./paths";
