@@ -10,15 +10,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { dirname, join } from "node:path";
 import { cleanupTempDir, makeLogger, makeTempDir } from "@test/helpers";
-import {
-  type KodaRefusal as BarrelKodaRefusal,
-  type KodaRefusals as BarrelKodaRefusals,
-  type MemoryKodaRefusal as BarrelMemoryKodaRefusal,
-  createKodaRefusals as barrelCreate,
-  KODA_REFUSALS_FILE as barrelFile,
-  KODA_REFUSALS_MAX as barrelMax,
-  KODA_REFUSAL_REPORT_MS as barrelReportMs,
-} from "@/memory";
+import * as barrel from "@/memory";
 import {
   _kodaRefusalsDeps,
   createKodaRefusals,
@@ -48,6 +40,34 @@ function refusalFixture(instant: number): KodaRefusal {
   return { ...APR_1, refusedAt: new Date(instant).toISOString() };
 }
 
+/** Whether `value` is a refusal this module would have written: every field present. */
+function isRefusal(value: unknown): value is KodaRefusal {
+  if (typeof value !== "object" || value === null) return false;
+  const field = (name: string): unknown => Reflect.get(value, name);
+  return (
+    typeof field("approvalId") === "string" &&
+    (field("kind") === "save" || field("kind") === "forget") &&
+    (field("scope") === "project" || field("scope") === "user") &&
+    typeof field("slug") === "string" &&
+    typeof field("status") === "string" &&
+    typeof field("refusedAt") === "string"
+  );
+}
+
+/**
+ * The `refusals` array of a parsed file, read without a cast.
+ *
+ * Throws rather than returning a partial list: a raw-file assertion that silently
+ * dropped an unreadable entry would pass for the wrong reason.
+ */
+function refusalsInFile(parsed: unknown): readonly KodaRefusal[] {
+  const refusals = typeof parsed === "object" && parsed !== null ? Reflect.get(parsed, "refusals") : undefined;
+  if (!Array.isArray(refusals) || !refusals.every(isRefusal)) {
+    throw new Error(`[test] not a refusals file: ${JSON.stringify(parsed)}`);
+  }
+  return refusals;
+}
+
 describe("createKodaRefusals", () => {
   let dir: string;
   let logger: ReturnType<typeof makeLogger>;
@@ -57,10 +77,7 @@ describe("createKodaRefusals", () => {
 
   const refusalsPath = (): string => join(dir, KODA_REFUSALS_FILE);
   const readJson = async (): Promise<unknown> => JSON.parse(await Bun.file(refusalsPath()).text());
-  const rawRefusals = async (): Promise<readonly KodaRefusal[]> => {
-    const file = (await readJson()) as { refusals?: readonly KodaRefusal[] };
-    return file.refusals ?? [];
-  };
+  const rawRefusals = async (): Promise<readonly KodaRefusal[]> => refusalsInFile(await readJson());
   const writeRaw = async (refusals: readonly unknown[]): Promise<void> => {
     await Bun.write(refusalsPath(), JSON.stringify({ version: 1, refusals }));
   };
@@ -348,17 +365,17 @@ describe("createKodaRefusals", () => {
   });
 
   test("the barrel exports the refusals API (US-002 barrel)", () => {
-    expect(barrelCreate).toBe(createKodaRefusals);
-    expect(barrelFile).toBe(KODA_REFUSALS_FILE);
-    expect(barrelMax).toBe(KODA_REFUSALS_MAX);
-    expect(barrelReportMs).toBe(KODA_REFUSAL_REPORT_MS);
+    expect(barrel.createKodaRefusals).toBe(createKodaRefusals);
+    expect(barrel.KODA_REFUSALS_FILE).toBe(KODA_REFUSALS_FILE);
+    expect(barrel.KODA_REFUSALS_MAX).toBe(KODA_REFUSALS_MAX);
+    expect(barrel.KODA_REFUSAL_REPORT_MS).toBe(KODA_REFUSAL_REPORT_MS);
     expect(KODA_REFUSALS_FILE).toBe("koda-refusals.json");
     expect(KODA_REFUSALS_MAX).toBe(20);
     expect(KODA_REFUSAL_REPORT_MS).toBe(7 * DAY_MS);
 
-    const statusEntry: BarrelMemoryKodaRefusal = { ...APR_1, refusedAt: stamp() };
-    const fullEntry: BarrelKodaRefusal = { ...statusEntry, approvalId: "apr_1" };
-    const handle: BarrelKodaRefusals = barrelCreate({ dir, logger, now: () => new Date(nowMs) });
+    const statusEntry: barrel.MemoryKodaRefusal = { ...APR_1, refusedAt: stamp() };
+    const fullEntry: barrel.KodaRefusal = { ...statusEntry, approvalId: "apr_1" };
+    const handle: barrel.KodaRefusals = barrel.createKodaRefusals({ dir, logger, now: () => new Date(nowMs) });
     const listed: readonly MemoryKodaRefusal[] = [statusEntry, fullEntry];
 
     expect(listed).toHaveLength(2);
