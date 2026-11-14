@@ -3,6 +3,10 @@
 All notable changes to `@nathapp/nax-agent-acp` are recorded here. Versions move in
 step with `@nathapp/nax-agent`.
 
+## [0.92.2] - 2026-11-14
+
+- No changes in this package. Released in lockstep with the other nax packages.
+
 ## [0.92.1] - 2026-11-13
 
 - No changes in this package. Released in lockstep with the other nax packages.
