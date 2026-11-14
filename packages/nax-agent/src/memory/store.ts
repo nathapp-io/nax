@@ -44,6 +44,7 @@ import {
   parsePendingForgetLine,
   parseSyncStateText,
 } from "./records.ts";
+import { dirOrNull, type MemoryStorePaths, memoryStorePaths } from "./store-paths.ts";
 import {
   MEMORY_SLUG_RE,
   type MemoryDecision,
@@ -53,12 +54,7 @@ import {
 } from "./types.ts";
 
 const ERROR_STAGE = "memory";
-const INDEX_FILE = "MEMORY.md";
-const NOTES_DIR = "notes";
 const NOTE_SUFFIX = ".md";
-const DECISIONS_FILE = "decisions.jsonl";
-const SYNC_STATE_FILE = "sync.json";
-const PENDING_FORGETS_FILE = "pending-forgets.jsonl";
 
 /** Reads refuse final-component links; the verified parent pin protects their ancestors. */
 const READ_FLAGS: number = constants.O_RDONLY | constants.O_NOFOLLOW;
@@ -112,20 +108,8 @@ export const _memoryStoreDeps: {
   pin: withPinnedDirectory,
 };
 
-/** The files this store owns, spelled out once so every caller agrees on them. */
-export interface MemoryStorePaths {
-  readonly projectDir: string;
-  readonly userDir: string | null;
-  readonly index: string;
-  readonly notesDir: string;
-  readonly decisions: string;
-  readonly pendingForgets: string;
-  readonly syncState: string;
-  readonly lock: string;
-  readonly outboxDir: string;
-  readonly userIndex: string | null;
-  readonly userNotesDir: string | null;
-}
+/** The mirror's disk layout lives in `store-paths.ts`; re-exported so the package entry is unchanged. */
+export type { MemoryStorePaths } from "./store-paths.ts";
 
 /** Where the sync loop has got to: the provider it talks to and the two cursors. */
 export interface MemorySyncState {
@@ -149,27 +133,8 @@ export interface MemoryStore {
   readSyncState(): Promise<MemorySyncState>;
   writeSyncState(state: MemorySyncState): Promise<void>;
   writeIndex(scope: MemoryScope, text: string): Promise<void>;
-}
-
-/** `undefined`, `null` and `""` all mean "this store has no user directory". */
-function dirOrNull(dir: string | null | undefined): string | null {
-  return dir === undefined || dir === null || dir === "" ? null : dir;
-}
-
-function memoryStorePaths(projectDir: string, userDir: string | null): MemoryStorePaths {
-  return {
-    projectDir,
-    userDir,
-    index: join(projectDir, INDEX_FILE),
-    notesDir: join(projectDir, NOTES_DIR),
-    decisions: join(projectDir, DECISIONS_FILE),
-    pendingForgets: join(projectDir, PENDING_FORGETS_FILE),
-    syncState: join(projectDir, SYNC_STATE_FILE),
-    lock: join(projectDir, "sync.lock"),
-    outboxDir: join(projectDir, "outbox"),
-    userIndex: userDir === null ? null : join(userDir, INDEX_FILE),
-    userNotesDir: userDir === null ? null : join(userDir, NOTES_DIR),
-  };
+  /** `"<scope>/<slug>"` of every note a held-forget source reports; absent with no source. */
+  readHeldForgetKeys?(): Promise<ReadonlySet<string>>;
 }
 
 function isMissing(error: unknown): boolean {
@@ -248,13 +213,53 @@ function validSlug(slug: string): void {
   if (!MEMORY_SLUG_RE.test(slug)) throw invalidSlug(slug);
 }
 
+/**
+ * The held-forget read a source becomes, or nothing when there is no source.
+ *
+ * A source is an outside system and can fail; that is not a failed index. One warning per
+ * failed call names the error, and the answer is the empty set — the index a store with no
+ * source would render.
+ */
+function heldForgetReadOf(
+  source: (() => Promise<ReadonlySet<string>>) | undefined,
+  logger: AgentLogger,
+): (() => Promise<ReadonlySet<string>>) | undefined {
+  if (source === undefined) return undefined;
+  return async () => {
+    try {
+      return await source();
+    } catch (error) {
+      logger.warn("memory", "reading the held forgets failed; the index marks none of them", {
+        error: errorMessage(error),
+      });
+      return new Set<string>();
+    }
+  };
+}
+
+/**
+ * The store's input: the two directories it mirrors, its logger, and the optional provider-neutral
+ * held-forget source (`"<scope>/<slug>"` keys a scope outside this mirror is holding a forget for).
+ * Absent, the store has no `readHeldForgetKeys`, so the index merges nothing more.
+ */
 export function createMemoryStore(input: {
   readonly projectDir: string;
   readonly userDir?: string | null;
   readonly logger: AgentLogger;
+  /** `"<scope>/<slug>"` of every note a held forget is waiting on, read on each index refresh. */
+  readonly heldForgets?: () => Promise<ReadonlySet<string>>;
 }): MemoryStore {
   const { logger } = input;
   const paths = memoryStorePaths(input.projectDir, dirOrNull(input.userDir));
+  /**
+   * The held-forget read the store exposes, or nothing when the caller gave no source.
+   *
+   * A source is an outside system, so it can fail; a failed read is not a failed index. One
+   * warning names the error and the read answers the empty set, which renders exactly the
+   * index a store with no source would: the session still gets its notes, without a marker
+   * this read could not vouch for. One warning per call, because each call is one failure.
+   */
+  const readHeldForgetKeys = heldForgetReadOf(input.heldForgets, logger);
   /** The notes directory of one scope, proved to sit inside that scope's root. */
   function confinedNotesDir(scope: MemoryScope): ScopedNotesDir {
     const root = scope === "user" ? paths.userDir : paths.projectDir;
@@ -576,6 +581,7 @@ export function createMemoryStore(input: {
 
   return {
     paths,
+    ...(readHeldForgetKeys === undefined ? {} : { readHeldForgetKeys }),
     readNote,
     writeNote,
     deleteNote,
