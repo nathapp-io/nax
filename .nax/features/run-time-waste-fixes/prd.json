@@ -3,7 +3,7 @@
   "feature": "run-time-waste-fixes",
   "branchName": "feat/run-time-waste-fixes",
   "createdAt": "2026-11-14T12:17:18.014Z",
-  "updatedAt": "2026-11-14T13:11:35.810Z",
+  "updatedAt": "2026-11-14T13:21:05.330Z",
   "userStories": [
     {
       "id": "US-001",
@@ -405,14 +405,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Reuses a transactional config answer to rerun a graph pass without a turn and carries final-pass timeout provenance through closure and reporting."
+        "reasoning": "Reuses a transactional config answer to rerun a graph pass without a turn and carries final-pass timeout provenance through closure and reporting.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/config-change-absorb.ts",
@@ -433,7 +436,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ad43b35f05e225ba9c78dfed796cfacacaa466b4"
     },
     {
       "id": "US-007",
