@@ -84,7 +84,7 @@ import {
   reconcileKodaNotes,
 } from "./koda-mapping";
 import type { CreateKodaMemoryProviderInput } from "./koda-provider";
-import type { KodaRefusal } from "./koda-refusals";
+import { KODA_REFUSAL_STATUSES, type KodaRefusal } from "./koda-refusals";
 
 const STAGE = "memory";
 
@@ -107,16 +107,14 @@ export const MEMORY_KODA_APPROVAL_CHECKS_MAX = 20;
 const APPROVAL_OPEN_STATUSES: ReadonlySet<string> = new Set(["pending", "approved"]);
 
 /**
- * The statuses that refused a proposal, as the words a logged refusal may carry: its slug is
- * restored, and then the record goes. A tuple rather than a set because the pull narrows koda's
- * answer to one of these words before it logs a refusal (US-003).
+ * The statuses that refused a proposal: its slug is restored, and then the record goes.
+ *
+ * Derived from the refusals module's own tuple rather than restated, because that module also
+ * declares what a logged refusal may carry (`KodaRefusal["status"]`). A word added there is then
+ * a word this pull recognises — restoring the slug and logging the refusal — instead of falling
+ * through to the unknown-status `keep` arm, where it would never be logged at all.
  */
-const APPROVAL_REFUSED_STATUSES = [
-  "rejected",
-  "expired",
-  "cancelled",
-  "failed",
-] as const satisfies readonly KodaRefusal["status"][];
+const APPROVAL_REFUSED_STATUSES = KODA_REFUSAL_STATUSES;
 
 /** The status that settled a proposal by writing the row the feed carries: nothing to restore. */
 const APPROVAL_EXECUTED_STATUS = "executed";

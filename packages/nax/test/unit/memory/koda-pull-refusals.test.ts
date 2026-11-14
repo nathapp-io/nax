@@ -22,6 +22,7 @@ import { type CreateKodaMemoryProviderInput, createKodaMemoryProvider } from "@/
 import {
   _kodaRefusalsDeps,
   createKodaRefusals,
+  KODA_REFUSAL_STATUSES,
   KODA_REFUSALS_FILE,
   type KodaRefusal,
   type KodaRefusals,
@@ -313,6 +314,27 @@ describe("pullKodaPage — the refusals a pull logs", () => {
       status: "expired",
     });
   });
+
+  /**
+   * The pull's refusal vocabulary is the refusals module's own tuple (`KODA_REFUSAL_STATUSES`),
+   * not a second copy of it: driving the loop from the exported tuple means a word added there is
+   * exercised here on the same commit, and one this pull failed to recognise would keep the record
+   * and log no refusal instead of reaching `refusals.record`.
+   */
+  test.each([...KODA_REFUSAL_STATUSES])(
+    "every status the refusals module declares is recognised as a refusal: %s",
+    async (word) => {
+      await approvals.record(record({ approvalId: "apr_9", kind: "forget" }));
+      stubKoda({
+        page: { items: [kodaRow(SLUG, "k2")] },
+        approvals: { apr_9: settlement(word) },
+      });
+
+      await pullLastPage();
+
+      expect(logged()).toEqual([{ approvalId: "apr_9", kind: "forget", scope: "project", slug: SLUG, status: word }]);
+    },
+  );
 
   test("an executed answer and a 404 log no refusal (AC-3)", async () => {
     await approvals.record(record({ approvalId: "apr_1" }));

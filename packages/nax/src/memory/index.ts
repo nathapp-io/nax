@@ -21,6 +21,7 @@ export type { KodaRefusal, KodaRefusals, MemoryKodaRefusal } from "./koda-refusa
 export {
   createKodaRefusals,
   KODA_REFUSAL_REPORT_MS,
+  KODA_REFUSAL_STATUSES,
   KODA_REFUSALS_FILE,
   KODA_REFUSALS_MAX,
 } from "./koda-refusals";

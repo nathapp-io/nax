@@ -54,8 +54,14 @@ export const KODA_REFUSAL_REPORT_MS = 7 * DAY_MS;
 /** The scopes a refusal may name. */
 const KODA_REFUSAL_SCOPES = ["project", "user"] as const satisfies readonly MemoryScope[];
 
-/** The statuses that refused a proposal: the words a logged refusal may carry. */
-const KODA_REFUSAL_STATUSES = ["rejected", "expired", "cancelled", "failed"] as const;
+/**
+ * The statuses that refused a proposal: the words a logged refusal may carry.
+ *
+ * The single list of them in `src/memory/`. The pull derives the statuses it treats as a
+ * refusal from this tuple (`koda-pull.ts`), so a word added here is a word the pull recognises,
+ * restores for and logs; the two lists cannot drift apart.
+ */
+export const KODA_REFUSAL_STATUSES = ["rejected", "expired", "cancelled", "failed"] as const;
 
 /** One proposal koda refused: the write, the note, and koda's own word for the answer. */
 export interface KodaRefusal {
@@ -67,7 +73,7 @@ export interface KodaRefusal {
   readonly scope: MemoryScope;
   /** The slug of the note the write was for. */
   readonly slug: string;
-  /** koda's status word for the refusal: one of `APPROVAL_REFUSED_STATUSES`. */
+  /** koda's status word for the refusal: one of `KODA_REFUSAL_STATUSES`. */
   readonly status: (typeof KODA_REFUSAL_STATUSES)[number];
   /** The ISO instant the pull logged the refusal. */
   readonly refusedAt: string;
