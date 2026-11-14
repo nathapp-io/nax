@@ -6,6 +6,7 @@ import type { WorkflowOpConfig } from "@/config/selectors";
 import {
   buildWorkflowReviewJsonRetry,
   buildWorkflowReviewJsonRetryCondensed,
+  buildWorkflowVerdictMismatchRetry,
   reviewerCommandsSection,
 } from "@/prompts";
 import { STEP_TIMEOUT_MARGIN_MS } from "@/utils/step-signal";
@@ -43,10 +44,16 @@ export const workflowStoryReviewOp: RunOperation<WorkflowReviewInput, StoryRevie
   parse: (output) => parseStoryReviewReply(output),
   retry: makeParseRetryStrategy({
     parse: (output) => parseStoryReviewReply(output),
-    validate: (parsed) => parsed !== null,
+    validate: (parsed) => parsed !== null && typeof parsed === "object" && !("mismatch" in parsed),
     reviewerKind: "workflow-story-review",
     maxAttempts: 2,
-    prompts: { invalid: buildWorkflowReviewJsonRetry, truncated: buildWorkflowReviewJsonRetryCondensed },
+    prompts: {
+      invalid: (output) => {
+        const mismatch = parseStoryReviewReply(output)?.mismatch;
+        return mismatch ? buildWorkflowVerdictMismatchRetry(mismatch) : buildWorkflowReviewJsonRetry();
+      },
+      truncated: buildWorkflowReviewJsonRetryCondensed,
+    },
     exhaustedFallback: () => null,
   }),
 };

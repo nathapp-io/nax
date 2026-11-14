@@ -103,6 +103,7 @@ export type {
   ReReviewResidual,
   ReReviewVerdict,
   StoryReviewVerdict,
+  VerdictMismatch,
   WorkflowFinding,
   WorkflowFindingDraft,
   WorkflowFindingKind,

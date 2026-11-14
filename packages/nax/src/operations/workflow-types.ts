@@ -39,7 +39,10 @@ export interface ImplementerReply {
   readonly noStatusBlock?: true;
 }
 
+export type VerdictMismatch = "spec" | "quality";
+
 export interface StoryReviewVerdict {
+  readonly mismatch?: readonly VerdictMismatch[];
   readonly spec: "pass" | "fail";
   readonly quality: "approved" | "changes";
   readonly findings: readonly WorkflowFindingDraft[];

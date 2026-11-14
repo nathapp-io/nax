@@ -1,5 +1,6 @@
 /** A5 workflow mode: the story review prompt (spec §6 step 4) and the JSON retries shared with the re-review. */
 
+import type { VerdictMismatch } from "@/operations/workflow-types";
 import { WORKFLOW_SETTLED_RULINGS_RULE } from "./workflow-implementer-builder";
 import { WORKFLOW_ENUMERATION_INSTRUCTION, WORKFLOW_QUALITY_CHECKLIST } from "./workflow-quality-checklist";
 
@@ -80,4 +81,13 @@ export function buildWorkflowReviewJsonRetry(): string {
 
 export function buildWorkflowReviewJsonRetryCondensed(): string {
   return 'Your reply was cut off. Re-send a shorter version: keep every finding but shorten "issue" and "suggestion" to one sentence each. Only the JSON object.';
+}
+
+export function buildWorkflowVerdictMismatchRetry(mismatch: readonly VerdictMismatch[]): string {
+  const messages: Record<VerdictMismatch, string> = {
+    spec: "You returned spec: fail but no critical or important spec finding. Either name the acceptance criterion that fails as a finding, or change the verdict to pass.",
+    quality:
+      "You returned quality: changes but no critical or important finding. Either name the defect as a finding, or change the verdict to approved.",
+  };
+  return [...mismatch.map((kind) => messages[kind]), buildWorkflowReviewJsonRetry()].join("\n");
 }
