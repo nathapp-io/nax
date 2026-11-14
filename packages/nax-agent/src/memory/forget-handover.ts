@@ -148,6 +148,9 @@ async function forgetLocked(input: MemoryForgetInput, request: MemoryWriteReques
  * from the copy read before the delete, and it is written back *before* the index is refreshed so
  * the index the next session reads still lists it. A `proposal` forget deleted nothing, so its
  * note stands as it was.
+ *
+ * That write back is the only copy the mirror gets — the entry is off the queue either way — so
+ * it goes through `restoreOrRewind`, which falls back to the pull when the write cannot land.
  */
 async function handOverForget(
   input: MemoryForgetInput,
