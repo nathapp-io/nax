@@ -3,7 +3,7 @@
   "feature": "run-time-waste-fixes",
   "branchName": "feat/run-time-waste-fixes",
   "createdAt": "2026-11-14T12:17:18.014Z",
-  "updatedAt": "2026-11-14T12:38:21.264Z",
+  "updatedAt": "2026-11-14T12:48:14.575Z",
   "userStories": [
     {
       "id": "US-001",
@@ -123,14 +123,17 @@
         "2921"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Existing pure parsers, prompt builder and makeParseRetryStrategy already provide the required seams; localized policy changes need parser regressions and scripted callOp tests, not a new retry abstraction."
+        "reasoning": "Existing pure parsers, prompt builder and makeParseRetryStrategy already provide the required seams; localized policy changes need parser regressions and scripted callOp tests, not a new retry abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/workflow-replies.ts",
@@ -156,7 +159,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "977ec97e4e3329faec776881ff75b41264203666"
     },
     {
       "id": "US-003",
