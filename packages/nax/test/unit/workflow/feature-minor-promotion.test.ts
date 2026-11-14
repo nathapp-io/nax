@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { featureMachineFixtures, makeFeatureMachineHarness } from "@test/helpers";
+import { formatWorkflowSummary } from "@/log-format/workflow-summary";
 import { parseBranchReviewReply } from "@/operations/workflow-replies";
 import { buildWorkflowBranchFixPrompt, buildWorkflowBranchReviewPrompt } from "@/prompts";
-import { formatWorkflowSummary } from "@/log-format/workflow-summary";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { branchFixStep, branchReviewStep } from "@/workflow/feature-steps";
 import { buildWorkflowRunSummary } from "@/workflow/run-summary";

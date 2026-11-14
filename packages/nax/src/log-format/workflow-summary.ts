@@ -49,6 +49,20 @@ function timeoutLines(view: WorkflowSummaryView, c: ChalkLike): string[] {
     : [];
 }
 
+function branchLines(branch: WorkflowSummaryView["branch"], c: ChalkLike): string[] {
+  if (!branch) return [];
+  const lines = [
+    `  ${c.gray("Branch findings:")} ${branch.found} found, ${branch.fixed} fixed, ${branch.left} left (minors left ${branch.minorsLeft}${branch.fixRounds ? `, fix rounds ${branch.fixRounds}` : ""})`,
+  ];
+  if (branch.minors) {
+    const m = branch.minors;
+    lines.push(
+      `  ${c.gray("Deferred minors:")} ${m.found} found, ${m.promoted} promoted, ${m.fixNow} fix-now, ${m.left} left`,
+    );
+  }
+  return lines;
+}
+
 export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useColor?: boolean } = {}): string {
   const c: ChalkLike = options.useColor === false ? createNoopChalk() : chalk;
   const lines: string[] = [];
@@ -63,18 +77,7 @@ export function formatWorkflowSummary(view: WorkflowSummaryView, options: { useC
   }
   lines.push(...timeoutLines(view, c));
   lines.push(...mismatchLines(view, c));
-  if (view.branch) {
-    const b = view.branch;
-    lines.push(
-      `  ${c.gray("Branch findings:")} ${b.found} found, ${b.fixed} fixed, ${b.left} left (minors left ${b.minorsLeft}${b.fixRounds ? `, fix rounds ${b.fixRounds}` : ""})`,
-    );
-    if (b.minors) {
-      const m = b.minors;
-      lines.push(
-        `  ${c.gray("Deferred minors:")} ${m.found} found, ${m.promoted} promoted, ${m.fixNow} fix-now, ${m.left} left`,
-      );
-    }
-  }
+  lines.push(...branchLines(view.branch, c));
   if (view.branchReviewSkipped) {
     const left = view.branchReviewSkipped.minorsLeft;
     lines.push(`  ${c.gray("Branch findings:")} branch review skipped (minors left ${left})`);
