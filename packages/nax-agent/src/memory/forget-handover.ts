@@ -35,6 +35,7 @@ import {
   writeRefused,
 } from "./operations-support.ts";
 import type { MemoryPushResult, MemoryWriteRequest } from "./provider-types.ts";
+import { rewindPullCursor } from "./pull-cursor.ts";
 import { discardRefused, restoreForgotten } from "./refusal.ts";
 import { GLOBAL_MEMORY_TIMERS, providerAnswers, raceTimeout } from "./support.ts";
 import { MEMORY_OP_TIMEOUT_MS, type MemoryNote, type MemoryNoteStatus, memoryNoteKey } from "./types.ts";
@@ -61,6 +62,26 @@ async function queuedForget(input: MemoryForgetInput): Promise<MemoryForgetResul
 /** Whether the answer carries the retire out: only `deleted` does. */
 function retired(answer: MemoryPushResult): boolean {
   return answer.status === "deleted";
+}
+
+/**
+ * Put the note a `direct` forget removed back — or hand the recovery to the pull.
+ *
+ * The write back is the whole of what keeps the note: the request this call made has already
+ * left the queue (accepted, or refused for good), so if the note cannot be written the mirror
+ * has nothing local that names it and no later run knows to go looking. Reporting that is not a
+ * recovery, so the second route is taken instead: this scope's pull cursor goes back to the
+ * beginning, and the next sync reads the provider's copy — which every one of these answers
+ * leaves live — in full.
+ *
+ * Both callers are the same shape: a `pending` answer under `direct` (the note was deleted when
+ * the entry was queued and the provider has not retired it) and a permanent refusal (the note
+ * was deleted and the provider has refused to retire it). `proposal` deleted nothing, so neither
+ * needs this at all and neither calls it.
+ */
+async function restoreOrRewind(input: MemoryForgetInput, previous: MemoryNote): Promise<void> {
+  if (await restoreForgotten(input, previous)) return;
+  await rewindPullCursor(input.store, input.scope);
 }
 
 /**
@@ -143,11 +164,11 @@ async function handOverForget(
     // The refusal is the caller's answer; the entry and the note are put back regardless of
     // whether removing it works, so a refused forget never leaves the note deleted.
     await discardRefused(input, request.clientId);
-    if (input.writeMode === "direct") await restoreForgotten(input, previous);
+    if (input.writeMode === "direct") await restoreOrRewind(input, previous);
     throw error;
   }
   await input.outbox.remove(request.clientId);
-  if (!retired(answer) && input.writeMode === "direct") await restoreForgotten(input, previous);
+  if (!retired(answer) && input.writeMode === "direct") await restoreOrRewind(input, previous);
   await refreshIndex(input);
   return { slug: input.slug, status: answer.status, delivered: true };
 }

@@ -556,6 +556,41 @@ describe("forgetMemoryNote", () => {
       });
     });
   });
+
+  /**
+   * A refusal is a second way to lose the note: the entry comes off the queue (retrying would
+   * only repeat the refusal) and the note is written back — so a write back that fails leaves
+   * nothing local naming the note either. The pull recovers it, and only a rewound cursor makes
+   * that pull read the note again.
+   */
+  test("F1: a restore that fails after a permanent refusal also rewinds this scope's cursor", async () => {
+    await withTempDir(async (dir) => {
+      const rejected = refusal();
+      const h = harness(dir, { push: rejected });
+      await h.store.writeNote(note());
+      await h.store.writeSyncState({
+        provider: "scripted",
+        cursor: { project: "page-7", user: "page-2" },
+        lastPullAt: null,
+        lastError: null,
+      });
+      const store: MemoryStore = {
+        ...h.store,
+        writeNote: async () => {
+          throw new Error(MIRROR_READ_ONLY);
+        },
+      };
+
+      const caught = await h.forget({ store }).catch((error: unknown) => error);
+
+      // The provider's refusal is still the caller's answer.
+      expect(caught).toBe(rejected);
+      // The provider still holds the note, so the next pull is what puts it back.
+      const state = await h.store.readSyncState();
+      expect(state.cursor.project).toBeNull();
+      expect(state.cursor.user).toBe("page-2");
+    });
+  });
 });
 
 /**
@@ -596,6 +631,41 @@ describe("US-004: a direct forget the provider holds pending", () => {
       const line = await indexLineFor(h, SLUG);
       expect(line).toContain(SLUG);
       expect(line.endsWith(" (forget pending)")).toBe(false);
+    });
+  });
+
+  /**
+   * The write back is the only thing standing between a held forget and a lost note: the entry
+   * has been accepted and taken off the queue, so nothing else names the note locally. A restore
+   * that cannot be written therefore has to hand the recovery to the pull, or the mirror loses a
+   * note the provider still holds and no later run knows to look for it.
+   */
+  test("F1: a restore that fails after a pending answer rewinds the cursor so the pull can recover it", async () => {
+    await withTempDir(async (dir) => {
+      const h = harness(dir, { push: { id: "mem_1", status: "pending" } });
+      await h.store.writeNote(note());
+      await h.store.writeSyncState({
+        provider: "scripted",
+        cursor: { project: "page-7", user: "page-2" },
+        lastPullAt: null,
+        lastError: null,
+      });
+      const store: MemoryStore = {
+        ...h.store,
+        writeNote: async () => {
+          throw new Error(MIRROR_READ_ONLY);
+        },
+      };
+
+      const result = await h.forget({ store });
+
+      expect(result).toEqual({ slug: SLUG, status: "pending", delivered: true });
+      // The note could not be written back, so the scope is read in full by the next sync.
+      const state = await h.store.readSyncState();
+      expect(state.cursor.project).toBeNull();
+      expect(state.cursor.user).toBe("page-2");
+      const warns = h.logger.calls.filter((call) => call.level === "warn");
+      expect(warns.map((call) => call.message)).toContain("memory forget could not restore the note");
     });
   });
 });
