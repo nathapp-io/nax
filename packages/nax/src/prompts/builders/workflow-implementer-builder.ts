@@ -189,7 +189,7 @@ export function buildWorkflowImplementPrompt(input: {
 ${e2e}## Report
 Write ${input.reportPath} with these sections:
 - **What was built**
-- **TDD evidence**: for each AC, the failing run and the passing run (command and the relevant output lines). If you did not capture the failing run, say so under **Decisions & assumptions**; then evidence that the test exercises the new code path is acceptable. Missing evidence without that note, or a test that asserts nothing, fails review.
+- **TDD evidence**: for each AC, the test that covers it (file and test name), the failing run and the passing run (command and the relevant output lines). An AC with no test of its own is the most common review finding, and a test that also passes without your change does not cover its AC. If you did not capture the failing run, say so under **Decisions & assumptions**; then evidence that the test exercises the new code path is acceptable. Missing evidence without that note, or a test that asserts nothing, fails review.
 - **Files changed**
 - **Decisions & assumptions**: every judgment call you made and why.
 

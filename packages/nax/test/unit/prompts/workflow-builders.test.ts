@@ -137,6 +137,26 @@ ${WORKFLOW_REPLY_CONTRACT}`);
     }
   });
 
+  test("implement prompt asks the report to name the test that covers each AC", () => {
+    const text = buildWorkflowImplementPrompt({ storyId: "US-003", briefPath: "/b.md", reportPath: "/r.md" });
+    expect(text).toContain("the test that covers it (file and test name)");
+    expect(text).toContain("An AC with no test of its own is the most common review finding");
+  });
+
+  test("story review states severity by consequence and says where minors go (nax#2920)", () => {
+    const text = buildWorkflowStoryReviewPrompt({
+      briefPath: "/b.md",
+      reportPath: "/r.md",
+      packagePath: "/p.diff",
+      concerns: [],
+    });
+    expect(text).toContain(
+      "Wrong behaviour a user or caller can reach is critical or important, however small the fix",
+    );
+    expect(text).toContain("Every minor you list is handed to one fix pass after all stories are done");
+    expect(text).toContain("only where a project rule or the convention of the surrounding code says so");
+  });
+
   test("rendered findings carry the observed excerpt to the fixer (nax#2486)", () => {
     const text = renderWorkflowFindings([
       {
