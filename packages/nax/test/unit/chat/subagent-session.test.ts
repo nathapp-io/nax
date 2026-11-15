@@ -240,6 +240,16 @@ describe("runSubagent session options", () => {
     expect(backendOptions().compaction).toEqual(expect.objectContaining({ enabled: false }));
   });
 
+  // US-006: the chat's own token cap is chat-session policy. A subagent keeps the
+  // execution.compaction data flow exactly as configured, with no chat cap applied.
+  test("US-006 AC-14 keeps execution compaction and applies no chat cap", async () => {
+    const config = makeNaxConfig({ chat: { compaction: { compactAtTokens: 100_000 } } });
+    await run({ config });
+    const compaction = backendOptions().compaction;
+    expect(compaction).toEqual(config.execution.compaction);
+    expect(compaction).not.toHaveProperty("compactAtTokens");
+  });
+
   test("AC-14 uses the memory transcript store", async () => {
     await run();
     expect(deps.createMemoryTranscriptStore).toHaveBeenCalledTimes(1);

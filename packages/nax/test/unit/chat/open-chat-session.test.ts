@@ -153,6 +153,37 @@ describe("openChatSession", () => {
       expect.objectContaining({ compaction: expect.objectContaining({ enabled: false }) }),
     );
   });
+  test("US-006 AC-12 forwards the percent settings with the chat token cap", async () => {
+    // `execution.compaction` is the shared default (US-005) here; the chat cap is added on top.
+    const config = makeNaxConfig({
+      execution: { compaction: { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 } },
+      chat: { compaction: { compactAtTokens: 100_000 } },
+    });
+    await open({ config });
+    expect(deps.nativeBackend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compaction: { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 100_000 },
+      }),
+    );
+  });
+  test("US-006 AC-13 no chat block forwards the chat default cap", async () => {
+    await open();
+    expect(deps.nativeBackend).toHaveBeenCalledWith(
+      expect.objectContaining({ compaction: expect.objectContaining({ compactAtTokens: 200_000 }) }),
+    );
+  });
+  test("US-006 a chat cap of 0 overrides an execution cap rather than falling back to it", async () => {
+    const config = makeNaxConfig({
+      execution: {
+        compaction: { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 150_000 },
+      },
+      chat: { compaction: { compactAtTokens: 0 } },
+    });
+    await open({ config });
+    expect(deps.nativeBackend).toHaveBeenCalledWith(
+      expect.objectContaining({ compaction: expect.objectContaining({ compactAtTokens: 0 }) }),
+    );
+  });
   test.each(["AC-7", "AC-8", "AC-9"])("%s full session options", async () => {
     await open({ mode: "full", config: makeNaxConfig({ execution: { approvalTimeout: 42_000 } }) });
     expect(deps.createAgentSession).toHaveBeenCalledWith(

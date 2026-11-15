@@ -28,6 +28,7 @@ export {
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
 export { GENERAL_AGENT_NAME, generalAgent } from "./builtin-agent";
 export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
+export { chatCompactAtTokens, idleCompactAfterMs } from "./chat-compaction";
 export {
   clampEffort,
   clampModelEffort,

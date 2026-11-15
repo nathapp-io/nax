@@ -59,6 +59,7 @@ export type { BotConfig, BotModelsConfig } from "./runtime-types-bot";
 export type {
   ChatAgentChoice,
   ChatBotStepConfig,
+  ChatCompactionConfig,
   ChatConfig,
   ChatStepConfig,
   ChatWorkflowConfig,
@@ -131,6 +132,8 @@ export {
   CHAT_MODEL_PATTERN,
   CHAT_PROFILE_PATTERN,
   ChatConfigSchema,
+  DEFAULT_CHAT_COMPACT_AT_TOKENS,
+  DEFAULT_IDLE_COMPACT_AFTER_MINUTES,
   DEFAULT_SPEC_FIX_ROUNDS,
 } from "./schemas-chat";
 export type { CommandSafetyConfig } from "./schemas-command-safety";

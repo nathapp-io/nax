@@ -37,6 +37,7 @@ import {
   recordAcpTurns,
   unseenMessages,
 } from "./acp";
+import { chatCompactAtTokens } from "./chat-compaction";
 import { type ChatMode, chatBackendPosture, chatModeOfMeta, chatSessionSettings } from "./chat-mode";
 
 export const _openChatSessionDeps = {
@@ -192,7 +193,9 @@ async function sessionOptions(
   });
   const mode = meta.mode === "full" ? "full" : "guarded";
   const catalogOverrides = request.config.agent?.native?.catalogOverrides;
-  const compaction = request.config.execution.compaction;
+  // US-006: chat compaction is the execution percentages with the chat's own absolute cap on
+  // top. `0` in `chat.compaction` turns the cap off rather than falling back to execution's.
+  const compaction = { ...request.config.execution.compaction, compactAtTokens: chatCompactAtTokens(request.config) };
   return {
     backend: deps.nativeBackend({
       ...chatBackendPosture(mode, request.config, posture),
@@ -213,7 +216,7 @@ async function sessionOptions(
       ...(request.toolProviders !== undefined ? { toolProviders: request.toolProviders } : {}),
       loopHandlerRole: "tui",
       ...(catalogOverrides?.length ? { catalogOverrides } : {}),
-      ...(compaction !== undefined ? { compaction } : {}),
+      compaction,
     }),
     sessionId: meta.sessionId,
     profile: chatSessionSettings(mode, posture).profile,

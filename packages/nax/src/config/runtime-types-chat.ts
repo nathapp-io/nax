@@ -49,7 +49,17 @@ export interface ChatWorkflowConfig {
   readonly specFixRounds: number;
 }
 
+/** The chat session's own compaction policy (US-006). `0` turns either half off. */
+export interface ChatCompactionConfig {
+  /** Absolute token trigger for the native chat session; 0 turns the cap off. */
+  readonly compactAtTokens: number;
+  /** Minutes of idleness before a background compact; 0 turns idle compaction off. */
+  readonly idleCompactAfterMinutes: number;
+}
+
 /** The optional `chat` root config key. */
 export interface ChatConfig {
   readonly workflow?: ChatWorkflowConfig;
+  /** Chat-session compaction policy; absent means the resolver defaults apply. */
+  readonly compaction?: ChatCompactionConfig;
 }

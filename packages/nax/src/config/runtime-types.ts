@@ -92,7 +92,13 @@ export interface ExecutionConfig {
   /** Token budget for plugin context providers (default: 2000) */
   contextProviderTokenBudget: number;
   /** Native context compaction settings, resolved as percentages of the model's window. */
-  compaction: { enabled: boolean; compactAtPercent: number; keepRecentPercent: number };
+  compaction: {
+    enabled: boolean;
+    compactAtPercent: number;
+    keepRecentPercent: number;
+    /** Absolute trigger that wins when below the percentage (0 = off); no default (US-005). */
+    compactAtTokens?: number;
+  };
   /** Test command override (null = disabled, undefined = auto-detect from package.json) */
   testCommand?: string | null;
   /** Lint command override (null = disabled, undefined = auto-detect from package.json) */

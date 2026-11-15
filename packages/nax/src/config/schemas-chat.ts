@@ -8,12 +8,27 @@
  * Profile names and model ids are validated here with the same patterns a launch applies to its
  * input; the launch path (`src/chat/jobs/job-argv.ts`) reads these two constants rather than
  * re-spelling them, so config load and launch cannot drift.
+ *
+ * `compaction` (US-006) is the chat session's own policy: an absolute token cap for the native
+ * chat session and the idle delay before a background compact. It is deliberately separate from
+ * the shared `execution.compaction` (US-005) — the chat defaults must not land there, because
+ * story sessions and chat subagents keep the execution settings.
  */
+import { MIN_COMPACT_AT_TOKENS } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
 import type { ChatConfig } from "./runtime-types-chat";
 
 /** Fix rounds the spec loop gets when `chat.workflow.specFixRounds` is unset. */
 export const DEFAULT_SPEC_FIX_ROUNDS = 2;
+
+/** The native chat session's absolute compaction trigger when `chat.compaction.compactAtTokens` is unset. */
+export const DEFAULT_CHAT_COMPACT_AT_TOKENS = 200_000;
+
+/** Minutes of chat idleness before an idle compaction when `chat.compaction.idleCompactAfterMinutes` is unset. */
+export const DEFAULT_IDLE_COMPACT_AFTER_MINUTES = 55;
+
+/** One day: an idle delay beyond it is indistinguishable from "off". */
+const MAX_IDLE_COMPACT_AFTER_MINUTES = 1_440;
 
 /** A profile name, as `nax chat` accepts one. */
 export const CHAT_PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -44,8 +59,26 @@ const ChatWorkflowConfigSchema = z.object({
   specFixRounds: z.number().int().min(1).max(10).default(DEFAULT_SPEC_FIX_ROUNDS),
 });
 
+/** The chat session's compaction policy. 0 turns either half off. */
+const ChatCompactionConfigSchema = z.object({
+  compactAtTokens: z
+    .number()
+    .int()
+    .refine((tokens) => tokens === 0 || tokens >= MIN_COMPACT_AT_TOKENS, {
+      message: `compactAtTokens must be 0 (off) or at least ${MIN_COMPACT_AT_TOKENS}`,
+    })
+    .default(DEFAULT_CHAT_COMPACT_AT_TOKENS),
+  idleCompactAfterMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_IDLE_COMPACT_AFTER_MINUTES)
+    .default(DEFAULT_IDLE_COMPACT_AFTER_MINUTES),
+});
+
 const ChatConfigObjectSchema = z.object({
   workflow: ChatWorkflowConfigSchema.optional(),
+  compaction: ChatCompactionConfigSchema.optional(),
 });
 
 export const ChatConfigSchema: z.ZodType<ChatConfig, z.input<typeof ChatConfigObjectSchema>> = ChatConfigObjectSchema;
