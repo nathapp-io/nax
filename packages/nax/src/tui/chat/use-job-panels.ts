@@ -18,7 +18,9 @@
  * Refreshes are serialized per job, and a job that has ended gets exactly one more applied
  * refresh once the one in flight settles, so its panel freezes on the final state rather
  * than on a figure read while it was still running. After that the job is not refreshed
- * again. The panel is display only: nothing it reads reaches the agent's context.
+ * again — a change announced while that last read was in flight is dropped, not queued, so
+ * nothing overwrites the panel that froze. The panel is display only: nothing it reads
+ * reaches the agent's context.
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { useEffect, useRef } from "react";
@@ -37,6 +39,8 @@ type SetEntries = (update: (rows: readonly TranscriptEntry[]) => readonly Transc
 
 export interface UseJobPanelsInput {
   readonly host: ChatHost;
+  /** The transcript as the last render drew it: the only ground truth for panel membership. */
+  readonly entries: readonly TranscriptEntry[];
   readonly setEntries: SetEntries;
   readonly turnRunning: boolean;
 }
@@ -63,13 +67,18 @@ interface PanelContext {
   readonly setEntries: SetEntries;
   /** The turn's state as it stands now, not as the last render saw it. */
   readonly turnRunning: () => boolean;
+  /** The transcript as the last render drew it, so a replaced list is seen as it now stands. */
+  readonly entries: () => readonly TranscriptEntry[];
 }
 
 /** The hook's own bookkeeping: which jobs it shows, and what each refresh is still owed. */
 interface PanelState {
   /** Jobs the hook shows, whether or not their panel is in the transcript right now. */
   readonly paneled: Set<string>;
-  /** Paneled jobs whose entry the hook has added since the entries were last replaced. */
+  /**
+   * Paneled jobs whose panel the last applied update put in the transcript. Cleared again when
+   * an update is refused, so it tracks the entries rather than the hook's intentions.
+   */
   readonly appended: Set<string>;
   /** Jobs with a refresh pending right now. */
   readonly inFlight: Set<string>;
@@ -106,20 +115,33 @@ function clearTimer(state: PanelState): void {
 /**
  * Applies one job's view, unless a turn is running and the transcript has no panel for it yet.
  *
- * The array itself is decided inside the updater, against the entries as they stand
- * (`hasJobPanel`), so an entry list replaced by `/clear` or a resume is a first append again.
- * The bookkeeping beside it is taken here, synchronously: `appended` says the panel is in the
- * transcript (which is what the turn's end flushes), and an ended view is the panel's last
- * word, so the job is never refreshed again — the one exception being the turn-end flush,
- * which runs for a job whose append was held back.
+ * Whether the panel is in the transcript is asked of the entries as the last render drew them
+ * (`hasJobPanel`), not of `appended`: `/clear` and a resume replace the entry list without
+ * telling the hook, so a set kept beside them would claim a panel the transcript no longer
+ * holds — and a job wrongly marked `done` is one the turn-end flush skips, which loses the
+ * panel for good. So a held-back view *removes* the job from `appended` (nothing was added) and
+ * never marks it done, leaving it for the flush on the turn's end. `done` is set only for a
+ * view that reaches the transcript, which is also why a job ended mid-turn still appears: its
+ * terminal view was held, so the flush still owes it one refresh.
+ *
+ * The updater repeats the check as the final authority — the turn can start between here and
+ * the render — and reconciles both sets when it refuses, so bookkeeping taken here can never
+ * outlive a refusal.
  */
 function applyView(context: PanelContext, state: PanelState, jobId: string, view: JobPanelView): void {
-  const held = context.turnRunning() && !state.appended.has(jobId);
+  if (context.turnRunning() && !hasJobPanel(context.entries(), jobId)) {
+    state.appended.delete(jobId);
+    state.done.delete(jobId);
+    return;
+  }
   context.setEntries((rows) => {
-    if (context.turnRunning() && !hasJobPanel(rows, jobId)) return rows;
+    if (context.turnRunning() && !hasJobPanel(rows, jobId)) {
+      state.appended.delete(jobId);
+      state.done.delete(jobId);
+      return rows;
+    }
     return upsertJobPanel(rows, view);
   });
-  if (held) return;
   state.appended.add(jobId);
   if (view.state !== "running") state.done.add(jobId);
 }
@@ -148,20 +170,38 @@ function syncTimer(context: PanelContext, state: PanelState): void {
   }, JOB_PANEL_REFRESH_MS);
 }
 
-/** After a refresh settles: drain a queued one, or run the single post-end refresh still owed. */
+/**
+ * After a refresh settles: drain a queued one, or run the single post-end refresh still owed.
+ *
+ * A job showing its ended state is finished, so anything queued for it while that view was
+ * read is dropped rather than run: the queued refresh would overwrite the panel that froze.
+ */
 function afterSettle(context: PanelContext, state: PanelState, jobId: string): void {
+  if (state.done.has(jobId)) {
+    state.queued.delete(jobId);
+    return;
+  }
   if (state.queued.delete(jobId)) {
     void refresh(context, state, jobId);
     return;
   }
-  if (state.done.has(jobId) || state.finalRequested.has(jobId)) return;
+  if (state.finalRequested.has(jobId)) return;
   if (!hasEnded(context, jobId)) return;
   state.finalRequested.add(jobId);
   void refresh(context, state, jobId);
 }
 
-/** Reads one job's view and applies it; a refresh for the same job never overlaps this one. */
+/**
+ * Reads one job's view and applies it; a refresh for the same job never overlaps this one.
+ *
+ * A job whose terminal view has been applied is never read again — its panel is the last word
+ * on it — so a change announced while that view was being read cannot restart it.
+ */
 async function refresh(context: PanelContext, state: PanelState, jobId: string): Promise<void> {
+  if (state.done.has(jobId)) {
+    state.queued.delete(jobId);
+    return;
+  }
   if (state.inFlight.has(jobId)) {
     state.queued.add(jobId);
     return;
@@ -229,10 +269,12 @@ export function useJobPanels(input: UseJobPanelsInput): void {
   const state = useRef<PanelState | null>(null);
   state.current ??= newState();
   const panels = state.current;
-  // The turn and the setter as they stand at the moment a refresh lands, not as the render
-  // that started it saw them: a reply can still be streaming when a read resolves.
+  // The turn, the transcript and the setter as they stand at the moment a refresh lands, not as
+  // the render that started it saw them: a reply can still be streaming when a read resolves.
   const turnRunning = useRef(input.turnRunning);
   turnRunning.current = input.turnRunning;
+  const entries = useRef(input.entries);
+  entries.current = input.entries;
   const setEntries = useRef(input.setEntries);
   setEntries.current = input.setEntries;
   const previousTurnRunning = useRef(input.turnRunning);
@@ -246,6 +288,7 @@ export function useJobPanels(input: UseJobPanelsInput): void {
       jobs,
       setEntries: (update) => setEntries.current(update),
       turnRunning: () => turnRunning.current,
+      entries: () => entries.current,
     };
     panels.live = true;
     const unsubscribe = jobs.onChange(() => onJobsChanged(context, panels));
@@ -272,6 +315,7 @@ export function useJobPanels(input: UseJobPanelsInput): void {
       jobs,
       setEntries: (update) => setEntries.current(update),
       turnRunning: () => turnRunning.current,
+      entries: () => entries.current,
     };
     flushHeldPanels(context, panels);
     syncTimer(context, panels);

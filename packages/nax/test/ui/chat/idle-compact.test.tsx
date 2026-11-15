@@ -77,7 +77,11 @@ const PANEL_VIEW = {
   logTail: [],
 };
 
-const savedPanels = { readJobPanelView: _jobPanelsDeps.readJobPanelView, setTimeout: _jobPanelsDeps.setTimeout };
+const savedPanels = {
+  readJobPanelView: _jobPanelsDeps.readJobPanelView,
+  setTimeout: _jobPanelsDeps.setTimeout,
+  clearTimeout: _jobPanelsDeps.clearTimeout,
+};
 
 beforeEach(() => {
   jest.useFakeTimers();
@@ -93,6 +97,7 @@ afterEach(() => {
   mock.restore();
   _jobPanelsDeps.readJobPanelView = savedPanels.readJobPanelView;
   _jobPanelsDeps.setTimeout = savedPanels.setTimeout;
+  _jobPanelsDeps.clearTimeout = savedPanels.clearTimeout;
   jest.useRealTimers();
 });
 

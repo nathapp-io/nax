@@ -4,7 +4,7 @@
  * operator configured nothing.
  */
 import { describe, expect, test } from "bun:test";
-import { makeFakeClock, makeNaxConfig } from "@test/helpers";
+import { fakeTimers, makeFakeClock, makeNaxConfig } from "@test/helpers";
 import { chatCompactAtTokens, createIdleCompactor, type IdleCompactState, idleCompactAfterMs } from "@/chat";
 
 describe("chatCompactAtTokens", () => {
@@ -62,7 +62,7 @@ function harness(delayMs = DELAY_MS) {
     onDue: (reason) => {
       reasons.push(reason);
     },
-    timers: { setTimeout: clock.setTimeout, clearTimeout: (handle) => clock.clearTimeout(Number(handle)) },
+    timers: fakeTimers(clock),
   });
   return { clock, reasons, compactor };
 }

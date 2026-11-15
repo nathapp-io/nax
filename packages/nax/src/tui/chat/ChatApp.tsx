@@ -1148,7 +1148,7 @@ export function ChatApp({
 
   // A running job's panel: appended when the job is first seen running, refreshed while it
   // runs and frozen once it ends. Held back while a turn streams, so a reply is never split.
-  useJobPanels({ host, setEntries, turnRunning });
+  useJobPanels({ host, entries, setEntries, turnRunning });
 
   // A job leaves the chat idle for a long time (US-007), so its history is compacted once per
   // job after the configured delay — through the screen's own `/compact` path, so the working

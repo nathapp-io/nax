@@ -40,13 +40,20 @@ export interface IdleCompactState {
   readonly acp: boolean;
 }
 
-/** An armed timer's handle: the runtime's own, or a fake clock's number. */
-type TimerHandle = ReturnType<typeof setTimeout> | number;
+/**
+ * An armed timer's handle: the runtime's own, or the fake clock's number.
+ *
+ * Three libraries declare the global `setTimeout` (Bun returns `Timer`, @types/node returns
+ * `Timeout`, lib.dom returns `number`), so its type is one overload set returning all three and
+ * no single implementation can satisfy it — a seam typed `typeof setTimeout` cannot be faked.
+ * This is the shape the chat's other armed timers already use (`ask-fallback.ts`,
+ * `ask-controller.ts`, `job-runner.ts`, `_jobPanelsDeps`), and why `fakeTimers()` exists.
+ */
+export type TimerHandle = ReturnType<typeof setTimeout> | number;
 
 /**
- * The two timer calls the compactor makes. Injectable so a test drives the delay from a fake
- * clock instead of waiting 55 real minutes; the shape is the one the chat's other armed timers
- * use (`ask-fallback.ts`, `_jobPanelsDeps`), so `makeFakeClock()` drops straight in.
+ * The two timer calls the compactor makes, in the call shape of the runtime's own: injectable so
+ * a test drives the delay from a fake clock instead of waiting 55 real minutes.
  */
 export interface IdleCompactTimers {
   setTimeout(callback: () => void, delayMs: number): TimerHandle;

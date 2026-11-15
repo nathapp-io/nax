@@ -232,6 +232,7 @@ function mountPanels(host: ChatHost, initialTurnRunning = false): Panels {
     rows = entries;
     useJobPanels({
       host,
+      entries,
       setEntries: (update) => {
         calls += 1;
         setEntries(update);
@@ -333,6 +334,32 @@ describe("useJobPanels: appending a panel", () => {
     expect(panels.entries()).toHaveLength(2);
     expect(panelIds(panels.entries())).toEqual(["run-1"]);
   });
+
+  test("AC-19 flushes a terminal panel held back while a turn ran after the transcript was replaced", async () => {
+    withFakeClock();
+    const fake = fakeJobs([job()]);
+    const panels = mountPanels(hostWith(fake.jobs));
+    await settleRead(fake);
+    expect(panelIds(panels.entries())).toEqual(["run-1"]);
+    // `/clear` or a resume replaces the transcript: the panel is gone, the job is not.
+    await panels.replace([{ kind: "user", text: "a cleared transcript" }]);
+    await panels.setTurnRunning(true);
+    // The job ends during the turn, so the refresh that reads it ends up held back.
+    fake.set(job({ state: "succeeded", endedAt: new Date(5_000).toISOString() }));
+    await actFrame(() => {
+      fake.emit();
+    });
+    await settleRead(fake);
+    // The refused read leaves the job's one post-end refresh owed, and the running turn
+    // refuses that one too.
+    if (reads.length > 0) await settleRead(fake);
+    expect(panelIds(panels.entries())).toEqual([]);
+    await panels.setTurnRunning(false);
+    expect(reads).toHaveLength(1);
+    await settleRead(fake);
+    expect(panelIds(panels.entries())).toEqual(["run-1"]);
+    expect(panelView(panels.entries(), "run-1")?.state).toBe("succeeded");
+  });
 });
 
 describe("useJobPanels: a running turn", () => {
@@ -418,6 +445,31 @@ describe("useJobPanels: refreshing a panel", () => {
     expect(panelView(panels.entries(), "run-1")?.state).toBe("succeeded");
     await tick(clock);
     expect(reads).toHaveLength(0);
+    expect(panelView(panels.entries(), "run-1")?.state).toBe("succeeded");
+  });
+
+  test("AC-17 does not refresh an ended job again when a change queues one while its terminal read is pending", async () => {
+    withFakeClock();
+    const fake = fakeJobs([job()]);
+    const panels = mountPanels(hostWith(fake.jobs));
+    await settleRead(fake);
+    fake.set(job({ state: "succeeded", endedAt: new Date(5_000).toISOString() }));
+    await actFrame(() => {
+      fake.emit();
+    });
+    expect(reads.map((read) => read.job.id)).toEqual(["run-1"]);
+    // A second job starts while the ended job's read is still in flight: its change asks the
+    // ended job for another refresh, which is queued behind the one being read.
+    fake.set(job({ id: "run-2", target: "another-feature" }));
+    await actFrame(() => {
+      fake.emit();
+    });
+    expect(reads.map((read) => read.job.id)).toEqual(["run-1", "run-2"]);
+    // The ended job's read resolves with its terminal state: the panel freezes there.
+    await settleRead(fake, "run-1");
+    expect(panelView(panels.entries(), "run-1")?.state).toBe("succeeded");
+    // Nothing is owed the ended job afterwards, so the queued refresh was dropped, not run.
+    expect(reads.filter((read) => read.job.id === "run-1")).toHaveLength(0);
     expect(panelView(panels.entries(), "run-1")?.state).toBe("succeeded");
   });
 
