@@ -3,7 +3,7 @@
   "feature": "review-and-gate-guards",
   "branchName": "feat/review-and-gate-guards",
   "createdAt": "2026-11-15T04:40:19.598Z",
-  "updatedAt": "2026-11-15T08:25:51.170Z",
+  "updatedAt": "2026-11-15T09:03:10.523Z",
   "userStories": [
     {
       "id": "US-001",
@@ -809,14 +809,17 @@
       "dependencies": [
         "US-011"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "A new wrapper composes existing retry abstractions rather than replacing dispatch architecture; invocation budgets across fallback hops are complex, and same-session behavior retains strict TDD."
+        "reasoning": "A new wrapper composes existing retry abstractions rather than replacing dispatch architecture; invocation budgets across fallback hops are complex, and same-session behavior retains strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/workflow-branch-review.ts",
@@ -843,7 +846,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f3921cd85a17bb44fe0ba37ef3dd24cba8bd1eb3"
     },
     {
       "id": "US-013",
