@@ -15,6 +15,7 @@ import { createHostJobs } from "@/chat/jobs";
 import { _jobRunnerDeps } from "@/chat/jobs/job-runner";
 import { _jobsHostDeps } from "@/chat/jobs/jobs-host";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
+import type { ChatWorkflowConfig } from "@/config";
 import { featureDir } from "@/config";
 
 const dirs: string[] = [];
@@ -38,7 +39,7 @@ interface KodaBlock {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
-async function compose(mode: () => ChatMode, koda?: KodaBlock) {
+async function compose(mode: () => ChatMode, koda?: KodaBlock, workflow?: ChatWorkflowConfig) {
   const repoRoot = makeTempDir("jobs-host-");
   dirs.push(repoRoot);
   await Bun.write(
@@ -59,6 +60,7 @@ async function compose(mode: () => ChatMode, koda?: KodaBlock) {
     config: makeNaxConfig({
       outputDir: join(repoRoot, "output"),
       ...(koda === undefined ? {} : { memory: { koda: { ...koda } } }),
+      ...(workflow === undefined ? {} : { chat: { workflow } }),
     }),
     asks,
     mode,
@@ -79,6 +81,24 @@ async function compose(mode: () => ChatMode, koda?: KodaBlock) {
 }
 
 describe("createHostJobs approve", () => {
+  test("US-006 AC-22 passes config.chat.workflow to the jobs provider", async () => {
+    const factory = spyOn(_jobsHostDeps, "createJobsProvider");
+    try {
+      await compose(() => "guarded", undefined, { specFixRounds: 2, plan: { profiles: ["p1"] } });
+      expect(factory.mock.calls[0]?.[0].workflow).toEqual({ specFixRounds: 2, plan: { profiles: ["p1"] } });
+    } finally {
+      factory.mockRestore();
+    }
+  });
+  test("US-006 with no chat.workflow the provider takes no workflow option", async () => {
+    const factory = spyOn(_jobsHostDeps, "createJobsProvider");
+    try {
+      await compose(() => "guarded");
+      expect(factory.mock.calls[0]?.[0]).not.toHaveProperty("workflow");
+    } finally {
+      factory.mockRestore();
+    }
+  });
   test("US-005 AC-11 provider options omit maxIterations", async () => {
     const factory = spyOn(_jobsHostDeps, "createJobsProvider");
     try {

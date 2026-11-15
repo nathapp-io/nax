@@ -5,9 +5,11 @@ import type { HostApprovalCard } from "@/chat/ask-controller";
 import type { ChatJobs, StartJobRequest } from "@/chat/jobs/job-runner";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import { createJobsProvider, type JobsProviderOptions, PROFILES_SCHEMA } from "@/chat/jobs/jobs-provider";
-import { featureDir } from "@/config";
+import { _workflowDefaultsDeps } from "@/chat/jobs/workflow-defaults";
+import { type ChatWorkflowConfig, featureDir } from "@/config";
 
 const originalDeps = { ..._jobsLaunchDeps };
+const originalWorkflowDeps = { ..._workflowDefaultsDeps };
 let options: JobsProviderOptions;
 let approve: ReturnType<typeof mock<(card: HostApprovalCard) => Promise<"allow" | "deny">>>;
 let start: ReturnType<typeof mock<ChatJobs["start"]>>;
@@ -65,6 +67,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   Object.assign(_jobsLaunchDeps, originalDeps);
+  Object.assign(_workflowDefaultsDeps, originalWorkflowDeps);
   cleanupTempDir(options.repoRoot);
 });
 async function launch(kind = "run", input: Record<string, unknown> = { feature: "f1" }) {
@@ -92,6 +95,9 @@ describe("createJobsProvider", () => {
     expect(PROFILES_SCHEMA.type).toBe("array");
     expect(PROFILES_SCHEMA.description).toContain("Omit");
     expect(PROFILES_SCHEMA.description).toContain("nax-jobs__list");
+  });
+  test("US-006 AC-23 the profiles description names chat.workflow as the configured default", () => {
+    expect(PROFILES_SCHEMA.description).toContain("chat.workflow");
   });
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
@@ -389,5 +395,92 @@ describe("createJobsProvider", () => {
   test("AC-24 approval receives the exact abort signal", async () => {
     await launch();
     expect(card().signal).toBe(signal);
+  });
+});
+
+describe("createJobsProvider chat.workflow defaults", () => {
+  function withWorkflow(workflow: ChatWorkflowConfig): void {
+    options = { ...options, workflow };
+  }
+  function workflow(overrides: Partial<ChatWorkflowConfig> = {}): ChatWorkflowConfig {
+    return { specFixRounds: 2, ...overrides };
+  }
+  async function writeSpec(): Promise<void> {
+    await Bun.write(join(featureDir(options.repoRoot, "f1"), "spec.md"), "spec");
+  }
+  async function writePlannedProfile(routingProfile: string): Promise<void> {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ routingProfile, userStories: [makeStory({ id: "US-001", status: "pending" })] })),
+    );
+  }
+
+  test("AC-10 a plan takes the configured profiles into argv", async () => {
+    await writeSpec();
+    _workflowDefaultsDeps.listProfileNames = async () => ["p1", "p2"];
+    withWorkflow(workflow({ plan: { profiles: ["p1", "p2"] } }));
+    await launch("plan");
+    expect(card().command).toContain("--profile p1 --profile p2");
+  });
+  test("AC-11 the plan card names chat.workflow.plan as the source", async () => {
+    await writeSpec();
+    _workflowDefaultsDeps.listProfileNames = async () => ["p1", "p2"];
+    withWorkflow(workflow({ plan: { profiles: ["p1", "p2"] } }));
+    await launch("plan");
+    expect(card().reason.split("\n")).toContain("profiles p1, p2 (chat.workflow.plan)");
+  });
+  test("AC-12 request profiles win over the configured plan list", async () => {
+    await writeSpec();
+    _workflowDefaultsDeps.listProfileNames = async () => ["p1", "x"];
+    withWorkflow(workflow({ plan: { profiles: ["p1"] } }));
+    await launch("plan", { feature: "f1", profiles: ["x"] });
+    expect(card().command).toContain("--profile x");
+    expect(card().command).not.toContain("--profile p1");
+  });
+  test("AC-13 a bot fix takes the configured model and names its source", async () => {
+    _workflowDefaultsDeps.listProfileNames = async () => [];
+    withWorkflow(workflow({ botFix: { model: "openai-codex/gpt-6.1-sol" } }));
+    await launch("bot_fix", { pr: 12 });
+    expect(card().reason.split("\n")).toContain("model openai-codex/gpt-6.1-sol (chat.workflow.botFix)");
+  });
+  test("AC-16 an unknown configured profile is an error before any card", async () => {
+    await writeSpec();
+    _workflowDefaultsDeps.listProfileNames = async () => ["alpha", "beta"];
+    withWorkflow(workflow({ plan: { profiles: ["ghost"] } }));
+    expect(await launch("plan")).toEqual({
+      isError: true,
+      content: "[chat] chat.workflow.plan.profiles names unknown profile ghost; known: alpha, beta",
+    });
+  });
+  test("AC-17 an unknown configured profile never reaches approval", async () => {
+    await writeSpec();
+    _workflowDefaultsDeps.listProfileNames = async () => ["alpha"];
+    withWorkflow(workflow({ plan: { profiles: ["ghost"] } }));
+    await launch("plan");
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+  test("a missing spec is reported before the unknown configured profile", async () => {
+    const listProfileNames = mock(async () => ["alpha"]);
+    _workflowDefaultsDeps.listProfileNames = listProfileNames;
+    withWorkflow(workflow({ plan: { profiles: ["ghost"] } }));
+    const result = await launch("plan");
+    expect(result.isError).toBe(true);
+    expect(result.content).toStartWith("[chat] no spec for f1; looked for ");
+    expect(listProfileNames).not.toHaveBeenCalled();
+  });
+  test("AC-18 a run with no workflow keeps the PRD's planned profile line", async () => {
+    await writePlannedProfile("a+b");
+    await launch();
+    expect(card().reason.split("\n")[2]).toBe("profiles (none); the run uses the PRD's planned profile a+b");
+    expect(card().command).not.toContain("--profile");
+  });
+  test("configured run profiles that differ from the plan warn on the card", async () => {
+    await writePlannedProfile("a+b");
+    _workflowDefaultsDeps.listProfileNames = async () => ["c"];
+    withWorkflow(workflow({ run: { profiles: ["c"] } }));
+    await launch();
+    expect(card().reason).toContain("warning: the PRD was planned with profile a+b, not c");
+    expect(card().command).toContain("--profile c");
   });
 });

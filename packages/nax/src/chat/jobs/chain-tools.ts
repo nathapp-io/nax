@@ -8,6 +8,7 @@ import { CHAIN_CHECK_MAX_LENGTH, CHAIN_MAX_STEPS, type ChainStep } from "./chain
 import { type ChatJobKind, isRunJobKind } from "./job-types";
 import { _jobsLaunchDeps, resolvePlanSpec } from "./jobs-launch";
 import type { JobsProviderOptions } from "./jobs-provider";
+import { applyWorkflowDefaults, unknownWorkflowProfile } from "./workflow-defaults";
 
 const BOT_PR_OFFSET = 2;
 
@@ -54,10 +55,20 @@ async function resolveStepTarget(entry: ParsedStep, step: number, options: Optio
   const target = await resolveTargetRepo(options.repoRoot, input.repo);
   if ("error" in target) return stepError(step, target.error);
   const stepOptions = { ...options, repoRoot: target.root };
-  if (input.kind !== "plan") return { input, options: stepOptions, prdExists: false };
-  const resolved = await resolvePlanSpec(input.feature, input.spec, stepOptions);
+  // Config defaults first: the card's argv must be the argv the step's own launch will build.
+  const applied = applyWorkflowDefaults(input, stepOptions.workflow);
+  const body = applied.input;
+  if (body.kind !== "plan") {
+    const unknown = await unknownWorkflowProfile(applied, stepOptions.repoRoot);
+    if (unknown !== undefined) return stepError(step, unknown);
+    return { input: body, options: stepOptions, prdExists: false };
+  }
+  const resolved = await resolvePlanSpec(body.feature, body.spec, stepOptions);
   if ("error" in resolved) return stepError(step, resolved.error);
-  return { input: { ...input, spec: resolved.spec }, options: stepOptions, prdExists: resolved.prdExists };
+  // After the spec: a missing spec is the more actionable report of the two.
+  const unknown = await unknownWorkflowProfile(applied, stepOptions.repoRoot);
+  if (unknown !== undefined) return stepError(step, unknown);
+  return { input: { ...body, spec: resolved.spec }, options: stepOptions, prdExists: resolved.prdExists };
 }
 
 async function resolveSteps(

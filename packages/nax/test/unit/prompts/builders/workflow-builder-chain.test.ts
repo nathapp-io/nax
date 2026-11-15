@@ -138,6 +138,10 @@ describe("buildJobsInstructions — chain lines", () => {
     expect(l[6]).toContain("Leave profiles empty to use the profile the PRD was planned with");
   });
 
+  test("US-006 AC-21 line 7 names chat.workflow as the source of a step's profiles", () => {
+    expect(lines(buildJobsInstructions())[6]).toContain("unless chat.workflow sets profiles for that step");
+  });
+
   test("#2819 explains when to finish a run that left no PR", () => {
     expect(lines(buildJobsInstructions())[7]).toContain("`nax-jobs__finish` publishes it");
   });

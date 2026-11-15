@@ -10,6 +10,7 @@ import type { ChainAdmission } from "./chain-controller";
 import { buildJobArgv, type JobLaunchInput, parseJobInput } from "./job-argv";
 import { type ChatJob, type ChatJobKind, isFeatureJobKind } from "./job-types";
 import type { JobsProviderOptions } from "./jobs-provider";
+import { applyWorkflowDefaults, unknownWorkflowProfile, type WorkflowDefaultsApplied } from "./workflow-defaults";
 
 export const _jobsLaunchDeps = {
   git: gitWithTimeout,
@@ -116,6 +117,8 @@ type Prepared = {
   /** Replaces the card's `profiles` line when the run adopts the PRD's planned profile. */
   readonly profileLine?: string;
 };
+/** Where `chat.workflow` supplied the values on the card, so the user sees the choice's origin. */
+type Provenance = Pick<WorkflowDefaultsApplied<unknown>, "profilesFrom" | "modelFrom">;
 type TargetError = { readonly error: string };
 
 async function preparePlan(
@@ -248,12 +251,25 @@ async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions
   return { input, details: [] };
 }
 
-async function launchReason(prepared: Prepared, options: JobsProviderOptions): Promise<string> {
+/** The card's `model` detail line, present only when `chat.workflow` supplied the model. */
+function modelLines(input: JobLaunchInput, modelFrom: string | undefined): readonly string[] {
+  const model = "model" in input ? input.model : undefined;
+  return modelFrom === undefined || model === undefined ? [] : [`model ${model} (${modelFrom})`];
+}
+
+function profilesLine(prepared: Prepared, profilesFrom: string | undefined): string {
+  if (prepared.profileLine !== undefined) return prepared.profileLine;
+  const names = prepared.input.profiles.join(", ") || "(none)";
+  return profilesFrom === undefined ? `profiles ${names}` : `profiles ${names} (${profilesFrom})`;
+}
+
+async function launchReason(prepared: Prepared, options: JobsProviderOptions, from: Provenance): Promise<string> {
   const branch = await _jobsLaunchDeps.git(["symbolic-ref", "--short", "HEAD"], options.repoRoot);
   return [
     `workdir ${options.repoRoot}${branch.exitCode === 0 ? ` on branch ${branch.stdout.trim()}` : ""}`,
     `nax ${options.naxEntry.join(" ")}`,
-    prepared.profileLine ?? `profiles ${prepared.input.profiles.join(", ") || "(none)"}`,
+    profilesLine(prepared, from.profilesFrom),
+    ...modelLines(prepared.input, from.modelFrom),
     ...prepared.details,
   ].join("\n");
 }
@@ -269,8 +285,13 @@ export async function launchJob(
   const options: JobsProviderOptions = { ...chatOptions, repoRoot: target.root };
   const parsed = parseJobInput(request.kind, request.raw);
   if ("error" in parsed) return { isError: true, content: parsed.error };
-  const prepared = await prepareTarget(parsed, options);
+  const applied = applyWorkflowDefaults(parsed, options.workflow);
+  const prepared = await prepareTarget(applied.input, options);
   if ("error" in prepared) return { isError: true, content: prepared.error };
+  // After the target: a missing spec or PRD is the more actionable report of the two.
+  const unknown = await unknownWorkflowProfile(applied, options.repoRoot);
+  if (unknown !== undefined) return { isError: true, content: unknown };
+  const from: Provenance = applied;
   const { input } = prepared;
   if (isFeatureJobKind(input.kind)) {
     const busy = busyJob(options) ?? (await busyLock(options));
@@ -284,13 +305,14 @@ export async function launchJob(
       options.chains?.startFailed(admission.chainId, admission.step, result.content.replace(/^\[chat\] /, ""));
     return result;
   }
-  return approvePrepared({ prepared, argv, note: admission?.note, signal: request.signal }, options);
+  return approvePrepared({ prepared, argv, from, note: admission?.note, signal: request.signal }, options);
 }
 
 async function approvePrepared(
   launch: {
     readonly prepared: Prepared;
     readonly argv: readonly string[];
+    readonly from: Provenance;
     readonly note?: string;
     readonly signal?: AbortSignal;
   },
@@ -305,7 +327,7 @@ async function approvePrepared(
       : "feature" in input
         ? `nax ${input.kind} ${target}`
         : `nax bot ${input.kind === "bot_review" ? "review" : "fix"} #${target}`;
-  const reason = await launchReason(prepared, options);
+  const reason = await launchReason(prepared, options, launch.from);
   const decision = await options.approve({
     tool: `nax-jobs__${input.kind}`,
     summary,

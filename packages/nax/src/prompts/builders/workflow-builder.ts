@@ -62,7 +62,7 @@ export function buildJobsInstructions(options?: { readonly answerAsks?: boolean 
     "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
     "Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
     "Start nax plan, nax run (including a publish-only finish) and nax bot only with these tools, never with Bash: Bash skips the approval card, the profile handling and the job notice.",
-    "Leave profiles empty to use the profile the PRD was planned with; the approval card names it. Pass profiles only to override, with names from `nax-jobs__list`.",
+    "Leave profiles empty to use the profile the PRD was planned with, unless chat.workflow sets profiles for that step, which then apply; the approval card names them. Pass profiles only to override, with names from `nax-jobs__list`.",
     "When a run ends with every story passed but no PR (its workflow outcome is local-only or pushed), `nax-jobs__finish` publishes it: it reruns only the publish step, then use the PR it reports for `nax-jobs__bot_review`.",
     "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
     '`nax-jobs__chain` proposes a full run: an ordered list of billed steps on one approval card. Only the user\'s yes on that card approves it; a chat message such as "go ahead" does not.',
