@@ -3,7 +3,7 @@
   "feature": "review-and-gate-guards",
   "branchName": "feat/review-and-gate-guards",
   "createdAt": "2026-11-15T04:40:19.598Z",
-  "updatedAt": "2026-11-15T08:02:06.760Z",
+  "updatedAt": "2026-11-15T08:15:57.588Z",
   "userStories": [
     {
       "id": "US-001",
@@ -674,14 +674,17 @@
       "dependencies": [
         "US-009"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Publish already consumes deterministic readiness facts and generic reason channels already feed artifacts/open items/summary; this adds one fact projection and formatter delegation with existing test harnesses."
+        "reasoning": "Publish already consumes deterministic readiness facts and generic reason channels already feed artifacts/open items/summary; this adds one fact projection and formatter delegation with existing test harnesses.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/approval.ts",
@@ -704,7 +707,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8062a683203df6df9062f8df991cd04fba754fea"
     },
     {
       "id": "US-011",
