@@ -29,6 +29,7 @@ import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import type { TestSummary } from "../test-runners";
+import type { GateStopReason } from "../utils/gate-stall";
 import { storyPackageDir } from "../utils/path-frame";
 import {
   applyBaselineDispositions,
@@ -100,6 +101,12 @@ export interface FullSuiteGateOutput {
    * a `no-gate-parse` marker instead.
    */
   readonly parsedSummary?: TestSummary;
+  /**
+   * Detector evidence when the run was interrupted (US-004). Its presence — not
+   * `status` — is the timeout signal: a command list keeps its first failing
+   * entry's ordinary `TEST_FAILURE` status even when a later entry was stopped.
+   */
+  readonly stopReason?: GateStopReason;
 }
 
 const fullSuiteGateConfigSelector = rectificationGateConfigSelector;
@@ -115,6 +122,8 @@ interface RunTestsResult {
   readonly parsedSummary: TestSummary;
   /** True when the runner returned status=TIMEOUT — let execute() decide accept-on-timeout. */
   readonly timedOut: boolean;
+  /** Detector evidence when the run was stopped (US-004) — independent of `timedOut`. */
+  readonly stopReason?: GateStopReason;
   /** Runner exit code (when known) — surfaced into synthetic findings on execution-failed. */
   readonly exitCode?: number;
   /** Final shell command actually executed (after buildTestCommand wrap) — for synth-finding context. */
@@ -200,6 +209,8 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       drainTimeoutMs: gateCtx.config?.quality?.drainTimeoutMs,
       shell: gateCtx.config?.quality?.shell,
       stripEnvVars: gateCtx.config?.quality?.stripEnvVars,
+      // The parsed gate-context policy reaches the executor through regression (AC-13).
+      stallDetection: gateCtx.config?.quality?.stallDetection,
     });
     const parsedSummary = parseTestOutput(result.output ?? "");
     return {
@@ -208,6 +219,9 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       output: result.output ?? "",
       parsedSummary,
       timedOut: result.status === "TIMEOUT",
+      // Kept separate from `timedOut`: `execute()` must widen its own predicate, so a
+      // consumer that replaces this dep cannot drop the stopped-list evidence (AC-14).
+      ...(result.stopReason !== undefined ? { stopReason: result.stopReason } : {}),
       exitCode: result.exitCode,
       command: result.command ?? renderCommandSpec(gateCtx.testCmd),
     };
@@ -343,12 +357,18 @@ export const fullSuiteGateOp: DeterministicOperation<
       };
     }
 
-    // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass.
-    if (testResult.timedOut) {
+    // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass. US-004: the
+    // timeout evidence is either signal, because a command list reports its first
+    // failing entry's ordinary status and still carries a stopped entry's reason.
+    const interrupted = testResult.timedOut || testResult.stopReason !== undefined;
+    if (interrupted) {
+      const stopReason = testResult.stopReason;
+      const evidence = stopReason !== undefined ? { stopReason } : {};
       const acceptOnTimeout = ctxConfig?.execution?.regressionGate?.acceptOnTimeout ?? true;
       if (acceptOnTimeout) {
         logger.warn("verify[regression]", "[BUG-026] Full-suite timed out (accepted as pass)", {
           storyId: input.story.id,
+          stopReason,
         });
         return {
           success: true,
@@ -359,10 +379,12 @@ export const fullSuiteGateOp: DeterministicOperation<
           findings: [],
           rawOutput: testResult.output,
           // No parsedSummary on timeout — the runner bailed before the parser ran.
+          ...evidence,
         };
       }
       logger.warn("verify[regression]", "Full-suite timed out (failing)", {
         storyId: input.story.id,
+        stopReason,
       });
       return {
         success: false,
@@ -373,6 +395,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         findings: [],
         rawOutput: testResult.output,
         // No parsedSummary on timeout — same reason.
+        ...evidence,
       };
     }
 

@@ -176,6 +176,38 @@ describe("runWorkflowSuiteGate", () => {
     else expect("timedOut" in r).toBe(false);
     if (red) expect(r.findings.length).toBeGreaterThan(0);
   });
+
+  // US-004 AC-16 — the operation's accept-on-timeout allowance never reaches the
+  // workflow: a suite that was stopped early is red and timed out, and the report
+  // says what stopped it instead of leaving the reader to guess at a hang.
+  test.each([
+    [
+      { kind: "repeated-output", stream: "stderr", count: 3, threshold: 3 } as const,
+      "stderr repeated the same line 3 times (threshold 3)",
+    ],
+    [{ kind: "silence", silenceTimeoutSeconds: 90 } as const, "no output for 90s"],
+  ])("a stopped suite stays red and timed out, naming the stop evidence", async (stopReason, evidence) => {
+    fake({
+      [fullSuiteGateOp.name]: {
+        success: true,
+        passed: true,
+        status: "passed-on-timeout",
+        estimatedCostUsd: 0,
+        findings: [],
+        rawOutput: "",
+        stopReason,
+      },
+    });
+
+    const r = await runWorkflowSuiteGate(sc());
+
+    expect(r.red).toBe(true);
+    expect(r.states["full-suite"]).toBe("red");
+    expect(r.timedOut).toEqual(["full-suite"]);
+    const issue = r.findings[0]?.issue ?? "";
+    expect(issue).toContain("passed-on-timeout");
+    expect(issue).toContain(evidence);
+  });
 });
 
 describe("run abort inside a gate", () => {

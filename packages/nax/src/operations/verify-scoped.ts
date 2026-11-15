@@ -9,8 +9,9 @@ import { getLogger } from "../logger";
 import { appendScratchEntry } from "../session/scratch-writer";
 import type { ResolvedTestPatterns, SelectScopedTestsResult, TestSummary } from "../test-runners";
 import { equalTestCommands, parseTestOutput, selectScopedTests } from "../test-runners";
+import type { GateStopReason } from "../utils/gate-stall";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
-import { regression } from "../verification/runners";
+import { isInterruptedVerification, regression } from "../verification/runners";
 import type { VerificationGateOptions, VerificationResult } from "../verification/types";
 import { resolveGateCwd } from "./gate-cwd";
 import type { CallContext, DeterministicOperation } from "./types";
@@ -51,6 +52,12 @@ export interface VerifyScopedOutput {
   readonly isFullSuite: boolean;
   readonly coversFullSuite: boolean;
   readonly scopeTestFallback?: boolean;
+  /**
+   * Detector evidence when the run was interrupted (US-004). Its presence — not
+   * `status` — is the interruption signal: an aggregate list can report an
+   * ordinary `TEST_FAILURE` and still carry a stopped entry's reason.
+   */
+  readonly stopReason?: GateStopReason;
 }
 
 export interface VerifyScopedDeps {
@@ -120,6 +127,14 @@ async function captureVerifyResult(
       error: errorMessage(err),
     });
   }
+}
+
+/**
+ * Attach detector evidence to an op result only when there is some (US-004), so a
+ * result that was not interrupted never grows the key.
+ */
+function withStopReason<T extends object>(result: T, stopReason: GateStopReason | undefined): T {
+  return stopReason === undefined ? result : { ...result, stopReason };
 }
 
 async function coversSuite(
@@ -297,6 +312,9 @@ export const verifyScopedOp: DeterministicOperation<
         drainTimeoutMs: quality.quality?.drainTimeoutMs,
         shell: quality.quality?.shell,
         stripEnvVars: quality.quality?.stripEnvVars,
+        // The parsed package policy reaches every run this op starts, including the
+        // zero-tests rerun below (US-004 AC-9/AC-10).
+        stallDetection: quality.quality?.stallDetection,
       });
       const parsed = result.output ? deps.parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
       return { result, parsed };
@@ -314,12 +332,14 @@ export const verifyScopedOp: DeterministicOperation<
     // (e.g. Go `[no test files]` on a helper-only `_test.go`, Mocha on a mapped
     // `.js` file with no specs — BUG-06). Either way the scope is unusable as a
     // verdict — a zero-test scoped run is inconclusive, not a pass — so rerun the
-    // full suite, which is the actual arbiter (#1207). TIMEOUT is excluded: a hung
-    // scoped run must not escalate into a second long run. Cost note: the rerun
-    // pays regression()'s 2s cleanup sleep a second time — accepted, the story
-    // genuinely needs the full-suite verdict.
+    // full suite, which is the actual arbiter (#1207). An interrupted run is
+    // excluded: a hung or stopped scoped run must not escalate into a second long
+    // run, and its own `status` cannot say so (US-004 — a mixed list reports the
+    // first failing entry's status, an ordinary `TEST_FAILURE`). Cost note: the
+    // rerun pays regression()'s 2s cleanup sleep a second time — accepted, the
+    // story genuinely needs the full-suite verdict.
     const ranNoTests = parsed.passed === 0 && parsed.failed === 0 && parsed.failures.length === 0;
-    if (result.status !== "TIMEOUT" && !isFullSuite && ranNoTests) {
+    if (!isInterruptedVerification(result) && !isFullSuite && ranNoTests) {
       logger.warn("verify[scoped]", "Scoped run executed no tests — falling back to full suite", {
         storyId: input.storyId,
         command: effectiveCommand,
@@ -362,12 +382,13 @@ export const verifyScopedOp: DeterministicOperation<
       };
     }
 
-    if (result.status === "TIMEOUT") {
+    if (isInterruptedVerification(result)) {
       logger.warn("verify[scoped]", "Scoped tests timed out", {
         storyId: input.storyId,
         durationMs,
         scopeTestFallback: scopeTestFallback ?? false,
         isFullSuite,
+        stopReason: result.stopReason,
       });
       await captureVerifyResult(
         input.storyId,
@@ -378,16 +399,19 @@ export const verifyScopedOp: DeterministicOperation<
         scratchDir,
         deps.appendScratchEntry,
       );
-      return {
-        success: false,
-        status: "timeout",
-        findings: [],
-        durationMs,
-        passCount: parsed.passed,
-        isFullSuite,
-        coversFullSuite: false,
-        scopeTestFallback,
-      };
+      return withStopReason(
+        {
+          success: false,
+          status: "timeout" as const,
+          findings: [],
+          durationMs,
+          passCount: parsed.passed,
+          isFullSuite,
+          coversFullSuite: false,
+          scopeTestFallback,
+        },
+        result.stopReason,
+      );
     }
 
     logger.warn("verify[scoped]", "Scoped tests failed", {

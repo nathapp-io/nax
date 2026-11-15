@@ -16,6 +16,7 @@ import {
   verifyScopedOp,
 } from "@/operations";
 import { runQualityQuietly } from "@/quality";
+import type { GateStopReason } from "@/utils/gate-stall";
 import { packageDirRelative } from "@/utils/paths";
 import { type GateReport, logGates } from "./gates-log";
 import { _workflowDeps, type StepContext } from "./step-context";
@@ -32,6 +33,19 @@ const SUITE_RED = new Set(["failed", "execution-failed", "timeout", "inconclusiv
 const SUITE_TIMED_OUT_ISSUE =
   "full suite hit its timeout before finishing (passed-on-timeout): a suite that never completed proves nothing. Find the hang or the test that now runs too long, and fix it.";
 const SUITE_SKIPPED = new Set(["skipped"]);
+
+/**
+ * The stopped-suite issue, naming the detector evidence when there is any (US-004).
+ * The gate's own issue text is the fallback: a wall deadline leaves no reason.
+ */
+function stoppedSuiteIssue(stopReason: GateStopReason | undefined): string {
+  if (stopReason === undefined) return SUITE_TIMED_OUT_ISSUE;
+  const evidence =
+    stopReason.kind === "repeated-output"
+      ? `${stopReason.stream} repeated the same line ${stopReason.count} times (threshold ${stopReason.threshold})`
+      : `no output for ${stopReason.silenceTimeoutSeconds}s`;
+  return `${SUITE_TIMED_OUT_ISSUE} It was stopped early: ${evidence}.`;
+}
 
 interface OneGate {
   readonly state: GateState;
@@ -170,12 +184,16 @@ export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResu
     });
     if (SUITE_SKIPPED.has(out.status)) return { state: "skipped", findings: [] };
     if (out.status === "passed-on-timeout")
-      return { ...redWithoutDetail("full-suite", SUITE_TIMED_OUT_ISSUE), timedOut: true };
+      return { ...redWithoutDetail("full-suite", stoppedSuiteIssue(out.stopReason)), timedOut: true };
     if (!SUITE_RED.has(out.status)) return { state: "green", findings: [] };
+    const detail =
+      out.stopReason !== undefined
+        ? stoppedSuiteIssue(out.stopReason)
+        : `full suite ${out.status} with no parsed failures`;
     const result: OneGate =
       out.findings.length > 0
         ? { state: "red", findings: toDrafts("full-suite", out.findings) }
-        : redWithoutDetail("full-suite", `full suite ${out.status} with no parsed failures`);
+        : redWithoutDetail("full-suite", detail);
     return out.status === "timeout" ? { ...result, timedOut: true } : result;
   });
   return finish(sc, [suite]);
