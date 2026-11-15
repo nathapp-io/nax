@@ -6,6 +6,7 @@
 
 /** Verification scope: what tests to run */
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
+import type { GateStopReason } from "../utils/gate-stall";
 
 /** Verification scope: what tests to run */
 export type VerificationScope = "scoped" | "full" | "regression";
@@ -28,6 +29,11 @@ export interface TestExecutionResult {
   killed?: boolean;
   childProcessesKilled?: boolean;
   countsTowardEscalation: boolean;
+  /**
+   * Present only when the stall detector ended the invocation — absent on a
+   * wall timeout, a normal exit, a stream error and a drain-deadline expiry.
+   */
+  stopReason?: GateStopReason;
 }
 
 /** Test output analysis (parsed) — implementation in src/test-runners/types */

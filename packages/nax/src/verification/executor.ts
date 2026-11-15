@@ -9,17 +9,32 @@ import { resolve } from "node:path";
 import { killProcessGroup, withAgentOutputEnv } from "@nathapp/nax-agent/internal";
 import { spawn } from "@/utils/bun-deps";
 import { assertTrusted } from "../trust";
+import {
+  createGateStallMonitor,
+  type GateStallMonitor,
+  type GateStallPolicy,
+  type GateStopReason,
+  resolveStallDetection,
+} from "../utils/gate-stall";
 import type { TestExecutionResult } from "./types";
 
 /** Injectable deps for testability — mock _executorDeps.spawn instead of global Bun.spawn */
 export const _executorDeps = {
   spawn,
   killProcessGroup,
+  createGateStallMonitor,
   setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
   clearTimeout: ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>)) as (
     handle: unknown,
   ) => void,
 };
+
+/**
+ * Defaults for the kill lane. Milliseconds, and only defaults: a caller passes
+ * `gracePeriodMs` / `drainTimeoutMs` when it needs something else.
+ */
+const DEFAULT_GRACE_PERIOD_MS = 5_000;
+const DEFAULT_DRAIN_TIMEOUT_MS = 2_000;
 
 /**
  * Race an already-in-progress Promise against a deadline.
@@ -105,16 +120,25 @@ export async function executeWithTimeout(
     gracePeriodMs?: number;
     drainTimeoutMs?: number;
     cwd?: string;
+    /** Opt this invocation into stall detection. Absent means no detector at all. */
+    stallDetection?: Partial<GateStallPolicy>;
   },
 ): Promise<TestExecutionResult> {
   // US-006: the test command comes from config and runs unsandboxed — refuse
   // before spawning unless a trust decision covers the cwd. resolve(".") is
   // Bun.spawn's own default cwd, so this is the directory that would host the
-  // process either way.
+  // process either way. It also precedes the detector: an untrusted cwd must
+  // not arm one.
   await assertTrusted(options?.cwd ?? resolve("."), "test-command");
   const shell = options?.shell ?? "/bin/sh";
-  const gracePeriodMs = options?.gracePeriodMs ?? 5000;
-  const drainTimeoutMs = options?.drainTimeoutMs ?? 2000;
+  const gracePeriodMs = options?.gracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS;
+  const drainTimeoutMs = options?.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS;
+
+  // One latch arbitrates the four things that can end this invocation: leader
+  // exit, wall deadline, repeated output and silence. The first observed while
+  // the process is live wins; everything that arrives later is inert.
+  const latch = createTerminalLatch();
+  const monitor = startStallMonitor(options?.stallDetection, latch);
 
   // nax-git-env-allow: not git: test command via /bin/sh
   const proc = _executorDeps.spawn([shell, "-c", command], {
@@ -130,122 +154,279 @@ export async function executeWithTimeout(
     detached: true,
   });
 
-  // Rule 07: drain stdout+stderr concurrently with proc.exited to prevent
-  // pipe-buffer deadlock. Sequential reads (after proc.exited) block when
-  // the child writes more output than the OS pipe buffer can hold (~64 KB).
-  // .catch(() => "") guards against stream errors (e.g. broken pipe on SIGKILL)
-  // so the timeout path always returns a result instead of rejecting.
-  const stdoutPromise = new Response(proc.stdout as ReadableStream).text().catch(() => "");
-  const stderrPromise = new Response(proc.stderr as ReadableStream).text().catch(() => "");
+  // Floating by design (mirrors src/quality/runner.ts): a rejected proc.exited
+  // must not surface as an unhandled rejection, and it is not a stall — the wall
+  // deadline still bounds the invocation.
+  proc.exited.then((exitCode) => latch.settle({ kind: "exit", exitCode })).catch(() => {});
 
-  const timeoutMs = timeoutSeconds * 1000;
+  // Rule 07: both streams are read concurrently with the leader's exit (a
+  // sequential read deadlocks on >64KB), and every chunk reaches the detector as
+  // it arrives — so a repeated line stops a live process long before its wall
+  // deadline. The collector decodes independently of the detector: the captured
+  // text is never rewritten by detection.
+  const collectors = openCollectors(proc, monitor);
 
-  let timedOut = false;
-  const timer = { id: undefined as unknown };
+  const wallTimer = _executorDeps.setTimeout(() => latch.settle({ kind: "deadline" }), timeoutSeconds * 1000);
 
-  const timeoutPromise = new Promise<void>((resolve) => {
-    timer.id = _executorDeps.setTimeout(() => {
-      timedOut = true;
-      resolve();
-    }, timeoutMs);
-  });
+  const terminal = await latch.terminal;
+  // Settlement disarms everything this invocation armed — the wall deadline, the
+  // silence deadline and every detector callback — so nothing late can change
+  // the outcome and no timer outlives the call.
+  _executorDeps.clearTimeout(wallTimer);
+  monitor?.dispose();
 
-  const processPromise = proc.exited;
-
-  const raceResult = await Promise.race([processPromise, timeoutPromise]);
-  _executorDeps.clearTimeout(timer.id);
-
-  if (timedOut) {
-    const pid = proc.pid;
-
-    // Send SIGTERM to process group to kill children too
-    _executorDeps.killProcessGroup(pid, "SIGTERM");
-
-    // SIGKILL the group when the grace period ends, whether or not the shell
-    // leader has exited by then: group members that ignored SIGTERM would
-    // otherwise leak. Once the leader is gone its bare pid may have been reused,
-    // so the single-process fallback is off. setTimeout (not Bun.sleep) because
-    // the timer must be cancellable: it is cleared below when the group is
-    // already empty, and otherwise awaited, so it never outlives this call.
-    let leaderExited = false;
-    let sigkillTimer: unknown;
-    const sigkillSent = new Promise<void>((resolve) => {
-      sigkillTimer = _executorDeps.setTimeout(() => {
-        _executorDeps.killProcessGroup(pid, "SIGKILL", { singleProcessFallback: !leaderExited });
-        resolve();
-      }, gracePeriodMs);
-    });
-
-    // Wait for graceful shutdown, but bail early if process already exited.
-    // Bun.sleep is not cancellable; use setTimeout via raceWithDeadline so the
-    // grace timer is cleared as soon as the process exits. Leaving it armed kept
-    // Bun's event loop alive for the full grace period after this function had
-    // already returned — a hard delay on CLI exit for every test timeout.
-    await raceWithDeadline(
-      proc.exited
-        .then(() => {
-          leaderExited = true;
-        })
-        .catch(() => {}),
-      gracePeriodMs,
-    );
-
-    // Signal 0 probes whether the group still has a member without delivering
-    // anything. An empty group has nothing left to kill; otherwise wait out the
-    // rest of the grace period for the SIGKILL (a Linux zombie still counts as a
-    // member until reaped, so this can wait the full grace period there).
-    if (leaderExited && !_executorDeps.killProcessGroup(pid, 0, { singleProcessFallback: false })) {
-      _executorDeps.clearTimeout(sigkillTimer);
-    } else {
-      await sigkillSent;
-    }
-    // Cleared even once fired: every armed timer reaches clearTimeout (a no-op on a fired one).
-    _executorDeps.clearTimeout(sigkillTimer);
-
-    // Bun bug: piped streams may not close after kill — cap the already-in-progress
-    // reads with a deadline so we collect whatever was buffered without hanging.
-    const [out, err] = await Promise.all([
-      raceWithDeadline(stdoutPromise, drainTimeoutMs),
-      raceWithDeadline(stderrPromise, drainTimeoutMs),
-    ]);
-    const parts = [out !== DRAIN_TIMEOUT ? out : "", err !== DRAIN_TIMEOUT ? err : ""].filter(Boolean);
-    const partialOutput = parts.join("\n") || undefined;
-
+  if (terminal.kind === "exit") {
+    const drained = await drainOutputs(collectors, drainTimeoutMs);
     return {
-      success: false,
-      timeout: true,
-      killed: true,
-      childProcessesKilled: true,
-      output: partialOutput,
-      error: `EXECUTION_TIMEOUT: Verification process exceeded ${timeoutSeconds}s. Process group (PID ${pid}) killed.`,
-      countsTowardEscalation: false, // Timeout is environmental, not code failure
+      success: terminal.exitCode === 0,
+      timeout: false,
+      exitCode: terminal.exitCode,
+      output: `${drained.stdout}\n${drained.stderr}`,
+      countsTowardEscalation: true,
     };
   }
 
-  const exitCode = typeof raceResult === "number" ? raceResult : 0;
-  // Stream reads were started concurrently — await their completion now.
-  // BUG-2: bound the drain with the same drainTimeoutMs the timeout path uses.
-  // proc.exited resolves when the spawned shell exits, NOT when all pipe
-  // write-ends close — a test-spawned grandchild (dev server, daemonized
-  // process) that inherits the pipe write-end keeps both streams open after
-  // the shell exits. Without the deadline, this call hangs indefinitely.
-  // Mirrors the timeout path (lines 147-150): raceWithDeadline caps the drain,
-  // and a DRAIN_TIMEOUT result becomes "" in the assembled output.
-  const [out, err] = await Promise.all([
-    raceWithDeadline(stdoutPromise, drainTimeoutMs),
-    raceWithDeadline(stderrPromise, drainTimeoutMs),
-  ]);
-  const stdout = out !== DRAIN_TIMEOUT ? out : "";
-  const stderr = err !== DRAIN_TIMEOUT ? err : "";
-  const output = `${stdout}\n${stderr}`;
+  // A detector stop takes the SAME lane as a wall deadline, and each invocation
+  // enters it at most once: the latch has already settled, so no later stop or
+  // deadline callback can start a second termination sequence.
+  await terminateProcessGroup({ pid: proc.pid, gracePeriodMs, exited: proc.exited });
+  const drained = await drainOutputs(collectors, drainTimeoutMs);
+  return stoppedResult({ terminal, pid: proc.pid, timeoutSeconds, drained });
+}
 
+/** What ends an invocation. The first event the latch records wins. */
+type TerminalEvent =
+  | { readonly kind: "exit"; readonly exitCode: number }
+  | { readonly kind: "deadline" }
+  | { readonly kind: "stalled"; readonly reason: GateStopReason };
+
+interface TerminalLatch {
+  readonly terminal: Promise<TerminalEvent>;
+  /** Record `event`, unless the invocation has already settled. */
+  settle(event: TerminalEvent): void;
+}
+
+function createTerminalLatch(): TerminalLatch {
+  let settled: TerminalEvent | undefined;
+  let notify: (event: TerminalEvent) => void = () => {};
+  const terminal = new Promise<TerminalEvent>((resolve) => {
+    notify = resolve;
+  });
   return {
-    success: exitCode === 0,
-    timeout: false,
-    exitCode,
-    output,
-    countsTowardEscalation: true,
+    terminal,
+    settle(event) {
+      if (settled !== undefined) return;
+      settled = event;
+      notify(event);
+    },
   };
+}
+
+/**
+ * Start the detector, or nothing at all when the caller did not opt in — no
+ * monitor means no detector callback can stop the run. A stop enters the latch
+ * exactly like a wall deadline, which is what puts both on one cleanup lane.
+ */
+function startStallMonitor(
+  stallDetection: Partial<GateStallPolicy> | undefined,
+  latch: TerminalLatch,
+): GateStallMonitor | undefined {
+  if (stallDetection === undefined) return undefined;
+  return _executorDeps.createGateStallMonitor({
+    policy: resolveStallDetection(stallDetection),
+    onStop: (reason) => latch.settle({ kind: "stalled", reason }),
+    setTimeout: (fn, ms) => _executorDeps.setTimeout(fn, ms),
+    clearTimeout: (handle) => _executorDeps.clearTimeout(handle),
+  });
+}
+
+interface StreamCollector {
+  /** Resolves once the reader stopped reading — on end, on error, or on cancel. */
+  readonly done: Promise<void>;
+  text(): string;
+  cancel(): Promise<void>;
+  isDone(): boolean;
+}
+
+interface OutputCollectors {
+  readonly stdout: StreamCollector;
+  readonly stderr: StreamCollector;
+}
+
+function openCollectors(
+  proc: { stdout: unknown; stderr: unknown },
+  monitor: GateStallMonitor | undefined,
+): OutputCollectors {
+  return {
+    stdout: collectStream(
+      proc.stdout as ReadableStream<Uint8Array>,
+      (chunk) => monitor?.observe("stdout", chunk),
+      () => monitor?.end("stdout"),
+    ),
+    stderr: collectStream(
+      proc.stderr as ReadableStream<Uint8Array>,
+      (chunk) => monitor?.observe("stderr", chunk),
+      () => monitor?.end("stderr"),
+    ),
+  };
+}
+
+/**
+ * Read one stream to its end, showing each chunk to the detector as it arrives
+ * and decoding it separately for the captured text.
+ *
+ * A stream error is not itself repetition or silence: the bytes read before the
+ * failure are kept, and `end` is only fed on a clean end of stream — a failed
+ * read leaves the existing exit/error policy untouched.
+ */
+function collectStream(
+  stream: ReadableStream<Uint8Array>,
+  onChunk: (chunk: Uint8Array) => void,
+  onEnd: () => void,
+): StreamCollector {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let finished = false;
+  const done = (async () => {
+    try {
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        onChunk(next.value);
+        text += decoder.decode(next.value, { stream: true });
+      }
+      text += decoder.decode();
+      onEnd();
+    } catch {
+      // A stream that fails still keeps every chunk read before the failure.
+    } finally {
+      finished = true;
+    }
+  })();
+  return { done, text: () => text, cancel: () => reader.cancel(), isDone: () => finished };
+}
+
+/**
+ * Drain one already-in-progress read, bounded by `deadlineMs`.
+ *
+ * Bun bug: piped streams may not close after a kill — the deadline is what stops
+ * this from hanging. Cancellation is best-effort and never awaited, so it cannot
+ * extend the deadline; whatever was collected still comes back.
+ */
+async function drainStream(collector: StreamCollector, deadlineMs: number): Promise<string> {
+  let timer: unknown;
+  const deadline = new Promise<boolean>((resolve) => {
+    timer = _executorDeps.setTimeout(() => resolve(true), deadlineMs);
+  });
+  const expired = await Promise.race([collector.done.then(() => false), deadline]);
+  _executorDeps.clearTimeout(timer);
+  if (expired && !collector.isDone()) void collector.cancel().catch(() => {});
+  return collector.text();
+}
+
+/** Drain stdout and stderr together, so neither blocks the other's reader. */
+async function drainOutputs(
+  collectors: OutputCollectors,
+  deadlineMs: number,
+): Promise<{ stdout: string; stderr: string }> {
+  const [stdout, stderr] = await Promise.all([
+    drainStream(collectors.stdout, deadlineMs),
+    drainStream(collectors.stderr, deadlineMs),
+  ]);
+  return { stdout, stderr };
+}
+
+/**
+ * SIGTERM the detached process group, wait out a bounded grace period, then
+ * SIGKILL whatever survives — the leader's exit does not end the group, and its
+ * bare pid may already belong to someone else once it is gone.
+ */
+async function terminateProcessGroup(options: {
+  readonly pid: number;
+  readonly gracePeriodMs: number;
+  readonly exited: Promise<number>;
+}): Promise<void> {
+  const { pid, gracePeriodMs } = options;
+  let leaderExited = false;
+
+  // Send SIGTERM to process group to kill children too
+  _executorDeps.killProcessGroup(pid, "SIGTERM");
+
+  // setTimeout (not Bun.sleep) because the timer must be cancellable: it is
+  // cleared below when the group is already empty, and otherwise awaited, so it
+  // never outlives this call.
+  let sigkillTimer: unknown;
+  const sigkillSent = new Promise<void>((resolve) => {
+    sigkillTimer = _executorDeps.setTimeout(() => {
+      _executorDeps.killProcessGroup(pid, "SIGKILL", { singleProcessFallback: !leaderExited });
+      resolve();
+    }, gracePeriodMs);
+  });
+
+  // Wait for graceful shutdown, but bail early if the process already exited.
+  // Bun.sleep is not cancellable; use setTimeout via raceWithDeadline so the
+  // grace timer is cleared as soon as the process exits — an armed one keeps
+  // Bun's event loop alive for the full grace period after this call returned.
+  await raceWithDeadline(
+    options.exited
+      .then(() => {
+        leaderExited = true;
+      })
+      .catch(() => {}),
+    gracePeriodMs,
+  );
+
+  // Signal 0 probes whether the group still has a member without delivering
+  // anything. An empty group has nothing left to kill; otherwise wait out the
+  // rest of the grace period for the SIGKILL (a Linux zombie still counts as a
+  // member until reaped, so this can wait the full grace period there).
+  if (leaderExited && !_executorDeps.killProcessGroup(pid, 0, { singleProcessFallback: false })) {
+    _executorDeps.clearTimeout(sigkillTimer);
+  } else {
+    await sigkillSent;
+  }
+  // Cleared even once fired: every armed timer reaches clearTimeout (a no-op on a fired one).
+  _executorDeps.clearTimeout(sigkillTimer);
+}
+
+/**
+ * The timeout-lane result. A detector stop carries its structured reason and a
+ * message naming what actually happened, so it never claims the wall deadline
+ * elapsed; a wall deadline carries no `stopReason` at all.
+ */
+function stoppedResult(options: {
+  readonly terminal: TerminalEvent;
+  readonly pid: number;
+  readonly timeoutSeconds: number;
+  readonly drained: { stdout: string; stderr: string };
+}): TestExecutionResult {
+  const output = [options.drained.stdout, options.drained.stderr].filter(Boolean).join("\n") || undefined;
+  const base = {
+    success: false,
+    timeout: true,
+    killed: true,
+    childProcessesKilled: true,
+    output,
+    countsTowardEscalation: false, // Timeout is environmental, not code failure
+  };
+  if (options.terminal.kind !== "stalled") {
+    return {
+      ...base,
+      error: `EXECUTION_TIMEOUT: Verification process exceeded ${options.timeoutSeconds}s. Process group (PID ${options.pid}) killed.`,
+    };
+  }
+  const reason = options.terminal.reason;
+  return { ...base, error: stallErrorMessage(reason, options.pid), stopReason: reason };
+}
+
+/** Name the detector evidence — the stream and threshold, or the silence setting. */
+function stallErrorMessage(reason: GateStopReason, pid: number): string {
+  const evidence =
+    reason.kind === "repeated-output"
+      ? `${reason.stream} repeated the same line ${reason.count} times (threshold ${reason.threshold})`
+      : `no output for ${reason.silenceTimeoutSeconds}s (silenceTimeoutSeconds: ${reason.silenceTimeoutSeconds})`;
+  return `EXECUTION_STALLED: Verification process made no progress: ${evidence}. Process group (PID ${pid}) killed.`;
 }
 
 /**
