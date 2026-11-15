@@ -3,7 +3,7 @@
   "feature": "review-and-gate-guards",
   "branchName": "feat/review-and-gate-guards",
   "createdAt": "2026-11-15T04:40:19.598Z",
-  "updatedAt": "2026-11-15T07:47:00.831Z",
+  "updatedAt": "2026-11-15T08:02:06.760Z",
   "userStories": [
     {
       "id": "US-001",
@@ -596,14 +596,17 @@
         "persistence"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Persisted feature-machine state, graph patch declarations, minor promotion, findings identity and resume behavior must change coherently."
+        "reasoning": "Persisted feature-machine state, graph patch declarations, minor promotion, findings identity and resume behavior must change coherently.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/feature-steps.ts",
@@ -638,7 +641,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1ae07b6d3162dcbc100632f990f22df3d93721e0"
     },
     {
       "id": "US-010",
