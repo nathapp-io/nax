@@ -20,6 +20,12 @@ export interface SubagentInstructionsInput {
   readonly rulesIndex: readonly RulesIndexEntry[];
   /** The rendered memory index; placed before the agent's own prompt when present and non-empty. */
   readonly memoryIndex?: string;
+  /**
+   * The tools this run maps for the agent, from `mapSubagentTools`. Absent means the
+   * agent declared no `tools:` and the session inherits; `[]` means only the always-on
+   * tools. Present renders the tools section before the agent's own prompt.
+   */
+  readonly allowedTools?: readonly string[];
 }
 
 /** One line per agent: its description, then the tools it declares, when it declares any. */
@@ -74,6 +80,25 @@ export function buildAcpSubagentInstructions(input: AcpSubagentInstructionsInput
   return sections.join("\n\n");
 }
 
+const SCRATCHPAD_TOOLS_SUFFIX = "plus the always-on scratchpad tools";
+const ONLY_SCRATCHPAD_TOOLS = "only the always-on scratchpad tools";
+const HAND_OFF_TO_CALLER =
+  "The agent that called you has its own tools; a step your tools cannot do goes in your final answer, with what is left and the path of any draft, rather than in a question to the person.";
+
+/**
+ * The tools section: the tools this run maps for the agent, then what to do with a
+ * step they cannot cover. Entries are rendered exactly as mapped, so a pattern such
+ * as `nax-skills__*` reads as the pattern the session admits.
+ *
+ * It states what the agent has and where an incomplete step is reported. The calling
+ * agent can finish what this one cannot, so asking the person is the wrong channel.
+ */
+function subagentToolsSection(allowedTools: readonly string[]): string {
+  const tools =
+    allowedTools.length === 0 ? ONLY_SCRATCHPAD_TOOLS : `${allowedTools.join(", ")}, ${SCRATCHPAD_TOOLS_SUFFIX}`;
+  return [`Your tools in this run: ${tools}.`, HAND_OFF_TO_CALLER].join("\n");
+}
+
 /** System instructions of a nested agent session: permissions, rules index, memory index, then the agent's own prompt. */
 export function buildSubagentInstructions(input: SubagentInstructionsInput): string {
   const sections = [chatPermissionParagraph(input.mode)];
@@ -81,6 +106,7 @@ export function buildSubagentInstructions(input: SubagentInstructionsInput): str
   if (rules) sections.push(rules);
   const memory = memorySectionOf(input.memoryIndex);
   if (memory !== undefined) sections.push(memory);
+  if (input.allowedTools !== undefined) sections.push(subagentToolsSection(input.allowedTools));
   sections.push(input.agent.prompt);
   return sections.join("\n\n");
 }

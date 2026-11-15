@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as prompts from "@/prompts";
 import { chatPermissionParagraph } from "@/prompts/builders/chat-builder";
+import { buildRulesIndexSection } from "@/prompts/builders/rules-index-builder";
 import { cleanIndexDescription } from "@/prompts/builders/skills-builder";
 import type { AgentResource } from "@/resources/types";
 
@@ -190,6 +191,74 @@ describe("buildSubagentInstructions native text", () => {
     expect(
       prompts.buildSubagentInstructions({ agent: { prompt: "Review it." }, mode: "guarded", rulesIndex: [] }),
     ).toBe([chatPermissionParagraph("guarded"), "Review it."].join("\n\n"));
+  });
+});
+
+describe("buildSubagentInstructions tools section", () => {
+  const scratchpad = "plus the always-on scratchpad tools.";
+  const handOff =
+    "The agent that called you has its own tools; a step your tools cannot do goes in your final answer, with what is left and the path of any draft, rather than in a question to the person.";
+
+  test("AC-1: names the run's tools and the always-on scratchpad tools", () => {
+    const text = prompts.buildSubagentInstructions({
+      agent,
+      mode: "guarded",
+      rulesIndex: [],
+      allowedTools: ["Read", "Grep"],
+    });
+    expect(text).toContain(`Your tools in this run: Read, Grep, ${scratchpad}`);
+  });
+
+  test("AC-2: an empty list says only the always-on scratchpad tools", () => {
+    const text = prompts.buildSubagentInstructions({ agent, mode: "guarded", rulesIndex: [], allowedTools: [] });
+    expect(text).toContain("Your tools in this run: only the always-on scratchpad tools.");
+  });
+
+  test("AC-3: renders a pattern entry such as nax-skills__* as given", () => {
+    const text = prompts.buildSubagentInstructions({
+      agent,
+      mode: "guarded",
+      rulesIndex: [],
+      allowedTools: ["nax-skills__*"],
+    });
+    expect(text).toContain(`Your tools in this run: nax-skills__*, ${scratchpad}`);
+  });
+
+  test("AC-4: places the tools section directly before the agent prompt", () => {
+    const text = prompts.buildSubagentInstructions({
+      agent,
+      mode: "guarded",
+      rulesIndex: [ruleEntry],
+      memoryIndex: "# Memory\n- [project] a — b",
+      allowedTools: ["Read"],
+    });
+    const sections = text.split("\n\n");
+    expect(sections[sections.length - 1]).toBe(agent.prompt);
+    expect(sections[sections.length - 2]).toStartWith("Your tools in this run:");
+  });
+
+  test("AC-5: tells the agent its caller has tools, and what to do with a step it cannot do", () => {
+    const text = prompts.buildSubagentInstructions({ agent, mode: "guarded", rulesIndex: [], allowedTools: ["Read"] });
+    expect(text).toContain(handOff);
+  });
+
+  test("AC-6: with allowedTools undefined the text is the pre-feature permission, rules, memory then prompt", () => {
+    const memoryIndex = "# Memory\n- [project] a — b";
+    const text = prompts.buildSubagentInstructions({
+      agent,
+      mode: "guarded",
+      rulesIndex: [ruleEntry],
+      memoryIndex,
+    });
+    expect(text).toBe(
+      [
+        chatPermissionParagraph("guarded"),
+        buildRulesIndexSection({ entries: [ruleEntry], shownAutomatically: true }),
+        prompts.buildMemorySection(memoryIndex),
+        agent.prompt,
+      ].join("\n\n"),
+    );
+    expect(text).not.toContain("Your tools in this run:");
   });
 });
 
