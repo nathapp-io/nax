@@ -266,13 +266,47 @@ describe("createGateStallMonitor — overlong line bound", () => {
     expect(stops).toEqual([]);
   });
 
-  test("a line of exactly the cap is still eligible and matches", () => {
-    // AC-11 boundary
-    const { monitor, stops } = harness(REPEAT(2));
-    monitor.observe("stdout", bytes(`${"q".repeat(CAP)}\n`));
-    monitor.observe("stdout", bytes(`${"q".repeat(CAP)}\n`));
+  test("a line of exactly the cap terminated by a CRLF delimiter is not overlong", () => {
+    // AC-11 (F1) — the CR belongs to the delimiter, so it must not count
+    // toward the cap. An accepted cap-length line consumes the whole per-stream
+    // budget, so the very next line cannot be assembled and is dropped; that is
+    // how acceptance is observable through the stop payload.
+    for (const chunks of [[`${"c".repeat(CAP)}\r\n`], [`${"c".repeat(CAP)}\r`, "\n"]]) {
+      const { monitor, stops } = harness(REPEAT(2));
+      for (const chunk of chunks) monitor.observe("stdout", bytes(chunk));
 
-    expect(stops).toEqual([{ kind: "repeated-output", stream: "stdout", count: 2, threshold: 2 }]);
+      monitor.observe("stdout", bytes("tiny\n"));
+      monitor.observe("stdout", bytes("tiny\n"));
+      expect(stops).toEqual([]);
+
+      monitor.observe("stdout", bytes("tiny\n"));
+      expect(stops).toEqual([{ kind: "repeated-output", stream: "stdout", count: 2, threshold: 2 }]);
+    }
+  });
+
+  test("the cap is shared between the pending line and the previous line", () => {
+    // AC-11 (F2) — retained detector text per stream never exceeds the cap.
+    const fits = harness(REPEAT(2));
+    fits.monitor.observe("stdout", bytes(`${"f".repeat(8_000)}\n`));
+    fits.monitor.observe("stdout", bytes(`${"f".repeat(8_000)}\n`));
+    expect(fits.stops).toEqual([{ kind: "repeated-output", stream: "stdout", count: 2, threshold: 2 }]);
+
+    const exceeds = harness(REPEAT(2));
+    exceeds.monitor.observe("stdout", bytes(`${"e".repeat(9_000)}\n`));
+    exceeds.monitor.observe("stdout", bytes(`${"e".repeat(9_000)}\n`));
+    // 9,000 + 9,000 is over the per-stream bound, so the second line is dropped
+    // as overlong rather than retained alongside the first.
+    expect(exceeds.stops).toEqual([]);
+  });
+
+  test("a trailing CR at EOF is content, so it can push the tail over the bound", () => {
+    // AC-11 — with no LF, a CR is not a delimiter
+    const { monitor, stops } = harness(REPEAT(2));
+    monitor.observe("stdout", bytes("ab\n"));
+    monitor.observe("stdout", bytes(`${"c".repeat(16_382)}\r`));
+    monitor.end("stdout");
+
+    expect(stops).toEqual([]);
   });
 });
 

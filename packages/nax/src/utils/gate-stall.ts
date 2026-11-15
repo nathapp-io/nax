@@ -24,9 +24,13 @@
  *  - Complete decoded line text is compared exactly, excluding its delimiter —
  *    indentation, trailing spaces, ANSI sequences and case all distinguish.
  *  - A whitespace-only line is ineligible: it resets the run and never counts.
- *  - Detector-only storage is bounded at LINE_CAP UTF-16 code units per stream.
- *    An overlong line resets the run and is ignored through its delimiter, so
- *    it can never match a truncated prefix of another long line.
+ *  - Detector-only storage is bounded at LINE_CAP UTF-16 code units per stream,
+ *    and the bound covers the pending line and the retained previous line
+ *    TOGETHER: the pending line may only grow into what the previous line
+ *    leaves. A line that does not fit is overlong — it resets the run and is
+ *    ignored through its delimiter, so it can never match a truncated prefix.
+ *    Delimiter bytes do not count: a trailing CR is not line text until the
+ *    next byte proves it was not the first half of a CRLF.
  *  - Every nonempty chunk on either stream restarts the silence deadline.
  *    Empty chunks and EOF do not. Silence is measured from monitor creation,
  *    which is spawn time.
@@ -169,15 +173,16 @@ function createLineTracker(options: {
 
   function acceptLine(stream: StreamName, line: string): void {
     const state = streams[stream];
-    if (line.length > LINE_CAP) {
+    if (line.length + previousLength(state) > LINE_CAP) {
+      // The line and the run's previous line would not fit the per-stream
+      // bound together, so the line is overlong: it resets the run.
       resetRun(state);
       return;
     }
     handleLine(state, stream, line);
   }
 
-  function handleLine(state: StreamState, stream: StreamName, rawLine: string): void {
-    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+  function handleLine(state: StreamState, stream: StreamName, line: string): void {
     if (line.trim() === "") {
       resetRun(state);
       return;
@@ -193,7 +198,10 @@ function createLineTracker(options: {
   function appendPending(state: StreamState, text: string): void {
     if (state.discarding) return;
     state.pending += text;
-    if (state.pending.length <= LINE_CAP) return;
+    // A trailing CR may still prove to be the first half of a CRLF delimiter,
+    // so it is not counted as line text yet.
+    const counted = state.pending.endsWith("\r") ? state.pending.length - 1 : state.pending.length;
+    if (counted + previousLength(state) <= LINE_CAP) return;
     // Overlong and still unterminated: drop it and skip through its delimiter.
     state.pending = "";
     state.discarding = true;
@@ -209,11 +217,17 @@ function createLineTracker(options: {
         appendPending(state, rest);
         return;
       }
-      const line = state.discarding ? null : state.pending + rest.slice(0, newline);
-      state.pending = "";
-      state.discarding = false;
+      const head = rest.slice(0, newline);
       rest = rest.slice(newline + 1);
-      if (line !== null) acceptLine(stream, line);
+      if (state.discarding) {
+        state.discarding = false;
+        continue;
+      }
+      const assembled = state.pending + head;
+      state.pending = "";
+      // A CR immediately before the LF is the LF half of one CRLF delimiter,
+      // so it is not part of the line text and does not count toward the bound.
+      acceptLine(stream, assembled.endsWith("\r") ? assembled.slice(0, -1) : assembled);
     }
   }
 
@@ -227,7 +241,8 @@ function createLineTracker(options: {
     const flushed = state.decoder.decode();
     if (flushed.length > 0) feedText(stream, flushed);
     if (state.discarding || state.pending.length === 0) return;
-    // EOF of a live process: the unterminated tail is one final line.
+    // EOF of a live process: the unterminated tail is one final line. No LF
+    // follows, so a trailing CR here is content, not a delimiter.
     const tail = state.pending;
     state.pending = "";
     acceptLine(stream, tail);
@@ -238,6 +253,11 @@ function createLineTracker(options: {
 
 function newStreamState(): StreamState {
   return { decoder: new TextDecoder(), pending: "", discarding: false, lastLine: null, count: 0 };
+}
+
+/** Units the run's retained previous line occupies in this stream's budget. */
+function previousLength(state: StreamState): number {
+  return state.lastLine === null ? 0 : state.lastLine.length;
 }
 
 function resetRun(state: StreamState): void {
