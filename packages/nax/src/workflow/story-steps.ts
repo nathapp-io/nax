@@ -4,7 +4,7 @@ import type { StepResult } from "@/step-graph";
 import { adjudicateResidual } from "./adjudicate";
 import { isFlaggedRuling } from "./advisor";
 import { stopOnUnchangedBlock } from "./blocked-stop";
-import { deriveEndState } from "./close";
+import { deriveEndState, heldFindings } from "./close";
 import { absorbConfigChange, implementerQuestion } from "./config-change-absorb";
 import { ledgerCannotVerify } from "./gate-timing";
 import type { ImplementOutcome, ImplementTurn } from "./implement";
@@ -592,6 +592,7 @@ export async function closeStep(env: StoryLoopEnv, state: StoryLoopState): Promi
       suite: s.suiteThisIteration ? s.suite : undefined,
       timedOut: timeoutGates(s.gates, s.suiteThisIteration ? s.suite : undefined),
       rulings: state.rulings.length,
+      holds: heldFindings(state.rulings),
     });
   const unreviewed = s.unreviewed || !s.reviewed;
   const outcome = await closeLoop(env, s, { ...end, rulings: state.rulings, unreviewed });

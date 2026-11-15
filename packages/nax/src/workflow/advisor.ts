@@ -66,7 +66,7 @@ export function defaultHold(finding: WorkflowFinding): WorkflowRuling {
     action: "hold",
     text: `hold ${finding.id}: ${finding.issue}`,
     why: "deterministic default (no advisor ruling)",
-    costIfWrong: "the finding stays open for the branch review",
+    costIfWrong: "the finding stays open and the story closes gate-open until a human rules on it",
     source: "default",
   };
 }

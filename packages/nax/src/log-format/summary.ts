@@ -71,7 +71,7 @@ export function formatRunSummary(summary: RunSummary, options: FormatterOptions)
   const gateOpen = summary.gateOpen ?? 0;
   if (gateOpen > 0) {
     lines.push(
-      `  ${c.yellow(`${EMOJI.warning} Gate-open:`)} ${c.bold(gateOpen.toString())} ${c.gray("(closed with a gate still red)")}`,
+      `  ${c.yellow(`${EMOJI.warning} Gate-open:`)} ${c.bold(gateOpen.toString())} ${c.gray("(closed unfinished: a red gate, a hold or no work)")}`,
     );
   }
 

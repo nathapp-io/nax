@@ -252,7 +252,8 @@ describe("recordStoryTrace", () => {
     expect(ruleReturn).toBeGreaterThan(-1);
     expect(ruleReturn).toBeLessThan(rulingIndex);
     // A write that carried options keeps them; the end line passes mirror:false.
-    expect(ledger.find((event) => event.text.startsWith("complete-with-rulings ("))?.options).toEqual({
+    // #2934: the default hold on F1 closes the story gate-open.
+    expect(ledger.find((event) => event.text.startsWith("complete-gate-open ("))?.options).toEqual({
       mirror: false,
     });
   });

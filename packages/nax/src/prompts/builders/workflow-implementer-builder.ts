@@ -83,7 +83,7 @@ export function buildWorkflowBrief(input: WorkflowBriefInput): string {
       ? section(
           "Warning",
           `You are building on a red base: ${input.redBaseDependencies
-            .map((d) => `${d.storyId} ended with a red gate (${d.reason})`)
+            .map((d) => `${d.storyId} closed gate-open (${d.reason})`)
             .join("; ")}. Expect failures that are not yours, and say so in your report.`,
         )
       : "";

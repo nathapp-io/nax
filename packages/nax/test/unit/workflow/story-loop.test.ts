@@ -268,7 +268,8 @@ describe("runStoryLoop", () => {
     expect(fixTurns(h.turns).map((t) => t.stepUps)).toEqual(
       freshFlags.map((_, i) => Math.max(0, i + 1 - Math.min(3, max))),
     );
-    expect(out).toMatchObject({ state: "complete-with-rulings", rounds });
+    // #2934: the default advisor holds the residual F1, so the story is not finished.
+    expect(out).toMatchObject({ state: "complete-gate-open", reason: "held for a human: F1", rounds });
     expect(h.ledger.some((l) => l.startsWith("Ruling: hold F1"))).toBe(true);
   });
 
