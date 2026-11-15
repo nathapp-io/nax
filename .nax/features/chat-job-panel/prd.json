@@ -1,0 +1,473 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-job-panel",
+  "branchName": "feat/chat-job-panel",
+  "createdAt": "2026-11-15T15:06:37.254Z",
+  "updatedAt": "2026-11-15T15:06:37.254Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Job panel view model",
+      "description": "**Goal** \u2014 Add the pure job-panel projection and resilient artifact reader with the public barrel exports required by the TUI.\n\n**Motivation** \u2014 The advisor's rulings during the run (`advisor/decision-log.ts` log lines, `<featureDir>/decisions.jsonl`) are never surfaced, including flagged ones.\n\n**Approach** \u2014 `buildJobPanelView(sources)` is pure:\n\n- `elapsedMs` = (`job.endedAt` ?? `now`) minus `job.startedAt`, floored at 0.\n- `cost` = `status.cost.spent` when `status` is present, else `job.cost`.\n- `progress` = `status.progress` `{ passed, total }` when present, else `job.progress`.\n- `current` = `{ storyId, phase }` from `status.current` while `job.state` is `running`; absent otherwise.\n- `stories` = the PRD stories in PRD order, `current` true for the story whose id equals the view's `current.storyId` (so no story is current once the job has ended).\n- `decisions` = decisions whose `decidedAt` parses and is at or after `job.startedAt` (an unparseable `decidedAt` is dropped), each `{ line: decisionBody(decision), flagged: decision.needsHumanConfirm }`, sorted flagged first, then by `decidedAt` newest first.\n- `logTail` = the last `JOB_PANEL_LOG_LINES` non-empty lines of `logTail`.\n\n`readJobPanelView(job, jobs, now)` gathers the sources: for `run` and `finish` jobs, `readJobStatus(job, job.cwd)`, the PRD at `<featureDir(job.cwd, job.target)>/prd.json` when it exists, and `readDecisions(job.cwd, job.target)`; for `plan` and bot jobs, `status` null, no stories and no decisions. It always reads `jobs.logTail(job.id, JOB_PANEL_LOG_LINES)`. A source that throws or is missing contributes its empty value (`null`, `[]`, `\"\"`); the panel still renders.\n\n`job-outcome.ts` \u2014 Target: exports `readJobStatus(job, repoRoot): Promise<NaxStatusFile | null>`, the existing pid-matched `matchingStatus` read. `readRunProgress` keeps its behaviour. Export `decisionBody` from `src/advisor/index.ts`, and export `readJobPanelView`, `buildJobPanelView` and the panel types from `src/chat/jobs/index.ts` and `src/chat/index.ts`. Value imports across modules go through barrels (`check:alias-internals`). The panel and the idle compactor are display and host behaviour only: none of the panel's content is added to the agent's context.\n\n**Scope** \u2014 In: new job-panel-view.ts, independent source fallbacks, PID-matched status export and advisor/chat barrels. Out: US-002 rendering/theme changes; US-003 live subscription and transcript insertion; US-004 clocks; US-005\u2013US-007 compaction. Adding the panel content to the agent's context. Making `JOB_PANEL_LOG_LINES`, `JOB_PANEL_REFRESH_MS` or `IDLE_COMPACT_MIN_TOKENS` configurable.\n\n**Interface** \u2014 verbatim TypeScript:\n```typescript\n// packages/nax/src/chat/jobs/job-panel-view.ts\nexport const JOB_PANEL_LOG_LINES = 12;\nexport interface JobPanelStory { readonly id: string; readonly title: string; readonly status: StoryStatus; readonly current: boolean }\nexport interface JobPanelDecision { readonly line: string; readonly flagged: boolean }\nexport interface JobPanelView {\n  readonly jobId: string;\n  readonly kind: ChatJobKind;\n  readonly target: string;\n  readonly state: ChatJobState;\n  readonly elapsedMs: number;\n  readonly cost?: number;\n  readonly progress?: { readonly passed: number; readonly total: number };\n  readonly current?: { readonly storyId: string; readonly phase: string };\n  readonly stories: readonly JobPanelStory[];\n  /** Flagged first, then newest first. */\n  readonly decisions: readonly JobPanelDecision[];\n  readonly logTail: readonly string[];\n}\nexport interface JobPanelSources {\n  readonly job: ChatJob;\n  readonly now: Date;\n  readonly status: NaxStatusFile | null;\n  readonly stories: readonly { readonly id: string; readonly title: string; readonly status: StoryStatus }[];\n  readonly decisions: readonly AdviceDecision[];\n  readonly logTail: string;\n}\nexport function buildJobPanelView(sources: JobPanelSources): JobPanelView;\nexport const _jobPanelDeps: { readJobStatus; loadPRD; readDecisions; exists };\nexport function readJobPanelView(job: ChatJob, jobs: Pick<ChatJobs, \"logTail\">, now: Date): Promise<JobPanelView>;\n```\n\nUse the existing read-only job/status/PRD/advisor contracts rather than introducing a second job registry. Tests override _jobPanelDeps and jobs.logTail; add builder and source-reader regressions before implementing.",
+      "acceptanceCriteria": [
+        "[unit] buildJobPanelView for a running job started at 10:00:00 with now 10:42:00 returns elapsedMs 2520000.",
+        "[unit] buildJobPanelView for an ended job uses job.endedAt, not now, for elapsedMs.",
+        "[unit] buildJobPanelView with status.cost.spent 3.18 returns cost 3.18 even when job.cost differs.",
+        "[unit] buildJobPanelView with status null returns cost equal to job.cost.",
+        "[unit] buildJobPanelView with status.progress { passed: 4, total: 13 } returns progress { passed: 4, total: 13 }.",
+        "[unit] buildJobPanelView for a running job with status.current { storyId: \"US-005\", phase: \"review\" } returns current { storyId: \"US-005\", phase: \"review\" }.",
+        "[unit] buildJobPanelView for a job whose state is succeeded returns no current.",
+        "[unit] buildJobPanelView for a running job returns stories in PRD order with current true only for the story whose id is the view's current.storyId.",
+        "[unit] buildJobPanelView drops decisions whose decidedAt is before job.startedAt.",
+        "[unit] buildJobPanelView returns each decision's line equal to decisionBody(decision).",
+        "[unit] buildJobPanelView orders a flagged (needsHumanConfirm true) decision before an unflagged one decided later.",
+        "[unit] buildJobPanelView orders two unflagged decisions newest decidedAt first.",
+        "[unit] buildJobPanelView with a log tail of 20 non-empty lines returns the last JOB_PANEL_LOG_LINES (12).",
+        "[unit] buildJobPanelView drops empty lines from the log tail.",
+        "[unit] readJobPanelView for a run job reads readDecisions(job.cwd, job.target) through _jobPanelDeps.",
+        "[unit] readJobPanelView for a plan job returns empty stories and decisions and does not call _jobPanelDeps.readDecisions.",
+        "[unit] readJobPanelView returns empty decisions when _jobPanelDeps.readDecisions rejects.",
+        "[unit] readJobPanelView returns empty stories when _jobPanelDeps.exists reports no prd.json.",
+        "[unit] readJobPanelView returns an empty logTail when jobs.logTail rejects.",
+        "[unit] readJobStatus returns null for a job whose status file names a different pid.",
+        "[unit] When status.json is missing or unreadable, readJobPanelView returns a panel using job.cost and job.progress as the status fallback, preserving the other available sources.",
+        "[unit] When prd.json is unreadable and _jobPanelDeps.loadPRD rejects, readJobPanelView returns a panel with empty stories, preserving the other available sources.",
+        "[unit] When decisions.jsonl is missing, readJobPanelView returns a panel with empty decisions, preserving the other available sources.",
+        "[unit] readRunProgress(job, repoRoot) for a run job with a PID-matched status whose cost.spent is 3.18 and progress is { passed: 4, total: 13 } returns { cost: 3.18, progress: { passed: 4, total: 13 } }, preserving the existing cost/progress projection after exporting readJobStatus."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "jobs",
+        "view-model"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The new pure projection and independent artifact reads reuse existing job/status/PRD/advisor APIs and _deps seams; thin barrel additions and deterministic fallback tests do not require a new lifecycle abstraction or multi-session isolation."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-outcome.ts",
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/execution/status-file.ts",
+        "packages/nax/src/advisor/decision-log.ts",
+        "packages/nax/src/advisor/ledger.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/jobs/job-panel-view.ts",
+        "packages/nax/test/unit/chat/jobs/job-panel-view.test.ts"
+      ],
+      "suggestedCriteria": [
+        "buildJobPanelView returns elapsedMs 0 when the selected end instant precedes job.startedAt.",
+        "buildJobPanelView excludes a decision whose decidedAt is unparseable.",
+        "buildJobPanelView includes a decision whose decidedAt exactly equals job.startedAt.",
+        "readJobPanelView for a finish job returns PID-matched status progress and the feature's PRD stories.",
+        "readJobPanelView for a bot_fix job returns no stories or decisions while retaining its available log tail."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Job panel transcript entry and layout",
+      "description": "**Goal** \u2014 Render the job view as a collapsible transcript card with progress, stories, advisor decisions and log rows.\n\n**Motivation** \u2014 The chat shows nothing until the `[nax-jobs] ... ended` notice, often hours later.\n\n**Approach** \u2014 Add `| { kind: \"job\"; view: JobPanelView; open?: boolean }` to TranscriptEntry, add layout-job.ts and the layout.ts dispatch case, and extend ChatGlyphs with progressFull (`\"\u2588\"`, ASCII `\"#\"`) and progressEmpty (`\"\u2591\"`, ASCII `\".\"`).\n\nPanel layout: Collapsed (default), two rows for a `run`/`finish` job with progress, one row otherwise; the explicit row-2 condition below also includes decision-only panels.\n\n- Row 1: the theme's `pointer` glyph, `nax <kind> <target>` (bot kinds: `nax bot review #<target>` / `nax bot fix #<target>`), the state word, `formatElapsed(elapsedMs)`, and `$<cost to 2 decimals>` when `cost` is set, separated by two spaces. The state word is coloured: `running` accent, `succeeded` success, `failed` and `lost` danger, `cancelled` warning. Row 1 ends with the theme's show/hide hint.\n- Row 2 is drawn when `progress` is set or there is at least one decision; without `progress` it starts at the decisions part. Row 2: `JOB_PROGRESS_CELLS` cells, `round(JOB_PROGRESS_CELLS * passed / total)` of them `progressFull` (accent) and the rest `progressEmpty` (muted), then `<passed>/<total>`; then ` \u00b7 <storyId> <phase>` when `current` is set; then ` \u00b7 <n> advisor decision` for one or ` \u00b7 <n> advisor decisions` for more (without the leading ` \u00b7 ` when nothing precedes it), with ` (<m> flagged)` in the warning colour when `m > 0`. A `total` of 0 draws all cells empty.\n- `formatElapsed`: under 60 s `<s>s`; under 60 min `<m>m`; otherwise `<h>h <mm>m` with two-digit minutes.\n\nExpanded adds, after the collapsed rows, three sections in this order, each under a muted heading row and indented with `cardIndent`: `stories` (one row per story: a status word \u2014 `passed` success, `failed`/`regression-failed` danger, `in-progress` accent, everything else muted \u2014 then `<id> <title>`, and `\u25c2 <phase>` after the current story), `advisor decisions` (one row per decision line, at most `JOB_PANEL_DECISION_ROWS` (10) rows followed by `+<n> more` when there are more; a flagged row starts with the theme's `warning` glyph and is drawn in the warning colour), and `log` (the log tail rows, muted). A section with nothing to show is omitted. Rows wrap to the transcript width through `cardRows`. With colour off every row is the same text without colour.\n\nThe progress algorithm, not the illustrative diagram, governs: { passed: 4, total: 13 } gives 5 full and 11 empty cells. The first row's pointer is followed by one space before nax; the command/state/elapsed/cost fields have the specified two-space gaps and the hint a single-space separator. Value imports across modules go through barrels (`check:alias-internals`); the TUI imports chat values/types from @/chat.\n\n**Scope** \u2014 In: new job entry union member, pure layout-job renderer, dispatcher and theme glyphs. Out: US-001 source gathering/projection; US-003 polling, upsert, click toggles and cachedLines own-expansion wiring; US-004 clock rows; US-005\u2013US-007 compaction. Any change to the footer job strip or a footer idle-time readout; `chat-status.ts` stays as it is. A row cap for the `stories` section (a PRD's story count is already bounded by the planner).\n\n**Interface** \u2014 verbatim TypeScript:\n```typescript\n// packages/nax/src/tui/chat/layout-job.ts\nexport const JOB_PROGRESS_CELLS = 16;\nexport const JOB_PANEL_DECISION_ROWS = 10;\nexport function formatElapsed(ms: number): string;\nexport function jobPanelLines(entry: Extract<TranscriptEntry, { kind: \"job\" }>, context: LayoutContext): readonly StyledLine[];\n```\n\nUse layout-background.ts and layout-lines.ts for the existing card indentation, sanitization, hint and wrapping conventions. Write direct text/span tests with Unicode, ASCII, colour-off and narrow contexts before implementing the renderer.",
+      "acceptanceCriteria": [
+        "[unit] formatElapsed(42_000) returns 42s.",
+        "[unit] formatElapsed(2_520_000) returns 42m.",
+        "[unit] formatElapsed(3_900_000) returns 1h 05m.",
+        "[unit] jobPanelLines for a collapsed running run view of review-and-gate-guards with elapsedMs 2520000 and cost 3.18 returns a first row whose text is <pointer> nax run review-and-gate-guards  running  42m  $3.18 <show hint> with the Unicode theme's pointer glyph and SHOW_HINT.",
+        "[unit] jobPanelLines draws the state word running in the accent colour.",
+        "[unit] jobPanelLines draws the state word failed in the danger colour.",
+        "[unit] jobPanelLines for a bot_review view with target 2936 renders nax bot review #2936 on the first row.",
+        "[unit] jobPanelLines for progress { passed: 4, total: 13 } renders a second row starting with 5 progressFull glyphs then 11 progressEmpty glyphs then ' 4/13'.",
+        "[unit] jobPanelLines for progress { passed: 0, total: 0 } renders 16 progressEmpty glyphs.",
+        "[unit] jobPanelLines second row contains '\u00b7 US-005 review' when current is { storyId: \"US-005\", phase: \"review\" }.",
+        "[unit] jobPanelLines second row contains '\u00b7 2 advisor decisions (1 flagged)' for two decisions with one flagged.",
+        "[unit] jobPanelLines draws ' (1 flagged)' in the warning colour.",
+        "[unit] jobPanelLines for a view with one decision and no progress renders a second row '1 advisor decision'.",
+        "[unit] jobPanelLines for a collapsed view returns no stories, advisor decisions or log heading row.",
+        "[unit] jobPanelLines for an expanded view returns the stories, advisor decisions and log headings in that order.",
+        "[unit] jobPanelLines for an expanded view with no decisions omits the advisor decisions heading.",
+        "[unit] jobPanelLines for an expanded view marks the current story's row with '\u25c2 <phase>'.",
+        "[unit] jobPanelLines for an expanded view starts a flagged decision row with the theme's warning glyph.",
+        "[unit] jobPanelLines for an expanded view with 12 decisions renders 10 decision rows followed by '+2 more'.",
+        "[unit] jobPanelLines with the colour-off theme returns rows with no colour styles.",
+        "[unit] The resolved ASCII theme has progressFull '#' and progressEmpty '.'.",
+        "[unit] The resolved Unicode theme has progressFull '\u2588' and progressEmpty '\u2591'."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "layout"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Adds a pure renderer using established styled-line/card primitives and additive union/theme/dispatch fields; no asynchronous lifecycle or new external integration."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/transcript-model.ts",
+        "packages/nax/src/tui/chat/layout.ts",
+        "packages/nax/src/tui/chat/layout-background.ts",
+        "packages/nax/src/tui/chat/layout-lines.ts",
+        "packages/nax/src/tui/chat/theme.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/layout-job.ts",
+        "packages/nax/test/unit/tui/chat/layout-job.test.ts"
+      ],
+      "suggestedCriteria": [
+        "jobPanelLines omits the cost field when view.cost is undefined.",
+        "jobPanelLines renders '$0.00' when view.cost is 0.",
+        "jobPanelLines for a bot_fix view with target 2936 renders 'nax bot fix #2936' on the first row.",
+        "jobPanelLines wraps long story titles without producing any row wider than context.width.",
+        "jobPanelLines renders succeeded in success, lost in danger and cancelled in warning when colour is enabled."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Live job panels in the chat",
+      "description": "**Goal** \u2014 Subscribe chat transcripts to live job views without splitting streaming replies, losing expansion state or freezing stale terminal results.\n\n**Motivation** \u2014 A job launched from chat runs headless (`chat/jobs/job-runner.ts`, output to `<outputDir>/chat-jobs/<id>.log`).\n\n**Approach** \u2014 `useJobPanels({ host, setEntries, turnRunning })`:\n\n- Does nothing when `host.jobs` is absent.\n- Subscribes to `host.jobs.onChange`. On every change, and every `JOB_PANEL_REFRESH_MS` while at least one paneled job is `running`, it refreshes the paneled jobs.\n- A job becomes paneled when it is `running` and is not yet paneled: a job started in this chat and a job re-attached when the chat opened both qualify. A job already ended when first seen is never paneled. The paneled set lives in the hook, so after `/clear` or a resume replaces the entries, the next refresh of a still-paneled job appends its panel again.\n- The hook keeps two per-job sets: `paneled` (jobs it shows) and `appended` (jobs whose entry it has added since the entries were last replaced). While `turnRunning` is true a refresh of a job not in `appended` computes its view but does not call `setEntries` (a turn's reply is still streaming, and an entry appended after it would split the reply); refreshes of `appended` jobs replace their entry in place. On the `turnRunning` true-to-false edge the hook runs one refresh for every `paneled` job not in `appended`, including a job that ended during the turn, so its panel appears after the turn showing its final state.\n- The decision is made against the current entries inside the `setEntries` updater with `hasJobPanel`, so after the entries are replaced (`/clear`, resume) a job with no entry is again a first append and follows the same `turnRunning` rule; `appended` only drives the true-to-false flush.\n- A refresh calls `readJobPanelView` for the job and applies `setEntries((rows) => upsertJobPanel(rows, view))`.\n- Refreshes are serialized per job: a refresh for a job does not start while an earlier one for that job is pending. A job that has ended gets exactly one more applied refresh, started after any pending one settles (and, for a job not yet appended, held until the turn ends), so its result is the last one applied and the panel freezes on the final state. The job is not refreshed after that.\n- On unmount it unsubscribes and clears its timer.\n\n`upsertJobPanel(entries, view)` replaces the `job` entry whose `view.jobId` matches, keeping its `open` flag and its position; with no match it appends `{ kind: \"job\", view }`. It returns a new array and never mutates its input. `hasJobPanel(entries, jobId)` says whether a `job` entry for that id exists; inside the `setEntries` updater the hook uses it to decide, per the rule above, between replacing and holding back an append while a turn runs.\n\n`ChatApp.tsx` calls `useJobPanels({ host, setEntries, turnRunning })` once. The `[nax-jobs]` notice to the agent, the background notice entry and the footer job strip are unchanged.\n\n`CollapsibleEntry` includes `\"job\"`, and a `job` entry toggles on its first row only, as a `background` entry does. In `cachedLines`, `job` joins the list using `entry.open ?? base.expanded`, so a panel's own `open` flag decides its expansion.\n\nNew code goes in new files. `packages/nax/src/tui/chat/chat-status.ts` is at the 600-line source limit and must not grow; `ChatApp.tsx` gains only the hook calls. `setInterval` is banned; timers use `setTimeout` with `clearTimeout`, the documented exception for a timer cancelled mid-flight. Each such call site carries the one-line comment saying so. Value imports across modules go through barrels (`check:alias-internals`); consume readJobPanelView from @/chat. The panel and the idle compactor are display and host behaviour only: none of the panel's content is added to the agent's context.\n\n**Scope** \u2014 In: job-panel-entries.ts, use-job-panels.ts, first-row click behavior, cachedLines own expansion and one ChatApp hook call. Out: US-001 artifact reader changes; US-002 renderer/theme implementation; US-004 turn stats; US-005\u2013US-007 compaction. A pending-ask section in the job panel; run asks keep reaching the chat as today's notices and cards. Any change to the footer job strip or a footer idle-time readout; `chat-status.ts` stays as it is. Adding the panel content to the agent's context. Making `JOB_PANEL_LOG_LINES`, `JOB_PANEL_REFRESH_MS` or `IDLE_COMPACT_MIN_TOKENS` configurable.\n\n**Interface** \u2014 verbatim TypeScript:\n```typescript\n// packages/nax/src/tui/chat/job-panel-entries.ts\nexport function upsertJobPanel(entries: readonly TranscriptEntry[], view: JobPanelView): readonly TranscriptEntry[];\nexport function hasJobPanel(entries: readonly TranscriptEntry[], jobId: string): boolean;\n\n// packages/nax/src/tui/chat/use-job-panels.ts\nexport const JOB_PANEL_REFRESH_MS = 2000;\nexport function useJobPanels(input: { readonly host: ChatHost; readonly setEntries: (update: (rows: readonly TranscriptEntry[]) => readonly TranscriptEntry[]) => void; readonly turnRunning: boolean }): void;\n```\n\nSeam: US-003 consumes readJobPanelView (US-001) and jobPanelLines via the job entry (US-002). Its seam ACs enter at the ChatJobs.onChange listener the hook subscribes and observe setEntries. Write integration tests with fake time and controllable pending reads, including terminal notification during a pending read and entry replacement during a running turn. Preserve unrelated entry identities, unsubscribe on unmount and prevent late async continuations from applying state after disposal.",
+      "acceptanceCriteria": [
+        "[unit] upsertJobPanel with no job entry for run-1 appends { kind: \"job\", view }.",
+        "[unit] upsertJobPanel with an existing job entry for run-1 replaces it at the same index.",
+        "[unit] upsertJobPanel keeps the replaced entry's open flag.",
+        "[unit] upsertJobPanel leaves its input array unchanged.",
+        "[unit] toggleTranscriptLine on the first row of a job entry flips its open flag.",
+        "[unit] toggleTranscriptLine on the second row of a job entry returns the entries unchanged.",
+        "[unit] layoutTranscript with expanded false for a job entry with open: true includes the stories heading row.",
+        "[integration] When host.jobs.onChange fires for a newly running job run-1 with turnRunning false, useJobPanels calls setEntries with an update that appends a job entry whose view.jobId is run-1.",
+        "[integration] When host.jobs.onChange fires for a newly running job with turnRunning true, useJobPanels leaves the entries without a job entry for it while turnRunning stays true, across refresh ticks.",
+        "[integration] When turnRunning changes from true to false, useJobPanels appends the panel of a job that became running during the turn.",
+        "[integration] A job that starts and ends while turnRunning is true gets a panel showing its ended state once turnRunning becomes false.",
+        "[unit] hasJobPanel returns true for an entries list holding a job entry for run-1 and false for run-2.",
+        "[integration] When the hook mounts with a job already running (re-attached), it adds a panel for that job.",
+        "[integration] When the hook mounts with only an already-ended job, it adds no panel.",
+        "[integration] With host.jobs absent, the hook never calls setEntries.",
+        "[integration] While a paneled job is running, the hook refreshes it again after JOB_PANEL_REFRESH_MS with no onChange event.",
+        "[integration] After a paneled job's state becomes succeeded, the hook refreshes it once and does not refresh it on the next JOB_PANEL_REFRESH_MS tick.",
+        "[integration] When a refresh started while the job was running resolves after the job ended, the panel's last applied view has the ended state.",
+        "[integration] After the entries are replaced with a list that has no panel, the next refresh of a still-running paneled job appends its panel again.",
+        "[integration] On unmount, the hook removes its onChange listener.",
+        "[integration] On unmount, the hook clears its refresh timer, so no refresh runs after it.",
+        "[integration] ChatApp rendered with a fake host whose jobs holds a running run job for review-and-gate-guards shows a frame row containing 'nax run review-and-gate-guards  running'."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "jobs",
+        "lifecycle"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Per-job serialized refreshes, terminal races, deferred streaming-safe append, replaced entries and React timer/subscription cleanup require coordinated state-machine and UI integration tests."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/use-jobs.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/chat/jobs/job-panel-view.ts",
+        "packages/nax/src/tui/chat/layout-job.ts",
+        "packages/nax/src/tui/chat/transcript-click.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/job-panel-entries.ts",
+        "packages/nax/src/tui/chat/use-job-panels.ts",
+        "packages/nax/test/unit/tui/chat/job-panel-entries.test.ts",
+        "packages/nax/test/ui/chat/job-panels.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When a paneled entry is cleared during a running turn, useJobPanels does not reappend it until turnRunning becomes false.",
+        "When onChange fires repeatedly while a job's readJobPanelView promise is pending, no second read for that job starts before the pending promise settles.",
+        "When a paneled job's final view is applied, later onChange events do not read or replace its frozen panel.",
+        "When an already appended panel refreshes while a reply streams, the existing reply entry retains its position and uninterrupted text.",
+        "When the hook unmounts before a pending read resolves, resolving that read does not call setEntries."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Turn end time on the stats row",
+      "description": "**Goal** \u2014 Leave a muted local end-time row for every observed top-level chat turn_end, including zero-output and unsuccessful turns.\n\n**Motivation** \u2014 It has no end time, so after a long run the user cannot tell how long the chat has been idle or whether the prompt cache has expired.\n\n**Approach** \u2014 `turnEndClock(endedAt, now)` renders the local time of `endedAt` as `HH:MM` (24-hour, two digits each) when it falls on the same local calendar day as `now`, and as `<Mon> <D> HH:MM` (`Nov 14 23:05`, English three-letter month) otherwise. An `endedAt` that does not parse renders as the empty string.\n\n`turnStatsText` with `endedAt` appends ` \u00b7 <turnEndClock(endedAt, now)>` (nothing when the clock is empty); without `endedAt` its output is unchanged.\n\n`turnStatsEntry(events, end, now)`:\n\n1. `completed` with output tokens: today's row plus ` \u00b7 <clock>`, e.g. `48.2 tok/s \u00b7 1.3k out \u00b7 14s \u00b7 14:32`.\n2. `completed` with no output tokens: `0 out \u00b7 <s>s \u00b7 <clock>`.\n3. `cancelled`, `timed_out`, `interrupted`, `errored`: `<status word> \u00b7 <clock>`, where the words are `cancelled`, `timed out`, `interrupted`, `errored`. When the clock is empty (an unparseable `end.at`) the row is the status word alone. This row is drawn in addition to the existing `Interrupted by user` or error row, so every turn ends with its time.\n\nThe clock comes from `end.at`. Times are local, so tests build `end.at` from local date parts.\n\nTarget: `turnStatsEntry(events, end, now: Date = new Date()): TranscriptEntry`; always returns a row. `ChatApp.tsx` appends the row for every turn end. Preserve top-level/subagent exclusion and per-turn event isolation in the existing call site.\n\nUpdate existing assertions, not just new tests: packages/nax/test/ui/chat/turn-stats.test.tsx's completed/no-rate/own-events rows currently assert clockless text, and cancelled/errored/zero-output cases assert no row. Replace them with the new clock-bearing invariants, using local date parts. The UI's stats-row observer must now see status-only rows as well as output-token rows. `AC-13 replays its history without any stats row` is unchanged. packages/nax/test/unit/tui/chat/turn-stats.test.ts likewise replaces completed/invalid-start clockless expectations and non-completed/zero-output undefined expectations. Keep invalid-start elapsed time at 0 while adding the end clock.\n\n**Scope** \u2014 In: turnEndClock, optional formatter inputs, always-returned turnStatsEntry, minimal ChatApp append adjustment and updates to existing stats tests. Out: US-001\u2013US-003 job panels; US-005\u2013US-007 compaction. Turn end times for a resumed session's replayed history. A turn-end row for a send that rejects before any `turn_end` event. Any change to the footer job strip or a footer idle-time readout; `chat-status.ts` stays as it is.\n\n**Interface** \u2014 verbatim TypeScript:\n```typescript\n// packages/nax/src/tui/chat/turn-stats.ts\nexport function turnEndClock(endedAt: string, now: Date): string;\n```\nTarget formatter input: `turnStatsText(input: { rate; outputTokens; elapsedMs; endedAt?: string; now?: Date }): string`. Target row builder: `turnStatsEntry(events, end, now: Date = new Date()): TranscriptEntry`.\n\nUse deterministic local-date fixtures and preserve the existing muted turn-stats renderer. Do not change decodeRate's window aggregation or synthesize event timestamps from rendering time.",
+      "acceptanceCriteria": [
+        "[unit] turnEndClock for an endedAt of 14:32 local time on the same local day as now returns 14:32.",
+        "[unit] turnEndClock for an endedAt of 09:05 local time returns 09:05.",
+        "[unit] turnEndClock for an endedAt of 23:05 on 14 November local time with now on 15 November returns 'Nov 14 23:05'.",
+        "[unit] turnEndClock for an unparseable endedAt returns the empty string.",
+        "[unit] turnStatsText without endedAt returns '48.2 tok/s \u00b7 1.3k out \u00b7 14s' for rate 48.2, 1300 output tokens and 14400 ms.",
+        "[unit] turnStatsText with endedAt at 14:32 local time on now's day returns '48.2 tok/s \u00b7 1.3k out \u00b7 14s \u00b7 14:32'.",
+        "[unit] turnStatsEntry for a completed turn with 1300 output tokens ending 14:32 local time returns text '48.2 tok/s \u00b7 1.3k out \u00b7 14s \u00b7 14:32'.",
+        "[unit] turnStatsEntry for a completed turn with 0 output tokens ending 14:32 returns text starting '0 out \u00b7 ' and ending ' \u00b7 14:32'.",
+        "[unit] turnStatsEntry for a cancelled turn ending 14:32 returns text 'cancelled \u00b7 14:32'.",
+        "[unit] turnStatsEntry for a timed_out turn ending 14:32 returns text 'timed out \u00b7 14:32'.",
+        "[unit] turnStatsEntry for an interrupted turn ending 14:32 returns text 'interrupted \u00b7 14:32'.",
+        "[unit] turnStatsEntry for an errored turn ending 14:32 returns text 'errored \u00b7 14:32'.",
+        "[unit] turnStatsEntry returns an entry whose kind is turn-stats for every turn-end status.",
+        "[unit] turnStatsEntry for a cancelled turn whose end.at does not parse returns text 'cancelled'.",
+        "[integration] ChatApp with a fake host whose turn ends cancelled shows a frame row 'cancelled \u00b7 <clock>'."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "turn-stats"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized pure formatting and row-builder behavior with a minimal existing UI call-site change; existing unit/UI assertions need deliberate behavioral updates."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/turn-stats.ts",
+        "packages/nax/test/unit/tui/chat/turn-stats.test.ts",
+        "packages/nax/test/ui/chat/turn-stats.test.tsx",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/transcript-model.ts"
+      ],
+      "suggestedCriteria": [
+        "turnStatsText with an unparseable endedAt returns its clockless output with no trailing separator.",
+        "turnEndClock includes the English month and day when endedAt and now have the same month/day but different local years.",
+        "ChatApp shows the existing Interrupted by user row in addition to the cancelled clock row.",
+        "ChatApp shows the existing error row in addition to the errored clock row.",
+        "ChatApp does not append a turn-stats row for a nested subagent turn_end."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/turn-stats.test.tsx",
+          "reason": "\"AC-9 appends one muted turn-stats row after the reply\" (`:228-240`), \"leaves the rate out when no round measured a window\" (`:242-250`) and \"measures only its own events, not the turn before it\" (`:290-300`) assert stats rows equal to the clockless text; \"AC-10 leaves no stats row for a cancelled turn\" (`:254-263`), \"AC-11 leaves no stats row for an errored turn\" (`:265-274`) and \"AC-12 leaves no stats row for a completed turn with no output tokens\" (`:276-286`) assert no row. Under US-004 every turn end leaves a row ending in its clock. Replace them with the new invariants: completed rows end ` \u00b7 <clock>`, a cancelled turn's row is `cancelled \u00b7 <clock>`, an errored turn's is `errored \u00b7 <clock>`, a zero-output turn's is `0 out \u00b7 <s>s \u00b7 <clock>`; build event times and the clock from local date parts. \"AC-13 replays its history without any stats row\" is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/turn-stats.test.ts",
+          "reason": "\"builds the row a completed turn with output earns\" (`:177-182`) and \"counts the elapsed time as none when the turn's own start does not parse\" (`:195-200`) assert the exact text without a clock, \"is undefined for a turn that did not complete, whatever it streamed\" (`:184-189`) and \"is undefined for a completed turn with no output tokens\" (`:191-193`) assert no row. Under US-004 every turn earns a row ending in its end clock. Replace them with the new invariants: the completed row ends ` \u00b7 <clock>`, a non-completed turn's row is `<status word> \u00b7 <clock>`, and a zero-output completed turn's row is `0 out \u00b7 <s>s \u00b7 <clock>`; build `end.at` and `now` from local date parts."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Absolute token cap for native compaction",
+      "description": "**Goal** \u2014 Add an optional absolute native-session compaction trigger and a retention budget scaled to the trigger that actually wins.\n\n**Motivation** \u2014 On a 1M-token window that is about 900k tokens, so the first turn after a multi-hour job pays a full cache write on a very large context.\n\n**Approach** \u2014 `compactionThreshold(window, cfg)` and `keepBudget(window, cfg, aggressive)` apply, in this order:\n\n1. `percentThreshold = min(floor(window * compactAtPercent / 100), window - headroom)` (today's rule).\n2. When `cfg.compactAtTokens` is set and greater than 0, `threshold = min(percentThreshold, compactAtTokens)`; otherwise `threshold = percentThreshold`.\n3. `keepBudget`: when step 2 lowered the threshold (the cap is below `percentThreshold`), `budget = floor(compactAtTokens * keepRecentPercent / compactAtPercent)`; otherwise today's `floor(window * keepRecentPercent / 100)`.\n4. `aggressive` halves the step-3 budget, as today.\n\nBecause the schema requires `keepRecentPercent <= compactAtPercent - 20`, the step-3 budget is always below the threshold it pairs with, so a compaction can never leave history above its own trigger.\n\n`ResolvedCompaction` \u2014 Target: gains `readonly compactAtTokens?: number`. `NativeBackendOptions.compaction` \u2014 Target: gains `readonly compactAtTokens?: number`.\n\n`compactionSettingsSchema` \u2014 Target: gains `compactAtTokens: z.number().int().optional()` accepting 0 or a value of at least `MIN_COMPACT_AT_TOKENS` (10000), with the message `compactAtTokens must be 0 (off) or at least 10000`; `DEFAULT_COMPACTION` is unchanged. This is the shared schema, so `execution.compaction.compactAtTokens` becomes a valid setting for every native session that reads `execution.compaction` (story sessions, chat subagents, the `nax-agent` ACP server in `nax-agent-acp/src/server/main.ts`) with no default, meaning no cap. The chat session alone gets its cap from `chat.compaction` (below), which always replaces any `execution.compaction.compactAtTokens` for the chat.\n\nThe chat-specific override is US-006's responsibility. With `compactAtTokens` 0, use the percent rule only (today's behaviour). Preserve shouldCompact's enabled gate and strict above-threshold comparison. Keep DEFAULT_COMPACTION, resolveCompaction(undefined) and every existing uncapped threshold/budget assertion unchanged. Export MIN_COMPACT_AT_TOKENS from @nathapp/nax-agent/internal, using the existing explicit compaction-settings export; do not expose private seams from the public root. The existing nativeBackend resolveCompaction path must carry the optional field through without a second resolver.\n\n**Scope** \u2014 In: ResolvedCompaction, shared compaction settings schema/constant/internal export, NativeBackendOptions.compaction and threshold/retention arithmetic within packages/nax-agent. Out: US-006 nax runtime types/chat defaults/chat option composition; US-007 idle timers/UI; US-001\u2013US-004 display work. A reason on the automatic token-cap compaction's transcript row; only the idle compaction names its reason. No new ACP-owned context-compaction policy: existing execution.compaction consumers only gain the explicitly configured optional field.\n\n**Interface** \u2014 verbatim TypeScript:\n```typescript\n// packages/nax-agent/src/native/session/compaction-settings.ts (exported from @nathapp/nax-agent/internal)\nexport const MIN_COMPACT_AT_TOKENS = 10_000;\n```\nTarget ResolvedCompaction shape: `{ enabled; compactAtPercent; keepRecentPercent; readonly compactAtTokens?: number }`. Target NativeBackendOptions.compaction adds `readonly compactAtTokens?: number` to the existing optional percentage settings.\n\nUse the existing compaction pure tests and scripted native-backend tests to prove the 1M-window/200k-cap behavior end to end. Preserve headroom, pinning, summaries, manual and reactive compaction behavior. Show regressions failing against old code before implementation; shipped nax-agent source stays Node-compatible and uses existing runtime/DI seams.",
+      "acceptanceCriteria": [
+        "[unit] compactionThreshold(1_000_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 }) returns 900000.",
+        "[unit] compactionThreshold(1_000_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 }) returns 200000.",
+        "[unit] compactionThreshold(128_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 }) returns the percent threshold 115200.",
+        "[unit] compactionThreshold with compactAtTokens 0 returns the percent threshold.",
+        "[unit] keepBudget(1_000_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 }) returns 66666.",
+        "[unit] keepBudget(128_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 }) returns 38400.",
+        "[unit] keepBudget(1_000_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 }, true) returns 33333.",
+        "[unit] shouldCompact(250_000, 1_000_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 }) returns true.",
+        "[unit] shouldCompact(250_000, 1_000_000, { enabled: false, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 }) returns false.",
+        "[unit] resolveCompaction({ compactAtTokens: 200_000 }) returns compactAtTokens 200000 with the default percentages.",
+        "[unit] resolveCompaction(undefined) returns an object with no compactAtTokens.",
+        "[unit] compactionSettingsSchema.safeParse({ compactAtTokens: -1 }) fails.",
+        "[unit] compactionSettingsSchema.safeParse({ compactAtTokens: 5000 }) fails with the message 'compactAtTokens must be 0 (off) or at least 10000'.",
+        "[unit] compactionSettingsSchema.safeParse({ compactAtTokens: 0 }) succeeds.",
+        "[integration] A native session created through nativeBackend({ compaction: { compactAtTokens: 200_000 } }) on a 1M-token-window model compacts its history before a send once the estimated context exceeds 200000 tokens."
+      ],
+      "tags": [
+        "feature",
+        "native",
+        "compaction",
+        "session"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "This is bounded arithmetic plus optional schema/type/internal-export plumbing across existing native compaction seams, with no new orchestration; retain strict three-session TDD because the requested session/token override applies to retained session history."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/session/compaction.ts",
+        "packages/nax-agent/src/native/session/compaction-settings.ts",
+        "packages/nax-agent/src/session/native-backend-options.ts",
+        "packages/nax-agent/src/session/native-backend.ts",
+        "packages/nax-agent/test/unit/session/native-backend-compaction.test.ts"
+      ],
+      "suggestedCriteria": [
+        "compactionSettingsSchema.safeParse({ compactAtTokens: 10000 }) succeeds.",
+        "compactionSettingsSchema.safeParse({ compactAtTokens: 10000.5 }) fails.",
+        "keepBudget returns the existing window-based budget when compactAtTokens equals percentThreshold rather than lowering it.",
+        "shouldCompact returns false when context tokens exactly equal the active compactAtTokens threshold.",
+        "compactionThreshold preserves the existing headroom-limited result for a small window when the configured cap is larger than percentThreshold."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Chat compaction config and the native chat session cap",
+      "description": "**Goal** \u2014 Resolve chat-specific compaction defaults and override only the native chat session's absolute token cap while retaining execution settings for other sessions.\n\n**Motivation** \u2014 The native chat compacts only at `execution.compaction.compactAtPercent` (default 90) of the model window.\n\n**Approach** \u2014 This feature extends the `chat` config block (`ChatConfigSchema`) added by the `chat-workflow-flow` feature, so it runs after that feature is merged. In this worktree those prerequisite files are absent; extend them after the prerequisite merge, without implementing a competing chat-workflow configuration.\n\n`chat.compaction` config:\n```json\n{ \"chat\": { \"compaction\": { \"compactAtTokens\": 200000, \"idleCompactAfterMinutes\": 55 } } }\n```\n\n`compactAtTokens` follows the shared rule, 0 or an integer of at least `MIN_COMPACT_AT_TOKENS` (10000), with the same message `compactAtTokens must be 0 (off) or at least 10000` (default `DEFAULT_CHAT_COMPACT_AT_TOKENS`); `MIN_COMPACT_AT_TOKENS` is exported from `@nathapp/nax-agent/internal` and the chat schema imports it there; `idleCompactAfterMinutes` is an integer from 0 to 1440 (default `DEFAULT_IDLE_COMPACT_AFTER_MINUTES`); 0 turns each off. With no `chat.compaction` block both defaults apply.\n\n`chatCompactAtTokens(config)` is `config.chat?.compaction?.compactAtTokens ?? DEFAULT_CHAT_COMPACT_AT_TOKENS`; 0 turns the cap off. Only the native chat session (`open-chat-session.ts`) takes it; story sessions and chat subagents keep `execution.compaction` as configured.\n\nChat session options in `packages/nax/src/chat/open-chat-session.ts` \u2014 Target: `{ ...request.config.execution.compaction, compactAtTokens: chatCompactAtTokens(request.config) }`.\n\n`ChatConfigSchema` in `packages/nax/src/config/schemas-chat.ts` and `ChatConfig` in `runtime-types-chat.ts` \u2014 Target: gain `compaction?: { compactAtTokens: number; idleCompactAfterMinutes: number }`. `ExecutionConfig.compaction` in runtime-types.ts adds `compactAtTokens?: number`. The shared schema from US-005 already accepts execution.compaction.compactAtTokens with no default; do not install the chat default on that shared setting.\n\nValue imports across modules go through barrels (`check:alias-internals`): `chatCompactAtTokens` and `idleCompactAfterMs` from `src/chat/index.ts`. Export `DEFAULT_CHAT_COMPACT_AT_TOKENS` and `DEFAULT_IDLE_COMPACT_AFTER_MINUTES` from `src/config/index.ts`. Preserve disabled execution compaction and configured percentages when spreading; chat's 0 overrides an execution cap, rather than falling back to it.\n\n**Scope** \u2014 In: extending prerequisite chat schema/type, defaults/constants/config barrel, execution runtime type, new chat-compaction.ts resolver helpers/chat barrel and native open-chat-session option composition. Out: US-005 shared threshold/schema arithmetic; US-007 createIdleCompactor, hook, ChatApp prop and CLI propagation; US-001\u2013US-004 display. Compaction for ACP chat agents, chat subagents, and `nax run` story sessions (they keep `execution.compaction`). This exclusion concerns chat-specific policy; explicit execution.compaction remains supported for native non-chat sessions.\n\n**Interface** \u2014 verbatim TypeScript:\n```typescript\n// packages/nax/src/config/schemas-chat.ts\nexport const DEFAULT_CHAT_COMPACT_AT_TOKENS = 200_000;\nexport const DEFAULT_IDLE_COMPACT_AFTER_MINUTES = 55;\n\n// packages/nax/src/chat/chat-compaction.ts\nexport function chatCompactAtTokens(config: NaxConfig): number;          // chat.compaction.compactAtTokens ?? DEFAULT_CHAT_COMPACT_AT_TOKENS\nexport function idleCompactAfterMs(config: NaxConfig): number;           // minutes ?? DEFAULT_IDLE_COMPACT_AFTER_MINUTES, times 60000\n```\n\nSeam: US-006 consumes compactAtTokens (US-005) through nativeBackend({ compaction }); its seam AC enters at openChatSession and observes the stubbed nativeBackend. Extend existing option tests, add config/resolver tests, and assert subagents keep execution.compaction. The existing open-chat-session compaction assertion uses objectContaining, so the added compactAtTokens does not break it.",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse({ chat: { compaction: {} } }) resolves chat.compaction.compactAtTokens to 200000.",
+        "[unit] NaxConfigSchema.parse({ chat: { compaction: {} } }) resolves chat.compaction.idleCompactAfterMinutes to 55.",
+        "[unit] NaxConfigSchema.safeParse fails at path chat.compaction.idleCompactAfterMinutes for 1441.",
+        "[unit] NaxConfigSchema.safeParse fails at path chat.compaction.compactAtTokens for -5.",
+        "[unit] NaxConfigSchema.safeParse fails at path chat.compaction.compactAtTokens for 5000 with the message 'compactAtTokens must be 0 (off) or at least 10000'.",
+        "[unit] NaxConfigSchema.parse({ execution: { compaction: { compactAtTokens: 150_000 } } }) keeps execution.compaction.compactAtTokens 150000.",
+        "[unit] chatCompactAtTokens returns 200000 for a config with no chat block.",
+        "[unit] chatCompactAtTokens returns 100000 for chat.compaction.compactAtTokens 100000.",
+        "[unit] chatCompactAtTokens returns 0 for chat.compaction.compactAtTokens 0.",
+        "[unit] idleCompactAfterMs returns 3300000 for a config with no chat block.",
+        "[unit] idleCompactAfterMs returns 0 for chat.compaction.idleCompactAfterMinutes 0.",
+        "[integration] openChatSession with a config whose execution.compaction is the default and whose chat.compaction.compactAtTokens is 100000 calls the stubbed nativeBackend with compaction { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 100000 }.",
+        "[integration] openChatSession with no chat block calls the stubbed nativeBackend with compaction.compactAtTokens 200000.",
+        "[integration] runSubagent with a config whose chat.compaction.compactAtTokens is 100000 and whose execution.compaction has no compactAtTokens calls _subagentSessionDeps.nativeBackend with a compaction that has no compactAtTokens, preserving the existing execution.compaction data flow rather than applying the chat cap."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "config",
+        "compaction",
+        "session"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Standard additive schema/default/type and option wiring, but native session/token configuration invokes the strict session/token TDD override and must preserve subagent and execution policy."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/open-chat-session.ts",
+        "packages/nax/test/unit/chat/open-chat-session.test.ts",
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/src/config/schemas-chat.ts",
+        "packages/nax/src/config/runtime-types-chat.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/chat/chat-compaction.ts",
+        "packages/nax/test/unit/chat/chat-compaction.test.ts",
+        "packages/nax/test/unit/config/chat-compaction.test.ts"
+      ],
+      "suggestedCriteria": [
+        "openChatSession with execution.compaction.compactAtTokens 150000 and chat.compaction.compactAtTokens 0 forwards compactAtTokens 0 to nativeBackend.",
+        "openChatSession with execution.compaction.enabled false retains enabled false when adding the chat cap.",
+        "runSubagent with execution.compaction.compactAtTokens 150000 and chat.compaction.compactAtTokens 100000 forwards compactAtTokens 150000.",
+        "idleCompactAfterMs returns 1800000 when chat.compaction.idleCompactAfterMinutes is 30.",
+        "NaxConfigSchema.safeParse rejects a fractional chat.compaction.idleCompactAfterMinutes value."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Idle compact while a job runs",
+      "description": "**Goal** \u2014 Compact native chat context once per running job after a qualifying idle delay, through the existing manual-compaction UI path.\n\n**Motivation** \u2014 Nothing reacts to idle time.\n\n**Approach** \u2014 `createIdleCompactor({ delayMs, onDue })` keeps one timer:\n\n- `update(state)` qualifies when `state.idle`, `state.runningJobId` is set, `state.acp` is false, `state.contextTokens` is at least `IDLE_COMPACT_MIN_TOKENS`, `delayMs` is greater than 0, and the compactor has not yet fired for `state.runningJobId`.\n- A qualifying `update` arms the timer when none is armed; while one is armed for the same job, further qualifying updates leave it running (the timer is never restarted by a re-render). The timer's origin is therefore the first qualifying update: the later of the turn ending and the job starting.\n- A qualifying `update` whose `runningJobId` differs from the job the armed timer was set for clears that timer and arms a new one for the new job, with its origin at that update.\n- A non-qualifying `update` clears an armed timer.\n- When the timer fires it calls `onDue(\"<minutes>m idle while job <jobId> runs\")`, where minutes is `round(delayMs / 60000)`, and records `jobId` as fired. It fires at most once per job id for the compactor's lifetime, whatever the compaction's outcome, so a failed compaction is not retried.\n- `dispose()` clears the timer.\n\n`useIdleCompact({ host, delayMs, turnRunning, contextTokens, compact, note })` creates one compactor and calls `update` on every render with `idle = !turnRunning`, `runningJobId` = the id of the first job in `host.jobs?.running()`, the footer's `contextTokens`, and `acp = isChatAcpModel(host.current().model)`. `onDue(reason)` calls the latest `note` and `compact` passed to the hook (held in refs updated each render, since the timer fires after renders): `note(`idle compact: ${reason}`)`, then `compact()`. `ChatApp.tsx` passes `delayMs` from its `idleCompactAfterMs` prop, `turnRunning` from its existing `turnRunning`, and binds `compact` to its existing `compactTurn`, so the working line, notices and turn slot behave as for `/compact`.\n\n`ChatAppProps` \u2014 Target: gains `readonly idleCompactAfterMs?: number` (absent means 0, off); `cli/chat.ts` `screenProps` sets it to `idleCompactAfterMs(config)`. Thread the loaded config through the existing screenProps/runShell call path; do not reload configuration in the hook.\n\nCompaction changes apply to the native chat session only. ACP chat agents own their context and are out of scope. A chat on an `acp:` model (`isChatAcpModel(host.current().model)`) never arms the idle compactor. The panel and the idle compactor are display and host behaviour only: none of the panel's content is added to the agent's context.\n\nNew code goes in new files. `packages/nax/src/tui/chat/chat-status.ts` is at the 600-line source limit and must not grow; `ChatApp.tsx` gains only the hook calls. `setInterval` is banned; timers use `setTimeout` with `clearTimeout`, the documented exception for a timer cancelled mid-flight. Each such call site carries the one-line comment saying so. Value imports across modules go through barrels (`check:alias-internals`): `createIdleCompactor`, `chatCompactAtTokens` and `idleCompactAfterMs` from `src/chat/index.ts`. The TUI imports them from `@/chat`.\n\nFailure: Idle compaction fails \u2014 `compactTurn` already appends the error row; the compactor has recorded the job id and does not fire again for it. Keep latest callbacks in refs and keep the compactor/fired-id history stable across ordinary renders; dispose the timer on unmount.\n\n**Scope** \u2014 In: extend US-006's chat-compaction.ts with the pure timer state machine; export it; add use-idle-compact.ts, optional ChatApp delay prop/minimal hook call, and configured CLI render props. Out: US-005 threshold arithmetic; US-006 schema/default/resolver implementation; US-001\u2013US-004 job-panel/turn-row changes. Idle compaction when no job is running. Keep-warm pings to hold the prompt cache. Compaction for ACP chat agents, chat subagents, and `nax run` story sessions (they keep `execution.compaction`). Any change to the footer job strip or a footer idle-time readout; `chat-status.ts` stays as it is. Making `JOB_PANEL_LOG_LINES`, `JOB_PANEL_REFRESH_MS` or `IDLE_COMPACT_MIN_TOKENS` configurable.\n\n**Interface** \u2014 verbatim TypeScript:\n```typescript\n// packages/nax/src/chat/chat-compaction.ts\nexport const IDLE_COMPACT_MIN_TOKENS = 20_000;\nexport interface IdleCompactState {\n  readonly idle: boolean;\n  readonly runningJobId?: string;\n  readonly contextTokens?: number;\n  readonly acp: boolean;\n}\nexport interface IdleCompactor { update(state: IdleCompactState): void; dispose(): void }\nexport function createIdleCompactor(options: {\n  readonly delayMs: number;\n  readonly onDue: (reason: string) => void;\n  readonly timers?: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };\n}): IdleCompactor;\n\n// packages/nax/src/tui/chat/use-idle-compact.ts\nexport function useIdleCompact(input: { readonly host: ChatHost; readonly delayMs: number; readonly turnRunning: boolean; readonly contextTokens?: number; readonly compact: () => Promise<void>; readonly note: (text: string) => void }): void;\n```\n\nSeam: US-007 consumes chatCompactAtTokens's sibling idleCompactAfterMs (US-006) and createIdleCompactor; its seam AC enters at the compactor's update and observes onDue. Extend US-006's timer-free helper tests with injected fake timers; add native/ACP hook tests, ChatApp notice/host.compact behavior and CLI deps.renderChat config propagation. Reuse the existing /compact slot/error path, not a new direct background compact invocation.",
+      "acceptanceCriteria": [
+        "[unit] A compactor with delayMs 3300000 and state { idle: true, runningJobId: \"run-1\", contextTokens: 50_000, acp: false } calls onDue(\"55m idle while job run-1 runs\") after fake time advances 3300000 ms.",
+        "[unit] A compactor receiving the same qualifying state again at 3000000 ms still fires at 3300000 ms (a requalifying update does not restart the timer).",
+        "[unit] A compactor that fired for run-1 never calls onDue again for run-1, across later idle periods.",
+        "[unit] A compactor that fired for run-1 calls onDue for run-2 after a qualifying idle period with runningJobId run-2.",
+        "[unit] A compactor armed for run-1 that receives a qualifying state for run-2 at 1000000 ms calls onDue for run-2 at 4300000 ms and never for run-1.",
+        "[unit] A compactor with state { idle: true, contextTokens: 50_000, acp: false } and no runningJobId never calls onDue.",
+        "[unit] A compactor with acp true never calls onDue.",
+        "[unit] A compactor with contextTokens 19999 never calls onDue.",
+        "[unit] A compactor with contextTokens undefined never calls onDue.",
+        "[unit] A compactor with delayMs 0 never calls onDue.",
+        "[unit] A compactor whose state changes to idle false before delayMs elapses never calls onDue for that period.",
+        "[unit] dispose() on an armed compactor prevents onDue when fake time passes delayMs.",
+        "[integration] useIdleCompact with a host on a native model, turnRunning false, a running job and contextTokens 50000 calls note with 'idle compact: 55m idle while job <id> runs' and then calls compact once after delayMs 3300000.",
+        "[integration] useIdleCompact with a host whose current().model is acp:codex does not call compact after delayMs.",
+        "[integration] ChatApp rendered with idleCompactAfterMs 3300000, a fake host on a native model with a running job, and a finished turn whose context is 50000 tokens, shows an 'idle compact:' notice and calls host.compact once after fake time advances 3300000 ms.",
+        "[integration] The chat command with a loaded config whose chat.compaction.idleCompactAfterMinutes is 30 calls the injected deps.renderChat with props whose idleCompactAfterMs is 1800000.",
+        "[integration] When idle compaction fails for a running job, ChatApp shows compactTurn's error row and does not call host.compact again for that job across later qualifying idle periods.",
+        "[integration] ChatApp rendered without idleCompactAfterMs does not invoke host.compact after 3300000 ms of fake time with an idle native chat, a running job and contextTokens 50000, preserving the existing behavior of direct renders that do not opt into idle compaction."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "compaction",
+        "session",
+        "timers",
+        "tui"
+      ],
+      "dependencies": [
+        "US-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Adds a once-per-job timer state machine and React/CLI/native-session integration with stale-closure, cancellation, busy-slot and failure/no-retry risks; strict session/token TDD override applies."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/chat-compaction.ts",
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/cli/chat.ts",
+        "packages/nax/src/chat/acp/index.ts",
+        "packages/nax/test/ui/chat/chat-compact.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/use-idle-compact.ts",
+        "packages/nax/test/ui/chat/idle-compact.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When note and compact callbacks are replaced by a rerender before the armed timer fires, useIdleCompact invokes only the latest callbacks.",
+        "When a native chat changes to an acp: model while its idle timer is armed, passing the delay does not invoke compact.",
+        "When a running job disappears before the idle delay elapses, the compactor does not call onDue.",
+        "When contextTokens is exactly 20000 and all other conditions qualify, the compactor calls onDue after the delay.",
+        "When useIdleCompact unmounts with an armed timer, passing the delay invokes neither note nor compact."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "Goal and delivery: close #2942, #2943 and #2944 (part of #2946) by adding display-only live job panels, local turn-end clocks and native-chat-specific compaction defaults and idle compaction. This is an enhancement to the existing Bun/TypeScript React/Ink chat and the Node-compatible nax-agent library, not a new application. Preserve exactly US-001 through US-007 and their specified workdirs/dependencies. US-001 -> US-002 -> US-003 supplies the display path; US-004 is independent; US-005 -> US-006 -> US-007 supplies compaction. No version bumps or release work is required.\n\nDiscovery and prerequisite: codebase-memory MCP was unavailable in this tool set, so discovery used direct Read, Glob and Grep. Source citations below refer to this worktree, not presumed future files. The spec requires chat-workflow-flow to merge first. Currently packages/nax/src/config/schemas-chat.ts and runtime-types-chat.ts do not exist (confirmed direct lookup and config glob); NaxConfigSchema currently composes other schemas in packages/nax/src/config/schemas.ts:8-64 and :95 onward. US-006 must extend the prerequisite's ChatConfigSchema and ChatConfig after that merge, not invent a parallel chat block or silently implement the unrelated workflow feature. The second-pass context alignment retains those two spec-recommended paths in US-006 contextFiles as external-prerequisite context: they are not readable in this checkout yet, but must exist after chat-workflow-flow merges and before this feature executes. They are not files this story creates and must not be put in expectedFiles. Do not execute US-006 on this unprepared checkout; merge/rebase the prerequisite first, then revalidate both paths. Preserve the binding dependency arrays rather than adding a fictitious story.\n\nRepository constraints: docs/architecture/ARCHITECTURE.md:13-39 indexes conventions, DI and testing; :160-180 documents hard/soft file limits, function limits, permission SSOT and cancellation rules. The spec explicitly freezes packages/nax/src/tui/chat/chat-status.ts at its source limit and permits only minimal hook calls/imports/props and the turn-end append adjustment in ChatApp.tsx; put substantive new logic in the named new modules. No setInterval. Every cancellable setTimeout/clearTimeout site needs the one-line documented mid-flight cancellation exception. Cross-module runtime values use barrels: advisor/index.ts exports decisionBody, chat/jobs/index.ts and chat/index.ts export panel API/types, chat/index.ts exports compaction API, config/index.ts exports chat defaults. TUI values come from @/chat and @/advisor, not alias-internal leaves. Source reads/spawns/timers need injectable seams; do not monkey-patch globals. nax-agent source is Node-compatible and must use #src/ imports or explicit .ts relative imports, never Bun APIs or nax imports. MIN_COMPACT_AT_TOKENS belongs on @nathapp/nax-agent/internal, never a new private import across the package boundary. A changed public facade declaration can affect api/nax-agent.api.txt; follow the existing API snapshot workflow when required, without exposing underscore seams on the public root.\n\nUS-001 existing model and sources: packages/nax/src/chat/jobs/job-types.ts:1-33 defines plan/run/finish/bot_review/bot_fix, the five states, pid/cwd/timestamps and optional cached cost/progress; :41-44 makes isRunJobKind include both run and finish. packages/nax/src/chat/jobs/job-runner.ts:33-61 exposes list (newest first), running, get, logTail, onChange and disposal. Keep that lifecycle read-only. packages/nax/src/chat/jobs/job-outcome.ts:23-43 already has _jobOutcomeDeps, projectProgress and private matchingStatus; the PID equality at :35 is essential to avoid showing another run's status. Expose readJobStatus over that read and preserve readRunProgress/resolveJobOutcome semantics (:39-43, :80-94). NaxStatusFile progress/cost/current are at packages/nax/src/execution/status-file.ts:158-190; do not import its heavy execution barrel just to read status. packages/nax/src/prd/index.ts:102-130 exports loadPRD and throws on missing/oversize/corrupt documents; extract userStories in PRD order. packages/nax/src/advisor/ledger.ts:28-30 derives feature paths, :72-76 reads decisions and :47-69 skips corrupt ledger lines; I/O can still reject. decisionBody is already implemented at packages/nax/src/advisor/decision-log.ts:60-63, including action rendering and confidence, but is not yet exported by advisor/index.ts (readDecisions is exported at :29). Reuse it, do not duplicate rendering. The ledger also has a trusted-decision action path (:93-121); this feature explicitly reads readDecisions for a display-only surface, never feeds that content to model context or action/approval resolution. Each source must fail independently to null/[]/empty text; one rejection must not discard successful sibling sources. New panel API is additive to packages/nax/src/chat/jobs/index.ts:1-22 and chat/index.ts:1-155. Existing job-outcome tests live at packages/nax/test/unit/chat/jobs/job-outcome.test.ts; add mirrored pure-builder/source-reader tests with _jobPanelDeps overrides and show new regressions failing first.\n\nUS-002/003 transcript architecture and risks: packages/nax/src/tui/chat/transcript-model.ts:20-83 is the entry union; reduceTranscript preserves entry identity (:226-253), and applyTextDelta appends a new reply when the last entry is no longer the current reply (:142-149). That is why a newly appended job panel during streaming would split a reply. Updating an existing panel in place is safe; first append must wait for turn completion. packages/nax/src/tui/chat/layout.ts:270-309 dispatches entry kinds, :351-369 applies open ?? base.expanded to collapsible kinds, and :374-404 lays out entries and computes line ownership. Add the dispatcher in US-002, own-expansion support in US-003. A replacement must create a fresh entry object to invalidate the WeakMap layout cache while preserving position/open and untouched entries. packages/nax/src/tui/chat/transcript-click.ts:8-11 declares CollapsibleEntry; :36-50 restricts attachment/background toggles to their structural first row. A job must mirror the background rule, never toggle from progress/details or wrapped continuation rows. packages/nax/src/tui/chat/layout-background.ts:34-49 is the card pattern; layout-lines.ts:29-32 defines context, :44-46 the hints, :52 the SpanStyle, :213-245 prefixes/indent/cardRows, with sanitization and width-aware wrapping. New panel rows must preserve styles across wrapping and strip colour styles with colour off, not merely rely on Ink disabling ANSI. Theme glyph shape and Unicode/ASCII tables are at packages/nax/src/tui/chat/theme.ts:48-68, :164-198 and :200-234. The illustrative progress diagram in the spec is not authoritative for cell count: the explicit algorithm and AC require round(16*4/13)=5 full and 11 empty cells.\n\nLive hook integration: packages/nax/src/tui/chat/use-jobs.ts:58-70 shows job/task/ask subscription cleanup; :73-115 owns the existing notice delivery and must remain unchanged. ChatApp entries/setEntries are at packages/nax/src/tui/chat/ChatApp.tsx:304-306, append helpers at :382-388, and turnRunning = busy || status.running at :404-405. Entries are replaced on session change at :549-554 and by clear paths, so stale appended bookkeeping cannot determine whether a panel is actually present; hasJobPanel inside the functional updater is authoritative. Maintain paneled and appended sets and per-job serialized reads, holding first appends during turns, flushing on the true-to-false edge, and scheduling exactly one fresh terminal read after an outstanding running read settles. Freeze terminal panels only after the final result is applied; do not let an old async result overwrite it. Cancel timers/subscriptions and ignore in-flight continuations after unmount. Do not panel a job already ended on initial observation, but do panel initially running re-attached jobs. Host jobs are optional. Existing footer/notice delivery remains at ChatApp.tsx:1125-1137. Existing UI fixture patterns are packages/nax/test/ui/chat/chat-jobs.test.tsx:53-113 and chat-compact.test.tsx:67-100; add hook/UI integration tests observing the real onChange -> setEntries -> layout seam, controlled promises for races, and fake time for polling. Existing click, background-layout and theme tests should retain current behavior.\n\nUS-004 turn-end behavior and migration: packages/nax/src/tui/chat/turn-stats.ts:78-100 computes decode speed from each top-level turn's own events; :105-118 floors elapsed time and formats clockless stats; :121-140 computes elapsed and currently returns undefined for non-completed or zero-output turns. Keep decodeRate and subagent filtering unchanged, append end.at's local clock and always return kind turn-stats for a real turn_end. ChatApp.tsx:593-613 folds events and currently conditionally appends the row for top-level turn ends; remove the obsolete undefined gate without changing nested-event exclusion. Existing interrupted/error entries originate in transcript-model.ts:213-220 and must remain, with the new muted end row in addition. Do not synthesize rows on pre-turn_end send rejection or resumed history. Update the exact clockless/no-row assertions in packages/nax/test/unit/tui/chat/turn-stats.test.ts:177-200 and packages/nax/test/ui/chat/turn-stats.test.tsx:228-300; UI statsRows currently filters only ' out \u00b7 ' (:214-215), so adjust observation to include non-completed status rows. Preserve resumed-history AC-13 (:303-317). Build event instants and expected clocks from local date components and supply now deterministically to avoid UTC/day-boundary failures. No persisted history migration is needed.\n\nUS-005 shared compaction impact: packages/nax-agent/src/native/session/compaction.ts:35-39 defines ResolvedCompaction, :108-115 computes percentage/headroom threshold and strict tokens > threshold trigger, :121-124 computes recent-history budget. Preserve headroom, enabled gating, aggressive flooring and all uncapped behavior. compaction-settings.ts:14-30 owns DEFAULT_COMPACTION, Zod defaults and the keepRecentPercent <= compactAtPercent - 20 refinement; add an optional validated cap with no default and leave the default object unchanged. NativeBackendOptions.compaction is at packages/nax-agent/src/session/native-backend-options.ts:63-67; its validator reuses the schema at :152. packages/nax-agent/src/session/native-backend.ts:176 already resolves raw.compaction, so no parallel resolver is needed. The proactive path calls shouldCompact in turn-loop-round-trip.ts:126, summarization calls keepBudget in turn-compaction-step.ts:133 and :195, and manual compaction also consumes it in manual-compaction.ts:129. Review these callers for compatibility rather than duplicating arithmetic. Export MIN_COMPACT_AT_TOKENS from the explicit internal re-export at packages/nax-agent/src/internal.ts:66-70. Schema sharing means execution.compaction.compactAtTokens becomes accepted for existing native consumers; packages/nax/src/config/schemas-execution.ts:191 uses this schema, and packages/nax-agent-acp/src/server/main.ts:137 already forwards compaction. No ACP-owned chat context behavior is changed. Existing tests include nax-agent/test/unit/native/compaction.test.ts, native/session/compaction-settings.test.ts, native/turn-loop-compaction.test.ts, session/native-backend-compaction.test.ts and integration/session/native-manual-compaction.test.ts. The backend test at :54-79 uses a scripted provider and seeded transcript and is a strong seam for the new 1M-window/200k-cap test. Retain tests proving resolveCompaction(undefined) has no cap and the original defaults.\n\nUS-006 native chat composition: packages/nax/src/config/runtime-types.ts:94-95 currently has only the three percentage settings. packages/nax/src/chat/open-chat-session.ts:185-187 reads execution.compaction and :189-210 forwards it via _openChatSessionDeps.nativeBackend, with native/ACP branches separated at :378-390. Override only native chat compactAtTokens by spreading execution.compaction then assigning chatCompactAtTokens(config); a chat value of 0 must replace an execution cap as well. Preserve enabled and percentages, posture, lock, transcript and permissions behavior. packages/nax/src/chat/subagent-session.ts:90-104 independently forwards execution.compaction and must not start consuming chat.compaction. US-006 extends prerequisite schema/types and config/index.ts, creates chat-compaction.ts helpers, and reuses the shared MIN constant/error rule. Omitted chat.compaction gets defaults through helpers, while a present empty block parses its two defaults. Existing option test packages/nax/test/unit/chat/open-chat-session.test.ts:150-154 uses nested objectContaining for enabled:false, so the added cap is additive. packages/nax/test/unit/config/execution-compaction-shared-schema.test.ts:12-35 anchors shared defaults/ranges/messages. No config-file migration is needed: absence remains accepted, chat gains defaults 200000/55, 0 explicitly disables each mechanism, and execution/subagents retain no cap unless configured.\n\nUS-007 idle lifecycle and CLI propagation: reuse compactTurn at packages/nax/src/tui/chat/ChatApp.tsx:962-999, which claims sending/current busy state, draws compacting/result notices, updates contextTokens, catches errors, and releases/drains the turn slot. Do not bypass it with a direct background host.compact call. ChatAppProps is at :87-104; an omitted idleCompactAfterMs is 0/off for direct renders. The command enables the configured/default delay by threading the loaded config into screenProps/runShell: packages/nax/src/cli/chat.ts:155-164 currently builds props without config, :167-210 calls deps.renderChat, and :407 calls runShell after config-dependent host composition. Exported isChatAcpModel already appears in chat/index.ts:12. The new hook must use the first running job, the existing footer contextTokens, !turnRunning and current model, with latest note/compact callbacks in refs. Keep one compactor per mounted hook and dispose it on unmount; rerenders must not restart its timer or reset its fired-job history. Switching qualifying jobs restarts the delay for the new job, while any loss of eligibility cancels it. Record fired before invoking callbacks, including failed compaction, to prevent retry loops. Existing /compact UI tests cover unavailable/busy, context updates and slot cleanup; reuse those patterns and the available packages/nax/test/helpers/timer-spy.ts rather than real waits. Add fake-time hook tests, a real ChatApp frame assertion and CLI deps.renderChat propagation assertion.\n\nFailure handling and verification: acceptance criteria explicitly enumerate absent/unreadable status/PRD/ledger, log-tail rejection, terminal races, idle compaction failure/no retry and cap 0. Additional inferred hardening assertions are segregated into suggestedCriteria, not silently promoted to spec ACs. Every story includes behavioral tests as implementation work, not standalone testing stories. Run targeted package-scoped Bun tests during implementation (never bare bun test or bun run nax); nax-agent regression tests must be demonstrated failing against old code. Typecheck/lint/build/coverage policies remain repository gates, not acceptance criteria, and coverage must not be manually run inside NAX_SANDBOXED=1. Session/token compaction stories use strict three-session-tdd per the requested session/token override; display-only stories use standard TDD routing. Second-pass self-audit: compared every numbered-by-order spec assertion in .nax/features/chat-job-panel/spec.md:436-579 with its same-story acceptanceCriteria: US-001 1-20, US-002 1-22, US-003 1-22, US-004 1-15, US-005 1-15, US-006 1-14 and US-007 1-16, totaling all 124 explicit spec ACs. Each remains in its original story and order, including default-percentages, re-attached, across-refresh-ticks, no-onChange, no-restart, later-idle-period and input-unchanged qualifications. No deprecated file-content AC tags occur. The failure table at spec.md:255-261 is also represented: source failures in US-001, terminal final refresh in US-003, failed idle compaction/no retry in US-007, and cap 0 in US-005. Negative paths already exist in every story: rejected/missing reads (001), zero-total/absent-section/colour-off layouts (002), absent jobs/ended-before-mount/deferred append (003), unparseable time and unsuccessful statuses (004), invalid schema/disabled compaction (005), invalid config/zero switches (006), and ineligibility/disposal/failure (007). Added only the requested regression anchors for unchanged readRunProgress projection and omitted idle prop behavior; clarified the subagent AC's default uncapped execution precondition so it does not prohibit a separately configured execution cap. Reduced US-001 to medium/tdd-simple and US-005 to medium with the mandatory session TDD override; only the concurrent live hook and idle lifecycle remain complex. All seven binding dependency arrays and all eleven verbatim feature exclusions remain unchanged. Critical spec context paths are aligned, with US-006's external merge prerequisite explicitly gated rather than invented as new output. This PRD drafting step changes no runtime code and cannot execute tests with the supplied file-only tools.",
+  "outOfScope": [
+    "A pending-ask section in the job panel; run asks keep reaching the chat as today's notices and cards.",
+    "Any change to the footer job strip or a footer idle-time readout; `chat-status.ts` stays as it is.",
+    "Turn end times for a resumed session's replayed history.",
+    "A reason on the automatic token-cap compaction's transcript row; only the idle compaction names its reason.",
+    "Keep-warm pings to hold the prompt cache.",
+    "Compaction for ACP chat agents, chat subagents, and `nax run` story sessions (they keep `execution.compaction`).",
+    "Idle compaction when no job is running.",
+    "Making `JOB_PANEL_LOG_LINES`, `JOB_PANEL_REFRESH_MS` or `IDLE_COMPACT_MIN_TOKENS` configurable.",
+    "Adding the panel content to the agent's context.",
+    "A turn-end row for a send that rejects before any `turn_end` event.",
+    "A row cap for the `stories` section (a PRD's story count is already bounded by the planner)."
+  ],
+  "routingProfile": "native-codex-dsm"
+}
