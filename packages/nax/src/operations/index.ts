@@ -37,6 +37,8 @@ export type {
   FullSuiteGateStatus,
 } from "./full-suite-gate";
 export { _fullSuiteGateDeps, fullSuiteGateOp } from "./full-suite-gate";
+export type { CheckInterruption } from "./gate-interruption";
+export { earlyStopEvidence } from "./gate-interruption";
 export type { LintCheckDeps, LintCheckInput, LintCheckOutput } from "./lint-check";
 export { _lintCheckDeps, lintCheckOp } from "./lint-check";
 export type { OpModelPreview } from "./op-model-preview";
@@ -77,14 +79,13 @@ export { _verifyScopedDeps, verifyScopedOp } from "./verify-scoped";
 export type { WorkflowBranchFixInput } from "./workflow-branch-fix";
 export { workflowBranchFixOp } from "./workflow-branch-fix";
 export type { WorkflowBranchReviewInput } from "./workflow-branch-review";
-export { workflowBranchReviewOp } from "./workflow-branch-review";
+export { _branchReviewRetryDeps, workflowBranchReviewOp } from "./workflow-branch-review";
 export type { WorkflowImplementInput } from "./workflow-implement";
 export { WORKFLOW_WRITE_TOOLS, workflowImplementOp } from "./workflow-implement";
 export type { WorkflowReReviewInput } from "./workflow-re-review";
 export { workflowReReviewOp } from "./workflow-re-review";
 export { workflowRepairOp } from "./workflow-repair";
 export {
-  isBranchQualityFloor,
   parseBranchReviewReply,
   parseImplementerReply,
   parseReReviewReply,

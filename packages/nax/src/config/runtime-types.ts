@@ -8,6 +8,7 @@
 import type { QualityCommandSpec, SandboxConfig } from "@nathapp/nax-agent/internal";
 import type { ConstitutionConfig } from "@/constitution/types";
 import type { ReviewConfig } from "@/review/types";
+import type { GateStallPolicy } from "@/utils/gate-stall";
 import type { AgentConfig, GenerateConfig } from "./runtime-types-agent";
 import type { AutoRouteConfig } from "./runtime-types-auto-route";
 import type { ContextConfig } from "./runtime-types-context";
@@ -139,6 +140,12 @@ export type { InstallConfig } from "./runtime-types-execution";
 export interface QualityConfig {
   /** Threshold for scoped test strategy — when changed source files exceed this count, fall back to full suite */
   scopeTestThreshold?: number;
+  /**
+   * Stall detection for spawned gate commands (US-002). Optional and additive:
+   * `DEFAULT_CONFIG` always supplies it, and each detector is disabled by its
+   * zero value — no separate enable switch.
+   */
+  stallDetection?: GateStallPolicy;
   /** Custom quality commands */
   commands: {
     typecheck?: QualityCommandSpec;

@@ -88,11 +88,17 @@ export function buildWorkflowReviewJsonRetryCondensed(): string {
   return 'Your reply was cut off. Re-send a shorter version: keep every finding but shorten "issue" and "suggestion" to one sentence each. Only the JSON object.';
 }
 
+/**
+ * One remedy sentence per mismatch kind — "name the missing work, or correct the verdict". Shared by
+ * the story review's retry and the branch review's one clarification (US-012): the two reviewers are
+ * asked the same question, so they get the same words.
+ */
+export const VERDICT_MISMATCH_SENTENCES: Record<VerdictMismatch, string> = {
+  spec: "You returned spec: fail but no critical or important spec finding. Either name the acceptance criterion that fails as a finding, or change the verdict to pass.",
+  quality:
+    "You returned quality: changes but no critical or important finding. Either name the defect as a finding, or change the verdict to approved.",
+};
+
 export function buildWorkflowVerdictMismatchRetry(mismatch: readonly VerdictMismatch[]): string {
-  const messages: Record<VerdictMismatch, string> = {
-    spec: "You returned spec: fail but no critical or important spec finding. Either name the acceptance criterion that fails as a finding, or change the verdict to pass.",
-    quality:
-      "You returned quality: changes but no critical or important finding. Either name the defect as a finding, or change the verdict to approved.",
-  };
-  return [...mismatch.map((kind) => messages[kind]), buildWorkflowReviewJsonRetry()].join("\n");
+  return [...mismatch.map((kind) => VERDICT_MISMATCH_SENTENCES[kind]), buildWorkflowReviewJsonRetry()].join("\n");
 }

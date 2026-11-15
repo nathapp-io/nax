@@ -6,6 +6,7 @@
 
 /** Verification scope: what tests to run */
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
+import type { GateStallPolicy, GateStopReason } from "../utils/gate-stall";
 
 /** Verification scope: what tests to run */
 export type VerificationScope = "scoped" | "full" | "regression";
@@ -28,6 +29,11 @@ export interface TestExecutionResult {
   killed?: boolean;
   childProcessesKilled?: boolean;
   countsTowardEscalation: boolean;
+  /**
+   * Present only when the stall detector ended the invocation — absent on a
+   * wall timeout, a normal exit, a stream error and a drain-deadline expiry.
+   */
+  stopReason?: GateStopReason;
 }
 
 /** Test output analysis (parsed) — implementation in src/test-runners/types */
@@ -57,6 +63,15 @@ export interface VerificationResult {
   exitCode?: number;
   /** Final shell command actually executed (post buildTestCommand wrap). */
   command?: string;
+  /**
+   * Interruption evidence, carried independently of `status` (US-004). On a
+   * single-command run it is the executor's detector reason; on a command list it
+   * is the FIRST detector reason in command order, and it is absent when no entry
+   * was stopped. Its presence — not the aggregate `status` — marks the run as
+   * interrupted, so a mixed list whose first failure was an ordinary code failure
+   * still says it was stopped.
+   */
+  stopReason?: GateStopReason;
 }
 
 /** Verification gate options */
@@ -87,4 +102,9 @@ export interface VerificationGateOptions {
   scopedTestPaths?: string[];
   /** Scoped test command template with {{files}} placeholder — overrides buildSmartTestCommand heuristic */
   testScopedTemplate?: QualityCommandSpec;
+  /**
+   * Stall-detection policy for every command in this gate (US-002/US-003).
+   * Absent means no detector at all — the executor creates no monitor.
+   */
+  stallDetection?: Partial<GateStallPolicy>;
 }

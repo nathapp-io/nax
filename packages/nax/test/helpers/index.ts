@@ -219,6 +219,7 @@ export {
 } from "./session-tmp-deps";
 export type { FakeProcSpec, SpawnCall, SpawnResult, SpawnStub } from "./spawn";
 export { makeSpawn, makeSpawnResult } from "./spawn";
+export { repeatedLinesStream, STALL_REPEAT_LINE, stalledProc } from "./stall-spawn";
 export { type MockStatusWriter, makeStatusWriter } from "./status-writer";
 export { eventsFromResult, streamFromComplete, withDerivedStream } from "./stream-from-complete";
 export { cleanupTempDir, makeTempDir, withTempDir } from "./temp";

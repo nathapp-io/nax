@@ -22,6 +22,8 @@ export { mergePackageConfig } from "./merge";
 export { deepMergeConfig } from "./merger";
 export { loadConfigForPackage } from "./package-config";
 export { packageConfigCache } from "./package-config-cache";
+export type { DeclaredStallDetection } from "./package-layer";
+export { parseDeclaredStallDetection } from "./package-layer";
 export { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "./path-security";
 export {
   featureDir,
@@ -125,6 +127,7 @@ export {
   ExecutionConfigSchema,
   RectificationConfigSchema,
   RegressionGateConfigSchema,
+  SparseStallDetectionConfigSchema,
   TddConfigSchema,
 } from "./schemas-execution";
 export type { AgentRoutingConfig, AgentRoutingProfile } from "./schemas-infra";

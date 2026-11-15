@@ -50,7 +50,15 @@ describe("runRepoGates", () => {
 
     await runRepoGates(fc);
 
-    expect(seen).toEqual([[{ name: "test", command: "root test", cwd: fc.projectDir }]]);
+    const expected: GateCommand[] = [
+      {
+        name: "test",
+        command: "root test",
+        cwd: fc.projectDir,
+        stallDetection: DEFAULT_CONFIG.quality.stallDetection,
+      },
+    ];
+    expect(seen).toEqual([expected]);
   });
 
   test("runs the gates inside the quiet-quality scope (the step line says the result)", async () => {

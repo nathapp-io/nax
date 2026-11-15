@@ -11,6 +11,7 @@ import { getSafeLogger } from "../logger";
 import { getContextFiles, type UserStory } from "../prd";
 import { type QualityCommandResult, runQualityCommand } from "../quality";
 import { findPackageDir } from "../test-runners/resolver";
+import type { GateStallPolicy } from "../utils/gate-stall";
 import { gitWithTimeout } from "../utils/git";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import type { LintOutputFormat } from "./lint-parsing";
@@ -38,6 +39,12 @@ interface ScopedLintArgs {
   stripEnvVars?: string[];
   naxIgnoreIndex?: NaxIgnoreIndex;
   scope?: AutofixLintScope;
+  /**
+   * The stall policy every lint command this module runs carries (US-008). One
+   * value for all four arms — template, derived, full-lint and degraded — so the
+   * arm a scope happens to resolve to cannot change how the command is observed.
+   */
+  stallDetection?: Partial<GateStallPolicy>;
 }
 
 interface ScopeResult {
@@ -204,14 +211,16 @@ async function runLintCommand(
   env: Record<string, string | undefined> | undefined,
   command: QualityCommandSpec,
   stripEnvVars?: string[],
+  stallDetection?: Partial<GateStallPolicy>,
 ): Promise<QualityCommandResult> {
-  return runQualityCommand({
+  return _scopedLintDeps.runQualityCommand({
     commandName: SCOPED_LINT_CHECK,
     command,
     workdir,
     storyId,
     env,
     stripEnvVars,
+    stallDetection,
   });
 }
 
@@ -269,6 +278,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
         args.env,
         fullLintCommand,
         args.stripEnvVars,
+        args.stallDetection,
       );
       return withLintScope(
         attachLintFindings(toReviewCheck(fullResult), args.lintOutputFormat, args.workdir),
@@ -306,6 +316,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
       args.env,
       scopedCommand,
       args.stripEnvVars,
+      args.stallDetection,
     );
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
@@ -318,6 +329,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
       args.env,
       scopedCommand,
       args.stripEnvVars,
+      args.stallDetection,
     );
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
@@ -333,7 +345,23 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     args.env,
     fullLintCommand,
     args.stripEnvVars,
+    args.stallDetection,
   );
+  // Interruption evidence outranks the diagnostics: a detector stop (repeated
+  // output, configured silence) or a wall timeout leaves a PARTIAL capture, and
+  // a list-valued command reports the first step's exit code while an entry that
+  // was stopped is recorded only in `timedOut`/`stopReason`. Filtering that
+  // capture down to in-scope lines could report an interrupted list as a clean
+  // out-of-scope pass, so the degradation path keeps the red/fail-fast verdict —
+  // and never parses a stopped run as if it were a completed diagnostic report.
+  if (fullResult.timedOut === true || fullResult.stopReason !== undefined) {
+    logger?.warn("review", "lint_scope_degraded", {
+      storyId: args.storyId,
+      reason: "interrupted",
+    });
+    return withLintScope(toReviewCheck(fullResult), scope, "degraded");
+  }
+
   if (fullResult.exitCode === 0) return withLintScope(toReviewCheck(fullResult), scope, "degraded");
 
   const parsed = parseLintOutput(fullResult.output, args.lintOutputFormat ?? "auto", {
@@ -386,5 +414,11 @@ export const _scopedLintDeps = {
   listChangedFiles,
   findPackageDir,
   runLintCommand,
+  /**
+   * What `runLintCommand` delegates to — a plain delegation, like
+   * `_qualityGateDeps.run`, so a test can keep the real helper and observe the
+   * options (the stall policy included) that reach command execution.
+   */
+  runQualityCommand,
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
 };

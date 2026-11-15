@@ -232,6 +232,22 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
     });
   });
 
+  describe("US-002: quality.stallDetection is carried by the root quality literal", () => {
+    // A whole-object Zod default returns its literal as given, so a root
+    // `quality` literal that omitted the block would leave
+    // `NaxConfigSchema.parse({}).quality.stallDetection` absent even though the
+    // field itself declares a default. Pin the block on both surfaces.
+    test("AC-9: DEFAULT_CONFIG and NaxConfigSchema.parse({}) both expose the default stall policy", () => {
+      const policy = { repeatedLineThreshold: 100, silenceTimeoutSeconds: 0 };
+      assertDefined(DEFAULT_CONFIG.quality.stallDetection, "DEFAULT_CONFIG.quality.stallDetection");
+      expect(DEFAULT_CONFIG.quality.stallDetection).toEqual(policy);
+
+      const parsed = NaxConfigSchema.parse({});
+      assertDefined(parsed.quality.stallDetection, "parsed quality.stallDetection");
+      expect(parsed.quality.stallDetection).toEqual(policy);
+    });
+  });
+
   describe("issue #1338: review.adversarial default is schema-derived (no hand-copied drift)", () => {
     test("DEFAULT_CONFIG.review.adversarial equals the schema default (aside from schema-optional substantiation)", () => {
       const schemaDefault = AdversarialReviewConfigSchema.parse({});

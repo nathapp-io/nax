@@ -121,12 +121,6 @@
         "cannotVerify": [],
         "findings": [
           {
-            "id": "B1",
-            "issue": "quality: reviewer reported changes without a finding",
-            "kind": "quality",
-            "severity": "important"
-          },
-          {
             "issue": "naming nit",
             "kind": "quality",
             "severity": "minor"
@@ -139,6 +133,10 @@
       }
     },
     {
+      "kind": "ledger",
+      "text": "branch review verdict inconsistent: quality changes without a blocking finding"
+    },
+    {
       "data": {
         "durationMs": 0,
         "step": "branch-review",
@@ -146,7 +144,7 @@
       },
       "kind": "log",
       "level": "info",
-      "message": "branch-review: spec pass, quality changes - 1 important, 1 minor (B1 quality: reviewer reported changes without a finding, naming nit)  <dur>"
+      "message": "branch-review: spec pass, quality changes - 1 minor (naming nit)  <dur>"
     },
     {
       "kind": "update",
@@ -156,20 +154,16 @@
         "gateFindings": [],
         "minors": [],
         "newMinors": ["naming nit"],
-        "nextFindingId": 2,
+        "nextFindingId": 1,
         "reasons": [],
         "repoGates": {
           "failing": [],
           "ran": ["build", "test"]
         },
-        "reviewOpen": [
-          {
-            "id": "B1",
-            "issue": "quality: reviewer reported changes without a finding",
-            "kind": "quality",
-            "severity": "important"
-          }
-        ],
+        "reviewMismatch": {
+          "kinds": ["quality"]
+        },
+        "reviewOpen": [],
         "reviewRan": true,
         "rulings": [],
         "seed": "seed0",
@@ -197,94 +191,24 @@
       "value": "h2"
     },
     {
-      "kind": "ledger",
-      "options": {
-        "mirror": false
-      },
-      "text": "branch fix: 1 item(s): B1"
-    },
-    {
-      "data": {
-        "step": "branch-fix",
-        "storyId": "_run"
-      },
-      "kind": "log",
-      "level": "info",
-      "message": "branch-fix start"
-    },
-    {
-      "args": [
-        [
-          {
-            "id": "B1",
-            "issue": "quality: reviewer reported changes without a finding",
-            "kind": "quality",
-            "severity": "important"
-          }
-        ]
-      ],
-      "kind": "call",
-      "method": "branchFix"
-    },
-    {
-      "kind": "return",
-      "method": "branchFix",
-      "value": {
-        "autoCommitted": false,
-        "dirty": false,
-        "reply": {
-          "commits": [],
-          "interrupted": false,
-          "status": "DONE",
-          "testSummary": ""
-        }
-      }
-    },
-    {
-      "data": {
-        "durationMs": 0,
-        "step": "branch-fix",
-        "storyId": "_run"
-      },
-      "kind": "log",
-      "level": "info",
-      "message": "branch-fix: B1  <dur>"
-    },
-    {
-      "args": [],
-      "kind": "call",
-      "method": "head"
-    },
-    {
-      "kind": "return",
-      "method": "head",
-      "value": "h3"
-    },
-    {
       "kind": "update",
       "record": {
         "cannotVerify": [],
-        "fixBase": "h2",
-        "fixRan": true,
-        "fixRounds": 1,
+        "fixRan": false,
         "gateFindings": [],
-        "lastHead": "h3",
+        "lastHead": "h2",
         "minors": [],
         "newMinors": ["naming nit"],
-        "nextFindingId": 2,
+        "nextFindingId": 1,
         "reasons": [],
         "repoGates": {
           "failing": [],
           "ran": ["build", "test"]
         },
-        "reviewOpen": [
-          {
-            "id": "B1",
-            "issue": "quality: reviewer reported changes without a finding",
-            "kind": "quality",
-            "severity": "important"
-          }
-        ],
+        "reviewMismatch": {
+          "kinds": ["quality"]
+        },
+        "reviewOpen": [],
         "reviewRan": true,
         "rulings": [],
         "seed": "seed0",
@@ -303,86 +227,22 @@
       "step": "branch-rereview"
     },
     {
-      "data": {
-        "step": "branch-rereview",
-        "storyId": "_run"
-      },
-      "kind": "log",
-      "level": "info",
-      "message": "branch-rereview start"
-    },
-    {
-      "args": [
-        [
-          {
-            "id": "B1",
-            "issue": "quality: reviewer reported changes without a finding",
-            "kind": "quality",
-            "severity": "important"
-          }
-        ],
-        "h2"
-      ],
-      "kind": "call",
-      "method": "branchReReview"
-    },
-    {
-      "kind": "return",
-      "method": "branchReReview",
-      "value": {
-        "ran": true,
-        "verdict": {
-          "newFindings": [],
-          "verdicts": [
-            {
-              "addressed": true,
-              "id": "B1",
-              "note": ""
-            }
-          ]
-        }
-      }
-    },
-    {
-      "kind": "artifact",
-      "name": "branch-rereview.json",
-      "value": {
-        "newFindings": [],
-        "verdicts": [
-          {
-            "addressed": true,
-            "id": "B1",
-            "note": ""
-          }
-        ]
-      }
-    },
-    {
-      "data": {
-        "durationMs": 0,
-        "step": "branch-rereview",
-        "storyId": "_run"
-      },
-      "kind": "log",
-      "level": "info",
-      "message": "branch-rereview: B1 addressed; minors left: 1  <dur>"
-    },
-    {
       "kind": "update",
       "record": {
         "cannotVerify": [],
-        "fixBase": "h2",
-        "fixRan": true,
-        "fixRounds": 1,
+        "fixRan": false,
         "gateFindings": [],
-        "lastHead": "h3",
+        "lastHead": "h2",
         "minors": [],
         "newMinors": ["naming nit"],
-        "nextFindingId": 2,
+        "nextFindingId": 1,
         "reasons": [],
         "repoGates": {
           "failing": [],
           "ran": ["build", "test"]
+        },
+        "reviewMismatch": {
+          "kinds": ["quality"]
         },
         "reviewOpen": [],
         "reviewRan": true,
@@ -407,18 +267,19 @@
       "kind": "update",
       "record": {
         "cannotVerify": [],
-        "fixBase": "h2",
-        "fixRan": true,
-        "fixRounds": 1,
+        "fixRan": false,
         "gateFindings": [],
-        "lastHead": "h3",
+        "lastHead": "h2",
         "minors": [],
         "newMinors": ["naming nit"],
-        "nextFindingId": 2,
+        "nextFindingId": 1,
         "reasons": [],
         "repoGates": {
           "failing": [],
           "ran": ["build", "test"]
+        },
+        "reviewMismatch": {
+          "kinds": ["quality"]
         },
         "reviewOpen": [],
         "reviewRan": true,
@@ -441,22 +302,6 @@
       "step": "final-gates"
     },
     {
-      "args": [],
-      "kind": "call",
-      "method": "repoGates"
-    },
-    {
-      "kind": "return",
-      "method": "repoGates",
-      "value": {
-        "findings": [],
-        "summary": {
-          "failing": [],
-          "ran": ["build", "test"]
-        }
-      }
-    },
-    {
       "data": {
         "durationMs": 0,
         "step": "final-gates",
@@ -464,7 +309,7 @@
       },
       "kind": "log",
       "level": "info",
-      "message": "final-gates green  <dur>"
+      "message": "final-gates green (no fix ran; repo-gates reused)  <dur>"
     },
     {
       "kind": "update",
@@ -474,18 +319,19 @@
           "failing": [],
           "ran": ["build", "test"]
         },
-        "fixBase": "h2",
-        "fixRan": true,
-        "fixRounds": 1,
+        "fixRan": false,
         "gateFindings": [],
-        "lastHead": "h3",
+        "lastHead": "h2",
         "minors": [],
         "newMinors": ["naming nit"],
-        "nextFindingId": 2,
+        "nextFindingId": 1,
         "reasons": [],
         "repoGates": {
           "failing": [],
           "ran": ["build", "test"]
+        },
+        "reviewMismatch": {
+          "kinds": ["quality"]
         },
         "reviewOpen": [],
         "reviewRan": true,
@@ -516,18 +362,19 @@
             "failing": [],
             "ran": ["build", "test"]
           },
-          "fixBase": "h2",
-          "fixRan": true,
-          "fixRounds": 1,
+          "fixRan": false,
           "gateFindings": [],
-          "lastHead": "h3",
+          "lastHead": "h2",
           "minors": [],
           "newMinors": ["naming nit"],
-          "nextFindingId": 2,
+          "nextFindingId": 1,
           "reasons": [],
           "repoGates": {
             "failing": [],
             "ran": ["build", "test"]
+          },
+          "reviewMismatch": {
+            "kinds": ["quality"]
           },
           "reviewOpen": [],
           "reviewRan": true,
@@ -567,7 +414,7 @@
     {
       "kind": "return",
       "method": "head",
-      "value": "h6"
+      "value": "h3"
     },
     {
       "data": {
@@ -594,7 +441,7 @@
     {
       "kind": "return",
       "method": "head",
-      "value": "h6"
+      "value": "h3"
     },
     {
       "kind": "update",
@@ -606,15 +453,13 @@
           "failing": [],
           "ran": ["build", "test"]
         },
-        "fixBase": "h2",
-        "fixRan": true,
-        "fixRounds": 1,
+        "fixRan": false,
         "gateFindings": [],
-        "head": "h6",
-        "lastHead": "h6",
+        "head": "h3",
+        "lastHead": "h3",
         "minors": [],
         "newMinors": ["naming nit"],
-        "nextFindingId": 2,
+        "nextFindingId": 1,
         "outcome": "ready",
         "passed": true,
         "pushFailed": false,
@@ -622,6 +467,9 @@
         "repoGates": {
           "failing": [],
           "ran": ["build", "test"]
+        },
+        "reviewMismatch": {
+          "kinds": ["quality"]
         },
         "reviewOpen": [],
         "reviewRan": true,
@@ -662,15 +510,13 @@
         "failing": [],
         "ran": ["build", "test"]
       },
-      "fixBase": "h2",
-      "fixRan": true,
-      "fixRounds": 1,
+      "fixRan": false,
       "gateFindings": [],
-      "head": "h6",
-      "lastHead": "h6",
+      "head": "h3",
+      "lastHead": "h3",
       "minors": [],
       "newMinors": ["naming nit"],
-      "nextFindingId": 2,
+      "nextFindingId": 1,
       "outcome": "ready",
       "passed": true,
       "pushFailed": false,
@@ -678,6 +524,9 @@
       "repoGates": {
         "failing": [],
         "ran": ["build", "test"]
+      },
+      "reviewMismatch": {
+        "kinds": ["quality"]
       },
       "reviewOpen": [],
       "reviewRan": true,

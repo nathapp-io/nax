@@ -10,6 +10,7 @@ import type { LintOutputFormat, LintParseResult } from "../review/lint-parsing";
 import { parseLintOutput } from "../review/lint-parsing";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { resolveGateCwd } from "./gate-cwd";
+import { type CheckInterruption, interruptionEvidence, interruptionNote } from "./gate-interruption";
 import { GATE_OUTPUT_TAIL_LINES, gateOutputTail } from "./gate-output-tail";
 import type { CallContext, DeterministicOperation } from "./types";
 
@@ -25,7 +26,7 @@ export interface LintCheckInput {
   readonly sessionScratchDir?: string;
 }
 
-export interface LintCheckOutput {
+export interface LintCheckOutput extends CheckInterruption {
   readonly success: boolean;
   readonly status?: "passed" | "skipped";
   readonly findings: Finding[];
@@ -133,6 +134,9 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       workdir: cmdWorkdir,
       storyId: input.storyId,
       stripEnvVars: quality?.stripEnvVars ?? [],
+      // Resolved AFTER provenance, so a manifest-detected command runs under the
+      // same policy the package view resolved for the package it belongs to.
+      stallDetection: quality?.stallDetection,
     });
 
     if (result.exitCode === 0) {
@@ -157,13 +161,15 @@ export const lintCheckOp: DeterministicOperation<LintCheckInput, LintCheckOutput
       severity: "error",
       category: "lint-failure",
       // Key only when DECLARED, shell string always -- see typecheck-check.ts.
-      message: `lint failed (no structured findings parsed), please re-run the lint check: ${
+      message: `lint ${
+        result.timedOut ? `was interrupted (${interruptionNote(result)})` : "failed (no structured findings parsed)"
+      }, please re-run the lint check: ${
         detectedFromPackage
           ? `\`${command}\``
           : `RunCommand {"command": "lint"} if that tool is available to you, otherwise \`${command}\``
       }${tail ? `\n\nOutput (last ${GATE_OUTPUT_TAIL_LINES} lines):\n${tail}` : ""}`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
-    return { success: false, findings, durationMs: Date.now() - start };
+    return { success: false, findings, durationMs: Date.now() - start, ...interruptionEvidence(result) };
   },
 };

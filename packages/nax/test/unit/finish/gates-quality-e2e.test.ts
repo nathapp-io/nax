@@ -84,6 +84,7 @@ describe("resolveGateCommands — e2e", () => {
         command: "bunx playwright test",
         cwd: "/repo",
         setup: "docker compose up -d",
+        stallDetection: DEFAULT_CONFIG.quality.stallDetection,
       },
     ]);
   });
@@ -112,6 +113,7 @@ describe("resolveGateCommands — e2e", () => {
         command: "bunx playwright test",
         cwd: "/repo/apps/web",
         setup: "docker compose -f web.yml up -d",
+        stallDetection: DEFAULT_CONFIG.quality.stallDetection,
       },
     ]);
   });
@@ -129,7 +131,13 @@ describe("resolveGateCommands — e2e", () => {
     const commands = await resolveGateCommands("/repo", ["."]);
 
     expect(commands).toEqual([
-      { name: "e2e", command: "bunx playwright test", cwd: "/repo", setup: "docker compose up -d" },
+      {
+        name: "e2e",
+        command: "bunx playwright test",
+        cwd: "/repo",
+        setup: "docker compose up -d",
+        stallDetection: DEFAULT_CONFIG.quality.stallDetection,
+      },
     ]);
   });
 });

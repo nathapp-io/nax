@@ -16,11 +16,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeNaxConfig, makeTempDir, withEnvVars } from "@test/helpers";
-import { createConfigLoader, loadConfigForWorkdir, loadPackageOverrideWithConfig } from "@/config";
+import { createConfigLoader, DEFAULT_CONFIG, loadConfigForWorkdir, loadPackageOverrideWithConfig } from "@/config";
 import { createConfigWarnDedupe } from "@/config/compat-shims";
 import { _clearRootConfigCache } from "@/config/loader";
 import { validatePackageConfig } from "@/config/package-layer";
 import { NaxError } from "@/errors";
+import { resolveGateCommands } from "@/finish";
 import { addSink, initLogger, resetLogger } from "@/logger";
 import { createPackageRegistry } from "@/runtime/packages";
 
@@ -323,5 +324,138 @@ describe("per-package config validation (US-004)", () => {
 
     const matching = warnings.filter((w) => w.stage === "packages" && w.data?.packageDir === "packages/web");
     expect(matching).toHaveLength(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Whole-branch review B3 — a DECLARED gate-stall policy is validated before
+  // the merge completes it. `mergePackageConfig` fills an absent field from the
+  // root and from the leaf default, so without this an invalid declaration (a
+  // `null` field, a primitive block) became a valid default policy here while
+  // `resolveGateCommands` rejected the very same file.
+  // -------------------------------------------------------------------------
+
+  /** A declared policy block the sparse schema rejects, and how to name it. */
+  const INVALID_DECLARATIONS: [string, unknown][] = [
+    ["a null repeatedLineThreshold", { repeatedLineThreshold: null }],
+    ["a null silenceTimeoutSeconds", { silenceTimeoutSeconds: null }],
+    ["a primitive block", 7],
+    ["a string block", "invalid"],
+    ["repeatedLineThreshold 1", { repeatedLineThreshold: 1 }],
+    ["a negative silenceTimeoutSeconds", { silenceTimeoutSeconds: -7 }],
+  ];
+
+  test.each(INVALID_DECLARATIONS)(
+    "B3: %s is rejected by the registry's package path, not completed to a default",
+    async (_label, declared) => {
+      await writePackageConfig("packages/api", { quality: { stallDetection: declared } });
+
+      const err = await captureError(() => loadOverride());
+
+      expect(err.code).toBe("PER_PACKAGE_PROFILE_INVALID");
+      expect(err.message).toContain('"packages/api"');
+      expect(err.message).toContain("quality.stallDetection");
+    },
+  );
+
+  test.each(INVALID_DECLARATIONS)(
+    "B3: %s is rejected by the workdir package path with the same error",
+    async (_label, declared) => {
+      await writePackageConfig("packages/api", { quality: { stallDetection: declared } });
+
+      const fromWorkdir = await captureError(() =>
+        loadConfigForWorkdir(join(repo, ".nax/config.json"), "packages/api"),
+      );
+      const fromOverride = await captureError(() => loadOverride());
+
+      expect(fromWorkdir.code).toBe(fromOverride.code);
+      expect(fromWorkdir.message).toBe(fromOverride.message);
+    },
+  );
+
+  test("B3: a valid sparse declaration still merges field-wise over the root policy", async () => {
+    const config = makeNaxConfig({
+      quality: { ...DEFAULT_CONFIG.quality, stallDetection: { repeatedLineThreshold: 40, silenceTimeoutSeconds: 0 } },
+    });
+    await writePackageConfig("packages/api", { quality: { stallDetection: { silenceTimeoutSeconds: 5 } } });
+
+    const result = await loadOverride("packages/api", config);
+
+    expect(result?.config.quality.stallDetection).toEqual({ repeatedLineThreshold: 40, silenceTimeoutSeconds: 5 });
+  });
+
+  test("B3: an explicit zero still wins over a non-zero root value", async () => {
+    const config = makeNaxConfig({
+      quality: { ...DEFAULT_CONFIG.quality, stallDetection: { repeatedLineThreshold: 40, silenceTimeoutSeconds: 9 } },
+    });
+    await writePackageConfig("packages/api", { quality: { stallDetection: { silenceTimeoutSeconds: 0 } } });
+
+    const result = await loadOverride("packages/api", config);
+
+    expect(result?.config.quality.stallDetection).toEqual({ repeatedLineThreshold: 40, silenceTimeoutSeconds: 0 });
+  });
+
+  // -------------------------------------------------------------------------
+  // Whole-branch review B3 (re-review follow-up) — the same declaration in a
+  // package-SELECTED PROFILE. The package config file's own block was validated
+  // above, but the profile layers merge in AFTER that check, so a profile's
+  // `silenceTimeoutSeconds: null` was still completed to 0 by
+  // `mergePackageConfig` here while `resolveGateCommands` rejected the same
+  // file. Each profile layer is now validated before it is merged.
+  // -------------------------------------------------------------------------
+
+  /** Write a package config selecting `profile`, and that profile's declaration. */
+  async function writePackageWithProfile(declared: unknown): Promise<void> {
+    await writePackageConfig("packages/api", { profile: "pkg-stall" });
+    await writePackageProfile("packages/api", "pkg-stall", { quality: { stallDetection: declared } });
+  }
+
+  test.each(INVALID_DECLARATIONS)(
+    "B3: a package profile declaring %s is rejected by the registry's package path",
+    async (_label, declared) => {
+      await writePackageWithProfile(declared);
+
+      const err = await captureError(() => loadOverride());
+
+      expect(err.code).toBe("PER_PACKAGE_PROFILE_INVALID");
+      expect(err.message).toContain('"packages/api"');
+      expect(err.message).toContain("quality.stallDetection");
+    },
+  );
+
+  test.each(INVALID_DECLARATIONS)(
+    "B3: a package profile declaring %s is rejected by the workdir package path with the same error",
+    async (_label, declared) => {
+      await writePackageWithProfile(declared);
+
+      const fromWorkdir = await captureError(() =>
+        loadConfigForWorkdir(join(repo, ".nax/config.json"), "packages/api"),
+      );
+      const fromOverride = await captureError(() => loadOverride());
+
+      expect(fromWorkdir.code).toBe(fromOverride.code);
+      expect(fromWorkdir.message).toBe(fromOverride.message);
+    },
+  );
+
+  test("B3: gate resolution rejects a package profile's declaration as the loaders do", async () => {
+    await writePackageWithProfile({ silenceTimeoutSeconds: null });
+
+    const fromWorkdir = await captureError(() => loadConfigForWorkdir(join(repo, ".nax/config.json"), "packages/api"));
+    const fromGates = await captureError(() => resolveGateCommands(repo, ["packages/api"]));
+
+    expect(fromGates.code).toBe(fromWorkdir.code);
+    expect(fromGates.message).toBe(fromWorkdir.message);
+    expect(fromGates.message).toContain("quality.stallDetection");
+  });
+
+  test("B3: a valid sparse profile declaration still overrides the root policy field-wise", async () => {
+    const config = makeNaxConfig({
+      quality: { ...DEFAULT_CONFIG.quality, stallDetection: { repeatedLineThreshold: 40, silenceTimeoutSeconds: 0 } },
+    });
+    await writePackageWithProfile({ silenceTimeoutSeconds: 5 });
+
+    const result = await loadOverride("packages/api", config);
+
+    expect(result?.config.quality.stallDetection).toEqual({ repeatedLineThreshold: 40, silenceTimeoutSeconds: 5 });
   });
 });

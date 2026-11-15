@@ -116,24 +116,33 @@ for (const op of [botPrReviewOp, botPrStaticReviewOp]) {
           max: 3,
         }),
       });
+      // The turn that ANSWERS that coverage prompt (the very next one) covers no
+      // more files than the reply before it, so the no-progress stop applies and
+      // the partial verdict is kept, findings included (US-003). Whole-branch
+      // review B3: only a turn answering coverage's own prompt measures coverage
+      // progress, so this assertion sits immediately after the prompt it answers —
+      // any intervening prompt (a triage or shape repair) takes the turn instead.
+      expect(strategy.shouldRetry(failure, 1, retryCtx(partial))).toEqual({
+        retry: false,
+        fallback: op.parse(partial, value, ctx()),
+      });
+      expect(op.parse(partial, value, ctx())?.findings[0]?.issue).toBe("bug");
+
+      // Independent of that stop: a reply that misses a triage id is the inner
+      // strategy's to re-ask, and coverage never overrules it.
+      const triage = op.retry(value, ctx());
+      if (!triage || !("shouldRetry" in triage)) throw new Error("expected strategy");
       const covered = JSON.stringify({ ...JSON.parse(partial), inspectedFiles: ["/checkout/src/a.ts"] });
-      expect(strategy.shouldRetry(failure, 0, retryCtx(covered))).toEqual({ retry: false });
+      expect(triage.shouldRetry(failure, 0, retryCtx(covered))).toEqual({ retry: false });
       for (const [field, expected] of [
         ["threads", buildBotTriageRetry(["T1", "T2"], [])],
         ["comments", buildBotTriageRetry(["C1"], [])],
         ["earlier", buildBotTriageRetry([], ["E1"])],
       ] as const) {
         expect(
-          strategy.shouldRetry(failure, 0, retryCtx(JSON.stringify({ ...JSON.parse(partial), [field]: [] }))),
+          triage.shouldRetry(failure, 0, retryCtx(JSON.stringify({ ...JSON.parse(partial), [field]: [] }))),
         ).toEqual({ retry: true, delayMs: 0, nextPrompt: expected });
       }
-      // One coverage retry was sent above; this reply covers no more files than that one, so the
-      // no-progress stop applies and the partial verdict is kept, findings included (US-003).
-      expect(strategy.shouldRetry(failure, 1, retryCtx(partial))).toEqual({
-        retry: false,
-        fallback: op.parse(partial, value, ctx()),
-      });
-      expect(op.parse(partial, value, ctx())?.findings[0]?.issue).toBe("bug");
       const optional = op.retry({ ...input, commentIds: ["C1"], earlierIds: ["E1"] }, ctx());
       if (!optional || !("shouldRetry" in optional)) throw new Error("expected strategy");
       expect(optional.shouldRetry(failure, 0, retryCtx(partial))).toEqual({ retry: false });

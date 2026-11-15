@@ -32,14 +32,16 @@ describe("skipped branch re-review (nax#2550)", () => {
   });
 });
 
-describe("branch review quality: changes without a finding (nax#2550)", () => {
-  test("is not clean: a synthetic blocking quality finding is opened and fixed", async () => {
+describe("branch review quality: changes without a finding (nax#2550, US-009)", () => {
+  // US-009: the floor this case used to synthesize is gone — an inconsistent verdict is evidence, so
+  // it opens no finding, spends no B id and dispatches no fix round.
+  test("opens no synthetic finding and dispatches no fix", async () => {
     const h = harness({ review: { ...PASS, quality: "changes" } });
     const final = await runFeatureMachine(h.env);
-    expect(h.calls).toContain("branchFix");
-    expect(h.fixInputs[0]?.map((f) => f.issue)).toEqual(["quality: reviewer reported changes without a finding"]);
-    expect(h.fixInputs[0]?.[0]).toMatchObject({ id: "B1", kind: "quality", severity: "important" });
-    expect(final.nextFindingId).toBe(2);
+    expect(h.calls).not.toContain("branchFix");
+    expect(final.reviewOpen).toEqual([]);
+    expect(final.nextFindingId).toBe(1);
+    expect(final.reviewMismatch).toEqual({ kinds: ["quality"] });
   });
 
   test("a blocking finding already present adds no synthetic one", async () => {

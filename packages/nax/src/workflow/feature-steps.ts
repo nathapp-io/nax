@@ -8,9 +8,8 @@
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { isBranchQualityFloor } from "@/operations";
 import type { StepResult } from "@/step-graph";
-import { describeUnread, featurePassed } from "./approval";
+import { _approvalDeps, describeUnread, featurePassed } from "./approval";
 import { dropKnownRestatements, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
 import { ciRemainingAfterRepair, ciRepairPlan } from "./ci-repair-steps";
@@ -28,6 +27,7 @@ import type {
   MinorItem,
   ReReviewVerdict,
   StorySummary,
+  VerdictMismatch,
   WorkflowFeatureRecord,
   WorkflowFinding,
   WorkflowFindingDraft,
@@ -115,22 +115,37 @@ export async function repoGatesStep(
 }
 
 /**
- * nax#2550: `quality: "changes"` with no blocking finding is not a clean review. A promoted
- * minor is already concrete work, so the synthetic finding is only needed when neither exists.
+ * The draft set the branch review hands the fix loop: the verdict's own blocking findings, plus one
+ * draft per promoted deferred minor. US-009 removed the draft this used to invent for a `changes`
+ * verdict with no blocking finding — a mismatch is evidence, not work, so the step records it as
+ * `reviewMismatch` instead of spending a B id and a fix round on a defect the reviewer never named.
+ * US-011 removed the parser's synthesized quality floor too, so this is the whole rule: what the
+ * reviewer wrote plus what the triage promoted.
  */
-const QUALITY_CHANGES_ISSUE = "quality: reviewer reported changes without a finding";
-function withQualityFloor(
+export function withQualityFloor(
   verdict: BranchReviewVerdict,
   promoted: readonly WorkflowFindingDraft[],
 ): WorkflowFindingDraft[] {
-  const blocking = [
-    ...verdict.findings.filter(
-      (finding) => isBlocking(finding) && !(promoted.length > 0 && isBranchQualityFloor(finding)),
-    ),
-    ...promoted,
+  return [...verdict.findings.filter(isBlocking), ...promoted];
+}
+
+/**
+ * US-009: the mismatch kinds a branch review's verdict carries, derived from the verdict itself —
+ * `verdict.mismatch` is the parser's own metadata and is not consulted, so a verdict injected by a
+ * caller that omits it reads exactly the same. A kind follows the parser's existing definition: a
+ * `spec` fail needs a critical/important spec finding, and a `quality` changes needs any
+ * critical/important finding. Empty, dropped-invalid and minor-only findings justify neither.
+ *
+ * Promoted deferred minors are deliberately not evidence here: they are real work, but they are not
+ * the reviewer's reply, so they cannot make an inconsistent one consistent.
+ */
+export function verdictMismatchKinds(verdict: BranchReviewVerdict): VerdictMismatch[] {
+  return [
+    ...(verdict.spec === "fail" && !verdict.findings.some((f) => f.kind === "spec" && isBlocking(f))
+      ? ["spec" as const]
+      : []),
+    ...(verdict.quality === "changes" && !verdict.findings.some(isBlocking) ? ["quality" as const] : []),
   ];
-  if (verdict.quality !== "changes" || blocking.length > 0) return blocking;
-  return [{ kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE }];
 }
 
 export async function branchReviewStep(
@@ -170,6 +185,13 @@ export async function branchReviewStep(
   const minors = out.verdict.findings.filter((f) => !isBlocking(f));
   // #2496: written here, after assign(), so the file and result.json name findings the same way.
   await env.sink.artifact("branch-review.json", { ...out.verdict, cannotVerify, findings: [...findings, ...minors] });
+  // US-009: an inconsistent verdict is recorded as evidence, not as a work item. The sentences come
+  // from the shared formatter through its seam, so the ledger, the readiness reason US-010 adds and
+  // the published summary read one text rather than three copies of it.
+  const mismatch = verdictMismatchKinds(out.verdict);
+  for (const sentence of _approvalDeps.branchMismatchReasons(mismatch)) {
+    await env.sink.ledger(ledgerText.note(sentence));
+  }
   const deferredTriage =
     rec.minors.length > 0
       ? `; deferred minors: ${promoted.length > 0 ? `${promoted.length} promote, ` : ""}${triagedMinors.filter((m) => m.triage === "fix-now").length} fix-now, ${triagedMinors.filter((m) => m.triage === "leave").length} leave`
@@ -186,6 +208,10 @@ export async function branchReviewStep(
       nextFindingId,
       minors: triagedMinors,
       newMinors: [...rec.newMinors, ...minorIssues(restated.kept)],
+      // US-009: a fresh review is the one step that settles the question, so a consistent verdict
+      // clears what an earlier, inconsistent one recorded — stated as `undefined` to clear it, which
+      // is why the graph node must declare the key.
+      reviewMismatch: mismatch.length > 0 ? { kinds: mismatch } : undefined,
     },
   };
 }

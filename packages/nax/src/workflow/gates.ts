@@ -6,6 +6,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Finding } from "@/findings";
 import {
+  earlyStopEvidence,
   type FullSuiteGateOutput,
   fullSuiteGateOp,
   type LintCheckOutput,
@@ -16,6 +17,7 @@ import {
   verifyScopedOp,
 } from "@/operations";
 import { runQualityQuietly } from "@/quality";
+import type { GateStopReason } from "@/utils/gate-stall";
 import { packageDirRelative } from "@/utils/paths";
 import { type GateReport, logGates } from "./gates-log";
 import { _workflowDeps, type StepContext } from "./step-context";
@@ -32,6 +34,27 @@ const SUITE_RED = new Set(["failed", "execution-failed", "timeout", "inconclusiv
 const SUITE_TIMED_OUT_ISSUE =
   "full suite hit its timeout before finishing (passed-on-timeout): a suite that never completed proves nothing. Find the hang or the test that now runs too long, and fix it.";
 const SUITE_SKIPPED = new Set(["skipped"]);
+
+/**
+ * The stopped-suite issue, naming the detector evidence when there is any (US-004).
+ * The gate's own issue text is the fallback: a wall deadline leaves no reason.
+ */
+function stoppedSuiteIssue(stopReason: GateStopReason | undefined): string {
+  if (stopReason === undefined) return SUITE_TIMED_OUT_ISSUE;
+  return `${SUITE_TIMED_OUT_ISSUE} It was stopped early: ${earlyStopEvidence(stopReason)}.`;
+}
+
+/**
+ * The issue for a mechanical (lint/typecheck) gate that never finished (US-008).
+ * A command the detector stopped, or whose wall deadline expired, produced no
+ * verdict: the parser only ever saw a partial stream, so the gate says why it
+ * ended rather than leaving that silence to read as the whole story.
+ */
+function interruptedCheckIssue(gate: GateName, stopReason: GateStopReason | undefined): string {
+  if (stopReason === undefined)
+    return `${gate} hit its timeout before finishing: a command that never completed proves nothing.`;
+  return `${gate} was stopped early: ${earlyStopEvidence(stopReason)}. The command never completed, so its partial output proves nothing.`;
+}
 
 interface OneGate {
   readonly state: GateState;
@@ -74,9 +97,21 @@ async function guarded(sc: StepContext, gate: GateName, run: () => Promise<OneGa
 
 function fromCheck(gate: GateName, out: LintCheckOutput | TypecheckCheckOutput): OneGate {
   if (out.success) return { state: out.status === "skipped" ? "skipped" : "green", findings: [] };
-  return out.findings.length > 0
-    ? { state: "red", findings: toDrafts(gate, out.findings) }
-    : redWithoutDetail(gate, `${gate} gate failed with no parsed findings`);
+  const base: OneGate =
+    out.findings.length > 0
+      ? { state: "red", findings: toDrafts(gate, out.findings) }
+      : redWithoutDetail(gate, `${gate} gate failed with no parsed findings`);
+  // A command that never finished (a detector stop, or the wall deadline) is not a
+  // verdict on the code: say why it ended, ahead of whatever the partial stream parsed.
+  if (out.timedOut !== true) return base;
+  return {
+    ...base,
+    timedOut: true,
+    findings: [
+      { kind: "gate", gate, severity: "important", issue: interruptedCheckIssue(gate, out.stopReason) },
+      ...base.findings,
+    ],
+  };
 }
 
 function combine(entries: readonly (readonly [GateName, OneGate])[]): GateRunResult {
@@ -170,12 +205,16 @@ export async function runWorkflowSuiteGate(sc: StepContext): Promise<GateRunResu
     });
     if (SUITE_SKIPPED.has(out.status)) return { state: "skipped", findings: [] };
     if (out.status === "passed-on-timeout")
-      return { ...redWithoutDetail("full-suite", SUITE_TIMED_OUT_ISSUE), timedOut: true };
+      return { ...redWithoutDetail("full-suite", stoppedSuiteIssue(out.stopReason)), timedOut: true };
     if (!SUITE_RED.has(out.status)) return { state: "green", findings: [] };
+    const detail =
+      out.stopReason !== undefined
+        ? stoppedSuiteIssue(out.stopReason)
+        : `full suite ${out.status} with no parsed failures`;
     const result: OneGate =
       out.findings.length > 0
         ? { state: "red", findings: toDrafts("full-suite", out.findings) }
-        : redWithoutDetail("full-suite", `full suite ${out.status} with no parsed failures`);
+        : redWithoutDetail("full-suite", detail);
     return out.status === "timeout" ? { ...result, timedOut: true } : result;
   });
   return finish(sc, [suite]);

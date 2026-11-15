@@ -4,6 +4,7 @@ import { _botChecksDeps, barCommands, checkCommands, DERIVED_INSTALL_TIMEOUT_SEC
 import { DEFAULT_CONFIG } from "@/config";
 import { initLogger, resetLogger } from "@/logger";
 import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
+import { DEFAULT_GATE_STALL_POLICY } from "@/utils/gate-stall";
 
 describe("barCommands", () => {
   test("AC-16: flattens string and list gate commands in order", () => {
@@ -41,6 +42,22 @@ describe("barCommands", () => {
     expect(barCommands({ source: "none", gates: [], preRun: [] })).toEqual([]);
   });
 });
+
+/**
+ * US-008: a gate derived from the trusted snapshot input (instruction or
+ * detection tier) carries the input config's resolved stall policy. `input.config`
+ * is `makeNaxConfig()`, so that is the schema default.
+ */
+function trustedGate(
+  name: string,
+  command: string,
+): {
+  name: string;
+  command: string;
+  stallDetection: typeof DEFAULT_GATE_STALL_POLICY;
+} {
+  return { name, command, stallDetection: DEFAULT_GATE_STALL_POLICY };
+}
 
 const original = { ..._botChecksDeps };
 const defaultPreRun = structuredClone(DEFAULT_CONFIG.execution.preRun);
@@ -129,7 +146,7 @@ describe("resolveBotChecks", () => {
     files["AGENTS.md"] = "checks";
     expect(await resolveBotChecks(input)).toEqual({
       source: "agents-md",
-      gates: [{ name: "test", command: "bun run test" }],
+      gates: [trustedGate("test", "bun run test")],
       preRun: [],
     });
   });
@@ -261,30 +278,24 @@ describe("resolveBotChecks detected tier", () => {
     files["bun.lock"] = "";
     expect(await resolveBotChecks(input)).toEqual({
       source: "detected",
-      gates: [
-        { name: "lint", command: "bun run lint" },
-        { name: "test", command: "bun run test" },
-      ],
+      gates: [trustedGate("lint", "bun run lint"), trustedGate("test", "bun run test")],
       preRun: [{ command: "bun install --frozen-lockfile", timeoutSeconds: 600 }],
     });
     expect(_botChecksDeps.runGit).toHaveBeenCalledWith(["show", "base-sha:package.json"], "/repo");
   });
   test.each([
-    ["AC-3", { typecheck: "tsc", "type-check": "other" }, [{ name: "typecheck", command: "npm run typecheck" }]],
+    ["AC-3", { typecheck: "tsc", "type-check": "other" }, [trustedGate("typecheck", "npm run typecheck")]],
     [
       "alias",
       { "type-check": "tsc", build: "compile" },
-      [
-        { name: "build", command: "npm run build" },
-        { name: "typecheck", command: "npm run type-check" },
-      ],
+      [trustedGate("build", "npm run build"), trustedGate("typecheck", "npm run type-check")],
     ],
     [
       "AC-4",
       { lint: "checker", test: 'echo "Error: no test specified" && exit 1' },
-      [{ name: "lint", command: "npm run lint" }],
+      [trustedGate("lint", "npm run lint")],
     ],
-    ["AC-5", { lint: 1, test: "runner" }, [{ name: "test", command: "npm run test" }]],
+    ["AC-5", { lint: 1, test: "runner" }, [trustedGate("test", "npm run test")]],
   ] as const)("US-003 %s: selects usable scripts", async (_ac, scripts, gates) => {
     manifest(scripts);
     expect((await resolveBotChecks(input)).gates).toEqual(gates);
@@ -300,7 +311,7 @@ describe("resolveBotChecks detected tier", () => {
     if (lockfile) files[lockfile] = "";
     expect(await resolveBotChecks(input)).toEqual({
       source: "detected",
-      gates: [{ name: "lint", command: `${prefix} lint` }],
+      gates: [trustedGate("lint", `${prefix} lint`)],
       preRun: install ? [{ command: install, timeoutSeconds: 600 }] : [],
     });
   });
@@ -338,7 +349,7 @@ describe("resolveBotChecks detected tier", () => {
     const order = ["bun.lock", "bun.lockb", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"];
     for (const path of order.slice(order.indexOf(first))) files[path] = "";
     const result = await resolveBotChecks(input);
-    expect(result.gates).toEqual([{ name: "lint", command: `${prefix} lint` }]);
+    expect(result.gates).toEqual([trustedGate("lint", `${prefix} lint`)]);
     expect(result.preRun).toEqual([{ command: install, timeoutSeconds: 600 }]);
   });
   test("no usable gates discards installs, including an unused extraction install", async () => {

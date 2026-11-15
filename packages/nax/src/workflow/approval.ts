@@ -13,6 +13,7 @@ import type {
   StoryState,
   StoryStateItem,
   StorySummary,
+  VerdictMismatch,
   WorkflowRuling,
 } from "./types";
 
@@ -29,6 +30,13 @@ export interface ReadinessFacts {
    * draft — an unread file is a file no one reviewed. Absent or empty adds no reason.
    */
   readonly branchReviewUnread?: readonly string[];
+  /**
+   * US-010: the persisted branch verdict mismatch (`WorkflowFeatureRecord.reviewMismatch`), carried
+   * into readiness unchanged. Each kind's sentence comes from `_approvalDeps.branchMismatchReasons` —
+   * the same seam the branch-review step logs its ledger notes through — so the draft marker, the
+   * open item and the published summary read one text. Absent or empty adds no reason.
+   */
+  readonly branchReviewMismatch?: readonly VerdictMismatch[];
   /** nax#2550: the feature workflow skipped an agent step at the cost limit. */
   readonly costLimited?: boolean;
   /** nax#2706: the story loop hit its iteration limit with stories still pending. */
@@ -51,6 +59,38 @@ const UNAVAILABLE_DEFAULT = "CI status unavailable";
 const PENDING_DEFAULT = "CI still pending after the wait";
 /** US-002: a check whose job never got a runner, when the wait reported no detail of its own. */
 const STARVED_DEFAULT = "CI checks never got a runner";
+
+/**
+ * US-009: the ledger line each verdict-mismatch kind contributes. A mismatch is not a finding — the
+ * reviewer named no defect — so the text says what the verdict claimed and what its evidence lacked,
+ * in the same words wherever it is read.
+ */
+const BRANCH_MISMATCH_REASONS: Readonly<Record<VerdictMismatch, string>> = {
+  spec: "branch review verdict inconsistent: spec fail without a blocking spec finding",
+  quality: "branch review verdict inconsistent: quality changes without a blocking finding",
+};
+
+/** The kinds in the stable order every reader writes them, so `spec` always precedes `quality`. */
+const MISMATCH_ORDER: readonly VerdictMismatch[] = ["spec", "quality"];
+
+/**
+ * US-009: one sentence per mismatch kind, each applicable sentence exactly once, in the stable
+ * `spec` → `quality` order. The branch-review step writes its ledger lines from this and the publish
+ * path reads its readiness reason from the same call, so the one text source cannot drift.
+ */
+export function branchMismatchReasons(kinds: readonly VerdictMismatch[]): string[] {
+  const present = new Set(kinds);
+  return MISMATCH_ORDER.filter((kind) => present.has(kind)).map((kind) => BRANCH_MISMATCH_REASONS[kind]);
+}
+
+/**
+ * US-009: the one seam every consumer of the mismatch text goes through — the branch-review step here
+ * and the publish readiness in US-010. Tests replace a member to observe the call rather than
+ * re-spelling the sentence, which is what kept an inline duplicate possible.
+ */
+export const _approvalDeps: { branchMismatchReasons: (kinds: readonly VerdictMismatch[]) => string[] } = {
+  branchMismatchReasons,
+};
 
 /**
  * US-001 (nax#2569): the reason one CI state contributes, or `undefined` when it blocks nothing. The
@@ -130,6 +170,9 @@ export function readinessReasons(f: ReadinessFacts): string[] {
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),
     ...(unread.length > 0 ? [describeUnread(unread)] : []),
+    // US-010: the sentences come from the shared formatter through its seam, so the reason `publish`
+    // reports is the very text the branch-review step wrote to its ledger.
+    ..._approvalDeps.branchMismatchReasons(f.branchReviewMismatch ?? []),
     ...(f.reReviewSkipped ? [RE_REVIEW_SKIPPED] : []),
     ...(f.costLimited ? [COST_LIMITED] : []),
   ];

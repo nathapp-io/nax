@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeFakeClock, makeSpawn, makeSpawnResult, waitForCondition } from "@test/helpers";
-import { _qualityRunnerDeps, runQualityCommand } from "@/quality/runner";
+import { _qualityRunnerDeps, type QualityCommandResult, runQualityCommand } from "@/quality/runner";
 
 const TIMEOUT_MS = 1_000;
 const GRACE_MS = 5_000;
@@ -25,11 +25,13 @@ let kills: KillCall[];
 let clock: ReturnType<typeof makeFakeClock>;
 let groupAlive: boolean;
 let resolveExited: (code: number) => void;
+let procStdout: ReadableStream<Uint8Array> | undefined;
 
 beforeEach(() => {
   original = { ..._qualityRunnerDeps };
   kills = [];
   groupAlive = true;
+  procStdout = undefined;
   clock = makeFakeClock();
   _qualityRunnerDeps.setTimeout = clock.setTimeout as typeof _qualityRunnerDeps.setTimeout;
   _qualityRunnerDeps.clearTimeout = clock.clearTimeout as typeof _qualityRunnerDeps.clearTimeout;
@@ -47,6 +49,7 @@ beforeEach(() => {
   _qualityRunnerDeps.spawn = makeSpawn(() => {
     const proc = makeSpawnResult({ pid: PID });
     Object.defineProperty(proc, "exited", { value: exited });
+    if (procStdout !== undefined) Object.defineProperty(proc, "stdout", { value: procStdout });
     return proc;
   }).spawn;
 });
@@ -108,5 +111,63 @@ describe("runQualityCommand — SIGKILL after a timeout", () => {
     expect(result.timedOut).toBe(false);
     expect(kills).toEqual([]);
     expect(clock.pending()).toBe(0);
+  });
+});
+
+/**
+ * Whole-branch review B1: the stop-first / exit-before-cleanup ordering. A
+ * detector wins the latch, the leader's exit is observed before the cleanup lane
+ * resumes, and the bare pid may already belong to another process by then. The
+ * SIGTERM therefore carries the same no-fallback rule the SIGKILL and the group
+ * probe already carried.
+ */
+describe("runQualityCommand — SIGTERM after an observed leader exit (B1)", () => {
+  const WALL_MS = 60_000;
+
+  /** Step virtual time until the run settles, through its grace and drains. */
+  async function settle(pending: Promise<QualityCommandResult>): Promise<QualityCommandResult> {
+    let done = false;
+    void pending.then(
+      () => {
+        done = true;
+      },
+      () => {
+        done = true;
+      },
+    );
+    for (let step = 0; step < 200 && !done; step++) await clock.advance(1_000);
+    return await pending;
+  }
+
+  test("does not fall back to the bare pid when the leader exit is observed first", async () => {
+    const encoder = new TextEncoder();
+    let push: (text: string) => void = () => {};
+    procStdout = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (text) => controller.enqueue(encoder.encode(text));
+      },
+    });
+    groupAlive = false;
+
+    const pending = runQualityCommand({
+      commandName: "test",
+      command: "bun test",
+      workdir: "/tmp/project",
+      timeoutMs: WALL_MS,
+      stallDetection: { repeatedLineThreshold: 2 },
+    });
+    await waitForCondition(() => clock.pending() > 0);
+
+    // The repetition settles the latch first; the exit is resolved in the same
+    // turn, so it is observed before the SIGTERM goes out.
+    push("same line\nsame line\n");
+    resolveExited(143);
+
+    const result = await settle(pending);
+
+    expect(result.stopReason).toMatchObject({ kind: "repeated-output" });
+    expect(kills.filter((k) => k.signal === "SIGTERM")).toEqual([{ pid: PID, signal: "SIGTERM", fallback: false }]);
+    // The group probe found nothing, so no SIGKILL and no bare-pid signal.
+    expect(kills.filter((k) => k.signal === "SIGKILL")).toEqual([]);
   });
 });

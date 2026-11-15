@@ -32,7 +32,19 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
     },
     "branch-review": {
       kind: "agent",
-      produces: ["reviewRan", "cannotVerify", "reviewUnread", "reviewOpen", "nextFindingId", "minors", "newMinors"],
+      produces: [
+        "reviewRan",
+        "cannotVerify",
+        "reviewUnread",
+        "reviewOpen",
+        "nextFindingId",
+        "minors",
+        "newMinors",
+        // US-009: the verdict's own inconsistency, recorded as evidence. Declared because the step
+        // also writes the key as `undefined` to clear stale evidence, and the runner rejects any
+        // patched key the node does not produce — stated or not.
+        "reviewMismatch",
+      ],
       transitions: [{ to: "branch-fix" }],
       run: branchReviewStep,
     },

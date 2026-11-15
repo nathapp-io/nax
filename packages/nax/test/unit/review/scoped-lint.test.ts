@@ -6,6 +6,7 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { _reviewGitDeps } from "@/review/runner";
 import { _scopedLintDeps, runScopedLintCheck } from "@/review/scoped-lint";
 import type { ReviewConfig } from "@/review/types";
+import { DEFAULT_GATE_STALL_POLICY, type GateStopReason } from "@/utils/gate-stall";
 import { _gitDeps } from "@/utils/git";
 
 const baseReviewConfig: ReviewConfig = makeConfigSlice("review", {
@@ -263,6 +264,70 @@ describe("runScopedLintCheck", () => {
     expect(result.output).toBe("totally unparseable lint output");
   });
 
+  // Whole-branch review B2 (US-008): a list-valued lint command reports the
+  // FIRST non-zero step's exit code, so "out-of-scope diagnostics, then a step a
+  // detector stopped" arrives as exitCode 1 + timedOut + stopReason. Filtering
+  // that partial capture down to the (empty) in-scope set used to answer
+  // success:true, exitCode:0 — an interrupted command list certified green.
+  test("degraded mode keeps a detector-interrupted mixed list red", async () => {
+    const stopReason = {
+      kind: "repeated-output",
+      stream: "stdout",
+      count: 100,
+      threshold: 100,
+    } satisfies GateStopReason;
+    _scopedLintDeps.runLintCommand = mock(async () => ({
+      commandName: "lint",
+      command: "custom-lint && other-lint",
+      success: false,
+      exitCode: 1,
+      output: "src/out.ts:2:2 error out of scope\n[nax] other-lint stopped early: repeated-output 100x",
+      durationMs: 9,
+      timedOut: true,
+      stopReason,
+    }));
+
+    const result = await runScopedLintCheck({
+      resolvedLintCommand: "custom-lint",
+      configCommands: baseReviewConfig.commands,
+      lintOutputFormat: "auto",
+      workdir: "/repo",
+      storyId: "US-001",
+      storyGitRef: "abc123",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.output).not.toContain("out of story scope");
+    expect(result.output).toContain("stopped early");
+    expect(result.lintScope?.status).toBe("degraded");
+  });
+
+  test("degraded mode keeps a wall-timed-out list red without a stop reason", async () => {
+    _scopedLintDeps.runLintCommand = mock(async () => ({
+      commandName: "lint",
+      command: "custom-lint && other-lint",
+      success: false,
+      exitCode: 1,
+      output: "src/out.ts:2:2 error out of scope",
+      durationMs: 9,
+      timedOut: true,
+    }));
+
+    const result = await runScopedLintCheck({
+      resolvedLintCommand: "custom-lint",
+      configCommands: baseReviewConfig.commands,
+      lintOutputFormat: "auto",
+      workdir: "/repo",
+      storyId: "US-001",
+      storyGitRef: "abc123",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(1);
+    expect(result.lintScope?.status).toBe("degraded");
+  });
+
   // Restored from #2102 — deleting the runAutofixLint shim took the only
   // out_of_scope coverage with it. The shim was a pure forward to
   // runScopedLintCheck, so the same arguments are retargeted here directly.
@@ -355,6 +420,15 @@ describe("runScopedLintCheck", () => {
     expect(result.checks).toHaveLength(1);
     expect(result.checks[0]?.lintScope?.status).toBe("degraded");
     expect(result.checks[0]?.command).toBe("eslint --max-warnings=0");
-    expect(runMock).toHaveBeenCalledWith("/repo", undefined, undefined, "eslint --max-warnings=0", []);
+    // US-008: the policy is the one `runReview` resolved for the whole run — with
+    // no `naxConfig` in scope, the schema defaults (never "no detector").
+    expect(runMock).toHaveBeenCalledWith(
+      "/repo",
+      undefined,
+      undefined,
+      "eslint --max-warnings=0",
+      [],
+      DEFAULT_GATE_STALL_POLICY,
+    );
   });
 });

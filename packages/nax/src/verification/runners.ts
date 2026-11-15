@@ -70,6 +70,9 @@ async function runSingleVerificationCore(
     gracePeriodMs: options.gracePeriodMs,
     drainTimeoutMs: options.drainTimeoutMs,
     cwd: options.workdir,
+    // Opting in is per invocation: an absent policy leaves the executor with no
+    // monitor at all, so nothing but the wall deadline can end this command.
+    stallDetection: options.stallDetection,
   });
 
   if (execution.timeout) {
@@ -81,6 +84,8 @@ async function runSingleVerificationCore(
       output: execution.output,
       exitCode: execution.exitCode,
       command: finalCommand,
+      // A detector stop and a wall deadline share this lane but not this evidence.
+      ...(execution.stopReason !== undefined ? { stopReason: execution.stopReason } : {}),
     };
   }
 
@@ -122,8 +127,24 @@ async function runSingleVerificationCore(
   };
 }
 
+/**
+ * Whether a verification run was interrupted rather than merely failing (US-004).
+ *
+ * The aggregate `status` alone cannot answer this: a command list keeps its first
+ * failing entry's status, so a list whose first failure was an ordinary code
+ * failure still reports `TEST_FAILURE` while a later entry was stopped by the
+ * detector. `stopReason` is the independent evidence, and either signal counts.
+ */
+export function isInterruptedVerification(result: VerificationResult): boolean {
+  return result.status === "TIMEOUT" || result.stopReason !== undefined;
+}
+
 function aggregateVerificationResults(results: VerificationResult[]): VerificationResult {
   const firstFailure = results.find((result) => !result.success);
+  // Interruption evidence rides independently of the aggregate (US-004): the
+  // first detector reason in command order, absent when no entry was stopped.
+  // Nothing below changes — a list's historical raw aggregation is preserved.
+  const stopReason = results.find((result) => result.stopReason !== undefined)?.stopReason;
   return {
     status: firstFailure?.status ?? "SUCCESS",
     success: results.every((result) => result.success),
@@ -136,6 +157,7 @@ function aggregateVerificationResults(results: VerificationResult[]): Verificati
     failCount: results.reduce((total, result) => total + (result.failCount ?? 0), 0),
     ...(firstFailure?.exitCode !== undefined ? { exitCode: firstFailure.exitCode } : { exitCode: 0 }),
     command: results.map((result) => result.command ?? "").join(" && "),
+    ...(stopReason !== undefined ? { stopReason } : {}),
   };
 }
 

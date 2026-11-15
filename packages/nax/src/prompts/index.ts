@@ -110,6 +110,7 @@ export {
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
+  buildWorkflowBranchVerdictMismatchRetry,
 } from "./builders/workflow-branch-builder";
 // US-004 (chat-workflow-state) — the fixed "nax loop" section of a chat session.
 export type { JobNoticeInput } from "./builders/workflow-builder";
@@ -149,6 +150,7 @@ export {
   buildWorkflowReviewJsonRetryCondensed,
   buildWorkflowStoryReviewPrompt,
   buildWorkflowVerdictMismatchRetry,
+  VERDICT_MISMATCH_SENTENCES,
 } from "./builders/workflow-story-review-builder";
 export type { ComposeInput } from "./compose";
 // Wave 1 composition utilities — slot-ordered assembly and serialisation.

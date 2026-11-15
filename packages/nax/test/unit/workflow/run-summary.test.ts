@@ -1,5 +1,6 @@
 /** Builds the end-of-run workflow summary from result.json (nax#2491 P5): reuses its tokensByRole and timings. */
 import { describe, expect, test } from "bun:test";
+import { readinessReasons } from "@/workflow/approval";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { newStoryRecord } from "@/workflow/result";
 import { buildWorkflowRunSummary } from "@/workflow/run-summary";
@@ -125,6 +126,26 @@ describe("buildWorkflowRunSummary", () => {
 
   test("branch findings: found is every B id issued, left is still open, fixed is the rest", () => {
     expect(view?.branch).toEqual({ found: 4, fixed: 3, left: 1, minorsLeft: 1 });
+  });
+
+  // US-009: a record written before `reviewMismatch` existed counts exactly as it did — the ids it
+  // already holds, nothing re-derived, nothing subtracted.
+  test("a historical record with no reviewMismatch keeps its finding counts (AC-20)", () => {
+    const file = resultFile();
+    const rec = file.featureWorkflow;
+    if (!rec) throw new Error("fixture has a feature record");
+    const first = rec.reviewOpen[0];
+    if (!first) throw new Error("fixture has an open finding");
+    const historical: WorkflowFeatureRecord = { ...rec, nextFindingId: 2, reviewOpen: [first], newMinors: [] };
+    expect("reviewMismatch" in historical).toBe(false);
+    const v = buildWorkflowRunSummary(
+      { ...file, featureWorkflow: historical },
+      {
+        storiesDurationMs: 0,
+        featureWorkflowDurationMs: 0,
+      },
+    );
+    expect(v?.branch).toMatchObject({ found: 1, fixed: 0, left: 1 });
   });
 
   // nax#2547 / nax#2548: how many fix and gate-repair rounds the feature workflow spent.
@@ -391,5 +412,57 @@ describe("buildWorkflowRunSummary", () => {
       expect(v?.roles[0] ?? {}).not.toHaveProperty("cacheReadTokens");
       expect(v?.roles[0] ?? {}).not.toHaveProperty("cacheWriteTokens");
     });
+  });
+});
+
+/**
+ * US-010: the mismatch the branch review persisted is readiness evidence, never a finding — the same
+ * sentences `publish` writes into `reasons` reach the summary's Publish line, and the branch counters
+ * still count only real issued work.
+ */
+describe("buildWorkflowRunSummary — branch verdict mismatch (US-010)", () => {
+  const timing = { storiesDurationMs: 0, featureWorkflowDurationMs: 0 };
+  const SPEC = "branch review verdict inconsistent: spec fail without a blocking spec finding";
+  const QUALITY = "branch review verdict inconsistent: quality changes without a blocking finding";
+  /** The reasons `publish` writes for mismatch-only evidence, taken from the readiness channel itself. */
+  const mismatchReasons = readinessReasons({
+    finalGates: { ran: ["test"], failing: [] },
+    ci: "green",
+    stories: [],
+    flagged: 0,
+    branchReviewRan: true,
+    branchReviewMismatch: ["spec", "quality"],
+  });
+
+  /** `resultFile`'s record as a mismatch-only publish leaves it: no B id, no open finding. */
+  function mismatchOnly(): WorkflowResultFile {
+    const file = resultFile();
+    const rec = file.featureWorkflow;
+    if (!rec) throw new Error("fixture has a feature record");
+    return {
+      ...file,
+      stories: {},
+      featureWorkflow: {
+        ...rec,
+        nextFindingId: 1,
+        reviewOpen: [],
+        newMinors: [],
+        minors: [],
+        reviewMismatch: { kinds: ["spec", "quality"] },
+        outcome: "draft",
+        reasons: mismatchReasons,
+      },
+    };
+  }
+
+  test("AC-11: mismatch-only evidence adds no branch finding", () => {
+    expect(mismatchReasons).toEqual([SPEC, QUALITY]);
+    const branch = buildWorkflowRunSummary(mismatchOnly(), timing)?.branch;
+    expect(branch).toMatchObject({ found: 0, fixed: 0, left: 0, minorsLeft: 0 });
+  });
+
+  test("AC-12: the published mismatch sentence is the summary's Publish reason", () => {
+    const publish = buildWorkflowRunSummary(mismatchOnly(), timing)?.publish;
+    expect(publish).toEqual({ outcome: "draft", reasons: [SPEC, QUALITY] });
   });
 });

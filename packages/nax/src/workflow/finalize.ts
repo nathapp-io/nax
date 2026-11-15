@@ -541,6 +541,10 @@ export async function publish(fc: FeatureContext, input: PublishInput): Promise<
     // US-003 (nax#2532): a review that did not read every changed file is an incomplete review, so
     // its reason keeps the PR a draft and the advisor is never asked (reasons non-empty).
     ...(input.record.reviewUnread ? { branchReviewUnread: input.record.reviewUnread } : {}),
+    // US-010: the mismatch US-009 persisted is a deterministic readiness reason, so an otherwise
+    // green PR stays a draft and the advisor is never asked to overrule it. The sentences come from
+    // the shared formatter inside `readinessReasons`, not from an inline copy here.
+    ...(input.record.reviewMismatch ? { branchReviewMismatch: input.record.reviewMismatch.kinds } : {}),
     ...(input.record.costLimited ? { costLimited: true } : {}),
     ...(fc.iterationCap ? { iterationCap: fc.iterationCap } : {}),
     // nax#2550: fix commits no re-review looked at never go ready.

@@ -1,6 +1,13 @@
 import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
 import { runQualityCommand } from "../quality/runner";
+import { type GateStallPolicy, resolveStallDetection } from "../utils/gate-stall";
+
+/** The verification command's shape: `quality.commands.test`, plus the run's policy. */
+type SetupQuality = {
+  readonly commands?: Record<string, string>;
+  readonly stallDetection?: Partial<GateStallPolicy>;
+};
 
 /**
  * Runs the configured quality.commands.test command to verify the generated
@@ -11,10 +18,16 @@ import { runQualityCommand } from "../quality/runner";
  * command hung `nax setup` forever. Delegates to runQualityCommand, the
  * shared shell-quoting-safe, timeout-enforced runner every other quality
  * command in nax uses.
+ *
+ * US-008: the run's resolved stall policy goes with the command, so a
+ * verification step that endlessly repeats one line stops on the detector
+ * instead of waiting out its wall-clock limit. The policy is completed here
+ * rather than passed sparse, so the same default the schema resolves applies
+ * to a config that predates the field.
  */
 export async function runSetupGate(workdir: string, config: NaxConfig): Promise<number> {
   const logger = getLogger();
-  const quality = config.quality as { commands?: Record<string, string> } | undefined;
+  const quality = config.quality as SetupQuality | undefined;
   const testCmd = quality?.commands?.test;
 
   if (!testCmd) {
@@ -30,6 +43,7 @@ export async function runSetupGate(workdir: string, config: NaxConfig): Promise<
     command: testCmd,
     workdir,
     storyId: "setup",
+    stallDetection: resolveStallDetection(quality?.stallDetection),
   });
   return result.exitCode;
 }

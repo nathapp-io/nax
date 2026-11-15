@@ -7,7 +7,9 @@ import {
   buildWorkflowBranchFixPrompt,
   buildWorkflowBranchReReviewPrompt,
   buildWorkflowBranchReviewPrompt,
+  buildWorkflowBranchVerdictMismatchRetry,
   memorySectionOf,
+  VERDICT_MISMATCH_SENTENCES,
   WORKFLOW_BEYOND_DIFF_SECTION,
   WORKFLOW_DESIGN_DECISIONS_ITEM,
   WORKFLOW_ENUMERATION_INSTRUCTION,
@@ -340,5 +342,33 @@ describe("buildWorkflowBranchReviewPrompt — the read-only memory section (US-0
     expect(text).toBe(buildWorkflowBranchReviewPrompt({ ...reviewBase, memoryIndex: "" }));
     // The section does arrive when there is an index, so the absence above is real.
     expect(buildWorkflowBranchReviewPrompt({ ...reviewBase, memoryIndex: "INDEX-LINE" })).not.toBe(text);
+  });
+});
+
+describe("buildWorkflowBranchVerdictMismatchRetry (US-012)", () => {
+  test("AC-3: asks for the failed kind's remedy, to name the missing work or correct the verdict", () => {
+    const spec = buildWorkflowBranchVerdictMismatchRetry(["spec"]);
+    expect(spec).toContain(VERDICT_MISMATCH_SENTENCES.spec);
+    expect(spec).toContain("Name the missing defect or the acceptance criterion that fails");
+    expect(spec).toContain("or correct the verdict");
+
+    const quality = buildWorkflowBranchVerdictMismatchRetry(["quality"]);
+    expect(quality).toContain(VERDICT_MISMATCH_SENTENCES.quality);
+    expect(quality).not.toContain(VERDICT_MISMATCH_SENTENCES.spec);
+  });
+
+  test("AC-3: both kinds are named, in the parser's spec-then-quality order", () => {
+    const both = buildWorkflowBranchVerdictMismatchRetry(["spec", "quality"]);
+    expect(both.indexOf(VERDICT_MISMATCH_SENTENCES.spec)).toBeLessThan(
+      both.indexOf(VERDICT_MISMATCH_SENTENCES.quality),
+    );
+  });
+
+  test("AC-4: requires the complete branch-review object, naming every field it keeps", () => {
+    const text = buildWorkflowBranchVerdictMismatchRetry(["spec"]);
+    for (const field of ['"spec"', '"quality"', '"findings"', '"inspectedFiles"', '"cannotVerify"', '"minorTriage"']) {
+      expect(text).toContain(field);
+    }
+    expect(text).toContain("do not change code");
   });
 });

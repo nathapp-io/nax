@@ -29,6 +29,7 @@ import type { Finding } from "../findings/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import type { TestSummary } from "../test-runners";
+import type { GateStopReason } from "../utils/gate-stall";
 import { storyPackageDir } from "../utils/path-frame";
 import {
   applyBaselineDispositions,
@@ -100,6 +101,13 @@ export interface FullSuiteGateOutput {
    * a `no-gate-parse` marker instead.
    */
   readonly parsedSummary?: TestSummary;
+  /**
+   * Detector evidence when a run, or one entry of a command list, was stopped
+   * (US-004). It rides on a timeout and on a failed verdict alike: a list whose
+   * first failing entry failed ordinarily stays `failed` even when a later entry
+   * was stopped, so the real failure is not hidden behind the stop.
+   */
+  readonly stopReason?: GateStopReason;
 }
 
 const fullSuiteGateConfigSelector = rectificationGateConfigSelector;
@@ -115,6 +123,8 @@ interface RunTestsResult {
   readonly parsedSummary: TestSummary;
   /** True when the runner returned status=TIMEOUT — let execute() decide accept-on-timeout. */
   readonly timedOut: boolean;
+  /** Detector evidence when the run was stopped (US-004) — independent of `timedOut`. */
+  readonly stopReason?: GateStopReason;
   /** Runner exit code (when known) — surfaced into synthetic findings on execution-failed. */
   readonly exitCode?: number;
   /** Final shell command actually executed (after buildTestCommand wrap) — for synth-finding context. */
@@ -200,6 +210,8 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       drainTimeoutMs: gateCtx.config?.quality?.drainTimeoutMs,
       shell: gateCtx.config?.quality?.shell,
       stripEnvVars: gateCtx.config?.quality?.stripEnvVars,
+      // The parsed gate-context policy reaches the executor through regression (AC-13).
+      stallDetection: gateCtx.config?.quality?.stallDetection,
     });
     const parsedSummary = parseTestOutput(result.output ?? "");
     return {
@@ -208,6 +220,9 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
       output: result.output ?? "",
       parsedSummary,
       timedOut: result.status === "TIMEOUT",
+      // Kept separate from `timedOut`: `execute()` must widen its own predicate, so a
+      // consumer that replaces this dep cannot drop the stopped-list evidence (AC-14).
+      ...(result.stopReason !== undefined ? { stopReason: result.stopReason } : {}),
       exitCode: result.exitCode,
       command: result.command ?? renderCommandSpec(gateCtx.testCmd),
     };
@@ -343,12 +358,20 @@ export const fullSuiteGateOp: DeterministicOperation<
       };
     }
 
-    // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass.
+    // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass. Only a run
+    // whose aggregate status is TIMEOUT is a timeout. A command list whose first
+    // failing entry failed ordinarily while a later entry was stopped keeps that
+    // ordinary status: it is a code failure, so accepting it on timeout would hide
+    // the failing test. It takes the failure path below and still carries the
+    // stopped entry's reason.
+    const stopReason = testResult.stopReason;
+    const evidence = stopReason !== undefined ? { stopReason } : {};
     if (testResult.timedOut) {
       const acceptOnTimeout = ctxConfig?.execution?.regressionGate?.acceptOnTimeout ?? true;
       if (acceptOnTimeout) {
         logger.warn("verify[regression]", "[BUG-026] Full-suite timed out (accepted as pass)", {
           storyId: input.story.id,
+          stopReason,
         });
         return {
           success: true,
@@ -359,10 +382,12 @@ export const fullSuiteGateOp: DeterministicOperation<
           findings: [],
           rawOutput: testResult.output,
           // No parsedSummary on timeout — the runner bailed before the parser ran.
+          ...evidence,
         };
       }
       logger.warn("verify[regression]", "Full-suite timed out (failing)", {
         storyId: input.story.id,
+        stopReason,
       });
       return {
         success: false,
@@ -373,6 +398,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         findings: [],
         rawOutput: testResult.output,
         // No parsedSummary on timeout — same reason.
+        ...evidence,
       };
     }
 
@@ -405,6 +431,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [synth],
         rawOutput: testResult.output,
+        ...evidence,
         // No parsedSummary — the parser ran but produced zero structured failures
         // (environmental failure shape). The post-run roll-forward hook treats
         // `parsedSummary` missing as `no-gate-parse`.
@@ -426,6 +453,7 @@ export const fullSuiteGateOp: DeterministicOperation<
       findings,
       rawOutput: testResult.output,
       parsedSummary: testResult.parsedSummary,
+      ...evidence,
     };
   },
 };

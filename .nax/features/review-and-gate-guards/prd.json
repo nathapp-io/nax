@@ -1,0 +1,937 @@
+{
+  "project": "nax-monorepo",
+  "feature": "review-and-gate-guards",
+  "branchName": "feat/review-and-gate-guards",
+  "createdAt": "2026-11-15T04:40:19.598Z",
+  "updatedAt": "2026-11-15T09:20:25.266Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Gate-stall leaf observer and policy default",
+      "description": "**Goal** — Add a bounded per-spawn stall monitor and shared policy.\n**Motivation** — Both otherwise wait for their wall-clock limit when a command endlessly repeats a line.\n**Approach** — Create `src/utils/gate-stall.ts` with the structural policy/reason types, the single `DEFAULT_GATE_STALL_POLICY` literal, `resolveStallDetection` and the bounded per-spawn observer.\nMaintain independent stdout and stderr repetition state; never concatenate their bytes into one line or interleave their repetition counts. Activity on the other stream does not reset a stream's repetition count.\nIncremental UTF-8 decoding survives split multibyte characters and arbitrary chunk boundaries. LF ends a line; CRLF is one delimiter even when split across chunks. Bare CR is ordinary content, not a progress-line delimiter. At stream EOF, a nonempty unterminated tail is one final line if the process is still live.\nCompare complete decoded line text exactly, excluding its LF or CRLF delimiter. Preserve indentation, trailing spaces, ANSI sequences and case in the comparison. A whitespace-only line is ineligible and resets that stream's repetition run; it never counts toward a stop. A different eligible line starts a new count at 1.\nBound detector-only pending/previous-line storage at 16,384 UTF-16 code units per stream. An overlong line resets that stream's run and is ignored through its delimiter; it must not match a truncated prefix. This does not truncate captured output.\nEvery nonempty byte chunk on either stream, including blanks and partial lines, resets the silence deadline. Empty chunks and EOF do not. Silence starts at process spawn, so a process producing no bytes is covered only when silence is enabled. Repetition remains useful against a noisy loop because repeated lines themselves reset silence.\n**Scope** — In: leaf observer/policy. Out: US-002 schema, US-003/005 engines. Silence detection enabled by default, adaptive silence thresholds, CPU-based liveness, heartbeat protocols, substring/fuzzy matching, repeated multi-line cycles, or test-framework-specific hang detection.\n**Interface** — `GateStallPolicy`: `{ repeatedLineThreshold; silenceTimeoutSeconds }`; default `{ repeatedLineThreshold: 100, silenceTimeoutSeconds: 0 }`.\n```typescript\nexport type GateStopReason =\n  | { readonly kind: \"repeated-output\"; readonly stream: \"stdout\" | \"stderr\"; readonly count: number; readonly threshold: number }\n  | { readonly kind: \"silence\"; readonly silenceTimeoutSeconds: number };\nexport interface GateStallMonitor {\n  observe(stream: \"stdout\" | \"stderr\", chunk: Uint8Array): void;\n  end(stream: \"stdout\" | \"stderr\"): void;\n  dispose(): void;\n}\nexport function createGateStallMonitor(options: {\n  readonly policy: GateStallPolicy;\n  readonly onStop: (reason: GateStopReason) => void;\n  readonly setTimeout: (fn: () => void, ms: number) => unknown;\n  readonly clearTimeout: (handle: unknown) => void;\n}): GateStallMonitor;\n```",
+      "acceptanceCriteria": [
+        "[unit] createGateStallMonitor emits repeated-output on the Nth consecutive equal eligible line of one stream for threshold N, counting the first occurrence as 1.",
+        "[unit] createGateStallMonitor keeps stdout and stderr repetition counts independent under interleaved identical text.",
+        "[unit] createGateStallMonitor resets a stream's repetition count on a different eligible line.",
+        "[unit] createGateStallMonitor resets a stream's repetition count on a whitespace-only line.",
+        "[unit] createGateStallMonitor never counts a whitespace-only line toward a stop.",
+        "[unit] createGateStallMonitor compares decoded text exactly, so indentation, trailing spaces, case and ANSI differences are distinct lines.",
+        "[unit] createGateStallMonitor produces the same line decisions for arbitrarily split UTF-8 multibyte sequences as for unsplit input.",
+        "[unit] createGateStallMonitor treats a CRLF delimiter split across chunks as one delimiter, and LF as the line end.",
+        "[unit] createGateStallMonitor treats a bare CR as ordinary content rather than a delimiter.",
+        "[unit] createGateStallMonitor.end treats a nonempty unterminated tail as one final line while the monitor is live.",
+        "[unit] createGateStallMonitor ignores an over-16,384-code-unit line through its delimiter instead of matching a truncated prefix.",
+        "[unit] createGateStallMonitor with positive silenceTimeoutSeconds emits silence after that many seconds without nonempty bytes since spawn.",
+        "[unit] createGateStallMonitor resets silence on a nonempty chunk on either stream, including blank and partial-line chunks.",
+        "[unit] createGateStallMonitor does not reset silence on an empty chunk.",
+        "[unit] createGateStallMonitor does not reset silence at stream EOF.",
+        "[unit] createGateStallMonitor with both policy values zero emits no stop while fake time advances and repeated lines arrive.",
+        "[unit] createGateStallMonitor with repeated lines arriving before each silence deadline stops for repeated-output rather than deferring repetition to silence.",
+        "[unit] createGateStallMonitor.dispose prevents later callbacks from emitting a stop.",
+        "[unit] createGateStallMonitor.dispose leaves no active silence timer.",
+        "[unit] Two createGateStallMonitor instances maintain isolated counters and silence deadlines when their streams are interleaved.",
+        "[unit] resolveStallDetection fills an absent field from DEFAULT_GATE_STALL_POLICY and preserves an explicit zero."
+      ],
+      "tags": [
+        "feature",
+        "gates",
+        "streams"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New bounded streaming abstraction combines per-stream decoding, repetition state, silence deadlines and disposal races.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/utils/path-frame.ts",
+        "packages/nax/test/helpers/fake-clock.ts",
+        "packages/nax/src/verification/executor.ts",
+        "packages/nax/src/quality/runner.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/utils/gate-stall.ts",
+        "packages/nax/test/unit/utils/gate-stall.test.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e9f49b6caaf9ebde71dbc45f8f56e7a0067a1c39"
+    },
+    {
+      "id": "US-002",
+      "title": "Gate-stall configuration surface and package merge",
+      "description": "**Goal** — Expose schema-defaulted quality.stallDetection and field-wise package overrides.\n**Motivation** — Silence can also indicate a hang, but quiet compilers and tests are legitimate: silence detection must remain disabled unless configured.\n**Approach** — Add `quality.stallDetection` to the quality schema with its defaults read from the leaf constant, carry the block in the root quality literal, expose it as an optional field on the public config type, and merge a package overlay field-wise.\n`repeatedLineThreshold` is 0 (disabled) or an integer >=2. Default 100 counts the first occurrence, so the 100th consecutive matching eligible line triggers. This deliberately conservative default catches runaway loops while reducing false positives from legitimate duplicate diagnostics. `silenceTimeoutSeconds` is an integer >=0; 0 disables it, and positive values explicitly opt in. Negative values, fractions, booleans, strings, null, non-finite programmatic values, and repeat threshold 1 are invalid. There is no extra enabled switch; setting both fields to 0 disables both detectors. Silence stays 0 when only repetition is configured. Global/project/profile/CLI layering uses the existing loader; package fields override root fields individually without losing an unset sibling or resurrecting a disabled value.\nThe schema's two defaults are `DEFAULT_GATE_STALL_POLICY`'s fields, and the root `schemas.ts` literal spreads the parsed block rather than restating numbers; a second hand-written default is what this forbids. A whole-object Zod default returns the literal as given, so a literal omitting the block would leave it absent from `NaxConfigSchema.parse({})` — the root literal must therefore carry it.\n**Scope** — In: StallDetectionConfigSchema, QualityConfigSchema, runtime-types.ts, schemas.ts, mergePackageConfig and config tests. Out: engine wiring (US-003/005), gate carrier resolution (US-007). Extend defaults.test.ts/merge.test.ts without changing command/lintOutput invariants. Verify one-default-source by static review of schema fields and parsed root spread, not a source-text test.\n**Interface** — `stallDetection` is optional additive public config; parsed config supplies both values.\n```json\n{\n  \"quality\": {\n    \"stallDetection\": {\n      \"repeatedLineThreshold\": 100,\n      \"silenceTimeoutSeconds\": 0\n    }\n  }\n}\n```",
+      "acceptanceCriteria": [
+        "[unit] NaxConfigSchema.parse with quality absent resolves stallDetection.repeatedLineThreshold to 100.",
+        "[unit] NaxConfigSchema.parse with quality absent resolves stallDetection.silenceTimeoutSeconds to 0.",
+        "[unit] An empty quality block resolves the same policy as an absent quality block.",
+        "[unit] StallDetectionConfigSchema accepts repeatedLineThreshold 0.",
+        "[unit] StallDetectionConfigSchema accepts an integer repeatedLineThreshold of 2 or more.",
+        "[unit] StallDetectionConfigSchema rejects repeatedLineThreshold 1, negatives, fractions, strings, booleans, null and non-finite programmatic numbers.",
+        "[unit] StallDetectionConfigSchema accepts silenceTimeoutSeconds 0 and a positive integer.",
+        "[unit] StallDetectionConfigSchema rejects negative, fractional, non-numeric, null, boolean and non-finite silenceTimeoutSeconds values.",
+        "[unit] DEFAULT_CONFIG.quality.stallDetection and NaxConfigSchema.parse({}).quality.stallDetection both expose the default policy when quality is absent, because the root quality default carries the block.",
+        "[unit] mergePackageConfig retains an unset root-policy sibling when a package overrides one stallDetection field.",
+        "[unit] mergePackageConfig honors an explicit package zero over a non-zero root value."
+      ],
+      "tags": [
+        "feature",
+        "gates",
+        "config"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Standard additive Zod/runtime config fields and explicit nested merge using the existing default pattern.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/config/schemas-execution.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/config/runtime-types.ts",
+        "packages/nax/src/config/merge.ts",
+        "packages/nax/src/config/defaults.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/config/gate-stall-schema.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/config/defaults.test.ts",
+          "reason": "extend the schema/DEFAULT_CONFIG equality and default-surface assertions for the new quality block; the replacing invariant is that an absent quality block and an empty one resolve the same repeat-100/silence-0 policy from the leaf default, not two independently maintained defaults."
+        },
+        {
+          "path": "packages/nax/test/unit/config/merge.test.ts",
+          "reason": "extend quality merge cases for a partial stallDetection overlay; preserve existing command/lintOutput assertions, with the added invariant that an explicit zero wins and an omitted policy sibling retains its root value."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1d1c6ab2269dc19c670de1aee6009282b79b9858"
+    },
+    {
+      "id": "US-003",
+      "title": "Verification executor stall lifecycle",
+      "description": "**Goal** — Stop stalled verification through bounded timeout cleanup.\n**Motivation** — Verification tests use `verification/executor.ts:executeWithTimeout`, whose `Response.text()` collectors reveal output only after closure.\n**Approach** — Wire the observer into `executeWithTimeout`: concurrent incremental collectors, the single terminal latch, detector evidence on the raw result and the existing process-group cleanup. Preserve trust-before-spawn, output exposure and every ordering guarantee.\nUse concurrent incremental collectors in executeWithTimeout, starting both reads before waiting on exit; quality engine wiring belongs to US-005. The verification collector needs to expose the text accumulated so far instead of depending on `Response.text()` finishing. The quality collector already provides a useful precedent. Feed bytes to the monitor as they arrive while retaining original output text; detector normalization must not rewrite the captured stream.\nA single terminal latch arbitrates normal leader exit, wall timeout, repetition and silence. The first event observed while the invocation is live wins. If leader exit has already been observed, queued detector/deadline callbacks and output drained afterwards cannot change that exit into a timeout. If a detector wins first, a subsequent exit 0 cannot turn the interrupted run into a pass. On an exact scheduling tie, callback observation order decides; tests drive each ordering rather than asserting an OS-level simultaneity guarantee.\nAn early stop enters the same cleanup lane as a wall timeout: detached process group, SIGTERM, bounded grace, group liveness probe, SIGKILL for remaining members even when the leader exited, no single-pid fallback after leader exit, bounded concurrent stream drains. Each invocation starts at most one termination sequence. Clear all wall/silence/grace/drain timers, disable detector callbacks on settlement, and cancel readers best-effort when drain deadlines expire. A stream error keeps bytes already collected and leaves existing exit/error policy intact; it is not itself repetition or silence.\n**Scope** — In: executor.ts, TestExecutionResult and lifecycle tests. Out: US-004 lists/ops, US-005 quality, US-007/008 gate injection. Refactoring all command runners into one engine, changing shell/trust/sandbox behavior, platform expansion beyond the current process-group support, or dependency/version changes.\n**Interface** — `executeWithTimeout(command, timeoutSeconds, env?, options?)` retains its call shape with optional `options.stallDetection`. Raw verification early stops return `success:false`, `timeout:true`, `killed:true`, `childProcessesKilled:true`, `countsTowardEscalation:false`, plus `stopReason`. Their `error` begins `EXECUTION_STALLED:` and identifies repeated output (stream/count/threshold) or configured silence, rather than falsely saying the wall timeout elapsed.",
+      "acceptanceCriteria": [
+        "[integration] executeWithTimeout with an explicit repetition policy feeds controlled stdout and stderr chunks into createGateStallMonitor before child exit, so a live repeated-line process stops before its wall timeout.",
+        "[unit] executeWithTimeout on repeated-output or opted-in silence returns the raw timeout-lane result with success:false, timeout:true, killed:true, childProcessesKilled:true and countsTowardEscalation:false.",
+        "[unit] That raw stopped result carries the matching structured stopReason.",
+        "[unit] executeWithTimeout detector-stop error starts with EXECUTION_STALLED: and identifies the actual threshold and stream, or the silence setting, rather than claiming the wall deadline elapsed.",
+        "[unit] executeWithTimeout leaves stopReason absent on an ordinary wall timeout.",
+        "[unit] executeWithTimeout leaves stopReason absent on a normal exit.",
+        "[unit] executeWithTimeout leaves stopReason absent on a stream error or a drain-deadline expiry.",
+        "[unit] executeWithTimeout with no stallDetection argument retains a quiet live process until its ordinary wall timeout.",
+        "[unit] executeWithTimeout with no stallDetection argument creates no monitor, so no detector can stop the run.",
+        "[unit] executeWithTimeout uses one SIGTERM-to-SIGKILL group-cleanup sequence when detector stop wins.",
+        "[unit] executeWithTimeout SIGKILLs surviving group members after leader exit with single-pid fallback disabled.",
+        "[unit] executeWithTimeout cancels escalation when its stopped process group is empty within the bounded drain lifecycle.",
+        "[unit] executeWithTimeout clears all timers within the bounded drain lifecycle when its stopped process group is empty.",
+        "[unit] When its stopped process group is empty and a pipe remains pending, executeWithTimeout initiates best-effort cancellation of each pending stream reader by the bounded drain deadline, leaving no outstanding reader wait.",
+        "[unit] executeWithTimeout preserves a normal leader result when exit is observed before a queued detector or deadline event, even if an inherited pipe remains open.",
+        "[unit] executeWithTimeout keeps timeout failure when detector stop is observed before an exit-0 event.",
+        "[unit] executeWithTimeout starts no second termination sequence when a later stop or deadline callback fires after the first one.",
+        "[unit] executeWithTimeout retains already-collected stdout then stderr when a stream errors or a drain deadline expires.",
+        "[unit] executeWithTimeout does not reclassify a normal exit as a detector stop when a stream errors.",
+        "[unit] executeWithTimeout drains simultaneous output larger than an OS pipe buffer without deadlock.",
+        "[unit] executeWithTimeout captured output text is unchanged by detector normalization.",
+        "[unit] executeWithTimeout refuses an untrusted cwd before creating a monitor or spawning a child."
+      ],
+      "tags": [
+        "feature",
+        "gates",
+        "subprocess",
+        "trust"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The existing executor and injected process-group lane bound the design, but concurrent collectors and terminal races need complex routing; trust-before-spawn retains the strict-TDD override.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/verification/executor.ts",
+        "packages/nax/src/verification/types.ts",
+        "packages/nax/src/quality/runner.ts",
+        "packages/nax/test/unit/verification/executor.test.ts",
+        "packages/nax/test/helpers/fake-clock.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/verification/executor-stall.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/verification/executor.test.ts",
+          "reason": "its timeout/kill/drain tests may observe streaming collector mechanics; preserve timeout flags, trust-before-spawn, bounded post-exit drains and every timer cleared, while permitting bytes already read to survive a drain deadline instead of requiring one buffered whole-stream read."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "7fbda485a6e07d5a82fcf3e32c02bc1ed276c653"
+    },
+    {
+      "id": "US-004",
+      "title": "Verification lists, interruption routing and test operations",
+      "description": "**Goal** — Carry independent detector evidence through verification lists and timeout routing in test operations.\n**Motivation** — Both otherwise wait for their wall-clock limit when a command endlessly repeats a line.\n**Approach** — Preserve raw first-failure list aggregation while carrying independent interruption evidence, and route it in `verifyScopedOp` and `fullSuiteGateOp`: no zero-tests rerun, the interruption route, and the existing accept-on-timeout contract with the reason on both forms.\nA verification command list keeps its historical raw aggregation, and interruption evidence is carried independently so a consumer cannot mistake a mixed list for an ordinary code failure:\n`status`, `exitCode` and `error` remain the first unsuccessful entry's values. `success` remains \"every entry succeeded\". `countsTowardEscalation` remains the any-entry `some`. `output`, `passCount` and `failCount` are unchanged.\nThe list's `stopReason` is the first detector reason in command order, and is absent when no entry was stopped. Its presence — not the aggregate `status` — is the interruption evidence.\n`verifyScopedOp` treats `status === \"TIMEOUT\" || stopReason !== undefined` as interrupted: it never starts the zero-tests full-suite rerun, and it returns `status:\"timeout\"` with the reason instead of a code-failure verdict. `fullSuiteGateOp` derives its internal `timedOut` from the same predicate, so the existing `acceptOnTimeout` translation still decides `passed-on-timeout` versus `timeout` — with the reason on both forms, and `runWorkflowSuiteGate` still reporting `passed-on-timeout` as red and timed out. Lists with no stopped entry keep today's behaviour exactly; ordinary historical list semantics are not rewritten.\n**Scope** — In: verification/types.ts and runners.ts, verify-scoped.ts, full-suite-gate.ts and workflow/gates.ts suite wrapper. Out: raw executor lifecycle (US-003), mechanical story checks (US-008), bootstrap setup. Pass parsed package/gate-context policy to every test run including legitimate fallback. Preserve existing TIMEOUT/acceptOnTimeout tests while extending shapes. Use controlled injected results for both mixed-list orders and real operation entry points.\n**Interface** — `VerificationGateOptions` gains optional `stallDetection`; `VerificationResult`, `VerifyScopedOutput` and `FullSuiteGateOutput` gain optional `stopReason`. `[ordinary failure, detector stop]` keeps `TEST_FAILURE`; `[detector stop, ordinary failure]` keeps `TIMEOUT`; both route interruption. Existing statuses and escalation semantics are retained.",
+      "acceptanceCriteria": [
+        "[unit] The scoped and regression verification list runs every entry in command order after a detector stop.",
+        "[unit] In the failure-then-stop order, list status, exitCode and error remain the first failing entry's values.",
+        "[unit] In the stop-then-failure order, list status, exitCode and error remain the first entry's values.",
+        "[unit] Both orders expose the first detector reason in command order as the list stopReason.",
+        "[unit] countsTowardEscalation keeps its any-entry semantics in both orders.",
+        "[unit] A list with no stopped entry carries no stopReason.",
+        "[unit] scoped and regression pass their configured stallDetection into the executor.",
+        "[unit] scoped and regression retain status:TIMEOUT and countsTowardEscalation false on a detector interruption.",
+        "[integration] verifyScopedOp.execute forwards package-view stallDetection to regression for execution of the scoped command returned by selectScopedTests.",
+        "[integration] verifyScopedOp.execute forwards the same policy into its ordinary zero-tests full-suite rerun path.",
+        "[integration] verifyScopedOp.execute returns status timeout with the stopReason when the scoped run is interrupted.",
+        "[integration] verifyScopedOp.execute starts no zero-tests full-suite rerun when the aggregate carries a stop reason although its status is a test failure.",
+        "[integration] fullSuiteGateOp.execute forwards gate-context stallDetection to regression.",
+        "[integration] fullSuiteGateOp.execute derives its timeout evidence from a list-level stop reason even when the aggregate status is a test failure.",
+        "[integration] fullSuiteGateOp.execute keeps the acceptOnTimeout passed-on-timeout and timeout outcomes and carries the stopReason on both.",
+        "[integration] runWorkflowSuiteGate reports a stopped full suite as red and timed out even when the operation returns passed-on-timeout."
+      ],
+      "tags": [
+        "feature",
+        "verification",
+        "operations",
+        "gates"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Existing runner aggregation and deterministic ops need additive reason forwarding plus a shared interruption predicate; no new execution engine or abstraction is introduced, and existing op doubles pin the translations.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/verification/runners.ts",
+        "packages/nax/src/operations/verify-scoped.ts",
+        "packages/nax/src/operations/full-suite-gate.ts",
+        "packages/nax/src/workflow/gates.ts",
+        "packages/nax/test/unit/verification/runners.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/verification/runners-stall.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/verification/runners.test.ts",
+          "reason": "preserve existing TIMEOUT and acceptOnTimeout assertions while extending stopped-result and list-aggregate shapes with the optional stop reason; list aggregation still runs every entry and keeps first-failure fields."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/verify-scoped.test.ts",
+          "reason": "option-forwarding and timeout cases may gain the policy and stop reason; TIMEOUT still returns status timeout and forbids the zero-tests full-suite rerun, and list interruption evidence now selects that same route."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/full-suite-gate.test.ts",
+          "reason": "runTests option and timeout result assertions may gain the policy and stop reason; existing passed-on-timeout versus timeout behavior remains the replacing invariant, not unconditional success or failure at this op layer."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "252537d522d93f797f3e14e0661e47c72ea3a936"
+    },
+    {
+      "id": "US-005",
+      "title": "Quality runner stall lifecycle and bounded settlement",
+      "description": "**Goal** — Interrupt stalled quality commands and bound settlement even when child exit never arrives.\n**Motivation** — Mechanical checks and repository gates use `quality/runner.ts:runQualityCommand`, which already collects streams incrementally.\n**Approach** — Extend the quality runner's existing incremental collectors with the same observer and single-stop latch, replace the direct exit await with the bounded terminal race, and carry the reason through single-command results without changing output exposure or cleanup behavior.\nThe quality runner adopts the executor's shape: one terminal race between the child exit and the first stop signal (wall, repetition or silence), a post-signal wait bounded by the configured grace period, then the existing bounded drains, then the stopped result — every armed timer cleared and stalled readers cancelled best-effort. A never-settling `proc.exited` with pending pipes must still produce the stopped result after those bounds. Process-group escalation and the no-bare-pid rule after an observed leader exit are unchanged.\nA rejected `proc.exited` keeps today's floating `.catch(() => {})`: it is not stall evidence, it does not reclassify a result, and repairing exit-rejection handling is explicitly out of this feature's scope (see Out of Scope).\nKeep existing output exposure: verification returns collected stdout then stderr; successful quality commands preserve the existing combined output; stopped quality harness commands expose only the diagnostic notice, while `origin:\"agent-tool\"` retains its bounded 4,000-character, line-boundary tail. Merely adding a stop reason must not enable heuristic stopping for agent-tool calls. Existing environment stripping, agent-output markers, NO_COLOR behavior, shell quoting, trusted-cwd checks, and actual working directories are unchanged. New structured logging carries reason/threshold/stream/count, not a copy of the repeated line or raw output.\n**Scope** — In: quality/runner.ts options/results/collectors/latch/cleanup. Out: US-006 aggregation, US-007/008 gate wiring. Repairing or reclassifying a rejected child-exit promise: this feature keeps today's floating catch and defines no new result policy for that error class. Preserve trust-before-monitor/spawn, both terminal observation orders, one SIGTERM/grace/probe/SIGKILL lane and best-effort bounded drains. Use fake clocks and controlled streams. runner.test.ts env/argv cases stay green unedited; only runner-drain.test.ts and runner-timeout-kill.test.ts gain bounded-settle changes preserving prior lifecycle invariants.\n**Interface** — Optional `QualityCommandOptions.stallDetection` and `QualityCommandResult.stopReason`. Raw quality early stops return `success:false`, `timedOut:true`, `exitCode:-1`, plus `stopReason`. Quality output begins `[nax] <commandName> stopped early: repeated-output ...` or `[nax] <commandName> stopped early: silence ...`. Absent low-level policy creates no monitor.",
+      "acceptanceCriteria": [
+        "[integration] runQualityCommand with explicit stallDetection feeds live child chunks into createGateStallMonitor, so repetition or opted-in silence can interrupt before the wall timeout.",
+        "[unit] runQualityCommand detector interruption returns success false, timedOut true, exitCode -1 and the matching structured stopReason.",
+        "[unit] runQualityCommand harness output identifies stopped-early repeated-output or silence.",
+        "[unit] runQualityCommand stopped harness output does not expose partial test diagnostics as a completed run.",
+        "[unit] runQualityCommand agent-tool output retains the existing bounded line-boundary tail when explicitly given a stall policy.",
+        "[unit] An ordinary agent-tool call with no policy remains detector-disabled.",
+        "[unit] runQualityCommand with no stallDetection argument retains existing normal-exit and wall-timeout output contracts without stopReason.",
+        "[unit] runQualityCommand detector interruption preserves group escalation after leader exit with single-pid fallback disabled for the remaining group.",
+        "[unit] runQualityCommand clears all armed timers by the existing drain deadline after a detector stop.",
+        "[unit] runQualityCommand cancels stalled readers best-effort by the existing drain deadline after a detector stop.",
+        "[unit] runQualityCommand returns the observed normal exit result when leader exit wins over a queued detector callback or slow inherited pipe drain.",
+        "[unit] runQualityCommand retains detector failure when the detector callback wins over exit 0.",
+        "[unit] Repetition, silence and wall callbacks collectively start at most one termination sequence.",
+        "[unit] runQualityCommand stream errors preserve text already collected without producing stopReason by themselves.",
+        "[unit] runQualityCommand consumes both pipes concurrently without losing a large nonrepeating output body.",
+        "[unit] runQualityCommand returns the stopped result after bounded grace and bounded drains when the child exit promise never settles.",
+        "[unit] runQualityCommand performs the existing trust check before creating a monitor or spawning a child.",
+        "[unit] When proc.exited rejects before any stop signal, runQualityCommand returns its existing error result (success:false, exitCode:-1, timedOut:false, output containing the rejection message) without stopReason, preserving the existing floating .catch rejection suppression rather than reclassifying rejection as stall evidence."
+      ],
+      "tags": [
+        "feature",
+        "quality",
+        "subprocess",
+        "trust"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "The existing collectors and executor race precedent avoid architectural novelty, while bounded never-exiting children and kill arbitration remain complex; trusted execution keeps strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/quality/runner.ts",
+        "packages/nax/src/quality/index.ts",
+        "packages/nax/test/unit/quality/runner-drain.test.ts",
+        "packages/nax/test/unit/quality/runner-timeout-kill.test.ts",
+        "packages/nax/src/verification/executor.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/quality/runner-stall.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/quality/runner-drain.test.ts",
+          "reason": "pending-pipe and large-output cases may observe the bounded settle; preserve retained bytes, the drain deadline and every timer cleared."
+        },
+        {
+          "path": "packages/nax/test/unit/quality/runner-timeout-kill.test.ts",
+          "reason": "virtual-clock process-group cases may observe the bounded settle; preserve one termination sequence, group escalation and the single-pid fallback rules."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8f29e788ec447e6076f5eb0c331fab1af18d8b03"
+    },
+    {
+      "id": "US-006",
+      "title": "Quality list aggregation",
+      "description": "**Goal** — Preserve complete quality-list execution while carrying the first detector reason independently.\n**Motivation** — Both otherwise wait for their wall-clock limit when a command endlessly repeats a line.\n**Approach** — Give every list entry fresh detector state, keep running later entries after a stop, and surface the first detector reason in command order while preserving first-failure exit, any-entry timeout, duration and combined output.\nState is per spawn, not per command name, story, gate list or retry. No progress or timer state leaks between consecutive commands or concurrent invocations.\n`QualityCommandOptions`, `QualityCommandResult`: Optional `stallDetection` input and `stopReason` result; single-command and list execution share the policy.\n**Scope** — In: quality/aggregate.ts and list execution in quality/runner.ts; extend existing aggregate.test.ts and runner list coverage with controlled streams/fake time. Out: single-spawn terminal lifecycle (US-005), policy configuration/carriers (US-002/007), verification list rules (US-004). Keep first nonzero exit distinct from the first detector reason: a prior ordinary failure must not hide later interruption. Preserve all entries' output and summed duration rather than short-circuiting. Do not rewrite existing empty/single-command contracts.\n**Interface** — `aggregateResults(commandName: string, results: QualityCommandResult[]): QualityCommandResult` retains its call shape, adding only optional `stopReason` from the first detector-stopped entry in command order. `timedOut` remains any-entry evidence even when first-failure exit is an ordinary error.",
+      "acceptanceCriteria": [
+        "[unit] runQualityCommand gives every list entry fresh repetition and silence state.",
+        "[unit] runQualityCommand continues later list entries after a stopped entry.",
+        "[unit] aggregateResults exposes the first detector stopReason in command order.",
+        "[unit] aggregateResults preserves the first non-zero step's exit code.",
+        "[unit] aggregateResults preserves any-entry timedOut semantics.",
+        "[unit] aggregateResults preserves summed duration.",
+        "[unit] aggregateResults preserves every entry's output."
+      ],
+      "tags": [
+        "feature",
+        "quality",
+        "aggregation"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Small additive aggregation and per-entry isolation over the established list loop; single-spawn concurrency is upstream.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/quality/aggregate.ts",
+        "packages/nax/src/quality/runner.ts",
+        "packages/nax/test/unit/quality/aggregate.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/quality/aggregate.test.ts",
+          "reason": "extend aggregate assertions with the first detector stop reason in command order; first nonzero exit, any-entry timeout, summed duration and every entry's output retain their existing meaning."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "146e51fb715ffbbb9838b5ae750b4d208f7868c6"
+    },
+    {
+      "id": "US-007",
+      "title": "Gate policy carrier, gate records and e2e setup",
+      "description": "**Goal** — Carry resolved trusted stall policy through repository gate descriptions, setup and records.\n**Motivation** — Both otherwise wait for their wall-clock limit when a command endlessly repeats a line.\n**Approach** — Resolve the policy onto every gate description, include it in overlay run identity, apply the leaf default to a policy-less gate, classify a stopped run as timed-out, copy its reason to the record, and pass the e2e gate's policy to its setup.\nFor repository gates, root-command precedence by key and current ordering stay intact. Overlay gates use field-wise root+overlay policy. Include the resolved policy in overlay run identity so otherwise identical command/setup runs with different policies are not silently deduplicated; identical resolved policies still dedupe as they do today. `GateCommand` is the policy carrier so bot worktree remapping need not reload configuration.\n`resolveStallDetection` is not a decorative export: completing a sparse or absent policy is a production step reached from `runQualityGates`, so `_qualityGateDeps` (`run`, `loadConfig`, `loadPackageOverride`) gains a `resolveStallDetection` entry and the finish gate calls it through that seam for every gate before the quality runner runs, and `resolveGateCommands` calls it for the root policy and for the field-wise merged overlay policy it attaches. The deps entry is a plain delegation to the leaf function, the same shape as `run`; it exists so the resolution is observable at the production entry instead of being re-implemented inline.\n**Scope** — In: finish/gates/quality.ts carrier/default/dedupe/records and e2e setup. Out: bot projection/CLI reporting (US-008), quality engine/list implementation (US-005/006). Capture the shared resolver with sparse input through real runRepoGates, then capture completed policy at _qualityGateDeps.run; final-value-only tests do not pin delegation. Existing exact gate-object tests may gain policy only: finish gates-quality/gates-quality-e2e, workflow repo-gates and integration runtime/package-profile-registry. Preserve precedence/order/root key identity, cwd, setup inheritance and later-gate execution.\n**Interface** — GateCommand gains optional `stallDetection`; GateRunRecord gains optional `stopReason`. A manually constructed `GateCommand` without the optional field gets `DEFAULT_GATE_STALL_POLICY` at `runQualityGates`, not a new literal default in the engine. `runQualityGates` classifies early stops as timed-out before considering exit -1; existing caller repair/advisor routing is not broadened.",
+      "acceptanceCriteria": [
+        "[unit] resolveGateCommands attaches the root's resolved policy to root commands.",
+        "[unit] resolveGateCommands attaches the field-wise merged overlay policy to eligible package commands.",
+        "[unit] resolveGateCommands keeps root-key precedence unchanged when an overlay names the same gate key.",
+        "[unit] resolveGateCommands includes the resolved policy in overlay run identity, so identical command, setup and cwd with different policies stay distinct runs.",
+        "[unit] resolveGateCommands still deduplicates overlay gates whose resolved policies are identical.",
+        "[integration] runRepoGates reaches runQualityCommand with the resolved policy for configured gates through the real finish helpers.",
+        "[integration] runRepoGates reaches resolveStallDetection through _qualityGateDeps for a configured gate, passing that gate's sparse policy input and handing the completed policy to the quality runner.",
+        "[unit] runQualityGates gives a manually constructed GateCommand with no policy DEFAULT_GATE_STALL_POLICY.",
+        "[unit] runQualityGates honors an explicit both-zero policy instead of the default.",
+        "[unit] runQualityGates classifies detector-stopped exit -1 as timed-out.",
+        "[unit] runQualityGates copies the stopReason to the gate record.",
+        "[unit] runQualityGates continues subsequent gates after a stopped gate.",
+        "[unit] A gate record carries stopReason only when a detector stopped the run.",
+        "[integration] runQualityGates passes the e2e gate's policy to its setup command.",
+        "[integration] A stopped e2e setup yields that gate's timed-out record with failedPhase setup.",
+        "[integration] The e2e journey does not start after a stopped setup."
+      ],
+      "tags": [
+        "feature",
+        "gates",
+        "config",
+        "finish"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "The existing finish gate module already owns resolution, deduplication, setup and records; adding one policy carrier and reason uses standard patterns without a new orchestration abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/finish/gates/quality.ts",
+        "packages/nax/src/finish/index.ts",
+        "packages/nax/src/bot/checks.ts",
+        "packages/nax/test/unit/finish/gates-quality.test.ts",
+        "packages/nax/test/unit/finish/gates-quality-e2e.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/finish/gates-quality.test.ts",
+          "reason": "exact resolver assertions currently name only name/command/cwd/setup; authorize the added resolved policy while preserving root precedence, ordering, dedupe and distinct root keys, and authorize an optional stop reason only on a detector-stopped gate record."
+        },
+        {
+          "path": "packages/nax/test/unit/finish/gates-quality-e2e.test.ts",
+          "reason": "the e2e and setup-inheritance exact-object assertions gain the resolved policy; e2e setup still precedes the journey in the same cwd, and a failed or stopped setup prevents the journey."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/repo-gates.test.ts",
+          "reason": "the real-resolver assertion that pins a single root gate object gains that gate's same resolved policy; root precedence and the single-gate outcome are unchanged."
+        },
+        {
+          "path": "packages/nax/test/integration/runtime/package-profile-registry.test.ts",
+          "reason": "the exact profile-resolved lint gate assertion gains the merged overlay policy while keeping the same name, command and package cwd."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "88a7b9c4351800d0500050035f88efeb384a255f"
+    },
+    {
+      "id": "US-008",
+      "title": "Gate entry points: story gates, review, setup, bot, CLI",
+      "description": "**Goal** — Wire harness gate entry points to policy and expose early-stop evidence without losing trust or provenance.\n**Motivation** — Both otherwise wait for their wall-clock limit when a command endlessly repeats a line.\n**Approach** — Wire mechanical story/review checks, setup verification and trusted bot gate projections to the resolved policy, carry early-stop evidence into gate records and the workflow gate-timeout route, and expose it through `nax gates run`. Preserve provenance, command order and bot snapshot trust. Every scoped-lint arm the design names — degraded, template, derived and full-lint — carries the policy, and the derived arm is pinned at command execution rather than only at the helper call.\nIn `runReview`, the policy crosses the injected `_scopedLintDeps.runLintCommand` helper boundary, so the helper signature carries it and every degraded, template, derived and full-lint path passes the same value. No story, projectDir, storyGitRef or scope is threaded into the production `runReview` adapter by this change. `_scopedLintDeps` additionally gains a `runQualityCommand` entry that the module's `runLintCommand` delegates to — the same plain-delegation shape as `_qualityGateDeps.run` — so a test can keep the real helper and capture the policy arriving at command execution for the derived arm, which is a distinct call site from the template and full-lint arms and is otherwise unpinned.\nFor instruction/detection-derived bot checks, attach the trusted resolver input's configured policy (schema defaults if unset), not LLM-extracted thresholds. `BotCheck.stallDetection` stays optional so hand-built check literals remain valid; an absent value falls back to `DEFAULT_GATE_STALL_POLICY` at the quality gate runner.\n**Scope** — In: lint/typecheck ops, workflow gates, review runner/scoped lint, setup-verify, bot checks/fix/baseline projections and CLI gates report. Out: US-003–007 engine/carrier work. Applying stall policy to installation/pre-run/bootstrap steps, run-start baseline capture, native agent tools, ACP-owned tools, hooks, git processes, remote CI jobs/waits or plugin-owned subprocesses. Preserve authorized regression assertions (analysis). Use production entry points, injected streams/fake clocks and LLM doubles; keep policy mappings real.\n**Interface** — LintCheckOutput/TypecheckCheckOutput gain optional `stopReason` and `timedOut: true`; sentinel text identifies interruption and GateRunResult.timedOut includes those gates. GateReportEntry gains only optional `stopReason`, not cwd/raw output; passed outputTail stays absent. `nax gates run` keeps exit 0 for all gates passed, 2 for an unsuccessful/empty gate run, 1 for usage/trust/execution setup errors. `--json` writes one document to stdout. Plain output uses gate diagnostic notice. runReview without naxConfig uses schema-derived policy; bot mappings never reread policy from the fixed branch.",
+      "acceptanceCriteria": [
+        "[integration] runStoryGates passes the package-view stallDetection to lint, including manifest-detected commands, after resolving command provenance.",
+        "[integration] runStoryGates reports a stopped lint command in GateRunResult.timedOut.",
+        "[integration] runStoryGates passes the package-view stallDetection to typecheck.",
+        "[integration] runStoryGates reports a stopped typecheck command in GateRunResult.timedOut.",
+        "[integration] runStoryGates keeps a green lint or typecheck gate out of the timed-out list.",
+        "[integration] runReview mechanical checks pass the provided config policy to the quality runner.",
+        "[integration] runScopedLintCheck template, full and degraded paths pass the same policy.",
+        "[integration] runScopedLintCheck's supported derived-command arm — no template, no degraded reason, a derivable full-lint command — passes that same policy to command execution, captured at the quality-runner seam with the appended-files scoped command.",
+        "[unit] runReview with no full config gets the schema-derived policy rather than detector-disabled behavior.",
+        "[integration] runSetupGate forwards the supplied config policy to its verification command.",
+        "[integration] runSetupGate returns the existing nonzero result when the command is stopped.",
+        "[unit] resolveBotChecks preserves a configured gate's policy when projecting trusted snapshot gates.",
+        "[unit] resolveBotChecks attaches the trusted input-config policy to instruction-derived gates rather than accepting extracted thresholds.",
+        "[unit] resolveBotChecks attaches the same trusted policy to detection-derived gates.",
+        "[integration] Bot gatesStep retains the reviewed gate policy while mapping execution to the checkout worktree.",
+        "[integration] failingOnHead retains the reviewed gate policy when running the baseline on the unmodified head.",
+        "[integration] Neither bot gatesStep nor failingOnHead rereads the policy from the fixed tree.",
+        "[integration] gatesRunCommand with a stopped configured gate returns exit 2.",
+        "[integration] gatesRunCommand writes one JSON document containing that gate's structured stopReason.",
+        "[integration] gatesRunCommand plain output shows the reason in that gate's output.",
+        "[integration] runStoryGates with an enabled detector and controlled child streams surfaces an early-stop reason in its timeout finding text instead of returning a false green from partial parser output."
+      ],
+      "tags": [
+        "feature",
+        "gates",
+        "workflow",
+        "cli",
+        "bot",
+        "trust"
+      ],
+      "dependencies": [
+        "US-004",
+        "US-007"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Existing gate entry points make this policy/evidence threading rather than a new architecture, but many projections need integration checks; trusted bot snapshot handling retains strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/gates.ts",
+        "packages/nax/src/operations/lint-check.ts",
+        "packages/nax/src/review/runner/index.ts",
+        "packages/nax/src/cli/setup-verify.ts",
+        "packages/nax/src/bot/fix-steps.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/integration/gate-stall-routing.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/bot/checks.test.ts",
+          "reason": "exact BotCheck gate assertions gain the trusted policy: the config-tier case, the extracted instruction-tier case, the preserved-setup case, the detected ordered-gates case, the usable-scripts table, the lockfile-prefix table and the lockfile-priority case; source, order, setup and preRun assertions are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/review/scoped-lint.test.ts",
+          "reason": "the production-adapter contract pin asserts the exact five-argument `runLintCommand(workdir, storyId, env, command, stripEnvVars)` call, which the added policy necessarily widens; authorize the policy-bearing call shape while preserving its actual invariant: the adapter still threads no story, projectDir, storyGitRef or scope, the missing-story-ref arm still logs the degraded warning and runs full lint (now with the schema-derived default policy), and the single-check, command and success assertions stand. This entry also authorizes the derived-arm fixture — restoring the real `runLintCommand` helper with `_scopedLintDeps.runQualityCommand` stubbed — that captures the policy arriving at command execution for the appended-files scoped command."
+        },
+        {
+          "path": "packages/nax/test/unit/cli/gates.test.ts",
+          "reason": "JSON gate-report assertions may gain an optional stop reason only on a stopped gate; passed and not-run records, exit codes and the single-document contract are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/gates.test.ts",
+          "reason": "extend story-gate assertions so a stopped lint or typecheck report appears in the timed-out list; green, red and skipped states and the existing scoped and full-suite timeout assertions are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "432560554bc535fddf9897cf183659887495afe6"
+    },
+    {
+      "id": "US-009",
+      "title": "Honest branch findings and persisted mismatch",
+      "description": "**Goal** — Remove consumer-invented branch work and persist unresolved verdict mismatch independently.\n**Motivation** — These become `B` findings, consume fix rounds and inflate branch-found/fixed counts even though the reviewer named no defect.\n**Approach** — Stop synthesizing verdict-floor work in `withQualityFloor`/`branchReviewStep`, derive mismatch kinds from the verdict itself, persist `reviewMismatch` through the feature machine, and keep every real fix path and finding count intact. Persistence needs the `branch-review` node to declare `reviewMismatch` among its `produces`, because the step graph rejects any patched key — including one patched as `undefined` when stale evidence is cleared — that the node does not declare. The step writes its ledger sentences through the shared `_approvalDeps.branchMismatchReasons` seam, so the one text source is observable where it is used.\nA mismatch follows the story parser's existing definition: spec fail needs a critical/important spec finding; quality changes needs any critical/important finding. Empty, dropped-invalid and minor-only findings do not justify a blocking verdict. Both kinds are reported in stable order `spec`, `quality`. Concrete promoted deferred minors remain real fix work, but do not supply evidence for a missing spec finding or retroactively make an inconsistent reviewer reply consistent.\nAbsence/empty means no new mismatch reason; historical records require no migration. A fresh consistent branch review clears stale mismatch evidence; rerunning or resuming downstream fix/adjudication/publish steps does not clear it. A later full branch review, not a fix reviewer addressing B ids, can resolve this evidence.\n**Scope** — In: feature-steps.ts, feature-graph.ts, WorkflowFeatureRecord, branch artifacts and shared approval formatter/seam. Out: US-010 readiness, US-011 parser removal, US-012 clarification, US-013 dispatch. Treating an inconsistent branch verdict as an invented B finding, automatically approving it, or accepting an advisor waiver as a substitute for clarification. Keep the existing parser-marker exclusion when promoted minors exist until US-011; never filter authored matching text. Update only authorized direct-floor/equivalence fixture/produces expectations; parsed-floor expectations remain until US-011. Exercise production runFeatureMachine and resumed records.\n**Interface** — `reviewMismatch?: { kinds: readonly VerdictMismatch[] }`. `branchMismatchReasons` and `_approvalDeps = { branchMismatchReasons }` live in approval.ts. Each ledger sentence is obtained through that seam once per kind in spec/quality order:\n`branch review verdict inconsistent: spec fail without a blocking spec finding`\n`branch review verdict inconsistent: quality changes without a blocking finding`\nA mismatch is not a `WorkflowFindingDraft`, B id, fix target or advisor ruling. `reviewRan` remains true for a parseable inconsistent review; do not label it skipped.",
+      "acceptanceCriteria": [
+        "[unit] branchReviewStep writes the branch-review artifact with real assigned finding ids and no synthesized verdict-floor draft.",
+        "[unit] withQualityFloor adds no draft of its own: B ids come from the verdict's blocking drafts plus promoted minors.",
+        "[unit] withQualityFloor keeps the existing exclusion of a parser-marked quality floor when promoted minors exist unchanged.",
+        "[unit] A quality changes verdict with no blocking finding and no promoted minor issues no B id.",
+        "[integration] runFeatureMachine dispatches no branch fix for mismatch-only evidence.",
+        "[integration] runFeatureMachine recognizes spec-fail-without-evidence on a directly injected verdict that omits mismatch metadata.",
+        "[integration] runFeatureMachine recognizes changes-without-a-blocking-finding on a directly injected verdict that omits mismatch metadata.",
+        "[integration] runFeatureMachine persists reviewMismatch.kinds in spec then quality order.",
+        "[integration] runFeatureMachine keeps reviewRan true for a parseable inconsistent review.",
+        "[integration] runFeatureMachine still fixes real blocking findings and gate findings alongside a mismatch.",
+        "[integration] runFeatureMachine still fixes fix-now minors alongside a mismatch.",
+        "[integration] runFeatureMachine still assigns B ids to promoted minors alongside a mismatch.",
+        "[integration] runFeatureMachine retains a spec mismatch when a quality minor is promoted.",
+        "[unit] branchMismatchReasons emits each applicable stable sentence once, in spec then quality order.",
+        "[integration] runFeatureMachine's branch-review step obtains those sentences through _approvalDeps.branchMismatchReasons with the persisted kinds, so the shared formatter is the source of the ledger text rather than an inline duplicate.",
+        "[integration] runFeatureMachine resumed downstream of branch review retains mismatch evidence without launching clarification or a fix solely for it.",
+        "[unit] A newly consistent full branch review clears stale reviewMismatch evidence.",
+        "[unit] A downstream finding re-review does not clear reviewMismatch.",
+        "[unit] Given otherwise-green readiness facts from a historical record lacking reviewMismatch, readinessReasons returns no branch-mismatch readiness reason, preserving the historical absence of mismatch evidence.",
+        "[unit] A historical record lacking reviewMismatch retains unchanged finding counts."
+      ],
+      "tags": [
+        "feature",
+        "branch-review",
+        "workflow",
+        "persistence"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Persisted feature-machine state, graph patch declarations, minor promotion, findings identity and resume behavior must change coherently.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/feature-steps.ts",
+        "packages/nax/src/workflow/feature-graph.ts",
+        "packages/nax/src/workflow/types.ts",
+        "packages/nax/src/workflow/approval.ts",
+        "packages/nax/src/operations/workflow-replies.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/feature-machine-honesty.test.ts",
+          "reason": "the synthetic-quality-floor case expects a branch fix, a B id and a bumped counter; the replacing invariant is persisted mismatch evidence, no verdict-only fix call and an unchanged counter, while cases with real blocking findings keep their real fix target."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-minor-promotion.test.ts",
+          "reason": "the direct-verdict quality-floor leave case loses its synthesized finding; the replacing invariant is that only authored blockers and genuine promoted minors receive B ids, and reviewer-authored text identical to the old floor text remains real work; the cases that parse a reply keep their current expectations until the parser stops injecting its floor."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-machine-equivalence.test.ts",
+          "reason": "the quality-floor scenario becomes a mismatch-only trace with no invented fix target; unrelated scenarios are not authorized for blanket regeneration."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-graph.test.ts",
+          "reason": "its exact `branch-review` produces pin currently lists `reviewRan`, `cannotVerify`, `reviewUnread`, `reviewOpen`, `nextFindingId`, `minors` and `newMinors`; authorize adding `reviewMismatch` to that expected set so the graph accepts both the persistence patch and the explicit stale-evidence clear. Preserve every other node's expected outputs, every node kind, exit and transition assertion."
+        },
+        {
+          "path": "packages/nax/test/fixtures/workflow-equivalence/feature/quality-floor.json",
+          "reason": "this golden trace encodes the synthetic floor fix session and counter; update only this scenario's affected events and end record to mismatch evidence with no synthetic fix."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "1ae07b6d3162dcbc100632f990f22df3d93721e0"
+    },
+    {
+      "id": "US-010",
+      "title": "Mismatch readiness, publish and summary channel",
+      "description": "**Goal** — Hold publish readiness for persisted branch mismatch using the existing reason channel, not findings.\n**Motivation** — The honest alternative is to ask the reviewer once, then retain an explicit uncertainty reason that keeps the PR draft.\n**Approach** — Carry the persisted mismatch into publish readiness through the existing deterministic reason channel, so an otherwise green PR stays draft and the same reason reaches open items and the run summary without becoming a finding. The readiness text comes from `_approvalDeps.branchMismatchReasons`, the same shared source the branch-review step uses, not an inline copy at the publish entry.\nPersist/log each applicable sentence once per branch-review step, in stable spec/quality order. Both call sites — `branchReviewStep`'s ledger note, which follows the existing `describeUnread` note pattern, and `readinessReasons` reached from `publish` — obtain those sentences through the `_approvalDeps.branchMismatchReasons` seam rather than re-implementing the text inline, which is what makes the shared source observable at the production entries. `publish` passes the mismatch fact to `readinessReasons`; it is a deterministic reason that keeps an otherwise green PR draft and skips finish-approval adjudication. An approving advisor or green CI cannot override it. Preserve local-only/push-only publish modes: they carry the reason without inventing a PR operation.\nUse the existing reason channel through `PublishOutcome.reasons`, `result.json` verdict reasons, generic reason open items, PR draft explanation and `buildWorkflowRunSummary`/`formatWorkflowSummary` Publish line. No new fabricated open finding is needed. Preserve the established distinction between readiness and `workflowPassed`/`RunResult.success`: mismatch alone holds readiness but does not falsely claim tests or implementation failed.\n**Scope** — In: approval ReadinessFacts/readinessReasons, finalize publish projection and summary/open-item reason flow. Out: US-009 persistence/formatter, US-011 parser, US-012/013 retry/dispatch. Treating an inconsistent branch verdict as an invented B finding, automatically approving it, or accepting an advisor waiver as a substitute for clarification. Extend approval.test.ts/run-summary.test.ts without changing independent reason or story-mismatch counts. Test one production persisted-step-to-publish flow, capturing the formatter at both owning call sites and asserting publish carries its returned sentence.\n**Interface** — `ReadinessFacts.branchReviewMismatch?: readonly VerdictMismatch[]`. Stable sentences from branchMismatchReasons:\n`branch review verdict inconsistent: spec fail without a blocking spec finding`\n`branch review verdict inconsistent: quality changes without a blocking finding`\nHistorical absent/empty kinds add no reason. nextFindingId and branch found/fixed/left statistics continue to count only real issued work.",
+      "acceptanceCriteria": [
+        "[unit] readinessReasons yields 'branch review verdict inconsistent: spec fail without a blocking spec finding' for the spec kind.",
+        "[unit] readinessReasons yields 'branch review verdict inconsistent: quality changes without a blocking finding' for the quality kind.",
+        "[unit] readinessReasons yields both sentences in spec then quality order when both kinds are persisted.",
+        "[unit] readinessReasons preserves independent unread-file, gate, CI, skipped-review and story reasons alongside the mismatch sentences.",
+        "[integration] Production publish with green gates, green CI and an approving advisor double leaves the PR a draft.",
+        "[integration] That publish path never asks finish approval to overrule the deterministic mismatch reason.",
+        "[integration] Production publish retains the mismatch reason under local-only mode without inventing a PR operation.",
+        "[integration] Production publish retains the mismatch reason under push-only mode without inventing a PR operation.",
+        "[integration] Production publish obtains the mismatch readiness reason through _approvalDeps.branchMismatchReasons, captured during that publish call with the persisted kinds, so the shared formatter is the source of the readiness text rather than an inline duplicate.",
+        "[integration] The sentence _approvalDeps.branchMismatchReasons returns during that publish call is the mismatch reason PublishOutcome.reasons carries.",
+        "[unit] buildWorkflowRunSummary reports zero added branch findings for mismatch-only evidence.",
+        "[unit] buildWorkflowRunSummary carries the published mismatch reason.",
+        "[unit] formatWorkflowSummary renders the published mismatch reason on the Publish line.",
+        "[unit] buildOpenItems represents a persisted publish mismatch reason as a reason item rather than a finding or ruling.",
+        "[unit] Mismatch-only readiness leaves workflowPassed and RunResult.success unchanged."
+      ],
+      "tags": [
+        "feature",
+        "branch-review",
+        "readiness",
+        "publish"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Publish already consumes deterministic readiness facts and generic reason channels already feed artifacts/open items/summary; this adds one fact projection and formatter delegation with existing test harnesses.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/approval.ts",
+        "packages/nax/src/workflow/finalize.ts",
+        "packages/nax/src/workflow/run-summary.ts",
+        "packages/nax/src/workflow/open-items.ts",
+        "packages/nax/src/workflow/types.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/workflow/approval.test.ts",
+          "reason": "extend deterministic reason fixtures with the ordered branch mismatch sentences; retain every independent gate, CI, unread-file, skipped-review and story reason assertion."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/run-summary.test.ts",
+          "reason": "extend branch-count and publish-summary cases so mismatch contributes zero found/fixed findings and its persisted reason survives; existing story mismatch counts are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "8062a683203df6df9062f8df991cd04fba754fea"
+    },
+    {
+      "id": "US-011",
+      "title": "Branch reply mismatch parsing",
+      "description": "**Goal** — Preserve branch verdict mismatch and actual reviewer findings without parser-generated blockers.\n**Motivation** — `parseStoryReviewReply` already reports verdict mismatches without manufacturing findings.\n**Approach** — Make `parseBranchReviewReply` a lenient shape parser that keeps its real findings and the parser's mismatch metadata instead of synthesizing blockers. The parser's floor marker and the consumer's now-dead exclusion of it go with it as natural cleanup; no other consumer contract changes.\nA mismatch follows the story parser's existing definition: spec fail needs a critical/important spec finding; quality changes needs any critical/important finding. Empty, dropped-invalid and minor-only findings do not justify a blocking verdict. Both kinds are reported in stable order `spec`, `quality`. Concrete promoted deferred minors remain real fix work, but do not supply evidence for a missing spec finding or retroactively make an inconsistent reviewer reply consistent.\n`parseBranchReviewReply` stays a lenient shape parser. A usable reply carries its real findings, normalized triage, cannotVerify, inspectedFiles and optional mismatch. It never injects a finding to make the verdict look justified.\n**Scope** — In: operations/workflow-replies.ts and workflow-types.ts as needed, remove parser floor marker/helper/export and obsolete consumer import/exclusion, branch parser and parsed minor-promotion expectations. Out: US-009 persistence, US-010 readiness, US-012/013 retry/dispatch. Changes to story-review verdict handling, finding substantiation, severity rules, minor-triage policy, branch-fix limits, or availability/tier escalation policy. Existing malformed shapes still return null. Only the branch tests currently requiring synthesized findings/missing mismatch and parsed spec/quality-floor minor-promotion cases change; real/promoted work and known-minor normalization stand.\n**Interface** — `parseBranchReviewReply(output, minorIds)` keeps its call shape and returns BranchReviewVerdict or null; BranchReviewVerdict carries optional `mismatch` inherited from StoryReviewVerdict, using existing `VerdictMismatch = \"spec\" | \"quality\"`. Keep one triage entry per known minor id in supplied order; missing/unknown triage normalizes as before. Consumer-first dependency on US-009 makes parser removal gate-safe.",
+      "acceptanceCriteria": [
+        "[unit] parseBranchReviewReply returns the spec mismatch for a fail verdict with no critical or important spec finding.",
+        "[unit] parseBranchReviewReply preserves only the real drafts when the reply has no findings.",
+        "[unit] parseBranchReviewReply preserves only the real drafts when findings were dropped as invalid.",
+        "[unit] parseBranchReviewReply preserves only the real drafts when findings are minor-only.",
+        "[unit] parseBranchReviewReply returns the quality mismatch for a changes verdict with no critical or important finding.",
+        "[unit] parseBranchReviewReply adds no important quality draft for that case.",
+        "[unit] parseBranchReviewReply reports both mismatch kinds once in spec then quality order when neither verdict has its evidence.",
+        "[unit] parseBranchReviewReply preserves concrete blocking findings for a consistent reply.",
+        "[unit] parseBranchReviewReply preserves the existing known-minor triage normalization for a consistent reply.",
+        "[unit] parseBranchReviewReply still returns null for a malformed verdict shape."
+      ],
+      "tags": [
+        "feature",
+        "branch-review",
+        "parsing"
+      ],
+      "dependencies": [
+        "US-009"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Localized pure-parser simplification and natural obsolete marker cleanup against an already-compatible consumer.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/workflow-replies.ts",
+        "packages/nax/src/operations/workflow-types.ts",
+        "packages/nax/test/unit/workflow/feature-minor-promotion.test.ts",
+        "packages/nax/test/unit/operations/workflow-replies.test.ts",
+        "packages/nax/src/operations/workflow-story-review.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/workflow-replies.test.ts",
+          "reason": "the branch tests that currently require synthesized findings or a missing mismatch now expect the real drafts plus the same mismatch kinds as the story parser; malformed shape still returns null."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/feature-minor-promotion.test.ts",
+          "reason": "the parsed spec-fail and parsed quality-floor cases now expect only real and promoted work; the replaced expectation is the parser-injected blocker, not the promoted minor."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0a6022dfec7c5e346b38daab88ca0d479dafcd3e"
+    },
+    {
+      "id": "US-012",
+      "title": "Bounded clarification and coverage retry composition",
+      "description": "**Goal** — Compose one branch mismatch clarification with independent invocation-scoped JSON and coverage budgets.\n**Motivation** — The honest alternative is to ask the reviewer once, then retain an explicit uncertainty reason that keeps the PR draft.\n**Approach** — Composition: `makeCoverageRetryStrategy` wraps `makeMismatchClarificationStrategy`, which wraps the existing shape strategy. Each wrapper consults its inner strategy first, so shape repair, then clarification, then coverage is the effect of the nesting rather than a second priority table. Each wrapper subtracts the prompts it issued from the attempt number it passes inward, so the shape allowance stays one turn while clarification and coverage prompts are interleaved; the clarification wrapper owns one `clarified` latch and sets it when it issues, and the coverage wrapper records the attempt at which it last issued so a reply counts as a coverage response only when it answers that prompt. Because the shape strategy decides from the attempt number it is handed and holds no spent latch of its own, the clarification wrapper also owns an invocation-local count of shape-repair prompts already issued and adds it to the attempt it passes inward: a repair spent in one hop is therefore not reissued when a manager-owned fallback hop restarts the loop at 0. All of these counters live on the strategy instance, which `callOp` resolves once per invocation; the wrappers carry no other state and never see raw bytes or config.\nA parseable mismatch gets at most one clarification turn for the entire invocation (both kinds together). Reuse the existing per-kind sentences; require the complete branch-review object, preserving findings, coverage evidence and minor triage, and ask to name the defect/failed AC or correct the verdict. This is read-only reviewer work, not a fix instruction.\nOn persistent mismatch, keep the last parseable verdict and mismatch; do not return null solely because it is inconsistent. If the clarification is malformed, the remaining shape allowance may repair it; once exhausted, retain the last parseable verdict, including real findings, rather than certifying it clean.\n**Scope** — In: wrapper/resolver/builders/seams. Out: US-013 delivery, US-011 parser, US-010 readiness. Changes to story-review verdict handling, finding substantiation, severity rules, minor-triage policy, branch-fix limits, or availability/tier escalation policy. Preserve deadlines/abort tests and stopped coverage. Assert real callOp prompts/decisions across hops.\n**Interface** — Retry barrel exports `MismatchClarificationOpts`/`makeMismatchClarificationStrategy`; prompts barrel exports `buildWorkflowBranchVerdictMismatchRetry`. `_branchReviewRetryDeps = { makeMismatchClarificationStrategy, buildWorkflowBranchVerdictMismatchRetry }` delegates to them. Bound: 3+C replies per completed hop; existing 21-send per-hop ceiling unchanged.",
+      "acceptanceCriteria": [
+        "[integration] callOp(workflowBranchReviewOp) sends exactly one mismatch clarification when a parseable review lacks blockers.",
+        "[integration] callOp(workflowBranchReviewOp) issues that clarification on the initial review's session handle, so no second review session is opened.",
+        "[integration] buildWorkflowBranchVerdictMismatchRetry's clarification text asks for the failed kind's remedy and to name the missing defect or failed AC, or to correct the verdict.",
+        "[integration] The clarification requires the complete branch-review object naming findings, inspectedFiles, cannotVerify and minorTriage.",
+        "[integration] When callOp(workflowBranchReviewOp) receives a corrected clean verdict with findings:[] and complete coverage, the resolved strategy returns retry:false, accepting that verdict with no fix target.",
+        "[integration] Given a clarification reply naming the missing defect, when the strategy resolved by workflowBranchReviewOp.retry reports its last-parseable verdict in RetryDecision.fallback, that verdict's findings contain the reviewer-authored blocking work.",
+        "[integration] A persistently inconsistent reply receives no second mismatch clarification from callOp(workflowBranchReviewOp) after its one clarification.",
+        "[unit] workflowBranchReviewOp.retry reports the last parseable reply, with its mismatch evidence and real findings, as its exhausted fallback rather than returning null solely because the reply is inconsistent.",
+        "[integration] workflowBranchReviewOp.retry repairs a malformed clarification only with the remaining one-turn JSON allowance.",
+        "[integration] workflowBranchReviewOp.retry clarifies an initially inconsistent and incomplete reply before sending any coverage prompt.",
+        "[integration] workflowBranchReviewOp.retry keeps the configured coverageRetries allowance for coverage prompts sent after a clarification.",
+        "[integration] Those post-clarification coverage prompts from workflowBranchReviewOp.retry keep their diff-part references.",
+        "[unit] workflowBranchReviewOp.retry measures coverage no-progress only against responses to coverage prompts.",
+        "[unit] workflowBranchReviewOp.retry spends no coverageRetries budget on a clarification or shape response.",
+        "[unit] workflowBranchReviewOp.retry cannot reset an active coverage allowance with a clarification or shape response.",
+        "[unit] workflowBranchReviewOp.retry cannot reopen a stopped coverage state with a clarification or shape response.",
+        "[integration] A mismatch first introduced by a coverage response is clarified by workflowBranchReviewOp.retry only while its invocation-local clarification latch remains unspent.",
+        "[integration] workflowBranchReviewOp.retry does not suppress the unspent clarification on coverage budget or no-progress exhaustion.",
+        "[integration] For coverage allowance C, callOp(workflowBranchReviewOp) sends no more than 3+C semantic replies in one completed hop.",
+        "[integration] workflowBranchReviewOp.retry issues no JSON repair in a manager fallback hop when one was already issued in an earlier hop, because the shape allowance is spent once per invocation.",
+        "[integration] No clarification, JSON or coverage prompt is sent for an adapterFailure transport result.",
+        "[integration] workflowBranchReviewOp.retry obtains its clarification wrapper from _branchReviewRetryDeps.makeMismatchClarificationStrategy, captured during a real callOp(workflowBranchReviewOp) mismatch run with the parsed-reply callback and clarification prompt factory in its options.",
+        "[integration] During that captured real callOp(workflowBranchReviewOp) mismatch run, the wrapper _branchReviewRetryDeps.makeMismatchClarificationStrategy's stub returns decides the follow-up prompts.",
+        "[integration] The clarification prompt callOp sends is the output of the captured _branchReviewRetryDeps.buildWorkflowBranchVerdictMismatchRetry call, made with the failed kind."
+      ],
+      "tags": [
+        "feature",
+        "branch-review",
+        "retry",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-011"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A new wrapper composes existing retry abstractions rather than replacing dispatch architecture; invocation budgets across fallback hops are complex, and same-session behavior retains strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/workflow-branch-review.ts",
+        "packages/nax/src/agents/retry/coverage-retry.ts",
+        "packages/nax/src/agents/retry/parse-retry.ts",
+        "packages/nax/src/agents/retry/index.ts",
+        "packages/nax/src/prompts/builders/workflow-branch-builder.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/agents/retry/mismatch-clarification-retry.ts",
+        "packages/nax/test/unit/agents/retry/mismatch-clarification-retry.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/workflow-branch-review.test.ts",
+          "reason": "retry assertions may account for the one-turn clarification prompt and the captured `_branchReviewRetryDeps` factory and builder calls; clean, malformed-only and coverage-only cases keep their current prompts and bounds. US-012's permission here covers the clarification prompt, the priority order, the send counts and the two seam captures only — never a delivered-value assertion."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/workflow-branch-review-coverage.test.ts",
+          "reason": "coverage budget and no-progress assertions remain, extended for shape and clarification interleavings; a clarification response alone is not a coverage no-progress event."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f3921cd85a17bb44fe0ba37ef3dd24cba8bd1eb3"
+    },
+    {
+      "id": "US-013",
+      "title": "Opt-in last-parseable dispatch handoff",
+      "description": "**Goal** — Deliver recorded plain-record retry fallback before post-parse hooks only for opted-in null parses.\n**Motivation** — The honest alternative is to ask the reviewer once, then retain an explicit uncertainty reason that keeps the PR draft.\n**Approach** — The opt-in branch validates with a new strict predicate, `isPlainRecord(value)`: `typeof value === \"object\"`, not null, not an array, and its prototype is either `Object.prototype` or `null`. This is deliberately **not** the check the existing throwing path uses — `validatedFallbackRecord` rejects only non-objects and null, so arrays and class instances pass it; the two predicates are separate and this feature does not claim the legacy one validates plain records.\nWhen set, `op.parse` returns null/undefined and `retryState.retryFallback` satisfies `isPlainRecord`, that object is the parse result.\nA `retryState.retryFallback` that is `undefined` or `null` counts as no fallback: the null parse result stands, so \"no parseable reply\" keeps today's skipped-review outcome and nothing is substituted.\nA `retryState.retryFallback` that is present but fails `isPlainRecord` (array, class instance, function, string, number, boolean) raises the existing `CALL_OP_INVALID_FALLBACK` error naming the observed value, before `runPostParse`, so neither `verify` nor `recover` runs and no malformed verdict reaches the branch step.\nThe post-parse hooks keep their existing meaning for a substituted value: `verify` is called with the fallback object as the parsed value it observes, and `recover` runs only when `verify` returns null — exactly the split `runPostParse` implements today. Substituting the fallback must therefore happen before `runPostParse`, not by returning the fallback around it.\nOperations without the flag keep today's behaviour exactly, including `validatedFallbackRecord`'s broader object check on the throwing path; `workflowBranchReviewOp` is the only op that sets it.\n**Scope** — In: RunOperation flag, module-private predicate/null-parse handoff in call-dispatch-run.ts, sole branch-op opt-in and delivered wrapper outcomes. Out: retry composition/prompts/seam counts (US-012), global fallback precedence changes. Ensure strict validation errors cannot be swallowed by the legacy parse-failure ladder. Extend call.test.ts opt-in cases without rewriting existing precedence; branch-operation tests here own delivered malformed-follow-up, coverage findings/mismatch and null outcomes. branch-review-sliced.test.ts adds only handoff/skipped cases; package-failure/abort/outer-timeout cases stay unedited. Drive all handoff/hook/strict-class assertions through real callOp, not strategy-only/predicate tests.\n**Interface** — `RunOperation.preferRetryFallbackOnNullParse?: true`; `isPlainRecord` lives privately in operations/call-dispatch-run.ts. Historical operations without the flag retain null-parse and throwing-path behavior unchanged.",
+      "acceptanceCriteria": [
+        "[integration] With preferRetryFallbackOnNullParse set, callOp returns the strategy's plain-record fallback when op.parse returns null.",
+        "[integration] That opt-in result passes the fallback object to a declared verify as the value it observes, driven through real callOp with an operation double that sets the flag and declares verify.",
+        "[integration] recover runs for that opt-in result only when that verify returns null.",
+        "[integration] A fallback record whose prototype is null is substituted as the parsed value under the flag.",
+        "[integration] An array fallback under the flag raises CALL_OP_INVALID_FALLBACK.",
+        "[integration] When an array fallback is rejected under the flag, neither post-parse hook runs.",
+        "[integration] A class-instance fallback under the flag raises CALL_OP_INVALID_FALLBACK and substitutes nothing.",
+        "[integration] Under preferRetryFallbackOnNullParse, callOp leaves the null parse result intact when the strategy's retryFallback is null or absent.",
+        "[integration] With the flag set and no parseable reply, runBranchReview reports skipped review for the resulting null verdict instead of a clean one.",
+        "[integration] runBranchReview receives the last parseable inconsistent review as the branch verdict instead of a skipped review, because workflowBranchReviewOp sets the flag.",
+        "[integration] Through real callOp(workflowBranchReviewOp), a parseable inconsistent verdict followed by a malformed clarification and an exhausted malformed shape repair returns the last parseable verdict.",
+        "[integration] Through real callOp(workflowBranchReviewOp), workflowBranchReviewOp.retry keeps the real findings of the last-parseable verdict after coverage exhaustion.",
+        "[integration] Through real callOp(workflowBranchReviewOp), workflowBranchReviewOp.retry also keeps the mismatch kinds carried by that last-parseable verdict after coverage exhaustion.",
+        "[integration] An operation without the flag whose parse throws keeps today's precedence, returning the recorded fallback through the existing throwing-path check even when that fallback is an array."
+      ],
+      "tags": [
+        "feature",
+        "branch-review",
+        "operations",
+        "dispatch"
+      ],
+      "dependencies": [
+        "US-012"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "An opt-in parse-ladder change must validate fallback classes before hooks and preserve legacy behavior while reaching the real branch wrapper.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/operations/call-dispatch-run.ts",
+        "packages/nax/src/operations/post-parse.ts",
+        "packages/nax/src/operations/types.ts",
+        "packages/nax/src/operations/workflow-branch-review.ts",
+        "packages/nax/src/workflow/branch-review.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/operations/call.test.ts",
+          "reason": "the parse-failure ladder cases keep their precedence for operations that do not opt in; authorize the added opt-in null-parse cases, including the rejected fallback classes that raise `CALL_OP_INVALID_FALLBACK`, without rewriting the existing ladder."
+        },
+        {
+          "path": "packages/nax/test/unit/operations/workflow-branch-review.test.ts",
+          "reason": "US-013's permission in this file is limited to the opt-in handoff outcomes: the flag set on `workflowBranchReviewOp`, the last parseable verdict reached through real `callOp` after a malformed clarification and exhausted repair, the findings that survive coverage exhaustion, and the null result with no parseable reply. US-012 owns the clarification-prompt and send-count cases in the same file; neither story may rewrite the other's cases."
+        },
+        {
+          "path": "packages/nax/test/unit/workflow/branch-review-sliced.test.ts",
+          "reason": "extend the wrapper cases with the opt-in handoff outcome (an inconsistent last-parseable verdict delivered as the branch verdict, and a null result still reported as skipped review); the existing package-failure, abort-propagation and review-timeout cases stay green unedited as the outer deadline anchor."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9c28b0ebe9ebbbeec5a8380efc113b786426aaac"
+    }
+  ],
+  "analysis": "Second-pass adversarial audit: re-read spec.md ACs at lines 643-886, its Context Files/Creates lists at 437-569, failure handling at 243-251 and all eleven feature exclusions at 283-293. Every one of the 206 spec bullets is retained as 215 independently observable assertions in its original story; no criterion, qualifying regression clause, story or binding dependency was deleted or moved. Full ordinal crosswalk (spec bullet -> PRD assertion, ranges are inclusive): US-001 1-21->1-21; US-002 1-11->1-11; US-003 1-11->1-11, 12->12/13/14, 13-20->15-22; US-004 1-16->1-16; US-005 1-18->1-18; US-006 1-5->1-5, 6->6/7; US-007 1-16->1-16; US-008 1-21->1-21; US-009 1->1, 2->2/3, 3-17->4-18, 18->19/20; US-010 1-11->1-11, 12->12/13, 13-14->14-15; US-011 1-7->1-7, 8->8/9, 9->10; US-012 1-21->1-21, 22->22/23, 23->24; US-013 1-4->1-4, 5->5/6, 6-13->7-14. The split assertions retain their original mechanism and regression conditions: empty-group escalation/timers/readers; duration/output; authored B work/temporary parser-marker exclusion; historical no-mismatch reasons/counts; carried/formatted Publish reason; real findings/known-minor triage; factory capture/returned-wrapper control; array rejection/hooks not reached.\n\nAudit corrections: US-004 policy reaches regression for selection.effectiveCommand, NOT the selectScopedTests metadata selector (operations/verify-scoped.ts:292-310); its AC now states the execution boundary explicitly. US-003 now spells out the raw timeout flags and observes best-effort reader cancellation rather than vaguely clearing readers. US-005's exit-rejection criterion observes the existing non-stall error result when rejection precedes any stop, preserving floating-catch behavior rather than adding an exit-error repair policy (quality/runner.ts:287-294,383-394). US-009 historical readiness means no added mismatch reason, not suppression of unrelated readiness reasons. US-010 criteria now state both exact stable sentences. US-012 corrected-clean acceptance is a retry:false decision with complete coverage; real blocking work is observed in RetryDecision.fallback, not by pretending the retry resolver itself returns a verdict or by asserting US-013's delivered substitution. US-003's description now limits collector implementation to its own executor, leaving quality wiring to US-005. Adjacent feature exclusions are echoed in owning Scope-Out sections without excluding their in-scope gate/setup/report work.\n\nEvery story already has a negative-path assertion, so none were invented: US-001 blank/overlong lines and disposal; US-002 invalid policy values; US-003 untrusted cwd/stream errors/stops; US-004 mixed failure/interruption and forbidden rerun; US-005 never-exiting child/stream rejection; US-006 continuation after interruption and first nonzero result; US-007 stopped setup prevents journey; US-008 timeout finding/exit 2; US-009 inconsistent evidence dispatches no invented fix; US-010 deterministic mismatch prevents ready promotion; US-011 malformed shape returns null; US-012 persistent mismatch/exhausted JSON/transport failure sends no extra prompts; US-013 rejected fallback classes/skipped null verdict. Regression anchors remain in each changed-behavior story; in particular keep existing timeout lanes, first-failure aggregation, no-policy opt-out, root precedence, known-minor triage, independent readiness reasons, session identity and legacy throwing-path array fallback. No deprecated file-content AC tags occur. All thirteen contextFiles arrays exactly match the spec's recommended lists, stay within five entries and contain no story-created file; expectedFiles and all binding workdirs/dependencies are unchanged. All eleven top-level outOfScope strings remain verbatim; the spec declares no separate story-local deferral block.\n\nRouting audit: US-004/007/010 use medium/tdd-simple because their existing aggregation/resolver/reason channels need standard additive fields and predicates, not new engines. US-003/005/008/012 are complex rather than expert because the architecture and injected seams already exist, retaining strict three-session TDD for trust or session-sensitive paths. US-001/009/013 remain complex with lite TDD for new streaming state, persisted machine semantics or generic fallback-ladder changes. Current revalidated anchors for the subprocess/dispatch descriptions: verification/executor.ts:99 executeWithTimeout, :114 trust check, :138-139 buffered readers, :155 terminal race; quality/runner.ts:144 collectors, :163 drains, :318 direct exit await; finish/gates/quality.ts:27 deps, :59 records, :86 classification, :118 carrier, :178 resolver, :253 setup, :279 runner; operations/call-dispatch-run.ts:397 legacy broad fallback validation and :464 authoritative parse; bot/fix-steps.ts:223 trusted gate execution and bot/gate-baseline.ts:54 baseline carrier use. These revalidated anchors supersede approximate line ranges in the original narrative below. No command tool is exposed, so this audit used reads/searches and text edits, not a claimed executed JSON/spec-lint/test validation.\n\nGoal and delivery: close #2924 and #2923 in one explicitly requested packages/nax feature, with two independent arcs: honest branch-review uncertainty and deterministic gate-stall interruption. Exactly US-001 through US-013 are retained with the binding dependency graph; do not add an artificial dependency between these arcs. All implementation/test paths are repository-root-relative; every story selects workdir packages/nax. This is an in-place TypeScript/Bun enhancement, not a new package, dependency or release. Graph tools and command execution are unavailable in this authoring session, so findings use direct reads/searches; no agents, paid services, plan/run or tests were invoked. The supplied spec is authoritative; line citations below ground its baseline, not its future implementation. Read docs/architecture/ARCHITECTURE.md and the scoped rules before implementation.\n\nRepository architecture and conventions: packages/nax/package.json:12 defines package typechecking and :49 defines the wrapped full suite; :83 exposes deterministic spec lint. Use bun:test, injected _deps, shared helpers, controlled streams and makeFakeClock; packages/nax/test/helpers/fake-clock.ts:1 re-exports the test-kit fake clock. Existing virtual-clock process coverage demonstrates makeSpawn/makeSpawnResult and dependency restoration at packages/nax/test/unit/quality/runner-timeout-kill.test.ts:10-64. Runtime tests must close every created runtime (packages/nax/test/unit/operations/workflow-branch-review-coverage.test.ts:19-23). Follow .nax/rules/config-patterns.md, retry-strategy.md, monorepo-awareness.md and the test architecture/helper rules; no rule-store edits. Preserve public barrels except utils, which has no barrel. Sources should remain under the repository size/complexity limits; natural concern extraction is allowed but not a separate refactor.\n\nGate leaf and configuration (US-001/002): create packages/nax/src/utils/gate-stall.ts as a leaf importing neither quality nor verification nor any sibling utils module. packages/nax/src/quality/runner.ts:20 already imports verification/executor, so reversing that direction creates a cycle. Declare GateStallPolicy, GateStopReason, GateStallMonitor, createGateStallMonitor, DEFAULT_GATE_STALL_POLICY and resolveStallDetection once in that leaf. The sole literal default is { repeatedLineThreshold: 100, silenceTimeoutSeconds: 0 }. Resolution fills sparse/absent fields while preserving zeros. QualityConfigSchema is at packages/nax/src/config/schemas-execution.ts:265; the root QualityConfigSchema.default literal at packages/nax/src/config/schemas.ts:188 bypasses nested defaults when quality is wholly absent. Introduce StallDetectionConfigSchema whose field defaults read the leaf constant, and spread the parsed block into that root literal rather than restating numbers. DEFAULT_CONFIG remains schema-derived. QualityConfig at packages/nax/src/config/runtime-types.ts:139 may keep stallDetection and its public fields optional for programmatic sparse configurations. packages/nax/src/config/merge.ts:167 explicitly merges quality commands/lintOutput, so add field-wise policy merging there without losing root siblings or resurrecting disabled values. Loader layering stays global/project/profile/CLI; engines never load config. Repeat threshold accepts 0 or integers >=2; silence accepts integers >=0. Reject null, coercions, booleans, strings, fractions, negatives, non-finite programmatic numbers and repeat threshold 1. Setting repetition alone must leave silence at 0. Verify the single-literal/default-source property by static review, not source-text assertions.\n\nMonitor algorithm (per spawn): maintain independent incremental UTF-8 decoding and repetition state for stdout/stderr; other-stream activity does not reset a repetition run. LF terminates a line and CRLF is one delimiter across chunks; bare CR is content. Compare complete decoded text exactly, excluding delimiters but preserving indentation, trailing spaces, ANSI and case. Whitespace-only lines are ineligible and reset that stream. Count first equal eligible occurrence as 1. At live EOF, a nonempty unterminated tail is one final line. Bound detector-only pending/previous-line storage at 16,384 UTF-16 code units per stream; an overlong line resets repetition and is ignored through its delimiter, never matched as a truncated prefix. Captured output is not capped or rewritten. Every nonempty byte chunk on either stream resets silence, including blanks/partials; empty chunks and EOF do not. Silence begins at spawn, defaults disabled, and has no required numerical relationship to wall timeout. Both detectors are disabled with both fields 0. dispose disables callbacks and clears the silence timer; instances share no timers/counters.\n\nExecutor baseline and lifecycle (US-003): executeWithTimeout at packages/nax/src/verification/executor.ts:108 has fourth-argument shell/grace/drain/cwd options; add optional stallDetection without changing call shape. Trust is checked before spawn at :124. Response.text collectors at :150-151 currently expose no live text and lose bytes on incomplete drains; replace with concurrent incremental collectors exposing accumulated text and best-effort cancellation. Existing timeout race, detached group, SIGTERM/grace/SIGKILL and liveness rules at :167-235 are preservation anchors. One terminal latch arbitrates observed leader exit, wall deadline, repetition and silence; first observed live event wins, with tests explicitly driving both orders. Stop callbacks after observed exit and output drained after exit cannot reclassify a normal result; detector-first cannot become pass on later exit 0. Each invocation starts at most one termination lane. Preserve group escalation even after shell leader exit, disable bare-pid fallback after observed leader exit, cancel escalation for an empty group, bound post-kill wait and concurrent stream drains, clear every timer and cancel stuck readers best-effort. Stream read errors retain prior bytes and existing result policy without fabricating detector evidence. Raw verification detector stops return success:false, timeout:true, killed:true, childProcessesKilled:true, countsTowardEscalation:false and stopReason, with error starting EXECUTION_STALLED: and describing actual stream/count/threshold or configured silence. Ordinary timeout/drain/spawn/exit never acquires stopReason. Output remains stdout then stderr. No options means no monitor, not an implicit default.\n\nVerification propagation (US-004): add optional stallDetection to VerificationGateOptions and stopReason to TestExecutionResult/VerificationResult at packages/nax/src/verification/types.ts:22,46,62. packages/nax/src/verification/runners.ts:66 forwards executor options; :73 translates timeout; :122 aggregates list results. Preserve command order, running all entries, first unsuccessful entry status/exitCode/error, every-entry success conjunction, some-entry countsTowardEscalation, output and pass/fail totals. Independently carry first detector reason in command order even for [ordinary failure, detector stop], whose aggregate remains TEST_FAILURE, and [detector stop, ordinary failure], whose aggregate remains TIMEOUT. No stopped entry means absent reason. packages/nax/src/operations/verify-scoped.ts:292 constructs regression options, :337 checks zero-test fallback and :388 routes TIMEOUT. Use status === TIMEOUT || stopReason !== undefined for interruption before fallback/code-failure interpretation, returning timeout plus reason. Pass package-view policy into regression for the command returned by scoped selection and into its legitimate zero-tests full-suite rerun, never adding policy to selectScopedTests metadata selection or applying it to maybeRunNewPackageSetup. packages/nax/src/operations/full-suite-gate.ts:200 calls regression and :218 derives timedOut; derive it from the same predicate, pass gate-context policy, and carry reason in timeout and passed-on-timeout outputs without changing acceptOnTimeout translation. packages/nax/src/workflow/gates.ts:159 must continue to make passed-on-timeout red/timed-out.\n\nQuality engine (US-005/006): QualityCommandOptions/Result are at packages/nax/src/quality/runner.ts:77,113; add optional stallDetection/stopReason. Incremental collectors already exist at :153 and concurrent bounded drains at :172. The timeout callback signals a group but :329 awaits proc.exited directly; replace this unbounded wait with the executor-shaped exit-versus-first-stop race followed by bounded grace and drains. A child whose exited never settles and whose pipes stay pending must still return the stopped result, clear timers and cancel readers. Keep the existing floating exited.catch(() => {}) behavior; rejected exit is not stall evidence and must not be repaired/reclassified in this feature. Use the same latch, no-bare-pid and trust-before-monitor rules as executor. Raw detector result is success:false, timedOut:true, exitCode:-1, stopReason; diagnostic begins [nax] <commandName> stopped early: repeated-output ... or silence .... Harness stopped output is notice only; origin agent-tool with explicitly supplied policy retains existing 4,000-character line-boundary tail. An ordinary agent-tool call gets no new policy. Preserve successful combined text, environment stripping, agent markers, NO_COLOR, shell quoting, cwd and normal timeout contracts (existing runner.test.ts stays green unedited). Structured logs carry reason/stream/count/threshold, never the repeated line/raw output. packages/nax/src/quality/runner.ts:422 already runs all list entries; use fresh per-spawn state. packages/nax/src/quality/aggregate.ts:8 preserves first nonzero exit, any-entry timedOut, duration sum and all output; add first stopReason in command order independently.\n\nRepository gate carrier (US-007): packages/nax/src/finish/gates/quality.ts:27 exposes _qualityGateDeps; add a plain resolver delegation resolveStallDetection alongside run/loadConfig/loadPackageOverride. GateRunRecord (:58) gains stopReason and GateCommand (:125) gains optional stallDetection. resolveGateCommands (:185) schedules root gates per configured key, then eligible overlay runs; root key precedence/order remain unchanged. Resolve root policy and field-wise root+overlay policy through the shared resolver, attach resolved values, and include resolved policy in overlay run identity with cwd/command/setup. Equal resolved policies still dedupe; distinct policy cannot silently collapse. runQualityGates (:274) resolves every gate's sparse policy through _qualityGateDeps.resolveStallDetection before execution, including hand-built gates absent the field, which get the leaf default. Explicit both-zero stays disabled. Pass the same resolved policy into e2e setup (:249) and journey. A stopped setup yields timed-out/failedPhase:setup plus reason and prevents journey; later gates still run. Existing classifyGateExit (:85) already prioritizes timeout over -1/not-run, so retain that order. Capture the resolver call itself at production entry, not only final values.\n\nEntry-point inventory (US-008): packages/nax/src/operations/lint-check.ts:133 and typecheck-check.ts:139 resolve actual provenance/cwd before runQualityCommand; pass package-view policy here, including detected commands, and add stopReason plus optional timedOut:true markers to operation outputs. A reason-bearing sentinel must describe interruption instead of parsing partial diagnostics as a completed failure. packages/nax/src/workflow/gates.ts:73 fromCheck currently drops timeout evidence; surface it into GateRunResult.timedOut while keeping green/skipped semantics and established repair/advisor routing. packages/nax/src/review/runner/index.ts:165 runCheck and its mechanical/scoped-lint adapter must pass provided naxConfig policy or schema-derived default with no full config. packages/nax/src/review/scoped-lint.ts:216 runLintCommand must carry the policy across its injected boundary, with a new _scopedLintDeps.runQualityCommand plain delegation used by the real helper; every degraded/template/derived/full-lint arm forwards the same value. Pin the derived appended-files arm at command execution, not merely at helper invocation. Do not thread story/projectDir/storyGitRef/scope into production runReview; preserve its degraded warning and full-lint behavior. packages/nax/src/cli/setup-verify.ts:15 supplies policy only to the verification gate and keeps nonzero stop result. packages/nax/src/bot/checks.ts:13 BotCheck stays optional-field compatible; :94 config projection currently drops policy, while :129 instruction extraction and :186 script detection must attach trusted input-config policy (schema defaults if absent), never LLM-authored thresholds. Bot fix gates at packages/nax/src/bot/fix-steps.ts:223 and failingOnHead in bot/gate-baseline.ts retain carrier fields across worktree/baseline mapping and must not reread configuration from fixed code. PreRun/bootstrap/reviewBuildSteps are still not gates.\n\nCLI and other owners: packages/nax/src/cli/gates.ts:93 GateReportEntry and :197 entryFor project internal gate records; add only optional stopReason. JSON is one stdout document, with existing name/status/exitCode/durationMs/failedPhase/outputTail semantics. Do not expose internal cwd/raw output; passed outputTail remains omitted. Plain output shows the diagnostic notice via existing tails. Exit remains 0 all passed, 2 unsuccessful/empty gate run and 1 usage/trust/setup error; stderr behavior unchanged. runRepoGates supplies feature repo/final/repair/post-CI-repair passes and nax gates run via the shared helpers. Intentionally leave detector options absent for captureRunBaseline, runPreRunSteps, bot reviewBuildSteps, maybeRunNewPackageSetup and native declared RunCommand via coding-tool-support-resolve.ts. Raw Bash/exec, ACP tools, hooks, git helpers, remote CI wait and plugin callbacks retain their owners/watchdogs. No engine silently turns detectors on for those consumers.\n\nHonest review consumer first (US-009): packages/nax/src/operations/workflow-replies.ts:136 already reports ordered VerdictMismatch on story reviews without synthesizing findings; VerdictMismatch = spec | quality at operations/workflow-types.ts:42 and BranchReviewVerdict already extends StoryReviewVerdict (:83). The branch parser at workflow-replies.ts:191 currently strips mismatch, injects spec blockers and a symbol-marked quality floor. Independently withQualityFloor at packages/nax/src/workflow/feature-steps.ts:122 invents work. US-009 removes only the consumer's synthetic floor first, keeping existing parser-marker exclusion with promoted minors until US-011 removes the parser floor and its now-dead import/export/helper. Only authored blockers and genuine promoted minors receive B ids. Direct legacy/custom injected verdicts may omit mismatch, so branchReviewStep must derive inconsistency from original reviewer findings: spec fail requires critical/important spec; quality changes requires any critical/important. Empty/dropped/minor-only findings do not suffice; promoted minors never retroactively justify reviewer verdict evidence. Real blockers, gates, fix-now and promoted minors continue their current work paths alongside mismatch. At feature-steps.ts:139-192 persist optional reviewMismatch:{ kinds: readonly VerdictMismatch[] }, stable spec/quality order, in record and branch-review artifact while retaining reviewRan:true. The branch-review FEATURE_GRAPH node at packages/nax/src/workflow/feature-graph.ts:35 must declare reviewMismatch in produces so both persistence and explicit undefined clearing are legal. A fresh consistent full review clears stale mismatch; downstream finding re-review, resume, adjudication or publish cannot clear it or dispatch new work solely for it. The assignment counter at feature-steps.ts:46 and branch summary at workflow/run-summary.ts:50 must count real work only.\n\nReadiness and artifacts (US-009/010): create branchMismatchReasons in packages/nax/src/workflow/approval.ts as the single text source, exported through _approvalDeps:{ branchMismatchReasons }. Stable sentences are exactly: branch review verdict inconsistent: spec fail without a blocking spec finding; branch review verdict inconsistent: quality changes without a blocking finding. Emit each applicable sentence once in spec/quality order. branchReviewStep obtains ledger notes through that seam, following describeUnread at approval.ts:78. ReadinessFacts (:19) gains optional branchReviewMismatch; readinessReasons (:122) also obtains sentences through that seam. Production publish at packages/nax/src/workflow/finalize.ts:535 maps persisted kinds into facts, preserving local-only and push-only modes, deterministic-reason precedence and no finish-approval adjudication when reasons exist. Green CI or approving advisor cannot override mismatch. Capture the shared formatter at BOTH the real branch step and readinessReasons reached from real publish; assert PublishOutcome.reasons carries its returned sentinel, not an inline duplicate. Reuse existing PublishOutcome.reasons -> persisted feature reasons/result.json verdict -> generic reason item (workflow/open-items.ts:119) -> PR draft explanation -> buildWorkflowRunSummary/formatWorkflowSummary Publish line. Do not invent open findings/rulings. Mismatch alone holds readiness, not featurePassed/RunResult.success/workflowPassed. Historical records lacking optional fields need no migration or new reason.\n\nParser (US-011): parseBranchReviewReply stays lenient, reuses story mismatch semantics unchanged, keeps real findings/cannotVerify/inspectedFiles and known minor-id triage normalization, and never creates verdict-derived findings. Remove parser QUALITY_FLOOR marker/isBranchQualityFloor and obsolete consumer exclusion naturally in this story. Consumer-first ordering intentionally makes each intermediate story gate-safe. Reviewer-authored text equal to an old synthetic message is still real work; identity, not text, distinguishes the old marker while it exists.\n\nRetry composition (US-012): packages/nax/src/operations/workflow-branch-review.ts:78 resolves one strategy per invocation with shape-only makeParseRetryStrategy (:95) wrapped by makeCoverageRetryStrategy (:110). Add agents/retry/mismatch-clarification-retry.ts with makeMismatchClarificationStrategy and MismatchClarificationOpts, exported via retry/index.ts; add buildWorkflowBranchVerdictMismatchRetry in prompts/builders/workflow-branch-builder.ts and export from prompts/index.ts. Reuse existing per-kind sentences at prompts/builders/workflow-story-review-builder.ts:91 without changing story-review behavior. The clarification is read-only, asks to name missing defect/failed AC or correct verdict and requires complete findings/coverage/minor-triage object. workflowBranchReviewOp.retry reaches both exports via _branchReviewRetryDeps:{ makeMismatchClarificationStrategy, buildWorkflowBranchVerdictMismatchRetry }, plain delegation seams captured during real callOp; capture the factory options and make its returned strategy decide sent prompts, and capture the builder output actually sent.\n\nComposition: makeCoverageRetryStrategy wraps makeMismatchClarificationStrategy, which wraps the existing shape strategy. Each wrapper consults its inner strategy first, so shape repair, then clarification, then coverage is the effect of the nesting rather than a second priority table. Each wrapper subtracts the prompts it issued from the attempt number it passes inward, so the shape allowance stays one turn while clarification and coverage prompts are interleaved; the clarification wrapper owns one clarified latch and sets it when it issues, and the coverage wrapper records the attempt at which it last issued so a reply counts as a coverage response only when it answers that prompt. Because the shape strategy decides from the attempt number it is handed and holds no spent latch of its own, the clarification wrapper also owns an invocation-local count of shape-repair prompts already issued and adds it to the attempt it passes inward: a repair spent in one hop is therefore not reissued when a manager-owned fallback hop restarts the loop at 0. All of these counters live on the strategy instance, which callOp resolves once per invocation; the wrappers carry no other state and never see raw bytes or config. Existing coverage wrapper at packages/nax/src/agents/retry/coverage-retry.ts:71 tracks issued/previousUnread but currently cannot distinguish interposed clarification replies; adjust it to evaluate no-progress only on coverage responses, preserve its independent budget/stopped state and always consult inner clarification before stopping.\n\nThe JSON allowance is one shape-repair prompt for the invocation with existing normal/condensed prompts, clarification is one turn for both mismatch kinds combined, and coverage is the configured independent coverageRetries budget (default 3). A clarification/shape turn neither spends nor resets coverage, and clarification cannot reopen stopped coverage. Clarify before coverage for an inconsistent incomplete reply, including when a coverage response first introduces mismatch and the latch is unspent; coverage exhaustion cannot suppress an unused clarification. Corrected parseable replies are authoritative for findings/triage. Persistent mismatch retains the last parseable verdict and real findings; malformed clarification may use remaining shape allowance, then reports last parseable/null exhausted fallback. No parseable reply keeps null/skipped-review behavior. AdapterFailure prompts none of these semantic retries; abort propagates; availability remains manager-owned. Coverage C permits at most 3+C replies in one completed semantic hop. Existing MAX_COMPLETE_RETRY_ATTEMPTS+1=21 ceiling is per send loop/hop, not a new global availability cap; strategy counters are invocation-local across hops. Real two-hop testing must spend JSON repair in hop one, then fail transport, then show no new JSON repair on hop two's malformed response by observing its reply count. US-012 owns decisions, captured exports, prompts/session handle and bounds, never assertions on final dispatch substitution.\n\nDispatch handoff (US-013): packages/nax/src/operations/call-dispatch-run.ts:102 resolves strategy once; :285-349 resets per-hop retryState and sends under the ceiling, recording decision fallback. :461 parseRunOutcome currently returns null from a nonempty malformed op.parse; fallback is read only when parse throws. Add preferRetryFallbackOnNullParse?: true to RunOperation (operations/types.ts:261); only workflowBranchReviewOp opts in. Add module-private isPlainRecord: non-null object, not array, prototype exactly Object.prototype or null. With flag and null/undefined parse, substitute a present valid retryFallback before runPostParse (operations/post-parse.ts:26); verify sees that object and recover runs only when verify yields null. Absent/null fallback is no fallback and null stands. Present non-record (array, class, function, string, number, boolean) must raise CALL_OP_INVALID_FALLBACK naming observed value before verify/recover. Do not let the enclosing parse-failure catch swallow that strict validation error and return the legacy fallback. Legacy validatedFallbackRecord at call-dispatch-run.ts:390 checks only object/non-null, despite its comment; retain its broader array/class acceptance on non-opt-in throwing paths and all current null-parse precedence without flag. US-013 owns real callOp delivered-value assertions: malformed clarification + exhausted shape returns last parseable inconsistent verdict, real findings/mismatch survive coverage exhaustion, no parseable reply reaches runBranchReview as skipped. Strict fallback tests must go through real callOp, not only predicate/strategy tests.\n\nFailure preservation: ordinary leader exit wins before queued detector/deadline even with inherited pipes; detector-first fails despite exit 0; errors preserve bytes without new evidence; never-settling quality exit is bounded; shape/coverage exhaustion uses last parseable/null; incomplete coverage separately holds readiness; persistent mismatch keeps authored work and draft readiness. Existing outer review timeout, package failure, zero-dispatch and abort contracts are preservation anchors, not new retry budgets: workflow/story-review.ts underReviewLimit override and abort handling are shared with workflow/branch-review.ts, while call-dispatch-run.ts:183-194 checks zero-dispatch/abort and :330-346 threads abort through retry sleep. Keep packages/nax/test/unit/workflow/branch-review-sliced.test.ts existing package-failure, abort and timeout-overrides-parseable-verdict cases unedited. No new timeout/abort AC is added to US-012, which is exactly at the 24-assertion cap.\n\nTest ownership/authorized modifications: each authorization changes only the conflicting assertion and preserves its invariant, never blanket snapshots. US-002 extends test/unit/config/defaults.test.ts and merge.test.ts for schema equality, absent=empty defaults, root sibling retention and explicit zero; static-review the leaf default imports/root parsed spread. US-003 may adjust executor.test.ts collector mechanics only, preserving trust-before-spawn, flags, bounded post-exit drains and timer cleanup while retaining already-read bytes. US-004 extends verification/runners.test.ts, operations/verify-scoped.test.ts and full-suite-gate.test.ts option/result shapes only; keep TIMEOUT/acceptOnTimeout, unconditional lists, first-failure aggregation and no zero-tests rerun on interruption. US-005 modifies runner-drain.test.ts and runner-timeout-kill.test.ts for bounded settlement while preserving retained bytes/deadlines, one kill lane, group escalation and pid rules; runner.test.ts environment/argv cases stay green unedited. US-006 extends quality/aggregate.test.ts for first reason while preserving all historical aggregation. US-007 updates exact gate objects only in finish/gates-quality.test.ts, finish/gates-quality-e2e.test.ts, workflow/repo-gates.test.ts and integration/runtime/package-profile-registry.test.ts for resolved policy; keep root precedence/key identity/order/dedupe/cwd and setup-before-journey semantics.\n\nUS-008 modifies bot/checks.test.ts exact config/instruction/preserved-setup/detected/script-table/lockfile-table/priority gate objects only by trusted policy, retaining source/order/setup/preRun. review/scoped-lint.test.ts five-argument helper pin necessarily widens to carry policy; preserve no story/projectDir/storyGitRef/scope in production adapter, missing-ref degraded warning/full lint, command/single-check/success invariants; add derived-arm fixture restoring real runLintCommand and stubbing new runQualityCommand seam. cli/gates.test.ts adds optional reason only on stopped JSON records with single-document/exit/passed/not-run invariants; workflow/gates.test.ts extends lint/typecheck timed-out list without changing green/red/skipped or scoped/full-suite timeout assertions.\n\nUS-009 replaces synthetic-floor fix/id/counter expectations in workflow/feature-machine-honesty.test.ts, direct-verdict leave cases in feature-minor-promotion.test.ts and only the quality-floor scenario in feature-machine-equivalence.test.ts plus test/fixtures/workflow-equivalence/feature/quality-floor.json. Preserve real work and reviewer-authored matching text; parsed-floor cases remain unchanged until US-011. workflow/feature-graph.test.ts adds only reviewMismatch to branch-review produces; preserve all other node/output/exit/transition pins. US-010 extends workflow/approval.test.ts with ordered reasons without dropping independent reasons and workflow/run-summary.test.ts with zero invented counts plus published reason, leaving story mismatch counts unchanged. US-011 updates workflow-replies.test.ts synthesized/missing-mismatch branch expectations and parsed spec/quality-floor minor-promotion cases only, retaining malformed=null and promoted work. US-012 changes workflow-branch-review.test.ts only for prompts/priority/send/session/seam captures, and workflow-branch-review-coverage.test.ts for interleaved independent coverage/no-progress; clean/malformed-only/coverage-only prompts remain. US-013 extends operations/call.test.ts opt-in cases without rewriting the existing ladder, owns delivered flag/fallback/findings/null outcomes in workflow-branch-review.test.ts, and extends only handoff/skipped outcomes in branch-review-sliced.test.ts, leaving outer-limit tests unedited. All test paths in this ownership paragraph are under packages/nax/test/ (unit unless integration/fixtures is explicit). New files are declared per story, and no expectedFiles lists existing files.\n\nProduction seam verification: observer construction/bytes and one kill lane are captured at existing runner deps; runRepoGates reaches _qualityGateDeps.resolveStallDetection with sparse input then _qualityGateDeps.run with completed policy; runStoryGates, runWorkflowSuiteGate, runRepoGates, gatesRunCommand, runSetupGate, runReview and bot gatesStep/failingOnHead exercise real policy/provenance/projection mapping above the injected engines, stubbing LLM-facing collaborators rather than mapping. Drive real runFeatureMachine branch review, persist the record, then real publish with green gates/CI and approving advisor double while capturing BOTH _approvalDeps formatter calls; resume downstream to show no new mismatch-only work. Drive real callOp(workflowBranchReviewOp) and wrappers for mismatch/coverage and two-hop shape budgets; capture both _branchReviewRetryDeps exports, not merely a final value. Drive opt-in dispatch fallback with verify/recover doubles and invalid fallback classes through callOp and runBranchReview.\n\nMigration and risk: all fields are additive optional results/record metadata with absent meaning no detector/mismatch evidence; no schema version bump, backfill, dependency change or repository configuration edit. Parsed config supplies complete policy but hand-built literals remain valid. Biggest risks are stream deadlock/byte loss, timers or readers escaping cleanup, detector callbacks overwriting normal exit, process-group members leaking, interpreting mixed lists as code failures, gate policy lost at bot/scoped-lint/CLI boundaries, default heuristic leaking into bootstrap/agent tools, graph undeclared patch keys, stale mismatch accidentally cleared, fabricated branch counts, and strict fallback errors accidentally falling through legacy validation. Verification is package-scoped under the normal pipeline: targeted timeout-wrapped bun tests, then bun run typecheck, bun run check:all and bun run test from packages/nax. Never bare bun test or bun run nax. Coverage validation is outside NAX_SANDBOXED=1/CI per repository guidance, not a story AC. Authoring runs only deterministic spec lint if command tooling is available; none is exposed here.\n\nAtomicity: split the spec's compound bullets only within their original story: US-003 cleanup into escalation/timers/readers; US-006 duration/output; US-009 B-assignment versus temporary parser-marker exclusion and historical reasons versus counts; US-010 summary carry versus formatting; US-011 findings versus triage; US-012 factory capture versus stub deciding prompts; US-013 array error versus hooks. The resulting story AC counts are 21,11,22,16,18,7,16,21,20,15,10,24,14 = 215. No suggested criteria or extra acceptance assertions are added.",
+  "outOfScope": [
+    "Splitting #2924 and #2923 into separate feature bundles; the user explicitly requested one bundle despite the independent arcs.",
+    "Changes to story-review verdict handling, finding substantiation, severity rules, minor-triage policy, branch-fix limits, or availability/tier escalation policy.",
+    "Treating an inconsistent branch verdict as an invented B finding, automatically approving it, or accepting an advisor waiver as a substitute for clarification.",
+    "Silencing a real reviewer finding, promoted minor, gate failure or independent coverage/readiness reason because mismatch evidence is present.",
+    "Silence detection enabled by default, adaptive silence thresholds, CPU-based liveness, heartbeat protocols, substring/fuzzy matching, repeated multi-line cycles, or test-framework-specific hang detection.",
+    "ANSI stripping, terminal-progress emulation, treating bare carriage returns as line breaks, or cross-stream ordering reconstruction.",
+    "Raw-output retention caps, a new log artifact format, broad result-schema migrations, or changing existing output-redaction/tail contracts.",
+    "Applying stall policy to installation/pre-run/bootstrap steps, run-start baseline capture, native agent tools, ACP-owned tools, hooks, git processes, remote CI jobs/waits or plugin-owned subprocesses.",
+    "Repairing or reclassifying a rejected child-exit promise: this feature keeps today's floating catch and defines no new result policy for that error class.",
+    "Refactoring all command runners into one engine, changing shell/trust/sandbox behavior, platform expansion beyond the current process-group support, or dependency/version changes.",
+    "Editing repository `.nax/` configuration, rules, PRDs or generated agent instructions as an implementation story; configuration examples describe user opt-in, not a repository config edit."
+  ],
+  "routingProfile": "native-codex-dsm"
+}

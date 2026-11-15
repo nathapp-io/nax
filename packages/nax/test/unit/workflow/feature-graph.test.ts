@@ -57,7 +57,17 @@ const expectedExits: Partial<Record<NodeId, string[]>> = {
 };
 const expectedProduces: Record<NodeId, string[]> = {
   "repo-gates": ["repoGates", "gateFindings", "nextFindingId"],
-  "branch-review": ["reviewRan", "cannotVerify", "reviewUnread", "reviewOpen", "nextFindingId", "minors", "newMinors"],
+  "branch-review": [
+    "reviewRan",
+    "cannotVerify",
+    "reviewUnread",
+    "reviewOpen",
+    "nextFindingId",
+    "minors",
+    "newMinors",
+    // US-009: the verdict's own inconsistency, persisted as evidence.
+    "reviewMismatch",
+  ],
   "branch-fix": ["fixBase", "fixRan", "fixRounds"],
   "branch-rereview": ["reReviewSkipped", "reviewOpen", "nextFindingId", "minors", "newMinors", "fixTargets"],
   adjudicate: ["rulings"],

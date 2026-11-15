@@ -119,17 +119,18 @@ describe("parseStoryReviewReply", () => {
     expect(v?.cannotVerify).toEqual(["perf"]);
   });
 
-  test("spec failure without findings reports mismatch; branch keeps its floor", () => {
+  // US-011: the branch parser synthesizes nothing — a mismatch is metadata, never a finding.
+  test("spec failure without findings keeps the mismatch and invents no draft", () => {
     const raw = JSON.stringify({ spec: "fail", quality: "approved", findings: [] });
     const v = parseStoryReviewReply(raw);
     expect(v?.findings).toEqual([]);
     expect(v?.mismatch).toEqual(["spec"]);
     const branch = parseBranchReviewReply(raw, []);
-    expect(branch?.findings).toEqual([expect.objectContaining({ kind: "spec", severity: "important" })]);
-    expect(branch).not.toHaveProperty("mismatch");
+    expect(branch?.findings).toEqual([]);
+    expect(branch?.mismatch).toEqual(["spec"]);
   });
 
-  test("minor spec finding remains alone; branch adds spec floor", () => {
+  test("minor spec finding remains alone; branch adds no spec draft", () => {
     const raw = JSON.stringify({
       spec: "fail",
       quality: "approved",
@@ -138,13 +139,10 @@ describe("parseStoryReviewReply", () => {
     const v = parseStoryReviewReply(raw);
     expect(v?.mismatch).toEqual(["spec"]);
     expect(v?.findings).toHaveLength(1);
-    expect(parseBranchReviewReply(raw, [])?.findings).toEqual([
-      { severity: "minor", kind: "spec", issue: "naming" },
-      expect.objectContaining({ kind: "spec", severity: "important" }),
-    ]);
+    expect(parseBranchReviewReply(raw, [])?.findings).toEqual([{ severity: "minor", kind: "spec", issue: "naming" }]);
   });
 
-  test("quality changes without blocking findings reports mismatch; branch retains floor", () => {
+  test("quality changes without blocking findings keeps the mismatch and adds no draft", () => {
     for (const findings of [
       [],
       [{ severity: "minor", kind: "quality", issue: "naming" }],
@@ -154,16 +152,16 @@ describe("parseStoryReviewReply", () => {
       const v = parseStoryReviewReply(raw);
       expect(v?.mismatch).toEqual(["quality"]);
       expect(v?.findings.filter((f) => f.severity !== "minor")).toEqual([]);
-      expect(parseBranchReviewReply(raw, [])?.findings.filter((f) => f.severity !== "minor")).toEqual([
-        expect.objectContaining({ kind: "quality", severity: "important" }),
-      ]);
+      expect(parseBranchReviewReply(raw, [])?.findings.filter((f) => f.severity !== "minor")).toEqual([]);
     }
   });
 
-  test("both mismatches are ordered, but branch only adds the spec floor", () => {
+  test("both mismatches are ordered, and the branch adds no draft for either", () => {
     const raw = JSON.stringify({ spec: "fail", quality: "changes", findings: [] });
     expect(parseStoryReviewReply(raw)?.mismatch).toEqual(["spec", "quality"]);
-    expect(parseBranchReviewReply(raw, [])?.findings).toEqual([expect.objectContaining({ kind: "spec" })]);
+    const branch = parseBranchReviewReply(raw, []);
+    expect(branch?.findings).toEqual([]);
+    expect(branch?.mismatch).toEqual(["spec", "quality"]);
   });
 
   test.each([
@@ -458,5 +456,90 @@ describe("parseBranchReviewReply", () => {
   test("an invalid review shape is null", () => {
     expect(parseBranchReviewReply("nope", ["M1"])).toBeNull();
     expect(parseBranchReviewReply(JSON.stringify({ spec: "maybe" }), [])).toBeNull();
+  });
+});
+
+/**
+ * US-011: `parseBranchReviewReply` is a lenient shape parser. It keeps the reviewer's real findings and
+ * the story parser's mismatch metadata, and never injects a draft to justify a verdict.
+ */
+describe("parseBranchReviewReply mismatch (US-011)", () => {
+  const reply = (over: Record<string, unknown>): string =>
+    JSON.stringify({ spec: "pass", quality: "approved", findings: [], cannotVerify: [], ...over });
+
+  test("AC-1 returns the spec mismatch for a fail verdict with no critical or important spec finding", () => {
+    expect(parseBranchReviewReply(reply({ spec: "fail" }), [])?.mismatch).toEqual(["spec"]);
+  });
+
+  test("AC-2 preserves only the real drafts when the reply has no findings", () => {
+    const out = parseBranchReviewReply(reply({ spec: "fail", quality: "changes" }), []);
+    expect(out?.findings).toEqual([]);
+  });
+
+  test("AC-3 preserves only the real drafts when findings were dropped as invalid", () => {
+    const out = parseBranchReviewReply(
+      reply({
+        spec: "fail",
+        quality: "changes",
+        findings: [{ severity: "important", kind: "spec" }, { severity: "bogus", kind: "bogus" }, "not a finding"],
+      }),
+      [],
+    );
+    expect(out?.findings).toEqual([]);
+    expect(out?.mismatch).toEqual(["spec", "quality"]);
+  });
+
+  test("AC-4 preserves only the real drafts when findings are minor-only", () => {
+    const minor = { severity: "minor" as const, kind: "spec" as const, issue: "naming" };
+    const out = parseBranchReviewReply(reply({ spec: "fail", findings: [minor] }), []);
+    expect(out?.findings).toEqual([minor]);
+    expect(out?.mismatch).toEqual(["spec"]);
+  });
+
+  test("AC-5 returns the quality mismatch for a changes verdict with no critical or important finding", () => {
+    expect(parseBranchReviewReply(reply({ quality: "changes" }), [])?.mismatch).toEqual(["quality"]);
+  });
+
+  test("AC-6 adds no important quality draft for that case", () => {
+    const out = parseBranchReviewReply(reply({ quality: "changes" }), []);
+    expect(out?.findings).toEqual([]);
+    expect(out?.findings.some((f) => f.kind === "quality" && f.severity === "important")).toBe(false);
+  });
+
+  test("AC-7 reports both mismatch kinds once in spec then quality order when neither verdict has its evidence", () => {
+    const out = parseBranchReviewReply(reply({ spec: "fail", quality: "changes" }), []);
+    expect(out?.mismatch).toEqual(["spec", "quality"]);
+    expect(out?.findings).toEqual([]);
+  });
+
+  test("AC-8 preserves concrete blocking findings for a consistent reply", () => {
+    const blocking = { severity: "important" as const, kind: "quality" as const, issue: "leaks a handle" };
+    const out = parseBranchReviewReply(reply({ quality: "changes", findings: [blocking] }), []);
+    expect(out?.findings).toEqual([blocking]);
+    expect(out).not.toHaveProperty("mismatch");
+  });
+
+  test("AC-9 preserves the known-minor triage normalization for a consistent reply", () => {
+    const out = parseBranchReviewReply(
+      reply({
+        minorTriage: [
+          { id: "M9", decision: "fix-now" },
+          { id: "M1", decision: "now!" },
+          { id: "M1", decision: "fix-now" },
+        ],
+      }),
+      ["M1", "M2"],
+    );
+    expect(out?.minorTriage).toEqual([
+      { id: "M1", decision: "fix-now" },
+      { id: "M2", decision: "leave" },
+    ]);
+    expect(out).not.toHaveProperty("mismatch");
+  });
+
+  test("AC-10 still returns null for a malformed verdict shape", () => {
+    expect(parseBranchReviewReply(reply({ spec: "maybe" }), [])).toBeNull();
+    expect(parseBranchReviewReply(reply({ quality: "ok" }), [])).toBeNull();
+    expect(parseBranchReviewReply("not json", [])).toBeNull();
   });
 });
