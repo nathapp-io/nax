@@ -8,6 +8,7 @@ export type {
   ReReviewResidual,
   ReReviewVerdict,
   StoryReviewVerdict,
+  VerdictMismatch,
   WorkflowFinding,
   WorkflowFindingDraft,
   WorkflowFindingKind,
@@ -19,6 +20,7 @@ import type {
   GateName,
   MinorTriageDecision,
   StoryReviewVerdict,
+  VerdictMismatch,
   WorkflowFinding,
   WorkflowFindingDraft,
   WorkflowSeverity,
@@ -261,6 +263,15 @@ export interface CiCheckRef {
  */
 export type CiRemainingCheck = CiCheckRef & { readonly newFailure: boolean };
 
+/**
+ * US-009: the kinds of inconsistency a branch review's verdict carried, in the stable order
+ * `spec` then `quality`. Persisted instead of a synthesized finding, so an inconsistent verdict is
+ * recorded as what it is: the reviewer's verdict and its findings disagree.
+ */
+export interface WorkflowReviewMismatch {
+  readonly kinds: readonly VerdictMismatch[];
+}
+
 /** The feature workflow's persisted state (spec §7, §10, P4-R1). `step` is the NEXT step to run. */
 export interface WorkflowFeatureRecord {
   readonly step: FeatureStep;
@@ -292,6 +303,15 @@ export interface WorkflowFeatureRecord {
    * incomplete — `publish` turns it into the reason that keeps the PR a draft.
    */
   readonly reviewUnread?: readonly string[];
+  /**
+   * US-009: the branch review's verdict contradicted its own findings — `spec` fail with no blocking
+   * spec finding, `quality` changes with no blocking finding. Evidence, never a finding: it opens no
+   * B id, no fix round and no gate, so it spends none of the run's budget. A later consistent full
+   * branch review clears it; a downstream fix, re-review or publish leaves it exactly as it is.
+   * Absent when the review was consistent, when it did not run, and on records written before the
+   * field existed — which therefore read as an absence of mismatch evidence, never as a green one.
+   */
+  readonly reviewMismatch?: WorkflowReviewMismatch;
   /** nax#2550: an agent step was skipped because the run reached `execution.costLimit`. */
   readonly costLimited?: true;
   /**

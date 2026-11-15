@@ -10,6 +10,7 @@ import {
   type ReadinessFacts,
   readinessReasons,
 } from "@/workflow/approval";
+import { newFeatureRecord } from "@/workflow/feature-record";
 import type { StorySummary } from "@/workflow/types";
 
 const story = (id: string, over: Partial<StorySummary> = {}): StorySummary => ({
@@ -93,6 +94,27 @@ describe("readinessReasons (spec §7.8, P4-R6)", () => {
     expect(readinessReasons({ ...READY, ci: "pending", ciDetail: "no CI result within 1200000ms" })).toEqual([
       "no CI result within 1200000ms",
     ]);
+  });
+
+  // US-009: a record written before `reviewMismatch` existed carries no mismatch evidence at all, so
+  // the readiness facts built from it add no branch-mismatch reason — otherwise every historical
+  // record would read as an inconsistent review.
+  test("a historical record with no reviewMismatch adds no branch-mismatch reason (AC-19)", () => {
+    const historical = {
+      ...newFeatureRecord({ now: "t", seed: "seed0", minors: [] }),
+      step: "publish" as const,
+      reviewRan: true,
+      finalGates: { ran: ["build", "test"], failing: [] },
+    };
+    expect("reviewMismatch" in historical).toBe(false);
+    const facts = {
+      ...READY,
+      finalGates: historical.finalGates,
+      branchReviewRan: historical.reviewRan,
+    };
+    const reasons = readinessReasons(facts);
+    expect(reasons).toEqual([]);
+    expect(reasons.filter((r) => r.includes("verdict inconsistent"))).toEqual([]);
   });
 });
 

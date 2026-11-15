@@ -350,15 +350,16 @@ describe("fix failure and triage", () => {
     await compareWithGolden(trace);
   });
 
-  test("quality-floor: a changes verdict with only a minor opens a synthetic blocking finding", async () => {
+  test("quality-floor: a changes verdict with only a minor opens no finding and records the mismatch", async () => {
     const h = harness({
       review: { ...PASS, quality: "changes", findings: [{ kind: "quality", severity: "minor", issue: "naming nit" }] },
     });
     const trace = await recordFeatureTrace("quality-floor", h);
-    // AC-34: the reviewer's verdict left nothing blocking, so the machine supplies the target itself.
-    const first = h.fixInputs[0];
-    assertDefined(first, "the branch fix argument");
-    expect(first.map((finding) => finding.issue)).toContain("quality: reviewer reported changes without a finding");
+    // AC-34 (US-009): the reviewer named no defect, so the machine invents no target — it records the
+    // mismatch as evidence and dispatches no fix.
+    expect(callsOf(trace)).not.toContain("branchFix");
+    expect(h.fixInputs).toEqual([]);
+    expect(finalRecordOf(h).reviewMismatch).toEqual({ kinds: ["quality"] });
     await compareWithGolden(trace);
   });
 });

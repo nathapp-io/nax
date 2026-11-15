@@ -65,10 +65,12 @@ describe("deferred minor promotion", () => {
     expect(result.patch.minors?.map((m) => m.triage)).toEqual(["promote", "fix-now", "leave"]);
   });
 
+  // US-009: the direct floor is gone — a `changes` verdict with no blocking finding is mismatch
+  // evidence, not a work item, so only a promoted minor opens a B id here.
   test.each([
-    ["promote", "US-001: a"],
-    ["leave", "quality: reviewer reported changes without a finding"],
-  ] as const)("quality floor with %s", async (decision, issue) => {
+    ["promote", ["US-001: a"]],
+    ["leave", []],
+  ] as const)("quality floor with %s", async (decision, expected) => {
     const review = {
       ...featureMachineFixtures.PASS,
       quality: "changes" as const,
@@ -76,8 +78,7 @@ describe("deferred minor promotion", () => {
     };
     const h = makeFeatureMachineHarness({ review }, { record: record() });
     const result = await branchReviewStep(h.env, h.env.record);
-    expect(result.patch.reviewOpen).toHaveLength(1);
-    expect(result.patch.reviewOpen?.[0]?.issue).toBe(issue);
+    expect(result.patch.reviewOpen?.map((f) => f.issue)).toEqual([...expected]);
   });
 
   test.each([

@@ -127,6 +127,26 @@ describe("buildWorkflowRunSummary", () => {
     expect(view?.branch).toEqual({ found: 4, fixed: 3, left: 1, minorsLeft: 1 });
   });
 
+  // US-009: a record written before `reviewMismatch` existed counts exactly as it did — the ids it
+  // already holds, nothing re-derived, nothing subtracted.
+  test("a historical record with no reviewMismatch keeps its finding counts (AC-20)", () => {
+    const file = resultFile();
+    const rec = file.featureWorkflow;
+    if (!rec) throw new Error("fixture has a feature record");
+    const first = rec.reviewOpen[0];
+    if (!first) throw new Error("fixture has an open finding");
+    const historical: WorkflowFeatureRecord = { ...rec, nextFindingId: 2, reviewOpen: [first], newMinors: [] };
+    expect("reviewMismatch" in historical).toBe(false);
+    const v = buildWorkflowRunSummary(
+      { ...file, featureWorkflow: historical },
+      {
+        storiesDurationMs: 0,
+        featureWorkflowDurationMs: 0,
+      },
+    );
+    expect(v?.branch).toMatchObject({ found: 1, fixed: 0, left: 1 });
+  });
+
   // nax#2547 / nax#2548: how many fix and gate-repair rounds the feature workflow spent.
   test("the record's fix and gate-repair rounds reach the view; absent when none ran", () => {
     const file = resultFile();
