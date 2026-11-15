@@ -13,6 +13,7 @@ export {
   writeAdviceAudit,
 } from "./audit";
 export { adviseBatch, type BatchItemResult, type BatchRequest, type BatchResult } from "./batch";
+export { decisionBody } from "./decision-log";
 export { dedupeKeyFor } from "./dedupe";
 export {
   type AdvisorSummary,
