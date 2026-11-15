@@ -3,7 +3,7 @@
   "feature": "chat-job-panel",
   "branchName": "feat/chat-job-panel",
   "createdAt": "2026-11-15T15:06:37.254Z",
-  "updatedAt": "2026-11-15T17:16:26.593Z",
+  "updatedAt": "2026-11-15T17:48:59.142Z",
   "userStories": [
     {
       "id": "US-001",
@@ -192,14 +192,17 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Per-job serialized refreshes, terminal races, deferred streaming-safe append, replaced entries and React timer/subscription cleanup require coordinated state-machine and UI integration tests."
+        "reasoning": "Per-job serialized refreshes, terminal races, deferred streaming-safe append, replaced entries and React timer/subscription cleanup require coordinated state-machine and UI integration tests.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/use-jobs.ts",
@@ -225,7 +228,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9df43dd855e194cdff7c9fc3181c1669328aad62"
     },
     {
       "id": "US-004",
