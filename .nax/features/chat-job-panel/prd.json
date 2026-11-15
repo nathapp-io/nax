@@ -3,7 +3,7 @@
   "feature": "chat-job-panel",
   "branchName": "feat/chat-job-panel",
   "createdAt": "2026-11-15T15:06:37.254Z",
-  "updatedAt": "2026-11-15T17:59:58.540Z",
+  "updatedAt": "2026-11-15T18:07:34.899Z",
   "userStories": [
     {
       "id": "US-001",
@@ -330,14 +330,17 @@
         "session"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "This is bounded arithmetic plus optional schema/type/internal-export plumbing across existing native compaction seams, with no new orchestration; retain strict three-session TDD because the requested session/token override applies to retained session history."
+        "reasoning": "This is bounded arithmetic plus optional schema/type/internal-export plumbing across existing native compaction seams, with no new orchestration; retain strict three-session TDD because the requested session/token override applies to retained session history.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session/compaction.ts",
@@ -357,7 +360,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "df5f04682fd1ff5a0e80032737a4bc794189d8cc"
     },
     {
       "id": "US-006",
