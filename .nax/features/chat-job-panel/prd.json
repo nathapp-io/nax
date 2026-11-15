@@ -3,7 +3,7 @@
   "feature": "chat-job-panel",
   "branchName": "feat/chat-job-panel",
   "createdAt": "2026-11-15T15:06:37.254Z",
-  "updatedAt": "2026-11-15T17:48:59.142Z",
+  "updatedAt": "2026-11-15T17:59:58.540Z",
   "userStories": [
     {
       "id": "US-001",
@@ -259,14 +259,17 @@
         "turn-stats"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Localized pure formatting and row-builder behavior with a minimal existing UI call-site change; existing unit/UI assertions need deliberate behavioral updates."
+        "reasoning": "Localized pure formatting and row-builder behavior with a minimal existing UI call-site change; existing unit/UI assertions need deliberate behavioral updates.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/turn-stats.ts",
@@ -296,7 +299,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "135c934977002c3ee1938e4ac59955493d8da6eb"
     },
     {
       "id": "US-005",
