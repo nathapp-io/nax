@@ -53,4 +53,31 @@ describe("compaction settings", () => {
   test("a non-boolean enabled is rejected", () => {
     expect(compactionSettingsSchema.safeParse({ enabled: "yes" }).success).toBe(false);
   });
+
+  test("AC-10: resolveCompaction carries an explicit token cap with the default percentages", () => {
+    expect(resolveCompaction({ compactAtTokens: 200_000 })).toEqual({
+      ...DEFAULT_COMPACTION,
+      compactAtTokens: 200_000,
+    });
+  });
+
+  test("AC-11: resolveCompaction(undefined) has no token cap", () => {
+    expect(resolveCompaction(undefined)).not.toHaveProperty("compactAtTokens");
+  });
+
+  test("AC-12: a negative token cap is rejected", () => {
+    expect(compactionSettingsSchema.safeParse({ compactAtTokens: -1 }).success).toBe(false);
+  });
+
+  test("AC-13: a cap below the minimum is rejected with the documented message", () => {
+    const bad = compactionSettingsSchema.safeParse({ compactAtTokens: 5_000 });
+    expect(bad.success).toBe(false);
+    expect(bad.error?.issues[0]?.message).toBe("compactAtTokens must be 0 (off) or at least 10000");
+  });
+
+  test("AC-14: a cap of 0 (off) is accepted", () => {
+    expect(compactionSettingsSchema.safeParse({ compactAtTokens: 0 }).success).toBe(true);
+    expect(compactionSettingsSchema.safeParse({ compactAtTokens: 10_000 }).success).toBe(true);
+    expect(compactionSettingsSchema.safeParse({ compactAtTokens: 10_000.5 }).success).toBe(false);
+  });
 });

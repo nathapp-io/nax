@@ -58,11 +58,14 @@ export interface NativeBackendOptions {
    * model call) and a context overflow is compacted and retried once. Percentages
    * are of the window; `keepRecentPercent` must sit at least 20 points below
    * `compactAtPercent`. `{ enabled: false }` turns it off.
+   * `compactAtTokens` is an optional absolute trigger that wins when it is
+   * below the percentage (0 = off); see compactionThreshold.
    */
   readonly compaction?: {
     readonly enabled?: boolean;
     readonly compactAtPercent?: number;
     readonly keepRecentPercent?: number;
+    readonly compactAtTokens?: number;
   };
 }
 
