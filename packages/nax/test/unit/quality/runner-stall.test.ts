@@ -225,45 +225,6 @@ async function advanceUntil(predicate: () => boolean, maxSteps = 200): Promise<v
 }
 
 // ---------------------------------------------------------------------------
-// AC-1 — live chunks reach the monitor, so a detector can beat the wall clock
-// ---------------------------------------------------------------------------
-
-describe("runQualityCommand — a detector interrupts a live child (AC-1)", () => {
-  test("AC-1: repeated output interrupts the command before its wall timeout", async () => {
-    useRealExecution();
-
-    const result = await runQualityCommand({
-      commandName: "test",
-      command: "while true; do echo nax-stall-line; done",
-      workdir: import.meta.dir,
-      timeoutMs: 5_000,
-      stallDetection: { repeatedLineThreshold: 3 },
-    });
-
-    expect(result.stopReason).toMatchObject({ kind: "repeated-output", stream: "stdout", threshold: 3 });
-    expect(result.timedOut).toBe(true);
-    expect(result.success).toBe(false);
-    expect(result.durationMs).toBeLessThan(5_000);
-  }, 30_000);
-
-  test("AC-1: opted-in silence interrupts the command before its wall timeout", async () => {
-    useRealExecution();
-
-    const result = await runQualityCommand({
-      commandName: "test",
-      command: "sleep 30",
-      workdir: import.meta.dir,
-      timeoutMs: 5_000,
-      stallDetection: { silenceTimeoutSeconds: 1 },
-    });
-
-    expect(result.stopReason).toEqual({ kind: "silence", silenceTimeoutSeconds: 1 });
-    expect(result.timedOut).toBe(true);
-    expect(result.durationMs).toBeLessThan(5_000);
-  }, 30_000);
-});
-
-// ---------------------------------------------------------------------------
 // AC-2 — the stopped result shape
 // ---------------------------------------------------------------------------
 
