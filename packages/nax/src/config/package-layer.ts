@@ -66,16 +66,23 @@ export type DeclaredStallDetection = Partial<{
  * rejected by `nax gates run`.
  *
  * Validation is sparse on purpose (`SparseStallDetectionConfigSchema`): only the
- * fields the overlay names are checked, absent ones stay absent for the
+ * fields the layer names are checked, absent ones stay absent for the
  * field-wise merge, and an explicit `0` is a value rather than an absence.
  *
- * @param raw - The declared block, exactly as the package config carries it.
+ * @param raw - The declared block, exactly as the layer carries it.
  * @param packageDir - Package directory relative to the repo root, for messages.
+ * @param source - The file the declaration came from, for messages. Defaults to
+ *   the package's own `.nax/mono/<pkg>/config.json`; a package PROFILE passes its
+ *   own profile path, because both layers can declare the block.
  * @returns The validated sparse policy, or `undefined` when nothing is declared.
  * @throws NaxError `PER_PACKAGE_PROFILE_INVALID` when the declared block is not
  *   an object or names an unsupported value.
  */
-export function parseDeclaredStallDetection(raw: unknown, packageDir: string): DeclaredStallDetection | undefined {
+export function parseDeclaredStallDetection(
+  raw: unknown,
+  packageDir: string,
+  source: string = join(PROJECT_NAX_DIR, "mono", packageDir, "config.json"),
+): DeclaredStallDetection | undefined {
   if (raw === undefined) return undefined;
   const result = SparseStallDetectionConfigSchema.safeParse(raw);
   if (result.success) return result.data;
@@ -86,10 +93,32 @@ export function parseDeclaredStallDetection(raw: unknown, packageDir: string): D
     })
     .join("; ");
   throw new NaxError(
-    `Invalid quality.stallDetection for package "${packageDir}" in ${join(PROJECT_NAX_DIR, "mono", packageDir, "config.json")}: ${reason}`,
+    `Invalid quality.stallDetection for package "${packageDir}" in ${source}: ${reason}`,
     "PER_PACKAGE_PROFILE_INVALID",
     { stage: "config", packageDir, field: "quality.stallDetection" },
   );
+}
+
+/**
+ * Validate one raw config LAYER's `quality.stallDetection` before it is merged.
+ *
+ * Every layer that can declare the block calls this — the package's own
+ * `config.json` (from `preparePackageLayer`) and each package-selected profile
+ * layer (from `loadPackageProfileLayers`). Validating only the package file
+ * left the profile path open: a profile's `silenceTimeoutSeconds: null` reached
+ * `mergePackageConfig`, which completed it to `0`, so the loaders accepted a
+ * file `resolveGateCommands` rejected.
+ *
+ * @param config - The raw layer.
+ * @param packageDir - Package directory relative to the repo root, for messages.
+ * @param source - The file this layer was read from, for messages.
+ */
+export function assertDeclaredStallDetection(
+  config: Record<string, unknown>,
+  packageDir: string,
+  source?: string,
+): void {
+  parseDeclaredStallDetection(declaredStallDetection(config), packageDir, source);
 }
 
 /** Validate mode alone so unrelated undefined variables cannot hide a removed mode. */
@@ -178,8 +207,9 @@ export function preparePackageLayer(
   // default, which would silently turn a malformed declaration (a `null` field,
   // a primitive block) into a valid policy — while the repository-gate resolver
   // rejects the same file. Both package-loading paths call this function, so
-  // both reject it here.
-  parseDeclaredStallDetection(declaredStallDetection(shimmed), packageDir);
+  // both reject it here; `loadPackageProfileLayers` does the same for each
+  // package-selected profile layer.
+  assertDeclaredStallDetection(shimmed, packageDir);
   return stripRemovedConfig(shimmed, warnDedupe.warn);
 }
 
