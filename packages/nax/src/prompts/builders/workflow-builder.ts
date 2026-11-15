@@ -7,7 +7,9 @@
 export function buildWorkflowInstructions(): string {
   return [
     "Call `nax-workflow__state` before proposing any workflow step, and call it again after any workflow step ends, so what you propose matches the feature's real state.",
-    "The nax loop runs in this order: brainstorm → spec-writing → spec-review (at most two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.",
+    "The nax loop runs in this order: brainstorm → spec-writing → spec-review (usually two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.",
+    // #2929: stated as "at most two", the model treated the budget as a cap that outranked the user.
+    'Two spec-review fix rounds are the default budget, not a limit: past two, another round needs the user\'s go-ahead, and a user instruction to continue (including an earlier one such as "until clean") is that go-ahead, for spec rounds only and never for `nax plan`. Applying spec fixes is your work; the user rules only on findings you cannot settle, never on edits.',
     "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without the user's explicit approval of that launch.",
     "nax never merges a PR and never releases; the user merges the PR and the user releases.",
     "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",

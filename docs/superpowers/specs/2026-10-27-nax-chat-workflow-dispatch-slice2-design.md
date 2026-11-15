@@ -239,7 +239,8 @@ only from files and the forge. It does no model call. It covers:
   `execution.maxIterations` (#2706 guard). The agent then proposes `-m`.
 
 The system prompt for chat gains a short "nax loop" section: brainstorm →
-spec-writing → spec-review (at most 2 fix rounds) → `nax plan` → PRD
+spec-writing → spec-review (usually 2 fix rounds; a default budget, not a
+cap, see #2929) → `nax plan` → PRD
 fidelity check (spec-review `--prd`) → commit spec and PRD → `nax run` →
 bot review and fix → the user merges → the user releases. It tells the agent
 to call `workflow__state` before proposing any workflow step, and to call it
