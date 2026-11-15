@@ -3,10 +3,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { makeNaxConfig } from "@test/helpers";
+import { assertDefined, makeNaxConfig } from "@test/helpers";
 import { DEFAULT_CONFIG } from "@/config/defaults";
 import { mergePackageConfig } from "@/config/merge";
 import type { NaxConfig } from "@/config/schema";
+import type { GateStallPolicy } from "@/utils/gate-stall";
 
 type SemanticConfig = NonNullable<NaxConfig["review"]["semantic"]>;
 
@@ -494,5 +495,65 @@ describe("mergePackageConfig — AC-59 context.v2.stages budget overrides", () =
       context: makeContextOverride(rootWithExec, { execution: { budgetTokens: 20_000 } }),
     });
     expect(overrideWins.context.v2.stages.execution?.budgetTokens).toBe(20_000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002: quality.stallDetection field-wise package merge
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("mergePackageConfig — quality.stallDetection (US-002)", () => {
+  /**
+   * A root whose stall policy differs from the schema default on BOTH fields, so
+   * a merge that fell back to the default instead of to root is visible.
+   */
+  function makeRootWithStallPolicy(): NaxConfig {
+    return makeNaxConfig({
+      quality: { stallDetection: { repeatedLineThreshold: 50, silenceTimeoutSeconds: 30 } },
+    });
+  }
+
+  /**
+   * A package overlay reaches `mergePackageConfig` BEFORE validation, so its
+   * stall block may legitimately name one field and leave the sibling unset — a
+   * shape `GateStallPolicy` (both fields required) cannot express. Build the
+   * block from a real config and delete the unnamed keys: casting a partial into
+   * the field's type would silence the type error instead (see the test cast
+   * ratchet in `.nax/rules/test-ratchets.md`).
+   */
+  function makeStallOverlay(named: Partial<GateStallPolicy>): Partial<NaxConfig> {
+    const overlay = makeNaxConfig({ quality: { stallDetection: named } });
+    const stall = overlay.quality.stallDetection;
+    assertDefined(stall, "overlay quality.stallDetection");
+    for (const key of Object.keys(stall)) {
+      if (!Object.hasOwn(named, key)) Reflect.deleteProperty(stall, key);
+    }
+    return { quality: overlay.quality };
+  }
+
+  test("AC-10: retains an unset root-policy sibling when a package overrides one stallDetection field", () => {
+    const root = makeRootWithStallPolicy();
+    const result = mergePackageConfig(root, makeStallOverlay({ repeatedLineThreshold: 5 }));
+
+    expect(result.quality.stallDetection?.repeatedLineThreshold).toBe(5);
+    expect(result.quality.stallDetection?.silenceTimeoutSeconds).toBe(30);
+    expect(root.quality.stallDetection).toEqual({ repeatedLineThreshold: 50, silenceTimeoutSeconds: 30 });
+  });
+
+  test("AC-11: honors an explicit package zero over a non-zero root value", () => {
+    const root = makeRootWithStallPolicy();
+    const result = mergePackageConfig(root, makeStallOverlay({ silenceTimeoutSeconds: 0 }));
+
+    expect(result.quality.stallDetection?.silenceTimeoutSeconds).toBe(0);
+    expect(result.quality.stallDetection?.repeatedLineThreshold).toBe(50);
+  });
+
+  test("a package block that omits stallDetection keeps the whole root policy", () => {
+    const root = makeRootWithStallPolicy();
+    const overlay = makeNaxConfig();
+    Reflect.deleteProperty(overlay.quality, "stallDetection");
+    const result = mergePackageConfig(root, { quality: overlay.quality });
+
+    expect(result.quality.stallDetection).toEqual({ repeatedLineThreshold: 50, silenceTimeoutSeconds: 30 });
   });
 });

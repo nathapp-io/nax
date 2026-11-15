@@ -7,6 +7,7 @@
  * interaction) are unchanged.
  */
 
+import { type GateStallPolicy, resolveStallDetection } from "../utils/gate-stall";
 import type { NaxConfig } from "./schema";
 
 type NativeConfig = NonNullable<NaxConfig["agent"]>["native"];
@@ -29,6 +30,26 @@ function mergeTranscriptAudit(
 /** A package's native field overrides must preserve unrelated root settings. */
 function mergeNativeConfig(root: NativeConfig, override: NativeConfig): NativeConfig {
   return override == null ? root : { ...root, ...override };
+}
+
+/**
+ * Field-wise stall-policy overlay (US-002): overriding one detector keeps the
+ * other from root, and an explicit `0` survives `??` so a package can disable
+ * a detector the root enabled. Absent from both sides means the block stays
+ * absent (the schema default then applies at parse time), so the key is only
+ * written when there is something to carry.
+ */
+function mergeStallDetection(
+  root: GateStallPolicy | undefined,
+  override: Partial<GateStallPolicy> | undefined,
+): { stallDetection?: GateStallPolicy } {
+  if (override === undefined) return {};
+  return {
+    stallDetection: resolveStallDetection({
+      repeatedLineThreshold: override.repeatedLineThreshold ?? root?.repeatedLineThreshold,
+      silenceTimeoutSeconds: override.silenceTimeoutSeconds ?? root?.silenceTimeoutSeconds,
+    }),
+  };
 }
 
 /**
@@ -55,7 +76,7 @@ function mergeModels(rootModels: NaxConfig["models"], overrideModels: NaxConfig[
  * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), rectification (deep)
  * - review: enabled, checks, commands (deep), semantic (deep), adversarial (deep)
- * - quality: commands (deep), testing (deep), lintOutput (deep)
+ * - quality: commands (deep), lintOutput (deep), stallDetection (field-wise)
  * - context: testCoverage (deep), v2.stages (deep), v2.rules (deep)
  * - project: type, language, frameworks
  *
@@ -166,6 +187,7 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
     },
     quality: {
       ...root.quality,
+      ...mergeStallDetection(root.quality.stallDetection, packageOverride.quality?.stallDetection),
       commands: {
         ...root.quality.commands,
         ...packageOverride.quality?.commands,

@@ -10,6 +10,7 @@ import {
   SandboxConfigSchema,
 } from "@nathapp/nax-agent/internal";
 import { z } from "zod";
+import { DEFAULT_GATE_STALL_POLICY } from "../utils/gate-stall";
 import { CommandSafetyConfigSchema } from "./schemas-command-safety";
 import { ModelTierSchema, TierConfigSchema } from "./schemas-model";
 import { ExecutionModeSchema } from "./schemas-workflow";
@@ -262,8 +263,49 @@ export const ExecutionConfigSchema = z.object({
  */
 export const QualityCommandSpecSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 
+/**
+ * Stall detection for one spawned gate command (observer in
+ * `src/utils/gate-stall.ts`).
+ *
+ * Both detectors are disabled by their zero value, and there is deliberately no
+ * separate enable switch: `{ repeatedLineThreshold: 0, silenceTimeoutSeconds: 0 }`
+ * turns both off. Silence defaults to 0 because a quiet compiler or test run is
+ * legitimate — only a hang is not — so a positive value is an explicit opt-in.
+ * Repetition defaults to a conservative 100 consecutive equal lines.
+ *
+ * Both defaults are read from the leaf's `DEFAULT_GATE_STALL_POLICY`, which is
+ * the only place those two numbers exist.
+ */
+export const StallDetectionConfigSchema = z.object({
+  /**
+   * Consecutive equal non-blank lines on one stream that trigger a stop; the
+   * first occurrence counts as 1. 0 disables repetition detection. 1 is
+   * rejected: a single line is not yet a repetition.
+   */
+  repeatedLineThreshold: z
+    .number()
+    .int()
+    .min(0, { message: "quality.stallDetection.repeatedLineThreshold must be 0 (disabled) or an integer >= 2" })
+    .refine((value) => value !== 1, {
+      message: "quality.stallDetection.repeatedLineThreshold must be 0 (disabled) or an integer >= 2",
+    })
+    .default(DEFAULT_GATE_STALL_POLICY.repeatedLineThreshold),
+  /** Seconds without any non-empty output chunk; 0 disables silence detection. */
+  silenceTimeoutSeconds: z
+    .number()
+    .int()
+    .min(0, { message: "quality.stallDetection.silenceTimeoutSeconds must be an integer >= 0" })
+    .default(DEFAULT_GATE_STALL_POLICY.silenceTimeoutSeconds),
+});
+
 export const QualityConfigSchema = z.object({
   scopeTestThreshold: z.number().int().min(0).default(10),
+  /**
+   * Stall detection for spawned gate commands. The block's own field defaults
+   * are the source of the numbers; the object default is the parsed block, so
+   * an empty `quality` block resolves the same policy an absent one does.
+   */
+  stallDetection: StallDetectionConfigSchema.default(StallDetectionConfigSchema.parse({})),
   commands: z
     .object({
       typecheck: QualityCommandSpecSchema.optional(),

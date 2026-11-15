@@ -34,6 +34,7 @@ import {
   QualityConfigSchema,
   RectificationConfigSchema,
   RegressionGateConfigSchema,
+  StallDetectionConfigSchema,
   TddConfigSchema,
 } from "./schemas-execution";
 import {
@@ -191,6 +192,12 @@ export const NaxConfigSchema = z
       lintOutput: {
         format: "auto",
       },
+      // US-002 — derived, not hand-written (same rationale as `rectification`
+      // above): a whole-object Zod default returns its literal as given, so a
+      // literal without this key would leave `quality.stallDetection` absent
+      // from NaxConfigSchema.parse({}) even though the field declares a
+      // default. The numbers live once, in DEFAULT_GATE_STALL_POLICY.
+      stallDetection: StallDetectionConfigSchema.parse({}),
       forceExit: false,
       detectOpenHandles: true,
       detectOpenHandlesRetries: 1,
