@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   pickerEntryRows as entryRows,
   pickerFrameOf as frameOf,
@@ -8,8 +8,10 @@ import {
 import { cleanup } from "ink-testing-library";
 import type { ChatHost } from "@/chat";
 import type { BackgroundTask, ChatBackgroundTasks } from "@/chat/background/task-types";
+import type { JobPanelView } from "@/chat/jobs/job-panel-view";
 import type { ChatJobs } from "@/chat/jobs/job-runner";
 import type { ChatJob } from "@/chat/jobs/job-types";
+import { _jobPanelsDeps } from "@/tui/chat/use-job-panels";
 
 const RETURN = "\r";
 const ESCAPE = "\x1b";
@@ -18,6 +20,19 @@ const TITLE = "Jobs and tasks · enter output · ctrl+x stop";
 const TASK_ID = "bash-1a2b3c4d";
 const JOB_ID = "run-0000aaaa";
 const OUTPUT_LINES = 40;
+
+/**
+ * The live job panel's artifact read (chat-job-panel US-003): never settled here, so the
+ * panel adds no row and the reads these cases count are the picker's own.
+ */
+const PANEL_READ = _jobPanelsDeps.readJobPanelView;
+const UNSETTLED_PANEL_READ = (): Promise<JobPanelView> => new Promise<JobPanelView>(() => {});
+beforeEach(() => {
+  _jobPanelsDeps.readJobPanelView = UNSETTLED_PANEL_READ;
+});
+afterEach(() => {
+  _jobPanelsDeps.readJobPanelView = PANEL_READ;
+});
 afterEach(cleanup);
 
 function task(patch: Partial<BackgroundTask> = {}): BackgroundTask {

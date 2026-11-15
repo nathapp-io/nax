@@ -349,7 +349,8 @@ function variantsFor(entry: TranscriptEntry, theme: ChatTheme): Map<string, read
  *
  * Only a `collapsible` listing joins the kinds that own their expansion: every other
  * listing is drawn whole at any expansion, so ctrl+o can never hide a slash command's
- * output — the user asked for it.
+ * output — the user asked for it. A job panel owns its expansion the same way, so a click
+ * on its headline survives the transcript-wide toggle.
  */
 function cachedLines(entry: TranscriptEntry, base: LayoutContext): readonly StyledLine[] {
   const context =
@@ -358,6 +359,7 @@ function cachedLines(entry: TranscriptEntry, base: LayoutContext): readonly Styl
     entry.kind === "skill" ||
     entry.kind === "attachment" ||
     entry.kind === "background" ||
+    entry.kind === "job" ||
     (entry.kind === "listing" && entry.collapsible === true)
       ? { ...base, expanded: entry.open ?? base.expanded }
       : base;

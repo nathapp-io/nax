@@ -78,6 +78,7 @@ import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { turnStatsEntry } from "./turn-stats";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
 import { useImageAttach } from "./use-image-attach";
+import { useJobPanels } from "./use-job-panels";
 import { useJobs } from "./use-jobs";
 import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
 import { useMentionMenu } from "./use-mention-menu";
@@ -1136,6 +1137,10 @@ export function ChatApp({
     deliver: (text) => sendTurn({ message: text }),
     note: (text) => append({ kind: "notice", text }),
   });
+
+  // A running job's panel: appended when the job is first seen running, refreshed while it
+  // runs and frozen once it ends. Held back while a turn streams, so a reply is never split.
+  useJobPanels({ host, setEntries, turnRunning });
 
   // Use input bookkeeping so batched keys see completion and submission clears the draft.
   function completeCommand(name: string): void {

@@ -7,8 +7,13 @@ import type { TranscriptEntry } from "./transcript-model";
  * collapsible listing carries one too, but only the jobs picker's output sets it.
  */
 type CollapsibleEntry =
-  | Extract<TranscriptEntry, { kind: "thinking" | "tool" | "skill" | "attachment" | "background" }>
+  | Extract<TranscriptEntry, { kind: "thinking" | "tool" | "skill" | "attachment" | "background" | "job" }>
   | Extract<TranscriptEntry, { kind: "listing" }>;
+
+type BlockEntry = Extract<TranscriptEntry, { kind: "thinking" | "tool" | "skill" }>;
+
+/** The kinds whose whole detail hangs off their first row: a notice and a job panel. */
+type HeadlineEntry = Extract<TranscriptEntry, { kind: "background" | "job" }>;
 
 /** The entry with its expansion flipped, sharing every other entry with the input array. */
 function withToggled(
@@ -23,11 +28,32 @@ function withToggled(
 }
 
 /**
+ * The kinds whose headline is their first row and nothing else: a notice's summary and a job
+ * panel's own headline. The lines they reveal never toggle them back.
+ */
+function headlineOnly(entry: TranscriptEntry): entry is HeadlineEntry {
+  return entry.kind === "background" || entry.kind === "job";
+}
+
+/**
+ * The row a thinking, tool or skill block toggles on beyond its first: a skill's own
+ * invocation is a row of its own, drawn above its header, and both toggle it.
+ */
+function hintRow(entry: BlockEntry, first: number, options: LayoutOptions): number {
+  if (entry.kind !== "skill") return first;
+  const invocation: TranscriptEntry = {
+    kind: "user",
+    text: `/${entry.name}${entry.args === "" ? "" : ` ${entry.args}`}`,
+  };
+  return first + layoutTranscript([invocation], options).length;
+}
+
+/**
  * Toggle only structural header rows, never wrapped continuations or body text. An
  * attachment toggles on its label row alone, and only when its status carries a body:
- * `path-only` and `refused` rows have nothing to reveal. A collapsible listing toggles on
- * its title row alone — its count row and its output never toggle it back — and a listing
- * that was not opted in is never toggled at all.
+ * `path-only` and `refused` rows have nothing to reveal. A notice and a job panel toggle on
+ * their first row alone, and a collapsible listing on its title row — its count row and its
+ * output never toggle it back — while a listing that was not opted in never toggles at all.
  */
 export function toggleTranscriptLine(
   entries: readonly TranscriptEntry[],
@@ -43,8 +69,7 @@ export function toggleTranscriptLine(
     if (!attachmentExpandable(entry.status) || line !== first) return entries;
     return withToggled(entries, index, entry, options);
   }
-  // A notice's summary is its first row; the notice lines it reveals never toggle it back.
-  if (entry.kind === "background") {
+  if (headlineOnly(entry)) {
     if (line !== first) return entries;
     return withToggled(entries, index, entry, options);
   }
@@ -54,14 +79,7 @@ export function toggleTranscriptLine(
     return withToggled(entries, index, entry, options);
   }
   if (entry.kind !== "thinking" && entry.kind !== "tool" && entry.kind !== "skill") return entries;
-  const hint =
-    entry.kind === "skill"
-      ? first +
-        layoutTranscript(
-          [{ kind: "user", text: `/${entry.name}${entry.args === "" ? "" : ` ${entry.args}`}` }],
-          options,
-        ).length
-      : first;
+  const hint = hintRow(entry, first, options);
   if (line !== first && line !== hint) return entries;
   return withToggled(entries, index, entry, options);
 }
