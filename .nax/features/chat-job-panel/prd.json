@@ -3,7 +3,7 @@
   "feature": "chat-job-panel",
   "branchName": "feat/chat-job-panel",
   "createdAt": "2026-11-15T15:06:37.254Z",
-  "updatedAt": "2026-11-15T17:05:17.602Z",
+  "updatedAt": "2026-11-15T17:16:26.593Z",
   "userStories": [
     {
       "id": "US-001",
@@ -116,14 +116,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Adds a pure renderer using established styled-line/card primitives and additive union/theme/dispatch fields; no asynchronous lifecycle or new external integration."
+        "reasoning": "Adds a pure renderer using established styled-line/card primitives and additive union/theme/dispatch fields; no asynchronous lifecycle or new external integration.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/transcript-model.ts",
@@ -147,7 +150,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c4ce993261f80644ebd987184bdbc7b68c8fcc2e"
     },
     {
       "id": "US-003",
