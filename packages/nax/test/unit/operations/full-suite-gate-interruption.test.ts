@@ -1,13 +1,13 @@
 /**
  * `fullSuiteGateOp` — stop evidence and accept-on-timeout (US-004).
  *
- * The gate derives its internal timeout evidence from the same predicate the
- * scoped op uses — `status === "TIMEOUT" || stopReason !== undefined` — so a
- * command list that reports its first failing entry's ordinary `TEST_FAILURE`
- * while one entry was stopped still reaches the timeout branch. The existing
- * `acceptOnTimeout` translation then decides `passed-on-timeout` versus `timeout`,
- * and both forms carry the detector reason. The gate-context stall policy is
- * forwarded to `regression` for the run.
+ * A run whose aggregate status is TIMEOUT reaches the timeout branch, where the
+ * existing `acceptOnTimeout` translation decides `passed-on-timeout` versus
+ * `timeout`, and both forms carry the detector reason. A command list whose first
+ * failing entry failed ordinarily while a later entry was stopped is not a
+ * timeout: accepting it on timeout would hide a real test failure, so it stays a
+ * code failure with its findings and still carries the reason. The gate-context
+ * stall policy is forwarded to `regression` for the run.
  *
  * Split from `full-suite-gate.test.ts` by concern to keep both files within the
  * test-size target.
@@ -142,20 +142,26 @@ describe("fullSuiteGateOp — stall policy forwarding (US-004)", () => {
 });
 
 describe("fullSuiteGateOp — timeout evidence from a stop reason (US-004)", () => {
-  // AC-14
-  test("derives timeout evidence from the list stop reason when the status is a test failure", async () => {
-    const config = makeNaxConfig({ execution: { regressionGate: { acceptOnTimeout: false } } });
+  // AC-14 — an ordinary failure ahead of a stopped entry stays a code failure,
+  // whatever acceptOnTimeout says, so the failing test reaches the fixer.
+  test.each([true, false])(
+    "keeps a mixed list's ordinary failure as a failed verdict carrying the stop reason (accept=%s)",
+    async (accept) => {
+      const config = makeNaxConfig({ execution: { regressionGate: { acceptOnTimeout: accept } } });
 
-    const out = await fullSuiteGateOp.execute(
-      INPUT,
-      ctxWithConfig({ execution: { regressionGate: { acceptOnTimeout: false } } }),
-      controlledDeps(config, failingRun({ stopReason: STOP_REASON })),
-    );
+      const out = await fullSuiteGateOp.execute(
+        INPUT,
+        ctxWithConfig({ execution: { regressionGate: { acceptOnTimeout: accept } } }),
+        controlledDeps(config, failingRun({ stopReason: STOP_REASON })),
+      );
 
-    expect(out.status).toBe("timeout");
-    expect(out.success).toBe(false);
-    expect(out.stopReason).toEqual(STOP_REASON);
-  });
+      expect(out.status).toBe("failed");
+      expect(out.success).toBe(false);
+      expect(out.passed).toBe(false);
+      expect(out.findings).toHaveLength(1);
+      expect(out.stopReason).toEqual(STOP_REASON);
+    },
+  );
 
   // AC-14 — the real runner path produces exactly that shape: a list whose first
   // entry fails ordinarily while the second is stopped by the detector.
@@ -185,7 +191,7 @@ describe("fullSuiteGateOp — timeout evidence from a stop reason (US-004)", () 
     const out: FullSuiteGateOutput = await fullSuiteGateOp.execute(
       INPUT,
       ctxWithConfig({ execution: { regressionGate: { acceptOnTimeout: accept } } }),
-      controlledDeps(config, failingRun({ stopReason: STOP_REASON })),
+      controlledDeps(config, failingRun({ stopReason: STOP_REASON, timedOut: true })),
     );
 
     expect(out.status).toBe(accept ? "passed-on-timeout" : "timeout");

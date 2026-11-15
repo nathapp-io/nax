@@ -150,16 +150,16 @@ A rejected `proc.exited` keeps today's floating `.catch(() => {})`: it is not st
 A verification command list keeps its historical raw aggregation, and interruption evidence is carried independently so a consumer cannot mistake a mixed list for an ordinary code failure:
 
 - `status`, `exitCode` and `error` remain the first unsuccessful entry's values. `success` remains "every entry succeeded". `countsTowardEscalation` remains the any-entry `some`. `output`, `passCount` and `failCount` are unchanged.
-- The list's `stopReason` is the first detector reason in command order, and is absent when no entry was stopped. Its presence — not the aggregate `status` — is the interruption evidence.
+- The list's `stopReason` is the first detector reason in command order, and is absent when no entry was stopped. Its presence is the interruption evidence; the aggregate `status` still decides whether the verdict is a timeout or a code failure.
 
 Both orders are pinned:
 
 | Order | Aggregate `status` | Aggregate `stopReason` | Consumer route |
 | --- | --- | --- | --- |
-| `[ordinary failure, detector stop]` | `TEST_FAILURE` (first failure) | the later entry's reason | interruption |
+| `[ordinary failure, detector stop]` | `TEST_FAILURE` (first failure) | the later entry's reason | code failure carrying the reason |
 | `[detector stop, ordinary failure]` | `TIMEOUT` (first failure) | the first entry's reason | interruption |
 
-`verifyScopedOp` treats `status === "TIMEOUT" || stopReason !== undefined` as interrupted: it never starts the zero-tests full-suite rerun, and it returns `status:"timeout"` with the reason instead of a code-failure verdict. `fullSuiteGateOp` derives its internal `timedOut` from the same predicate, so the existing `acceptOnTimeout` translation still decides `passed-on-timeout` versus `timeout` — with the reason on both forms, and `runWorkflowSuiteGate` still reporting `passed-on-timeout` as red and timed out. Lists with no stopped entry keep today's behaviour exactly; ordinary historical list semantics are not rewritten.
+`verifyScopedOp` never starts the zero-tests full-suite rerun when `status === "TIMEOUT" || stopReason !== undefined`. Its verdict follows the aggregate status: `TIMEOUT` returns `status:"timeout"` with the reason, while a list whose first failing entry failed ordinarily returns the ordinary `failed` verdict with its findings and the reason. `fullSuiteGateOp` takes its timeout branch only for a `TIMEOUT` aggregate, where the existing `acceptOnTimeout` translation still decides `passed-on-timeout` versus `timeout` — with the reason on both forms, and `runWorkflowSuiteGate` still reporting `passed-on-timeout` as red and timed out. A list whose ordinary failure precedes a stopped entry is never accepted on timeout: that would hide a real failing test behind the stop, so it stays `failed` with its findings and carries the reason. Lists with no stopped entry keep today's behaviour exactly; ordinary historical list semantics are not rewritten.
 
 ### Actual gate execution-path inventory
 
@@ -580,7 +580,7 @@ Entries grant specific permission, not an instruction to weaken unrelated assert
 
 **US-004**
 - `packages/nax/test/unit/verification/runners.test.ts` — preserve existing TIMEOUT and acceptOnTimeout assertions while extending stopped-result and list-aggregate shapes with the optional stop reason; list aggregation still runs every entry and keeps first-failure fields.
-- `packages/nax/test/unit/operations/verify-scoped.test.ts` — option-forwarding and timeout cases may gain the policy and stop reason; TIMEOUT still returns status timeout and forbids the zero-tests full-suite rerun, and list interruption evidence now selects that same route.
+- `packages/nax/test/unit/operations/verify-scoped.test.ts` — option-forwarding and timeout cases may gain the policy and stop reason; TIMEOUT still returns status timeout and forbids the zero-tests full-suite rerun, and list interruption evidence also forbids that rerun, while a list whose first failing entry failed ordinarily keeps the failed verdict.
 - `packages/nax/test/unit/operations/full-suite-gate.test.ts` — runTests option and timeout result assertions may gain the policy and stop reason; existing passed-on-timeout versus timeout behavior remains the replacing invariant, not unconditional success or failure at this op layer.
 
 **US-005**
@@ -714,9 +714,9 @@ Collision sweep performed for the two closed-world shapes this feature widens. `
 - [integration] `verifyScopedOp.execute` forwards package-view stallDetection into scoped selection.
 - [integration] `verifyScopedOp.execute` forwards the same policy into its ordinary zero-tests full-suite rerun path.
 - [integration] `verifyScopedOp.execute` returns status timeout with the stopReason when the scoped run is interrupted.
-- [integration] `verifyScopedOp.execute` starts no zero-tests full-suite rerun when the aggregate carries a stop reason although its status is a test failure.
+- [integration] `verifyScopedOp.execute` starts no zero-tests full-suite rerun when the aggregate carries a stop reason although its status is a test failure, and returns the ordinary failed verdict with findings and the stop reason.
 - [integration] `fullSuiteGateOp.execute` forwards gate-context stallDetection to regression.
-- [integration] `fullSuiteGateOp.execute` derives its timeout evidence from a list-level stop reason even when the aggregate status is a test failure.
+- [integration] `fullSuiteGateOp.execute` keeps a list whose aggregate status is a test failure as a failed verdict with findings and the list-level stop reason, under either acceptOnTimeout setting.
 - [integration] `fullSuiteGateOp.execute` keeps the acceptOnTimeout passed-on-timeout and timeout outcomes and carries the stopReason on both.
 - [integration] `runWorkflowSuiteGate` reports a stopped full suite as red and timed out even when the operation returns passed-on-timeout.
 

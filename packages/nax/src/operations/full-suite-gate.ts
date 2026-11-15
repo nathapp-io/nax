@@ -102,9 +102,10 @@ export interface FullSuiteGateOutput {
    */
   readonly parsedSummary?: TestSummary;
   /**
-   * Detector evidence when the run was interrupted (US-004). Its presence — not
-   * `status` — is the timeout signal: a command list keeps its first failing
-   * entry's ordinary `TEST_FAILURE` status even when a later entry was stopped.
+   * Detector evidence when a run, or one entry of a command list, was stopped
+   * (US-004). It rides on a timeout and on a failed verdict alike: a list whose
+   * first failing entry failed ordinarily stays `failed` even when a later entry
+   * was stopped, so the real failure is not hidden behind the stop.
    */
   readonly stopReason?: GateStopReason;
 }
@@ -357,13 +358,15 @@ export const fullSuiteGateOp: DeterministicOperation<
       };
     }
 
-    // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass. US-004: the
-    // timeout evidence is either signal, because a command list reports its first
-    // failing entry's ordinary status and still carries a stopped entry's reason.
-    const interrupted = testResult.timedOut || testResult.stopReason !== undefined;
-    if (interrupted) {
-      const stopReason = testResult.stopReason;
-      const evidence = stopReason !== undefined ? { stopReason } : {};
+    // issue #1116: BUG-026 — timeout + acceptOnTimeout → treat as pass. Only a run
+    // whose aggregate status is TIMEOUT is a timeout. A command list whose first
+    // failing entry failed ordinarily while a later entry was stopped keeps that
+    // ordinary status: it is a code failure, so accepting it on timeout would hide
+    // the failing test. It takes the failure path below and still carries the
+    // stopped entry's reason.
+    const stopReason = testResult.stopReason;
+    const evidence = stopReason !== undefined ? { stopReason } : {};
+    if (testResult.timedOut) {
       const acceptOnTimeout = ctxConfig?.execution?.regressionGate?.acceptOnTimeout ?? true;
       if (acceptOnTimeout) {
         logger.warn("verify[regression]", "[BUG-026] Full-suite timed out (accepted as pass)", {
@@ -428,6 +431,7 @@ export const fullSuiteGateOp: DeterministicOperation<
         attempts: 0,
         findings: [synth],
         rawOutput: testResult.output,
+        ...evidence,
         // No parsedSummary — the parser ran but produced zero structured failures
         // (environmental failure shape). The post-run roll-forward hook treats
         // `parsedSummary` missing as `no-gate-parse`.
@@ -449,6 +453,7 @@ export const fullSuiteGateOp: DeterministicOperation<
       findings,
       rawOutput: testResult.output,
       parsedSummary: testResult.parsedSummary,
+      ...evidence,
     };
   },
 };

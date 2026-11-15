@@ -53,9 +53,10 @@ export interface VerifyScopedOutput {
   readonly coversFullSuite: boolean;
   readonly scopeTestFallback?: boolean;
   /**
-   * Detector evidence when the run was interrupted (US-004). Its presence — not
-   * `status` — is the interruption signal: an aggregate list can report an
-   * ordinary `TEST_FAILURE` and still carry a stopped entry's reason.
+   * Detector evidence when the run, or one entry of a command list, was stopped
+   * (US-004). It rides on a timeout and on a failed verdict alike: a list whose
+   * first failing entry failed ordinarily stays `failed`, so its findings are not
+   * hidden behind the stop.
    */
   readonly stopReason?: GateStopReason;
 }
@@ -382,7 +383,11 @@ export const verifyScopedOp: DeterministicOperation<
       };
     }
 
-    if (isInterruptedVerification(result)) {
+    // Only a TIMEOUT aggregate is a timeout verdict. A mixed list whose first failing
+    // entry failed ordinarily stays a code failure (below) so its findings reach the
+    // fixer, and carries the stopped entry's reason; the rerun guard above already
+    // uses the wider interruption predicate.
+    if (result.status === "TIMEOUT") {
       logger.warn("verify[scoped]", "Scoped tests timed out", {
         storyId: input.storyId,
         durationMs,
@@ -456,15 +461,18 @@ export const verifyScopedOp: DeterministicOperation<
       scratchDir,
       deps.appendScratchEntry,
     );
-    return {
-      success: false,
-      status: "failed",
-      findings,
-      durationMs,
-      passCount: parsed.passed,
-      isFullSuite,
-      coversFullSuite: false,
-      scopeTestFallback,
-    };
+    return withStopReason(
+      {
+        success: false,
+        status: "failed" as const,
+        findings,
+        durationMs,
+        passCount: parsed.passed,
+        isFullSuite,
+        coversFullSuite: false,
+        scopeTestFallback,
+      },
+      result.stopReason,
+    );
   },
 };

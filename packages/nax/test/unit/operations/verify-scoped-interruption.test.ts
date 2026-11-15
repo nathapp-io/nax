@@ -1,9 +1,11 @@
 /**
  * `verifyScopedOp` — interruption routing (US-004).
  *
- * The scoped op treats `status === "TIMEOUT" || stopReason !== undefined` as
- * interrupted: it never starts its zero-tests full-suite rerun, and it answers
- * `status: "timeout"` with the detector reason instead of a code-failure verdict.
+ * Any detector stop (`status === "TIMEOUT" || stopReason !== undefined`) keeps the
+ * op from starting its zero-tests full-suite rerun. The verdict, though, follows
+ * the aggregate status: a stopped run answers `status: "timeout"` with the detector
+ * reason, while a mixed list whose first failing entry failed ordinarily stays a
+ * code failure — its findings reach the fixer — and still carries the reason.
  * Both test runs it starts — the scoped command from `selectScopedTests` and the
  * ordinary zero-tests rerun — carry the package-view stall policy.
  *
@@ -180,14 +182,29 @@ describe("verifyScopedOp — interruption routing (US-004)", () => {
     // is exactly the shape that otherwise triggers the rerun.
     const recorder = recordingRegression([MIXED_LIST_RUN]);
 
-    const out: VerifyScopedOutput = await verifyScopedOp.execute(
+    await verifyScopedOp.execute(
       INPUT,
       ctxWithQuality({ commands: { test: "bun test" }, stallDetection: PACKAGE_POLICY }),
       deps({ regression: recorder.regression, parseTestOutput: NO_TEST_PARSED }),
     );
 
     expect(recorder.calls).toHaveLength(1);
-    expect(out.status).toBe("timeout");
+  });
+
+  // A mixed list's ordinary failure must not be hidden behind the later stop:
+  // the verdict stays a code failure with findings, and the reason rides along.
+  test("keeps an ordinary failure in a mixed list as a code failure that carries the stop reason", async () => {
+    const recorder = recordingRegression([MIXED_LIST_RUN]);
+
+    const out: VerifyScopedOutput = await verifyScopedOp.execute(
+      INPUT,
+      ctxWithQuality({ commands: { test: "bun test" }, stallDetection: PACKAGE_POLICY }),
+      deps({ regression: recorder.regression, parseTestOutput: NO_TEST_PARSED }),
+    );
+
+    expect(out.status).toBe("failed");
+    expect(out.success).toBe(false);
+    expect(out.findings.length).toBeGreaterThan(0);
     expect(out.stopReason).toEqual(STOP_REASON);
   });
 });
