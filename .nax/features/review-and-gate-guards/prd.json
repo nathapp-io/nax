@@ -3,7 +3,7 @@
   "feature": "review-and-gate-guards",
   "branchName": "feat/review-and-gate-guards",
   "createdAt": "2026-11-15T04:40:19.598Z",
-  "updatedAt": "2026-11-15T07:06:38.725Z",
+  "updatedAt": "2026-11-15T07:21:31.390Z",
   "userStories": [
     {
       "id": "US-001",
@@ -433,14 +433,17 @@
         "US-002",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "The existing finish gate module already owns resolution, deduplication, setup and records; adding one policy carrier and reason uses standard patterns without a new orchestration abstraction."
+        "reasoning": "The existing finish gate module already owns resolution, deduplication, setup and records; adding one policy carrier and reason uses standard patterns without a new orchestration abstraction.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/finish/gates/quality.ts",
@@ -471,7 +474,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "88a7b9c4351800d0500050035f88efeb384a255f"
     },
     {
       "id": "US-008",
