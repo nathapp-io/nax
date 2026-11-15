@@ -1,5 +1,6 @@
 import { isAbsolute, win32 } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
+import { CHAT_MODEL_PATTERN, CHAT_PROFILE_PATTERN } from "@/config";
 import { NaxError } from "@/errors";
 import { validateFeatureName } from "@/utils/feature-name";
 import { type ChatJobKind, isFeatureJobKind } from "./job-types";
@@ -32,8 +33,6 @@ type JobLaunchBody =
     };
 
 type InputError = { readonly error: string };
-const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 
 function parseProfiles(raw: unknown): readonly string[] | InputError {
   if (raw === undefined) return [];
@@ -42,7 +41,7 @@ function parseProfiles(raw: unknown): readonly string[] | InputError {
   }
   const profiles: string[] = [];
   for (const profile of raw) {
-    if (!PROFILE_PATTERN.test(profile)) return { error: `[chat] profile ${profile} is not a valid profile name` };
+    if (!CHAT_PROFILE_PATTERN.test(profile)) return { error: `[chat] profile ${profile} is not a valid profile name` };
     profiles.push(profile);
   }
   return profiles;
@@ -100,7 +99,7 @@ function parseBot(
     return { error: "[chat] pr must be a positive integer" };
   }
   const { model } = raw;
-  if (model !== undefined && (typeof model !== "string" || !MODEL_PATTERN.test(model))) {
+  if (model !== undefined && (typeof model !== "string" || !CHAT_MODEL_PATTERN.test(model))) {
     return { error: `[chat] model ${String(model)} is not a valid model id` };
   }
   const base = { pr, profiles, ...(model === undefined ? {} : { model }) };

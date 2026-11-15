@@ -375,6 +375,8 @@ export interface NaxConfig {
   /** A5 workflow mode (single implementer + bounded review loop); root-only */
   workflow?: import("./runtime-types-workflow").WorkflowConfig;
   bot?: import("./runtime-types-bot").BotConfig;
+  /** US-005 (#2931): optional chat workflow settings; absent keeps today's chat defaults. */
+  chat?: import("./runtime-types-chat").ChatConfig;
   /** External MCP servers the native agent may call tools on (client only) */
   mcp?: import("./runtime-types-mcp").McpConfig;
   memory?: import("./runtime-types-memory").MemoryConfig;

@@ -56,6 +56,13 @@ export { getProjectKey } from "./project-key";
 export { pinRootOnlyKeys, pinRootOnlyKeysRaw, ROOT_ONLY_EXECUTION_KEYS } from "./root-only-keys";
 export type { AdvisorConfig } from "./runtime-types-advisor";
 export type { BotConfig, BotModelsConfig } from "./runtime-types-bot";
+export type {
+  ChatAgentChoice,
+  ChatBotStepConfig,
+  ChatConfig,
+  ChatStepConfig,
+  ChatWorkflowConfig,
+} from "./runtime-types-chat";
 export type { MemoryConfig, MemoryKodaConfig, MemoryMcpConfig } from "./runtime-types-memory";
 export type {
   ExecutionMode,
@@ -120,6 +127,12 @@ export {
 } from "./schemas-acp-agents";
 export { ADVISOR_DEFAULTS, resolveAdvisorConfig } from "./schemas-advisor";
 export { BotConfigSchema } from "./schemas-bot";
+export {
+  CHAT_MODEL_PATTERN,
+  CHAT_PROFILE_PATTERN,
+  ChatConfigSchema,
+  DEFAULT_SPEC_FIX_ROUNDS,
+} from "./schemas-chat";
 export type { CommandSafetyConfig } from "./schemas-command-safety";
 export { CommandSafetyConfigSchema } from "./schemas-command-safety";
 export {
