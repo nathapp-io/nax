@@ -3,7 +3,7 @@
   "feature": "review-and-gate-guards",
   "branchName": "feat/review-and-gate-guards",
   "createdAt": "2026-11-15T04:40:19.598Z",
-  "updatedAt": "2026-11-15T07:21:31.390Z",
+  "updatedAt": "2026-11-15T07:47:00.831Z",
   "userStories": [
     {
       "id": "US-001",
@@ -516,14 +516,17 @@
         "US-004",
         "US-007"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing gate entry points make this policy/evidence threading rather than a new architecture, but many projections need integration checks; trusted bot snapshot handling retains strict TDD."
+        "reasoning": "Existing gate entry points make this policy/evidence threading rather than a new architecture, but many projections need integration checks; trusted bot snapshot handling retains strict TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/gates.ts",
@@ -557,7 +560,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "432560554bc535fddf9897cf183659887495afe6"
     },
     {
       "id": "US-009",
