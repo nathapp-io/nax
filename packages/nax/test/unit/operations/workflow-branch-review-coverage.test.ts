@@ -12,7 +12,11 @@ import type { RetryStrategy } from "@/agents/retry";
 import type { TurnResult } from "@/agents/types";
 import { workflowConfigSelector } from "@/config";
 import { callOp, parseBranchReviewReply, type WorkflowBranchReviewInput, workflowBranchReviewOp } from "@/operations";
-import { buildWorkflowBranchCoverageRetry, buildWorkflowReviewJsonRetry } from "@/prompts";
+import {
+  buildWorkflowBranchCoverageRetry,
+  buildWorkflowBranchVerdictMismatchRetry,
+  buildWorkflowReviewJsonRetry,
+} from "@/prompts";
 import type { NaxRuntime } from "@/runtime";
 
 const createdRuntimes: NaxRuntime[] = [];
@@ -218,5 +222,195 @@ describe("workflowBranchReviewOp coverage retries through callOp (AC-15)", () =>
     expect(handles[1]).toBe(handles[0]);
     expect(handles[2]).toBe(handles[0]);
     expect(verdict?.inspectedFiles).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+});
+
+// ─── Clarification and coverage interleaving (US-012) ───────────────────────
+
+/**
+ * A branch-review reply whose verdict contradicts its findings: `spec: fail` with nothing blocking,
+ * which the parser records as the `spec` mismatch.
+ */
+function mismatchJson(inspectedFiles: readonly string[]): string {
+  return JSON.stringify({ spec: "fail", quality: "approved", inspectedFiles, findings: [], cannotVerify: [] });
+}
+
+const THREE_FILES: WorkflowBranchReviewInput = {
+  ...input,
+  requiredFiles: ["src/a.ts", "src/b.ts", "src/c.ts"],
+};
+
+/** Dispatch the op through real callOp, answering each turn with the next scripted reply. */
+async function runReview(i: WorkflowBranchReviewInput, replies: readonly string[]): Promise<string[]> {
+  const prompts: string[] = [];
+  const agentManager = makeMockAgentManager({
+    runWithFallbackFn: async (req) => {
+      assertDefined(req.executeHop, "req.executeHop");
+      const hop = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+      return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
+    },
+    runAsSessionFn: async (_agentName, handle, prompt): Promise<TurnResult> => {
+      prompts.push(prompt);
+      if (handle.id === "") throw new Error("the review session handle is required");
+      return {
+        output: replies[prompts.length - 1] ?? "",
+        estimatedCostUsd: 0,
+        internalRoundTrips: 1,
+        tokenUsage: { inputTokens: 0, outputTokens: 0 },
+      };
+    },
+  });
+  const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+  createdRuntimes.push(runtime);
+  await callOp(
+    { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "_run" },
+    workflowBranchReviewOp,
+    i,
+  );
+  return prompts;
+}
+
+describe("workflowBranchReviewOp clarification and coverage interleaving (US-012)", () => {
+  test("AC-11: the configured coverage allowance survives a clarification", () => {
+    const strategy = strategyFor({ ...THREE_FILES, coverageRetries: 2 });
+    expect(strategy.shouldRetry(probe, 0, retryCtx(mismatchJson([])))).toMatchObject({ retry: true });
+
+    expect(strategy.shouldRetry(probe, 1, retryCtx(verdictJson([])))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowBranchCoverageRetry(input.range, ["src/a.ts", "src/b.ts", "src/c.ts"], false, {
+        attempt: 1,
+        max: 2,
+      }),
+    });
+    // The second ask is still within the configured two, not a one-shot after the clarification.
+    expect(strategy.shouldRetry(probe, 2, retryCtx(verdictJson(["src/a.ts"])))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowBranchCoverageRetry(input.range, ["src/b.ts", "src/c.ts"], false, {
+        attempt: 2,
+        max: 2,
+      }),
+    });
+  });
+
+  test("AC-12: a post-clarification coverage prompt keeps its diff-part references", () => {
+    const parts = [{ path: "/run/package-branch-part-02.diff", files: ["src/a.ts"] }];
+    const strategy = strategyFor({ ...input, requiredFiles: ["src/a.ts"], diffParts: parts });
+    strategy.shouldRetry(probe, 0, retryCtx(mismatchJson([])));
+
+    const decision = strategy.shouldRetry(probe, 1, retryCtx(verdictJson([])));
+
+    expect(decision).toMatchObject({ retry: true });
+    const nextPrompt = decision.retry ? decision.nextPrompt : undefined;
+    expect(nextPrompt).toContain("- src/a.ts (package-branch-part-02.diff)");
+  });
+
+  test("AC-13: no-progress is measured only against responses to coverage prompts", () => {
+    const strategy = strategyFor({ ...THREE_FILES, coverageRetries: 3 });
+    expect(strategy.shouldRetry(probe, 0, retryCtx(verdictJson([])))).toMatchObject({ retry: true });
+    // The reply at attempt 1 answers the coverage prompt but introduces a mismatch, so the
+    // clarification — not coverage — is what follows it.
+    expect(strategy.shouldRetry(probe, 1, retryCtx(mismatchJson([])))).toMatchObject({ retry: true });
+
+    // This reply answers the clarification and covers no more files than the first one did; it is
+    // not a coverage response, so it is neither a no-progress event nor a spent allowance.
+    expect(strategy.shouldRetry(probe, 2, retryCtx(verdictJson([])))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowBranchCoverageRetry(input.range, ["src/a.ts", "src/b.ts", "src/c.ts"], false, {
+        attempt: 2,
+        max: 3,
+      }),
+    });
+  });
+
+  test("AC-14: a clarification response spends none of the coverage budget", () => {
+    const strategy = strategyFor({ ...input, requiredFiles: ["src/a.ts"], coverageRetries: 1 });
+    strategy.shouldRetry(probe, 0, retryCtx(mismatchJson([])));
+
+    expect(strategy.shouldRetry(probe, 1, retryCtx(verdictJson([])))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowBranchCoverageRetry(input.range, ["src/a.ts"], false, { attempt: 1, max: 1 }),
+    });
+  });
+
+  test("AC-15: a shape response cannot reset a spent coverage allowance", () => {
+    const strategy = strategyFor({ ...input, requiredFiles: ["src/a.ts"], coverageRetries: 1 });
+    strategy.shouldRetry(probe, 0, retryCtx(mismatchJson([])));
+    expect(strategy.shouldRetry(probe, 1, retryCtx(verdictJson([])))).toMatchObject({ retry: true });
+    // The JSON repair is the shape allowance, not a coverage one.
+    expect(strategy.shouldRetry(probe, 2, retryCtx("not json"))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowReviewJsonRetry(),
+    });
+
+    const decision = strategy.shouldRetry(probe, 3, retryCtx(verdictJson([])));
+    expect(decision.retry).toBe(false);
+    expect(decision).toEqual({ retry: false, fallback: parseBranchReviewReply(verdictJson([]), []) });
+  });
+
+  test("AC-16: a stopped coverage state is not reopened by a restarted hop's shape response", () => {
+    const strategy = strategyFor({ ...input, requiredFiles: ["src/a.ts", "src/b.ts"], coverageRetries: 3 });
+    expect(strategy.shouldRetry(probe, 0, retryCtx(verdictJson([])))).toMatchObject({ retry: true });
+    expect(strategy.shouldRetry(probe, 1, retryCtx(verdictJson([])))).toEqual({
+      retry: false,
+      fallback: parseBranchReviewReply(verdictJson([]), []),
+    });
+
+    // A manager-owned fallback hop restarts the loop at attempt 0 with a fresh session.
+    expect(strategy.shouldRetry(probe, 0, retryCtx("not json"))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowReviewJsonRetry(),
+    });
+    // One more file read is progress by the old measure, but the stop holds for the invocation.
+    expect(strategy.shouldRetry(probe, 1, retryCtx(verdictJson(["src/a.ts"])))).toEqual({
+      retry: false,
+      fallback: parseBranchReviewReply(verdictJson(["src/a.ts"]), []),
+    });
+  });
+
+  test("AC-19: a coverage allowance of 2 sends 3+2 replies in one completed hop, and no more", async () => {
+    const prompts = await runReview({ ...THREE_FILES, coverageRetries: 2 }, [
+      "not json",
+      mismatchJson([]),
+      verdictJson(["src/a.ts"]),
+      verdictJson(["src/a.ts", "src/b.ts"]),
+      verdictJson(["src/a.ts", "src/b.ts", "src/c.ts"]),
+    ]);
+
+    expect(prompts).toHaveLength(5);
+    expect(prompts[1]).toBe(buildWorkflowReviewJsonRetry());
+    expect(prompts[2]).toContain("contradict each other");
+    expect(prompts[3]).toContain("This is coverage retry 1 of 2.");
+    expect(prompts[4]).toContain("This is coverage retry 2 of 2.");
+  });
+});
+
+describe("workflowBranchReviewOp clarification is never suppressed by coverage (AC-18)", () => {
+  test("an exhausted coverage budget still lets the clarification fire", () => {
+    const strategy = strategyFor({ ...input, requiredFiles: ["src/a.ts"], coverageRetries: 0 });
+
+    expect(strategy.shouldRetry(probe, 0, retryCtx(mismatchJson([])))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowBranchVerdictMismatchRetry(["spec"]),
+    });
+  });
+
+  test("a stopped coverage state still lets the clarification fire", () => {
+    const strategy = strategyFor({ ...input, requiredFiles: ["src/a.ts"], coverageRetries: 3 });
+    expect(strategy.shouldRetry(probe, 0, retryCtx(verdictJson([])))).toMatchObject({ retry: true });
+    // No progress: coverage stops here for the rest of the invocation.
+    expect(strategy.shouldRetry(probe, 1, retryCtx(verdictJson([])))).toMatchObject({ retry: false });
+
+    expect(strategy.shouldRetry(probe, 0, retryCtx(mismatchJson([])))).toEqual({
+      retry: true,
+      delayMs: 0,
+      nextPrompt: buildWorkflowBranchVerdictMismatchRetry(["spec"]),
+    });
   });
 });

@@ -1,4 +1,5 @@
 /** A5 workflow mode: the whole-branch review, its scoped re-review, and the one branch fix (spec §7 steps 2-4). */
+import type { VerdictMismatch } from "@/operations/workflow-types";
 import type { DiffPart } from "@/workflow/branch-diff-parts";
 import { memoryReferenceSectionOf, memorySectionOf } from "./memory-builder";
 import {
@@ -13,6 +14,7 @@ import {
   WORKFLOW_ENUMERATION_INSTRUCTION,
   WORKFLOW_QUALITY_CHECKLIST,
 } from "./workflow-quality-checklist";
+import { VERDICT_MISMATCH_SENTENCES } from "./workflow-story-review-builder";
 
 export interface BranchReviewPromptInput {
   readonly specPath?: string;
@@ -215,6 +217,21 @@ ${missing
 ${budget}
 List in inspectedFiles every file you have read or diffed in this session, not only the new ones.
 Re-send the whole JSON object: the same findings, plus anything the files above turned up.`;
+}
+
+/**
+ * The branch clarification (US-012): the reviewer's verdict contradicts its own findings, so it gets
+ * one read-only second look in the same session. It keeps the story review's per-kind remedy
+ * sentences and asks for the whole branch-review object back, because the verdict this reply carries
+ * is the one the run records — findings, coverage evidence and minor triage included. It is not a
+ * fix instruction: nothing here asks the reviewer to change code.
+ */
+export function buildWorkflowBranchVerdictMismatchRetry(mismatch: readonly VerdictMismatch[]): string {
+  const remedies = mismatch.map((kind) => VERDICT_MISMATCH_SENTENCES[kind]).join("\n");
+  return `Your verdict and your findings contradict each other. This is a second, read-only look: do not change code, commit anything or make any fix.
+${remedies}
+Name the missing defect or the acceptance criterion that fails as a finding, and quote in "observed" the code that proves it — or correct the verdict if the branch is in fact in the state your findings describe.
+Re-send the complete branch-review JSON object, keeping everything you already reported: "spec", "quality", "findings", "inspectedFiles", "cannotVerify" and "minorTriage". Reply with only the JSON object.`;
 }
 
 export function buildWorkflowBranchReReviewPrompt(input: {

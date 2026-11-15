@@ -1,10 +1,11 @@
 /** A5 workflow mode: the one whole-branch review (spec §7 step 2). Fresh, read tools plus sandboxed Bash; one shape retry plus an independent coverage budget. */
 import { basename } from "node:path";
-import { makeCoverageRetryStrategy, makeParseRetryStrategy } from "@/agents/retry";
+import { makeCoverageRetryStrategy, makeMismatchClarificationStrategy, makeParseRetryStrategy } from "@/agents/retry";
 import { WORKFLOW_REVIEW_DEFAULTS, workflowConfigSelector } from "@/config";
 import type { WorkflowOpConfig } from "@/config/selectors";
 import {
   buildWorkflowBranchCoverageRetry,
+  buildWorkflowBranchVerdictMismatchRetry,
   buildWorkflowReviewJsonRetry,
   buildWorkflowReviewJsonRetryCondensed,
   reviewerCommandsSection,
@@ -53,6 +54,17 @@ function partNamesByFile(parts: readonly DiffPart[]): ReadonlyMap<string, readon
   }
   return result;
 }
+
+/**
+ * US-012: the two seams the branch retry composition reaches. Tests capture the clarification
+ * wrapper's options and stub the prompt factory through this object, so "the wrapper's decision
+ * decides the follow-up prompt" and "callOp sends the builder's output, made with the failed kind"
+ * are asserted against a real dispatch rather than a re-implementation of the wiring.
+ */
+export const _branchReviewRetryDeps = {
+  makeMismatchClarificationStrategy,
+  buildWorkflowBranchVerdictMismatchRetry,
+};
 
 export const workflowBranchReviewOp: RunOperation<
   WorkflowBranchReviewInput,
@@ -104,11 +116,24 @@ export const workflowBranchReviewOp: RunOperation<
       exhaustedFallback: parse,
     });
     /**
+     * US-012: the one mismatch clarification, asked after shape repair and before coverage. It
+     * consults `shapeRetry` first, so the pre-existing repair still wins; both wrappers then sit under
+     * coverage, whose budget is untouched by either. `exhaustedFallback` keeps returning the parsed
+     * verdict, so a persistent mismatch is reported with its findings rather than dropped.
+     */
+    const clarificationRetry = _branchReviewRetryDeps.makeMismatchClarificationStrategy({
+      inner: shapeRetry,
+      parse,
+      mismatch: (parsed) => (isVerdict(parsed) ? (parsed.mismatch ?? []) : []),
+      prompt: (kinds) => _branchReviewRetryDeps.buildWorkflowBranchVerdictMismatchRetry(kinds),
+      reviewerKind: "workflow-branch-review",
+    });
+    /**
      * Coverage, on its own budget (US-002, nax#2858). It decides only whether to ask again: an
      * incomplete verdict is kept through `exhaustedFallback`, findings included.
      */
     return makeCoverageRetryStrategy({
-      inner: shapeRetry,
+      inner: clarificationRetry,
       parse,
       missing,
       maxCoverageRetries: input.coverageRetries ?? WORKFLOW_REVIEW_DEFAULTS.coverageRetries,

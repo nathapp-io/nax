@@ -21,10 +21,10 @@ type StopReason = "budget" | "no progress";
 
 /**
  * A parser that throws describes the same unusable reply as one that returns null, and the
- * inner strategy (which runs the same parser) owns that shape failure. Coverage only decides
- * whether to ask again, so a throw here must not become a coverage decision.
+ * inner strategy (which runs the same parser) owns that shape failure. Coverage and the mismatch
+ * clarification only decide whether to ask again, so a throw here must not become their decision.
  */
-function parseOutput(parse: (output: string) => unknown, output: string): unknown {
+export function parseWithoutThrowing(parse: (output: string) => unknown, output: string): unknown {
   try {
     return parse(output);
   } catch {
@@ -59,6 +59,44 @@ function logStop(
 }
 
 /**
+ * The parsed reply when this turn is coverage's business at all, else `undefined`. A transport
+ * failure, an empty turn, an adapter-failed turn and an unparseable reply are the inner strategy's
+ * (shape or triage) to judge: coverage only decides whether a *readable* reply needs asking again.
+ * The reply is wrapped so that a falsy parse result is still a reply.
+ */
+function coverageReply(
+  opts: CoverageRetryOpts,
+  failure: AdapterFailure | Error,
+  ctx: RetryContext,
+): { readonly parsed: unknown } | undefined {
+  if (!(failure instanceof ParseValidationError)) return undefined;
+  if (!ctx.lastOutput) return undefined;
+  if (ctx.lastTurnResult?.adapterFailure) return undefined;
+  const parsed = parseWithoutThrowing(opts.parse, ctx.lastOutput);
+  return parsed == null ? undefined : { parsed };
+}
+
+/** The one exhausted decision: the op's own fallback, never an invented value. */
+function exhaustedDecision(opts: CoverageRetryOpts, ctx: RetryContext): RetryDecision {
+  return { retry: false, fallback: opts.exhaustedFallback(ctx.lastOutput ?? "") };
+}
+
+/**
+ * A reply counts as coverage's answer only when it is the very next turn after coverage asked — and
+ * only then is its unread count a progress measurement. A reply to a clarification or to a JSON
+ * repair is neither: it measures nothing and spends nothing.
+ */
+function answersCoverage(
+  issuedAt: number | null,
+  attempt: number,
+  previousUnread: number | null,
+  unread: number,
+): boolean {
+  if (issuedAt === null || attempt !== issuedAt + 1) return false;
+  return previousUnread !== null && unread >= previousUnread;
+}
+
+/**
  * Wraps an op's shape (and, for the bot, triage) retry and owns the file-coverage decision.
  *
  * Coverage has its own budget, separate from the inner strategy's: the inner strategy is
@@ -68,6 +106,12 @@ function logStop(
  * exhaustion through `fallback`, and the budget stops as soon as a retry covers no more
  * files than the one before it.
  *
+ * US-012: an interleaved clarification prompt makes "the reply that follows a coverage prompt"
+ * and "the reply two turns later" different things, so `issuedAt` records where coverage last
+ * asked and only the very next turn counts as its answer. A clarification or shape reply is none of
+ * coverage's business: it measures no progress and reopens nothing, and `stopped` keeps a spent or
+ * no-progress budget shut for the rest of the invocation (which outlives a manager fallback hop).
+ *
  * The strategy is resolved once per `callOp` call, so the coverage budget is per `callOp`.
  * Pulled out of #2858: a reviewer that answered "I did not read them" faced no second ask
  * because coverage shared the JSON-shape retry's `maxAttempts: 2`.
@@ -75,6 +119,10 @@ function logStop(
 export function makeCoverageRetryStrategy(opts: CoverageRetryOpts): RetryStrategy {
   let issued = 0;
   let previousUnread: number | null = null;
+  /** The attempt at which coverage last asked, so a later reply is not mistaken for its answer. */
+  let issuedAt: number | null = null;
+  /** Set once the budget or no-progress stopped coverage: nothing reopens it for this invocation. */
+  let stopped = false;
 
   return {
     shouldRetry(failure: AdapterFailure | Error, attempt: number, ctx: RetryContext): RetryDecision {
@@ -84,30 +132,30 @@ export function makeCoverageRetryStrategy(opts: CoverageRetryOpts): RetryStrateg
         inner ??= opts.inner.shouldRetry(failure, innerAttempt, ctx);
         return inner;
       };
-      const stop = (reason: StopReason, unread: number): RetryDecision => {
-        logStop(opts, ctx, issued, unread, reason);
-        return { retry: false, fallback: opts.exhaustedFallback(ctx.lastOutput ?? "") };
-      };
 
-      if (!(failure instanceof ParseValidationError)) return decideInner();
-      if (!ctx.lastOutput) return decideInner();
-      if (ctx.lastTurnResult?.adapterFailure) return decideInner();
-
-      const parsed = parseOutput(opts.parse, ctx.lastOutput);
-      if (parsed == null) return decideInner();
+      const reply = coverageReply(opts, failure, ctx);
+      if (reply === undefined) return decideInner();
 
       const decision = decideInner();
       if (decision.retry) return decision;
       if ("fallback" in decision) return decision;
+      if (stopped) return exhaustedDecision(opts, ctx);
 
-      const unread = opts.missing(parsed);
+      const unread = opts.missing(reply.parsed);
       if (unread.length === 0) return decision;
-      if (issued >= opts.maxCoverageRetries) return stop("budget", unread.length);
-      if (issued > 0 && previousUnread !== null && unread.length >= previousUnread) {
-        return stop("no progress", unread.length);
+      if (issued >= opts.maxCoverageRetries) {
+        stopped = true;
+        logStop(opts, ctx, issued, unread.length, "budget");
+        return exhaustedDecision(opts, ctx);
+      }
+      if (answersCoverage(issuedAt, attempt, previousUnread, unread.length)) {
+        stopped = true;
+        logStop(opts, ctx, issued, unread.length, "no progress");
+        return exhaustedDecision(opts, ctx);
       }
 
       issued += 1;
+      issuedAt = attempt;
       previousUnread = unread.length;
       logRetry(opts, ctx, issued, unread.length);
       return {
