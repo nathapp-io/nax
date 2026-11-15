@@ -8,8 +8,21 @@ import { buildWorkflowInstructions } from "@/prompts";
 import { validateFeatureName } from "@/utils/feature-name";
 import { resolveTargetRepo, targetOutputDir } from "../target-repo";
 import { type FeatureStateOptions, readFeatureState, readWorkflowStateList } from "./feature-state";
+import { similarFeatureNames } from "./similar-features";
 
-const MAX_KNOWN_FEATURES = 20;
+/**
+ * The answer for a feature name with no artifacts yet. Deliberately not a `FeatureState`:
+ * `stage: "not-started"` is what tells the agent the feature is new, and the artifact
+ * fields are null rather than a list of unrelated feature names (issue #2927).
+ */
+export interface NotStartedFeature {
+  readonly name: string;
+  readonly stage: "not-started";
+  readonly spec: null;
+  readonly prd: null;
+  readonly similar: readonly string[];
+}
+
 export const _workflowProviderDeps = { stat: statSync, readdir: readdirSync };
 
 function failure(content: string): ToolResult {
@@ -75,10 +88,19 @@ async function readState(input: Record<string, unknown>, base: FeatureStateOptio
   if (exists(dir, "directory") || exists(join(options.repoRoot, ".nax", "specs", `${feature}.md`), "file")) {
     return { content: JSON.stringify(await readFeatureState(feature, options), null, 2) };
   }
-  const names = knownDirectories(options.repoRoot);
-  const available = names.slice(0, MAX_KNOWN_FEATURES).join(", ") || "(none)";
-  const suffix = names.length > MAX_KNOWN_FEATURES ? `, +${names.length - MAX_KNOWN_FEATURES} more` : "";
-  return failure(`unknown feature ${feature}; known: ${available}${suffix}`);
+  return {
+    content: JSON.stringify(
+      {
+        name: feature,
+        stage: "not-started",
+        spec: null,
+        prd: null,
+        similar: similarFeatureNames(feature, knownDirectories(options.repoRoot)),
+      } satisfies NotStartedFeature,
+      null,
+      2,
+    ),
+  };
 }
 
 /** A static provider: the native runtime owns tool-result size bounds. */

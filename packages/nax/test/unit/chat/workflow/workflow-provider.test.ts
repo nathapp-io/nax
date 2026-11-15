@@ -133,8 +133,20 @@ describe("createWorkflowProvider", () => {
       });
     },
   );
-  test("AC-11 unknown feature without feature tree", async () => {
-    expect(await run({ feature: "nope" })).toEqual({ isError: true, content: "unknown feature nope; known: (none)" });
+  test("AC-5 an absent feature is not an error result", async () => {
+    const result = await run({ feature: "nope" });
+    expect(result.isError).not.toBe(true);
+  });
+  test("AC-6 an absent feature returns the not-started shape", async () => {
+    const result = await run({ feature: "nope" });
+    expect(result.content).toBe(
+      JSON.stringify({ name: "nope", stage: "not-started", spec: null, prd: null, similar: [] }, null, 2),
+    );
+  });
+  test("AC-9 an invalid feature name is still an error result", async () => {
+    const result = await run({ feature: "../etc" });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("..");
   });
   test.each([{ feature: 7 }, { feature: false }, { feature: {} }, { feature: [] }, { feature: undefined }])(
     "AC-12 AC-19 rejects non-string %j",
@@ -201,10 +213,14 @@ describe("createWorkflowProvider", () => {
       }
     },
   );
-  test("does not suggest directories rejected by the feature path validator", async () => {
+  test("AC-8 never suggests a directory the feature validators reject", async () => {
     features("f1");
+    // Valid per validateFeatureName's regex but rejected by featureDir's 64-character cap.
     mkdirSync(join(featuresDir(options.repoRoot), "f".repeat(65)));
-    expect(await run({ feature: "nope" })).toEqual({ isError: true, content: "unknown feature nope; known: f1" });
+    // Rejected by validateFeatureName itself, and within one edit of "f 1".
+    mkdirSync(join(featuresDir(options.repoRoot), "f 1"));
+    expect(JSON.parse((await run({ feature: "f11" })).content).similar).toEqual(["f1"]);
+    expect(JSON.parse((await run({ feature: "f".repeat(64) })).content).similar).toEqual([]);
   });
   test("accepts a 64-character feature name at the path limit", async () => {
     const feature = "f".repeat(64);
@@ -213,9 +229,16 @@ describe("createWorkflowProvider", () => {
     expect(result.isError).not.toBe(true);
     expect(JSON.parse(result.content).name).toBe(feature);
   });
-  test("AC-15 sorts known directory names", async () => {
-    features("f2", "f1");
-    expect(await run({ feature: "nope" })).toEqual({ isError: true, content: "unknown feature nope; known: f1, f2" });
+  test("AC-7 names only close feature directories, closest first", async () => {
+    features("review-and-gate-guards", "f2", "f1");
+    const result = await run({ feature: "f11" });
+    expect(JSON.parse(result.content)).toEqual({
+      name: "f11",
+      stage: "not-started",
+      spec: null,
+      prd: null,
+      similar: ["f1", "f2"],
+    });
   });
   test("AC-16 accepts legacy spec-only features but does not list them", async () => {
     await Bun.write(join(options.repoRoot, ".nax", "specs", "f3.md"), "legacy");
@@ -237,15 +260,13 @@ describe("createWorkflowProvider", () => {
     expect(result.isError).not.toBe(true);
     expect(JSON.parse(result.content)).toEqual({ features: [], omitted: 0 });
   });
-  test("AC-23 bounds valid known directories to 20", async () => {
-    const names = Array.from({ length: 22 }, (_, i) => `f${String(i + 1).padStart(2, "0")}`);
+  test("AC-23 bounds similar names to MAX_SIMILAR_FEATURES", async () => {
+    const names = Array.from({ length: 22 }, (_, i) => `flow${String(i + 1).padStart(2, "0")}`);
     features(...names.reverse());
     mkdirSync(join(options.repoRoot, ".nax", "features", "bad name"));
-    const expected = Array.from({ length: 20 }, (_, i) => `f${String(i + 1).padStart(2, "0")}`).join(", ");
-    expect(await run({ feature: "nope" })).toEqual({
-      isError: true,
-      content: `unknown feature nope; known: ${expected}, +2 more`,
-    });
+    const result = await run({ feature: "flow" });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(result.content).similar).toEqual(["flow01", "flow02", "flow03"]);
   });
   describe("repo argument", () => {
     const origLoad = _targetRepoDeps.loadConfig;
