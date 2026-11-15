@@ -18,9 +18,24 @@ import {
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { assertTrusted } from "../trust";
+import {
+  createGateStallMonitor,
+  type GateStallMonitor,
+  type GateStallPolicy,
+  type GateStopReason,
+  resolveStallDetection,
+} from "../utils/gate-stall";
 import { withAgentOutputEnv } from "../verification/executor";
 import { aggregateResults } from "./aggregate";
 import { qualityLogsAreQuiet } from "./log-scope";
+import {
+  createTerminalLatch,
+  stopLogFields,
+  stopProcessGroup,
+  stoppedOutput,
+  type TerminalLatch,
+  timedOutOutput,
+} from "./runner-lifecycle";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -68,12 +83,12 @@ export function withNoColorEnv(
 }
 
 /**
- * How much of a timed-out agent-tool command's output is kept: the tail, so the
+ * How much of a stopped agent-tool command's output is kept: the tail, so the
  * agent can see which step was still running (#2536). Harness runs keep only
  * the notice, because their findings parsers would read a partial run as a
- * complete one.
+ * complete one. Defined beside the notices that cut it.
  */
-export const TIMEOUT_OUTPUT_TAIL_CHARS = 4_000;
+export { TIMEOUT_OUTPUT_TAIL_CHARS } from "./runner-lifecycle";
 
 export interface QualityCommandOptions {
   /** Short name used in logs (e.g. "lint", "typecheck", "build"). */
@@ -108,6 +123,12 @@ export interface QualityCommandOptions {
    * quality pairs, 283 of them (98%) from this path.
    */
   origin?: "harness" | "agent-tool";
+  /**
+   * Opt this invocation into stall detection. Absent means no detector at all:
+   * repetition and silence are never inferred for a caller that did not ask,
+   * so an agent-tool iteration loop keeps its own behaviour.
+   */
+  stallDetection?: Partial<GateStallPolicy>;
 }
 
 export interface QualityCommandResult {
@@ -118,6 +139,11 @@ export interface QualityCommandResult {
   output: string;
   durationMs: number;
   timedOut: boolean;
+  /**
+   * Present only when a detector stopped this command. A wall timeout carries
+   * no reason, and the property is absent rather than undefined on that path.
+   */
+  stopReason?: GateStopReason;
 }
 
 /**
@@ -129,6 +155,7 @@ export interface QualityCommandResult {
 export const _qualityRunnerDeps = {
   spawn: spawn as typeof Bun.spawn,
   killProcessGroup,
+  createGateStallMonitor,
   setTimeout: ((fn: () => void, ms: number) => setTimeout(fn, ms)) as (fn: () => void, ms: number) => unknown,
   clearTimeout: ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>)) as (
     handle: unknown,
@@ -141,7 +168,20 @@ interface StreamCollector {
   cancel: () => Promise<void>;
 }
 
-function collectStream(stream: ReadableStream<Uint8Array>): StreamCollector {
+/**
+ * Read one stream to its end, showing each chunk to the detector as it arrives
+ * and decoding it separately for the captured text, so detection never rewrites
+ * what the caller sees.
+ *
+ * A stream error is not repetition or silence: the bytes read before the failure
+ * are kept and `onEnd` is not fed, which leaves the existing exit/error policy
+ * untouched.
+ */
+function collectStream(
+  stream: ReadableStream<Uint8Array>,
+  onChunk: (chunk: Uint8Array) => void,
+  onEnd: () => void,
+): StreamCollector {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let output = "";
@@ -150,14 +190,56 @@ function collectStream(stream: ReadableStream<Uint8Array>): StreamCollector {
       while (true) {
         const next = await reader.read();
         if (next.done) break;
+        onChunk(next.value);
         output += decoder.decode(next.value, { stream: true });
       }
       output += decoder.decode();
+      onEnd();
     } catch {
       // A stream that fails still returns every chunk read before the failure.
     }
   })();
   return { done, text: () => output, cancel: () => reader.cancel() };
+}
+
+/**
+ * Start both readers before the leader is awaited — a sequential read deadlocks
+ * on output larger than the OS pipe buffer (~64KB).
+ */
+function openCollectors(
+  proc: { stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array> },
+  monitor: GateStallMonitor | undefined,
+): { stdout: StreamCollector; stderr: StreamCollector } {
+  return {
+    stdout: collectStream(
+      proc.stdout,
+      (chunk) => monitor?.observe("stdout", chunk),
+      () => monitor?.end("stdout"),
+    ),
+    stderr: collectStream(
+      proc.stderr,
+      (chunk) => monitor?.observe("stderr", chunk),
+      () => monitor?.end("stderr"),
+    ),
+  };
+}
+
+/**
+ * Start the stall detector, or nothing at all when the caller did not opt in.
+ * A stop enters the latch exactly like a wall deadline, which is what puts both
+ * on the same cleanup lane.
+ */
+function startStallMonitor(
+  stallDetection: Partial<GateStallPolicy> | undefined,
+  latch: TerminalLatch,
+): GateStallMonitor | undefined {
+  if (stallDetection === undefined) return undefined;
+  return _qualityRunnerDeps.createGateStallMonitor({
+    policy: resolveStallDetection(stallDetection),
+    onStop: (reason) => latch.settle({ kind: "stalled", reason }),
+    setTimeout: (fn, ms) => _qualityRunnerDeps.setTimeout(fn, ms),
+    clearTimeout: (handle) => _qualityRunnerDeps.clearTimeout(handle),
+  });
 }
 
 async function drainStream(collector: StreamCollector): Promise<{ output: string; timedOut: boolean }> {
@@ -185,19 +267,6 @@ async function drainOutputStreams(opts: {
     _qualityRunnerDeps.killProcessGroup(opts.pid, "SIGTERM", { singleProcessFallback: false });
   }
   return [stdout.output, stderr.output];
-}
-
-/**
- * The timeout notice, followed by the tail of `partial` (stdout, then stderr)
- * cut at a line boundary so no truncated path reaches the reader.
- */
-function timedOutOutput(commandName: string, timeoutMs: number, partial: string): string {
-  const notice = `[nax] ${commandName} timed out after ${timeoutMs / 1000}s`;
-  const cut = partial.slice(-TIMEOUT_OUTPUT_TAIL_CHARS);
-  const firstBreak = cut.indexOf("\n");
-  const whole = partial.length > TIMEOUT_OUTPUT_TAIL_CHARS && firstBreak >= 0 ? cut.slice(firstBreak + 1) : cut;
-  const tail = whole.trim();
-  return tail === "" ? notice : `${notice}; last output before the kill:\n${tail}`;
 }
 
 /**
@@ -276,104 +345,122 @@ async function runSingleCommand(
       detached: true,
     });
 
-    let timedOut = false;
     let leaderExited = false;
-    let sigkillTimer: unknown;
-    let sigkillSent: Promise<void> | undefined;
-    let sigkillFired = false;
 
+    // One latch arbitrates the four things that can end this invocation: the
+    // leader's exit, the wall deadline, repeated output and silence. The first
+    // event observed while the child is live wins; everything later is inert.
+    const latch = createTerminalLatch();
     // The shell leader's exit says nothing about the rest of its group, so it
-    // only changes HOW the SIGKILL is sent (see below), never whether.
+    // only changes HOW the SIGKILL is sent (see stopProcessGroup), never whether.
     proc.exited
-      .then(() => {
-        leaderExited = true;
-      })
-      // Floating by design (the flag defaults to the safe value); .catch keeps a
-      // rejected proc.exited from surfacing as an unhandled rejection, which the
-      // crash handler would escalate to a full teardown.
+      .then(
+        (exitCode) => {
+          leaderExited = true;
+          latch.settle({ kind: "exit", exitCode });
+        },
+        // A rejected exit is not stall evidence: it settles the latch as an error
+        // so the pre-latch result (returned by the catch below) is unchanged.
+        (error: unknown) => latch.settle({ kind: "error", error }),
+      )
+      // Floating by design: .catch keeps a rejected proc.exited from surfacing as
+      // an unhandled rejection, which the crash handler would escalate to a full
+      // teardown — including a settle callback that itself throws.
       .catch(() => {});
 
-    // setTimeout, not Bun.sleep: both timers must be cancellable mid-flight
-    // (forbidden-patterns-source.md, the clearTimeout exception).
-    const killTimer = _qualityRunnerDeps.setTimeout(() => {
-      timedOut = true;
-      _qualityRunnerDeps.killProcessGroup(proc.pid, "SIGTERM");
-      // Escalate to SIGKILL for the whole group even if the leader exited in the
-      // meantime: members that ignored SIGTERM would otherwise leak. Once the
-      // leader is gone the bare pid may belong to an unrelated process, so the
-      // single-process fallback is off. The timer never outlives this function:
-      // it is cleared below for an empty group, and otherwise awaited.
-      sigkillSent = new Promise<void>((resolve) => {
-        sigkillTimer = _qualityRunnerDeps.setTimeout(() => {
-          sigkillFired = true;
-          _qualityRunnerDeps.killProcessGroup(proc.pid, "SIGKILL", { singleProcessFallback: !leaderExited });
-          resolve();
-        }, SIGKILL_GRACE_PERIOD_MS);
-      });
-    }, timeoutMs);
-
-    // Start both readers before awaiting the leader to avoid pipe-buffer deadlocks.
-    const stdoutCollector = collectStream(proc.stdout);
-    const stderrCollector = collectStream(proc.stderr);
-    const exitCode = await proc.exited;
-    leaderExited = true;
-    if (!timedOut) _qualityRunnerDeps.clearTimeout(killTimer);
-
-    const [stdout, stderr] = await drainOutputStreams({
-      stdout: stdoutCollector,
-      stderr: stderrCollector,
-      pid: proc.pid,
-      timedOut,
-    });
-
-    if (timedOut) _qualityRunnerDeps.clearTimeout(killTimer);
-    // A pending SIGKILL is awaited while the group still has a member (signal 0
-    // probes without delivering anything) and cancelled once it is empty, so no
-    // timer outlives the call.
-    if (sigkillTimer !== undefined) {
-      const membersLeft =
-        !sigkillFired && _qualityRunnerDeps.killProcessGroup(proc.pid, 0, { singleProcessFallback: false });
-      if (membersLeft) await sigkillSent;
-      // Cleared even once fired: every armed timer reaches clearTimeout (a no-op on a fired one).
-      _qualityRunnerDeps.clearTimeout(sigkillTimer);
+    // The monitor arms a silence deadline the moment it is created, so it comes
+    // AFTER spawn — a spawn failure must leave neither a timer nor a callback
+    // behind — and it is disposed if stream setup throws before the latch settles.
+    let monitor: GateStallMonitor | undefined;
+    let collectors: { stdout: StreamCollector; stderr: StreamCollector };
+    try {
+      monitor = startStallMonitor(opts.stallDetection, latch);
+      // Rule 07: both streams are read concurrently with the leader's exit, and
+      // every chunk reaches the detector as it arrives, so a repeated line stops
+      // a live child long before its wall deadline.
+      collectors = openCollectors(proc, monitor);
+    } catch (error) {
+      monitor?.dispose();
+      throw error;
     }
 
-    const durationMs = Date.now() - startTime;
+    // setTimeout, not Bun.sleep: the wall deadline must be cancellable mid-flight
+    // (forbidden-patterns-source.md, the clearTimeout exception).
+    const killTimer = _qualityRunnerDeps.setTimeout(() => latch.settle({ kind: "deadline" }), timeoutMs);
 
-    if (timedOut) {
-      logger?.warn("quality", `${commandName} timed out`, {
+    const terminal = await latch.terminal;
+    // Settlement disarms everything this invocation armed — the wall deadline, the
+    // silence deadline and every detector callback — so nothing late can change
+    // the outcome and no timer outlives the call.
+    _qualityRunnerDeps.clearTimeout(killTimer);
+    monitor?.dispose();
+
+    if (terminal.kind === "error") throw terminal.error;
+
+    if (terminal.kind === "exit") {
+      const [stdout, stderr] = await drainOutputStreams({
+        stdout: collectors.stdout,
+        stderr: collectors.stderr,
+        pid: proc.pid,
+        timedOut: false,
+      });
+      const durationMs = Date.now() - startTime;
+      const output = [stdout, stderr].filter(Boolean).join("\n");
+
+      logger?.[level]("quality", `${commandName} completed`, {
         storyId,
         commandName,
         command,
         workdir,
+        exitCode: terminal.exitCode,
         durationMs,
-        timedOut: true,
+        timedOut: false,
       });
+
       return {
         commandName,
         command,
-        success: false,
-        exitCode: -1,
-        output: timedOutOutput(commandName, timeoutMs, origin === "agent-tool" ? [stdout, stderr].join("\n") : ""),
+        success: terminal.exitCode === 0,
+        exitCode: terminal.exitCode,
+        output,
         durationMs,
-        timedOut: true,
+        timedOut: false,
       };
     }
 
-    const output = [stdout, stderr].filter(Boolean).join("\n");
-    const success = exitCode === 0;
-
-    logger?.[level]("quality", `${commandName} completed`, {
-      storyId,
-      commandName,
-      command,
-      workdir,
-      exitCode,
-      durationMs,
-      timedOut: false,
+    // A detector stop takes the SAME lane as a wall deadline, and each invocation
+    // enters it at most once: the latch has already settled, so no later callback
+    // can start a second termination sequence.
+    await stopProcessGroup(_qualityRunnerDeps, {
+      pid: proc.pid,
+      gracePeriodMs: SIGKILL_GRACE_PERIOD_MS,
+      exited: proc.exited,
+      hasLeaderExited: () => leaderExited,
+    });
+    const [stdout, stderr] = await drainOutputStreams({
+      stdout: collectors.stdout,
+      stderr: collectors.stderr,
+      pid: proc.pid,
+      timedOut: true,
     });
 
-    return { commandName, command, success, exitCode, output, durationMs, timedOut: false };
+    const durationMs = Date.now() - startTime;
+    const partial = [stdout, stderr].join("\n");
+    const output =
+      terminal.kind === "stalled"
+        ? stoppedOutput({ commandName, reason: terminal.reason, partial, origin })
+        : timedOutOutput(commandName, timeoutMs, origin === "agent-tool" ? partial : "");
+    const stoppedData = { storyId, commandName, command, workdir, durationMs, timedOut: true };
+
+    if (terminal.kind === "stalled") {
+      // Structured evidence only — never a copy of the repeated line or raw output.
+      logger?.warn("quality", `${commandName} stopped early`, { ...stoppedData, ...stopLogFields(terminal.reason) });
+    } else {
+      logger?.warn("quality", `${commandName} timed out`, stoppedData);
+    }
+
+    const base = { commandName, command, success: false, exitCode: -1, output, durationMs, timedOut: true };
+    return terminal.kind === "stalled" ? { ...base, stopReason: terminal.reason } : base;
   } catch (error) {
     const durationMs = Date.now() - startTime;
     return {
