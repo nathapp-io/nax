@@ -120,6 +120,12 @@ export interface RunCommandToolOptions {
    * the tool answers `exit 1` and spawns nothing.
    */
   readonly runDeclaredCommand?: DeclaredCommandRunner;
+  /**
+   * #2935: the session's launcher, read ONLY to describe where a declared command runs when there
+   * is no Exec grant (the Exec variant reads `exec.launcher`). Declared commands never run through
+   * it: `runDeclaredCommand` spawns on the host.
+   */
+  readonly launcher?: CommandLauncher;
 }
 
 function quoteAt(template: string, end: number): "single" | "double" | undefined {
@@ -364,7 +370,7 @@ export function createRunCommandTool(
     name: "RunCommand",
     // A non-zero exit here is the agent's red/green loop, not a fault.
     routineErrors: true,
-    description: runCommandDescription(commandDescriptions, exec),
+    description: runCommandDescription(commandDescriptions, exec, opts.launcher),
     inputSchema: runCommandInputSchema(keys, exec, takesFiles),
     // `{{files}}` is the declared scoped-test path parameter. Keeping it in
     // the policy's containment seam prevents a quoted-but-otherwise harmless

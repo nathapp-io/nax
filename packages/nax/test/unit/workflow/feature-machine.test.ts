@@ -143,6 +143,25 @@ describe("runFeatureMachine", () => {
     expect(h.ledger).toContain("repo gates red: lint");
   });
 
+  // #2934: a hold waits for a human, so it is not a branch-fix finding; a no-work story did not end
+  // with a red gate, so the fix is not told to green one.
+  test("a held story is no fix finding; a no-work story reaches the fix as unfinished", async () => {
+    const h = harness(
+      { gates: [GREEN, GREEN], review: { ...PASS, quality: "changes", findings: [] } },
+      {
+        stories: [
+          done("US-001", { state: "complete-gate-open", reason: "held for a human: F1" }),
+          done("US-002", { state: "complete-gate-open", reason: "no work produced" }),
+        ],
+        limits: ONE_ROUND,
+      },
+    );
+    await runFeatureMachine(h.env);
+    const issues = (h.fixInputs[0] ?? []).map((f) => f.issue);
+    expect(issues.some((i) => i.startsWith("US-001"))).toBe(false);
+    expect(issues).toContain("US-002 closed unfinished (no work produced). Resolve what kept it open.");
+  });
+
   test("no seed: the branch review is skipped with a ledger line; review did not run (P4-R15)", async () => {
     const h = harness({}, { record: newFeatureRecord({ now: "t", seed: null, minors: [] }) });
     const final = await runFeatureMachine(h.env);

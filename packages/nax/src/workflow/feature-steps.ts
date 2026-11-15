@@ -13,6 +13,7 @@ import { _approvalDeps, describeUnread, featurePassed } from "./approval";
 import { dropKnownRestatements, nextBranchFixRound } from "./branch-fix-rounds";
 import type { BranchReviewFacts } from "./branch-review";
 import { ciRemainingAfterRepair, ciRepairPlan } from "./ci-repair-steps";
+import { HELD_REASON_PREFIX } from "./close";
 import type { FeatureEnv } from "./feature-machine";
 import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./feature-step-helpers";
 import { ledgerCannotVerify } from "./gate-timing";
@@ -93,6 +94,18 @@ function reviewFacts(env: FeatureEnv, rec: WorkflowFeatureRecord): BranchReviewF
 const gatesText = (failing: readonly string[]): string =>
   failing.length > 0 ? `red (${failing.join(", ")})` : "green";
 
+/**
+ * #2934: only a red or timed-out gate is a red gate. A story that produced no work, or stopped at
+ * the cost limit, closed gate-open for its own reason, and "make its gates green" would point the
+ * branch fix at the wrong thing.
+ */
+function gateOpenIssue(storyId: string, reason: string | undefined): string {
+  if (reason === undefined || reason.startsWith("red") || reason.startsWith("gate timeout")) {
+    return `${storyId} ended with a red gate (${reason ?? "gate red"}). Make its gates green.`;
+  }
+  return `${storyId} closed unfinished (${reason}). Resolve what kept it open.`;
+}
+
 export async function repoGatesStep(
   env: FeatureEnv,
   rec: WorkflowFeatureRecord,
@@ -101,11 +114,13 @@ export async function repoGatesStep(
   const run = await env.steps.repoGates();
   log.done(gatesText(run.summary.failing));
   const gateOpen: WorkflowFindingDraft[] = env.facts.stories
-    .filter((s) => s.state === "complete-gate-open")
+    // #2934: a hold waits for a human; a branch fix cannot settle it, and the story's gate-open
+    // state already blocks readiness, so it is not turned into a fix finding.
+    .filter((s) => s.state === "complete-gate-open" && !s.reason?.startsWith(HELD_REASON_PREFIX))
     .map((s) => ({
       kind: "gate",
       severity: "important",
-      issue: `${s.id} ended with a red gate (${s.reason ?? "gate red"}). Make its gates green.`,
+      issue: gateOpenIssue(s.id, s.reason),
     }));
   const { findings, nextFindingId } = assign(rec, [...run.findings, ...gateOpen]);
   if (run.summary.failing.length > 0) {

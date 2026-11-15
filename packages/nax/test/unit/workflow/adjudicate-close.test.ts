@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { adjudicateResidual } from "@/workflow/adjudicate";
 import { defaultWorkflowAdvisor, type WorkflowAdvisor } from "@/workflow/advisor";
-import { deriveEndState } from "@/workflow/close";
+import { deriveEndState, heldFindings } from "@/workflow/close";
 import type { GateRunResult, WorkflowEndState } from "@/workflow/types";
 
 const f = (id: string) => ({ id, kind: "quality" as const, severity: "important" as const, issue: `issue ${id}` });
@@ -194,6 +194,41 @@ describe("deriveEndState", () => {
   ];
   test.each(cases)("%j -> %s", (input, state) => {
     expect(deriveEndState(input).state).toBe(state);
+  });
+
+  // #2934: a hold keeps its finding open for a human, so the story is not finished.
+  test("a hold ruling closes the story gate-open and names the held findings", () => {
+    expect(deriveEndState({ costStop: false, gates: green, suite: green, rulings: 2, holds: ["F1", "F3"] })).toEqual({
+      state: "complete-gate-open",
+      reason: "held for a human: F1, F3",
+    });
+  });
+
+  test("heldFindings keeps only hold rulings; a waive that needs confirmation is not a hold", () => {
+    const ruling = (findingId: string, action: "hold" | "waive" | "defer", needsHumanConfirm = false) => ({
+      findingId,
+      action,
+      text: "",
+      why: "",
+      costIfWrong: "",
+      source: "advisor" as const,
+      ...(needsHumanConfirm ? { needsHumanConfirm: true } : {}),
+    });
+    expect(heldFindings([ruling("F1", "waive", true), ruling("F2", "hold"), ruling("F3", "defer")])).toEqual(["F2"]);
+    expect(heldFindings([ruling("F1", "waive", true)])).toEqual([]);
+  });
+
+  test("no hold among the rulings keeps complete-with-rulings", () => {
+    expect(deriveEndState({ costStop: false, gates: green, suite: green, rulings: 2, holds: [] }).state).toBe(
+      "complete-with-rulings",
+    );
+  });
+
+  test("a red gate or a cost stop names its own reason before a hold", () => {
+    expect(deriveEndState({ costStop: false, gates: green, suite: red, rulings: 1, holds: ["F1"] }).reason).toBe(
+      "red: full-suite",
+    );
+    expect(deriveEndState({ costStop: true, rulings: 1, holds: ["F1"] }).reason).toBe("cost-limit");
   });
 
   test("cost stop reason is cost-limit; red reason names the gates", () => {
