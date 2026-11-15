@@ -10,7 +10,7 @@ import type { AgentSession, LoopHandlerSet, SessionEvent, ToolProvider, ToolResu
 import type { NaxConfig } from "@/config";
 import type { AgentResource, ResourceCatalog } from "@/resources";
 import type { ChatAskController } from "./ask-controller";
-import { generalAgent } from "./builtin-agent";
+import { agentNamed, generalAgent } from "./builtin-agent";
 import type { ChatLedger } from "./chat-ledger";
 import type { ChatMode } from "./chat-mode";
 import {
@@ -55,7 +55,8 @@ export interface SubagentRuns {
   /**
    * The model `run` would use for this agent and override, with the label naming where
    * it came from, or undefined for an unknown agent or a refused override. Opens no
-   * session. An absent `agentName` is the built-in general agent, never a catalog lookup.
+   * session. An absent `agentName` is the built-in general agent, never a catalog lookup;
+   * `general` is that agent too, unless the catalog has an agent of that name.
    */
   modelFor(agentName: string | undefined, override?: string): { model: string; label: SubagentModelLabel } | undefined;
   /** The nested session that issued this request id, if one is still running. */
@@ -241,9 +242,9 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const runs: SubagentRuns = {
     run,
     modelFor(agentName, override) {
-      // An absent name is the general agent: a run with a model and no agent has no
-      // agent file, so there is nothing to look up in the catalog.
-      const agent = agentName === undefined ? generalAgent() : deps.catalog.findAgent(agentName);
+      // An absent name is the general agent: a call with no agent has no agent file, and
+      // `general` resolves to the built-in one unless the catalog has an agent of that name.
+      const agent = agentName === undefined ? generalAgent() : agentNamed(deps.catalog, agentName);
       if (agent === undefined) return undefined;
       const { model, source } = resolveFor(agent, deps.current(), override);
       if (refused(override, source)) return undefined;

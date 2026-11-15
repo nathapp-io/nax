@@ -6,6 +6,14 @@ import { cleanIndexDescription } from "./skills-builder";
 
 export const MAX_AGENTS_INDEX_ENTRIES = 150;
 
+/** One agents-index entry: the agent file's description and, when it declares any, its tools. */
+export interface AgentsIndexEntry {
+  readonly qualifiedName: string;
+  readonly description: string;
+  /** The agent file's `tools` as written; `[]` renders `(tools: none)`, absent renders nothing. */
+  readonly tools?: readonly string[];
+}
+
 export interface SubagentInstructionsInput {
   readonly agent: Pick<AgentResource, "prompt">;
   readonly mode: "full" | "guarded";
@@ -14,15 +22,22 @@ export interface SubagentInstructionsInput {
   readonly memoryIndex?: string;
 }
 
+/** One line per agent: its description, then the tools it declares, when it declares any. */
+function agentEntryLine(entry: AgentsIndexEntry): string {
+  const head = `- ${entry.qualifiedName}: ${cleanIndexDescription(entry.description)}`;
+  if (entry.tools === undefined) return head;
+  return `${head} (tools: ${entry.tools.length === 0 ? "none" : entry.tools.join(", ")})`;
+}
+
 /** Advertise available agents without inlining their prompts. */
-export function buildAgentsInstructions(entries: readonly { qualifiedName: string; description: string }[]): string {
+export function buildAgentsInstructions(entries: readonly AgentsIndexEntry[]): string {
   const lines = [
     "When a task suits one of these agents, call nax-agents__run with the agent name and a self-contained task.",
     "Pass model to run an agent on another model: provider/model for the nax native agent (openai-codex/gpt-6-luna is native), acp:<agent> for an installed ACP agent.",
-    "To run a task on a model when no agent fits, omit agent and pass model; the task runs on the built-in general agent.",
+    "When no agent fits, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.",
   ];
   for (const entry of entries.slice(0, MAX_AGENTS_INDEX_ENTRIES)) {
-    lines.push(`- ${entry.qualifiedName}: ${cleanIndexDescription(entry.description)}`);
+    lines.push(agentEntryLine(entry));
   }
   if (entries.length > MAX_AGENTS_INDEX_ENTRIES) {
     lines.push(`- ... and ${entries.length - MAX_AGENTS_INDEX_ENTRIES} more`);

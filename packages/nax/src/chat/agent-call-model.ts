@@ -19,19 +19,21 @@ interface AgentRunCall {
 }
 
 /**
- * The model request a `nax-agents__run` input carries, or undefined when the input asks
- * for neither a named agent nor a model — a present but non-string `agent` or `model` is
- * a malformed call, and annotating it would name a model that will never run.
+ * The model request a `nax-agents__run` input carries, or undefined when the input is not
+ * an object — a present but non-string `agent` or `model` is a malformed call, and
+ * annotating it would name a model that will never run. A call with neither key asks for
+ * the general agent on the caller's model, so it is annotated like any other.
  */
 function agentRunCall(input: unknown): AgentRunCall | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const agent = Reflect.get(input, "agent");
   const model = Reflect.get(input, "model");
-  const override = typeof model === "string" ? model : undefined;
-  if (typeof agent === "string") return { agent, override };
-  // A non-string agent is forwarded untouched, as before; an absent one is the general agent.
-  if (agent !== undefined) return undefined;
-  return override === undefined ? undefined : { agent: undefined, override };
+  if (agent !== undefined && typeof agent !== "string") return undefined;
+  if (model !== undefined && typeof model !== "string") return undefined;
+  return {
+    agent: typeof agent === "string" ? agent : undefined,
+    override: typeof model === "string" ? model : undefined,
+  };
 }
 
 export function withAgentCallModel(

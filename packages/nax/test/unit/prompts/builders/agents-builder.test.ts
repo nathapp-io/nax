@@ -75,10 +75,10 @@ describe("buildAgentsInstructions", () => {
     expect(out[3]).toBe("- reviewer: Reviews diffs");
   });
 
-  test("AC-3 US-002: the third line names the general-agent fallback", () => {
+  test("AC-9 US-002: the third line names the general-agent fallback", () => {
     const out = lines(prompts.buildAgentsInstructions([agent]));
     expect(out[2]).toBe(
-      "To run a task on a model when no agent fits, omit agent and pass model; the task runs on the built-in general agent.",
+      "When no agent fits, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.",
     );
   });
 
@@ -108,6 +108,28 @@ describe("buildAgentsInstructions", () => {
     const text = prompts.buildAgentsInstructions([{ ...agent, description: "a\u0007b" }]);
     expect(text).not.toContain("\u0007");
     expect(lines(text)).toContain("- reviewer: ab");
+  });
+
+  test("AC-10 US-002: an agent's declared tools are listed on its entry line", () => {
+    const text = prompts.buildAgentsInstructions([
+      { qualifiedName: "planner", description: "Plans", tools: ["Read", "Grep", "Glob"] },
+    ]);
+    expect(lines(text)).toContain("- planner: Plans (tools: Read, Grep, Glob)");
+  });
+
+  test("AC-11 US-002: an entry with no tools has no tools annotation", () => {
+    const text = prompts.buildAgentsInstructions([{ qualifiedName: "reviewer", description: "Reviews diffs" }]);
+    expect(lines(text)).toContain("- reviewer: Reviews diffs");
+  });
+
+  test("AC-13 US-002: an empty tools list renders tools: none", () => {
+    const text = prompts.buildAgentsInstructions([{ qualifiedName: "bare", description: "No tools", tools: [] }]);
+    expect(lines(text)).toContain("- bare: No tools (tools: none)");
+  });
+
+  test("US-002: a declared tool list keeps the entry clean of control characters", () => {
+    const text = prompts.buildAgentsInstructions([{ ...agent, tools: ["Read"] }]);
+    expect(lines(text)).toContain("- reviewer: Reviews diffs (tools: Read)");
   });
 });
 
