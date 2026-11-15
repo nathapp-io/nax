@@ -3,7 +3,7 @@
   "feature": "chat-workflow-flow",
   "branchName": "feat/chat-workflow-flow",
   "createdAt": "2026-11-15T14:53:59.039Z",
-  "updatedAt": "2026-11-15T15:39:48.370Z",
+  "updatedAt": "2026-11-15T15:47:08.947Z",
   "userStories": [
     {
       "id": "US-001",
@@ -152,14 +152,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Two-module additive instruction plumbing, with strict isolation because session creation and allowed-tool context are touched; grants themselves remain unchanged."
+        "reasoning": "Two-module additive instruction plumbing, with strict isolation because session creation and allowed-tool context are touched; grants themselves remain unchanged.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/prompts/builders/agents-builder.ts",
@@ -172,7 +175,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "a2bf0ea584970adc0e85a9f06e5cc6441526afe9"
     },
     {
       "id": "US-004",
