@@ -2,17 +2,22 @@
  * Whole-branch review dispatch and failure handling. The scripted op records inputs after dispatch
  * so assertions are not swallowed by the review's own failure handling.
  */
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import {
+  assertDefined,
   cleanupTempDir,
   makeFeatureContext,
+  makeMockAgentManager,
   makeResolvedTestPatterns,
   makeScriptedCallOp,
+  makeSessionManager,
   makeTempDir,
+  makeTestRuntime,
 } from "@test/helpers";
-import type { CallContext } from "@/operations";
+import { type CallContext, callOp, workflowBranchReviewOp } from "@/operations";
 import { buildWorkflowBranchReviewPrompt } from "@/prompts";
+import type { NaxRuntime } from "@/runtime";
 import { _branchReviewDeps, runBranchReview } from "@/workflow/branch-review";
 import type { FeatureContext } from "@/workflow/feature-context";
 import { _workflowDeps } from "@/workflow/step-context";
@@ -193,6 +198,88 @@ describe("runBranchReview — the package step", () => {
     const out = await runBranchReview(ctx, { seed: "seed0", facts });
     expect(out).toEqual({ ran: false, why: "review package failed: boom" });
     expect(calls.length).toBe(0);
+  });
+});
+
+describe("runBranchReview — opt-in last-parseable handoff (US-013)", () => {
+  const prompts: string[] = [];
+  const runtimes: NaxRuntime[] = [];
+
+  beforeEach(() => {
+    prompts.length = 0;
+  });
+
+  afterEach(async () => {
+    await Promise.allSettled(runtimes.map((runtime) => runtime.close()));
+    runtimes.length = 0;
+  });
+
+  /**
+   * Dispatch through the real `callOp` instead of the scripted stub, against an agent that answers
+   * each turn with the next scripted reply. The ctx is given a real temp workdir so the dispatch's
+   * own cwd preflight has a directory to run in.
+   */
+  function realDispatch(replies: readonly string[]): CallContext {
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        assertDefined(req.executeHop, "req.executeHop");
+        const hop = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async (_agentName, _handle, prompt) => {
+        prompts.push(prompt);
+        return {
+          output: replies[prompts.length - 1] ?? "",
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    runtimes.push(runtime);
+    const workdir = makeTempDir("wf-br-handoff-");
+    dirs.push(workdir);
+    _workflowDeps.callOp = callOp;
+    return { runtime, packageView: runtime.packages.repo(), packageDir: workdir, agentName: "claude", storyId: "_run" };
+  }
+
+  /** A branch-review reply as the reviewer sends it. */
+  function replyJson(over: Record<string, unknown>): string {
+    return JSON.stringify({
+      spec: "pass",
+      quality: "approved",
+      findings: [],
+      cannotVerify: [],
+      inspectedFiles: DIR_A,
+      minorTriage: [],
+      ...over,
+    });
+  }
+
+  test("AC-9: with the flag set and no parseable reply the review is skipped, not certified clean", async () => {
+    stubBranchChanges(DIR_A);
+    const callCtx = realDispatch(["not json", "not json"]);
+    const ctx = fc({ callCtx });
+
+    const out = await runBranchReview(ctx, { seed: "seed0", facts });
+
+    // The opt-in is in force — the branch op is the op that sets it.
+    expect(workflowBranchReviewOp.preferRetryFallbackOnNullParse).toBe(true);
+    expect(out).toEqual({ ran: false, why: "unparseable reply" });
+  });
+
+  test("AC-10: the last parseable inconsistent review is the branch verdict, not a skipped review", async () => {
+    stubBranchChanges(DIR_A);
+    const callCtx = realDispatch([replyJson({ spec: "fail" }), "not json", "not json"]);
+    const ctx = fc({ callCtx });
+
+    const out = await runBranchReview(ctx, { seed: "seed0", facts });
+
+    expect(prompts).toHaveLength(3);
+    if (!out.ran) throw new Error(`the branch review must run, got ${out.why}`);
+    expect(out.verdict.spec).toBe("fail");
+    expect(out.verdict.mismatch).toEqual(["spec"]);
   });
 });
 

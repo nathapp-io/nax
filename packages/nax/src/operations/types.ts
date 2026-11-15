@@ -326,6 +326,17 @@ export interface RunOperation<I, O, C> extends OperationBase<I, O, C> {
     | RetryStrategy
     | ((input: I, ctx: BuildContext<C>) => RetryPreset | RetryStrategy | undefined);
   /**
+   * Opts this op into the last-parseable handoff (US-013). When `op.parse` returns null or
+   * undefined and the retry strategy recorded a `retryFallback`, that fallback becomes the parsed
+   * value — before `runPostParse`, so `verify`/`recover` see it exactly as they see a parsed result.
+   *
+   * The fallback must be a plain record (`isPlainRecord`): an array, class instance or primitive
+   * raises `CALL_OP_INVALID_FALLBACK` before any post-parse hook runs. A null/absent fallback keeps
+   * the null parse result. Absent (the default) leaves both the null-parse and the throwing-path
+   * precedence exactly as they were.
+   */
+  readonly preferRetryFallbackOnNullParse?: true;
+  /**
    * Optional file-output path resolver. When set, `callOp` reads this file
    * after each agent send (inside `sendWithParseRetry`) and replaces the
    * turn's text output with the file content before the retry probe fires.

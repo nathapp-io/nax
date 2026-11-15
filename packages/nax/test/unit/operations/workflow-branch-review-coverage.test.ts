@@ -390,6 +390,74 @@ describe("workflowBranchReviewOp clarification and coverage interleaving (US-012
   });
 });
 
+describe("workflowBranchReviewOp delivers the last parseable verdict (US-013)", () => {
+  /** Dispatch the op through real callOp and return the verdict it delivered, plus the prompts sent. */
+  async function deliveredVerdict(i: WorkflowBranchReviewInput, replies: readonly string[]) {
+    const prompts: string[] = [];
+    const agentManager = makeMockAgentManager({
+      runWithFallbackFn: async (req) => {
+        assertDefined(req.executeHop, "req.executeHop");
+        const hop = await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        return { result: { ...hop.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async (_agentName, _handle, prompt): Promise<TurnResult> => {
+        prompts.push(prompt);
+        return {
+          output: replies[prompts.length - 1] ?? "",
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+    const verdict = await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "_run" },
+      workflowBranchReviewOp,
+      i,
+    );
+    return { verdict, prompts };
+  }
+
+  test("AC-11: an inconsistent verdict followed by a malformed clarification and an exhausted repair is delivered", async () => {
+    const { verdict, prompts } = await deliveredVerdict({ ...input, requiredFiles: [] }, [
+      mismatchJson([]),
+      "not json",
+      "not json",
+    ]);
+
+    expect(prompts).toHaveLength(3);
+    expect(prompts[1]).toContain("contradict each other");
+    expect(prompts[2]).toBe(buildWorkflowReviewJsonRetry());
+    expect(verdict).not.toBeNull();
+    expect(verdict?.spec).toBe("fail");
+  });
+
+  test("AC-12: the delivered last-parseable verdict keeps its real findings", async () => {
+    const { verdict, prompts } = await deliveredVerdict({ ...THREE_FILES, coverageRetries: 1 }, [
+      verdictJson(["src/a.ts"], [IMPORTANT_FINDING]),
+      "not json",
+      "not json",
+    ]);
+
+    expect(prompts[1]).toContain("This is coverage retry 1 of 1.");
+    expect(verdict).not.toBeNull();
+    expect(verdict?.findings.map((finding) => finding.issue)).toEqual([IMPORTANT_FINDING.issue]);
+  });
+
+  test("AC-13: the delivered last-parseable verdict keeps the mismatch kinds it carried", async () => {
+    const { verdict } = await deliveredVerdict({ ...THREE_FILES, coverageRetries: 1 }, [
+      mismatchJson(THREE_FILES.requiredFiles),
+      "not json",
+      "not json",
+    ]);
+
+    expect(verdict).not.toBeNull();
+    expect(verdict?.mismatch).toEqual(["spec"]);
+  });
+});
+
 describe("workflowBranchReviewOp clarification is never suppressed by coverage (AC-18)", () => {
   test("an exhausted coverage budget still lets the clarification fire", () => {
     const strategy = strategyFor({ ...input, requiredFiles: ["src/a.ts"], coverageRetries: 0 });

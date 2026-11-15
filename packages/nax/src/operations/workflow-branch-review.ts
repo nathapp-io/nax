@@ -77,6 +77,10 @@ export const workflowBranchReviewOp: RunOperation<
   session: { role: "wf-branch-review", lifetime: "fresh" },
   config: workflowConfigSelector,
   tools: [...WORKFLOW_REVIEW_TOOLS],
+  // US-013: the branch op is the sole opt-in. When the retry composition exhausts on a reply
+  // `parse` cannot read, the strategy's recorded last-parseable verdict is delivered instead of
+  // null, so an inconsistent review is reported as inconsistent rather than certifying the branch.
+  preferRetryFallbackOnNullParse: true,
   model: (input, ctx) =>
     input.model ?? ctx.config.workflow?.models?.branchReview ?? ctx.config.finish?.reviewers?.quality ?? undefined,
   timeoutMs: (input) => input.timeoutMs + STEP_TIMEOUT_MARGIN_MS,

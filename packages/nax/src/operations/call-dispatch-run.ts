@@ -393,6 +393,57 @@ function throwRunRetryBudget(
   );
 }
 
+/**
+ * The strict record check the opt-in handoff validates with (US-013). Deliberately NOT the predicate
+ * `validatedFallbackRecord` uses: that one rejects only non-objects and null, so arrays and class
+ * instances pass it. A plain record is an object whose prototype is `Object.prototype` or `null`.
+ */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/** Names the observed value for `CALL_OP_INVALID_FALLBACK`, so the log says what arrived. */
+function describeObservedFallback(value: unknown): string {
+  if (Array.isArray(value)) return `an array of ${value.length} item(s)`;
+  if (typeof value === "function") return "a function";
+  if (typeof value === "object" && value !== null) {
+    const className: unknown = Object.getPrototypeOf(value)?.constructor?.name;
+    return `an instance of ${typeof className === "string" ? className : "an anonymous class"}`;
+  }
+  return `a ${typeof value}`;
+}
+
+/** The strict error the opt-in handoff raises; `parseRunOutcome` must never let the ladder swallow it. */
+const INVALID_HANDOFF_FALLBACK_CODE = "CALL_OP_INVALID_FALLBACK";
+
+/**
+ * US-013: substitute the strategy's recorded fallback for a null parse result, for ops that opt in.
+ *
+ * Runs after `op.parse` (and after the outcome's `adapterFailure` is attached) and BEFORE
+ * `runPostParse`, so `verify` observes the substituted value and the existing conditional `recover`
+ * still applies. A null/absent fallback is "no fallback" — the null parse result stands. A present
+ * non-record fallback raises `CALL_OP_INVALID_FALLBACK` instead of delivering a malformed value.
+ */
+function handoffRetryFallback<I, O, C>(
+  op: RunOperation<I, O, C>,
+  storyId: string | undefined,
+  parsed: O,
+  retryFallback: unknown,
+): O {
+  if (op.preferRetryFallbackOnNullParse !== true) return parsed;
+  if (retryFallback === undefined || retryFallback === null) return parsed;
+  if (!isPlainRecord(retryFallback)) {
+    throw new NaxError(
+      `callOp[${op.name}]: retryFallback is ${describeObservedFallback(retryFallback)}; the last-parseable handoff requires a plain record`,
+      INVALID_HANDOFF_FALLBACK_CODE,
+      { stage: op.stage, storyId },
+    );
+  }
+  return parsed === null || parsed === undefined ? (retryFallback as O) : parsed;
+}
+
 /** Both exhaustedFallback ladders share the "fallback must be a plain object" rule. */
 function validatedFallbackRecord(
   op: { name: string; stage: import("../config/permissions").PipelineStage },
@@ -468,7 +519,7 @@ async function parseRunOutcome<I, O, C>(
     readonly rawOutput: string;
   },
 ): Promise<O> {
-  const { op, input, buildCtx, outcome, rawOutput } = args;
+  const { op, input, buildCtx, outcome, rawOutput, retryState, ctx } = args;
   try {
     const parsedRun = op.parse(rawOutput, input, buildCtx);
     // US-001: attach the run outcome's adapterFailure to a non-null object
@@ -478,8 +529,14 @@ async function parseRunOutcome<I, O, C>(
     // is the consumer; other ops that surface adapterFailure on their own
     // are not affected because their parsed value already carries one.
     const parsedRunWithFailure = attachOutcomeAdapterFailure(parsedRun, outcome.result.adapterFailure);
-    return await runPostParse(op, parsedRunWithFailure, input, buildCtx);
+    // US-013: the opt-in last-parseable handoff — before runPostParse, so verify observes the
+    // substituted fallback and the existing conditional recover still applies.
+    const parsed = handoffRetryFallback(op, ctx.storyId, parsedRunWithFailure, retryState.retryFallback);
+    return await runPostParse(op, parsed, input, buildCtx);
   } catch (_parseErr) {
+    // The strict handoff error is not a parse failure: the legacy ladder below would otherwise
+    // spread a rejected array or class instance into an O and report it as a parsed verdict.
+    if (_parseErr instanceof NaxError && _parseErr.code === INVALID_HANDOFF_FALLBACK_CODE) throw _parseErr;
     return handleRunParseFailure(args, _parseErr);
   }
 }
