@@ -152,4 +152,4 @@ export {
 export { type RunSubagentInput, type RunSubagentResult, runSubagent } from "./subagent-session";
 export { type DroppedSubagentTool, type MappedSubagentTools, mapSubagentTools } from "./subagent-tools";
 export { type RunChatTurnOptions, runChatTurn } from "./turn-runner";
-export { createWorkflowProvider, type FeatureStateOptions } from "./workflow";
+export { createWorkflowProvider, type FeatureStateOptions, type WorkflowProviderOptions } from "./workflow";

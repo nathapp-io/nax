@@ -234,6 +234,23 @@ describe("chatCommand workflow composition", () => {
       expect(instructions).toContain("nax-workflow__state");
     });
   });
+  test("US-007 AC-18 forwards chat.workflow to the workflow provider and the rendered text", async () => {
+    const { deps } = fixture();
+    deps.loadConfig.mockResolvedValue(
+      makeNaxConfig({
+        chat: { workflow: { specFixRounds: 3 } },
+        models: { native: { balanced: "test/model" } },
+      }),
+    );
+    await chatCommand({ dir: "/r" }, deps);
+    expect(deps.createWorkflowProvider).toHaveBeenCalledTimes(1);
+    expect(deps.createWorkflowProvider.mock.calls[0]?.[0].workflow?.specFixRounds).toBe(3);
+    const provider = deps.createChatHost.mock.calls[0]?.[0].resources?.toolProviders.find(
+      (p) => p.id === "nax-workflow",
+    );
+    assertDefined(provider, "workflow provider handed to createChatHost");
+    expect(await provider.instructions?.("/r")).toContain("spec-review (usually three fix rounds)");
+  });
   test("US-006 AC-5 resolves the configured project key under isolated global storage", async () => {
     await withTempDir(async (dir) => {
       const original = process.env.NAX_GLOBAL_CONFIG_DIR;

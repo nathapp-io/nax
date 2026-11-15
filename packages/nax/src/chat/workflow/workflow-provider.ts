@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { featureDir, featuresDir } from "@/config";
+import type { ChatWorkflowConfig } from "@/config/runtime-types-chat";
 import { buildWorkflowInstructions } from "@/prompts";
 import { validateFeatureName } from "@/utils/feature-name";
 import { resolveTargetRepo, targetOutputDir } from "../target-repo";
@@ -103,8 +104,17 @@ async function readState(input: Record<string, unknown>, base: FeatureStateOptio
   };
 }
 
+/**
+ * The workflow provider's options: the feature-state inputs plus the loaded
+ * `chat.workflow` block, which the instruction text renders.
+ */
+export interface WorkflowProviderOptions extends FeatureStateOptions {
+  /** From `config.chat.workflow`; absent leaves the default instructions. */
+  readonly workflow?: ChatWorkflowConfig;
+}
+
 /** A static provider: the native runtime owns tool-result size bounds. */
-export function createWorkflowProvider(options: FeatureStateOptions): ToolProvider {
+export function createWorkflowProvider(options: WorkflowProviderOptions): ToolProvider {
   const tool: ProviderTool = {
     localName: "state",
     description:
@@ -121,6 +131,6 @@ export function createWorkflowProvider(options: FeatureStateOptions): ToolProvid
     kind: "static",
     stages: ["*"],
     tools: async () => [tool],
-    instructions: async () => buildWorkflowInstructions(),
+    instructions: async () => buildWorkflowInstructions({ workflow: options.workflow }),
   };
 }

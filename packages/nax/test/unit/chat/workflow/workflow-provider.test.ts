@@ -250,6 +250,11 @@ describe("createWorkflowProvider", () => {
   test("AC-17 delegates instructions", async () => {
     expect(await (await provider()).instructions?.(options.repoRoot)).toBe(buildWorkflowInstructions());
   });
+  test("US-007 AC-17 the provider renders the configured spec fix rounds", async () => {
+    const { createWorkflowProvider } = await import("@/chat/workflow/workflow-provider");
+    const withWorkflow = createWorkflowProvider({ ...options, workflow: { specFixRounds: 3 } });
+    expect(await withWorkflow.instructions?.(options.repoRoot)).toContain("spec-review (usually three fix rounds)");
+  });
   test("AC-18 chat barrel exports provider and options", async () => {
     const { createWorkflowProvider } = await import("@/chat");
     const publicOptions: import("@/chat").FeatureStateOptions = options;

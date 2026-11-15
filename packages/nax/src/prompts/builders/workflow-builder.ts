@@ -1,19 +1,111 @@
 /**
  * The fixed "nax loop" section a chat session carries: the workflow order, when
- * to read feature state, which steps are billed launches, and what nax never does.
+ * to read feature state, which steps are billed launches, what nax never does,
+ * where a feature's spec artifacts live, and which spec/plan/run choices
+ * `chat.workflow` has already made.
  *
- * Pure fixed text — no config, no file reads, no model calls.
+ * Pure fixed text — no file reads, no model calls. The only input is the loaded
+ * `chat.workflow` block, so an absent one renders today's text unchanged.
  */
-export function buildWorkflowInstructions(): string {
-  return [
+import { DEFAULT_SPEC_FIX_ROUNDS, PROJECT_FEATURES_DIR } from "@/config";
+import type { ChatAgentChoice, ChatStepConfig, ChatWorkflowConfig } from "@/config/runtime-types-chat";
+
+/** What an agent choice renders as when `chat.workflow` does not set it. */
+const UNSET_CHOICE = "the agent you choose";
+
+/** The agent a model-only choice runs through; `nax-agents__run` has no model without one. */
+const GENERAL_AGENT = "general";
+
+/** English words for the fix-round budget the schema accepts (1..10). */
+const ROUND_WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"] as const;
+
+export interface WorkflowInstructionsInput {
+  /** The loaded `chat.workflow` block; absent leaves the choice lines out. */
+  readonly workflow?: ChatWorkflowConfig;
+}
+
+/** `one`..`ten` for a schema-valid round count, and the numeral for anything else. */
+function roundWord(rounds: number): string {
+  return ROUND_WORDS[rounds - 1] ?? String(rounds);
+}
+
+/** A sentence-opening form of `roundWord`. */
+function roundWordCapitalised(rounds: number): string {
+  const word = roundWord(rounds);
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
+}
+
+/** Whether a choice names an agent or a model; `{}` counts as unset. */
+function isChoiceSet(choice: ChatAgentChoice | undefined): boolean {
+  return choice !== undefined && (choice.agent !== undefined || choice.model !== undefined);
+}
+
+/** A choice as the instruction line names it: agent and/or model, or the unset wording. */
+function describeChoice(choice: ChatAgentChoice | undefined): string {
+  if (!isChoiceSet(choice)) return UNSET_CHOICE;
+  const parts = [`agent ${choice?.agent ?? GENERAL_AGENT}`];
+  if (choice?.model !== undefined) parts.push(`model ${choice.model}`);
+  return parts.join(" and ");
+}
+
+function hasProfiles(step: ChatStepConfig | undefined): boolean {
+  return step?.profiles !== undefined && step.profiles.length > 0;
+}
+
+/** Where a feature's spec artifacts live, and the one report a spec round may write. */
+function pathsLine(): string {
+  const spec = `${PROJECT_FEATURES_DIR}/<feature>/spec.md`;
+  const fidelityReport = `${PROJECT_FEATURES_DIR}/<feature>/prd-fidelity-report.md`;
+  return `The spec for a feature is \`${spec}\`, which is where the plan launch reads it. Spec-review findings and fixes stay in this chat and in the spec itself, so a spec round writes no report file; the PRD fidelity check (spec-review --prd) writes \`${fidelityReport}\`.`;
+}
+
+/** The spec writer and reviewer `chat.workflow` names, or `null` when it names neither. */
+function specAgentsLine(workflow: ChatWorkflowConfig | undefined): string | null {
+  if (!isChoiceSet(workflow?.specWriter) && !isChoiceSet(workflow?.specReviewer)) return null;
+  return `Spec-writing runs through nax-agents__run with ${describeChoice(workflow?.specWriter)}; spec-review runs with ${describeChoice(workflow?.specReviewer)} (chat.workflow).`;
+}
+
+/**
+ * The profiles `chat.workflow` sets for plan and run, or `null` when it sets neither.
+ * Deliberately never names `nax bot review` / `nax bot fix`: the one line naming all
+ * four billed commands must stay the only one.
+ */
+function profilesLine(workflow: ChatWorkflowConfig | undefined): string | null {
+  const steps: string[] = [];
+  if (hasProfiles(workflow?.plan)) steps.push(`nax plan (${(workflow?.plan?.profiles ?? []).join(", ")})`);
+  if (hasProfiles(workflow?.run)) steps.push(`nax run (${(workflow?.run?.profiles ?? []).join(", ")})`);
+  if (steps.length === 0) return null;
+  return `chat.workflow sets the profiles for ${steps.join(" and ")}; leave profiles empty on those launches and the card names them.`;
+}
+
+/** The line that hands back whatever `chat.workflow` left unset, or `null` when it set everything. */
+function userChoiceLine(workflow: ChatWorkflowConfig | undefined): string | null {
+  const everyChoiceSet =
+    hasProfiles(workflow?.plan) &&
+    hasProfiles(workflow?.run) &&
+    isChoiceSet(workflow?.specWriter) &&
+    isChoiceSet(workflow?.specReviewer);
+  if (everyChoiceSet) return null;
+  return "In this chat, where chat.workflow does not set them, the plan and run profiles and the spec writer and reviewer are the user's choice: nax-jobs__list returns the profile names; ask for the spec writer and reviewer when you propose spec-writing, and for the profiles in the same message that asks for plan approval.";
+}
+
+export function buildWorkflowInstructions(input?: WorkflowInstructionsInput): string {
+  const workflow = input?.workflow;
+  const rounds = workflow?.specFixRounds ?? DEFAULT_SPEC_FIX_ROUNDS;
+  const lines = [
     "Call `nax-workflow__state` before proposing any workflow step, and call it again after any workflow step ends, so what you propose matches the feature's real state.",
-    "The nax loop runs in this order: brainstorm → spec-writing → spec-review (usually two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.",
+    `The nax loop runs in this order: brainstorm → spec-writing → spec-review (usually ${roundWord(rounds)} fix rounds) → \`nax plan\` → PRD fidelity check (spec-review \`--prd\`) → commit the spec and PRD → \`nax run\` → \`nax bot review\` / \`nax bot fix\` → the user merges → the user releases.`,
     // #2929: stated as "at most two", the model treated the budget as a cap that outranked the user.
-    'Two spec-review fix rounds are the default budget, not a limit: past two, another round needs the user\'s go-ahead, and a user instruction to continue (including an earlier one such as "until clean") is that go-ahead, for spec rounds only and never for `nax plan`. Applying spec fixes is your work; the user rules only on findings you cannot settle, never on edits.',
+    `${roundWordCapitalised(rounds)} spec-review fix rounds are the default budget, not a limit: past ${roundWord(rounds)}, another round needs the user's go-ahead, and a user instruction to continue (including an earlier one such as "until clean") is that go-ahead, for spec rounds only and never for \`nax plan\`. Applying spec fixes is your work; the user rules only on findings you cannot settle, never on edits.`,
     "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without the user's explicit approval of that launch.",
     "nax never merges a PR and never releases; the user merges the PR and the user releases.",
     "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
-  ].join("\n");
+    pathsLine(),
+  ];
+  for (const optionalLine of [specAgentsLine(workflow), profilesLine(workflow), userChoiceLine(workflow)]) {
+    if (optionalLine !== null) lines.push(optionalLine);
+  }
+  return lines.join("\n");
 }
 
 export interface JobNoticeInput {
