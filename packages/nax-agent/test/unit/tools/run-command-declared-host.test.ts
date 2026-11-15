@@ -51,7 +51,10 @@ describe("#2935 RunCommand says where a declared command runs", () => {
   });
 
   test("no sandbox running: the description is unchanged", () => {
-    const states: SandboxState[] = [{ kind: "disabled" }, { kind: "unavailable", backend: "srt", reason: "no backend" }];
+    const states: SandboxState[] = [
+      { kind: "disabled" },
+      { kind: "unavailable", backend: "srt", reason: "no backend" },
+    ];
     for (const state of states) {
       expect(createRunCommandTool(DECLARED, { launcher: launcherIn(state) }).description).not.toContain(
         DECLARED_HOST_SENTENCE,
