@@ -363,7 +363,10 @@ describe("createAgentsProvider general dispatch (chat-workflow-flow US-002)", ()
   test("AC-2 a bare task passes an undefined model argument", async () => {
     const { run, provider } = setup([agent("reviewer")]);
     await runTool(provider, { task: "t" });
-    expect(run.mock.calls[0]?.[3]).toBeUndefined();
+    expect(run).toHaveBeenCalledTimes(1);
+    const call = run.mock.calls[0];
+    assertDefined(call, "run call");
+    expect(call[3]).toBeUndefined();
   });
 
   test("AC-3 agent general with no catalog agent of that name runs the built-in general agent", async () => {
