@@ -362,6 +362,19 @@ describe("chatCommand", () => {
       }),
     );
   });
+  test("US-007 AC-16: renders the idle compact delay from the loaded config", async () => {
+    const f = await fixture();
+    f.deps.loadConfig.mockResolvedValue(
+      structuredClone(makeNaxConfig({ chat: { compaction: { idleCompactAfterMinutes: 30 } } })),
+    );
+    await f.chatCommand({}, f.deps);
+    expect(f.deps.renderChat).toHaveBeenCalledWith(expect.objectContaining({ idleCompactAfterMs: 1_800_000 }));
+  });
+  test("US-007 AC-16: an unconfigured compaction renders the 55-minute default", async () => {
+    const f = await fixture();
+    await f.chatCommand({}, f.deps);
+    expect(f.deps.renderChat).toHaveBeenCalledWith(expect.objectContaining({ idleCompactAfterMs: 3_300_000 }));
+  });
   test("AC-11: locked resume reports the exact message and never renders", async () => {
     const f = await fixture();
     f.host.resume.mockRejectedValue(

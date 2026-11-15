@@ -77,6 +77,7 @@ import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { turnStatsEntry } from "./turn-stats";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
+import { useIdleCompact } from "./use-idle-compact";
 import { useImageAttach } from "./use-image-attach";
 import { useJobPanels } from "./use-job-panels";
 import { useJobs } from "./use-jobs";
@@ -102,6 +103,12 @@ export interface ChatAppProps {
    * marker (US-008). Absent on a terminal with no title to keep current.
    */
   readonly onBusyChange?: (busy: boolean) => void;
+  /**
+   * How long the chat may sit idle while a job runs before it compacts its own history
+   * (`chat.compaction.idleCompactAfterMinutes`, US-007). Absent means 0, so a screen rendered
+   * without it — every direct render before this story — never compacts on idle.
+   */
+  readonly idleCompactAfterMs?: number;
 }
 
 /** Environment seam; sampled once per mounted screen. */
@@ -297,6 +304,7 @@ export function ChatApp({
   cwd = host.repoRoot,
   home = "",
   onBusyChange,
+  idleCompactAfterMs = 0,
 }: ChatAppProps): ReactElement {
   const { stdout } = useStdout();
   const [tmux] = useState(() => Boolean(_chatAppDeps.tmux()));
@@ -1141,6 +1149,19 @@ export function ChatApp({
   // A running job's panel: appended when the job is first seen running, refreshed while it
   // runs and frozen once it ends. Held back while a turn streams, so a reply is never split.
   useJobPanels({ host, setEntries, turnRunning });
+
+  // A job leaves the chat idle for a long time (US-007), so its history is compacted once per
+  // job after the configured delay — through the screen's own `/compact` path, so the working
+  // line, the notices and the turn slot behave exactly as they do for the command.
+  useIdleCompact({
+    host,
+    delayMs: idleCompactAfterMs,
+    turnRunning,
+    // Undefined until a usage event reports one; the compactor needs a real count to qualify.
+    contextTokens: status.contextTokens,
+    compact: compactTurn,
+    note: (text) => append({ kind: "notice", text }),
+  });
 
   // Use input bookkeeping so batched keys see completion and submission clears the draft.
   function completeCommand(name: string): void {
