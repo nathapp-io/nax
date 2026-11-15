@@ -82,17 +82,18 @@ function exhaustedDecision(opts: CoverageRetryOpts, ctx: RetryContext): RetryDec
 }
 
 /**
- * A reply counts as coverage's answer only when it is the very next turn after coverage asked — and
- * only then is its unread count a progress measurement. A reply to a clarification or to a JSON
+ * A reply counts as coverage's answer only when it answers the coverage prompt still outstanding —
+ * and only then is its unread count a progress measurement. A reply to a clarification or to a JSON
  * repair is neither: it measures nothing and spends nothing.
+ *
+ * `awaitingAnswer` is the prompt-ownership fact, and it is deliberately not the attempt number:
+ * a manager-owned fallback hop restarts `sendWithParseRetry` at attempt 0 while every strategy
+ * counter survives the hop, so `attempt === issuedAt + 1` can be true of a reply that answers a
+ * prompt someone else issued (whole-branch review B3). The flag is cleared by anything that takes
+ * the next turn away from coverage — an inner prompt, a transport failure, a hop restart.
  */
-function answersCoverage(
-  issuedAt: number | null,
-  attempt: number,
-  previousUnread: number | null,
-  unread: number,
-): boolean {
-  if (issuedAt === null || attempt !== issuedAt + 1) return false;
+function answersCoverage(awaitingAnswer: boolean, previousUnread: number | null, unread: number): boolean {
+  if (!awaitingAnswer) return false;
   return previousUnread !== null && unread >= previousUnread;
 }
 
@@ -107,10 +108,14 @@ function answersCoverage(
  * files than the one before it.
  *
  * US-012: an interleaved clarification prompt makes "the reply that follows a coverage prompt"
- * and "the reply two turns later" different things, so `issuedAt` records where coverage last
- * asked and only the very next turn counts as its answer. A clarification or shape reply is none of
+ * and "the reply two turns later" different things, so only the turn that answers coverage's
+ * outstanding prompt counts as its answer. A clarification or shape reply is none of
  * coverage's business: it measures no progress and reopens nothing, and `stopped` keeps a spent or
  * no-progress budget shut for the rest of the invocation (which outlives a manager fallback hop).
+ * Prompt ownership is tracked as a flag rather than as an attempt arithmetic (whole-branch review
+ * B3): attempt numbers are hop-local while every counter here survives the hop, so a hop that
+ * restarts at attempt 0 after an adapter failure would otherwise let a clarification reply look
+ * like the answer to the coverage prompt the previous hop issued.
  *
  * The strategy is resolved once per `callOp` call, so the coverage budget is per `callOp`.
  * Pulled out of #2858: a reviewer that answered "I did not read them" faced no second ask
@@ -119,8 +124,10 @@ function answersCoverage(
 export function makeCoverageRetryStrategy(opts: CoverageRetryOpts): RetryStrategy {
   let issued = 0;
   let previousUnread: number | null = null;
-  /** The attempt at which coverage last asked, so a later reply is not mistaken for its answer. */
+  /** The attempt at which coverage last asked, so a hop restart at a lower attempt is detectable. */
   let issuedAt: number | null = null;
+  /** True while the turn now arriving is the reply to coverage's own, still-outstanding prompt. */
+  let awaitingAnswer = false;
   /** Set once the budget or no-progress stopped coverage: nothing reopens it for this invocation. */
   let stopped = false;
 
@@ -133,10 +140,24 @@ export function makeCoverageRetryStrategy(opts: CoverageRetryOpts): RetryStrateg
         return inner;
       };
 
+      // Attempts only ever increase inside one hop, so a non-increasing one means a
+      // manager-owned fallback hop restarted the loop: whatever coverage asked in the
+      // previous hop answers nothing here.
+      if (issuedAt !== null && attempt <= issuedAt) awaitingAnswer = false;
+
       const reply = coverageReply(opts, failure, ctx);
-      if (reply === undefined) return decideInner();
+      if (reply === undefined) {
+        // A transport failure, an empty turn or an adapter-failed turn produced no reply at
+        // all, so the next turn answers whatever the inner strategy asks next — not coverage.
+        awaitingAnswer = false;
+        return decideInner();
+      }
 
       const decision = decideInner();
+      // This turn is the reply to the outstanding prompt (if any) and it is being spent here:
+      // whichever prompt the inner strategy issues next owns the turn after it.
+      const answeredCoveragePrompt = awaitingAnswer;
+      awaitingAnswer = false;
       if (decision.retry) return decision;
       if ("fallback" in decision) return decision;
       if (stopped) return exhaustedDecision(opts, ctx);
@@ -148,7 +169,7 @@ export function makeCoverageRetryStrategy(opts: CoverageRetryOpts): RetryStrateg
         logStop(opts, ctx, issued, unread.length, "budget");
         return exhaustedDecision(opts, ctx);
       }
-      if (answersCoverage(issuedAt, attempt, previousUnread, unread.length)) {
+      if (answersCoverage(answeredCoveragePrompt, previousUnread, unread.length)) {
         stopped = true;
         logStop(opts, ctx, issued, unread.length, "no progress");
         return exhaustedDecision(opts, ctx);
@@ -157,6 +178,7 @@ export function makeCoverageRetryStrategy(opts: CoverageRetryOpts): RetryStrateg
       issued += 1;
       issuedAt = attempt;
       previousUnread = unread.length;
+      awaitingAnswer = true;
       logRetry(opts, ctx, issued, unread.length);
       return {
         retry: true,

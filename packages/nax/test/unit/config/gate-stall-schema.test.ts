@@ -15,7 +15,7 @@
 import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
 import { NaxConfigSchema } from "@/config/schemas";
-import { StallDetectionConfigSchema } from "@/config/schemas-execution";
+import { SparseStallDetectionConfigSchema, StallDetectionConfigSchema } from "@/config/schemas-execution";
 
 describe("NaxConfigSchema quality.stallDetection defaults (US-002)", () => {
   test("AC-1: parse with quality absent resolves repeatedLineThreshold to 100", () => {
@@ -101,5 +101,42 @@ describe("StallDetectionConfigSchema.silenceTimeoutSeconds (US-002)", () => {
       quality: { stallDetection: { repeatedLineThreshold: 5, enabled: true } },
     });
     expect(withStraySwitch.quality.stallDetection).toEqual({ repeatedLineThreshold: 5, silenceTimeoutSeconds: 0 });
+  });
+});
+
+describe("SparseStallDetectionConfigSchema — a DECLARED policy (B4)", () => {
+  /**
+   * A package overlay is read by `loadPackageOverride`, which returns declared
+   * values unparsed, so the finish gate validates the sparse block itself. The
+   * schema must reject what the full one rejects while leaving absent fields
+   * absent: a default here would overwrite the sibling the overlay meant to
+   * inherit from the root config.
+   */
+  test("leaves absent detectors absent instead of defaulting them", () => {
+    expect(SparseStallDetectionConfigSchema.parse({})).toEqual({});
+    expect(SparseStallDetectionConfigSchema.parse({ repeatedLineThreshold: 40 })).toEqual({
+      repeatedLineThreshold: 40,
+    });
+    expect(SparseStallDetectionConfigSchema.parse({ silenceTimeoutSeconds: 0 })).toEqual({
+      silenceTimeoutSeconds: 0,
+    });
+  });
+
+  test("keeps an explicit both-zero policy", () => {
+    expect(SparseStallDetectionConfigSchema.parse({ repeatedLineThreshold: 0, silenceTimeoutSeconds: 0 })).toEqual({
+      repeatedLineThreshold: 0,
+      silenceTimeoutSeconds: 0,
+    });
+  });
+
+  test.each([
+    ["repeatedLineThreshold: 1", { repeatedLineThreshold: 1 }],
+    ["repeatedLineThreshold: -1", { repeatedLineThreshold: -1 }],
+    ["silenceTimeoutSeconds: -7", { silenceTimeoutSeconds: -7 }],
+    ["a numeric string", { silenceTimeoutSeconds: "10" }],
+    ["null", null],
+    ["a bare number", 7],
+  ] as const)("rejects %s", (_label, value) => {
+    expect(SparseStallDetectionConfigSchema.safeParse(value).success).toBe(false);
   });
 });

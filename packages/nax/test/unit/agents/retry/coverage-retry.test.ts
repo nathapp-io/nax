@@ -325,6 +325,91 @@ describe("makeCoverageRetryStrategy", () => {
     });
   });
 
+  // Whole-branch review B3: attempt numbers are hop-local, every counter here is not.
+  // A hop that restarts at attempt 0 after an adapter failure reuses the number the
+  // previous hop's coverage prompt was issued at, so `attempt === issuedAt + 1` can be
+  // true of a reply that answers a CLARIFICATION prompt. Treating it as a coverage
+  // measurement stopped coverage for "no progress" with retries still unspent.
+  describe("B3: coverage progress is measured only against coverage's own prompt", () => {
+    test("a hop restart does not let a clarification reply measure coverage progress", () => {
+      const logger = makeLogger();
+      const promptCalls: number[] = [];
+      let innerPrompts = 0;
+      // Hop 1 answers shape-only; hop 2's first reply earns a clarification prompt.
+      const inner = recordingInner(() => {
+        if (innerPrompts-- > 0) return { retry: true, delayMs: 0, nextPrompt: "clarify mismatch" };
+        return { retry: false };
+      });
+      const strategy = build({
+        inner: inner.strategy,
+        parse: makeParse({
+          "hop-one-reply": ["a.ts", "b.ts"],
+          "hop-two-reply": ["b.ts"],
+          "clarification-reply": ["a.ts", "b.ts", "c.ts"],
+        }),
+        promptCalls,
+        logger,
+      });
+
+      // Hop 1: coverage asks (unread 2, attempt 1 of the budget).
+      expect(strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput: "hop-one-reply" }))).toMatchObject({
+        retry: true,
+      });
+
+      // Hop 2 restarts at attempt 0. The clarification wrapper issues its prompt there.
+      innerPrompts = 1;
+      expect(strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput: "hop-two-reply" }))).toEqual({
+        retry: true,
+        delayMs: 0,
+        nextPrompt: "clarify mismatch",
+      });
+
+      // The reply to that clarification covers no more files. It answers the
+      // clarification, not coverage's prompt, so coverage may ask again.
+      expect(strategy.shouldRetry(parseError, 1, makeCtx({ lastOutput: "clarification-reply" }))).toEqual({
+        retry: true,
+        delayMs: 0,
+        nextPrompt: prompt(["a.ts", "b.ts", "c.ts"], { attempt: 2, max: 3 }),
+      });
+      expect(promptCalls).toEqual([1, 2]);
+      expect(logger.calls.filter((call) => call.message === "Coverage retry stopped")).toEqual([]);
+    });
+
+    test("a transport failure invalidates the pending coverage identity", () => {
+      const promptCalls: number[] = [];
+      let innerPrompts = 0;
+      const inner = recordingInner(() => {
+        if (innerPrompts-- > 0) return { retry: true, delayMs: 0, nextPrompt: "repair shape" };
+        return { retry: false };
+      });
+      const strategy = build({
+        inner: inner.strategy,
+        parse: makeParse({
+          "hop-one-reply": ["a.ts", "b.ts"],
+          "repaired-reply": ["a.ts", "b.ts", "c.ts"],
+        }),
+        promptCalls,
+      });
+
+      expect(strategy.shouldRetry(parseError, 0, makeCtx({ lastOutput: "hop-one-reply" }))).toMatchObject({
+        retry: true,
+      });
+      // The transport failure produced no reply; the inner strategy asks a repair.
+      innerPrompts = 1;
+      expect(strategy.shouldRetry(transportError, 0, makeCtx({ lastOutput: "hop-one-reply" }))).toMatchObject({
+        retry: true,
+      });
+      // attempt 1 > issuedAt 0, so only the cleared identity keeps this from being
+      // read as coverage's answer.
+      expect(strategy.shouldRetry(parseError, 1, makeCtx({ lastOutput: "repaired-reply" }))).toEqual({
+        retry: true,
+        delayMs: 0,
+        nextPrompt: prompt(["a.ts", "b.ts", "c.ts"], { attempt: 2, max: 3 }),
+      });
+      expect(promptCalls).toEqual([1, 2]);
+    });
+  });
+
   describe("AC-14 to AC-17: the strategy's own log lines", () => {
     test("AC-14 logs one 'Coverage retry' warn with storyId first, unread, attempt and max", () => {
       const logger = makeLogger();

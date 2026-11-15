@@ -298,6 +298,22 @@ export const StallDetectionConfigSchema = z.object({
     .default(DEFAULT_GATE_STALL_POLICY.silenceTimeoutSeconds),
 });
 
+/**
+ * The same two field rules WITHOUT their defaults, for a layer that DECLARES a
+ * policy instead of resolving one — a package overlay read by
+ * `loadPackageOverride`, which returns declared values unparsed by design.
+ *
+ * `.partial()` is not this schema: a `ZodDefault` inside an optional still
+ * supplies its default, so a sparse overlay would come back carrying both
+ * numbers and silently override the sibling it meant to inherit. Here an absent
+ * field stays absent, `resolveStallDetection` completes it later, and an explicit
+ * `0` is preserved because it is a value, not an absence.
+ */
+export const SparseStallDetectionConfigSchema = z.object({
+  repeatedLineThreshold: StallDetectionConfigSchema.shape.repeatedLineThreshold.unwrap().optional(),
+  silenceTimeoutSeconds: StallDetectionConfigSchema.shape.silenceTimeoutSeconds.unwrap().optional(),
+});
+
 export const QualityConfigSchema = z.object({
   scopeTestThreshold: z.number().int().min(0).default(10),
   /**

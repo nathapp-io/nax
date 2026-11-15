@@ -125,6 +125,7 @@ export {
   ExecutionConfigSchema,
   RectificationConfigSchema,
   RegressionGateConfigSchema,
+  SparseStallDetectionConfigSchema,
   TddConfigSchema,
 } from "./schemas-execution";
 export type { AgentRoutingConfig, AgentRoutingProfile } from "./schemas-infra";

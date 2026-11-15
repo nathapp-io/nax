@@ -9,8 +9,10 @@
  * stay there, the policy carrier lives here.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import type { NaxConfig } from "@/config";
-import { DEFAULT_CONFIG } from "@/config";
+import { DEFAULT_CONFIG, PROJECT_NAX_DIR } from "@/config";
+import { NaxError } from "@/errors";
 import type { GateRunRecord } from "@/finish";
 import { _qualityGateDeps, classifyGateExit, resolveGateCommands, runQualityGates } from "@/finish";
 import type { QualityCommandResult } from "@/quality";
@@ -175,6 +177,74 @@ describe("resolveGateCommands — stall policy", () => {
 
     expect(await resolveGateCommands("/repo", ["."])).toEqual([
       { name: "build", command: "tsc --noEmit", cwd: "/repo", stallDetection: ROOT_POLICY },
+    ]);
+  });
+});
+
+describe("resolveGateCommands — a package's DECLARED policy is validated (B4)", () => {
+  /** An overlay whose declared policy block is exactly `raw` plus the named command. */
+  function overlayWithPolicy(commands: NaxConfig["quality"]["commands"], raw: unknown): Partial<NaxConfig> {
+    const quality = { ...DEFAULT_CONFIG.quality, commands };
+    // A `.nax/mono/<pkg>/config.json` is raw JSON: `loadPackageOverride` returns
+    // its declared values unparsed, so this is exactly what the gate reads.
+    Reflect.set(quality, "stallDetection", raw);
+    return { quality };
+  }
+
+  test.each([
+    ["repeatedLineThreshold: 1", { repeatedLineThreshold: 1 }],
+    ["silenceTimeoutSeconds: -7", { silenceTimeoutSeconds: -7 }],
+  ])("rejects a schema-invalid %s with a configuration error", async (_label, raw) => {
+    _qualityGateDeps.loadConfig = async () => configWithStall({}, ROOT_POLICY);
+    _qualityGateDeps.loadPackageOverride = async () => overlayWithPolicy({ test: "pkg test" }, raw);
+    const runCalls: string[] = [];
+    _qualityGateDeps.run = async (opts) => {
+      runCalls.push(opts.commandName);
+      return gateResult(opts.commandName);
+    };
+
+    let caught: unknown;
+    try {
+      await resolveGateCommands("/repo", ["pkg"]);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NaxError);
+    expect(caught instanceof NaxError ? caught.code : undefined).toBe("PER_PACKAGE_PROFILE_INVALID");
+    // The invalid value never becomes a scheduled gate, so nothing can run it.
+    expect(runCalls).toEqual([]);
+  });
+
+  test("the rejection names the package and its config file", async () => {
+    _qualityGateDeps.loadConfig = async () => configWithStall({}, ROOT_POLICY);
+    _qualityGateDeps.loadPackageOverride = async () =>
+      overlayWithPolicy({ test: "pkg test" }, { repeatedLineThreshold: 1 });
+
+    const caught = await resolveGateCommands("/repo", ["pkg"]).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+
+    expect(caught instanceof NaxError ? caught.message : "").toContain('"pkg"');
+    expect(caught instanceof NaxError ? caught.message : "").toContain(
+      join(PROJECT_NAX_DIR, "mono", "pkg", "config.json"),
+    );
+  });
+
+  test("a valid sparse overlay keeps sibling inheritance and an explicit zero", async () => {
+    _qualityGateDeps.loadConfig = async () => configWithStall({ lint: "root lint" }, ROOT_POLICY);
+    _qualityGateDeps.loadPackageOverride = async () =>
+      overlayWithPolicy({ test: "pkg test" }, { silenceTimeoutSeconds: 0 });
+
+    expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
+      { name: "lint", command: "root lint", cwd: "/repo", stallDetection: ROOT_POLICY },
+      {
+        name: "test@pkg",
+        command: "pkg test",
+        cwd: "/repo/pkg",
+        stallDetection: { repeatedLineThreshold: ROOT_POLICY.repeatedLineThreshold, silenceTimeoutSeconds: 0 },
+      },
     ]);
   });
 });

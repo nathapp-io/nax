@@ -347,6 +347,21 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     args.stripEnvVars,
     args.stallDetection,
   );
+  // Interruption evidence outranks the diagnostics: a detector stop (repeated
+  // output, configured silence) or a wall timeout leaves a PARTIAL capture, and
+  // a list-valued command reports the first step's exit code while an entry that
+  // was stopped is recorded only in `timedOut`/`stopReason`. Filtering that
+  // capture down to in-scope lines could report an interrupted list as a clean
+  // out-of-scope pass, so the degradation path keeps the red/fail-fast verdict —
+  // and never parses a stopped run as if it were a completed diagnostic report.
+  if (fullResult.timedOut === true || fullResult.stopReason !== undefined) {
+    logger?.warn("review", "lint_scope_degraded", {
+      storyId: args.storyId,
+      reason: "interrupted",
+    });
+    return withLintScope(toReviewCheck(fullResult), scope, "degraded");
+  }
+
   if (fullResult.exitCode === 0) return withLintScope(toReviewCheck(fullResult), scope, "degraded");
 
   const parsed = parseLintOutput(fullResult.output, args.lintOutputFormat ?? "auto", {

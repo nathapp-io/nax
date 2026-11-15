@@ -20,7 +20,14 @@
  */
 import { join } from "node:path";
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
-import { loadConfig, loadPackageOverride, type NaxConfig, PROJECT_NAX_DIR } from "@/config";
+import {
+  loadConfig,
+  loadPackageOverride,
+  type NaxConfig,
+  PROJECT_NAX_DIR,
+  SparseStallDetectionConfigSchema,
+} from "@/config";
+import { NaxError } from "@/errors";
 import { type QualityCommandResult, runQualityCommand } from "@/quality";
 import { type GateStallPolicy, type GateStopReason, resolveStallDetection } from "@/utils/gate-stall";
 import type { QualityGateResult } from "../types";
@@ -193,6 +200,35 @@ function fieldWisePolicy(
 }
 
 /**
+ * The package's DECLARED policy, validated before it is merged or scheduled
+ * (whole-branch review B4).
+ *
+ * `loadPackageOverride` returns declared values unvalidated by design — it is
+ * the command-provenance reader, not a config resolver — and
+ * `resolveStallDetection` only completes absent fields. So a declared
+ * `repeatedLineThreshold: 1` or `silenceTimeoutSeconds: -7` would reach a
+ * spawned gate intact: the first stops a gate on its second line, the second
+ * can silently disable silence detection. The file is `.nax/mono/<pkg>/config.json`,
+ * so an invalid value there is the same class of error the loader's own package
+ * chain reports: `PER_PACKAGE_PROFILE_INVALID`.
+ *
+ * Validation is sparse on purpose: only the fields the overlay names are
+ * checked, absent ones stay absent for the field-wise merge, and an explicit `0`
+ * is a value rather than an absence.
+ */
+function validateDeclaredPolicy(raw: unknown, packageDir: string): Partial<GateStallPolicy> | undefined {
+  if (raw === undefined) return undefined;
+  const result = SparseStallDetectionConfigSchema.safeParse(raw);
+  if (result.success) return result.data;
+  const reason = result.error.issues.map((issue) => issue.message).join("; ");
+  throw new NaxError(
+    `Invalid quality.stallDetection for package "${packageDir}" in ${join(PROJECT_NAX_DIR, "mono", packageDir, "config.json")}: ${reason}`,
+    "PER_PACKAGE_PROFILE_INVALID",
+    { stage: "config", packageDir, field: "quality.stallDetection" },
+  );
+}
+
+/**
  * Every gate command this repo actually configures, layered (fixes F2).
  *
  * Root commands come from `loadConfig(workdir)`, which applies the global
@@ -290,7 +326,7 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
     if (!overlayCommands) continue;
 
     const overlayPolicy = _qualityGateDeps.resolveStallDetection(
-      fieldWisePolicy(rootStall, override?.quality?.stallDetection),
+      fieldWisePolicy(rootStall, validateDeclaredPolicy(override?.quality?.stallDetection, packageDir)),
     );
     const packageCwd = join(repoRoot, packageDir);
     for (const gate of GATE_ORDER) {
