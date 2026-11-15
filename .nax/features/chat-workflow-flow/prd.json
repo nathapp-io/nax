@@ -3,7 +3,7 @@
   "feature": "chat-workflow-flow",
   "branchName": "feat/chat-workflow-flow",
   "createdAt": "2026-11-15T14:53:59.039Z",
-  "updatedAt": "2026-11-15T15:55:08.883Z",
+  "updatedAt": "2026-11-15T16:02:48.622Z",
   "userStories": [
     {
       "id": "US-001",
@@ -251,14 +251,17 @@
         "schema"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive Zod schema and matching runtime/barrel types follow existing config patterns; conditional defaults and exact issue paths are the compatibility risks."
+        "reasoning": "Additive Zod schema and matching runtime/barrel types follow existing config patterns; conditional defaults and exact issue paths are the compatibility risks.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/config/schemas.ts",
@@ -276,7 +279,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "296c437f6a92c65b7566be2db146e4f7575ca0dc"
     },
     {
       "id": "US-006",
