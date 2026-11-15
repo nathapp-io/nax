@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { formatRunSummary } from "@/log-format/summary";
 import type { RunSummary, WorkflowSummaryView } from "@/log-format/types";
 import { formatWorkflowSummary } from "@/log-format/workflow-summary";
+import { readinessReasons } from "@/workflow/approval";
 
 const VIEW: WorkflowSummaryView = {
   storiesDurationMs: 8_393_000,
@@ -177,5 +178,29 @@ describe("formatRunSummary with a workflow", () => {
       });
       expect(line).toContain("cache r 0 w 57,056");
     });
+  });
+});
+
+/**
+ * US-010: a persisted branch verdict mismatch keeps the PR a draft, and the sentence readiness
+ * produced for it is the one the Publish line renders — no re-spelling between the two.
+ */
+describe("formatWorkflowSummary — branch verdict mismatch (US-010)", () => {
+  const SPEC = "branch review verdict inconsistent: spec fail without a blocking spec finding";
+  const QUALITY = "branch review verdict inconsistent: quality changes without a blocking finding";
+
+  test("AC-13: the published mismatch reason renders on the Publish line", () => {
+    const reasons = readinessReasons({
+      finalGates: { ran: ["test"], failing: [] },
+      ci: "green",
+      stories: [],
+      flagged: 0,
+      branchReviewRan: true,
+      branchReviewMismatch: ["spec", "quality"],
+    });
+    const out = formatWorkflowSummary({ ...VIEW, publish: { outcome: "draft", reasons } }, { useColor: false });
+    const publishLine = out.split("\n").find((line) => line.includes("Publish:"));
+    expect(publishLine).toBe(`  Publish:  draft - ${SPEC}; ${QUALITY}`);
+    expect(out).toContain(QUALITY);
   });
 });

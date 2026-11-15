@@ -183,3 +183,42 @@ describe("buildOpenItems: the whole list (US-002)", () => {
     expect(verdict?.openItems).toContainEqual({ id: "D-1", kind: "advisor", issue: "advisor held: x" });
   });
 });
+
+/**
+ * US-010: the mismatch `publish` carries is a reason — evidence the reviewer's verdict and its own
+ * findings disagreed — so it opens a reason item and blocks nothing. It is neither a finding nor a
+ * ruling, and no B id is spent on it.
+ */
+describe("buildOpenItems: a published mismatch reason (US-010)", () => {
+  const SPEC = "branch review verdict inconsistent: spec fail without a blocking spec finding";
+  const QUALITY = "branch review verdict inconsistent: quality changes without a blocking finding";
+
+  test("AC-14: each mismatch sentence is a reason item, never a finding or a ruling", () => {
+    const reasons = readinessReasons({
+      finalGates: { ran: ["test"], failing: [] },
+      ci: "green",
+      stories: [],
+      flagged: 0,
+      branchReviewRan: true,
+      branchReviewMismatch: ["spec", "quality"],
+    });
+    const record = rec({
+      passed: true,
+      outcome: "draft",
+      nextFindingId: 1,
+      reviewOpen: [],
+      rulings: [],
+      reviewMismatch: { kinds: ["spec", "quality"] },
+      reasons,
+    });
+    const items = buildOpenItems(record);
+    expect(items).toEqual([
+      { id: "_run:reason1", kind: "reason", issue: SPEC },
+      { id: "_run:reason2", kind: "reason", issue: QUALITY },
+    ]);
+    expect(ofKind(items, "finding")).toEqual([]);
+    expect(ofKind(items, "ruling")).toEqual([]);
+    // Nothing blocking: the reason items never fail the workflow or the run.
+    expect(buildVerdict(record)?.workflowPassed).toBe(true);
+  });
+});

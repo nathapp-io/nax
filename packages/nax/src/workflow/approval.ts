@@ -30,6 +30,13 @@ export interface ReadinessFacts {
    * draft — an unread file is a file no one reviewed. Absent or empty adds no reason.
    */
   readonly branchReviewUnread?: readonly string[];
+  /**
+   * US-010: the persisted branch verdict mismatch (`WorkflowFeatureRecord.reviewMismatch`), carried
+   * into readiness unchanged. Each kind's sentence comes from `_approvalDeps.branchMismatchReasons` —
+   * the same seam the branch-review step logs its ledger notes through — so the draft marker, the
+   * open item and the published summary read one text. Absent or empty adds no reason.
+   */
+  readonly branchReviewMismatch?: readonly VerdictMismatch[];
   /** nax#2550: the feature workflow skipped an agent step at the cost limit. */
   readonly costLimited?: boolean;
   /** nax#2706: the story loop hit its iteration limit with stories still pending. */
@@ -163,6 +170,9 @@ export function readinessReasons(f: ReadinessFacts): string[] {
     ...(f.flagged > 0 ? [`${f.flagged} ruling(s) flagged for a human`] : []),
     ...(f.branchReviewRan ? [] : ["branch review did not run"]),
     ...(unread.length > 0 ? [describeUnread(unread)] : []),
+    // US-010: the sentences come from the shared formatter through its seam, so the reason `publish`
+    // reports is the very text the branch-review step wrote to its ledger.
+    ..._approvalDeps.branchMismatchReasons(f.branchReviewMismatch ?? []),
     ...(f.reReviewSkipped ? [RE_REVIEW_SKIPPED] : []),
     ...(f.costLimited ? [COST_LIMITED] : []),
   ];
