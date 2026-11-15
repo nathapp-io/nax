@@ -19,6 +19,7 @@ import {
   makeSpawn,
   makeSpawnResult,
   makeTempDir,
+  repeatedLinesStream,
   useUntrustedRegistry,
   waitForCondition,
   withTimerSpy,
@@ -89,9 +90,14 @@ interface FakeProc {
 
 /** A fake process whose exit the test settles explicitly. */
 function fakeProc(
-  options: { stdout?: ReadableStream<Uint8Array>; stderr?: ReadableStream<Uint8Array> } = {},
+  options: {
+    stdout?: ReadableStream<Uint8Array>;
+    stderr?: ReadableStream<Uint8Array>;
+    /** Distinct pids keep the kill calls of a list's entries attributable. */
+    pid?: number;
+  } = {},
 ): FakeProc {
-  const proc = makeSpawnResult({ pid: FAKE_PID });
+  const proc = makeSpawnResult({ pid: options.pid ?? FAKE_PID });
   let settle: (code: number) => void = () => {};
   let fail: (error: unknown) => void = () => {};
   const exited = new Promise<number>((resolve, reject) => {
@@ -203,6 +209,19 @@ async function settle(pending: Promise<QualityCommandResult>): Promise<QualityCo
     await clock.advance(CLOCK_STEP_MS);
   }
   return await tracked;
+}
+
+/**
+ * Walk the virtual clock forward one step at a time until `predicate` holds, for
+ * a run the test has to interleave with — a list whose later entry is settled by
+ * the test once it has been spawned.
+ */
+async function advanceUntil(predicate: () => boolean, maxSteps = 200): Promise<void> {
+  for (let step = 0; step < maxSteps; step++) {
+    if (predicate()) return;
+    await clock.advance(CLOCK_STEP_MS);
+  }
+  if (!predicate()) throw new Error("[test] the run never reached the awaited state on the virtual clock");
 }
 
 // ---------------------------------------------------------------------------
@@ -667,5 +686,115 @@ describe("runQualityCommand — rejected exit (AC-18)", () => {
     expect(result).toMatchObject({ success: false, exitCode: -1, timedOut: false });
     expect(result.output).toContain("waitpid failed: spawn ENOENT");
     expect("stopReason" in result).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-006 — the list: per-entry detector state, continuation, aggregation
+// ---------------------------------------------------------------------------
+
+/** The pid of the n-th list entry's fake child, so kills stay attributable. */
+const LIST_PIDS = [7_001, 7_002, 7_003] as const;
+
+interface ListEntry {
+  /** Copies of the detector's repeat line on stdout, closing the stream. */
+  repeats?: number;
+  /** stdout for an entry that is not the stalled one. */
+  stdout?: string;
+  /** Settle this entry's exit with this code when it is spawned. */
+  exitWith?: number;
+}
+
+/**
+ * A spawn stub that hands each list entry its own child, in spawn order, and
+ * records the policy of every monitor created. The entries without `exitWith`
+ * stay live, so only a detector can end them and the test settles their exit.
+ */
+function listSpawn(entries: ListEntry[]): {
+  stub: ReturnType<typeof makeSpawn>;
+  fakes: FakeProc[];
+  policies: unknown[];
+} {
+  const fakes: FakeProc[] = [];
+  const policies: unknown[] = [];
+  _qualityRunnerDeps.createGateStallMonitor = (options) => {
+    policies.push(options.policy);
+    return createGateStallMonitor(options);
+  };
+  const stub = makeSpawn(() => {
+    const index = fakes.length;
+    const entry = entries[index] ?? {};
+    const stdout = entry.repeats === undefined ? closedStream(entry.stdout ?? "") : repeatedLinesStream(entry.repeats);
+    const fake = fakeProc({ pid: LIST_PIDS[index] ?? FAKE_PID, stdout });
+    fakes.push(fake);
+    if (entry.exitWith !== undefined) fake.exit(entry.exitWith);
+    return fake.proc;
+  });
+  _qualityRunnerDeps.spawn = stub.spawn;
+  return { stub, fakes, policies };
+}
+
+describe("runQualityCommand with a list — fresh detector state (AC-1)", () => {
+  test("AC-1: every entry counts repetitions from zero", async () => {
+    const { fakes, policies } = listSpawn([{ repeats: 3 }, { repeats: 2 }]);
+
+    const pending = run({ command: ["step-a", "step-b"], stallDetection: { repeatedLineThreshold: 3 } });
+    // Entry 1 stops on its third equal line; entry 2 is spawned once it has settled.
+    await advanceUntil(() => fakes.length === 2);
+    fakes[1]?.exit(0);
+
+    const result = await settle(pending);
+
+    // One monitor per entry — nothing is created once for the whole list.
+    expect(policies).toHaveLength(2);
+    // Entry 2 saw the same line twice against a threshold of 3. A count carried
+    // over from entry 1 would have reached 3 and stopped it instead.
+    expect(result.output).toContain("=== step-a (exit -1) ===");
+    expect(result.output).toContain("=== step-b (exit 0) ===");
+    expect(kills.filter((call) => call.pid === LIST_PIDS[0] && call.signal === "SIGTERM")).toHaveLength(1);
+    expect(kills.filter((call) => call.pid === LIST_PIDS[1])).toEqual([]);
+  });
+
+  test("AC-1: every entry arms its own silence deadline", async () => {
+    const { fakes, policies } = listSpawn([{ stdout: "" }, { stdout: "progress\n" }]);
+
+    const pending = run({ command: ["step-a", "step-b"], stallDetection: { silenceTimeoutSeconds: 2 } });
+    await advanceUntil(() => fakes.length === 2);
+    // Entry 1's deadline was spent seconds ago. Entry 2 then lives through the
+    // first second of its own 2s window (the step `settle` takes below) — a
+    // shared, already-fired deadline would have signalled it at spawn.
+    fakes[1]?.exit(0);
+
+    const result = await settle(pending);
+
+    expect(policies).toHaveLength(2);
+    expect(result.output).toContain("=== step-a (exit -1) ===");
+    expect(result.output).toContain("=== step-b (exit 0) ===");
+    // A shared (already-fired) deadline would have signalled entry 2 too.
+    expect(kills.filter((call) => call.pid === LIST_PIDS[1])).toEqual([]);
+  });
+});
+
+describe("runQualityCommand with a list — continuation (AC-2)", () => {
+  test("AC-2: a stopped entry does not stop the entries after it", async () => {
+    const { stub } = listSpawn([
+      { repeats: 2 },
+      { stdout: "step-b ok\n", exitWith: 0 },
+      { stdout: "step-c ok\n", exitWith: 0 },
+    ]);
+
+    const result = await settle(
+      run({ command: ["step-a", "step-b", "step-c"], stallDetection: { repeatedLineThreshold: 2 } }),
+    );
+
+    // All three ran, in order, after the first was stopped.
+    expect(stub.calls.map((call) => call.cmd[2])).toEqual(["step-a", "step-b", "step-c"]);
+    expect(result.output).toContain("=== step-a (exit -1) ===");
+    expect(result.output).toContain("step-b ok");
+    expect(result.output).toContain("step-c ok");
+    expect(result.success).toBe(false);
+    expect(result.timedOut).toBe(true);
+    // The list carries the first detector reason, not a completed-run verdict.
+    expect(result.stopReason).toEqual({ kind: "repeated-output", stream: "stdout", count: 2, threshold: 2 });
   });
 });
