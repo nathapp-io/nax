@@ -22,12 +22,18 @@ import { join } from "node:path";
 import type { QualityCommandSpec } from "@nathapp/nax-agent/internal";
 import { loadConfig, loadPackageOverride, type NaxConfig, PROJECT_NAX_DIR } from "@/config";
 import { type QualityCommandResult, runQualityCommand } from "@/quality";
+import { type GateStallPolicy, type GateStopReason, resolveStallDetection } from "@/utils/gate-stall";
 import type { QualityGateResult } from "../types";
 
 export const _qualityGateDeps = {
   run: runQualityCommand,
   loadConfig,
   loadPackageOverride,
+  // The leaf resolver, delegated rather than re-implemented. Completing a
+  // sparse or absent policy is a production step reached from
+  // `runQualityGates`, and a seam is what lets a test observe that it happened
+  // at the entry point instead of inferring it from a final value.
+  resolveStallDetection,
 };
 
 /**
@@ -70,21 +76,35 @@ export interface GateRunRecord {
   readonly durationMs: number;
   /** Present, as "setup", only when the gate's setup bootstrap failed and the command never ran. */
   readonly failedPhase?: "setup";
+  /**
+   * Present only when a detector — repeated output or silence — stopped this
+   * gate's run. Absent (never `undefined`) on an ordinary exit and on a
+   * wall-clock timeout, which carry no reason of their own.
+   */
+  readonly stopReason?: GateStopReason;
   /** The raw output of whichever run decided the status (setup or command). */
   readonly output: string;
 }
 
 /**
- * The status for one `QualityCommandResult`, in decision order: a timeout wins
- * over any exit code (a killed process reports -1, which would otherwise read
- * as "never ran"); then success; then the exit codes that mean the shell could
- * not find or execute the command at all — 127/126 from the shell, -1 from a
- * spawn error — which is "not-run", the third state a caller could previously
- * only recover by parsing the combined output text (#2569); everything else
- * failed.
+ * The status for one `QualityCommandResult`, in decision order: a detector stop
+ * or a wall timeout wins over any exit code (a stopped child reports -1, which
+ * would otherwise read as "never ran"); then success; then the exit codes that
+ * mean the shell could not find or execute the command at all — 127/126 from
+ * the shell, -1 from a spawn error — which is "not-run", the third state a
+ * caller could previously only recover by parsing the combined output text
+ * (#2569); everything else failed.
+ *
+ * `stopReason` is checked alongside `timedOut` rather than after the exit code
+ * because it is the evidence that the run ended early: a detector stopped a
+ * live child, which is not the same thing as a command the shell never found.
  */
-export function classifyGateExit(res: { readonly exitCode: number; readonly timedOut: boolean }): GateRunStatus {
-  if (res.timedOut) return "timed-out";
+export function classifyGateExit(res: {
+  readonly exitCode: number;
+  readonly timedOut: boolean;
+  readonly stopReason?: GateStopReason;
+}): GateRunStatus {
+  if (res.stopReason !== undefined || res.timedOut) return "timed-out";
   if (res.exitCode === 0) return "passed";
   if (res.exitCode === 127 || res.exitCode === 126 || res.exitCode === -1) return "not-run";
   return "failed";
@@ -111,6 +131,8 @@ function gateRecord(gate: GateCommand, res: QualityCommandResult, failedPhase?: 
     durationMs: res.durationMs,
     // Spread, not `failedPhase: undefined`: AC-15 pins the key's absence.
     ...(failedPhase === undefined ? {} : { failedPhase }),
+    // Same rule for the stop reason: only a detector stop writes the key.
+    ...(res.stopReason === undefined ? {} : { stopReason: res.stopReason }),
     output: res.output,
   };
 }
@@ -129,6 +151,15 @@ export interface GateCommand {
    * the real failure.
    */
   setup?: QualityCommandSpec;
+  /**
+   * The gate's resolved stall policy, carried on the description so every
+   * consumer runs it under the policy it was configured with: a caller that
+   * remaps the run (the bot's worktree projection, `nax gates run`) does not
+   * reload configuration to find it again. `resolveGateCommands` resolves it
+   * onto every gate it produces; `runQualityGates` completes one a hand-built
+   * gate leaves out from the leaf default.
+   */
+  stallDetection?: GateStallPolicy;
 }
 
 type QualityCommands = NaxConfig["quality"]["commands"];
@@ -142,6 +173,23 @@ function overlayCommandsOf(override: Partial<NaxConfig> | null): QualityCommands
 /** Overlay setup inherits the root unless the overlay explicitly names e2eSetup. */
 function overlaySetupCommands(root: QualityCommands, overlay: QualityCommands): QualityCommands {
   return Object.hasOwn(overlay, "e2eSetup") ? overlay : { ...overlay, e2eSetup: root.e2eSetup };
+}
+
+/**
+ * The sparse policy input for an overlay gate: each detector the overlay names,
+ * else the root's — the field-wise rule `mergePackageConfig` applies to a
+ * package overlay, with an explicit `0` surviving `??` so a package can turn a
+ * detector the root enabled back off. What is still absent is left for
+ * `resolveStallDetection` to complete, which is why this stays sparse.
+ */
+function fieldWisePolicy(
+  root: GateStallPolicy | undefined,
+  overlay: Partial<GateStallPolicy> | undefined,
+): Partial<GateStallPolicy> {
+  return {
+    repeatedLineThreshold: overlay?.repeatedLineThreshold ?? root?.repeatedLineThreshold,
+    silenceTimeoutSeconds: overlay?.silenceTimeoutSeconds ?? root?.silenceTimeoutSeconds,
+  };
 }
 
 /**
@@ -170,31 +218,47 @@ function overlaySetupCommands(root: QualityCommands, overlay: QualityCommands): 
  *
  * An *overlay* gate is considered only when the root leaves its key
  * unconfigured, regardless of command, cwd or setup differences. Remaining
- * overlay gates are identified by the run they make — `cwd`, `command` and
- * `setup`, never the gate key. An overlay's own keys sharing a run, or a run
- * another root key already makes, count as one run. Different setup remains
- * a distinct run for these fallback gates (whole-branch review B1 residual).
+ * overlay gates are identified by the run they make — `cwd`, `command`,
+ * `setup` and the resolved stall policy, never the gate key. An overlay's own
+ * keys sharing a run, or a run another root key already makes, count as one
+ * run. Different setup remains a distinct run for these fallback gates
+ * (whole-branch review B1 residual), and so does a different policy: an
+ * overlay that runs the root's command under its own stall policy is two runs,
+ * not one silently deduplicated.
  */
 export async function resolveGateCommands(repoRoot: string, packageDirs: string[]): Promise<GateCommand[]> {
   /**
    * The runs already scheduled, keyed by what actually gets spawned — `cwd`,
-   * `command` and `setup` — never by gate key. Root gates add to it; overlay
-   * gates are matched against it.
+   * `command`, `setup` and the resolved policy — never by gate key. Root gates
+   * add to it; overlay gates are matched against it.
    */
   const seenRuns = new Set<string>();
   const out: GateCommand[] = [];
 
-  /** `command` AND `setup`: the same command bootstrapping a different stack is a different run. */
-  const runKey = (cwd: string, command: QualityCommandSpec, setup?: QualityCommandSpec): string =>
-    `${cwd}::${JSON.stringify(command)}::${JSON.stringify(setup ?? null)}`;
+  /** `command` AND `setup` AND policy: each difference makes a different run. */
+  const runKey = (
+    cwd: string,
+    command: QualityCommandSpec,
+    stallDetection: GateStallPolicy,
+    setup?: QualityCommandSpec,
+  ): string =>
+    `${cwd}::${JSON.stringify(command)}::${JSON.stringify(setup ?? null)}::${stallDetection.repeatedLineThreshold}/${stallDetection.silenceTimeoutSeconds}`;
 
   const isConfigured = (command: QualityCommandSpec | undefined): command is QualityCommandSpec =>
     command !== undefined && (typeof command === "string" ? [command] : command).some((part) => part.trim());
 
   /** Schedule one run, and record it as already scheduled. */
-  const schedule = (name: string, command: QualityCommandSpec, cwd: string, setup?: QualityCommandSpec): void => {
-    seenRuns.add(runKey(cwd, command, setup));
-    out.push(setup === undefined ? { name, command, cwd } : { name, command, cwd, setup });
+  const schedule = (
+    name: string,
+    command: QualityCommandSpec,
+    cwd: string,
+    stallDetection: GateStallPolicy,
+    setup?: QualityCommandSpec,
+  ): void => {
+    seenRuns.add(runKey(cwd, command, stallDetection, setup));
+    out.push(
+      setup === undefined ? { name, command, cwd, stallDetection } : { name, command, cwd, setup, stallDetection },
+    );
   };
 
   /**
@@ -206,12 +270,16 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
 
   const rootConfig = await _qualityGateDeps.loadConfig(repoRoot);
   const rootCommands: QualityCommands = rootConfig.quality?.commands ?? {};
+  // Resolved once, through the seam, so every gate of this resolution carries
+  // the same completed policy and the resolution itself is observable.
+  const rootStall = rootConfig.quality?.stallDetection;
+  const rootPolicy = _qualityGateDeps.resolveStallDetection(rootStall);
   for (const gate of GATE_ORDER) {
     const command = rootCommands[gate];
     // A root gate goes in per key, whatever any other key's command string
     // says: `seenRuns` only ever absorbs the overlays below.
     if (!isConfigured(command)) continue;
-    schedule(gate, command, repoRoot, setupFor(rootCommands, gate));
+    schedule(gate, command, repoRoot, rootPolicy, setupFor(rootCommands, gate));
   }
 
   for (const packageDir of packageDirs) {
@@ -221,6 +289,9 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
     const overlayCommands = overlayCommandsOf(override);
     if (!overlayCommands) continue;
 
+    const overlayPolicy = _qualityGateDeps.resolveStallDetection(
+      fieldWisePolicy(rootStall, override?.quality?.stallDetection),
+    );
     const packageCwd = join(repoRoot, packageDir);
     for (const gate of GATE_ORDER) {
       // Only a gate the overlay itself names — never backfill from the merged
@@ -234,8 +305,8 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
       const setup = setupFor(overlaySetupCommands(rootCommands, overlayCommands), gate);
       // The package's own gate key is not part of the identity: an overlay
       // asking for a run the repo is already about to make is one run.
-      if (seenRuns.has(runKey(packageCwd, command, setup))) continue;
-      schedule(`${gate}@${packageDir}`, command, packageCwd, setup);
+      if (seenRuns.has(runKey(packageCwd, command, overlayPolicy, setup))) continue;
+      schedule(`${gate}@${packageDir}`, command, packageCwd, overlayPolicy, setup);
     }
   }
 
@@ -243,20 +314,27 @@ export async function resolveGateCommands(repoRoot: string, packageDirs: string[
 }
 
 /**
- * Run a gate's `setup` when it has one, under the gate's own cwd and timeout.
+ * Run a gate's `setup` when it has one, under the gate's own cwd, timeout and
+ * stall policy — a bootstrap that repeats one line forever is as stuck as the
+ * command it prepares, so it runs under the same policy (AC-14).
  * Returns the setup's `QualityCommandResult` when the setup ran and failed —
  * the caller reports the failure and builds the gate's record from it — or
  * `null` when there is no setup or it passed. A setup that never came up fails
  * the gate untouched: the command is never run, because a journey run against a
  * half-started stack reports noise rather than the real failure.
  */
-async function runGateSetup(gate: GateCommand, timeoutMs: number): Promise<QualityCommandResult | null> {
+async function runGateSetup(
+  gate: GateCommand,
+  stallDetection: GateStallPolicy,
+  timeoutMs: number,
+): Promise<QualityCommandResult | null> {
   if (gate.setup === undefined) return null;
   const res = await _qualityGateDeps.run({
     commandName: `${gate.name}:setup`,
     command: gate.setup,
     workdir: gate.cwd,
     timeoutMs,
+    stallDetection,
   });
   return res.exitCode === 0 ? null : res;
 }
@@ -275,6 +353,12 @@ async function runGateSetup(gate: GateCommand, timeoutMs: number): Promise<Quali
  * It is an observer: the returned `QualityGateResult` is the same with or
  * without it, and an exception it throws propagates out of here (stopping the
  * remaining gates) rather than being read as a gate failure.
+ *
+ * Every gate runs under a *completed* stall policy. A gate from
+ * `resolveGateCommands` already carries one; a gate a caller built by hand may
+ * carry none, and it gets the leaf default here — the resolution happens
+ * through `_qualityGateDeps.resolveStallDetection`, the same seam a configured
+ * gate goes through, rather than as a second literal default in this module.
  */
 export async function runQualityGates(
   repoRoot: string,
@@ -288,8 +372,9 @@ export async function runQualityGates(
 
   for (const gate of commands) {
     ran.push(gate.name);
+    const stallDetection = _qualityGateDeps.resolveStallDetection(gate.stallDetection);
 
-    const setupFailure = await runGateSetup(gate, timeoutMs);
+    const setupFailure = await runGateSetup(gate, stallDetection, timeoutMs);
     if (setupFailure !== null) {
       chunks.push(`[${gate.name}] exit=${setupFailure.exitCode}\nsetup failed:\n${setupFailure.output}`);
       failing.push(gate.name);
@@ -302,6 +387,7 @@ export async function runQualityGates(
       command: gate.command,
       workdir: gate.cwd,
       timeoutMs,
+      stallDetection,
     });
     chunks.push(`[${gate.name}] exit=${res.exitCode}\n${res.output}`);
     if (res.exitCode !== 0) failing.push(gate.name);

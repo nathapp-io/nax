@@ -17,7 +17,11 @@ afterEach(() => {
   _qualityGateDeps.run = original.run;
   _qualityGateDeps.loadConfig = original.loadConfig;
   _qualityGateDeps.loadPackageOverride = original.loadPackageOverride;
+  _qualityGateDeps.resolveStallDetection = original.resolveStallDetection;
 });
+
+/** The policy a configured gate carries when the config sets none: the default. */
+const DEFAULT_POLICY = DEFAULT_CONFIG.quality.stallDetection;
 
 /** A full NaxConfig with `quality.commands` overridden -- avoids partial casts. */
 function configWithCommands(commands: NaxConfig["quality"]["commands"]): NaxConfig {
@@ -34,7 +38,7 @@ describe("resolveGateCommands", () => {
       quality: { ...DEFAULT_CONFIG.quality, commands: { test: "bun test apps/web" } },
     });
     expect(await resolveGateCommands("/repo", ["apps/web"])).toEqual([
-      { name: "test", command: "root test", cwd: "/repo" },
+      { name: "test", command: "root test", cwd: "/repo", stallDetection: DEFAULT_POLICY },
     ]);
   });
 
@@ -44,8 +48,8 @@ describe("resolveGateCommands", () => {
       quality: { ...DEFAULT_CONFIG.quality, commands: { build: "bun run build" } },
     });
     expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
-      { name: "test", command: "root test", cwd: "/repo" },
-      { name: "build@pkg", command: "bun run build", cwd: "/repo/pkg" },
+      { name: "test", command: "root test", cwd: "/repo", stallDetection: DEFAULT_POLICY },
+      { name: "build@pkg", command: "bun run build", cwd: "/repo/pkg", stallDetection: DEFAULT_POLICY },
     ]);
   });
 
@@ -58,7 +62,7 @@ describe("resolveGateCommands", () => {
         quality: { ...DEFAULT_CONFIG.quality, commands: { lint: "biome lint" } },
       });
       expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
-        { name: "lint@pkg", command: "biome lint", cwd: "/repo/pkg" },
+        { name: "lint@pkg", command: "biome lint", cwd: "/repo/pkg", stallDetection: DEFAULT_POLICY },
       ]);
     },
   );
@@ -81,7 +85,7 @@ describe("resolveGateCommands", () => {
       quality: { ...DEFAULT_CONFIG.quality, commands: { lint: "pkg lint" } },
     });
     expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
-      { name: "lint", command: ["biome lint", "tsc --noEmit"], cwd: "/repo" },
+      { name: "lint", command: ["biome lint", "tsc --noEmit"], cwd: "/repo", stallDetection: DEFAULT_POLICY },
     ]);
   });
 
@@ -103,7 +107,13 @@ describe("resolveGateCommands", () => {
       },
     });
     expect(await resolveGateCommands("/repo", ["pkg"])).toEqual([
-      { name: "e2e@pkg", command: "journey", cwd: "/repo/pkg", setup: setup ?? "root setup" },
+      {
+        name: "e2e@pkg",
+        command: "journey",
+        cwd: "/repo/pkg",
+        setup: setup ?? "root setup",
+        stallDetection: DEFAULT_POLICY,
+      },
     ]);
   });
   test("F2 regression: no root quality.commands, but a package overlay sets `test` -- resolved and included", async () => {
@@ -115,7 +125,9 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", ["apps/web"]);
 
-    expect(commands).toEqual([{ name: "test@apps/web", command: "bun test apps/web", cwd: "/repo/apps/web" }]);
+    expect(commands).toEqual([
+      { name: "test@apps/web", command: "bun test apps/web", cwd: "/repo/apps/web", stallDetection: DEFAULT_POLICY },
+    ]);
   });
 
   test("a package overlay that sets only one gate does not fan out the root's other gates for that package", async () => {
@@ -146,7 +158,9 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", []);
 
-    expect(commands).toEqual([{ name: "build", command: "profile-layered build cmd", cwd: "/repo" }]);
+    expect(commands).toEqual([
+      { name: "build", command: "profile-layered build cmd", cwd: "/repo", stallDetection: DEFAULT_POLICY },
+    ]);
   });
 
   test("a package overlay repeating the root command verbatim from the same directory is deduped", async () => {
@@ -160,7 +174,7 @@ describe("resolveGateCommands", () => {
     // and repeats the root's exact command -- must collapse to one gate.
     const commands = await resolveGateCommands("/repo", ["."]);
 
-    expect(commands).toEqual([{ name: "build", command: "echo root", cwd: "/repo" }]);
+    expect(commands).toEqual([{ name: "build", command: "echo root", cwd: "/repo", stallDetection: DEFAULT_POLICY }]);
   });
 
   test("review B1: two root gate keys with the same command string are two gates", async () => {
@@ -172,8 +186,8 @@ describe("resolveGateCommands", () => {
     _qualityGateDeps.loadPackageOverride = async () => null;
 
     expect(await resolveGateCommands("/repo", [])).toEqual([
-      { name: "build", command: "tsc --noEmit", cwd: "/repo" },
-      { name: "typecheck", command: "tsc --noEmit", cwd: "/repo" },
+      { name: "build", command: "tsc --noEmit", cwd: "/repo", stallDetection: DEFAULT_POLICY },
+      { name: "typecheck", command: "tsc --noEmit", cwd: "/repo", stallDetection: DEFAULT_POLICY },
     ]);
   });
 
@@ -188,7 +202,9 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", ["pkg"]);
 
-    expect(commands).toEqual([{ name: "build@pkg", command: "bun run tsc", cwd: "/repo/pkg" }]);
+    expect(commands).toEqual([
+      { name: "build@pkg", command: "bun run tsc", cwd: "/repo/pkg", stallDetection: DEFAULT_POLICY },
+    ]);
   });
 
   test("review B1 residual: an overlay gate repeating a run the root already schedules is one run", async () => {
@@ -204,7 +220,9 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", ["."]);
 
-    expect(commands).toEqual([{ name: "build", command: "tsc --noEmit", cwd: "/repo" }]);
+    expect(commands).toEqual([
+      { name: "build", command: "tsc --noEmit", cwd: "/repo", stallDetection: DEFAULT_POLICY },
+    ]);
   });
 
   test("filters out the empty-string package dir -- the root package is the root run", async () => {
@@ -215,7 +233,7 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", [""]);
 
-    expect(commands).toEqual([{ name: "lint", command: "biome lint", cwd: "/repo" }]);
+    expect(commands).toEqual([{ name: "lint", command: "biome lint", cwd: "/repo", stallDetection: DEFAULT_POLICY }]);
   });
 
   test("a package that merely inherits root commands (no own quality.commands) is not fanned out", async () => {
@@ -224,7 +242,7 @@ describe("resolveGateCommands", () => {
 
     const commands = await resolveGateCommands("/repo", ["apps/inherits-only"]);
 
-    expect(commands).toEqual([{ name: "test", command: "bun test", cwd: "/repo" }]);
+    expect(commands).toEqual([{ name: "test", command: "bun test", cwd: "/repo", stallDetection: DEFAULT_POLICY }]);
   });
 
   test("orders root gates by GATE_ORDER, then each package's gates by GATE_ORDER, packages in order given", async () => {

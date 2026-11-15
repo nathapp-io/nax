@@ -9,6 +9,7 @@ import { resolveGateCommands } from "@/finish/gates/quality";
 import { resolveGateCwd } from "@/operations/gate-cwd";
 import { lintCheckOp } from "@/operations/lint-check";
 import { createPackageRegistry } from "@/runtime/packages";
+import { DEFAULT_GATE_STALL_POLICY } from "@/utils/gate-stall";
 
 describe("package profile registry integration", () => {
   let repo: string;
@@ -163,6 +164,11 @@ describe("package profile registry integration", () => {
 
   test("AC-17 finish resolves profile-only package lint command", async () => {
     const gates = await resolveGateCommands(repo, ["packages/api"]);
-    expect(gates).toContainEqual({ name: "lint@packages/api", command: "false", cwd: join(repo, "packages/api") });
+    expect(gates).toContainEqual({
+      name: "lint@packages/api",
+      command: "false",
+      cwd: join(repo, "packages/api"),
+      stallDetection: DEFAULT_GATE_STALL_POLICY,
+    });
   });
 });
