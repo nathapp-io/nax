@@ -138,7 +138,6 @@ export async function executeWithTimeout(
   // exit, wall deadline, repeated output and silence. The first observed while
   // the process is live wins; everything that arrives later is inert.
   const latch = createTerminalLatch();
-  const monitor = startStallMonitor(options?.stallDetection, latch);
 
   // nax-git-env-allow: not git: test command via /bin/sh
   const proc = _executorDeps.spawn([shell, "-c", command], {
@@ -159,12 +158,23 @@ export async function executeWithTimeout(
   // deadline still bounds the invocation.
   proc.exited.then((exitCode) => latch.settle({ kind: "exit", exitCode })).catch(() => {});
 
-  // Rule 07: both streams are read concurrently with the leader's exit (a
-  // sequential read deadlocks on >64KB), and every chunk reaches the detector as
-  // it arrives — so a repeated line stops a live process long before its wall
-  // deadline. The collector decodes independently of the detector: the captured
-  // text is never rewritten by detection.
-  const collectors = openCollectors(proc, monitor);
+  // The monitor arms a silence deadline the moment it is created, so it comes
+  // AFTER spawn (a spawn failure must not leave a timer or a callback behind)
+  // and it is disposed if stream setup throws before the latch can settle it.
+  let monitor: GateStallMonitor | undefined;
+  let collectors: OutputCollectors;
+  try {
+    monitor = startStallMonitor(options?.stallDetection, latch);
+    // Rule 07: both streams are read concurrently with the leader's exit (a
+    // sequential read deadlocks on >64KB), and every chunk reaches the detector
+    // as it arrives — so a repeated line stops a live process long before its
+    // wall deadline. The collector decodes independently of the detector: the
+    // captured text is never rewritten by detection.
+    collectors = openCollectors(proc, monitor);
+  } catch (error) {
+    monitor?.dispose();
+    throw error;
+  }
 
   const wallTimer = _executorDeps.setTimeout(() => latch.settle({ kind: "deadline" }), timeoutSeconds * 1000);
 

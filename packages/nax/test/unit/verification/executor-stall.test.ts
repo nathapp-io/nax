@@ -289,6 +289,40 @@ describe("executeWithTimeout — detector stops a live process", () => {
     expect(armed.filter((timer) => timer.ms === TIMEOUT_MS && timer.fired)).toEqual([]);
   });
 
+  // F1 (fix round 1) — a monitor armed before a failing spawn would keep its
+  // silence timer on the event loop and its callback retained after the caller
+  // sees the rejection.
+  test("F1: a spawn failure leaves no detector monitor or timer behind", async () => {
+    const failing = makeSpawn(() => {
+      throw new Error("spawn ENOENT");
+    });
+    _executorDeps.spawn = failing.spawn;
+
+    await expect(
+      executeWithTimeout("bun test", LONG_TIMEOUT_S, undefined, stallOptions({ silenceTimeoutSeconds: SILENCE_S })),
+    ).rejects.toThrow("spawn ENOENT");
+
+    // The silence deadline armed by the monitor is the leak: nothing disposed it.
+    expect(clock.pending()).toBe(0);
+    expect(monitorCalls).toBe(0);
+  });
+
+  // F1 (fix round 1) — the same leak through the other setup step: a stream that
+  // cannot be read throws after the monitor exists, so the catch must dispose it.
+  test("F1: a stream-setup failure disposes the monitor it already created", async () => {
+    const locked = liveStream("never read\n");
+    locked.getReader(); // locks the stream, so openCollectors' getReader() throws
+    stubSpawn({ stdout: locked, stderr: closedStream() });
+
+    await expect(
+      executeWithTimeout("bun test", LONG_TIMEOUT_S, undefined, stallOptions({ silenceTimeoutSeconds: SILENCE_S })),
+    ).rejects.toThrow();
+
+    // The monitor WAS created (setup got that far) and was then disposed.
+    expect(monitorCalls).toBe(1);
+    expect(clock.pending()).toBe(0);
+  });
+
   // AC-2, AC-3
   test("AC-2/AC-3: a repeated-output stop returns the raw timeout-lane result with its structured reason", async () => {
     stubSpawn({ stdout: liveStream("dup-line\n", "dup-line\n") });
