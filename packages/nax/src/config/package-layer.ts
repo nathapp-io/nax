@@ -27,6 +27,7 @@
  * This module must not import `loader.ts` — the loader imports it.
  */
 
+import { join } from "node:path";
 import { NaxError } from "../errors";
 import type { Logger } from "../logger";
 import { applyConfigCompatShims, type ConfigWarnDedupe } from "./compat-shims";
@@ -40,9 +41,56 @@ import {
   warnQualityCommandChains,
 } from "./config-guards";
 import { resolveEnvVars, UnresolvedEnvVarError } from "./dotenv";
+import { PROJECT_NAX_DIR } from "./paths";
 import { sensitiveFilteredProcessEnv } from "./profile";
 import { stripRemovedConfig } from "./removed-stage-names";
 import { type NaxConfig, NaxConfigSchema } from "./schema";
+import { SparseStallDetectionConfigSchema } from "./schemas-execution";
+
+/** The policy fields a package may declare, with no defaults applied. */
+export type DeclaredStallDetection = Partial<{
+  readonly repeatedLineThreshold: number;
+  readonly silenceTimeoutSeconds: number;
+}>;
+
+/**
+ * Read a package's DECLARED `quality.stallDetection`, validating it before any
+ * merge can normalize it (whole-branch review B3).
+ *
+ * `mergePackageConfig` completes a package's declared policy from the root and
+ * from the defaults, which is right for a field the package does not name — but
+ * it also turns an INVALID declaration into a valid one: a `null` field silently
+ * inherits the root value, and a primitive or malformed block becomes the default
+ * policy. The repository-gate resolver already rejects those declarations, so
+ * without this the same file was accepted by story/package execution and
+ * rejected by `nax gates run`.
+ *
+ * Validation is sparse on purpose (`SparseStallDetectionConfigSchema`): only the
+ * fields the overlay names are checked, absent ones stay absent for the
+ * field-wise merge, and an explicit `0` is a value rather than an absence.
+ *
+ * @param raw - The declared block, exactly as the package config carries it.
+ * @param packageDir - Package directory relative to the repo root, for messages.
+ * @returns The validated sparse policy, or `undefined` when nothing is declared.
+ * @throws NaxError `PER_PACKAGE_PROFILE_INVALID` when the declared block is not
+ *   an object or names an unsupported value.
+ */
+export function parseDeclaredStallDetection(raw: unknown, packageDir: string): DeclaredStallDetection | undefined {
+  if (raw === undefined) return undefined;
+  const result = SparseStallDetectionConfigSchema.safeParse(raw);
+  if (result.success) return result.data;
+  const reason = result.error.issues
+    .map((issue) => {
+      const path = issue.path.join(".");
+      return path === "" ? issue.message : `${path}: ${issue.message}`;
+    })
+    .join("; ");
+  throw new NaxError(
+    `Invalid quality.stallDetection for package "${packageDir}" in ${join(PROJECT_NAX_DIR, "mono", packageDir, "config.json")}: ${reason}`,
+    "PER_PACKAGE_PROFILE_INVALID",
+    { stage: "config", packageDir, field: "quality.stallDetection" },
+  );
+}
 
 /** Validate mode alone so unrelated undefined variables cannot hide a removed mode. */
 function rejectResolvedPipelineMode(config: Record<string, unknown>, source: string): void {
@@ -125,7 +173,21 @@ export function preparePackageLayer(
   // rejecting it.
   rejectLegacyRectificationKeys(shimmed);
   rejectDeadQualityFlags(shimmed);
+  // The declared gate-stall policy is validated BEFORE any merge completes it:
+  // `mergePackageConfig` fills an absent field from the root and from the leaf
+  // default, which would silently turn a malformed declaration (a `null` field,
+  // a primitive block) into a valid policy — while the repository-gate resolver
+  // rejects the same file. Both package-loading paths call this function, so
+  // both reject it here.
+  parseDeclaredStallDetection(declaredStallDetection(shimmed), packageDir);
   return stripRemovedConfig(shimmed, warnDedupe.warn);
+}
+
+/** The package's own `quality.stallDetection`, or `undefined` when it declares none. */
+function declaredStallDetection(config: Record<string, unknown>): unknown {
+  const quality = config.quality;
+  if (quality === null || typeof quality !== "object" || Array.isArray(quality)) return undefined;
+  return (quality as Record<string, unknown>).stallDetection;
 }
 
 /**

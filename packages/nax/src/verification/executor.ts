@@ -138,6 +138,10 @@ export async function executeWithTimeout(
   // exit, wall deadline, repeated output and silence. The first observed while
   // the process is live wins; everything that arrives later is inert.
   const latch = createTerminalLatch();
+  // Observed separately from the latch: an exit that arrives after a detector
+  // stop changes no outcome, but it does mean the leader's pid is no longer
+  // ours, which the cleanup lane must respect.
+  let leaderExited = false;
 
   // nax-git-env-allow: not git: test command via /bin/sh
   const proc = _executorDeps.spawn([shell, "-c", command], {
@@ -156,7 +160,12 @@ export async function executeWithTimeout(
   // Floating by design (mirrors src/quality/runner.ts): a rejected proc.exited
   // must not surface as an unhandled rejection, and it is not a stall — the wall
   // deadline still bounds the invocation.
-  proc.exited.then((exitCode) => latch.settle({ kind: "exit", exitCode })).catch(() => {});
+  proc.exited
+    .then((exitCode) => {
+      leaderExited = true;
+      latch.settle({ kind: "exit", exitCode });
+    })
+    .catch(() => {});
 
   // The monitor arms a silence deadline the moment it is created, so it comes
   // AFTER spawn (a spawn failure must not leave a timer or a callback behind)
@@ -199,7 +208,12 @@ export async function executeWithTimeout(
   // A detector stop takes the SAME lane as a wall deadline, and each invocation
   // enters it at most once: the latch has already settled, so no later stop or
   // deadline callback can start a second termination sequence.
-  await terminateProcessGroup({ pid: proc.pid, gracePeriodMs, exited: proc.exited });
+  await terminateProcessGroup({
+    pid: proc.pid,
+    gracePeriodMs,
+    exited: proc.exited,
+    hasLeaderExited: () => leaderExited,
+  });
   const drained = await drainOutputs(collectors, drainTimeoutMs);
   return stoppedResult({ terminal, pid: proc.pid, timeoutSeconds, drained });
 }
@@ -356,12 +370,17 @@ async function terminateProcessGroup(options: {
   readonly pid: number;
   readonly gracePeriodMs: number;
   readonly exited: Promise<number>;
+  /** Whether the caller has already observed the leader's exit. */
+  readonly hasLeaderExited: () => boolean;
 }): Promise<void> {
   const { pid, gracePeriodMs } = options;
-  let leaderExited = false;
+  let leaderExited = options.hasLeaderExited();
 
-  // Send SIGTERM to process group to kill children too
-  _executorDeps.killProcessGroup(pid, "SIGTERM");
+  // Send SIGTERM to process group to kill children too. The group kill may hit
+  // ESRCH when the group is already gone; falling back to the bare pid is only
+  // safe while the leader is still ours, because its pid may have been reused by
+  // an unrelated process once it has exited.
+  _executorDeps.killProcessGroup(pid, "SIGTERM", { singleProcessFallback: !leaderExited });
 
   // setTimeout (not Bun.sleep) because the timer must be cancellable: it is
   // cleared below when the group is already empty, and otherwise awaited, so it

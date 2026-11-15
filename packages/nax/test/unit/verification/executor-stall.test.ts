@@ -65,6 +65,21 @@ function stalledStream(): ReadableStream<Uint8Array> {
   });
 }
 
+/** A stream the test pushes into, so a chunk can be ordered against the leader's exit. */
+function pushableStream(): { stream: ReadableStream<Uint8Array>; push: (text: string) => void } {
+  const encoder = new TextEncoder();
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c;
+    },
+  });
+  return {
+    stream,
+    push: (text) => controller?.enqueue(encoder.encode(text)),
+  };
+}
+
 /** Stream that delivers `chunks` immediately and then stays open — a live child. */
 function liveStream(...chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -506,6 +521,37 @@ describe("executeWithTimeout — one process-group cleanup sequence", () => {
     expect(kills.filter((kill) => kill.signal === "SIGKILL")).toEqual([
       { pid: PID, signal: "SIGKILL", fallback: false },
     ]);
+  });
+
+  // Whole-branch review B1 — the stop-first / exit-before-cleanup ordering. The
+  // detector settles the latch and the leader's exit is observed before the
+  // cleanup lane resumes, so its bare pid may already belong to another process.
+  test("AC-11: the SIGTERM cannot fall back to the bare pid once the leader exit is observed", async () => {
+    groupAlive = false;
+    const controlled = pushableStream();
+    stubSpawn({ stdout: controlled.stream, stderr: stalledStream() });
+    const pending = executeWithTimeout(
+      "bun test",
+      LONG_TIMEOUT_S,
+      undefined,
+      stallOptions({ repeatedLineThreshold: 2 }),
+    );
+    await waitForSpawn();
+
+    // Repetition settles the latch first; the exit is resolved in the same turn,
+    // so it is observed before `terminateProcessGroup` runs.
+    controlled.push("dup-line\ndup-line\n");
+    manualExit.resolve(143);
+
+    await stepUntilSettled(pending);
+    const result = await pending;
+
+    expect(result.stopReason).toEqual({ kind: "repeated-output", stream: "stdout", count: 2, threshold: 2 });
+    // groupAlive is false, so only the group was signalled — never the reused pid.
+    expect(kills.filter((kill) => kill.signal === "SIGTERM")).toEqual([
+      { pid: PID, signal: "SIGTERM", fallback: false },
+    ]);
+    expect(kills.filter((kill) => kill.signal === "SIGKILL")).toEqual([]);
   });
 
   // AC-12

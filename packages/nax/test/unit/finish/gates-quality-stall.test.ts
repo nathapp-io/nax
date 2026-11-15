@@ -194,6 +194,10 @@ describe("resolveGateCommands — a package's DECLARED policy is validated (B4)"
   test.each([
     ["repeatedLineThreshold: 1", { repeatedLineThreshold: 1 }],
     ["silenceTimeoutSeconds: -7", { silenceTimeoutSeconds: -7 }],
+    // Whole-branch review B3: the same declarations the package loaders reject.
+    ["a null repeatedLineThreshold", { repeatedLineThreshold: null }],
+    ["a primitive block", 7],
+    ["a string block", "invalid"],
   ])("rejects a schema-invalid %s with a configuration error", async (_label, raw) => {
     _qualityGateDeps.loadConfig = async () => configWithStall({}, ROOT_POLICY);
     _qualityGateDeps.loadPackageOverride = async () => overlayWithPolicy({ test: "pkg test" }, raw);

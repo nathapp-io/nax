@@ -468,6 +468,97 @@ describe("createGateStallMonitor — lifecycle", () => {
   });
 });
 
+describe("createGateStallMonitor — a silence deadline beyond the timer range", () => {
+  // Whole-branch review B2: Bun (like Node) substitutes ~1 ms and warns for a
+  // delay above 2^31-1 ms, so a supported multi-week silence threshold used to
+  // stop a gate immediately. Every armed delay must stay in range while the
+  // slices still add up to the configured deadline.
+  const MAX_DELAY_MS = 2_147_483_647;
+  /** 3,000,000 s — a supported value, and well past the single-timer range. */
+  const LONG_SECONDS = 3_000_000;
+
+  /** The monitor with its timer delays recorded, so an overflow is observable. */
+  function recordingHarness(policy: Partial<GateStallPolicy>) {
+    const clock = makeFakeClock();
+    const stops: GateStopReason[] = [];
+    const delays: number[] = [];
+    const monitor = createGateStallMonitor({
+      policy: { ...DEFAULT_GATE_STALL_POLICY, ...policy },
+      onStop: (reason) => stops.push(reason),
+      setTimeout: (fn, ms) => {
+        delays.push(ms);
+        return clock.setTimeout(fn, ms);
+      },
+      clearTimeout: (handle) => {
+        if (typeof handle === "number") clock.clearTimeout(handle);
+      },
+    });
+    return { clock, monitor, stops, delays };
+  }
+
+  test("arms every slice inside the timer range instead of stopping at 1 ms", async () => {
+    const { clock, monitor, stops, delays } = recordingHarness(SILENCE(LONG_SECONDS));
+
+    expect(delays).toHaveLength(1);
+    expect(delays[0]).toBeLessThanOrEqual(MAX_DELAY_MS);
+
+    // Bun's overflow substitution would fire the deadline on the next millisecond.
+    await clock.advance(1);
+    expect(stops).toEqual([]);
+
+    // The slices add up to the configured deadline: silent one millisecond before it…
+    await clock.advance(LONG_SECONDS * 1_000 - 2);
+    expect(stops).toEqual([]);
+    // …and stopped at it.
+    await clock.advance(1);
+    expect(stops).toEqual([{ kind: "silence", silenceTimeoutSeconds: LONG_SECONDS }]);
+    expect(delays.every((ms) => ms > 0 && ms <= MAX_DELAY_MS)).toBe(true);
+    monitor.dispose();
+  });
+
+  test("a deadline exactly at the boundary stays one timer", async () => {
+    // 2,147,483 s is the largest whole-second deadline that fits 2^31-1 ms.
+    const atBoundary = recordingHarness(SILENCE(2_147_483));
+    expect(atBoundary.delays).toEqual([2_147_483_000]);
+    atBoundary.monitor.dispose();
+
+    const pastBoundary = recordingHarness(SILENCE(2_147_484));
+    expect(pastBoundary.delays).toEqual([MAX_DELAY_MS]);
+    pastBoundary.monitor.dispose();
+  });
+
+  test("a chunk restarts the whole sliced deadline from the configured value", async () => {
+    const { clock, monitor, stops, delays } = recordingHarness(SILENCE(LONG_SECONDS));
+
+    await clock.advance(MAX_DELAY_MS - 1_000);
+    monitor.observe("stdout", bytes("still working\n"));
+    // Reset: the remainder of the first slice is discarded and the full deadline
+    // is armed again, still in range.
+    expect(delays).toHaveLength(2);
+    expect(delays[1]).toBeLessThanOrEqual(MAX_DELAY_MS);
+
+    // The pre-reset deadline would have passed if the chain had not restarted:
+    // one millisecond before the full span counted from the reset, still silent…
+    await clock.advance(LONG_SECONDS * 1_000 - 1);
+    expect(stops).toEqual([]);
+    // …and stopped at it.
+    await clock.advance(1);
+    expect(stops).toEqual([{ kind: "silence", silenceTimeoutSeconds: LONG_SECONDS }]);
+    expect(delays.every((ms) => ms > 0 && ms <= MAX_DELAY_MS)).toBe(true);
+    monitor.dispose();
+  });
+
+  test("dispose cancels the pending slice of a sliced deadline", async () => {
+    const { clock, monitor, stops } = recordingHarness(SILENCE(LONG_SECONDS));
+
+    monitor.dispose();
+    expect(clock.pending()).toBe(0);
+
+    await clock.advance(LONG_SECONDS * 1_000);
+    expect(stops).toEqual([]);
+  });
+});
+
 describe("resolveStallDetection", () => {
   test("fills an absent field from DEFAULT_GATE_STALL_POLICY", () => {
     // AC-21

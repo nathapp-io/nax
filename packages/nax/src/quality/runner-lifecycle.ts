@@ -100,7 +100,11 @@ export async function stopProcessGroup(
   const { pid, gracePeriodMs } = options;
   let leaderExited = options.hasLeaderExited();
 
-  deps.killProcessGroup(pid, "SIGTERM");
+  // The bare-pid fallback is only safe while the leader is still ours. Once its
+  // exit has been observed its pid may already belong to an unrelated process,
+  // and an ESRCH on the group would then signal that stranger — so the SIGTERM
+  // carries the same restriction the SIGKILL and the group probe already do.
+  deps.killProcessGroup(pid, "SIGTERM", { singleProcessFallback: !leaderExited });
 
   // setTimeout, not Bun.sleep: the grace timer must be cancellable, and it never
   // outlives this function — cleared below for an empty group, awaited otherwise.

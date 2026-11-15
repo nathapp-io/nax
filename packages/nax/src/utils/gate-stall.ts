@@ -33,7 +33,9 @@
  *    next byte proves it was not the first half of a CRLF.
  *  - Every nonempty chunk on either stream restarts the silence deadline.
  *    Empty chunks and EOF do not. Silence is measured from monitor creation,
- *    which is spawn time.
+ *    which is spawn time. A deadline beyond the runtime's single-timer range is
+ *    armed in slices that add up to it, so a large supported value waits the
+ *    configured time instead of firing at once.
  *
  * Both detectors are disabled by their zero values, and `onStop` fires at most
  * once per monitor.
@@ -74,6 +76,16 @@ export interface GateStallMonitor {
 const LINE_CAP = 16_384;
 
 const MS_PER_SECOND = 1_000;
+
+/**
+ * The largest delay a single `setTimeout` accepts (2^31-1 ms, as in Bun and
+ * Node). A larger delay is not honoured: the runtime emits a
+ * `TimeoutOverflowWarning` and substitutes ~1 ms, so a supported multi-week
+ * silence threshold would stop a gate immediately instead of never. Long
+ * silences are therefore armed in slices of at most this, and the slices add up
+ * to the configured deadline.
+ */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 type StreamName = "stdout" | "stderr";
 
@@ -117,10 +129,29 @@ export function createGateStallMonitor(options: {
   function armSilence(): void {
     clearSilence();
     if (disposed || stopped || silenceSeconds <= 0) return;
+    const totalMs = silenceSeconds * MS_PER_SECOND;
+    // A programmatic non-finite value cannot be scheduled; the schema rejects it.
+    if (!Number.isFinite(totalMs)) return;
+    armSilenceSlice(totalMs);
+  }
+
+  /**
+   * Arm the next slice of the remaining silence. A deadline beyond
+   * MAX_TIMER_DELAY_MS cannot be one timer — the runtime would fire it at ~1 ms —
+   * so it is re-armed for the remainder each time a slice elapses. The slices
+   * always sum to the configured deadline, and the pending handle stays the one
+   * `clearSilence` disarms, so a reset or disposal cancels the whole chain.
+   */
+  function armSilenceSlice(remainingMs: number): void {
+    const sliceMs = Math.min(remainingMs, MAX_TIMER_DELAY_MS);
     silenceHandle = armTimer(() => {
       silenceHandle = null;
+      if (remainingMs > sliceMs) {
+        armSilenceSlice(remainingMs - sliceMs);
+        return;
+      }
       emit({ kind: "silence", silenceTimeoutSeconds: silenceSeconds });
-    }, silenceSeconds * MS_PER_SECOND);
+    }, sliceMs);
   }
 
   const lines = createLineTracker({

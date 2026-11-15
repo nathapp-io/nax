@@ -424,9 +424,9 @@ describe("runQualityCommand — group escalation after a detector stop (AC-8)", 
     const result = await settle(run({ stallDetection: { repeatedLineThreshold: 2 } }));
 
     expect(result.stopReason).toMatchObject({ kind: "repeated-output" });
-    expect(kills.filter((call) => call.signal === "SIGTERM")).toEqual([
-      { pid: FAKE_PID, signal: "SIGTERM", singleProcessFallback: undefined },
-    ]);
+    // Signalled while the leader was live, so the bare-pid fallback stays available.
+    const sigterm = kills.filter((call) => call.signal === "SIGTERM");
+    expect(sigterm).toEqual([{ pid: FAKE_PID, signal: "SIGTERM", singleProcessFallback: true }]);
     expect(kills.filter((call) => call.signal === "SIGKILL")).toEqual([
       { pid: FAKE_PID, signal: "SIGKILL", singleProcessFallback: false },
     ]);
