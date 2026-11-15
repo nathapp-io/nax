@@ -3,7 +3,7 @@
   "feature": "chat-workflow-flow",
   "branchName": "feat/chat-workflow-flow",
   "createdAt": "2026-11-15T14:53:59.039Z",
-  "updatedAt": "2026-11-15T15:25:25.050Z",
+  "updatedAt": "2026-11-15T15:39:48.370Z",
   "userStories": [
     {
       "id": "US-001",
@@ -89,14 +89,17 @@
         "bugfix"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Five existing source modules need standard optional-model dispatch, catalog-first fallback and index/metadata updates, with no new abstraction; strict three-session isolation remains mandatory for the nested-session dispatch path."
+        "reasoning": "Five existing source modules need standard optional-model dispatch, catalog-first fallback and index/metadata updates, with no new abstraction; strict three-session isolation remains mandatory for the nested-session dispatch path.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/agents-provider.ts",
@@ -123,7 +126,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "af142b65a519cf1071895bb0992b26fdd06c5238"
     },
     {
       "id": "US-003",
