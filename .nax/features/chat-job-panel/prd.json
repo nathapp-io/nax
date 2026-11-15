@@ -3,7 +3,7 @@
   "feature": "chat-job-panel",
   "branchName": "feat/chat-job-panel",
   "createdAt": "2026-11-15T15:06:37.254Z",
-  "updatedAt": "2026-11-15T18:07:34.899Z",
+  "updatedAt": "2026-11-15T18:23:06.441Z",
   "userStories": [
     {
       "id": "US-001",
@@ -393,14 +393,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Standard additive schema/default/type and option wiring, but native session/token configuration invokes the strict session/token TDD override and must preserve subagent and execution policy."
+        "reasoning": "Standard additive schema/default/type and option wiring, but native session/token configuration invokes the strict session/token TDD override and must preserve subagent and execution policy.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/open-chat-session.ts",
@@ -425,7 +428,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "354f6d2ae0d9cfa280b57e2f3e6d83073d79883c"
     },
     {
       "id": "US-007",
