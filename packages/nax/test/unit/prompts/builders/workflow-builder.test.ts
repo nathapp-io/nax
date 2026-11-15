@@ -65,8 +65,29 @@ describe("buildWorkflowInstructions", () => {
     expect(buildWorkflowInstructions()).toContain("--prd");
   });
 
-  test("AC-4 caps spec-review fix rounds at two", () => {
-    expect(buildWorkflowInstructions()).toContain("at most two");
+  test("AC-4 names two spec-review fix rounds as the usual budget", () => {
+    expect(buildWorkflowInstructions()).toContain("spec-review (usually two fix rounds)");
+  });
+
+  test("#2929 never states the spec-review fix rounds as a hard cap", () => {
+    const specReviewLines = lines(buildWorkflowInstructions()).filter((line) => line.includes("spec-review"));
+    expect(specReviewLines.length).toBeGreaterThan(0);
+    for (const line of specReviewLines) {
+      expect({ line, capped: /at most|no more than|maximum|\bcap\b/i.test(line) }).toEqual({ line, capped: false });
+    }
+  });
+
+  test("#2929 the user's instruction to continue is the go-ahead past two rounds, for spec rounds only", () => {
+    const budgetLine = lines(buildWorkflowInstructions()).find((line) => line.includes("default budget")) ?? "";
+    expect(budgetLine).toContain("not a limit");
+    expect(budgetLine).toContain("a user instruction to continue");
+    expect(budgetLine).toContain("never for `nax plan`");
+  });
+
+  test("#2929 applying spec fixes stays with the agent; the user rules only on findings it cannot settle", () => {
+    const text = buildWorkflowInstructions();
+    expect(text).toContain("Applying spec fixes is your work");
+    expect(text).toContain("the user rules only on findings you cannot settle");
   });
 
   test("AC-5 says a billed launch starts only on the user's explicit approval", () => {
@@ -196,11 +217,12 @@ describe("buildJobsInstructions", () => {
 });
 
 describe("workflow text preservation", () => {
-  test("US-004 AC-11 retains the four original lines then the repo line", () => {
+  test("US-004 AC-11 retains the original lines, the fix-budget line (#2929), then the repo line", () => {
     expect(buildWorkflowInstructions()).toBe(
       [
         "Call `nax-workflow__state` before proposing any workflow step, and call it again after any workflow step ends, so what you propose matches the feature's real state.",
-        "The nax loop runs in this order: brainstorm → spec-writing → spec-review (at most two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.",
+        "The nax loop runs in this order: brainstorm → spec-writing → spec-review (usually two fix rounds) → `nax plan` → PRD fidelity check (spec-review `--prd`) → commit the spec and PRD → `nax run` → `nax bot review` / `nax bot fix` → the user merges → the user releases.",
+        'Two spec-review fix rounds are the default budget, not a limit: past two, another round needs the user\'s go-ahead, and a user instruction to continue (including an earlier one such as "until clean") is that go-ahead, for spec rounds only and never for `nax plan`. Applying spec fixes is your work; the user rules only on findings you cannot settle, never on edits.',
         "`nax plan`, `nax run`, `nax bot review` and `nax bot fix` are billed: never start one without the user's explicit approval of that launch.",
         "nax never merges a PR and never releases; the user merges the PR and the user releases.",
         "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
