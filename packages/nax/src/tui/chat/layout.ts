@@ -34,6 +34,7 @@
 import { attachmentLines } from "./layout-attachment";
 import { backgroundLines } from "./layout-background";
 import { imageLines } from "./layout-image";
+import { jobPanelLines } from "./layout-job";
 import {
   cardIndent,
   cardRows,
@@ -298,6 +299,8 @@ function layoutEntry(entry: TranscriptEntry, context: LayoutContext): readonly S
       return interruptedLines(context);
     case "turn-stats":
       return turnStatsLines(entry, context);
+    case "job":
+      return jobPanelLines(entry, context);
   }
 }
 

@@ -57,6 +57,9 @@ export interface ChatGlyphs {
   readonly thinking: string;
   /** The marker the terminal title takes while a turn runs (US-008). */
   readonly busy: string;
+  /** A filled cell of the job panel's progress bar; `progressEmpty` is a cell still to pass. */
+  readonly progressFull: string;
+  readonly progressEmpty: string;
   readonly ellipsis: string;
   readonly rule: string;
   readonly codeTop: string;
@@ -169,6 +172,8 @@ const UNICODE_GLYPHS: ChatGlyphs = {
   error: "✗",
   thinking: "✻",
   busy: "✳",
+  progressFull: "█",
+  progressEmpty: "░",
   ellipsis: "…",
   rule: "─",
   codeTop: "┌",
@@ -201,6 +206,8 @@ const ASCII_GLYPHS: ChatGlyphs = {
   error: "x",
   thinking: "*",
   busy: "*",
+  progressFull: "#",
+  progressEmpty: ".",
   ellipsis: "...",
   rule: "-",
   codeTop: "+",
