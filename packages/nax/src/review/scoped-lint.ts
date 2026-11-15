@@ -11,6 +11,7 @@ import { getSafeLogger } from "../logger";
 import { getContextFiles, type UserStory } from "../prd";
 import { type QualityCommandResult, runQualityCommand } from "../quality";
 import { findPackageDir } from "../test-runners/resolver";
+import type { GateStallPolicy } from "../utils/gate-stall";
 import { gitWithTimeout } from "../utils/git";
 import type { NaxIgnoreIndex } from "../utils/path-filters";
 import type { LintOutputFormat } from "./lint-parsing";
@@ -38,6 +39,12 @@ interface ScopedLintArgs {
   stripEnvVars?: string[];
   naxIgnoreIndex?: NaxIgnoreIndex;
   scope?: AutofixLintScope;
+  /**
+   * The stall policy every lint command this module runs carries (US-008). One
+   * value for all four arms — template, derived, full-lint and degraded — so the
+   * arm a scope happens to resolve to cannot change how the command is observed.
+   */
+  stallDetection?: Partial<GateStallPolicy>;
 }
 
 interface ScopeResult {
@@ -204,14 +211,16 @@ async function runLintCommand(
   env: Record<string, string | undefined> | undefined,
   command: QualityCommandSpec,
   stripEnvVars?: string[],
+  stallDetection?: Partial<GateStallPolicy>,
 ): Promise<QualityCommandResult> {
-  return runQualityCommand({
+  return _scopedLintDeps.runQualityCommand({
     commandName: SCOPED_LINT_CHECK,
     command,
     workdir,
     storyId,
     env,
     stripEnvVars,
+    stallDetection,
   });
 }
 
@@ -269,6 +278,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
         args.env,
         fullLintCommand,
         args.stripEnvVars,
+        args.stallDetection,
       );
       return withLintScope(
         attachLintFindings(toReviewCheck(fullResult), args.lintOutputFormat, args.workdir),
@@ -306,6 +316,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
       args.env,
       scopedCommand,
       args.stripEnvVars,
+      args.stallDetection,
     );
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
@@ -318,6 +329,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
       args.env,
       scopedCommand,
       args.stripEnvVars,
+      args.stallDetection,
     );
     return withLintScope(attachLintFindings(toReviewCheck(scopedResult), args.lintOutputFormat, args.workdir), scope);
   }
@@ -333,6 +345,7 @@ export async function runScopedLintCheck(args: ScopedLintArgs): Promise<ReviewCh
     args.env,
     fullLintCommand,
     args.stripEnvVars,
+    args.stallDetection,
   );
   if (fullResult.exitCode === 0) return withLintScope(toReviewCheck(fullResult), scope, "degraded");
 
@@ -386,5 +399,11 @@ export const _scopedLintDeps = {
   listChangedFiles,
   findPackageDir,
   runLintCommand,
+  /**
+   * What `runLintCommand` delegates to — a plain delegation, like
+   * `_qualityGateDeps.run`, so a test can keep the real helper and observe the
+   * options (the stall policy included) that reach command execution.
+   */
+  runQualityCommand,
   fileExists: (path: string): Promise<boolean> => Bun.file(path).exists(),
 };

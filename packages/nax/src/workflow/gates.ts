@@ -6,6 +6,7 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { Finding } from "@/findings";
 import {
+  earlyStopEvidence,
   type FullSuiteGateOutput,
   fullSuiteGateOp,
   type LintCheckOutput,
@@ -40,11 +41,19 @@ const SUITE_SKIPPED = new Set(["skipped"]);
  */
 function stoppedSuiteIssue(stopReason: GateStopReason | undefined): string {
   if (stopReason === undefined) return SUITE_TIMED_OUT_ISSUE;
-  const evidence =
-    stopReason.kind === "repeated-output"
-      ? `${stopReason.stream} repeated the same line ${stopReason.count} times (threshold ${stopReason.threshold})`
-      : `no output for ${stopReason.silenceTimeoutSeconds}s`;
-  return `${SUITE_TIMED_OUT_ISSUE} It was stopped early: ${evidence}.`;
+  return `${SUITE_TIMED_OUT_ISSUE} It was stopped early: ${earlyStopEvidence(stopReason)}.`;
+}
+
+/**
+ * The issue for a mechanical (lint/typecheck) gate that never finished (US-008).
+ * A command the detector stopped, or whose wall deadline expired, produced no
+ * verdict: the parser only ever saw a partial stream, so the gate says why it
+ * ended rather than leaving that silence to read as the whole story.
+ */
+function interruptedCheckIssue(gate: GateName, stopReason: GateStopReason | undefined): string {
+  if (stopReason === undefined)
+    return `${gate} hit its timeout before finishing: a command that never completed proves nothing.`;
+  return `${gate} was stopped early: ${earlyStopEvidence(stopReason)}. The command never completed, so its partial output proves nothing.`;
 }
 
 interface OneGate {
@@ -88,9 +97,21 @@ async function guarded(sc: StepContext, gate: GateName, run: () => Promise<OneGa
 
 function fromCheck(gate: GateName, out: LintCheckOutput | TypecheckCheckOutput): OneGate {
   if (out.success) return { state: out.status === "skipped" ? "skipped" : "green", findings: [] };
-  return out.findings.length > 0
-    ? { state: "red", findings: toDrafts(gate, out.findings) }
-    : redWithoutDetail(gate, `${gate} gate failed with no parsed findings`);
+  const base: OneGate =
+    out.findings.length > 0
+      ? { state: "red", findings: toDrafts(gate, out.findings) }
+      : redWithoutDetail(gate, `${gate} gate failed with no parsed findings`);
+  // A command that never finished (a detector stop, or the wall deadline) is not a
+  // verdict on the code: say why it ended, ahead of whatever the partial stream parsed.
+  if (out.timedOut !== true) return base;
+  return {
+    ...base,
+    timedOut: true,
+    findings: [
+      { kind: "gate", gate, severity: "important", issue: interruptedCheckIssue(gate, out.stopReason) },
+      ...base.findings,
+    ],
+  };
 }
 
 function combine(entries: readonly (readonly [GateName, OneGate])[]): GateRunResult {

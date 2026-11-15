@@ -10,6 +10,7 @@ import { parseTypecheckOutput } from "../review/typecheck-parsing";
 import type { TypecheckOutputFormat, TypecheckParseResult } from "../review/typecheck-parsing/types";
 import { appendScratchEntry } from "../session/scratch-writer";
 import { resolveGateCwd } from "./gate-cwd";
+import { type CheckInterruption, interruptionEvidence, interruptionNote } from "./gate-interruption";
 import { GATE_OUTPUT_TAIL_LINES, gateOutputTail } from "./gate-output-tail";
 import type { CallContext, DeterministicOperation } from "./types";
 
@@ -25,7 +26,7 @@ export interface TypecheckCheckInput {
   readonly sessionScratchDir?: string;
 }
 
-export interface TypecheckCheckOutput {
+export interface TypecheckCheckOutput extends CheckInterruption {
   readonly success: boolean;
   readonly status?: "passed" | "skipped";
   readonly findings: Finding[];
@@ -138,6 +139,9 @@ export const typecheckCheckOp: DeterministicOperation<
       workdir: cmdWorkdir,
       storyId: input.storyId,
       stripEnvVars: quality?.stripEnvVars ?? [],
+      // Resolved AFTER provenance, so a manifest-detected command runs under the
+      // same policy the package view resolved for the package it belongs to.
+      stallDetection: quality?.stallDetection,
     });
 
     if (result.exitCode === 0) {
@@ -168,13 +172,15 @@ export const typecheckCheckOp: DeterministicOperation<
       // command that was auto-detected above has no key and naming one would
       // send the model into `unknown command "typecheck"`. The shell string
       // stays for the ACP transport, which has no RunCommand at all.
-      message: `typecheck failed (no structured findings parsed), please re-run the typecheck: ${
+      message: `typecheck ${
+        result.timedOut ? `was interrupted (${interruptionNote(result)})` : "failed (no structured findings parsed)"
+      }, please re-run the typecheck: ${
         detectedFromPackage
           ? `\`${command}\``
           : `RunCommand {"command": "typecheck"} if that tool is available to you, otherwise \`${command}\``
       }${tail ? `\n\nOutput (last ${GATE_OUTPUT_TAIL_LINES} lines):\n${tail}` : ""}`,
     };
     const findings = parsedFindings.length > 0 ? parsedFindings : [sentinel];
-    return { success: false, findings, durationMs: Date.now() - start };
+    return { success: false, findings, durationMs: Date.now() - start, ...interruptionEvidence(result) };
   },
 };

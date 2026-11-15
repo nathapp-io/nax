@@ -12,6 +12,7 @@ import type { Iteration } from "@/findings";
 import { getSafeLogger } from "@/logger";
 import type { UserStory } from "@/prd";
 import { runQualityCommand } from "@/quality";
+import { type GateStallPolicy, resolveStallDetection } from "@/utils/gate-stall";
 import { autoCommitIfDirty, gitWithTimeout } from "@/utils/git";
 import type { NaxIgnoreIndex } from "@/utils/path-filters";
 import { resolveLanguageCommand } from "../language-commands";
@@ -60,6 +61,12 @@ export const _reviewLintDeps = {
 export const _reviewRunnerDeps = {
   file: Bun.file as (path: string) => Pick<BunFile, "text">,
   which: Bun.which as (command: string) => string | null,
+  /**
+   * The quality runner every non-scoped mechanical check goes through. A plain
+   * delegation, so a test can keep the real `runCheck` and read the options —
+   * including the stall policy (US-008) — that reach command execution.
+   */
+  runQualityCommand,
 };
 
 /**
@@ -167,8 +174,17 @@ async function runCheck(
   storyId?: string,
   env?: Record<string, string | undefined>,
   stripEnvVars?: string[],
+  stallDetection?: Partial<GateStallPolicy>,
 ): Promise<ReviewCheckResult> {
-  const result = await runQualityCommand({ commandName: check, command, workdir, storyId, env, stripEnvVars });
+  const result = await _reviewRunnerDeps.runQualityCommand({
+    commandName: check,
+    command,
+    workdir,
+    storyId,
+    env,
+    stripEnvVars,
+    stallDetection,
+  });
   return {
     check,
     command: result.command,
@@ -320,6 +336,12 @@ async function runMechanicalCheck(
     return null;
   }
 
+  // US-008: every mechanical check runs under the config's resolved stall policy.
+  // An absent `naxConfig` (a caller with only the review slice) completes the
+  // policy from the schema defaults — never `undefined`, which would silently
+  // disable both detectors.
+  const stallDetection = resolveStallDetection(naxConfig?.quality?.stallDetection);
+
   // Run the check
   return checkName === "lint"
     ? await _reviewLintDeps.runScopedLintCheck({
@@ -335,10 +357,19 @@ async function runMechanicalCheck(
         env,
         stripEnvVars: naxConfig?.quality?.stripEnvVars ?? [],
         naxIgnoreIndex,
+        stallDetection,
       })
     : normalizeMechanicalFindings(
         checkName,
-        await runCheck(checkName, command, workdir, storyId, env, naxConfig?.quality?.stripEnvVars ?? []),
+        await runCheck(
+          checkName,
+          command,
+          workdir,
+          storyId,
+          env,
+          naxConfig?.quality?.stripEnvVars ?? [],
+          stallDetection,
+        ),
         workdir,
       );
 }

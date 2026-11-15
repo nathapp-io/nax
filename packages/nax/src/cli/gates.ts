@@ -27,6 +27,7 @@ import { errorMessage, realOrRaw } from "@nathapp/nax-agent/internal";
 import type { Command } from "commander";
 import { findProjectDir, globalConfigDir, PROJECT_NAX_DIR } from "@/config";
 import { NaxError } from "@/errors";
+import { stopEvidence } from "@/quality";
 import { ensureProjectTrusted, normalizeTrustPath } from "@/trust";
 import {
   DEFAULT_GATE_TAIL_LINES,
@@ -38,6 +39,7 @@ import {
   resolveGateCommands,
   runQualityGates,
 } from "../finish/gates/quality";
+import type { GateStopReason } from "../utils/gate-stall";
 
 export interface GatesCliDeps {
   log: (msg: string) => void;
@@ -93,6 +95,13 @@ export interface GateReportEntry {
   readonly exitCode: number;
   readonly durationMs: number;
   readonly failedPhase?: "setup";
+  /**
+   * Present only when a detector stopped this gate's run (US-008) — the
+   * structured evidence behind a "timed-out" status, which otherwise cannot be
+   * told apart from a wall-clock deadline. Absent on every other path, and it
+   * never carries raw output.
+   */
+  readonly stopReason?: GateStopReason;
   /** `gateOutputTail(record.output)`; absent for a "passed" gate. */
   readonly outputTail?: string;
 }
@@ -200,6 +209,8 @@ function entryFor(record: GateRunRecord): GateReportEntry {
     exitCode: record.exitCode,
     durationMs: record.durationMs,
     ...(record.failedPhase === undefined ? {} : { failedPhase: record.failedPhase }),
+    // Only a detector stop writes the key; a wall deadline has no reason to give.
+    ...(record.stopReason === undefined ? {} : { stopReason: record.stopReason }),
     ...(record.status === "passed" ? {} : { outputTail: gateOutputTail(record.output) }),
   };
 }
@@ -228,7 +239,8 @@ function formatDuration(durationMs: number): string {
 /**
  * `<status> <name> <exit=n> <duration> <note> <setup failed>`, aligned in
  * columns. `exit=` is meaningless for a timeout (the killed process reports -1)
- * and redundant for a pass, so both omit it.
+ * and redundant for a pass, so both omit it. A detector stop names its evidence
+ * on the line, because "timed-out" alone cannot tell a stall from a deadline.
  */
 function gateLine(entry: GateReportEntry): string {
   const showsExit = entry.status !== "passed" && entry.status !== "timed-out";
@@ -237,6 +249,7 @@ function gateLine(entry: GateReportEntry): string {
     entry.name.padEnd(NAME_COLUMN),
     (showsExit ? `exit=${entry.exitCode}` : "").padEnd(EXIT_COLUMN),
     formatDuration(entry.durationMs),
+    entry.stopReason === undefined ? "" : `  stopped early: ${stopEvidence(entry.stopReason)}`,
     entry.status === "not-run" ? `  ${NOT_RUN_NOTE}` : "",
     entry.failedPhase === "setup" ? "  (setup failed)" : "",
   ].join(" ");

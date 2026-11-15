@@ -7,6 +7,7 @@ import { DEFAULT_GATE_TIMEOUT_MS, GATE_ORDER, resolveGateCommands } from "@/fini
 import { getSafeLogger } from "@/logger";
 import type { BotChecksExtractOutput } from "@/operations/bot-checks-extract";
 import type { QualityCommandSpec } from "@/quality";
+import { type GateStallPolicy, resolveStallDetection } from "@/utils/gate-stall";
 import { botGit } from "./git";
 
 export type BotCheckSource = "config" | "agents-md" | "claude-md" | "detected" | "none";
@@ -14,6 +15,12 @@ export interface BotCheck {
   readonly name: string;
   readonly command: QualityCommandSpec;
   readonly setup?: QualityCommandSpec;
+  /**
+   * The stall policy this gate runs under (US-008). Optional so a hand-built
+   * literal stays valid; an absent value falls back to `DEFAULT_GATE_STALL_POLICY`
+   * at the quality gate runner, never to a re-read of the fixed tree.
+   */
+  readonly stallDetection?: GateStallPolicy;
 }
 export interface BotChecks {
   readonly source: BotCheckSource;
@@ -89,6 +96,16 @@ function selectPreRun(input: ResolveBotChecksInput, install?: string): readonly 
   return install ? [{ command: install, timeoutSeconds: DERIVED_INSTALL_TIMEOUT_SECONDS }] : [];
 }
 
+/**
+ * The policy a gate derived from the trusted snapshot input runs under: the
+ * input config's own `quality.stallDetection`, completed from the schema
+ * defaults when unset. Never a threshold the extraction inferred, and never a
+ * read of the fixed tree.
+ */
+function trustedPolicy(input: ResolveBotChecksInput): GateStallPolicy {
+  return resolveStallDetection(input.config.quality?.stallDetection);
+}
+
 async function configChecks(input: ResolveBotChecksInput): Promise<BotChecks | null> {
   if (!input.hasBaseNax) return null;
   try {
@@ -96,7 +113,15 @@ async function configChecks(input: ResolveBotChecksInput): Promise<BotChecks | n
     if (!gates.length) return null;
     return {
       source: "config",
-      gates: gates.map(({ name, command, setup }) => ({ name, command, ...(setup === undefined ? {} : { setup }) })),
+      gates: gates.map(({ name, command, setup, stallDetection }) => ({
+        name,
+        command,
+        ...(setup === undefined ? {} : { setup }),
+        // Kept as resolved: a gate the snapshot's own config produced already
+        // carries the policy that config gave it, and re-deriving it here would
+        // substitute the input config's.
+        ...(stallDetection === undefined ? {} : { stallDetection }),
+      })),
       preRun: selectPreRun(input),
     };
   } catch (cause) {
@@ -129,8 +154,11 @@ async function instructionChecks(input: ResolveBotChecksInput): Promise<BotCheck
       });
       return null;
     }
+    const policy = trustedPolicy(input);
     const gates = GATE_ORDER.flatMap((name) =>
-      extracted.gates.filter((entry) => entry.gate === name).map(({ command }) => ({ name, command })),
+      extracted.gates
+        .filter((entry) => entry.gate === name)
+        .map(({ command }) => ({ name, command, stallDetection: policy })),
     );
     if (!gates.length) return null;
     return {
@@ -185,7 +213,8 @@ async function detectedChecks(input: ResolveBotChecksInput): Promise<BotChecks |
     const manifest: unknown = JSON.parse(text);
     if (!isRecord(manifest) || !isRecord(manifest.scripts)) return null;
     const { prefix, install } = await lockfileCommands(input);
-    const gates = scriptGates(manifest.scripts, prefix);
+    const policy = trustedPolicy(input);
+    const gates = scriptGates(manifest.scripts, prefix).map((gate) => ({ ...gate, stallDetection: policy }));
     return gates.length ? { source: "detected", gates, preRun: selectPreRun(input, install) } : null;
   } catch (cause) {
     getSafeLogger()?.warn("bot", "Skipping base detected checks", {

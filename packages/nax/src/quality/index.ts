@@ -27,6 +27,8 @@ export { DEFAULT_FULL_SUITE_TIMEOUT_SECONDS, resolveFullSuiteTimeoutSeconds } fr
 export { qualityLogsAreQuiet, runQualityQuietly } from "./log-scope";
 export type { QualityCommandOptions, QualityCommandResult } from "./runner";
 export { runQualityCommand } from "./runner";
+/** The detector evidence in words — the same text a stopped run reports (US-008). */
+export { stopEvidence } from "./runner-lifecycle";
 export type {
   PreExistingFailure,
   SelfVerificationResult,

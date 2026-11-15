@@ -6,6 +6,7 @@ import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
 import { _reviewGitDeps } from "@/review/runner";
 import { _scopedLintDeps, runScopedLintCheck } from "@/review/scoped-lint";
 import type { ReviewConfig } from "@/review/types";
+import { DEFAULT_GATE_STALL_POLICY } from "@/utils/gate-stall";
 import { _gitDeps } from "@/utils/git";
 
 const baseReviewConfig: ReviewConfig = makeConfigSlice("review", {
@@ -355,6 +356,15 @@ describe("runScopedLintCheck", () => {
     expect(result.checks).toHaveLength(1);
     expect(result.checks[0]?.lintScope?.status).toBe("degraded");
     expect(result.checks[0]?.command).toBe("eslint --max-warnings=0");
-    expect(runMock).toHaveBeenCalledWith("/repo", undefined, undefined, "eslint --max-warnings=0", []);
+    // US-008: the policy is the one `runReview` resolved for the whole run — with
+    // no `naxConfig` in scope, the schema defaults (never "no detector").
+    expect(runMock).toHaveBeenCalledWith(
+      "/repo",
+      undefined,
+      undefined,
+      "eslint --max-warnings=0",
+      [],
+      DEFAULT_GATE_STALL_POLICY,
+    );
   });
 });

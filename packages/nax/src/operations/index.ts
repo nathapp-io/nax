@@ -37,6 +37,8 @@ export type {
   FullSuiteGateStatus,
 } from "./full-suite-gate";
 export { _fullSuiteGateDeps, fullSuiteGateOp } from "./full-suite-gate";
+export type { CheckInterruption } from "./gate-interruption";
+export { earlyStopEvidence } from "./gate-interruption";
 export type { LintCheckDeps, LintCheckInput, LintCheckOutput } from "./lint-check";
 export { _lintCheckDeps, lintCheckOp } from "./lint-check";
 export type { OpModelPreview } from "./op-model-preview";
