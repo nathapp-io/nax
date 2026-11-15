@@ -603,9 +603,9 @@ export function ChatApp({
       // settles without one — a rejection, a runner that threw — never looks completed.
       if (event.type === "turn_end" && !isSubagentEvent(event)) {
         turnEnd.current = event.status;
-        // What the turn decoded, as one muted row under the reply it measured (US-007).
-        const stats = turnStatsEntry(turnEvents.current, event);
-        if (stats !== undefined) append(stats);
+        // What the turn decoded and when it stopped, as one muted row under the reply it
+        // measured (US-007, US-004). Every turn end leaves one, however it ended.
+        append(turnStatsEntry(turnEvents.current, event));
       }
     },
     [append],

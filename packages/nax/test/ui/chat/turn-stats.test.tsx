@@ -30,16 +30,19 @@ const MODEL = "test-model";
 const REPO_ROOT = "/repo";
 const RETURN = "\r";
 
-/** Every case states its window in milliseconds past this instant. */
-const BASE = Date.parse("2026-10-26T00:00:00.000Z");
+/** Every case states its window in milliseconds past 14:32 local time today. */
+const LOCAL_NOW = new Date();
+const BASE = new Date(LOCAL_NOW.getFullYear(), LOCAL_NOW.getMonth(), LOCAL_NOW.getDate(), 14, 32, 0, 0).getTime();
+/** The local clock every row in these cases ends at (US-004), pad and all. */
+const CLOCK = "14:32";
 
 /** What the turn asks the model, and what the model streams back. */
 const ASK = "how fast";
 const REPLY = "very fast";
 /** 241 tokens in 5s is 48.2 tok/s — and 1.3k output over 14.4s is the story's own row. */
-const STATS = "48.2 tok/s · 1.3k out · 14s";
+const STATS = `48.2 tok/s · 1.3k out · 14s · ${CLOCK}`;
 /** The same turn with no measurable round: the rate part is left out. */
-const STATS_NO_RATE = "1.3k out · 14s";
+const STATS_NO_RATE = `1.3k out · 14s · ${CLOCK}`;
 const OUTPUT_TOKENS = 1_300;
 
 /** The SGR code that opens `hex` as a foreground colour — what ink writes for a theme token. */
@@ -212,8 +215,11 @@ function mountScreen(options: ScreenOptions = {}) {
     await turn.finish();
     await settle();
   };
-  /** The rows that state a decode speed or a measured turn. */
-  const statsRows = (): readonly string[] => rows().filter((row) => row.includes(" out · "));
+  /**
+   * The rows a finished turn leaves — the muted footnotes (US-007) and, since US-004, the
+   * status rows too. Every one of them ends in the turn's end clock.
+   */
+  const statsRows = (): readonly string[] => rows().filter((row) => row.endsWith(CLOCK));
   return { ...fake, ui, rawRows, rows, settle, submit, drive, statsRows };
 }
 
@@ -225,7 +231,7 @@ function completedTurn(turn: Turn): void {
 }
 
 describe("a completed turn", () => {
-  test("AC-9 appends one muted turn-stats row after the reply", async () => {
+  test("AC-9 appends one muted turn-stats row after the reply, ending at its clock", async () => {
     const ui = mountScreen();
     await ui.drive(completedTurn);
     expect(ui.statsRows()).toEqual([STATS]);
@@ -250,19 +256,20 @@ describe("a completed turn", () => {
   });
 });
 
-describe("a turn with nothing to measure", () => {
-  test("AC-10 leaves no stats row for a cancelled turn", async () => {
+describe("a turn that did not complete", () => {
+  test("US-004 AC-15 shows a cancelled turn's end time beside its interruption", async () => {
     const ui = mountScreen();
     await ui.drive((turn) => {
       turn.start(0);
       turn.round(0, 5_000, 241);
       turn.end(14_400, "cancelled", OUTPUT_TOKENS);
     });
+    // The interruption row is still there: the end time is drawn in addition to it.
     expect(ui.rows()).toContain("  ⎿  Interrupted by user");
-    expect(ui.statsRows()).toEqual([]);
+    expect(ui.statsRows()).toEqual([`cancelled · ${CLOCK}`]);
   });
 
-  test("AC-11 leaves no stats row for an errored turn", async () => {
+  test("shows an errored turn's end time beside its error", async () => {
     const ui = mountScreen();
     await ui.drive((turn) => {
       turn.start(0);
@@ -270,19 +277,21 @@ describe("a turn with nothing to measure", () => {
       turn.end(14_400, "errored", OUTPUT_TOKENS, { code: "PROVIDER_ERROR", message: "boom" });
     });
     expect(ui.rows().some((row) => row.startsWith("✗ "))).toBe(true);
-    expect(ui.statsRows()).toEqual([]);
+    expect(ui.statsRows()).toEqual([`errored · ${CLOCK}`]);
   });
+});
 
-  test("AC-12 leaves no stats row for a completed turn with no output tokens", async () => {
+describe("a turn with nothing to measure", () => {
+  test("states a completed turn with no output tokens and its end time", async () => {
     const ui = mountScreen();
     await ui.drive((turn) => {
       turn.start(0);
       turn.round(0, 5_000, 0);
       turn.end(14_400, "completed", 0);
     });
-    // The turn did complete and did produce its reply: only the measurement is withheld.
+    // The turn did complete and did produce its reply: only the rate is withheld.
     expect(ui.rows()).toContain(`⏺ ${REPLY}`);
-    expect(ui.statsRows()).toEqual([]);
+    expect(ui.statsRows()).toEqual([`0 out · 14s · ${CLOCK}`]);
   });
 });
 
@@ -296,7 +305,7 @@ describe("a second turn", () => {
       turn.end(5_000, "completed", 500);
     });
     // Concatenating the two turns' rounds would read 48.7 tok/s; each turn's own is 50.0.
-    expect(ui.statsRows()).toEqual([STATS, "50.0 tok/s · 500 out · 5s"]);
+    expect(ui.statsRows()).toEqual([STATS, `50.0 tok/s · 500 out · 5s · ${CLOCK}`]);
   });
 });
 
