@@ -117,6 +117,7 @@ async function subagentSessionOptions(
       mode: input.mode,
       rulesIndex: set.rules.map(toRulesIndexEntry),
       ...(input.memoryIndex !== undefined ? { memoryIndex: input.memoryIndex } : {}),
+      ...(input.allowedTools !== undefined ? { allowedTools: input.allowedTools } : {}),
     }),
   };
 }

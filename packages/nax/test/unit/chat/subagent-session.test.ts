@@ -297,6 +297,18 @@ describe("runSubagent session options", () => {
     );
   });
 
+  test("AC-7 US-003: the instructions name the run's mapped tools", async () => {
+    await run({ allowedTools: ["Read", "Grep", "Glob"] });
+    expect(sessionOptions().instructions).toContain(
+      "Your tools in this run: Read, Grep, Glob, plus the always-on scratchpad tools.",
+    );
+  });
+
+  test("AC-8 US-003: no allowedTools means no tools section", async () => {
+    await run();
+    expect(sessionOptions().instructions).not.toContain("Your tools in this run:");
+  });
+
   test("passes the configured rule override fields", async () => {
     const config = makeNaxConfig({ context: { rules: { overrideDir: "/ovr", overrideMode: "replace" } } });
     await run({ config });

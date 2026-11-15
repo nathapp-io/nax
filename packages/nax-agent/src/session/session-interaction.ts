@@ -136,6 +136,25 @@ function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext)
 }
 
 /**
+ * US-004 (nax#2930): the abandoned result both abandoned paths answer with.
+ * The session turn controller aborts its signal with a `NaxError` for a cancel,
+ * the turn deadline, a stalled consumer and an iterator close, and
+ * `AbortSignal.any` keeps the reason of the source that aborted first — so a
+ * `NaxError` reason names WHY the turn ended. Any other reason (a bare
+ * `abort()`, a plain error, the native adapter's own watchdog, which aborts
+ * with none) keeps the text that says only that it ended.
+ *
+ * Evaluated at abandonment time, never before the race: the reason is only
+ * observable once the signal has aborted.
+ */
+export function abandonedToolMessage(name: string, signal: AbortSignal): string {
+  const base = `Tool "${name}" was abandoned: the turn ended`;
+  const reason: unknown = signal.reason;
+  if (!(reason instanceof NaxError)) return `${base}.`;
+  return `${base} (${reason.code}: ${reason.message}).`;
+}
+
+/**
  * Settle with `work`, or with `onAbort()` the moment `signal` aborts. The tool
  * batch awaits interaction handlers with no abort race of its own, so a tool
  * that ignores its signal would otherwise hang the turn (and `close()`, which
@@ -160,12 +179,12 @@ async function raceAbort<T>(work: Promise<T>, signal: AbortSignal, onAbort: () =
  * would otherwise hang the turn. See `raceAbort`.
  */
 async function invoke(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext): Promise<EmbedderToolResult> {
-  const abandoned: EmbedderToolResult = {
-    content: `Tool "${tool.name}" was abandoned: the turn ended.`,
+  const abandoned = (): EmbedderToolResult => ({
+    content: abandonedToolMessage(tool.name, ctx.signal),
     isError: true,
-  };
-  if (ctx.signal.aborted) return abandoned;
-  return raceAbort(runSafely(tool, input, ctx), ctx.signal, () => abandoned);
+  });
+  if (ctx.signal.aborted) return abandoned();
+  return raceAbort(runSafely(tool, input, ctx), ctx.signal, abandoned);
 }
 
 async function runEmbedderTool(
@@ -261,12 +280,12 @@ async function callTool(
   deps: SessionInteractionDeps,
   request: CodingToolRequest,
   signal: AbortSignal,
-  abandoned: CodingToolOutcome,
+  abandoned: () => CodingToolOutcome,
 ): Promise<CodingToolOutcome> {
   const work = deps.runtime.callTool(request.name, request.input ?? {}, { ...toolCallContext(request), signal });
   const graceMs = normaliseCancelGrace(deps.cancelGraceByTool?.get(request.name));
-  if (graceMs === undefined) return raceAbort(work, signal, () => abandoned);
-  return raceCancelGrace({ work, signal, graceMs, timers: deps.timers ?? PROCESS_TIMERS, onExpire: () => abandoned });
+  if (graceMs === undefined) return raceAbort(work, signal, abandoned);
+  return raceCancelGrace({ work, signal, graceMs, timers: deps.timers ?? PROCESS_TIMERS, onExpire: abandoned });
 }
 
 /** Map a tool outcome onto the handler's answer, denial or throw. */
@@ -285,12 +304,12 @@ async function runCodingTool(
   deps.setCurrentCallId(request.toolCallId);
   try {
     const signal = request.signal ?? deps.turnSignal();
-    const abandoned: CodingToolOutcome = {
+    const abandoned = (): CodingToolOutcome => ({
       kind: "error",
-      content: `Tool "${request.name}" was abandoned: the turn ended.`,
-    };
+      content: abandonedToolMessage(request.name, signal),
+    });
     // An already-aborted signal never reaches the tool, grace or no grace.
-    return answerFor(signal.aborted ? abandoned : await callTool(deps, request, signal, abandoned), request.name);
+    return answerFor(signal.aborted ? abandoned() : await callTool(deps, request, signal, abandoned), request.name);
   } finally {
     deps.setCurrentCallId(undefined);
   }

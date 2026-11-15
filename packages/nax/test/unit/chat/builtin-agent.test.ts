@@ -28,7 +28,9 @@ describe("generalAgent", () => {
 
   test("AC-5: carries the general-agent description", () => {
     expect(generalAgent().description).toBe(GENERAL_AGENT_DESCRIPTION);
-    expect(generalAgent().description).toBe("Runs a self-contained task on the model you pass");
+    expect(generalAgent().description).toBe(
+      "Runs a self-contained task with your tools, on your model unless you pass one",
+    );
   });
 
   test("AC-6: declares no model, so the caller's model wins", () => {

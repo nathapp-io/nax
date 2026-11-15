@@ -41,6 +41,13 @@ export type {
 } from "./runtime-types";
 export type { AutoRouteConfig, AutoRouteDowngradeConfig, AutoRouteUpgradeConfig } from "./runtime-types-auto-route";
 export type { BotConfig, BotModelsConfig } from "./runtime-types-bot";
+export type {
+  ChatAgentChoice,
+  ChatBotStepConfig,
+  ChatConfig,
+  ChatStepConfig,
+  ChatWorkflowConfig,
+} from "./runtime-types-chat";
 export type { MemoryConfig, MemoryMcpConfig } from "./runtime-types-memory";
 // Schema types
 export type {

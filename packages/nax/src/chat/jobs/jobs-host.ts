@@ -77,6 +77,7 @@ export function createHostJobs(options: HostJobsOptions): {
     runAsks,
     approve,
     interactionPlugin: options.config.interaction?.plugin ?? "cli",
+    ...(options.config.chat?.workflow === undefined ? {} : { workflow: options.config.chat.workflow }),
   });
   const close = (): void => {
     runAsks.dispose();

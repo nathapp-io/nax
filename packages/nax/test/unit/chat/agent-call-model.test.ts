@@ -82,15 +82,24 @@ describe("withAgentCallModel", () => {
     expect(modelFor).toHaveBeenCalledWith(undefined, "p/x");
   });
 
-  test("AC-17 an absent agent and model forwards the event unchanged", () => {
+  // US-002 of chat-workflow-flow: a bare `{ task }` call now runs the general agent on
+  // the parent model, so the card must name that model.
+  test("AC-14 an absent agent and model annotates the event with modelFor(undefined, undefined)'s model", () => {
     const event = call("nax-agents__run", { task: "t" });
-    const seen = run(event, () => resolved("x", "inherited"));
-    expect(seen[0]).toBe(event);
+    const modelFor: ModelFor = mock(() => resolved("anthropic/chat", "inherited"));
+    const seen = run(event, modelFor);
+    expect(modelFor).toHaveBeenCalledTimes(1);
+    expect(modelFor).toHaveBeenCalledWith(undefined, undefined);
+    expect(seen).toEqual([
+      { ...event, metadata: { keep: "me", subagentModel: "anthropic/chat", subagentModelSource: "inherited" } },
+    ]);
   });
 
-  test("AC-18 an absent agent and model does not call modelFor", () => {
+  test("AC-15 an absent agent with a non-string model forwards the event unchanged", () => {
+    const event = call("nax-agents__run", { task: "t", model: 7 });
     const modelFor: ModelFor = mock(() => resolved("x", "inherited"));
-    run(call("nax-agents__run", { task: "t" }), modelFor);
+    const seen = run(event, modelFor);
+    expect(seen[0]).toBe(event);
     expect(modelFor).not.toHaveBeenCalled();
   });
 

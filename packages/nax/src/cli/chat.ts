@@ -270,6 +270,9 @@ async function chatResources(
         deps.createWorkflowProvider({
           repoRoot,
           outputDir,
+          // Absent (undefined) when `chat.workflow` is unconfigured: the provider
+          // then renders the default instructions.
+          workflow: config.chat?.workflow,
         }),
         ...(memory === undefined ? [] : [createMemoryToolProvider(memory)]),
         ...mcp.providers,

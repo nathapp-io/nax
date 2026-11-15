@@ -113,7 +113,7 @@ export {
   buildWorkflowBranchVerdictMismatchRetry,
 } from "./builders/workflow-branch-builder";
 // US-004 (chat-workflow-state) — the fixed "nax loop" section of a chat session.
-export type { JobNoticeInput } from "./builders/workflow-builder";
+export type { JobNoticeInput, WorkflowInstructionsInput } from "./builders/workflow-builder";
 export { buildJobNotice, buildJobsInstructions, buildWorkflowInstructions } from "./builders/workflow-builder";
 // US-004 — the CI repair's own brief, and the two rules it must never break.
 export {

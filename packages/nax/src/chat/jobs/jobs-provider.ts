@@ -1,5 +1,5 @@
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
-import { listProfiles } from "@/config";
+import { type ChatWorkflowConfig, listProfiles } from "@/config";
 import { buildJobsInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
 import type { ChatChains } from "./chain-controller";
@@ -24,6 +24,8 @@ export interface JobsProviderOptions {
   readonly jobs: ChatJobs;
   readonly chains?: ChatChains;
   readonly runAsks?: ChatRunAsks;
+  /** `config.chat.workflow`: the defaults every launch takes when its own input names none. */
+  readonly workflow?: ChatWorkflowConfig;
   readonly approve: (card: HostApprovalCard) => Promise<"allow" | "deny">;
   readonly sessionId: () => string;
   readonly now: () => Date;
@@ -33,7 +35,7 @@ export const PROFILES_SCHEMA = {
   type: "array",
   items: { type: "string" },
   description:
-    "Config profiles for this job, applied in order. Omit it to use the profile the PRD was planned with (run) or the default config; pass it only to override. nax-jobs__list returns the available names.",
+    "Config profiles for this job, applied in order. Omit it to use chat.workflow's profiles for this step when configured, else the profile the PRD was planned with (run) or the default config; pass it only to override. nax-jobs__list returns the available names.",
 } as const;
 const profiles = PROFILES_SCHEMA;
 const repo = { type: "string" };

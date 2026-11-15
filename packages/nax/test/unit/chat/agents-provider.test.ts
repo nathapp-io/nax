@@ -249,8 +249,9 @@ describe("createAgentsProvider model override", () => {
 });
 
 const RUN_DESCRIPTION =
-  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task on a model with no catalog agent, omit agent and pass model: the task runs on the built-in general agent with your tools.";
-const NEEDS_AGENT_OR_MODEL = "[chat] run requires agent, or model to run the built-in general agent";
+  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.";
+const GENERAL_LAST_SENTENCE =
+  "To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.";
 
 describe("createAgentsProvider bare-model dispatch (chat-dispatch-visibility US-002)", () => {
   test("AC-1 inputSchema.required is [task]", async () => {
@@ -276,17 +277,6 @@ describe("createAgentsProvider bare-model dispatch (chat-dispatch-visibility US-
     expect(calledTask).toBe("t");
     expect(calledSignal).toBe(controller.signal);
     expect(calledModel).toBe("openai-codex/gpt-6-luna");
-  });
-
-  test("AC-6 a missing agent and a missing model names both requirements", async () => {
-    const { provider } = setup([agent("reviewer")]);
-    expect(await runTool(provider, { task: "t" })).toEqual({ isError: true, content: NEEDS_AGENT_OR_MODEL });
-  });
-
-  test("AC-7 a missing agent and a missing model does not call the injected run", async () => {
-    const { run, provider } = setup([agent("reviewer")]);
-    await runTool(provider, { task: "t" });
-    expect(run).not.toHaveBeenCalled();
   });
 
   test("AC-8 a blank model with no agent is an error result", async () => {
@@ -355,5 +345,66 @@ describe("createAgentsProvider bare-model dispatch (chat-dispatch-visibility US-
     assertDefined(call, "run call");
     expect(call).toHaveLength(3);
     expect([...call]).toEqual([reviewer, "t", controller.signal]);
+  });
+});
+
+describe("createAgentsProvider general dispatch (chat-workflow-flow US-002)", () => {
+  test("AC-1 a bare task runs the built-in general agent", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { task: "t" });
+    expect(run).toHaveBeenCalledTimes(1);
+    const called = run.mock.calls[0]?.[0];
+    assertDefined(called, "run agent");
+    expect(called.name).toBe("general");
+    expect(called.origin).toEqual({ kind: "nax-builtin" });
+    expect(run.mock.calls[0]?.[1]).toBe("t");
+  });
+
+  test("AC-2 a bare task passes an undefined model argument", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { task: "t" });
+    expect(run).toHaveBeenCalledTimes(1);
+    const call = run.mock.calls[0];
+    assertDefined(call, "run call");
+    expect(call[3]).toBeUndefined();
+  });
+
+  test("AC-3 agent general with no catalog agent of that name runs the built-in general agent", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { agent: "general", task: "t" });
+    const called = run.mock.calls[0]?.[0];
+    assertDefined(called, "run agent");
+    expect(called.name).toBe("general");
+    expect(called.origin).toEqual({ kind: "nax-builtin" });
+    expect(run.mock.calls[0]?.[1]).toBe("t");
+  });
+
+  test("AC-4 agent general with a model and no catalog agent of that name passes the model through", async () => {
+    const { run, provider } = setup([agent("reviewer")]);
+    await runTool(provider, { agent: "general", task: "t", model: "openai-codex/gpt-6-luna" });
+    const called = run.mock.calls[0]?.[0];
+    assertDefined(called, "run agent");
+    expect(called.origin).toEqual({ kind: "nax-builtin" });
+    expect(run.mock.calls[0]?.[3]).toBe("openai-codex/gpt-6-luna");
+  });
+
+  test("AC-5 agent general resolves the catalog agent when the catalog has one", async () => {
+    const catalogGeneral = agent("general", projectOrigin, "The project's own general agent");
+    const { run, provider } = setup([catalogGeneral]);
+    await runTool(provider, { agent: "general", task: "t" });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[0]).toBe(catalogGeneral);
+  });
+
+  test("AC-6 the description equals RUN_DESCRIPTION and ends with the general-agent sentence", async () => {
+    const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
+    expect(tool?.description).toBe(RUN_DESCRIPTION);
+    expect(tool?.description.endsWith(GENERAL_LAST_SENTENCE)).toBe(true);
+  });
+
+  test("AC-12 instructions list an agent's declared tools on its entry line", async () => {
+    const withTools: AgentResource = { ...agent("reviewer"), tools: ["Read"] };
+    const text = await setup([withTools]).provider.instructions?.("/w");
+    expect(text).toContain("- reviewer: Reviews diffs (tools: Read)");
   });
 });

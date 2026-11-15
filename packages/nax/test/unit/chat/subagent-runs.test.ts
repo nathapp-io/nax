@@ -346,6 +346,14 @@ describe("SubagentRuns.run model override", () => {
     await runs.run(generalAgent(), "t", undefined, "bogus");
     expect(runSubagent).not.toHaveBeenCalled();
   });
+
+  // US-002 of chat-workflow-flow: a bare-task general run has no model of its own, so
+  // the nested session runs on the chat's current model.
+  test("AC-8 the general agent with no model runs on the chat session's model", async () => {
+    const { runSubagent, runs } = setup();
+    await runs.run(generalAgent(), "t");
+    expect(runSubagent.mock.calls[0]?.[0].model).toBe("anthropic/chat");
+  });
 });
 
 describe("SubagentRuns.modelFor", () => {
@@ -371,6 +379,18 @@ describe("SubagentRuns.modelFor", () => {
 
   test("AC-21 an unknown agent returns undefined", () => {
     expect(make().modelFor("nobody")).toBeUndefined();
+  });
+
+  // US-002 of chat-workflow-flow: `agent: "general"` is the built-in general agent
+  // unless the catalog has one of that name.
+  test("AC-7 the general name with no catalog agent of that name inherits the parent model", () => {
+    expect(make().modelFor("general")).toEqual({ model: "anthropic/chat", label: "inherited" });
+  });
+
+  test("US-002 the general name prefers a catalog agent of that name", () => {
+    const catalogGeneral = makeAgentResource({ name: "general", model: "openai/gpt-x" });
+    const runs = createSubagentRuns(runsDeps({ asks: asks(), catalog: makeAgentCatalog([catalogGeneral]) }));
+    expect(runs.modelFor("general")).toEqual({ model: "openai/gpt-x", label: "agent file" });
   });
 
   test("AC-22 a refused override returns undefined", () => {

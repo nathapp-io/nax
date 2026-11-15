@@ -8,6 +8,8 @@ import { buildJobArgv } from "@/chat/jobs/job-argv";
 import type { ChatJobs } from "@/chat/jobs/job-runner";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import { createJobsProvider, type JobsProviderOptions } from "@/chat/jobs/jobs-provider";
+import { _workflowDefaultsDeps } from "@/chat/jobs/workflow-defaults";
+import type { ChatWorkflowConfig } from "@/config";
 
 const steps = [
   { kind: "plan", input: { feature: "f1" } },
@@ -15,6 +17,7 @@ const steps = [
 ];
 const declined = { isError: true, content: "[chat] the user declined the chain; propose steps one at a time" };
 const originalGit = _jobsLaunchDeps.git;
+const originalWorkflowDeps = { ..._workflowDefaultsDeps };
 const originalWrite = _chainStoreDeps.write;
 const originalTimers = { ..._askControllerDeps };
 let root: string;
@@ -64,6 +67,7 @@ beforeEach(async () => {
 afterEach(() => {
   chains.dispose();
   _jobsLaunchDeps.git = originalGit;
+  Object.assign(_workflowDefaultsDeps, originalWorkflowDeps);
   _chainStoreDeps.write = originalWrite;
   Object.assign(_askControllerDeps, originalTimers);
   cleanupTempDir(root);
@@ -293,5 +297,31 @@ describe("createChainTools card and activation", () => {
     expect(asks.pending()).toEqual([]);
     expect(chains.active()).toBeUndefined();
     asks.reset();
+  });
+});
+
+describe("createChainTools chat.workflow defaults", () => {
+  const workflow: ChatWorkflowConfig = { specFixRounds: 2, plan: { profiles: ["p1"] } };
+  test("AC-19 a plan step with no profiles takes the configured list into argv", async () => {
+    _workflowDefaultsDeps.listProfileNames = async () => ["p1"];
+    options = { ...options, workflow };
+    await invoke({ steps: [{ kind: "plan", input: { feature: "f1" } }] });
+    expect(card().command).toContain("--profile p1");
+  });
+  test("AC-20 an unknown configured profile fails step 1 before the chain card", async () => {
+    _workflowDefaultsDeps.listProfileNames = async () => ["p1"];
+    options = { ...options, workflow: { specFixRounds: 2, plan: { profiles: ["ghost"] } } };
+    expect(await invoke({ steps: [{ kind: "plan", input: { feature: "f1" } }] })).toEqual({
+      isError: true,
+      content: "[chat] step 1: chat.workflow.plan.profiles names unknown profile ghost; known: p1",
+    });
+    expect(approve).not.toHaveBeenCalled();
+  });
+  test("an explicit step profile list is not checked against config or replaced", async () => {
+    _workflowDefaultsDeps.listProfileNames = mock(async () => ["p1"]);
+    options = { ...options, workflow };
+    await invoke({ steps: [{ kind: "plan", input: { feature: "f1", profiles: ["explicit"] } }] });
+    expect(card().command).toContain("--profile explicit");
+    expect(card().command).not.toContain("--profile p1");
   });
 });

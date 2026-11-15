@@ -23,6 +23,7 @@ import {
 import { AdvisorConfigObjectSchema } from "./schemas-advisor";
 import { AuthConfigSchema } from "./schemas-auth";
 import { BotConfigSchema } from "./schemas-bot";
+import { ChatConfigSchema } from "./schemas-chat";
 import { ContextConfigSchema } from "./schemas-context";
 import {
   AutoModeConfigSchema,
@@ -460,6 +461,9 @@ export const NaxConfigSchema = z
     // A5 workflow mode. Read only when execution.mode === "workflow".
     workflow: WorkflowConfigObjectSchema.prefault({}),
     bot: BotConfigSchema.prefault({}),
+    // US-005 (#2931): optional chat workflow settings. No root default — `parse({})` has no `chat`
+    // key, so DEFAULT_CONFIG is unchanged until the operator opts in.
+    chat: ChatConfigSchema.optional(),
     // Derived, not hand-written — same reason as `context:` above: a literal
     // default here would shadow every inner `.default()` in McpConfigSchema.
     mcp: McpConfigSchema.default(() => McpConfigSchema.parse({})),
