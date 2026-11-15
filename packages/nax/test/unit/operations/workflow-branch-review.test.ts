@@ -486,6 +486,48 @@ describe("workflowBranchReviewOp mismatch clarification (US-012)", () => {
     expect(restarted.retry).toBe(false);
   });
 
+  test("AC-20: a real manager fallback hop issues no second JSON repair", async () => {
+    const prompts: string[] = [];
+    const agents: string[] = [];
+    const swapFailure = { category: "availability", outcome: "fail-rate-limit", retriable: true, message: "" } as const;
+    const agentManager = makeMockAgentManager({
+      // The manager runs the primary hop, then a swap hop on another agent — the same two-hop
+      // sequence `runWithFallback` drives, and the hop body restarts its retry loop at 0 each time.
+      runWithFallbackFn: async (req) => {
+        assertDefined(req.executeHop, "req.executeHop");
+        agents.push("claude");
+        await req.executeHop("claude", undefined, { kind: "primary" }, req.runOptions);
+        agents.push("codex");
+        const swap = await req.executeHop("codex", undefined, { kind: "swap", failure: swapFailure }, req.runOptions);
+        return { result: { ...swap.result, agentFallbacks: [] }, fallbacks: [] };
+      },
+      runAsSessionFn: async (_agentName, _handle, prompt): Promise<TurnResult> => {
+        prompts.push(prompt);
+        return {
+          output: "not json",
+          estimatedCostUsd: 0,
+          internalRoundTrips: 1,
+          tokenUsage: { inputTokens: 0, outputTokens: 0 },
+        };
+      },
+    });
+    const runtime = makeTestRuntime({ agentManager, sessionManager: makeSessionManager() });
+    createdRuntimes.push(runtime);
+
+    await callOp(
+      { runtime, packageView: runtime.packages.repo(), packageDir: "/tmp", agentName: "claude", storyId: "_run" },
+      workflowBranchReviewOp,
+      clarifyInput,
+    );
+
+    expect(agents).toEqual(["claude", "codex"]);
+    // Primary hop: the review prompt, then the one JSON repair it is allowed. Fallback hop: the
+    // review prompt again, and — the allowance being spent for the invocation — nothing after it.
+    expect(prompts).toHaveLength(3);
+    expect(prompts[2]).toContain(clarifyInput.prompt);
+    expect(prompts.filter((prompt) => prompt.includes(buildWorkflowReviewJsonRetry()))).toHaveLength(1);
+  });
+
   test("AC-21: an adapterFailure transport result gets no clarification, JSON or coverage prompt", () => {
     const adapterFailedTurn: TurnResult = {
       output: mismatchJson([]),
