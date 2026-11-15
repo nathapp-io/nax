@@ -45,6 +45,19 @@ function execSandboxNote(launcher: CommandLauncher | undefined): string {
 }
 
 /**
+ * #2935: declared commands go to nax's quality runner (`runDeclaredCommand`), which spawns on the
+ * host; the launcher only wraps the argv branch. Said only while a sandbox is running, since with
+ * none every tool runs on the host and the sentence would contrast with nothing. Without it, a model
+ * that reads NAX_SANDBOXED=1 from Bash concludes every command tool is sandboxed.
+ */
+const DECLARED_HOST_SENTENCE =
+  "A declared command runs on the host, outside the sandbox, the same way nax runs its own quality gates.";
+
+function declaredHostNote(launcher: CommandLauncher | undefined): string {
+  return launcher?.state.kind === "available" ? ` ${DECLARED_HOST_SENTENCE}` : "";
+}
+
+/**
  * US-008: the one sentence an opted-in session appends to an Exec-capable
  * description. Worded for the argv branch ("the argv", not "the command") so it
  * reads as the argv branch's own argument — the declared branch refuses the
@@ -68,15 +81,24 @@ function withUnsandboxedArgvSentence(description: string, exec: RunCommandExecOp
 }
 
 function execDescription(commandDescriptions: string, exec: RunCommandExecOptions): string {
+  const launcher = exec.launcher;
   return withUnsandboxedArgvSentence(
-    `Two ways to run something. (1) Run one of this project's declared commands: ${commandDescriptions} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; ${describeExecAllowlist(exec.patterns)}. Supply exactly one of "command" or "argv".${execSandboxNote(exec.launcher)}`,
+    `Two ways to run something. (1) Run one of this project's declared commands: ${commandDescriptions} — supply "command" and, optionally, "values" for its placeholders. (2) Run an allowlisted external command via "argv" (an array, e.g. ["bun","add","left-pad"]) — no shell, so no quoting and no shell metacharacters; ${describeExecAllowlist(exec.patterns)}. Supply exactly one of "command" or "argv".${declaredHostNote(launcher)}${execSandboxNote(launcher)}`,
     exec,
   );
 }
 
-export function runCommandDescription(commandDescriptions: string, exec: RunCommandExecOptions | undefined): string {
+/**
+ * `launcher` is the session's launcher for the declared-only variant (no Exec grant), read for
+ * the #2935 host sentence alone; the Exec variant reads `exec.launcher`.
+ */
+export function runCommandDescription(
+  commandDescriptions: string,
+  exec: RunCommandExecOptions | undefined,
+  launcher?: CommandLauncher,
+): string {
   if (exec === undefined) {
-    return `Run one of this project's declared commands: ${commandDescriptions}. Supply values for its placeholders; you cannot write a command of your own.`;
+    return `Run one of this project's declared commands: ${commandDescriptions}. Supply values for its placeholders; you cannot write a command of your own.${declaredHostNote(launcher)}`;
   }
   return execDescription(commandDescriptions, exec);
 }

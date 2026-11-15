@@ -99,6 +99,7 @@ export function unsandboxedRuntimeOption(args: {
 }
 
 export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): CodingTool[] {
+  const launcherOption = args.launcher !== undefined ? { launcher: args.launcher } : {};
   return [
     ...(args.declaredCommands.size > 0 || args.allowExec
       ? [
@@ -106,6 +107,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             stripEnvVars: args.stripEnvVars,
             commandCwd: args.commandCwd ?? args.root,
             runDeclaredCommand: args.runDeclaredCommand,
+            ...launcherOption,
             ...(args.allowExec
               ? {
                   exec: {
@@ -129,7 +131,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
                     // site; the fallback exists only for the type.
                     patterns: args.execGrant?.patterns ?? [],
                     ...(args.packageName !== undefined ? { packageName: args.packageName } : {}),
-                    ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+                    ...launcherOption,
                     // US-008: the same option Bash takes, forwarded to the argv
                     // branch's advertisement through the same helper — one
                     // shape for "off" and "absent" on both tools.
@@ -151,7 +153,7 @@ export function buildDeclaredCommandTools(args: DeclaredCommandToolsArgs): Codin
             patterns: args.bashDescriptionPatterns,
             bashApproval: args.bashApproval,
             ...(args.humanApproval === true ? { humanApproval: true } : {}),
-            ...(args.launcher !== undefined ? { launcher: args.launcher } : {}),
+            ...launcherOption,
             ...unsandboxedToolOptions(args),
             ...bashBackgroundOption(args),
           }),

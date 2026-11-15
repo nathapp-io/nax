@@ -11,6 +11,7 @@ import {
   unsandboxedRuntimeOption,
 } from "#src/coding-tools/coding-tool-extras";
 import type { QualityCommandSpec } from "#src/internal/command-spec/index";
+import type { CommandLauncher } from "#src/sandbox/index";
 import type { CodingTool } from "#src/tools/index";
 
 const args = (extra: Partial<DeclaredCommandToolsArgs> = {}): DeclaredCommandToolsArgs => ({
@@ -106,5 +107,22 @@ describe("unsandboxedRuntimeOption", () => {
         ...(ask ? { alwaysAsk: true } : {}),
       },
     });
+  });
+});
+
+// #2935: the declared-only RunCommand (no Exec grant) gets the session launcher
+// for its description, so the host sentence survives the real wiring.
+describe("buildDeclaredCommandTools — declared commands run on the host (#2935)", () => {
+  test("a running sandbox reaches the declared-only RunCommand description", () => {
+    const launcher: CommandLauncher = {
+      state: { kind: "available", backend: "srt", network: "open" },
+      run: async () => {
+        throw new Error("the description test never runs a command");
+      },
+    };
+    const tools = buildDeclaredCommandTools(args({ declaredCommands: new Map([["test", "bun test"]]), launcher }));
+    const runCommand = tools.find((tool) => tool.name === "RunCommand");
+    if (runCommand === undefined) throw new Error("expected a RunCommand tool");
+    expect(runCommand.description).toContain("A declared command runs on the host, outside the sandbox");
   });
 });
