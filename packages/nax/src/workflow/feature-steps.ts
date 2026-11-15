@@ -8,7 +8,6 @@
  */
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "@/logger";
-import { isBranchQualityFloor } from "@/operations";
 import type { StepResult } from "@/step-graph";
 import { _approvalDeps, describeUnread, featurePassed } from "./approval";
 import { dropKnownRestatements, nextBranchFixRound } from "./branch-fix-rounds";
@@ -120,20 +119,14 @@ export async function repoGatesStep(
  * draft per promoted deferred minor. US-009 removed the draft this used to invent for a `changes`
  * verdict with no blocking finding — a mismatch is evidence, not work, so the step records it as
  * `reviewMismatch` instead of spending a B id and a fix round on a defect the reviewer never named.
- *
- * The parser-marker exclusion stays until US-011: while `parseBranchReviewReply` still synthesizes a
- * quality floor, a promoted minor is the concrete work that floor would have duplicated.
+ * US-011 removed the parser's synthesized quality floor too, so this is the whole rule: what the
+ * reviewer wrote plus what the triage promoted.
  */
 export function withQualityFloor(
   verdict: BranchReviewVerdict,
   promoted: readonly WorkflowFindingDraft[],
 ): WorkflowFindingDraft[] {
-  return [
-    ...verdict.findings.filter(
-      (finding) => isBlocking(finding) && !(promoted.length > 0 && isBranchQualityFloor(finding)),
-    ),
-    ...promoted,
-  ];
+  return [...verdict.findings.filter(isBlocking), ...promoted];
 }
 
 /**
@@ -144,14 +137,14 @@ export function withQualityFloor(
  * critical/important finding. Empty, dropped-invalid and minor-only findings justify neither.
  *
  * Promoted deferred minors are deliberately not evidence here: they are real work, but they are not
- * the reviewer's reply, so they cannot make an inconsistent one consistent. The parser's own
- * quality-floor draft is excluded for the same reason — US-011 stops it being synthesized.
+ * the reviewer's reply, so they cannot make an inconsistent one consistent.
  */
 export function verdictMismatchKinds(verdict: BranchReviewVerdict): VerdictMismatch[] {
-  const authored = verdict.findings.filter((finding) => !isBranchQualityFloor(finding));
   return [
-    ...(verdict.spec === "fail" && !authored.some((f) => f.kind === "spec" && isBlocking(f)) ? ["spec" as const] : []),
-    ...(verdict.quality === "changes" && !authored.some(isBlocking) ? ["quality" as const] : []),
+    ...(verdict.spec === "fail" && !verdict.findings.some((f) => f.kind === "spec" && isBlocking(f))
+      ? ["spec" as const]
+      : []),
+    ...(verdict.quality === "changes" && !verdict.findings.some(isBlocking) ? ["quality" as const] : []),
   ];
 }
 

@@ -83,7 +83,7 @@ describe("deferred minor promotion", () => {
 
   test.each([
     ["pass", [], ["US-001: a"]],
-    ["fail", [], ["spec", "US-001: a"]],
+    ["fail", [{ kind: "spec", severity: "important", issue: "real spec defect" }], ["spec", "US-001: a"]],
     ["pass", [{ kind: "quality", severity: "important", issue: "real defect" }], ["real defect", "US-001: a"]],
   ] as const)(
     "parsed review preserves real and spec findings with promotion (%s)",
@@ -104,22 +104,24 @@ describe("deferred minor promotion", () => {
     },
   );
 
-  test("parsed quality floor stays without promotion, and identical reviewer text stays with promotion", async () => {
+  // US-011: the parser synthesizes no quality floor, so a `changes` verdict with no reviewer finding
+  // contributes nothing — the sentence below is real work only when the reviewer actually wrote it.
+  test("a parsed quality verdict contributes only its authored findings, promoted or not", async () => {
     const issue =
       "Story review returned quality: changes without a blocking finding. Re-read the story diff for the quality problem the reviewer saw, and fix it.";
-    for (const promoted of [false, true]) {
-      const findings = promoted ? [{ kind: "quality", severity: "important", issue }] : [];
+    for (const authored of [false, true]) {
+      const findings = authored ? [{ kind: "quality", severity: "important", issue }] : [];
       const reply = JSON.stringify({
         spec: "pass",
         quality: "changes",
         findings,
-        minorTriage: [{ id: "M1", decision: promoted ? "promote" : "leave" }],
+        minorTriage: [{ id: "M1", decision: authored ? "promote" : "leave" }],
       });
       const review = parseBranchReviewReply(reply, ["M1"]);
       if (!review) throw new Error("missing verdict");
       const h = makeFeatureMachineHarness({ review }, { record: record() });
       const result = await branchReviewStep(h.env, h.env.record);
-      expect(result.patch.reviewOpen?.map((f) => f.issue)).toEqual(promoted ? [issue, "US-001: a"] : [issue]);
+      expect(result.patch.reviewOpen?.map((f) => f.issue)).toEqual(authored ? [issue, "US-001: a"] : []);
     }
   });
 

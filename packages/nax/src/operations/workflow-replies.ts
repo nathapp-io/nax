@@ -20,16 +20,6 @@ const STATUSES: readonly ImplementerStatus[] = ["DONE", "DONE_WITH_CONCERNS", "N
 const SEVERITIES: readonly WorkflowSeverity[] = ["critical", "important", "minor"];
 const REVIEW_KINDS: readonly WorkflowFindingKind[] = ["spec", "quality"];
 const NO_VERDICT_NOTE = "(no verdict returned)";
-const SPEC_FAIL_ISSUE =
-  "Story review returned spec: fail without a blocking spec finding. Re-read the brief's acceptance criteria and the TDD-evidence rule, and fix what is missing.";
-const QUALITY_CHANGES_ISSUE =
-  "Story review returned quality: changes without a blocking finding. Re-read the story diff for the quality problem the reviewer saw, and fix it.";
-const QUALITY_FLOOR = Symbol("branch quality floor");
-
-/** Distinguish the parser's floor from reviewer-authored findings, even with identical text. */
-export function isBranchQualityFloor(finding: WorkflowFindingDraft): boolean {
-  return Object.hasOwn(finding, QUALITY_FLOOR);
-}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -187,22 +177,17 @@ function triageOf(parsed: unknown): Map<string, MinorTriageDecision> {
   return triage;
 }
 
-/** One triage entry per known minor id, in the given order; untriaged or unknown -> leave (P4-R8). */
+/**
+ * One triage entry per known minor id, in the given order; untriaged or unknown -> leave (P4-R8).
+ * A lenient shape parser (US-011): it carries the story parser's real findings and its mismatch
+ * metadata unchanged, and never injects a draft to justify a verdict.
+ */
 export function parseBranchReviewReply(output: string, minorIds: readonly string[]): BranchReviewVerdict | null {
   const verdict = parseStoryReviewReply(output);
   if (!verdict) return null;
-  const { mismatch, ...branchVerdict } = verdict;
-  const findings = [...verdict.findings];
-  if (mismatch?.includes("spec")) findings.push({ kind: "spec", severity: "important", issue: SPEC_FAIL_ISSUE });
-  if (verdict.quality === "changes" && !findings.some((f) => f.severity !== "minor")) {
-    const floor: WorkflowFindingDraft = { kind: "quality", severity: "important", issue: QUALITY_CHANGES_ISSUE };
-    Object.defineProperty(floor, QUALITY_FLOOR, { value: true });
-    findings.push(floor);
-  }
   const triage = triageOf(tryParseLLMJson<unknown>(output));
   return {
-    ...branchVerdict,
-    findings,
+    ...verdict,
     minorTriage: minorIds.map((id) => ({ id, decision: triage.get(id) ?? "leave" })),
   };
 }

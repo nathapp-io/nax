@@ -38,14 +38,13 @@ describe("withQualityFloor (US-009)", () => {
     ]);
   });
 
-  test("still excludes the parser-marked quality floor when a minor is promoted (AC-3)", () => {
+  test("a parsed changes verdict contributes no draft of its own, promoted or not (US-011)", () => {
     const parsed = parseBranchReviewReply(JSON.stringify({ spec: "pass", quality: "changes" }), ["M1"]);
     if (!parsed) throw new Error("the parsed verdict must exist");
     const promoted = [{ kind: "quality" as const, severity: "important" as const, issue: "US-001: rename tmp" }];
-    // With a promoted minor the parser's own floor is not reviewer evidence, so it is not blocking.
+    // The parser invents nothing, so the promoted minor is the only draft either way.
     expect(withQualityFloor(parsed, promoted)).toEqual(promoted);
-    // Without one the floor stays, exactly as before US-009.
-    expect(withQualityFloor(parsed, [])).toEqual([...parsed.findings]);
+    expect(withQualityFloor(parsed, [])).toEqual([]);
   });
 
   test("a changes verdict with no blocking finding and no promoted minor adds nothing (AC-4)", () => {
