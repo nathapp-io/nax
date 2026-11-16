@@ -13,7 +13,7 @@ import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
-import type { PRD } from "../prd";
+import { type PRD, pendingStoryIds } from "../prd";
 import { tryLlmBatchRoute } from "../routing";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { SessionManager } from "../session";
@@ -104,6 +104,47 @@ async function runPreRunStepsOrFail(opts: {
     opts.statusWriter.setRunStatus("failed");
     await opts.statusWriter.update(0, 0);
     throw err;
+  }
+}
+
+/**
+ * US-001 — the run-start baseline capture, skipped when the run has no story to
+ * execute.
+ *
+ * Extracted from `runExecutionPhase` for the same cognitive-complexity reason as
+ * `runPreRunStepsOrFail` above. Two guards plus the pending-story guard:
+ *
+ *   1. `options.dryRun` — dry runs plan without mutating the tree; spawning the
+ *      test suite and writing `.nax/features/<fid>/test-baseline.json` would
+ *      mutate the user's repo (matches `ensureStoryPackageDirs`).
+ *   2. no pending story — `--publish-only` on a finished feature (and any
+ *      re-run that executes nothing) must leave the existing baseline
+ *      byte-identical. Capture writes it, and the completion phase's auto-commit
+ *      then moved HEAD, which a publish-only run refuses on.
+ *   3. try/catch — `captureRunBaseline`'s docstring invariant ("never blocks or
+ *      fails the run") must hold even if any step throws on a disk / permission
+ *      / parse failure. `runCommand` throws are already caught inside the helper
+ *      and surfaced as a `no-baseline: error` marker; the outer catch is the
+ *      safety net for everything outside that one branch.
+ */
+async function captureRunStartBaseline(options: RunnerExecutionOptions, prd: PRD): Promise<void> {
+  const logger = getSafeLogger();
+  if (options.dryRun) return;
+  if (pendingStoryIds(prd).length === 0) {
+    logger?.info("execution", "Run-start test baseline skipped — no story to run", { feature: options.feature });
+    return;
+  }
+  try {
+    await captureRunBaseline({
+      root: options.workdir,
+      featureId: options.feature,
+      config: options.config,
+      workdir: options.workdir,
+    });
+  } catch (err) {
+    logger?.warn("execution", "Run-start baseline capture threw — continuing", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -203,31 +244,9 @@ export async function runExecutionPhase(
   // the first story pipeline dispatch; never blocks or fails the run. Feature
   // dir is rooted at `workdir`; the capture step is feature-scoped.
   //
-  // Two guards:
-  //   1. `!options.dryRun` — dry runs plan without mutating the tree; spawning
-  //      the test suite and writing `.nax/features/<fid>/test-baseline.json`
-  //      would mutate the user's repo (matches `ensureStoryPackageDirs` above).
-  //   2. try/catch — `captureRunBaseline`'s docstring invariant ("never blocks
-  //      or fails the run") must hold even if `resolveQualityTestCommands`,
-  //      `parseTestOutput`, `captureRunStartRef`, or `writeRunBaseline` throw
-  //      on a disk / permission / parse failure. `runCommand` throws are
-  //      already caught inside the helper and surfaced as a `no-baseline:
-  //      error` marker; the outer catch is the safety net for everything
-  //      outside that one branch.
-  if (!options.dryRun) {
-    try {
-      await captureRunBaseline({
-        root: options.workdir,
-        featureId: options.feature,
-        config: options.config,
-        workdir: options.workdir,
-      });
-    } catch (err) {
-      logger?.warn("execution", "Run-start baseline capture threw — continuing", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  // US-001 — the guards and the no-pending-story skip live in the helper: inlining
+  // them pushed this function past the cognitive-complexity limit (`check:complexity`).
+  await captureRunStartBaseline(options, prd);
 
   // PERF-1: Precompute batch plan once from ready stories
   const readyStories = getAllReadyStories(prd);

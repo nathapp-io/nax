@@ -5,6 +5,7 @@ import { ledgerPath } from "@/advisor";
 import { NaxError } from "@/errors";
 import { buildBranchPackageReadingNote } from "@/prompts";
 import { ALWAYS_EXCLUDED, truncateDiff } from "@/review";
+import type { MovedCommit } from "./publish-only";
 import { _workflowDeps } from "./step-context";
 
 const DIFF_CONTEXT_LINES = 10;
@@ -80,6 +81,24 @@ export async function changedFilesSince(projectDir: string, base: string): Promi
     });
   }
   return stdout.split("\n").filter((line) => line !== "");
+}
+
+/**
+ * The commits between `base` and HEAD, newest first — what a publish-only refusal names when
+ * HEAD moved since the workflow finished. `undefined` on a failing read, never an empty list: the
+ * caller must not report "HEAD did not move" from an answer it could not get (`onlyLedgerChangedSince`
+ * is fail-closed the same way).
+ */
+export async function commitsSince(projectDir: string, base: string): Promise<readonly MovedCommit[] | undefined> {
+  const result = await _workflowDeps.git(["log", "--format=%h%x09%s", `${base}..HEAD`], projectDir);
+  if (result.exitCode !== 0) return undefined;
+  return result.stdout
+    .split("\n")
+    .filter((line) => line !== "")
+    .flatMap((line) => {
+      const tab = line.indexOf("\t");
+      return tab === -1 ? [] : [{ sha: line.slice(0, tab), subject: line.slice(tab + 1) }];
+    });
 }
 
 /**

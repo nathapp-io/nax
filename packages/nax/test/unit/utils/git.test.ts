@@ -23,6 +23,7 @@ import {
   autoCommitIfDirty,
   captureOutputFiles,
   captureWorkingTreeChanges,
+  isNaxAutoCommitSubject,
   parsePorcelainForNaxPaths,
 } from "@/utils/git";
 
@@ -669,5 +670,28 @@ describe("autoCommitIfDirty .nax/ restore", () => {
     assertDefined(checkoutCall, "checkout call");
     expect(checkoutCall.args).not.toContain("HEAD");
     expect(checkoutCall.args).toContain("--");
+  });
+});
+
+/**
+ * US-001 (run-start-baseline-fixes): the one commit subject a nax run writes
+ * itself. A publish-only refusal names the commits that moved HEAD and singles
+ * these out, so the predicate must match exactly what `autoCommitIfDirty` writes
+ * — no prefix match that would also swallow `chore(<f>): advisor decisions`.
+ */
+describe("isNaxAutoCommitSubject", () => {
+  test("AC-6: the run-summary auto-commit subject a nax run writes is recognised", () => {
+    expect(isNaxAutoCommitSubject("chore(my-feature): auto-commit after run-summary session")).toBe(true);
+  });
+
+  test("AC-7: an ordinary commit is not a nax auto-commit", () => {
+    expect(isNaxAutoCommitSubject("fix: handle empty input")).toBe(false);
+  });
+
+  test("another nax bookkeeping commit is not an auto-commit", () => {
+    expect(isNaxAutoCommitSubject("chore(my-feature): advisor decisions")).toBe(false);
+    expect(isNaxAutoCommitSubject("chore(my-feature): auto-commit after implementer")).toBe(false);
+    expect(isNaxAutoCommitSubject("auto-commit after run-summary session")).toBe(false);
+    expect(isNaxAutoCommitSubject("")).toBe(false);
   });
 });
