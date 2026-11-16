@@ -20,7 +20,6 @@ import {
   reportAcpOpens,
 } from "./acp";
 import { withAgentCallModel } from "./agent-call-model";
-import { createAgentsProvider } from "./agents-provider";
 import { type ChatAskController, createChatAskController } from "./ask-controller";
 import { type AskFallback, createAskFallback } from "./ask-fallback";
 import { type ChatBackgroundTasks, createHostTasks } from "./background";
@@ -36,6 +35,7 @@ import { createHostMemory, type HostMemory } from "./host-memory";
 import { createHostQueue, type HostQueue } from "./host-queue";
 import { createHostRecents, type HostRecents } from "./host-recents";
 import { createHostCompacting, createHostSteering, type HostCompacting, type HostSteering } from "./host-steer-compact";
+import { chatToolProviders } from "./host-tool-providers";
 import { closeChatHost, createChatLoopHandlers } from "./host-wiring";
 import { type ChatJobs, type ChatRunAsks, createHostJobs } from "./jobs";
 import {
@@ -206,13 +206,12 @@ class NativeChatHost implements ChatHost {
         ledger: () => this.ledger,
         turnListener: () => this.turnListener,
         memoryIndex: () => this.activeMemoryIndex,
+        backgroundTasks: () => this.tasks,
       });
       const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
       this.tasks = hostTasks.tasks;
       const providers = [...resources.toolProviders, ...(hostJobs?.providers ?? []), hostTasks.provider];
-      // Always last: the built-in general and explore agents are reachable even when the
-      // catalog has no agent of its own.
-      this.toolProviders = [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })];
+      this.toolProviders = chatToolProviders({ catalog: resources.catalog, providers, runs: this.runs });
     }
     if (hostJobs || this.tasks) {
       const closeOptions = { hostJobs, tasks: this.tasks, asks: this.asks, logger: deps.logger };
