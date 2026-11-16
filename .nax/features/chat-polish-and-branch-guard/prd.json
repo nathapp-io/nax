@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-branch-guard",
   "branchName": "feat/chat-polish-and-branch-guard",
   "createdAt": "2026-11-16T05:50:00.189Z",
-  "updatedAt": "2026-11-16T07:14:14.990Z",
+  "updatedAt": "2026-11-16T07:33:45.924Z",
   "userStories": [
     {
       "id": "US-001",
@@ -431,14 +431,17 @@
       "dependencies": [
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Session cancellation crosses layered key ownership, same-batch refs, timer expiry/reset and streaming mouse input; strict isolation is appropriate for destructive session-control behavior."
+        "reasoning": "Session cancellation crosses layered key ownership, same-batch refs, timer expiry/reset and streaming mouse input; strict isolation is appropriate for destructive session-control behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -474,7 +477,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "ae723f2237658c5039df4cef494c425ecd5903cc"
     },
     {
       "id": "US-007",
