@@ -184,10 +184,11 @@ describe("captureRunBaseline evidence — AC4 (first failing command)", () => {
     expect(marker.evidence?.command).toBe("cmd-b");
   });
 
-  // The list form must not let an earlier command's named failure mask a later
-  // command that names none — the masking command is the one whose evidence the
-  // baseline is degraded for.
-  test("AC4: a command naming its failure does not mask a sibling that names none", async () => {
+  // The root path keeps the aggregate rule (spec US-004: "runs exactly as
+  // today"), so a command that names its failures satisfies the whole list and
+  // the baseline is captured rather than degraded. The per-command rule lives in
+  // `runGroup`, where US-004/AC-14 scopes it to per-package groups.
+  test("AC4: a named failure anywhere in the root command list keeps the baseline captured", async () => {
     _captureDeps.resolveTestCommands = async () => ["cmd-a", "cmd-b"];
     _captureDeps.runCommand = async (command: string): Promise<CaptureRunnerResult> => ({
       success: false,
@@ -201,9 +202,9 @@ describe("captureRunBaseline evidence — AC4 (first failing command)", () => {
 
     await captureRunBaseline(makeOptions());
 
-    const marker = onlyMarker();
-    expect(marker.reason).toBe("unparseable");
-    expect(marker.evidence?.command).toBe("cmd-b");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.kind).toBe("captured");
+    expect(writes[0]).not.toHaveProperty("evidence");
   });
 });
 

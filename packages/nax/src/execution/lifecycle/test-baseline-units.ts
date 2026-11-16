@@ -178,6 +178,20 @@ export function unparseableFailure(outcome: CaptureLoopOutcome): CommandRun | un
   return outcome.outcomes.find((command) => !command.success && command.parsed.failures.length === 0)?.run;
 }
 
+/**
+ * The root path's rule, unchanged by this feature: the whole command list
+ * degrades only when a command failed and no command in the list named a
+ * failure, and the evidence is the first failing command in run order.
+ *
+ * Aggregate deliberately — spec US-004 keeps the root path exactly as today, so
+ * `unparseableFailure`'s per-command rule applies to per-package groups only.
+ * Lifting this masking defect out of the root path is a separate change.
+ */
+export function aggregateUnparseableFailure(outcome: CaptureLoopOutcome): CommandRun | undefined {
+  if (outcome.parsedSummaries.some((summary) => summary.failures.length > 0)) return undefined;
+  return outcome.outcomes.find((command) => !command.success)?.run;
+}
+
 /** One list of commands to run, from one directory, under one timeout. */
 export interface CommandRunInput {
   readonly commands: readonly string[];

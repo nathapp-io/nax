@@ -28,6 +28,7 @@ import {
 } from "@/verification";
 import { captureRunStartRef } from "../deferred-review";
 import {
+  aggregateUnparseableFailure,
   type CaptureUnit,
   capturePackageBaselines,
   evidenceFor,
@@ -35,7 +36,6 @@ import {
   resolveCaptureUnit,
   runCaptureCommands,
   type UnitResolveInput,
-  unparseableFailure,
 } from "./test-baseline-units";
 
 /** Subset of TestExecutionResult the capture step actually reads. */
@@ -346,12 +346,15 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
     failures: allFailures,
   };
 
-  // AC9 — a command exited non-zero but its parser named no structured failure.
-  // Keyed per command, not on the aggregate: one command naming its failures
-  // must not hide another command that names none, or that command's
-  // pre-existing failures would later be labelled as introduced. The evidence
-  // names that command — the first failing one in run order.
-  const unparseable = unparseableFailure(outcome);
+  // AC9 — the runner exited non-zero but the parser named no structured failure
+  // anywhere in the list. Keyed on the named failures, not the count: a parser
+  // that reads "990 failed" but names none would otherwise write a captured
+  // baseline with no entries, and every pre-existing failure would later be
+  // labelled as introduced. The evidence names the first failing command in run
+  // order — the one that first broke the capture. Aggregate by design: spec
+  // US-004 keeps this legacy root path exactly as today, so the per-command rule
+  // applies to per-package groups only.
+  const unparseable = aggregateUnparseableFailure(outcome);
   if (unparseable !== undefined) {
     await writeNoBaseline(root, featureId, "unparseable", evidenceFor(unparseable));
     return;
