@@ -866,8 +866,22 @@ export function ChatApp({
   }
 
   /**
+   * The oldest queued line, when ctrl+s is the queue's rather than the prompt's (US-005): a
+   * turn is sending, the prompt is empty (its text trims to `""` — a slash line is not empty
+   * and keeps today's behaviour), and no interrupt send is waiting. A pending interrupt send
+   * already owns what happens next, and the queue drains behind it, so those lines stay put.
+   */
+  function queuedSteer(): { readonly text: string; readonly rest: MessageQueue } | undefined {
+    if (!sending.current) return undefined;
+    if (interruptSend.current !== undefined) return undefined;
+    if (editorRef.current.text.trim() !== "") return undefined;
+    return takeQueued(queueRef.current);
+  }
+
+  /**
    * ctrl+s (US-004): hand the typed line to the turn that is running, or — with nothing
-   * running — send it exactly as a return would.
+   * running — send it exactly as a return would. With the prompt empty and a line waiting in
+   * the queue, the oldest queued line goes to the turn instead (US-005).
    *
    * Which of the two it is comes from `sending`, never from the rendered `busy` flag: a return,
    * the text typed after it and this chord can arrive in one batch, and the flag of the render
@@ -885,6 +899,11 @@ export function ChatApp({
    * the user's to edit or send.
    */
   function steerRunningTurn(): void {
+    const queuedLine = queuedSteer();
+    if (queuedLine !== undefined) {
+      steerQueued(queuedLine);
+      return;
+    }
     const text = steerText();
     if (text === undefined) return;
     if (!sending.current) {
@@ -893,36 +912,63 @@ export function ChatApp({
       inputHandle.current?.submit(text);
       return;
     }
-    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
-      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
-      return;
-    }
-    let result: SteerResult | undefined;
     try {
-      result = host.steer?.(text);
+      steerLine(text);
+    } catch (error) {
+      append({ kind: "error", text: errorMessage(error) });
+    }
+  }
+
+  /**
+   * A queued line handed to the running turn, exactly as a typed one is: the same steering and
+   * interrupt path, so a brain that steers shows the row a typed steer shows and a brain that
+   * cannot interrupts the turn and sends the line next. It leaves the queue only once the brain
+   * has taken it: a steer that throws or refuses never reached the turn, so nothing the user
+   * queued is dropped — the line stays where it was.
+   */
+  function steerQueued(queuedLine: { readonly text: string; readonly rest: MessageQueue }): void {
+    try {
+      if (!steerLine(queuedLine.text)) return;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
       return;
     }
+    replaceQueue(queuedLine.rest);
+  }
+
+  /**
+   * One line handed to the turn that is sending, wherever it came from; `false` when nothing
+   * took it. A picture in the draft is refused with the queue's own notice — a queued line never
+   * carries one, and the prompt is empty when a queued line is taken. A steer the brain accepts
+   * earns a steering row; one it cannot take interrupts the turn and holds the line to be sent
+   * first. A steer that throws is the caller's to report, and leaves the line where it was.
+   */
+  function steerLine(text: string): boolean {
+    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
+      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
+      return false;
+    }
+    const result = host.steer?.(text);
     // The line goes somewhere it is held now, whatever the brain answered: leaving it in the
     // prompt would steer, queue or send it twice.
     inputHandle.current?.edit(EMPTY_EDITOR);
     if (result?.status === "accepted") {
       trackSteer(result, text);
-      return;
+      return true;
     }
     // A send is already waiting to interrupt this turn. It could not be steered, and a second
     // pending send would have to replace it — so this line takes the queue instead, behind the
     // first one, and neither is lost.
     if (interruptSend.current !== undefined) {
       replaceQueue(pushQueued(queueRef.current, text));
-      return;
+      return true;
     }
     interruptSend.current = text;
     // The turn to cancel is the one `sending` owns, not the one the last render reported: this
     // key can arrive in the same batch as the return that started that turn. A card, a picker
     // and a menu still own escape from the frame, and the control guard still applies.
     if (escLayer(sending.current).kind === "turn") host.cancel();
+    return true;
   }
 
   /**
@@ -1198,6 +1244,14 @@ export function ChatApp({
     if (askedBySession(pending) && turnRunning && keys.canControl()) host.cancel();
   }
 
+  /**
+   * Whether ctrl+s would send a queued line now (US-005) — the key's own rule, read here for the
+   * footer: the queue is not empty, the draft trims to `""`, and no interrupt send is waiting.
+   */
+  function queuedNow(): boolean {
+    return queued.length > 0 && draft.editor.text.trim() === "" && interruptSend.current === undefined;
+  }
+
   const columns = size.columns;
   const layoutOptions = { width: columns, theme, expanded };
   const lines = layoutTranscript(entries, layoutOptions);
@@ -1219,6 +1273,8 @@ export function ChatApp({
             tmux,
             // The esc layer's own hint, which names what esc would close, deny or cancel now.
             layer: escHint !== undefined,
+            // Whether ctrl+s would send a queued line now (US-005).
+            queued: queuedNow(),
           })
         : "copied",
     layerHint: escHint,

@@ -165,7 +165,7 @@ const SANDBOX_OFF = "sandbox off";
 const SANDBOX_UNAVAILABLE = "sandbox unavailable";
 
 /** The hints with text of their own; `copied` and `layer` compose theirs from a caller's value. */
-type FixedHint = "quit" | "clear" | "busy" | "background" | "backgroundTmux" | "expanded" | "idle";
+type FixedHint = "quit" | "clear" | "busy" | "queued" | "background" | "backgroundTmux" | "expanded" | "idle";
 
 /** The gesture the footer offers, in precedence order; only one is ever shown. */
 export type FooterHint = FixedHint | "copied" | "layer";
@@ -179,6 +179,7 @@ const HINT_PARTS: Readonly<Record<FixedHint, { readonly gesture: string; readonl
   quit: { gesture: "press ctrl-c again to quit" },
   clear: { gesture: "esc again to clear" },
   busy: { gesture: "esc to interrupt" },
+  queued: { gesture: "esc to interrupt", extra: "ctrl+s to send queued now" },
   background: { gesture: "esc to interrupt", extra: "ctrl+b to background" },
   backgroundTmux: { gesture: "esc to interrupt", extra: "ctrl+b ctrl+b to background" },
   expanded: { gesture: "ctrl+o to collapse" },
