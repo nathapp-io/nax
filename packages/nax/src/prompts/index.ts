@@ -13,8 +13,10 @@ export type { AcpSubagentInstructionsInput, SubagentInstructionsInput } from "./
 export {
   buildAcpSubagentInstructions,
   buildAgentsInstructions,
+  buildExploreAgentPrompt,
   buildGeneralAgentPrompt,
   buildSubagentInstructions,
+  EXPLORE_SENTENCE,
   MAX_AGENTS_INDEX_ENTRIES,
 } from "./builders/agents-builder";
 export { buildBackgroundTaskNotice, buildBackgroundTasksInstructions } from "./builders/background-builder";

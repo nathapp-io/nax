@@ -4,14 +4,15 @@ import { readClaudeJsonMcp } from "./claude-json";
 import { type HookParseResult, hooksFromSettings, parseHooksJson } from "./parse-hooks";
 import { parseMcpJson } from "./parse-mcp";
 import { isResourceObject, readResourceJson, resourceError } from "./parse-shared";
-import { _resourceFsDeps, scanAgentsDir, scanCommandsDir, scanSkillsDir } from "./scan-dirs";
-import type { ResourceDiagnostic, ResourceOrigin, ResourcePackage } from "./types";
+import { _resourceFsDeps, type ResourceScanResult, scanAgentsDir, scanCommandsDir, scanSkillsDir } from "./scan-dirs";
+import type { AgentResource, ResourceDiagnostic, ResourceOrigin, ResourcePackage } from "./types";
 
 type DiagnosticSink = ResourceDiagnostic[];
 type JsonObject = Record<string, unknown>;
 const USER_ORIGIN = { kind: "claude-user" } as const;
 const PROJECT_ORIGIN = { kind: "claude-project" } as const;
 const INSTALLED_PLUGINS_VERSION = 2;
+const NO_AGENTS: ResourceScanResult<AgentResource> = { resources: [], diagnostics: [] };
 
 function missing(error: unknown): boolean {
   return isResourceObject(error) && error.code === "ENOENT";
@@ -60,11 +61,13 @@ async function scanPackage(options: {
   diagnostics: DiagnosticSink;
 }): Promise<ResourcePackage> {
   const { id, root, componentRoot, origin, diagnostics } = options;
-  const [skills, commands, agents] = await Promise.all([
+  const [skills, commands] = await Promise.all([
     scanSkillsDir(join(componentRoot, "skills"), origin),
     scanCommandsDir(join(componentRoot, "commands"), origin),
-    scanAgentsDir(join(componentRoot, "agents"), origin),
   ]);
+  // `~/.claude/agents/` is not an agent source: those agents are written for Claude Code and
+  // would land in every nax chat's listing. nax's own agents come from `naxAgentsDir(env)`.
+  const agents = origin.kind === "claude-user" ? NO_AGENTS : await scanAgentsDir(join(componentRoot, "agents"), origin);
   diagnostics.push(...skills.diagnostics, ...commands.diagnostics, ...agents.diagnostics);
   const mcpPath = join(root, ".mcp.json");
   const mcpText =

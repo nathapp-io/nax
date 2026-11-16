@@ -1,13 +1,12 @@
 /** The `nax-agents` provider: validated, named-agent invocation for a chat session. */
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
-import { buildAgentsInstructions } from "@/prompts";
+import { buildAgentsInstructions, EXPLORE_SENTENCE } from "@/prompts";
 import type { AgentResource, ResourceCatalog } from "@/resources";
 import { agentNamed, generalAgent } from "./builtin-agent";
 
 const MAX_AVAILABLE_AGENTS = 20;
 
-const RUN_DESCRIPTION =
-  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.";
+const RUN_DESCRIPTION = `Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. ${EXPLORE_SENTENCE}`;
 
 const INVALID_INPUT = "[chat] run requires agent: string and task: string";
 const BAD_MODEL = "[chat] run model must be a non-empty string";
@@ -59,7 +58,11 @@ function targetOf(input: Record<string, unknown>): RunTarget {
   return { kind: "agent", name, task, ...(model !== undefined ? { model } : {}) };
 }
 
-/** A static provider; it advertises nothing for a catalog without agents. */
+/**
+ * A static provider. It is always offered: even with no catalog agent the built-in
+ * `general` and `explore` agents are reachable, and the three fixed instruction lines
+ * still tell the model so.
+ */
 export function createAgentsProvider(options: AgentsProviderOptions): ToolProvider {
   const { catalog } = options;
   const tool: ProviderTool = {
@@ -86,7 +89,7 @@ export function createAgentsProvider(options: AgentsProviderOptions): ToolProvid
     id: "nax-agents",
     kind: "static",
     stages: ["*"],
-    tools: async () => (catalog.agents.length ? [tool] : []),
-    instructions: async () => (catalog.agents.length ? buildAgentsInstructions(catalog.agents) : undefined),
+    tools: async () => [tool],
+    instructions: async () => buildAgentsInstructions(catalog.agents),
   };
 }

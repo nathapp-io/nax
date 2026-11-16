@@ -6,6 +6,12 @@ import { cleanIndexDescription } from "./skills-builder";
 
 export const MAX_AGENTS_INDEX_ENTRIES = 150;
 
+/**
+ * The sentence that advertises the built-in explore agent. It is appended to the general
+ * line and to the `run` tool's description, so the instruction line count does not move.
+ */
+export const EXPLORE_SENTENCE = "For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.";
+
 /** One agents-index entry: the agent file's description and, when it declares any, its tools. */
 export interface AgentsIndexEntry {
   readonly qualifiedName: string;
@@ -40,7 +46,7 @@ export function buildAgentsInstructions(entries: readonly AgentsIndexEntry[]): s
   const lines = [
     "When a task suits one of these agents, call nax-agents__run with the agent name and a self-contained task.",
     "Pass model to run an agent on another model: provider/model for the nax native agent (openai-codex/gpt-6-luna is native), acp:<agent> for an installed ACP agent.",
-    "When no agent fits, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.",
+    `When no agent fits, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. ${EXPLORE_SENTENCE}`,
   ];
   for (const entry of entries.slice(0, MAX_AGENTS_INDEX_ENTRIES)) {
     lines.push(agentEntryLine(entry));
@@ -118,4 +124,15 @@ export function buildSubagentInstructions(input: SubagentInstructionsInput): str
  */
 export function buildGeneralAgentPrompt(): string {
   return "You are a general-purpose subagent. Complete the task you are given with the tools you have, then reply with a concise final answer: the agent that called you reads only your last message.";
+}
+
+/**
+ * The whole prompt of the built-in explore agent: a read-only searcher, so it is told to
+ * find and read code and report where it is, and to change nothing.
+ */
+export function buildExploreAgentPrompt(): string {
+  return [
+    "You are a read-only code search subagent. Find and read the code the task asks about with Read, Glob, Grep and Git, and report what you found as file paths and line numbers.",
+    "Change nothing: you have no tool that writes, and the agent that called you reads only your last message.",
+  ].join("\n");
 }

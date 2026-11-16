@@ -13,6 +13,8 @@ export function originLabel(origin: ResourceOrigin): string {
       return `plugin ${origin.plugin}`;
     case "nax-plugin":
       return `nax-plugin ${origin.plugin}`;
+    case "nax-user":
+      return "nax-user";
     case "nax-builtin":
       return "built-in";
   }
