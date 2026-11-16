@@ -6,7 +6,8 @@
  *
  * Split from `chat-status.ts`, which is at the source line cap and keeps the legacy span
  * producers this module reuses: `modeSpan`, `sandboxSpan`, `costSpan`, `hintSpans`,
- * `formatJobStrip`, `shortModel` and `singleRow`.
+ * `formatJobStrip` and `shortModel`. `singleRow` comes from `layout-lines.ts`, which owns the
+ * one-row primitives, so this module reaches the job strip without an import cycle.
  */
 import {
   costSpan,
@@ -18,9 +19,9 @@ import {
   modeSpan,
   sandboxSpan,
   shortModel,
-  singleRow,
 } from "./chat-status";
 import { contextSpan } from "./context-span";
+import { singleRow } from "./layout-lines";
 import type { Span } from "./styled-line";
 import type { ChatGlyphs } from "./theme";
 

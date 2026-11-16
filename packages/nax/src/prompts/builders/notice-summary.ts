@@ -13,8 +13,8 @@
  * notice carries one line per task.
  */
 
-/** `buildBackgroundTaskNotice` line; the command itself may contain `)` and `(`. */
-const TASK_LINE = /^\[nax-tasks\] background command \S+ \(.*?\) ended: (\S+?),/;
+/** `buildBackgroundTaskNotice` line, for a shell command or a background agent run; the command may hold `)` and `(`. */
+const TASK_LINE = /^\[nax-tasks\] background (command|agent) \S+ \(.*?\) ended: (\S+?),/;
 /** `buildJobNotice` line; `<state>` is the single word after `ended: `, cost/note/log follow. */
 const JOB_LINE = /^\[nax-jobs\] job \S+ \((\S+) (.+?)\) ended: (\S+)/;
 /** `buildRunAskNotice` first line. */
@@ -22,21 +22,33 @@ const RUN_ASK_LINE = /^\[nax-jobs\] run ask (\S+)/;
 
 const SUMMARY_SEPARATOR = " · ";
 
-/** States of every task line, in the order the tasks appear in the notice. */
-function taskStates(lines: readonly string[]): string[] {
-  const states: string[] = [];
-  for (const line of lines) {
-    const match = TASK_LINE.exec(line);
-    if (match !== null) states.push(match[1]);
-  }
-  return states;
+/** The kind of one task line and its state, in the order the tasks appear in the notice. */
+interface TaskLine {
+  readonly kind: string;
+  readonly state: string;
 }
 
-function taskSummary(states: readonly string[]): string {
+function taskLines(lines: readonly string[]): TaskLine[] {
+  const found: TaskLine[] = [];
+  for (const line of lines) {
+    const match = TASK_LINE.exec(line);
+    if (match !== null) found.push({ kind: match[1] ?? "", state: match[2] ?? "" });
+  }
+  return found;
+}
+
+/** The noun follows what the notice counted: commands, agents, or both. */
+function taskNoun(kinds: ReadonlySet<string>, count: number): string {
+  if (kinds.size > 1) return "background tasks";
+  if (kinds.has("agent")) return count === 1 ? "background agent" : "background agents";
+  return count === 1 ? "background command" : "background commands";
+}
+
+function taskSummary(tasks: readonly TaskLine[]): string {
   const counts = new Map<string, number>();
-  for (const state of states) counts.set(state, (counts.get(state) ?? 0) + 1);
-  const noun = states.length === 1 ? "background command" : "background commands";
-  const parts = [`${states.length} ${noun} ended`];
+  for (const task of tasks) counts.set(task.state, (counts.get(task.state) ?? 0) + 1);
+  const noun = taskNoun(new Set(tasks.map((task) => task.kind)), tasks.length);
+  const parts = [`${tasks.length} ${noun} ended`];
   for (const [state, count] of counts) parts.push(`${count} ${state}`);
   return parts.join(SUMMARY_SEPARATOR);
 }
@@ -56,5 +68,5 @@ export function summarizeBackgroundNotice(text: string): string | undefined {
   const job = JOB_LINE.exec(first);
   if (job !== null) return [`nax job ${job[1]} ${job[2]} ended`, job[3]].join(SUMMARY_SEPARATOR);
   if (!TASK_LINE.test(first)) return undefined;
-  return taskSummary(taskStates(lines));
+  return taskSummary(taskLines(lines));
 }

@@ -82,6 +82,9 @@ function fakeTasks(rows: BackgroundTask[], stopImpl?: StopImpl): TasksFixture {
       adopt: () => {
         throw new Error("unused");
       },
+      adoptAgent: () => {
+        throw new Error("unused");
+      },
       foreground: () => () => {},
       stop,
       stopAll: async () => {},

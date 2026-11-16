@@ -5,15 +5,17 @@
  * host state, that status and the hint the screen offers (US-017); `workingLine` turns the same status into the
  * animated line the screen redraws every `WORKING_TICK_MS`, and `headerLines` composes the three rows above the
  * transcript (US-018). The footer's role-tagged segmentation, which a fitter drops one role at a time, lives in
- * `footer-segments.ts` (US-001); this module supplies the spans it is built from.
+ * `footer-segments.ts` (US-001); the job and background-task ledger `footerModel` draws lives in `job-strip.ts` and
+ * is re-exported here; this module supplies the spans the footer is built from.
  *
  * Everything here is pure: a status the event does not change is returned as the same object.
  */
 import { parseModelSpec, type SessionEvent } from "@nathapp/nax-agent";
 import { acpModelLabel, type ChatHostState, isChatAcpModel, sessionTitleText } from "@/chat";
 import { contextSpan, formatTokens } from "./context-span";
-import { oneLine, resolveWidth } from "./layout-lines";
-import { displayWidth, type Span, type StyledLine, sanitizeText } from "./styled-line";
+import { type FooterJob, type FooterTask, formatJobStrip } from "./job-strip";
+import { resolveWidth, singleRow } from "./layout-lines";
+import { displayWidth, type Span, type StyledLine } from "./styled-line";
 import { type ChatColorToken, type ChatGlyphs, resolveChatTheme } from "./theme";
 import { toolTitle } from "./tool-card";
 import { elideSpansEnd, spansWidth } from "./wrap";
@@ -22,6 +24,7 @@ import { elideSpansEnd, spansWidth } from "./wrap";
 export type TurnPhase = "thinking" | "writing" | "tool" | "approval" | "compacting" | "retrying";
 
 export { formatTokens, formatWindow } from "./context-span";
+export { type FooterJob, type FooterTask, formatJobStrip } from "./job-strip";
 
 export interface TurnStatus {
   readonly running: boolean;
@@ -223,16 +226,6 @@ const COST_PREFIX = "$";
  */
 export const GLYPHS = resolveChatTheme({ env: {}, colorLevel: 0 }).glyphs;
 
-/**
- * Host text as one row: escape sequences and controls are stripped, then a line break
- * becomes a space. The footer, a header line and the working line are one physical row
- * each, so a cwd, a version, a model or a tool name carrying a newline must not add a row
- * to the screen.
- */
-export function singleRow(text: string): string {
-  return oneLine(sanitizeText(text));
-}
-
 /** The mode's label without its glyph: the footer draws it, the header states it. */
 function modeLabel(mode: ChatHostState["mode"]): string {
   return mode === "full" ? "full" : "guarded";
@@ -273,50 +266,6 @@ function leftLine(input: {
 export function costSpan(state: ChatHostState): Span {
   const cost = (state.meta.costUsd ?? 0).toFixed(COST_DECIMALS);
   return { text: `${SEPARATOR}${COST_PREFIX}${cost}`, color: "muted" };
-}
-
-export interface FooterJob {
-  readonly kind: "run" | "plan" | "finish" | "bot_review" | "bot_fix";
-  readonly target: string;
-  readonly progress?: { readonly passed: number; readonly total: number };
-  readonly cost?: number;
-}
-
-const JOB_TARGET_LIMIT = 16;
-const JOB_STRIP_LIMIT = 2;
-
-function jobPart(job: FooterJob): string {
-  const target = singleRow(job.target);
-  if (job.kind === "bot_review" || job.kind === "bot_fix") return `${job.kind} #${target}`;
-  const feature = target.length > JOB_TARGET_LIMIT ? `${target.slice(0, JOB_TARGET_LIMIT - 1)}…` : target;
-  let part = `${job.kind} ${feature}`;
-  if (job.kind === "run" || job.kind === "finish") {
-    if (job.progress !== undefined) part += ` ${job.progress.passed}/${job.progress.total}`;
-    if (job.cost !== undefined) part += ` $${job.cost.toFixed(COST_DECIMALS)}`;
-  }
-  return part;
-}
-
-/** A running host-owned background command, as the footer strip needs it. */
-export interface FooterTask {
-  readonly command: string;
-}
-
-/** The one part every running background command shares: `1 shell`, `3 shells`. */
-function shellPart(count: number): string {
-  return `${count} shell${count === 1 ? "" : "s"}`;
-}
-
-/**
- * Compact, independent ledger of jobs then background tasks for the one-row footer: the first `JOB_STRIP_LIMIT` jobs,
- * the jobs they hid, and — when commands run — one part counting them, since a few shells would crowd the row.
- */
-export function formatJobStrip(jobs: readonly FooterJob[], tasks: readonly FooterTask[] = []): string {
-  const hidden = jobs.length - JOB_STRIP_LIMIT;
-  const strip = jobs.slice(0, JOB_STRIP_LIMIT).map(jobPart).join(SEPARATOR);
-  const counted = hidden > 0 ? `${strip} +${hidden}` : strip;
-  if (tasks.length === 0) return counted;
-  return counted === "" ? shellPart(tasks.length) : `${counted}${SEPARATOR}${shellPart(tasks.length)}`;
 }
 
 function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {

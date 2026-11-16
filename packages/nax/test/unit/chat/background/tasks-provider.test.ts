@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { BackgroundCommandEnd, ToolProvider } from "@nathapp/nax-agent";
 import { makeLogger } from "@test/helpers";
+import type { BackgroundAgentEnd } from "@/chat/background";
 import * as background from "@/chat/background";
 import * as prompts from "@/prompts";
 
@@ -112,6 +113,36 @@ describe("registry notices after a tool read (US-001)", () => {
     expect(JSON.parse((await run(f.provider, "output", { task: f.id })).content).state).toBe("running");
     await f.finish();
     expect(f.tasks.peekNotice()).toContain(f.id);
+  });
+});
+describe("background agent tasks through the nax-tasks tools (US-005)", () => {
+  function agentFixture() {
+    const host = background.createHostTasks({ outputDir: "/o", now: () => new Date(0), logger: makeLogger() });
+    const end = Promise.withResolvers<BackgroundAgentEnd>();
+    const stop = mock(() => end.resolve({ outcome: "stopped", text: "" }));
+    const id = host.tasks.adoptAgent({
+      agent: "code-reviewer",
+      task: "Review the spec",
+      ended: end.promise,
+      stop,
+    }).id;
+    return { ...host, id, stop };
+  }
+  test("AC-12 the stop tool stops a background agent task", async () => {
+    const f = agentFixture();
+    expect(await run(f.provider, "stop", { task: f.id })).toEqual({ content: `stopped task ${f.id}` });
+    expect(f.stop).toHaveBeenCalledTimes(1);
+    expect(f.tasks.get(f.id)?.state).toBe("stopped");
+    await f.tasks.stopAll();
+  });
+  test("AC-13 the output tool returns a background agent task's log", async () => {
+    const f = agentFixture();
+    expect(JSON.parse((await run(f.provider, "output", { task: f.id })).content)).toMatchObject({
+      id: f.id,
+      kind: "agent",
+      output: "first\nsecond\nthird",
+    });
+    await f.tasks.stopAll();
   });
 });
 describe("createHostTasks", () => {

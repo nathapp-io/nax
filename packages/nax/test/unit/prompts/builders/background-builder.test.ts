@@ -40,4 +40,32 @@ describe("buildBackgroundTasksInstructions", () => {
       expect(text).toContain(name);
     expect(text).toContain("when a background command ends");
   });
+
+  test("AC-15 offers a background subagent run and what happens to it", () => {
+    const text = prompts.buildBackgroundTasksInstructions();
+    expect(text).toContain("nax-agents__run");
+    expect(text).toContain("runInBackground");
+    expect(text).toContain("keeps running after your turn ends");
+  });
+});
+
+describe("buildBackgroundTaskNotice with agent tasks (US-005)", () => {
+  const agentTask: BackgroundTask = {
+    id: "agent-1a2b3c4d",
+    kind: "agent",
+    command: "code-reviewer: Review the spec",
+    state: "failed",
+    origin: "agent",
+    startedAt: new Date(0).toISOString(),
+    logPath: "/o/chat-tasks/agent-1a2b3c4d.log",
+  };
+
+  test("AC-14 keeps the shell line, then writes the agent line, then one follow-up", () => {
+    const lines = prompts.buildBackgroundTaskNotice([task, agentTask]).split("\n");
+    expect(lines).toEqual([
+      "[nax-tasks] background command bash-1a2b3c4d (bun test) ended: failed, exit code 1, log /o/chat-tasks/bash-1a2b3c4d.log",
+      "[nax-tasks] background agent agent-1a2b3c4d (code-reviewer: Review the spec) ended: failed, log /o/chat-tasks/agent-1a2b3c4d.log",
+      "Read its output with `nax-tasks__output`, report the outcome to the user and propose the next step.",
+    ]);
+  });
 });

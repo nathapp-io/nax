@@ -12,6 +12,9 @@ import { NaxError } from "@/errors";
 import type { Logger } from "@/logger";
 import { buildBackgroundTaskNotice } from "@/prompts";
 import {
+  type BackgroundAgentEnd,
+  type BackgroundAgentHandle,
+  type BackgroundAgentSink,
   type BackgroundTask,
   type BackgroundTaskState,
   type ChatBackgroundTasks,
@@ -26,8 +29,21 @@ const TASK_OUTPUT_DEFAULT_LINES = 40;
 const RANDOM_HEX_LENGTH = 8;
 const ID_ATTEMPTS = 16;
 const LOG_LIMIT_LINE = "[nax] log limit reached; further output dropped";
+/** The task's own first line is all a command, a notice and a footer row can show. */
+const TASK_COMMAND_TASK_LIMIT = 80;
+/** A task's line breaks: a `\r\n` first line must not leave a stray `\r` in a record or a log line. */
+const TASK_LINE_BREAK = /\r\n|\n/;
 const encoder = new TextEncoder();
 const NEWLINE_BYTE = 10;
+
+/** The first line of a subagent task; a task written on one line keeps all of it. */
+function taskFirstLine(task: string): string {
+  return task.split(TASK_LINE_BREAK)[0] ?? "";
+}
+
+function truncateTaskLine(line: string): string {
+  return line.length > TASK_COMMAND_TASK_LIMIT ? line.slice(0, TASK_COMMAND_TASK_LIMIT) : line;
+}
 
 async function readLogTail(path: string): Promise<string> {
   const file = Bun.file(path);
@@ -57,7 +73,8 @@ export const _backgroundTaskDeps = {
 
 interface TaskEntry {
   record: BackgroundTask;
-  readonly handle: BackgroundCommandHandle;
+  /** Both a command's and an agent run's handle expose only this to the registry. */
+  readonly stop: () => void;
   pending: Promise<void>;
   bytes: number;
   endsWithNewline: boolean;
@@ -151,7 +168,7 @@ class BackgroundTasks implements ChatBackgroundTasks {
       throw new NaxError(`[chat] task ${id} is not running`, "CHAT_TASK_NOT_RUNNING", { stage: "chat", id });
     }
     entry.record = { ...entry.record, state: "stopped" };
-    entry.handle.stop();
+    entry.stop();
     return { ...entry.record };
   }
 
@@ -162,16 +179,16 @@ class BackgroundTasks implements ChatBackgroundTasks {
     while (this.completions.size > 0) await Promise.all([...this.completions]);
   }
 
-  private newId(): string {
+  private newId(prefix: "bash" | "agent"): string {
     for (let attempt = 0; attempt < ID_ATTEMPTS; attempt++) {
-      const id = `bash-${_backgroundTaskDeps.randomHex()}`;
+      const id = `${prefix}-${_backgroundTaskDeps.randomHex()}`;
       if (TASK_ID_PATTERN.test(id) && !this.entries.has(id)) return id;
     }
     throw new NaxError("[chat] could not allocate a background task id", "CHAT_TASK_ID_FAILED", { stage: "chat" });
   }
 
   adopt(handle: BackgroundCommandHandle): BackgroundCommandSink {
-    const id = this.newId();
+    const id = this.newId("bash");
     const entry: TaskEntry = {
       record: {
         id,
@@ -182,7 +199,7 @@ class BackgroundTasks implements ChatBackgroundTasks {
         state: "running",
         logPath: join(this.options.outputDir, "chat-tasks", `${id}.log`),
       },
-      handle,
+      stop: () => handle.stop(),
       pending: Promise.resolve(),
       bytes: 0,
       endsWithNewline: true,
@@ -202,6 +219,44 @@ class BackgroundTasks implements ChatBackgroundTasks {
       id,
       append: (_stream, chunk) => {
         if (entry.record.state === "running") this.append(entry, chunk);
+      },
+    };
+  }
+
+  adoptAgent(handle: BackgroundAgentHandle): BackgroundAgentSink {
+    const id = this.newId("agent");
+    const first = taskFirstLine(handle.task);
+    const entry: TaskEntry = {
+      record: {
+        id,
+        kind: "agent",
+        command: `${handle.agent}: ${truncateTaskLine(first)}`,
+        origin: "agent",
+        startedAt: this.options.now().toISOString(),
+        state: "running",
+        logPath: join(this.options.outputDir, "chat-tasks", `${id}.log`),
+      },
+      stop: () => handle.stop(),
+      pending: Promise.resolve(),
+      bytes: 0,
+      endsWithNewline: true,
+      capped: false,
+      logFailed: false,
+    };
+    this.entries.set(id, entry);
+    this.enqueue(entry, () => _backgroundTaskDeps.mkdir(join(this.options.outputDir, "chat-tasks")));
+    this.appendLine(entry, `[nax] agent ${handle.agent}: ${first}`);
+    const completion = handle.ended.then((end) => {
+      this.finalizeAgent(entry, end);
+      this.completions.delete(completion);
+    });
+    this.completions.add(completion);
+    if (this.shuttingDown) this.stop(id);
+    this.emit();
+    return {
+      id,
+      appendLine: (line) => {
+        if (entry.record.state === "running") this.appendLine(entry, line);
       },
     };
   }
@@ -237,6 +292,11 @@ class BackgroundTasks implements ChatBackgroundTasks {
     }
   }
 
+  /** One whole log line, separating it from a previous write that did not end in a newline. */
+  private appendLine(entry: TaskEntry, line: string): void {
+    this.append(entry, encoder.encode(`${entry.endsWithNewline ? "" : "\n"}${line}\n`));
+  }
+
   private finalize(entry: TaskEntry, end: BackgroundCommandEnd): void {
     entry.record = {
       ...entry.record,
@@ -247,7 +307,22 @@ class BackgroundTasks implements ChatBackgroundTasks {
     };
     const line =
       end.launchError !== undefined ? `[nax] launch failed: ${end.launchError}` : `[nax] exit code ${end.exitCode}`;
-    this.append(entry, encoder.encode(`${entry.endsWithNewline ? "" : "\n"}${line}\n`));
+    this.appendLine(entry, line);
+    if (entry.record.state === "succeeded" || entry.record.state === "failed") {
+      this.unnoticed.set(entry.record.id, entry.record);
+    }
+    this.emit();
+  }
+
+  /** A subagent run has an outcome and its text, never an exit code. */
+  private finalizeAgent(entry: TaskEntry, end: BackgroundAgentEnd): void {
+    entry.record = {
+      ...entry.record,
+      state: entry.record.state === "stopped" ? "stopped" : end.outcome,
+      endedAt: this.options.now().toISOString(),
+    };
+    if (end.text.trimEnd() !== "") this.appendLine(entry, end.text.trimEnd());
+    this.appendLine(entry, `[nax] agent ended: ${end.outcome}`);
     if (entry.record.state === "succeeded" || entry.record.state === "failed") {
       this.unnoticed.set(entry.record.id, entry.record);
     }

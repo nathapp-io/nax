@@ -66,6 +66,9 @@ function fakeTasks(rows: readonly BackgroundTask[]): ChatBackgroundTasks {
     adopt: () => {
       throw new Error("unused");
     },
+    adoptAgent: () => {
+      throw new Error("unused");
+    },
     foreground: () => () => {},
     stop: mock<ChatBackgroundTasks["stop"]>((id) => rows.find((row) => row.id === id) ?? task()),
     stopAll: async () => {},

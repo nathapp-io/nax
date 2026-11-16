@@ -215,6 +215,16 @@ export function oneLine(text: string): string {
   return text.split(SOURCE_LINE_BREAK).join(SPACE);
 }
 
+/**
+ * Host text as one row: escape sequences and controls are stripped, then a line break becomes
+ * a space. A footer row, a header row and the working line are one physical row each, so a cwd,
+ * a version, a model, a tool name or a job target carrying a newline must not add a row to the
+ * screen.
+ */
+export function singleRow(text: string): string {
+  return oneLine(sanitizeText(text));
+}
+
 /** `  ⎿  ` — the gutter, the result glyph, and the two columns that follow it. */
 export function resultPrefix(theme: ChatTheme): string {
   return `${GUTTER}${theme.glyphs.result}${SPACE}${SPACE}`;
