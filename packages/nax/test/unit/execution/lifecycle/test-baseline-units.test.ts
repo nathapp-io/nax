@@ -475,6 +475,23 @@ describe("captureRunBaseline per package — AC14 (unparseable)", () => {
     expect(marker.evidence?.cwd).toBe("packages/b");
     expect(marker.evidence?.command).toBe("run packages/b");
   });
+
+  // One command naming its failure must not mask another command in the same
+  // group that names none: the second's evidence would be discarded and its
+  // pre-existing failures would later be labelled as introduced.
+  test("AC14: a named failure in one command does not mask a sibling command that names none", async () => {
+    stubUnits((dir) => unit(dir, ["suite-a", "suite-b"]));
+    recordRuns((command) => ({ success: false, output: command, timedOut: false, exitCode: 1 }));
+    _captureDeps.parseTestOutput = (output) =>
+      output === "suite-a" ? FAILING_A : { passed: 0, failed: 3, failures: [] };
+
+    await captureRunBaseline(makeOptions({ packageDirs: ["packages/a"] }));
+
+    const marker = onlyMarker();
+    expect(marker.reason).toBe("unparseable");
+    expect(marker.evidence?.command).toBe("suite-b");
+    expect(marker.evidence?.cwd).toBe("packages/a");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

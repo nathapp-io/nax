@@ -183,6 +183,28 @@ describe("captureRunBaseline evidence — AC4 (first failing command)", () => {
     expect(marker.reason).toBe("unparseable");
     expect(marker.evidence?.command).toBe("cmd-b");
   });
+
+  // The list form must not let an earlier command's named failure mask a later
+  // command that names none — the masking command is the one whose evidence the
+  // baseline is degraded for.
+  test("AC4: a command naming its failure does not mask a sibling that names none", async () => {
+    _captureDeps.resolveTestCommands = async () => ["cmd-a", "cmd-b"];
+    _captureDeps.runCommand = async (command: string): Promise<CaptureRunnerResult> => ({
+      success: false,
+      timedOut: false,
+      output: command,
+    });
+    _captureDeps.parseTestOutput = (output: string): CaptureParsedSummary =>
+      output === "cmd-a"
+        ? { passed: 0, failed: 1, failures: [{ file: "a.test.ts", testName: "fails" }] }
+        : { passed: 0, failed: 4, failures: [] };
+
+    await captureRunBaseline(makeOptions());
+
+    const marker = onlyMarker();
+    expect(marker.reason).toBe("unparseable");
+    expect(marker.evidence?.command).toBe("cmd-b");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

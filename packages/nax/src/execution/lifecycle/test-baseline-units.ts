@@ -147,17 +147,35 @@ export function evidenceFor(run: CommandRun | undefined): BaselineEvidence | und
   };
 }
 
+/** One command the loop ran, kept beside the summary its own output parsed to. */
+export interface CommandOutcome {
+  readonly run: CommandRun;
+  readonly success: boolean;
+  readonly parsed: CaptureParsedSummary;
+}
+
 /** What the per-command loop observed, in a shape the decision tree can read. */
 export interface CaptureLoopOutcome {
   readonly parsedSummaries: readonly CaptureParsedSummary[];
-  /** False when any command exited non-zero. */
-  readonly aggregateSuccess: boolean;
+  /** Every command that completed, in run order, each with its own parse. */
+  readonly outcomes: readonly CommandOutcome[];
   /** The command that timed out, if one did. */
   readonly timedOut?: CommandRun;
   /** The command whose run threw, if one did. */
   readonly thrown?: CommandRun;
-  /** Every non-success command, in run order. */
-  readonly failed: readonly CommandRun[];
+}
+
+/**
+ * The first command, in run order, that failed and whose parsed output named no
+ * failure — the command that makes the whole baseline `unparseable`.
+ *
+ * Per command, deliberately: one failing command that does name its failures
+ * must not hide another failing command that names none. A capture that kept
+ * going would record the first command's failures only, and every pre-existing
+ * failure of the second would later be labelled as introduced.
+ */
+export function unparseableFailure(outcome: CaptureLoopOutcome): CommandRun | undefined {
+  return outcome.outcomes.find((command) => !command.success && command.parsed.failures.length === 0)?.run;
 }
 
 /** One list of commands to run, from one directory, under one timeout. */
@@ -179,10 +197,9 @@ export interface CommandRunInput {
  */
 export async function runCaptureCommands(input: CommandRunInput): Promise<CaptureLoopOutcome> {
   const { commands, timeoutSeconds, workdir, cwd, deps } = input;
-  let aggregateSuccess = true;
   let timedOut: CommandRun | undefined;
   let thrown: CommandRun | undefined;
-  const failed: CommandRun[] = [];
+  const outcomes: CommandOutcome[] = [];
   const parsedSummaries: CaptureParsedSummary[] = [];
 
   for (const command of commands) {
@@ -200,19 +217,16 @@ export async function runCaptureCommands(input: CommandRunInput): Promise<Captur
       timedOut = run;
       break;
     }
-    if (!result.success) {
-      aggregateSuccess = false;
-      failed.push(run);
-    }
-    parsedSummaries.push(deps.parseTestOutput(result.output));
+    const parsed = deps.parseTestOutput(result.output);
+    outcomes.push({ run, success: result.success, parsed });
+    parsedSummaries.push(parsed);
   }
 
   return {
     parsedSummaries,
-    aggregateSuccess,
+    outcomes,
     ...(timedOut ? { timedOut } : {}),
     ...(thrown ? { thrown } : {}),
-    failed,
   };
 }
 
@@ -365,11 +379,13 @@ async function runGroup(group: CommandGroup, input: CapturePackageBaselinesInput
   }
 
   const namedFailures = outcome.parsedSummaries.flatMap((summary) => summary.failures);
-  // Keyed on the named failures, not the count: a parser that reads "990 failed"
-  // but names none would otherwise write a captured baseline with no entries and
-  // every pre-existing failure would later be labelled as introduced.
-  if (!outcome.aggregateSuccess && namedFailures.length === 0) {
-    await writeNoBaseline("unparseable", evidenceFor(outcome.failed[0]));
+  // Per command, not per group: a command that read "990 failed" but named none
+  // would otherwise ride on another command's named failures, and every
+  // pre-existing failure it counted would later be labelled as introduced. The
+  // evidence names that command, not the group's first failure.
+  const unparseable = unparseableFailure(outcome);
+  if (unparseable !== undefined) {
+    await writeNoBaseline("unparseable", evidenceFor(unparseable));
     return undefined;
   }
 

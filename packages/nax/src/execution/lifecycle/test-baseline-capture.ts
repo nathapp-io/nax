@@ -35,6 +35,7 @@ import {
   resolveCaptureUnit,
   runCaptureCommands,
   type UnitResolveInput,
+  unparseableFailure,
 } from "./test-baseline-units";
 
 /** Subset of TestExecutionResult the capture step actually reads. */
@@ -215,7 +216,8 @@ async function writeNoBaseline(
  *   2. No resolvable test command → `no-baseline: no-test-command` (no spawn).
  *   3. Runner throws → catch, `no-baseline: error`, resolve normally.
  *   4. Runner result `timedOut` → `no-baseline: timeout`.
- *   5. Runner result `!success && failures.length === 0` → `no-baseline: unparseable`.
+ *   5. A command's result `!success` whose own parse named no failure →
+ *      `no-baseline: unparseable`, with that command's evidence.
  *   6. Otherwise (suite ran and parser produced failures, or green suite) →
  *      `captured` with `source: "preflight"`, `baseRef` from `captureGitRef`,
  *      one entry per parsed failure. Green suites carry `entries: []` — the
@@ -317,7 +319,7 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
     cwd: relativeCwd(root, workdir),
     deps: _captureDeps,
   });
-  const { parsedSummaries, aggregateSuccess } = outcome;
+  const { parsedSummaries } = outcome;
 
   // AC10 — runner throws; a `no-baseline: error` marker naming the command
   // that threw, so a crash is distinguishable from a real failure.
@@ -344,14 +346,14 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
     failures: allFailures,
   };
 
-  // AC9 — runner exited non-zero but parser produced zero structured failures
-  // (across every command in the list). Keyed on the named failures, not the
-  // count: a parser that reads "990 failed" but names none would otherwise write
-  // a captured baseline with no entries, and every pre-existing failure would
-  // later be labelled as introduced. The evidence names the first failing
-  // command in run order — the one that first broke the capture.
-  if (!aggregateSuccess && summary.failures.length === 0) {
-    await writeNoBaseline(root, featureId, "unparseable", evidenceFor(outcome.failed[0]));
+  // AC9 — a command exited non-zero but its parser named no structured failure.
+  // Keyed per command, not on the aggregate: one command naming its failures
+  // must not hide another command that names none, or that command's
+  // pre-existing failures would later be labelled as introduced. The evidence
+  // names that command — the first failing one in run order.
+  const unparseable = unparseableFailure(outcome);
+  if (unparseable !== undefined) {
+    await writeNoBaseline(root, featureId, "unparseable", evidenceFor(unparseable));
     return;
   }
 
