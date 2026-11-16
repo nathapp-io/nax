@@ -3,7 +3,7 @@
   "feature": "background-agents-and-forge-kind",
   "branchName": "feat/background-agents-and-forge-kind",
   "createdAt": "2026-11-16T11:16:53.192Z",
-  "updatedAt": "2026-11-16T12:17:15.606Z",
+  "updatedAt": "2026-11-16T12:33:15.042Z",
   "userStories": [
     {
       "id": "US-001",
@@ -295,14 +295,17 @@
         "tui"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Generalizes a concurrent registry across two handle kinds with log/stop/completion races and propagates kind through notices and UI; session execution is delegated to US-007."
+        "reasoning": "Generalizes a concurrent registry across two handle kinds with log/stop/completion races and propagates kind through notices and UI; session execution is delegated to US-007.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/background/task-registry.ts",
@@ -325,7 +328,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0577bd836e5674ce66d2593d7d201a83d1f01575"
     },
     {
       "id": "US-006",
