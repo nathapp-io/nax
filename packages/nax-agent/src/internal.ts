@@ -66,6 +66,7 @@ export * from "#src/native/session/compaction";
 export {
   compactionSettingsSchema,
   DEFAULT_COMPACTION,
+  MIN_COMPACT_AT_TOKENS,
   resolveCompaction,
 } from "#src/native/session/compaction-settings";
 export { DEFAULT_INSTRUCTION_FILE_NAME, isInstructionFileName } from "#src/native/session/instruction-file-name";

@@ -18,6 +18,7 @@ import {
   createChatStorage,
   createRecentModelStore,
   createWorkflowProvider,
+  idleCompactAfterMs,
   MEMLOG_DIR,
   MEMLOG_ENV,
   parseMemlogInterval,
@@ -151,19 +152,24 @@ function writeExitSummary(host: ChatHost, deps: ChatCommandDeps): void {
   deps.writeOut(formatChatExitSummary(state));
 }
 
-/** The props the screen draws with: the terminal's own theme, build, launch directory and home. */
-function screenProps(host: ChatHost, deps: ChatCommandDeps, cwd: string): ChatAppProps {
+/**
+ * The props the screen draws with: the terminal's own theme, build, launch directory and home —
+ * and the loaded config's idle-compaction delay (US-007), which every render of the screen
+ * reads. The config is threaded from the caller rather than reloaded here.
+ */
+function screenProps(host: ChatHost, deps: ChatCommandDeps, cwd: string, config: NaxConfig): ChatAppProps {
   return {
     host,
     theme: resolveChatTheme({ env: deps.env, colorLevel: chalk.level }),
     version: NAX_VERSION,
     cwd,
     home: homedir(),
+    idleCompactAfterMs: idleCompactAfterMs(config),
   };
 }
 
 /** Own the terminal lifetime; signal shutdown awaits lock release before allowing exit. */
-async function runShell(host: ChatHost, deps: ChatCommandDeps, cwd: string): Promise<void> {
+async function runShell(host: ChatHost, deps: ChatCommandDeps, cwd: string, config: NaxConfig): Promise<void> {
   let shell: ChatShell | undefined;
   let closing: Promise<void> | undefined;
   let shutdown: Promise<void> | undefined;
@@ -183,7 +189,7 @@ async function runShell(host: ChatHost, deps: ChatCommandDeps, cwd: string): Pro
     })());
   try {
     for (const signal of ["SIGTERM", "SIGHUP"] as const) removers.push(deps.onSignal(signal, () => stop(signal)));
-    shell = deps.renderChat(screenProps(host, deps, cwd));
+    shell = deps.renderChat(screenProps(host, deps, cwd, config));
     await shell.waitUntilExit();
     await shutdown;
   } finally {
@@ -408,7 +414,7 @@ async function composeChat(options: ChatCommandOptions, deps: ChatCommandDeps, c
           now: () => new Date(),
         });
   try {
-    await runShell(host, deps, cwd);
+    await runShell(host, deps, cwd, config);
   } finally {
     // After runShell: the screen is gone, so the path and any queued failure reach the user.
     if (sampler !== undefined) {

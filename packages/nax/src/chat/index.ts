@@ -29,6 +29,15 @@ export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskF
 export { GENERAL_AGENT_NAME, generalAgent } from "./builtin-agent";
 export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
 export {
+  chatCompactAtTokens,
+  createIdleCompactor,
+  IDLE_COMPACT_MIN_TOKENS,
+  type IdleCompactor,
+  type IdleCompactState,
+  type IdleCompactTimers,
+  idleCompactAfterMs,
+} from "./chat-compaction";
+export {
   clampEffort,
   clampModelEffort,
   cycleEffort,
@@ -84,6 +93,15 @@ export {
   sniffImage,
 } from "./images";
 export type { ChatJob, ChatJobs } from "./jobs";
+export {
+  buildJobPanelView,
+  JOB_PANEL_LOG_LINES,
+  type JobPanelDecision,
+  type JobPanelSources,
+  type JobPanelStory,
+  type JobPanelView,
+  readJobPanelView,
+} from "./jobs";
 export {
   _chatMemorySamplerDeps,
   type ChatMemorySampler,

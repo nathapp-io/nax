@@ -10,13 +10,30 @@
 import { describe, expect, test } from "bun:test";
 import type { SessionEvent, TurnEndStatus } from "@nathapp/nax-agent";
 import { isSubagentEvent } from "@/tui/chat/chat-status";
-import { decodeRate, turnStatsEntry, turnStatsText } from "@/tui/chat/turn-stats";
+import type { TranscriptEntry } from "@/tui/chat/transcript-model";
+import { decodeRate, turnEndClock, turnStatsEntry, turnStatsText } from "@/tui/chat/turn-stats";
 
-/** Every case states its window in milliseconds past this instant. */
-const BASE = Date.parse("2026-10-26T00:00:00.000Z");
+/**
+ * Every case states its window in milliseconds past 14:32 local time today. The clock a row
+ * carries (US-004) is local, so the instant comes from local date parts — that is what keeps
+ * a case's expected `14:32` true on every machine, whatever its zone.
+ */
+const LOCAL_NOW = new Date();
+const BASE = new Date(LOCAL_NOW.getFullYear(), LOCAL_NOW.getMonth(), LOCAL_NOW.getDate(), 14, 32, 0, 0).getTime();
+
+/** A local instant today, named by its clock so a case reads as the wall time it means. */
+function localTime(hour: number, minute: number): Date {
+  return new Date(LOCAL_NOW.getFullYear(), LOCAL_NOW.getMonth(), LOCAL_NOW.getDate(), hour, minute, 0, 0);
+}
 
 function at(ms: number): string {
   return new Date(BASE + ms).toISOString();
+}
+
+/** The text of the row a turn earned, narrowed — every turn end earns a `turn-stats` row (US-004). */
+function rowText(entry: TranscriptEntry): string {
+  if (entry.kind !== "turn-stats") throw new Error(`expected a turn-stats row, got ${entry.kind}`);
+  return entry.text;
 }
 
 interface EventOptions {
@@ -153,9 +170,35 @@ describe("decodeRate", () => {
   });
 });
 
+describe("turnEndClock", () => {
+  test("US-004 AC-1 states an instant earlier the same local day as its local time", () => {
+    expect(turnEndClock(localTime(14, 32).toISOString(), localTime(18, 0))).toBe("14:32");
+  });
+
+  test("US-004 AC-2 pads both parts to two digits", () => {
+    expect(turnEndClock(localTime(9, 5).toISOString(), localTime(18, 0))).toBe("09:05");
+  });
+
+  test("US-004 AC-3 names the month and the day when the instant falls on an earlier local day", () => {
+    const endedAt = new Date(2026, 10, 14, 23, 5, 0, 0).toISOString();
+    expect(turnEndClock(endedAt, new Date(2026, 10, 15, 0, 10, 0, 0))).toBe("Nov 14 23:05");
+  });
+
+  test("US-004 AC-4 returns the empty string for an endedAt that does not parse", () => {
+    expect(turnEndClock("now", localTime(18, 0))).toBe("");
+  });
+});
+
 describe("turnStatsText", () => {
-  test("AC-7 states the rate, the output and the whole seconds", () => {
+  test("US-004 AC-5 states the rate, the output and the whole seconds without an end time", () => {
     expect(turnStatsText({ rate: 48.2, outputTokens: 1_300, elapsedMs: 14_400 })).toBe("48.2 tok/s · 1.3k out · 14s");
+  });
+
+  test("US-004 AC-6 appends the end clock when the turn states when it ended", () => {
+    const endedAt = localTime(14, 32).toISOString();
+    expect(turnStatsText({ rate: 48.2, outputTokens: 1_300, elapsedMs: 14_400, endedAt, now: localTime(18, 0) })).toBe(
+      "48.2 tok/s · 1.3k out · 14s · 14:32",
+    );
   });
 
   test("AC-8 leaves the rate out when no window measured one", () => {
@@ -172,31 +215,50 @@ describe("turnStatsText", () => {
 });
 
 describe("turnStatsEntry", () => {
+  /** One 5s round of 241 tokens, ended 14.4s in, at 14:32:14 local time. */
   const TURN = [turnStart(0), textDelta(0), usage(5_000, 241)];
+  /** Later the same local day, as the screen's clock reads it. */
+  const NOW = localTime(18, 0);
 
-  test("builds the row a completed turn with output earns", () => {
-    expect(turnStatsEntry(TURN, turnEnd(14_400, "completed", 1_300))).toEqual({
+  test("US-004 AC-7 states a completed turn's measurement and the time it ended", () => {
+    expect(turnStatsEntry(TURN, turnEnd(14_400, "completed", 1_300), NOW)).toEqual({
       kind: "turn-stats",
-      text: "48.2 tok/s · 1.3k out · 14s",
+      text: "48.2 tok/s · 1.3k out · 14s · 14:32",
     });
   });
 
-  test("is undefined for a turn that did not complete, whatever it streamed", () => {
-    for (const status of ["cancelled", "errored", "timed_out", "interrupted"] as const) {
-      const end = turnEnd(14_400, status, 1_300, { code: "CANCELLED", message: "stopped" });
-      expect(turnStatsEntry(TURN, end)).toBeUndefined();
+  test("US-004 AC-8 states a completed turn that reported no output", () => {
+    const text = rowText(turnStatsEntry(TURN, turnEnd(14_400, "completed", 0), NOW));
+    expect(text.startsWith("0 out · ")).toBe(true);
+    expect(text.endsWith(" · 14:32")).toBe(true);
+  });
+
+  test.each([
+    { ac: "AC-9", status: "cancelled", word: "cancelled" },
+    { ac: "AC-10", status: "timed_out", word: "timed out" },
+    { ac: "AC-11", status: "interrupted", word: "interrupted" },
+    { ac: "AC-12", status: "errored", word: "errored" },
+  ] as const)("US-004 $ac states that a $status turn ended at its clock", ({ status, word }) => {
+    const end = turnEnd(14_400, status, 1_300, { code: "CANCELLED", message: "stopped" });
+    expect(rowText(turnStatsEntry(TURN, end, NOW))).toBe(`${word} · 14:32`);
+  });
+
+  test("US-004 AC-13 earns a turn-stats row whatever the turn ended as", () => {
+    for (const status of ["completed", "cancelled", "timed_out", "interrupted", "errored"] as const) {
+      expect(turnStatsEntry(TURN, turnEnd(14_400, status, 1_300), NOW).kind).toBe("turn-stats");
     }
   });
 
-  test("is undefined for a completed turn with no output tokens", () => {
-    expect(turnStatsEntry(TURN, turnEnd(14_400, "completed", 0))).toBeUndefined();
+  test("US-004 AC-14 states the status word alone when the end time does not parse", () => {
+    const end = { ...turnEnd(14_400, "cancelled", 1_300), at: "now" };
+    expect(rowText(turnStatsEntry(TURN, end, NOW))).toBe("cancelled");
   });
 
   test("counts the elapsed time as none when the turn's own start does not parse", () => {
     const unparseable: SessionEvent = { ...turnStart(0), at: "now" };
-    expect(turnStatsEntry([unparseable, textDelta(0), usage(5_000, 241)], turnEnd(14_400, "completed", 1_300))).toEqual(
-      { kind: "turn-stats", text: "48.2 tok/s · 1.3k out · 0s" },
-    );
+    expect(
+      turnStatsEntry([unparseable, textDelta(0), usage(5_000, 241)], turnEnd(14_400, "completed", 1_300), NOW),
+    ).toEqual({ kind: "turn-stats", text: "48.2 tok/s · 1.3k out · 0s · 14:32" });
   });
 });
 

@@ -36,6 +36,12 @@ export interface ResolvedCompaction {
   readonly enabled: boolean;
   readonly compactAtPercent: number;
   readonly keepRecentPercent: number;
+  /**
+   * Absolute trigger, in tokens, that overrides the percentage when it is
+   * lower. Optional with no default: absent (or 0) means the percent rule
+   * alone, which is what every pre-existing session and config gets.
+   */
+  readonly compactAtTokens?: number;
 }
 
 /** A reply needs room whatever the window is. */
@@ -100,14 +106,30 @@ export function estimateContextTokens(
 }
 
 /**
- * The percentage governs; the floor only takes over when a percentage of the
- * window would leave too little room for a reply. Both constants are a safety
- * rail against a window smaller than the defaults assume, not tuning knobs —
- * which is why they are not config.
+ * The percentage rule on its own: the percentage governs; the floor only takes
+ * over when a percentage of the window would leave too little room for a reply.
+ * Both constants are a safety rail against a window smaller than the defaults
+ * assume, not tuning knobs — which is why they are not config.
  */
-export function compactionThreshold(window: number, cfg: ResolvedCompaction): number {
+function percentThreshold(window: number, cfg: ResolvedCompaction): number {
   const headroom = Math.min(MIN_HEADROOM_TOKENS, Math.floor(window * MAX_HEADROOM_FRACTION));
   return Math.min(Math.floor(window * (cfg.compactAtPercent / 100)), window - headroom);
+}
+
+/** The configured absolute cap, when there is one: absent and 0 both mean "off". */
+function tokenCap(cfg: ResolvedCompaction): number | undefined {
+  return cfg.compactAtTokens !== undefined && cfg.compactAtTokens > 0 ? cfg.compactAtTokens : undefined;
+}
+
+/**
+ * The percent rule, lowered by an absolute token cap when the cap is set and
+ * smaller. The cap exists for large windows, where a percentage of the window
+ * is far more context than a new turn should ever pay a cache write for.
+ */
+export function compactionThreshold(window: number, cfg: ResolvedCompaction): number {
+  const threshold = percentThreshold(window, cfg);
+  const cap = tokenCap(cfg);
+  return cap === undefined ? threshold : Math.min(threshold, cap);
 }
 
 export function shouldCompact(tokens: number, window: number, cfg: ResolvedCompaction): boolean {
@@ -117,9 +139,19 @@ export function shouldCompact(tokens: number, window: number, cfg: ResolvedCompa
 /**
  * How much recent conversation survives verbatim, in tokens.
  * `aggressive` halves it — the reactive backstop's only difference.
+ *
+ * Scaled to whichever trigger WINS. When the cap lowered the threshold, the
+ * budget is the keep fraction of the cap, so it stays below the trigger it
+ * pairs with; otherwise it is the keep fraction of the window, as before. The
+ * schema's `keepRecentPercent <= compactAtPercent - 20` is what makes the
+ * cap-scaled budget always smaller than the cap.
  */
 export function keepBudget(window: number, cfg: ResolvedCompaction, aggressive = false): number {
-  const budget = Math.floor(window * (cfg.keepRecentPercent / 100));
+  const cap = tokenCap(cfg);
+  const capped = cap !== undefined && cap < percentThreshold(window, cfg);
+  const budget = capped
+    ? Math.floor((cap * cfg.keepRecentPercent) / cfg.compactAtPercent)
+    : Math.floor(window * (cfg.keepRecentPercent / 100));
   return aggressive ? Math.floor(budget / 2) : budget;
 }
 

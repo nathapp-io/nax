@@ -60,4 +60,45 @@ describe("layoutTranscript overrides", () => {
         .join("\n");
     expect([text(true, false).includes(detail), text(false, true).includes(detail)]).toEqual([true, false]);
   });
+
+  test("AC-7 a job panel's own open flag expands its sections while the transcript is collapsed", () => {
+    const job: TranscriptEntry = {
+      kind: "job",
+      view: {
+        jobId: "run-1",
+        kind: "run",
+        target: "review-and-gate-guards",
+        state: "running",
+        elapsedMs: 2_520_000,
+        stories: [{ id: "US-001", title: "View model", status: "passed", current: false }],
+        decisions: [],
+        logTail: [],
+      },
+      open: true,
+    };
+    const rows = layoutTranscript([job], { width: 100, theme, expanded: false })
+      .map(plainText)
+      .map((row) => row.trim());
+    expect(rows).toContain("stories");
+  });
+
+  test("AC-7 the same panel without open draws no section while the transcript is collapsed", () => {
+    const job: TranscriptEntry = {
+      kind: "job",
+      view: {
+        jobId: "run-1",
+        kind: "run",
+        target: "review-and-gate-guards",
+        state: "running",
+        elapsedMs: 2_520_000,
+        stories: [{ id: "US-001", title: "View model", status: "passed", current: false }],
+        decisions: [],
+        logTail: [],
+      },
+    };
+    const rows = layoutTranscript([job], { width: 100, theme, expanded: false })
+      .map(plainText)
+      .map((row) => row.trim());
+    expect(rows).not.toContain("stories");
+  });
 });

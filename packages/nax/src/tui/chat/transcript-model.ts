@@ -8,6 +8,7 @@
  * itself rather than a copy.
  */
 import type { SessionEvent } from "@nathapp/nax-agent";
+import type { JobPanelView } from "@/chat";
 import type { MentionStatus } from "@/chat/mentions";
 
 export interface ToolChild {
@@ -69,7 +70,14 @@ export type TranscriptEntry =
    * One finished turn's measurement (US-007): `48.2 tok/s · 1.3k out · 14s`, drawn as a
    * muted row under the reply it measures rather than as anything the model said.
    */
-  | { kind: "turn-stats"; text: string };
+  | { kind: "turn-stats"; text: string }
+  /**
+   * A job the chat started or re-attached (chat-job-panel), drawn by `layout-job.ts` as a
+   * collapsible panel: state, elapsed time, cost, story progress, the advisor's decisions
+   * and the job log tail. `view` is the projection `buildJobPanelView` returns; a refresh
+   * replaces the entry, so the panel's lines are re-laid out only when it changed.
+   */
+  | { kind: "job"; view: JobPanelView; open?: boolean };
 
 type ToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;
 

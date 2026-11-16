@@ -34,14 +34,15 @@ async function status(
   runStatus = "completed",
   pid = 4242,
   workflow?: { outcome: string; url?: string },
+  metrics: { cost?: number; passed?: number; total?: number } = {},
 ): Promise<void> {
   await Bun.write(
     join(featureDir(repoRoot, "feature"), "status.json"),
     JSON.stringify({
       version: 1,
       run: { id: "run-1", pid, status: runStatus },
-      cost: { spent: 1.2, limit: null },
-      progress: { passed: 3, total: 7, failed: 1, pending: 3 },
+      cost: { spent: metrics.cost ?? 1.2, limit: null },
+      progress: { passed: metrics.passed ?? 3, total: metrics.total ?? 7, failed: 1, pending: 3 },
       ...(workflow ? { workflow: { step: "done", stories: {}, ...workflow } } : {}),
     }),
   );
@@ -166,5 +167,26 @@ describe("readRunProgress", () => {
   test("missing status has no progress", async () => {
     const { readRunProgress } = await import("@/chat/jobs/job-outcome");
     expect(await readRunProgress(job(), repoRoot)).toBeNull();
+  });
+});
+
+describe("readJobStatus", () => {
+  test("AC-20 returns null for a status file naming a different pid", async () => {
+    await status("completed", 1);
+    const { readJobStatus } = await import("@/chat/jobs/job-outcome");
+    expect(await readJobStatus(job(), repoRoot)).toBeNull();
+  });
+
+  test("AC-20 returns the run record when the pid matches", async () => {
+    await status("running", 4242);
+    const { readJobStatus } = await import("@/chat/jobs/job-outcome");
+    expect(await readJobStatus(job(), repoRoot)).toMatchObject({ run: { pid: 4242, status: "running" } });
+  });
+
+  test("AC-24 readRunProgress keeps its cost/progress projection once readJobStatus is exported", async () => {
+    await status("running", 4242, undefined, { cost: 3.18, passed: 4, total: 13 });
+    const { readJobStatus, readRunProgress } = await import("@/chat/jobs/job-outcome");
+    expect(await readJobStatus(job(), repoRoot)).not.toBeNull();
+    expect(await readRunProgress(job(), repoRoot)).toEqual({ cost: 3.18, progress: { passed: 4, total: 13 } });
   });
 });

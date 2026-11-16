@@ -30,7 +30,8 @@ function projectProgress(status: NaxStatusFile): RunProgress {
   };
 }
 
-async function matchingStatus(job: ChatJob, repoRoot: string): Promise<NaxStatusFile | null> {
+/** The feature's run record, but only when it names this job's pid. */
+export async function readJobStatus(job: ChatJob, repoRoot: string): Promise<NaxStatusFile | null> {
   const status = await _jobOutcomeDeps.readStatusFile(featureDir(repoRoot, job.target));
   return status?.run.pid === job.pid ? status : null;
 }
@@ -38,7 +39,7 @@ async function matchingStatus(job: ChatJob, repoRoot: string): Promise<NaxStatus
 /** Only a PID-matched run record may contribute cost or progress. */
 export async function readRunProgress(job: ChatJob, repoRoot: string): Promise<RunProgress | null> {
   if (!isRunJobKind(job.kind)) return null;
-  const status = await matchingStatus(job, repoRoot);
+  const status = await readJobStatus(job, repoRoot);
   return status ? projectProgress(status) : null;
 }
 
@@ -84,8 +85,8 @@ export async function resolveJobOutcome(
   exit: { readonly exitCode?: number },
   repoRoot: string,
 ): Promise<JobOutcome> {
-  if (job.kind === "run") return runOutcome(await matchingStatus(job, repoRoot), job, exit.exitCode);
-  if (job.kind === "finish") return finishOutcome(await matchingStatus(job, repoRoot), job, exit.exitCode);
+  if (job.kind === "run") return runOutcome(await readJobStatus(job, repoRoot), job, exit.exitCode);
+  if (job.kind === "finish") return finishOutcome(await readJobStatus(job, repoRoot), job, exit.exitCode);
   if (job.cancelRequested) return { state: "cancelled" };
   if (job.kind === "plan") return planOutcome(job, repoRoot);
   if (exit.exitCode === 0) return { state: "succeeded" };

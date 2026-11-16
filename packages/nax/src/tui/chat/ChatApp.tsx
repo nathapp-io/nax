@@ -77,7 +77,9 @@ import { toggleTranscriptLine } from "./transcript-click";
 import { reduceTranscript, type TranscriptEntry } from "./transcript-model";
 import { turnStatsEntry } from "./turn-stats";
 import { footerHint, useClipboardFeedback } from "./use-clipboard-feedback";
+import { useIdleCompact } from "./use-idle-compact";
 import { useImageAttach } from "./use-image-attach";
+import { useJobPanels } from "./use-job-panels";
 import { useJobs } from "./use-jobs";
 import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
 import { useMentionMenu } from "./use-mention-menu";
@@ -101,6 +103,12 @@ export interface ChatAppProps {
    * marker (US-008). Absent on a terminal with no title to keep current.
    */
   readonly onBusyChange?: (busy: boolean) => void;
+  /**
+   * How long the chat may sit idle while a job runs before it compacts its own history
+   * (`chat.compaction.idleCompactAfterMinutes`, US-007). Absent means 0, so a screen rendered
+   * without it — every direct render before this story — never compacts on idle.
+   */
+  readonly idleCompactAfterMs?: number;
 }
 
 /** Environment seam; sampled once per mounted screen. */
@@ -296,6 +304,7 @@ export function ChatApp({
   cwd = host.repoRoot,
   home = "",
   onBusyChange,
+  idleCompactAfterMs = 0,
 }: ChatAppProps): ReactElement {
   const { stdout } = useStdout();
   const [tmux] = useState(() => Boolean(_chatAppDeps.tmux()));
@@ -602,9 +611,9 @@ export function ChatApp({
       // settles without one — a rejection, a runner that threw — never looks completed.
       if (event.type === "turn_end" && !isSubagentEvent(event)) {
         turnEnd.current = event.status;
-        // What the turn decoded, as one muted row under the reply it measured (US-007).
-        const stats = turnStatsEntry(turnEvents.current, event);
-        if (stats !== undefined) append(stats);
+        // What the turn decoded and when it stopped, as one muted row under the reply it
+        // measured (US-007, US-004). Every turn end leaves one, however it ended.
+        append(turnStatsEntry(turnEvents.current, event));
       }
     },
     [append],
@@ -1134,6 +1143,23 @@ export function ChatApp({
       canControl: keys.canControl(),
     }),
     deliver: (text) => sendTurn({ message: text }),
+    note: (text) => append({ kind: "notice", text }),
+  });
+
+  // A running job's panel: appended when the job is first seen running, refreshed while it
+  // runs and frozen once it ends. Held back while a turn streams, so a reply is never split.
+  useJobPanels({ host, entries, setEntries, turnRunning });
+
+  // A job leaves the chat idle for a long time (US-007), so its history is compacted once per
+  // job after the configured delay — through the screen's own `/compact` path, so the working
+  // line, the notices and the turn slot behave exactly as they do for the command.
+  useIdleCompact({
+    host,
+    delayMs: idleCompactAfterMs,
+    turnRunning,
+    // Undefined until a usage event reports one; the compactor needs a real count to qualify.
+    contextTokens: status.contextTokens,
+    compact: compactTurn,
     note: (text) => append({ kind: "notice", text }),
   });
 

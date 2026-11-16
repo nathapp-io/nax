@@ -41,6 +41,50 @@ describe("toggleTranscriptLine: background rows", () => {
   });
 });
 
+type JobEntry = Extract<TranscriptEntry, { kind: "job" }>;
+
+/** A job panel whose view carries progress, so it draws its headline row and a second row. */
+function jobPanel(overrides: Partial<JobEntry> = {}): JobEntry {
+  return {
+    kind: "job",
+    view: {
+      jobId: "run-1",
+      kind: "run",
+      target: "review-and-gate-guards",
+      state: "running",
+      elapsedMs: 2_520_000,
+      progress: { passed: 4, total: 13 },
+      stories: [],
+      decisions: [],
+      logTail: [],
+    },
+    ...overrides,
+  };
+}
+
+describe("toggleTranscriptLine: job panels", () => {
+  test("AC-5 clicking a collapsed panel's headline row opens it", () => {
+    expect(toggleTranscriptLine([jobPanel()], 0, OPTIONS)).toEqual([jobPanel({ open: true })]);
+  });
+
+  test("AC-5 clicking an open panel's headline row closes it again", () => {
+    expect(toggleTranscriptLine([jobPanel({ open: true })], 0, OPTIONS)).toEqual([jobPanel({ open: false })]);
+  });
+
+  test("AC-6 clicking a panel's progress row leaves the entries unchanged", () => {
+    const entries: readonly TranscriptEntry[] = [jobPanel({ open: true })];
+    // Row 0 is the headline; row 1 is the progress row and never toggles the panel.
+    expect(toggleTranscriptLine(entries, 1, OPTIONS)).toBe(entries);
+  });
+
+  test("shares every other entry with the input array, so only the clicked panel is redrawn", () => {
+    const user: TranscriptEntry = { kind: "user", text: "hi" };
+    const toggled = toggleTranscriptLine([user, jobPanel()], 2, OPTIONS);
+    expect(toggled[0]).toBe(user);
+    expect(toggled[1]).toEqual(jobPanel({ open: true }));
+  });
+});
+
 type ListingEntry = Extract<TranscriptEntry, { kind: "listing" }>;
 
 /** The jobs picker's output listing, collapsible unless a case says otherwise. */

@@ -195,6 +195,43 @@ describe("native backend compaction: a turn that ends after compacting", () => {
   });
 });
 
+describe("native backend compaction: absolute token cap", () => {
+  test("AC-15: a 1M-window session compacts before a send past an explicit 200k cap", async () => {
+    // 250k estimated tokens: far below 90% of a 1M window, past the 200k cap.
+    const provider = installScriptedProvider({ contextWindow: 1_000_000 });
+    provider.push(textRound("answer"));
+    provider.pushComplete("capped summary");
+    const store = await seeded("t-1", bigDoc(500_000));
+
+    const session = await resumeAgentSession(
+      "t-1",
+      sessionOptions({ transcriptStore: store, compaction: { compactAtTokens: 200_000 } }),
+    );
+    const events = await collect(session.send("next"));
+
+    expect(compactions(events)).toEqual(["proactive"]);
+    expect(turnEndOf(events).status).toBe("completed");
+    expect(provider.completeRequests).toHaveLength(1);
+    const contents = ((await store.load("t-1"))?.messages ?? []).map((m) => m.content);
+    expect(contents[1]).toContain("capped summary");
+    expect(contents.join("")).not.toContain("a".repeat(500_000));
+    await session.close();
+  });
+
+  test("the same history is left alone without the cap, so the cap is what fires it", async () => {
+    const provider = installScriptedProvider({ contextWindow: 1_000_000 });
+    provider.push(textRound("answer"));
+    const store = await seeded("t-2", bigDoc(500_000));
+
+    const session = await resumeAgentSession("t-2", sessionOptions({ transcriptStore: store }));
+    const events = await collect(session.send("next"));
+
+    expect(compactions(events)).toEqual([]);
+    expect(provider.completeRequests).toHaveLength(0);
+    await session.close();
+  });
+});
+
 describe("native backend compaction: overflow", () => {
   test("a context overflow compacts, retries and answers", async () => {
     const provider = installScriptedProvider({ contextWindow: 20_000 });

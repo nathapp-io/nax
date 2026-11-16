@@ -122,6 +122,45 @@ describe("compactionThreshold", () => {
       expect(compactionThreshold(window, cfg)).toBeLessThan(window);
     }
   });
+
+  test("AC-1: a 1M window with no token cap keeps the percent threshold", () => {
+    expect(compactionThreshold(1_000_000, { enabled: true, compactAtPercent: 90, keepRecentPercent: 30 })).toBe(
+      900_000,
+    );
+  });
+
+  test("AC-2: a token cap below the percent threshold wins", () => {
+    expect(
+      compactionThreshold(1_000_000, {
+        enabled: true,
+        compactAtPercent: 90,
+        keepRecentPercent: 30,
+        compactAtTokens: 200_000,
+      }),
+    ).toBe(200_000);
+  });
+
+  test("AC-3: a token cap above the percent threshold is ignored", () => {
+    expect(
+      compactionThreshold(128_000, {
+        enabled: true,
+        compactAtPercent: 90,
+        keepRecentPercent: 30,
+        compactAtTokens: 200_000,
+      }),
+    ).toBe(115_200);
+  });
+
+  test("AC-4: a cap of 0 turns the cap off and leaves the percent threshold", () => {
+    expect(
+      compactionThreshold(1_000_000, {
+        enabled: true,
+        compactAtPercent: 90,
+        keepRecentPercent: 30,
+        compactAtTokens: 0,
+      }),
+    ).toBe(900_000);
+  });
 });
 
 describe("shouldCompact", () => {
@@ -132,6 +171,28 @@ describe("shouldCompact", () => {
 
   test("never fires when disabled", () => {
     expect(shouldCompact(999_999, 128_000, { ...cfg, enabled: false })).toBe(false);
+  });
+
+  test("AC-8: fires on a 1M window once the token cap is crossed", () => {
+    expect(
+      shouldCompact(250_000, 1_000_000, {
+        enabled: true,
+        compactAtPercent: 90,
+        keepRecentPercent: 30,
+        compactAtTokens: 200_000,
+      }),
+    ).toBe(true);
+  });
+
+  test("AC-9: the enabled gate still governs a capped threshold", () => {
+    expect(
+      shouldCompact(250_000, 1_000_000, {
+        enabled: false,
+        compactAtPercent: 90,
+        keepRecentPercent: 30,
+        compactAtTokens: 200_000,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -148,6 +209,38 @@ describe("keepBudget", () => {
     for (const window of [4095, 128_000, 1_048_576]) {
       expect(keepBudget(window, cfg)).toBeLessThan(compactionThreshold(window, cfg));
     }
+  });
+
+  test("AC-5: scales to the winning token cap, not the window", () => {
+    expect(
+      keepBudget(1_000_000, {
+        enabled: true,
+        compactAtPercent: 90,
+        keepRecentPercent: 30,
+        compactAtTokens: 200_000,
+      }),
+    ).toBe(66_666);
+  });
+
+  test("AC-6: a cap that does not win leaves the window-scaled budget", () => {
+    expect(
+      keepBudget(128_000, {
+        enabled: true,
+        compactAtPercent: 90,
+        keepRecentPercent: 30,
+        compactAtTokens: 200_000,
+      }),
+    ).toBe(38_400);
+  });
+
+  test("AC-7: the aggressive backstop halves the cap-scaled budget", () => {
+    expect(
+      keepBudget(
+        1_000_000,
+        { enabled: true, compactAtPercent: 90, keepRecentPercent: 30, compactAtTokens: 200_000 },
+        true,
+      ),
+    ).toBe(33_333);
   });
 });
 
