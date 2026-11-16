@@ -17,6 +17,7 @@ import { type PRD, pendingStoryIds } from "../prd";
 import { tryLlmBatchRoute } from "../routing";
 import type { DispatchContext } from "../runtime/dispatch-context";
 import { SessionManager } from "../session";
+import { storyPackageDir } from "../utils/path-frame";
 import { precomputeBatchPlan } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
 import { ensureStoryPackageDirs } from "./ensure-package-dirs";
@@ -130,7 +131,8 @@ async function runPreRunStepsOrFail(opts: {
 async function captureRunStartBaseline(options: RunnerExecutionOptions, prd: PRD): Promise<void> {
   const logger = getSafeLogger();
   if (options.dryRun) return;
-  if (pendingStoryIds(prd).length === 0) {
+  const pendingIds = new Set(pendingStoryIds(prd));
+  if (pendingIds.size === 0) {
     logger?.info("execution", "Run-start test baseline skipped — no story to run", { feature: options.feature });
     return;
   }
@@ -140,12 +142,31 @@ async function captureRunStartBaseline(options: RunnerExecutionOptions, prd: PRD
       featureId: options.feature,
       config: options.config,
       workdir: options.workdir,
+      // US-004 — capture each pending story's package on its own. The same
+      // predicate the skip above uses, so a story waiting on a dependency still
+      // gets its package measured. Sorted and distinct: the capture groups these
+      // and runs each group in this order.
+      packageDirs: pendingPackageDirs(prd, pendingIds),
+      packages: options.runtime.packages,
     });
   } catch (err) {
     logger?.warn("execution", "Run-start baseline capture threw — continuing", {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * The repo-relative package dirs the pending stories live in — `"."` for a root
+ * story. Sorted and distinct, so `captureRunBaseline` takes a stable order.
+ */
+function pendingPackageDirs(prd: PRD, pendingIds: ReadonlySet<string>): string[] {
+  const dirs = new Set<string>();
+  for (const story of prd.userStories) {
+    if (!pendingIds.has(story.id)) continue;
+    dirs.add(storyPackageDir(story) ?? ".");
+  }
+  return [...dirs].sort();
 }
 
 async function outputHeadlessHeader(options: RunnerExecutionOptions, prd: PRD): Promise<void> {

@@ -12,12 +12,11 @@
  * also out of scope — parallel stories inherit the run-start baseline.
  */
 
-import { relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
-import { getSafeLogger, redactSecrets } from "@/logger";
-import { gateOutputTail } from "@/operations/gate-output-tail";
+import { getSafeLogger } from "@/logger";
 import { resolveFullSuiteTimeoutSeconds, resolveQualityTestCommands } from "@/quality";
+import type { PackageRegistry } from "@/runtime";
 import { parseTestOutput, type TestSummary } from "@/test-runners";
 import {
   type BaselineEvidence,
@@ -28,6 +27,15 @@ import {
   writeStoryBaseline,
 } from "@/verification";
 import { captureRunStartRef } from "../deferred-review";
+import {
+  type CaptureUnit,
+  capturePackageBaselines,
+  evidenceFor,
+  relativeCwd,
+  resolveCaptureUnit,
+  runCaptureCommands,
+  type UnitResolveInput,
+} from "./test-baseline-units";
 
 /** Subset of TestExecutionResult the capture step actually reads. */
 export interface CaptureRunnerResult {
@@ -84,6 +92,13 @@ export interface TestBaselineCaptureDeps {
   /** Resolve the gate timeout: regressionGate.timeoutSeconds ?? rectification.fullSuiteTimeoutSeconds ?? schema default. */
   resolveGateTimeoutSeconds: (config: NaxConfig) => number;
   regressionGateEnabled: (config: NaxConfig) => boolean;
+  /**
+   * Resolve one package's capture unit — its gate switch, its gate timeout and
+   * (when the gate is on) its suite command. Production wiring delegates to
+   * `resolveCaptureUnit`, which reads all three from the same package-merged
+   * config the full-suite gate reads.
+   */
+  resolveUnit: (input: UnitResolveInput) => Promise<CaptureUnit>;
 }
 
 /**
@@ -127,7 +142,17 @@ export const _captureDeps: TestBaselineCaptureDeps = {
   clockMs: () => Date.now(),
   resolveGateTimeoutSeconds: resolveFullSuiteTimeoutSeconds,
   regressionGateEnabled: (config) => config.execution?.regressionGate?.enabled ?? true,
+  resolveUnit: resolveUnitProduction,
 };
+
+/**
+ * `_captureDeps.resolveUnit`'s production wiring. Declared as a hoisted function
+ * so it can read the resolvers off `_captureDeps` itself: a test that stubs the
+ * gate switch or the timeout then also stubs them here.
+ */
+function resolveUnitProduction(input: UnitResolveInput): Promise<CaptureUnit> {
+  return resolveCaptureUnit(input, _captureDeps);
+}
 
 /** Strip the runtime-only fields the capture step never reads. */
 function adaptTestSummary(summary: TestSummary): CaptureParsedSummary {
@@ -144,7 +169,19 @@ export interface CaptureRunBaselineOptions {
   readonly featureId: string;
   readonly config: NaxConfig;
   readonly workdir: string;
+  /**
+   * The repo-relative package dirs to capture — `"."` for the repo root
+   * (US-004). Absent, `["."]`, or with no `packages` registry, the capture runs
+   * the single root command exactly as before; anything else captures each
+   * package on its own.
+   */
+  readonly packageDirs?: readonly string[];
+  /** The run's package registry, used to resolve a unit per package dir. */
+  readonly packages?: Pick<PackageRegistry, "resolve">;
 }
+
+/** Why the capture wrote a `no-baseline` marker instead of a snapshot. */
+export type NoBaselineReason = "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error";
 
 /**
  * Write a `no-baseline` marker with the given reason. Single persistence seam
@@ -154,7 +191,7 @@ export interface CaptureRunBaselineOptions {
 async function writeNoBaseline(
   root: string,
   featureId: string,
-  reason: "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error",
+  reason: NoBaselineReason,
   evidence?: BaselineEvidence,
 ): Promise<void> {
   const baseline: TestBaseline = {
@@ -166,110 +203,6 @@ async function writeNoBaseline(
   await _captureDeps.writeRunBaseline(root, featureId, baseline);
   // `reason` stays first; the evidence fields follow it verbatim.
   getSafeLogger()?.info("execution", "No run-start test baseline", { reason, ...evidence });
-}
-
-/** One command the capture ran, with its own timing and outcome. */
-interface CommandRun {
-  readonly command: string;
-  /** Relative to the capture root; `"."` for the root itself. */
-  readonly cwd: string;
-  readonly durationMs: number;
-  /** Absent when the runner threw. */
-  readonly result?: CaptureRunnerResult;
-  /** Set only when the runner threw. */
-  readonly error?: unknown;
-}
-
-/** Root-relative cwd for the evidence — `"."` when the command ran at the root. */
-function relativeCwd(root: string, workdir: string): string {
-  const rel = relative(root, workdir);
-  return rel === "" ? "." : rel;
-}
-
-/** Bounded, redacted output tail; omitted entirely when the output was empty. */
-function outputTailField(output: string): { outputTail?: string } {
-  const tail = gateOutputTail(output);
-  return tail === "" ? {} : { outputTail: tail };
-}
-
-/**
- * Turn one command run into persistable evidence. `command` and `error` are
- * redacted because `test-baseline.json` is committed; `outputTail` is redacted
- * and bounded by `gateOutputTail`. Absent values are absent keys, not
- * `undefined`.
- */
-function evidenceFor(run: CommandRun | undefined): BaselineEvidence | undefined {
-  if (run === undefined) return undefined;
-  return {
-    command: redactSecrets(run.command),
-    cwd: run.cwd,
-    ...(run.result?.exitCode !== undefined ? { exitCode: run.result.exitCode } : {}),
-    durationMs: run.durationMs,
-    ...(run.result !== undefined ? outputTailField(run.result.output) : {}),
-    ...(run.error !== undefined ? { error: redactSecrets(errorMessage(run.error)) } : {}),
-  };
-}
-
-/** What the per-command loop observed, in a shape the decision tree can read. */
-interface CaptureLoopOutcome {
-  readonly parsedSummaries: CaptureParsedSummary[];
-  /** False when any command exited non-zero. */
-  readonly aggregateSuccess: boolean;
-  /** The command that timed out, if one did. */
-  readonly timedOut?: CommandRun;
-  /** The command whose run threw, if one did. */
-  readonly thrown?: CommandRun;
-  /** Every non-success command, in run order. */
-  readonly failed: readonly CommandRun[];
-}
-
-/**
- * Run every resolved command independently, timing each one through
- * `_captureDeps.clockMs` and recording its outcome. A timed-out result or a
- * runner throw stops the loop — matches the gate's semantics: don't pollute the
- * baseline with partial output from commands that never ran.
- */
-async function runCaptureCommands(
-  commands: readonly string[],
-  timeoutSeconds: number,
-  cwd: string,
-  workdir: string,
-): Promise<CaptureLoopOutcome> {
-  let aggregateSuccess = true;
-  let timedOut: CommandRun | undefined;
-  let thrown: CommandRun | undefined;
-  const failed: CommandRun[] = [];
-  const parsedSummaries: CaptureParsedSummary[] = [];
-
-  for (const command of commands) {
-    const startedAt = _captureDeps.clockMs();
-    let result: CaptureRunnerResult;
-    try {
-      result = await _captureDeps.runCommand(command, timeoutSeconds, workdir);
-    } catch (err) {
-      thrown = { command, cwd, durationMs: _captureDeps.clockMs() - startedAt, error: err };
-      break;
-    }
-
-    const run: CommandRun = { command, cwd, durationMs: _captureDeps.clockMs() - startedAt, result };
-    if (result.timedOut) {
-      timedOut = run;
-      break;
-    }
-    if (!result.success) {
-      aggregateSuccess = false;
-      failed.push(run);
-    }
-    parsedSummaries.push(_captureDeps.parseTestOutput(result.output));
-  }
-
-  return {
-    parsedSummaries,
-    aggregateSuccess,
-    ...(timedOut ? { timedOut } : {}),
-    ...(thrown ? { thrown } : {}),
-    failed,
-  };
 }
 
 /**
@@ -316,6 +249,16 @@ export async function captureRunBaseline(opts: CaptureRunBaselineOptions): Promi
   }
 }
 
+/**
+ * True when the capture must run per package rather than once at the root.
+ *
+ * `["."]` is the single-package case spelled out by the caller, and an empty
+ * list carries no package to capture — both keep the root path.
+ */
+function isMultiPackage(packageDirs: readonly string[]): boolean {
+  return packageDirs.length > 0 && !(packageDirs.length === 1 && packageDirs[0] === ".");
+}
+
 async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise<void> {
   const { root, featureId, config, workdir } = opts;
 
@@ -326,6 +269,24 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
       featureId,
       error: errorMessage(err),
     });
+  }
+
+  // US-004 — a monorepo run measures each pending story's package on its own:
+  // the root command goes through the workspace runner, whose per-line package
+  // prefixes leave the parser naming no failure, and it is a different command
+  // from the per-story gate the baseline is compared against. `["."]`, an absent
+  // registry and an absent list all keep the single-package path below.
+  const packageDirs = opts.packageDirs;
+  const packages = opts.packages;
+  if (packages !== undefined && packageDirs !== undefined && isMultiPackage(packageDirs)) {
+    await capturePackageBaselines({
+      opts,
+      packageDirs,
+      packages,
+      deps: _captureDeps,
+      writeNoBaseline: (reason, evidence) => writeNoBaseline(root, featureId, reason, evidence),
+    });
+    return;
   }
 
   // AC6 — gate disabled, no spawn.
@@ -349,7 +310,13 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
   getSafeLogger()?.info("execution", "Capturing run-start test baseline", { commands, timeoutSeconds });
 
   // Run each command independently; aggregate outputs and parsed summaries.
-  const outcome = await runCaptureCommands(commands, timeoutSeconds, relativeCwd(root, workdir), workdir);
+  const outcome = await runCaptureCommands({
+    commands,
+    timeoutSeconds,
+    workdir,
+    cwd: relativeCwd(root, workdir),
+    deps: _captureDeps,
+  });
   const { parsedSummaries, aggregateSuccess } = outcome;
 
   // AC10 — runner throws; a `no-baseline: error` marker naming the command
