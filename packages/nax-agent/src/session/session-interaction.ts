@@ -18,6 +18,7 @@ import { cutToByteCap } from "#src/tools/truncate";
 import type { EmbedderTool, EmbedderToolContext, EmbedderToolResult } from "./agent-session-types.ts";
 import type { AdapterInteraction, AdapterInteractionResponse, InteractionHandler } from "./interaction-handler.ts";
 import type { SessionAskPort } from "./session-backend.ts";
+import { TurnEndAbort } from "./turn-end-abort.ts";
 
 /** Byte cap on an embedder approval's default summary. */
 export const EMBEDDER_SUMMARY_BYTES = 1024;
@@ -140,9 +141,16 @@ function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext)
  * The session turn controller aborts its signal with a `NaxError` for a cancel,
  * the turn deadline, a stalled consumer and an iterator close, and
  * `AbortSignal.any` keeps the reason of the source that aborted first — so a
- * `NaxError` reason names WHY the turn ended. Any other reason (a bare
- * `abort()`, a plain error, the native adapter's own watchdog, which aborts
- * with none) keeps the text that says only that it ended.
+ * `NaxError` reason names WHY the turn ended.
+ *
+ * US-003: the native adapter's own two turn-end aborts carry a `TurnEndAbort`
+ * instead — the same `AbortError` name a bare `abort()` produces, with nax's
+ * reason in the message. It has no error code, so it renders the message
+ * alone; its identity (not its name) is what distinguishes it from the
+ * runtime's `DOMException`.
+ *
+ * Any other reason (a bare `abort()`, a runtime `DOMException`, a plain
+ * error) keeps the text that says only that it ended.
  *
  * Evaluated at abandonment time, never before the race: the reason is only
  * observable once the signal has aborted.
@@ -150,8 +158,9 @@ function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext)
 export function abandonedToolMessage(name: string, signal: AbortSignal): string {
   const base = `Tool "${name}" was abandoned: the turn ended`;
   const reason: unknown = signal.reason;
-  if (!(reason instanceof NaxError)) return `${base}.`;
-  return `${base} (${reason.code}: ${reason.message}).`;
+  if (reason instanceof NaxError) return `${base} (${reason.code}: ${reason.message}).`;
+  if (reason instanceof TurnEndAbort) return `${base} (${reason.message}).`;
+  return `${base}.`;
 }
 
 /**
