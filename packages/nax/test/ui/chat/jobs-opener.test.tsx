@@ -39,6 +39,9 @@ function fakeTasks(rows: BackgroundTask[], read: ChatBackgroundTasks["output"] =
     adopt: () => {
       throw new Error("unused");
     },
+    adoptAgent: () => {
+      throw new Error("unused");
+    },
     foreground: () => () => {},
     stop,
     stopAll: async () => {},

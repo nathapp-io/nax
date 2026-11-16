@@ -38,6 +38,7 @@ import {
   StallDetectionConfigSchema,
   TddConfigSchema,
 } from "./schemas-execution";
+import { ForgeConfigSchema } from "./schemas-forge";
 import {
   AgentConfigSchema,
   DEFAULT_AGENT_CODEX_ACP_CONFIG,
@@ -115,6 +116,9 @@ export const NaxConfigSchema = z
         message: "outputDir must be absolute or start with ~/",
       }),
     version: z.number().default(1),
+    // US-001: optional, with no default — an absent block stays absent so
+    // `DEFAULT_CONFIG` never claims a forge nobody declared.
+    forge: ForgeConfigSchema.optional(),
     models: ModelMapSchema.default(structuredClone(DEFAULT_MODEL_MAPS)),
     autoMode: AutoModeConfigSchema.default({
       complexityRouting: {

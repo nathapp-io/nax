@@ -8,13 +8,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import * as resources from "@/resources";
-import { naxAgentsDir } from "@/resources/claude-paths";
+import { _claudePathsDeps, naxAgentsDir } from "@/resources/claude-paths";
 import { originLabel } from "@/resources/listing";
 
 const HELPER = "---\nname: helper\ndescription: helps\n---\nHelp out.\n";
 const REVIEWER = "---\nname: reviewer\ndescription: reviews\n---\nReview it.\n";
 const MALFORMED = "---\nname: broken\n---\nNo description.\n";
 
+let savedHomedir: typeof _claudePathsDeps.homedir;
 let dir: string;
 let repoRoot: string;
 let claudeDir: string;
@@ -36,8 +37,14 @@ beforeEach(() => {
   claudeDir = join(dir, "claude");
   claudeJson = join(dir, "fixture-missing/.claude.json");
   naxGlobalDir = join(dir, "nax-global");
+  // `agentsSkillsDir()` reads the real home directory; pin it so this file stays closed-world.
+  savedHomedir = _claudePathsDeps.homedir;
+  _claudePathsDeps.homedir = () => join(dir, "home");
 });
-afterEach(() => cleanupTempDir(dir));
+afterEach(() => {
+  _claudePathsDeps.homedir = savedHomedir;
+  cleanupTempDir(dir);
+});
 
 describe("discoverClaudeCodePackages agent sources", () => {
   test("AC-1 <claudeDir>/agents/reviewer.md leaves the claude-user package with no agents", async () => {

@@ -1,14 +1,38 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join, resolve } from "node:path";
 import type { LoopHandlerEntry, LoopHandlerSet } from "@nathapp/nax-agent/internal";
-import { assertDefined, makeLogger, makeNaxConfig, makePRD, makeStory, withTempDir } from "@test/helpers";
+import {
+  assertDefined,
+  cleanupTempDir,
+  makeLogger,
+  makeNaxConfig,
+  makePRD,
+  makeStory,
+  makeTempDir,
+  withTempDir,
+} from "@test/helpers";
 import { _chatMcpDeps, type ChatMcp, createChatHost, createChatMcp, createChatStorage } from "@/chat";
 import { _chatCommandDeps, chatCommand } from "@/cli/chat";
 import { featureDir, globalConfigDir } from "@/config";
 import { NaxError } from "@/errors";
 import type { McpPool } from "@/mcp";
 import { PluginRegistry } from "@/plugins";
-import { buildResourceCatalog, loadResourceCatalog } from "@/resources";
+import { _claudePathsDeps, buildResourceCatalog, loadResourceCatalog } from "@/resources";
+
+let savedHomedir: typeof _claudePathsDeps.homedir;
+let homeDir: string;
+
+// `loadResourceCatalog` reads `agentsSkillsDir()`, i.e. the real home directory, in the two
+// tests that use the real catalog: pin it so no test sees a real `~/.agents/skills` package.
+beforeEach(() => {
+  homeDir = makeTempDir();
+  savedHomedir = _claudePathsDeps.homedir;
+  _claudePathsDeps.homedir = () => homeDir;
+});
+afterEach(() => {
+  _claudePathsDeps.homedir = savedHomedir;
+  cleanupTempDir(homeDir);
+});
 
 function emptyMcp(overrides: Partial<ChatMcp> = {}): ChatMcp {
   return {

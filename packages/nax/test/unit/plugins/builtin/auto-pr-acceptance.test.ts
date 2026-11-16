@@ -87,6 +87,7 @@ beforeEach(() => {
     openDraft: _autoPrDeps.openDraft,
     findPrTemplate: _autoPrDeps.findPrTemplate,
     readDefaultBranch: _autoPrDeps.readDefaultBranch,
+    capturedForgeKind: _autoPrDeps.capturedForgeKind,
   };
   _autoPrDeps.run = makeDeps().run;
   _autoPrDeps.readText = makeDeps().readText;
@@ -106,6 +107,7 @@ afterEach(() => {
   _autoPrDeps.openDraft = saved.openDraft;
   _autoPrDeps.findPrTemplate = saved.findPrTemplate;
   _autoPrDeps.readDefaultBranch = saved.readDefaultBranch;
+  _autoPrDeps.capturedForgeKind = saved.capturedForgeKind;
 });
 
 // ─── Plugin metadata ────────────────────────────────────────────────────────

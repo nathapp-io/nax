@@ -54,6 +54,7 @@ beforeEach(() => {
     openDraft: _autoPrDeps.openDraft,
     findPrTemplate: _autoPrDeps.findPrTemplate,
     readDefaultBranch: _autoPrDeps.readDefaultBranch,
+    capturedForgeKind: _autoPrDeps.capturedForgeKind,
   };
   // Default: pretend this is a github repo so the early-exit guards in execute()
   // don't fire before the hasOpenPr recheck we're testing.
@@ -74,6 +75,7 @@ afterEach(() => {
   _autoPrDeps.openDraft = saved.openDraft;
   _autoPrDeps.findPrTemplate = saved.findPrTemplate;
   _autoPrDeps.readDefaultBranch = saved.readDefaultBranch;
+  _autoPrDeps.capturedForgeKind = saved.capturedForgeKind;
 });
 
 describe("BUG-8 — defaultRun timeout", () => {

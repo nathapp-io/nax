@@ -5,6 +5,8 @@ export type ResourceOrigin =
   | { readonly kind: "nax-plugin"; readonly plugin: string }
   /** An agent under nax's own global agents directory, `naxAgentsDir(env)`. */
   | { readonly kind: "nax-user" }
+  /** A skill under the user-level skills directory other coding agents read, `agentsSkillsDir()`. */
+  | { readonly kind: "agents-user" }
   /** A resource nax itself supplies; it has no file on disk and never joins a catalog. */
   | { readonly kind: "nax-builtin" };
 

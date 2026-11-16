@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import type { AgentResource, CommandResource, ResourceOrigin, ResourcePackage, SkillResource } from "@/resources";
 import * as resources from "@/resources";
+import { _claudePathsDeps } from "@/resources/claude-paths";
 
 function skill(name: string, origin: ResourceOrigin): SkillResource {
   const qualifiedName = "plugin" in origin ? `${origin.plugin}:${name}` : name;
@@ -174,12 +175,17 @@ describe("loadResourceCatalog", () => {
   let repoRoot: string;
   let claudeDir: string;
   let naxGlobalDir: string;
+  let savedHomedir: typeof _claudePathsDeps.homedir;
   beforeEach(async () => {
     dir = makeTempDir();
     repoRoot = join(dir, "repo");
     claudeDir = join(dir, "claude");
     // An isolated nax global dir, so no test reads the developer's own ~/.nax/agents.
     naxGlobalDir = join(dir, "nax-global");
+    // `agentsSkillsDir()` reads the real home directory: pin it, so no test sees a real
+    // `~/.agents/skills` package in this file's closed-world package lists.
+    savedHomedir = _claudePathsDeps.homedir;
+    _claudePathsDeps.homedir = () => join(dir, "home");
     await Bun.write(join(claudeDir, "skills/u/SKILL.md"), "---\ndescription: user fixture\n---\nBody");
     const installPath = join(dir, "plugin");
     await Bun.write(join(installPath, "skills/s/SKILL.md"), "---\ndescription: plugin fixture\n---\nBody");
@@ -189,7 +195,10 @@ describe("loadResourceCatalog", () => {
       JSON.stringify({ version: 2, plugins: { "p@m": [{ scope: "user", installPath }] } }),
     );
   });
-  afterEach(() => cleanupTempDir(dir));
+  afterEach(() => {
+    _claudePathsDeps.homedir = savedHomedir;
+    cleanupTempDir(dir);
+  });
   const naxOrigin = { kind: "nax-plugin", plugin: "native" } as const;
   const nax = pkg("nax:native", naxOrigin, { skills: [skill("n", naxOrigin)] });
   const load = (

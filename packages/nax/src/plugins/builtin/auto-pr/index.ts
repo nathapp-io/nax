@@ -15,9 +15,11 @@
 
 import * as path from "node:path";
 import { gitSpawnEnv, hardenedGitArgv } from "@nathapp/nax-agent/internal";
+import type { ForgeKind } from "@/forge";
 import {
   forgeFromRemoteUrl as _detectForge,
   findPrTemplate as _findPrTemplate,
+  _forgeKind,
   hasOpenPr as _hasOpenPr,
   openPr as _openDraft,
 } from "@/forge";
@@ -137,6 +139,8 @@ export const _autoPrDeps: {
   openDraft: typeof _openDraft;
   findPrTemplate: typeof _findPrTemplate;
   readDefaultBranch: (workdir: string) => Promise<string | undefined>;
+  /** The `NAX_FORGE_KIND` captured at CLI start (US-001). */
+  capturedForgeKind: () => ForgeKind | undefined;
 } = {
   run: defaultRun,
   readText: defaultReadText,
@@ -146,6 +150,9 @@ export const _autoPrDeps: {
   openDraft: _openDraft,
   findPrTemplate: _findPrTemplate,
   readDefaultBranch: defaultReadDefaultBranch,
+  // Read through the module so a capture that happens after this object is
+  // built is still seen.
+  capturedForgeKind: () => _forgeKind.current,
 };
 
 /** Read the loose `autoPr` block from `ctx.config`. Defaults to enabled=false. */
@@ -163,6 +170,37 @@ function getAutoPrConfig(context: PostRunContext): AutoPrConfig {
 /** `PostRunContext` already exposes a tightly-typed `paused` count. */
 function getStorySummary(context: PostRunContext): PostRunContext["storySummary"] {
   return context.storySummary;
+}
+
+/** A value that names a forge; anything else in the config is not a decision. */
+function asForgeKind(value: unknown): ForgeKind | undefined {
+  return value === "github" || value === "gitlab" ? value : undefined;
+}
+
+/**
+ * `forge.kind` of the config the run resolved (US-001).
+ *
+ * `PostRunContext.config` is typed `unknown` (`plugins/extensions.ts`), so the
+ * key is read the same loose way `getAutoPrConfig` reads `autoPr`. This is the
+ * run's own config, so it is the one place a `--profile`-supplied `forge.kind`
+ * is seen.
+ */
+export function configuredForgeKind(context: PostRunContext): ForgeKind | undefined {
+  const cfg = context.config as Record<string, unknown> | undefined;
+  if (!cfg) return undefined;
+  const forge = cfg.forge as Record<string, unknown> | undefined;
+  if (!forge) return undefined;
+  return asForgeKind(forge.kind);
+}
+
+/**
+ * The forge this action acts on: the kind captured at CLI start, else the run's
+ * `forge.kind`, else classify the remote URL. Read the remote first — `execute`
+ * pushes to `origin`, so a remote that cannot be resolved is a skip regardless
+ * of what the caller declared.
+ */
+function autoPrForge(context: PostRunContext, remoteUrl: string): ForgeKind | null {
+  return _autoPrDeps.capturedForgeKind() ?? configuredForgeKind(context) ?? _autoPrDeps.detectForge(remoteUrl);
 }
 
 /**
@@ -222,7 +260,7 @@ const autoPrAction: IPostRunAction = {
     const remoteUrl = await _autoPrDeps.getRemoteUrl(context.workdir);
     if (!remoteUrl) return false;
 
-    const forge = _autoPrDeps.detectForge(remoteUrl);
+    const forge = autoPrForge(context, remoteUrl);
     if (!forge) return false;
 
     const exists = await _autoPrDeps.hasOpenPr(
@@ -262,7 +300,7 @@ const autoPrAction: IPostRunAction = {
       if (!remoteUrl) {
         return { success: false, message: "Could not resolve git remote URL" };
       }
-      const forge = _autoPrDeps.detectForge(remoteUrl);
+      const forge = autoPrForge(context, remoteUrl);
       if (!forge) {
         return { success: false, message: "Remote host is not GitHub or GitLab" };
       }

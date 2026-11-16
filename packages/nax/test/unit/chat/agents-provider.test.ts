@@ -255,7 +255,7 @@ describe("createAgentsProvider model override", () => {
 });
 
 const RUN_DESCRIPTION =
-  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.";
+  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. Set \"runInBackground\": true to return at once with a task id; the agent keeps running after your turn ends and a notice arrives when it ends. For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.";
 const GENERAL_LAST_SENTENCE =
   "To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.";
 

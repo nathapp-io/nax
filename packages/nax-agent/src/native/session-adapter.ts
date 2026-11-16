@@ -21,6 +21,7 @@ import {
   type TurnResult,
 } from "#src/session/session-types";
 import { createTurnDeadline } from "#src/session/turn-deadline";
+import { TurnEndAbort } from "#src/session/turn-end-abort";
 import { _adapterDeps, authFields, isProtocolStreamError } from "./adapter-deps.ts";
 import { _clientDeps, getNativeClient, type NativeCatalogOverrides } from "./client.ts";
 import type { GuardedCredentialStore } from "./credentials/index.ts";
@@ -246,7 +247,14 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     // and the whole-turn deadline end the same in-flight call. Registering
     // through the hook (rather than a private registry) is what lets
     // sendPrompt tell a watchdog cancel from an unrelated process kill.
-    hooks?.onActiveCall?.(callId, async () => turnController.abort());
+    //
+    // US-003: the reason names WHY the turn ended, so an abandoned tool's
+    // result can say it (session/session-interaction.ts). It keeps the
+    // AbortError contract — `TurnEndAbort` is named "AbortError" — because the
+    // session manager and the watchdog classification key on that name.
+    hooks?.onActiveCall?.(callId, async () =>
+      turnController.abort(new TurnEndAbort("turn cancelled by its active-call cancel (idle watchdog or soft cancel)")),
+    );
     hooks?.onStreamActivity?.({
       ...eventBase,
       kind: "agent.call_started",
@@ -265,7 +273,12 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
     const deadlineController = new AbortController();
     const deadlineMs = deadline.remainingMs();
     const deadlineTimer =
-      deadlineMs !== undefined ? _adapterDeps.setTimeout(() => deadlineController.abort(), deadlineMs) : undefined;
+      deadlineMs !== undefined
+        ? _adapterDeps.setTimeout(
+            () => deadlineController.abort(new TurnEndAbort(`native turn deadline of ${timeoutSeconds}s reached`)),
+            deadlineMs,
+          )
+        : undefined;
     const turnSignals: AbortSignal[] = [turnController.signal, deadlineController.signal];
     if (opts.signal !== undefined) turnSignals.unshift(opts.signal);
     const turnSignal = AbortSignal.any(turnSignals);

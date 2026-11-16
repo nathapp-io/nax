@@ -399,6 +399,8 @@ export interface NaxConfig {
   generate?: GenerateConfig;
   /** Project profile — language and tooling metadata (US-001) */
   project?: import("./runtime-types-project").ProjectProfile;
+  /** US-001: the forge kind for this project config; absent leaves detection to decide. */
+  forge?: import("./runtime-types-forge").ForgeConfig;
   autoPr: import("./runtime-types-autopr").AutoPrConfig;
   /** Configuration profile name. For a multi-profile chain this is the composite, e.g. "a+b" (default: "default") */
   profile: string;

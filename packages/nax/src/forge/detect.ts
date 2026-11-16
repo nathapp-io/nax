@@ -47,11 +47,17 @@ async function forgeFromCli(deps: ForgeDeps, repoRoot: string): Promise<ForgeKin
 }
 
 /**
- * Resolve the forge for a repository: read `origin`, classify by host, and fall
- * back to a CLI probe. Returns null rather than throwing — callers differ on
- * whether an undetermined forge is fatal, so the decision is theirs.
+ * Resolve the forge for a repository: a declared kind first (`NAX_FORGE_KIND`,
+ * then `forge.kind`), then read `origin`, classify by host, and fall back to a
+ * CLI probe. Returns null rather than throwing — callers differ on whether an
+ * undetermined forge is fatal, so the decision is theirs.
  */
 export async function detectForge(deps: ForgeDeps, repoRoot: string): Promise<ForgeKind | null> {
+  // A declared kind answers what neither the host name nor a CLI probe can, so
+  // it is asked before either — and it costs no subprocess at all.
+  const explicit = await deps.explicitKind?.(repoRoot);
+  if (explicit !== undefined) return explicit;
+
   // nax-git-env-allow: ForgeDeps.run is defaultForgeDeps.run in production, which hardens every command
   const remote = await deps.run(["git", "remote", "get-url", "origin"], { cwd: repoRoot });
   if (remote.exitCode !== 0) return null;

@@ -84,6 +84,7 @@ beforeEach(() => {
     openDraft: _autoPrDeps.openDraft,
     findPrTemplate: _autoPrDeps.findPrTemplate,
     readDefaultBranch: _autoPrDeps.readDefaultBranch,
+    capturedForgeKind: _autoPrDeps.capturedForgeKind,
   };
   _autoPrDeps.run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
   _autoPrDeps.readText = async () => null;
@@ -103,6 +104,7 @@ afterEach(() => {
   _autoPrDeps.openDraft = saved.openDraft;
   _autoPrDeps.findPrTemplate = saved.findPrTemplate;
   _autoPrDeps.readDefaultBranch = saved.readDefaultBranch;
+  _autoPrDeps.capturedForgeKind = saved.capturedForgeKind;
 });
 
 describe("isPublishableBranch (src/utils/git.ts)", () => {

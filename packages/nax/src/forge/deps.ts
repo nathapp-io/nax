@@ -13,6 +13,7 @@
 
 import { gitSpawnEnv, hardenedGitArgv, killProcessGroup } from "@nathapp/nax-agent/internal";
 import { injectedForgeIdentity } from "./identity";
+import { resolveExplicitForgeKind } from "./kind";
 import type { ForgeDeps } from "./types";
 
 /** Default wall-clock cap for any one subprocess (BUG-8). */
@@ -143,4 +144,7 @@ export const defaultForgeDeps: ForgeDeps = {
   // The identity captured at CLI start (US-002), read through the module so a
   // capture that happens after this object is built is still seen.
   identity: injectedForgeIdentity,
+  // US-001: the declared forge kind, likewise read through the module so a
+  // capture after this object is built is seen.
+  explicitKind: resolveExplicitForgeKind,
 };

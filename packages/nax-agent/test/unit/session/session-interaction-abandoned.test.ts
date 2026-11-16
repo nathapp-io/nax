@@ -22,6 +22,7 @@ import {
   createSessionInteractionHandler,
   type SessionInteractionDeps,
 } from "#src/session/session-interaction";
+import { TurnEndAbort } from "#src/session/turn-end-abort";
 import type { CodingToolOutcome, CodingToolRuntime } from "#src/tools/runtime";
 
 const IDLE = new AbortController().signal;
@@ -96,6 +97,32 @@ describe("abandonedToolMessage", () => {
   test("AC-4: a plain Error reason is not a turn-end reason and keeps today's text", () => {
     expect(abandonedToolMessage("acme__put", abortedWith(new Error("koda went away")))).toBe(
       'Tool "acme__put" was abandoned: the turn ended.',
+    );
+  });
+
+  test("US-003 AC-2: a TurnEndAbort reason appends its message, not a code", () => {
+    expect(
+      abandonedToolMessage("acme__put", abortedWith(new TurnEndAbort("native turn deadline of 600s reached"))),
+    ).toBe('Tool "acme__put" was abandoned: the turn ended (native turn deadline of 600s reached).');
+  });
+
+  test("US-003 AC-3: a signal aborted with no argument keeps today's text", () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(abandonedToolMessage("acme__put", controller.signal)).toBe(
+      'Tool "acme__put" was abandoned: the turn ended.',
+    );
+  });
+
+  test("US-003 AC-4: a runtime DOMException named AbortError is not nax's own reason and keeps today's text", () => {
+    expect(abandonedToolMessage("acme__put", abortedWith(new DOMException("some text", "AbortError")))).toBe(
+      'Tool "acme__put" was abandoned: the turn ended.',
+    );
+  });
+
+  test("US-003 AC-5: a NaxError reason still appends its code and message", () => {
+    expect(abandonedToolMessage("acme__put", abortedWith(new NaxError("cancelled", "AGENT_SESSION_CANCELLED")))).toBe(
+      'Tool "acme__put" was abandoned: the turn ended (AGENT_SESSION_CANCELLED: cancelled).',
     );
   });
 });

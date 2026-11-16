@@ -1,7 +1,7 @@
 import type { NaxConfig } from "../config";
-import { claudeConfigDir, claudeJsonPath, naxAgentsDir } from "./claude-paths";
+import { agentsSkillsDir, claudeConfigDir, claudeJsonPath, naxAgentsDir } from "./claude-paths";
 import { discoverClaudeCodePackages } from "./claude-sources";
-import { scanAgentsDir } from "./scan-dirs";
+import { scanAgentsDir, scanSkillsDir } from "./scan-dirs";
 import type {
   AgentResource,
   CommandResource,
@@ -81,16 +81,39 @@ async function naxUserPackage(env: Readonly<Record<string, string | undefined>>)
 }
 
 /**
- * Place `nax-user` between the repo's package and the user/plugin packages, so a repo
- * agent wins a name clash over a `~/.nax` agent, which wins over a plugin agent.
+ * Skills a user installed under the shared `<home>/.agents/skills` directory, `agents-user`.
+ * An absent directory yields no package and no diagnostic, as `naxUserPackage` does.
  */
-function withNaxUser(
+async function agentsUserPackage(): Promise<ResourcePackage | undefined> {
+  const origin = { kind: "agents-user" } as const;
+  const root = agentsSkillsDir();
+  const { resources, diagnostics } = await scanSkillsDir(root, origin);
+  if (resources.length === 0 && diagnostics.length === 0) return undefined;
+  return {
+    id: "agents-user",
+    root,
+    origin,
+    skills: resources,
+    commands: [],
+    agents: [],
+    mcpServers: [],
+    hooks: [],
+    diagnostics,
+  };
+}
+
+/**
+ * Place the user packages between the repo's package and the user/plugin packages, so a repo
+ * resource wins a name clash over a `~/.nax` or `~/.agents` resource, which wins over a plugin's.
+ */
+function withUserPackages(
   packages: readonly ResourcePackage[],
-  naxUser: ResourcePackage | undefined,
+  userPackages: readonly (ResourcePackage | undefined)[],
 ): readonly ResourcePackage[] {
-  if (naxUser === undefined) return packages;
+  const insert = userPackages.filter((pkg) => pkg !== undefined);
+  if (insert.length === 0) return packages;
   const at = packages[0]?.origin.kind === "claude-project" ? 1 : 0;
-  return [...packages.slice(0, at), naxUser, ...packages.slice(at)];
+  return [...packages.slice(0, at), ...insert, ...packages.slice(at)];
 }
 
 /** Repo-scoped discovery; callers settle trust before loading any resources. */
@@ -101,12 +124,14 @@ export async function loadResourceCatalog(options: {
   naxPluginPackages: readonly ResourcePackage[];
 }): Promise<ResourceCatalog> {
   const { repoRoot, config, env, naxPluginPackages } = options;
-  const [claudePackages, naxUser] = await Promise.all([
+  const [claudePackages, naxUser, agentsUser] = await Promise.all([
     (config.resources?.claudeCode ?? true)
       ? discoverClaudeCodePackages({ repoRoot, claudeDir: claudeConfigDir(env), claudeJson: claudeJsonPath(env) })
       : Promise.resolve<ResourcePackage[]>([]),
     // nax's own agents are not Claude Code resources: they load with discovery disabled too.
     naxUserPackage(env),
+    // The shared user skills directory belongs to no Claude Code location: it loads either way.
+    agentsUserPackage(),
   ]);
-  return buildResourceCatalog([...withNaxUser(claudePackages, naxUser), ...naxPluginPackages]);
+  return buildResourceCatalog([...withUserPackages(claudePackages, [naxUser, agentsUser]), ...naxPluginPackages]);
 }

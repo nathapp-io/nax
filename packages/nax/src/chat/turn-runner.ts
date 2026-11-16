@@ -19,8 +19,15 @@ export interface RunChatTurnOptions {
   readonly onEvent: (event: SessionEvent) => void;
   /** ISO timestamp for shared session metadata, not ledger milliseconds. */
   readonly now: string;
+  /** Establish background-spend eligibility before this turn can start any nested runs. */
+  readonly beginNestedTurn?: () => void;
   /** Spend of nested sessions to add to this turn's metadata; read once, after `turn_end`. */
   readonly extraCostUsd?: () => number;
+  /**
+   * Retires the spend `extraCostUsd` reported, once the metadata carrying it has persisted.
+   * Spend that arrives while the write is in flight is therefore not silently dropped.
+   */
+  readonly commitExtraCost?: () => void;
   /**
    * Resolves once every nested run of this turn has finished, abandoned ones included.
    * Awaited after `turn_end` and before the ledger flush and the metadata write, so a
@@ -41,15 +48,18 @@ async function writeTurnMeta(options: RunChatTurnOptions, costUsd: number): Prom
   const { handle, storage, message, now } = options;
   // Re-read spend/title for repeated turns using the opener's immutable handle.
   const stored = (await storage.readMeta(handle.meta.sessionId)) ?? handle.meta;
+  const extraCost = options.extraCostUsd?.() ?? 0;
   const meta: SessionMeta = {
     ...handle.meta,
     updatedAt: now,
-    costUsd: (stored.costUsd ?? 0) + costUsd + (options.extraCostUsd?.() ?? 0),
+    costUsd: (stored.costUsd ?? 0) + costUsd + extraCost,
     title:
       stored.title ??
       [...(options.title?.trim() || message).trim().replace(/\s+/gu, " ")].slice(0, TITLE_CODE_POINT_LIMIT).join(""),
   };
   await storage.writeMeta(meta);
+  // Only a write that persisted may retire the spend it carried.
+  options.commitExtraCost?.();
   return meta;
 }
 
@@ -71,6 +81,7 @@ function turnInput(images: readonly ImageAttachment[] | undefined): readonly [] 
 /** Consume one native turn; rejected sends must not flush or mutate shared state. */
 export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionMeta> {
   const { handle, message, asks, ledger, onEvent, images } = options;
+  options.beginNestedTurn?.();
   let previousAt: string | undefined;
   let ended: Extract<SessionEvent, { type: "turn_end" }> | undefined;
   for await (const event of handle.session.send(message, ...turnInput(images))) {
