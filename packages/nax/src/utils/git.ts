@@ -175,6 +175,25 @@ export function registerBeforeAutoCommit(hook: AutoCommitHook): () => void {
 }
 
 /**
+ * The subject `autoCommitIfDirty` writes. Only this exact shape counts as a nax
+ * auto-commit: other nax commits in the same range (the workflow's advisor
+ * ledger, `chore(<feature>): advisor decisions`) are real bookkeeping too, but
+ * they carry rulings the PR cites and are treated as ordinary commits.
+ */
+const NAX_AUTO_COMMIT_SUBJECT = /^chore\([^)]*\): auto-commit after .+ session$/;
+
+/**
+ * Whether `subject` is the commit message `autoCommitIfDirty` writes below.
+ *
+ * US-001 (run-start-baseline-fixes): the publish-only HEAD-moved refusal names the
+ * commits that moved HEAD and tells the caller when every one of them is a nax
+ * auto-commit — the signal that re-running would re-review bookkeeping only.
+ */
+export function isNaxAutoCommitSubject(subject: string): boolean {
+  return NAX_AUTO_COMMIT_SUBJECT.test(subject);
+}
+
+/**
  * Auto-commit safety net.
  *
  * If the agent left uncommitted changes after a session, stage and commit them

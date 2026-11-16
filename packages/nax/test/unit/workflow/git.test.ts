@@ -6,6 +6,7 @@ import { ALWAYS_EXCLUDED } from "@/review";
 import {
   changedFilesSince,
   commitLedger,
+  commitsSince,
   listUncommitted,
   readHead,
   writeBranchReviewPackage,
@@ -177,6 +178,39 @@ describe("workflow git helpers", () => {
     await Bun.write(join(dir, "b.txt"), "new\n");
     await Bun.write(join(dir, ".nax", "y.json"), "{}");
     expect((await listUncommitted(dir)).sort((a, b) => a.localeCompare(b))).toEqual(["a.txt", "b.txt"]);
+  });
+});
+
+/**
+ * US-001 (run-start-baseline-fixes): the commits between a recorded base and
+ * HEAD, which the publish-only HEAD-moved refusal names. A failed read is
+ * `undefined` (unknown), never an empty list that would read as "HEAD did not
+ * move".
+ */
+describe("commitsSince", () => {
+  test("AC-8: parses `<sha>\\t<subject>` lines and asks for the base..HEAD log", async () => {
+    const calls: string[][] = [];
+    _workflowDeps.git = async (args) => {
+      calls.push(args);
+      return { stdout: "abc1234\tchore(f): auto-commit after run-summary session\n", exitCode: 0 };
+    };
+
+    const moved = await commitsSince("/repo", "h1");
+
+    expect(moved).toEqual([{ sha: "abc1234", subject: "chore(f): auto-commit after run-summary session" }]);
+    expect(calls).toEqual([["log", "--format=%h%x09%s", "h1..HEAD"]]);
+  });
+
+  test("AC-9: a non-zero exit is an unknown answer, not an empty one", async () => {
+    _workflowDeps.git = async () => ({ stdout: "", stderr: "bad revision", exitCode: 128 });
+
+    expect(await commitsSince("/repo", "h1")).toBeUndefined();
+  });
+
+  test("an empty log answers an empty list", async () => {
+    _workflowDeps.git = async () => ({ stdout: "", exitCode: 0 });
+
+    expect(await commitsSince("/repo", "h1")).toEqual([]);
   });
 });
 

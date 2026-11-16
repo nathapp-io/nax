@@ -569,3 +569,78 @@ describe("fullSuiteGateOp — baseline disposition labeling (US-003)", () => {
     expect(out.findings.map((f) => f.baselineDisposition)).toEqual([undefined, undefined]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-003 — gate findings are matched against their OWN package's baseline
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("fullSuiteGateOp — gate findings match their own package (US-003)", () => {
+  const FEATURE_ID = "feature-us-003-packages";
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = makeTempDir("nax-test-gate-package-baseline-");
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempRoot);
+  });
+
+  /** The one failing test every AC here shares. */
+  const X_SUMMARY: TestSummary = {
+    passed: 0,
+    failed: 1,
+    failures: [{ file: "x.test.ts", testName: "t", error: "boom", stackTrace: [] }],
+  };
+
+  function failingXDeps(): Partial<FullSuiteGateDeps> {
+    return {
+      runTests: async () => ({
+        passed: false,
+        failed: 1,
+        output: "1 test failed",
+        parsedSummary: X_SUMMARY,
+        timedOut: false,
+      }),
+    };
+  }
+
+  /** A run-start baseline captured for two packages: `packages/a` is failing at base. */
+  async function seedRunBaselineAcrossPackages(): Promise<void> {
+    await writeRunBaseline(tempRoot, FEATURE_ID, {
+      kind: "captured",
+      source: "preflight",
+      capturedAt: "2026-01-15T00:00:00.000Z",
+      packageDirs: ["packages/a", "packages/b"],
+      entries: [{ file: "x.test.ts", testName: "t", packageDir: "packages/a" }],
+    });
+  }
+
+  function inputForPackage(packageDir: string): FullSuiteGateInput {
+    return makeInput({ workdir: packageDir }, "/tmp", { projectDir: tempRoot, featureName: FEATURE_ID });
+  }
+
+  test("AC-14: a failure in another package than the baseline entry reads introduced", async () => {
+    await seedRunBaselineAcrossPackages();
+
+    const out = await fullSuiteGateOp.execute(inputForPackage("packages/b"), mockCtx, makeDeps(failingXDeps()));
+
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["introduced"]);
+  });
+
+  test("AC-15: the same failure in the entry's own package reads pre-existing", async () => {
+    await seedRunBaselineAcrossPackages();
+
+    const out = await fullSuiteGateOp.execute(inputForPackage("packages/a"), mockCtx, makeDeps(failingXDeps()));
+
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["pre-existing"]);
+  });
+
+  test("AC-16: a package the baseline never captured reads unattributed", async () => {
+    await seedRunBaselineAcrossPackages();
+
+    const out = await fullSuiteGateOp.execute(inputForPackage("packages/c"), mockCtx, makeDeps(failingXDeps()));
+
+    expect(out.findings.map((f) => f.baselineDisposition)).toEqual(["unattributed"]);
+  });
+});

@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeConfigSlice, makeMockRuntime, makeNaxConfig, makeStory } from "@test/helpers";
 import type { ConfigSelector, NaxConfig } from "@/config";
+import { NaxError } from "@/errors";
 import {
   _fullSuiteGateDeps,
   _verifyScopedDeps,
@@ -10,6 +11,7 @@ import {
   type VerifyScopedDeps,
   verifyScopedOp,
 } from "@/operations";
+import { _commandDefaultsDeps, clearCommandDefaultsCache } from "@/quality";
 import type { PackageView } from "@/runtime";
 
 type QualityCommands = NonNullable<NonNullable<NaxConfig["quality"]>["commands"]>;
@@ -196,5 +198,100 @@ describe("_fullSuiteGateDeps.resolveGateContext — US-002: cwd provenance", () 
 
     expect(gateCtx.cmdWorkdir).toBe("/w");
     expect(gateCtx.cmdProvenance).toBe("overlay");
+  });
+});
+
+const savedDetectLanguage = _commandDefaultsDeps.detectLanguage;
+const savedFileExists = _commandDefaultsDeps.fileExists;
+const savedReadJson = _commandDefaultsDeps.readJson;
+
+/** Force the detection fallback to yield `bun test` (a bun JS package with no test script). */
+function detectBunTest(): void {
+  _commandDefaultsDeps.detectLanguage = async () => "typescript";
+  _commandDefaultsDeps.fileExists = async (p) => p.endsWith("bun.lock");
+  _commandDefaultsDeps.readJson = async () => null;
+}
+
+/** Force the detection fallback to yield nothing at all. */
+function detectNothing(): void {
+  _commandDefaultsDeps.detectLanguage = async () => undefined;
+  _commandDefaultsDeps.fileExists = async () => false;
+  _commandDefaultsDeps.readJson = async () => null;
+}
+
+describe("_fullSuiteGateDeps.resolveGateContext — US-003: shared suite command", () => {
+  beforeEach(clearCommandDefaultsCache);
+
+  afterEach(() => {
+    _commandDefaultsDeps.detectLanguage = savedDetectLanguage;
+    _commandDefaultsDeps.fileExists = savedFileExists;
+    _commandDefaultsDeps.readJson = savedReadJson;
+    clearCommandDefaultsCache();
+  });
+
+  test("AC-6: no configured and no detected test command throws TEST_COMMAND_MISSING", async () => {
+    detectNothing();
+    const config = makeNaxConfig();
+    const ctx: CallContext = {
+      runtime: makeMockRuntime({ config }),
+      agentName: "test-agent",
+      packageDir: "/w/packages/a",
+      storyId: "US-003",
+      packageView: packageViewWith(config),
+    };
+
+    const run = _fullSuiteGateDeps.resolveGateContext(
+      { workdir: "/w/packages/a", story: makeStory({ id: "US-003", workdir: "packages/a" }) },
+      ctx,
+    );
+
+    const caught = await run.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(caught).toBeInstanceOf(NaxError);
+    if (!(caught instanceof NaxError)) throw new Error(`expected a NaxError, got ${String(caught)}`);
+    expect(caught.code).toBe("TEST_COMMAND_MISSING");
+  });
+
+  test("AC-7: an overlay-declared test command runs from the package's absolute dir", async () => {
+    const config = makeNaxConfig({ quality: { commands: { test: "custom test" } } });
+    const ctx: CallContext = {
+      runtime: makeMockRuntime({ config }),
+      agentName: "test-agent",
+      packageDir: "/w/packages/a",
+      storyId: "US-003",
+      packageView: packageViewWith(config, { hasOverride: true, overlay: rawOverlay({ test: "custom test" }) }),
+    };
+
+    const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
+      { workdir: "/w/packages/a", story: makeStory({ id: "US-003", workdir: "packages/a" }) },
+      ctx,
+    );
+
+    expect(gateCtx.testCmd).toBe("custom test");
+    expect(gateCtx.cmdWorkdir).toBe("/w/packages/a");
+    expect(gateCtx.cmdProvenance).toBe("overlay");
+  });
+
+  test("AC-8: a detected test command carries provenance 'detected'", async () => {
+    detectBunTest();
+    const config = makeNaxConfig();
+    const ctx: CallContext = {
+      runtime: makeMockRuntime({ config }),
+      agentName: "test-agent",
+      packageDir: "/w/packages/a",
+      storyId: "US-003",
+      packageView: packageViewWith(config),
+    };
+
+    const gateCtx = await _fullSuiteGateDeps.resolveGateContext(
+      { workdir: "/w/packages/a", story: makeStory({ id: "US-003", workdir: "packages/a" }) },
+      ctx,
+    );
+
+    expect(gateCtx.testCmd).toBe("bun test");
+    expect(gateCtx.cmdWorkdir).toBe("/w/packages/a");
+    expect(gateCtx.cmdProvenance).toBe("detected");
   });
 });

@@ -33,11 +33,13 @@ import type { GateStopReason } from "../utils/gate-stall";
 import { storyPackageDir } from "../utils/path-frame";
 import {
   applyBaselineDispositions,
+  baselineForPackage,
   readRunBaseline,
   resolveStoryBaseline,
   type StoryExecutionMode,
 } from "../verification";
-import { type GateCommandProvenance, resolveGateCwd } from "./gate-cwd";
+import type { GateCommandProvenance } from "./gate-cwd";
+import { resolveSuiteTestCommand } from "./suite-test-command";
 import type { CallContext, DeterministicOperation } from "./types";
 
 /**
@@ -152,26 +154,21 @@ export interface FullSuiteGateDeps {
 
 export const _fullSuiteGateDeps: FullSuiteGateDeps = {
   resolveGateContext: async (input, ctx) => {
-    const { resolveQualityTestCommands } = await import("../quality/command-resolver");
     const { resolveFullSuiteTimeoutSeconds } = await import("../quality/gate-timeout");
     const config = ctx.packageView.config; // package-merged config (2b), not root
     const fullSuiteTimeout = resolveFullSuiteTimeoutSeconds(config);
-    const { testCommand: resolvedTestCmd } = await resolveQualityTestCommands(
-      config,
-      input.workdir,
-      storyPackageDir(input.story),
-    );
-    // Detection fallback: no command configured (root or per-package) — derive one
-    // from the package's manifest. Runs from the package dir, since the default was
-    // detected there (e.g. a new package's freshly-scaffolded pyproject.toml).
-    if (!resolvedTestCmd) {
-      const { resolveDefaultQualityCommands } = await import("../quality/command-defaults");
-      // input.workdir is the resolved ABSOLUTE package dir (CallContext.packageDir = ctx.workdir).
-      // ctx.packageView.packageDir is the RELATIVE key — never probe/spawn against it.
-      const detected = (await resolveDefaultQualityCommands(input.workdir)).test;
-      if (detected) {
-        return { config, testCmd: detected, fullSuiteTimeout, cmdWorkdir: input.workdir };
-      }
+    // The command + cwd resolution is shared with the run-start baseline capture
+    // (src/operations/suite-test-command) so the gate and the baseline it is
+    // measured against can never run different commands.
+    const suite = await resolveSuiteTestCommand({
+      packageView: ctx.packageView,
+      // input.workdir is the resolved ABSOLUTE package dir (CallContext.packageDir
+      // = ctx.workdir). ctx.packageView.packageDir is the RELATIVE key — never
+      // probe/spawn against it.
+      workdir: input.workdir,
+      packageDir: storyPackageDir(input.story),
+    });
+    if (suite === undefined) {
       const pkg = storyPackageDir(input.story) ?? input.workdir;
       throw new NaxError(
         `No test command configured or detected for package "${pkg}". Set quality.commands.test in .nax/config.json or .nax/mono/<pkg>/config.json.`,
@@ -184,15 +181,13 @@ export const _fullSuiteGateDeps: FullSuiteGateDeps = {
         },
       );
     }
-    // Root-config fallback: the command was not declared per-package, so the
-    // provenance rule runs it from the repo root (see gate-cwd.ts).
-    const { cwd: cmdWorkdir, provenance } = resolveGateCwd({
-      commandName: "test",
-      detected: false,
-      packageView: ctx.packageView,
-      workdir: input.workdir,
-    });
-    return { config, testCmd: resolvedTestCmd, fullSuiteTimeout, cmdWorkdir, cmdProvenance: provenance };
+    return {
+      config,
+      testCmd: suite.testCmd,
+      fullSuiteTimeout,
+      cmdWorkdir: suite.cmdWorkdir,
+      cmdProvenance: suite.provenance,
+    };
   },
   runTests: async (_input, gateCtx) => {
     const { regression } = await import("../verification/runners");
@@ -254,12 +249,20 @@ async function labelFindingsWithBaseline(input: FullSuiteGateInput, findings: Fi
   const root = input.projectDir;
   const featureId = input.featureName;
   if (!root || !featureId) return findings;
+  // A monorepo baseline covers several packages; a finding may only be measured
+  // against its OWN package's entries, or another package's identical
+  // (file, testName) would label this package's new failure `pre-existing`.
+  const packageDir = storyPackageDir(input.story) ?? ".";
   try {
     const [storyBaseline, runBaseline] = await Promise.all([
       resolveStoryBaseline(root, featureId, input.story.id, input.executionMode ?? "sequential"),
       readRunBaseline(root, featureId),
     ]);
-    return applyBaselineDispositions(findings, storyBaseline, runBaseline);
+    return applyBaselineDispositions(
+      findings,
+      baselineForPackage(storyBaseline, packageDir),
+      baselineForPackage(runBaseline, packageDir),
+    );
   } catch (err) {
     getLogger().warn("verify[regression]", "Baseline labeling failed — findings left unlabeled", {
       storyId: input.story.id,

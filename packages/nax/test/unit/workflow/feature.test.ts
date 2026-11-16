@@ -431,6 +431,60 @@ describe("runWorkflowFeature", () => {
     expect(envs).toHaveLength(0);
   });
 
+  /**
+   * US-001 (run-start-baseline-fixes): the refusal names the commits that moved HEAD.
+   * `head` is what `rev-parse HEAD` answers; `log` answers the `git log` lookup, or
+   * throws to stand for an unreadable history.
+   */
+  function stubHeadAndLog(head: string, log: () => { stdout: string; exitCode: number }): string[][] {
+    const calls: string[][] = [];
+    _workflowDeps.git = async (args) => {
+      calls.push(args);
+      if (args[0] === "rev-parse") return { stdout: `${head}\n`, exitCode: 0 };
+      if (args[0] === "log") return log();
+      return { stdout: "", exitCode: 1 };
+    };
+    return calls;
+  }
+
+  test("AC-17: a publish-only refusal for an all-auto-commit move says so", async () => {
+    const { input, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "ready", head: "h1" });
+    stubHeadAndLog("h2", () => ({
+      stdout: "abc1234\tchore(f): auto-commit after run-summary session\n",
+      exitCode: 0,
+    }));
+
+    await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
+      code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+      message: expect.stringContaining("by nax auto-commits only"),
+    });
+  });
+
+  test("AC-18: an unreadable commit log falls back to the plain refusal", async () => {
+    const { input, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "ready", head: "h1" });
+    stubHeadAndLog("h2", () => {
+      throw new Error("git log failed");
+    });
+
+    await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
+      code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+      message: expect.stringContaining(
+        "HEAD moved since the workflow finished; run nax run so the new commits are reviewed",
+      ),
+    });
+  });
+
+  test("AC-19: a prior recorded at the current HEAD never looks the commits up", async () => {
+    const { input, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "ready", head: "headX" });
+    const calls = stubHeadAndLog("headX", () => ({ stdout: "", exitCode: 0 }));
+
+    expect((await runWorkflowFeature({ ...input, publishOnly: true }))?.outcome).toBe("already-finished");
+    expect(calls.filter((args) => args[0] === "log")).toEqual([]);
+  });
+
   test("the token meter is unsubscribed even when the context build throws", async () => {
     const { input, runtime } = setup();
     const bus = runtime.dispatchEvents;

@@ -86,11 +86,23 @@ describe("captureRunBaseline — issue #2152 logging", () => {
     });
   });
 
+  // The `timeout`, `unparseable` and `error` rows each run a command, so their
+  // log data now also carries that command's evidence (US-002); the other two
+  // reasons are not command-caused and keep the exact `{ reason }` shape.
   test.each([
-    { reason: "gate-disabled", arrange: () => (_captureDeps.regressionGateEnabled = () => false) },
-    { reason: "no-test-command", arrange: () => (_captureDeps.resolveTestCommands = async () => undefined) },
+    {
+      reason: "gate-disabled",
+      commandCaused: false,
+      arrange: () => (_captureDeps.regressionGateEnabled = () => false),
+    },
+    {
+      reason: "no-test-command",
+      commandCaused: false,
+      arrange: () => (_captureDeps.resolveTestCommands = async () => undefined),
+    },
     {
       reason: "timeout",
+      commandCaused: true,
       arrange: () => {
         _captureDeps.resolveTestCommands = async () => "bun test";
         _captureDeps.runCommand = async () => ({ success: false, output: "", timedOut: true });
@@ -98,6 +110,7 @@ describe("captureRunBaseline — issue #2152 logging", () => {
     },
     {
       reason: "unparseable",
+      commandCaused: true,
       arrange: () => {
         _captureDeps.resolveTestCommands = async () => "bun test";
         _captureDeps.runCommand = async () => ({ success: false, output: "", timedOut: false });
@@ -105,6 +118,7 @@ describe("captureRunBaseline — issue #2152 logging", () => {
     },
     {
       reason: "error",
+      commandCaused: true,
       arrange: () => {
         _captureDeps.resolveTestCommands = async () => "bun test";
         _captureDeps.runCommand = async () => {
@@ -112,17 +126,20 @@ describe("captureRunBaseline — issue #2152 logging", () => {
         };
       },
     },
-  ])("logs no-baseline reason `$reason`", async ({ reason, arrange }) => {
+  ])("logs no-baseline reason `$reason`", async ({ reason, commandCaused, arrange }) => {
     const logs = installInfoLogSpy();
     arrange();
 
     await captureRunBaseline(makeOptions());
 
+    const expectedData = commandCaused
+      ? expect.objectContaining({ reason, command: "bun test", cwd: "." })
+      : { reason };
     expect(logs).toContainEqual({
       level: "info",
       stage: "execution",
       message: "No run-start test baseline",
-      data: { reason },
+      data: expectedData,
     });
   });
 });

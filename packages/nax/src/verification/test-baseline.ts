@@ -41,10 +41,37 @@ export type BaselineDisposition = "introduced" | "pre-existing" | "earlier-story
 /**
  * One entry in a captured baseline. `testName` is optional — when absent,
  * the entry is a file-level fallback that matches any finding in that file.
+ *
+ * `packageDir` is the repo-rooted package the failing test belongs to (`"."`
+ * for the repo root). It is absent on every baseline captured before per-package
+ * capture existed, and `baselineForPackage` reads an absent value as the root.
  */
 export interface BaselineEntry {
   file: string;
   testName?: string;
+  packageDir?: string;
+}
+
+/**
+ * Why a command-caused degraded baseline degraded, and what the command was.
+ *
+ * `test-baseline.json` is committed to the repo, so every field is safe to
+ * persist: `command` and `error` are redacted, `cwd` is relative to the capture
+ * root, and `outputTail` is the bounded, redacted tail of the command output.
+ * A marker not caused by a command (`gate-disabled`, `no-test-command`) carries
+ * no evidence at all.
+ */
+export interface BaselineEvidence {
+  readonly command: string;
+  /** Relative to the capture root; `"."` for the root itself. */
+  readonly cwd: string;
+  /** Present only when the runner reported one. */
+  readonly exitCode?: number;
+  readonly durationMs: number;
+  /** Omitted when the command produced no output. */
+  readonly outputTail?: string;
+  /** Set for a runner throw; never set together with `outputTail`. */
+  readonly error?: string;
 }
 
 /**
@@ -52,7 +79,8 @@ export interface BaselineEntry {
  *   - `captured`   — a real snapshot; `entries` may be empty (baseline green).
  *   - `no-baseline`— a sentinel explaining why no capture exists (disabled,
  *                    timeout, parse failure, etc.). Read paths return this
- *                    exactly as written.
+ *                    exactly as written. A command-caused reason carries
+ *                    `evidence`.
  */
 export type TestBaseline =
   | {
@@ -61,11 +89,19 @@ export type TestBaseline =
       capturedAt: string;
       source: "preflight" | "roll-forward";
       entries: BaselineEntry[];
+      /**
+       * The packages this capture covered, repo-rooted (`"."` for the repo root).
+       * Absent on a single-entry capture and on every baseline written before
+       * per-package capture: absent means "not package-scoped", so
+       * `baselineForPackage` returns the baseline unchanged.
+       */
+      packageDirs?: string[];
     }
   | {
       kind: "no-baseline";
       reason: "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error" | "no-gate-parse";
       capturedAt: string;
+      evidence?: BaselineEvidence;
     };
 
 /**
@@ -183,6 +219,35 @@ export async function resolveStoryBaseline(
 // ─────────────────────────────────────────────────────────────────────────────
 // Classification
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Narrow a baseline to the entries a single package captured.
+ *
+ * A monorepo run-start capture covers several packages, so a story must not
+ * match its failures against another package's entries: the same file path and
+ * test name can fail in two packages for unrelated reasons, and a match against
+ * the other package's entry would label a new failure `pre-existing`.
+ *
+ * Returns:
+ *   - the input unchanged when it is `undefined`, a `no-baseline` marker, or a
+ *     captured baseline with no `packageDirs` (not package-scoped);
+ *   - `undefined` when this package was not captured — the caller then has no
+ *     baseline for it, which classifies as `unattributed`;
+ *   - otherwise a new captured baseline holding only this package's entries.
+ *     An entry with no `packageDir` belongs to the repo root (`"."`).
+ *
+ * Pure: the input baseline and its entries are never mutated.
+ */
+export function baselineForPackage(baseline: TestBaseline | undefined, packageDir: string): TestBaseline | undefined {
+  if (baseline === undefined || baseline.kind === "no-baseline") return baseline;
+  const { packageDirs } = baseline;
+  if (packageDirs === undefined) return baseline;
+  if (!packageDirs.includes(packageDir)) return undefined;
+  return {
+    ...baseline,
+    entries: baseline.entries.filter((entry) => (entry.packageDir ?? ".") === packageDir),
+  };
+}
 
 /**
  * Pure, non-mutating classification. Returns a new array of new `Finding`

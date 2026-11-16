@@ -22,10 +22,10 @@ import {
   newFeatureRecord,
   summariseStories,
 } from "./feature-record";
-import { onlyLedgerChangedSince, readHead } from "./git";
+import { commitsSince, onlyLedgerChangedSince, readHead } from "./git";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
-import { publishOnlyStart } from "./publish-only";
+import { type MovedCommit, publishOnlyStart } from "./publish-only";
 import { logWorkflow } from "./run-log";
 import { resolveSeed } from "./seed";
 import { workflowStatusBlock } from "./status-block";
@@ -112,6 +112,26 @@ async function ledgerOnlySince(fc: FeatureContext, base: string): Promise<boolea
   } catch {
     // A git failure is an unknown answer, and an unknown HEAD never proves a record is current.
     return false;
+  }
+}
+
+/**
+ * US-001 (run-start-baseline-fixes): the commits a publish-only refusal should name, looked up only
+ * when it can be refused for a moved HEAD — a `done` record whose recorded head differs from a
+ * readable current one. Fail-soft: a throwing lookup reads as unknown, which keeps the plain refusal.
+ */
+async function movedSinceRecord(
+  fc: FeatureContext,
+  prior: WorkflowFeatureRecord | null,
+  head: string | undefined,
+): Promise<readonly MovedCommit[] | undefined> {
+  const recorded = prior?.head;
+  if (prior?.step !== "done" || recorded === undefined || recorded === "") return undefined;
+  if (head === undefined || head === "" || recorded === head) return undefined;
+  try {
+    return await commitsSince(fc.projectDir, recorded);
+  } catch {
+    return undefined;
   }
 }
 
@@ -229,7 +249,8 @@ async function runInContext(
   const stories = summariseStories(fc.prd, await collectStoryRecords(fc.featureDir));
   const prior = await loadPriorFeature(fc.featureDir, fc.runId);
   const head = await currentHead(fc);
-  const publishOnly = input.publishOnly === true ? publishOnlyStart(prior, head) : undefined;
+  const publishOnly =
+    input.publishOnly === true ? publishOnlyStart(prior, head, await movedSinceRecord(fc, prior, head)) : undefined;
   if (publishOnly?.kind === "refused") {
     throw new NaxError(`[workflow] --publish-only: ${publishOnly.reason}`, "WORKFLOW_PUBLISH_ONLY_REFUSED", {
       stage: "workflow",
