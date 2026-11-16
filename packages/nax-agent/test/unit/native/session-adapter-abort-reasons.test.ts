@@ -207,12 +207,17 @@ describe("NativeSessionAdapter — turn-end abort reasons (US-003)", () => {
     // first callback captured; no other captured callback is fired in this
     // test. (The round trip arms its own per-call timer second, and that one
     // deliberately keeps aborting with no reason — out of scope here.)
-    expect(timers.length).toBeGreaterThan(0);
+    //
+    // Deliberately no assertion on the captured COUNT: how many timers a turn
+    // arms is not this story's behaviour, and a count assertion placed here
+    // fails BEFORE the reason is ever observed — which is how a stale count
+    // hid the missing deadline reason once already.
     timers[0]?.();
     const err = await rejectionOf(turn);
 
     expect(answer.message).toBe('Tool "Read" was abandoned: the turn ended (native turn deadline of 600s reached).');
     expect(err.name).toBe("AbortError");
+    expect(err.message).toBe("native turn deadline of 600s reached");
   });
 
   test("AC-7: the active-call cancel answers an in-flight coding tool with the cancel reason", async () => {
