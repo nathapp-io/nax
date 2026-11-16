@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import * as resources from "@/resources";
+import { _claudePathsDeps } from "@/resources/claude-paths";
 import { _resourceFsDeps } from "@/resources/scan-dirs";
 
 const skill = "---\ndescription: fixture skill\n---\nBody";
 const originalDeps = { ..._resourceFsDeps };
+let savedHomedir: typeof _claudePathsDeps.homedir;
 let dir: string;
 let repoRoot: string;
 let claudeDir: string;
@@ -26,8 +28,12 @@ beforeEach(() => {
   repoRoot = join(dir, "repo");
   claudeDir = join(dir, "claude");
   claudeJson = join(dir, "fixture-missing/.claude.json");
+  // `loadResourceCatalog` reads `agentsSkillsDir()`, i.e. the real home directory: pin it.
+  savedHomedir = _claudePathsDeps.homedir;
+  _claudePathsDeps.homedir = () => join(dir, "home");
 });
 afterEach(() => {
+  _claudePathsDeps.homedir = savedHomedir;
   Object.assign(_resourceFsDeps, originalDeps);
   cleanupTempDir(dir);
 });

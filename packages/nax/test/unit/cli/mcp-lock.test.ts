@@ -5,7 +5,7 @@ import { cleanupTempDir, makeNaxConfig, makeTempDir, withDepsRestore } from "@te
 import { _mcpLockCommandDeps, runMcpLockCommand } from "@/cli/mcp";
 import type { McpServerConfig } from "@/config";
 import { type createMcpPool, type McpPool, type McpToolDescriptor, schemaHash } from "@/mcp";
-import { loadResourceCatalog } from "@/resources";
+import { _claudePathsDeps, loadResourceCatalog } from "@/resources";
 
 const NO_RETRY = { maxAttempts: 1, baseDelayMs: 0 };
 const SCHEMA = { type: "object", properties: { q: { type: "string" } } };
@@ -13,6 +13,8 @@ const SCHEMA = { type: "object", properties: { q: { type: "string" } } };
 let projectDir: string;
 let claudeDir: string;
 let globalDir: string;
+let homeDir: string;
+let savedHomedir: typeof _claudePathsDeps.homedir;
 let previousGlobalDir: string | undefined;
 let requested: Record<string, McpServerConfig>[];
 let listed: string[];
@@ -74,6 +76,10 @@ describe("runMcpLockCommand with catalog servers", () => {
     projectDir = realpathSync(makeTempDir("nax-mcp-lock-project-"));
     claudeDir = realpathSync(makeTempDir("nax-mcp-lock-claude-"));
     globalDir = realpathSync(makeTempDir("nax-mcp-lock-global-"));
+    // `loadResourceCatalog` reads `agentsSkillsDir()`, i.e. the real home directory: pin it.
+    homeDir = realpathSync(makeTempDir("nax-mcp-lock-home-"));
+    savedHomedir = _claudePathsDeps.homedir;
+    _claudePathsDeps.homedir = () => homeDir;
     mkdirSync(join(projectDir, ".nax"), { recursive: true });
     previousGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
     process.env.NAX_GLOBAL_CONFIG_DIR = globalDir;
@@ -88,11 +94,13 @@ describe("runMcpLockCommand with catalog servers", () => {
   });
 
   afterEach(() => {
+    _claudePathsDeps.homedir = savedHomedir;
     if (previousGlobalDir === undefined) delete process.env.NAX_GLOBAL_CONFIG_DIR;
     else process.env.NAX_GLOBAL_CONFIG_DIR = previousGlobalDir;
     cleanupTempDir(projectDir);
     cleanupTempDir(claudeDir);
     cleanupTempDir(globalDir);
+    cleanupTempDir(homeDir);
   });
 
   test("AC-7 pins a .mcp.json server's tools by input-schema hash in the project lock", async () => {

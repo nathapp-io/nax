@@ -14,6 +14,16 @@ export function claudeJsonPath(env: Readonly<Record<string, string | undefined>>
 }
 
 /**
+ * The user-level skills directory other coding agents read: `<home>/.agents/skills`.
+ *
+ * Skills installed there (13 on the machine that reported #2959) reach no Claude Code
+ * location, so the catalog scans this directory itself. It has no env-var override.
+ */
+export function agentsSkillsDir(): string {
+  return join(_claudePathsDeps.homedir(), ".agents", "skills");
+}
+
+/**
  * nax's own user-scoped agents directory, `~/.nax/agents` by default.
  *
  * It takes the same override and default as `globalConfigDir()` and reads them from the
