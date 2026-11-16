@@ -111,5 +111,14 @@ export function useEscConfirm(layer: EscLayer, turnRunning: boolean): EscConfirm
     return false;
   }, [clearArm]);
 
+  // A pending window must not outlive the screen: nothing is drawn after unmount, so the timer
+  // is cleared rather than allowed to fire into it.
+  useEffect(
+    () => () => {
+      if (expiry.current !== undefined) _escConfirmDeps.clearTimeout(expiry.current);
+    },
+    [],
+  );
+
   return { armed, press };
 }
