@@ -8,10 +8,13 @@
  *
  * `press()` decides from the arm time it writes synchronously, never from the rendered `armed`:
  * a terminal can deliver two escapes in one input batch with no render between them, and the
- * second one must still be the second press of the same gesture. `armed` is what the screen
- * draws — the footer's "esc again to …" hint — and it is cleared by the window's expiry, by the
- * turn ending, and by the top esc layer changing, so a new turn or a different layer never
- * inherits an arm it did not earn.
+ * second one must still be the second press of the same gesture. The arm is stamped with the
+ * esc target it was earned on, so a press on another target — a replacement question of the
+ * same kind — is a first press even before the screen redraws. `armed` is what the screen
+ * draws — the footer's "esc again to …" hint — and it is cleared by the window's expiry, by
+ * the turn ending, by the top esc layer changing, and by the screen's own `reset()` at a turn
+ * boundary it claims itself (a drained queue can end one turn and start the next without ever
+ * drawing an idle frame).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EscLayer } from "./esc-layer";
@@ -36,22 +39,29 @@ export const _escConfirmDeps = {
   clearTimeout: (handle: TimerHandle): void => globalThis.clearTimeout(handle),
 };
 
-/** What the hook offers the screen: the rendered arm, and the press that decides. */
+/** What the hook offers the screen: the rendered arm, the press that decides, and the reset. */
 export interface EscConfirm {
   /** Whether the first escape is still waiting for its second — what the footer's hint reads. */
   readonly armed: boolean;
   /** True when this press is the second of a timely pair, so the destructive action may run. */
   press(): boolean;
+  /**
+   * End the arm now, whatever the rendered frame says. The screen calls this at a turn
+   * boundary it claims itself — a queued line starting the next turn can end one turn and
+   * begin the next without ever drawing an idle frame, so no render-based trigger would see it.
+   */
+  reset(): void;
 }
 
 /**
  * How two layers differ for the arm's purposes. A card replacing the bare turn is a different
- * layer, and a stopping question is not the same layer as a question that stops nothing.
+ * layer, a stopping question is not the same layer as a question that stops nothing, and two
+ * questions are two targets: the arm belongs to the card it was earned on, by its request id.
  */
 function layerKey(layer: EscLayer): string {
   switch (layer.kind) {
     case "question":
-      return `question:${layer.stops}`;
+      return `question:${layer.stops}:${layer.id ?? ""}`;
     case "picker":
       return `picker:${layer.picker}`;
     default:
@@ -67,6 +77,8 @@ function layerKey(layer: EscLayer): string {
 export function useEscConfirm(layer: EscLayer, turnRunning: boolean): EscConfirm {
   /** When this arm was stamped. Written by `press()` before it returns, ahead of any render. */
   const armedAt = useRef<number | undefined>(undefined);
+  /** Which esc target the stamp belongs to: another layer or another question is another arm. */
+  const armedKey = useRef<string | undefined>(undefined);
   /** The armed window's expiry, cleared whenever the arm ends for any other reason. */
   const expiry = useRef<TimerHandle | undefined>(undefined);
   const [armed, setArmed] = useState(false);
@@ -78,6 +90,7 @@ export function useEscConfirm(layer: EscLayer, turnRunning: boolean): EscConfirm
       expiry.current = undefined;
     }
     armedAt.current = undefined;
+    armedKey.current = undefined;
     setArmed(false);
   }, []);
 
@@ -93,7 +106,10 @@ export function useEscConfirm(layer: EscLayer, turnRunning: boolean): EscConfirm
 
   const press = useCallback((): boolean => {
     const now = _chatKeyDeps.now();
-    const stampedAt = armedAt.current;
+    // The arm this press may confirm is only this layer's own: a press on another target —
+    // a replacement question of the same kind, a card that replaced the turn — is a first
+    // press, decided here rather than by a render the screen may not have made yet.
+    const stampedAt = armedKey.current === key ? armedAt.current : undefined;
     // Exclusive, as ctrl+c's double interrupt is: a press exactly `ESC_CONFIRM_MS` later is a
     // new offer, not the confirmation of an offer that has already lapsed.
     if (stampedAt !== undefined && now - stampedAt < ESC_CONFIRM_MS) {
@@ -102,14 +118,16 @@ export function useEscConfirm(layer: EscLayer, turnRunning: boolean): EscConfirm
     }
     if (expiry.current !== undefined) _escConfirmDeps.clearTimeout(expiry.current);
     armedAt.current = now;
+    armedKey.current = key;
     setArmed(true);
     expiry.current = _escConfirmDeps.setTimeout(() => {
       expiry.current = undefined;
       armedAt.current = undefined;
+      armedKey.current = undefined;
       setArmed(false);
     }, ESC_CONFIRM_MS);
     return false;
-  }, [clearArm]);
+  }, [clearArm, key]);
 
   // A pending window must not outlive the screen: nothing is drawn after unmount, so the timer
   // is cleared rather than allowed to fire into it.
@@ -120,5 +138,5 @@ export function useEscConfirm(layer: EscLayer, turnRunning: boolean): EscConfirm
     [],
   );
 
-  return { armed, press };
+  return { armed, press, reset: clearArm };
 }

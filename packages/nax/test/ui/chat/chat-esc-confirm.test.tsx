@@ -10,7 +10,7 @@
  * through `_escConfirmDeps`, so a case moves the clock and runs the recorded callback itself.
  */
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { SessionEventBody } from "@nathapp/nax-agent";
+import type { SessionEvent, SessionEventBody, TurnEndStatus } from "@nathapp/nax-agent";
 import { assertDefined, mountChatPicker as mount } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
 import { act, type ReactElement, useState } from "react";
@@ -22,6 +22,8 @@ import { _chatKeyDeps } from "@/tui/chat/useChatKeys";
 /** The sequence a terminal sends for a lone esc, and the one ctrl-c sends. */
 const ESCAPE = "\x1b";
 const CTRL_C = "\x03";
+/** The microtask rounds a drained queue needs to reach the next send's own body. */
+const FLUSHES = 6;
 /** The session the mounted fake host reports, and the id its own turn's events carry. */
 const SESSION = "picker-session";
 /** A question the chat session itself asked: closing it also stops the turn. */
@@ -100,7 +102,7 @@ function confirmHarness(): {
   press(): boolean;
   armed(): boolean;
 } {
-  let latest: EscConfirm = { armed: false, press: () => false };
+  let latest: EscConfirm = { armed: false, press: () => false, reset: () => {} };
   function Root(): ReactElement {
     latest = useEscConfirm({ kind: "turn" }, true);
     return <></>;
@@ -176,7 +178,7 @@ describe("useEscConfirm", () => {
 
   test("a new turn of the same layer does not inherit the last turn's arm", () => {
     const setters: { running?: (value: boolean) => void } = {};
-    let latest: EscConfirm = { armed: false, press: () => false };
+    let latest: EscConfirm = { armed: false, press: () => false, reset: () => {} };
     function Root(): ReactElement {
       const [running, setRunning] = useState(true);
       setters.running = setRunning;
@@ -204,7 +206,7 @@ describe("useEscConfirm", () => {
 
   test("the arm does not carry to a different esc layer", () => {
     const setters: { layer?: (next: EscLayer) => void } = {};
-    let latest: EscConfirm = { armed: false, press: () => false };
+    let latest: EscConfirm = { armed: false, press: () => false, reset: () => {} };
     function Root(): ReactElement {
       const [layer, setLayer] = useState<EscLayer>({ kind: "turn" });
       setters.layer = setLayer;
@@ -438,5 +440,89 @@ describe("an armed turn that has ended", () => {
     ui.press(ESCAPE);
     expect(ui.cancels()).toBe(0);
     expect(ui.footer()).toContain("esc again to interrupt");
+  });
+});
+
+/** A turn's own end event: what the screen reads to decide what the queue does next. */
+function turnEnd(status: TurnEndStatus): SessionEventBody {
+  return { type: "turn_end", status, output: "", usage: { inputTokens: 0, outputTokens: 0 }, costUsd: 0 };
+}
+
+describe("a queued line that starts the next turn", () => {
+  /**
+   * A screen whose every send opens its own gate and keeps its own listener, so a case can end
+   * one turn — with a `turn_end` the queue reads — and watch the line it drained start the next.
+   */
+  function queuedScreen() {
+    const gates: ReturnType<typeof Promise.withResolvers<void>>[] = [];
+    const listeners: ((event: SessionEvent) => void)[] = [];
+    const send: ChatHost["send"] = async (_message, listener) => {
+      listeners.push(listener);
+      const gate = Promise.withResolvers<void>();
+      gates.push(gate);
+      await gate.promise;
+    };
+    const ui = screen({ send: mock(send) });
+    /** End the turn the send at `index` opened, then let the drain and the next send settle. */
+    const endAndDrain = async (index: number): Promise<void> => {
+      const listener = listeners[index];
+      assertDefined(listener, `the listener of send ${index}`);
+      act(() => {
+        listener({ sessionId: SESSION, turnId: `t${index}`, at: "now", metadata: {}, ...turnEnd("completed") });
+      });
+      await Promise.resolve(
+        act(async () => {
+          gates[index]?.resolve();
+        }),
+      );
+      // The drain submits the queued line from the turn's own `finally`; a few rounds of
+      // microtasks carry it to the next send's body without waiting on anything.
+      for (let round = 0; round < FLUSHES; round += 1) {
+        await Promise.resolve(
+          act(async () => {
+            await Promise.resolve();
+          }),
+        );
+      }
+    };
+    return { ...ui, endAndDrain };
+  }
+
+  test("B2 the turn a drained queued line starts does not inherit the last turn's arm", async () => {
+    const ui = queuedScreen();
+    await ui.submit("work");
+    await ui.submit("queued next");
+    ui.press(ESCAPE);
+    expect(ui.footer()).toContain("esc again to interrupt");
+    await ui.endAndDrain(0);
+    // The queued line is the second send: nothing drew an idle frame between the two turns.
+    expect(ui.host.send).toHaveBeenCalledTimes(2);
+    expect(ui.footer()).not.toContain("esc again");
+    ui.press(ESCAPE);
+    expect(ui.cancels()).toBe(0);
+    expect(ui.footer()).toContain("esc again to interrupt");
+    ui.press(ESCAPE);
+    expect(ui.cancels()).toBe(1);
+  });
+});
+
+describe("a stopping question replaced by another", () => {
+  test("B3 the replacement question does not inherit the arm of the question it replaced", async () => {
+    const ui = await runningTurn();
+    ui.raise(SESSION_QUESTION);
+    ui.raise({ ...SESSION_QUESTION, requestId: "q2", text: "Also proceed?" });
+    ui.press(ESCAPE);
+    expect(ui.footer()).toContain("esc again to close and stop");
+    // q1 is answered elsewhere, so q2 is the card the next escape would act on.
+    act(() => {
+      ui.host.asks.answerQuestion("q1", "yes");
+    });
+    expect(ui.rows().join("\n")).toContain("Also proceed?");
+    ui.press(ESCAPE);
+    expect(ui.order).toEqual([]);
+    expect(ui.host.asks.pending()).toHaveLength(1);
+    expect(ui.footer()).toContain("esc again to close and stop");
+    ui.press(ESCAPE);
+    expect(ui.order).toEqual(["decline:q2", "cancel"]);
   });
 });

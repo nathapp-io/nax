@@ -495,6 +495,8 @@ export function ChatApp({
     return topEscLayer({
       ask: escAsk(ask),
       askFromSession: askedBySession(ask),
+      // The card the arm belongs to: a question replaced by another question is another target.
+      askId: ask?.requestId,
       picker: picker.model?.kind,
       mentionShown: mention.ownsNavigation(),
       menuShown: menuShown(),
@@ -1033,6 +1035,9 @@ export function ChatApp({
       return;
     }
     sending.current = true;
+    // A compaction holds the turn slot, so it is a turn boundary too — an arm earned before it
+    // must not survive into whatever runs next.
+    escConfirm.reset();
     setBusy(true);
     setStatus(compactingStatus);
     append({ kind: "notice", text: `${COMPACTING}${theme.glyphs.ellipsis}` });
@@ -1141,6 +1146,10 @@ export function ChatApp({
   ): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
+    // A turn claimed here is a new gesture boundary: an arm the previous turn earned dies with
+    // it, synchronously, because a line drained off the queue starts this turn from the end of
+    // the last one and may never draw an idle frame for the effect to notice (US-006).
+    escConfirm.reset();
     setBusy(true);
     turnEnd.current = undefined;
     // A new send starts a new turn, and a discarded group belongs to the turn that discarded

@@ -113,12 +113,29 @@ function startedResult(job: ChatJob, launch: ApprovedLaunch): ToolResult {
   };
 }
 
+/**
+ * The branch guard, read again as the job is about to start: a card can sit open while the user
+ * switches the checkout, and the branch that was allowed when the card was drawn is not the one
+ * the job would commit onto. An approval is not a licence to run on a protected branch.
+ */
+async function branchRefusalAfterApproval(
+  input: JobLaunchInput,
+  options: JobsProviderOptions,
+): Promise<ToolResult | undefined> {
+  if (input.kind !== "plan" && input.kind !== "run") return undefined;
+  const refusal = await featureBranchRefusal({ kind: input.kind, feature: input.feature, repoRoot: options.repoRoot });
+  return refusal === undefined ? undefined : { isError: true, content: refusal };
+}
+
 async function startApproved(
   input: JobLaunchInput,
   launch: ApprovedLaunch,
   options: JobsProviderOptions,
 ): Promise<ToolResult> {
   const { argv, auto } = launch;
+  // Before anything else starts, and therefore after the approval the caller waited on.
+  const moved = await branchRefusalAfterApproval(input, options);
+  if (moved) return moved;
   if (isFeatureJobKind(input.kind)) {
     const held = await busyLock(options);
     if (held) return held;

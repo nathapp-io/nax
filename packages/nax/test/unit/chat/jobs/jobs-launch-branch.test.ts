@@ -285,6 +285,58 @@ describe("launchJob feature branch guard", () => {
   });
 });
 
+describe("the branch guard after the card", () => {
+  /**
+   * The user switches the checkout while the approval card waits: the card is answered and the
+   * branch git reports changes from then on. `launchReason` has already read the old branch.
+   */
+  function switchBranchOnApproval(branch: string): void {
+    const moved = mock(async () => {
+      gitAnswer(0, `${branch}\n`);
+      return "allow" as const;
+    });
+    approve = moved;
+    options = { ...options, approve: moved };
+  }
+
+  test("B1 a checkout moved to main while the run card was open starts nothing", async () => {
+    await writePendingPRD("feat/f1-x");
+    switchBranchOnApproval("main");
+    expect(await launch("run")).toEqual({
+      isError: true,
+      content: refusalText("run", "main", "feat/f1-x"),
+    });
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("B1 a checkout moved to main while the plan card was open starts nothing", async () => {
+    await writeSpec();
+    switchBranchOnApproval("main");
+    const result = await launch("plan");
+    expect(result.isError).toBe(true);
+    expect(result.content).toStartWith("[chat] nax plan for f1 refused: the checkout is on main;");
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("B1 an unnamed checkout while the card was open starts nothing", async () => {
+    await writePendingPRD("feat/f1-x");
+    switchBranchOnApproval("");
+    expect(await launch("run")).toMatchObject({
+      isError: true,
+      content: expect.stringContaining("the checkout is on an unnamed branch;"),
+    });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("B1 a card answered on the feature branch still starts the run", async () => {
+    await writePendingPRD("feat/f1");
+    expect((await launch("run")).isError).toBeUndefined();
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("nax-jobs__chain feature branch guard", () => {
   test("AC-15 a plan step on main fails the proposal", async () => {
     await writeSpec();

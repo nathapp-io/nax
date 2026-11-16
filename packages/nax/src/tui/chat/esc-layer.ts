@@ -16,10 +16,12 @@ export type EscAsk = "question" | "approval" | "choice";
 
 /**
  * What esc acts on. `question` carries `stops` because closing the card also cancels the turn
- * when the chat session asked it, while an approval or a choice card never stops a turn.
+ * when the chat session asked it, while an approval or a choice card never stops a turn. It
+ * also carries the question's own `id` when the screen knows it: a card replaced by another
+ * card of the same kind is a different escape target, never the one already armed.
  */
 export type EscLayer =
-  | { kind: "question"; stops: boolean }
+  | { kind: "question"; stops: boolean; id?: string }
   | { kind: "approval" }
   | { kind: "choice" }
   | { kind: "picker"; picker: PickerKind }
@@ -33,6 +35,11 @@ export interface EscLayerInput {
   readonly ask?: EscAsk;
   /** Whether the chat session asked it — only then does closing the card cancel the turn. */
   readonly askFromSession?: boolean;
+  /**
+   * The open question's own request id. Two questions on the same layer are still two escape
+   * targets, so the arm earned on one must never carry to the other.
+   */
+  readonly askId?: string;
   /** The picker drawn under the input, if one is open. */
   readonly picker?: PickerKind;
   /** The mention picker's esc claim: false while only its no-git diagnostic line is drawn. */
@@ -63,7 +70,10 @@ const ESC_CLOSE_MENU = "esc to close menu";
 
 /** A question card is on top whenever it is drawn; it stops the turn only when both hold. */
 function questionLayer(input: EscLayerInput): EscLayer {
-  return { kind: "question", stops: input.askFromSession === true && input.turnRunning === true };
+  const stops = input.askFromSession === true && input.turnRunning === true;
+  // Only when the screen knows it: a layer built without an id stays exactly the two fields it
+  // has always had, so the card and the arm are the same value they were before.
+  return input.askId === undefined ? { kind: "question", stops } : { kind: "question", stops, id: input.askId };
 }
 
 /** The card layer for `ask`, or undefined when no card is drawn. */
