@@ -3,7 +3,7 @@
   "feature": "run-start-baseline-fixes",
   "branchName": "feat/run-start-baseline-fixes",
   "createdAt": "2026-11-16T02:53:27.261Z",
-  "updatedAt": "2026-11-16T03:28:24.802Z",
+  "updatedAt": "2026-11-16T03:40:39.249Z",
   "userStories": [
     {
       "id": "US-001",
@@ -174,14 +174,17 @@
         "monorepo"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Extracts existing command/cwd logic and adds a pure baseline filter across three production files; existing resolver and gate fixtures support straightforward TDD without changing execution control flow."
+        "reasoning": "Extracts existing command/cwd logic and adds a pure baseline filter across three production files; existing resolver and gate fixtures support straightforward TDD without changing execution control flow.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/operations/full-suite-gate.ts",
@@ -205,7 +208,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "45d610dee1acd3057bd1edd7077c58bd1953d08e"
     },
     {
       "id": "US-004",
