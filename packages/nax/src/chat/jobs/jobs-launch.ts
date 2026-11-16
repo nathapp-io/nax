@@ -133,13 +133,15 @@ async function startApproved(
   options: JobsProviderOptions,
 ): Promise<ToolResult> {
   const { argv, auto } = launch;
-  // Before anything else starts, and therefore after the approval the caller waited on.
-  const moved = await branchRefusalAfterApproval(input, options);
-  if (moved) return moved;
+  // The lock read comes first, and the branch is read after it: a checkout change during the lock
+  // read would otherwise land behind a branch the guard had already approved. Both reads still
+  // happen after the approval the caller waited on.
   if (isFeatureJobKind(input.kind)) {
     const held = await busyLock(options);
     if (held) return held;
   }
+  const moved = await branchRefusalAfterApproval(input, options);
+  if (moved) return moved;
   try {
     // No await from this final in-memory check to start: the runner registers synchronously.
     const busy = isFeatureJobKind(input.kind) ? busyJob(options) : undefined;

@@ -159,7 +159,7 @@ describe("launchJob busy checkout and failures", () => {
     expect(approve).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
-  test("simultaneous allowed launches check jobs after lock read without an async gap", async () => {
+  test("simultaneous allowed launches check running jobs synchronously before start", async () => {
     start.mockImplementation(async () => {
       const started = job();
       running.push(started);

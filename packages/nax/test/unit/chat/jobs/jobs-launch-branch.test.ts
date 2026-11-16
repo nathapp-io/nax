@@ -330,6 +330,22 @@ describe("the branch guard after the card", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  test("B1 a checkout moved to main while the lock was read starts nothing", async () => {
+    await writePendingPRD("feat/f1-x");
+    // The launch reads the lock twice: once before the card and once as it starts. The second read
+    // is the one a checkout can change during, so the branch is only moved on that call.
+    let reads = 0;
+    _jobsLaunchDeps.lockHolder = mock(async () => {
+      reads += 1;
+      if (reads > 1) gitAnswer(0, "main\n");
+      return null;
+    });
+    expect(await launch("run")).toEqual({ isError: true, content: refusalText("run", "main", "feat/f1-x") });
+    expect(reads).toBe(2);
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
+  });
+
   test("B1 a card answered on the feature branch still starts the run", async () => {
     await writePendingPRD("feat/f1");
     expect((await launch("run")).isError).toBeUndefined();
