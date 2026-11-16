@@ -142,12 +142,22 @@ export interface IdleCompactState {
   readonly contextTokens?: number;
   readonly acp: boolean;
 }
+/** An armed timer's handle: the runtime's own, or a fake clock's number. */
+export type TimerHandle = ReturnType<typeof setTimeout> | number;
+export interface IdleCompactTimers {
+  setTimeout(callback: () => void, delayMs: number): TimerHandle;
+  clearTimeout(handle: TimerHandle): void;
+}
 export interface IdleCompactor { update(state: IdleCompactState): void; dispose(): void }
 export function createIdleCompactor(options: {
   readonly delayMs: number;
   readonly onDue: (reason: string) => void;
-  readonly timers?: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };
+  readonly timers?: IdleCompactTimers;
 }): IdleCompactor;
+// `timers` is this seam, not the global's own type: three libraries declare `setTimeout` (Bun
+// `Timer`, @types/node `Timeout`, lib.dom `number`), so `typeof setTimeout` is one overload set
+// that no fake implementation can satisfy, and the cast that would silence it is forbidden at
+// baseline 0. `fakeTimers(clock)` in the test helpers adapts the fake clock to this shape.
 
 // packages/nax-agent/src/native/session/compaction-settings.ts (exported from @nathapp/nax-agent/internal)
 export const MIN_COMPACT_AT_TOKENS = 10_000;
