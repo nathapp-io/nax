@@ -67,7 +67,7 @@ beforeEach(async () => {
       dispose: () => {},
     },
   };
-  _jobsLaunchDeps.git = mock(async () => ({ exitCode: 0, stdout: "main", stderr: "" }));
+  _jobsLaunchDeps.git = mock(async () => ({ exitCode: 0, stdout: "feat/f1", stderr: "" }));
   _jobsLaunchDeps.lockHolder = mock(async (r: string) => {
     lockRoots.push(r);
     return null;

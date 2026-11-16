@@ -66,7 +66,7 @@ beforeEach(async () => {
   };
   chains = createChainController({ ...options, cwd: root, outputDir: join(root, "output") });
   options = { ...options, chains };
-  _jobsLaunchDeps.git = async () => ({ exitCode: 0, stdout: "main\n", stderr: "" });
+  _jobsLaunchDeps.git = async () => ({ exitCode: 0, stdout: "feat/f1\n", stderr: "" });
   _jobsLaunchDeps.lockHolder = async () => null;
   for (const dir of [root, nested]) {
     await Bun.write(

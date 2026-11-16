@@ -4,7 +4,7 @@ import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage, isProcessAlive } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
 import { countStories, loadPRD } from "@/prd";
-import { gitWithTimeout } from "@/utils/git";
+import { gitWithTimeout, isPublishableBranch } from "@/utils/git";
 import { resolveTargetRepo } from "../target-repo";
 import type { ChainAdmission } from "./chain-controller";
 import { buildJobArgv, type JobLaunchInput, parseJobInput } from "./job-argv";
@@ -47,6 +47,46 @@ async function busyLock(options: JobsProviderOptions): Promise<ToolResult | unde
   return pid === null
     ? undefined
     : { isError: true, content: `[chat] this checkout is held by nax pid ${pid}; wait for it or stop it first` };
+}
+
+/** How the refusal names a branch that `git symbolic-ref` reported as the empty string. */
+const UNNAMED_BRANCH = "an unnamed branch";
+
+/** The planner's default branch for a feature, used when its PRD names no other (`plan/strategies/context-builder.ts`). */
+function defaultFeatureBranch(feature: string): string {
+  return `feat/${feature}`;
+}
+
+/** The branch a feature's plan and run belong on: its PRD's branchName, else the planner's default. */
+async function featureTargetBranch(feature: string, repoRoot: string): Promise<string> {
+  const path = join(featureDir(repoRoot, feature), "prd.json");
+  if (!(await _jobsLaunchDeps.exists(path))) return defaultFeatureBranch(feature);
+  try {
+    const prd = await _jobsLaunchDeps.loadPRD(path);
+    return prd.branchName === "" ? defaultFeatureBranch(feature) : prd.branchName;
+  } catch {
+    // An unreadable PRD cannot name its branch; the planner's default is still the right target.
+    return defaultFeatureBranch(feature);
+  }
+}
+
+/**
+ * Refuses a feature's plan or run while the checkout is on main, master or an
+ * unnamed branch: the launch would commit the run onto a protected branch.
+ * A branch git cannot name (detached HEAD, not a repository) is not refused.
+ */
+export async function featureBranchRefusal(input: {
+  readonly kind: "plan" | "run";
+  readonly feature: string;
+  readonly repoRoot: string;
+}): Promise<string | undefined> {
+  const branch = await _jobsLaunchDeps.git(["symbolic-ref", "--short", "HEAD"], input.repoRoot);
+  if (branch.exitCode !== 0) return undefined;
+  const name = branch.stdout.trim();
+  if (isPublishableBranch(name)) return undefined;
+  const target = await featureTargetBranch(input.feature, input.repoRoot);
+  const shown = name === "" ? UNNAMED_BRANCH : name;
+  return `[chat] nax ${input.kind} for ${input.feature} refused: the checkout is on ${shown}; plan and run a feature on its feature branch ${target}. Create or check out ${target}, then launch again.`;
 }
 
 type ApprovedLaunch = {
@@ -293,6 +333,15 @@ export async function launchJob(
   if (unknown !== undefined) return { isError: true, content: unknown };
   const from: Provenance = applied;
   const { input } = prepared;
+  // Before the busy check: a protected checkout refuses regardless of what else is running here.
+  if (input.kind === "plan" || input.kind === "run") {
+    const refusal = await featureBranchRefusal({
+      kind: input.kind,
+      feature: input.feature,
+      repoRoot: options.repoRoot,
+    });
+    if (refusal !== undefined) return { isError: true, content: refusal };
+  }
   if (isFeatureJobKind(input.kind)) {
     const busy = busyJob(options) ?? (await busyLock(options));
     if (busy) return busy;

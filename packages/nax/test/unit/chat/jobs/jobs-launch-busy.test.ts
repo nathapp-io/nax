@@ -59,7 +59,7 @@ beforeEach(async () => {
       dispose: () => {},
     },
   };
-  _jobsLaunchDeps.git = mock(async () => ({ exitCode: 0, stdout: "main", stderr: "" }));
+  _jobsLaunchDeps.git = mock(async () => ({ exitCode: 0, stdout: "feat/f1", stderr: "" }));
   _jobsLaunchDeps.lockHolder = mock(async () => null);
   await Bun.write(join(featureDir(options.repoRoot, "f1"), "prd.json"), JSON.stringify(makePRD()));
   await Bun.write(join(featureDir(options.repoRoot, "f1"), "spec.md"), "spec");

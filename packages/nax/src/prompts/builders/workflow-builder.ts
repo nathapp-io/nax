@@ -59,6 +59,10 @@ function pathsLine(): string {
   return `The spec for a feature is \`${spec}\`, which is where the plan launch reads it. Spec-review findings and fixes stay in this chat and in the spec itself, so a spec round writes no report file; the PRD fidelity check (spec-review --prd) writes \`${fidelityReport}\`.`;
 }
 
+/** Where a feature's plan and run happen: its feature branch, never a default branch. */
+const BRANCH_LINE =
+  "A feature's `nax plan` and `nax run` happen on its feature branch (the PRD's branchName, by default feat/<feature>), never on main or master: create or check out that branch before the launch; `nax-jobs__plan` and `nax-jobs__run` refuse on main, master or an unnamed branch.";
+
 /** The spec writer and reviewer `chat.workflow` names, or `null` when it names neither. */
 function specAgentsLine(workflow: ChatWorkflowConfig | undefined): string | null {
   if (!isChoiceSet(workflow?.specWriter) && !isChoiceSet(workflow?.specReviewer)) return null;
@@ -101,6 +105,7 @@ export function buildWorkflowInstructions(input?: WorkflowInstructionsInput): st
     "nax never merges a PR and never releases; the user merges the PR and the user releases.",
     "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
     pathsLine(),
+    BRANCH_LINE,
   ];
   for (const optionalLine of [specAgentsLine(workflow), profilesLine(workflow), userChoiceLine(workflow)]) {
     if (optionalLine !== null) lines.push(optionalLine);
