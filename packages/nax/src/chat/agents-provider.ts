@@ -6,10 +6,16 @@ import { agentNamed, generalAgent } from "./builtin-agent";
 
 const MAX_AVAILABLE_AGENTS = 20;
 
-const RUN_DESCRIPTION = `Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. ${EXPLORE_SENTENCE}`;
+/** The background-dispatch sentence, kept whole so the description stays readable at its call site. */
+const BACKGROUND_SENTENCE =
+  'Set "runInBackground": true to return at once with a task id; the agent keeps running after your turn ends and a notice arrives when it ends.';
+
+const RUN_DESCRIPTION = `Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. ${BACKGROUND_SENTENCE} ${EXPLORE_SENTENCE}`;
 
 const INVALID_INPUT = "[chat] run requires agent: string and task: string";
 const BAD_MODEL = "[chat] run model must be a non-empty string";
+const BAD_RUN_IN_BACKGROUND = "[chat] run runInBackground must be a boolean";
+const NO_RUN_IN_BACKGROUND = "[chat] runInBackground is not available in this chat";
 
 export interface AgentsProviderOptions {
   readonly catalog: ResourceCatalog;
@@ -20,6 +26,8 @@ export interface AgentsProviderOptions {
     signal: AbortSignal | undefined,
     model?: string,
   ) => Promise<ToolResult>;
+  /** Starts a background run; absent when the chat has no background task registry. */
+  readonly runInBackground?: (agent: AgentResource, task: string, model?: string) => Promise<ToolResult>;
 }
 
 function failure(content: string): ToolResult {
@@ -59,6 +67,21 @@ function targetOf(input: Record<string, unknown>): RunTarget {
 }
 
 /**
+ * Starts a background run instead of a foreground one. The agent already skipped the
+ * turn's signal, so it is not passed: a background run outlives the turn that started it.
+ */
+function startBackground(
+  options: AgentsProviderOptions,
+  agent: AgentResource,
+  task: string,
+  model: string | undefined,
+): Promise<ToolResult> {
+  const start = options.runInBackground;
+  if (!start) return Promise.resolve(failure(NO_RUN_IN_BACKGROUND));
+  return model === undefined ? start(agent, task) : start(agent, task, model);
+}
+
+/**
  * A static provider. It is always offered: even with no catalog agent the built-in
  * `general` and `explore` agents are reachable, and the three fixed instruction lines
  * still tell the model so.
@@ -70,16 +93,32 @@ export function createAgentsProvider(options: AgentsProviderOptions): ToolProvid
     description: RUN_DESCRIPTION,
     inputSchema: {
       type: "object",
-      properties: { agent: { type: "string" }, task: { type: "string" }, model: { type: "string" } },
+      properties: {
+        agent: { type: "string" },
+        task: { type: "string" },
+        model: { type: "string" },
+        runInBackground: { type: "boolean" },
+      },
       required: ["task"],
       additionalProperties: false,
     },
     async run(input, ctx) {
       const target = targetOf(input);
       if (target.kind === "failure") return target.result;
-      if (target.kind === "general") return options.run(generalAgent(), target.task, ctx.signal, target.model);
+      // A present flag must be a boolean; an absent one is the foreground call.
+      if (input.runInBackground !== undefined && typeof input.runInBackground !== "boolean") {
+        return failure(BAD_RUN_IN_BACKGROUND);
+      }
+      const background = input.runInBackground === true;
+      if (target.kind === "general") {
+        const general = generalAgent();
+        if (background) return startBackground(options, general, target.task, target.model);
+        return options.run(general, target.task, ctx.signal, target.model);
+      }
       const agent = agentNamed(catalog, target.name);
+      // An unknown name is reported before the background capability is checked.
       if (!agent) return unknownAgent(catalog, target.name);
+      if (background) return startBackground(options, agent, target.task, target.model);
       return target.model === undefined
         ? options.run(agent, target.task, ctx.signal)
         : options.run(agent, target.task, ctx.signal, target.model);
