@@ -123,6 +123,11 @@ describe("resolveAgentSessionOptions", () => {
     expect(resolveAgentSessionOptions(base({ approvalTimeoutMs: 30_000 })).approvalTimeoutMs).toBe(30_000);
   });
 
+  test('turnTimeoutSeconds "none" resolves to no turn deadline (#2962)', () => {
+    expect(resolveAgentSessionOptions(base({ turnTimeoutSeconds: "none" })).turnTimeoutSeconds).toBe("none");
+    rejects(base({ turnTimeoutSeconds: "never" }), "AGENT_SESSION_INVALID_OPTIONS", "turnTimeoutSeconds");
+  });
+
   test("a transcriptStore missing markTurn is rejected", () => {
     const { markTurn: _dropped, ...partial } = createMemoryTranscriptStore();
     rejects(base({ transcriptStore: partial }), "AGENT_SESSION_INVALID_OPTIONS", "transcriptStore");

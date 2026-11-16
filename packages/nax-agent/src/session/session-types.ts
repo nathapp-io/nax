@@ -100,6 +100,12 @@ export interface OpenSessionOpts extends TrackedSpawnDeadlineOptions {
   modelTier?: string;
   /** ACP: maximum session duration in seconds. */
   timeoutSeconds: number;
+  /**
+   * Native: open with NO whole-turn deadline, so a turn ends only by cancel, close or its own
+   * finish; `timeoutSeconds` is then not used to bound it. The agent-session facade sets this
+   * for `turnTimeoutSeconds: "none"` (nax chat, #2962).
+   */
+  noTurnDeadline?: boolean;
   /** ACP: acpx --prompt-retries value (default 0 — opt-in). */
   promptRetries?: number;
   /** Fired once the session is physically established, before the first prompt. */

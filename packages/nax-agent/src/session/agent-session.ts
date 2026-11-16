@@ -32,6 +32,7 @@ import { createPendingAskTable, type PendingAskTable } from "./pending-asks.ts";
 import { createSessionAskPort } from "./session-ask-port.ts";
 import type { BackendInfo, OpenedBackend } from "./session-backend.ts";
 import { createSteerQueue, type SteerQueue, type SteerResult } from "./steer-channel.ts";
+import { armTurnDeadline } from "./turn-timeout.ts";
 
 /** The running turn: what the ask port reads. */
 interface LiveSlot {
@@ -89,16 +90,14 @@ function claimCompact(options: {
   const { ctx, closeSignal, run, hooks } = options;
   const turnId = _agentSessionDeps.randomUUID();
   const controller = new AbortController();
-  const timer = _agentSessionDeps.setTimeout(
-    () =>
-      controller.abort(new NaxError("compaction deadline", "AGENT_SESSION_TURN_TIMEOUT", { stage: "agent-session" })),
-    ctx.turnTimeoutSeconds * 1000,
+  const disarm = armTurnDeadline(ctx.turnTimeoutSeconds, () =>
+    controller.abort(new NaxError("compaction deadline", "AGENT_SESSION_TURN_TIMEOUT", { stage: "agent-session" })),
   );
   const signal = AbortSignal.any([controller.signal, closeSignal]);
   const result = Promise.resolve()
     .then(() => run({ signal }))
     .finally(() => {
-      _agentSessionDeps.clearTimeout(timer);
+      disarm();
       hooks.onSettle();
     });
   const claim: ActiveClaim = {
@@ -299,7 +298,7 @@ class FacadeAgentSession implements AgentSession {
    * (closed), then its claim (busy), then the backend's capability (last,
    * because it is the one the caller can do nothing about). The signal the
    * backend receives aborts on this call's own deadline — the session's
-   * `turnTimeoutSeconds`, the same budget a turn gets — and on `close()`.
+   * `turnTimeoutSeconds`, the same budget a turn gets (none for `"none"`) — and on `close()`.
    */
   async compact(): Promise<CompactResult> {
     const run = this.parts.opened.compact;

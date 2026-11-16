@@ -83,5 +83,7 @@ export async function acpSessionOptions(
       ...(input.memoryIndex !== undefined ? { memoryIndex: input.memoryIndex } : {}),
     }),
     ...(input.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: input.approvalTimeoutMs } : {}),
+    // A chat turn runs until it finishes or the user stops it, never against a wall clock (#2962).
+    turnTimeoutSeconds: "none",
   };
 }

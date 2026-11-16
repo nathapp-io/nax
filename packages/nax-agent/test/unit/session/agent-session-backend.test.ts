@@ -246,7 +246,7 @@ const abortOf = (opts: SendTurnOpts): Promise<void> =>
 
 async function sessionOn(
   turn: (opts: SendTurnOpts) => Promise<never>,
-  turnTimeoutSeconds?: number,
+  turnTimeoutSeconds?: number | "none",
 ): Promise<AgentSession> {
   return createAgentSession({
     backend: turnBackend(turn),
@@ -324,6 +324,111 @@ describe("turn_end keeps a failed turn's attached spend (#2367)", () => {
     const end = turnEndOf(await collect(session.send("go")));
     expect(end).toMatchObject({ status: "errored", costUsd: 0, usage: { inputTokens: 0, outputTokens: 0 } });
     expect("costSource" in end).toBe(false);
+    await session.close();
+  });
+});
+
+describe('turnTimeoutSeconds "none": a turn with no deadline (#2962)', () => {
+  const realSetTimeout = _agentSessionDeps.setTimeout;
+  afterEach(() => {
+    _agentSessionDeps.setTimeout = realSetTimeout;
+  });
+
+  test("no deadline timer is armed for the turn, and the backend is told so", async () => {
+    const armed: number[] = [];
+    _agentSessionDeps.setTimeout = (fn: () => void, ms: number) => {
+      armed.push(ms);
+      return realSetTimeout(fn, ms);
+    };
+    let opened: BackendOpenContext | undefined;
+    const backend: SessionBackend = {
+      kind: "acp:fake",
+      async open(ctx) {
+        opened = ctx;
+        const inner = await turnBackend(async () => {
+          throw new Error("done");
+        }).open(ctx);
+        return inner;
+      },
+    };
+    const session = await createAgentSession({
+      backend,
+      profile: "none",
+      transcriptStore: createMemoryTranscriptStore(),
+      turnTimeoutSeconds: "none",
+    });
+    await collect(session.send("go"));
+    expect(opened?.turnTimeoutSeconds).toBe("none");
+    expect(armed).toEqual([]);
+    await session.close();
+  });
+
+  test("a numeric turnTimeoutSeconds still arms the deadline", async () => {
+    const armed: number[] = [];
+    _agentSessionDeps.setTimeout = (fn: () => void, ms: number) => {
+      armed.push(ms);
+      return realSetTimeout(fn, ms);
+    };
+    const session = await sessionOn(async () => {
+      throw new Error("done");
+    }, 7);
+    await collect(session.send("go"));
+    expect(armed).toContain(7000);
+    await session.close();
+  });
+});
+
+describe('turnTimeoutSeconds "none": `!` commands and compaction (#2962)', () => {
+  const realSetTimeout = _agentSessionDeps.setTimeout;
+  afterEach(() => {
+    _agentSessionDeps.setTimeout = realSetTimeout;
+  });
+
+  /** A backend with a host command runner and a compactor, so both claim paths can be driven. */
+  function commandBackend(): SessionBackend {
+    return {
+      kind: "acp:fake",
+      async open(ctx) {
+        const inner = await turnBackend(async () => {
+          throw new Error("unused");
+        }).open(ctx);
+        return {
+          ...inner,
+          runCommand: async () => ({ content: "ok", isError: false }),
+          compact: async () => ({
+            compacted: false,
+            tokensBefore: 0,
+            tokensAfter: 0,
+            usage: { inputTokens: 0, outputTokens: 0 },
+            costUsd: 0,
+          }),
+        };
+      },
+    };
+  }
+
+  test.each([
+    ["none", []],
+    [9, [9000]],
+  ] as const)("turnTimeoutSeconds %p arms %p for a command and for compaction", async (seconds, expected) => {
+    const armed: number[] = [];
+    _agentSessionDeps.setTimeout = (fn: () => void, ms: number) => {
+      armed.push(ms);
+      return realSetTimeout(fn, ms);
+    };
+    const session = await createAgentSession({
+      backend: commandBackend(),
+      profile: "none",
+      transcriptStore: createMemoryTranscriptStore(),
+      turnTimeoutSeconds: seconds,
+    });
+    const command = await session.runCommand?.("echo hi", () => {});
+    expect(command).toEqual({ content: "ok", isError: false });
+    expect(armed).toEqual([...expected]);
+    armed.length = 0;
+    const compacted = await session.compact?.();
+    expect(compacted?.compacted).toBe(false);
+    expect(armed).toEqual([...expected]);
     await session.close();
   });
 });

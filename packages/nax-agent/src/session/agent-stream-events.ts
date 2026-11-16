@@ -36,6 +36,7 @@ export interface AgentStreamEventBase {
 export interface AgentCallStartedEvent extends AgentStreamEventBase {
   readonly kind: "agent.call_started";
   readonly model: string;
+  /** The turn's deadline in seconds; 0 for a native session opened with no turn deadline (#2962). */
   readonly timeoutSeconds: number;
 }
 

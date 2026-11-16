@@ -20,6 +20,7 @@ import {
 import { _sessionSandboxDeps } from "#src/coding-tools/coding-tool-sandbox";
 import { _clientDeps } from "#src/native/client";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
+import { NativeSessionAdapter, nativeSessionStateOf } from "#src/native/session-adapter";
 import { _launcherDeps } from "#src/sandbox/index";
 import { _agentSessionDeps } from "#src/session/agent-session-deps";
 import { NATIVE_BACKEND_KIND, nativeBackend } from "#src/session/native-backend";
@@ -631,5 +632,25 @@ describe("nativeBackend — the assembled session's unsandboxed Bash escape", ()
     expect(JSON.stringify(refusal)).toContain("allowUnsandboxedCommands");
     expect(runArgvCalls).toEqual([]);
     expect(seam.backend.calls).toEqual([]);
+  });
+});
+
+/** The native session's recorded turn timeout for an opened backend. */
+function recordedTimeout(opened: Awaited<ReturnType<typeof openBackend>>): number | null | undefined {
+  if (!(opened.adapter instanceof NativeSessionAdapter)) throw new Error("expected the native adapter");
+  return nativeSessionStateOf(opened.adapter).timeouts.get(opened.handle.id);
+}
+
+describe("nativeBackend turn deadline (#2962)", () => {
+  test('turnTimeoutSeconds "none" opens the native session with no turn deadline', async () => {
+    const context = await ctx({ turnTimeoutSeconds: "none" });
+    const opened = await openBackend(nativeBackend({ model: MODEL }), context);
+    expect(recordedTimeout(opened)).toBeNull();
+  });
+
+  test("a numeric turnTimeoutSeconds is the native session's deadline", async () => {
+    const context = await ctx({ turnTimeoutSeconds: 60 });
+    const opened = await openBackend(nativeBackend({ model: MODEL }), context);
+    expect(recordedTimeout(opened)).toBe(60);
   });
 });

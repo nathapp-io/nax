@@ -56,6 +56,16 @@ import { streamComplete } from "./stream-complete.ts";
 const FALLBACK_TURN_TIMEOUT_SECONDS = 3600;
 
 /**
+ * The turn budget a session's recorded timeout gives: `undefined` (no deadline) for a
+ * session opened with `noTurnDeadline`, which records `null` (#2962); the recorded seconds
+ * otherwise, or the fallback when none was recorded.
+ */
+export function recordedTurnBudgetSeconds(recorded: number | null | undefined): number | undefined {
+  if (recorded === null) return undefined;
+  return recorded ?? FALLBACK_TURN_TIMEOUT_SECONDS;
+}
+
+/**
  * US-003: the per-turn inputs the adapter forwards verbatim into `TurnDeps`:
  * the plugin-contributed loop handlers and the facts their handlers read, plus
  * (S3-3) the turn's `onTurnEvent` sink. Built here rather than inline in
@@ -212,7 +222,9 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
         fallbackTimeoutSeconds: FALLBACK_TURN_TIMEOUT_SECONDS,
       });
     }
-    const timeoutSeconds = storedTimeoutSeconds ?? FALLBACK_TURN_TIMEOUT_SECONDS;
+    const budgetSeconds = recordedTurnBudgetSeconds(storedTimeoutSeconds);
+    // `timeoutSeconds` labels the turn's events and deadline reason; 0 marks "no deadline".
+    const timeoutSeconds = budgetSeconds ?? 0;
     // S3-4: the session's system prompt (facade `instructions`), or `{}`.
     // Resolved here so the `complete` closure spreads it without a branch.
     const instructionInteraction = createInstructionInteraction(
@@ -222,7 +234,7 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
 
     // One budget for the whole turn, not one per round-trip. Created here
     // because this is where `timeoutSeconds` is known; consulted by the loop.
-    const deadline = createTurnDeadline(timeoutSeconds, () => _adapterDeps.now());
+    const deadline = createTurnDeadline(budgetSeconds, () => _adapterDeps.now());
 
     const hooks = this.state.streamHooks.get(handle.id);
     // One callId per turn, mirroring SpawnAcpSession.prompt(). `runId` is
@@ -479,16 +491,18 @@ export class NativeSessionAdapter implements AgentSessionAdapter {
    * its state, and a deadline.
    *
    * A missing timeout entry falls back to the turn default WITHOUT a warning,
-   * unlike `sendTurn`: the facade always arms its own deadline first, so a
-   * missing entry is not the unbounded degradation the turn's warning names.
+   * unlike `sendTurn`: a facade session always records one, so a missing entry
+   * is not the unbounded degradation the turn's warning names. A session
+   * opened with `noTurnDeadline` compacts with no deadline, like its turns.
    */
   async compactHistory(handle: SessionHandle, opts: { signal: AbortSignal }): Promise<CompactResult> {
-    const timeoutSeconds = this.state.timeouts.get(handle.id) ?? FALLBACK_TURN_TIMEOUT_SECONDS;
     return compactStoredHistory({
       state: this.state,
       handle,
       client: await this.client(),
-      deadline: createTurnDeadline(timeoutSeconds, () => _adapterDeps.now()),
+      deadline: createTurnDeadline(recordedTurnBudgetSeconds(this.state.timeouts.get(handle.id)), () =>
+        _adapterDeps.now(),
+      ),
       signal: opts.signal,
     });
   }

@@ -79,9 +79,10 @@ export interface NativeSessionState {
   /**
    * Session name -> timeoutSeconds, so sendTurn can bound each `complete()`
    * call with a deadline (whole-branch review finding 4). Same lifecycle as
-   * `transcriptDirs` — populated on open, cleared on close only.
+   * `transcriptDirs` — populated on open, cleared on close only. `null` is a
+   * session opened with `noTurnDeadline`: its turns have no deadline (#2962).
    */
-  readonly timeouts: Map<string, number>;
+  readonly timeouts: Map<string, number | null>;
 
   /**
    * Session name -> the runtime hooks handed to openSession. SessionManager
@@ -293,7 +294,7 @@ export async function openNativeSession(
     retainOnClose: opts.retainOnClose === true,
     transcriptArchive: opts.transcriptArchive,
   });
-  state.timeouts.set(name, opts.timeoutSeconds);
+  state.timeouts.set(name, opts.noTurnDeadline === true ? null : opts.timeoutSeconds);
   state.scratchpadRoots.set(name, opts.workdir);
   if (opts.transcriptOwner !== undefined) state.transcriptOwners.set(name, opts.transcriptOwner);
   else state.transcriptOwners.delete(name);

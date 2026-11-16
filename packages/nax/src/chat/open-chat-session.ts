@@ -227,6 +227,9 @@ async function sessionOptions(
       ...(request.memoryIndex !== undefined ? { memoryIndex: request.memoryIndex } : {}),
     }),
     approvalTimeoutMs: request.config.execution.approvalTimeout,
+    // A chat turn is the user's: it runs until it finishes or they stop it with Esc, never
+    // against a wall clock (#2962).
+    turnTimeoutSeconds: "none",
   };
 }
 

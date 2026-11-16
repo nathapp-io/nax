@@ -14,6 +14,7 @@ import type {
   CompactResult,
   EmbedderTool,
   SessionConfigureInput,
+  TurnTimeoutSeconds,
 } from "./agent-session-types.ts";
 import type { AgentSessionAdapter, SendTurnOpts, SessionHandle } from "./session-types.ts";
 
@@ -82,7 +83,8 @@ export interface BackendOpenContext {
   /** Re-read at use time: the running turn's signal, or a never-aborting one between turns. */
   readonly turnSignal: () => AbortSignal;
   readonly currentTurnId: () => string | undefined;
-  readonly turnTimeoutSeconds: number;
+  /** The session's turn budget; `"none"` means no deadline, and the backend arms none of its own (#2962). */
+  readonly turnTimeoutSeconds: TurnTimeoutSeconds;
   readonly metadata: Readonly<Record<string, string>>;
   /** Aborted when the session starts closing. */
   readonly openSignal: AbortSignal;

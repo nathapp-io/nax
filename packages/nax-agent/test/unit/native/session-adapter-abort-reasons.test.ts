@@ -22,7 +22,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Client, ResolvedModel } from "@nathapp/nax-ai";
 import { _adapterDeps } from "#src/native/adapter-deps";
 import { _clientDeps, _resetNativeClient } from "#src/native/client";
-import { NativeSessionAdapter } from "#src/native/session-adapter";
+import { NativeSessionAdapter, recordedTurnBudgetSeconds } from "#src/native/session-adapter";
 import type { InteractionHandler } from "#src/session/interaction-handler";
 import { createPendingAskTable } from "#src/session/pending-asks";
 import { createSessionAskPort } from "#src/session/session-ask-port";
@@ -316,5 +316,38 @@ describe("NativeSessionAdapter — turn-end abort reasons (US-003)", () => {
 
     expect(err.name).toBe("AbortError");
     expect(err.message).toBe("turn cancelled by its active-call cancel (idle watchdog or soft cancel)");
+  });
+});
+
+describe("NativeSessionAdapter — a session opened with noTurnDeadline (#2962)", () => {
+  test("arms no whole-turn deadline and no per-call deadline, and the turn completes", async () => {
+    const timers = captureTimers();
+    _clientDeps.build = async () => fakeClient();
+    const adapter = new NativeSessionAdapter();
+    const handle = await adapter.openSession("sess-no-deadline", {
+      agentName: "native",
+      workdir: makeTestDir("nax-no-deadline-root-"),
+      resolvedPermissions: { mode: "approve-all", bashApproval: "raw" },
+      modelDef: { provider: "unknown", model: "openai/gpt-5.4-mini" },
+      timeoutSeconds: 0,
+      noTurnDeadline: true,
+      transcriptDir: makeTestDir("nax-no-deadline-transcript-"),
+    });
+    sessionCleanups.push(() => adapter.closeSession(handle));
+
+    const result = await adapter.sendTurn(handle, "hi", {
+      interactionHandler: { onInteraction: async () => null },
+    });
+
+    expect(result.output).toContain("ok");
+    expect(timers).toEqual([]);
+  });
+});
+
+describe("recordedTurnBudgetSeconds (#2962)", () => {
+  test("null (noTurnDeadline) is no deadline; a number is itself; absent is the 3600s fallback", () => {
+    expect(recordedTurnBudgetSeconds(null)).toBeUndefined();
+    expect(recordedTurnBudgetSeconds(42)).toBe(42);
+    expect(recordedTurnBudgetSeconds(undefined)).toBe(3600);
   });
 });
