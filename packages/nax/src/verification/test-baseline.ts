@@ -48,11 +48,34 @@ export interface BaselineEntry {
 }
 
 /**
+ * Why a command-caused degraded baseline degraded, and what the command was.
+ *
+ * `test-baseline.json` is committed to the repo, so every field is safe to
+ * persist: `command` and `error` are redacted, `cwd` is relative to the capture
+ * root, and `outputTail` is the bounded, redacted tail of the command output.
+ * A marker not caused by a command (`gate-disabled`, `no-test-command`) carries
+ * no evidence at all.
+ */
+export interface BaselineEvidence {
+  readonly command: string;
+  /** Relative to the capture root; `"."` for the root itself. */
+  readonly cwd: string;
+  /** Present only when the runner reported one. */
+  readonly exitCode?: number;
+  readonly durationMs: number;
+  /** Omitted when the command produced no output. */
+  readonly outputTail?: string;
+  /** Set for a runner throw; never set together with `outputTail`. */
+  readonly error?: string;
+}
+
+/**
  * The baseline artifact. Two shapes:
  *   - `captured`   — a real snapshot; `entries` may be empty (baseline green).
  *   - `no-baseline`— a sentinel explaining why no capture exists (disabled,
  *                    timeout, parse failure, etc.). Read paths return this
- *                    exactly as written.
+ *                    exactly as written. A command-caused reason carries
+ *                    `evidence`.
  */
 export type TestBaseline =
   | {
@@ -66,6 +89,7 @@ export type TestBaseline =
       kind: "no-baseline";
       reason: "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error" | "no-gate-parse";
       capturedAt: string;
+      evidence?: BaselineEvidence;
     };
 
 /**

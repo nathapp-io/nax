@@ -12,12 +12,15 @@
  * also out of scope — parallel stories inherit the run-start baseline.
  */
 
+import { relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { NaxConfig } from "@/config";
-import { getSafeLogger } from "@/logger";
+import { getSafeLogger, redactSecrets } from "@/logger";
+import { gateOutputTail } from "@/operations/gate-output-tail";
 import { resolveFullSuiteTimeoutSeconds, resolveQualityTestCommands } from "@/quality";
 import { parseTestOutput, type TestSummary } from "@/test-runners";
 import {
+  type BaselineEvidence,
   clearStoryBaselines,
   executeWithTimeout,
   type TestBaseline,
@@ -70,6 +73,14 @@ export interface TestBaselineCaptureDeps {
   writeStoryBaseline: (root: string, featureId: string, storyId: string, baseline: TestBaseline) => Promise<void>;
   clearStoryBaselines: (root: string, featureId: string) => Promise<void>;
   now: () => string;
+  /**
+   * Milliseconds clock used to time each command run. Read exactly twice per
+   * command — immediately before and immediately after `runCommand` — so the
+   * recorded evidence duration measures that command alone, not the whole
+   * capture. The `Run-start test baseline captured` log line keeps using
+   * `Date.now` for its total.
+   */
+  clockMs: () => number;
   /** Resolve the gate timeout: regressionGate.timeoutSeconds ?? rectification.fullSuiteTimeoutSeconds ?? schema default. */
   resolveGateTimeoutSeconds: (config: NaxConfig) => number;
   regressionGateEnabled: (config: NaxConfig) => boolean;
@@ -113,6 +124,7 @@ export const _captureDeps: TestBaselineCaptureDeps = {
   writeStoryBaseline,
   clearStoryBaselines,
   now: () => new Date().toISOString(),
+  clockMs: () => Date.now(),
   resolveGateTimeoutSeconds: resolveFullSuiteTimeoutSeconds,
   regressionGateEnabled: (config) => config.execution?.regressionGate?.enabled ?? true,
 };
@@ -134,19 +146,130 @@ export interface CaptureRunBaselineOptions {
   readonly workdir: string;
 }
 
-/** Write a `no-baseline` marker with the given reason. Single persistence seam for every degraded path. */
+/**
+ * Write a `no-baseline` marker with the given reason. Single persistence seam
+ * for every degraded path; `evidence` is passed only when a command caused the
+ * degradation.
+ */
 async function writeNoBaseline(
   root: string,
   featureId: string,
   reason: "gate-disabled" | "no-test-command" | "timeout" | "unparseable" | "error",
+  evidence?: BaselineEvidence,
 ): Promise<void> {
   const baseline: TestBaseline = {
     kind: "no-baseline",
     reason,
     capturedAt: _captureDeps.now(),
+    ...(evidence !== undefined ? { evidence } : {}),
   };
   await _captureDeps.writeRunBaseline(root, featureId, baseline);
-  getSafeLogger()?.info("execution", "No run-start test baseline", { reason });
+  // `reason` stays first; the evidence fields follow it verbatim.
+  getSafeLogger()?.info("execution", "No run-start test baseline", { reason, ...evidence });
+}
+
+/** One command the capture ran, with its own timing and outcome. */
+interface CommandRun {
+  readonly command: string;
+  /** Relative to the capture root; `"."` for the root itself. */
+  readonly cwd: string;
+  readonly durationMs: number;
+  /** Absent when the runner threw. */
+  readonly result?: CaptureRunnerResult;
+  /** Set only when the runner threw. */
+  readonly error?: unknown;
+}
+
+/** Root-relative cwd for the evidence — `"."` when the command ran at the root. */
+function relativeCwd(root: string, workdir: string): string {
+  const rel = relative(root, workdir);
+  return rel === "" ? "." : rel;
+}
+
+/** Bounded, redacted output tail; omitted entirely when the output was empty. */
+function outputTailField(output: string): { outputTail?: string } {
+  const tail = gateOutputTail(output);
+  return tail === "" ? {} : { outputTail: tail };
+}
+
+/**
+ * Turn one command run into persistable evidence. `command` and `error` are
+ * redacted because `test-baseline.json` is committed; `outputTail` is redacted
+ * and bounded by `gateOutputTail`. Absent values are absent keys, not
+ * `undefined`.
+ */
+function evidenceFor(run: CommandRun | undefined): BaselineEvidence | undefined {
+  if (run === undefined) return undefined;
+  return {
+    command: redactSecrets(run.command),
+    cwd: run.cwd,
+    ...(run.result?.exitCode !== undefined ? { exitCode: run.result.exitCode } : {}),
+    durationMs: run.durationMs,
+    ...(run.result !== undefined ? outputTailField(run.result.output) : {}),
+    ...(run.error !== undefined ? { error: redactSecrets(errorMessage(run.error)) } : {}),
+  };
+}
+
+/** What the per-command loop observed, in a shape the decision tree can read. */
+interface CaptureLoopOutcome {
+  readonly parsedSummaries: CaptureParsedSummary[];
+  /** False when any command exited non-zero. */
+  readonly aggregateSuccess: boolean;
+  /** The command that timed out, if one did. */
+  readonly timedOut?: CommandRun;
+  /** The command whose run threw, if one did. */
+  readonly thrown?: CommandRun;
+  /** Every non-success command, in run order. */
+  readonly failed: readonly CommandRun[];
+}
+
+/**
+ * Run every resolved command independently, timing each one through
+ * `_captureDeps.clockMs` and recording its outcome. A timed-out result or a
+ * runner throw stops the loop — matches the gate's semantics: don't pollute the
+ * baseline with partial output from commands that never ran.
+ */
+async function runCaptureCommands(
+  commands: readonly string[],
+  timeoutSeconds: number,
+  cwd: string,
+  workdir: string,
+): Promise<CaptureLoopOutcome> {
+  let aggregateSuccess = true;
+  let timedOut: CommandRun | undefined;
+  let thrown: CommandRun | undefined;
+  const failed: CommandRun[] = [];
+  const parsedSummaries: CaptureParsedSummary[] = [];
+
+  for (const command of commands) {
+    const startedAt = _captureDeps.clockMs();
+    let result: CaptureRunnerResult;
+    try {
+      result = await _captureDeps.runCommand(command, timeoutSeconds, workdir);
+    } catch (err) {
+      thrown = { command, cwd, durationMs: _captureDeps.clockMs() - startedAt, error: err };
+      break;
+    }
+
+    const run: CommandRun = { command, cwd, durationMs: _captureDeps.clockMs() - startedAt, result };
+    if (result.timedOut) {
+      timedOut = run;
+      break;
+    }
+    if (!result.success) {
+      aggregateSuccess = false;
+      failed.push(run);
+    }
+    parsedSummaries.push(_captureDeps.parseTestOutput(result.output));
+  }
+
+  return {
+    parsedSummaries,
+    aggregateSuccess,
+    ...(timedOut ? { timedOut } : {}),
+    ...(thrown ? { thrown } : {}),
+    failed,
+  };
 }
 
 /**
@@ -164,6 +287,11 @@ async function writeNoBaseline(
  *      `captured` with `source: "preflight"`, `baseRef` from `captureGitRef`,
  *      one entry per parsed failure. Green suites carry `entries: []` — the
  *      baseline is the empty set, not a missing baseline (AC5).
+ *
+ * A degraded marker caused by a command (3, 4, 5) carries that command's
+ * evidence — command, cwd, exit code, duration and a redacted output tail — so
+ * a `timeout` can be told from a crash or a real failure long after the run.
+ * Reasons 1 and 2, and the fail-open outer catch, carry none.
  *
  * List-form commands (nax#1990) run each entry independently and aggregate
  * the parsed summaries — never `&&`-join (which would short-circuit on the
@@ -221,43 +349,19 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
   getSafeLogger()?.info("execution", "Capturing run-start test baseline", { commands, timeoutSeconds });
 
   // Run each command independently; aggregate outputs and parsed summaries.
-  // A single timed-out result short-circuits the whole loop to `timeout` —
-  // matches the gate's `TIMEOUT` semantics: don't pollute the baseline with
-  // partial output from commands that never ran.
-  let aggregateSuccess = true;
-  let aggregateTimedOut = false;
-  let runnerThrew = false;
-  const parsedSummaries: CaptureParsedSummary[] = [];
+  const outcome = await runCaptureCommands(commands, timeoutSeconds, relativeCwd(root, workdir), workdir);
+  const { parsedSummaries, aggregateSuccess } = outcome;
 
-  for (const command of commands) {
-    let result: CaptureRunnerResult;
-    try {
-      result = await _captureDeps.runCommand(command, timeoutSeconds, workdir);
-    } catch {
-      // AC10 — runner throws; record so we write a `no-baseline: error`
-      // marker after the loop and don't claim the suite ran.
-      runnerThrew = true;
-      break;
-    }
-
-    if (result.timedOut) {
-      // AC8 — runner timed out; stop running remaining entries.
-      aggregateTimedOut = true;
-      break;
-    }
-
-    if (!result.success) aggregateSuccess = false;
-
-    parsedSummaries.push(_captureDeps.parseTestOutput(result.output));
-  }
-
-  if (runnerThrew) {
-    await writeNoBaseline(root, featureId, "error");
+  // AC10 — runner throws; a `no-baseline: error` marker naming the command
+  // that threw, so a crash is distinguishable from a real failure.
+  if (outcome.thrown !== undefined) {
+    await writeNoBaseline(root, featureId, "error", evidenceFor(outcome.thrown));
     return;
   }
 
-  if (aggregateTimedOut) {
-    await writeNoBaseline(root, featureId, "timeout");
+  // AC8 — runner timed out; stop running remaining entries.
+  if (outcome.timedOut !== undefined) {
+    await writeNoBaseline(root, featureId, "timeout", evidenceFor(outcome.timedOut));
     return;
   }
 
@@ -277,9 +381,10 @@ async function captureRunBaselineInner(opts: CaptureRunBaselineOptions): Promise
   // (across every command in the list). Keyed on the named failures, not the
   // count: a parser that reads "990 failed" but names none would otherwise write
   // a captured baseline with no entries, and every pre-existing failure would
-  // later be labelled as introduced.
+  // later be labelled as introduced. The evidence names the first failing
+  // command in run order — the one that first broke the capture.
   if (!aggregateSuccess && summary.failures.length === 0) {
-    await writeNoBaseline(root, featureId, "unparseable");
+    await writeNoBaseline(root, featureId, "unparseable", evidenceFor(outcome.failed[0]));
     return;
   }
 
