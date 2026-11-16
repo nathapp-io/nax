@@ -117,17 +117,19 @@ describe("useJobs tasks", () => {
 });
 
 describe("ChatApp footer tasks", () => {
-  test("AC-14 draws the running task on the footer row", async () => {
+  test("AC-14 counts the running task as one shell on the footer row", async () => {
     const tasks = tasksFixture();
     const ui = mountChatPicker({ tasks });
-    expect(ui.rows().at(-1)).not.toContain("bash sleep 60");
+    expect(ui.rows().at(-1)).not.toContain("1 shell");
     let end: ReturnType<typeof adoptRunning> | undefined;
     await ui.settleAfter(() => {
       end = adoptRunning(tasks, "sleep 60");
     });
-    expect(ui.rows().at(-1)).toContain("bash sleep 60");
+    expect(ui.rows().at(-1)).toContain("1 shell");
+    // The command itself is never on the footer row: the strip counts the shells, it does not name them.
+    expect(ui.rows().at(-1)).not.toContain("bash sleep 60");
     await ui.settleAfter(() => end?.resolve({ exitCode: 0, timedOut: false, aborted: false }));
     await ui.settleAfter(() => {});
-    expect(ui.rows().at(-1)).not.toContain("bash sleep 60");
+    expect(ui.rows().at(-1)).not.toContain("1 shell");
   });
 });

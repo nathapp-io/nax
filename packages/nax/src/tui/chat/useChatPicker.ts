@@ -56,6 +56,8 @@ export interface ChatPicker {
   cycle(entry: PickerEntry, step: 1 | -1): void;
   /** ctrl+x on a jobs row: stop a running task or cancel a running job; the picker stays open. */
   stop(entry: PickerEntry): void;
+  /** The listing Enter on a jobs row draws; a lone shell's strip click opens it without the picker. */
+  showOutput(entry: PickerEntry): Promise<void>;
 }
 
 /** The host action a choice names, decided by which picker asked. */
@@ -285,5 +287,5 @@ export function useChatPicker({ host, runControl, onError, show }: ChatPickerOpt
     },
     [state?.kind, host],
   );
-  return { model, open, cancel, choose, setQuery, cycle, stop };
+  return { model, open, cancel, choose, setQuery, cycle, stop, showOutput };
 }

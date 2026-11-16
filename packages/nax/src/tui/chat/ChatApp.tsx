@@ -1233,6 +1233,7 @@ export function ChatApp({
     size,
     open: picker.open,
     note: (text) => append({ kind: "notice", text }),
+    showOutput: (entry) => void picker.showOutput(entry),
   });
 
   // The bottom budget and the menus' shares of it are measured above the key handlers, beside

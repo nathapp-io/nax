@@ -227,8 +227,11 @@ function jobEntry(job: ChatJob, nowMs: number): PickerEntry {
   };
 }
 
-/** One background task: its command on a single row, its state and age. */
-function taskEntry(task: BackgroundTask, nowMs: number): PickerEntry {
+/**
+ * One background task: its command on a single row, its state and age. A strip click on a lone
+ * shell reads the same row the jobs picker's Enter does, so its output lists under the same title.
+ */
+export function taskEntry(task: BackgroundTask, nowMs: number): PickerEntry {
   return {
     value: task.id,
     label: displayText(`bash ${task.command}`),

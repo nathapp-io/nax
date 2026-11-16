@@ -15,7 +15,9 @@ const BUSY_NOTICE = "wait for the turn to finish (Ctrl-C to interrupt)";
 const UNAVAILABLE = "jobs are not available in this session";
 const TASK_ID = "bash-1a2b3c4d";
 const COMMAND = "bun run test";
-const STRIP = `bash ${COMMAND}`;
+/** One running task is one part on the strip; the command itself is no longer drawn there. */
+const STRIP = "1 shell";
+const LISTING = `bash ${COMMAND} · running`;
 const FLUSHES = 6;
 afterEach(cleanup);
 
@@ -143,24 +145,27 @@ describe("ctrl+g", () => {
 });
 
 describe("a click on the footer strip", () => {
-  test("AC-11 opens the jobs picker at the strip's first column on the footer row", async () => {
+  test("AC-11 a click on the strip's first column lists the lone shell's output", async () => {
     const { ui, footerRow, stripColumn, click } = withStrip();
     expect(stripColumn).toBeGreaterThan(0);
     click({ x: stripColumn, y: footerRow });
     await flush(ui);
-    expect(ui.rows()).toContain(TITLE);
+    expect(text(ui)).toContain(LISTING);
+    expect(ui.rows()).not.toContain(TITLE);
   });
-  test("the strip's last column opens it too", async () => {
+  test("the strip's last column lists it too", async () => {
     const { ui, footerRow, stripColumn, click } = withStrip();
     click({ x: stripColumn + STRIP.length - 1, y: footerRow });
     await flush(ui);
-    expect(ui.rows()).toContain(TITLE);
+    expect(text(ui)).toContain(LISTING);
+    expect(ui.rows()).not.toContain(TITLE);
   });
   test("AC-12 one column left of the strip opens nothing", async () => {
     const { ui, footerRow, stripColumn, click } = withStrip();
     click({ x: stripColumn - 1, y: footerRow });
     await flush(ui);
     expect(ui.rows()).not.toContain(TITLE);
+    expect(text(ui)).not.toContain(LISTING);
   });
   test("AC-13 a release on a different cell opens nothing", async () => {
     const { ui, footerRow, stripColumn, click } = withStrip();
@@ -173,6 +178,7 @@ describe("a click on the footer strip", () => {
     click({ x: stripColumn, y: footerRow }, undefined, "right");
     await flush(ui);
     expect(ui.rows()).not.toContain(TITLE);
+    expect(text(ui)).not.toContain(LISTING);
   });
   test("AC-15 opens nothing while an approval ask card is pending", async () => {
     const { ui, footerRow, stripColumn, click } = withStrip();

@@ -1,16 +1,13 @@
 /**
- * The chat turn status as data: what the turn is doing right now, how long it has run
- * and how many tokens it has spent. `reduceTurnStatus` folds a session event stream into
- * it; `shortModel` and `formatTokens` are the display helpers the footer and the working
- * line share (US-016). `footerModel` composes the screen's one-line footer from a host
- * state, that status and the hint the screen is offering (US-017). `workingLine` turns
- * the same status into the animated line the screen redraws every `WORKING_TICK_MS`, and
- * `headerLines` composes the three fixed rows above the transcript (US-018). The footer's
- * role-tagged segmentation, which a fitter drops one role at a time, lives in
+ * The chat turn status as data: what the turn is doing right now, how long it has run and how many tokens it has
+ * spent. `reduceTurnStatus` folds a session event stream into it; `shortModel` and `formatTokens` are the display
+ * helpers the footer and the working line share (US-016). `footerModel` composes the screen's one-line footer from a
+ * host state, that status and the hint the screen offers (US-017); `workingLine` turns the same status into the
+ * animated line the screen redraws every `WORKING_TICK_MS`, and `headerLines` composes the three rows above the
+ * transcript (US-018). The footer's role-tagged segmentation, which a fitter drops one role at a time, lives in
  * `footer-segments.ts` (US-001); this module supplies the spans it is built from.
  *
- * Everything here is pure. A status the event does not change is returned as the same
- * object, so a component that compares by reference does no needless work.
+ * Everything here is pure: a status the event does not change is returned as the same object.
  */
 import { parseModelSpec, type SessionEvent } from "@nathapp/nax-agent";
 import { acpModelLabel, type ChatHostState, isChatAcpModel, sessionTitleText } from "@/chat";
@@ -304,18 +301,21 @@ export interface FooterTask {
   readonly command: string;
 }
 
-/** `bash <command>`: the command on one row, cut to the target limit in display columns. */
-function taskPart(task: FooterTask): string {
-  return `bash ${elideEnd(singleRow(task.command), JOB_TARGET_LIMIT, ELLIPSIS)}`;
+/** The one part every running background command shares: `1 shell`, `3 shells`. */
+function shellPart(count: number): string {
+  return `${count} shell${count === 1 ? "" : "s"}`;
 }
 
-/** Compact, independent ledger of jobs then background tasks for the one-row footer. */
+/**
+ * Compact, independent ledger of jobs then background tasks for the one-row footer: the first `JOB_STRIP_LIMIT` jobs,
+ * the jobs they hid, and — when commands run — one part counting them, since a few shells would crowd the row.
+ */
 export function formatJobStrip(jobs: readonly FooterJob[], tasks: readonly FooterTask[] = []): string {
-  const total = jobs.length + tasks.length;
-  const shown = [...jobs.slice(0, JOB_STRIP_LIMIT).map(jobPart)];
-  for (const task of tasks.slice(0, Math.max(0, JOB_STRIP_LIMIT - jobs.length))) shown.push(taskPart(task));
-  const strip = shown.join(SEPARATOR);
-  return total > JOB_STRIP_LIMIT ? `${strip} +${total - JOB_STRIP_LIMIT}` : strip;
+  const hidden = jobs.length - JOB_STRIP_LIMIT;
+  const strip = jobs.slice(0, JOB_STRIP_LIMIT).map(jobPart).join(SEPARATOR);
+  const counted = hidden > 0 ? `${strip} +${hidden}` : strip;
+  if (tasks.length === 0) return counted;
+  return counted === "" ? shellPart(tasks.length) : `${counted}${SEPARATOR}${shellPart(tasks.length)}`;
 }
 
 function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {
@@ -326,10 +326,9 @@ function rightLine(state: ChatHostState, status: TurnStatus): StyledLine {
 }
 
 /**
- * The one-line footer: what the screen is doing on the left, what it costs on the right.
- * The whole left side is the warning quit hint while that hint is showing, so mode and
- * sandbox never compete with a pending quit. `glyphs` defaults to the Unicode set so a caller
- * that has no theme still composes; a screen passes its resolved theme's.
+ * The one-line footer: what the screen is doing on the left, what it costs on the right. The whole left side is the
+ * warning quit hint while that hint shows, so mode and sandbox never compete with a pending quit. `glyphs` defaults to
+ * the Unicode set so a caller with no theme still composes; a screen passes its resolved theme's.
  */
 export function footerModel(input: {
   state: ChatHostState;
@@ -431,13 +430,11 @@ function workingDetail(status: TurnStatus, elapsed: number, escHint?: string): s
 const ESC_INTERRUPT = HINT_PARTS.busy.gesture;
 
 /**
- * The line the screen shows while a turn runs: a spinner frame and what the turn is doing,
- * in the accent colour, then a muted measurement of the time and the tokens. Undefined
- * when no turn runs, so the screen reserves no row for it. `escHint` takes the place of
- * `esc to interrupt`, so the line names what esc would do now. A `width` fits the row to a
- * narrow screen from the same frame, verb and seconds: the tokens and the esc hint go — the
- * footer carries the action — and a row still too wide is elided at its end with the theme's
- * ellipsis. Omitted, the row is drawn whole.
+ * The line the screen shows while a turn runs: a spinner frame and what the turn is doing, in the accent colour, then a
+ * muted measurement of the time and the tokens. Undefined when no turn runs, so the screen reserves no row for it.
+ * `escHint` takes the place of `esc to interrupt`, so the line names what esc would do now. A `width` fits the row to a
+ * narrow screen from the same frame, verb and seconds: the tokens and the esc hint go — the footer carries the action —
+ * and a row still too wide is elided at its end with the theme's ellipsis. Omitted, the row is drawn whole.
  */
 export function workingLine(
   status: TurnStatus,
@@ -507,9 +504,9 @@ function tailColumns(text: string, columns: number): string {
 }
 
 /**
- * A text elided in the middle to at most `columns` display columns: the start and the end
- * are kept and the gap between them becomes the ellipsis, so a deep path still shows where
- * it begins and what it ends in. A negative or empty budget keeps the ellipsis alone.
+ * A text elided in the middle to at most `columns` display columns: the start and the end are kept and the gap between
+ * them becomes the ellipsis, so a deep path still shows where it begins and what it ends in.
+ * A negative or empty budget keeps the ellipsis alone.
  */
 function elideMiddle(text: string, columns: number, ellipsis: string): string {
   const limit = Math.max(1, columns);
@@ -576,11 +573,9 @@ function headerRuleLine(width: number, glyphs: ChatGlyphs): StyledLine {
 }
 
 /**
- * The screen's fixed header: the product and the session's model and mode, where it runs,
- * and a rule the width of the terminal. `width` below `MIN_LAYOUT_WIDTH` is treated as
- * that minimum, and the path is elided in the middle to leave the sandbox suffix room.
- * `glyphs` is the drawing theme's set; it defaults to the Unicode one so a caller without a
- * theme still composes a complete header.
+ * The screen's fixed header: the product and the session's model and mode, where it runs, and a rule the width of the
+ * terminal. `width` below `MIN_LAYOUT_WIDTH` is treated as that minimum, and the path is elided in the middle to leave
+ * the sandbox suffix room. `glyphs` defaults to the Unicode set, so a caller without a theme still composes a header.
  */
 export function headerLines(input: {
   state: ChatHostState;
