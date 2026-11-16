@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-branch-guard",
   "branchName": "feat/chat-polish-and-branch-guard",
   "createdAt": "2026-11-16T05:50:00.189Z",
-  "updatedAt": "2026-11-16T06:58:59.945Z",
+  "updatedAt": "2026-11-16T07:14:14.990Z",
   "userStories": [
     {
       "id": "US-001",
@@ -359,14 +359,17 @@
       "dependencies": [
         "US-004"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Three existing modules reuse takeQueued and the established steer/interrupt path rather than introducing a new dispatcher; retain strict TDD under the session-control override because fallback cancels and resends a turn."
+        "reasoning": "Three existing modules reuse takeQueued and the established steer/interrupt path rather than introducing a new dispatcher; retain strict TDD under the session-control override because fallback cancels and resends a turn.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -387,7 +390,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "d71064b83150ad6b40c0ad36470ee2702e320635"
     },
     {
       "id": "US-006",
