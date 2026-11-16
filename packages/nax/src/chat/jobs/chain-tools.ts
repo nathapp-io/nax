@@ -6,7 +6,7 @@ import { buildChainStepArgv, CHAIN_STEP_FIELDS, type ChainStepInput, parseChainS
 import type { ChatChains } from "./chain-controller";
 import { CHAIN_CHECK_MAX_LENGTH, CHAIN_MAX_STEPS, type ChainStep } from "./chain-types";
 import { type ChatJobKind, isRunJobKind } from "./job-types";
-import { _jobsLaunchDeps, resolvePlanSpec } from "./jobs-launch";
+import { _jobsLaunchDeps, featureBranchRefusal, resolvePlanSpec } from "./jobs-launch";
 import type { JobsProviderOptions } from "./jobs-provider";
 import { applyWorkflowDefaults, unknownWorkflowProfile } from "./workflow-defaults";
 
@@ -58,17 +58,26 @@ async function resolveStepTarget(entry: ParsedStep, step: number, options: Optio
   // Config defaults first: the card's argv must be the argv the step's own launch will build.
   const applied = applyWorkflowDefaults(input, stepOptions.workflow);
   const body = applied.input;
-  if (body.kind !== "plan") {
-    const unknown = await unknownWorkflowProfile(applied, stepOptions.repoRoot);
-    if (unknown !== undefined) return stepError(step, unknown);
-    return { input: body, options: stepOptions, prdExists: false };
+  let prepared: ChainStepInput = body;
+  let prdExists = false;
+  if (body.kind === "plan") {
+    const resolved = await resolvePlanSpec(body.feature, body.spec, stepOptions);
+    if ("error" in resolved) return stepError(step, resolved.error);
+    // After the spec: a missing spec is the more actionable report of the two.
+    prepared = { ...body, spec: resolved.spec };
+    prdExists = resolved.prdExists;
   }
-  const resolved = await resolvePlanSpec(body.feature, body.spec, stepOptions);
-  if ("error" in resolved) return stepError(step, resolved.error);
-  // After the spec: a missing spec is the more actionable report of the two.
   const unknown = await unknownWorkflowProfile(applied, stepOptions.repoRoot);
   if (unknown !== undefined) return stepError(step, unknown);
-  return { input: { ...body, spec: resolved.spec }, options: stepOptions, prdExists: resolved.prdExists };
+  if (body.kind === "plan" || body.kind === "run") {
+    const refusal = await featureBranchRefusal({
+      kind: body.kind,
+      feature: body.feature,
+      repoRoot: stepOptions.repoRoot,
+    });
+    if (refusal !== undefined) return stepError(step, refusal);
+  }
+  return { input: prepared, options: stepOptions, prdExists };
 }
 
 async function resolveSteps(

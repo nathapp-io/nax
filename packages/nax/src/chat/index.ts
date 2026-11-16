@@ -26,7 +26,13 @@ export {
   QUESTION_DECLINED_REPLY,
 } from "./ask-controller";
 export { _askFallbackDeps, type AskFallback, type AskFallbackOptions, createAskFallback } from "./ask-fallback";
-export { GENERAL_AGENT_NAME, generalAgent } from "./builtin-agent";
+export {
+  EXPLORE_AGENT_DESCRIPTION,
+  EXPLORE_AGENT_NAME,
+  exploreAgent,
+  GENERAL_AGENT_NAME,
+  generalAgent,
+} from "./builtin-agent";
 export { type ChatAgentRow, formatAgentsListing } from "./chat-agents-listing";
 export {
   chatCompactAtTokens,

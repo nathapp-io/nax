@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { PassThrough } from "node:stream";
+import { fakeTimers, makeFakeClock } from "@test/helpers";
 import {
+  _mouseInputDeps,
   createMouseInput,
   DISABLE_MOUSE,
   ENABLE_MOUSE,
+  ESC_FLUSH_MS,
   type MouseEvent,
   type MouseInput,
   parseSgrMouse,
@@ -12,12 +15,18 @@ import {
 const ESC = "\u001b";
 const wheel = `${ESC}[<64;3;4M`;
 const inputs: MouseInput[] = [];
+const realSetTimeout = _mouseInputDeps.setTimeout;
+const realClearTimeout = _mouseInputDeps.clearTimeout;
 afterEach(() => {
   for (const input of inputs) input.dispose();
   inputs.length = 0;
+  _mouseInputDeps.setTimeout = realSetTimeout;
+  _mouseInputDeps.clearTimeout = realClearTimeout;
 });
 
 function setup(isTTY = true) {
+  const clock = makeFakeClock();
+  Object.assign(_mouseInputDeps, fakeTimers(clock));
   const source = Object.assign(new PassThrough(), {
     isTTY,
     isRaw: false,
@@ -29,7 +38,7 @@ function setup(isTTY = true) {
   inputs.push(input);
   const events: MouseEvent[] = [];
   input.events.subscribe((event) => events.push(event));
-  return { source, input, events };
+  return { clock, source, input, events };
 }
 
 function readText(input: MouseInput): string {
@@ -99,9 +108,11 @@ describe("createMouseInput", () => {
   test.each([
     ["AC-13", ESC],
     ["AC-22", `${ESC}[`],
-  ])("%s forwards Escape immediately", (_ac, chunk) => {
-    const { source, input } = setup();
+  ])("%s holds Escape for the flush delay, then forwards it", async (_ac, chunk) => {
+    const { clock, source, input } = setup();
     source.write(chunk);
+    expect(readText(input)).toBe("");
+    await clock.advance(ESC_FLUSH_MS);
     expect(readText(input)).toBe(chunk);
   });
   test("AC-14 forwards malformed reports without events", () => {

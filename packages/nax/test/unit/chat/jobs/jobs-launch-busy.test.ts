@@ -59,7 +59,7 @@ beforeEach(async () => {
       dispose: () => {},
     },
   };
-  _jobsLaunchDeps.git = mock(async () => ({ exitCode: 0, stdout: "main", stderr: "" }));
+  _jobsLaunchDeps.git = mock(async () => ({ exitCode: 0, stdout: "feat/f1", stderr: "" }));
   _jobsLaunchDeps.lockHolder = mock(async () => null);
   await Bun.write(join(featureDir(options.repoRoot, "f1"), "prd.json"), JSON.stringify(makePRD()));
   await Bun.write(join(featureDir(options.repoRoot, "f1"), "spec.md"), "spec");
@@ -159,7 +159,7 @@ describe("launchJob busy checkout and failures", () => {
     expect(approve).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
-  test("simultaneous allowed launches check jobs after lock read without an async gap", async () => {
+  test("simultaneous allowed launches check running jobs synchronously before start", async () => {
     start.mockImplementation(async () => {
       const started = job();
       running.push(started);

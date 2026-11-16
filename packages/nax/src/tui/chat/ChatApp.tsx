@@ -31,6 +31,7 @@ import {
   type TurnStatus,
   WORKING_TICK_MS,
 } from "./chat-status";
+import { useEscConfirm } from "./esc-confirm";
 import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
 import { FixedRow } from "./FixedRow";
 import {
@@ -494,13 +495,19 @@ export function ChatApp({
     return topEscLayer({
       ask: escAsk(ask),
       askFromSession: askedBySession(ask),
+      // The card the arm belongs to: a question replaced by another question is another target.
+      askId: ask?.requestId,
       picker: picker.model?.kind,
       mentionShown: mention.ownsNavigation(),
       menuShown: menuShown(),
       turnRunning: running && keys.canControl(),
     });
   }
-  const escHint = escHintText(escLayer(turnRunning));
+  const escLayerNow = escLayer(turnRunning);
+  // A destructive esc asks twice: the hook owns that arm, and clears it whenever the turn ends
+  // or the top layer changes, so a new turn never inherits the last one's first press.
+  const escConfirm = useEscConfirm(escLayerNow, turnRunning);
+  const escHint = escHintText(escLayerNow, escConfirm.armed);
   // The working line is drawn from the turn status alone, so its presence is unchanged; only
   // its text takes the layer's hint, and `esc to interrupt` stays when the layer has none.
   const working = workingLine(status, nowMs, theme.glyphs, escHint, size.columns);
@@ -535,6 +542,9 @@ export function ChatApp({
     // never also reach the turn. The turn's ownership is read synchronously, like every other
     // key-time fact: the frame's answer is a render old when a batch carries several keys.
     if (!key.escape || escLayer(sending.current).kind !== "turn") return;
+    // Stopping a turn cannot be undone, so the first escape only offers it (US-006); a second
+    // one inside the window is the press that stops it.
+    if (!escConfirm.press()) return;
     host.cancel();
   });
 
@@ -866,8 +876,22 @@ export function ChatApp({
   }
 
   /**
+   * The oldest queued line, when ctrl+s is the queue's rather than the prompt's (queued send, chat-polish US-005): a
+   * turn is sending, the prompt is empty (its text trims to `""` — a slash line is not empty
+   * and keeps today's behaviour), and no interrupt send is waiting. A pending interrupt send
+   * already owns what happens next, and the queue drains behind it, so those lines stay put.
+   */
+  function queuedSteer(): { readonly text: string; readonly rest: MessageQueue } | undefined {
+    if (!sending.current) return undefined;
+    if (interruptSend.current !== undefined) return undefined;
+    if (editorRef.current.text.trim() !== "") return undefined;
+    return takeQueued(queueRef.current);
+  }
+
+  /**
    * ctrl+s (US-004): hand the typed line to the turn that is running, or — with nothing
-   * running — send it exactly as a return would.
+   * running — send it exactly as a return would. With the prompt empty and a line waiting in
+   * the queue, the oldest queued line goes to the turn instead (chat-polish US-005).
    *
    * Which of the two it is comes from `sending`, never from the rendered `busy` flag: a return,
    * the text typed after it and this chord can arrive in one batch, and the flag of the render
@@ -885,6 +909,11 @@ export function ChatApp({
    * the user's to edit or send.
    */
   function steerRunningTurn(): void {
+    const queuedLine = queuedSteer();
+    if (queuedLine !== undefined) {
+      steerQueued(queuedLine);
+      return;
+    }
     const text = steerText();
     if (text === undefined) return;
     if (!sending.current) {
@@ -893,36 +922,63 @@ export function ChatApp({
       inputHandle.current?.submit(text);
       return;
     }
-    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
-      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
-      return;
-    }
-    let result: SteerResult | undefined;
     try {
-      result = host.steer?.(text);
+      steerLine(text);
+    } catch (error) {
+      append({ kind: "error", text: errorMessage(error) });
+    }
+  }
+
+  /**
+   * A queued line handed to the running turn, exactly as a typed one is: the same steering and
+   * interrupt path, so a brain that steers shows the row a typed steer shows and a brain that
+   * cannot interrupts the turn and sends the line next. It leaves the queue only once the brain
+   * has taken it: a steer that throws or refuses never reached the turn, so nothing the user
+   * queued is dropped — the line stays where it was.
+   */
+  function steerQueued(queuedLine: { readonly text: string; readonly rest: MessageQueue }): void {
+    try {
+      if (!steerLine(queuedLine.text)) return;
     } catch (error) {
       append({ kind: "error", text: errorMessage(error) });
       return;
     }
+    replaceQueue(queuedLine.rest);
+  }
+
+  /**
+   * One line handed to the turn that is sending, wherever it came from; `false` when nothing
+   * took it. A picture in the draft is refused with the queue's own notice — a queued line never
+   * carries one, and the prompt is empty when a queued line is taken. A steer the brain accepts
+   * earns a steering row; one it cannot take interrupts the turn and holds the line to be sent
+   * first. A steer that throws is the caller's to report, and leaves the line where it was.
+   */
+  function steerLine(text: string): boolean {
+    if (imagesForSend(imageAttach.current(), text).images.length > 0) {
+      append({ kind: "notice", text: IMAGES_NOT_QUEUED });
+      return false;
+    }
+    const result = host.steer?.(text);
     // The line goes somewhere it is held now, whatever the brain answered: leaving it in the
     // prompt would steer, queue or send it twice.
     inputHandle.current?.edit(EMPTY_EDITOR);
     if (result?.status === "accepted") {
       trackSteer(result, text);
-      return;
+      return true;
     }
     // A send is already waiting to interrupt this turn. It could not be steered, and a second
     // pending send would have to replace it — so this line takes the queue instead, behind the
     // first one, and neither is lost.
     if (interruptSend.current !== undefined) {
       replaceQueue(pushQueued(queueRef.current, text));
-      return;
+      return true;
     }
     interruptSend.current = text;
     // The turn to cancel is the one `sending` owns, not the one the last render reported: this
     // key can arrive in the same batch as the return that started that turn. A card, a picker
     // and a menu still own escape from the frame, and the control guard still applies.
     if (escLayer(sending.current).kind === "turn") host.cancel();
+    return true;
   }
 
   /**
@@ -979,6 +1035,9 @@ export function ChatApp({
       return;
     }
     sending.current = true;
+    // A compaction holds the turn slot, so it is a turn boundary too — an arm earned before it
+    // must not survive into whatever runs next.
+    escConfirm.reset();
     setBusy(true);
     setStatus(compactingStatus);
     append({ kind: "notice", text: `${COMPACTING}${theme.glyphs.ellipsis}` });
@@ -1087,6 +1146,10 @@ export function ChatApp({
   ): Promise<boolean> {
     if (sending.current) return false;
     sending.current = true;
+    // A turn claimed here is a new gesture boundary: an arm the previous turn earned dies with
+    // it, synchronously, because a line drained off the queue starts this turn from the end of
+    // the last one and may never draw an idle frame for the effect to notice (US-006).
+    escConfirm.reset();
     setBusy(true);
     turnEnd.current = undefined;
     // A new send starts a new turn, and a discarded group belongs to the turn that discarded
@@ -1190,12 +1253,25 @@ export function ChatApp({
    * Esc on the question card: decline the question, then stop the chat turn it interrupted —
    * but only when the chat session itself asked it, a turn is running, and the keys can still
    * control it. A run ask's or a job's question asks as `"host"`: nothing here is waiting for
-   * the answer, so the chat turn keeps running. The decline always comes first, so a question
-   * is settled even on the turn it goes on to stop.
+   * the answer, so the chat turn keeps running — and, since closing it stops nothing, it keeps
+   * its single escape. A question that does stop the turn is destructive, so its escape asks
+   * twice exactly as the bare turn's does (US-006).
+   *
+   * The decline always comes first, so a question is settled even on the turn it goes on to stop.
    */
   function dismissQuestion(pending: ChatPendingAsk): void {
+    const stops = askedBySession(pending) && turnRunning && keys.canControl();
+    if (stops && !escConfirm.press()) return;
     host.asks.declineQuestion(pending.requestId);
-    if (askedBySession(pending) && turnRunning && keys.canControl()) host.cancel();
+    if (stops) host.cancel();
+  }
+
+  /**
+   * Whether ctrl+s would send a queued line now (chat-polish US-005) — the key's own rule, read here for the
+   * footer: the queue is not empty, the draft trims to `""`, and no interrupt send is waiting.
+   */
+  function queuedNow(): boolean {
+    return queued.length > 0 && draft.editor.text.trim() === "" && interruptSend.current === undefined;
   }
 
   const columns = size.columns;
@@ -1219,6 +1295,8 @@ export function ChatApp({
             tmux,
             // The esc layer's own hint, which names what esc would close, deny or cancel now.
             layer: escHint !== undefined,
+            // Whether ctrl+s would send a queued line now (chat-polish US-005).
+            queued: queuedNow(),
           })
         : "copied",
     layerHint: escHint,
@@ -1233,6 +1311,7 @@ export function ChatApp({
     size,
     open: picker.open,
     note: (text) => append({ kind: "notice", text }),
+    showOutput: (entry) => void picker.showOutput(entry),
   });
 
   // The bottom budget and the menus' shares of it are measured above the key handlers, beside

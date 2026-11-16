@@ -16,6 +16,13 @@
  *   - AC13  a captured baseline carries no evidence
  *   - AC14  `gateOutputTail` is reachable through its nested barrel
  *
+ * Plus the per-command degradation of the root path (US-001):
+ *   - AC-1  a sibling that names no failure degrades the baseline
+ *   - AC-2  the third command, not the second, is the one that degrades it
+ *   - AC-3  a green sibling keeps the capture, entry for entry
+ *   - AC-4  a lone unparseable command names itself as the evidence
+ *   - AC-5  the degraded capture logs exactly one info entry naming cmd-b
+ *
  * Lives beside `test-baseline-capture.test.ts` (770 of the 800-line cap)
  * rather than inside it.
  *
@@ -88,6 +95,33 @@ function onlyEvidence(): BaselineEvidence {
   expect(evidence).toBeDefined();
   if (evidence === undefined) throw new Error("expected evidence");
   return evidence;
+}
+
+/** One command in a stubbed list: how it exits and what its own parse names. */
+interface CommandRunSpec {
+  readonly command: string;
+  readonly success: boolean;
+  readonly failed: number;
+  readonly failures: readonly { file: string; testName: string }[];
+}
+
+/**
+ * Stub `runCommand` / `parseTestOutput` for a command list: each command echoes
+ * its own name as output and parses to its own spec, so a test reads as "this
+ * command named that failure, that one named none".
+ */
+function stubCommandRuns(specs: readonly CommandRunSpec[]): void {
+  const byCommand = new Map(specs.map((spec) => [spec.command, spec]));
+  _captureDeps.runCommand = async (command: string): Promise<CaptureRunnerResult> => ({
+    success: byCommand.get(command)?.success ?? false,
+    timedOut: false,
+    output: command,
+  });
+  _captureDeps.parseTestOutput = (output: string): CaptureParsedSummary => {
+    const spec = byCommand.get(output);
+    return { passed: 0, failed: spec?.failed ?? 0, failures: [...(spec?.failures ?? [])] };
+  };
+  _captureDeps.captureGitRef = async () => "base-ref";
 }
 
 function installLoggerSpy(): LogCall[] {
@@ -184,27 +218,88 @@ describe("captureRunBaseline evidence — AC4 (first failing command)", () => {
     expect(marker.evidence?.command).toBe("cmd-b");
   });
 
-  // The root path keeps the aggregate rule (spec US-004: "runs exactly as
-  // today"), so a command that names its failures satisfies the whole list and
-  // the baseline is captured rather than degraded. The per-command rule lives in
-  // `runGroup`, where US-004/AC-14 scopes it to per-package groups.
-  test("AC4: a named failure anywhere in the root command list keeps the baseline captured", async () => {
+  // Per command, not per list (US-001): one command naming its failures must not
+  // hide a sibling that names none — otherwise the sibling's pre-existing
+  // failures ride into a captured baseline and are later labelled introduced.
+  test("AC-1: a failing cmd-b that names no failure degrades the baseline even though cmd-a named one", async () => {
     _captureDeps.resolveTestCommands = async () => ["cmd-a", "cmd-b"];
-    _captureDeps.runCommand = async (command: string): Promise<CaptureRunnerResult> => ({
-      success: false,
-      timedOut: false,
-      output: command,
-    });
-    _captureDeps.parseTestOutput = (output: string): CaptureParsedSummary =>
-      output === "cmd-a"
-        ? { passed: 0, failed: 1, failures: [{ file: "a.test.ts", testName: "fails" }] }
-        : { passed: 0, failed: 4, failures: [] };
+    stubCommandRuns([
+      { command: "cmd-a", success: false, failed: 1, failures: [{ file: "a.test.ts", testName: "fails" }] },
+      { command: "cmd-b", success: false, failed: 4, failures: [] },
+    ]);
 
     await captureRunBaseline(makeOptions());
 
     expect(writes).toHaveLength(1);
-    expect(writes[0]?.kind).toBe("captured");
-    expect(writes[0]).not.toHaveProperty("evidence");
+    const marker = onlyMarker();
+    expect(marker.reason).toBe("unparseable");
+    expect(marker.evidence?.command).toBe("cmd-b");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 — the root path degrades on the first command that names no failure
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("captureRunBaseline — US-001 (per-command degradation)", () => {
+  test("AC-2: cmd-c naming no failure degrades the baseline past two commands that did name theirs", async () => {
+    _captureDeps.resolveTestCommands = async () => ["cmd-a", "cmd-b", "cmd-c"];
+    stubCommandRuns([
+      { command: "cmd-a", success: false, failed: 1, failures: [{ file: "a.test.ts", testName: "fails" }] },
+      { command: "cmd-b", success: false, failed: 1, failures: [{ file: "b.test.ts", testName: "fails" }] },
+      { command: "cmd-c", success: false, failed: 3, failures: [] },
+    ]);
+
+    await captureRunBaseline(makeOptions());
+
+    expect(writes).toHaveLength(1);
+    expect(onlyMarker().evidence?.command).toBe("cmd-c");
+  });
+
+  test("AC-3: a named failure in cmd-a with a green cmd-b captures exactly that one entry", async () => {
+    _captureDeps.resolveTestCommands = async () => ["cmd-a", "cmd-b"];
+    stubCommandRuns([
+      { command: "cmd-a", success: false, failed: 1, failures: [{ file: "a.test.ts", testName: "fails" }] },
+      { command: "cmd-b", success: true, failed: 0, failures: [] },
+    ]);
+
+    await captureRunBaseline(makeOptions());
+
+    expect(writes).toHaveLength(1);
+    const baseline = writes[0];
+    expect(baseline?.kind).toBe("captured");
+    if (baseline?.kind !== "captured") throw new Error("expected a captured baseline");
+    expect(baseline.entries).toEqual([{ file: "a.test.ts", testName: "fails" }]);
+  });
+
+  test("AC-4: a lone failing command that names no failure degrades the baseline naming itself", async () => {
+    _captureDeps.resolveTestCommands = async () => "cmd-only";
+    stubCommandRuns([{ command: "cmd-only", success: false, failed: 2, failures: [] }]);
+
+    await captureRunBaseline(makeOptions());
+
+    const marker = onlyMarker();
+    expect(marker.reason).toBe("unparseable");
+    expect(marker.evidence?.command).toBe("cmd-only");
+  });
+
+  test("AC-5: the degraded capture logs one info entry naming reason unparseable and command cmd-b", async () => {
+    const logs = installLoggerSpy();
+    _captureDeps.resolveTestCommands = async () => ["cmd-a", "cmd-b"];
+    stubCommandRuns([
+      { command: "cmd-a", success: false, failed: 1, failures: [{ file: "a.test.ts", testName: "fails" }] },
+      { command: "cmd-b", success: false, failed: 4, failures: [] },
+    ]);
+
+    await captureRunBaseline(makeOptions());
+
+    const noBaselineLogs = logs.filter((l) => l.message === "No run-start test baseline");
+    expect(noBaselineLogs).toHaveLength(1);
+    expect(noBaselineLogs[0]).toMatchObject({
+      level: "info",
+      stage: "execution",
+      data: { reason: "unparseable", command: "cmd-b" },
+    });
   });
 });
 

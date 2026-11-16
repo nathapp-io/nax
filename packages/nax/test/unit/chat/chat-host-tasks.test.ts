@@ -149,9 +149,14 @@ describe("chat host tasks", () => {
     await waitForCondition(() => tasks.peekNotice() !== undefined);
     expect(tasks.peekNotice()).toContain(sink.id);
   });
-  test("AC-20 resources precede tasks without a nax entry", async () => {
+  test("AC-17 resources precede tasks and the always-on agents provider without a nax entry", async () => {
     const f = fixture();
     await f.host.start({ mode: "full", model: "test" });
-    expect(f.open.mock.calls[0]?.[0].toolProviders?.map((p) => p.id)).toEqual(["first", "second", "nax-tasks"]);
+    expect(f.open.mock.calls[0]?.[0].toolProviders?.map((p) => p.id)).toEqual([
+      "first",
+      "second",
+      "nax-tasks",
+      "nax-agents",
+    ]);
   });
 });

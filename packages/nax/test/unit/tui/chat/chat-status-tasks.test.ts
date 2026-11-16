@@ -3,8 +3,6 @@ import type { ChatHostState } from "@/chat";
 import { type FooterJob, footerModel, formatJobStrip, IDLE_STATUS } from "@/tui/chat/chat-status";
 import { displayWidth } from "@/tui/chat/styled-line";
 
-const NINE_WIDE = "界".repeat(9);
-
 function chatState(): ChatHostState {
   return {
     sessionId: "abcdefgh-1234",
@@ -27,56 +25,63 @@ function chatState(): ChatHostState {
 
 const BASE = { state: chatState(), status: IDLE_STATUS, hint: "idle" as const };
 const PLAN: FooterJob = { kind: "plan", target: "f1" };
+/** Three single-letter run targets: the shortest jobs that overflow JOB_STRIP_LIMIT. */
+const RUNS_ABC: readonly FooterJob[] = [
+  { kind: "run", target: "a" },
+  { kind: "run", target: "b" },
+  { kind: "run", target: "c" },
+];
+const shells = (...commands: string[]) => commands.map((command) => ({ command }));
 
 describe("formatJobStrip with background tasks", () => {
-  test.each<{ ac: string; jobs: FooterJob[]; commands: string[]; expected: string }>([
-    { ac: "AC-1", jobs: [], commands: ["bun run test"], expected: "bash bun run test" },
-    { ac: "AC-2", jobs: [PLAN], commands: ["ls"], expected: "plan f1 · bash ls" },
-    {
-      ac: "AC-3",
-      jobs: [PLAN, { kind: "plan", target: "f2" }],
-      commands: ["ls"],
-      expected: "plan f1 · plan f2 +1",
-    },
-    { ac: "overflow among tasks", jobs: [PLAN], commands: ["a", "b", "c"], expected: "plan f1 · bash a +2" },
-    { ac: "AC-4", jobs: [], commands: ["a-very-long-command-line"], expected: "bash a-very-long-com…" },
-    {
-      ac: "exactly 16 columns stays whole",
-      jobs: [],
-      commands: ["0123456789abcdef"],
-      expected: "bash 0123456789abcdef",
-    },
-    { ac: "AC-5", jobs: [], commands: [NINE_WIDE], expected: `bash ${"界".repeat(7)}…` },
-    { ac: "AC-6", jobs: [], commands: ["echo a\nls"], expected: "bash echo a ls" },
-    { ac: "AC-6 crlf", jobs: [], commands: ["a\r\nb"], expected: "bash a b" },
-  ])("$ac", ({ jobs, commands, expected }) => {
-    expect(
-      formatJobStrip(
-        jobs,
-        commands.map((command) => ({ command })),
-      ),
-    ).toBe(expected);
+  test("AC-1 counts one running task as one shell", () => {
+    expect(formatJobStrip([], shells("bun run test"))).toBe("1 shell");
   });
 
-  test("keeps the strip of jobs alone unchanged without tasks", () => {
+  test("AC-2 draws the one job it shows, then the shells behind it", () => {
+    expect(formatJobStrip([PLAN], shells("a", "b", "c"))).toBe("plan f1 · 3 shells");
+  });
+
+  test("AC-3 counts the hidden jobs after the two it draws, then the shells", () => {
+    expect(formatJobStrip(RUNS_ABC, shells("sleep 60"))).toBe("run a · run b +1 · 1 shell");
+  });
+
+  test("AC-4 leaves the strip of jobs alone when no task runs", () => {
     expect(formatJobStrip([PLAN])).toBe("plan f1");
+  });
+
+  test("counts two shells as a plural part", () => {
+    expect(formatJobStrip([], shells("a", "b"))).toBe("2 shells");
+  });
+
+  test("appends the hidden-job count to the last drawn job when no task runs", () => {
+    expect(formatJobStrip([PLAN, { kind: "plan", target: "f2" }, { kind: "plan", target: "f3" }])).toBe(
+      "plan f1 · plan f2 +1",
+    );
+  });
+
+  test("draws no strip at all with neither jobs nor tasks", () => {
     expect(formatJobStrip([])).toBe("");
+    expect(formatJobStrip([], [])).toBe("");
   });
 });
 
 describe("footerModel tasks and stripWidth", () => {
-  test("AC-7 draws the task strip first on the right", () => {
-    expect(footerModel({ ...BASE, tasks: [{ command: "ls" }] }).right[0]?.text).toBe("bash ls");
+  test("AC-5 measures the one shell part it draws", () => {
+    const model = footerModel({ ...BASE, tasks: shells("bun run test") });
+    expect(model.stripWidth).toBe(displayWidth("1 shell"));
   });
 
-  test("AC-8 measures the task strip", () => {
-    expect(footerModel({ ...BASE, tasks: [{ command: "ls" }] }).stripWidth).toBe(displayWidth("bash ls"));
+  test("AC-6 draws the shell count first on the right, never the command", () => {
+    const model = footerModel({ ...BASE, tasks: shells("ls") });
+    expect(model.right[0]?.text).toBe("1 shell");
+    expect(JSON.stringify(model.right)).not.toContain("bash");
   });
 
-  test("AC-8 measures a wide task command in display columns", () => {
-    const model = footerModel({ ...BASE, tasks: [{ command: NINE_WIDE }] });
-    expect(model.stripWidth).toBe(displayWidth(`bash ${"界".repeat(7)}…`));
-    expect(model.stripWidth).toBe(5 + 14 + 1);
+  test("counts every running shell in one part", () => {
+    const model = footerModel({ ...BASE, tasks: shells("a", "b", "c") });
+    expect(model.right[0]?.text).toBe("3 shells");
+    expect(model.stripWidth).toBe(displayWidth("3 shells"));
   });
 
   test("AC-9 is zero with neither jobs nor tasks", () => {
@@ -93,8 +98,8 @@ describe("footerModel tasks and stripWidth", () => {
   });
 
   test("measures the combined strip only, not the separator", () => {
-    const model = footerModel({ ...BASE, jobs: [PLAN], tasks: [{ command: "ls" }] });
-    expect(model.stripWidth).toBe(displayWidth("plan f1 · bash ls"));
-    expect(model.right[0]?.text).toBe("plan f1 · bash ls");
+    const model = footerModel({ ...BASE, jobs: [PLAN], tasks: shells("ls") });
+    expect(model.stripWidth).toBe(displayWidth("plan f1 · 1 shell"));
+    expect(model.right[0]?.text).toBe("plan f1 · 1 shell");
   });
 });

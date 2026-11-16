@@ -128,8 +128,9 @@ describe("createChatHost resources", () => {
     await host.resume({ id: "another-id" });
     for (const [request] of f.open.mock.calls) {
       expect(request.loopHandlers).toBe(first?.loopHandlers);
-      expect(request.toolProviders?.slice(0, -1)).toEqual([...f.resources.toolProviders]);
-      expect(request.toolProviders?.at(-1)?.id).toBe("nax-tasks");
+      expect(request.toolProviders?.slice(0, -2)).toEqual([...f.resources.toolProviders]);
+      expect(request.toolProviders?.at(-2)?.id).toBe("nax-tasks");
+      expect(request.toolProviders?.at(-1)?.id).toBe("nax-agents");
     }
     expect(host.catalog).toBe(f.resources.catalog);
     expect(host.naxPlugins).toBe(f.resources.naxPlugins);
@@ -247,7 +248,11 @@ describe("createChatHost resources", () => {
       await f.build(true, false).start({ mode: "guarded", model: "test/model" });
       expect(_openChatSessionDeps.nativeBackend).toHaveBeenCalledWith(
         expect.objectContaining({
-          toolProviders: [...f.resources.toolProviders, expect.objectContaining({ id: "nax-tasks" })],
+          toolProviders: [
+            ...f.resources.toolProviders,
+            expect.objectContaining({ id: "nax-tasks" }),
+            expect.objectContaining({ id: "nax-agents" }),
+          ],
         }),
       );
     } else {

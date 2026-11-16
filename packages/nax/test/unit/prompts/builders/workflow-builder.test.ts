@@ -36,6 +36,10 @@ const FIDELITY_REPORT_PATH = `${PROJECT_FEATURES_DIR}/<feature>/prd-fidelity-rep
 /** The one line naming the spec report, present whether or not `chat.workflow` is set. */
 const PATHS_LINE = `The spec for a feature is \`${SPEC_PATH}\`, which is where the plan launch reads it. Spec-review findings and fixes stay in this chat and in the spec itself, so a spec round writes no report file; the PRD fidelity check (spec-review --prd) writes \`${FIDELITY_REPORT_PATH}\`.`;
 
+/** The fixed line that puts a feature's plan and run on its feature branch. */
+const BRANCH_LINE =
+  "A feature's `nax plan` and `nax run` happen on its feature branch (the PRD's branchName, by default feat/<feature>), never on main or master: create or check out that branch before the launch; `nax-jobs__plan` and `nax-jobs__run` refuse on main, master or an unnamed branch.";
+
 /** The line that hands the unset choices back to the user. */
 const CHOICES_LINE =
   "In this chat, where chat.workflow does not set them, the plan and run profiles and the spec writer and reviewer are the user's choice: nax-jobs__list returns the profile names; ask for the spec writer and reviewer when you propose spec-writing, and for the profiles in the same message that asks for plan approval.";
@@ -264,7 +268,7 @@ describe("workflow text preservation", () => {
 
   test("US-007 appends the paths line then the choices line after the last original line", () => {
     const output = lines(buildWorkflowInstructions());
-    expect(output.slice(ORIGINAL_LINES.length)).toEqual([PATHS_LINE, CHOICES_LINE]);
+    expect(output.slice(ORIGINAL_LINES.length)).toEqual([PATHS_LINE, BRANCH_LINE, CHOICES_LINE]);
   });
 
   test("US-007 keeps the six fixed lines byte-identical when chat.workflow is set", () => {
@@ -280,6 +284,42 @@ describe("workflow text preservation", () => {
       }),
     );
     expect(output.slice(0, ORIGINAL_LINES.length)).toEqual(ORIGINAL_LINES);
+  });
+});
+
+describe("US-002 buildWorkflowInstructions feature branch", () => {
+  test("AC-18 names the guarded launches, main, master and the default branch", () => {
+    const branchLines = lines(buildWorkflowInstructions()).filter(
+      (line) =>
+        line.includes("nax-jobs__plan") &&
+        line.includes("nax-jobs__run") &&
+        line.includes("main") &&
+        line.includes("master") &&
+        line.includes("feat/<feature>"),
+    );
+    expect(branchLines).toEqual([BRANCH_LINE]);
+  });
+
+  test("AC-19 puts the branch line right after the fidelity-report line, before any chat.workflow line", () => {
+    const output = lines(
+      buildWorkflowInstructions({
+        workflow: {
+          specFixRounds: 2,
+          plan: { profiles: ["p1"] },
+          specWriter: { agent: "general" },
+          specReviewer: { agent: "code-reviewer" },
+        },
+      }),
+    );
+    const pathsAt = output.findIndex((line) => line.includes(FIDELITY_REPORT_PATH));
+    expect(output[pathsAt + 1]).toBe(BRANCH_LINE);
+    const firstOptionalAt = output.findIndex(
+      (line) =>
+        line.includes("Spec-writing runs through") ||
+        line.includes("sets the profiles") ||
+        line.startsWith("In this chat, where chat.workflow does not set them,"),
+    );
+    expect(firstOptionalAt).toBeGreaterThan(output.indexOf(BRANCH_LINE));
   });
 });
 

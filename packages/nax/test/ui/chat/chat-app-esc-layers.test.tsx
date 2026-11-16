@@ -128,6 +128,10 @@ describe("esc on an ask card", () => {
     await ui.submit("work");
     ui.raise(SESSION_QUESTION);
     expect(ui.frame()).toContain("Proceed?");
+    // A question that stops the turn is destructive, so esc asks twice (US-006): the first
+    // press only arms the card, the second declines and then stops the turn.
+    ui.press(ESCAPE);
+    expect(ui.order).toEqual([]);
     ui.press(ESCAPE);
     expect(ui.order).toEqual(["decline:q1", "cancel"]);
     expect(ui.frame()).not.toContain("Proceed?");
@@ -259,6 +263,9 @@ describe("esc on the turn itself", () => {
     const ui = screen();
     await ui.submit("work");
     expect(ui.footer()).toContain("esc to interrupt");
+    // Two presses: the first only offers the stop, the second takes it (US-006).
+    ui.press(ESCAPE);
+    expect(ui.order).toEqual([]);
     ui.press(ESCAPE);
     expect(ui.order).toEqual(["cancel"]);
   });
@@ -270,6 +277,7 @@ describe("esc on the turn itself", () => {
     await ui.settle();
     expect(ui.rows()).toContain(NO_FILE_LIST_LINE);
     expect(ui.footer()).toContain("esc to interrupt");
+    ui.press(ESCAPE);
     ui.press(ESCAPE);
     expect(ui.order).toEqual(["cancel"]);
   });

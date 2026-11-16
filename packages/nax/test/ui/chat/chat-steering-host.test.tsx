@@ -228,7 +228,9 @@ describe("ctrl+s batched behind the return that started the turn, over the real 
     const real = await realHostWithClaim();
     const ui = render(<ChatApp host={real.host} theme={THEME} />);
     try {
-      await batch(ui, ["hi", RETURN, ESCAPE]);
+      // Two escapes in the one batch: the first only arms the stop, the second takes it
+      // (US-006), and both run before any render.
+      await batch(ui, ["hi", RETURN, ESCAPE, ESCAPE]);
       // The claim existed when the key ran: the turn's own `cancel` reached a live slot.
       expect(real.claim.claimedOnCancel).toBe(true);
     } finally {

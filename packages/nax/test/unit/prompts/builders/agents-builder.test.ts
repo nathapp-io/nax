@@ -76,10 +76,10 @@ describe("buildAgentsInstructions", () => {
     expect(out[3]).toBe("- reviewer: Reviews diffs");
   });
 
-  test("AC-9 US-002: the third line names the general-agent fallback", () => {
+  test("AC-9 US-002: the third line names the general-agent fallback and the explore sentence", () => {
     const out = lines(prompts.buildAgentsInstructions([agent]));
     expect(out[2]).toBe(
-      "When no agent fits, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.",
+      "When no agent fits, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.",
     );
   });
 
@@ -131,6 +131,21 @@ describe("buildAgentsInstructions", () => {
   test("US-002: a declared tool list keeps the entry clean of control characters", () => {
     const text = prompts.buildAgentsInstructions([{ ...agent, tools: ["Read"] }]);
     expect(lines(text)).toContain("- reviewer: Reviews diffs (tools: Read)");
+  });
+});
+
+describe("prompts barrel agents surface", () => {
+  test("exposes buildExploreAgentPrompt", () => {
+    expect(typeof prompts.buildExploreAgentPrompt).toBe("function");
+  });
+
+  test("the explore prompt is a read-only search prompt of its own", () => {
+    const prompt = prompts.buildExploreAgentPrompt();
+    expect(prompt).not.toBe(prompts.buildGeneralAgentPrompt());
+    expect(prompt).toContain("Read");
+    expect(prompt).toContain("Glob");
+    expect(prompt).toContain("Grep");
+    expect(prompt).toContain("Git");
   });
 });
 

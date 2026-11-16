@@ -210,9 +210,9 @@ class NativeChatHost implements ChatHost {
       const hostTasks = createHostTasks({ outputDir: this.outputDir, now: deps.now, logger: deps.logger });
       this.tasks = hostTasks.tasks;
       const providers = [...resources.toolProviders, ...(hostJobs?.providers ?? []), hostTasks.provider];
-      this.toolProviders = resources.catalog.agents.length
-        ? [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })]
-        : providers;
+      // Always last: the built-in general and explore agents are reachable even when the
+      // catalog has no agent of its own.
+      this.toolProviders = [...providers, createAgentsProvider({ catalog: resources.catalog, run: this.runs.run })];
     }
     if (hostJobs || this.tasks) {
       const closeOptions = { hostJobs, tasks: this.tasks, asks: this.asks, logger: deps.logger };

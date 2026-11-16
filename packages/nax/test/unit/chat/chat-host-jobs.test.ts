@@ -174,8 +174,9 @@ describe("createChatHost jobs", () => {
     await f.start();
     const request = f.open.mock.calls[0]?.[0];
     assertDefined(request, "open request");
-    expect(request.toolProviders?.slice(0, -1)).toEqual([...f.resources.toolProviders]);
-    expect(request.toolProviders?.at(-1)?.id).toBe("nax-tasks");
+    expect(request.toolProviders?.slice(0, -2)).toEqual([...f.resources.toolProviders]);
+    expect(request.toolProviders?.at(-1)?.id).toBe("nax-agents");
+    expect(request.toolProviders?.at(-2)?.id).toBe("nax-tasks");
     expect(request.toolProviders?.map((p) => p.id)).not.toContain("nax-jobs");
     expect(f.host.jobs).toBeUndefined();
     expect(f.host.confirmBeforeClose).toBeDefined();

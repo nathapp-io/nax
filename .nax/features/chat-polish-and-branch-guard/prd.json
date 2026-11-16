@@ -1,0 +1,562 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-polish-and-branch-guard",
+  "branchName": "feat/chat-polish-and-branch-guard",
+  "createdAt": "2026-11-16T05:50:00.189Z",
+  "updatedAt": "2026-11-16T07:42:51.549Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Degrade the root run-start baseline per command",
+      "description": "**Goal** — Make an unparseable failing root test command degrade the baseline even when a sibling names failures.\n\n**Motivation** — With `quality.commands.test: [\"cmd-a\", \"cmd-b\"]`, where `cmd-a` names one failure and `cmd-b` fails naming none, the baseline is `captured` with only `cmd-a`'s entry; every pre-existing `cmd-b` failure is later labelled `introduced`.\n\n**Approach** — `captureRunBaselineInner` replaces `aggregateUnparseableFailure(outcome)` with `unparseableFailure(outcome)`: the first command, in run order, that failed and whose own parse named no failure makes the baseline `unparseable` with that command's evidence. `aggregateUnparseableFailure` is deleted. Everything else on the root path is unchanged.\n\n**Scope** — In: root capture's helper import/call, deletion of the obsolete helper and stale aggregate-rule comments, evidence fixtures and info logging assertions. Out: chat launch protection (US-002), agent discovery (US-003), transcript/footer changes (US-004), queue steering (US-005) and Esc/mouse handling (US-006). `.nax/` files are not edited by this feature's stories; `.nax/features/run-start-baseline-fixes/spec.md` US-004 (\"runs exactly as today\") was updated by hand on this branch before the run.\n\n**Interface** — Reuse `unparseableFailure(outcome)`, `evidenceFor(run)` and `writeNoBaseline` without changing their contracts. Removal of `aggregateUnparseableFailure` is verified by the normal build/static gate, `bun run typecheck`.\n\n**Regression update** — In `packages/nax/test/unit/execution/lifecycle/test-baseline-capture-evidence.test.ts`, replace the test \"AC4: a named failure anywhere in the root command list keeps the baseline captured\" with the same cmd-a/cmd-b fixture expecting exactly one `no-baseline` marker, `reason: \"unparseable\"` and `evidence.command: \"cmd-b\"`; remove its preceding aggregate-rule comment. Preserve timeout/error precedence, per-package behavior and evidence redaction.",
+      "acceptanceCriteria": [
+        "[unit] captureRunBaseline with _captureDeps.resolveTestCommands returning [\"cmd-a\", \"cmd-b\"], both commands failing, cmd-a parsing to one named failure and cmd-b parsing to failed: 4 with no named failure, writes exactly one baseline: kind: \"no-baseline\", reason: \"unparseable\", evidence.command equal to cmd-b.",
+        "[unit] captureRunBaseline with commands [\"cmd-a\", \"cmd-b\", \"cmd-c\"], all failing, cmd-a and cmd-b each naming one failure and cmd-c naming none, writes a no-baseline marker whose evidence.command is cmd-c.",
+        "[unit] captureRunBaseline with commands [\"cmd-a\", \"cmd-b\"], cmd-a failing with one named failure { file: \"a.test.ts\", testName: \"fails\" } and cmd-b succeeding with no failures, writes one captured baseline whose entries equal [{ file: \"a.test.ts\", testName: \"fails\" }].",
+        "[unit] captureRunBaseline with one command that fails and names no failure writes a no-baseline marker with reason: \"unparseable\" and evidence.command equal to that command.",
+        "[unit] captureRunBaseline with commands [\"cmd-a\", \"cmd-b\"], both failing, cmd-a naming one failure and cmd-b naming none, logs one info entry at stage execution whose data has reason: \"unparseable\" and command: \"cmd-b\"."
+      ],
+      "tags": [
+        "bugfix",
+        "execution",
+        "baseline"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "A small two-module behavior correction and existing fixture update using established capture/evidence seams; no new abstraction or security-sensitive session path.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/execution/lifecycle/test-baseline-capture.ts",
+        "packages/nax/src/execution/lifecycle/test-baseline-units.ts",
+        "packages/nax/test/unit/execution/lifecycle/test-baseline-capture-evidence.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/execution/lifecycle/test-baseline-capture-evidence.test.ts",
+          "reason": "the test \"AC4: a named failure anywhere in the root command list keeps the baseline captured\" pins the aggregate rule this story removes (`cmd-a` names one failure, `cmd-b` fails naming none, expected one `captured` write with no evidence); it becomes a test that the same fixture writes one `no-baseline` marker with reason `unparseable` and `evidence.command` equal to `cmd-b`, and its preceding comment about the aggregate rule is removed."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "208fe90d344227a68fb9d573dfc15e278d92823f"
+    },
+    {
+      "id": "US-002",
+      "title": "Refuse chat plan and run launches on protected branches",
+      "description": "**Goal** — Refuse chat plan/run launches and chain proposals on main, master or an exit-zero unnamed branch before approval or execution.\n\n**Motivation** — A chat agent launched `nax-jobs__run` with the checkout on `main`, and the run committed onto `main`.\n\n**Approach** — A new exported function in `chat/jobs/jobs-launch.ts`:\n\n```ts\n// packages/nax/src/chat/jobs/jobs-launch.ts\nexport async function featureBranchRefusal(input: {\n  readonly kind: \"plan\" | \"run\";\n  readonly feature: string;\n  readonly repoRoot: string;\n}): Promise<string | undefined>;\n```\n\nIt reads the checked-out branch with `_jobsLaunchDeps.git([\"symbolic-ref\", \"--short\", \"HEAD\"], repoRoot)` (the call `launchReason` already makes). When that call exits non-zero (detached HEAD, not a repository), it returns `undefined`: the branch is unknown and the launch is not refused. When the trimmed branch fails `isPublishableBranch(branch)` (`utils/git.ts`: `\"\"`, `main`, `master`), it returns the refusal text:\n\n```\n[chat] nax <kind> for <feature> refused: the checkout is on <branch>; plan and run a feature on its feature branch <target>. Create or check out <target>, then launch again.\n```\n\n`<branch>` is the branch name, or `an unnamed branch` for `\"\"`. `<target>` is the feature PRD's `branchName` when `<featureDir>/prd.json` exists and loads (through `_jobsLaunchDeps.exists` and `_jobsLaunchDeps.loadPRD`), otherwise `feat/<feature>` (the planner's default, `plan/strategies/context-builder.ts`). No default-branch lookup is made.\n\nCall sites:\n- `launchJob`: after `prepareTarget` and `unknownWorkflowProfile` succeed and before the busy check, a `plan` or `run` input whose `featureBranchRefusal` returns text ends the call with `{ isError: true, content: <text> }`; no approval is requested and no job starts. This covers chain auto-admission too, since it runs inside `launchJob`.\n- `chain-tools.ts` `resolveStepTarget`: a `plan` or `run` step whose `featureBranchRefusal` returns text yields that step's error through `stepError(step, text)`, so no chain card is shown.\n\n`buildWorkflowInstructions` (`prompts/builders/workflow-builder.ts`) gains one fixed line, placed after `pathsLine()` and before the optional lines:\n\n```\nA feature's `nax plan` and `nax run` happen on its feature branch (the PRD's branchName, by default feat/<feature>), never on main or master: create or check out that branch before the launch; `nax-jobs__plan` and `nax-jobs__run` refuse on main, master or an unnamed branch.\n```\n\n**Scope** — In: shared branch refusal helper, both launch and chain-step wiring, exact workflow guidance and launch/chain regressions. Out: baseline classification (US-001), resource discovery/builtins (US-003), UI footer/queue/Esc changes (US-004–US-006). The `nax run` CLI does not check or switch branches; only the chat launch tools refuse. The default branch read from `origin/HEAD` is not consulted by the launch guard; only `\"\"`, `main` and `master` are refused. A launch on a detached HEAD is not refused. `nax-jobs__finish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix` are not guarded by branch; publish keeps `auto-pr`'s own guard.\n\n**Interface** — `featureBranchRefusal(input: { readonly kind: \"plan\" | \"run\"; readonly feature: string; readonly repoRoot: string; }): Promise<string | undefined>` as declared above; reuse `isPublishableBranch(branch, defaultBranch?)`, `featureDir(repoRoot, feature)` and `_jobsLaunchDeps` without bypassing target preparation or approval ordering.\n\n**Regression updates** — Change only the main-answering git stubs in `jobs-launch-chain.test.ts`, `jobs-launch-nested.test.ts`, `jobs-launch-busy.test.ts` and `chain-tools-repo.test.ts` to feat/f1, keeping every other assertion. In `workflow-builder.test.ts`, introduce the exact BRANCH_LINE and change `[PATHS_LINE, CHOICES_LINE]` to `[PATHS_LINE, BRANCH_LINE, CHOICES_LINE]`; keep the original-line prefix and approval-wording assertions. Create the branch test file listed in expectedFiles.",
+      "acceptanceCriteria": [
+        "[unit] featureBranchRefusal({ kind: \"run\", feature: \"f1\", repoRoot }) with _jobsLaunchDeps.git answering [\"symbolic-ref\", \"--short\", \"HEAD\"] with exit 0 and stdout main\\n, and a loadable prd.json whose branchName is feat/f1-x, returns \"[chat] nax run for f1 refused: the checkout is on main; plan and run a feature on its feature branch feat/f1-x. Create or check out feat/f1-x, then launch again.\".",
+        "[unit] featureBranchRefusal({ kind: \"plan\", feature: \"f1\", repoRoot }) with the branch master and no prd.json returns text that names master and the target feat/f1.",
+        "[unit] featureBranchRefusal with _jobsLaunchDeps.git answering exit 0 and stdout \\n returns text that names an unnamed branch.",
+        "[unit] featureBranchRefusal with the branch feat/f1 returns undefined.",
+        "[unit] featureBranchRefusal with _jobsLaunchDeps.git answering exit 1 (detached HEAD or not a repository) returns undefined.",
+        "[unit] featureBranchRefusal with the branch main and _jobsLaunchDeps.loadPRD throwing for an existing prd.json returns text whose target is feat/f1.",
+        "[unit] launchJob for kind run, feature f1, a pending-story prd.json with branchName feat/f1-x, and the branch main returns { isError: true, content: \"[chat] nax run for f1 refused: the checkout is on main; plan and run a feature on its feature branch feat/f1-x. Create or check out feat/f1-x, then launch again.\" }.",
+        "[unit] launchJob for kind run, feature f1, a pending-story prd.json, and the branch main makes no options.approve call.",
+        "[unit] launchJob for kind run, feature f1, a pending-story prd.json, and the branch main makes no options.jobs.start call (the existing job-start port; no job starts).",
+        "[unit] launchJob for kind plan, feature f1, an existing spec.md, and the branch main returns isError: true with content starting \"[chat] nax plan for f1 refused: the checkout is on main\".",
+        "[unit] launchJob for kind plan, feature f1, an existing spec.md, and the branch main makes no options.approve call.",
+        "[unit] launchJob for kind run on the branch feat/f1 calls options.approve once.",
+        "[unit] launchJob for kind bot_review with the branch main calls options.approve once (bot launches are not guarded).",
+        "[unit] launchJob for kind run with no prd.json and the branch main returns a ToolResult whose content is \"[chat] no prd.json for f1; run nax plan first\" (the missing-PRD error is reported before the branch refusal).",
+        "[unit] nax-jobs__chain with steps plan f1 then run f1 and the branch main returns isError: true with content containing \"nax plan for f1 refused\".",
+        "[unit] nax-jobs__chain with steps plan f1 then run f1 and the branch main makes no options.approve call.",
+        "[unit] nax-jobs__chain with steps bot_review then bot_fix and the branch main calls options.approve once.",
+        "[unit] buildWorkflowInstructions() contains a line that includes nax-jobs__plan, nax-jobs__run, main, master and feat/<feature>.",
+        "[unit] buildWorkflowInstructions()'s new branch line sits directly after the line naming prd-fidelity-report.md and before any optional chat.workflow line.",
+        "[unit] launchJob for a prepared run with _jobsLaunchDeps.git returning exit 1 still reaches options.approve with a card whose reason names the workdir but omits the branch, as today.",
+        "[unit] launchJob for either kind plan with an existing spec.md or kind run with a pending-story prd.json, on each exit-zero branch main, master or an empty trimmed branch, returns isError: true with content starting \"[chat] nax <kind> for f1 refused: the checkout is on <branch>;\", substituting the requested kind and branch name and using an unnamed branch for the empty string.",
+        "[unit] launchJob for either kind plan with an existing spec.md or kind run with a pending-story prd.json, on each exit-zero branch main, master or an empty trimmed branch, makes no options.approve call.",
+        "[unit] nax-jobs__chain with a single plan f1 step with an existing spec.md, or a single run f1 step, on each exit-zero branch main, master or an empty trimmed branch, returns isError: true with content starting [chat] step 1: nax <kind> for f1 refused: the checkout is on <branch>, using an unnamed branch for the empty string.",
+        "[unit] nax-jobs__chain with a single plan f1 step with an existing spec.md, or a single run f1 step, on each exit-zero branch main, master or an empty trimmed branch, makes no options.approve call."
+      ],
+      "tags": [
+        "bugfix",
+        "chat",
+        "workflow",
+        "branch-guard"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Three source modules reuse injected git/PRD ports and existing launch/chain validation paths; this is an operational branch check, not a change to authorization or session permissions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/chat/jobs/chain-tools.ts",
+        "packages/nax/src/utils/git.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/test/unit/chat/jobs/jobs-launch.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/chat/jobs/jobs-launch-branch.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a chain-auto-admitted run is launched after the checkout changes to main, launchJob returns the branch refusal without starting a job.",
+        "When a chain step targets a nested repo on master while the chat's repo is on feat/f1, nax-jobs__chain refuses that step using the nested repo's branch.",
+        "featureBranchRefusal returns undefined for branch develop even when origin/HEAD would name develop as the default branch."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/prompts/builders/workflow-builder.test.ts",
+          "reason": "\"US-007 appends the paths line then the choices line after the last original line\" expects the lines after `ORIGINAL_LINES` to equal `[PATHS_LINE, CHOICES_LINE]`; the new branch line sits between them, so the expectation becomes `[PATHS_LINE, BRANCH_LINE, CHOICES_LINE]` with a `BRANCH_LINE` constant holding the new line's exact text, and the `slice(0, ORIGINAL_LINES.length)` and approval-wording tests stay."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch-chain.test.ts",
+          "reason": "the `_jobsLaunchDeps.git` stub at line 82 answers main, which the new guard refuses for plan and run launches; the stub answers feat/f1 instead, and every other assertion stays."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch-nested.test.ts",
+          "reason": "the `_jobsLaunchDeps.git` stub at line 70 answers main, which the new guard refuses for plan and run launches; the stub answers feat/f1 instead, and every other assertion stays."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch-busy.test.ts",
+          "reason": "the `_jobsLaunchDeps.git` stub at line 62 answers main, which the new guard refuses for plan and run launches; the stub answers feat/f1 instead, and every other assertion stays."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-tools-repo.test.ts",
+          "reason": "the `_jobsLaunchDeps.git` stub at line 69 answers main, which the new guard refuses for plan and run steps; the stub answers feat/f1 instead, and every other assertion stays."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "e740fa4c9d6a9eaad30a91be5907451e35e3c419"
+    },
+    {
+      "id": "US-003",
+      "title": "Load nax user agents and always expose built-in explore",
+      "description": "**Goal** — Replace Claude user-agent discovery with nax user agents and make general/explore invocable even with an empty catalog.\n\n**Motivation** — Those agents are written for Claude Code, and they land in every nax chat's `nax-agents__run` listing.\n\n**Approach** — `discoverClaudeCodePackages` keeps scanning `~/.claude` for skills, commands, settings, hooks and MCP, but the `claude-user` package no longer scans `<claudeDir>/agents`: its `agents` is `[]`. The repo's `.claude/agents/` (`claude-project`) and enabled Claude plugins' agents are unchanged.\n\nA new `ResourceOrigin` kind `{ kind: \"nax-user\" }` labels agents from `naxAgentsDir(env)/*.md`. `naxAgentsDir(env)` is a new export of `resources/claude-paths.ts`: `join(env.NAX_GLOBAL_CONFIG_DIR ?? join(_claudePathsDeps.homedir(), \".nax\"), \"agents\")` — the same override and default as `globalConfigDir()`, read from the `env` that `loadResourceCatalog` is given rather than from `process.env`. The directory is scanned with `scanAgentsDir` into a package with id `nax-user`; the package is left out of the catalog when it holds no agents and no diagnostics (an absent directory yields neither). `loadResourceCatalog` loads it whether or not `resources.claudeCode` is enabled, and orders packages `[claude-project, nax-user, claude-user, …claude plugins, …nax plugins]`, so on a name clash a repo agent wins over a `~/.nax` agent, which wins over a plugin agent. `originLabel` returns `nax-user` for it.\n\n`chat/builtin-agent.ts` gains `explore`:\n\n```ts\nexport const EXPLORE_AGENT_NAME = \"explore\";\nexport function exploreAgent(): AgentResource; // tools [\"Read\", \"Glob\", \"Grep\", \"Git\"], origin nax-builtin, no model\n```\n\n`agentNamed(catalog, name)` resolves a catalog agent first, then the `general` and `explore` built-ins. `explore`'s prompt comes from a new `buildExploreAgentPrompt()` in `prompts/builders/agents-builder.ts` (read-only search: find and read code, report file paths and line numbers, change nothing), and its description is a new `EXPLORE_AGENT_DESCRIPTION` in `builtin-agent.ts`: `Searches and reads the codebase without changing it`.\n\nThe agent-facing text names `explore` in the sentence that already names `general`, so neither the instruction line count nor the overflow line moves: the sentence `For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.` is appended to `buildAgentsInstructions`'s third line and to the end of `RUN_DESCRIPTION` (`agents-provider.ts`). `createAgentsProvider` always offers the `run` tool and always returns instructions (the three fixed lines, then any catalog entries). The host attaches `nax-agents` whether or not the catalog has agents (`chat-host.ts`). `/agents` (`chat-agents-listing.ts`) stays a listing of catalog agents only.\n\n**Scope** — In: origin/path/catalog discovery and precedence, skip claude-user agent scanning, builtin explore, builder/barrel wiring, always-on agents provider for resource-enabled hosts, and affected provider/order fixtures. Out: launch branch protection (US-002), baseline behavior (US-001), footer and key handling (US-004–US-006). Skills, commands, settings, hooks and MCP from `~/.claude` are still loaded; only `~/.claude/agents/` stops. The repo's `.claude/agents/` and Claude plugin agents are still loaded. `/agents` does not list the built-in `general` and `explore` agents. A long subagent run is not kept alive past its parent turn's end, nor moved to a background task (#2930 second half stays open).\n\n**Interface** — `export const EXPLORE_AGENT_NAME = \"explore\"; export function exploreAgent(): AgentResource;` as above; add `{ readonly kind: \"nax-user\" }` to `ResourceOrigin`, export `naxAgentsDir(env)` from `resources/claude-paths.ts`, and add `buildExploreAgentPrompt()` to the prompt builder surface. `EXPLORE_AGENT_DESCRIPTION` is exactly `Searches and reads the codebase without changing it`. Reuse the existing run callback and tool-mapping policy, not a new dispatch path.\n\n**Failure behavior** — An absent nax agents directory creates neither a package nor a diagnostic. A malformed file produces the existing scanAgentsDir diagnostic and retains a diagnostics-only package.\n\n**Regression updates** — Replace agents-provider.test.ts's empty-catalog no-tool/undefined-instruction assertions with one run tool and three fixed instruction lines, and append the explore sentence to its exact description/suffix constants and agents-builder.test.ts's third-line expectation. Update host provider ordering in chat-host-tasks.test.ts, host-subagents.test.ts, chat-host-jobs.test.ts and chat-host-resources.test.ts to end in nax-tasks then nax-agents after the existing resources/optional jobs providers. In resources/catalog.test.ts, pass a temp NAX_GLOBAL_CONFIG_DIR alongside CLAUDE_CONFIG_DIR to prevent developer-home reads, leaving assertions unchanged. New tests are listed in expectedFiles; keep builtins outside the catalog.",
+      "acceptanceCriteria": [
+        "[unit] discoverClaudeCodePackages with <claudeDir>/agents/reviewer.md present returns a claude-user package whose agents is [].",
+        "[unit] discoverClaudeCodePackages with <claudeDir>/skills/<name>/SKILL.md present still returns that skill on the claude-user package.",
+        "[unit] discoverClaudeCodePackages with <repoRoot>/.claude/agents/reviewer.md present returns a claude-project package with an agent named reviewer.",
+        "[unit] loadResourceCatalog with env.NAX_GLOBAL_CONFIG_DIR set to a temp dir holding agents/helper.md (frontmatter name: helper, description: helps) returns a catalog whose findAgent(\"helper\") has origin.kind === \"nax-user\".",
+        "[unit] loadResourceCatalog with config.resources.claudeCode set to false and agents/helper.md under env.NAX_GLOBAL_CONFIG_DIR still returns findAgent(\"helper\").",
+        "[unit] loadResourceCatalog with no agents/ dir under env.NAX_GLOBAL_CONFIG_DIR returns a catalog whose packages hold no package with id nax-user.",
+        "[unit] loadResourceCatalog with an agent named helper both in <repoRoot>/.claude/agents/ and in <env.NAX_GLOBAL_CONFIG_DIR>/agents/ returns findAgent(\"helper\") with origin.kind === \"claude-project\".",
+        "[unit] originLabel({ kind: \"nax-user\" }) returns \"nax-user\".",
+        "[unit] naxAgentsDir({ NAX_GLOBAL_CONFIG_DIR: \"/g\" }) returns \"/g/agents\".",
+        "[unit] agentNamed(catalog, EXPLORE_AGENT_NAME) on a catalog with no explore agent returns an agent with name: \"explore\", description equal to EXPLORE_AGENT_DESCRIPTION, origin.kind === \"nax-builtin\", tools equal to [\"Read\", \"Glob\", \"Grep\", \"Git\"] and no model.",
+        "[unit] agentNamed(catalog, \"explore\") on a catalog holding a discovered explore agent returns the discovered agent.",
+        "[unit] exploreAgent().prompt equals buildExploreAgentPrompt().",
+        "[unit] buildExploreAgentPrompt() returns a non-empty string different from buildGeneralAgentPrompt().",
+        "[unit] createAgentsProvider over buildResourceCatalog([]) yields exactly one tool, whose localName is run.",
+        "[unit] createAgentsProvider over buildResourceCatalog([]) returns instructions whose third line ends with \"For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.\".",
+        "[unit] The run tool of createAgentsProvider called with { agent: \"explore\", task: \"find X\" } over an empty catalog calls the run callback once with an agent named explore and task find X.",
+        "[unit] ChatHost.start with a catalog that has no agents passes a provider list to the session that ends with nax-agents.",
+        "[unit] loadResourceCatalog with an absent <env.NAX_GLOBAL_CONFIG_DIR>/agents/ directory returns no diagnostic for that absent directory.",
+        "[unit] loadResourceCatalog with a malformed agent file under <env.NAX_GLOBAL_CONFIG_DIR>/agents/ includes the scanAgentsDir diagnostic for that file with origin.kind === \"nax-user\", as for any agent directory."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "resources",
+        "agents",
+        "tool-access"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Cross-module discovery precedence, builtin resolution, prompt exports and host provider wiring; the read-only tool allowlist and nested-session access boundary require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/resources/claude-sources.ts",
+        "packages/nax/src/resources/catalog.ts",
+        "packages/nax/src/chat/builtin-agent.ts",
+        "packages/nax/src/chat/agents-provider.ts",
+        "packages/nax/src/chat/chat-host.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/resources/nax-user-agents.test.ts",
+        "packages/nax/test/unit/chat/builtin-explore-agent.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a nax user agent and a plugin agent share the name helper and no repo agent overrides them, findAgent(\"helper\") returns the nax-user agent.",
+        "When a nax agents directory contains only malformed agent files, loadResourceCatalog retains the nax-user package and its diagnostics.",
+        "naxAgentsDir({}) returns the agents directory under the injected home directory's .nax folder.",
+        "When a malformed file exists only under <claudeDir>/agents, discoverClaudeCodePackages returns no diagnostic for that ignored file.",
+        "When /agents lists a catalog without discovered general or explore agents, its output contains neither builtin agent."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/agents-provider.test.ts",
+          "reason": "\"AC-4 no agents yields no tools\", \"AC-9 instructions are undefined with no agents\" and \"AC-18 a catalog with no agents still advertises no tools\" pin the empty-catalog gating this story removes; with no catalog agents the provider now yields exactly one tool named `run`, and its instructions' third line ends with `For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.`; `RUN_DESCRIPTION` (about line 251) and the general-agent sentence constant after it pin the tool description, and both gain that appended sentence."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-tasks.test.ts",
+          "reason": "\"AC-20 resources precede tasks without a nax entry\" expects provider ids `[\"first\", \"second\", \"nax-tasks\"]` for a catalog with no agents; the agents provider is now always attached, so the expected ids are `[\"first\", \"second\", \"nax-tasks\", \"nax-agents\"]`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/host-subagents.test.ts",
+          "reason": "\"AC-2 start passes the resources' own providers when the catalog has no agents\" asserts the providers minus the last equal the resources' providers and the last is `nax-tasks`; the agents provider is now always attached last, so the providers minus the last two equal the resources' providers, the second-to-last is `nax-tasks` and the last is `nax-agents`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-jobs.test.ts",
+          "reason": "\"resources-only host has confirmation and preserves provider/handler ordering\" asserts the providers minus the last equal the resources' providers and the last is `nax-tasks`; the agents provider is now always attached last, so the providers minus the last two equal the resources' providers, the second-to-last is `nax-tasks` and the last is `nax-agents`."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-resources.test.ts",
+          "reason": "the resume loop (about line 131) asserts the providers minus the last equal the resources' providers and the last is `nax-tasks`, and the `withResources` start (about line 250) expects `toolProviders` equal to the resources' providers then `nax-tasks`; the agents provider is now always attached last, so both expect the resources' providers, then `nax-tasks`, then `nax-agents`."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/agents-builder.test.ts",
+          "reason": "\"AC-9 US-002: the third line names the general-agent fallback\" expects the third line exactly; the line now ends with the appended sentence `For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.`, and the expectation gains it."
+        },
+        {
+          "path": "packages/nax/test/unit/resources/catalog.test.ts",
+          "reason": "the `load` helper (about line 195) passes `env: { CLAUDE_CONFIG_DIR: claudeDir }`, which would now also read the developer's real home nax agents folder; the helper also passes NAX_GLOBAL_CONFIG_DIR pointing at a temp dir with no agents folder, and every assertion stays."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "715fb5d69e67cb8de7b359a500c27e14a9f517a7"
+    },
+    {
+      "id": "US-004",
+      "title": "Center transcript markers and group footer shells",
+      "description": "**Goal** — Center transcript bottom markers, compact running shells into one footer part and open a lone shell's output on a strip click.\n\n**Motivation** — Each running background command is its own `bash <command>` footer part (`formatJobStrip`), so a few shells crowd the strip.\n\n**Approach** — The marker row in `TranscriptViewport.tsx` is centred in the viewport width (`justifyContent=\"center\"` on the row), still truncated when wider than the window; `markerRowAt` keeps hit-testing the whole row. `formatJobStrip`, `FooterJob` and `FooterTask` stay in `chat-status.ts`; the per-task `taskPart` is removed. `chat-status.ts` is at 600 lines and `check:file-sizes` rejects a 601-line source file, so the rewritten strip must leave the file at or under 600 lines, with room for US-005's one new hint entry. The strip is: up to `JOB_STRIP_LIMIT` (2) job parts, then ` +<k>` for hidden jobs, then — when tasks run — the separator ` · ` and one part `1 shell` or `<n> shells` (for example `run a · run b +1 · 1 shell`). `use-jobs-opener.ts`: a left press and release on the footer strip reads, at click time, the running tasks from `host.tasks?.list()` and the running jobs from `host.jobs?.list()`. With exactly one running task and no running job it calls the new input `showOutput(taskEntry(task, now))` — the same listing Enter on that task's jobs-picker row produces, titled `bash <command> · running` — and opens no picker; otherwise it opens the jobs picker as today. ctrl+g always opens the jobs picker, so a lone shell can still be stopped there with ctrl+x. `useChatPicker` returns its existing `showOutput`, and `picker-model.ts` exports its existing `taskEntry`. The fitted footer's `N active (ctrl+g)` fallback (`status-layout.ts`) keeps counting each task.\n\n**Scope** — In: marker layout only, shell grouping and widths, exposing picker output/task-entry APIs, ChatApp callback wiring and event-time click routing. Out: queued hint/ctrl+s behavior (US-005), Esc confirmation/mouse buffering (US-006), baseline/launch/resource changes (US-001–US-003). Part-level hit-testing inside the footer strip is not added: a click anywhere on the strip acts on the whole strip. ctrl+g keeps opening the jobs picker in every case; only a strip click opens a lone shell directly. The fitted footer's `N active (ctrl+g)` fallback keeps counting each task and each job.\n\n**Interface** — Preserve `formatJobStrip(jobs, tasks)` in `chat-status.ts`. `useJobsOpener` input gains `showOutput(entry: PickerEntry): void`; `useChatPicker`'s return gains its existing `showOutput(entry: PickerEntry): Promise<void>`; `taskEntry(task, nowMs)` is exported unchanged.\n\n**Regression updates** — Replace per-command strip text in chat-status-tasks.test.ts with 1 shell/N shells after jobs; remove strip command-elision/newline cases and measure new strip widths. footer-tasks.test.tsx AC-14 expects 1 shell while running and no shell part after completion. jobs-opener.test.tsx changes STRIP to 1 shell; the first-column and last-column lone-task clicks expect the bash <command> · running transcript listing and no picker title. Preserve AC-12–AC-17 no-action assertions and AC-6/AC-18/AC-19/AC-20 ctrl+g assertions. New rendered tests live in footer-shells.test.tsx. Do not center ordinary transcript rows.",
+      "acceptanceCriteria": [
+        "[unit] formatJobStrip([], [{ command: \"bun run test\" }]) returns \"1 shell\".",
+        "[unit] formatJobStrip over one plan job with target f1 and three tasks returns \"plan f1 · 3 shells\".",
+        "[unit] formatJobStrip over three run jobs with targets a, b, c and one task returns \"run a · run b +1 · 1 shell\".",
+        "[unit] formatJobStrip over one plan job with target f1 and no task returns \"plan f1\".",
+        "[unit] footerModel (from chat-status.ts) with one task returns stripWidth equal to the display width of \"1 shell\".",
+        "[integration] A rendered ChatApp with one running host task shows \"1 shell\" on the footer row and no \"bash \" text there.",
+        "[integration] A rendered TranscriptViewport 60 columns wide, scrolled up, draws its marker row \"↓ Scroll to bottom (End)\" with a leading-space count of floor((60 - 24) / 2) or ceil((60 - 24) / 2).",
+        "[integration] A rendered TranscriptViewport 60 columns wide with unseen lines draws its \"↓ <n> new lines (End)\" marker centred by the same rule, using the marker's display width.",
+        "[integration] A rendered TranscriptViewport 10 columns wide, scrolled up, draws a marker row no wider than 10 columns.",
+        "[integration] A rendered ChatApp with exactly one running task sleep 60 and no job: a left press and release on the footer strip appends a transcript listing titled \"bash sleep 60 · running\".",
+        "[integration] A rendered ChatApp with exactly one running task sleep 60 and no job: a left press and release on the footer strip opens no picker.",
+        "[integration] A rendered ChatApp with two running tasks: a left press and release on the footer strip opens the jobs picker.",
+        "[integration] A rendered ChatApp with one running task and one running job: a left press and release on the footer strip opens the jobs picker.",
+        "[integration] A rendered ChatApp with exactly one running task and no job: ctrl+g opens the jobs picker.",
+        "[integration] A rendered ChatApp with one running task and no job: a right-button press and release on the footer strip opens no picker, preserving the existing right-button no-action behavior.",
+        "[integration] A rendered ChatApp with one running task and no job: a right-button press and release on the footer strip appends no shell-output listing, preserving the existing right-button no-action behavior."
+      ],
+      "tags": [
+        "bugfix",
+        "tui",
+        "chat",
+        "footer",
+        "transcript"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Combines fixed-width Ink rendering, footer formatting and widths, event-time registry reads and cross-hook output wiring across several modules, without changing permissions or session controls.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/TranscriptViewport.tsx",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/use-jobs-opener.ts",
+        "packages/nax/src/tui/chat/useChatPicker.ts",
+        "packages/nax/src/tui/chat/picker-model.ts",
+        "packages/nax/src/tui/chat/footer-segments.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/footer-shells.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When the running task count changes between drawing the footer and releasing a strip click, the output-versus-picker decision uses the current running tasks and jobs.",
+        "When one task is running and ended jobs remain listed, a strip click opens the running task's output rather than the jobs picker.",
+        "When the footer falls back to N active (ctrl+g) for three tasks and one job, it displays 4 active (ctrl+g).",
+        "When the user clicks a marker row outside the centered label's columns, the transcript still scrolls to the bottom."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tui/chat/chat-status-tasks.test.ts",
+          "reason": "the strip cases expect one `bash <command>` part per task (for example `bash bun run test`, `plan f1 · bash ls`, `plan f1 · bash a +2`, and the elision and newline cases); tasks are now one `1 shell` / `<n> shells` part after the jobs, so each expectation becomes the shell count form (for example `1 shell`, `plan f1 · 1 shell`, `plan f1 · 3 shells`), the per-command elision and newline cases are removed, and the width assertions measure the new strip text."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/footer-tasks.test.tsx",
+          "reason": "\"AC-14 draws the running task on the footer row\" asserts the footer row contains `bash sleep 60`; it now asserts the footer row contains `1 shell` while the task runs and not after it ends."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/jobs-opener.test.tsx",
+          "reason": "`STRIP` is `bash <COMMAND>`, and \"AC-11 opens the jobs picker at the strip's first column on the footer row\" and \"the strip's last column opens it too\" click a strip holding one running task and no job and expect the jobs picker title; `STRIP` becomes `1 shell`, those two tests expect the transcript to list `bash <COMMAND> · running` and no picker title, and the no-action tests (AC-12 to AC-17) and the ctrl+g tests (AC-6, AC-18, AC-19, AC-20) keep their assertions."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "b260603d8442d29c792aebb4b43000c77e7567f8"
+    },
+    {
+      "id": "US-005",
+      "title": "Send the oldest queued message now with ctrl+s",
+      "description": "**Goal** — Let ctrl+s on an empty prompt steer the oldest queued message into the running turn and advertise that gesture.\n\n**Motivation** — A line typed during a turn is queued (`queued · <text>` rows), but nothing can send a queued line now: ctrl+s steers only the typed draft, and no hint names it.\n\n**Approach** — `steerRunningTurn` in `ChatApp.tsx`: when a turn is sending, the draft is empty (its text trims to `\"\"`), no interrupt send is pending (`interruptSend.current === undefined`), and the queue is non-empty, the oldest queued line is taken off the queue (`takeQueued`) and handed to the running turn exactly as a typed line would be (steer when the brain accepts, else interrupt and send next). With an interrupt send already pending, ctrl+s on an empty draft does nothing: the queue drains behind that send. A slash-line draft is not empty and keeps today's behaviour (ctrl+s does nothing). `footerHint` (`use-clipboard-feedback.ts`) takes a new optional `queued?: boolean` input (absent means `false`, so existing callers and fixtures that omit it keep today's result); when the turn is busy, no layer owns esc, and `queued` is true, it returns the new `FixedHint` `\"queued\"` (gesture `esc to interrupt`, extra `ctrl+s to send queued now`), ahead of `background`. `queued` is true when the queue is non-empty, the draft trims to `\"\"`, and no interrupt send is pending.\n\n**Scope** — In: queued-line selection through the existing steering/interrupt path, ref-safe queue removal, new queued hint and footer eligibility. Out: shell strip/marker layout and click routing (US-004), Esc confirmation and split mouse handling (US-006), baseline/branch/resource changes (US-001–US-003). Preserve typed-draft priority, slash-line no-op, existing image refusal and normal queue-drain behavior.\n\n**Interface** — `footerHint` input gains optional `queued?: boolean` (absent = `false`); `FooterHint`/`FixedHint`/`HINT_PARTS` gain `\"queued\"` with gesture `esc to interrupt` and extra `ctrl+s to send queued now`. Reuse `takeQueued(queue)` and its existing atomic `{ text, rest }` result; no new queue API or host dispatch method.\n\n**Dependency and tests** — Depends on US-004 because removing taskPart frees room for the hint in chat-status.ts at its 600-line hard limit. Add chat-steer-queued.test.tsx for rendered queue/steering/interrupt and footer observations. Existing steering tests use nonempty drafts and existing footer tests have empty queues; retain their behavioral assertions. Update required footerHint input fixtures with queued:false if needed without changing expectations. The unsupported-steer fallback still interrupts immediately; US-006's Esc confirmation must not later gate that programmatic path.",
+      "acceptanceCriteria": [
+        "[integration] A rendered ChatApp whose brain steers, during a running turn, with one queued line next please and an empty prompt: ctrl+s calls host.steer once with next please.",
+        "[integration] A rendered ChatApp whose brain steers and accepts the steer, during a running turn, with one queued line next please and an empty prompt: after ctrl+s, no queued · next please row is drawn and a steering · next please row is.",
+        "[integration] A rendered ChatApp with queued lines one then two and an empty prompt: ctrl+s calls host.steer with one.",
+        "[integration] A rendered ChatApp with queued lines one then two and an empty prompt: after ctrl+s, the queue rows show only queued · two.",
+        "[integration] A rendered ChatApp whose brain answers host.steer with unsupported, with one queued line next please and an empty prompt: ctrl+s calls host.cancel once.",
+        "[integration] A rendered ChatApp whose brain answers host.steer with unsupported, with one queued line next please and an empty prompt: after ctrl+s cancels the turn and that turn settles, the next turn sent carries next please.",
+        "[integration] A rendered ChatApp during a running turn with a queued line and the prompt holding draft: ctrl+s calls host.steer with draft.",
+        "[integration] A rendered ChatApp during a running turn with a queued line and the prompt holding draft: ctrl+s leaves the queued line queued.",
+        "[integration] A rendered ChatApp during a running turn with an empty queue and an empty prompt: ctrl+s calls neither host.steer nor host.cancel, as today.",
+        "[unit] footerHint({ busy: true, queued: true, layer: false, quitArmed: false, clearArmed: false, expanded: false, backgroundable: true, tmux: false }) returns \"queued\".",
+        "[unit] footerHint({ busy: true, queued: false, layer: false, quitArmed: false, clearArmed: false, expanded: false, backgroundable: true, tmux: false }) returns \"background\".",
+        "[unit] footerHint with busy: true, queued: true and layer: true returns \"layer\".",
+        "[unit] hintSpans(\"queued\") returns spans whose gesture.text is \"esc to interrupt\" and extra.text is \"ctrl+s to send queued now\".",
+        "[integration] A rendered ChatApp during a running turn with one queued line and an empty prompt shows ctrl+s to send queued now on the footer row.",
+        "[integration] A rendered ChatApp during a running turn with one queued line and the prompt holding draft does not show ctrl+s to send queued now on the footer row.",
+        "[integration] A rendered ChatApp whose brain answers host.steer with unsupported, after ctrl+s on a typed first left an interrupt send pending, with queued lines a then b and an empty prompt: a second ctrl+s makes no further host.steer or host.cancel call.",
+        "[integration] A rendered ChatApp whose brain answers host.steer with unsupported, after ctrl+s on a typed first left an interrupt send pending, with queued lines a then b and an empty prompt: after a second ctrl+s, the queue rows still read queued · a then queued · b.",
+        "[integration] A rendered ChatApp during a running turn with one queued line and the prompt holding only spaces: ctrl+s calls host.steer with the queued line."
+      ],
+      "tags": [
+        "feature",
+        "tui",
+        "chat",
+        "queue",
+        "steering"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Three existing modules reuse takeQueued and the established steer/interrupt path rather than introducing a new dispatcher; retain strict TDD under the session-control override because fallback cancels and resends a turn.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/message-queue.ts",
+        "packages/nax/src/tui/chat/use-clipboard-feedback.ts",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/test/ui/chat/chat-steering.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/ui/chat/chat-steer-queued.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When the prompt contains a slash-line draft and the queue is nonempty during a turn, ctrl+s neither steers nor consumes the queued line.",
+        "When a typed interrupt send is pending with an empty draft and a nonempty queue, the footer does not show ctrl+s to send queued now.",
+        "When a queued message is selected for steering and host.steer throws, the message remains available to the user rather than being lost."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "d71064b83150ad6b40c0ad36470ee2702e320635"
+    },
+    {
+      "id": "US-006",
+      "title": "Confirm destructive Esc",
+      "description": "**Goal** — Require a second timely Esc to stop a turn or stopping question.\n\n**Motivation** — A single Esc stops the turn (`ChatApp.tsx` `host.cancel()`, and `dismissQuestion` for a session question).\n\n**Approach** — A new `tui/chat/esc-confirm.ts` exports `ESC_CONFIRM_MS = 2_000` and a hook `useEscConfirm()` returning `{ armed: boolean; press(): boolean }`: `press()` returns `true` when it follows an armed press by less than `ESC_CONFIRM_MS` (read through `_chatKeyDeps.now`, exclusive like ctrl+c's `DOUBLE_INTERRUPT_MS`), and otherwise arms and returns `false`; a timer armed through a new `_escConfirmDeps = { setTimeout, clearTimeout }` clears `armed` (and so the hint) when the window passes. `press()` decides from the arm time held in a ref it writes synchronously, never from the rendered `armed`, so two Escapes delivered in one input batch with no render between them still confirm. The arm is also cleared when the turn ends and when the top Esc layer changes (for example a question card replacing the bare turn), so a new turn or a different layer never inherits it. Esc on the `turn` layer, and Esc on a `question` layer with `stops: true`, call `host.cancel()` / `dismissQuestion` only when `press()` returns `true`. `escHintText(layer, armed)` returns `esc again to interrupt` for an armed `turn` layer and `esc again to close and stop` for an armed stopping question; unarmed hints are unchanged. Every other Esc layer (approval, choice, non-stopping question, picker, menu, idle clear) keeps its single Esc. ctrl+c is unchanged.\n\n**Scope** — In: new confirmation hook and lifecycle reset, destructive Esc wiring, armed hints, and deterministic timer tests. Out: split mouse-prefix handling (US-007), queue selection/hint eligibility (US-005), shell grouping/clicks (US-004), baseline/branch/resource changes (US-001–US-003). A long subagent run is not kept alive past its parent turn's end, nor moved to a background task (#2930 second half stays open). The native adapter's whole-turn deadline and idle watchdog aborts (`native/session-adapter.ts`) keep aborting with no reason; the ACP twin of the abandoned message is unchanged. ctrl+c still cancels a running turn on its first press. Approval, choice, non-stopping question, picker and menu layers keep a single Esc.\n\n**Interface** — `useEscConfirm()` returns `{ armed: boolean; press(): boolean }`; `ESC_CONFIRM_MS = 2_000`; `_escConfirmDeps = { setTimeout, clearTimeout }`; `escHintText(layer, armed = false)`. Reuse `_chatKeyDeps.now`, `topEscLayer`. Reset confirmation on turn end and top-layer changes without making same-batch presses rely on a rendered state. Keep immediate programmatic cancellation (including unsupported steering) outside this Esc-only guard.\n\n**Regression updates** — chat-app-keys.test.tsx AC-1 and chat-app-esc-layers.test.tsx AC-1/AC-15/AC-4 now press Escape twice but retain one cancel and the existing decline-before-cancel order. chat-steering-host.test.tsx B2 changes its single batch to [\"hi\", RETURN, ESCAPE, ESCAPE], preserving the live-claim assertion. New files are listed in expectedFiles; drive dependency clocks/timers, not real waits. Depends on US-005 because both change ChatApp footer hint composition.",
+      "acceptanceCriteria": [
+        "[unit] useEscConfirm().press() once returns false.",
+        "[unit] After one useEscConfirm().press(), armed is true.",
+        "[unit] useEscConfirm().press() twice with _chatKeyDeps.now advanced by 1,999 ms between them returns true on the second press.",
+        "[unit] useEscConfirm().press() twice with _chatKeyDeps.now advanced by 2,000 ms or more between them returns false on the second press (including the exclusive 2,000 ms boundary and a press after the window).",
+        "[unit] useEscConfirm().press() twice with _chatKeyDeps.now advanced by 2,000 ms between them leaves armed true.",
+        "[unit] escHintText({ kind: \"turn\" }, true) returns \"esc again to interrupt\".",
+        "[unit] escHintText({ kind: \"question\", stops: true }, true) returns \"esc again to close and stop\".",
+        "[unit] escHintText({ kind: \"question\", stops: true }, false) returns \"esc to close and stop\".",
+        "[unit] escHintText({ kind: \"turn\" }, false) returns undefined.",
+        "[integration] A rendered ChatApp during a running turn: one Escape makes no host.cancel call.",
+        "[integration] A rendered ChatApp during a running turn: one Escape makes the footer row show esc again to interrupt.",
+        "[integration] A rendered ChatApp during a running turn: two Escapes within ESC_CONFIRM_MS make exactly one host.cancel call.",
+        "[integration] A rendered ChatApp during a running turn: two Escapes with _chatKeyDeps.now 2,000 ms apart make no host.cancel call.",
+        "[integration] A rendered ChatApp with a session question raised during a running turn: one Escape neither declines the question nor cancels.",
+        "[integration] A rendered ChatApp with a session question raised during a running turn: one Escape makes the footer show esc again to close and stop.",
+        "[integration] A rendered ChatApp with a session question raised during a running turn: after a first Escape arms that question without declining or cancelling, a second Escape within ESC_CONFIRM_MS declines it and then cancels, in that order.",
+        "[integration] A rendered ChatApp with an approval card shown: one Escape denies it.",
+        "[integration] A rendered ChatApp with a question card asked by the host (not the session) during a running turn: one Escape declines it.",
+        "[integration] A rendered ChatApp with a question card asked by the host (not the session) during a running turn: one Escape makes no host.cancel call.",
+        "[integration] A rendered ChatApp during a running turn: one ctrl+c makes exactly one host.cancel call.",
+        "[integration] A rendered ChatApp during a running turn: after one Escape, running the _escConfirmDeps.setTimeout callback returns the footer row to esc to interrupt.",
+        "[integration] A rendered ChatApp: one Escape during a running turn, then the turn ends and a new turn starts within ESC_CONFIRM_MS; one Escape on the new turn makes no host.cancel call."
+      ],
+      "tags": [
+        "bugfix",
+        "tui",
+        "chat",
+        "input",
+        "session-control"
+      ],
+      "dependencies": [
+        "US-005"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Session cancellation crosses layered key ownership, same-batch refs, timer expiry/reset and streaming mouse input; strict isolation is appropriate for destructive session-control behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/ChatApp.tsx",
+        "packages/nax/src/tui/chat/esc-layer.ts",
+        "packages/nax/src/tui/chat/useChatKeys.ts",
+        "packages/nax/test/ui/chat/chat-app-esc-layers.test.tsx"
+      ],
+      "expectedFiles": [
+        "packages/nax/src/tui/chat/esc-confirm.ts",
+        "packages/nax/test/ui/chat/chat-esc-confirm.test.tsx"
+      ],
+      "suggestedCriteria": [
+        "When two Escapes arrive in the same input batch during a running turn, ChatApp calls host.cancel exactly once even without a render between them.",
+        "When one Escape arms a bare running turn and a stopping question replaces it within ESC_CONFIRM_MS, one Escape on that question neither declines nor cancels.",
+        "When a question replaces another question after the first one was armed, the replacement question requires its own two Escapes before decline/cancel.",
+        "When a hook unmounts with an armed confirmation timer, its pending timer is cleared."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/chat-app-keys.test.tsx",
+          "reason": "\"AC-1 escape while a scripted turn runs calls host.cancel once\" presses Escape once and expects one `host.cancel`; one Escape now only arms, so the test presses Escape twice and still expects exactly one `host.cancel`."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-app-esc-layers.test.tsx",
+          "reason": "\"AC-1 declines a session question and stops the turn it was asked during\", \"AC-15 a bare running turn keeps esc to interrupt and is cancelled once\" and \"AC-4 a no-git mention line does not keep esc from the turn\" press Escape once and expect `[\"decline:q1\", \"cancel\"]` / `[\"cancel\"]`; a stopping question and a bare turn now need a second Escape, so each presses Escape twice and keeps its expected order."
+        },
+        {
+          "path": "packages/nax/test/ui/chat/chat-steering-host.test.tsx",
+          "reason": "\"B2 escape in that batch cancels the claim it started\" batches `[\"hi\", RETURN, ESCAPE]` and expects the turn's cancel to reach the live claim; one Escape now only arms, so the batch becomes `[\"hi\", RETURN, ESCAPE, ESCAPE]` and the assertion stays."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ae723f2237658c5039df4cef494c425ecd5903cc"
+    },
+    {
+      "id": "US-007",
+      "title": "Buffer split mouse-report prefixes",
+      "description": "**Goal** — Prevent a mouse report split after its first bytes from reaching Ink as a lone Escape.\n\n**Motivation** — Chat enables any-motion mouse tracking (`ENABLE_MOUSE`), and `filterReports` holds back a split report only once its `\\u001b[<` prefix is complete, so a read that ends after `\\u001b` or `\\u001b[` hands Ink a lone Escape, which Ink reports as `key.escape` (#2930).\n\n**Approach** — `mouse-input.ts` holds a trailing `\\u001b` or `\\u001b[` at the end of a chunk as pending. When the next chunk continues it into `\\u001b[<…`, the report is parsed as today; when it continues with anything else, the held bytes are forwarded ahead of it; when no data arrives within `ESC_FLUSH_MS = 50`, the held bytes are forwarded alone, so a real Esc press reaches Ink 50 ms later. The flush timer runs through a new exported `_mouseInputDeps = { setTimeout, clearTimeout }`; new data, the flush itself and `dispose()` each clear a pending timer.\n\n**Scope** — In: split-prefix hold/flush in `mouse-input.ts` and deterministic timer tests. Out: Esc confirmation (US-006) and every other chat change.\n\n**Interface** — `ESC_FLUSH_MS = 50`; `_mouseInputDeps = { setTimeout, clearTimeout }`. Keep the existing `MouseInput` and Ink stream contracts.\n\n**Regression updates** — mouse-input.test.ts's AC-13/AC-22 cases for lone Escape and Escape-[ now assert no forwarded bytes before the injected flush callback and the same bytes after it. Preserve full-report inline text, broken grammar and bounded-partial-buffer behavior. Drive the injected timers, not real waits.",
+      "acceptanceCriteria": [
+        "[unit] createMouseInput given the chunk \\u001b then, before ESC_FLUSH_MS, the chunk [<0;10;5M emits one left press event at x 10, y 5.",
+        "[unit] createMouseInput given the chunk \\u001b then, before ESC_FLUSH_MS, the chunk [<0;10;5M forwards no text to Ink.",
+        "[unit] createMouseInput given the chunk \\u001b[ then, before ESC_FLUSH_MS, the chunk <35;3;4M emits one move event.",
+        "[unit] createMouseInput given the chunk \\u001b[ then, before ESC_FLUSH_MS, the chunk <35;3;4M forwards no text to Ink.",
+        "[unit] createMouseInput given the chunk \\u001b and no further data forwards nothing before ESC_FLUSH_MS.",
+        "[unit] createMouseInput given the chunk \\u001b and no further data forwards \\u001b once the _mouseInputDeps.setTimeout callback runs.",
+        "[unit] createMouseInput given the chunk \\u001b then, before ESC_FLUSH_MS, the chunk x forwards \\u001bx.",
+        "[unit] createMouseInput given the chunk \\u001b then, before ESC_FLUSH_MS, the chunk x leaves no flush pending.",
+        "[unit] createMouseInput given one chunk a\\u001b[<0;1;1Mb forwards ab, as today.",
+        "[unit] createMouseInput given one chunk a\\u001b[<0;1;1Mb emits one event, as today.",
+        "[unit] createMouseInput after dispose() with a held \\u001b forwards nothing when the flush timer would have run."
+      ],
+      "tags": [
+        "bugfix",
+        "tui",
+        "chat",
+        "input"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Stream chunk-boundary handling with an injectable flush timer in one isolated module.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/mouse-input.ts",
+        "packages/nax/test/unit/tui/chat/mouse-input.test.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax/test/unit/tui/chat/mouse-input-esc-prefix.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When createMouseInput receives a lone \\u001b[ and no further data, it forwards those bytes only after ESC_FLUSH_MS."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/tui/chat/mouse-input.test.ts",
+          "reason": "the `test.each` \"AC-13 / AC-22 forwards Escape immediately\" expects a lone `\\u001b` and a lone `\\u001b[` to be readable at once; they are now held for `ESC_FLUSH_MS`, so the test drives `_mouseInputDeps.setTimeout` (or advances its timer) and expects the same bytes after the flush and nothing before it."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4be847db65efd1185739ec4768f36270dc09173f"
+    }
+  ],
+  "analysis": "Context and implementation posture: This is an enhancement to @nathapp/nax, not greenfield work. All six stories are confined to packages/nax and use its Bun, strict TypeScript, React 19/Ink 6 and bun:test stack (packages/nax/package.json:5, packages/nax/package.json:15, packages/nax/package.json:106). No changes to nax-agent, nax-agent-acp or nax-ai, package versions, dependencies or persistent schemas are required. codebase-memory MCP was unavailable in this session; discovery used direct reads and text search against the supplied worktree. The architecture index confirms injectable _deps, prompt-builder ownership, nested barrel boundaries and a 600-line hard source limit (docs/architecture/ARCHITECTURE.md:17, docs/architecture/ARCHITECTURE.md:89, docs/architecture/ARCHITECTURE.md:141). Existing sources were inspected, but no tests or commands were executed during PRD generation. Implementers must read known files again before edits and follow package rules. Use existing mocks and @test/helpers rather than module-wide mocks or duplicated helper machinery; restore dependency seams and timers after tests. Run targeted path-qualified tests from packages/nax, never bare bun test. The pipeline owns typecheck, check:all and normal tests; coverage is a separate outside-sandbox operation, not a story acceptance criterion. Do not edit .nax files in implementation stories; this PRD is the planning artifact, not a request for runtime stories to change specs or ratchets.\n\nUS-001 evidence and impact: packages/nax/src/execution/lifecycle/test-baseline-capture.ts:264 owns the root capture decision tree. It clears story baselines, delegates multi-package captures, checks gate/command availability, runs commands independently, handles throws/timeouts first, and aggregates summaries before persisting a captured baseline. The masking call is at packages/nax/src/execution/lifecycle/test-baseline-capture.ts:357 and its import at :31. packages/nax/src/execution/lifecycle/test-baseline-units.ts:177 already implements unparseableFailure using outcomes.find over each failing command's own named failures; :190 implements the aggregate helper to delete; :400 already uses the per-command helper for package groups. evidenceFor at :138 redacts command/error/output and bounds the output tail; leave it, writeNoBaseline and precedence for error/timeout unchanged. The runner calls captureRunBaseline from packages/nax/src/execution/runner-execution.ts:140, so this changes root-run baseline classification without changing the runner API or artifact shape. Tests at packages/nax/test/unit/execution/lifecycle/test-baseline-capture-evidence.test.ts:175 use _captureDeps and logger spies; :202 explicitly pins the obsolete aggregate behavior. Replace that fixture's captured expectation with one unparseable no-baseline marker naming cmd-b and delete the preceding legacy-root comment. Add cmd-c ordering, failing-plus-green, single unparseable and info-log checks there. Update stale aggregate-rule comments in both source files. Existing package behavior, secret redaction, timeout/error evidence, warning semantics and successful capture must remain unchanged. Deletion of aggregateUnparseableFailure is verified through the normal static/typecheck gate, not a textual-content AC.\n\nUS-002 evidence and impact: packages/nax/src/chat/jobs/jobs-launch.ts:15 exposes git/exists/loadPRD seams. prepareTarget at :241 delegates plan spec resolution and pending-story PRD loading; launchReason at :270 reads symbolic-ref but currently only describes the branch. launchJob at :283 resolves a potentially nested target repo, applies defaults, prepares the target, checks workflow profiles, checks busy/lock state and only then admits chains or requests approval. Insert the new exported featureBranchRefusal after preparation/profile validation and before busy/admission, using the resolved repoRoot, so both explicit and chain-auto launches are guarded without changing existing error precedence. Do not make prepareRun's missing/unreadable PRD errors disappear behind a branch error. packages/nax/src/chat/jobs/chain-tools.ts:53 has separate plan and non-plan paths in resolveStepTarget; guard both plan and run branches after their existing applicable validation using stepOptions.repoRoot and stepError, before any chain card. A chain's run step must still be proposable before its preceding plan has created the PRD. packages/nax/src/utils/git.ts:21 and :33 implement the static protected names plus an optional remote default; call isPublishableBranch with only the branch, never resolve a default branch. Non-zero symbolic-ref is deliberately allowed, including detached HEAD/not-a-repository; an exit-zero empty string is refused. On refusal only, target naming uses featureDir, exists and loadPRD, falling back to feat/<feature> if missing or unreadable. This is an operational launch guard, not a checkout mechanism or a race-proof CLI invariant. The branch can change after a card; do not broaden this story into CLI enforcement. packages/nax/src/prompts/builders/workflow-builder.ts:92 composes fixed lines, pathsLine(), then optional workflow lines; insert the exact branch guidance immediately after pathsLine(). Existing jobs-launch tests already use feat/f1 at packages/nax/test/unit/chat/jobs/jobs-launch.test.ts:58. The spec identifies main stubs to switch to feat/f1 while preserving every other assertion: jobs-launch-chain.test.ts:82, jobs-launch-nested.test.ts:70, jobs-launch-busy.test.ts:62 and chain-tools-repo.test.ts:69 under packages/nax/test/unit/chat/jobs/. Update packages/nax/test/unit/prompts/builders/workflow-builder.test.ts to expect [PATHS_LINE, BRANCH_LINE, CHOICES_LINE] after ORIGINAL_LINES, preserving original-prefix and approval-wording assertions. Create jobs-launch-branch.test.ts to exercise helper, real launch and chain tool seams, no approval/start on refusal, bot exemption and missing-PRD precedence.\n\nUS-003 evidence and impact: packages/nax/src/resources/claude-sources.ts:51 scanPackage currently scans skills/commands/agents concurrently for every origin; :207 basePackage and :218 discoverClaudeCodePackages assemble project, user and enabled Claude plugins. Stop the claude-user agent scan itself rather than merely discarding scanned agents, so user agent errors do not leak diagnostics, but keep all its other discovery and MCP/settings/hook behavior. Project and plugin agents remain unchanged. packages/nax/src/resources/catalog.ts:14 indexResources is first-wins for short and qualified lookups and records collision diagnostics; :61 loadResourceCatalog currently conditionally loads Claude packages then appends nax plugins. Scan the nax user agent directory independently of claudeCode and interleave the resulting package between claude-project and claude-user without disturbing plugin ordering. Retain a diagnostics-only nax-user package, but omit an empty, diagnostic-free one. packages/nax/src/resources/scan-dirs.ts:11 already provides top-level *.md parsing; :47 sorts files, suppresses ENOENT diagnostics, caps inputs and carries parsing/read diagnostics. Reuse that scanner and _resourceFsDeps. packages/nax/src/resources/claude-paths.ts:4 exposes homedir injection; naxAgentsDir must honor the env passed to loadResourceCatalog instead of consulting process.env/globalConfigDir directly. Extend ResourceOrigin at packages/nax/src/resources/types.ts:1 and originLabel at packages/nax/src/resources/listing.ts:6; review ResourcePackage's id comment at types.ts:109 as well. packages/nax/src/chat/builtin-agent.ts:24 already gives discovered general precedence over its builtin; add explore with the same discovered-first resolution, no model, exact description and Read/Glob/Grep/Git allowlist. packages/nax/src/chat/subagent-runs.ts:13 also consumes agentNamed; preserve dispatch/tool-mapping policy rather than adding a parallel execution path or new permission defaults. The prompt belongs in packages/nax/src/prompts/builders/agents-builder.ts beside buildGeneralAgentPrompt (:119). Export through the appropriate existing barrels, especially packages/nax/src/prompts/index.ts:11 and resources/index.ts:2 when public consumers need the new builder/path; chat/index.ts:29 already exports builtin general APIs. packages/nax/src/chat/agents-provider.ts:63 gates both tools and instructions on catalog.agents.length; :9 freezes RUN_DESCRIPTION. Remove both catalog-length gates and append the exact explore sentence to the tool description and only the existing third instruction line (agents-builder.ts:38); do not shift index/overflow lines. packages/nax/src/chat/chat-host.ts:213 builds providers in resources/jobs/tasks order and conditionally appends agents; make the append unconditional within the resource-enabled assembly, keeping nax-agents last. Do not fabricate resource services for hosts constructed without resources. /agents remains a catalog-only listing; builtins stay outside ResourceCatalog.\nUS-003 migration and test anchors: This intentionally stops importing personal Claude Code agent files. Users wanting those agents in nax can copy their selected definitions into ~/.nax/agents or <NAX_GLOBAL_CONFIG_DIR>/agents; do not automatically move/delete files or stop loading other Claude resource types. packages/nax/test/unit/chat/agents-provider.test.ts:87, :107 and :334 pin empty-catalog gating; change to one run tool and always-present three fixed instruction lines. Its RUN_DESCRIPTION and general-fallback suffix constants at :251/:254 must gain the explore sentence. Update packages/nax/test/unit/prompts/builders/agents-builder.test.ts's exact third-line assertion. Provider-order fixtures explicitly identified by the spec also need updates: packages/nax/test/unit/chat/chat-host-tasks.test.ts (AC-20), host-subagents.test.ts (AC-2), chat-host-jobs.test.ts (resources-only host), chat-host-resources.test.ts (resume and withResources start) must expect resources, optional jobs, nax-tasks, nax-agents, with slices adjusted from one suffix to two where applicable. packages/nax/test/unit/resources/catalog.test.ts:195 currently supplies only CLAUDE_CONFIG_DIR, which would newly read a developer's actual ~/.nax/agents; inject a temp NAX_GLOBAL_CONFIG_DIR too and keep its other assertions. All new filesystem fixtures must isolate both global resource roots. Add nax-user-agents.test.ts and builtin-explore-agent.test.ts as specified, including diagnostics and empty-catalog tool-callback wiring, not just object existence. Read-only tool admission and nested-session dispatch merit strict three-session TDD.\n\nUS-004 evidence and impact: packages/nax/src/tui/chat/TranscriptViewport.tsx:147 wraps rows at fixed height and clips overflow; :161 ViewportRows draws the marker with truncate at :180. Center only the marker row with justifyContent=\"center\", not ordinary transcript rows, retaining full-row markerRowAt hit-testing at :235. packages/nax/src/tui/chat/chat-status.ts:171 owns hint variants and :313 owns formatJobStrip; it is exactly 600 lines. FooterJob, FooterTask and formatJobStrip remain in that module. Delete taskPart at :308, cap only jobs at JOB_STRIP_LIMIT=2, append hidden-job count to the jobs portion, then append a singular/plural shell-count part with a separator only when a jobs portion exists. footerModel at :342 calculates display width from strip text; retain that ownership and leave space for US-005's hint. packages/nax/src/tui/chat/status-layout.ts:68 continues to sum each job and task for the fitted N active (ctrl+g) fallback; grouping display parts must not group activity counts. packages/nax/src/tui/chat/use-jobs-opener.ts:61 already reads a latest ref, matches a same-cell left press/release and hit-tests the fitted footer. Its ctrl+g path at :67 always opens jobs, and its click path at :101 currently does the same. For click only, list running tasks and jobs at event time; exactly one running task and zero running jobs calls showOutput(taskEntry(task, now)); all other cases retain the picker and existing blocking/hit rules. Do not infer the click target from stale rendered counts or individual strip parts. packages/nax/src/tui/chat/useChatPicker.ts:44 declares ChatPicker and :161 defines showOutput, using outputOf (:72) for current registry state and the existing collapsed listing/error handling. Expose that existing callback in the interface and return at :288 and thread it from ChatApp (:1228). Export existing taskEntry at packages/nax/src/tui/chat/picker-model.ts:231 unchanged. Existing task strip unit cases at packages/nax/test/unit/tui/chat/chat-status-tasks.test.ts:33 currently assert bash commands, task overflow/elision/newline text and display widths; rewrite as shell counts and remove command-specific strip cases, not picker sanitization behavior. packages/nax/test/ui/chat/footer-tasks.test.tsx must expect 1 shell while running and none after completion. packages/nax/test/ui/chat/jobs-opener.test.tsx:17 freezes STRIP as bash <command>; :149 and the next test expect a picker for lone-shell clicks. Change STRIP to 1 shell and those two expectations to output listing/no picker, keeping off-target, drag/button/blocking and ctrl+g tests. That fixture already uses @test/helpers mountChatPicker, fakeMouse and host task registries (:1, :33, :87). Add footer-shells.test.tsx for rendered centering, narrow widths and click routing.\n\nUS-005 evidence and impact: packages/nax/src/tui/chat/message-queue.ts:98 already exports atomic takeQueued returning text/rest. packages/nax/src/tui/chat/ChatApp.tsx:382 holds interruptSend; :387 replaceQueue updates the ref before scheduling state. steerText at :862 rejects whitespace and slash drafts; :887 steerRunningTurn currently exits before consulting the queue. Select a queue line only while sending.current, the real draft trims empty, interruptSend is undefined, and the queue is nonempty. Preserve the nonempty slash no-op and typed-draft priority. Reuse the same host.steer, trackSteer (:935), pending interrupt and drainQueue (:1021) flow; typed unsupported steering already cancels and sends interruptSend ahead of queued lines. An empty ctrl+s must never consume or reorder queued lines behind a pending interrupt send. Avoid double removal/loss with synchronous refs when input arrives in one batch; no render-state decisions for live send ownership. Accepted steers have an applied promise and steering rows; discarded steers are requeued by existing machinery. Do not change image refusal, ordinary Return queueing, idle ctrl+s, error restoration or mention/history semantics. Guard against accidentally treating a slash draft as an empty draft just because steerText returns undefined. packages/nax/src/tui/chat/use-clipboard-feedback.ts:14 orders quit, clear, layer, busy/background and idle hints; add queued:boolean and prioritize the queued hint only after layer ownership and before background. Add one FixedHint/HINT_PARTS entry at packages/nax/src/tui/chat/chat-status.ts:171/:185, taking advantage of US-004's freed lines. Compute eligibility at ChatApp's footer call (:1213) from queue/draft/pending interrupt, not busy alone. Existing steering fixtures at packages/nax/test/ui/chat/chat-steering.test.tsx:87 use controllable host turns, accepted/unsupported steer results, actual stdin and act; mirror/reuse shared helpers for the new chat-steer-queued.test.tsx without weakening typed-draft tests. The spec requires no behavioral changes in existing US-005 tests; direct footerHint callers in packages/nax/test/unit/tui/chat/chat-status.test.ts:44 may need queued:false in their shared input to satisfy the new required input, with expectations unchanged. Dependency US-004 is required for chat-status line budget, not a new activity-count algorithm.\n\nUS-006 evidence and impact: packages/nax/src/tui/chat/esc-layer.ts:82 establishes ask, picker, menu, turn ownership; :95 formats its hints. packages/nax/src/tui/chat/ChatApp.tsx:493 derives ownership from overlays plus a synchronous running ref; :537 currently cancels a bare turn on one Esc, and :1196 dismissQuestion currently declines first then conditionally cancels. Integrate useEscConfirm in both destructive Esc paths only, and pass its armed state into escHintText for footer and working-line composition (:503/:1213). Use request/layer identity and explicit turn-end clearing so a replacement layer or new turn cannot inherit the old arm; avoid clearing on every render just because topEscLayer returns a new object. The new hook's public shape remains {armed, press}; internal lifecycle reset/integration must not make confirmation depend on a rendered flag. Write arm timestamps synchronously so batched Escape/Escape confirms with no intervening render. packages/nax/src/tui/chat/useChatKeys.ts:15/:16 provide the 2,000 ms exclusive ctrl+c pattern and _chatKeyDeps.now; do not change ctrl+c cancellation/quit logic. US-005's unsupported steer cancellation remains immediate: the Esc confirmation must not gate programmatic cancel paths. Timer callbacks must clear the hint without another key, and cleanup must prevent callbacks after unmount/layer reset from redrawing or reviving an arm.\npackages/nax/src/tui/chat/mouse-input.ts:4 enables any-motion SGR, :24 defines the full ESC-[< prefix, :53 filters reports, and :107 createMouseInput combines pending chunks, StringDecoder and the Ink stream. Today :77 forwards bare ESC/ESC-[ immediately because only full report prefixes enter pending. Add 50 ms holding for those trailing partial prefixes, continuing complete report parsing, broken-prefix byte ordering, UTF-8 decoding and the existing 64-character bound. Run timers through _mouseInputDeps, cancel on new data, flush and dispose (:137), and do not deliver stale bytes after disposal. A real Escape now has a deliberate 50 ms transport delay, distinct from the 2,000 ms confirmation window; tests should control seams instead of sleeping. Existing packages/nax/test/unit/tui/chat/mouse-input.test.ts covers malformed/oversized partial reports, subscriptions, UTF-8 and disposal; change only its immediate bare-prefix expectation to deferred flushing and keep regression anchors such as inline a<report>b => ab. Add mouse-input-esc-prefix.test.ts and chat-esc-confirm.test.tsx, including unit-level hook boundary tests and real rendered ChatApp cancellation/hint tests. Update the single-Esc destructive assertions in packages/nax/test/ui/chat/chat-app-keys.test.tsx AC-1, chat-app-esc-layers.test.tsx AC-1/AC-15/AC-4 and chat-steering-host.test.tsx B2 to send two Escapes while retaining their original cancellation counts/order; B2 must keep both Escapes in the same batch. Approval, choice, non-stopping host-question, picker, menu and idle-clear one-Esc behavior stays intact. The shared esc-layer UI suite uses mountChatPicker, live ask controller and cancellation ordering mocks (packages/nax/test/ui/chat/chat-app-esc-layers.test.tsx:15/:91).\n\nDelivery and risks: Preserve exactly US-001..US-006, with no dependencies for the first four, US-005 depending only on US-004, and US-006 only on US-005. The latter two serialize footer/ChatApp edits and timer-hint behavior. US-002 and US-003 change agent-facing prompt text and fixture expectations across host/provider tests; preserve fixed-line ordering and approval semantics. US-003 intentionally changes user-resource precedence and always exposes builtins but never lists them in /agents. US-004 changes drawn strip widths and click behavior, not the picker stop capability or activity totals. US-005/US-006 are concurrency-sensitive: refs, pending send priority, same-batch keys, async steer settlement, timer expiry and layer identity must remain coherent. There is no data migration; old baselines and PRDs keep the same schemas, no branch is automatically checked out, and user agent files remain untouched. Acceptance criteria include every numbered spec criterion plus explicit missing-directory diagnostic and malformed-agent failure rows; additional design-edge behaviors are recorded separately as suggestedCriteria. Done means those observable behaviors and retained regression anchors are implemented with the specified new tests and ordinary package gates, without expanding into the CLI branch guard, subagent lifetime or adapter abort-reason work.\n\nSecond-pass adversarial audit (against the on-disk spec and re-read sources): All 83 numbered spec ACs remain in their original stories; compound criteria were split only into observable assertions, never reassigned or removed. The following exhaustive map uses spec AC number -> revised acceptanceCriteria array position(s), counted from 1. US-001: 1->1, 2->2, 3->3, 4->4, 5->5. US-002: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7/8/9, 8->10/11, 9->12, 10->13, 11->14, 12->15/16, 13->17, 14->18, 15->19. US-003: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8/9, 9->10, 10->11, 11->12/13, 12->14, 13->15, 14->16, 15->17. US-004: 1->1, 2->2, 3->3, 4->4, 5->5, 6->6, 7->7, 8->8, 9->9, 10->10/11, 11->12, 12->13, 13->14. US-005: 1->1, 2->2, 3->3/4, 4->5/6, 5->7/8, 6->9, 7->10, 8->11, 9->12, 10->13, 11->14, 12->15, 13->16/17, 14->18. US-006: 1->1/2, 2->3, 3->4/5, 4->6, 5->7, 6->8/9, 7->10/11, 8->12, 9->13, 10->14/15/16, 11->17, 12->18/19, 13->20, 14->21/22, 15->23/24, 16->25/26, 17->27/28, 18->29/30, 19->31, 20->32, 21->33. Qualifying regression clauses survive: bot launches are not guarded, missing-PRD precedence, continued Claude skills and nax-user discovery with Claude disabled, no builtin model, decline-before-cancel ordering, non-session host questions, and the mouse inline-report behavior 'as today'. Exact whitespace-bearing values remain significant, especially the footer's forbidden 'bash ' prefix and ESC byte sequences. No deprecated file-content tags were present.\n\nFailure-table audit, row by row: (1) mixed parseable/unparseable root commands are US-001 AC1/2/5; (2) unknown branch is US-002 AC5 plus added AC20 pinning the approval card's unchanged branch omission; (3) each protected name for both plan/run launch and chain proposal is explicitly exercised by added US-002 AC21-24, not just the helper; (4) missing/unloadable PRD refusal targets are US-002 AC2/6; (5) absent nax agents directory is US-003 AC6/18; (6) malformed agent diagnostic is US-003 AC19, preserving the same scanner behavior as any agent directory; (7) empty prompt/queue ctrl+s no-op is US-005 AC9, as today; (8) first Esc only arms is US-006 AC1/2/10/11; (9) expired second Esc rearms instead of confirming is US-006 AC4/5/13, including the exclusive 2,000 ms boundary; (10) lone trailing ESC flush is US-006 AC25/26. US-004 also has explicit right-button negative-path regressions (added AC15/16), grounded in packages/nax/test/ui/chat/jobs-opener.test.tsx:172, rather than an invented error path. Every story therefore has a negative-path assertion and an unchanged-behavior or obsolete-behavior-removal assertion.\n\nCode-fit corrections from this pass: packages/nax/src/chat/jobs/jobs-provider.ts:20 has no options.start member; the existing start port is options.jobs.start, called at jobs-launch.ts:98. US-002 AC7's no-start requirement is preserved through that real port, not a fictional dependency. launchJob returns a ToolResult (jobs-launch.ts:281), so missing-PRD text is asserted through result.content. packages/nax/src/tui/chat/chat-status.ts:195 returns Span objects from hintSpans, so US-005 AC10 is asserted through gesture.text and extra.text, not by comparing an object to a string. Continuations in mouse-prefix ACs arrive before the 50 ms flush; the destructive question AC now explicitly establishes the first arm before its second press. The US-004 fifth context file is now the spec-recommended footer-segments.ts:73, where rightSegments also calls formatJobStrip; picker-model.ts:231 remains an existing export to modify/read, explicitly named in the description and analysis, not a newly created file. All other story context lists match the spec's recommended existing files and stay within five entries; expectedFiles contain only this story's new outputs. Bindings remain exactly six stories with dependencies [], [], [], [], [US-004], [US-005], all scoped to packages/nax. US-002 is medium/tdd-simple because it adds a conventional operational validation on existing ports, not authentication or an authorization subsystem. US-005 is medium in code scope because it reuses existing queue/steer machinery, while keeping the required session-control TDD override. US-003/US-006 retain complex strict routing for read-only tool admission/session control; US-004 retains complex lite routing for cross-hook rendering/click integration.\n\nOut-of-scope audit: all 15 feature exclusions are retained verbatim as separate top-level entries: (1) no CLI branch checking/switching, (2) no origin/HEAD default lookup, (3) detached HEAD allowed, (4) finish/bot tools not branch-guarded, (5) non-agent Claude user resources retained, (6) repo/Claude-plugin agents retained, (7) builtins absent from /agents, (8) no subagent lifetime extension/background migration, (9) adapter deadline/idle abort reasons and ACP twin unchanged, (10) first ctrl+c still cancels, (11) other Esc layers remain single-press, (12) no part-level footer hit-testing, (13) ctrl+g always picker, (14) fallback counts individual tasks/jobs, (15) implementation stories do not edit .nax files. Relevant branch/resource/footer/Esc exclusions are also echoed in the corresponding description scopes. There are no story-local exclusion blocks to hoist. The source-creation lists and binding dependency graph require no changes. No description contradicts its ACs; descriptions retain their exact spec design paragraphs and distinguish old behavior in Motivation from the target behavior in Approach. This audit used file tools only; it does not claim execution of a JSON parser, test runner or quality gate.",
+  "outOfScope": [
+    "The `nax run` CLI does not check or switch branches; only the chat launch tools refuse.",
+    "The default branch read from `origin/HEAD` is not consulted by the launch guard; only `\"\"`, `main` and `master` are refused.",
+    "A launch on a detached HEAD is not refused.",
+    "`nax-jobs__finish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix` are not guarded by branch; publish keeps `auto-pr`'s own guard.",
+    "Skills, commands, settings, hooks and MCP from `~/.claude` are still loaded; only `~/.claude/agents/` stops.",
+    "The repo's `.claude/agents/` and Claude plugin agents are still loaded.",
+    "`/agents` does not list the built-in `general` and `explore` agents.",
+    "A long subagent run is not kept alive past its parent turn's end, nor moved to a background task (#2930 second half stays open).",
+    "The native adapter's whole-turn deadline and idle watchdog aborts (`native/session-adapter.ts`) keep aborting with no reason; the ACP twin of the abandoned message is unchanged.",
+    "ctrl+c still cancels a running turn on its first press.",
+    "Approval, choice, non-stopping question, picker and menu layers keep a single Esc.",
+    "Part-level hit-testing inside the footer strip is not added: a click anywhere on the strip acts on the whole strip.",
+    "ctrl+g keeps opening the jobs picker in every case; only a strip click opens a lone shell directly.",
+    "The fitted footer's `N active (ctrl+g)` fallback keeps counting each task and each job.",
+    "`.nax/` files are not edited by this feature's stories; `.nax/features/run-start-baseline-fixes/spec.md` US-004 (\"runs exactly as today\") was updated by hand on this branch before the run."
+  ],
+  "routingProfile": "native-codex-dsm"
+}

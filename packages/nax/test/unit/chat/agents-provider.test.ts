@@ -13,6 +13,7 @@ import {
 const projectOrigin = { kind: "claude-project" } as const;
 const pluginOrigin = { kind: "claude-plugin", plugin: "p", marketplace: "m" } as const;
 const INVALID_INPUT = "[chat] run requires agent: string and task: string";
+const EXPLORE_SENTENCE = "For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.";
 
 function agent(name: string, origin: ResourceOrigin = projectOrigin, description = "Reviews diffs"): AgentResource {
   return {
@@ -84,8 +85,10 @@ describe("createAgentsProvider identity", () => {
 });
 
 describe("createAgentsProvider tools and instructions", () => {
-  test("AC-4 no agents yields no tools", async () => {
-    expect(await setup([]).provider.tools("/w")).toEqual([]);
+  test("AC-14 a catalog with no agents still yields exactly one tool named run", async () => {
+    const tools = await setup([]).provider.tools("/w");
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.localName).toBe("run");
   });
   test("AC-5 one agent yields one tool named run", async () => {
     const tools = await setup([agent("reviewer")]).provider.tools("/w");
@@ -104,8 +107,11 @@ describe("createAgentsProvider tools and instructions", () => {
     const text = await setup([agent("reviewer")]).provider.instructions?.("/w");
     expect(text).toContain("- reviewer: Reviews diffs");
   });
-  test("AC-9 instructions are undefined with no agents", async () => {
-    expect(await setup([]).provider.instructions?.("/w")).toBeUndefined();
+  test("AC-15 with no agents the third instruction line ends with the explore sentence", async () => {
+    const text = await setup([]).provider.instructions?.("/w");
+    const lines = (text ?? "").split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines[2]?.endsWith(EXPLORE_SENTENCE)).toBe(true);
   });
 });
 
@@ -249,7 +255,7 @@ describe("createAgentsProvider model override", () => {
 });
 
 const RUN_DESCRIPTION =
-  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.";
+  "Run a named catalog agent on a self-contained task and return its final answer. Optional model overrides the agent's model: provider/model (for example openai-codex/gpt-6-luna) runs it on the nax native agent with that provider's model; acp:<agent> (for example acp:codex) runs it on an installed ACP agent. A provider name such as openai-codex is a native provider, not the Codex ACP agent. To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model. For read-only code search, pass agent explore: it has Read, Glob, Grep and Git only.";
 const GENERAL_LAST_SENTENCE =
   "To run a task with no catalog agent, omit agent (or pass agent general): the task runs on the built-in general agent with your tools, on your model unless you pass model.";
 
@@ -331,8 +337,8 @@ describe("createAgentsProvider bare-model dispatch (chat-dispatch-visibility US-
     expect(run).not.toHaveBeenCalled();
   });
 
-  test("AC-18 a catalog with no agents still advertises no tools", async () => {
-    expect(await setup([]).provider.tools("/w")).toEqual([]);
+  test("AC-18 a catalog with no agents still offers the one run tool", async () => {
+    expect(await setup([]).provider.tools("/w")).toHaveLength(1);
   });
 
   test("AC-19 a named agent with no model still calls run with exactly three arguments", async () => {
@@ -396,10 +402,22 @@ describe("createAgentsProvider general dispatch (chat-workflow-flow US-002)", ()
     expect(run.mock.calls[0]?.[0]).toBe(catalogGeneral);
   });
 
-  test("AC-6 the description equals RUN_DESCRIPTION and ends with the general-agent sentence", async () => {
+  test("AC-16 over an empty catalog agent explore runs the built-in explore agent on the task", async () => {
+    const { run, provider } = setup([]);
+    await runTool(provider, { agent: "explore", task: "find X" });
+    expect(run).toHaveBeenCalledTimes(1);
+    const call = run.mock.calls[0];
+    assertDefined(call, "run call");
+    expect(call[0].name).toBe("explore");
+    expect(call[0].origin).toEqual({ kind: "nax-builtin" });
+    expect(call[1]).toBe("find X");
+  });
+
+  test("AC-6 the description equals RUN_DESCRIPTION, names the general fallback and ends with the explore sentence", async () => {
     const tool = (await setup([agent("reviewer")]).provider.tools("/w"))[0];
     expect(tool?.description).toBe(RUN_DESCRIPTION);
-    expect(tool?.description.endsWith(GENERAL_LAST_SENTENCE)).toBe(true);
+    expect(tool?.description).toContain(GENERAL_LAST_SENTENCE);
+    expect(tool?.description.endsWith(EXPLORE_SENTENCE)).toBe(true);
   });
 
   test("AC-12 instructions list an agent's declared tools on its entry line", async () => {

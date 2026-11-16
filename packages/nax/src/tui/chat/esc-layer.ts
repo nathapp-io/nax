@@ -16,10 +16,12 @@ export type EscAsk = "question" | "approval" | "choice";
 
 /**
  * What esc acts on. `question` carries `stops` because closing the card also cancels the turn
- * when the chat session asked it, while an approval or a choice card never stops a turn.
+ * when the chat session asked it, while an approval or a choice card never stops a turn. It
+ * also carries the question's own `id` when the screen knows it: a card replaced by another
+ * card of the same kind is a different escape target, never the one already armed.
  */
 export type EscLayer =
-  | { kind: "question"; stops: boolean }
+  | { kind: "question"; stops: boolean; id?: string }
   | { kind: "approval" }
   | { kind: "choice" }
   | { kind: "picker"; picker: PickerKind }
@@ -33,6 +35,11 @@ export interface EscLayerInput {
   readonly ask?: EscAsk;
   /** Whether the chat session asked it — only then does closing the card cancel the turn. */
   readonly askFromSession?: boolean;
+  /**
+   * The open question's own request id. Two questions on the same layer are still two escape
+   * targets, so the arm earned on one must never carry to the other.
+   */
+  readonly askId?: string;
   /** The picker drawn under the input, if one is open. */
   readonly picker?: PickerKind;
   /** The mention picker's esc claim: false while only its no-git diagnostic line is drawn. */
@@ -54,13 +61,19 @@ const PICKER_HINTS: Readonly<Record<PickerKind, string>> = {
 
 const ESC_CLOSE = "esc to close";
 const ESC_CLOSE_AND_STOP = "esc to close and stop";
+/** What the two destructive layers say once their first press has armed the second. */
+const ESC_AGAIN_INTERRUPT = "esc again to interrupt";
+const ESC_AGAIN_CLOSE_AND_STOP = "esc again to close and stop";
 const ESC_DENY = "esc to deny";
 const ESC_CANCEL = "esc to cancel";
 const ESC_CLOSE_MENU = "esc to close menu";
 
 /** A question card is on top whenever it is drawn; it stops the turn only when both hold. */
 function questionLayer(input: EscLayerInput): EscLayer {
-  return { kind: "question", stops: input.askFromSession === true && input.turnRunning === true };
+  const stops = input.askFromSession === true && input.turnRunning === true;
+  // Only when the screen knows it: a layer built without an id stays exactly the two fields it
+  // has always had, so the card and the arm are the same value they were before.
+  return input.askId === undefined ? { kind: "question", stops } : { kind: "question", stops, id: input.askId };
 }
 
 /** The card layer for `ask`, or undefined when no card is drawn. */
@@ -91,11 +104,16 @@ export function topEscLayer(input: EscLayerInput): EscLayer {
  * What esc does on `layer`, as the footer's and the working line's hint text. `undefined` for a
  * running turn and for nothing at all: those keep the existing busy and idle hints, which the
  * screens already compose.
+ *
+ * `armed` is the confirmed-escape gesture's own state (US-006): a running turn and a stopping
+ * question both stop on a second press, so their hint names the second press once the first one
+ * has armed it. Every other layer keeps its single-escape wording, armed or not.
  */
-export function escHintText(layer: EscLayer): string | undefined {
+export function escHintText(layer: EscLayer, armed = false): string | undefined {
   switch (layer.kind) {
     case "question":
-      return layer.stops ? ESC_CLOSE_AND_STOP : ESC_CLOSE;
+      if (!layer.stops) return ESC_CLOSE;
+      return armed ? ESC_AGAIN_CLOSE_AND_STOP : ESC_CLOSE_AND_STOP;
     case "approval":
       return ESC_DENY;
     case "choice":
@@ -105,6 +123,7 @@ export function escHintText(layer: EscLayer): string | undefined {
     case "menu":
       return ESC_CLOSE_MENU;
     case "turn":
+      return armed ? ESC_AGAIN_INTERRUPT : undefined;
     case "none":
       return undefined;
   }

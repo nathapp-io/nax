@@ -143,11 +143,18 @@ interface ViewportRowsProps {
  * `rows` physical rows: an empty line (the gap `layoutTranscript` puts between entries, and
  * a line whose spans are all empty) still takes its row instead of collapsing, and a line,
  * or the marker, that measures wider than the window is clipped rather than wrapped
- * into rows the height budget never allocated.
+ * into rows the height budget never allocated. Only the marker row is centred (`centered`);
+ * a transcript line keeps its own columns, or every row would drift with its length.
  */
-function ViewportRow({ children }: { readonly children: ReactNode }): ReactElement {
+function ViewportRow({
+  children,
+  centered = false,
+}: {
+  readonly children: ReactNode;
+  readonly centered?: boolean;
+}): ReactElement {
   return (
-    <Box height={ROW_HEIGHT} overflow="hidden">
+    <Box height={ROW_HEIGHT} overflow="hidden" justifyContent={centered ? "center" : undefined}>
       {children}
     </Box>
   );
@@ -178,7 +185,7 @@ function ViewportRows({ visible, rows, offset, unseen, theme }: ViewportRowsProp
         </ViewportRow>
       ))}
       {marker === undefined ? null : (
-        <ViewportRow>
+        <ViewportRow centered>
           <Text wrap="truncate" color={theme.colors.muted}>
             {markerLabel(marker, unseen)}
           </Text>

@@ -173,10 +173,13 @@ describe("loadResourceCatalog", () => {
   let dir: string;
   let repoRoot: string;
   let claudeDir: string;
+  let naxGlobalDir: string;
   beforeEach(async () => {
     dir = makeTempDir();
     repoRoot = join(dir, "repo");
     claudeDir = join(dir, "claude");
+    // An isolated nax global dir, so no test reads the developer's own ~/.nax/agents.
+    naxGlobalDir = join(dir, "nax-global");
     await Bun.write(join(claudeDir, "skills/u/SKILL.md"), "---\ndescription: user fixture\n---\nBody");
     const installPath = join(dir, "plugin");
     await Bun.write(join(installPath, "skills/s/SKILL.md"), "---\ndescription: plugin fixture\n---\nBody");
@@ -192,7 +195,13 @@ describe("loadResourceCatalog", () => {
   const load = (
     config: { resources?: { claudeCode: boolean; skillsInRun: boolean; mcpInRun: boolean } },
     naxPluginPackages: ResourcePackage[] = [],
-  ) => resources.loadResourceCatalog({ repoRoot, config, env: { CLAUDE_CONFIG_DIR: claudeDir }, naxPluginPackages });
+  ) =>
+    resources.loadResourceCatalog({
+      repoRoot,
+      config,
+      env: { CLAUDE_CONFIG_DIR: claudeDir, NAX_GLOBAL_CONFIG_DIR: naxGlobalDir },
+      naxPluginPackages,
+    });
   test("AC-10 enabled Claude discovery loads the fixture user skill", async () => {
     expect(
       (await load({ resources: { claudeCode: true, skillsInRun: false, mcpInRun: false } })).findSkill("u"),

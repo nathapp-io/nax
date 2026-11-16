@@ -1,14 +1,19 @@
 /**
  * The jobs picker's two gestures that need no slash command: ctrl+g and a left click on the
- * footer's job and task strip. Both open the same picker as `/jobs`, and both work while a turn
- * runs, because a slash command typed mid-turn only prints the busy notice. An ask card, an
- * open picker or a shown slash menu owns the screen, so both gestures are ignored then.
+ * footer's job and task strip. Both read the registries at event time, so a click acts on what
+ * runs now rather than on what the frame it was drawn from was counted at. ctrl+g always opens
+ * the picker; a click opens the picker too, except when the strip counts exactly one shell and
+ * no job — that shell's output is shown straight away, and ctrl+g still reaches the picker for
+ * its ctrl+x. An ask card, an open picker or a shown slash menu owns the screen, so both
+ * gestures are ignored then.
  */
 
 import { useInput } from "ink";
 import { useEffect, useRef } from "react";
 import type { ChatHost } from "@/chat";
+import type { BackgroundTask } from "@/chat/background/task-types";
 import type { MouseEvents } from "./mouse-input";
+import { _pickerDeps, type PickerEntry, taskEntry } from "./picker-model";
 import type { PickerKind } from "./slash-commands";
 import type { StyledLine } from "./styled-line";
 import { spansWidth } from "./wrap";
@@ -49,12 +54,66 @@ export interface JobsOpenerInput {
   readonly size: { readonly columns: number; readonly rows: number };
   open(kind: PickerKind): void;
   note(text: string): void;
+  /** Append one row's output listing — what Enter on that row of the jobs picker draws. */
+  showOutput(entry: PickerEntry): void;
 }
 
 /** One cell of a left-button press. */
 interface Press {
   readonly x: number;
   readonly y: number;
+}
+
+/** The running rows of a registry, read at event time; a host without the registry runs none. */
+function runningTasks(host: ChatHost): readonly BackgroundTask[] {
+  return (host.tasks?.list() ?? []).filter((task) => task.state === "running");
+}
+
+/** How many jobs the host reports running; the picker is what a click reaches when any do. */
+function runningJobs(host: ChatHost): number {
+  return (host.jobs?.list() ?? []).filter((job) => job.state === "running").length;
+}
+
+/**
+ * The one shell a strip click opens directly: exactly one running task and no running job.
+ * Anything else — two shells, or one beside a job — leaves the picker as the way in.
+ */
+function loneShell(host: ChatHost): BackgroundTask | undefined {
+  const tasks = runningTasks(host);
+  if (tasks.length !== 1 || runningJobs(host) !== 0) return undefined;
+  return tasks[0];
+}
+
+/**
+ * True when a release completes a press on the same cell of the footer strip: the arguments are
+ * the press and its release, and nothing — an ask card, a picker, the slash menu — owns the screen.
+ */
+function stripClicked(input: JobsOpenerInput, pressed: Press, released: Press): boolean {
+  if (input.blocked || pressed.x !== released.x || pressed.y !== released.y) return false;
+  const { footer, size } = input;
+  return footerStripHit({
+    x: released.x,
+    y: released.y,
+    footerRow: size.rows - FRAME_SLACK_ROWS,
+    columns: size.columns,
+    rightWidth: spansWidth(footer.right),
+    stripWidth: footer.stripWidth,
+  });
+}
+
+/**
+ * A completed click on the strip: the lone shell's output, or the jobs picker. `markBlocked`
+ * stands the gesture down at once, so a second click in the same batch opens nothing.
+ */
+function openFromStrip(input: JobsOpenerInput, markBlocked: () => void): void {
+  const task = loneShell(input.host);
+  // A lone shell has nothing to choose between, so its output is drawn without the picker.
+  if (task !== undefined) {
+    input.showOutput(taskEntry(task, _pickerDeps.now()));
+    return;
+  }
+  markBlocked();
+  input.open("jobs");
 }
 
 /** Open the jobs picker from ctrl+g or a press and release on one cell of the footer strip. */
@@ -88,20 +147,12 @@ export function useJobsOpener(input: JobsOpenerInput): void {
       if (event.kind !== "release") return;
       const pressed = press.current;
       press.current = undefined;
-      if (pressed === undefined || pressed.x !== event.x || pressed.y !== event.y) return;
-      const { blocked, footer, size, open } = latest.current;
-      if (blocked) return;
-      const hit = footerStripHit({
-        x: event.x,
-        y: event.y,
-        footerRow: size.rows - FRAME_SLACK_ROWS,
-        columns: size.columns,
-        rightWidth: spansWidth(footer.right),
-        stripWidth: footer.stripWidth,
+      if (pressed === undefined) return;
+      const current = latest.current;
+      if (!stripClicked(current, pressed, event)) return;
+      openFromStrip(current, () => {
+        latest.current = { ...latest.current, blocked: true };
       });
-      if (!hit) return;
-      latest.current = { ...latest.current, blocked: true };
-      open("jobs");
     });
   }, [mouse]);
 }

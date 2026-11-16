@@ -7,9 +7,10 @@ import type { MouseEvents } from "./mouse-input";
 /**
  * The gesture the footer offers, in precedence order: an armed quit, then an armed clear,
  * then the esc layer's own hint (what esc would close, deny or cancel right now), then a
- * running turn (with a background key when available), then expanded detail, then idle.
- * Only one is ever shown, so the warning-coloured quit hint is never hidden behind something
- * the screen is merely doing, and the layer hint is never hidden behind the busy one.
+ * running turn whose queue can be sent now (chat-polish `US-005`), then a running turn (with a background
+ * key when available), then expanded detail, then idle. Only one is ever shown, so the
+ * warning-coloured quit hint is never hidden behind something the screen is merely doing, and
+ * the layer hint is never hidden behind the busy one.
  */
 export function footerHint(input: {
   quitArmed: boolean;
@@ -20,10 +21,17 @@ export function footerHint(input: {
   tmux: boolean;
   /** Whether something drawn over the turn owns esc — `escHintText(topEscLayer(...)) !== undefined`. */
   layer: boolean;
+  /**
+   * Whether ctrl+s would send a queued line now: the queue is non-empty, the draft trims to
+   * `""`, and no interrupt send is waiting. Absent means `false`, so a caller that never has a
+   * queue keeps the hint it had before the input existed.
+   */
+  queued?: boolean;
 }): FooterHint {
   if (input.quitArmed) return "quit";
   if (input.clearArmed) return "clear";
   if (input.layer) return "layer";
+  if (input.busy && input.queued === true) return "queued";
   if (input.busy && input.backgroundable) return input.tmux ? "backgroundTmux" : "background";
   if (input.busy) return "busy";
   if (input.expanded) return "expanded";

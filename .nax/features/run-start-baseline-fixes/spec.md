@@ -77,7 +77,7 @@ It runs `resolveQualityTestCommands(packageView.config, workdir, packageDir)`; w
 
 `captureRunStartBaseline` passes `packageDirs` = the sorted distinct values of `storyPackageDir(story) ?? "."` over the stories whose ids `pendingStoryIds(prd)` returns (the same predicate as the skip, so a story waiting on a dependency still gets its package captured), and `packages = options.runtime.packages`.
 
-When `packageDirs` is absent, equals `["."]`, or `packages` is absent, the capture runs exactly as today (root `regressionGateEnabled(config)` check, the root command from `resolveTestCommands(config, workdir)` in `workdir`), logs exactly as today, and writes a captured baseline with no `packageDirs` field.
+When `packageDirs` is absent, equals `["."]`, or `packages` is absent, the capture runs the root path (root `regressionGateEnabled(config)` check, the root command from `resolveTestCommands(config, workdir)` in `workdir`), degrading per command like the per-package path (#2950, feature chat-polish-and-branch-guard), logs as before, and writes a captured baseline with no `packageDirs` field.
 
 Otherwise each package directory is a capture unit, handled in a new module `packages/nax/src/execution/lifecycle/test-baseline-units.ts` so `test-baseline-capture.ts` stays under the 600-line cap. A new capture dep resolves one unit:
 
