@@ -180,7 +180,7 @@ async function main(): Promise<void> {
       process.exit(code);
     }
   }
-  process.stdout.write(`\n[run-tests] all phases passed\n`);
+  process.stdout.write(OUTPUT_CONTROLLER.passedBanner());
   process.exit(0);
 }
 
