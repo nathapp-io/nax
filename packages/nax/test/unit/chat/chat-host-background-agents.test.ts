@@ -14,6 +14,7 @@ import {
   makeSubagentHostHarness,
   type SubagentHostHarness,
   type SubagentHostOptions,
+  turnEndEvent,
   waitForCondition,
   withDepsRestore,
 } from "@test/helpers";
@@ -61,6 +62,28 @@ function timeoutResolved(requestId: string): SessionEvent {
 
 function taskIdOf(h: SubagentHostHarness): string {
   return (h.toolResults[0]?.content ?? "").replace("started in the background as ", "");
+}
+
+/** The session's cumulative spend as the host currently holds it. */
+async function spent(h: SubagentHostHarness): Promise<number> {
+  return h.host.current().meta.costUsd ?? 0;
+}
+
+/** A nested run whose completion — events and result — the test decides. */
+function controlledRun(): { input(): RunSubagentInput | undefined; finish(costUsd: number): void } {
+  const settled = Promise.withResolvers<RunSubagentResult>();
+  let captured: RunSubagentInput | undefined;
+  _subagentRunsDeps.runSubagent = mock((input: RunSubagentInput) => {
+    captured = input;
+    return settled.promise;
+  });
+  return {
+    input: () => captured,
+    finish: (costUsd: number) => {
+      captured?.onEvent(turnEndEvent("bg done", costUsd));
+      settled.resolve({ content: "bg done" });
+    },
+  };
 }
 
 describe("ChatHost background subagent runs", () => {
@@ -123,5 +146,86 @@ describe("ChatHost background subagent asks", () => {
     expect(id).toMatch(/^agent-[0-9a-f]{8}$/);
     await waitForCondition(() => h.host.tasks?.get(id)?.state === "failed");
     expect(await h.host.tasks?.output(id)).toContain("boom");
+  });
+});
+
+describe("ChatHost background subagent spend", () => {
+  withDepsRestore(_subagentRunsDeps);
+
+  test("B1 background spend that lands during the metadata write reaches the next turn", async () => {
+    const h = setup();
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const run = controlledRun();
+    const before = await spent(h);
+    const write = h.storage.writeMeta.bind(h.storage);
+    let duringWrite: (() => void) | undefined;
+    h.storage.writeMeta = async (meta) => {
+      const during = duringWrite;
+      duringWrite = undefined;
+      // The spend is taken before the write, so finishing the run here lands after it.
+      during?.();
+      return write(meta);
+    };
+    duringWrite = () => run.finish(0.25);
+    await h.host.send("go", () => {});
+    h.control.skipRun = true;
+    h.control.chatCostUsd = 1;
+    await h.host.send("again", () => {});
+    expect((await spent(h)) - before).toBeCloseTo(1.25);
+  });
+
+  test("B1 a send that threw does not discard background spend", async () => {
+    const h = setup({ chatThrows: true, holdChat: true });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    const run = controlledRun();
+    const before = await spent(h);
+    const sending = h.host.send("go", () => {});
+    await waitForCondition(() => run.input() !== undefined);
+    // The background run finishes while the parent turn is still open: its spend is already
+    // counted when the send throws and the turn's own accounting is released.
+    run.finish(0.25);
+    h.releaseChat();
+    await expect(sending).rejects.toThrow("chat send failed");
+    h.control.chatThrows = false;
+    h.control.skipRun = true;
+    h.control.chatCostUsd = 1;
+    await h.host.send("again", () => {});
+    expect((await spent(h)) - before).toBeCloseTo(1.25);
+  });
+});
+
+describe("ChatHost background subagent teardown", () => {
+  withDepsRestore(_subagentRunsDeps);
+
+  test("B2 a stopped background run's open session is still closed by host.close", async () => {
+    const h = setup({ holdNested: true, holdNestedPastCancel: true, holdNestedClose: true });
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    await h.host.send("go", () => {});
+    await waitForCondition(() => h.nestedSessions.length > 0);
+    h.host.tasks?.stop(taskIdOf(h));
+    let closed = false;
+    const closing = h.host.close().then(() => {
+      closed = true;
+    });
+    await waitForCondition(() => (h.nestedSessions[0]?.closeCalls ?? 0) >= 1);
+    // The close waits on the session's own teardown, not on the stopped task's report.
+    expect(closed).toBe(false);
+    h.releaseNestedClose();
+    await closing;
+    expect(closed).toBe(true);
+  });
+
+  test("B2 host.close aborts a background run that has not opened its session yet", async () => {
+    let signal: AbortSignal | undefined;
+    _subagentRunsDeps.runSubagent = mock((input: RunSubagentInput) => {
+      signal = input.signal;
+      return new Promise<RunSubagentResult>(() => {});
+    });
+    const h = setup();
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    await h.host.send("go", () => {});
+    await waitForCondition(() => signal !== undefined);
+    await h.host.close();
+    expect(signal?.aborted).toBe(true);
   });
 });

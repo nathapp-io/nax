@@ -414,4 +414,56 @@ describe("SubagentRuns background asks", () => {
     expect(nested.session.closeCalls).toBe(1);
     nested.finish();
   });
+
+  test("B2 stopping a run leaves its session owned, so closeAll still closes it", async () => {
+    const reg = registry();
+    const nested = nestedSession();
+    const { asks } = askFixture();
+    const runs = createRuns({ asks, backgroundTasks: () => reg.tasks });
+    const id = taskIdOf(await runs.runInBackground(reviewer, "check it"));
+    await nested.reached;
+    reg.tasks.stop(id);
+    expect(nested.session.cancelCalls).toBe(1);
+    // The stop answers its asks at once; it does not hand the session back to the chat.
+    await runs.closeAll();
+    expect(nested.session.closeCalls).toBe(1);
+    nested.finish();
+  });
+
+  test("B2 closeAll() aborts a run whose session has not opened", async () => {
+    const reg = registry();
+    let signal: AbortSignal | undefined;
+    hangingRun((input) => {
+      signal = input.signal;
+    });
+    const { asks } = askFixture();
+    const runs = createRuns({ asks, backgroundTasks: () => reg.tasks });
+    await runs.runInBackground(reviewer, "check it");
+    await waitForCondition(() => signal !== undefined);
+    expect(signal?.aborted).toBe(false);
+    await runs.closeAll();
+    expect(signal?.aborted).toBe(true);
+  });
+});
+
+describe("SubagentRuns background spend", () => {
+  withDepsRestore(_subagentRunsDeps);
+  withDepsRestore(_subagentSessionDeps);
+
+  test("B1 background spend is never the turn's, and only a commit retires it", async () => {
+    const reg = registry();
+    const run = controlledRun();
+    const { asks } = askFixture();
+    const runs = createRuns({ asks, backgroundTasks: () => reg.tasks });
+    await runs.runInBackground(reviewer, "check it");
+    run.input()?.onEvent(turnEndEvent("bg done", 0.25));
+    expect(runs.takeCost()).toBe(0);
+    expect(runs.costForTurn()).toBeCloseTo(0.25);
+    // A completion that lands while the write is in flight stays pending for the next turn.
+    run.input()?.onEvent(turnEndEvent("bg again", 0.5));
+    runs.commitCost();
+    expect(runs.costForTurn()).toBeCloseTo(0.5);
+    runs.commitCost();
+    expect(runs.costForTurn()).toBe(0);
+  });
 });

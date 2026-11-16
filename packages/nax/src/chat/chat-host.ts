@@ -49,7 +49,7 @@ import { createSessionHygiene, resumableRows } from "./session-hygiene";
 import { sessionAcceptsImages } from "./session-images";
 import { latestResumableId, listCwdSessions } from "./session-listing";
 import { switchChatSession } from "./session-switch";
-import { createSubagentRuns, type SubagentRuns } from "./subagent-runs";
+import { createSubagentRuns, type SubagentRuns, turnSpendHooks } from "./subagent-runs";
 import { routeAskEvent, runChatTurn } from "./turn-runner";
 
 const DEFAULT_CHAT_ASK_FALLBACK_MS = 60_000;
@@ -491,7 +491,7 @@ class NativeChatHost implements ChatHost {
         ledger,
         onEvent: runs ? withAgentCallModel(onEvent, runs.modelFor) : onEvent,
         now: this.deps.now().toISOString(),
-        ...(runs ? { extraCostUsd: () => runs.takeCost(), settleNested: () => runs.settle() } : {}),
+        ...turnSpendHooks(runs),
       });
       // Adopt the persisted accounting once the queue has written it. A same-session switch
       // keeps its settings and live session, but still receives this turn's spend; a
@@ -511,7 +511,7 @@ class NativeChatHost implements ChatHost {
       } finally {
         this.turnListener = undefined;
         this.sending = false;
-        // Nested spend of a send that threw is dropped, never added to the next send.
+        // A send that threw keeps no foreground spend; background spend waits for a write.
         runs?.takeCost();
       }
     }

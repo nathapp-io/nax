@@ -8,7 +8,9 @@
  *
  * A run started with `runInBackground` is deliberately outside that lifecycle (US-007): it
  * is adopted as a chat task, kept out of the turn's own set, and its tool calls go to its
- * task log instead of the transcript, so only stopping the task ends it.
+ * task log instead of the transcript, so only stopping the task ends it. Its spend is kept
+ * in its own accumulator, because it belongs to no turn: it waits for a metadata write to
+ * carry it, and survives a send that throws and a write that is still in flight.
  */
 import type { AgentSession, LoopHandlerSet, SessionEvent, ToolProvider, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
@@ -78,8 +80,20 @@ export interface SubagentRuns {
   modelFor(agentName: string | undefined, override?: string): { model: string; label: SubagentModelLabel } | undefined;
   /** The nested session that issued this request id, if one is still running. */
   sessionFor(requestId: string): AgentSession | undefined;
-  /** Spend of nested turns since the last call; resets to 0. */
+  /**
+   * Spend of *foreground* nested turns since the last call; resets to 0. Background spend
+   * never appears here: it belongs to no turn, and a send that threw must not discard it.
+   */
   takeCost(): number;
+  /**
+   * What a turn's metadata write should carry: this turn's foreground nested spend (taken
+   * now) plus every background spend no write has carried yet. The background part is only
+   * a snapshot — {@link SubagentRuns.commitCost} retires exactly that much once the write
+   * resolved, so spend that landed mid-write stays pending for the next one.
+   */
+  costForTurn(): number;
+  /** Retire the background spend `costForTurn` reported; call only after its write persisted. */
+  commitCost(): void;
   cancelAll(): void;
   /**
    * Cancel every run still in flight, including one whose session is still opening, and
@@ -87,7 +101,30 @@ export interface SubagentRuns {
    * the parent send waits here before it releases its listener and spend accounting.
    */
   settle(): Promise<void>;
+  /**
+   * Close every session a run still owns — a stopped background run's included, which stays
+   * owned until its own turn ends — and abort a background run that has not opened one yet,
+   * so nothing opens a session after the chat's resources are gone.
+   */
   closeAll(): Promise<void>;
+}
+
+/**
+ * The spend hooks `runChatTurn` needs, in one place: the host passes the runs it built, or
+ * nothing. Kept here rather than open-coded at the host's call site, which sits at its own
+ * file-size cap, and so the two halves (take, then commit) stay one decision.
+ */
+export function turnSpendHooks(runs: SubagentRuns | undefined): {
+  readonly extraCostUsd?: () => number;
+  readonly commitExtraCost?: () => void;
+  readonly settleNested?: () => Promise<void>;
+} {
+  if (runs === undefined) return {};
+  return {
+    extraCostUsd: () => runs.costForTurn(),
+    commitExtraCost: () => runs.commitCost(),
+    settleNested: () => runs.settle(),
+  };
 }
 
 /** The ask text a person sees names the agent that is asking. */
@@ -158,6 +195,8 @@ interface ActivityRouting {
   readonly forward?: (event: SessionEvent) => void;
   /** A background run's log: each `tool_call` appends one line. */
   readonly onToolCall?: (name: string) => void;
+  /** Set for a background run: its spend joins the pending pool, never the turn's. */
+  readonly background?: boolean;
 }
 
 /** A finished background run's end state: an error result and a plain one differ in the outcome alone. */
@@ -168,9 +207,16 @@ function endOf(result: ToolResult): BackgroundAgentEnd {
 export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const owners = new Map<string, AgentSession>();
   const active = new Set<AgentSession>();
-  /** Every run in flight, from before its session opens until it has closed it. */
+  /** Every foreground run in flight, from before its session opens until it has closed it. */
   const inFlight = new Map<Promise<unknown>, RunEntry>();
+  /** Every background run in flight: not the turn's to cancel, but the chat's to tear down. */
+  const background = new Map<Promise<unknown>, RunEntry>();
+  /** This turn's foreground nested spend, dropped when a send ends without persisting it. */
   let spentUsd = 0;
+  /** Background spend no metadata write has carried yet; it outlives every turn. */
+  let pendingBackgroundUsd = 0;
+  /** The background spend `costForTurn` reported, retired only once its write persisted. */
+  let accountedUsd = 0;
 
   function resolveFor(agent: AgentResource, current: SubagentRunsCurrent, override?: string) {
     const requested = override ?? agent.model;
@@ -182,8 +228,12 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     });
   }
 
-  function release(session: AgentSession): void {
-    active.delete(session);
+  /**
+   * Deny every ask `session` still owns, now: a stopped or finished run must not leave a
+   * pending ask that only the approval timeout would answer. The session itself stays owned
+   * — `release` is what gives up its lifecycle.
+   */
+  function releaseAsks(session: AgentSession): void {
     for (const [requestId, owner] of [...owners]) {
       if (owner !== session) continue;
       owners.delete(requestId);
@@ -200,6 +250,12 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         decidedBy: "cancelled",
       });
     }
+  }
+
+  /** The run is over: its session is no longer the chat's to close, and its asks are answered. */
+  function release(session: AgentSession): void {
+    active.delete(session);
+    releaseAsks(session);
   }
 
   function routeAsk(event: SessionEvent, session: AgentSession, agent: AgentResource): void {
@@ -227,8 +283,11 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
           "subagent",
         );
       nested.previousAt = event.at;
-    } else if (event.type === "turn_end") spentUsd += event.costUsd;
-    else if (event.type === "tool_call") {
+    } else if (event.type === "turn_end") {
+      // Background spend waits for a metadata write; foreground spend belongs to this turn.
+      if (routing.background === true) pendingBackgroundUsd += event.costUsd;
+      else spentUsd += event.costUsd;
+    } else if (event.type === "tool_call") {
       routing.onToolCall?.(event.name);
       routing.forward?.(event);
     } else if (event.type === "tool_result") routing.forward?.(event);
@@ -264,7 +323,9 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       current,
       model,
       ...(forward !== undefined ? { forward } : {}),
-      ...(background !== undefined ? { onToolCall: (name: string) => background.appendLine(`[tool] ${name}`) } : {}),
+      ...(background !== undefined
+        ? { background: true, onToolCall: (name: string) => background.appendLine(`[tool] ${name}`) }
+        : {}),
     };
     const { allowedTools } = mapSubagentTools(agent.tools);
     const memoryIndex = deps.memoryIndex?.();
@@ -311,7 +372,9 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
    * Esc, its tool batch being abandoned — may cancel it. Its own controller is linked to no
    * parent signal, and it ends only when it finishes or its task (or the chat) is stopped.
    * `ended` always resolves: an error result and a thrown error are both failures, and a
-   * stop wins over whatever the run does afterwards.
+   * stop wins over whatever the run does afterwards. The promise itself is tracked in
+   * `background` until `runNested` has released its session, so the chat can still reach a
+   * run whose task already reported itself stopped.
    */
   async function runInBackground(agent: AgentResource, task: string, model?: string): Promise<ToolResult> {
     const tasks = deps.backgroundTasks?.();
@@ -330,20 +393,27 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         stopped = true;
         ended.resolve({ outcome: "stopped", text: "" });
         // Before the session opens its signal is the only handle on the run; after, the
-        // session's own cancel ends the turn so its transport can close. Release here so a
-        // pending ask is answered now rather than when the run eventually settles.
+        // session's own cancel ends the turn so its transport can close. Only the asks are
+        // released here: the session stays owned until its turn really ends, so closeAll
+        // still closes it rather than tearing the chat's resources down beneath it.
         if (entry.session === undefined) entry.controller.abort();
         else {
           entry.session.cancel();
-          release(entry.session);
+          releaseAsks(entry.session);
         }
       },
     };
     const sink = tasks.adoptAgent(handle);
-    void runNested(agent, task, { entry, background: sink, ...(model !== undefined ? { override: model } : {}) }).then(
+    const promise = runNested(agent, task, {
+      entry,
+      background: sink,
+      ...(model !== undefined ? { override: model } : {}),
+    }).then(
       (result) => ended.resolve(endOf(result)),
       (cause: unknown) => ended.resolve({ outcome: "failed", text: errorMessage(cause) }),
     );
+    background.set(promise, entry);
+    void promise.then(() => background.delete(promise));
     return { isError: false, content: `started in the background as ${sink.id}` };
   }
 
@@ -365,6 +435,17 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       spentUsd = 0;
       return taken;
     },
+    costForTurn() {
+      // Snapshot the background share before handing the total over: a run that finishes
+      // while the write is in flight then stays pending for the next turn, instead of being
+      // retired as if this write had carried it.
+      accountedUsd = pendingBackgroundUsd;
+      return runs.takeCost() + accountedUsd;
+    },
+    commitCost() {
+      pendingBackgroundUsd -= accountedUsd;
+      accountedUsd = 0;
+    },
     cancelAll() {
       for (const { controller, session } of inFlight.values()) {
         // A run whose session is not open yet is cancelled through its signal; one with a
@@ -378,6 +459,9 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       await Promise.allSettled([...inFlight.keys()]);
     },
     async closeAll() {
+      // A run still opening has no session to close, and must not open one once the chat's
+      // resources are gone: its signal is the only handle on it.
+      for (const entry of background.values()) if (entry.session === undefined) entry.controller.abort();
       await Promise.all([...active].map((session) => session.close()));
     },
   };
