@@ -3,7 +3,7 @@
   "feature": "background-agents-and-forge-kind",
   "branchName": "feat/background-agents-and-forge-kind",
   "createdAt": "2026-11-16T11:16:53.192Z",
-  "updatedAt": "2026-11-16T11:55:50.850Z",
+  "updatedAt": "2026-11-16T12:07:29.587Z",
   "userStories": [
     {
       "id": "US-001",
@@ -176,14 +176,17 @@
         "cancellation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Small reason-tagging change, but it crosses native session cancellation and the shared tool-abandonment contract; session lifecycle requires strict isolated TDD."
+        "reasoning": "Small reason-tagging change, but it crosses native session cancellation and the shared tool-abandonment contract; session lifecycle requires strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent/src/native/session-adapter.ts",
@@ -199,7 +202,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "defcfdc2fe8a1f5d64c6816a7a4e3b1ba1fdfc21"
     },
     {
       "id": "US-004",
