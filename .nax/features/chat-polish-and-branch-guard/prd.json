@@ -3,7 +3,7 @@
   "feature": "chat-polish-and-branch-guard",
   "branchName": "feat/chat-polish-and-branch-guard",
   "createdAt": "2026-11-16T05:50:00.189Z",
-  "updatedAt": "2026-11-16T06:25:28.879Z",
+  "updatedAt": "2026-11-16T06:39:35.864Z",
   "userStories": [
     {
       "id": "US-001",
@@ -178,14 +178,17 @@
         "tool-access"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-module discovery precedence, builtin resolution, prompt exports and host provider wiring; the read-only tool allowlist and nested-session access boundary require strict security TDD."
+        "reasoning": "Cross-module discovery precedence, builtin resolution, prompt exports and host provider wiring; the read-only tool allowlist and nested-session access boundary require strict security TDD.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/resources/claude-sources.ts",
@@ -239,7 +242,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "715fb5d69e67cb8de7b359a500c27e14a9f517a7"
     },
     {
       "id": "US-004",
