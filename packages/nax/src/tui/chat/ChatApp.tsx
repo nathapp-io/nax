@@ -31,6 +31,7 @@ import {
   type TurnStatus,
   WORKING_TICK_MS,
 } from "./chat-status";
+import { useEscConfirm } from "./esc-confirm";
 import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
 import { FixedRow } from "./FixedRow";
 import {
@@ -500,7 +501,11 @@ export function ChatApp({
       turnRunning: running && keys.canControl(),
     });
   }
-  const escHint = escHintText(escLayer(turnRunning));
+  const escLayerNow = escLayer(turnRunning);
+  // A destructive esc asks twice: the hook owns that arm, and clears it whenever the turn ends
+  // or the top layer changes, so a new turn never inherits the last one's first press.
+  const escConfirm = useEscConfirm(escLayerNow, turnRunning);
+  const escHint = escHintText(escLayerNow, escConfirm.armed);
   // The working line is drawn from the turn status alone, so its presence is unchanged; only
   // its text takes the layer's hint, and `esc to interrupt` stays when the layer has none.
   const working = workingLine(status, nowMs, theme.glyphs, escHint, size.columns);
@@ -535,6 +540,9 @@ export function ChatApp({
     // never also reach the turn. The turn's ownership is read synchronously, like every other
     // key-time fact: the frame's answer is a render old when a batch carries several keys.
     if (!key.escape || escLayer(sending.current).kind !== "turn") return;
+    // Stopping a turn cannot be undone, so the first escape only offers it (US-006); a second
+    // one inside the window is the press that stops it.
+    if (!escConfirm.press()) return;
     host.cancel();
   });
 
@@ -1236,12 +1244,17 @@ export function ChatApp({
    * Esc on the question card: decline the question, then stop the chat turn it interrupted —
    * but only when the chat session itself asked it, a turn is running, and the keys can still
    * control it. A run ask's or a job's question asks as `"host"`: nothing here is waiting for
-   * the answer, so the chat turn keeps running. The decline always comes first, so a question
-   * is settled even on the turn it goes on to stop.
+   * the answer, so the chat turn keeps running — and, since closing it stops nothing, it keeps
+   * its single escape. A question that does stop the turn is destructive, so its escape asks
+   * twice exactly as the bare turn's does (US-006).
+   *
+   * The decline always comes first, so a question is settled even on the turn it goes on to stop.
    */
   function dismissQuestion(pending: ChatPendingAsk): void {
+    const stops = askedBySession(pending) && turnRunning && keys.canControl();
+    if (stops && !escConfirm.press()) return;
     host.asks.declineQuestion(pending.requestId);
-    if (askedBySession(pending) && turnRunning && keys.canControl()) host.cancel();
+    if (stops) host.cancel();
   }
 
   /**

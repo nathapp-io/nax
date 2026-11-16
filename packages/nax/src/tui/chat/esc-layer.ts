@@ -54,6 +54,9 @@ const PICKER_HINTS: Readonly<Record<PickerKind, string>> = {
 
 const ESC_CLOSE = "esc to close";
 const ESC_CLOSE_AND_STOP = "esc to close and stop";
+/** What the two destructive layers say once their first press has armed the second. */
+const ESC_AGAIN_INTERRUPT = "esc again to interrupt";
+const ESC_AGAIN_CLOSE_AND_STOP = "esc again to close and stop";
 const ESC_DENY = "esc to deny";
 const ESC_CANCEL = "esc to cancel";
 const ESC_CLOSE_MENU = "esc to close menu";
@@ -91,11 +94,16 @@ export function topEscLayer(input: EscLayerInput): EscLayer {
  * What esc does on `layer`, as the footer's and the working line's hint text. `undefined` for a
  * running turn and for nothing at all: those keep the existing busy and idle hints, which the
  * screens already compose.
+ *
+ * `armed` is the confirmed-escape gesture's own state (US-006): a running turn and a stopping
+ * question both stop on a second press, so their hint names the second press once the first one
+ * has armed it. Every other layer keeps its single-escape wording, armed or not.
  */
-export function escHintText(layer: EscLayer): string | undefined {
+export function escHintText(layer: EscLayer, armed = false): string | undefined {
   switch (layer.kind) {
     case "question":
-      return layer.stops ? ESC_CLOSE_AND_STOP : ESC_CLOSE;
+      if (!layer.stops) return ESC_CLOSE;
+      return armed ? ESC_AGAIN_CLOSE_AND_STOP : ESC_CLOSE_AND_STOP;
     case "approval":
       return ESC_DENY;
     case "choice":
@@ -105,6 +113,7 @@ export function escHintText(layer: EscLayer): string | undefined {
     case "menu":
       return ESC_CLOSE_MENU;
     case "turn":
+      return armed ? ESC_AGAIN_INTERRUPT : undefined;
     case "none":
       return undefined;
   }

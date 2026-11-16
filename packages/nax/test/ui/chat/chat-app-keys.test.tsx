@@ -195,9 +195,12 @@ async function started() {
 }
 
 describe("ChatApp interruption", () => {
-  test("AC-1 escape while a scripted turn runs calls host.cancel once", async () => {
+  test("AC-1 escape while a scripted turn runs calls host.cancel once on the second press", async () => {
     const ui = await started();
     ui.emit({ type: "turn_start" });
+    // Stopping a turn cannot be undone, so esc asks twice (US-006); the fixture's clock is
+    // the real one, so the two presses are well inside `ESC_CONFIRM_MS`.
+    ui.press(ESCAPE);
     ui.press(ESCAPE);
     expect(ui.cancel).toHaveBeenCalledTimes(1);
   });
