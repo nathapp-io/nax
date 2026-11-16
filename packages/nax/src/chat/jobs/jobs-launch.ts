@@ -63,7 +63,9 @@ async function featureTargetBranch(feature: string, repoRoot: string): Promise<s
   if (!(await _jobsLaunchDeps.exists(path))) return defaultFeatureBranch(feature);
   try {
     const prd = await _jobsLaunchDeps.loadPRD(path);
-    return prd.branchName === "" ? defaultFeatureBranch(feature) : prd.branchName;
+    // `loadPRD` does not validate `branchName`, so a malformed or legacy PRD may carry none.
+    const { branchName } = prd;
+    return typeof branchName === "string" && branchName !== "" ? branchName : defaultFeatureBranch(feature);
   } catch {
     // An unreadable PRD cannot name its branch; the planner's default is still the right target.
     return defaultFeatureBranch(feature);

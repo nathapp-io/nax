@@ -49,6 +49,16 @@ async function writeSpec(): Promise<void> {
   await Bun.write(join(featureDir(root, "f1"), "spec.md"), "spec");
 }
 
+/** A PRD that loads but carries no branchName, as a malformed or legacy PRD can. */
+async function writePRDWithoutBranchName(): Promise<void> {
+  await Bun.write(
+    join(featureDir(root, "f1"), "prd.json"),
+    JSON.stringify(
+      makePRD({ branchName: undefined, userStories: [makeStory({ id: "US-001", status: "pending", passes: false })] }),
+    ),
+  );
+}
+
 beforeEach(() => {
   root = makeTempDir("jobs-launch-branch-");
   chains = undefined;
@@ -173,6 +183,15 @@ describe("featureBranchRefusal", () => {
     expect(await featureBranchRefusal({ kind: "run", feature: "f1", repoRoot: root })).toBe(
       refusalText("run", "main", "feat/f1"),
     );
+  });
+
+  test("F1 a loadable PRD with no branchName falls back to the planner's default branch", async () => {
+    await writePRDWithoutBranchName();
+    gitAnswer(0, "main\n");
+    expect(await featureBranchRefusal({ kind: "run", feature: "f1", repoRoot: root })).toBe(
+      refusalText("run", "main", "feat/f1"),
+    );
+    expect(await featureBranchRefusal({ kind: "plan", feature: "f1", repoRoot: root })).not.toContain("undefined");
   });
 });
 
