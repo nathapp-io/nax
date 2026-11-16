@@ -85,11 +85,13 @@ export interface SubagentRuns {
    * never appears here: it belongs to no turn, and a send that threw must not discard it.
    */
   takeCost(): number;
+  /** Begin a parent turn, making spend from earlier turns' background runs eligible. */
+  beginTurn(): void;
   /**
    * What a turn's metadata write should carry: this turn's foreground nested spend (taken
-   * now) plus every background spend no write has carried yet. The background part is only
-   * a snapshot — {@link SubagentRuns.commitCost} retires exactly that much once the write
-   * resolved, so spend that landed mid-write stays pending for the next one.
+   * now) plus unpersisted background spend from runs started before this turn. The background
+   * part is only a snapshot — {@link SubagentRuns.commitCost} retires exactly that much once
+   * the write resolved, so spend that landed mid-write stays pending for the next one.
    */
   costForTurn(): number;
   /** Retire the background spend `costForTurn` reported; call only after its write persisted. */
@@ -116,12 +118,14 @@ export interface SubagentRuns {
  * file-size cap, and so the two halves (take, then commit) stay one decision.
  */
 export function turnSpendHooks(runs: SubagentRuns | undefined): {
+  readonly beginNestedTurn?: () => void;
   readonly extraCostUsd?: () => number;
   readonly commitExtraCost?: () => void;
   readonly settleNested?: () => Promise<void>;
 } {
   if (runs === undefined) return {};
   return {
+    beginNestedTurn: () => runs.beginTurn(),
     extraCostUsd: () => runs.costForTurn(),
     commitExtraCost: () => runs.commitCost(),
     settleNested: () => runs.settle(),
@@ -196,8 +200,8 @@ interface ActivityRouting {
   readonly forward?: (event: SessionEvent) => void;
   /** A background run's log: each `tool_call` appends one line. */
   readonly onToolCall?: (name: string) => void;
-  /** Set for a background run: its spend joins the pending pool, never the turn's. */
-  readonly background?: boolean;
+  /** The parent turn that started a background run; its spend is ineligible until a later turn. */
+  readonly backgroundTurn?: number;
 }
 
 /** A finished background run's end state: an error result and a plain one differ in the outcome alone. */
@@ -214,7 +218,11 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
   const background = new Map<Promise<unknown>, RunEntry>();
   /** This turn's foreground nested spend, dropped when a send ends without persisting it. */
   let spentUsd = 0;
-  /** Background spend no metadata write has carried yet; it outlives every turn. */
+  /** Parent-turn sequence, captured before a background run starts any async work. */
+  let turnNumber = 0;
+  /** Spend from background runs started this turn; ineligible even if they finish early. */
+  let deferredBackgroundUsd = 0;
+  /** Eligible background spend no metadata write has carried yet; it outlives every turn. */
   let pendingBackgroundUsd = 0;
   /** The background spend `costForTurn` reported, retired only once its write persisted. */
   let accountedUsd = 0;
@@ -285,9 +293,10 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
         );
       nested.previousAt = event.at;
     } else if (event.type === "turn_end") {
-      // Background spend waits for a metadata write; foreground spend belongs to this turn.
-      if (routing.background === true) pendingBackgroundUsd += event.costUsd;
-      else spentUsd += event.costUsd;
+      // A background run cannot charge its starting turn, regardless of when it finishes.
+      if (routing.backgroundTurn === undefined) spentUsd += event.costUsd;
+      else if (routing.backgroundTurn === turnNumber) deferredBackgroundUsd += event.costUsd;
+      else pendingBackgroundUsd += event.costUsd;
     } else if (event.type === "tool_call") {
       routing.onToolCall?.(event.name);
       routing.forward?.(event);
@@ -325,7 +334,7 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       model,
       ...(forward !== undefined ? { forward } : {}),
       ...(background !== undefined
-        ? { background: true, onToolCall: (name: string) => background.appendLine(`[tool] ${name}`) }
+        ? { backgroundTurn: turnNumber, onToolCall: (name: string) => background.appendLine(`[tool] ${name}`) }
         : {}),
     };
     const { allowedTools } = mapSubagentTools(agent.tools);
@@ -436,8 +445,13 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
       spentUsd = 0;
       return taken;
     },
+    beginTurn() {
+      turnNumber += 1;
+      pendingBackgroundUsd += deferredBackgroundUsd;
+      deferredBackgroundUsd = 0;
+    },
     costForTurn() {
-      // Snapshot the background share before handing the total over: a run that finishes
+      // Snapshot the eligible background share before handing the total over: a run that finishes
       // while the write is in flight then stays pending for the next turn, instead of being
       // retired as if this write had carried it.
       accountedUsd = pendingBackgroundUsd;

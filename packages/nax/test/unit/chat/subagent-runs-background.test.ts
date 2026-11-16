@@ -503,13 +503,18 @@ describe("SubagentRuns background spend", () => {
     const run = controlledRun();
     const { asks } = askFixture();
     const runs = createRuns({ asks, backgroundTasks: () => reg.tasks });
+    runs.beginTurn();
     await runs.runInBackground(reviewer, "check it");
     run.input()?.onEvent(turnEndEvent("bg done", 0.25));
     expect(runs.takeCost()).toBe(0);
+    expect(runs.costForTurn()).toBe(0);
+    runs.commitCost();
+    runs.beginTurn();
     expect(runs.costForTurn()).toBeCloseTo(0.25);
     // A completion that lands while the write is in flight stays pending for the next turn.
     run.input()?.onEvent(turnEndEvent("bg again", 0.5));
     runs.commitCost();
+    runs.beginTurn();
     expect(runs.costForTurn()).toBeCloseTo(0.5);
     runs.commitCost();
     expect(runs.costForTurn()).toBe(0);

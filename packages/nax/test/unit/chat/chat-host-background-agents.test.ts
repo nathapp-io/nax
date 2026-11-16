@@ -166,6 +166,41 @@ describe("ChatHost background subagent asks", () => {
 describe("ChatHost background subagent spend", () => {
   withDepsRestore(_subagentRunsDeps);
 
+  test.each([false, true])(
+    "early background completion skips its starting turn and survives a failed next write: %s",
+    async (failNextWrite) => {
+      const h = setup({ holdChat: true, chatCostUsd: 1 });
+      await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+      const run = controlledRun();
+      const before = await spent(h);
+      const starting = h.host.send("go", () => {});
+      await waitForCondition(() => run.input() !== undefined);
+      run.finish(0.25);
+      h.releaseChat();
+      await starting;
+      expect((await spent(h)) - before).toBeCloseTo(1);
+
+      h.control.skipRun = true;
+      const write = h.storage.writeMeta.bind(h.storage);
+      const attempted: number[] = [];
+      h.storage.writeMeta = async (meta) => {
+        attempted.push(meta.costUsd ?? 0);
+        if (failNextWrite && attempted.length === 1) throw new Error("metadata write failed");
+        return write(meta);
+      };
+      if (failNextWrite) {
+        await expect(h.host.send("failed write", () => {})).rejects.toThrow("metadata write failed");
+        expect((await spent(h)) - before).toBeCloseTo(1);
+        expect((await h.storage.readMeta(h.host.current().meta.sessionId))?.costUsd).toBeCloseTo(before + 1);
+      }
+      await h.host.send("next persisted turn", () => {});
+      expect(attempted).toEqual(failNextWrite ? [before + 2.25, before + 2.25] : [before + 2.25]);
+      expect((await spent(h)) - before).toBeCloseTo(2.25);
+      await h.host.send("one more", () => {});
+      expect((await spent(h)) - before).toBeCloseTo(3.25);
+    },
+  );
+
   test("B1 background spend that lands during the metadata write reaches the next turn", async () => {
     const h = setup();
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });

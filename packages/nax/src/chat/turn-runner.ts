@@ -19,6 +19,8 @@ export interface RunChatTurnOptions {
   readonly onEvent: (event: SessionEvent) => void;
   /** ISO timestamp for shared session metadata, not ledger milliseconds. */
   readonly now: string;
+  /** Establish background-spend eligibility before this turn can start any nested runs. */
+  readonly beginNestedTurn?: () => void;
   /** Spend of nested sessions to add to this turn's metadata; read once, after `turn_end`. */
   readonly extraCostUsd?: () => number;
   /**
@@ -79,6 +81,7 @@ function turnInput(images: readonly ImageAttachment[] | undefined): readonly [] 
 /** Consume one native turn; rejected sends must not flush or mutate shared state. */
 export async function runChatTurn(options: RunChatTurnOptions): Promise<SessionMeta> {
   const { handle, message, asks, ledger, onEvent, images } = options;
+  options.beginNestedTurn?.();
   let previousAt: string | undefined;
   let ended: Extract<SessionEvent, { type: "turn_end" }> | undefined;
   for await (const event of handle.session.send(message, ...turnInput(images))) {
