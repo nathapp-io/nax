@@ -3,7 +3,7 @@
   "feature": "background-agents-and-forge-kind",
   "branchName": "feat/background-agents-and-forge-kind",
   "createdAt": "2026-11-16T11:16:53.192Z",
-  "updatedAt": "2026-11-16T12:07:29.587Z",
+  "updatedAt": "2026-11-16T12:17:15.606Z",
   "userStories": [
     {
       "id": "US-001",
@@ -227,14 +227,17 @@
         "cancellation"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Existing signal fan-in and abandonment races remain in place; this adds a local formatter and reason arguments at four abort sites. Session lifecycle paths still require strict isolated TDD."
+        "reasoning": "Existing signal fan-in and abandonment races remain in place; this adds a local formatter and reason arguments at four abort sites. Session lifecycle paths still require strict isolated TDD.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax-agent-acp/src/client/tool-calls.ts",
@@ -254,7 +257,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "bee30b7bbbdb850e15ae2d75445df27c2d71a2e2"
     },
     {
       "id": "US-005",
