@@ -153,12 +153,19 @@ describe("ChatInput empty focus cursor", () => {
     expect(input.textRows()).toEqual([`> ${PLACEHOLDER}`]);
   });
 
-  test("AC-3 draws no inverse cell and no placeholder while a turn runs", () => {
+  test("AC-3 (#2963) draws the cursor after the marker, and no placeholder, while a turn runs", () => {
+    // Typing while a turn runs queues the line, so the busy input holds focus and says so.
     const input = mount({ colored: true, busy: true });
-    expect(input.cursorCell()).toBe("");
-    expect(input.inverseCells()).toBe(0);
+    expect(input.cursorCell()).toBe(" ");
+    expect(input.inverseCells()).toBe(1);
     expect(input.textRows()).toEqual([">"]);
     expect(input.rawFrame()).not.toContain("Try");
+  });
+
+  test("#2963 an inactive input draws no cursor while a turn runs", () => {
+    const input = mount({ colored: true, busy: true, active: false });
+    expect(input.inverseCells()).toBe(0);
+    expect(input.textRows()).toEqual([">"]);
   });
 
   test("AC-4 draws the hint's first character inverse", () => {
