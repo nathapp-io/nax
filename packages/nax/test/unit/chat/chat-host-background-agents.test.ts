@@ -36,14 +36,28 @@ function setup(options: SubagentHostOptions = {}): SubagentHostHarness {
   return harness;
 }
 
-/** A nested run that never settles, exposing the signal the chat handed it. */
-function hangingRun(): () => AbortSignal | undefined {
+/**
+ * A nested run that never settles while it is allowed to run, exposing the signal the chat
+ * handed it. It still unwinds when that signal aborts — which is what a real `runSubagent`
+ * does, and what the chat's close now waits for.
+ */
+function parkedRun(): () => AbortSignal | undefined {
   let captured: AbortSignal | undefined;
   _subagentRunsDeps.runSubagent = mock((input: RunSubagentInput) => {
     captured = input.signal;
-    return new Promise<RunSubagentResult>(() => {});
+    return unwindsOnAbort(input.signal);
   });
   return () => captured;
+}
+
+/** A run that resolves only once `signal` aborts, as a cancelled nested open does. */
+function unwindsOnAbort(signal: AbortSignal | undefined): Promise<RunSubagentResult> {
+  const cancelled: RunSubagentResult = { isError: true, content: "subagent reviewer cancelled: cancelled" };
+  if (signal === undefined) return new Promise<RunSubagentResult>(() => {});
+  if (signal.aborted) return Promise.resolve(cancelled);
+  return new Promise<RunSubagentResult>((resolve) => {
+    signal.addEventListener("abort", () => resolve(cancelled), { once: true });
+  });
 }
 
 /** The resolution a nested session emits for itself once the approval timeout elapses. */
@@ -90,7 +104,7 @@ describe("ChatHost background subagent runs", () => {
   withDepsRestore(_subagentRunsDeps);
 
   test("AC-20 the tool starts a background agent task and returns its id at once", async () => {
-    hangingRun();
+    parkedRun();
     const h = setup();
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
     await h.host.send("go", () => {});
@@ -101,7 +115,7 @@ describe("ChatHost background subagent runs", () => {
   });
 
   test("AC-21 the turn ending leaves the background run's signal unaborted", async () => {
-    const signal = hangingRun();
+    const signal = parkedRun();
     const h = setup();
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
     await h.host.send("go", () => {});
@@ -216,16 +230,45 @@ describe("ChatHost background subagent teardown", () => {
   });
 
   test("B2 host.close aborts a background run that has not opened its session yet", async () => {
-    let signal: AbortSignal | undefined;
-    _subagentRunsDeps.runSubagent = mock((input: RunSubagentInput) => {
-      signal = input.signal;
-      return new Promise<RunSubagentResult>(() => {});
+    const signal = parkedRun();
+    const h = setup();
+    await h.host.start({ mode: "guarded", model: CHAT_MODEL });
+    await h.host.send("go", () => {});
+    await waitForCondition(() => signal() !== undefined);
+    await h.host.close();
+    expect(signal()?.aborted).toBe(true);
+  });
+
+  test("B2 host.close drains a pending open's cleanup before it releases the chat's resources", async () => {
+    const cleanup = Promise.withResolvers<void>();
+    const cleaningUp = Promise.withResolvers<void>();
+    _subagentRunsDeps.runSubagent = mock(async (input: RunSubagentInput): Promise<RunSubagentResult> => {
+      const signal = input.signal;
+      if (signal === undefined) throw new Error("expected a run signal");
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      cleaningUp.resolve();
+      await cleanup.promise;
+      return { isError: true, content: "subagent reviewer cancelled: cancelled" };
     });
     const h = setup();
     await h.host.start({ mode: "guarded", model: CHAT_MODEL });
     await h.host.send("go", () => {});
-    await waitForCondition(() => signal !== undefined);
-    await h.host.close();
-    expect(signal?.aborted).toBe(true);
+    let closed = false;
+    const closing = h.host.close().then(() => {
+      closed = true;
+    });
+    await cleaningUp.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    // The chat session — a resource the nested run's cleanup still touches — is not closed
+    // while the drained run is unwinding.
+    expect(closed).toBe(false);
+    expect(h.chatSessions[0]?.closeCalls).toBe(0);
+    cleanup.resolve();
+    await closing;
+    expect(closed).toBe(true);
+    expect(h.chatSessions[0]?.closeCalls).toBe(1);
   });
 });

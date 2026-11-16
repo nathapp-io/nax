@@ -104,7 +104,8 @@ export interface SubagentRuns {
   /**
    * Close every session a run still owns — a stopped background run's included, which stays
    * owned until its own turn ends — and abort a background run that has not opened one yet,
-   * so nothing opens a session after the chat's resources are gone.
+   * so nothing opens a session after the chat's resources are gone. A run aborted mid-open is
+   * then drained: it owes the chat the cleanup its own open had already started.
    */
   closeAll(): Promise<void>;
 }
@@ -461,7 +462,18 @@ export function createSubagentRuns(deps: SubagentRunsDeps): SubagentRuns {
     async closeAll() {
       // A run still opening has no session to close, and must not open one once the chat's
       // resources are gone: its signal is the only handle on it.
-      for (const entry of background.values()) if (entry.session === undefined) entry.controller.abort();
+      const opening: Promise<unknown>[] = [];
+      for (const [promise, entry] of background) {
+        if (entry.session !== undefined) continue;
+        entry.controller.abort();
+        opening.push(promise);
+      }
+      // The abort is only the reach: the run still has to unwind what its open had already
+      // started — a backend, a transport, an in-flight session creation — and that cleanup
+      // outlives the abort. The chat releases its shared resources once this returns, so the
+      // run's own cleanup is drained first. A run with a session is not waited on: its turn
+      // ends through `session.close()` below, and its cleanup belongs to that path.
+      await Promise.allSettled(opening);
       await Promise.all([...active].map((session) => session.close()));
     },
   };

@@ -124,6 +124,34 @@ function hangingRun(onStart?: (input: RunSubagentInput) => void) {
   });
 }
 
+/** Resolve once `signal` has aborted, or at once when it already has. */
+function whenAborted(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
+/**
+ * A nested run that parks while it opens, so it has no session yet, and then runs its own
+ * cleanup once aborted: `cleanup` is what a real backend's close costs, and gating it is how
+ * a test watches whether `closeAll` waited for it.
+ */
+function runUntilAbort(options: { cleanup?: () => Promise<void> } = {}) {
+  const seen = Promise.withResolvers<AbortSignal>();
+  const cleaningUp = Promise.withResolvers<void>();
+  _subagentRunsDeps.runSubagent = mock(async (input: RunSubagentInput): Promise<RunSubagentResult> => {
+    const signal = input.signal;
+    if (signal === undefined) throw new Error("expected a run signal");
+    seen.resolve(signal);
+    await whenAborted(signal);
+    cleaningUp.resolve();
+    if (options.cleanup !== undefined) await options.cleanup();
+    return { isError: true, content: "subagent reviewer cancelled: cancelled" };
+  });
+  return { signal: seen.promise, cleaningUp: cleaningUp.promise };
+}
+
 /** The real `runSubagent` over a nested session that holds its turn open until `finish()`. */
 function nestedSession() {
   const gate = Promise.withResolvers<void>();
@@ -432,17 +460,37 @@ describe("SubagentRuns background asks", () => {
 
   test("B2 closeAll() aborts a run whose session has not opened", async () => {
     const reg = registry();
-    let signal: AbortSignal | undefined;
-    hangingRun((input) => {
-      signal = input.signal;
-    });
+    const run = runUntilAbort();
     const { asks } = askFixture();
     const runs = createRuns({ asks, backgroundTasks: () => reg.tasks });
     await runs.runInBackground(reviewer, "check it");
-    await waitForCondition(() => signal !== undefined);
-    expect(signal?.aborted).toBe(false);
+    const signal = await run.signal;
+    expect(signal.aborted).toBe(false);
     await runs.closeAll();
-    expect(signal?.aborted).toBe(true);
+    expect(signal.aborted).toBe(true);
+  });
+
+  test("B2 closeAll() drains a pending open's cleanup before it resolves", async () => {
+    const reg = registry();
+    const cleanup = Promise.withResolvers<void>();
+    const run = runUntilAbort({ cleanup: () => cleanup.promise });
+    const { asks } = askFixture();
+    const runs = createRuns({ asks, backgroundTasks: () => reg.tasks });
+    await runs.runInBackground(reviewer, "check it");
+    let closed = false;
+    const closing = runs.closeAll().then(() => {
+      closed = true;
+    });
+    // The abort reached the run and its cleanup is under way; the chat's resources are still
+    // this run's to touch until that cleanup returned.
+    await run.cleaningUp;
+    // Every microtask closeAll could resolve through has run; a macrotask boundary is the
+    // point past which nothing is left in flight but the cleanup itself.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    cleanup.resolve();
+    await closing;
+    expect(closed).toBe(true);
   });
 });
 
