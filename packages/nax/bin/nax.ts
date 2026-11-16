@@ -97,7 +97,7 @@ import { registerResumeCommand } from "../src/commands/resume";
 import { runsCommand } from "../src/commands/runs";
 import { unlockCommand } from "../src/commands/unlock";
 import { configureNaxCredentials, DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
-import { captureForgeIdentity } from "../src/forge";
+import { captureForgeIdentity, captureForgeKind } from "../src/forge";
 import { loadHooksConfig } from "../src/hooks";
 import { getSafeLogger, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
@@ -131,8 +131,11 @@ import {
 // tree exists. The token file is read and deleted here, so nothing nax spawns
 // can inherit a token from the environment and the token never stays on disk;
 // a refused injection stops the process before any command runs.
+// US-001: `NAX_FORGE_KIND` is captured in the same place, so a value naming no
+// forge stops the process before a command can act on the wrong one.
 try {
   await captureForgeIdentity(process.env);
+  captureForgeKind(process.env);
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);

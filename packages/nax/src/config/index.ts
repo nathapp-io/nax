@@ -64,6 +64,7 @@ export type {
   ChatStepConfig,
   ChatWorkflowConfig,
 } from "./runtime-types-chat";
+export type { ForgeConfig } from "./runtime-types-forge";
 export type { MemoryConfig, MemoryKodaConfig, MemoryMcpConfig } from "./runtime-types-memory";
 export type {
   ExecutionMode,

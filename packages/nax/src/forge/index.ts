@@ -42,6 +42,7 @@ export type { LinkedIssue } from "./issues";
 export { MAX_LINKED_ISSUES, parseClosingRefs, readIssue, readLinkedIssues } from "./issues";
 export type { JobLogRead } from "./job-log";
 export { CI_ANNOTATION_CHARS, CI_ANNOTATION_LINES, readJobLog, stripAnsi } from "./job-log";
+export { _forgeKind, captureForgeKind, FORGE_KIND_ENV, resolveExplicitForgeKind } from "./kind";
 export {
   findOwnComments,
   hasNaxWorkflowMarker,

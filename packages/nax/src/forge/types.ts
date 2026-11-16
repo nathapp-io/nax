@@ -30,4 +30,10 @@ export interface ForgeDeps {
    * and the ambient CLI login is used, exactly as it was.
    */
   identity?(): InjectedForgeIdentity | undefined;
+  /**
+   * The forge kind the caller declared for `repoRoot` — `NAX_FORGE_KIND`, else
+   * `forge.kind` of that repo's config, else undefined. Optional so a fake
+   * written before the feature detects exactly as it did.
+   */
+  explicitKind?(repoRoot: string): Promise<ForgeKind | undefined>;
 }
