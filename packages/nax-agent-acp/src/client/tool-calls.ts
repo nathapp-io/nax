@@ -25,6 +25,7 @@ import {
   type SessionAskPort,
 } from "@nathapp/nax-agent";
 import { capBytes, scrubSecrets, stripControl, stripInvisible } from "#src/client/text";
+import { abandonedText } from "#src/client/turn-end-abort";
 
 export const MAX_CONCURRENT_TOOL_CALLS = 8;
 /** Byte cap of an approval summary (native: EMBEDDER_SUMMARY_BYTES). */
@@ -104,8 +105,8 @@ export function toolSummary(tool: EmbedderTool, input: unknown, secrets: readonl
   return capBytes(visible.replace(/[\n\t]+/g, " ").trim(), TOOL_SUMMARY_BYTES);
 }
 
-function abandoned(name: string): CallToolResult {
-  return textResult(`Tool "${name}" was abandoned: the turn ended.`, true);
+function abandoned(name: string, signal: AbortSignal): CallToolResult {
+  return textResult(abandonedText(name, signal), true);
 }
 
 function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext): Promise<CallToolResult> {
@@ -123,10 +124,10 @@ function runSafely(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext)
 
 /** Answers at once when the signal aborts: a run that ignores its signal is abandoned and its late result ignored. */
 async function invoke(tool: EmbedderTool, input: unknown, ctx: EmbedderToolContext): Promise<CallToolResult> {
-  if (ctx.signal.aborted) return abandoned(tool.name);
+  if (ctx.signal.aborted) return abandoned(tool.name, ctx.signal);
   let onAbort = (): void => {};
   const aborted = new Promise<CallToolResult>((resolve) => {
-    onAbort = () => resolve(abandoned(tool.name));
+    onAbort = () => resolve(abandoned(tool.name, ctx.signal));
     ctx.signal.addEventListener("abort", onAbort, { once: true });
   });
   try {
@@ -168,7 +169,7 @@ export function createToolCalls(deps: ToolCallDeps): ToolCalls {
     accepted += 1;
     const input = args ?? {};
     const ctx: EmbedderToolContext = { sessionId: deps.sessionId, toolCallId: `mcp-${accepted}`, signal };
-    if (signal.aborted) return abandoned(tool.name);
+    if (signal.aborted) return abandoned(tool.name, signal);
     const denied = await approve(deps, tool, input, ctx);
     return denied ?? invoke(tool, input, ctx);
   };

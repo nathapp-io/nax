@@ -20,6 +20,7 @@ import { NaxError } from "@nathapp/nax-agent";
 import { TOOL_HOST_SERVER_NAME } from "#src/client/pre-approval";
 import { race } from "#src/client/race";
 import type { ToolCalls } from "#src/client/tool-calls";
+import { TurnEndAbort } from "#src/client/turn-end-abort";
 
 export type HttpMcpServer = Extract<McpServer, { type: "http" }>;
 
@@ -163,7 +164,7 @@ async function serveMcp(state: HostState, req: IncomingMessage, res: ServerRespo
   );
   const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
   res.on("close", () => {
-    gone.abort();
+    gone.abort(new TurnEndAbort("the agent closed the tool request"));
     void transport.close().catch(() => undefined);
     void server.close().catch(() => undefined);
   });
@@ -255,7 +256,7 @@ export function createToolHost(
     },
     drain: () => calls.drain(),
     stop() {
-      state.stopped.abort();
+      state.stopped.abort(new TurnEndAbort("the tool host stopped"));
       stopping ??= close(http);
       return stopping;
     },

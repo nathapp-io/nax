@@ -232,8 +232,15 @@ describe("a call that outlives its turn (Review Focus 1)", () => {
     expect(endOf(events).status).toBe("cancelled");
     expect(seen[0]?.signal.aborted).toBe(true);
     await waitForCondition(() => results(o).length === 1, 3_000);
+    // US-004: the session's cancel aborts its turn signal with a NaxError reason, so the
+    // abandoned text names it — the caller's own reason is kept, not replaced.
     expect(results(o)[0]).toMatchObject({
-      result: { content: [{ type: "text", text: 'Tool "slow" was abandoned: the turn ended.' }], isError: true },
+      result: {
+        content: [
+          { type: "text", text: 'Tool "slow" was abandoned: the turn ended (AGENT_SESSION_CANCELLED: cancelled).' },
+        ],
+        isError: true,
+      },
     });
   });
 
@@ -250,6 +257,26 @@ describe("a call that outlives its turn (Review Focus 1)", () => {
     const events = await turn;
     expect(endOf(events).status).toBe("errored");
     expect(seen[0]?.signal.aborted).toBe(true);
+  });
+
+  test("US-004 AC-9: the agent process dying answers the run with (the agent process exited)", async () => {
+    const seen: EmbedderToolContext[] = [];
+    const o = await open(
+      "full",
+      [{ kind: "mcpCall", tool: "slow", input: {}, detached: true }, { kind: "hang" }],
+      [hangingTool(seen)],
+    );
+    const turn = driveTurn(o.session, "x");
+    await waitForCondition(() => seen.length === 1, 3_000);
+    o.fake.crash();
+    await turn;
+    await waitForCondition(() => results(o).length === 1, 3_000);
+    expect(results(o)[0]).toMatchObject({
+      result: {
+        content: [{ type: "text", text: 'Tool "slow" was abandoned: the turn ended (the agent process exited).' }],
+        isError: true,
+      },
+    });
   });
 });
 

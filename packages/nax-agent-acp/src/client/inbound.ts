@@ -27,6 +27,7 @@ import type { TurnCollector } from "#src/client/events";
 import type { OwnToolLedger } from "#src/client/own-tool-calls";
 import { isDenial, rejectLocally } from "#src/client/permissions";
 import { isRecord } from "#src/client/text";
+import { TurnEndAbort } from "#src/client/turn-end-abort";
 
 /** Concurrent permission requests and elicitations one turn may hold; further ones are answered locally. */
 export const MAX_PENDING_DECISIONS = 16;
@@ -177,7 +178,7 @@ export function createInboundRouter(
       active = binding;
       return async () => {
         if (active === binding) active = undefined;
-        scope.abort();
+        scope.abort(new TurnEndAbort("the ACP prompt turn ended"));
         await Promise.allSettled([...binding.pending]);
       };
     },

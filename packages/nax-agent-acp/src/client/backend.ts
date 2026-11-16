@@ -53,6 +53,7 @@ import { shellSandboxPlan } from "#src/client/shell-sandbox";
 import { createToolCalls } from "#src/client/tool-calls";
 import { createToolHost, newToolHostServerName, newToolHostToken, type ToolHost } from "#src/client/tool-host";
 import { runPromptTurn, type TurnState } from "#src/client/turn";
+import { TurnEndAbort } from "#src/client/turn-end-abort";
 import { type CostMeter, createCostMeter } from "#src/client/usage";
 
 /** Test seam: the process launcher, the tool host factory and its server name. Production always uses launchAgent, createToolHost and newToolHostServerName. */
@@ -221,7 +222,7 @@ async function connect(
   const status = { disconnected: false };
   void acp.launched.exited.then(() => {
     status.disconnected = true;
-    gone.abort();
+    gone.abort(new TurnEndAbort("the agent process exited"));
   });
   const state: TurnState = {
     link: acp.link,
