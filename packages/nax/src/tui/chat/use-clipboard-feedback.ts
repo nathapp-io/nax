@@ -7,7 +7,7 @@ import type { MouseEvents } from "./mouse-input";
 /**
  * The gesture the footer offers, in precedence order: an armed quit, then an armed clear,
  * then the esc layer's own hint (what esc would close, deny or cancel right now), then a
- * running turn whose queue can be sent now (`US-005`), then a running turn (with a background
+ * running turn whose queue can be sent now (chat-polish `US-005`), then a running turn (with a background
  * key when available), then expanded detail, then idle. Only one is ever shown, so the
  * warning-coloured quit hint is never hidden behind something the screen is merely doing, and
  * the layer hint is never hidden behind the busy one.

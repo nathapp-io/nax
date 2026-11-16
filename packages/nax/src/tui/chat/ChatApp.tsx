@@ -866,7 +866,7 @@ export function ChatApp({
   }
 
   /**
-   * The oldest queued line, when ctrl+s is the queue's rather than the prompt's (US-005): a
+   * The oldest queued line, when ctrl+s is the queue's rather than the prompt's (queued send, chat-polish US-005): a
    * turn is sending, the prompt is empty (its text trims to `""` — a slash line is not empty
    * and keeps today's behaviour), and no interrupt send is waiting. A pending interrupt send
    * already owns what happens next, and the queue drains behind it, so those lines stay put.
@@ -881,7 +881,7 @@ export function ChatApp({
   /**
    * ctrl+s (US-004): hand the typed line to the turn that is running, or — with nothing
    * running — send it exactly as a return would. With the prompt empty and a line waiting in
-   * the queue, the oldest queued line goes to the turn instead (US-005).
+   * the queue, the oldest queued line goes to the turn instead (chat-polish US-005).
    *
    * Which of the two it is comes from `sending`, never from the rendered `busy` flag: a return,
    * the text typed after it and this chord can arrive in one batch, and the flag of the render
@@ -1245,7 +1245,7 @@ export function ChatApp({
   }
 
   /**
-   * Whether ctrl+s would send a queued line now (US-005) — the key's own rule, read here for the
+   * Whether ctrl+s would send a queued line now (chat-polish US-005) — the key's own rule, read here for the
    * footer: the queue is not empty, the draft trims to `""`, and no interrupt send is waiting.
    */
   function queuedNow(): boolean {
@@ -1273,7 +1273,7 @@ export function ChatApp({
             tmux,
             // The esc layer's own hint, which names what esc would close, deny or cancel now.
             layer: escHint !== undefined,
-            // Whether ctrl+s would send a queued line now (US-005).
+            // Whether ctrl+s would send a queued line now (chat-polish US-005).
             queued: queuedNow(),
           })
         : "copied",
