@@ -3,7 +3,7 @@
   "feature": "background-agents-and-forge-kind",
   "branchName": "feat/background-agents-and-forge-kind",
   "createdAt": "2026-11-16T11:16:53.192Z",
-  "updatedAt": "2026-11-16T11:44:02.105Z",
+  "updatedAt": "2026-11-16T11:55:50.850Z",
   "userStories": [
     {
       "id": "US-001",
@@ -103,14 +103,17 @@
         "skills"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "Additive source using the existing path seam, directory scanner and catalog precedence; several fixture adjustments isolate real-home discovery without a new architecture."
+        "reasoning": "Additive source using the existing path seam, directory scanner and catalog precedence; several fixture adjustments isolate real-home discovery without a new architecture.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/resources/catalog.ts",
@@ -148,7 +151,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5fd61c47361e54be8691c0d924fd0b6c17dcf513"
     },
     {
       "id": "US-003",
