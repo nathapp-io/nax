@@ -10,14 +10,17 @@ import { describe, expect, test } from "bun:test";
 import {
   MAX_QUEUED_ROWS,
   type MessageQueue,
+  pendingPreviewLines,
   pushDiscardedSteer,
   pushQueued,
   pushQueuedFront,
   queueRowLines,
   queueToPrompt,
+  type SteeringRow,
   steeringRowLines,
   takeQueued,
 } from "@/tui/chat/message-queue";
+import { displayWidth } from "@/tui/chat/styled-line";
 
 describe("takeQueued", () => {
   test("AC-1 takes the oldest message and leaves the rest in order", () => {
@@ -142,6 +145,102 @@ describe("queueRowLines", () => {
 
   test("strips an escape sequence a queued line carries", () => {
     expect(queueRowLines(["\u001b[2Jred"])).toEqual(["queued · red"]);
+  });
+});
+
+describe("pendingPreviewLines", () => {
+  /** `count` pending steers, each naming its own arrival position. */
+  function steersOf(count: number): readonly SteeringRow[] {
+    return Array.from({ length: count }, (_unused, index) => ({ steerId: `s${index + 1}`, text: `s${index + 1}` }));
+  }
+
+  /** `count` queued texts, each naming its own place in the queue. */
+  function queueOf(count: number): MessageQueue {
+    return Array.from({ length: count }, (_unused, index) => `q${index + 1}`);
+  }
+
+  /** The previews a projection of `count` pending items shows at `budget` rows. */
+  function projected(count: number, budget: number): readonly string[] {
+    return pendingPreviewLines({ queued: queueOf(count), budget });
+  }
+
+  /** Every pending item's own row, in the spec's group order: steers first, then the queue. */
+  function allItems(steerCount: number, queueCount: number): readonly string[] {
+    return [...steeringRowLines(steersOf(steerCount)), ...queueRowLines(queueOf(queueCount))];
+  }
+
+  test("AC-14 crosses 0, 1, 4, 5, 17 and 40 items with every budget through 4", () => {
+    for (const count of [0, 1, 4, 5, 17, 40]) {
+      for (const budget of [0, 1, 2, 3, 4]) {
+        const rows = projected(count, budget);
+        expect({ count, budget, length: rows.length }).toEqual({ count, budget, length: Math.min(count, budget) });
+        // The summary sits inside the budget, never beside it: the last row is the summary.
+        if (budget > 0 && count > budget) expect(rows.at(-1)).toBe(`+${count - budget + 1} pending`);
+      }
+    }
+  });
+
+  test("AC-15 shows the first B-1 items and counts every hidden one when 17 items meet three rows", () => {
+    expect(projected(17, 3)).toEqual(["queued · q1", "queued · q2", "+15 pending"]);
+  });
+
+  test("AC-16 shows every item it can fit, steers in arrival order then queued oldest first", () => {
+    const rows = pendingPreviewLines({ steering: steersOf(2), queued: queueOf(2), budget: 4 });
+    expect(rows).toEqual(allItems(2, 2));
+    expect(rows).toEqual(["steering · s1", "steering · s2", "queued · q1", "queued · q2"]);
+  });
+
+  test("AC-16 shows no summary row when everything fits, whatever the budget", () => {
+    expect(projected(4, 4)).toEqual(["queued · q1", "queued · q2", "queued · q3", "queued · q4"]);
+    expect(pendingPreviewLines({ steering: steersOf(2), queued: queueOf(2) })).toEqual(allItems(2, 2));
+  });
+
+  test("AC-17 counts the hidden items across both groups on the final row", () => {
+    expect(pendingPreviewLines({ steering: steersOf(3), queued: queueOf(2), budget: 3 })).toEqual([
+      "steering · s1",
+      "steering · s2",
+      "+3 pending",
+    ]);
+  });
+
+  test("AC-18 with one whole row for more than one item, draws only the combined summary", () => {
+    expect(pendingPreviewLines({ steering: steersOf(1), queued: queueOf(1), budget: 1 })).toEqual(["+2 pending"]);
+    expect(projected(17, 1)).toEqual(["+17 pending"]);
+  });
+
+  test("AC-19 with one row for exactly one item, draws that item's labelled preview", () => {
+    expect(pendingPreviewLines({ steering: steersOf(1), budget: 1 })).toEqual(["steering · s1"]);
+    expect(projected(1, 1)).toEqual(["queued · q1"]);
+  });
+
+  test("AC-20 draws nothing at all for a zero-row budget", () => {
+    expect(pendingPreviewLines({ steering: steersOf(3), queued: queueOf(2), budget: 0 })).toEqual([]);
+  });
+
+  test("AC-20 draws nothing when nothing is pending, whatever the budget", () => {
+    expect(pendingPreviewLines({ steering: [], queued: [], budget: 4 })).toEqual([]);
+  });
+
+  test("AC-21 flattens line breaks and strips escapes so each item stays one row", () => {
+    expect(pendingPreviewLines({ steering: [{ steerId: "s1", text: "\u001b[2Jone\ntwo" }], budget: 4 })).toEqual([
+      "steering · one two",
+    ]);
+  });
+
+  test("AC-21 cuts a projection to the columns it is drawn into", () => {
+    const [row] = pendingPreviewLines({ queued: ["x".repeat(80)], budget: 4, columns: 20 });
+    expect(displayWidth(row ?? "")).toBe(20);
+  });
+
+  test("AC-22 leaves the stored messages, the order and the steering rows untouched", () => {
+    const steering: readonly SteeringRow[] = steersOf(3);
+    const queued: MessageQueue = queueOf(17);
+    pendingPreviewLines({ steering, queued, budget: 4 });
+    expect(steering).toEqual(steersOf(3));
+    expect(queued).toEqual(queueOf(17));
+    expect(steering.map((row) => row.steerId)).toEqual(["s1", "s2", "s3"]);
+    expect(queued[0]).toBe("q1");
+    expect(queued.at(-1)).toBe("q17");
   });
 });
 
