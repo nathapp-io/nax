@@ -8,24 +8,6 @@ appliesTo:
   - "packages/nax/src/**/*.ts"
   - "packages/nax/bin/*.ts"
   - "packages/nax-agent/src/**/*.ts"
-stages:
-  - "context"
-  - "execution"
-  - "tdd-implementer"
-  - "rectify"
-  - "review"
-  - "review-semantic"
-  - "review-adversarial"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "no-test"
-  - "batch"
-  - "queue-check"
-  - "routing"
-  - "constitution"
-  - "prompt"
-  - "optimizer"
 ---
 
 # Monorepo & Language-Agnostic Awareness

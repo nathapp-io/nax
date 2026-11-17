@@ -7,20 +7,6 @@ paths:
 appliesTo:
   - "packages/nax/test/**/*.test.ts"
   - "packages/nax-agent/test/**/*.test.ts"
-stages:
-  - "context"
-  - "execution"
-  - "tdd-test-writer"
-  - "tdd-verifier"
-  - "tdd-implementer"
-  - "rectify"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "batch"
-  - "acceptance"
-  - "review-semantic"
-  - "review-adversarial"
 ---
 
 # Forbidden Patterns

@@ -6,28 +6,6 @@
       "maxAcCount": 24
     }
   },
-  "models": {
-    "claude": {
-      "fast": "haiku",
-      "balanced": "sonnet",
-      "powerful": "sonnet"
-    },
-    "opencode": {
-      "fast": "minimax/MiniMax-M2.7",
-      "balanced": "minimax/MiniMax-M2.7",
-      "powerful": "minimax/MiniMax-M2.7"
-    },
-    "pi": {
-      "fast": "huggingface/MiniMaxAI/MiniMax-M2.7",
-      "balanced": "huggingface/MiniMaxAI/MiniMax-M2.7",
-      "powerful": "huggingface/MiniMaxAI/MiniMax-M2.7"
-    },
-    "native": {
-      "fast": "minimax/MiniMax-M2.7",
-      "balanced": "minimax/MiniMax-M3",
-      "powerful": "opencode-go/deepseek-v4.1-flash[high]"
-    }
-  },
   "autoMode": {
     "complexityRouting": {
       "simple": "fast",

@@ -7,26 +7,6 @@ paths:
 appliesTo:
   - "packages/nax/src/**/*.ts"
   - "packages/nax-agent/src/**/*.ts"
-stages:
-  - "context"
-  - "execution"
-  - "tdd-test-writer"
-  - "tdd-implementer"
-  - "tdd-verifier"
-  - "rectify"
-  - "review"
-  - "review-semantic"
-  - "review-adversarial"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "no-test"
-  - "batch"
-  - "queue-check"
-  - "routing"
-  - "constitution"
-  - "prompt"
-  - "optimizer"
 ---
 
 # Error Handling Patterns
