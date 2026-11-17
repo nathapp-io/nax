@@ -19,7 +19,15 @@ import { formatDuration } from "@/log-format";
 import { getSafeLogger } from "@/logger";
 import { cancellableDelay } from "@/utils/bun-deps";
 import { EMPTY_STARVED_LEDGER, type StarvedLedger, starvedAtDeadline } from "./ci-starved";
+import {
+  EMPTY_SAME_HEAD_RERUN_STATE,
+  type SameHeadRerun,
+  type SameHeadRerunState,
+  settleSameHead,
+} from "./ci-wait-same-head";
 import { headMismatchDetail, readHeadSha, settlePoll, type WaitContext } from "./ci-wait-starved";
+
+export type { SameHeadRerun };
 
 export type CiWaitOutcome = "green" | "failed" | "pending" | "conflicting" | "no-checks" | "unavailable" | "starved";
 
@@ -28,6 +36,8 @@ export interface CiWaitResult {
   readonly detail: string;
   /** Present exactly when `outcome` is `"starved"`: the checks no runner ever picked up (US-002). */
   readonly starvedChecks?: readonly string[];
+  /** Present exactly when this wait re-ran checks: their names, in the order it re-ran them (US-002). */
+  readonly sameHeadReruns?: readonly string[];
 }
 
 /**
@@ -461,6 +471,8 @@ export async function waitForChecks(
     readonly expectedSha?: string;
     /** Re-run starved jobs, at most `CI_STARVED_RERUN_LIMIT` rounds; absent means do not. */
     readonly rerunStarved?: boolean;
+    /** How the wait reads and re-runs the failed checks of the head commit; absent means never (US-002). */
+    readonly sameHeadRerun?: SameHeadRerun;
   },
 ): Promise<CiWaitResult> {
   const startedAt = _ciWaitDeps.now();
@@ -476,6 +488,8 @@ export async function waitForChecks(
   };
   /** The wait's own bookkeeping: which rounds it spent and which jobs it re-ran (US-002). */
   let ledger: StarvedLedger = EMPTY_STARVED_LEDGER;
+  /** The same-head re-run's bookkeeping: the names it re-ran, its set-aside polls, its progress (US-002). */
+  let sameHead: SameHeadRerunState = EMPTY_SAME_HEAD_RERUN_STATE;
   let cancelHeartbeat = (): void => {};
   const progress = progressLog(() => {
     // Every info line starts a fresh deadline. A fixed interval could skip a
@@ -487,7 +501,7 @@ export async function waitForChecks(
   /** Every terminal return, and only a terminal return, says how it ended — with the result's own fields. */
   const end = (result: CiWaitResult): CiWaitResult => {
     progress.done(result.outcome, startedAt);
-    return result;
+    return sameHead.rerunNames.length === 0 ? result : { ...result, sameHeadReruns: sameHead.rerunNames };
   };
   // Independent of polling and of any single sleep: a slow forge call cannot
   // suppress the heartbeat, and the schedule is cancelled on every return path.
@@ -500,7 +514,9 @@ export async function waitForChecks(
       const terminal = terminalPoll(poll) ?? history.onErrorLimit(errors.note(poll));
       const settled = await settlePoll({ wait, poll, ledger, terminal, run: _ciWaitDeps.run });
       ledger = settled.ledger;
-      if (settled.result) return end(settled.result);
+      const decided = await settleSameHead(opts.sameHeadRerun, { poll, result: settled.result, state: sameHead });
+      sameHead = decided.state;
+      if (decided.result) return end(decided.result);
       if (_ciWaitDeps.now() + opts.pollMs > deadline) {
         return end(
           deadlineVerdict({
