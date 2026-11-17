@@ -272,6 +272,32 @@ async function prepareRun(
 /** How many characters of HEAD a refusal names. */
 const HEAD_SHORT = 7;
 
+/** The flag every launch argv spells its project directory with (`nax run -f f1 -d <root>`). */
+const DIR_FLAG = "-d";
+
+/**
+ * The repository a chain step runs in, read from its argv — the chain record keeps no repo field.
+ * A step whose argv names none runs in the chat's own checkout, which is what its launch builds.
+ */
+function stepRepoRoot(argv: readonly string[], chatRoot: string): string {
+  const index = argv.indexOf(DIR_FLAG);
+  return (index === -1 ? undefined : argv[index + 1]) ?? chatRoot;
+}
+
+/**
+ * US-002: whether the chain's next step is exactly the publish this refusal stopped. A feature name
+ * alone is not enough: the same feature name can exist in two repositories, and refusing one must
+ * not stop an approved step that runs in the other.
+ */
+function isRefusedPublishStep(
+  step: { readonly kind: string; readonly target: string; readonly argv: readonly string[] } | undefined,
+  input: JobLaunchInput,
+  repoRoot: string,
+): boolean {
+  if (input.kind !== "publish" || step?.kind !== "publish" || step.target !== input.feature) return false;
+  return stepRepoRoot(step.argv, repoRoot) === repoRoot;
+}
+
 /**
  * US-002: already published at this HEAD. An advisory read: an unreadable record or HEAD refuses
  * nothing, because the workflow's own publish-only checks decide, on their own reads.
@@ -370,13 +396,9 @@ async function launchReason(prepared: Prepared, options: JobsProviderOptions, fr
  * the publish that was refused would wait forever. Stop it with the same words the tool returned.
  */
 function stopRefusedPublishStep(error: string, input: JobLaunchInput, options: JobsProviderOptions): ToolResult {
-  if (input.kind === "publish") {
-    const next = options.chains?.summary()?.next;
-    const step = next === undefined ? undefined : options.chains?.active()?.steps[next - 1];
-    if (step?.kind === "publish" && step.target === input.feature) {
-      options.chains?.stop(error.replace(/^\[chat\] /, ""));
-    }
-  }
+  const next = options.chains?.summary()?.next;
+  const step = next === undefined ? undefined : options.chains?.active()?.steps[next - 1];
+  if (isRefusedPublishStep(step, input, options.repoRoot)) options.chains?.stop(error.replace(/^\[chat\] /, ""));
   return { isError: true, content: error };
 }
 

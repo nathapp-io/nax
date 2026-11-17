@@ -163,6 +163,11 @@ export interface JobNoticeInput {
   readonly chainStep?: number;
   /** US-004: present when the job left a draft PR held by open items. */
   readonly held?: JobNoticeHeld;
+  /**
+   * The job's repository relative to the chat's folder, present only when the job ran in a nested
+   * nax project: its guidance then has to name that repository or it reads the chat's own feature.
+   */
+  readonly repo?: string;
 }
 
 /**
@@ -192,17 +197,23 @@ function heldOpening(held: JobNoticeHeld): string {
  * US-004 (user ruling 2026-11-17): the evidence-first, single-approval ruling plan every
  * held-draft notice carries — settle each item from evidence, ask the user once, and post
  * the drafted replies on their one yes.
+ *
+ * `repo` scopes every command it prescribes: a run launched with `repo` left the chat in its
+ * parent folder, so an unscoped status command reads the wrong feature (or none).
  */
-function heldPlan(target: string): string {
+function heldPlan(target: string, repo: string | undefined): string {
+  const directory = repo === undefined ? "" : ` -d ${repo}`;
+  const botRepo = repo === undefined ? "" : `, each with repo ${repo}`;
+  const forgeRepo = repo === undefined ? "" : ` run from ${repo}`;
   return [
-    `Read them with nax workflow status -f ${target} --json, then settle each one from evidence as the nax-finish skill's Step 3 does (load it with nax-skills__load when it is listed): verify the item's premise against commits, code and tests, and draft one reply per item whose first line is its ruling keyword (verified:, confirm:, override:, waive: or fixed <sha>) followed by the evidence; findings are left to nax bot fix.`,
-    "Then send the user one message with every drafted reply and the plan (post the replies on their item threads, then nax-jobs__bot_review, then nax-jobs__bot_fix); on their yes, post each reply on its item's thread with gh or glab and propose that chain.",
+    `Read them with nax workflow status -f ${target}${directory} --json, then settle each one from evidence as the nax-finish skill's Step 3 does (load it with nax-skills__load when it is listed): verify the item's premise against commits, code and tests, and draft one reply per item whose first line is its ruling keyword (verified:, confirm:, override:, waive: or fixed <sha>) followed by the evidence; findings are left to nax bot fix.`,
+    `Then send the user one message with every drafted reply and the plan (post the replies on their item threads, then nax-jobs__bot_review, then nax-jobs__bot_fix${botRepo}); on their yes, post each reply on its item's thread with gh or glab${forgeRepo} and propose that chain.`,
   ].join(" ");
 }
 
 /** US-004: the whole held-draft notice line, opening and plan. */
-function heldNoticeLine(held: JobNoticeHeld, target: string): string {
-  return `${heldOpening(held)} ${heldPlan(target)}`;
+function heldNoticeLine(held: JobNoticeHeld, target: string, repo: string | undefined): string {
+  return `${heldOpening(held)} ${heldPlan(target, repo)}`;
 }
 
 /** Pure completion notice shared by owned and re-attached background jobs. */
@@ -215,7 +226,7 @@ export function buildJobNotice(input: JobNoticeInput): string {
   ];
   // US-004: a held draft has stopped the chain, so its guidance replaces the chain line.
   if (input.held !== undefined) {
-    noticeLines.push(heldNoticeLine(input.held, input.target));
+    noticeLines.push(heldNoticeLine(input.held, input.target, input.repo));
   } else if (input.chainId !== undefined) {
     noticeLines.push(chainNoticeLine(input.chainId, input.chainStep));
   }

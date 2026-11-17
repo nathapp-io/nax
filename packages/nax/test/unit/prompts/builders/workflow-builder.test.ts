@@ -284,6 +284,13 @@ describe("buildJobNotice — held draft", () => {
     expect(heldThird({ items })).toContain("held by 7 open items (I-1, I-2, I-3, I-4, I-5, and 2 more)");
   });
 
+  test("a nested repository scopes the status command, the bot steps and the forge commands to it", () => {
+    const third = lines(workflow.buildJobNotice({ ...JOB, target: "f1", held: HELD_TWO, repo: "repos/nax" }))[2] ?? "";
+    expect(third).toContain("Read them with nax workflow status -f f1 -d repos/nax --json");
+    expect(third).toContain("nax-jobs__bot_review, then nax-jobs__bot_fix, each with repo repos/nax");
+    expect(third).toContain("post each reply on its item's thread with gh or glab run from repos/nax");
+  });
+
   test("US-004 AC-9 a held chained job keeps three lines and drops the chain continuation line", () => {
     const noticeLines = lines(
       workflow.buildJobNotice({

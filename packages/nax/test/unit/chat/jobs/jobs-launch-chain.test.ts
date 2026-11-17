@@ -354,4 +354,53 @@ describe("launchJob publish refusal stops the matching chain step", () => {
     expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
     expect(chains.stop).not.toHaveBeenCalled();
   });
+
+  /** A publish step's real argv names the repository it runs in; the chat's own is the default. */
+  function publishArgv(repoRoot: string): string[] {
+    return [...options.naxEntry, "run", "-f", "f1", "-d", repoRoot, "--headless", "--publish-only"];
+  }
+
+  test("the same feature name in another repository is not the step this refusal stops", async () => {
+    await allPassedPrd();
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: publishArgv(join(options.repoRoot, "repos", "other")), target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
+    expect(chains.stop).not.toHaveBeenCalled();
+  });
+
+  test("a refusal in a nested repository leaves the chat's own publish step active", async () => {
+    await allPassedPrd();
+    const nested = join(options.repoRoot, "repos", "other");
+    await Bun.write(
+      join(featureDir(nested, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
+    );
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: publishArgv(options.repoRoot), target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1", repo: "repos/other" })).toMatchObject({ isError: true });
+    expect(chains.stop).not.toHaveBeenCalled();
+  });
+
+  test("the step this refusal stops is the one that runs in the same repository", async () => {
+    await allPassedPrd();
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: publishArgv(options.repoRoot), target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
+    expect(chains.stop).toHaveBeenCalledWith(publishedAtHead);
+  });
 });

@@ -526,6 +526,22 @@ describe("createJobRunner", () => {
     jobs.dispose();
   });
 
+  test("a job in a nested repository carries that repository into the held-draft notice", async () => {
+    _jobOutcomeDeps.readStatusFile = async () => draftStatus(child.pid);
+    _jobOutcomeDeps.resolveOutputDir = async () => join(repoRoot, "output");
+    _jobOutcomeDeps.loadRunVerdict = async () => draftRun([{ id: "D-1", kind: "advisor", issue: "D-1 is open" }]);
+    const jobs = runner();
+    const ended = nextTerminal(jobs);
+    await jobs.start({ ...request, cwd: join(repoRoot, "repos", "nax") });
+    exit(0);
+    await ended;
+    const notice = jobs.peekNotice() ?? "";
+    expect(notice).toContain("nax workflow status -f f1 -d repos/nax --json");
+    expect(notice).toContain("nax-jobs__bot_review, then nax-jobs__bot_fix, each with repo repos/nax");
+    expect(clock.pending()).toBe(0);
+    jobs.dispose();
+  });
+
   test("missing log is empty and dispose does not signal; unsubscribe removes listener", async () => {
     const jobs = runner();
     const changed = mock(() => {});
