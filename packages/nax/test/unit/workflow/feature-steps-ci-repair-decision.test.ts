@@ -439,6 +439,108 @@ describe("the failed and skipped steps in the finding's issue (US-004)", () => {
   });
 });
 
+/**
+ * US-004: a check that passed on another pipeline for the same commit is the one fact the log cannot
+ * give — it says the failure may not reproduce. The issue says so, and only when that fact is there,
+ * so every other finding keeps exactly the text it had.
+ */
+describe("the same-head facts in the finding's issue (US-004)", () => {
+  const SAME_HEAD_URL = "https://gitlab.com/g/p/-/jobs/601";
+  const SAME_HEAD = "This check passed on another pipeline for the same commit";
+  const RERAN = "The CI wait re-ran it once before this repair round.";
+
+  /** The issue the publish step patched for the single failed check of these seams. */
+  async function issueOf(opts: HarnessOpts): Promise<string | undefined> {
+    const h = harness(opts);
+    const out = await publishStep(h.env, h.env.record);
+    return out.patch.ciRepairFindings?.[0]?.issue;
+  }
+
+  /** One failed `test` check that passed elsewhere on the same commit, repair round left. */
+  function sameHead(passedOnSameHead: FailedCheck["passedOnSameHead"], extra: HarnessOpts = {}): HarnessOpts {
+    return { checks: [{ name: "test", excerpt: "boom", passedOnSameHead }], limits: LIMITS, ...extra };
+  }
+
+  test("AC-1: a check that passed elsewhere names that fact and where it passed", async () => {
+    const issue = await issueOf(sameHead({ url: SAME_HEAD_URL }));
+    expect(issue).toEndWith(`${SAME_HEAD} (${SAME_HEAD_URL}).`);
+  });
+
+  test("AC-2: a same-head fact with no url is still the fact, without a location", async () => {
+    expect(await issueOf(sameHead({}))).toEndWith(`${SAME_HEAD}.`);
+  });
+
+  test("AC-3: a check the CI wait re-ran says so", async () => {
+    const issue = await issueOf(
+      sameHead({ url: SAME_HEAD_URL }, { published: { ...DRAFT_FAILED, ciReruns: ["test"] } }),
+    );
+    expect(issue).toContain(RERAN);
+  });
+
+  test("AC-4: a re-run of another check is not this check's re-run", async () => {
+    const issue = await issueOf(
+      sameHead({ url: SAME_HEAD_URL }, { published: { ...DRAFT_FAILED, ciReruns: ["lint"] } }),
+    );
+    expect(issue).not.toContain(RERAN);
+    // The control: the same seams naming this check do print it.
+    const control = await issueOf(
+      sameHead({ url: SAME_HEAD_URL }, { published: { ...DRAFT_FAILED, ciReruns: ["test"] } }),
+    );
+    expect(control).toContain(RERAN);
+  });
+
+  test("AC-5: green repository gates are named, with the commands that ran", async () => {
+    const issue = await issueOf(
+      sameHead({ url: SAME_HEAD_URL }, { record: { finalGates: { ran: ["build", "test"], failing: [] } } }),
+    );
+    expect(issue).toContain("The repository's own gates (build, test) passed locally on this commit.");
+  });
+
+  test("AC-6: repository gates that failed locally are not cited", async () => {
+    const issue = await issueOf(
+      sameHead({ url: SAME_HEAD_URL }, { record: { finalGates: { ran: ["build", "test"], failing: ["test"] } } }),
+    );
+    expect(issue).not.toContain("repository's own gates");
+    // The control: the same seams with green gates do cite them.
+    const control = await issueOf(
+      sameHead({ url: SAME_HEAD_URL }, { record: { finalGates: { ran: ["build", "test"], failing: [] } } }),
+    );
+    expect(control).toContain("repository's own gates");
+  });
+
+  test("AC-7: a check with no same-head fact keeps the plain issue, whatever else the publish knows", async () => {
+    const issue = await issueOf({
+      checks: [{ name: "e2e", excerpt: "boom" }],
+      limits: LIMITS,
+      published: { ...DRAFT_FAILED, ciReruns: ["e2e"] },
+      record: { finalGates: { ran: ["build"], failing: [] } },
+    });
+    expect(issue).toBe(`CI check e2e failed:\n${markdownFence("boom")}`);
+  });
+
+  test("AC-8: the facts are one blank line after the fenced excerpt", async () => {
+    const issue = await issueOf(sameHead({ url: SAME_HEAD_URL }));
+    expect(issue).toContain(`${markdownFence("boom")}\n\n${SAME_HEAD}`);
+    expect(issue).not.toContain("\n\n\n");
+  });
+
+  test("AC-9: the three facts read as one paragraph, in that order", async () => {
+    const issue = await issueOf(
+      sameHead(
+        {},
+        {
+          published: { ...DRAFT_FAILED, ciReruns: ["test"] },
+          record: { finalGates: { ran: ["build"], failing: [] } },
+        },
+      ),
+    );
+    expect(issue).toBe(
+      `CI check test failed:\n${markdownFence("boom")}\n\n` +
+        `${SAME_HEAD}. ${RERAN} The repository's own gates (build) passed locally on this commit.`,
+    );
+  });
+});
+
 describe("the shared harness's CI repair seams (US-006)", () => {
   test("the scripted publish outcomes come in order, and the last one repeats", async () => {
     const seq: PublishOutcome[] = [

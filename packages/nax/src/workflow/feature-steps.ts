@@ -505,6 +505,15 @@ export async function publishStep(
   const why = out.reasons.length > 0 ? `: ${out.reasons.join("; ")}` : "";
   log.done(`${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`);
   await env.sink.ledger(ledgerText.note(`feature ${out.outcome}${out.url ? ` ${out.url}` : ""}${why}`), NO_MIRROR);
+  // US-003: the checks the CI wait re-ran are a fact of this publish, and the ledger is the only
+  // record of it — nax posts no PR comment about a re-run.
+  if (out.ciReruns?.length) {
+    const names = out.ciReruns.join("; ");
+    await env.sink.ledger(
+      ledgerText.note(`CI re-ran ${names}: they passed on another pipeline for the same commit`),
+      NO_MIRROR,
+    );
+  }
   // US-006: a draft PR whose CI failed may still be repairable, so the decision reads the failed
   // checks before the step ends. It never changes the publish outcome itself: the repair is a
   // separate node, and a run that may not repair keeps the draft it has. US-005: the one read also
@@ -528,6 +537,9 @@ export async function publishStep(
       // (the url is deliberately not cleared: the re-publish keeps the PR an earlier one opened).
       approval: out.approval,
       ciDetail: out.ciDetail,
+      // US-003: `ciReruns` is this publish's fact too, so it is written unconditionally: a wait
+      // that re-ran nothing clears what an earlier publish recorded.
+      ciReruns: out.ciReruns,
       storyStates: env.facts.stories.map((s) => ({
         id: s.id,
         state: s.state,

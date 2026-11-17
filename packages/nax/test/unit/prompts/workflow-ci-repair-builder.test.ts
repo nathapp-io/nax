@@ -10,6 +10,9 @@ import { describe, expect, test } from "bun:test";
 import { assertDefined } from "@test/helpers";
 import {
   buildWorkflowCiRepairPrompt,
+  CI_REPAIR_NO_SHORTCUTS_RULE,
+  CI_REPAIR_NON_REPRODUCIBLE_OUTCOME,
+  CI_REPAIR_STEP_REPRODUCTION_RULE,
   memorySectionOf,
   REPAIR_VERIFICATION_RULE,
   WORKFLOW_ARTIFACTS_RULE,
@@ -99,6 +102,28 @@ describe("buildWorkflowCiRepairPrompt", () => {
     const text = buildWorkflowCiRepairPrompt({ round: 1, reportPath: REPORT, findings });
     expect(text.startsWith("You are repairing the CI of this pull request.")).toBe(true);
     expect(text).not.toContain("undefined");
+  });
+});
+
+/**
+ * US-004 — the non-reproducible outcome.
+ *
+ * A check that passed on another pipeline for the same commit may not reproduce. Without an allowed
+ * no-change outcome the brief describes editing as the only move, so the repair edits something to
+ * have something to report. The outcome joins the list of rules, and every old rule stays.
+ */
+describe("buildWorkflowCiRepairPrompt — the non-reproducible outcome (US-004)", () => {
+  test("AC-10: the allowed no-change outcome follows the step rule, verbatim", () => {
+    const text = buildWorkflowCiRepairPrompt(input);
+    expect(text).toContain(CI_REPAIR_NON_REPRODUCIBLE_OUTCOME);
+    const lines = text.split("\n");
+    const ruleLine = lines.findIndex((line) => line.includes(CI_REPAIR_STEP_REPRODUCTION_RULE));
+    expect(ruleLine).toBeGreaterThan(-1);
+    expect(lines[ruleLine + 1]).toBe(`- ${CI_REPAIR_NON_REPRODUCIBLE_OUTCOME}`);
+  });
+
+  test("AC-11: the no-shortcuts rule survives the new outcome", () => {
+    expect(buildWorkflowCiRepairPrompt(input)).toContain(CI_REPAIR_NO_SHORTCUTS_RULE);
   });
 });
 

@@ -22,6 +22,9 @@ const gh: PrRef = { forge: "github", host: "github.com", repo: "o/r", number: 42
 const GL_PIPELINES = "glab api --hostname gitlab.com projects/g%2Fp/merge_requests/7/pipelines?per_page=20";
 const GL_JOBS = "glab api --hostname gitlab.com projects/g%2Fp/pipelines/77/jobs?scope[]=failed&per_page=100";
 const glTrace = (jobId: number): string => `glab api --hostname gitlab.com projects/g%2Fp/jobs/${jobId}/trace`;
+/** The argv of the success-jobs read of one sibling pipeline, as one string key. */
+const glSuccess = (pipelineId: number): string =>
+  `glab api --hostname gitlab.com projects/g%2Fp/pipelines/${pipelineId}/jobs?scope[]=success&per_page=100`;
 
 /** The argv of the GitHub listing and of one GitHub Actions job log. */
 const GH_LISTING = "gh api --hostname github.com repos/o/r/commits/abc123/check-runs?per_page=100&filter=latest";
@@ -298,7 +301,7 @@ describe("readFailedChecks log errors", () => {
       [ghJobLog(991)]: { exitCode: 1, stdout: "##[error]partial output", stderr: "boom" },
     });
     expect(await forge.readFailedChecks(gh, "abc123", deps, "/repo")).toEqual([
-      { name: "build", excerpt: "(log unavailable: boom)", logUnavailable: true },
+      { name: "build", excerpt: "(log unavailable: boom)", logUnavailable: true, jobId: "991" },
     ]);
   });
 
@@ -382,5 +385,194 @@ describe("readFailedChecks log errors", () => {
     expect(checks.map((check) => check.name)).toEqual(["one", "two"]);
     expect(checks[0]?.excerpt).toBe("(log unavailable: boom)");
     expect(checks[1]?.excerpt).toBe("two failed");
+  });
+});
+
+/** The argv of the success-jobs read of one sibling pipeline. */
+const successArgv = (pipelineId: number): string[] => [
+  "glab",
+  "api",
+  "--hostname",
+  "gitlab.com",
+  `projects/g%2Fp/pipelines/${pipelineId}/jobs?scope[]=success&per_page=100`,
+];
+
+/** The pipeline ids whose success jobs the fixture was asked for, in call order. */
+function successReadIds(calls: readonly { readonly cmd: readonly string[] }[]): number[] {
+  return calls.flatMap((call) => {
+    const match = /pipelines\/(\d+)\/jobs\?scope\[\]=success&per_page=100$/.exec(call.cmd.at(-1) ?? "");
+    return match?.[1] === undefined ? [] : [Number(match[1])];
+  });
+}
+
+/** A fixture of two head pipelines: 77 failed a job, 88 passed one on the same commit. */
+function twoHeadPipelines(successReply: FakeReply) {
+  return forgeFixture({
+    [GL_PIPELINES]: ok([
+      { id: 77, sha: "abc123" },
+      { id: 88, sha: "abc123" },
+    ]),
+    [GL_JOBS]: ok([{ id: 501, name: "test" }]),
+    [glSuccess(88)]: successReply,
+    [glTrace(501)]: log("boom"),
+  });
+}
+
+describe("readFailedChecks same-head evidence on GitLab", () => {
+  test("AC-6 adds the job id and the same-named pass of a sibling pipeline", async () => {
+    const { deps } = twoHeadPipelines(ok([{ id: 601, name: "test", web_url: "https://gitlab.com/g/p/-/jobs/601" }]));
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.name).toBe("test");
+    expect(checks[0]?.jobId).toBe("501");
+    expect(checks[0]?.passedOnSameHead).toEqual({ url: "https://gitlab.com/g/p/-/jobs/601" });
+  });
+
+  test("AC-7 reads the success jobs of the sibling pipeline", async () => {
+    const { deps, calls } = twoHeadPipelines(ok([{ id: 601, name: "test" }]));
+    await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(calls.map((call) => call.cmd)).toContainEqual(successArgv(88));
+  });
+
+  test("AC-8 never reads the jobs of a pipeline whose sha is not the head", async () => {
+    const { deps, calls } = forgeFixture({
+      [GL_PIPELINES]: ok([
+        { id: 77, sha: "abc123" },
+        { id: 12, sha: "other" },
+      ]),
+      [GL_JOBS]: ok([{ id: 501, name: "test" }]),
+      [glTrace(501)]: log("boom"),
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks.map((check) => check.jobId)).toEqual(["501"]);
+    expect(successReadIds(calls)).toEqual([]);
+    expect(calls.map((call) => call.cmd.at(-1))).not.toContain(
+      "projects/g%2Fp/pipelines/12/jobs?scope[]=success&per_page=100",
+    );
+  });
+
+  test("AC-9 reads no success jobs for a single head pipeline and reports no pass", async () => {
+    const { deps, calls } = forgeFixture({
+      [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }]),
+      [GL_JOBS]: ok([{ id: 501, name: "test" }]),
+      [glTrace(501)]: log("boom"),
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(successReadIds(calls)).toEqual([]);
+    expect(checks[0]?.jobId).toBe("501");
+    expect(checks[0]).not.toHaveProperty("passedOnSameHead");
+  });
+
+  test("AC-10 resolves with the failed checks when a sibling read exits non-zero", async () => {
+    const { deps } = twoHeadPipelines({ exitCode: 1, stdout: "", stderr: "boom" });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.jobId).toBe("501");
+    expect(checks[0]).not.toHaveProperty("passedOnSameHead");
+  });
+
+  test("AC-11 reports no pass when no sibling success job has the failed job's name", async () => {
+    const { deps } = twoHeadPipelines(ok([{ id: 601, name: "lint" }]));
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks[0]?.name).toBe("test");
+    expect(checks[0]?.jobId).toBe("501");
+    expect(checks[0]).not.toHaveProperty("passedOnSameHead");
+  });
+
+  test("AC-12 reads the failed jobs second and the sibling success jobs after them", async () => {
+    const { deps, calls } = twoHeadPipelines(ok([{ id: 601, name: "test" }]));
+    await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(calls[1]?.cmd).toEqual(JOBS_ARGV);
+    expect(calls[2]?.cmd).toEqual(successArgv(88));
+  });
+
+  test("AC-13 reads the success jobs of the first three sibling pipelines only", async () => {
+    const { deps, calls } = forgeFixture({
+      [GL_PIPELINES]: ok([
+        { id: 77, sha: "abc123" },
+        { id: 81, sha: "abc123" },
+        { id: 82, sha: "abc123" },
+        { id: 83, sha: "abc123" },
+        { id: 84, sha: "abc123" },
+      ]),
+      [GL_JOBS]: ok([{ id: 501, name: "test" }]),
+      [glSuccess(81)]: ok([]),
+      [glSuccess(82)]: ok([]),
+      [glSuccess(83)]: ok([]),
+      [glTrace(501)]: log("boom"),
+    });
+    await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(successReadIds(calls)).toEqual([81, 82, 83]);
+  });
+
+  test("AC-14 skips a head pipeline without a numeric id and reads no success jobs", async () => {
+    const { deps, calls } = forgeFixture({
+      [GL_PIPELINES]: ok([{ id: 77, sha: "abc123" }, { sha: "abc123" }]),
+      [GL_JOBS]: ok([{ id: 501, name: "test" }]),
+      [glTrace(501)]: log("boom"),
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks.map((check) => check.jobId)).toEqual(["501"]);
+    expect(successReadIds(calls)).toEqual([]);
+  });
+
+  test("AC-16 ignores an empty job name on both the failed and the passing job", async () => {
+    const { deps } = forgeFixture({
+      [GL_PIPELINES]: ok([
+        { id: 77, sha: "abc123" },
+        { id: 88, sha: "abc123" },
+      ]),
+      [GL_JOBS]: ok([{ id: 501, name: "" }]),
+      [glSuccess(88)]: ok([{ id: 601, name: "", web_url: "https://gitlab.com/g/p/-/jobs/601" }]),
+      [glTrace(501)]: log("boom"),
+    });
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.jobId).toBe("501");
+    expect(checks[0]).not.toHaveProperty("passedOnSameHead");
+  });
+
+  test("AC-17 reads no success jobs when the head pipeline has no failed job", async () => {
+    const { deps, calls } = forgeFixture({
+      [GL_PIPELINES]: ok([
+        { id: 77, sha: "abc123" },
+        { id: 88, sha: "abc123" },
+      ]),
+      [GL_JOBS]: ok([]),
+    });
+    expect(await forge.readFailedChecks(gl, "abc123", deps, "/repo")).toEqual([]);
+    expect(successReadIds(calls)).toEqual([]);
+  });
+
+  test.each([
+    ["unparseable JSON", { exitCode: 0, stdout: "not JSON", stderr: "" }],
+    ["a non-array JSON value", ok({ id: 601, name: "test" })],
+  ])("AC-18 resolves with the failed checks when a sibling reply is %s", async (_case, reply) => {
+    const { deps } = twoHeadPipelines(reply);
+    const checks = await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.name).toBe("test");
+    expect(checks[0]?.jobId).toBe("501");
+    expect(checks[0]).not.toHaveProperty("passedOnSameHead");
+  });
+
+  test("AC-19 does not let an id-less sibling use up one of the three reads", async () => {
+    const { deps, calls } = forgeFixture({
+      [GL_PIPELINES]: ok([
+        { id: 77, sha: "abc123" },
+        { sha: "abc123" },
+        { id: 81, sha: "abc123" },
+        { id: 82, sha: "abc123" },
+        { id: 83, sha: "abc123" },
+        { id: 84, sha: "abc123" },
+      ]),
+      [GL_JOBS]: ok([{ id: 501, name: "test" }]),
+      [glSuccess(81)]: ok([]),
+      [glSuccess(82)]: ok([]),
+      [glSuccess(83)]: ok([]),
+      [glTrace(501)]: log("boom"),
+    });
+    await forge.readFailedChecks(gl, "abc123", deps, "/repo");
+    expect(successReadIds(calls)).toEqual([81, 82, 83]);
   });
 });

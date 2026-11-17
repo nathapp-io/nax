@@ -128,6 +128,8 @@ export const FEATURE_GRAPH: StepGraph<WorkflowFeatureRecord, FeatureEnv, Feature
         // US-003: the PR this publish left with no item index (present only when the thread step
         // returned an outcome), so the end of the run can say bot commands will refuse it.
         "itemIndexMissing",
+        // US-003: the checks its CI wait re-ran, which the patch always states and so must declare.
+        "ciReruns",
         "endedAt",
       ],
       exits: ["ci-repair"],

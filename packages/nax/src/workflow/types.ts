@@ -411,6 +411,11 @@ export interface WorkflowFeatureRecord {
    * Absent for every other state, and on records written before the field existed.
    */
   readonly ciDetail?: string;
+  /**
+   * US-003: the checks the CI wait re-ran because they passed on another pipeline for the same
+   * commit, as the publish that waited recorded them. Absent when that publish re-ran nothing.
+   */
+  readonly ciReruns?: readonly string[];
   /** US-001 (nax#2569): each story's end state as `publish` saw it. Absent on older records. */
   readonly storyStates?: readonly StoryStateItem[];
   readonly timings: Readonly<Record<string, number>>;

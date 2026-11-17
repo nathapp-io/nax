@@ -16,6 +16,7 @@ import type { ForgeKind } from "@/forge";
 import { getSafeLogger } from "@/logger";
 import { isPublishableBranch } from "@/utils/git";
 import { askApproval, type ReadinessFacts, readinessReasons } from "./approval";
+import { sameHeadRerunFor } from "./ci-same-head";
 import type { CiWaitResult } from "./ci-wait";
 import { parseClosingIssues } from "./closing-issues";
 import type { FeatureContext } from "./feature-context";
@@ -54,6 +55,12 @@ export interface PublishOutcome {
    * (US-003) `starved` — the states whose reason is built from it. Absent for every other state.
    */
   readonly ciDetail?: string;
+  /**
+   * US-003: the checks this publish's CI wait re-ran because they passed on another pipeline for the
+   * same commit. Present exactly when the wait re-ran something, so a publish that re-ran nothing
+   * clears what an earlier publish recorded.
+   */
+  readonly ciReruns?: readonly string[];
 }
 
 /** The CI states whose readiness reason is the wait's own `detail` rather than a fixed sentence. */
@@ -69,10 +76,13 @@ const DETAILED_CI_STATES: ReadonlySet<FeatureCiState> = new Set<FeatureCiState>(
 /**
  * US-001: the `ciDetail` a result carries, so the verdict keeps the text the draft marker used. An
  * absent key (not an empty one) for `green`, `pending`, `skipped` and `failed` — `pending` keeps
- * none (US-003), so its open item uses the fallback text, not the wait's own detail.
+ * none (US-003), so its open item uses the fallback text, not the wait's own detail. US-003: the
+ * wait's same-head re-runs ride along, present exactly when it re-ran a check.
  */
-function ciDetailFields(ci: CiWaitResult): Pick<PublishOutcome, "ciDetail"> {
-  return DETAILED_CI_STATES.has(ci.outcome) ? { ciDetail: ci.detail } : {};
+function ciDetailFields(ci: CiWaitResult): Pick<PublishOutcome, "ciDetail" | "ciReruns"> {
+  const detail = DETAILED_CI_STATES.has(ci.outcome) ? { ciDetail: ci.detail } : {};
+  const reruns = ci.sameHeadReruns?.length ? { ciReruns: ci.sameHeadReruns } : {};
+  return { ...detail, ...reruns };
 }
 
 /**
@@ -407,8 +417,10 @@ function logFinishPr(ready: boolean, url: string | undefined, kept: readonly str
  * config. The wait is bound to the HEAD that was pushed — read here, because nothing is committed
  * after the push any more (US-002: the approval ruling rides the pre-push ledger commit) — and an
  * unreadable HEAD only warns: `readinessReasons` decides what a missing binding means, not the wait.
+ * US-003: `prUrl` (only `pr` mode has one) opts the wait into re-running a check that passed on
+ * another pipeline for the same commit; with no URL or no HEAD there is nothing to re-run.
  */
-async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitResult> {
+async function waitForCi(fc: FeatureContext, forge: ForgeKind, prUrl?: string): Promise<CiWaitResult> {
   let expectedSha: string | undefined;
   try {
     expectedSha = (await readHead(fc.projectDir)) || undefined;
@@ -427,6 +439,9 @@ async function waitForCi(fc: FeatureContext, forge: ForgeKind): Promise<CiWaitRe
     // US-003: a check whose job never got a runner is re-run (boundedly) rather than repaired. The
     // re-run is opt-in per caller: `nax workflow promote` is a one-poll check and passes nothing.
     rerunStarved: true,
+    ...(prUrl !== undefined && expectedSha !== undefined
+      ? { sameHeadRerun: sameHeadRerunFor(fc, prUrl, expectedSha) }
+      : {}),
   });
 }
 
@@ -512,7 +527,7 @@ async function prMode(plan: PublishPlan, input: PublishInput): Promise<PublishOu
   );
   // US-005: a URL the forge did not return is left out rather than invented; the step is still named.
   getSafeLogger()?.info("workflow", `Publish: draft PR${draft?.url ? ` ${draft.url}` : ""}`, { storyId: "_run" });
-  const ci = await waitForCi(fc, plan.forge);
+  const ci = await waitForCi(fc, plan.forge, draft?.url);
   // An aborted wait reports `pending`, which blocks readiness (US-003): stop before promotion.
   if (fc.runSignal?.aborted) throw abortedError();
   // US-007: a ledger the branch lacks is a readiness reason like any other.

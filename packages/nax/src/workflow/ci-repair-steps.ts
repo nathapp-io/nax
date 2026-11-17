@@ -19,14 +19,20 @@ import { costExceeded, featureStep, limitsOf, NO_MIRROR, roundLabel } from "./fe
 import type { PublishOutcome } from "./finalize";
 import { ledgerText } from "./ledger";
 import { reviewRepairDiff } from "./repair-review";
-import type { CiCheckRef, CiRemainingCheck, WorkflowFeatureRecord, WorkflowFindingDraft } from "./types";
+import type {
+  CiCheckRef,
+  CiRemainingCheck,
+  RepoGateSummary,
+  WorkflowFeatureRecord,
+  WorkflowFindingDraft,
+} from "./types";
 
 /**
  * US-004: a check's issue names the step that failed and the steps the job skipped after it, so the
  * repair reproduces every step that never got to run. A check with no step facts (GitLab, a non-Actions
  * check run, an unreadable jobs reply) keeps the plain failure text.
  */
-function ciCheckIssue(check: FailedCheck): string {
+function ciCheckFailureText(check: FailedCheck): string {
   const excerpt = markdownFence(check.excerpt);
   if (!check.failedStep) return `CI check ${check.name} failed:\n${excerpt}`;
   const skipped = check.skippedSteps ?? [];
@@ -35,14 +41,51 @@ function ciCheckIssue(check: FailedCheck): string {
 }
 
 /**
+ * US-004: what this publish knows beyond the log — the checks its CI wait re-ran and what the repo's
+ * own gates did on this commit. Derived from the outcome and the record the publish step already has,
+ * so no new parameter reaches the repair plan.
+ */
+interface CiRepairFacts {
+  /** `out.ciReruns`: the checks this publish's CI wait re-ran because they passed elsewhere. */
+  readonly reruns?: readonly string[];
+  /** `rec.finalGates`: the repo's gates as the last final-gates pass found them. */
+  readonly finalGates?: RepoGateSummary;
+}
+
+/**
+ * US-004: the facts paragraph of a check that passed on another pipeline for the same commit — the
+ * one fact the log cannot give, because it says the failure may not reproduce. An empty list for a
+ * check without the fact, which is what keeps every other issue's text exactly as it was.
+ */
+function sameHeadSentences(check: FailedCheck, facts: CiRepairFacts): string[] {
+  const sameHead = check.passedOnSameHead;
+  if (!sameHead) return [];
+  const where = sameHead.url ? ` (${sameHead.url})` : "";
+  const sentences = [`This check passed on another pipeline for the same commit${where}.`];
+  if (facts.reruns?.includes(check.name)) sentences.push("The CI wait re-ran it once before this repair round.");
+  const gates = facts.finalGates;
+  if (gates && gates.ran.length > 0 && gates.failing.length === 0) {
+    sentences.push(`The repository's own gates (${gates.ran.join(", ")}) passed locally on this commit.`);
+  }
+  return sentences;
+}
+
+/** US-004: the check's issue, with the same-head facts as one paragraph after one blank line. */
+function ciCheckIssue(check: FailedCheck, facts: CiRepairFacts): string {
+  const text = ciCheckFailureText(check);
+  const sentences = sameHeadSentences(check, facts);
+  return sentences.length === 0 ? text : `${text}\n\n${sentences.join(" ")}`;
+}
+
+/**
  * US-006: the failed checks of a PR's CI, as the findings the CI repair round repairs. A CI check
  * is not a repo gate, but it is the same kind of work: make this check pass.
  */
-function ciRepairFindingsOf(checks: readonly FailedCheck[]): WorkflowFindingDraft[] {
+function ciRepairFindingsOf(checks: readonly FailedCheck[], facts: CiRepairFacts): WorkflowFindingDraft[] {
   return checks.map((check) => ({
     kind: "gate",
     severity: "important",
-    issue: ciCheckIssue(check),
+    issue: ciCheckIssue(check, facts),
     ...(check.url ? { suggestion: `See ${check.url}` } : {}),
   }));
 }
@@ -68,17 +111,13 @@ export interface CiRepairPlan {
  * US-006: read the failed checks of the published PR and turn them into repair findings. An empty
  * list and a failed read are both "no repair": the ledger says which, and the publish outcome
  * stands. US-005: the same single read yields the checks the repair targets, so the publish step
- * never has to read the CI twice.
+ * never has to read the CI twice. US-004: the findings cite the same-head facts of this publish.
  */
-async function readCiFailuresForRepair(
-  env: FeatureEnv,
-  reader: NonNullable<FeatureSteps["readCiFailures"]>,
-  url: string,
-  head: string,
-): Promise<CiRepairPlan | undefined> {
+async function readCiFailuresForRepair(env: FeatureEnv, input: CiRepairRead): Promise<CiRepairPlan | undefined> {
+  const { reader, head, facts } = input;
   let checks: readonly FailedCheck[];
   try {
-    checks = await reader({ url, head });
+    checks = await reader({ url: input.url, head });
   } catch (err) {
     await env.sink.ledger(ledgerText.note(`CI logs unavailable: ${errorMessage(err)}`), NO_MIRROR);
     return undefined;
@@ -100,7 +139,26 @@ async function readCiFailuresForRepair(
     ledgerText.note(`CI failed: ${checks.map((check) => check.name).join(", ")} (repairing)`),
     NO_MIRROR,
   );
-  return { findings: ciRepairFindingsOf(checks), targets: ciRepairTargetsOf(checks) };
+  return { findings: ciRepairFindingsOf(checks, facts), targets: ciRepairTargetsOf(checks) };
+}
+
+/** US-004: the one CI read of a repair, with the facts its findings may cite. */
+interface CiRepairRead {
+  readonly reader: NonNullable<FeatureSteps["readCiFailures"]>;
+  readonly url: string;
+  readonly head: string;
+  readonly facts: CiRepairFacts;
+}
+
+/**
+ * US-004: the same-head facts of this publish, taken from the outcome and the record the repair plan
+ * already receives. A key is present only when the run recorded it, so an absent one cites nothing.
+ */
+function ciRepairFactsOf(out: PublishOutcome, rec: WorkflowFeatureRecord): CiRepairFacts {
+  return {
+    ...(out.ciReruns ? { reruns: out.ciReruns } : {}),
+    ...(rec.finalGates ? { finalGates: rec.finalGates } : {}),
+  };
 }
 
 /**
@@ -122,7 +180,12 @@ export async function ciRepairPlan(
   if (!out.url || !head) return undefined;
   if ((rec.ciRepairRounds ?? 0) >= (limitsOf(env).ciRepairRounds ?? 0)) return undefined;
   if (costExceeded(env)) return undefined;
-  return await readCiFailuresForRepair(env, reader, out.url, head);
+  return await readCiFailuresForRepair(env, {
+    reader,
+    url: out.url,
+    head,
+    facts: ciRepairFactsOf(out, rec),
+  });
 }
 
 /**

@@ -333,3 +333,62 @@ describe("readFailedChecks", () => {
     await expect(promise).rejects.toMatchObject({ code: "FORGE_CI_READ_FAILED", context: { stage: "forge" } });
   });
 });
+
+describe("readFailedChecks same-head evidence on GitHub", () => {
+  /** The one check of a fixture whose check runs are `runs`. */
+  async function onlyCheck(runs: readonly CheckRun[], logs: Readonly<Record<string, string>> = {}) {
+    const { deps } = githubFixture(runs, { "11": "boom", ...logs });
+    const checks = await forge.readFailedChecks(gh, "abc123", deps, "/repo");
+    expect(checks).toHaveLength(1);
+    return checks[0];
+  }
+
+  const failedTest = checkRun({ id: 11, name: "test", conclusion: "failure", app: { slug: "github-actions" } });
+
+  test("AC-1 reports a same-named passing run of the same commit as passedOnSameHead", async () => {
+    const check = await onlyCheck([
+      failedTest,
+      checkRun({
+        id: 12,
+        name: "test",
+        conclusion: "success",
+        html_url: "https://github.com/o/r/actions/runs/5/job/12",
+      }),
+    ]);
+    expect(check?.name).toBe("test");
+    expect(check?.passedOnSameHead).toEqual({ url: "https://github.com/o/r/actions/runs/5/job/12" });
+  });
+
+  test("AC-2 leaves passedOnSameHead out when no other run of that name passed", async () => {
+    const check = await onlyCheck([failedTest]);
+    expect(check?.jobId).toBe("11");
+    expect(check).not.toHaveProperty("passedOnSameHead");
+  });
+
+  test("AC-3 does not count a skipped same-named run as a pass", async () => {
+    const check = await onlyCheck([failedTest, checkRun({ id: 12, name: "test", conclusion: "skipped" })]);
+    expect(check?.jobId).toBe("11");
+    expect(check).not.toHaveProperty("passedOnSameHead");
+  });
+
+  test("AC-4 reports an empty passedOnSameHead when the passing run has no html_url", async () => {
+    const check = await onlyCheck([failedTest, checkRun({ id: 12, name: "test", conclusion: "success" })]);
+    expect(check?.passedOnSameHead).toEqual({});
+  });
+
+  test("AC-5 reports the Actions job id of a failed run and no jobId for another app", async () => {
+    const actionCheck = await onlyCheck([failedTest]);
+    expect(actionCheck?.jobId).toBe("11");
+    const otherApp = await onlyCheck([checkRun({ id: 5, app: { slug: "circleci" } })]);
+    expect(otherApp).not.toHaveProperty("jobId");
+  });
+
+  test("AC-15 ignores an empty name on both the failed and the passing run", async () => {
+    const check = await onlyCheck([
+      checkRun({ id: 11, name: "", conclusion: "failure", app: { slug: "github-actions" } }),
+      checkRun({ id: 12, name: "", conclusion: "success", html_url: "https://github.com/o/r/actions/runs/5/job/12" }),
+    ]);
+    expect(check?.jobId).toBe("11");
+    expect(check).not.toHaveProperty("passedOnSameHead");
+  });
+});

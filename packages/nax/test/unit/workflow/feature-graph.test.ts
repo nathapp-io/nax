@@ -96,6 +96,8 @@ const expectedProduces: Record<NodeId, string[]> = {
     "ciRemaining",
     // US-003: the PR this publish left with no item index.
     "itemIndexMissing",
+    // US-003: the checks the CI wait re-ran, which the patch always states (cleared when none).
+    "ciReruns",
     "endedAt",
   ],
 };
