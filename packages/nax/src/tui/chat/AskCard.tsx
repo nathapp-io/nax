@@ -272,10 +272,15 @@ function diffRows(diff: readonly DiffLine[], context: LayoutContext): readonly S
   });
 }
 
-/** The countdown row as the card draws it at `nowMs`. */
-function countdownRow(expiresAt: string, nowMs: number): StyledLine {
+/**
+ * The countdown's rows as the card draws them at `nowMs`: `expires in m:ss` behind the same
+ * wrap every other card text takes, so a card narrower than the label draws it over two rows
+ * and the measurement reserves both. It is the card's tail, so a row it counted as one while
+ * the frame could only draw two would be an overflow the allocator never saw.
+ */
+function countdownRows(expiresAt: string, nowMs: number, context: LayoutContext): readonly StyledLine[] {
   const countdown = countdownLabel(expiresAt, nowMs);
-  return [styled(countdown.text, { color: countdown.color })];
+  return prefixedLine([styled(countdown.text, { color: countdown.color })], [], context);
 }
 
 /**
@@ -301,7 +306,7 @@ function approvalParts(
     ],
     tail: [
       ...optionRows(approval, options.selected ?? 0, context),
-      countdownRow(options.expiresAt, options.nowMs ?? _askCardDeps.now()),
+      ...countdownRows(options.expiresAt, options.nowMs ?? _askCardDeps.now(), context),
       ruleRow(context.theme, context.width, border),
     ],
     bodyFloor: 0,
@@ -321,7 +326,7 @@ function questionParts(model: AskCardQuestion, options: AskCardContentOptions, c
     frame: [ruleRow(context.theme, context.width, model.border), ...questionTitleRows(model, context)],
     body,
     tail: [
-      countdownRow(options.expiresAt, options.nowMs ?? _askCardDeps.now()),
+      ...countdownRows(options.expiresAt, options.nowMs ?? _askCardDeps.now(), context),
       ruleRow(context.theme, context.width, model.border),
     ],
     bodyFloor: Math.min(1, body.length),

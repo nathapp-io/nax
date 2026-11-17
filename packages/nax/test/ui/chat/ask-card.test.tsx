@@ -12,6 +12,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { SessionEvent, SessionEventBody } from "@nathapp/nax-agent";
 import { makeFakeClock } from "@test/helpers";
 import chalk from "chalk";
+import { Box } from "ink";
 import { cleanup, render } from "ink-testing-library";
 import { act, type ReactElement, useState } from "react";
 import type { AskChoice } from "@/chat";
@@ -144,6 +145,13 @@ interface MountOptions {
   readonly theme?: ChatTheme;
   /** The question card's starting draft; absent means an untouched box. */
   readonly answer?: InputDraft;
+  /**
+   * The columns of the parent the card is mounted under — the frame `ChatApp` draws it in,
+   * which is what actually wraps a row the card is a column too narrow for. Without it the
+   * card is mounted free, so a row the layout counted as one is never asked to wrap and an
+   * undercounted row stays invisible.
+   */
+  readonly container?: number;
 }
 
 /**
@@ -157,7 +165,7 @@ function mountCard(ask: ChatPendingAsk, options: MountOptions = {}) {
   function Harness(): ReactElement {
     const [answer, setAnswer] = useState<InputDraft>(options.answer ?? EMPTY_DRAFT);
     const model = askCardModel(ask, { canRemember, entries: options.entries ?? NO_ENTRIES });
-    return (
+    const card = (
       <AskCard
         ask={ask}
         model={model}
@@ -170,8 +178,25 @@ function mountCard(ask: ChatPendingAsk, options: MountOptions = {}) {
         onDeclined={onDeclined}
       />
     );
+    return options.container === undefined ? (
+      card
+    ) : (
+      <Box flexDirection="column" width={options.container}>
+        {card}
+      </Box>
+    );
   }
   const ui = render(<Harness />);
+  // A card framed into a narrower parent draws into that parent, and the input inside it draws
+  // to the terminal's columns — `ChatApp` gives it the same width for both. Mounting under a
+  // narrow `Box` while the terminal still reports 100 columns would let `ink` wrap a row the
+  // input measured as one, which is a mismatch of this harness, not of the screen.
+  if (options.container !== undefined) {
+    Object.defineProperty(ui.stdout, "columns", { value: options.container, configurable: true });
+    act(() => {
+      ui.rerender(<Harness />);
+    });
+  }
   return {
     ...ui,
     resolve,
@@ -845,5 +870,113 @@ describe("AskCard safe minimum", () => {
       `${THEME.glyphs.ellipsis} 9 more lines`,
     );
     expect(mountCard(longer, { budget: measuredLonger.measurement.minimum }).frame()).toContain("9 more lines");
+  });
+});
+
+/**
+ * The card inside a parent of the columns it is framed to — what `ChatApp` actually gives it.
+ *
+ * The card's own `width` prop is a promise, not a boundary: mounted free, `ink` draws a
+ * sixteen-column countdown as one row and an undercounted row stays invisible. These cases
+ * mount the card under a `Box` of exactly those columns, so every row the layout counted as
+ * one is a row the terminal is allowed to wrap.
+ */
+describe("AskCard in a constrained frame", () => {
+  /** The narrowest width a layout is ever given. */
+  const NARROWEST = 10;
+  /** The widest card whose `expires in 10:00` is still one column too wide to fit on one row. */
+  const WRAPS_AT = 15;
+  /** Wide enough for that same countdown in one row, so it is the countdown and nothing else. */
+  const FITS_AT = 16;
+  /** Ten minutes left: a countdown two of these widths cannot draw on one row. */
+  const TEN_MINUTES_MS = 10 * 60_000;
+  /** A question small enough that only its countdown can wrap at these widths. */
+  const PROCEED = (expiresAt: string): ChatPendingAsk => question({ text: "Proceed?", expiresAt });
+
+  /** The rule a frame of `width` columns draws, in the plain theme. */
+  const rule = (width: number): string => THEME.glyphs.rule.repeat(width);
+
+  /**
+   * One card measured at the instant it is drawn: the clock is virtual, so the rows the
+   * measurement reserves and the rows the card draws are read at the same `nowMs` and the
+   * countdown cannot be a different width in the two.
+   */
+  function wrapped(ask: (expiresAt: string) => ChatPendingAsk, width: number, canRemember = false) {
+    const clock = fakeClock();
+    const expiresAt = new Date(clock.now() + TEN_MINUTES_MS).toISOString();
+    const built = ask(expiresAt);
+    const model = askCardModel(built, { canRemember, entries: NO_ENTRIES });
+    const measurement = measureAskCard(model, {
+      width,
+      theme: THEME,
+      answer: EMPTY_DRAFT,
+      expiresAt,
+      nowMs: clock.now(),
+    });
+    return { clock, ask: built, model, measurement, expiresAt };
+  }
+
+  test("the countdown is measured as the rows it wraps to, and drawn as exactly those rows", () => {
+    const card = wrapped(PROCEED, WRAPS_AT);
+    const layout = askCardLayout(card.model, {
+      width: WRAPS_AT,
+      budget: card.measurement.minimum,
+      theme: THEME,
+      answer: EMPTY_DRAFT,
+      expiresAt: card.expiresAt,
+      nowMs: card.clock.now(),
+    });
+    // The tail's countdown is two physical rows here, the frame's bottom rule the third.
+    expect(layout.tail.map(plainText)).toEqual(["expires in", "10:00", rule(WRAPS_AT)]);
+    expect(layout.rows).toBe(card.measurement.minimum);
+    const mounted = mountCard(card.ask, {
+      width: WRAPS_AT,
+      container: WRAPS_AT,
+      budget: card.measurement.minimum,
+      canRemember: false,
+    });
+    // Not one row more than the budget it was measured with: the wrap is reserved, not lost.
+    expect(mounted.rows()).toHaveLength(card.measurement.minimum);
+    expect(mounted.rows().slice(-3)).toEqual(["expires in", "10:00", rule(WRAPS_AT)]);
+  });
+
+  test("a wrapped countdown is the only extra row the minimum carries at a narrow width", () => {
+    const narrow = wrapped(PROCEED, NARROWEST);
+    const fitted = wrapped(PROCEED, FITS_AT);
+    // Everything else — the title, the first question row, the answer box, the rules — is
+    // the same at both widths, so the wrapped countdown is the whole difference.
+    expect(narrow.measurement.minimum).toBe(fitted.measurement.minimum + 1);
+    const mounted = mountCard(narrow.ask, {
+      width: NARROWEST,
+      container: NARROWEST,
+      budget: narrow.measurement.minimum,
+      canRemember: false,
+    });
+    expect(mounted.rows()).toHaveLength(narrow.measurement.minimum);
+  });
+
+  test("an approval's options and countdown are drawn in the rows it reserved", () => {
+    const card = wrapped(
+      (expiresAt) => approval({ command: "npm test", summary: "Run the tests", reason: "one line", expiresAt }),
+      NARROWEST,
+      true,
+    );
+    const mounted = mountCard(card.ask, {
+      width: NARROWEST,
+      container: NARROWEST,
+      budget: card.measurement.minimum,
+    });
+    const rows = mounted.rows();
+    expect(rows).toHaveLength(card.measurement.minimum);
+    // The countdown's own two rows sit directly above the frame's bottom rule.
+    expect(rows.slice(-3)).toEqual(["expires in", "10:00", rule(NARROWEST)]);
+    // No option is clipped away by the rows the countdown took: every number is on screen.
+    if (card.model.kind === "question") throw new Error("an approval is not a question card");
+    for (const option of card.model.options) {
+      const numbered = rows.some((row) =>
+        row.trimStart().replace(`${THEME.glyphs.pointer} `, "").startsWith(`${option.index}. `),
+      );
+      expect(numbered).toBe(true);
+    }
   });
 });

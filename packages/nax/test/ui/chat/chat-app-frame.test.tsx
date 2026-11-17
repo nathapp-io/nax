@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { CompactResult } from "@nathapp/nax-agent";
 import { cleanup } from "ink-testing-library";
 import { _chatAppDeps } from "@/tui/chat/ChatApp";
+import { TERMINAL_TOO_SMALL } from "@/tui/chat/frame-layout";
 import { APPROVAL, COMPLETED, frameHarness, QUESTION } from "./frame-harness";
 
 const savedIndex = _chatAppDeps.mentionFileIndex;
@@ -82,6 +83,32 @@ describe("ChatApp allocated physical frame", () => {
     expect(ui.rows()).toHaveLength(1);
     expect(Bun.stringWidth(ui.rows()[0] ?? "")).toBeLessThanOrEqual(20);
     expect(ui.rows()[0]).toStartWith("Terminal too small");
+  });
+  test.each([10, 15])("AC-1 AC-4 a %i-column ask frame reserves its wrapped countdown", async (width) => {
+    const ui = frameHarness();
+    await ui.resize(24, width);
+    ui.ask(QUESTION);
+    // `expires in 0:00` is wider than either of these frames, so the card's countdown is two
+    // physical rows; a frame that counts it as one overflows its own allocation.
+    expect(ui.rows().join("\n")).toContain("Proceed?");
+    for (const height of [9, 10, 11, 12]) {
+      await ui.resize(height, width);
+      expect(ui.rows().length).toBeLessThanOrEqual(Math.max(1, height - 1));
+    }
+  });
+  test("AC-4 a wrapped countdown pushes the ask past the essential set, not over the frame", async () => {
+    const ui = frameHarness();
+    await ui.resize(24, 10);
+    ui.ask(QUESTION);
+    // Nine rows of card plus the footer is ten: a nine-row frame cannot hold it, so the screen
+    // says so instead of drawing an actionable card with a row missing.
+    await ui.resize(10, 10);
+    // Clipped to the supported width: ten columns, which is what this frame has.
+    expect(ui.rows()).toEqual([TERMINAL_TOO_SMALL.slice(0, 10)]);
+    // One row more and the same card is drawn whole again, so the boundary is the row it needs.
+    await ui.resize(11, 10);
+    expect(ui.rows().join("\n")).toContain("Proceed?");
+    expect(ui.rows().length).toBeLessThanOrEqual(10);
   });
   test.each([undefined, 0])("AC-3 fallback dimensions for %s", async (dimension) => {
     const ui = frameHarness();
