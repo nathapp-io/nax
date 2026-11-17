@@ -3,7 +3,7 @@
   "feature": "chat-ux-fixes",
   "branchName": "feat/chat-ux-fixes",
   "createdAt": "2026-11-17T15:44:34.420Z",
-  "updatedAt": "2026-11-17T16:26:31.219Z",
+  "updatedAt": "2026-11-17T16:38:02.153Z",
   "userStories": [
     {
       "id": "US-001",
@@ -104,14 +104,17 @@
         "formatting"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One pure formatter and four direct consumers use standard deterministic formatting with no new dependencies or lifecycle abstractions. Boundary and consumer tests fit ordinary failing-test-first implementation."
+        "reasoning": "One pure formatter and four direct consumers use standard deterministic formatting with no new dependencies or lifecycle abstractions. Boundary and consumer tests fit ordinary failing-test-first implementation.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/chat-status.ts",
@@ -128,7 +131,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "6ab4ce80d5d407303bded78e96f6cc44eee431af"
     },
     {
       "id": "US-003",
