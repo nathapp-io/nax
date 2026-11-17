@@ -2,14 +2,19 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempDir, makeFakeClock, makeTempDir } from "@test/helpers";
+import { _jobOutcomeDeps } from "@/chat/jobs/job-outcome";
 import { _jobRunnerDeps, createJobRunner, JOB_POLL_MS, type StartJobRequest } from "@/chat/jobs/job-runner";
 import { _jobStoreDeps, jobAsksDir, jobLogPath, jobsDir, readJobRecords } from "@/chat/jobs/job-store";
 import { featureDir } from "@/config";
 import { NaxError } from "@/errors";
+import type { NaxStatusFile } from "@/execution/status-file";
 import { chatHeartbeatFresh } from "@/interaction/chat-ask-files";
+import type { LoadedRun } from "@/workflow/run-verdict";
+import type { OpenItem } from "@/workflow/types";
 
 const originalDeps = { ..._jobRunnerDeps };
 const originalStoreDeps = { ..._jobStoreDeps };
+const originalOutcomeDeps = { ..._jobOutcomeDeps };
 let repoRoot: string;
 let outputDir: string;
 let clock: ReturnType<typeof makeFakeClock>;
@@ -53,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   Object.assign(_jobRunnerDeps, originalDeps);
   Object.assign(_jobStoreDeps, originalStoreDeps);
+  Object.assign(_jobOutcomeDeps, originalOutcomeDeps);
   cleanupTempDir(repoRoot);
 });
 function runner() {
@@ -501,6 +507,25 @@ describe("createJobRunner", () => {
     expect(jobs.get("missing")).toBeUndefined();
   });
 
+  test("US-004 AC-11 a draft PR's open item reaches the queued notice through the job record", async () => {
+    _jobOutcomeDeps.readStatusFile = async () => draftStatus(child.pid);
+    _jobOutcomeDeps.resolveOutputDir = async () => join(repoRoot, "output");
+    _jobOutcomeDeps.loadRunVerdict = async () => draftRun([{ id: "D-1", kind: "advisor", issue: "D-1 is open" }]);
+    const jobs = runner();
+    const ended = nextTerminal(jobs);
+    const job = await jobs.start(request);
+    exit(0);
+    await ended;
+    expect((await readJobRecords(outputDir))[0]).toMatchObject({
+      id: job.id,
+      state: "succeeded",
+      held: { url: "https://x/pull/7", items: [{ id: "D-1", kind: "advisor" }] },
+    });
+    expect(jobs.peekNotice()).toContain("The PR is a draft held by 1 open item (D-1)");
+    expect(clock.pending()).toBe(0);
+    jobs.dispose();
+  });
+
   test("missing log is empty and dispose does not signal; unsubscribe removes listener", async () => {
     const jobs = runner();
     const changed = mock(() => {});
@@ -525,4 +550,55 @@ function nextTerminal(jobs: ReturnType<typeof runner>): Promise<void> {
       }
     });
   });
+}
+
+/** US-004 AC-11: the pid-matched completed run record of a run that published a draft PR. */
+function draftStatus(pid: number): NaxStatusFile {
+  return {
+    version: 1,
+    run: {
+      id: "run-1",
+      feature: "f1",
+      startedAt: "2026-10-01T00:00:00Z",
+      status: "completed",
+      dryRun: false,
+      pid,
+    },
+    progress: { total: 1, passed: 1, failed: 0, paused: 0, blocked: 0, pending: 0 },
+    cost: { spent: 0, limit: null },
+    current: null,
+    iterations: 1,
+    updatedAt: "2026-10-01T00:00:00Z",
+    durationMs: 1,
+    workflow: { step: "publish", stories: {}, outcome: "draft", url: "https://x/pull/7" },
+  };
+}
+
+/** US-004 AC-11: the loaded run whose open items hold that draft, as the verdict reader reports them. */
+function draftRun(openItems: readonly OpenItem[]): LoadedRun {
+  return {
+    runId: "w1",
+    runDir: "unused",
+    result: { schemaVersion: 1, runId: "w1", feature: "f1", stories: {} },
+    record: {
+      step: "done",
+      startedAt: "2026-10-01",
+      seed: null,
+      gateFindings: [],
+      reviewRan: true,
+      reviewOpen: [],
+      minors: [],
+      newMinors: [],
+      nextFindingId: 1,
+      fixRan: false,
+      rulings: [],
+      reasons: [],
+      timings: {},
+      tokensByRole: {},
+      url: "https://x/pull/7",
+    },
+    openItems,
+    reasons: [],
+    supplementaryItems: [],
+  };
 }

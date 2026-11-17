@@ -116,7 +116,13 @@ export {
 } from "./builders/workflow-branch-builder";
 // US-004 (chat-workflow-state) — the fixed "nax loop" section of a chat session.
 // US-003 (chat-publish-held-drafts) — the one held-draft item formatter every call site shares.
-export type { HeldItem, JobNoticeInput, WorkflowInstructionsInput } from "./builders/workflow-builder";
+// US-004 (chat-publish-held-drafts) — the held draft a completion notice guides the agent through.
+export type {
+  HeldItem,
+  JobNoticeHeld,
+  JobNoticeInput,
+  WorkflowInstructionsInput,
+} from "./builders/workflow-builder";
 export {
   buildJobNotice,
   buildJobsInstructions,

@@ -140,6 +140,17 @@ export function buildWorkflowInstructions(input?: WorkflowInstructionsInput): st
   return lines.join("\n");
 }
 
+/**
+ * US-004: the held draft a run or publish left, as the notice needs it — a structural
+ * copy of the job record's `HeldDraft`, so `prompts` never imports from `chat`.
+ */
+export interface JobNoticeHeld {
+  readonly url?: string;
+  readonly items: readonly HeldItem[];
+  /** Set when the open items could not be read; `items` is then empty. */
+  readonly unreadable?: true;
+}
+
 export interface JobNoticeInput {
   readonly id: string;
   readonly kind: string;
@@ -150,6 +161,8 @@ export interface JobNoticeInput {
   readonly logPath: string;
   readonly chainId?: string;
   readonly chainStep?: number;
+  /** US-004: present when the job left a draft PR held by open items. */
+  readonly held?: JobNoticeHeld;
 }
 
 /**
@@ -163,6 +176,35 @@ function chainNoticeLine(chainId: string, chainStep: number | undefined): string
   return `This job is ${position}chain ${chainId}; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).`;
 }
 
+/**
+ * US-004: how a held-draft notice opens — the count and items, or why there are none.
+ * The named-items opening is the only one that also says not to ask the user to rule.
+ */
+function heldOpening(held: JobNoticeHeld): string {
+  if (held.unreadable === true) return "The PR is a draft whose open items could not be read.";
+  if (held.items.length === 0) return "The PR is a draft with no open items listed.";
+  const count = held.items.length;
+  const list = heldItemList(held.items, { withKinds: false });
+  return `The PR is a draft held by ${count} open ${heldItemNoun(count)} (${list}). Do not ask the user to rule on them.`;
+}
+
+/**
+ * US-004 (user ruling 2026-11-17): the evidence-first, single-approval ruling plan every
+ * held-draft notice carries — settle each item from evidence, ask the user once, and post
+ * the drafted replies on their one yes.
+ */
+function heldPlan(target: string): string {
+  return [
+    `Read them with nax workflow status -f ${target} --json, then settle each one from evidence as the nax-finish skill's Step 3 does (load it with nax-skills__load when it is listed): verify the item's premise against commits, code and tests, and draft one reply per item whose first line is its ruling keyword (verified:, confirm:, override:, waive: or fixed <sha>) followed by the evidence; findings are left to nax bot fix.`,
+    "Then send the user one message with every drafted reply and the plan (post the replies on their item threads, then nax-jobs__bot_review, then nax-jobs__bot_fix); on their yes, post each reply on its item's thread with gh or glab and propose that chain.",
+  ].join(" ");
+}
+
+/** US-004: the whole held-draft notice line, opening and plan. */
+function heldNoticeLine(held: JobNoticeHeld, target: string): string {
+  return `${heldOpening(held)} ${heldPlan(target)}`;
+}
+
 /** Pure completion notice shared by owned and re-attached background jobs. */
 export function buildJobNotice(input: JobNoticeInput): string {
   const cost = input.cost !== undefined ? ` cost $${input.cost.toFixed(2)}` : "";
@@ -171,7 +213,10 @@ export function buildJobNotice(input: JobNoticeInput): string {
     `[nax-jobs] job ${input.id} (${input.kind} ${input.target}) ended: ${input.state}${cost}${note} log ${input.logPath}`,
     "Call `nax-workflow__state`, report the outcome to the user and propose the single next step.",
   ];
-  if (input.chainId !== undefined) {
+  // US-004: a held draft has stopped the chain, so its guidance replaces the chain line.
+  if (input.held !== undefined) {
+    noticeLines.push(heldNoticeLine(input.held, input.target));
+  } else if (input.chainId !== undefined) {
     noticeLines.push(chainNoticeLine(input.chainId, input.chainStep));
   }
   return noticeLines.join("\n");
