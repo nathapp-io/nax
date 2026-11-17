@@ -18,7 +18,7 @@ import { type ChatHost, type ChatPendingAsk, createMentionFileIndex, expandChatM
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
-import { AskCard, measureAskCard } from "./AskCard";
+import { AskCard } from "./AskCard";
 import { askCardModel } from "./ask-card";
 import { bottomBlocked } from "./bottom-region";
 import {
@@ -40,8 +40,9 @@ import {
 } from "./chat-status";
 import { useEscConfirm } from "./esc-confirm";
 import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
-import { FixedRow } from "./FixedRow";
+import { AllocatedLine, FixedRow } from "./FixedRow";
 import { allocateChatFrame, type ChatFrameOptions, TERMINAL_TOO_SMALL } from "./frame-layout";
+import { measureFrameSurfaces } from "./frame-surfaces";
 import {
   EMPTY_IMAGE_DRAFT,
   type ImageDraft,
@@ -66,7 +67,7 @@ import {
   takeQueued,
 } from "./message-queue";
 import type { MouseEvents } from "./mouse-input";
-import { measurePicker, Picker, useChatPicker } from "./Picker";
+import { Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
 import { sessionTranscript } from "./session-transcript";
 import {
@@ -449,17 +450,15 @@ export function ChatApp({
         });
   const frameOptions: ChatFrameOptions = {
     rows: size.rows,
-    input: measureInput(draft, { width: size.columns, container: size.columns, busy, hint }),
-    ask:
-      ask === undefined || askModel === undefined
-        ? undefined
-        : measureAskCard(askModel, {
-            width: size.columns,
-            theme,
-            answer,
-            expiresAt: ask.expiresAt,
-          }),
-    picker: picker.model === undefined ? undefined : measurePicker(picker.model),
+    ...measureFrameSurfaces({
+      draft,
+      input: { width: size.columns, container: size.columns, busy, hint },
+      ask,
+      askModel,
+      answer,
+      picker: picker.model,
+      theme,
+    }),
     menus: menu.open ? menu.rows : mention.view.rows,
     previews: Math.min(MAX_PENDING_PREVIEW_ROWS, steering.length + queued.length),
     working: workingShown,
@@ -1339,21 +1338,9 @@ export function ChatApp({
         active={targets.transcript}
         followToken={followToken}
       />
-      {regions.statusGapBefore.rows > 0 ? (
-        <FixedRow>
-          <StyledLineView line={[{ text: " " }]} theme={theme} />
-        </FixedRow>
-      ) : null}
-      {regions.status.rows > 0 && working ? (
-        <FixedRow>
-          <StyledLineView line={working} theme={theme} />
-        </FixedRow>
-      ) : null}
-      {regions.statusGapAfter.rows > 0 ? (
-        <FixedRow>
-          <StyledLineView line={[{ text: " " }]} theme={theme} />
-        </FixedRow>
-      ) : null}
+      <AllocatedLine region={regions.statusGapBefore} line={[{ text: " " }]} theme={theme} />
+      <AllocatedLine region={regions.status} line={working} theme={theme} />
+      <AllocatedLine region={regions.statusGapAfter} line={[{ text: " " }]} theme={theme} />
       {previewLines.map((text, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: previews are positional, in send order.
         <FixedRow key={index}>
@@ -1450,11 +1437,11 @@ export function ChatApp({
         </Box>
         <MentionMenu view={mentionView} width={columns} theme={theme} />
       </Box>
-      {regions.diagnostic.rows > 0 ? (
-        <FixedRow>
-          <StyledLineView line={cutSpans([{ text: TERMINAL_TOO_SMALL }], columns)} theme={theme} />
-        </FixedRow>
-      ) : null}
+      <AllocatedLine
+        region={regions.diagnostic}
+        line={cutSpans([{ text: TERMINAL_TOO_SMALL }], columns)}
+        theme={theme}
+      />
       {regions.footer.rows > 0 ? (
         <Box
           flexDirection="row"

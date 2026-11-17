@@ -13,6 +13,37 @@ afterEach(() => {
   _chatAppDeps.mentionFileIndex = savedIndex;
 });
 
+type FrameScreen = ReturnType<typeof frameHarness>;
+
+async function populatePending(ui: FrameScreen, surface: string): Promise<void> {
+  if (surface === "queue" || surface === "mixed") for (let i = 0; i < 4; i++) await ui.submit(`queue ${i}`);
+  if (surface === "steer" || surface === "mixed") for (let i = 0; i < 5; i++) ui.steer(`steer ${i}`);
+}
+
+async function prepareFrameSurface(surface: string): Promise<FrameScreen> {
+  _chatAppDeps.mentionFileIndex = () => ({
+    get: async () => ({ git: true, rows: [{ path: "file.ts", folder: false }] }),
+  });
+  const ui = frameHarness();
+  await ui.resize(24);
+  if (["busy", "busy-short", "busy-long", "queue", "steer", "mixed"].includes(surface)) await ui.start();
+  if (surface.includes("short")) ui.type("draft");
+  if (surface.includes("long")) ui.type("long draft ".repeat(100));
+  if (surface === "slash") ui.type("/");
+  if (surface === "mention") {
+    ui.type("@file");
+    await ui.settle();
+  }
+  await populatePending(ui, surface);
+  if (surface === "question") {
+    ui.ask(QUESTION);
+    ui.type("answer ".repeat(100));
+  }
+  if (surface === "approval") ui.ask(APPROVAL);
+  if (surface === "picker") await ui.submit("/model");
+  return ui;
+}
+
 describe("ChatApp allocated physical frame", () => {
   test.each([
     "idle",
@@ -30,27 +61,7 @@ describe("ChatApp allocated physical frame", () => {
     "approval",
     "picker",
   ])("AC-1 AC-28 bounds every complete %s frame at supported widths", async (surface) => {
-    _chatAppDeps.mentionFileIndex = () => ({
-      get: async () => ({ git: true, rows: [{ path: "file.ts", folder: false }] }),
-    });
-    const ui = frameHarness();
-    await ui.resize(24);
-    if (["busy", "busy-short", "busy-long", "queue", "steer", "mixed"].includes(surface)) await ui.start();
-    if (surface.includes("short")) ui.type("draft");
-    if (surface.includes("long")) ui.type("long draft ".repeat(100));
-    if (surface === "slash") ui.type("/");
-    if (surface === "mention") {
-      ui.type("@file");
-      await ui.settle();
-    }
-    if (surface === "queue" || surface === "mixed") for (let i = 0; i < 4; i++) await ui.submit(`queue ${i}`);
-    if (surface === "steer" || surface === "mixed") for (let i = 0; i < 5; i++) ui.steer(`steer ${i}`);
-    if (surface === "question") {
-      ui.ask(QUESTION);
-      ui.type("answer ".repeat(100));
-    }
-    if (surface === "approval") ui.ask(APPROVAL);
-    if (surface === "picker") await ui.submit("/model");
+    const ui = await prepareFrameSurface(surface);
     for (const width of [40, 80, 120])
       for (const height of HEIGHTS) {
         await ui.resize(height, width);

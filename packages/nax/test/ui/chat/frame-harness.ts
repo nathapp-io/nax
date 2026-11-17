@@ -37,9 +37,10 @@ export const APPROVAL = {
   requestId: "a1",
   tool: "Bash",
   command: "echo hi",
+  summary: "Print a greeting",
   reason: "Run this command",
   expiresAt: "later",
-} as const;
+} as const satisfies SessionEventBody;
 export const COMPLETED = {
   type: "turn_end",
   status: "completed",
