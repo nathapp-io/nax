@@ -59,8 +59,8 @@ function runOutcome(status: NaxStatusFile | null, job: ChatJob, exitCode?: numbe
   return { state: "failed", ...metrics, note: `run status ${status.run.status}` };
 }
 
-/** #2819: a finish job is a publish-only run; its note names what the publish produced. */
-function finishOutcome(status: NaxStatusFile | null, job: ChatJob, exitCode?: number): JobOutcome {
+/** #2819: a publish job is a publish-only run; its note names what the publish produced. */
+function publishOutcome(status: NaxStatusFile | null, job: ChatJob, exitCode?: number): JobOutcome {
   const outcome = runOutcome(status, job, exitCode);
   const workflow = status?.workflow;
   if (outcome.state === "cancelled" || workflow?.outcome === undefined) return outcome;
@@ -86,7 +86,7 @@ export async function resolveJobOutcome(
   repoRoot: string,
 ): Promise<JobOutcome> {
   if (job.kind === "run") return runOutcome(await readJobStatus(job, repoRoot), job, exit.exitCode);
-  if (job.kind === "finish") return finishOutcome(await readJobStatus(job, repoRoot), job, exit.exitCode);
+  if (job.kind === "publish") return publishOutcome(await readJobStatus(job, repoRoot), job, exit.exitCode);
   if (job.cancelRequested) return { state: "cancelled" };
   if (job.kind === "plan") return planOutcome(job, repoRoot);
   if (exit.exitCode === 0) return { state: "succeeded" };

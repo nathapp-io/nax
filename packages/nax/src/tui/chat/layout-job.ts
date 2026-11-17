@@ -110,8 +110,9 @@ function commandOf(view: JobPanelView): string {
       return `nax bot fix #${view.target}`;
     case "plan":
     case "run":
-    case "finish":
       return `nax ${view.kind} ${view.target}`;
+    case "publish":
+      return `nax run ${view.target} --publish-only`;
   }
 }
 

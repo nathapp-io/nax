@@ -181,7 +181,7 @@ async function logTailSource(job: ChatJob, jobs: Pick<ChatJobs, "logTail">): Pro
 }
 
 /**
- * Gathers the artifacts of `job`. Only `run` and `finish` jobs write a run record and a
+ * Gathers the artifacts of `job`. Only `run` and `publish` jobs write a run record and a
  * feature PRD; a `plan` job has no run record yet and a bot job owns no feature at all.
  */
 export async function readJobPanelView(

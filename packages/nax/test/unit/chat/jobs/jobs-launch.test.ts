@@ -102,7 +102,7 @@ describe("createJobsProvider", () => {
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
     ["run", { feature: { type: "string" }, maxCost: { type: "number" } }, "feature"],
-    ["finish", { feature: { type: "string" } }, "feature"],
+    ["publish", { feature: { type: "string" } }, "feature"],
     ["bot_review", { pr: { type: "integer" }, model: { type: "string" }, decisions: { type: "string" } }, "pr"],
     [
       "bot_fix",
@@ -181,7 +181,7 @@ describe("createJobsProvider", () => {
     expect((await provider.tools(options.repoRoot)).slice(0, 5).map((t) => t.localName)).toEqual([
       "plan",
       "run",
-      "finish",
+      "publish",
       "bot_review",
       "bot_fix",
     ]);
@@ -313,24 +313,40 @@ describe("createJobsProvider", () => {
     await launch("run", { feature: "f1", profiles: ["a", "b"] });
     expect(card().reason).not.toContain("warning: the PRD was planned");
   });
-  test("#2819 finish is refused while stories are pending", async () => {
-    const result = await launch("finish", { feature: "f1" });
+  test("#2819 publish is refused while stories are pending", async () => {
+    const result = await launch("publish", { feature: "f1" });
     expect(result).toEqual({
       isError: true,
       content: "[chat] f1 has 3 pending stories; finish them with nax-jobs__run first",
     });
     expect(approve).not.toHaveBeenCalled();
   });
-  test("#2819 finish on a passed feature shows a publish-only card and runs --publish-only", async () => {
+  test("AC-18 publish over a PRD with 2 pending stories is refused before any card", async () => {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(
+        makePRD({
+          userStories: [1, 2].map((n) => makeStory({ id: `US-00${n}`, status: "pending", passes: false })),
+        }),
+      ),
+    );
+    expect(await launch("publish", { feature: "f1" })).toEqual({
+      isError: true,
+      content: "[chat] f1 has 2 pending stories; finish them with nax-jobs__run first",
+    });
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+  test("#2819 publish on a passed feature shows a publish-only card and runs --publish-only", async () => {
     await Bun.write(
       join(featureDir(options.repoRoot, "f1"), "prd.json"),
       JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
     );
-    await launch("finish", { feature: "f1" });
+    await launch("publish", { feature: "f1" });
     expect(card().summary).toBe("nax run f1 --publish-only");
     expect(card().reason).toContain("publish only: reruns the workflow's publish step");
     expect(start.mock.calls[0]?.[0]).toMatchObject({
-      kind: "finish",
+      kind: "publish",
       target: "f1",
       argv: [...runArgv(), "--publish-only"],
     });

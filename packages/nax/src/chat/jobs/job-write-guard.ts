@@ -1,4 +1,4 @@
-/** Repo-scoped checkout-write exclusion while plan/run/finish jobs are active. */
+/** Repo-scoped checkout-write exclusion while plan/run/publish jobs are active. */
 
 import type { LoopHandlerSet } from "@nathapp/nax-agent";
 import { isWithinRootCanonical } from "../target-repo";

@@ -189,7 +189,7 @@ describe("createChainTools check, stop and listing", () => {
     expect((await createJobsProvider(legacy).tools(root)).map((t) => t.localName)).toEqual([
       "plan",
       "run",
-      "finish",
+      "publish",
       "bot_review",
       "bot_fix",
       "list",

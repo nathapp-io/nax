@@ -261,11 +261,11 @@ async function prepareRun(
 }
 
 /**
- * #2819: a finish job reruns only the workflow's publish step, so every story must have passed. The
+ * #2819: a publish job reruns only the workflow's publish step, so every story must have passed. The
  * workflow itself refuses a run with no finished record or a moved HEAD; the card says what it does.
  */
-async function prepareFinish(
-  input: Extract<JobLaunchInput, { kind: "finish" }>,
+async function preparePublish(
+  input: Extract<JobLaunchInput, { kind: "publish" }>,
   options: JobsProviderOptions,
 ): Promise<Prepared | TargetError> {
   const path = join(featureDir(options.repoRoot, input.feature), "prd.json");
@@ -301,7 +301,7 @@ async function prepareTarget(input: JobLaunchInput, options: JobsProviderOptions
   }
   if (input.kind === "plan") return preparePlan(input, options);
   if (input.kind === "run") return prepareRun(input, options);
-  if (input.kind === "finish") return prepareFinish(input, options);
+  if (input.kind === "publish") return preparePublish(input, options);
   if (
     input.kind === "bot_review" &&
     input.decisions !== undefined &&
@@ -392,7 +392,7 @@ async function approvePrepared(
   const { input } = prepared;
   const target = "feature" in input ? input.feature : String(input.pr);
   const summary =
-    input.kind === "finish"
+    input.kind === "publish"
       ? `nax run ${target} --publish-only`
       : "feature" in input
         ? `nax ${input.kind} ${target}`

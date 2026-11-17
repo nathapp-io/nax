@@ -15,7 +15,7 @@ type JobLaunchBody =
       readonly profiles: readonly string[];
       readonly maxCost?: number;
     }
-  | { readonly kind: "finish"; readonly feature: string; readonly profiles: readonly string[] }
+  | { readonly kind: "publish"; readonly feature: string; readonly profiles: readonly string[] }
   | {
       readonly kind: "bot_review";
       readonly pr: number;
@@ -140,7 +140,7 @@ function parseJobBody(kind: ChatJobKind, raw: Record<string, unknown>): JobLaunc
     }
     const profiles = parseProfiles(raw.profiles);
     if ("error" in profiles) return profiles;
-    if (kind === "finish") return { kind, feature: raw.feature, profiles };
+    if (kind === "publish") return { kind, feature: raw.feature, profiles };
     return kind === "plan" ? parsePlan(raw.feature, raw, profiles) : parseRun(raw.feature, raw, profiles);
   }
   const profiles = parseProfiles(raw.profiles);
@@ -162,7 +162,7 @@ export function buildJobArgv(
     }
     return [...ctx.naxEntry, "plan", "-f", input.feature, "--from", input.spec, "-d", ctx.repoRoot, ...profiles];
   }
-  if (input.kind === "finish") {
+  if (input.kind === "publish") {
     return [
       ...ctx.naxEntry,
       "run",

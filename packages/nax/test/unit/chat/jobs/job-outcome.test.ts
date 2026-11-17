@@ -53,16 +53,23 @@ async function resolve(overrides: Partial<ChatJob> = {}, exitCode?: number) {
 }
 
 describe("resolveJobOutcome", () => {
-  test("#2819 a finish job reads its run record and names the published PR", async () => {
+  test("AC-12 a publish job names a ready PR the same way a finish job did", async () => {
+    await status("completed", 4242, { outcome: "ready", url: "https://x/pull/7" });
+    expect(await resolve({ kind: "publish", id: "publish-1a2b3c4d" })).toMatchObject({
+      state: "succeeded",
+      note: "publish ready https://x/pull/7",
+    });
+  });
+  test("#2819 a publish job reads its run record and names the published PR", async () => {
     await status("completed", 4242, { outcome: "draft", url: "https://x/pull/7" });
-    expect(await resolve({ kind: "finish", id: "finish-1a2b3c4d" })).toMatchObject({
+    expect(await resolve({ kind: "publish", id: "publish-1a2b3c4d" })).toMatchObject({
       state: "succeeded",
       note: "publish draft https://x/pull/7",
     });
   });
-  test("#2819 a refused finish fails and keeps the run record's reason", async () => {
+  test("#2819 a refused publish fails and keeps the run record's reason", async () => {
     await status("failed", 4242, { outcome: "local-only" });
-    expect(await resolve({ kind: "finish", id: "finish-1a2b3c4d" })).toMatchObject({
+    expect(await resolve({ kind: "publish", id: "publish-1a2b3c4d" })).toMatchObject({
       state: "failed",
       note: "publish local-only; run status failed",
     });
@@ -155,10 +162,10 @@ describe("readRunProgress", () => {
     const { readRunProgress } = await import("@/chat/jobs/job-outcome");
     expect(await readRunProgress(job(), repoRoot)).toBeNull();
   });
-  test("#2819 a finish job projects its run record too; a bot job never does", async () => {
+  test("#2819 a publish job projects its run record too; a bot job never does", async () => {
     await status();
     const { readRunProgress } = await import("@/chat/jobs/job-outcome");
-    expect(await readRunProgress(job({ kind: "finish" }), repoRoot)).toEqual({
+    expect(await readRunProgress(job({ kind: "publish" }), repoRoot)).toEqual({
       cost: 1.2,
       progress: { passed: 3, total: 7 },
     });

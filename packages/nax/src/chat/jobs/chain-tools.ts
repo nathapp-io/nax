@@ -140,7 +140,7 @@ function failure(content: string): ToolResult {
 
 function stepLabel(step: ChainStep): string {
   if (step.kind === "plan" || step.kind === "run") return `nax ${step.kind} ${step.target}`;
-  if (step.kind === "finish") return `nax run ${step.target} --publish-only`;
+  if (step.kind === "publish") return `nax run ${step.target} --publish-only`;
   const action = step.kind === "bot_review" ? "review" : "fix";
   return `nax bot ${action} ${step.prIndex === undefined ? `#${step.target}` : "(PR chosen by the agent)"}`;
 }

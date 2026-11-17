@@ -65,17 +65,35 @@ describe("newJobId", () => {
     expect(store.newJobId("run")).toBe("run-1a2b3c4d");
   });
   test("defaults to eight lowercase hex characters for every kind", () => {
-    for (const kind of ["plan", "run", "bot_review", "bot_fix"] as const) {
+    for (const kind of ["plan", "run", "publish", "bot_review", "bot_fix"] as const) {
       expect(types.JOB_ID_PATTERN.test(store.newJobId(kind))).toBe(true);
     }
+  });
+  test("AC-4 a publish id is publish-<8 hex> and the pattern accepts it", () => {
+    const id = store.newJobId("publish");
+    expect(id).toMatch(/^publish-[0-9a-f]{8}$/);
+    expect(types.JOB_ID_PATTERN.test(id)).toBe(true);
   });
 });
 describe("JOB_ID_PATTERN", () => {
   test("AC-4 accepts a bot fix id", () => {
     expect(types.JOB_ID_PATTERN.test("bot_fix-0f0f0f0f")).toBe(true);
   });
+  test("AC-5 accepts a legacy finish id so an old record still reads", () => {
+    expect(types.JOB_ID_PATTERN.test("finish-1a2b3c4d")).toBe(true);
+  });
   test("AC-5 rejects traversal", () => {
     expect(types.JOB_ID_PATTERN.test("run-../../x")).toBe(false);
+  });
+});
+describe("ChatJobKind predicates", () => {
+  test("AC-8 publish is a feature kind and a run kind", () => {
+    expect(types.isFeatureJobKind("publish")).toBe(true);
+    expect(types.isRunJobKind("publish")).toBe(true);
+  });
+  test("AC-8 bot kinds stay neither", () => {
+    expect(types.isFeatureJobKind("bot_review")).toBe(false);
+    expect(types.isRunJobKind("bot_fix")).toBe(false);
   });
 });
 describe("writeJobRecord", () => {
@@ -95,6 +113,12 @@ describe("writeJobRecord", () => {
   test("chain AC-11 preserves optional chain links", async () => {
     const record: ChatJob = { ...job(), chainId: "chain-1a2b3c4d", chainStep: 2 };
     await store.writeJobRecord(dir, record);
+    expect(await store.readJobRecords(dir)).toEqual([record]);
+  });
+  test("AC-7 a publish record round trips under publish-1a2b3c4d.json", async () => {
+    const record = job({ id: "publish-1a2b3c4d", kind: "publish" });
+    await store.writeJobRecord(dir, record);
+    expect(readdirSync(store.jobsDir(dir))).toEqual(["publish-1a2b3c4d.json"]);
     expect(await store.readJobRecords(dir)).toEqual([record]);
   });
   test("AC-7 replaces an existing record", async () => {
@@ -163,6 +187,14 @@ describe("readJobRecords", () => {
   });
   test("AC-12 returns empty for a missing directory", async () => {
     expect(await store.readJobRecords(dir)).toEqual([]);
+  });
+  test("AC-6 reads a legacy finish record as publish and keeps its id", async () => {
+    const legacy = { ...job({ id: "finish-1a2b3c4d", state: "succeeded" }), kind: "finish" };
+    mkdirSync(store.jobsDir(dir), { recursive: true });
+    await Bun.write(join(store.jobsDir(dir), "finish-1a2b3c4d.json"), JSON.stringify(legacy));
+    const records = await store.readJobRecords(dir);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ kind: "publish", id: "finish-1a2b3c4d" });
   });
   test.each([
     null,

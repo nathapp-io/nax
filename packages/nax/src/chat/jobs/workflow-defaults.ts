@@ -18,7 +18,7 @@ export interface WorkflowDefaultsApplied<T> {
   readonly modelFrom?: string;
 }
 
-/** `run` and `finish` share one key: `finish` is a publish-only run. */
+/** `run` and `publish` share one key: `publish` is a publish-only run. */
 type StepKey = "plan" | "run" | "botReview" | "botFix";
 
 interface StepDefaults {
@@ -31,7 +31,7 @@ function stepDefaults(workflow: ChatWorkflowConfig, kind: ChatJobKind): StepDefa
   switch (kind) {
     case "plan":
       return { key: "plan", profiles: workflow.plan?.profiles ?? [] };
-    case "finish":
+    case "publish":
     case "run":
       return { key: "run", profiles: workflow.run?.profiles ?? [] };
     case "bot_review":

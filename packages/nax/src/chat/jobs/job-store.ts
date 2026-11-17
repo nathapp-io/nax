@@ -5,7 +5,10 @@ import { type ChatJob, type ChatJobKind, JOB_ID_PATTERN } from "./job-types";
 
 export const CHAT_JOBS_DIR = "chat-jobs";
 const RANDOM_HEX_LENGTH = 8;
-const JOB_KINDS: readonly string[] = ["plan", "run", "finish", "bot_review", "bot_fix"];
+/** `finish` is here only so a record written before the rename passes `isJobRecord`; it reads as publish. */
+const JOB_KINDS: readonly string[] = ["plan", "run", "publish", "finish", "bot_review", "bot_fix"];
+/** Widened so the legacy kind can be compared against a `ChatJobKind` that no longer names it. */
+const LEGACY_FINISH: string = "finish";
 const JOB_STATES: readonly string[] = ["running", "succeeded", "failed", "cancelled", "lost"];
 
 export const _jobStoreDeps = {
@@ -88,10 +91,15 @@ function isJobRecord(value: unknown): value is ChatJob {
   );
 }
 
+/** A record written before the rename keeps its id but reads as the kind it names today. */
+function normalizeKind(record: ChatJob): ChatJob {
+  return record.kind === LEGACY_FINISH ? { ...record, kind: "publish" } : record;
+}
+
 async function readRecord(path: string): Promise<ChatJob | null> {
   try {
     const value: unknown = await _jobStoreDeps.file(path).json();
-    return isJobRecord(value) ? value : null;
+    return isJobRecord(value) ? normalizeKind(value) : null;
   } catch (err) {
     // Malformed JSON and records removed during a read are ordinary recovery skips.
     if (err instanceof SyntaxError || isMissing(err)) return null;

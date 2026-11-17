@@ -122,6 +122,12 @@ describe("jobPanelLines: collapsed row one", () => {
     expect(rows[0]).toContain("nax bot review #2936");
   });
 
+  test("AC-13 names a publish job as `nax run <target> --publish-only`", () => {
+    const rows = rowsOf(entry({ kind: "publish", target: "f1", elapsedMs: 0 }));
+    expect(rows[0]).toContain("nax run f1 --publish-only");
+    expect(rows[0]).not.toContain("nax finish");
+  });
+
   test("names a bot fix job as `nax bot fix #<target>`", () => {
     const rows = rowsOf(entry({ kind: "bot_fix", target: "2936", elapsedMs: 0 }));
     expect(rows[0]).toContain("nax bot fix #2936");

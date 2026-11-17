@@ -126,6 +126,13 @@ describe("createChainTools card and activation", () => {
     expect(card().reason).not.toContain("no channel");
     expect(card().reason).not.toContain("run steps' asks you do not answer in chat fall to their timeout defaults");
   });
+  test("AC-11 labels one publish step as nax run f1 --publish-only", async () => {
+    await invoke({ steps: [{ kind: "publish", input: { feature: "f1" } }] });
+    const stepLine = card()
+      .reason.split("\n")
+      .find((line) => line.startsWith("1. "));
+    expect(stepLine).toBe("1. nax run f1 --publish-only — starts after: you approve this card");
+  });
   test("AC-6 states the check prerequisite", async () => {
     await invoke({ steps: [steps[0], { ...steps[1], checkBefore: "PRD fidelity READY" }] });
     expect(card().reason.split("\n")).toContain(
