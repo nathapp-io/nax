@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { type Instance, render } from "ink";
 import { createElement } from "react";
-import { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
+import { CLEAR_ALT_SCREEN, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
 import { ChatApp, type ChatAppProps } from "./ChatApp";
 import { createMouseInput, DISABLE_MOUSE, ENABLE_MOUSE } from "./mouse-input";
 import {
@@ -15,10 +15,17 @@ import {
 } from "./terminal-title";
 import { resolveChatTheme } from "./theme";
 
-export { ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
+export { CLEAR_ALT_SCREEN, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN } from "./alt-screen";
 export { ChatApp, type ChatAppProps } from "./ChatApp";
 export { formatChatExitSummary } from "./exit-summary";
 export { type ChatTheme, resolveChatTheme } from "./theme";
+
+/**
+ * How long a burst of terminal resizes is allowed to settle before the screen repaints: a
+ * drag fires a resize per column, and the frame is only right once the last one has been laid
+ * out again.
+ */
+export const RESIZE_REPAINT_MS = 50;
 
 export const _renderChatDeps = {
   render,
@@ -28,6 +35,13 @@ export const _renderChatDeps = {
   clearTimeout: (handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>),
   write: (text: string): void => {
     process.stdout.write(text);
+  },
+  /** Subscribe to terminal resizes; the returned remover unsubscribes. */
+  onResize: (handler: () => void): (() => void) => {
+    process.stdout.on("resize", handler);
+    return () => {
+      process.stdout.off("resize", handler);
+    };
   },
   /** Register the process-exit guard; the returned remover must be called after the first restore. */
   onExit: (handler: () => void): (() => void) => {
@@ -62,6 +76,10 @@ function projectName(props: ChatAppProps): string {
  * writes the project's name, and keeps it current as `ChatApp` reports its turns starting and
  * ending — a chat in a background tab then shows whether it is still working. The restore pops
  * the saved title, and only when it was saved: a render that threw first never took one.
+ *
+ * A terminal resize leaves the frame drawn at the old width (US-001): once a burst of resizes
+ * has settled the screen is erased and the whole frame written again from 1:1, because Ink's
+ * incremental path only rewrites the rows that changed (#2973).
  */
 export function renderChat(props: ChatAppProps): Instance {
   const source = _renderChatDeps.stdin();
@@ -116,10 +134,22 @@ export function renderChat(props: ChatAppProps): Instance {
       armFrame();
     }
   };
+  let removeResize: (() => void) | undefined;
+  /** The armed repaint, kept apart from the title's `timer`: neither path clears the other's. */
+  let repaintTimer: unknown;
+  let repaintArmed = 0;
+  const stopRepaint = (): void => {
+    if (repaintTimer === undefined) return;
+    _renderChatDeps.clearTimeout(repaintTimer);
+    repaintTimer = undefined;
+    repaintArmed += 1;
+  };
   const restore = (): void => {
     if (restored) return;
     restored = true;
     stopFrames();
+    stopRepaint();
+    removeResize?.();
     removeExit?.();
     if (isTTY) _renderChatDeps.write(DISABLE_MOUSE);
     _renderChatDeps.write(LEAVE_ALT_SCREEN);
@@ -139,6 +169,27 @@ export function renderChat(props: ChatAppProps): Instance {
         stdin: mouse.stdin,
       },
     );
+    // A re-armed setTimeout, never Bun.sleep: the handle must stay cancellable
+    // (forbidden-patterns-source), and a burst of resizes must repaint once, after the last.
+    const armRepaint = (): void => {
+      repaintArmed += 1;
+      const mine = repaintArmed;
+      repaintTimer = _renderChatDeps.setTimeout(() => {
+        // A repaint whose timeout was cleared (or replaced) must neither write nor repaint.
+        if (restored || mine !== repaintArmed) return;
+        repaintTimer = undefined;
+        _renderChatDeps.write(CLEAR_ALT_SCREEN);
+        instance.repaint();
+      }, RESIZE_REPAINT_MS);
+    };
+    // A resize leaves rows drawn at the old width behind, and Ink's incremental path only
+    // rewrites the rows that changed (#2973). Once the last resize of a burst has been laid
+    // out again, erase the screen and write the whole frame from 1:1.
+    removeResize = _renderChatDeps.onResize(() => {
+      if (restored) return;
+      stopRepaint();
+      armRepaint();
+    });
     if (isTTY) {
       _renderChatDeps.write(ENABLE_MOUSE);
       _renderChatDeps.write(PUSH_TITLE);

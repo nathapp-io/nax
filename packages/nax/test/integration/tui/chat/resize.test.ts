@@ -206,6 +206,16 @@ describe("source renderChat physical resize", () => {
           }
         };
         await resizeAndAssert();
+        // US-001 AC-21: a chat pane narrowed and then widened again draws the frame the
+        // never-resized reference pane still shows, at the 80 columns tmux reports. tmux may
+        // not re-wrap the alternate screen when it narrows, so this case guards the width
+        // path; `ink-incremental-render.test.tsx` is the proof that a repaint writes every row.
+        const paneWidth = async () => tmux(socket, "display-message", "-p", "-t", "chat:0", "#{pane_width}").trimEnd();
+        tmux(socket, "resize-window", "-t", "chat:0", "-x", "50", "-y", "24");
+        expect(await until(paneWidth, (value) => value === "50")).toBe("50");
+        tmux(socket, "resize-window", "-t", "chat:0", "-x", "80", "-y", "24");
+        expect(await until(paneWidth, (value) => value === "80")).toBe("80");
+        expect(await until(current, (frame) => frame === expected)).toBe(expected);
         for (let i = 0; i < 4; i++) {
           await call("/bytes");
           await call("/tick", true);

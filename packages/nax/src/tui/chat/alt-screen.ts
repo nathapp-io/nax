@@ -12,3 +12,6 @@ export const ENTER_ALT_SCREEN = "\u001b[?1049h\u001b[H";
 
 /** Switch back to the normal screen, leaving the shell prompt where the chat found it. */
 export const LEAVE_ALT_SCREEN = "\u001b[?1049l";
+
+/** Erase the whole alternate screen and home the cursor, so a full frame redraws from 1:1. */
+export const CLEAR_ALT_SCREEN = "\u001b[2J\u001b[H";
