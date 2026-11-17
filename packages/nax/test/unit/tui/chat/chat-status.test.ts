@@ -749,3 +749,29 @@ describe("reduceTurnStatus on tool_input_delta", () => {
     expect(next.toolName).toBe("Write");
   });
 });
+
+test("ACP context survives billing usage and turn boundaries", () => {
+  const base = { sessionId: "s", turnId: "t", at: "now", metadata: {} };
+  const context = reduceTurnStatus(IDLE_STATUS, { ...base, type: "context_usage", used: 42_000, size: 200_000 });
+  const billed = reduceTurnStatus(context, {
+    ...base,
+    type: "usage",
+    round: 0,
+    inputTokens: 120_000,
+    outputTokens: 2_000,
+    costUsd: 0.1,
+  });
+  expect(billed.contextTokens).toBe(42_000);
+  expect(billed.inputTokens).toBe(120_000);
+  expect(plainText(footer({ status: billed }).right)).toContain("42.0k/200k ctx (21%)");
+  const next = reduceTurnStatus(billed, { ...base, type: "turn_start" });
+  expect(plainText(footer({ status: next }).right)).toContain("42.0k/200k ctx (21%)");
+  const compacted = reduceTurnStatus(next, { ...base, type: "context_usage", used: 0, size: 100_000 });
+  expect(plainText(footer({ status: compacted }).right)).toContain("0/100k ctx (0%)");
+});
+
+test("ACP without a context report hides turn totals", () => {
+  expect(
+    plainText(footer({ state: { model: "acp:codex" }, status: { ...IDLE_STATUS, contextTokens: 120_000 } }).right),
+  ).not.toContain("ctx");
+});

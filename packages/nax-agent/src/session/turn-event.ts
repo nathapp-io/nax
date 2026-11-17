@@ -61,6 +61,8 @@ export type TurnEvent =
        */
       readonly costSource?: import("./agent-session-types.ts").CostSource;
     }
+  /** Current context occupancy, independent of per-call or per-turn billing totals. */
+  | { readonly type: "context_usage"; readonly used: number; readonly size: number }
   | { readonly type: "compaction"; readonly reason: "proactive" | "overflow" };
 
 /** The per-turn sink. Called synchronously; a throw or a rejected promise is contained by the backend. */

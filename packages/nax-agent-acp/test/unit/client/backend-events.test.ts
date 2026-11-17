@@ -111,10 +111,12 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
       "tool_call",
       "tool_result",
       "thinking_delta",
+      "context_usage",
       "text_delta",
       "usage",
       "turn_end",
     ]);
+    expect(find(events, "context_usage")).toMatchObject({ used: 100, size: 200_000 });
     const at = (type: SessionEvent["type"]) => events.findIndex((e) => e.type === type);
     const deltas = events.flatMap((e, i) => (e.type === "tool_input_delta" ? [{ e, i }] : []));
     expect(deltas.length).toBeGreaterThan(0);

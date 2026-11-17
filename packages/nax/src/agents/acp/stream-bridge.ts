@@ -95,6 +95,7 @@ function activityOf(event: TurnEvent, toolNames: Map<string, string>): Activity 
     case "usage":
       return usageActivity(event);
     case "stream_reset":
+    case "context_usage":
     case "compaction":
     case "tool_input_delta":
       return undefined;

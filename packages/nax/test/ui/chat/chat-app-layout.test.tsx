@@ -774,3 +774,19 @@ describe("US005 ChatApp clipboard", () => {
     expect(ui.rows().at(-1)).toContain("copied 5 chars");
   });
 });
+
+test.each(["session", "model"])("ACP context is live and clears on %s switches", async (change) => {
+  const ui = mount({ state: { model: "acp:codex" } });
+  await ui.resize(120, 30);
+  await ui.start();
+  ui.emit({ type: "context_usage", used: 42_000, size: 200_000 });
+  ui.emit({ type: "usage", round: 0, inputTokens: 120_000, outputTokens: 2_000, costUsd: 0 });
+  expect(ui.rows().at(-1)).toContain("42.0k/200k ctx (21%)");
+  ui.emit({ type: "context_usage", used: 99_000, size: 100_000 }, { subagentTask: "nested" });
+  expect(ui.rows().at(-1)).toContain("42.0k/200k ctx (21%)");
+  await ui.settle();
+  const state = ui.host.current();
+  ui.setState({ ...state, ...(change === "session" ? { sessionId: "new-session" } : { model: "anthropic/claude" }) });
+  await ui.resize(121, 30);
+  expect(ui.rows().at(-1)).not.toContain("ctx");
+});
