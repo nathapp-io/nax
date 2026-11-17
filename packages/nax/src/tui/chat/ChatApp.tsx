@@ -18,10 +18,17 @@ import { type ChatHost, type ChatPendingAsk, createMentionFileIndex, expandChatM
 import { buildCommandMessage } from "@/prompts";
 import { runCommandShellLines } from "@/resources";
 import { NAX_VERSION } from "@/version";
-import { AskCard, askCardLayout } from "./AskCard";
+import { AskCard, measureAskCard } from "./AskCard";
 import { askCardModel } from "./ask-card";
-import { bottomBlocked, bottomRowsFor, menuRowsFor, viewportActive } from "./bottom-region";
-import { ChatInput, type ChatInputHandle, EMPTY_DRAFT, INPUT_RULE_ROWS, type InputDraft, inputRows } from "./ChatInput";
+import { bottomBlocked } from "./bottom-region";
+import {
+  ChatInput,
+  type ChatInputHandle,
+  EMPTY_DRAFT,
+  INPUT_RULE_ROWS,
+  type InputDraft,
+  measureInput,
+} from "./ChatInput";
 import {
   formatTokens,
   headerLines,
@@ -34,6 +41,7 @@ import {
 import { useEscConfirm } from "./esc-confirm";
 import { type EscAsk, type EscLayer, escHintText, topEscLayer } from "./esc-layer";
 import { FixedRow } from "./FixedRow";
+import { allocateChatFrame, type ChatFrameOptions, TERMINAL_TOO_SMALL } from "./frame-layout";
 import {
   EMPTY_IMAGE_DRAFT,
   type ImageDraft,
@@ -48,17 +56,17 @@ import { MentionMenu } from "./MentionMenu";
 import { needsMentionExpansion, sentEntries } from "./mention-send";
 import {
   type DiscardedSteers,
+  MAX_PENDING_PREVIEW_ROWS,
   type MessageQueue,
+  pendingPreviewLines,
   pushDiscardedSteer,
   pushQueued,
-  queueRowLines,
   queueToPrompt,
   type SteeringRow,
-  steeringRowLines,
   takeQueued,
 } from "./message-queue";
 import type { MouseEvents } from "./mouse-input";
-import { Picker, useChatPicker } from "./Picker";
+import { measurePicker, Picker, useChatPicker } from "./Picker";
 import { SlashMenu } from "./SlashMenu";
 import { sessionTranscript } from "./session-transcript";
 import {
@@ -82,11 +90,12 @@ import { useIdleCompact } from "./use-idle-compact";
 import { useImageAttach } from "./use-image-attach";
 import { useJobPanels } from "./use-job-panels";
 import { useJobs } from "./use-jobs";
-import { FRAME_SLACK_ROWS, useJobsOpener } from "./use-jobs-opener";
+import { useJobsOpener } from "./use-jobs-opener";
 import { useMentionMenu } from "./use-mention-menu";
 import { useSlashMenuKeys } from "./use-slash-menu-keys";
 import { useSwitchNotices } from "./use-switch-notices";
 import { useChatKeys } from "./useChatKeys";
+import { cutSpans } from "./wrap";
 
 export interface ChatAppProps {
   readonly host: ChatHost;
@@ -121,13 +130,6 @@ export const _chatAppDeps = {
   mentionFileIndex: createMentionFileIndex,
 };
 
-const HEADER_ROWS = 3;
-/** Rows the footer always claims. */
-const FOOTER_ROWS = 1;
-/** Rows the working line claims while a turn runs. */
-const WORKING_ROWS = 1;
-/** The viewport never shrinks below this, however little room the fixed regions leave. */
-const MIN_VIEWPORT_ROWS = 1;
 /** What a stream that cannot report its size is assumed to be. */
 const DEFAULT_COLUMNS = 80;
 const DEFAULT_ROWS = 24;
@@ -255,23 +257,6 @@ function idleForJobNotice(input: { turnRunning: boolean; bottomBlocked: boolean;
   return !input.turnRunning && !input.bottomBlocked && input.canControl;
 }
 
-/**
- * The rows the queue draws above the input. An ask card or a picker replaces the input, and
- * the queue drawn above it with it: nothing is drawn then, so nothing is reserved either.
- */
-function queueLinesFor(queue: MessageQueue, blocked: boolean): readonly string[] {
-  return blocked ? EMPTY_QUEUE : queueRowLines(queue);
-}
-
-/**
- * The rows the steers the running turn has not taken yet draw above the queue (US-004). They
- * are reserved and drawn beside the queue's, and left out with it when an ask card or a picker
- * replaces the input and the rows above it.
- */
-function steeringLinesFor(steering: readonly SteeringRow[], blocked: boolean): readonly string[] {
-  return blocked ? EMPTY_QUEUE : steeringRowLines(steering);
-}
-
 /** An ask card, a picker, or any menu drawn under the input, claims the bottom region. */
 function surfaceShown(cardOrPicker: boolean, ...menus: readonly boolean[]): boolean {
   return cardOrPicker || menus.includes(true);
@@ -394,7 +379,9 @@ export function ChatApp({
   }, []);
   const append = useCallback((entry: TranscriptEntry) => appendAll([entry]), [appendAll]);
   const showError = useCallback((error: unknown) => append({ kind: "error", text: errorMessage(error) }), [append]);
+  const interactive = useRef(true);
   const keys = useChatKeys({
+    active: () => interactive.current,
     host,
     running: sending,
     refresh: update,
@@ -425,53 +412,65 @@ export function ChatApp({
     dismissed: dismissedQuery,
     blocked: bottomBlocked(ask, picker.model),
   });
-  // Measure first: an invisible menu must not claim navigation or run unseen commands. The
-  // working line's row is decided here, from the turn alone; its text is composed further
-  // down, once the layer that names esc's action can be read without a cycle.
   const workingShown = status.running;
-  const usableRows = size.rows - FRAME_SLACK_ROWS;
-  /**
-   * The rows the queue draws above the input, and the height it claims: like the working line,
-   * it is reserved out of the usable rows before the bottom region's budget is measured, so a
-   * queue never eats the prompt's own room. An ask card or a picker replaces the input, and
-   * the queue with it — nothing is drawn then, so nothing is reserved either.
-   */
-  const queueLines = queueLinesFor(queued, bottomBlocked(ask, picker.model));
-  const steeringLines = steeringLinesFor(steering, bottomBlocked(ask, picker.model));
-  /** The steering rows then the queue's: everything the screen draws above the input. */
-  const aboveInputLines = [...steeringLines, ...queueLines];
-  const bottomBudget = Math.max(
-    1,
-    usableRows -
-      HEADER_ROWS -
-      (workingShown ? WORKING_ROWS : 0) -
-      aboveInputLines.length -
-      FOOTER_ROWS -
-      MIN_VIEWPORT_ROWS,
-  );
-  const menuRows = menuRowsFor({ rows: menu.rows, budget: bottomBudget });
-  /** A menu with no row budget cannot own keys. */
+  // Desired menu demand is independent of terminal height; only the final allocation projects it.
   function menuShown(): boolean {
-    return menu.open && menuRows > 0;
+    return menu.open && frame.regions.menus.rows > 0;
   }
-  /** Check visibility and the newest prompt, not the render preceding a batched key. */
   function menuOwnsKeys(): boolean {
-    return menuShown() && slashKeys.ownsKeys();
+    return frame.targets.menus && menuShown() && slashKeys.ownsKeys();
   }
-  // The `@` picker draws under the same input and takes the same keys; it builds one file list
-  // for the cwd the screen was handed, and writes a chosen row through the input's handle.
   const mention = useMentionMenu({
     cwd,
     indexFor: _chatAppDeps.mentionFileIndex,
     editor: draft.editor,
     blocked: bottomBlocked(ask, picker.model),
-    suppressed: menuShown(),
+    suppressed: menu.open,
     slashOwns: menuOwnsKeys,
-    budget: bottomBudget,
+    allocatedRows: (rows, editor) => {
+      if (editor.text === draft.editor.text) return frame.regions.menus.rows;
+      // Preserve loaded-list batching: measure a newly typed query before React paints it.
+      return allocateChatFrame({
+        ...frameOptions,
+        input: measureInput({ ...draft, editor }, { width: size.columns, container: size.columns, busy, hint }),
+        menus: rows,
+      }).regions.menus.rows;
+    },
     active: !keys.locked,
     handle: inputHandle,
   });
-  const mentionView = mention.view;
+  const answer = ask?.type === "question" && ask.requestId === answerDraft.requestId ? answerDraft.draft : EMPTY_DRAFT;
+  const askModel =
+    ask === undefined
+      ? undefined
+      : askCardModel(ask, {
+          canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
+          entries,
+        });
+  const frameOptions: ChatFrameOptions = {
+    rows: size.rows,
+    input: measureInput(draft, { width: size.columns, container: size.columns, busy, hint }),
+    ask:
+      ask === undefined || askModel === undefined
+        ? undefined
+        : measureAskCard(askModel, {
+            width: size.columns,
+            theme,
+            answer,
+            expiresAt: ask.expiresAt,
+          }),
+    picker: picker.model === undefined ? undefined : measurePicker(picker.model),
+    menus: menu.open ? menu.rows : mention.view.rows,
+    previews: Math.min(MAX_PENDING_PREVIEW_ROWS, steering.length + queued.length),
+    working: workingShown,
+    locked: keys.locked,
+  };
+  const frame = allocateChatFrame(frameOptions);
+  interactive.current = frame.surface !== "diagnostic";
+  const { regions, targets } = frame;
+  const mentionView = { ...mention.view, rows: Math.min(mention.view.rows, regions.menus.rows) };
+  const previewLines = pendingPreviewLines({ steering, queued, budget: regions.previews.rows, columns: size.columns });
+  const inputBudget = Math.max(1, regions.surface.rows - INPUT_RULE_ROWS);
   /** True while the picker's rows (or its diagnostic line) are drawn under the input. */
   const mentionShown = mentionView.rows > 0;
   if (menu.reopen) {
@@ -518,13 +517,14 @@ export function ChatApp({
     input: inputHandle,
     editor: () => editorRef.current,
     notice: (text) => append({ kind: "notice", text }),
-    active: () => !bottomBlocked(ask, picker.model),
+    active: () => targets.input,
   });
 
   // Ctrl+o toggles detail; ctrl+v attaches a clipboard image; ctrl+s steers the running turn
   // (or interrupts it and sends the draft next); escape interrupts only when no bottom surface
   // or control owns it. The hook decides whether a key is theirs to answer.
   useInput((input, key) => {
+    if (frame.surface === "diagnostic") return;
     if (key.ctrl && input === CTRL_O) {
       setExpanded((current) => !current);
       return;
@@ -1209,8 +1209,6 @@ export function ChatApp({
     note: (text) => append({ kind: "notice", text }),
   });
 
-  // A running job's panel: appended when the job is first seen running, refreshed while it
-  // runs and frozen once it ends. Held back while a turn streams, so a reply is never split.
   useJobPanels({ host, entries, setEntries, turnRunning });
 
   // A job leaves the chat idle for a long time (US-007), so its history is compacted once per
@@ -1306,7 +1304,7 @@ export function ChatApp({
   useJobsOpener({
     host,
     mouse,
-    blocked: surfaceShown(bottomBlocked(ask, picker.model), menuShown(), mentionShown),
+    blocked: !targets.footer || surfaceShown(bottomBlocked(ask, picker.model), menuShown(), mentionShown),
     footer,
     size,
     open: picker.open,
@@ -1314,95 +1312,91 @@ export function ChatApp({
     showOutput: (entry) => void picker.showOutput(entry),
   });
 
-  // The bottom budget and the menus' shares of it are measured above the key handlers, beside
-  // the claims that read them; the input is measured against what those leave.
-  const inputBudget = Math.max(1, bottomBudget - INPUT_RULE_ROWS - menuRows - mentionView.rows);
-  // The question card's draft is the screen's state: only then can the card's rows — the
-  // answer box included — be measured before the frame is composed. It is the card's own
-  // draft, keyed by the request it was typed for, so it never inherits the chat input's.
-  const answer = ask?.type === "question" && ask.requestId === answerDraft.requestId ? answerDraft.draft : EMPTY_DRAFT;
-  const askModel =
-    ask === undefined
-      ? undefined
-      : askCardModel(ask, {
-          canRemember: ask.type === "approval_requested" && host.asks.canRemember(ask),
-          entries,
-        });
-  const cardRows =
-    ask === undefined || askModel === undefined
-      ? undefined
-      : askCardLayout(askModel, {
-          width: columns,
-          budget: bottomBudget,
-          theme,
-          answer,
-          expiresAt: ask.expiresAt,
-        }).rows;
-  const inputBottomRows = inputRows(draft, { width: columns, busy, container: columns, maxRows: inputBudget });
-  const bottomRows = bottomRowsFor({
-    ask: cardRows,
-    picker: picker.model,
-    input: aboveInputLines.length + inputBottomRows + menuRows + mentionView.rows,
-    budget: bottomBudget,
-  });
-  const viewportHeight = Math.max(
-    MIN_VIEWPORT_ROWS,
-    usableRows - HEADER_ROWS - (working ? WORKING_ROWS : 0) - bottomRows - FOOTER_ROWS,
-  );
-
   return (
     <Box flexDirection="column" width={columns}>
-      <Box flexDirection="column">
-        {header.map((row, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: the header's rows are positional and re-rendered whole.
-          <FixedRow key={index}>
+      {header.map((row, index) => (
+        <Box
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional header regions.
+          key={index}
+          display={
+            [regions.headerTitle.rows, regions.headerPath.rows, regions.headerRule.rows][index] ? "flex" : "none"
+          }
+        >
+          <FixedRow>
             <StyledLineView line={row} theme={theme} />
           </FixedRow>
-        ))}
-      </Box>
+        </Box>
+      ))}
       <TranscriptViewport
         key={state.sessionId}
         mouse={mouse}
-        top={HEADER_ROWS}
+        top={regions.transcript.top}
         onCopy={onCopy}
         onClick={(line) => setEntries((rows) => toggleTranscriptLine(rows, line, layoutOptions))}
         lines={lines}
-        height={viewportHeight}
+        height={regions.transcript.rows}
         theme={theme}
-        active={viewportActive(keys.locked, picker.model)}
+        active={targets.transcript}
         followToken={followToken}
       />
-      {working ? (
+      {regions.statusGapBefore.rows > 0 ? (
+        <FixedRow>
+          <StyledLineView line={[{ text: " " }]} theme={theme} />
+        </FixedRow>
+      ) : null}
+      {regions.status.rows > 0 && working ? (
         <FixedRow>
           <StyledLineView line={working} theme={theme} />
         </FixedRow>
       ) : null}
-      {/* Clip measured rows to preserve the footer. Cards take precedence over pickers and input. */}
-      {ask !== undefined && askModel !== undefined ? (
-        <Box height={bottomRows} overflow="hidden" flexDirection="column">
+      {regions.statusGapAfter.rows > 0 ? (
+        <FixedRow>
+          <StyledLineView line={[{ text: " " }]} theme={theme} />
+        </FixedRow>
+      ) : null}
+      {previewLines.map((text, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: previews are positional, in send order.
+        <FixedRow key={index}>
+          <StyledLineView line={[{ text, color: "muted" }]} theme={theme} />
+        </FixedRow>
+      ))}
+      {/* Keep local surface state mounted while hidden; hidden surfaces occupy no rows. */}
+      <Box
+        display={frame.surface === "ask" ? "flex" : "none"}
+        height={regions.surface.rows}
+        overflow="hidden"
+        flexDirection="column"
+      >
+        {ask !== undefined && askModel !== undefined ? (
           <AskCard
             key={ask.requestId}
             ask={ask}
             model={askModel}
             controller={host.asks}
             width={columns}
-            budget={bottomRows}
+            budget={regions.surface.rows}
             theme={theme}
             answer={answer}
             onAnswerChange={(next) => setAnswerDraft({ requestId: ask.requestId, draft: next })}
             onDeclined={() => setHint(TELL_NAX_HINT)}
             onDismiss={() => dismissQuestion(ask)}
-            active={!keys.locked}
+            active={targets.ask}
           />
-        </Box>
-      ) : picker.model !== undefined ? (
-        <Box height={bottomRows} overflow="hidden" flexDirection="column">
+        ) : null}
+      </Box>
+      <Box
+        display={frame.surface === "picker" ? "flex" : "none"}
+        height={regions.surface.rows}
+        overflow="hidden"
+        flexDirection="column"
+      >
+        {picker.model !== undefined ? (
           <Picker
             model={picker.model}
             width={columns}
             theme={theme}
-            budget={bottomBudget}
-            active={!keys.locked}
+            budget={regions.surface.rows}
+            active={targets.picker}
             onChoose={picker.choose}
             onCycle={picker.cycle}
             onStop={picker.stop}
@@ -1410,66 +1404,69 @@ export function ChatApp({
             onQuery={picker.setQuery}
             query={picker.model.query}
           />
-        </Box>
-      ) : (
-        <Box height={bottomRows} overflow="hidden" flexDirection="column">
-          {steeringLines.map((text, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: the steering rows are positional and drawn in arrival order.
-            <FixedRow key={index}>
-              <StyledLineView line={[{ text, color: "muted" }]} theme={theme} />
-            </FixedRow>
-          ))}
-          {queueLines.map((text, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: the queue's rows are positional and drawn oldest first.
-            <FixedRow key={index}>
-              <StyledLineView line={[{ text, color: "muted" }]} theme={theme} />
-            </FixedRow>
-          ))}
-          <ChatInput
-            draft={draft}
-            onDraftChange={changeDraft}
-            onPaste={imageAttach.onPaste}
-            onSubmit={(message) => {
-              setHint(undefined);
-              void submit(message);
-            }}
-            onQueue={queueReturn}
-            // A return can arrive in the same batch as the one that started a turn, before
-            // any redraw: the turn's owner is `sending`, not the rendered `busy` flag.
-            busyNow={() => sending.current}
+        ) : null}
+      </Box>
+      <Box display={frame.surface === "input" ? "flex" : "none"} flexDirection="column">
+        <ChatInput
+          draft={draft}
+          onDraftChange={changeDraft}
+          onPaste={imageAttach.onPaste}
+          onSubmit={(message) => {
+            setHint(undefined);
+            void submit(message);
+          }}
+          onQueue={queueReturn}
+          busyNow={() => sending.current}
+          width={columns}
+          theme={theme}
+          active={targets.input}
+          busy={busy}
+          maxRows={inputBudget}
+          hint={hint}
+          yieldNavigation={mention.ownsNavigation}
+          handle={inputHandle}
+          onClearArmedChange={setClearArmed}
+        />
+        <Box
+          display={menuShown() ? "flex" : "none"}
+          height={regions.menus.rows}
+          overflow="hidden"
+          flexDirection="column"
+        >
+          <SlashMenu
+            menu={menu}
             width={columns}
             theme={theme}
-            active={!keys.locked}
-            busy={busy}
-            maxRows={inputBudget}
-            hint={hint}
-            yieldNavigation={mention.ownsNavigation}
-            handle={inputHandle}
-            onClearArmedChange={setClearArmed}
+            active={targets.menus && menu.open}
+            ownsKeys={menuOwnsKeys}
+            maxRows={regions.menus.rows}
+            onComplete={completeCommand}
+            onRun={runCommandLine}
+            onClose={() => {
+              slashKeys.sawDismissal(menu.query);
+              setDismissedQuery(menu.query);
+            }}
           />
-          {menuShown() ? (
-            <SlashMenu
-              menu={menu}
-              width={columns}
-              theme={theme}
-              active={!keys.locked}
-              ownsKeys={menuOwnsKeys}
-              maxRows={menuRows}
-              onComplete={completeCommand}
-              onRun={runCommandLine}
-              onClose={() => {
-                slashKeys.sawDismissal(menu.query);
-                setDismissedQuery(menu.query);
-              }}
-            />
-          ) : null}
-          <MentionMenu view={mentionView} width={columns} theme={theme} />
         </Box>
-      )}
-      <Box flexDirection="row" justifyContent="space-between" width={columns} height={1} overflow="hidden">
-        <StyledLineView line={footer.left} theme={theme} />
-        <StyledLineView line={footer.right} theme={theme} />
+        <MentionMenu view={mentionView} width={columns} theme={theme} />
       </Box>
+      {regions.diagnostic.rows > 0 ? (
+        <FixedRow>
+          <StyledLineView line={cutSpans([{ text: TERMINAL_TOO_SMALL }], columns)} theme={theme} />
+        </FixedRow>
+      ) : null}
+      {regions.footer.rows > 0 ? (
+        <Box
+          flexDirection="row"
+          justifyContent="space-between"
+          width={columns}
+          height={regions.footer.rows}
+          overflow="hidden"
+        >
+          <StyledLineView line={footer.left} theme={theme} />
+          <StyledLineView line={footer.right} theme={theme} />
+        </Box>
+      ) : null}
     </Box>
   );
 }

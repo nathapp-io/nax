@@ -28,7 +28,6 @@
 import { type Key, useInput } from "ink";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { MentionFileIndex, MentionFileList, MentionFileRow } from "@/chat";
-import { menuRowsFor } from "./bottom-region";
 import type { ChatInputHandle } from "./ChatInput";
 import type { EditorState } from "./line-editor";
 import { applyMentionRow, filterMentionRows, type MentionQuery, mentionQueryAt } from "./mention-menu";
@@ -100,8 +99,8 @@ export interface MentionMenuOptions {
   readonly suppressed: boolean;
   /** The slash menu's claim, read at key time: the prompt yields to whichever menu owns it. */
   readonly slashOwns: () => boolean;
-  /** The rows the bottom region can spare, which the picker's share is measured against. */
-  readonly budget: number;
+  /** Final allocated menu share, read only after demand has been measured. */
+  readonly allocatedRows: (desired: number, editor: EditorState) => number;
   /** False while the screen's keys are locked, as they are during a close. */
   readonly active: boolean;
   /** The input's handle: an applied row is written through it, caret where the row left it. */
@@ -110,7 +109,7 @@ export interface MentionMenuOptions {
 
 /** The claim on the keys, and the state the view draws from it. */
 export interface MentionMenuController {
-  /** What the picker draws this render. */
+  /** Desired content at the menu cap; the frame projects its rows to the final allocation. */
   readonly view: MentionMenuView;
   /**
    * True while a menu under the input — this picker or the slash menu — owns up, down, tab,
@@ -165,12 +164,8 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     setRevision((seen) => seen + 1);
   }, [index, options.editor]);
 
-  /**
-   * The rows the picker may draw for `count` matches: at most the slash menu's own cap, and
-   * never more than its share of the bottom region the screen can spare.
-   */
-  const shareOf = (count: number): number =>
-    menuRowsFor({ rows: Math.min(count, SLASH_MENU_MAX_ROWS), budget: latest.current.budget });
+  /** Desired demand never depends on the last degraded allocation. */
+  const desiredRows = (count: number): number => Math.min(count, SLASH_MENU_MAX_ROWS);
 
   /** The mention being typed right now, and the rows the loaded list keeps for it. */
   const claim = (): MentionClaim | undefined => {
@@ -192,7 +187,7 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     const state = live.current;
     if (latest.current.blocked || latest.current.suppressed) return false;
     if (state.dismissed === state.editor.text) return false;
-    return shareOf(found.matches.length) > 0;
+    return latest.current.active && latest.current.allocatedRows(desiredRows(found.matches.length), state.editor) > 0;
   };
 
   /** The pointer's row for a claim: a new query is a new list, so it starts on its first match. */
@@ -272,12 +267,12 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     const listed = state.listed;
     if (listed === undefined) return NO_VIEW;
     if (!listed.git) {
-      const rows = shareOf(1);
+      const rows = desiredRows(1);
       return { ...NO_VIEW, noGit: rows > 0, rows };
     }
     const found = claim();
     if (found === undefined) return NO_VIEW;
-    const rows = shareOf(found.matches.length);
+    const rows = desiredRows(found.matches.length);
     if (rows <= 0) return NO_VIEW;
     return { matches: found.matches, selected: pointerFor(found), noGit: false, rows };
   };

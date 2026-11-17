@@ -34,9 +34,11 @@ interface ChatKeysOptions {
   refresh(): void;
   onError(error: unknown): void;
   onNotice?: (text: string) => void;
+  /** Diagnostic frames retain Ctrl-C only; no hidden control shortcut may act. */
+  active?: () => boolean;
 }
 
-export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatKeysOptions): {
+export function useChatKeys({ host, running, refresh, onError, onNotice, active }: ChatKeysOptions): {
   locked: boolean;
   /**
    * True while a ctrl-c that cancelled a turn is still within the double-interrupt window:
@@ -170,6 +172,8 @@ export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatK
     if (closing.current) return;
     if (key.ctrl && input === "c") {
       interrupt();
+    } else if (active?.() === false) {
+      return;
     } else if (key.ctrl && input === "b" && canControl()) {
       moveForeground();
     } else if (key.ctrl && input === "t" && canControl()) {

@@ -205,8 +205,9 @@ describe("TranscriptViewport", () => {
     expect(view.rows()).toEqual(["line 19"]);
   });
 
-  test("a window height below one row still draws one row", () => {
-    expect(mount(numbered(20), { height: 0 }).rows()).toEqual(["line 20"]);
+  test("a zero-height window is suspended and draws no transcript row", () => {
+    // rows() splits the empty frame string into one empty element, not a physical text row.
+    expect(mount(numbered(20), { height: 0 }).rows()).toEqual([""]);
   });
 
   test("F1 an empty line still occupies a row", () => {
