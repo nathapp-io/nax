@@ -71,3 +71,40 @@ export function publishOnlyStart(
   if (prior.outcome === "ready" || prior.outcome === "draft") return { kind: "published" };
   return { kind: "resume", record: { ...prior, step: "publish" } };
 }
+
+/**
+ * Only transport failures and a pending CI retry publishing without spending another review at the
+ * same HEAD. US-003: a pending CI keeps the PR a draft, so the draft is published again — but only
+ * when that pending CI is the draft's sole reason, so a draft held for an unrelated reason is not
+ * re-published on every run.
+ */
+export function isTransientDraft(prior: WorkflowFeatureRecord): boolean {
+  return (
+    prior.outcome === "draft" &&
+    (prior.ci === "unavailable" ||
+      (prior.ci === "pending" && prior.reasons.length === 1) ||
+      prior.reasons.some((reason) => reason.startsWith("PR update failed:")))
+  );
+}
+
+/** The publication a publish-only run at `head` would skip over. */
+export interface PublishedAtHead {
+  readonly outcome: "ready" | "draft";
+  readonly url?: string;
+}
+
+/**
+ * US-002: the prior record's publication when a publish-only run at `head` would do nothing;
+ * otherwise undefined. It repeats exactly the condition `runInContext` skips at (nax#2550), so a
+ * chat launch can refuse before billing a run that would skip in its first second.
+ */
+export function publishedAtHead(
+  prior: WorkflowFeatureRecord | null,
+  head: string | undefined,
+): PublishedAtHead | undefined {
+  if (prior === null || prior.step !== "done") return undefined;
+  if (head === undefined || head === "" || prior.head !== head) return undefined;
+  if (prior.outcome !== "ready" && prior.outcome !== "draft") return undefined;
+  if (isTransientDraft(prior)) return undefined;
+  return { outcome: prior.outcome, ...(prior.url === undefined ? {} : { url: prior.url }) };
+}

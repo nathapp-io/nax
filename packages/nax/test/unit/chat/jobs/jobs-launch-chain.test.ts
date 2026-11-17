@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { assertDefined, cleanupTempDir, makePRD, makeStory, makeTempDir } from "@test/helpers";
-import type { ChatChains } from "@/chat/jobs/chain-controller";
+import type { ChainSummary, ChatChains } from "@/chat/jobs/chain-controller";
+import type { ChainStep, ChatChain } from "@/chat/jobs/chain-types";
 import { buildJobArgv } from "@/chat/jobs/job-argv";
 import type { ChatJobs, StartJobRequest } from "@/chat/jobs/job-runner";
 import type { ChatJob, ChatJobKind } from "@/chat/jobs/job-types";
@@ -9,6 +10,8 @@ import * as launches from "@/chat/jobs/jobs-launch";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import { createJobsProvider, type JobsProviderOptions } from "@/chat/jobs/jobs-provider";
 import { featureDir } from "@/config";
+import { newFeatureRecord } from "@/workflow/feature-record";
+import type { WorkflowFeatureRecord } from "@/workflow/types";
 
 const original = { ..._jobsLaunchDeps };
 const chainId = "chain-1a2b3c4d";
@@ -264,5 +267,140 @@ describe("launchJob chain admission", () => {
       2,
       `nax run job ${job().id} is already running in this checkout`,
     );
+  });
+});
+
+/**
+ * US-002: a publish refused because the feature is already published at HEAD would otherwise leave
+ * the chain active with a next step that can never start.
+ */
+describe("launchJob publish refusal stops the matching chain step", () => {
+  const publishedAtHead =
+    "f1 is already published at HEAD abcdef0 as a draft PR https://x/pull/7; nothing to publish: use nax-jobs__bot_review for its open items";
+
+  function publishedRecord(): WorkflowFeatureRecord {
+    return {
+      ...newFeatureRecord({ now: approvedAt, seed: null, minors: [] }),
+      step: "done",
+      head: "abcdef0123",
+      outcome: "draft",
+      url: "https://x/pull/7",
+      ci: "green",
+      reasons: [],
+    };
+  }
+  async function allPassedPrd(): Promise<void> {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
+    );
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => publishedRecord());
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+  }
+  function stageChain(steps: readonly ChainStep[], next: number): void {
+    const active: ChatChain = {
+      schemaVersion: 1,
+      id: chainId,
+      sessionId: "chat-1",
+      cwd: options.repoRoot,
+      approvedAt,
+      state: "active",
+      steps,
+    };
+    chains.active = mock(() => active);
+    chains.summary = mock(
+      (): ChainSummary => ({
+        id: chainId,
+        state: "active",
+        next,
+        steps: steps.map((step, i) => ({ step: i + 1, kind: step.kind, argv: step.argv })),
+        spent: 0,
+      }),
+    );
+  }
+
+  test("AC-14 the chain stops with the refusal text when its next step is that publish", async () => {
+    await allPassedPrd();
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: [], target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1" })).toEqual({
+      isError: true,
+      content: `[chat] ${publishedAtHead}`,
+    });
+    expect(chains.stop).toHaveBeenCalledTimes(1);
+    expect(chains.stop).toHaveBeenCalledWith(publishedAtHead);
+  });
+
+  test("AC-15 no active chain is left to stop", async () => {
+    await allPassedPrd();
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
+    expect(chains.stop).not.toHaveBeenCalled();
+  });
+
+  test("AC-16 a chain whose next step is a bot review is not stopped", async () => {
+    await allPassedPrd();
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "bot_review", argv: [], target: "12" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
+    expect(chains.stop).not.toHaveBeenCalled();
+  });
+
+  /** A publish step's real argv names the repository it runs in; the chat's own is the default. */
+  function publishArgv(repoRoot: string): string[] {
+    return [...options.naxEntry, "run", "-f", "f1", "-d", repoRoot, "--headless", "--publish-only"];
+  }
+
+  test("the same feature name in another repository is not the step this refusal stops", async () => {
+    await allPassedPrd();
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: publishArgv(join(options.repoRoot, "repos", "other")), target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
+    expect(chains.stop).not.toHaveBeenCalled();
+  });
+
+  test("a refusal in a nested repository leaves the chat's own publish step active", async () => {
+    await allPassedPrd();
+    const nested = join(options.repoRoot, "repos", "other");
+    await Bun.write(
+      join(featureDir(nested, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
+    );
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: publishArgv(options.repoRoot), target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1", repo: "repos/other" })).toMatchObject({ isError: true });
+    expect(chains.stop).not.toHaveBeenCalled();
+  });
+
+  test("the step this refusal stops is the one that runs in the same repository", async () => {
+    await allPassedPrd();
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: publishArgv(options.repoRoot), target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
+    expect(chains.stop).toHaveBeenCalledWith(publishedAtHead);
   });
 });

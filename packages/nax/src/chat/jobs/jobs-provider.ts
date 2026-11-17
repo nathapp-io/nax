@@ -47,7 +47,7 @@ const schemas = {
     maxCost: { type: "number" },
     repo,
   },
-  finish: { feature: { type: "string" }, profiles, repo },
+  publish: { feature: { type: "string" }, profiles, repo },
   bot_review: { pr: { type: "integer" }, profiles, model: { type: "string" }, decisions: { type: "string" }, repo },
   bot_fix: {
     repo,
@@ -58,7 +58,7 @@ const schemas = {
     noRereview: { type: "boolean" },
   },
 } satisfies Record<ChatJobKind, Record<string, unknown>>;
-const LAUNCH_KINDS: readonly ChatJobKind[] = ["plan", "run", "finish", "bot_review", "bot_fix"];
+const LAUNCH_KINDS: readonly ChatJobKind[] = ["plan", "run", "publish", "bot_review", "bot_fix"];
 
 function summary(job: ChatJob): Record<string, unknown> {
   const { id, kind, target, state, startedAt, endedAt, progress, cost, note } = job;

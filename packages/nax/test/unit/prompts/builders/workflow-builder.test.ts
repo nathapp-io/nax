@@ -220,8 +220,107 @@ describe("buildJobNotice", () => {
   });
 });
 
+/** The held draft AC-1..AC-5 name: a draft PR held by two advisor items. */
+const HELD_TWO: workflow.JobNoticeInput["held"] = {
+  url: "https://x/pull/7",
+  items: [
+    { id: "D-1", kind: "advisor" },
+    { id: "D-2", kind: "advisor" },
+  ],
+};
+
+/** The third line of the notice a held draft gets. */
+function heldThird(held: workflow.JobNoticeInput["held"]): string {
+  return lines(workflow.buildJobNotice({ ...JOB, target: "f1", held }))[2] ?? "";
+}
+
+describe("buildJobNotice — held draft", () => {
+  test("US-004 AC-1 a held draft gets three lines, the third naming the count and the items", () => {
+    const noticeLines = lines(workflow.buildJobNotice({ ...JOB, target: "f1", held: HELD_TWO }));
+    expect(noticeLines).toHaveLength(3);
+    expect(noticeLines[2]).toStartWith(
+      "The PR is a draft held by 2 open items (D-1, D-2). Do not ask the user to rule on them.",
+    );
+  });
+
+  test("US-004 AC-2 the third line points at the feature's workflow status", () => {
+    expect(heldThird(HELD_TWO)).toContain("nax workflow status -f f1 --json");
+  });
+
+  test("US-004 AC-3 the third line names the nax-finish skill's Step 3 and nax-skills__load", () => {
+    expect(heldThird(HELD_TWO)).toContain("the nax-finish skill's Step 3");
+    expect(heldThird(HELD_TWO)).toContain("nax-skills__load");
+  });
+
+  test("US-004 AC-4 the third line names every ruling keyword and leaves findings to nax bot fix", () => {
+    const third = heldThird(HELD_TWO);
+    for (const keyword of ["verified:", "confirm:", "override:", "waive:", "fixed <sha>"]) {
+      expect(third).toContain(keyword);
+    }
+    expect(third).toContain("findings are left to nax bot fix");
+  });
+
+  test("US-004 AC-5 the third line asks once, plans the bot chain, then posts on the user's yes", () => {
+    const third = heldThird(HELD_TWO);
+    expect(third).toContain("send the user one message with every drafted reply and the plan");
+    expect(third).toContain("nax-jobs__bot_review, then nax-jobs__bot_fix");
+    expect(third).toContain("on their yes, post each reply on its item's thread with gh or glab");
+  });
+
+  test("US-004 AC-6 an unreadable draft says so and still points at the status command", () => {
+    expect(heldThird({ items: [], unreadable: true })).toStartWith(
+      "The PR is a draft whose open items could not be read. Read them with nax workflow status -f f1 --json",
+    );
+  });
+
+  test("US-004 AC-7 a draft with no open items says so and still points at the status command", () => {
+    expect(heldThird({ items: [] })).toStartWith(
+      "The PR is a draft with no open items listed. Read them with nax workflow status -f f1 --json",
+    );
+  });
+
+  test("US-004 AC-8 seven items name five and count the rest", () => {
+    const items = [1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `I-${n}`, kind: "finding" }));
+    expect(heldThird({ items })).toContain("held by 7 open items (I-1, I-2, I-3, I-4, I-5, and 2 more)");
+  });
+
+  test("a nested repository scopes the status command, the bot steps and the forge commands to it", () => {
+    const third = lines(workflow.buildJobNotice({ ...JOB, target: "f1", held: HELD_TWO, repo: "repos/nax" }))[2] ?? "";
+    expect(third).toContain("Read them with nax workflow status -f f1 -d repos/nax --json");
+    expect(third).toContain("nax-jobs__bot_review, then nax-jobs__bot_fix, each with repo repos/nax");
+    expect(third).toContain("post each reply on its item's thread with gh or glab run from repos/nax");
+  });
+
+  test("US-004 AC-9 a held chained job keeps three lines and drops the chain continuation line", () => {
+    const noticeLines = lines(
+      workflow.buildJobNotice({
+        ...JOB,
+        target: "f1",
+        held: HELD_TWO,
+        chainId: "chain-1a2b3c4d",
+        chainStep: 2,
+      }),
+    );
+    expect(noticeLines).toHaveLength(3);
+    expect(noticeLines[2]).toStartWith("The PR is a draft held by 2 open items (D-1, D-2).");
+    expect(noticeLines.join("\n")).not.toContain("call the next step's launch tool");
+  });
+
+  test("US-004 AC-10 a job with no held draft keeps its exact pre-feature lines", () => {
+    expect(workflow.buildJobNotice(JOB)).toBe(
+      "[nax-jobs] job run-1a2b3c4d (run f1) ended: succeeded log /o/l.log\n" +
+        "Call `nax-workflow__state`, report the outcome to the user and propose the single next step.",
+    );
+    expect(workflow.buildJobNotice({ ...JOB, chainId: "chain-1a2b3c4d", chainStep: 2 })).toBe(
+      "[nax-jobs] job run-1a2b3c4d (run f1) ended: succeeded log /o/l.log\n" +
+        "Call `nax-workflow__state`, report the outcome to the user and propose the single next step.\n" +
+        "This job is step 2 of chain chain-1a2b3c4d; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).",
+    );
+  });
+});
+
 describe("buildJobsInstructions", () => {
-  test.each(["nax-jobs__plan", "nax-jobs__run", "nax-jobs__finish", "nax-jobs__bot_review", "nax-jobs__bot_fix"])(
+  test.each(["nax-jobs__plan", "nax-jobs__run", "nax-jobs__publish", "nax-jobs__bot_review", "nax-jobs__bot_fix"])(
     "US-004 AC-4 names billed tool %s",
     (tool) => {
       expect(workflow.buildJobsInstructions()).toContain(tool);
@@ -484,5 +583,50 @@ describe("US-007 buildWorkflowInstructions approval wording", () => {
       (line) => line.includes("chat.workflow sets the profiles") || line.includes("Spec-writing runs through"),
     );
     expect(added.filter((line) => /explicit.*approv|approv.*explicit/i.test(line))).toHaveLength(0);
+  });
+});
+
+/** A held draft's open items, as every formatter call site passes them. */
+function heldItems(...entries: readonly (readonly [string, string])[]) {
+  return entries.map(([id, kind]) => ({ id, kind }));
+}
+
+const SEVEN_FINDINGS = heldItems(
+  ["I-1", "finding"],
+  ["I-2", "finding"],
+  ["I-3", "finding"],
+  ["I-4", "finding"],
+  ["I-5", "finding"],
+  ["I-6", "finding"],
+  ["I-7", "finding"],
+);
+
+describe("US-003 heldItemList", () => {
+  test("AC-12 lists ids alone, or id and kind together", () => {
+    const items = heldItems(["D-1", "advisor"], ["D-2", "advisor"]);
+    expect(workflow.heldItemList(items, { withKinds: false })).toBe("D-1, D-2");
+    expect(workflow.heldItemList(items, { withKinds: true })).toBe("D-1 advisor, D-2 advisor");
+  });
+
+  test("AC-13 names five entries, then counts the rest; HELD_ITEMS_NAMED is five", () => {
+    expect(workflow.heldItemList(SEVEN_FINDINGS, { withKinds: false })).toBe("I-1, I-2, I-3, I-4, I-5, and 2 more");
+    expect(workflow.HELD_ITEMS_NAMED).toBe(5);
+  });
+
+  test("AC-13 both are exported from the @/prompts barrel", () => {
+    expect(prompts.HELD_ITEMS_NAMED).toBe(5);
+    expect(prompts.heldItemList(SEVEN_FINDINGS, { withKinds: false })).toBe("I-1, I-2, I-3, I-4, I-5, and 2 more");
+  });
+
+  test("adds no remainder clause at exactly five entries, and lists nothing for none", () => {
+    expect(workflow.heldItemList(SEVEN_FINDINGS.slice(0, 5), { withKinds: false })).toBe("I-1, I-2, I-3, I-4, I-5");
+    expect(workflow.heldItemList([], { withKinds: true })).toBe("");
+  });
+
+  test("US-003 heldItemNoun is singular only for one", () => {
+    expect(workflow.heldItemNoun(0)).toBe("items");
+    expect(workflow.heldItemNoun(1)).toBe("item");
+    expect(workflow.heldItemNoun(2)).toBe("items");
+    expect(prompts.heldItemNoun(1)).toBe("item");
   });
 });

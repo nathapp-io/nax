@@ -14,7 +14,7 @@ function workflow(overrides: Partial<ChatWorkflowConfig> = {}): ChatWorkflowConf
 }
 
 const plan = (profiles: readonly string[]): JobLaunchInput => ({ kind: "plan", feature: "f1", profiles });
-const finish = (profiles: readonly string[]): JobLaunchInput => ({ kind: "finish", feature: "f1", profiles });
+const publish = (profiles: readonly string[]): JobLaunchInput => ({ kind: "publish", feature: "f1", profiles });
 const botReview = (profiles: readonly string[], model?: string): JobLaunchInput => ({
   kind: "bot_review",
   pr: 7,
@@ -42,8 +42,8 @@ describe("applyWorkflowDefaults", () => {
     expect(applied.input.profiles).toEqual(["x"]);
     expect(applied.profilesFrom).toBeUndefined();
   });
-  test("AC-4 finish takes workflow.run.profiles and names chat.workflow.run", () => {
-    const applied = applyWorkflowDefaults(finish([]), workflow({ run: { profiles: ["r1"] } }));
+  test("AC-9 publish takes workflow.run.profiles and names chat.workflow.run", () => {
+    const applied = applyWorkflowDefaults(publish([]), workflow({ run: { profiles: ["r1"] } }));
     expect(applied.input.profiles).toEqual(["r1"]);
     expect(applied.profilesFrom).toBe("chat.workflow.run");
   });

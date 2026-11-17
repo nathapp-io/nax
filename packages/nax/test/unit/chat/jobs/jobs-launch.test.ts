@@ -7,6 +7,9 @@ import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import { createJobsProvider, type JobsProviderOptions, PROFILES_SCHEMA } from "@/chat/jobs/jobs-provider";
 import { _workflowDefaultsDeps } from "@/chat/jobs/workflow-defaults";
 import { type ChatWorkflowConfig, featureDir } from "@/config";
+import { newFeatureRecord } from "@/workflow/feature-record";
+import { workflowFeatureDir } from "@/workflow/paths";
+import type { WorkflowFeatureRecord } from "@/workflow/types";
 
 const originalDeps = { ..._jobsLaunchDeps };
 const originalWorkflowDeps = { ..._workflowDefaultsDeps };
@@ -56,6 +59,9 @@ beforeEach(async () => {
     now: () => new Date("2026-10-01T00:00:00Z"),
   };
   _jobsLaunchDeps.git = mock(async () => ({ exitCode: 0, stdout: "feat/f1\n", stderr: "" }));
+  // US-002: a publish launch reads the prior record and HEAD after its pending-story guard.
+  _jobsLaunchDeps.loadPriorFeature = mock(async () => null);
+  _jobsLaunchDeps.headSha = mock(async () => null);
   await Bun.write(
     join(featureDir(repoRoot, "f1"), "prd.json"),
     JSON.stringify(
@@ -102,7 +108,7 @@ describe("createJobsProvider", () => {
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
     ["run", { feature: { type: "string" }, maxCost: { type: "number" } }, "feature"],
-    ["finish", { feature: { type: "string" } }, "feature"],
+    ["publish", { feature: { type: "string" } }, "feature"],
     ["bot_review", { pr: { type: "integer" }, model: { type: "string" }, decisions: { type: "string" } }, "pr"],
     [
       "bot_fix",
@@ -181,7 +187,7 @@ describe("createJobsProvider", () => {
     expect((await provider.tools(options.repoRoot)).slice(0, 5).map((t) => t.localName)).toEqual([
       "plan",
       "run",
-      "finish",
+      "publish",
       "bot_review",
       "bot_fix",
     ]);
@@ -313,24 +319,40 @@ describe("createJobsProvider", () => {
     await launch("run", { feature: "f1", profiles: ["a", "b"] });
     expect(card().reason).not.toContain("warning: the PRD was planned");
   });
-  test("#2819 finish is refused while stories are pending", async () => {
-    const result = await launch("finish", { feature: "f1" });
+  test("#2819 publish is refused while stories are pending", async () => {
+    const result = await launch("publish", { feature: "f1" });
     expect(result).toEqual({
       isError: true,
       content: "[chat] f1 has 3 pending stories; finish them with nax-jobs__run first",
     });
     expect(approve).not.toHaveBeenCalled();
   });
-  test("#2819 finish on a passed feature shows a publish-only card and runs --publish-only", async () => {
+  test("AC-18 publish over a PRD with 2 pending stories is refused before any card", async () => {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(
+        makePRD({
+          userStories: [1, 2].map((n) => makeStory({ id: `US-00${n}`, status: "pending", passes: false })),
+        }),
+      ),
+    );
+    expect(await launch("publish", { feature: "f1" })).toEqual({
+      isError: true,
+      content: "[chat] f1 has 2 pending stories; finish them with nax-jobs__run first",
+    });
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+  test("#2819 publish on a passed feature shows a publish-only card and runs --publish-only", async () => {
     await Bun.write(
       join(featureDir(options.repoRoot, "f1"), "prd.json"),
       JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
     );
-    await launch("finish", { feature: "f1" });
+    await launch("publish", { feature: "f1" });
     expect(card().summary).toBe("nax run f1 --publish-only");
     expect(card().reason).toContain("publish only: reruns the workflow's publish step");
     expect(start.mock.calls[0]?.[0]).toMatchObject({
-      kind: "finish",
+      kind: "publish",
       target: "f1",
       argv: [...runArgv(), "--publish-only"],
     });
@@ -482,5 +504,105 @@ describe("createJobsProvider chat.workflow defaults", () => {
     await launch();
     expect(card().reason).toContain("warning: the PRD was planned with profile a+b, not c");
     expect(card().command).toContain("--profile c");
+  });
+});
+/**
+ * US-002: a publish launch at a HEAD the feature already published would do nothing —
+ * `runInContext` skips `--publish-only` there — so the launch is refused before its card.
+ */
+describe("createJobsProvider US-002 publish refusal", () => {
+  const refusal =
+    "[chat] f1 is already published at HEAD abcdef0 as a draft PR https://x/pull/7; nothing to publish: use nax-jobs__bot_review for its open items";
+
+  async function allPassedPrd(): Promise<void> {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
+    );
+  }
+  function record(over: Partial<WorkflowFeatureRecord>): WorkflowFeatureRecord {
+    return { ...newFeatureRecord({ now: "2026-10-01T00:00:00Z", seed: null, minors: [] }), ...over };
+  }
+  const published = record({
+    step: "done",
+    head: "abcdef0123",
+    outcome: "draft",
+    url: "https://x/pull/7",
+    ci: "green",
+    reasons: [],
+  });
+
+  test("AC-10 a published draft at HEAD refuses before any card", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => published);
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    expect(await launch("publish", { feature: "f1" })).toEqual({ isError: true, content: refusal });
+    expect(approve).not.toHaveBeenCalled();
+    expect(_jobsLaunchDeps.loadPriorFeature).toHaveBeenCalledWith(workflowFeatureDir(options.repoRoot, "f1"), "");
+  });
+
+  test("AC-11 the refusal names no URL when the record has none", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => ({ ...published, url: undefined }));
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    expect(await launch("publish", { feature: "f1" })).toEqual({
+      isError: true,
+      content:
+        "[chat] f1 is already published at HEAD abcdef0 as a draft PR; nothing to publish: use nax-jobs__bot_review for its open items",
+    });
+  });
+
+  test("AC-12 an unreadable HEAD does not refuse", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => published);
+    _jobsLaunchDeps.headSha = mock(async () => null);
+    await launch("publish", { feature: "f1" });
+    expect(card().summary).toBe("nax run f1 --publish-only");
+    expect(_jobsLaunchDeps.headSha).toHaveBeenCalledWith(options.repoRoot);
+  });
+
+  test("AC-13 an unreadable prior record does not refuse", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => {
+      throw new Error("unreadable record");
+    });
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    await launch("publish", { feature: "f1" });
+    expect(card().summary).toBe("nax run f1 --publish-only");
+    expect(_jobsLaunchDeps.loadPriorFeature).toHaveBeenCalled();
+    expect(_jobsLaunchDeps.headSha).toHaveBeenCalled();
+  });
+
+  test("AC-13 a rejected HEAD read does not refuse", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => published);
+    _jobsLaunchDeps.headSha = mock(async () => {
+      throw new Error("git failed");
+    });
+    await launch("publish", { feature: "f1" });
+    expect(card().summary).toBe("nax run f1 --publish-only");
+    expect(_jobsLaunchDeps.headSha).toHaveBeenCalled();
+  });
+
+  test("AC-20 no prior record still reaches the publish card", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => null);
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    await launch("publish", { feature: "f1" });
+    expect(card().summary).toBe("nax run f1 --publish-only");
+    expect(_jobsLaunchDeps.loadPriorFeature).toHaveBeenCalled();
+  });
+
+  test("AC-17 the real workflow-directory loader reads the feature's newest record", async () => {
+    await allPassedPrd();
+    await Bun.write(
+      join(workflowFeatureDir(options.repoRoot, "f1"), "run-1", "result.json"),
+      JSON.stringify({ schemaVersion: 1, stories: {}, featureWorkflow: published }),
+    );
+    _jobsLaunchDeps.loadPriorFeature = originalDeps.loadPriorFeature;
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    const result = await launch("publish", { feature: "f1" });
+    expect(result.isError).toBe(true);
+    expect(result.content).toStartWith("[chat] f1 is already published at HEAD abcdef0");
   });
 });

@@ -24,6 +24,33 @@ export interface WorkflowInstructionsInput {
   readonly workflow?: ChatWorkflowConfig;
 }
 
+/** US-003: how many held-draft open items a note, a stop reason or a notice names before counting the rest. */
+export const HELD_ITEMS_NAMED = 5;
+
+/** One publish-time open item, as every held-draft formatter sees it. */
+export interface HeldItem {
+  readonly id: string;
+  readonly kind: string;
+}
+
+/** US-003: `item` for exactly one, `items` otherwise — the noun every held-draft sentence uses. */
+export function heldItemNoun(count: number): string {
+  return count === 1 ? "item" : "items";
+}
+
+/**
+ * US-003: the one rendering of a held draft's open items, so the job note, the chain stop
+ * reason and the notice agree. Display only: the caller keeps every item.
+ */
+export function heldItemList(items: readonly HeldItem[], options: { readonly withKinds: boolean }): string {
+  const named = items
+    .slice(0, HELD_ITEMS_NAMED)
+    .map((item) => (options.withKinds ? `${item.id} ${item.kind}` : item.id));
+  const omitted = items.length - named.length;
+  const list = named.join(", ");
+  return omitted > 0 ? `${list}, and ${omitted} more` : list;
+}
+
 /** `one`..`ten` for a schema-valid round count, and the numeral for anything else. */
 function roundWord(rounds: number): string {
   return ROUND_WORDS[rounds - 1] ?? String(rounds);
@@ -113,6 +140,17 @@ export function buildWorkflowInstructions(input?: WorkflowInstructionsInput): st
   return lines.join("\n");
 }
 
+/**
+ * US-004: the held draft a run or publish left, as the notice needs it — a structural
+ * copy of the job record's `HeldDraft`, so `prompts` never imports from `chat`.
+ */
+export interface JobNoticeHeld {
+  readonly url?: string;
+  readonly items: readonly HeldItem[];
+  /** Set when the open items could not be read; `items` is then empty. */
+  readonly unreadable?: true;
+}
+
 export interface JobNoticeInput {
   readonly id: string;
   readonly kind: string;
@@ -123,6 +161,13 @@ export interface JobNoticeInput {
   readonly logPath: string;
   readonly chainId?: string;
   readonly chainStep?: number;
+  /** US-004: present when the job left a draft PR held by open items. */
+  readonly held?: JobNoticeHeld;
+  /**
+   * The job's repository relative to the chat's folder, present only when the job ran in a nested
+   * nax project: its guidance then has to name that repository or it reads the chat's own feature.
+   */
+  readonly repo?: string;
 }
 
 /**
@@ -136,6 +181,41 @@ function chainNoticeLine(chainId: string, chainStep: number | undefined): string
   return `This job is ${position}chain ${chainId}; call nax-jobs__list to see whether the chain continues, and if it does, call the next step's launch tool with exactly the approved arguments (no card is shown for it).`;
 }
 
+/**
+ * US-004: how a held-draft notice opens — the count and items, or why there are none.
+ * The named-items opening is the only one that also says not to ask the user to rule.
+ */
+function heldOpening(held: JobNoticeHeld): string {
+  if (held.unreadable === true) return "The PR is a draft whose open items could not be read.";
+  if (held.items.length === 0) return "The PR is a draft with no open items listed.";
+  const count = held.items.length;
+  const list = heldItemList(held.items, { withKinds: false });
+  return `The PR is a draft held by ${count} open ${heldItemNoun(count)} (${list}). Do not ask the user to rule on them.`;
+}
+
+/**
+ * US-004 (user ruling 2026-11-17): the evidence-first, single-approval ruling plan every
+ * held-draft notice carries — settle each item from evidence, ask the user once, and post
+ * the drafted replies on their one yes.
+ *
+ * `repo` scopes every command it prescribes: a run launched with `repo` left the chat in its
+ * parent folder, so an unscoped status command reads the wrong feature (or none).
+ */
+function heldPlan(target: string, repo: string | undefined): string {
+  const directory = repo === undefined ? "" : ` -d ${repo}`;
+  const botRepo = repo === undefined ? "" : `, each with repo ${repo}`;
+  const forgeRepo = repo === undefined ? "" : ` run from ${repo}`;
+  return [
+    `Read them with nax workflow status -f ${target}${directory} --json, then settle each one from evidence as the nax-finish skill's Step 3 does (load it with nax-skills__load when it is listed): verify the item's premise against commits, code and tests, and draft one reply per item whose first line is its ruling keyword (verified:, confirm:, override:, waive: or fixed <sha>) followed by the evidence; findings are left to nax bot fix.`,
+    `Then send the user one message with every drafted reply and the plan (post the replies on their item threads, then nax-jobs__bot_review, then nax-jobs__bot_fix${botRepo}); on their yes, post each reply on its item's thread with gh or glab${forgeRepo} and propose that chain.`,
+  ].join(" ");
+}
+
+/** US-004: the whole held-draft notice line, opening and plan. */
+function heldNoticeLine(held: JobNoticeHeld, target: string, repo: string | undefined): string {
+  return `${heldOpening(held)} ${heldPlan(target, repo)}`;
+}
+
 /** Pure completion notice shared by owned and re-attached background jobs. */
 export function buildJobNotice(input: JobNoticeInput): string {
   const cost = input.cost !== undefined ? ` cost $${input.cost.toFixed(2)}` : "";
@@ -144,7 +224,10 @@ export function buildJobNotice(input: JobNoticeInput): string {
     `[nax-jobs] job ${input.id} (${input.kind} ${input.target}) ended: ${input.state}${cost}${note} log ${input.logPath}`,
     "Call `nax-workflow__state`, report the outcome to the user and propose the single next step.",
   ];
-  if (input.chainId !== undefined) {
+  // US-004: a held draft has stopped the chain, so its guidance replaces the chain line.
+  if (input.held !== undefined) {
+    noticeLines.push(heldNoticeLine(input.held, input.target, input.repo));
+  } else if (input.chainId !== undefined) {
     noticeLines.push(chainNoticeLine(input.chainId, input.chainStep));
   }
   return noticeLines.join("\n");
@@ -153,14 +236,14 @@ export function buildJobNotice(input: JobNoticeInput): string {
 /** Fixed provider guidance; launching, approval and checkout guards live elsewhere. */
 export function buildJobsInstructions(options?: { readonly answerAsks?: boolean }): string {
   const instructions = [
-    "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__finish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
+    "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__publish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
     "A denial is final for that call; do not retry with changed arguments to get round it.",
     "Jobs run in the background; a [nax-jobs] notice arrives when one ends.",
     "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
     "Start one step at a time: after a job ends, report the outcome to the user and propose the single next step.",
-    "Start nax plan, nax run (including a publish-only finish) and nax bot only with these tools, never with Bash: Bash skips the approval card, the profile handling and the job notice.",
+    "Start nax plan, nax run (including a publish-only run) and nax bot only with these tools, never with Bash: Bash skips the approval card, the profile handling and the job notice.",
     "Leave profiles empty to use the profile the PRD was planned with, unless chat.workflow sets profiles for that step, which then apply; the approval card names them. Pass profiles only to override, with names from `nax-jobs__list`.",
-    "When a run ends with every story passed but no PR (its workflow outcome is local-only or pushed), `nax-jobs__finish` publishes it: it reruns only the publish step, then use the PR it reports for `nax-jobs__bot_review`.",
+    "When a run ends with every story passed but no PR (its workflow outcome is local-only or pushed), `nax-jobs__publish` publishes it: it reruns only the publish step, then use the PR it reports for `nax-jobs__bot_review`.",
     "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
     '`nax-jobs__chain` proposes a full run: an ordered list of billed steps on one approval card. Only the user\'s yes on that card approves it; a chat message such as "go ahead" does not.',
     "While a chain is active, call each step's launch tool with exactly the approved arguments, one step at a time, after the previous step succeeded; a different call stops the chain and shows a normal card.",

@@ -140,7 +140,7 @@ function failure(content: string): ToolResult {
 
 function stepLabel(step: ChainStep): string {
   if (step.kind === "plan" || step.kind === "run") return `nax ${step.kind} ${step.target}`;
-  if (step.kind === "finish") return `nax run ${step.target} --publish-only`;
+  if (step.kind === "publish") return `nax run ${step.target} --publish-only`;
   const action = step.kind === "bot_review" ? "review" : "fix";
   return `nax bot ${action} ${step.prIndex === undefined ? `#${step.target}` : "(PR chosen by the agent)"}`;
 }
@@ -150,6 +150,22 @@ function stepReason(step: ChainStep, index: number): string {
   const check = step.checkBefore === undefined ? "" : ` and check "${step.checkBefore}" passed`;
   const pr = step.prIndex === undefined ? "" : " — the agent picks the PR when the step starts";
   return `${index + 1}. ${stepLabel(step)} — starts after: ${condition}${check}${pr}`;
+}
+
+/**
+ * US-002: in workflow mode `nax run` publishes its own PR, so a publish step placed after a run of
+ * the same feature is refused whenever that run published one. The card says so before approval.
+ */
+function publishAfterRunWarnings(steps: readonly ChainStep[]): readonly string[] {
+  return steps.flatMap((step, index) => {
+    if (step.kind !== "publish") return [];
+    const run = steps.findLastIndex((other, i) => i < index && other.kind === "run" && other.target === step.target);
+    return run === -1
+      ? []
+      : [
+          `warning: step ${index + 1} publishes ${step.target} after step ${run + 1} runs it; a workflow-mode run publishes its own PR, so step ${index + 1} is refused if that run published one`,
+        ];
+  });
 }
 
 async function chainReason(proposal: ResolvedChainProposal, options: Options): Promise<string> {
@@ -164,6 +180,7 @@ async function chainReason(proposal: ResolvedChainProposal, options: Options): P
     ...proposal.existingPlanPrds.map(
       ({ step, feature }) => `warning: step ${step} replaces the existing prd.json for ${feature}`,
     ),
+    ...publishAfterRunWarnings(proposal.steps),
     ...(options.interactionPlugin === "cli" && proposal.steps.some((step) => isRunJobKind(step.kind))
       ? ["run steps' asks you do not answer in chat fall to their timeout defaults"]
       : []),

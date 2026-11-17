@@ -13,7 +13,7 @@ const JOB_TARGET_LIMIT = 16;
 const JOB_STRIP_LIMIT = 2;
 
 export interface FooterJob {
-  readonly kind: "run" | "plan" | "finish" | "bot_review" | "bot_fix";
+  readonly kind: "run" | "plan" | "publish" | "bot_review" | "bot_fix";
   readonly target: string;
   readonly progress?: { readonly passed: number; readonly total: number };
   readonly cost?: number;
@@ -31,7 +31,7 @@ function jobPart(job: FooterJob): string {
   if (job.kind === "bot_review" || job.kind === "bot_fix") return `${job.kind} #${target}`;
   const feature = target.length > JOB_TARGET_LIMIT ? `${target.slice(0, JOB_TARGET_LIMIT - 1)}…` : target;
   let part = `${job.kind} ${feature}`;
-  if (job.kind === "run" || job.kind === "finish") {
+  if (job.kind === "run" || job.kind === "publish") {
     if (job.progress !== undefined) part += ` ${job.progress.passed}/${job.progress.total}`;
     if (job.cost !== undefined) part += ` $${job.cost.toFixed(COST_DECIMALS)}`;
   }

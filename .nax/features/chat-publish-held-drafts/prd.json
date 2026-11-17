@@ -1,0 +1,328 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-publish-held-drafts",
+  "branchName": "feat/chat-publish-held-drafts",
+  "createdAt": "2026-11-17T10:21:20.271Z",
+  "updatedAt": "2026-11-17T11:22:46.861Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Rename the chat finish job to publish with legacy record recovery",
+      "description": "**Goal** — Rename the chat finish job to publish throughout launch, display and storage-facing contracts while keeping old job records readable.\n\n**Motivation** — The name `finish` reads as \"take the PR to ready\", the job the nax-finish skill does.\n\n**Approach** — **Rename (US-001).** `ChatJobKind` replaces `\"finish\"` with `\"publish\"`. Everything keyed by kind follows: the launch schema in `jobs-provider.ts` (tool `nax-jobs__publish`), `LAUNCH_KINDS`, `parseJobInput` and `buildJobArgv` (`job-argv.ts`), `CHAIN_STEP_FIELDS` and `buildChainStepArgv` (`chain-argv.ts`), `stepDefaults` (`workflow-defaults.ts`), `resolveJobOutcome` (`job-outcome.ts`), `prepareFinish` (renamed `preparePublish`) and `approvePrepared` (`jobs-launch.ts`), `stepLabel` (`chain-tools.ts`), `isFeatureJobKind` / `isRunJobKind` (`job-types.ts`), `FooterJob.kind` and `jobPart` (`tui/chat/job-strip.ts`), and `commandOf` (`tui/chat/layout-job.ts`). `commandOf` returns `nax run <target> --publish-only` for a publish job; today it returns `nax finish <target>`, a command that does not exist. The argv is unchanged: `nax run <feature> --publish-only`. `buildJobsInstructions` names `nax-jobs__publish` on its first and eighth lines, and its sixth line's phrase `nax run (including a publish-only finish)` becomes `nax run (including a publish-only run)`; the line count and order stay the same.\n\nJob records written before the rename stay readable. `JOB_KINDS` in `job-store.ts` lists `\"publish\"` and keeps `\"finish\"`, the latter only so a legacy record passes `isJobRecord` before it is mapped. `JOB_ID_PATTERN` accepts the prefix `publish` and the legacy prefix `finish`. `readJobRecords` returns a stored record whose `kind` is `\"finish\"` with `kind: \"publish\"` and its `id` unchanged. Chain records are audit data and are never read back (`chain-controller.ts`: \"disk records are audit data, never activation input\"), so they need no compatibility.\n\n**Scope** — In: all named chat-kind discriminants, approval labels, footer/panel strings, instruction-line substitutions and read-time legacy normalization; unchanged real argv includes -f, -d, --headless and profile arguments. Update existing ordered tool-name assertions in chain-tools.test.ts (AC-20), chain-tool-input.test.ts (AC-1/AC-23), test/unit/chat/chat-host-chain.test.ts (both lists), answer-ask-tool.test.ts (AC-3), jobs-provider.test.ts and jobs-launch.test.ts so publish is third and every other entry stays unchanged. Rename the existing #2819 inputs/schema cases in jobs-launch, chain-argv, job-argv, job-outcome and workflow-defaults tests; keep the pending-stories refusal, publish-only card summary, argv, outcome notes, progress and profile-provenance expectations unchanged. Update workflow-builder.test.ts, workflow-builder-chain.test.ts and chat-status.test.ts rename assertions. Add tests only to existing module test files, including job-store, layout-job and chain-tool-card; split by describe block only if a file would pass 650 lines. Out: US-002 no-op refusal and card warnings; US-003 held-draft enrichment/chain stops; US-004 notice guidance; no nax-jobs__finish alias or unrelated finish subsystem rename.\n\n**Interface** — Target ChatJobKind: `\"plan\" | \"run\" | \"publish\" | \"bot_review\" | \"bot_fix\"`. Target JOB_ID_PATTERN accepts `plan|run|publish|finish|bot_review|bot_fix` prefixes (`finish` for legacy records only; `newJobId` never produces it). Existing function signatures remain otherwise unchanged.",
+      "acceptanceCriteria": [
+        "[unit] createJobsProvider(options).tools(root) returns launch tools whose localNames start with plan, run, publish, bot_review, bot_fix, in that order, and no tool has localName finish.",
+        "[unit] buildJobArgv({ kind: \"publish\", feature: \"f1\", profiles: [\"a\"] }, ctx) returns [...ctx.naxEntry, \"run\", \"-f\", \"f1\", \"-d\", ctx.repoRoot, \"--headless\", \"--publish-only\", \"--profile\", \"a\"], the same argv the finish kind returned before the rename, preserving the run command, feature, publish-only flag and profile arguments.",
+        "[unit] parseJobInput(\"publish\", { feature: \"f1\", profiles: [\"a\"] }) returns { kind: \"publish\", feature: \"f1\", profiles: [\"a\"] }.",
+        "[unit] newJobId(\"publish\") returns a string matching /^publish-[0-9a-f]{8}$/, and JOB_ID_PATTERN accepts it.",
+        "[unit] JOB_ID_PATTERN accepts finish-1a2b3c4d.",
+        "[unit] readJobRecords(outputDir) over a store holding one valid record with id: \"finish-1a2b3c4d\" and kind: \"finish\" returns one record with kind: \"publish\" and id: \"finish-1a2b3c4d\".",
+        "[unit] writeJobRecord(outputDir, job) with id: \"publish-1a2b3c4d\" and kind: \"publish\" writes publish-1a2b3c4d.json, and readJobRecords returns it with kind: \"publish\".",
+        "[unit] isFeatureJobKind(\"publish\") and isRunJobKind(\"publish\") both return true.",
+        "[unit] applyWorkflowDefaults for a publish input with empty profiles and chat.workflow.run.profiles [\"r1\"] returns profiles [\"r1\"] and profilesFrom chat.workflow.run.",
+        "[unit] buildChainStepArgv({ kind: \"publish\", feature: \"f1\", profiles: [\"p\"] }, ctx) returns [...ctx.naxEntry, \"run\", \"-f\", \"f1\", \"-d\", ctx.repoRoot, \"--headless\", \"--publish-only\", \"--profile\", \"p\"], preserving the existing run/feature/publish-only argv with profile arguments, and CHAIN_STEP_FIELDS.publish equals [\"feature\", \"profiles\", \"repo\"].",
+        "[unit] The nax-jobs__chain approval card for one publish step on feature f1 shows the step line beginning 1. nax run f1 --publish-only.",
+        "[unit] resolveJobOutcome for { kind: \"publish\", id: \"publish-1a2b3c4d\" }, with a pid-matched completed status whose workflow is { outcome: \"ready\", url: \"https://x/pull/7\" }, returns state: \"succeeded\" and note publish ready https://x/pull/7.",
+        "[unit] The job panel's command text for a publish job with target f1 is nax run f1 --publish-only.",
+        "[unit] The footer job strip renders a running publish job with target f1 and cost 0.5 as publish f1 $0.50.",
+        "[unit] The first line of buildJobsInstructions() names nax-jobs__publish and not nax-jobs__finish.",
+        "[unit] The eighth line of buildJobsInstructions() contains `nax-jobs__publish` publishes it, and buildJobsInstructions() still has 12 lines.",
+        "[unit] The sixth line of buildJobsInstructions() contains nax run (including a publish-only run).",
+        "[integration] launchJob for kind publish and feature f1 over a PRD with 2 pending stories returns { isError: true, content: \"[chat] f1 has 2 pending stories; finish them with nax-jobs__run first\" }, preserving the existing pending-stories refusal text after the rename."
+      ],
+      "tags": [
+        "chat",
+        "jobs",
+        "publish",
+        "compatibility",
+        "tui"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Although many consumers need edits, this is a bounded mechanical kind rename plus read-time normalization using existing schemas, argv builders and storage fixtures; no new execution flow or permission policy is introduced, so one-session TDD is sufficient.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/chat/jobs/job-store.ts",
+        "packages/nax/src/chat/jobs/jobs-provider.ts",
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/tui/chat/layout-job.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-tools.test.ts",
+          "reason": "the AC-20 tool-name list expects `\"finish\"` third; the kind is renamed, so it expects `\"publish\"` third and the rest of the list is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-tool-input.test.ts",
+          "reason": "the AC-1 and AC-23 tool-name lists expect `\"finish\"` third; the kind is renamed, so both expect `\"publish\"` third and the rest of each list is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host-chain.test.ts",
+          "reason": "the AC-14 tool-name list and the second tool-name list (near line 418) expect `\"finish\"` third; the kind is renamed, so both expect `\"publish\"` third and the rest of each list is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/answer-ask-tool.test.ts",
+          "reason": "the AC-3 tool-name list expects `\"finish\"` third; the kind is renamed, so it expects `\"publish\"` third and the rest of the list is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-provider.test.ts",
+          "reason": "the tool-name list expects `\"finish\"` third; the kind is renamed, so it expects `\"publish\"` third and the rest of the list is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch.test.ts",
+          "reason": "the schema row `[\"finish\", ...]`, the AC-1 launch-tool list and the two #2819 tests launch kind `\"finish\"`; the kind is renamed, so they use `\"publish\"`. The pending-stories refusal text and the `nax run f1 --publish-only` card summary are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/chain-argv.test.ts",
+          "reason": "the `CHAIN_STEP_FIELDS` expectation has a `finish` key and the #2819 test builds a `finish` step; the kind is renamed, so the key and the step kind are `publish` and the expected argv is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/job-argv.test.ts",
+          "reason": "the two #2819 tests build and parse kind `\"finish\"`; the kind is renamed, so they use `\"publish\"` and the expected argv and parsed input are unchanged apart from the kind."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/job-outcome.test.ts",
+          "reason": "three #2819 tests use the finish kind: the two `resolveJobOutcome` tests on `{ kind: \"finish\", id: \"finish-1a2b3c4d\" }` and the `readRunProgress` test on `job({ kind: \"finish\" })`; the kind is renamed, so they use `{ kind: \"publish\", id: \"publish-1a2b3c4d\" }` and `job({ kind: \"publish\" })` with the same expected state, note and progress."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/jobs/workflow-defaults.test.ts",
+          "reason": "the `finish` helper builds kind `\"finish\"`; the kind is renamed, so it builds `\"publish\"` and the AC-4 expectation (run profiles, `chat.workflow.run`) is unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/workflow-builder.test.ts",
+          "reason": "the `test.each` list names `nax-jobs__finish`; the tool is renamed, so it names `nax-jobs__publish`."
+        },
+        {
+          "path": "packages/nax/test/unit/prompts/builders/workflow-builder-chain.test.ts",
+          "reason": "the AC-4..AC-8 first line and the #2819 line-8 assertion name `nax-jobs__finish`; the tool is renamed, so they name `nax-jobs__publish`, and the line count of 12 and every other line are unchanged."
+        },
+        {
+          "path": "packages/nax/test/unit/tui/chat/chat-status.test.ts",
+          "reason": "the `#2819 finish` row uses `kind: \"finish\"` and expects `finish f1 $0.50`; the kind is renamed, so it uses `kind: \"publish\"` and expects `publish f1 $0.50`."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "77a292c6b12b466c1bbdfb28ea0ebc12d52a7de4"
+    },
+    {
+      "id": "US-002",
+      "title": "Refuse redundant publish launches and warn on run-then-publish chains",
+      "description": "**Goal** — Refuse a publish launch that would do nothing at the current HEAD, stop its matching active-chain step and warn about redundant publish proposals.\n\n**Motivation** — In workflow mode, `nax run` publishes the PR itself, so the `finish` step (`nax run <feature> --publish-only`) did nothing: its log says `Feature workflow already finished at this HEAD — skipped`, it cost $0.00, and it took 2 s.\n\n**Approach** — **Publish refusal (US-002).** `isTransientDraft` moves from `workflow/feature.ts` to `workflow/publish-only.ts` and is exported. `feature.ts` imports it, and `runInContext` behaves as before. A new pure function in `publish-only.ts`:\n\n```ts\nexport interface PublishedAtHead {\n  readonly outcome: \"ready\" | \"draft\";\n  readonly url?: string;\n}\n/** The prior record's publication when a publish-only run at `head` would do nothing; otherwise undefined. */\nexport function publishedAtHead(\n  prior: WorkflowFeatureRecord | null,\n  head: string | undefined,\n): PublishedAtHead | undefined;\n```\n\nIt returns `{ outcome, url }` only when all of these hold: `prior.step === \"done\"`, `head` is a non-empty string equal to `prior.head`, `prior.outcome` is `\"ready\"` or `\"draft\"`, and `isTransientDraft(prior)` is false. That matches `runInContext`'s skip condition for a publish-only run.\n\n`preparePublish` (in `jobs-launch.ts`) runs after its pending-stories check. It reads the newest prior record with `_jobsLaunchDeps.loadPriorFeature(workflowFeatureDir(repoRoot, feature), \"\")` and HEAD with `_jobsLaunchDeps.headSha(repoRoot)`. Both are added to `_jobsLaunchDeps`. `loadPriorFeature` expects the feature's workflow run directory, `.nax/features/<feature>/workflow`, which `workflowFeatureDir` (`workflow/paths.ts`) returns; `featureDir` from `@/config` is one level too high and would always yield `null`. `loadPriorFeature`, `workflowFeatureDir` and `publishedAtHead` are imported from their workflow leaf files by relative path with a `biome-ignore lint/style/noRestrictedImports` comment, as `chat/workflow/feature-state.ts` does, because the workflow barrel closes a runtime cycle. `headSha` comes from the `@/finish` barrel. When `publishedAtHead` returns a value, it refuses before any card with the error:\n\n`[chat] <feature> is already published at HEAD <first 7 chars of head> as a <outcome> PR <url>; nothing to publish: use nax-jobs__bot_review for its open items`\n\nWhen the record has no `url`, the error omits the space and URL after `PR`. When `launchJob` returns this refusal and the active chain's next step is a `publish` step whose target is the same feature, `launchJob` calls `options.chains.stop(<the refusal text without its \"[chat] \" prefix>)`. The next step is the step at index `summary().next - 1` of `options.chains.active()`, and its `target` field holds the feature name. Today a refusal in `prepareTarget` returns before chain admission and leaves the chain active.\n\nThe chain card warns at proposal time. `chainReason` adds the line `warning: step <n> publishes <feature> after step <m> runs it; a workflow-mode run publishes its own PR, so step <n> is refused if that run published one` for each publish step that follows a run step of the same feature (`m` is the latest such run step before `n`).\n\nFailure handling: `headSha` returns `null` or rejects, or `loadPriorFeature` returns `null` or rejects — `preparePublish` does not refuse; the launch continues to its card and the workflow's own publish-only checks decide. A publish refusal while no chain is active, or the next chain step is not that publish — the refusal is returned and no chain is stopped.\n\n**Scope** — In: helper extraction without changing its body; pure no-op predicate; fail-soft advisory reads after the PRD/pending-story guards; exact refusal/card warning strings; matching next-chain-step stop before admission. Stub `_jobsLaunchDeps.loadPriorFeature` and `_jobsLaunchDeps.headSha` to resolve null in jobs-launch.test.ts beforeEach; its existing afterEach restore covers both and every existing expectation is unchanged. Extend existing workflow/publish-only.test.ts, chat/jobs/jobs-launch.test.ts, jobs-launch-chain.test.ts and chain-tool-card.test.ts; the real workflow-directory loader test must leave loadPriorFeature at its default. No planned new files; split by describe block only if an existing test would pass 650 lines. Out: US-001 rename/legacy normalization; US-003 terminal held data/chain reconciliation; US-004 notices; changing publishOnlyStart or runInContext behavior, new chain states or schema, and unrelated launch refusals.\n\n**Interface** — The PublishedAtHead and publishedAtHead declarations above are binding. Export `isTransientDraft(prior: WorkflowFeatureRecord): boolean` from workflow/publish-only.ts with its existing body. `_jobsLaunchDeps` gains `loadPriorFeature` and `headSha`; normalize the latter's null to undefined at the publishedAtHead boundary. Use existing ChatChains.active(), summary() and stop(reason) contracts; obtain target from active().steps, not summary.steps.",
+      "acceptanceCriteria": [
+        "[unit] publishedAtHead(prior, \"h1\"), with prior a WorkflowFeatureRecord built by newFeatureRecord and overridden to { step: \"done\", head: \"h1\", outcome: \"draft\", url: \"https://x/pull/7\", ci: \"green\", reasons: [] }, returns { outcome: \"draft\", url: \"https://x/pull/7\" }.",
+        "[unit] publishedAtHead(prior, \"h1\") with the same prior but outcome: \"ready\" returns { outcome: \"ready\", url: \"https://x/pull/7\" }.",
+        "[unit] publishedAtHead(prior, \"h2\") with prior.head: \"h1\" returns undefined.",
+        "[unit] publishedAtHead(prior, undefined) and publishedAtHead(prior, \"\") with prior.head: \"h1\" both return undefined.",
+        "[unit] publishedAtHead(null, \"h1\") returns undefined.",
+        "[unit] publishedAtHead(prior, \"h1\") with prior.step: \"publish\" and prior.head: \"h1\" returns undefined.",
+        "[unit] publishedAtHead(prior, \"h1\") with prior.outcome: \"local-only\" and prior.head: \"h1\" returns undefined.",
+        "[unit] publishedAtHead(prior, \"h1\") with prior.outcome: \"draft\", prior.ci: \"unavailable\" and prior.head: \"h1\" returns undefined, because isTransientDraft returns true for that record.",
+        "[unit] isTransientDraft imported from workflow/publish-only.ts returns true for { outcome: \"draft\", ci: \"pending\", reasons: [\"CI pending\"] } and false for { outcome: \"draft\", ci: \"green\", reasons: [\"open items\"] } (both built by newFeatureRecord with those overrides).",
+        "[integration] launchJob for kind publish, feature f1, over a PRD whose stories have all passed, with _jobsLaunchDeps.loadPriorFeature returning a newFeatureRecord record overridden to { step: \"done\", head: \"abcdef0123\", outcome: \"draft\", url: \"https://x/pull/7\", ci: \"green\", reasons: [] } and _jobsLaunchDeps.headSha returning \"abcdef0123\", returns isError: true with content [chat] f1 is already published at HEAD abcdef0 as a draft PR https://x/pull/7; nothing to publish: use nax-jobs__bot_review for its open items, and the approve callback is not called.",
+        "[integration] launchJob for kind publish with _jobsLaunchDeps.headSha returning abcdef0123 and _jobsLaunchDeps.loadPriorFeature returning a done draft record at head abcdef0123 with no url, returns content [chat] f1 is already published at HEAD abcdef0 as a draft PR; nothing to publish: use nax-jobs__bot_review for its open items.",
+        "[integration] launchJob for kind publish with _jobsLaunchDeps.headSha returning null calls the approve callback with summary nax run f1 --publish-only.",
+        "[integration] launchJob for kind publish with _jobsLaunchDeps.loadPriorFeature rejecting with an Error calls the approve callback with summary nax run f1 --publish-only, and so does a launch with _jobsLaunchDeps.headSha rejecting with an Error.",
+        "[integration] launchJob for kind publish, refused with _jobsLaunchDeps.loadPriorFeature returning a done draft record at head abcdef0123 with url https://x/pull/7 and _jobsLaunchDeps.headSha returning abcdef0123, while the active chain's next step (index summary().next - 1 of chains.active().steps) is a publish step with target f1, calls chains.stop once with f1 is already published at HEAD abcdef0 as a draft PR https://x/pull/7; nothing to publish: use nax-jobs__bot_review for its open items.",
+        "[integration] launchJob for kind publish, refused with _jobsLaunchDeps.loadPriorFeature returning a done draft record at head abcdef0123 with url https://x/pull/7 and _jobsLaunchDeps.headSha returning abcdef0123, while no chain is active, does not call chains.stop.",
+        "[integration] launchJob for kind publish, refused with _jobsLaunchDeps.loadPriorFeature returning a done draft record at head abcdef0123 with url https://x/pull/7 and _jobsLaunchDeps.headSha returning abcdef0123, while the active chain's next step is a bot_review step, does not call chains.stop.",
+        "[integration] launchJob for kind publish, feature f1, with _jobsLaunchDeps.headSha returning abcdef0123 and _jobsLaunchDeps.loadPriorFeature left at its default, over a repo whose .nax/features/f1/workflow/run-1/result.json holds schemaVersion: 1, stories: {} and a featureWorkflow record built by newFeatureRecord and overridden to { step: \"done\", head: \"abcdef0123\", outcome: \"draft\", url: \"https://x/pull/7\", ci: \"green\", reasons: [] }, returns isError: true with content starting [chat] f1 is already published at HEAD abcdef0.",
+        "[unit] The nax-jobs__chain tool, given steps run f1 then publish f1, calls the approve callback with a reason containing warning: step 2 publishes f1 after step 1 runs it; a workflow-mode run publishes its own PR, so step 2 is refused if that run published one.",
+        "[unit] The nax-jobs__chain tool, given steps run f1 then publish f2, calls the approve callback with a reason that contains no line starting warning: step 2 publishes.",
+        "[integration] launchJob for kind publish over a PRD whose stories have all passed, with _jobsLaunchDeps.loadPriorFeature returning null and _jobsLaunchDeps.headSha returning abcdef0123, calls the approve callback with summary nax run f1 --publish-only."
+      ],
+      "tags": [
+        "chat",
+        "publish",
+        "workflow",
+        "chains"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Five existing modules receive an unchanged helper extraction, a pure predicate, injectable advisory reads and a guarded call to the existing stop method; established launch/card fixtures cover these bounded branches without new concurrency or state-machine abstractions.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/workflow/publish-only.ts",
+        "packages/nax/src/workflow/feature.ts",
+        "packages/nax/src/chat/jobs/jobs-launch.ts",
+        "packages/nax/src/chat/jobs/chain-tools.ts",
+        "packages/nax/src/workflow/paths.ts"
+      ],
+      "suggestedCriteria": [
+        "When a publish f1 launch is refused as already published and the active chain's next step is publish f2, chains.stop is not called.",
+        "When a chain proposal contains run f1, run f1, publish f1, its approval reason warns that step 3 publishes f1 after step 2 runs it.",
+        "publishedAtHead returns undefined for a done draft record at the current HEAD whose reasons include PR update failed: network error, preserving retry eligibility."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/jobs/jobs-launch.test.ts",
+          "reason": "the publish launch tests stub only `_jobsLaunchDeps.git`, so the new `loadPriorFeature` and `headSha` deps would read real run records and spawn real git; the file's `beforeEach` stubs `_jobsLaunchDeps.loadPriorFeature` to resolve `null` and `_jobsLaunchDeps.headSha` to resolve `null`, its existing `afterEach` restore covers both, and every existing expectation is unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "9700736dda4d2764625b7dc0573e178fbfa1c8cf"
+    },
+    {
+      "id": "US-003",
+      "title": "Record held draft outcomes and stop chains before continuation or completion",
+      "description": "**Goal** — Attach ordered publish-time held-draft items to successful run/publish outcomes and stop any chain whose terminal step leaves such a draft.\n\n**Motivation** — A held draft PR counts as success: the job note does not list its open items, and the chain completes.\n\n**Approach** — **Held draft (US-003).** A new type in `job-types.ts`:\n\n```ts\nexport interface HeldDraft {\n  readonly url?: string;\n  /** The publish-time open items, in verdict order; empty when there are none or they could not be read. */\n  readonly items: readonly { readonly id: string; readonly kind: string }[];\n  /** Set when the open items could not be read; `items` is then empty. */\n  readonly unreadable?: true;\n}\n```\n\n`ChatJob` and `JobOutcome` gain an optional `held?: HeldDraft`. For a `run` or `publish` job whose outcome state is `succeeded`, and whose pid-matched status record has `workflow.outcome === \"draft\"`, `resolveJobOutcome` calls `_jobOutcomeDeps.loadRunVerdict(repoRoot, job.target, _jobOutcomeDeps.resolveOutputDir)`. The items are its `openItems` mapped to `{ id, kind }`. `_jobOutcomeDeps.resolveOutputDir` defaults to `targetOutputDir` from `chat/target-repo.ts`, which already resolves a nax project's output directory for chat. `loadRunVerdict` is imported from `workflow/run-verdict.ts` by relative path with a `biome-ignore lint/style/noRestrictedImports` comment, as `chat/workflow/feature-state.ts` does. The outcome carries `held: { url: workflow.url, items }`. When `loadRunVerdict` rejects, it carries `held: { url: workflow.url, items: [], unreadable: true }`.\n\nThe note for both kinds becomes `publish <outcome> <url>` (as `finishOutcome` writes today, now also for `run`), followed by `; held by <N> open <item|items>: <list>` when `held.items` is non-empty, or `; open items unreadable: <error message>` when `held.unreadable` is set. Any existing note follows these segments, joined by `; `, in this order: publish segment, held or unreadable segment, existing note (for example `exit code 1 disagrees with the run record`). A run or publish job whose workflow outcome is anything but `draft` gets no `held`.\n\nOne exported helper formats every item list, so the job note, the chain stop reason and the notice agree: `heldItemList(items, { withKinds }): string` in `prompts/builders/workflow-builder.ts`, with the constant `HELD_ITEMS_NAMED = 5`; both `heldItemList` and `HELD_ITEMS_NAMED` are exported from the `@/prompts` barrel. It joins the first 5 entries with `, ` (each `<id> <kind>` when `withKinds` is true, else `<id>`) and appends `, and <K> more` when K entries are left out. The noun is `item` when N is 1 and `items` otherwise, everywhere.\n\n`ChainController.reconcile` stops the chain whenever a step's job ends `succeeded` with `held`, whatever step follows. It calls `stop(\"step <n> left draft PR <url> held by <N> open <item|items>: <heldItemList(items, { withKinds: false })>\")`. With `unreadable` set the tail reads `held by open items that could not be read`; with `items` empty and no `unreadable`, it reads `with no open items listed`. `<url>` and its space are omitted when absent. The chain record's state is then `stopped`; no new chain state is added. The chain stops even when a `bot_review` or `bot_fix` step follows: running bot review before the rulings are posted would record none, and the chain allows each step once. The agent proposes the bot steps itself, after the user's yes on the rulings (US-004).\n\nFailure handling: `loadRunVerdict` throws for a draft run or publish job — the outcome keeps `state: \"succeeded\"`, sets `held: { url, items: [], unreadable: true }`, and its note carries `; open items unreadable: <error message>`. The known-empty result is distinct: it has held with empty items, no unreadable field and no held/error note segment. Only display is truncated; retain every ordered id/kind in held.items. Keep cancellation/PID matching/status authority and exit-disagreement notes intact.\n\n**Scope** — In: HeldDraft fields, publication note enrichment for both feature run kinds, injected verdict/output-dir reads, shared formatter and prompts-barrel exports, terminal-record propagation via the existing runner spread, and persisted stopped-chain reasons before the completed branch. Extend existing chat/jobs/job-outcome.test.ts, chat/jobs/chain-controller.test.ts and prompts/builders/workflow-builder.test.ts. The old #2819 draft test stubs loadRunVerdict to resolve no open items, retains its exact publish draft URL note and restores the stub. Controller integration tests must deliver terminal jobs carrying held through the jobs onChange notification and verify persisted stopped records, not only call admission. No planned new files; split by describe block only if an existing test would pass 650 lines. Out: US-001 tool rename/legacy migration; US-002 launch-time no-op refusal and warnings; US-004 held notice instructions; bot jobs' Kept as draft interpretation, reading live PR threads, a new chain state/schema or autonomous ruling posting.\n\n**Interface** — The HeldDraft declaration above is binding; ChatJob and JobOutcome each gain `readonly held?: HeldDraft`. Shared formatting contract: `heldItemList(items, { withKinds }): string`, `HELD_ITEMS_NAMED = 5`, exported from `@/prompts`. Existing read-only dependency: `loadRunVerdict(dir, feature, resolveOutputDir): Promise<LoadedRun>`; LoadedRun.openItems supplies verdict order. `_jobOutcomeDeps` gains loadRunVerdict and resolveOutputDir, whose default is targetOutputDir. JobRunner already persists `{ ...job, ...outcome }` and builds notices from the terminal ChatJob, so no new runner production wiring is required.",
+      "acceptanceCriteria": [
+        "[unit] resolveJobOutcome for a run job with a pid-matched completed status whose workflow is { outcome: \"draft\", url: \"https://x/pull/7\" }, and _jobOutcomeDeps.loadRunVerdict resolving a LoadedRun whose openItems are D-1 (advisor) and US-003 (cannot-verify), returns state: \"succeeded\" and held: { url: \"https://x/pull/7\", items: [{ id: \"D-1\", kind: \"advisor\" }, { id: \"US-003\", kind: \"cannot-verify\" }] }.",
+        "[unit] resolveJobOutcome for a run job with a pid-matched completed status whose workflow is { outcome: \"draft\", url: \"https://x/pull/7\" }, and _jobOutcomeDeps.loadRunVerdict resolving a LoadedRun whose openItems are D-1 (advisor) and US-003 (cannot-verify), returns note \"publish draft https://x/pull/7; held by 2 open items: D-1 advisor, US-003 cannot-verify\".",
+        "[unit] resolveJobOutcome for a publish job with a pid-matched completed status whose workflow is { outcome: \"draft\", url: \"https://x/pull/7\" }, and _jobOutcomeDeps.loadRunVerdict resolving a LoadedRun whose openItems are D-1 (advisor) and US-003 (cannot-verify), returns held: { url: \"https://x/pull/7\", items: [{ id: \"D-1\", kind: \"advisor\" }, { id: \"US-003\", kind: \"cannot-verify\" }] } and note \"publish draft https://x/pull/7; held by 2 open items: D-1 advisor, US-003 cannot-verify\", the same held and note as for run under the same status and stub.",
+        "[unit] resolveJobOutcome for a run job with a pid-matched completed draft workflow and _jobOutcomeDeps.loadRunVerdict resolving a LoadedRun whose openItems are I-1..I-7 of kind finding returns a note ending \"held by 7 open items: I-1 finding, I-2 finding, I-3 finding, I-4 finding, I-5 finding, and 2 more\", and held.items has seven entries.",
+        "[unit] resolveJobOutcome for a run job whose pid-matched completed status has workflow { outcome: \"ready\", url: \"https://x/pull/7\" } returns no held, the note publish ready https://x/pull/7, and does not call _jobOutcomeDeps.loadRunVerdict.",
+        "[unit] resolveJobOutcome for a run job whose pid-matched status has no workflow block returns no held and does not call _jobOutcomeDeps.loadRunVerdict.",
+        "[unit] resolveJobOutcome for a run job whose run record has status failed and workflow { outcome: \"draft\" } returns state: \"failed\" and no held.",
+        "[unit] resolveJobOutcome for a draft run job with _jobOutcomeDeps.loadRunVerdict rejecting with Error(\"no workflow result\") returns state: \"succeeded\", held: { url: \"https://x/pull/7\", items: [], unreadable: true } and the note publish draft https://x/pull/7; open items unreadable: no workflow result.",
+        "[unit] resolveJobOutcome passes _jobOutcomeDeps.loadRunVerdict the repo root, the job's target as the feature, and _jobOutcomeDeps.resolveOutputDir.",
+        "[unit] resolveJobOutcome for a draft run job with zero open items from loadRunVerdict returns held: { url: \"https://x/pull/7\", items: [] } with no unreadable field, and the note publish draft https://x/pull/7.",
+        "[unit] resolveJobOutcome for a draft run job with exit code 1, a completed run record and one open item D-1 (advisor) returns the note publish draft https://x/pull/7; held by 1 open item: D-1 advisor; exit code 1 disagrees with the run record.",
+        "[unit] heldItemList([{ id: \"D-1\", kind: \"advisor\" }, { id: \"D-2\", kind: \"advisor\" }], { withKinds: false }) returns D-1, D-2, and with { withKinds: true } returns D-1 advisor, D-2 advisor.",
+        "[unit] heldItemList over seven items I-1..I-7 of kind finding with { withKinds: false } returns I-1, I-2, I-3, I-4, I-5, and 2 more, and HELD_ITEMS_NAMED equals 5.",
+        "[integration] A chain controller with an active two-step chain (run f1, then publish f1), whose step-2 job turns succeeded with held: { url: \"https://x/pull/7\", items: [{ id: \"D-1\", kind: \"advisor\" }] } and fires the jobs change notification, ends with chain state stopped and stop reason step 2 left draft PR https://x/pull/7 held by 1 open item: D-1.",
+        "[integration] A chain controller with an active two-step chain (run f1, then publish f1), whose step-2 job turns succeeded with no held and fires the jobs change notification, ends with chain state completed, preserving successful completion of the same chain when no draft hold is recorded.",
+        "[integration] A chain controller with an active chain (run f1, then bot_review), whose step-1 job turns succeeded with held: { url: \"https://x/pull/7\", items: [{ id: \"D-1\", kind: \"advisor\" }] }, ends with chain state stopped and stop reason step 1 left draft PR https://x/pull/7 held by 1 open item: D-1.",
+        "[integration] A chain whose last-step job turns succeeded with held: { items: [] }, no url and no unreadable, ends stopped with stop reason step 1 left draft PR with no open items listed.",
+        "[integration] A chain whose last-step job turns succeeded with held: { items: [], unreadable: true } and no url ends stopped with stop reason step 1 left draft PR held by open items that could not be read.",
+        "[integration] A chain whose last-step job carries held with seven items I-1..I-7 ends with a stop reason ending held by 7 open items: I-1, I-2, I-3, I-4, I-5, and 2 more.",
+        "[integration] After a held-draft stop, the chain record written through the chain store has state stopped and the same stop reason."
+      ],
+      "tags": [
+        "chat",
+        "jobs",
+        "held-drafts",
+        "workflow",
+        "chains"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Adds a cross-module terminal outcome contract, asynchronous verdict loading and fail-soft enrichment, a shared formatter, and event-driven persisted chain termination while preserving child-status authority.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/jobs/job-outcome.ts",
+        "packages/nax/src/chat/jobs/chain-controller.ts",
+        "packages/nax/src/chat/jobs/job-types.ts",
+        "packages/nax/src/chat/target-repo.ts",
+        "packages/nax/src/prompts/builders/workflow-builder.ts"
+      ],
+      "suggestedCriteria": [
+        "resolveJobOutcome returns no held and does not load a verdict when a completed draft status names a different pid from the run job.",
+        "When a run job is cancellation-requested despite a completed draft status, resolveJobOutcome returns state cancelled with no held and does not load a verdict.",
+        "When a chain's first run leaves held and its next step is bot_fix, the jobs change notification stops the chain before bot_fix can be auto-admitted."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/jobs/job-outcome.test.ts",
+          "reason": "the #2819 test whose status workflow is a draft with a pull URL expects the exact note \"publish draft\" plus that URL; a draft outcome now reads its open items, so the test stubs `_jobOutcomeDeps.loadRunVerdict` to resolve a run with no open items, keeps the same exact note, and restores the stub afterwards."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "fe7d4c12d82ea834f4efa170af9b4fc70bede0c8"
+    },
+    {
+      "id": "US-004",
+      "title": "Guide the chat agent to draft evidence-backed rulings and ask once",
+      "description": "**Goal** — Replace chain-continuation guidance on held-draft notices with an exact evidence-first, single-approval ruling preparation plan.\n\n**Motivation** — The user's standing requirement is minimal human interaction: finish problems go to an agent, and the user is asked once, only for what the evidence cannot settle.\n\n**Approach** — **Notice guidance (US-004).** `JobNoticeInput` gains `held?: { url?: string; items: readonly { id: string; kind: string }[]; unreadable?: true }`, a structural copy of `HeldDraft` so `prompts` does not import from `chat`. `buildJobNotice` keeps its first two lines. When `held` is present, it adds this line third and leaves out the chain line, because a held draft has stopped the chain:\n\n`The PR is a draft held by <N> open <item|items> (<heldItemList(items, { withKinds: false })>). Do not ask the user to rule on them. Read them with nax workflow status -f <target> --json, then settle each one from evidence as the nax-finish skill's Step 3 does (load it with nax-skills__load when it is listed): verify the item's premise against commits, code and tests, and draft one reply per item whose first line is its ruling keyword (verified:, confirm:, override:, waive: or fixed <sha>) followed by the evidence; findings are left to nax bot fix. Then send the user one message with every drafted reply and the plan (post the replies on their item threads, then nax-jobs__bot_review, then nax-jobs__bot_fix); on their yes, post each reply on its item's thread with gh or glab and propose that chain.`\n\nWhen `unreadable` is set, the opening reads `The PR is a draft whose open items could not be read.`; when `items` is empty without `unreadable`, it reads `The PR is a draft with no open items listed.`. Both then continue from `Read them with`. `JobRunner` already builds notices from the terminal `ChatJob` record (`buildJobNotice(this.records.get(job.id) ?? terminal)`), so `held` reaches the notice through the record without new wiring.\n\nThis line implements the user ruling of 2026-11-17: the agent posts ruling replies on the user's one approval. That replaces slice-2 design §4.7's \"agent-only rulings stay with `nax bot fix` and the user\". The design document is updated by hand on this branch (see Out of Scope).\n\n**Scope** — In: structural notice input extension, exact third-line wording and three opening variants, singular/plural and the existing US-003 formatter, suppression of chain continuation only when held exists, existing no-held notice preservation, and a runner child-exit integration assertion proving the queued notice receives held from _jobOutcomeDeps. Extend existing prompts/builders/workflow-builder.test.ts and notice-summary.test.ts plus chat/jobs/job-runner.test.ts; restore all outcome-dependency stubs and use existing fake-child/durable-change helpers. No planned new files; split by describe block only if a test would pass 650 lines. Out: US-003 held derivation, formatter creation or chain stopping; US-002 publish refusal/warnings; US-001 rename/instruction-line changes; dedicated reply-posting tools, implementing posting inside JobRunner or posting before the user's yes, koda handoff, permission/session changes and the hand-edited design document. The notice must still instruct the chat agent to post the drafted replies after the user's one approval, as specified above. `buildJobsInstructions` is untouched by this story.\n\n**Interface** — Add to JobNoticeInput the spec's structural field `held?: { url?: string; items: readonly { id: string; kind: string }[]; unreadable?: true }`. Retain buildJobNotice(input: JobNoticeInput): string and reuse heldItemList(items, { withKinds: false }) from US-003; do not introduce a prompts-to-chat dependency. JobRunner's existing terminal-record call is the integration seam, not a new adapter or projection.",
+      "acceptanceCriteria": [
+        "[unit] buildJobNotice with kind: \"run\", target: \"f1\", state: \"succeeded\" and held: { url: \"https://x/pull/7\", items: [{ id: \"D-1\", kind: \"advisor\" }, { id: \"D-2\", kind: \"advisor\" }] } returns three lines, and the third line starts The PR is a draft held by 2 open items (D-1, D-2). Do not ask the user to rule on them.",
+        "[unit] buildJobNotice for kind run, target f1, state succeeded and held.items [{ id: \"D-1\", kind: \"advisor\" }, { id: \"D-2\", kind: \"advisor\" }] returns a third line containing \"nax workflow status -f f1 --json\".",
+        "[unit] buildJobNotice for kind run, target f1, state succeeded and held.items [{ id: \"D-1\", kind: \"advisor\" }, { id: \"D-2\", kind: \"advisor\" }] returns a third line naming the nax-finish skill's Step 3 and nax-skills__load.",
+        "[unit] buildJobNotice for kind run, target f1, state succeeded and held.items [{ id: \"D-1\", kind: \"advisor\" }, { id: \"D-2\", kind: \"advisor\" }] returns a third line naming verified:, confirm:, override:, waive: and fixed <sha>, and saying findings are left to nax bot fix.",
+        "[unit] buildJobNotice for kind run, target f1, state succeeded and held.items [{ id: \"D-1\", kind: \"advisor\" }, { id: \"D-2\", kind: \"advisor\" }] returns a third line saying to send the user one message with every drafted reply and the plan naming nax-jobs__bot_review then nax-jobs__bot_fix, and, on their yes, to post each reply on its item's thread with gh or glab.",
+        "[unit] buildJobNotice for target f1 with held: { items: [], unreadable: true } returns a third line starting \"The PR is a draft whose open items could not be read. Read them with nax workflow status -f f1 --json\".",
+        "[unit] buildJobNotice for target f1 with held: { items: [] } and no unreadable returns a third line starting \"The PR is a draft with no open items listed. Read them with nax workflow status -f f1 --json\".",
+        "[unit] buildJobNotice with held carrying seven items I-1..I-7 returns a third line containing held by 7 open items (I-1, I-2, I-3, I-4, I-5, and 2 more).",
+        "[unit] buildJobNotice with held carrying one item and chainId: \"chain-1a2b3c4d\", chainStep: 2 returns exactly three lines, the held line third, and no line containing call the next step's launch tool.",
+        "[unit] buildJobNotice without held returns exactly the lines it returned before this feature for the same input, with and without a chain id.",
+        "[integration] A job runner whose run child exits 0, with _jobOutcomeDeps.readStatusFile returning a pid-matched completed status with workflow { outcome: \"draft\", url: \"https://x/pull/7\" } and _jobOutcomeDeps.loadRunVerdict resolving a LoadedRun whose openItems contains one item D-1 (advisor), queues a notice whose text contains The PR is a draft held by 1 open item (D-1)."
+      ],
+      "tags": [
+        "chat",
+        "prompts",
+        "held-drafts",
+        "notices"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "An additive structural input and conditional pure prompt line reuse the upstream formatter and existing terminal-record transport; integration is verified through a fake child exit without changing authorization or posting behavior.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
+      },
+      "contextFiles": [
+        "packages/nax/src/prompts/builders/workflow-builder.ts",
+        "packages/nax/src/chat/jobs/job-runner.ts",
+        "packages/nax/src/chat/jobs/job-types.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "0c6f88fe7ae627500415af21182b20091b63d768"
+    }
+  ],
+  "analysis": "This is an enhancement of the existing Bun/TypeScript chat-job system in @nathapp/nax, not a greenfield service. All implementation stays in packages/nax; no cross-package dependency or release/version change is needed. Codebase-memory MCP is unavailable in this host, so discovery used direct Read, Grep and Glob tools against the supplied execution repository. Read docs/architecture/ARCHITECTURE.md:13-35 and :152-172 before implementation: use injectable _deps for external calls, pure prompt builders, explicit constants, Bun APIs, bounded functions and bun:test with restored dependency seams. The binding execution order is US-001 first, US-002 and US-003 each dependent only on US-001, and US-004 dependent only on US-003. Keep exactly these four implementation stories. US-001 establishes the renamed launch/outcome dispatch and shared job kind; US-002 changes jobs-launch while US-003 changes job-outcome. Preserve upstream edits to shared job types, prompt builders and tests without adding a dependency between US-002 and US-003.\n\nUS-001 impact and migration: packages/nax/src/chat/jobs/job-types.ts:1 defines the current finish-bearing ChatJobKind; :34 defines JOB_ID_PATTERN; :37-43 classify finish as both feature and run. These predicates feed the runner, write guard, panel, provider and launch logic (imports found in src/chat/jobs/job-runner.ts:11, job-write-guard.ts:6, job-panel-view.ts:14, chain-types.ts:1 and jobs-provider.ts:8). Rename only the chat kind, not the separate finish helper subsystem, skill name or unrelated execution/config finish phases. src/chat/jobs/jobs-provider.ts:42-61 holds the schema and ordered LAUNCH_KINDS, and :142-166 generates launch tools. src/chat/jobs/job-argv.ts:9-32 defines the input union, :133-149 parses it and :151-204 builds argv. The actual existing publish-only argv is [nax entry..., run, -f, feature, -d, repoRoot, --headless, --publish-only, --profile, profile...] (:165-178); the display shorthand is not a reason to drop -f/-d/--headless. src/chat/jobs/chain-argv.ts:11-16 and :37-45 mirror the input tables and delegate feature argv. src/chat/jobs/workflow-defaults.ts:21-41 maps finish onto chat.workflow.run; keep that provenance and profile behavior for publish. src/chat/jobs/jobs-launch.ts:263-294 prepares finish and rejects pending stories, :301-304 dispatches preparation, and :394-406 formats the publish-only card summary. Rename prepareFinish to preparePublish without changing its pending-stories refusal or publish-only explanation. src/chat/jobs/chain-tools.ts:141-147 provides step labels; src/tui/chat/job-strip.ts:15-37 repeats the kind union and includes finish in cost/progress rendering. src/tui/chat/layout-job.ts:104-116 currently renders the nonexistent nax finish command; publish must explicitly render nax run <target> --publish-only. src/prompts/builders/workflow-builder.ts:155-175 is the fixed jobs instruction builder; preserve line order/count and every unrelated line, changing only the first/eighth tool names and sixth-line phrase. src/chat/jobs/job-outcome.ts:64-71 and :88-89 dispatch and name the old finish outcome; US-001 changes kind identity but leaves existing outcome behavior intact until US-003.\n\nDurable compatibility is a read-time normalization, not an on-disk migration. src/chat/jobs/job-store.ts:8 validates stored kinds, :34-35 generates ids, :39-56 atomically writes records, :74-98 validates/reads minimum recovery records, and :102-118 enumerates/sorts them while preserving extra fields. Accept both finish and publish in the storage validator and id regex, normalize legacy kind finish to publish after validation, and retain the exact legacy id, filename, argv and other data. New typed launches and newJobId use publish only; there is deliberately no finish tool alias. Avoid a type guard that incorrectly assumes legacy finish already satisfies the narrowed target ChatJobKind before mapping. Chains need no migration: src/chat/jobs/chain-controller.ts:65 explicitly treats disk records as audit data, never activation input. Relevant existing US-001 tests include test/unit/chat/jobs/job-store.test.ts:24-41 (fixture), :62-79 (ids); job-outcome.test.ts:56-68 and :157-164 (#2819 finish regressions); jobs-launch.test.ts:108-112 (schema row); and existing chain-argv, job-argv, workflow-defaults, chain-tool-card, layout-job, chat-status and workflow-builder tests. The spec additionally requires mechanical ordered tool-list updates in chain-tools.test.ts, chain-tool-input.test.ts, test/unit/chat/chat-host-chain.test.ts, answer-ask-tool.test.ts, jobs-provider.test.ts and jobs-launch.test.ts, plus workflow-builder-chain.test.ts; retain list order with publish third.\n\nUS-002 integration: src/workflow/feature.ts:219-233 contains private isTransientDraft. Move its body unchanged to src/workflow/publish-only.ts and import it back into feature.ts. It returns true only for draft records with ci unavailable, ci pending with one reason, or a PR update failed: reason. src/workflow/feature.ts:193-200 uses it to restart publishing and :247-270 uses its negation in the finished-at-HEAD skip; do not change these runtime semantics. src/workflow/publish-only.ts:53-73 already has publishOnlyStart; leave that decision surface unchanged and add the narrower pure publishedAtHead predicate specified here. A transient draft must remain retryable even when ready/draft alone might otherwise look published. src/workflow/feature-record.ts:25-47 provides newFeatureRecord test fixtures; :87-101 loads the newest other run record. The crucial path is workflowFeatureDir(repoRoot, feature), defined at src/workflow/paths.ts:10-11 as featureDir(...)/workflow: passing config.featureDir directly would silently miss records. Use currentRunId empty string so no actual newest run is excluded. headSha is exported from src/finish/index.ts:7 and defined at src/finish/commit.ts:50. New loadPriorFeature/headSha dependencies belong on _jobsLaunchDeps (src/chat/jobs/jobs-launch.ts:15-22) and are fail-soft only for this advisory no-op check: null or rejection must still reach normal approval/workflow checks. Normalize headSha null to undefined for the pure helper. Read after the pending-stories check and refuse before approval. src/chat/workflow/feature-state.ts:7-14 demonstrates annotated relative leaf imports: using @/workflow here would close workflow -> step-context -> cli runtime cycles.\n\nlaunchJob prepares the target at src/chat/jobs/jobs-launch.ts:349-351, before chain admit at :371-377; an early preparation error currently leaves the chain active. On the specific published-at-HEAD refusal, inspect chains.active().steps at chains.summary().next - 1 and compare kind publish plus target feature before stopping with the prefix-stripped refusal; do not stop unrelated/no chain or general preparation failures. ChainSummary exposes next, kind and argv but not target (src/chat/jobs/chain-controller.ts:20-37), so get target from active().steps, not summary.steps or parsed argv. src/chat/jobs/chain-tools.ts:94-103 stores target explicitly and :156-177 assembles card reasons. Add warnings for every publish after a prior run of the same feature, referencing the latest preceding matching run; different features do not warn. Existing test/unit/workflow/publish-only.test.ts:6-43 supplies a finished fixture and baseline decision tests; test/unit/chat/jobs/jobs-launch.test.ts:18-78 sets up mocks and already restores the complete _jobsLaunchDeps snapshot, so add null stubs for both new dependencies in beforeEach. test/unit/chat/jobs/jobs-launch-chain.test.ts:39-86 supplies mock ChatChains; override active/summary for the early-refusal seam. test/unit/chat/jobs/chain-tool-card.test.ts:28-85 provides approval-card fixtures. Include the real .nax/features/f1/workflow/run-1/result.json loader integration, with only headSha stubbed, so the path contract is genuinely tested.\n\nUS-003 outcome dataflow: src/chat/jobs/job-outcome.ts:9-14 defines JobOutcome; :22-25 exposes injectable readers; :35-38 rejects status records not matching the job pid; :47-61 implements cancellation and authoritative run-record status, including exit-code disagreement notes. Currently run jobs return this basic outcome while finish alone gets publication text (:64-71, :88-89). After the rename, share publication enrichment for run and publish without losing cancellation, failure, metric or disagreement semantics. Only succeeded draft workflows load held items. Keep state succeeded for an executed job that left a draft, but attach HeldDraft to both JobOutcome and ChatJob; the chain, not the child outcome, transitions to stopped. src/workflow/run-verdict.ts:25-37 defines LoadedRun, whose ordered openItems are authoritative; :84-107 defines loadRunVerdict(dir, feature, resolveOutputDir), throws WORKFLOW_RESULT_MISSING/WORKFLOW_NOT_STARTED, and also resolves supplementary information through the resolver. Pass repo root, job.target and the injectable resolver exactly. src/chat/target-repo.ts:60-63 implements targetOutputDir from the target project's config, so use it as the default rather than assuming the chat host's output directory. Import run-verdict through an annotated relative leaf, following feature-state, and use the existing prompts barrel for shared formatting. Project every open item to id/kind, retaining order and the full list; truncate display only, at exported HELD_ITEMS_NAMED = 5. Unreadable verdicts retain succeeded, empty items and unreadable true while preserving the error message only in the note. Zero known items still means held, without unreadable. Notes use publication, held/error, existing note order; singular item only at one. Ready/no-workflow/failed/cancelled jobs never gain held, and bot outcome semantics stay exit-code based.\n\nsrc/chat/jobs/chain-controller.ts:75-79 subscribes to jobs onChange; :91-109 reconciles terminal jobs and currently completes a successful last step without considering publication. Insert the succeeded+held stop before the completed branch and before advancing/cost-cap logic, independent of next-step kind, and call the existing stop method (:238-245). That method persists immutable stopped state/reason through a serialized write queue (:248-257); no new chain state/schema is needed. Event-driven tests must capture/fire the jobs onChange listener; test/unit/chat/jobs/chain-controller.test.ts:39-45 currently provides a no-op subscription, so merely polling summary would not exercise the required seam. Its :19-22 and :67-81 supply event-driven durable-write waits; use those rather than sleeps. src/chat/jobs/job-runner.ts:288-302 already spreads the resolved outcome into the terminal ChatJob, writes it, and builds a notice from the current terminal record before emit. This automatically carries held to persistence, controller get(), and notice inputs without new runner production wiring. The reattached path also spreads the outcome and builds a notice (job-runner.ts:452-456). The store's preservation of extra fields avoids a held projection/migration. src/prompts/index.ts:118-119 currently exports workflow builders and must additionally export heldItemList and HELD_ITEMS_NAMED. Add outcome regressions to test/unit/chat/jobs/job-outcome.test.ts; its #2819 draft expectation at :57-62 needs a loadRunVerdict stub resolving zero open items to preserve the exact original note, restored afterwards. Add helper tests to existing test/unit/prompts/builders/workflow-builder.test.ts and controller notification/persisted-stop tests to existing chain-controller.test.ts.\n\nUS-004 prompt boundary: src/prompts/builders/workflow-builder.ts:115-127 defines JobNoticeInput as a chat-independent structural interface; extend it structurally rather than importing HeldDraft from chat. buildJobNotice at :143-152 currently emits two fixed lines, plus chainNoticeLine (:135-138) when chainId exists. Preserve the first two lines byte-for-byte; when held exists, add the exact specified evidence/rulings guidance third and suppress the chain-next-step instruction even if a chain id is present. Use the US-003 shared formatter with withKinds false and match singular/plural, unreadable and empty variants. This is instruction generation, not autonomous ruling posting: user approval remains required before the agent uses gh/glab and proposes bot_review then bot_fix. Do not implement a new posting tool, finish automation, handoff or permission change. test/unit/prompts/builders/workflow-builder.test.ts:185-219 anchors the existing two-line notice, and workflow-builder-chain.test.ts covers chain notices/instruction lines; notice-summary.test.ts:55-81 and :107-119 anchors summary behavior independent of extra lines and notes. test/unit/chat/jobs/job-runner.test.ts:29-57 provides fake child exit and restored _deps; :65-73 provides nextChange for durable notification. Extend its dependency snapshot/restore to _jobOutcomeDeps for the child-exit test and assert the queued notice, not a direct buildJobNotice call.\n\nTesting and boundaries: No story intentionally creates a new source or test file; contextFiles name existing repo-rooted files, and expectedFiles is omitted. Extend each existing module test file specified by the spec. Only if an edited test would pass 650 lines, split by describe block into <module>-<concern>.test.ts; do not preemptively create tests elsewhere. Preserve all named regression changes and test seams listed in each story. Package commands run from packages/nax; targeted bun test test/unit/<path>.test.ts --timeout=30000 is appropriate, never bare bun test or bun run nax. Pipeline quality gates are not acceptance criteria. The main risks are a partial rename breaking discriminated unions/tool order, losing legacy recovery by rejecting finish ids before mapping, accidentally changing publishOnlyStart or transient retry semantics, silently reading the wrong workflow directory, stopping an unrelated chain on an early refusal, hidden real git/disk calls from unmocked new dependencies, cycles from workflow barrel imports, treating unreadable/empty items as no hold, and dropping held during terminal-record or prompt projection. Feature completion is honest stopped-chain reporting and a prepared, single-approval ruling plan, not making a PR ready or automating finish. All feature-level exclusions below remain binding; the design-document hand edit is explicitly not part of this run.\n\nRefinement audit: All 67 numbered spec acceptance criteria remain in their original stories and original order: US-001 AC-1 through AC-17, US-002 AC-1 through AC-19, US-003 AC-1 through AC-20, US-004 AC-1 through AC-11. No regression qualifier or fixture-building parenthetical was removed. US-001 AC-2 and AC-10 now spell out the real argv from packages/nax/src/chat/jobs/job-argv.ts:165-178, rather than treating the display shorthand as literal adjacent tokens; they explicitly retain the unchanged-argv anchor. Outcome/notice criteria with previous-criterion references now state their own inputs, and verdict stubs explicitly resolve LoadedRun.openItems, matching packages/nax/src/workflow/run-verdict.ts:25-37 and :84-107. US-004 scope distinguishes the required instruction to post after the user's yes from implementing a posting action in JobRunner. The four failure-table rows are represented by US-003 AC-8, US-002 AC-12/13 plus its additional null-prior launch criterion, US-001 AC-6, and US-002 AC-15/16 respectively. An additional US-001 pending-stories refusal criterion pins the existing negative launch path and exact text at packages/nax/src/chat/jobs/jobs-launch.ts:282-285; US-002 already has refusals/read failures, US-003 has failed/unreadable outcomes, and US-004 has unreadable-item fallback and chain-line suppression. Current acceptance totals are 18, 20, 20 and 11; the two criteria beyond the 67 numbered spec criteria cover the specified null-prior failure-table case and the audit-requested negative regression, not new feature scope. All eight feature exclusions remain verbatim in the top-level array, with nearby boundaries reflected in each Scope section. Every contextFiles list matches its spec-recommended list exactly, and all paths already exist. Binding story ids, workdirs and dependencies are unchanged. US-001 and US-002 use medium/tdd-simple because the code uses established mappings, readers and stop/card seams; US-003 remains complex/three-session-tdd-lite for asynchronous outcome enrichment and persisted notification-driven chain state, and US-004 remains medium/tdd-simple. No security policy, permission resolver or session implementation is changed.",
+  "outOfScope": [
+    "Reporting `nax bot fix`'s \"Kept as draft\" ready-pass result as a held draft: bot jobs' outcome stays exit-code based. Tracked as a follow-up.",
+    "Handing an existing PR to koda for its finish (`nax-flow__send` with a PR) and the agent offering it (#2968 items 6 and 7, koda #477).",
+    "A dedicated tool for posting ruling replies: the agent posts with `gh` or `glab` under the session's Bash permission, after the user's yes.",
+    "Reading live PR thread state for `held.items`: they are the publish-time verdict's open items, not the items still open on the PR.",
+    "A `nax-jobs__finish` alias for the old tool name.",
+    "A new chain state such as `held`, or any change to the chain record schema.",
+    "Updating slice-2 design §4.7 (`docs/superpowers/specs/2026-10-27-nax-chat-workflow-dispatch-slice2-design.md`) to record that the agent posts rulings on the user's one approval: done by hand on this branch, not by the run.",
+    "Changing `buildJobsInstructions` beyond renaming `nax-jobs__finish` to `nax-jobs__publish` on lines 1 and 8 and rewording the line-6 phrase `a publish-only finish` to `a publish-only run`."
+  ],
+  "routingProfile": "native-codex-dsm"
+}

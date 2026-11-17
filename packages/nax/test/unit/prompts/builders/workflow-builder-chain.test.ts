@@ -124,7 +124,7 @@ describe("buildJobsInstructions — chain lines", () => {
 
   test("AC-4..AC-8 the five original instruction lines are preserved verbatim", () => {
     expect(lines(buildJobsInstructions()).slice(0, 5)).toEqual([
-      "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__finish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
+      "`nax-jobs__plan`, `nax-jobs__run`, `nax-jobs__publish`, `nax-jobs__bot_review` and `nax-jobs__bot_fix`: each is billed and shows the user an approval card.",
       "A denial is final for that call; do not retry with changed arguments to get round it.",
       "Jobs run in the background; a [nax-jobs] notice arrives when one ends.",
       "Write, Edit, Delete and GitCommit are refused in this checkout while a run or plan job runs.",
@@ -142,8 +142,22 @@ describe("buildJobsInstructions — chain lines", () => {
     expect(lines(buildJobsInstructions())[6]).toContain("unless chat.workflow sets profiles for that step");
   });
 
-  test("#2819 explains when to finish a run that left no PR", () => {
-    expect(lines(buildJobsInstructions())[7]).toContain("`nax-jobs__finish` publishes it");
+  test("AC-16 line 8 names nax-jobs__publish as what publishes a run that left no PR", () => {
+    expect(lines(buildJobsInstructions())[7]).toContain("`nax-jobs__publish` publishes it");
+  });
+
+  test("AC-15 line 1 names nax-jobs__publish and not nax-jobs__finish", () => {
+    const first = lines(buildJobsInstructions())[0] ?? "";
+    expect(first).toContain("nax-jobs__publish");
+    expect(first).not.toContain("nax-jobs__finish");
+  });
+
+  test("AC-17 line 6 says a publish-only run, not a publish-only finish", () => {
+    expect(lines(buildJobsInstructions())[5]).toContain("nax run (including a publish-only run)");
+  });
+
+  test("AC-16 the instruction list is still twelve lines", () => {
+    expect(lines(buildJobsInstructions())).toHaveLength(12);
   });
 
   test("AC-14 the repo line immediately precedes the chain lines", () => {

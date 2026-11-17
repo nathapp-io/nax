@@ -6,8 +6,8 @@ import { validateFeatureName } from "@/utils/feature-name";
 const ctx = { naxEntry: ["bun", "/n.ts"], repoRoot: "/r" };
 
 describe("buildJobArgv", () => {
-  test("#2819 finish is a headless publish-only run with its profiles", () => {
-    expect(buildJobArgv({ kind: "finish", feature: "f1", profiles: ["a"] }, ctx)).toEqual([
+  test("AC-2 publish is a headless publish-only run with its profiles", () => {
+    expect(buildJobArgv({ kind: "publish", feature: "f1", profiles: ["a"] }, ctx)).toEqual([
       "bun",
       "/n.ts",
       "run",
@@ -157,13 +157,13 @@ const invalid: [string, ChatJobKind, Record<string, unknown>, string][] = [
 ];
 
 describe("parseJobInput", () => {
-  test("#2819 finish takes a validated feature and profiles only", () => {
-    expect(parseJobInput("finish", { feature: "f1", profiles: ["a"] })).toEqual({
-      kind: "finish",
+  test("AC-3 publish takes a validated feature and profiles only", () => {
+    expect(parseJobInput("publish", { feature: "f1", profiles: ["a"] })).toEqual({
+      kind: "publish",
       feature: "f1",
       profiles: ["a"],
     });
-    expect(parseJobInput("finish", {})).toEqual({ error: "[chat] feature must be a string" });
+    expect(parseJobInput("publish", {})).toEqual({ error: "[chat] feature must be a string" });
   });
   test("US-005 AC-2 removal precedes invalid maxCost", () => {
     expect(parseJobInput("run", { feature: "f1", maxIterations: 40, maxCost: -1 })).toEqual({

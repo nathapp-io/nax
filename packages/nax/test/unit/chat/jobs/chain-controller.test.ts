@@ -3,7 +3,7 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { type ChatChains, createChainController } from "@/chat/jobs/chain-controller";
 import { _chainStoreDeps, readChainRecord } from "@/chat/jobs/chain-store";
 import type { ChainStep } from "@/chat/jobs/chain-types";
-import type { ChatJob, ChatJobState } from "@/chat/jobs/job-types";
+import type { ChatJob, ChatJobState, HeldDraft } from "@/chat/jobs/job-types";
 import { NaxError } from "@/errors";
 
 const originalDeps = { ..._chainStoreDeps };
@@ -15,12 +15,14 @@ let chains: ChatChains;
 let jobs: Map<string, ChatJob>;
 let writes: number;
 let waiters: { count: number; resolve: () => void }[];
+/** Every jobs-change listener the controllers under test registered, in order. */
+let listeners: (() => void)[];
 
 function written(count: number): Promise<void> {
   if (writes >= count) return Promise.resolve();
   return new Promise((resolve) => waiters.push({ count, resolve }));
 }
-function job(state: ChatJobState): ChatJob {
+function job(state: ChatJobState, overrides: Partial<ChatJob> = {}): ChatJob {
   return {
     schemaVersion: 1,
     id: "run-1a2b3c4d",
@@ -34,6 +36,7 @@ function job(state: ChatJobState): ChatJob {
     logPath: "job.log",
     sessionId: "chat-1",
     approvedAt,
+    ...overrides,
   };
 }
 function controller(): ChatChains {
@@ -42,8 +45,18 @@ function controller(): ChatChains {
     cwd: dir,
     sessionId: () => "chat-1",
     now: () => new Date(approvedAt),
-    jobs: { get: (id) => jobs.get(id), onChange: () => () => {} },
+    jobs: {
+      get: (id) => jobs.get(id),
+      onChange: (listener) => {
+        listeners.push(listener);
+        return () => {};
+      },
+    },
   });
+}
+/** Delivers a terminal job the way the runner does: the record, then the change notification. */
+function notify(): void {
+  for (const listener of listeners) listener();
 }
 async function twoSteps(state?: ChatJobState, checkBefore?: string): Promise<string> {
   const chain = await chains.activate({ steps: [first, { ...second, checkBefore }] });
@@ -65,6 +78,7 @@ beforeEach(() => {
   jobs = new Map();
   writes = 0;
   waiters = [];
+  listeners = [];
   const published = (): void => {
     writes++;
     for (const waiter of waiters) if (writes >= waiter.count) waiter.resolve();
@@ -312,5 +326,115 @@ describe("createChainController", () => {
     expect(chains.active()).toBeUndefined();
     await written(2);
     expect((await readChainRecord(dir, chain.id))?.stopReason).toBe("step 1 could not start: checkout busy");
+  });
+});
+
+describe("US-003 held draft", () => {
+  const publishStep: ChainStep = { kind: "publish", argv: ["nax", "run", "f1", "--publish-only"], target: "f1" };
+  const botReview: ChainStep = { kind: "bot_review", argv: ["nax", "bot", "review", "12"], target: "12" };
+  const HELD_ONE: HeldDraft = { url: "https://x/pull/7", items: [{ id: "D-1", kind: "advisor" }] };
+
+  /**
+   * Starts step `step` with a job that is still running, so only the later record update and
+   * change notification can end it — the path the runner actually takes.
+   */
+  function startStep(chainId: string, step: number, id: string, entry: Partial<ChatJob>): void {
+    jobs.set(id, job("running", { id, ...entry }));
+    chains.started(chainId, step, id);
+  }
+
+  /** Ends a started step's job: the terminal record lands, then the change notification fires. */
+  function endStep(id: string, overrides: Partial<ChatJob>): void {
+    jobs.set(id, job("succeeded", { id, ...overrides }));
+    notify();
+  }
+
+  test("AC-14 stops at the last step when its job leaves a held draft", async () => {
+    const chain = await chains.activate({ steps: [first, publishStep] });
+    expect(chains.admit(first).kind).toBe("auto");
+    startStep(chain.id, 1, "run-1a2b3c4d", {});
+    endStep("run-1a2b3c4d", {});
+    expect(chains.active()?.id).toBe(chain.id);
+
+    expect(chains.admit({ kind: publishStep.kind, argv: publishStep.argv }).kind).toBe("auto");
+    startStep(chain.id, 2, "publish-1a2b3c4d", { kind: "publish" });
+    endStep("publish-1a2b3c4d", { kind: "publish", held: HELD_ONE });
+
+    expect(chains.active()).toBeUndefined();
+    expect(chains.summary()).toMatchObject({
+      state: "stopped",
+      stopReason: "step 2 left draft PR https://x/pull/7 held by 1 open item: D-1",
+    });
+  });
+
+  test("AC-15 completes the same chain when the last step leaves no held draft", async () => {
+    const chain = await chains.activate({ steps: [first, publishStep] });
+    expect(chains.admit(first).kind).toBe("auto");
+    startStep(chain.id, 1, "run-1a2b3c4d", {});
+    endStep("run-1a2b3c4d", {});
+
+    expect(chains.admit({ kind: publishStep.kind, argv: publishStep.argv }).kind).toBe("auto");
+    startStep(chain.id, 2, "publish-1a2b3c4d", { kind: "publish" });
+    endStep("publish-1a2b3c4d", { kind: "publish" });
+
+    expect(chains.summary()).toMatchObject({ state: "completed" });
+    expect(chains.summary()).not.toHaveProperty("stopReason");
+  });
+
+  test("AC-16 stops even when a bot_review step still follows", async () => {
+    const chain = await chains.activate({ steps: [first, botReview] });
+    expect(chains.admit(first).kind).toBe("auto");
+    startStep(chain.id, 1, "run-1a2b3c4d", {});
+    endStep("run-1a2b3c4d", { held: HELD_ONE });
+
+    expect(chains.active()).toBeUndefined();
+    expect(chains.summary()).toMatchObject({
+      state: "stopped",
+      stopReason: "step 1 left draft PR https://x/pull/7 held by 1 open item: D-1",
+    });
+    expect(chains.admit({ kind: botReview.kind, argv: botReview.argv })).toMatchObject({ kind: "card" });
+    await written(3);
+    expect(await readChainRecord(dir, chain.id)).toMatchObject({ state: "stopped" });
+  });
+
+  /** Activates, admits and ends one step whose job carries `held`. */
+  async function oneHeldStep(held: HeldDraft): Promise<string> {
+    const chain = await chains.activate({ steps: [first] });
+    expect(chains.admit(first).kind).toBe("auto");
+    startStep(chain.id, 1, "run-1a2b3c4d", {});
+    endStep("run-1a2b3c4d", { held });
+    await written(3);
+    return chain.id;
+  }
+
+  test("AC-17 an empty held list with no url ends stopped with no open items listed", async () => {
+    await oneHeldStep({ items: [] });
+    expect(chains.summary()).toMatchObject({
+      state: "stopped",
+      stopReason: "step 1 left draft PR with no open items listed",
+    });
+  });
+
+  test("AC-18 an unreadable held draft says the open items could not be read", async () => {
+    await oneHeldStep({ items: [], unreadable: true });
+    expect(chains.summary()).toMatchObject({
+      state: "stopped",
+      stopReason: "step 1 left draft PR held by open items that could not be read",
+    });
+  });
+
+  test("AC-19 names five of seven held items and counts the rest", async () => {
+    const ids = ["I-1", "I-2", "I-3", "I-4", "I-5", "I-6", "I-7"];
+    await oneHeldStep({ url: "https://x/pull/7", items: ids.map((id) => ({ id, kind: "finding" })) });
+    expect(chains.summary()?.stopReason?.endsWith("held by 7 open items: I-1, I-2, I-3, I-4, I-5, and 2 more")).toBe(
+      true,
+    );
+  });
+
+  test("AC-20 the persisted chain record carries the stop and its reason", async () => {
+    const id = await oneHeldStep(HELD_ONE);
+    const reason = "step 1 left draft PR https://x/pull/7 held by 1 open item: D-1";
+    expect(chains.summary()?.stopReason).toBe(reason);
+    expect(await readChainRecord(dir, id)).toMatchObject({ state: "stopped", stopReason: reason });
   });
 });

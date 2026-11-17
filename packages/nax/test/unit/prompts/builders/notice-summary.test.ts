@@ -78,6 +78,26 @@ describe("summarizeBackgroundNotice", () => {
     expect(summarizeBackgroundNotice(notice)).toBe("nax job plan chat-y ended · failed");
   });
 
+  test("US-004 a held-draft notice still summarises from its first line alone", () => {
+    const notice = buildJobNotice({
+      id: "job-4",
+      kind: "run",
+      target: "chat-w",
+      state: "succeeded",
+      note: "publish draft https://x/pull/7; held by 2 open items: D-1 advisor, D-2 advisor",
+      logPath: "/o/jobs/job-4.log",
+      held: {
+        url: "https://x/pull/7",
+        items: [
+          { id: "D-1", kind: "advisor" },
+          { id: "D-2", kind: "advisor" },
+        ],
+      },
+    });
+    expect(notice).toContain("The PR is a draft held by 2 open items (D-1, D-2)");
+    expect(summarizeBackgroundNotice(notice)).toBe("nax job run chat-w ended · succeeded");
+  });
+
   test("AC-6 a run ask summarises as sent to the agent", () => {
     expect(summarizeBackgroundNotice(buildRunAskNotice("ask-7", request))).toBe("run ask ask-7 sent to the agent");
   });

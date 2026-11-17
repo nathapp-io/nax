@@ -25,7 +25,7 @@ import {
 import { commitsSince, onlyLedgerChangedSince, readHead } from "./git";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
-import { type MovedCommit, publishOnlyStart } from "./publish-only";
+import { isTransientDraft, type MovedCommit, publishOnlyStart } from "./publish-only";
 import { logWorkflow } from "./run-log";
 import { resolveSeed } from "./seed";
 import { workflowStatusBlock } from "./status-block";
@@ -214,21 +214,6 @@ function logHandOff(stories: readonly StorySummary[], storiesDurationMs: number 
   const ran = stories.filter((s) => s.state !== "not-run").length;
   const took = storiesDurationMs === undefined ? "" : ` (${formatDuration(storiesDurationMs)})`;
   logWorkflow(FEATURE_SCOPE, `stories done ${ran}/${stories.length}${took} - feature workflow start`);
-}
-
-/**
- * Only transport failures and a pending CI retry publishing without spending another review at the
- * same HEAD. US-003: a pending CI keeps the PR a draft, so the draft is published again — but only
- * when that pending CI is the draft's sole reason, so a draft held for an unrelated reason is not
- * re-published on every run.
- */
-function isTransientDraft(prior: WorkflowFeatureRecord): boolean {
-  return (
-    prior.outcome === "draft" &&
-    (prior.ci === "unavailable" ||
-      (prior.ci === "pending" && prior.reasons.length === 1) ||
-      prior.reasons.some((reason) => reason.startsWith("PR update failed:")))
-  );
 }
 
 function isFinishedAtHead(

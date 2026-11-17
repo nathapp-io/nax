@@ -1,5 +1,6 @@
 /** Repo-scoped detached jobs. Records and log paths are machine-local. */
 import { closeSync, mkdirSync, openSync, realpathSync } from "node:fs";
+import { isAbsolute, relative } from "node:path";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { CHAT_ASKS_FLAG, writeChatHeartbeat } from "@/interaction";
@@ -125,6 +126,17 @@ class DetachedJobs implements ChatJobs {
         this.warn(cause);
       }
     }
+  }
+  /**
+   * The completion notice for `job`, naming the job's repository relative to this chat's folder when
+   * it ran in a nested nax project: every command the notice prescribes has to be scoped to it.
+   */
+  private notice(job: ChatJob): string {
+    return buildJobNotice({ ...job, ...this.repoScope(job.cwd) });
+  }
+  private repoScope(cwd: string): { readonly repo?: string } {
+    const path = relative(this.options.repoRoot, cwd);
+    return path === "" || isAbsolute(path) || path.startsWith("..") ? {} : { repo: path };
   }
   private warn(cause: unknown): void {
     getLogger()?.warn("chat", "Job lifecycle callback failed", { error: errorMessage(cause) });
@@ -299,7 +311,7 @@ class DetachedJobs implements ChatJobs {
     this.pendingTerminals.set(job.id, terminal);
     await this.saveTerminal(terminal);
     this.syncPoll();
-    this.notices.push(buildJobNotice(this.records.get(job.id) ?? terminal));
+    this.notices.push(this.notice(this.records.get(job.id) ?? terminal));
     this.emit();
   }
   private async saveTerminal(terminal: ChatJob): Promise<void> {
@@ -453,7 +465,7 @@ class DetachedJobs implements ChatJobs {
       const terminal: ChatJob = { ...job, ...outcome, endedAt: this.options.now().toISOString() };
       await writeJobRecord(this.options.outputDir, terminal);
       this.records.set(job.id, terminal);
-      if (notify) this.notices.push(buildJobNotice(terminal));
+      if (notify) this.notices.push(this.notice(terminal));
     }
     this.emit();
   }

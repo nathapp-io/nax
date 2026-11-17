@@ -1,13 +1,27 @@
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { getLogger } from "@/logger";
+import { heldItemList, heldItemNoun } from "@/prompts";
 import { resolveStepArgv } from "./chain-argv";
 import { createChainRecord, newChainId, writeChainRecord } from "./chain-store";
 import type { ChainCheck, ChainState, ChainStep, ChatChain } from "./chain-types";
 import type { ChatJobs } from "./job-runner";
-import type { ChatJobKind, ChatJobState } from "./job-types";
+import type { ChatJobKind, ChatJobState, HeldDraft } from "./job-types";
 
 const CHAIN_ID_MAX_ATTEMPTS = 16;
+
+/**
+ * US-003: why a chain stopped at a step that left a draft PR. A held draft is a success for the
+ * step but never for the chain, whatever step follows.
+ */
+function heldStopReason(step: number, held: HeldDraft): string {
+  const pr = held.url === undefined ? "draft PR" : `draft PR ${held.url}`;
+  const base = `step ${step} left ${pr}`;
+  if (held.unreadable === true) return `${base} held by open items that could not be read`;
+  if (held.items.length === 0) return `${base} with no open items listed`;
+  const list = heldItemList(held.items, { withKinds: false });
+  return `${base} held by ${held.items.length} open ${heldItemNoun(held.items.length)}: ${list}`;
+}
 
 export interface ChainLaunch {
   readonly kind: ChatJobKind;
@@ -96,6 +110,9 @@ class ChainController implements ChatChains {
     if (!job || job.state === "running") return;
     if (job.state !== "succeeded") {
       this.stop(`step ${index + 1} ended ${job.state}`);
+    } else if (job.held !== undefined) {
+      // US-003: a held draft outranks continuation and completion — every step follows it.
+      this.stop(heldStopReason(index + 1, job.held));
     } else if (index === chain.steps.length - 1) {
       this.current = { ...chain, state: "completed", endedAt: this.options.now().toISOString() };
       this.persist(this.current);

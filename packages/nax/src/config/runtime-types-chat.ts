@@ -29,13 +29,13 @@ export interface ChatAgentChoice {
 /**
  * Which profiles, agents and models each part of the chat workflow runs with.
  *
- * Step keys are per launch kind: `plan` -> `plan`; `run` and `finish` -> `run`;
+ * Step keys are per launch kind: `plan` -> `plan`; `run` and `publish` -> `run`;
  * `bot_review` -> `botReview`; `bot_fix` -> `botFix`.
  */
 export interface ChatWorkflowConfig {
   /** `nax plan` launches. */
   readonly plan?: ChatStepConfig;
-  /** `nax run` launches, and `finish` (a publish-only run). */
+  /** `nax run` launches, and `publish` (a publish-only run). */
   readonly run?: ChatStepConfig;
   /** `nax bot review` launches. */
   readonly botReview?: ChatBotStepConfig;
