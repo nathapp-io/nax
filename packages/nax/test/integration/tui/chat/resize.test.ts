@@ -92,6 +92,25 @@ describe("source renderChat physical resize", () => {
       const type = (text: string) => {
         for (const target of ["chat", "reference"]) tmux(socket, "send-keys", "-t", `${target}:0.0`, "-l", text);
       };
+      /**
+       * Type a line, and hold the key that submits it until both panes have drawn the draft.
+       *
+       * `send-keys` writes the literal text and the following key as separate pty writes, but
+       * two writes are not two reads: an app that has not drained stdin yet — a freshly mounted
+       * one, on a loaded runner — reads both in the same chunk, and ink hands a chunk to its
+       * handlers as text (`parseKeypress` only calls a lone `\r` a return), so the submit key
+       * inside it is never a submit. The line then sits in the prompt forever and nothing is
+       * sent (#2965). The drawn draft is proof the text was read, so the key that follows
+       * arrives as a chunk of its own.
+       */
+      const compose = async (text: string): Promise<void> => {
+        type(text);
+        for (const reference of [false, true])
+          await until(
+            () => capture(reference),
+            (frame) => frame.includes(text),
+          );
+      };
       try {
         const command = `CI=0 CONTINUOUS_INTEGRATION=0 FORCE_COLOR=0 ${JSON.stringify(process.execPath)} ${JSON.stringify(FIXTURE)} ${JSON.stringify(control)}`;
         tmux(
@@ -129,7 +148,7 @@ describe("source renderChat physical resize", () => {
             () => capture(reference),
             (frame) => frame.includes("Try"),
           );
-        type("hello");
+        await compose("hello");
         key("Enter");
         for (const reference of [false, true]) {
           await until(
@@ -144,7 +163,7 @@ describe("source renderChat physical resize", () => {
         const addPending = async () => {
           const count = scenario === "steers" ? 17 : 4;
           for (let i = 0; i < count; i++) {
-            type(`pending ${i}`);
+            await compose(`pending ${i}`);
             key(scenario === "steers" ? "C-s" : "Enter");
             for (const reference of [false, true]) {
               if (scenario === "steers")
