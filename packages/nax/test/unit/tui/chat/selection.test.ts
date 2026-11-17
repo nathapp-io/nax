@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { allocateChatFrame } from "@/tui/chat/frame-layout";
 import { highlightLine, markerRowAt, type Selection, selectedText, transcriptPointAt } from "@/tui/chat/selection";
 import { plainText, type StyledLine } from "@/tui/chat/styled-line";
 
@@ -6,6 +7,13 @@ const geometry = { top: 3, height: 10, total: 50, offset: 0, unseen: 0 };
 const lines: readonly StyledLine[] = [[{ text: "hello world" }], [{ text: "second line" }]];
 const selection: Selection = { anchor: { line: 0, column: 6 }, focus: { line: 1, column: 5 } };
 describe("transcriptPointAt", () => {
+  test.each([6, 8, 24])("US-004 AC-1 normal/compact allocated first cell at H=%s", (rows) => {
+    const { transcript } = allocateChatFrame({ rows, input: { minimum: 3, desired: 3 } }).regions;
+    expect(transcript.rows).toBeGreaterThan(0);
+    const view = { ...geometry, top: transcript.top, height: transcript.rows, total: 100 };
+    for (const x of [1, 5, 80])
+      expect(transcriptPointAt(view, x, transcript.top + 1)).toEqual({ line: 100 - transcript.rows, column: x - 1 });
+  });
   test.each(Array.from({ length: 10 }, (_, row) => row))("US-006 AC-5 short window row %s", (row) => {
     const view = { ...geometry, total: 3 };
     expect(transcriptPointAt(view, 1, view.top + row + 1)).toEqual(row < 3 ? { line: row, column: 0 } : undefined);

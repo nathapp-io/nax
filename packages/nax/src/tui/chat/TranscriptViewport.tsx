@@ -33,8 +33,8 @@ import {
   visibleRange,
 } from "./viewport";
 
-/** The shortest window the view will draw; ChatApp guarantees at least this many rows. */
-const MIN_VIEWPORT_ROWS = 1;
+/** A suspended viewport draws no rows, retaining the last live geometry in memory. */
+const MIN_VIEWPORT_ROWS = 0;
 
 /** Every row of the window is one physical row, whatever its content measures. */
 const ROW_HEIGHT = 1;
@@ -207,6 +207,8 @@ export function TranscriptViewport({
   followToken = 0,
 }: TranscriptViewportProps): ReactElement {
   const rows = viewRows(height);
+  // Suspend geometry, not memory. Content still arrives relative to the last live height.
+  active = active && rows > 0;
   const total = lines.length;
   const [memory, setMemory] = useState<ViewportMemory>({
     state: INITIAL_VIEWPORT,
@@ -218,8 +220,9 @@ export function TranscriptViewport({
   // actions the reducer expects rather than re-derived here. Adjusting the state during
   // render (instead of in an effect) keeps the frame that follows a change consistent with
   // it — no stale paint in between.
-  if (memory.total !== total || memory.height !== rows || memory.token !== followToken) {
-    setMemory(nextMemory(memory, total, rows, followToken));
+  const memoryRows = rows > 0 ? rows : memory.height;
+  if (memory.total !== total || memory.height !== memoryRows || memory.token !== followToken) {
+    setMemory(nextMemory(memory, total, memoryRows, followToken));
   }
   // The mouse subscription is bound once per active session, so `top` reaches it through a
   // ref: reading the prop here would keep the value the effect was created with.
@@ -236,13 +239,14 @@ export function TranscriptViewport({
         return;
       }
       if (event.kind !== "wheelUp" && event.kind !== "wheelDown") return;
+      if (event.x < 1 || event.y <= latestTop.current || event.y > latestTop.current + rows) return;
       const action: ViewportAction = { type: event.kind };
       setMemory((previous) => ({
         ...previous,
         state: reduceViewport(previous.state, action, previous.total, previous.height),
       }));
     });
-  }, [active, mouse]);
+  }, [active, mouse, rows]);
   useInput(
     (_input, key) => {
       const action = viewportAction(key);
@@ -266,6 +270,7 @@ export function TranscriptViewport({
   const visible = lines
     .slice(start, end)
     .map((line, index) => (selection ? highlightLine(line, start + index, selection) : line));
+  if (rows === 0) return <Box height={0} />;
   return (
     <ViewportRows
       visible={visible}

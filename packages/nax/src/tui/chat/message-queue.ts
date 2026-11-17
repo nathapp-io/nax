@@ -17,15 +17,24 @@
  * The rows the queue claims on screen are `queueRowLines`' business, not the screen's: the
  * cap, the muted `queued · <text>` marker and the `+N more` overflow exist in one place, so
  * the drawn rows and the height the bottom region reserves for them cannot disagree.
+ * `pendingPreviewLines` is that arithmetic for a short terminal: the pending steers and the
+ * queue share one row budget, and the row that names what did not fit counts both groups.
  */
-import { oneLine } from "./layout-lines";
+import { oneLine, resolveWidth } from "./layout-lines";
 import { sanitizeText } from "./styled-line";
+import { cutSpans } from "./wrap";
 
 /** The lines waiting for the running turn to finish, oldest first. */
 export type MessageQueue = readonly string[];
 
 /** The most queued messages drawn at once; anything longer is counted by a `+N more` row. */
 export const MAX_QUEUED_ROWS = 3;
+
+/**
+ * The most combined preview rows the screen draws: the pending steers and the queued messages
+ * share one budget, because two separate caps still overflow a short terminal.
+ */
+export const MAX_PENDING_PREVIEW_ROWS = 4;
 
 /** What a queued message's row says in front of the text: muted, one row per message. */
 const QUEUED_MARKER = "queued · ";
@@ -36,6 +45,8 @@ const STEERING_MARKER = "steering · ";
 /** The row that stands for the messages the cap hides: `+2 more`. */
 const MORE_PREFIX = "+";
 const MORE_SUFFIX = " more";
+/** The row that stands for the pending items a preview budget hides: `+3 pending`. */
+const PENDING_SUFFIX = " pending";
 
 /** The queue with `text` appended: the line waits behind everything queued before it. */
 export function pushQueued(queue: MessageQueue, text: string): MessageQueue {
@@ -120,9 +131,19 @@ export function queueToPrompt(queue: MessageQueue, draft: string): string {
  * take more rows than it was counted for or draw over the screen.
  */
 export function queueRowLines(queue: MessageQueue): readonly string[] {
-  const shown = queue.slice(0, MAX_QUEUED_ROWS).map((text) => `${QUEUED_MARKER}${oneLine(sanitizeText(text))}`);
+  const shown = queue.slice(0, MAX_QUEUED_ROWS).map(queuedRow);
   const hidden = queue.length - shown.length;
   return hidden > 0 ? [...shown, `${MORE_PREFIX}${hidden}${MORE_SUFFIX}`] : shown;
+}
+
+/** One queued message's row: its label, then its text flattened and stripped to a single row. */
+function queuedRow(text: string): string {
+  return `${QUEUED_MARKER}${oneLine(sanitizeText(text))}`;
+}
+
+/** One pending steer's row, drawn exactly like a queued row but for its label. */
+function steeredRow(row: SteeringRow): string {
+  return `${STEERING_MARKER}${oneLine(sanitizeText(row.text))}`;
 }
 
 /**
@@ -141,5 +162,64 @@ export interface SteeringRow {
  * stripped of terminal escapes, so a steer can take no more rows than it was counted for.
  */
 export function steeringRowLines(steering: readonly SteeringRow[]): readonly string[] {
-  return steering.map((row) => `${STEERING_MARKER}${oneLine(sanitizeText(row.text))}`);
+  return steering.map(steeredRow);
+}
+
+/** What a combined pending projection is drawn from: both groups, and the rows it may use. */
+export interface PendingPreviewInput {
+  /** The steers the running turn has not taken yet, in arrival order. */
+  readonly steering?: readonly SteeringRow[];
+  /** The messages waiting for the next turn, oldest first. */
+  readonly queued?: MessageQueue;
+  /**
+   * The rows the frame allocated to the previews. Absent means the normal maximum; a smaller
+   * number is a short terminal's budget, and zero draws nothing at all.
+   */
+  readonly budget?: number;
+  /**
+   * The columns each projection row is drawn into. Required: a preview is one physical row,
+   * so a row longer than the width it is drawn at wraps into a row nobody allocated. A width
+   * below the layout's supported minimum — or not a number at all — is treated as that
+   * minimum, which is the same floor every other chat row is measured at.
+   */
+  readonly columns: number;
+}
+
+/**
+ * The pending previews as one height-bounded projection: the steers in arrival order and then
+ * the queued messages oldest first, in at most `budget` rows — four by default. When every
+ * pending item fits, every one of them is drawn. Otherwise the last available row stands for
+ * the rest as `+N pending`, where N counts the items hidden across **both** groups, so the
+ * summary is inside the budget rather than beside it.
+ *
+ * This is a projection and nothing more: the queue it reads, the steering rows it reads and
+ * everything they hold are left exactly as they were. A hidden message is still queued, a
+ * hidden steer is still pending, and a resize that finds more room shows them again.
+ */
+export function pendingPreviewLines(input: PendingPreviewInput): readonly string[] {
+  const budget = previewBudget(input.budget);
+  if (budget === 0) return [];
+  const items = [...(input.steering ?? []).map(steeredRow), ...(input.queued ?? []).map(queuedRow)];
+  if (items.length === 0) return [];
+  const shown = items.length <= budget ? items : overflowed(items, budget);
+  return shown.map((row) => fittedRow(row, input.columns));
+}
+
+/** The budget a projection may use: the allocation's rows, never past the normal maximum. */
+function previewBudget(budget: number | undefined): number {
+  if (budget === undefined || !Number.isFinite(budget)) return MAX_PENDING_PREVIEW_ROWS;
+  return Math.max(0, Math.min(MAX_PENDING_PREVIEW_ROWS, Math.floor(budget)));
+}
+
+/** The rows a projection draws when the pending items do not fit: what fits, then the count. */
+function overflowed(items: readonly string[], budget: number): readonly string[] {
+  const shown = items.slice(0, budget - 1);
+  return [...shown, `${MORE_PREFIX}${items.length - shown.length}${PENDING_SUFFIX}`];
+}
+
+/** One projection row, cut to the columns it is drawn into so it stays one physical row. */
+function fittedRow(row: string, columns: number): string {
+  return cutSpans([{ text: row }], resolveWidth(columns))
+    .map((span) => span.text)
+    .join("");
 }

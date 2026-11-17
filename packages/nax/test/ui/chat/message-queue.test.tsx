@@ -385,13 +385,18 @@ describe("queueing a busy return", () => {
     expect(promptRow(ui.rows())).toBe(">");
   });
 
-  test("AC-18 five queued messages draw three rows and a +2 more row", async () => {
+  test("AC-18 five queued messages share four preview rows including +2 pending", async () => {
     const ui = mountScreen();
     await ui.submit("hello");
     for (const text of ["m1", "m2", "m3", "m4", "m5"]) await ui.submit(text);
     const rows = ui.rows();
-    expect(rows.filter((row) => row.startsWith("queued · "))).toHaveLength(3);
-    expect(rows.filter((row) => row.trimEnd() === "+2 more")).toHaveLength(1);
+    expect(rows.filter((row) => row.startsWith("queued · ") || row.endsWith(" pending"))).toEqual([
+      "queued · m1",
+      "queued · m2",
+      "queued · m3",
+      "+2 pending",
+    ]);
+    expect(ui.send).toHaveBeenCalledTimes(1);
   });
 });
 

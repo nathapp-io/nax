@@ -10,7 +10,11 @@
  * rows the card draws, so a long reason or a wide diff never pushes the footer off the
  * screen. A card taller than the rows the screen can spare loses the middle of its head and
  * an elision label names what it withheld; the options and the countdown are what the user
- * must act on, so they are kept.
+ * must act on, so they are kept. `measureAskCard` is the same building blocks without a
+ * budget: the fewest rows the card can be drawn in — its title, every option, the countdown,
+ * the rules and at least one question-text row — and the rows it draws when nothing is
+ * withheld. A screen that cannot give the minimum has to say so rather than draw a card with
+ * its question or one of its options missing.
  *
  * Keys have one owner here. An approval card owns escape (No), return (the selection), the
  * bare arrows (move the selection), the option's own number, and the `a` / `s` / `d`
@@ -64,10 +68,14 @@ const ELIDED_ONE = "1 more line";
  */
 const ANSWER_HINT = "type your answer · enter to send";
 /**
- * One empty line: what separates the card's title from what it is asking about. It carries a
- * space, because a row of no spans draws nothing at all — the row has to exist to be counted.
+ * One empty line: what separates the card's title from what it is asking about, and what a
+ * blank source line inside a card text draws. It carries a space, because a row of no spans
+ * draws nothing at all — the row has to exist to be counted.
  */
 const CARD_BLANK: StyledLine = [{ text: SPACE }];
+
+/** The text a blank source line draws: one space, so the row it was measured as is a row on screen. */
+const BLANK_ROW = SPACE;
 
 /**
  * Injected seams. `now` reads the countdown's clock, and the timer pair is the chain that
@@ -109,11 +117,10 @@ export function countdownLabel(expiresAt: string, nowMs: number): AskCountdown {
   };
 }
 
-export interface AskCardLayoutOptions {
+/** Everything a card's rows depend on but the rows it is given. */
+export interface AskCardContentOptions {
   /** The columns the card is drawn into. */
   readonly width: number;
-  /** The rows the screen can give the whole card. */
-  readonly budget: number;
   readonly theme: ChatTheme;
   /** The question card's own draft, which its input draws and this counts. */
   readonly answer: InputDraft;
@@ -127,6 +134,11 @@ export interface AskCardLayoutOptions {
    * knowing which option the user has moved to.
    */
   readonly selected?: number;
+}
+
+export interface AskCardLayoutOptions extends AskCardContentOptions {
+  /** The rows the screen can give the whole card. */
+  readonly budget: number;
 }
 
 /** The rows the card draws, already fitted to the rows the screen can spare. */
@@ -143,17 +155,36 @@ export interface AskCardLayout {
    * the whole box would let the two rule rows on top of it draw rows nobody reserved.
    */
   readonly inputMaxRows: number;
-  /** How many of the card's own rows were withheld — the elision label names them. */
+  /** How many of the card's content rows were withheld — the elision label names them. */
   readonly elided: number;
   /** Every row the card occupies, `head` + `input` + `tail`. */
   readonly rows: number;
 }
 
-/** The card before it is fitted: its head, its tail, and the box the question adds. */
-interface Card {
-  readonly head: readonly StyledLine[];
+/**
+ * The card before it is fitted to a budget: the rows it can never give up, the rows it may
+ * withhold behind the elision marker, and the tail the user acts on. Splitting a card this way
+ * is what lets a measurement name a safe minimum — a title, an option row or the countdown is
+ * not something a short screen is allowed to take away.
+ */
+interface CardParts {
+  /** Never withheld: the frame's top rule and the complete wrapped title with its attribution. */
+  readonly frame: readonly StyledLine[];
+  /**
+   * The rows between the title and the tail — an approval's blank separator, command, summary,
+   * reason and diff, or a question's text. Every row past `bodyFloor` may be withheld.
+   */
+  readonly body: readonly StyledLine[];
+  /** Never withheld: the options the user chooses between, the countdown and the bottom rule. */
   readonly tail: readonly StyledLine[];
+  /** The body rows the card refuses to lose: a question keeps its first text row; an approval none. */
+  readonly bodyFloor: number;
+  /** Whether the card frames an answer box, whose fewest rows are `BOX_MIN_ROWS`. */
+  readonly question: boolean;
 }
+
+/** The fewest rows the question's answer box is drawn in: its two rules and one text row. */
+const BOX_MIN_ROWS = INPUT_RULE_ROWS + 1;
 
 /** The frame's rule: the theme's rule glyph across the card, in the ask's border tone. */
 function ruleRow(theme: ChatTheme, columns: number, border: StyledLine[number]["color"]): StyledLine {
@@ -163,11 +194,16 @@ function ruleRow(theme: ChatTheme, columns: number, border: StyledLine[number]["
 /**
  * A card text's rows: sanitised, split on its own line breaks, then each source line wrapped
  * behind `prefix` — which every continuation row keeps, so a wrapped command stays indented.
+ * A blank source line — the question of a blank question card, or an empty line inside a
+ * reason — carries one space rather than no span at all: a row of no spans draws nothing, so
+ * a measured blank line would be a row the card counted and never put on screen.
  */
 function textRows(text: string, prefix: StyledLine, style: SpanStyle, context: LayoutContext): readonly StyledLine[] {
   const source = textLines(text);
-  const body = source.length === 0 ? [""] : source;
-  return body.flatMap((physical) => prefixedLine([styled(physical, style)], prefix, context));
+  const body = source.length === 0 ? [BLANK_ROW] : source;
+  return body.flatMap((physical) =>
+    prefixedLine([styled(physical === "" ? BLANK_ROW : physical, style)], prefix, context),
+  );
 }
 
 /** A card text's rows, or none when it says nothing: an absent summary is not a blank row. */
@@ -236,24 +272,32 @@ function diffRows(diff: readonly DiffLine[], context: LayoutContext): readonly S
   });
 }
 
-/** The countdown row as the card draws it at `nowMs`. */
-function countdownRow(expiresAt: string, nowMs: number): StyledLine {
+/**
+ * The countdown's rows as the card draws them at `nowMs`: `expires in m:ss` behind the same
+ * wrap every other card text takes, so a card narrower than the label draws it over two rows
+ * and the measurement reserves both. It is the card's tail, so a row it counted as one while
+ * the frame could only draw two would be an overflow the allocator never saw.
+ */
+function countdownRows(expiresAt: string, nowMs: number, context: LayoutContext): readonly StyledLine[] {
   const countdown = countdownLabel(expiresAt, nowMs);
-  return [styled(countdown.text, { color: countdown.color })];
+  return prefixedLine([styled(countdown.text, { color: countdown.color })], [], context);
 }
 
-/** An approval's rows: what it wants to run, why, what it would change, and the choices. */
-function approvalBody(
+/**
+ * An approval's parts: what it wants to run, why and what it would change behind its title,
+ * and the choices, countdown and bottom rule the user acts on beneath it. None of the body is
+ * required — a short card may withhold all of it behind the elision marker.
+ */
+function approvalParts(
   approval: AskCardApproval | AskCardChoice,
-  options: AskCardLayoutOptions,
+  options: AskCardContentOptions,
   context: LayoutContext,
-): Card {
+): CardParts {
   const indent: StyledLine = [styled(SPACE.repeat(INDENT_COLUMNS))];
   const border = approval.kind === "choice" ? "warning" : approval.border;
   return {
-    head: [
-      ruleRow(context.theme, context.width, border),
-      ...titleRows(approval, context),
+    frame: [ruleRow(context.theme, context.width, border), ...titleRows(approval, context)],
+    body: [
       CARD_BLANK,
       ...optionalRows(approval.kind === "choice" ? undefined : approval.command, indent, { bold: true }, context),
       ...optionalRows(approval.summary, indent, { color: "muted" }, context),
@@ -262,31 +306,57 @@ function approvalBody(
     ],
     tail: [
       ...optionRows(approval, options.selected ?? 0, context),
-      countdownRow(options.expiresAt, options.nowMs ?? _askCardDeps.now()),
+      ...countdownRows(options.expiresAt, options.nowMs ?? _askCardDeps.now(), context),
       ruleRow(context.theme, context.width, border),
     ],
+    bodyFloor: 0,
+    question: false,
   };
 }
 
-/** A question's rows: what nax asks, and the box the answer is typed into. */
-function questionBody(model: AskCardQuestion, options: AskCardLayoutOptions, context: LayoutContext): Card {
+/**
+ * A question's parts: what nax asks, and the box the answer is typed into. The first
+ * question-text row is part of the minimum — a card that withheld every word of its question
+ * would be unanswerable — and a blank question keeps its own empty row, which is where the
+ * answer's context would have been.
+ */
+function questionParts(model: AskCardQuestion, options: AskCardContentOptions, context: LayoutContext): CardParts {
+  const body = textRows(model.text, [], {}, context);
   return {
-    head: [
-      ruleRow(context.theme, context.width, model.border),
-      ...questionTitleRows(model, context),
-      ...textRows(model.text, [], {}, context),
-    ],
+    frame: [ruleRow(context.theme, context.width, model.border), ...questionTitleRows(model, context)],
+    body,
     tail: [
-      countdownRow(options.expiresAt, options.nowMs ?? _askCardDeps.now()),
+      ...countdownRows(options.expiresAt, options.nowMs ?? _askCardDeps.now(), context),
       ruleRow(context.theme, context.width, model.border),
     ],
+    bodyFloor: Math.min(1, body.length),
+    question: true,
   };
+}
+
+/** One card's parts, whichever kind of ask it draws. */
+function cardParts(model: AskCardModel, options: AskCardContentOptions, context: LayoutContext): CardParts {
+  return model.kind === "question" ? questionParts(model, options, context) : approvalParts(model, options, context);
 }
 
 /** The elision label: the theme's ellipsis, then how many of the card's rows were withheld. */
 function elisionRows(elided: number, context: LayoutContext): readonly StyledLine[] {
   const count = elided === 1 ? ELIDED_ONE : `${elided} more lines`;
   return textRows(`${context.theme.glyphs.ellipsis} ${count}`, [], { color: "muted" }, context);
+}
+
+/** The rows the marker takes for `elided` withheld rows at this card's width, wrapping included. */
+function markerRows(elided: number, context: LayoutContext): number {
+  return elided <= 0 ? 0 : elisionRows(elided, context).length;
+}
+
+/**
+ * The fewest rows a card's head can be drawn in: the frame — the top rule and the complete
+ * title — its floor body rows, and the marker's own wrapped rows for whatever the minimum
+ * withholds. It is the rows a card cannot be usable without, not a preference.
+ */
+function headFloorRows(parts: CardParts, context: LayoutContext): number {
+  return parts.frame.length + parts.bodyFloor + markerRows(parts.body.length - parts.bodyFloor, context);
 }
 
 /** The question box's rows: the whole box as drawn, and the text-row cap it was measured with. */
@@ -299,28 +369,62 @@ interface QuestionBox {
 const NO_BOX: QuestionBox = { rows: 0, maxRows: 0 };
 
 /**
- * Fit the card to the rows the screen can spare: the question's box and the tail — the
- * options and the countdown, which the user must act on — are kept, and the head gives up
- * its last rows to an elision label until the card fits.
+ * The box a question draws in `budget` rows: as many text rows as the card has left once its
+ * frame, its first question-text row, the marker, the countdown and the bottom rule are
+ * reserved. It never drops below its three-row minimum, which is what makes the card's own
+ * measurement the row count the allocator can trust.
  */
-function fitCard(card: Card, box: QuestionBox, budget: number, context: LayoutContext): AskCardLayout {
-  const room = budget - box.rows - card.tail.length;
-  const fitted = (head: readonly StyledLine[], elided: number): AskCardLayout => ({
-    head,
-    tail: card.tail,
-    input: box.rows,
-    inputMaxRows: box.maxRows,
+function questionBox(
+  parts: CardParts,
+  budget: number,
+  options: AskCardContentOptions,
+  context: LayoutContext,
+): QuestionBox {
+  const desired = inputRows(options.answer, { width: options.width, container: options.width, hint: ANSWER_HINT });
+  const room = budget - parts.tail.length - headFloorRows(parts, context);
+  const rows = Math.min(Math.max(room, BOX_MIN_ROWS), desired);
+  const maxRows = Math.max(1, rows - INPUT_RULE_ROWS);
+  return {
+    rows: inputRows(options.answer, { width: options.width, container: options.width, maxRows, hint: ANSWER_HINT }),
+    maxRows,
+  };
+}
+
+/** What a fitted head is: the rows it draws, and how many content rows it withheld. */
+interface FittedHead {
+  readonly head: readonly StyledLine[];
+  readonly elided: number;
+}
+
+/**
+ * Fit the head into the rows the card has left. The frame is kept whatever the budget — the
+ * top rule and the title are what the card is — and the body loses its tail: the largest body
+ * that fits beside the marker's own wrapped rows wins, so the marker never pushes the options
+ * or the countdown off the card. The first question-text row is a floor too: below it the card
+ * is drawn taller than the rows it was given, which is exactly what the measurement reports so
+ * the allocator can choose its diagnostic instead of an actionable card with its question cut
+ * out of it.
+ */
+function fitHead(parts: CardParts, available: number, context: LayoutContext): FittedHead {
+  const roomForBody = available - parts.frame.length;
+  if (parts.body.length <= roomForBody) return { head: [...parts.frame, ...parts.body], elided: 0 };
+  for (let kept = Math.min(parts.body.length, roomForBody); kept > parts.bodyFloor; kept--) {
+    const withheld = parts.body.length - kept;
+    if (kept + markerRows(withheld, context) > roomForBody) continue;
+    return {
+      head: [...parts.frame, ...parts.body.slice(0, kept), ...elisionRows(withheld, context)],
+      elided: withheld,
+    };
+  }
+  const elided = parts.body.length - parts.bodyFloor;
+  return {
+    head: [
+      ...parts.frame,
+      ...parts.body.slice(0, parts.bodyFloor),
+      ...(elided === 0 ? [] : elisionRows(elided, context)),
+    ],
     elided,
-    rows: head.length + box.rows + card.tail.length,
-  });
-  if (card.head.length <= room) return fitted(card.head, 0);
-  if (room <= 0) return fitted([], card.head.length);
-  // The label is a row of its own, and it wraps on a narrow card; it is measured at the
-  // widest count it could carry, so the reservation never comes up a row short.
-  const reserve = elisionRows(card.head.length, context).length;
-  const kept = Math.max(0, room - reserve);
-  const elided = card.head.length - kept;
-  return fitted([...card.head.slice(0, kept), ...(elided === 0 ? [] : elisionRows(elided, context))], elided);
+  };
 }
 
 /**
@@ -330,20 +434,55 @@ function fitCard(card: Card, box: QuestionBox, budget: number, context: LayoutCo
 export function askCardLayout(model: AskCardModel, options: AskCardLayoutOptions): AskCardLayout {
   const context: LayoutContext = { width: resolveWidth(options.width), theme: options.theme, expanded: false };
   const budget = Math.max(1, Math.floor(options.budget));
-  if (model.kind !== "question") {
-    return fitCard(approvalBody(model, options, context), NO_BOX, budget, context);
-  }
-  // The box keeps at least one text row, and never so many that the frame's own rules are
-  // cut. `maxRows` caps the editor's rows alone, so the two rules are deducted from the room
-  // first: a cap on the whole box would draw two rows nobody reserved.
-  const card = questionBody(model, options, context);
-  const room = Math.max(INPUT_RULE_ROWS + 1, budget - card.tail.length - 1);
-  const maxRows = Math.max(1, room - INPUT_RULE_ROWS);
-  const box = {
-    rows: inputRows(options.answer, { width: options.width, container: options.width, maxRows, hint: ANSWER_HINT }),
-    maxRows,
+  const parts = cardParts(model, options, context);
+  const box = parts.question ? questionBox(parts, budget, options, context) : NO_BOX;
+  const fitted = fitHead(parts, budget - box.rows - parts.tail.length, context);
+  return {
+    head: fitted.head,
+    tail: parts.tail,
+    input: box.rows,
+    inputMaxRows: box.maxRows,
+    elided: fitted.elided,
+    rows: fitted.head.length + box.rows + parts.tail.length,
   };
-  return fitCard(card, box, budget, context);
+}
+
+/** What a card measures: the rows it cannot be drawn in fewer of, and the rows it would like. */
+export interface AskCardMeasurement {
+  /**
+   * The fewest rows the card is drawn in without losing its title, the options it offers, the
+   * countdown, the frame's rules or the minimum of its answer box — the elision marker it has
+   * to draw for what it withholds included. A budget below this cannot show a safe card, so
+   * the screen replaces the frame with its diagnostic instead of clipping an actionable one.
+   */
+  readonly minimum: number;
+  /** Every row the card draws when nothing is withheld: its whole head, box and tail. */
+  readonly desired: number;
+  /** The content rows the minimum withholds — exactly the count the elision marker names. */
+  readonly elided: number;
+  /** The rows that marker occupies at this width, its wrapping included; 0 when nothing is withheld. */
+  readonly marker: number;
+}
+
+/**
+ * The card measured at the width, theme, answer draft and clock it is drawn with. The screen
+ * allocates the bottom region from these numbers rather than from the card's internals: a
+ * budget at or above `minimum` can always be drawn without losing anything the user acts on,
+ * and one below it is a diagnostic the allocator must choose.
+ */
+export function measureAskCard(model: AskCardModel, options: AskCardContentOptions): AskCardMeasurement {
+  const context: LayoutContext = { width: resolveWidth(options.width), theme: options.theme, expanded: false };
+  const parts = cardParts(model, options, context);
+  const elided = parts.body.length - parts.bodyFloor;
+  const boxDesired = parts.question
+    ? inputRows(options.answer, { width: options.width, container: options.width, hint: ANSWER_HINT })
+    : NO_BOX.rows;
+  return {
+    minimum: headFloorRows(parts, context) + (parts.question ? BOX_MIN_ROWS : NO_BOX.rows) + parts.tail.length,
+    desired: parts.frame.length + parts.body.length + boxDesired + parts.tail.length,
+    elided,
+    marker: markerRows(elided, context),
+  };
 }
 
 export interface AskCardProps {

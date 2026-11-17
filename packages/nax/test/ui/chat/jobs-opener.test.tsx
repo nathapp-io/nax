@@ -148,6 +148,81 @@ describe("ctrl+g", () => {
 });
 
 describe("a click on the footer strip", () => {
+  test.each([5, 8, 24])(
+    "US-004 AC-3 AC-4 AC-14 footer at height %s freezes in diagnostic and restores",
+    async (height) => {
+      const output = mock(async () => "task output");
+      const { ui, mouse, click } = withStrip({ tasks: fakeTasks([task()], output) });
+      const resize = async (rows: number) => {
+        Object.defineProperty(ui.ui.stdout, "rows", { value: rows, configurable: true });
+        Object.defineProperty(ui.ui.stdout, "columns", { value: 80, configurable: true });
+        await ui.settleAfter(() => ui.ui.stdout.emit("resize"));
+      };
+      await resize(height);
+      const footer = ui.rows().at(-1) ?? "";
+      const point = { x: footer.indexOf(STRIP) + 1, y: ui.rows().length };
+      expect(point.x).toBeGreaterThan(0);
+      const before = ui.rows();
+      await resize(2);
+      click(point);
+      ui.press(CTRL_G);
+      mouse.emit("wheelUp", point);
+      await flush(ui);
+      expect(output).not.toHaveBeenCalled();
+      expect(ui.rows()).toEqual(["Terminal too small — enlarge to continue"]);
+      await resize(height);
+      expect(ui.rows()).toEqual(before);
+      click(point);
+      await flush(ui);
+      expect(output).toHaveBeenCalledTimes(1);
+      await resize(24);
+      ui.press(CTRL_G);
+      await flush(ui);
+      expect(ui.rows()).toContain(TITLE);
+    },
+  );
+
+  test.each([RETURN, CTRL_X])(
+    "US-004 AC-12 AC-13 hidden jobs picker cannot choose/stop; restored %j acts",
+    async (key) => {
+      const output = mock(async () => "task output");
+      const tasks = fakeTasks([task()], output);
+      const { ui } = withStrip({ tasks });
+      ui.press(CTRL_G);
+      await flush(ui);
+      const before = ui.rows();
+      Object.defineProperty(ui.ui.stdout, "rows", { value: 2, configurable: true });
+      await ui.settleAfter(() => ui.ui.stdout.emit("resize"));
+      ui.press(RETURN);
+      ui.press(CTRL_X);
+      expect(output).not.toHaveBeenCalled();
+      expect(tasks.stop).not.toHaveBeenCalled();
+      Object.defineProperty(ui.ui.stdout, "rows", { value: 24, configurable: true });
+      await ui.settleAfter(() => ui.ui.stdout.emit("resize"));
+      expect(ui.rows()).toEqual(before);
+      ui.press(key);
+      await flush(ui);
+      expect(tasks.stop).toHaveBeenCalledTimes(key === CTRL_X ? 1 : 0);
+      expect(output).toHaveBeenCalledTimes(key === RETURN ? 1 : 0);
+    },
+  );
+  test("US-004 footer actions intersect the synchronous control lock", async () => {
+    const output = mock(async () => "task output");
+    const { ui, click, footerRow, stripColumn } = withStrip({ tasks: fakeTasks([task()], output) });
+    const gate = Promise.withResolvers<void>();
+    ui.host.switchTo = () => gate.promise;
+    ui.press("\x1b[Z");
+    click({ x: stripColumn, y: footerRow });
+    ui.press(CTRL_G);
+    await flush(ui);
+    expect(output).not.toHaveBeenCalled();
+    expect(ui.rows()).not.toContain(TITLE);
+    await ui.settleAfter(() => gate.resolve());
+    ui.press(CTRL_G);
+    await flush(ui);
+    expect(ui.rows()).toContain(TITLE);
+  });
+
   test("AC-11 a click on the strip's first column lists the lone shell's output", async () => {
     const { ui, footerRow, stripColumn, click } = withStrip();
     expect(stripColumn).toBeGreaterThan(0);

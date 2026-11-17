@@ -37,8 +37,6 @@ const STATE: ChatHostState = {
 };
 
 const SANDBOX_WARNING = "sandbox unavailable: commands run outside the sandbox";
-/** The rows the fixed regions claim: header (3), the input's two rules and one text row, and the footer. */
-const FIXED_ROWS_WITHOUT_VIEWPORT = 3 + 3 + 1;
 
 interface MountOptions {
   readonly mouse?: MouseEvents;
@@ -426,14 +424,13 @@ describe("ChatApp slash command entries", () => {
 });
 
 describe("ChatApp degenerate terminals", () => {
-  test("AC-23 a terminal smaller than the fixed regions still reserves one viewport row", async () => {
+  test("AC-23 a height-five idle input yields all optional regions", async () => {
     const ui = mount();
     await ui.resize(80, 5);
     await ui.start();
-    // Three header rows, the single viewport row, then the input's three rows and the footer.
-    expect(ui.rows()).toHaveLength(FIXED_ROWS_WITHOUT_VIEWPORT + 1);
-    // The one row the viewport got is the newest transcript line.
-    expect(ui.rows()).toContain("> hello");
+    // The input and footer fit exactly; no viewport minimum may increase the frame.
+    expect(ui.rows()).toHaveLength(4);
+    expect(ui.rows().join("\n")).not.toContain("> hello");
     expect(ui.rows().at(-1)).toContain("⏵ guarded");
   });
 });
@@ -713,7 +710,7 @@ test("US003 AC-15 ChatApp forwards wheel events to its transcript viewport", asy
   const before = ui.rows().slice(3, -4);
   const older = "  row-38";
   expect(before).not.toContain(older);
-  act(() => mouse.emit("wheelUp"));
+  act(() => mouse.emit("wheelUp", { x: 1, y: 4 }));
   expect(ui.rows().slice(3, -4)).not.toEqual(before);
   expect(ui.rows()).toContain(older);
 });
@@ -728,7 +725,7 @@ describe("US005 ChatApp clipboard", () => {
     _clipboardDeps.platform = "linux";
     const ui = mount({ mouse: mouse.events });
     // One viewport row directly below the three header rows.
-    await ui.resize(80, 8);
+    await ui.resize(80, 9);
     await ui.start();
     expect(ui.rows()[3]).toBe("> hello");
     const event = (kind: "press" | "drag" | "release", x: number) =>

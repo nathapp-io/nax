@@ -12,14 +12,13 @@ import { useInput } from "ink";
 import { useEffect, useRef } from "react";
 import type { ChatHost } from "@/chat";
 import type { BackgroundTask } from "@/chat/background/task-types";
+import type { FrameRegion } from "./frame-layout";
 import type { MouseEvents } from "./mouse-input";
 import { _pickerDeps, type PickerEntry, taskEntry } from "./picker-model";
 import type { PickerKind } from "./slash-commands";
 import type { StyledLine } from "./styled-line";
 import { spansWidth } from "./wrap";
 
-/** Keep Ink below its full-terminal clear threshold: the frame is this many rows short of the terminal. */
-export const FRAME_SLACK_ROWS = 1;
 /** ink reports ctrl+g as the letter `g` with the ctrl modifier. ctrl+j arrives as a line feed, so it is not used. */
 export const JOBS_KEY = "g";
 const JOBS_UNAVAILABLE = "jobs are not available in this session";
@@ -50,8 +49,12 @@ export interface JobsOpenerInput {
   readonly mouse?: MouseEvents;
   /** An ask card, a picker or the slash menu is shown. */
   readonly blocked: boolean;
+  /** Event-time control guard: a render can lag an in-flight switch or close. */
+  readonly canControl?: () => boolean;
   readonly footer: { readonly right: StyledLine; readonly stripWidth: number };
   readonly size: { readonly columns: number; readonly rows: number };
+  /** Drawn zero-based allocation, not the terminal's last usable row. */
+  readonly region: FrameRegion;
   open(kind: PickerKind): void;
   note(text: string): void;
   /** Append one row's output listing — what Enter on that row of the jobs picker draws. */
@@ -84,17 +87,22 @@ function loneShell(host: ChatHost): BackgroundTask | undefined {
   return tasks[0];
 }
 
+/** Visibility, surface precedence and control locks must all allow the gesture. */
+function blockedNow(input: JobsOpenerInput): boolean {
+  return input.blocked || input.region.rows === 0 || input.canControl?.() === false;
+}
+
 /**
  * True when a release completes a press on the same cell of the footer strip: the arguments are
  * the press and its release, and nothing — an ask card, a picker, the slash menu — owns the screen.
  */
 function stripClicked(input: JobsOpenerInput, pressed: Press, released: Press): boolean {
-  if (input.blocked || pressed.x !== released.x || pressed.y !== released.y) return false;
+  if (blockedNow(input) || pressed.x !== released.x || pressed.y !== released.y) return false;
   const { footer, size } = input;
   return footerStripHit({
     x: released.x,
     y: released.y,
-    footerRow: size.rows - FRAME_SLACK_ROWS,
+    footerRow: input.region.top + 1,
     columns: size.columns,
     rightWidth: spansWidth(footer.right),
     stripWidth: footer.stripWidth,
@@ -125,8 +133,8 @@ export function useJobsOpener(input: JobsOpenerInput): void {
 
   useInput((key, modifiers) => {
     if (!modifiers.ctrl || key !== JOBS_KEY) return;
-    const { blocked, host, open, note } = latest.current;
-    if (blocked) return;
+    const { host, open, note } = latest.current;
+    if (blockedNow(latest.current)) return;
     if (host.jobs === undefined && host.tasks === undefined) {
       note(JOBS_UNAVAILABLE);
       return;
@@ -141,7 +149,7 @@ export function useJobsOpener(input: JobsOpenerInput): void {
     return mouse.subscribe((event) => {
       if (event.button !== "left") return;
       if (event.kind === "press") {
-        press.current = { x: event.x, y: event.y };
+        press.current = blockedNow(latest.current) ? undefined : { x: event.x, y: event.y };
         return;
       }
       if (event.kind !== "release") return;

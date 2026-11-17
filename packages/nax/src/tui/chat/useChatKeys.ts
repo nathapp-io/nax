@@ -34,9 +34,11 @@ interface ChatKeysOptions {
   refresh(): void;
   onError(error: unknown): void;
   onNotice?: (text: string) => void;
+  /** Diagnostic frames retain Ctrl-C only; no hidden control shortcut may act. */
+  active?: () => boolean;
 }
 
-export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatKeysOptions): {
+export function useChatKeys({ host, running, refresh, onError, onNotice, active }: ChatKeysOptions): {
   locked: boolean;
   /**
    * True while a ctrl-c that cancelled a turn is still within the double-interrupt window:
@@ -95,6 +97,11 @@ export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatK
 
   async function switchMode(mode: ChatMode): Promise<void> {
     await runControl(() => host.switchTo({ mode }));
+  }
+  function cycleMode(): void {
+    const mode = nextChatMode(queued.current?.mode ?? host.current().mode);
+    if (running.current) queued.current = { ...queued.current, mode };
+    else void switchMode(mode);
   }
   function cycleModelEffort(): void {
     const model = queued.current?.model ?? host.current().model;
@@ -170,14 +177,14 @@ export function useChatKeys({ host, running, refresh, onError, onNotice }: ChatK
     if (closing.current) return;
     if (key.ctrl && input === "c") {
       interrupt();
+    } else if (active?.() === false) {
+      return;
     } else if (key.ctrl && input === "b" && canControl()) {
       moveForeground();
     } else if (key.ctrl && input === "t" && canControl()) {
       cycleModelEffort();
     } else if (key.shift && key.tab && !key.ctrl && !key.meta && canControl()) {
-      const mode = nextChatMode(queued.current?.mode ?? host.current().mode);
-      if (running.current) queued.current = { ...queued.current, mode };
-      else void switchMode(mode);
+      cycleMode();
     }
   });
   return {
