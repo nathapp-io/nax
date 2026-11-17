@@ -388,7 +388,14 @@ Default, one step at a time:
 - It never starts a second billed step because the first succeeded, and
   never re-launches after a failure or a denial without a fresh card.
 - Agent-only rulings (posting bot rulings, marking a PR ready) stay with
-  `nax bot fix` and the user, as today.
+  `nax bot fix` and the user, as today. **Superseded 2026-11-17 (user
+  ruling, nax #2968):** when a run or publish leaves a draft PR held by open
+  items, the agent drafts one ruling reply per item from evidence, as the
+  nax-finish skill's Step 3 does. It sends the user one message with every
+  draft and the plan (post the replies, then bot review, then bot fix), and
+  on the user's yes it posts the replies itself. Marking a PR ready stays
+  with `nax bot fix`. Fully automated finishing, with no approval per PR,
+  belongs to koda's fleet flow (user ruling 2026-11-04).
 
 Approving the full run (a chain):
 
@@ -501,6 +508,7 @@ Approving the full run (a chain):
 | On close: ask whether to cancel; kept jobs run in the background | user (Q4) | 2026-10-27 |
 | koda dispatch, merge/release tools, cross-session memory out of scope | Claude | 2026-10-27 |
 | Builder check: launch ask = new host entry point on `ChatAskController` (bypasses the full-mode auto-allow, never remembered); no nax-agent change; per-command child argv, no new flags | Claude (after builder check) | 2026-10-27 |
+| On a held draft PR, the agent drafts a ruling per open item from evidence and posts the replies on the user's one approval; this supersedes the 4.7 line that left rulings with the user (nax #2968) | user | 2026-11-17 |
 
 ## 9. Glossary
 
