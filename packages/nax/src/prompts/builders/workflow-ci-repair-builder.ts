@@ -27,6 +27,15 @@ export const CI_REPAIR_NO_SHORTCUTS_RULE =
 export const CI_REPAIR_STEP_REPRODUCTION_RULE =
   "A CI job stops at its first failing step, so a step CI skipped never ran: reproduce the failing step and every skipped step locally.";
 
+/**
+ * US-004: a check that passed on another pipeline for the same commit may simply not reproduce, and
+ * the brief used to describe editing as the only move. This names the no-change outcome as allowed —
+ * an outcome, not a new restriction: every rule above still holds. The reply contract's `concerns`
+ * field already carries it into `ciRepairConcerns`, so the ledger needs no new plumbing.
+ */
+export const CI_REPAIR_NON_REPRODUCIBLE_OUTCOME =
+  "A check whose finding says it passed on another pipeline for the same commit may be non-deterministic: if you cannot reproduce its failure locally, change nothing for that check, reply DONE_WITH_CONCERNS, and say so, with what you ran, in concerns.";
+
 export function buildWorkflowCiRepairPrompt(input: {
   readonly round: number;
   readonly prUrl?: string;
@@ -53,6 +62,7 @@ ${renderWorkflowFindings(input.findings)}
 - ${CI_REPAIR_NO_SHORTCUTS_RULE}
 - ${GATE_INTEGRITY_RULE}
 - ${CI_REPAIR_STEP_REPRODUCTION_RULE}
+- ${CI_REPAIR_NON_REPRODUCIBLE_OUTCOME}
 - Fix the cause each check reports, then re-run that check's command before you commit.
 - Before you commit, run the full test command of every package you changed, not only the tests you touched: the repository gates run every suite, and a repair that breaks an unrelated test turns the branch red again.
 - Commit, then append a "CI repair r${input.round}" section to ${input.reportPath}: what you changed for each check, the test evidence, and any Decisions & assumptions.
