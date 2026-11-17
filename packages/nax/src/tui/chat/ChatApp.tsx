@@ -243,6 +243,7 @@ function compactingStatus(current: TurnStatus): TurnStatus {
     outputTokens: 0,
     streamedChars: 0,
     ...(current.contextTokens === undefined ? {} : { contextTokens: current.contextTokens }),
+    ...(current.contextWindow === undefined ? {} : { contextWindow: current.contextWindow }),
   };
 }
 
@@ -301,6 +302,13 @@ export function ChatApp({
   const transcriptSession = useRef(state.sessionId);
   const [entries, setEntries] = useState<readonly TranscriptEntry[]>(() => sessionTranscript(host));
   const [status, setStatus] = useState<TurnStatus>(IDLE_STATUS);
+  const contextOwner = useRef({ sessionId: state.sessionId, model: state.model });
+  useLayoutEffect(() => {
+    const previous = contextOwner.current;
+    if (previous.sessionId === state.sessionId && previous.model === state.model) return;
+    contextOwner.current = { sessionId: state.sessionId, model: state.model };
+    setStatus(IDLE_STATUS);
+  }, [state.sessionId, state.model]);
   const [draft, setDraft] = useState<InputDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
   /** The lines typed while a turn was running, drawn above the input until it finishes. */

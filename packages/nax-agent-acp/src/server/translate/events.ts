@@ -105,6 +105,7 @@ function streamResetUpdate(event: EventOf<"stream_reset">, notices: boolean): Se
 export function createEventTranslator(deps: EventTranslatorDeps): EventTranslator {
   const calls = new Map<string, KnownCall>();
   const approvals = new Map<string, KnownApproval>();
+  let context: { used: number; size: number } | undefined;
   let compactions = 0;
   let sessionCostUsd = deps.priorCostUsd ?? 0;
 
@@ -129,7 +130,8 @@ export function createEventTranslator(deps: EventTranslatorDeps): EventTranslato
 
   function usage(event: EventOf<"usage">): SessionUpdate[] {
     if (event.costSource !== "unpriced") sessionCostUsd += event.costUsd;
-    return usageUpdate(event, deps.contextWindow, sessionCostUsd);
+    const updates = usageUpdate(event, context?.size ?? deps.contextWindow, sessionCostUsd);
+    return context === undefined ? updates : updates.map((update) => ({ ...update, ...context }));
   }
 
   function compaction(event: EventOf<"compaction">): SessionUpdate[] {
@@ -176,6 +178,9 @@ export function createEventTranslator(deps: EventTranslatorDeps): EventTranslato
         return [];
       case "approval_resolved":
         return resolved(event);
+      case "context_usage":
+        context = { used: event.used, size: event.size };
+        return [{ sessionUpdate: "usage_update", used: event.used, size: event.size }];
       case "turn_start":
       case "question":
       case "turn_end":

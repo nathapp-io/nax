@@ -34,8 +34,10 @@ export interface TurnStatus {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly streamedChars: number;
-  /** input + cacheRead + cacheWrite of the latest usage event; survives turn_end. */
+  /** Reported context occupancy, or native input + caches; survives turn_end. */
   readonly contextTokens?: number;
+  /** Window supplied with an authoritative context reading (ACP). */
+  readonly contextWindow?: number;
 }
 
 /** No turn has run. `phase` is only read while `running`, so its value here is inert. */
@@ -85,6 +87,7 @@ function inPhase(status: TurnStatus, phase: TurnPhase, toolName?: string): TurnS
 
 function applyTurnStart(status: TurnStatus, event: EventOf<"turn_start">): TurnStatus {
   const started: TurnStatus = {
+    ...(status.contextWindow === undefined ? {} : { contextWindow: status.contextWindow }),
     running: true,
     startedAt: event.at,
     phase: THINKING,
@@ -101,7 +104,10 @@ function applyUsage(status: TurnStatus, event: EventOf<"usage">): TurnStatus {
     inputTokens: status.inputTokens + event.inputTokens,
     outputTokens: status.outputTokens + event.outputTokens,
     streamedChars: 0,
-    contextTokens: event.inputTokens + (event.cacheRead ?? 0) + (event.cacheWrite ?? 0),
+    contextTokens:
+      status.contextWindow === undefined
+        ? event.inputTokens + (event.cacheRead ?? 0) + (event.cacheWrite ?? 0)
+        : status.contextTokens,
   };
 }
 
@@ -132,6 +138,8 @@ export function reduceTurnStatus(status: TurnStatus, event: SessionEvent): TurnS
       return inPhase(status, COMPACTING);
     case "stream_reset":
       return { ...inPhase(status, RETRYING), streamedChars: 0 };
+    case "context_usage":
+      return { ...status, contextTokens: event.used, contextWindow: event.size };
     case "usage":
       return applyUsage(status, event);
     case "turn_end":

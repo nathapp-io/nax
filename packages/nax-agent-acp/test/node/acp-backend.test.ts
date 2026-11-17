@@ -215,9 +215,11 @@ test("tool events, usage and a question round trip over a Node agent process", a
     "tool_call",
     "tool_result",
     "question",
+    "context_usage",
     "usage",
     "turn_end",
   ]);
+  expect(events.find((e) => e.type === "context_usage")).toMatchObject({ used: 10, size: 100 });
   expect(events.find((e) => e.type === "usage")).toMatchObject({
     inputTokens: 1,
     outputTokens: 2,

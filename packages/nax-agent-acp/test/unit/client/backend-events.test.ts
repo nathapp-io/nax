@@ -105,7 +105,8 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
     // A pending call's input growth shows Writing (US-005): one or more deltas come
     // between turn_start and the call, and the rest of the order is unchanged. The
     // facade's channel merges adjacent deltas, so the count is not pinned.
-    const shown = events.filter((e) => e.type !== "tool_input_delta");
+    // Context arrives live; text may be held until settle by environment-secret scrubbing.
+    const shown = events.filter((e) => e.type !== "tool_input_delta" && e.type !== "context_usage");
     expect(types(shown)).toEqual([
       "turn_start",
       "tool_call",
@@ -115,7 +116,9 @@ describe("tool calls and usage end to end (spec §6.7; D5-a to D5-f, D5-h)", () 
       "usage",
       "turn_end",
     ]);
+    expect(events.filter((e) => e.type === "context_usage")).toMatchObject([{ used: 100, size: 200_000 }]);
     const at = (type: SessionEvent["type"]) => events.findIndex((e) => e.type === type);
+    expect(at("context_usage")).toBeLessThan(at("usage"));
     const deltas = events.flatMap((e, i) => (e.type === "tool_input_delta" ? [{ e, i }] : []));
     expect(deltas.length).toBeGreaterThan(0);
     expect(

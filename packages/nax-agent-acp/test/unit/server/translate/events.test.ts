@@ -291,3 +291,14 @@ describe("cumulative session cost (review fix)", () => {
     expect(t.costUsd()).toBe(0.25);
   });
 });
+
+test("forwards authoritative context without adding spend", async () => {
+  const t = translator(200_000);
+  expect(await t.translate(ev({ type: "context_usage", used: 42_000, size: 200_000 }))).toEqual([
+    { sessionUpdate: "usage_update", used: 42_000, size: 200_000 },
+  ]);
+  expect(t.costUsd()).toBe(0);
+  expect(
+    await t.translate(ev({ type: "usage", round: 0, inputTokens: 120_000, outputTokens: 2_000, costUsd: 0.1 })),
+  ).toEqual([{ sessionUpdate: "usage_update", used: 42_000, size: 200_000, cost: { amount: 0.1, currency: "USD" } }]);
+});

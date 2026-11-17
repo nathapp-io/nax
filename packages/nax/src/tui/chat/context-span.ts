@@ -3,7 +3,7 @@
  * `chat-status.ts` (line cap); it takes only types from it, so no import cycle forms.
  */
 
-import type { ChatHostState } from "@/chat";
+import { type ChatHostState, isChatAcpModel } from "@/chat";
 import type { TurnStatus } from "./chat-status";
 import type { Span } from "./styled-line";
 import type { ChatColorToken } from "./theme";
@@ -39,7 +39,7 @@ export function formatWindow(n: number): string {
 
 /** The rounded share of the model's window the turn has used, when both numbers are known. */
 export function contextPercent(state: ChatHostState, status: TurnStatus): number | undefined {
-  const { contextWindow } = state;
+  const contextWindow = status.contextWindow ?? state.contextWindow;
   if (contextWindow === undefined || contextWindow <= 0 || status.contextTokens === undefined) return undefined;
   return Math.round((status.contextTokens / contextWindow) * PERCENT);
 }
@@ -51,12 +51,14 @@ export function percentColor(percent: number): ChatColorToken {
 
 /** Tokens against the window with its percentage; tokens alone when the window is unknown. */
 export function contextSpan(state: ChatHostState, status: TurnStatus): Span | undefined {
+  if (isChatAcpModel(state.model) && status.contextWindow === undefined) return undefined;
   const tokens = status.contextTokens;
   if (tokens === undefined) return undefined;
   const percent = contextPercent(state, status);
-  if (percent === undefined || state.contextWindow === undefined) {
+  const contextWindow = status.contextWindow ?? state.contextWindow;
+  if (percent === undefined || contextWindow === undefined) {
     return { text: `${SEPARATOR}${formatTokens(tokens)} ctx`, color: "muted" };
   }
-  const text = `${formatTokens(tokens)}/${formatWindow(state.contextWindow)} ctx (${percent}%)`;
+  const text = `${formatTokens(tokens)}/${formatWindow(contextWindow)} ctx (${percent}%)`;
   return { text: `${SEPARATOR}${text}`, color: percentColor(percent) };
 }

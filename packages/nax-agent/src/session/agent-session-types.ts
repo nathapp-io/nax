@@ -169,6 +169,8 @@ export type SessionEventBody =
       readonly costUsd: number;
       readonly costSource?: CostSource;
     }
+  /** Current context occupancy, independent of per-call or per-turn billing totals. */
+  | { readonly type: "context_usage"; readonly used: number; readonly size: number }
   | { readonly type: "compaction"; readonly reason: "proactive" | "overflow" }
   | {
       readonly type: "turn_end";

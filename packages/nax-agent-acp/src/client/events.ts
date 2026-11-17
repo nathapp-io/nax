@@ -4,7 +4,8 @@
  * values, holding back only the tail that could start a secret (D5-g); a delta of
  * one stream, and any tool event, first flushes what the other stream holds, so the
  * order is kept. Tool calls and results come from tool-events.ts (D5-c to D5-f);
- * usage_update costs feed the session's cost meter (D5-b). User chunks, plans, mode,
+ * usage_update costs feed the session's cost meter (D5-b); used/size emit separate
+ * context_usage snapshots, never billing totals. User chunks, plans, mode,
  * config and command updates, and anything unknown are dropped. finish() flushes
  * held text and answers unanswered tool calls; settle(response) does that and then
  * emits the turn's one usage event (D5-h). onReceipt fires once, on the first
@@ -166,6 +167,14 @@ export function createTurnCollector(emit: TurnEventSink | undefined, options: Co
         return;
       case "usage_update":
         meter.observe(update.cost);
+        if (
+          Number.isSafeInteger(update.used) &&
+          update.used >= 0 &&
+          Number.isSafeInteger(update.size) &&
+          update.size > 0
+        ) {
+          send({ type: "context_usage", used: update.used, size: update.size });
+        }
         return;
       default:
         return;

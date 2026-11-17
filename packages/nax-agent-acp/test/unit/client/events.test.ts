@@ -102,7 +102,7 @@ describe("createTurnCollector: tools, finish and settle (D5-c, D5-e, D5-h)", () 
       usage: { totalTokens: 15, inputTokens: 10, outputTokens: 5 },
     });
     expect(spend).toEqual({ tokenUsage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.02, costSource: "reported" });
-    expect(events.map((e) => e.type)).toEqual(["text_delta", "usage"]);
+    expect(events.map((e) => e.type)).toEqual(["context_usage", "text_delta", "usage"]);
     expect(events.at(-1)).toEqual({
       type: "usage",
       round: 0,
@@ -251,4 +251,42 @@ describe("createTurnCollector: startup banner and worked() (nax#2591)", () => {
     act(collector);
     expect(collector.worked()).toBe(true);
   });
+});
+
+test("reports live context independently of turn spending", () => {
+  const { events, collector } = setup();
+  collector.onUpdate({ sessionUpdate: "usage_update", used: 42_000, size: 200_000 });
+  expect(events).toEqual([{ type: "context_usage", used: 42_000, size: 200_000 }]);
+  collector.settle({
+    stopReason: "end_turn",
+    usage: { inputTokens: 120_000, outputTokens: 2_000, totalTokens: 122_000 },
+  });
+  expect(events[1]).toMatchObject({ type: "usage", inputTokens: 120_000, outputTokens: 2_000 });
+});
+
+test.each([
+  [-1, 200],
+  [NaN, 200],
+  [1.5, 200],
+  [1, 0],
+  [1, Infinity],
+])("ignores invalid context %s/%s", (used, size) => {
+  const { events, collector } = setup();
+  collector.onUpdate({ sessionUpdate: "usage_update", used, size });
+  expect(events).toEqual([]);
+});
+
+test.each([false, true])("context stays live with text buffering=%s", (buffered) => {
+  const { events, collector } = setup(buffered ? [SECRET] : []);
+  collector.onUpdate(say("All good"));
+  collector.onUpdate({ sessionUpdate: "usage_update", used: 42_000, size: 200_000 });
+  expect(events.map((event) => event.type)).toEqual(buffered ? ["context_usage"] : ["text_delta", "context_usage"]);
+  collector.settle({ stopReason: "end_turn" });
+  expect(events.filter((event) => event.type === "text_delta")).toEqual([
+    { type: "text_delta", round: 0, text: "All good" },
+  ]);
+  expect(events.filter((event) => event.type === "context_usage")).toEqual([
+    { type: "context_usage", used: 42_000, size: 200_000 },
+  ]);
+  expect(events.at(-1)?.type).toBe("usage");
 });
