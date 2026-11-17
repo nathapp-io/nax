@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { newFeatureRecord } from "@/workflow/feature-record";
-import { type PublishOnlyStart, publishOnlyStart } from "@/workflow/publish-only";
+import { isTransientDraft, type PublishOnlyStart, publishedAtHead, publishOnlyStart } from "@/workflow/publish-only";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
 
 function finished(over: Partial<WorkflowFeatureRecord> = {}): WorkflowFeatureRecord {
@@ -107,5 +107,75 @@ describe("publishOnlyStart — HEAD-moved refusal names the moving commits", () 
 
   test("AC-16: a matching HEAD still publishes, whatever the lookup found", () => {
     expect(publishOnlyStart(prior(), "h1", [{ sha: "abc1234", subject: "fix: x" }])).toEqual({ kind: "published" });
+  });
+});
+
+/** The record a publish-only run would skip at: `done`, at `head`, published as `outcome`. */
+function recorded(over: Partial<WorkflowFeatureRecord> = {}): WorkflowFeatureRecord {
+  return {
+    ...newFeatureRecord({ now: "t", seed: "s", minors: [] }),
+    step: "done",
+    head: "h1",
+    outcome: "draft",
+    url: "https://x/pull/7",
+    ci: "green",
+    reasons: [],
+    ...over,
+  };
+}
+
+describe("publishedAtHead (US-002)", () => {
+  test("AC-1 a draft PR at the same HEAD is already published", () => {
+    expect(publishedAtHead(recorded(), "h1")).toEqual({ outcome: "draft", url: "https://x/pull/7" });
+  });
+
+  test("AC-2 a ready PR at the same HEAD is already published", () => {
+    expect(publishedAtHead(recorded({ outcome: "ready" }), "h1")).toEqual({
+      outcome: "ready",
+      url: "https://x/pull/7",
+    });
+  });
+
+  test("AC-3 a record left at a different HEAD publishes something", () => {
+    expect(publishedAtHead(recorded({ head: "h1" }), "h2")).toBeUndefined();
+  });
+
+  test("AC-4 an unreadable or empty HEAD is never an already-published HEAD", () => {
+    expect(publishedAtHead(recorded({ head: "h1" }), undefined)).toBeUndefined();
+    expect(publishedAtHead(recorded({ head: "h1" }), "")).toBeUndefined();
+  });
+
+  test("AC-5 no prior record publishes something", () => {
+    expect(publishedAtHead(null, "h1")).toBeUndefined();
+  });
+
+  test("AC-6 a run that stopped before done publishes something", () => {
+    expect(publishedAtHead(recorded({ step: "publish", head: "h1" }), "h1")).toBeUndefined();
+  });
+
+  test("AC-7 a run that published no PR has nothing published at that HEAD", () => {
+    expect(publishedAtHead(recorded({ outcome: "local-only", head: "h1" }), "h1")).toBeUndefined();
+  });
+
+  test("AC-8 a transient draft is republished, not skipped", () => {
+    expect(
+      publishedAtHead(recorded({ outcome: "draft", ci: "unavailable", head: "h1", reasons: [] }), "h1"),
+    ).toBeUndefined();
+  });
+
+  test("a record with no url names no PR", () => {
+    expect(publishedAtHead(recorded({ url: undefined }), "h1")).toEqual({ outcome: "draft" });
+  });
+});
+
+describe("isTransientDraft (US-002)", () => {
+  test("AC-9 a pending CI as the draft's only reason is transient", () => {
+    const prior = recorded({ outcome: "draft", ci: "pending", reasons: ["CI pending"] });
+    expect(isTransientDraft(prior)).toBe(true);
+  });
+
+  test("AC-9 a draft held by open items is not transient", () => {
+    const prior = recorded({ outcome: "draft", ci: "green", reasons: ["open items"] });
+    expect(isTransientDraft(prior)).toBe(false);
   });
 });

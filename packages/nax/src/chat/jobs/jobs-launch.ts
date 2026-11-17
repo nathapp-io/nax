@@ -3,8 +3,15 @@ import { join, relative } from "node:path";
 import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage, isProcessAlive } from "@nathapp/nax-agent/internal";
 import { featureDir } from "@/config";
+import { headSha } from "@/finish";
 import { countStories, loadPRD } from "@/prd";
 import { gitWithTimeout, isPublishableBranch } from "@/utils/git";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { loadPriorFeature } from "../../workflow/feature-record";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { workflowFeatureDir } from "../../workflow/paths";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { publishedAtHead } from "../../workflow/publish-only";
 import { resolveTargetRepo } from "../target-repo";
 import type { ChainAdmission } from "./chain-controller";
 import { buildJobArgv, type JobLaunchInput, parseJobInput } from "./job-argv";
@@ -19,6 +26,8 @@ export const _jobsLaunchDeps = {
   isProcessAlive,
   exists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   loadPRD,
+  loadPriorFeature,
+  headSha,
 };
 
 /** Advisory read only: execution remains responsible for acquiring the checkout lock. */
@@ -180,7 +189,7 @@ type Prepared = {
 };
 /** Where `chat.workflow` supplied the values on the card, so the user sees the choice's origin. */
 type Provenance = Pick<WorkflowDefaultsApplied<unknown>, "profilesFrom" | "modelFrom">;
-type TargetError = { readonly error: string };
+type TargetError = { readonly error: string; readonly publishedAtHead?: true };
 
 async function preparePlan(
   input: Extract<JobLaunchInput, { kind: "plan" }>,
@@ -260,6 +269,24 @@ async function prepareRun(
   return { input, details, ...(profileLine === undefined ? {} : { profileLine }) };
 }
 
+/** How many characters of HEAD a refusal names. */
+const HEAD_SHORT = 7;
+
+/**
+ * US-002: already published at this HEAD. An advisory read: an unreadable record or HEAD refuses
+ * nothing, because the workflow's own publish-only checks decide, on their own reads.
+ */
+async function publishedRefusal(feature: string, repoRoot: string): Promise<string | undefined> {
+  const [prior, head] = await Promise.all([
+    _jobsLaunchDeps.loadPriorFeature(workflowFeatureDir(repoRoot, feature), "").catch(() => null),
+    _jobsLaunchDeps.headSha(repoRoot).catch(() => null),
+  ]);
+  const published = publishedAtHead(prior, head ?? undefined);
+  if (head === null || published === undefined) return undefined;
+  const pr = published.url === undefined ? "PR" : `PR ${published.url}`;
+  return `[chat] ${feature} is already published at HEAD ${head.slice(0, HEAD_SHORT)} as a ${published.outcome} ${pr}; nothing to publish: use nax-jobs__bot_review for its open items`;
+}
+
 /**
  * #2819: a publish job reruns only the workflow's publish step, so every story must have passed. The
  * workflow itself refuses a run with no finished record or a moved HEAD; the card says what it does.
@@ -282,6 +309,9 @@ async function preparePublish(
   if (pending > 0) {
     return { error: `[chat] ${input.feature} has ${pending} pending stories; finish them with nax-jobs__run first` };
   }
+  // After the pending-story guard: a feature that is not finished has a more actionable report.
+  const refusal = await publishedRefusal(input.feature, options.repoRoot);
+  if (refusal !== undefined) return { error: refusal, publishedAtHead: true };
   return {
     input,
     details: [
@@ -335,6 +365,21 @@ async function launchReason(prepared: Prepared, options: JobsProviderOptions, fr
   ].join("\n");
 }
 
+/**
+ * US-002: a refusal before admission leaves the chain active, so a chain whose next step is exactly
+ * the publish that was refused would wait forever. Stop it with the same words the tool returned.
+ */
+function stopRefusedPublishStep(error: string, input: JobLaunchInput, options: JobsProviderOptions): ToolResult {
+  if (input.kind === "publish") {
+    const next = options.chains?.summary()?.next;
+    const step = next === undefined ? undefined : options.chains?.active()?.steps[next - 1];
+    if (step?.kind === "publish" && step.target === input.feature) {
+      options.chains?.stop(error.replace(/^\[chat\] /, ""));
+    }
+  }
+  return { isError: true, content: error };
+}
+
 /** Parse, prepare, check busy state, then use chain admission or a host card. */
 export async function launchJob(
   request: { readonly kind: ChatJobKind; readonly raw: Record<string, unknown>; readonly signal?: AbortSignal },
@@ -348,7 +393,11 @@ export async function launchJob(
   if ("error" in parsed) return { isError: true, content: parsed.error };
   const applied = applyWorkflowDefaults(parsed, options.workflow);
   const prepared = await prepareTarget(applied.input, options);
-  if ("error" in prepared) return { isError: true, content: prepared.error };
+  if ("error" in prepared) {
+    return prepared.publishedAtHead === true
+      ? stopRefusedPublishStep(prepared.error, applied.input, options)
+      : { isError: true, content: prepared.error };
+  }
   // After the target: a missing spec or PRD is the more actionable report of the two.
   const unknown = await unknownWorkflowProfile(applied, options.repoRoot);
   if (unknown !== undefined) return { isError: true, content: unknown };

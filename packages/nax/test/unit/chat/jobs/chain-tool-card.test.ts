@@ -332,3 +332,47 @@ describe("createChainTools chat.workflow defaults", () => {
     expect(card().command).not.toContain("--profile p1");
   });
 });
+
+/** US-002: the chain card warns that a run step already publishes its own PR. */
+describe("createChainTools publish-after-run warning", () => {
+  const warning =
+    "warning: step 2 publishes f1 after step 1 runs it; a workflow-mode run publishes its own PR, so step 2 is refused if that run published one";
+
+  test("AC-18 a publish step that follows a run of the same feature warns", async () => {
+    await invoke({
+      steps: [
+        { kind: "run", input: { feature: "f1" } },
+        { kind: "publish", input: { feature: "f1" } },
+      ],
+    });
+    expect(card().reason.split("\n")).toContain(warning);
+  });
+
+  test("AC-19 a publish step for another feature warns about nothing", async () => {
+    await invoke({
+      steps: [
+        { kind: "run", input: { feature: "f1" } },
+        { kind: "publish", input: { feature: "f2" } },
+      ],
+    });
+    expect(
+      card()
+        .reason.split("\n")
+        .filter((line) => line.startsWith("warning: step 2 publishes")),
+    ).toEqual([]);
+  });
+
+  test("a publish step with no run before it warns about nothing", async () => {
+    await invoke({
+      steps: [
+        { kind: "publish", input: { feature: "f1" } },
+        { kind: "run", input: { feature: "f1" } },
+      ],
+    });
+    expect(
+      card()
+        .reason.split("\n")
+        .filter((line) => line.startsWith("warning: step")),
+    ).toEqual([]);
+  });
+});
