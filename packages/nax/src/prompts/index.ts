@@ -115,8 +115,16 @@ export {
   buildWorkflowBranchVerdictMismatchRetry,
 } from "./builders/workflow-branch-builder";
 // US-004 (chat-workflow-state) — the fixed "nax loop" section of a chat session.
-export type { JobNoticeInput, WorkflowInstructionsInput } from "./builders/workflow-builder";
-export { buildJobNotice, buildJobsInstructions, buildWorkflowInstructions } from "./builders/workflow-builder";
+// US-003 (chat-publish-held-drafts) — the one held-draft item formatter every call site shares.
+export type { HeldItem, JobNoticeInput, WorkflowInstructionsInput } from "./builders/workflow-builder";
+export {
+  buildJobNotice,
+  buildJobsInstructions,
+  buildWorkflowInstructions,
+  HELD_ITEMS_NAMED,
+  heldItemList,
+  heldItemNoun,
+} from "./builders/workflow-builder";
 // US-004 — the CI repair's own brief, and the two rules it must never break.
 export {
   buildWorkflowCiRepairPrompt,

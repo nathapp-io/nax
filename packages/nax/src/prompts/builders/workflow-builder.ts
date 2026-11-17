@@ -24,6 +24,33 @@ export interface WorkflowInstructionsInput {
   readonly workflow?: ChatWorkflowConfig;
 }
 
+/** US-003: how many held-draft open items a note, a stop reason or a notice names before counting the rest. */
+export const HELD_ITEMS_NAMED = 5;
+
+/** One publish-time open item, as every held-draft formatter sees it. */
+export interface HeldItem {
+  readonly id: string;
+  readonly kind: string;
+}
+
+/** US-003: `item` for exactly one, `items` otherwise — the noun every held-draft sentence uses. */
+export function heldItemNoun(count: number): string {
+  return count === 1 ? "item" : "items";
+}
+
+/**
+ * US-003: the one rendering of a held draft's open items, so the job note, the chain stop
+ * reason and the notice agree. Display only: the caller keeps every item.
+ */
+export function heldItemList(items: readonly HeldItem[], options: { readonly withKinds: boolean }): string {
+  const named = items
+    .slice(0, HELD_ITEMS_NAMED)
+    .map((item) => (options.withKinds ? `${item.id} ${item.kind}` : item.id));
+  const omitted = items.length - named.length;
+  const list = named.join(", ");
+  return omitted > 0 ? `${list}, and ${omitted} more` : list;
+}
+
 /** `one`..`ten` for a schema-valid round count, and the numeral for anything else. */
 function roundWord(rounds: number): string {
   return ROUND_WORDS[rounds - 1] ?? String(rounds);

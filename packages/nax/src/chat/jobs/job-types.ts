@@ -1,6 +1,15 @@
 export type ChatJobKind = "plan" | "run" | "publish" | "bot_review" | "bot_fix";
 export type ChatJobState = "running" | "succeeded" | "failed" | "cancelled" | "lost";
 
+/** US-003: the draft PR a run or publish left behind, and what it is held by. */
+export interface HeldDraft {
+  readonly url?: string;
+  /** The publish-time open items, in verdict order; empty when there are none or they could not be read. */
+  readonly items: readonly { readonly id: string; readonly kind: string }[];
+  /** Set when the open items could not be read; `items` is then empty. */
+  readonly unreadable?: true;
+}
+
 /** Machine-local job record, stored under the project's output directory. */
 export interface ChatJob {
   readonly schemaVersion: 1;
@@ -29,6 +38,8 @@ export interface ChatJob {
   readonly cost?: number;
   readonly progress?: { readonly passed: number; readonly total: number };
   readonly note?: string;
+  /** US-003: set when this run or publish left a draft PR, with the items the verdict still lists. */
+  readonly held?: HeldDraft;
 }
 
 /**

@@ -486,3 +486,48 @@ describe("US-007 buildWorkflowInstructions approval wording", () => {
     expect(added.filter((line) => /explicit.*approv|approv.*explicit/i.test(line))).toHaveLength(0);
   });
 });
+
+/** A held draft's open items, as every formatter call site passes them. */
+function heldItems(...entries: readonly (readonly [string, string])[]) {
+  return entries.map(([id, kind]) => ({ id, kind }));
+}
+
+const SEVEN_FINDINGS = heldItems(
+  ["I-1", "finding"],
+  ["I-2", "finding"],
+  ["I-3", "finding"],
+  ["I-4", "finding"],
+  ["I-5", "finding"],
+  ["I-6", "finding"],
+  ["I-7", "finding"],
+);
+
+describe("US-003 heldItemList", () => {
+  test("AC-12 lists ids alone, or id and kind together", () => {
+    const items = heldItems(["D-1", "advisor"], ["D-2", "advisor"]);
+    expect(workflow.heldItemList(items, { withKinds: false })).toBe("D-1, D-2");
+    expect(workflow.heldItemList(items, { withKinds: true })).toBe("D-1 advisor, D-2 advisor");
+  });
+
+  test("AC-13 names five entries, then counts the rest; HELD_ITEMS_NAMED is five", () => {
+    expect(workflow.heldItemList(SEVEN_FINDINGS, { withKinds: false })).toBe("I-1, I-2, I-3, I-4, I-5, and 2 more");
+    expect(workflow.HELD_ITEMS_NAMED).toBe(5);
+  });
+
+  test("AC-13 both are exported from the @/prompts barrel", () => {
+    expect(prompts.HELD_ITEMS_NAMED).toBe(5);
+    expect(prompts.heldItemList(SEVEN_FINDINGS, { withKinds: false })).toBe("I-1, I-2, I-3, I-4, I-5, and 2 more");
+  });
+
+  test("adds no remainder clause at exactly five entries, and lists nothing for none", () => {
+    expect(workflow.heldItemList(SEVEN_FINDINGS.slice(0, 5), { withKinds: false })).toBe("I-1, I-2, I-3, I-4, I-5");
+    expect(workflow.heldItemList([], { withKinds: true })).toBe("");
+  });
+
+  test("US-003 heldItemNoun is singular only for one", () => {
+    expect(workflow.heldItemNoun(0)).toBe("items");
+    expect(workflow.heldItemNoun(1)).toBe("item");
+    expect(workflow.heldItemNoun(2)).toBe("items");
+    expect(prompts.heldItemNoun(1)).toBe("item");
+  });
+});
