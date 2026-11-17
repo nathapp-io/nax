@@ -12,7 +12,10 @@
  * taller than the rows the screen can spare. `pickerRows` is the same arithmetic without a
  * theme, because the screen measures the rows it reserves before it draws them — the entry
  * window is capped by that budget, so the footer stays on the screen's last row however many
- * models a catalogue holds.
+ * models a catalogue holds. `measurePicker` reports that arithmetic as a measurement: the
+ * rows the list draws whatever it holds, the fewest rows a list can be used in (its fixed
+ * rows and one selected entry, or only the fixed rows when there is nothing to point at), and
+ * the rows it draws when nothing is withheld.
  *
  * `useChatPicker.ts` owns the state: which picker is open and what it is waiting on, so the screen owns
  * no part of a list it merely mounts. Every choice runs through `useChatKeys.runControl`,
@@ -95,6 +98,34 @@ function visibleEntries(model: PickerModel, budget: number): number {
   return Math.min(model.entries.length, PICKER_MAX_ROWS, Math.max(0, budget - fixedRows(model)));
 }
 
+/**
+ * The picker measured: the rows it occupies whatever its list holds, the fewest rows a list
+ * can still be used in, and the rows it draws when nothing is withheld. The screen allocates
+ * the bottom region from these rather than from the picker's own constants, so a measurement
+ * and the drawing cannot disagree.
+ */
+export interface PickerMeasurement {
+  /** Rows drawn whatever the list holds: both rules, the title, the filter row and the note. */
+  readonly fixed: number;
+  /**
+   * The fewest rows the list can be used in: `fixed`, plus one selected entry row while the
+   * filtered list has any entry. An empty list has none to point at, so it needs only `fixed`.
+   */
+  readonly minimum: number;
+  /** Every row the picker draws when nothing is withheld: `fixed` plus its entry window. */
+  readonly desired: number;
+}
+
+/** The picker measured for its list at its own caps; the budget only ever takes rows away. */
+export function measurePicker(model: PickerModel): PickerMeasurement {
+  const fixed = fixedRows(model);
+  return {
+    fixed,
+    minimum: fixed + (model.entries.length === 0 ? 0 : 1),
+    desired: fixed + Math.min(model.entries.length, PICKER_MAX_ROWS),
+  };
+}
+
 /** The index of the first entry drawn, so the window always holds the pointer. */
 function windowStart(count: number, selected: number, rows: number): number {
   return Math.max(FIRST_ENTRY, Math.min(selected - rows + 1, count - rows));
@@ -140,7 +171,7 @@ function noteRow(note: PickerNote, theme: ChatTheme, columns: number): StyledLin
 
 /** The rows the picker occupies for a budget: its frame, title, window and note, and no more. */
 export function pickerRows(model: PickerModel, budget: number): number {
-  return fixedRows(model) + visibleEntries(model, Math.max(1, Math.floor(budget)));
+  return measurePicker(model).fixed + visibleEntries(model, Math.max(1, Math.floor(budget)));
 }
 
 /** The rows the picker draws at a given width and budget, windowed around the pointer. */

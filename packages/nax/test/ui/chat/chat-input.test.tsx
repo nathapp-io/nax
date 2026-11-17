@@ -19,7 +19,11 @@ import {
   type ChatInputHandle,
   DOUBLE_ESCAPE_MS,
   EMPTY_DRAFT,
+  INPUT_MIN_ROWS,
+  INPUT_RULE_ROWS,
   type InputDraft,
+  inputRows,
+  measureInput,
 } from "@/tui/chat/ChatInput";
 import { type EditorState, EMPTY_EDITOR } from "@/tui/chat/line-editor";
 import { resolveChatTheme } from "@/tui/chat/theme";
@@ -75,11 +79,22 @@ interface MountOptions {
   readonly colored?: boolean;
   /** The owner's claim on a pasted chunk — the seam the chat screen attaches an image through. */
   readonly onPaste?: (chunk: string) => boolean;
+  /** The most text rows the screen can spare; absent means the input's own cap. */
+  readonly maxRows?: number;
 }
 
 /** Mount the input under an owner that keeps the draft, and expose the test verbs. */
 function mount(options: MountOptions = {}) {
-  const { active, busy, hint, yieldNavigation, initialDraft = EMPTY_DRAFT, colored = false, onPaste } = options;
+  const {
+    active,
+    busy,
+    hint,
+    yieldNavigation,
+    initialDraft = EMPTY_DRAFT,
+    colored = false,
+    onPaste,
+    maxRows,
+  } = options;
   const drafts: InputDraft[] = [];
   const onSubmit = mock((_text: string) => {});
   const onClearArmedChange = mock((_armed: boolean) => {});
@@ -107,6 +122,7 @@ function mount(options: MountOptions = {}) {
         handle={handle}
         onClearArmedChange={onClearArmedChange}
         onPaste={onPaste}
+        maxRows={maxRows}
       />
     );
   }
@@ -608,5 +624,54 @@ describe("ChatInput edges", () => {
     input.type("!");
     input.type(DOWN);
     expect(input.textRows()).toEqual(["> two!"]);
+  });
+});
+
+describe("ChatInput measurement", () => {
+  test("AC-1 a measurement at the input's minimum reports two rules and one text row", () => {
+    expect(INPUT_MIN_ROWS).toBe(3);
+    expect(INPUT_MIN_ROWS).toBe(INPUT_RULE_ROWS + 1);
+    // Requested at its minimum — one text row under the two rules — the input reports three.
+    const textRowCap = INPUT_MIN_ROWS - INPUT_RULE_ROWS;
+    const measured = measureInput(EMPTY_DRAFT, { width: WIDTH, container: WIDTH, maxRows: textRowCap });
+    expect(measured.minimum).toBe(INPUT_MIN_ROWS);
+    expect(measured.desired).toBe(INPUT_RULE_ROWS + 1);
+    expect(measured.textRows).toBe(textRowCap);
+    // What it reports is what a three-row budget draws: two rules around one text row.
+    const input = mount({ maxRows: textRowCap });
+    expect(input.rows()).toHaveLength(INPUT_MIN_ROWS);
+    expect(input.rows()[0]).toBe(RULE);
+    expect(input.rows().at(-1)).toBe(RULE);
+  });
+
+  /**
+   * Every field the screen measures with is the field the input draws with: the draft, the
+   * frame's width, the container it is drawn into (the host's own `stdout.columns`, which is
+   * wider than the frame in these mounts), the owner's hint, whether a turn is running, and
+   * the text-row cap the screen could spare.
+   */
+  interface FrameFixture {
+    readonly draft: InputDraft;
+    readonly busy?: boolean;
+    readonly hint?: string;
+    readonly maxRows?: number;
+  }
+  const ONE_LINE = (text: string): InputDraft => ({ editor: { text, cursor: Array.from(text).length }, history: [] });
+  const FRAMES: readonly (readonly [string, FrameFixture])[] = [
+    ["an empty idle input and its placeholder", { draft: EMPTY_DRAFT }],
+    ["an empty input while a turn runs", { draft: EMPTY_DRAFT, busy: true }],
+    ["the owner's own hint", { draft: EMPTY_DRAFT, hint: "esc again to clear" }],
+    ["a draft shorter than the container on one text row", { draft: ONE_LINE("x".repeat(60)), maxRows: 2 }],
+    ["a three-line draft capped at two rows", { draft: ONE_LINE("a\nb\nc"), maxRows: 2 }],
+    ["a draft wider than the cap, windowed to it", { draft: ONE_LINE("x".repeat(300)), maxRows: 3 }],
+  ];
+  test.each(FRAMES)("AC-2 inputRows matches the mounted input's physical rows for %s", (_name, fixture) => {
+    const { draft, busy, hint, maxRows } = fixture;
+    const input = mount({ initialDraft: draft, busy, hint, maxRows });
+    // The container is the stdout columns the input itself reads, never the frame's width.
+    const container = input.ui.stdout.columns;
+    const options = { width: WIDTH, container, busy, hint, maxRows };
+    expect(inputRows(draft, options)).toBe(input.rows().length);
+    expect(measureInput(draft, options).desired).toBe(input.rows().length);
   });
 });

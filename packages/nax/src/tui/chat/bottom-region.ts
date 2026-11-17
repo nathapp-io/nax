@@ -15,11 +15,8 @@
  * itself. Nothing here draws: it returns booleans and row counts.
  */
 import type { ChatPendingAsk } from "@/chat";
-import { INPUT_RULE_ROWS } from "./ChatInput";
+import { INPUT_MIN_ROWS } from "./ChatInput";
 import { type PickerModel, pickerRows } from "./Picker";
-
-/** The rows the input claims whatever its draft: its two rules and one text row to type in. */
-const INPUT_MIN_ROWS = INPUT_RULE_ROWS + 1;
 
 /** The fewest rows the menu can be given: none, when the budget cannot spare any. */
 const NO_MENU_ROWS = 0;

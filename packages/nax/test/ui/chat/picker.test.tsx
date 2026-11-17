@@ -31,6 +31,9 @@ import { createChatHost } from "@/chat/chat-host";
 import {
   _pickerDeps,
   type ChatPicker,
+  measurePicker,
+  Picker,
+  type PickerEntry,
   type PickerModel,
   pickerLayout,
   pickerModel,
@@ -646,5 +649,128 @@ describe("Picker — a session past the store's first page", () => {
     ui.press(RETURN);
     await ui.settle();
     expect(opened).toContain(storedSessionId(PAGE_TWO_INDEX));
+  });
+});
+
+describe("Picker measurement", () => {
+  /** One row's text, the theme's colours dropped — every row here is plain characters. */
+  const rowText = (lines: readonly (readonly { readonly text: string }[])[], at: number): string =>
+    (lines[at] ?? []).map((span) => span.text).join("");
+  const at = (model: PickerModel, budget: number) => pickerLayout(model, { width: 80, budget, theme: FILTER_THEME });
+  /** A nonempty filtered list that also carries a note, so every fixed row is present. */
+  const noted = (query = "GPT"): PickerModel => ({
+    ...filterModel(query),
+    note: { text: "1 running · 2 ended", tone: "muted" },
+  });
+
+  test("AC-3 a nonempty filtered picker's minimum draws its fixed rows and one selected entry", () => {
+    const model = noted();
+    const measured = measurePicker(model);
+    // Rule, title, filter line, note and rule are fixed; one selected entry row is the minimum.
+    expect(measured.fixed).toBe(5);
+    expect(measured.minimum).toBe(measured.fixed + 1);
+    const layout = at(model, measured.minimum);
+    expect(layout.rows).toBe(measured.minimum);
+    expect(rowText(layout.lines, 0)).toMatch(/^─+$/);
+    expect(rowText(layout.lines, 1)).toBe("Switch model");
+    expect(rowText(layout.lines, 2)).toBe("Filter: GPT");
+    // Exactly one entry row, and it is the one the pointer is on.
+    expect(layout.lines[3]?.map((span) => span.text).join("")).toContain(`${POINTER} openai/gpt-y`);
+    expect(rowText(layout.lines, 4)).toBe("1 running · 2 ended");
+    expect(rowText(layout.lines, 5)).toMatch(/^─+$/);
+  });
+
+  test("AC-3 extra entry rows yield down to the one-entry minimum", () => {
+    const model = filterModel("");
+    const measured = measurePicker(model);
+    expect(measured.fixed).toBe(4);
+    expect(measured.minimum).toBe(5);
+    // Two entries fit a large budget: `desired` is the four fixed rows plus both of them.
+    expect(measured.desired).toBe(6);
+    expect(at(model, measured.desired).rows).toBe(measured.desired);
+    const squeezed = at(model, measured.minimum);
+    expect(squeezed.rows).toBe(measured.minimum);
+    // The pointer's own row is the one that survives; the entry below it is the one withheld.
+    expect(squeezed.lines.filter((line) => plainText(line).includes("anthropic/claude-x"))).toHaveLength(1);
+    expect(squeezed.lines.some((line) => plainText(line).includes("openai/gpt-y"))).toBe(false);
+  });
+
+  test("AC-4 an empty filtered list's minimum is only its fixed frame, title, filter and note rows", () => {
+    const model = filterModel("zzz");
+    expect(model.entries).toEqual([]);
+    const measured = measurePicker(model);
+    expect(measured.fixed).toBe(5);
+    expect(measured.minimum).toBe(measured.fixed);
+    expect(measured.desired).toBe(measured.fixed);
+    const layout = at(model, measured.minimum);
+    expect(layout.rows).toBe(measured.minimum);
+    expect(rowText(layout.lines, 0)).toMatch(/^─+$/);
+    expect(rowText(layout.lines, 1)).toBe("Switch model");
+    expect(rowText(layout.lines, 2)).toBe("Filter: zzz");
+    expect(rowText(layout.lines, 3)).toBe("no models match");
+    expect(rowText(layout.lines, 4)).toMatch(/^─+$/);
+    // No entry row at all, so nothing on screen can be chosen.
+    expect(layout.lines.some((line) => plainText(line).includes(POINTER))).toBe(false);
+  });
+});
+
+describe("Picker — an empty list takes no entry action", () => {
+  /** ctrl+x: the jobs picker's stop key. */
+  const CTRL_X = "\x18";
+  const LEFT = "\x1b[D";
+  const RIGHT = "\x1b[C";
+  const UP = "\x1b[A";
+
+  function mountPicker(model: PickerModel) {
+    const onChoose = mock((_entry: PickerEntry) => {});
+    const onCycle = mock((_entry: PickerEntry, _step: 1 | -1) => {});
+    const onStop = mock((_entry: PickerEntry) => {});
+    const onCancel = mock(() => {});
+    const ui = render(
+      <Picker
+        model={model}
+        width={80}
+        theme={FILTER_THEME}
+        budget={20}
+        onChoose={onChoose}
+        onCycle={onCycle}
+        onStop={onStop}
+        onCancel={onCancel}
+      />,
+    );
+    return {
+      ui,
+      onChoose,
+      onCycle,
+      onStop,
+      press: (sequence: string) =>
+        act(() => {
+          ui.stdin.write(sequence);
+        }),
+    };
+  }
+
+  test("AC-5 an empty filtered model list chooses, cycles and stops nothing", () => {
+    // A query that matches no model leaves the list empty and the note in its place.
+    const picker = mountPicker(filterModel("zzz"));
+    const ui = picker.ui;
+    expect((ui.lastFrame() ?? "").includes("no models match")).toBe(true);
+    for (const key of [RETURN, LEFT, RIGHT, DOWN, UP]) picker.press(key);
+    expect(picker.onChoose).not.toHaveBeenCalled();
+    expect(picker.onCycle).not.toHaveBeenCalled();
+    expect(picker.onStop).not.toHaveBeenCalled();
+    // The list answered nothing, so it is still open and still empty.
+    expect((ui.lastFrame() ?? "").includes("Switch model")).toBe(true);
+  });
+
+  test("AC-5 an empty jobs list stops nothing on ctrl+x", () => {
+    const jobs = pickerModel({ kind: "jobs", models: [], currentModel: "", currentMode: "guarded" });
+    expect(jobs.entries).toEqual([]);
+    const picker = mountPicker(jobs);
+    expect((picker.ui.lastFrame() ?? "").includes("no jobs or tasks")).toBe(true);
+    picker.press(CTRL_X);
+    picker.press(RETURN);
+    expect(picker.onStop).not.toHaveBeenCalled();
+    expect(picker.onChoose).not.toHaveBeenCalled();
   });
 });

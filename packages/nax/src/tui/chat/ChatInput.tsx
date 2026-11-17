@@ -16,7 +16,9 @@
  * prompt keeps the line being typed in view. The rows are the input's own: it wraps each
  * source line to the columns it is drawn into and renders the pieces, so the height
  * `inputRows` reports is the height on screen — nothing is left for the terminal to wrap,
- * and no prompt text is ever cut away.
+ * and no prompt text is ever cut away. `measureInput` is the same count as a measurement: the
+ * two rules and one text row the frame cannot be drawn without, the rows this draft draws at
+ * this width and cap, and the cap its text rows are drawn under.
  *
  * Keys: a printable chunk is inserted at the cursor (via the line editor, which also owns
  * backspace, the arrows, the word moves and the ctrl chords), return submits, up and down
@@ -175,6 +177,13 @@ const MAX_TEXT_ROWS = 8;
 
 /** The two rule lines that frame the editor: one above it, one below. */
 export const INPUT_RULE_ROWS = 2;
+
+/**
+ * The fewest rows the input can be drawn in: its two rules and the one text row between them.
+ * The screen gives the input this many rows before anything else, so a measurement can never
+ * claim less than the frame that is actually on screen.
+ */
+export const INPUT_MIN_ROWS = INPUT_RULE_ROWS + 1;
 
 /** What the input needs to know about a frame to decide how many rows it draws. */
 export interface InputRowsOptions {
@@ -341,13 +350,41 @@ function visibleRows(draft: InputDraft, options: RowOptions): readonly TextRow[]
 }
 
 /**
+ * What the input measures for a frame: how small it can be drawn, how large it will draw
+ * itself, and the cap its text rows are drawn under. The screen allocates from these rather
+ * than from constants of its own, so a measurement and the drawing cannot disagree.
+ */
+export interface InputMeasurement {
+  /** The fewest rows the input is ever drawn in — its two rules and one text row. */
+  readonly minimum: number;
+  /** Every row the input draws for this draft: the two rules plus its visible text rows. */
+  readonly desired: number;
+  /** The most text rows this frame shows, which is the cap it draws its draft with. */
+  readonly textRows: number;
+}
+
+/**
+ * The input measured as it is drawn: the draft, the frame's width, the container it is drawn
+ * into, the owner's hint, whether a turn is running and the text-row cap the screen can spare
+ * are all the fields the drawing itself reads, so `desired` is the input's height on screen.
+ * `minimum` is what the frame cannot be drawn without, whatever the draft.
+ */
+export function measureInput(draft: InputDraft, options: InputRowsOptions): InputMeasurement {
+  return {
+    minimum: INPUT_MIN_ROWS,
+    desired: INPUT_RULE_ROWS + visibleRows(draft, options).length,
+    textRows: textRowCap(options),
+  };
+}
+
+/**
  * The rows the input draws for a draft: the two rules around its text rows, counted after
  * wrapping and windowing. The screen's owner reserves exactly this many rows for the bottom
  * region, so a draft wider or taller than the terminal scrolls under the viewport instead of
  * pushing the footer off the screen.
  */
 export function inputRows(draft: InputDraft, options: InputRowsOptions): number {
-  return INPUT_RULE_ROWS + visibleRows(draft, options).length;
+  return measureInput(draft, options).desired;
 }
 
 /** A run of text and how to draw it. The cursor adds `inverse`, which `Span` has no slot for. */
