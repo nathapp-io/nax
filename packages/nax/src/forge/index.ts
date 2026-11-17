@@ -12,6 +12,7 @@ export type { FailedCheck } from "./ci-failures";
 export {
   CI_EXCERPT_CHARS,
   CI_EXCERPT_LINES,
+  CI_SAME_HEAD_SIBLING_PIPELINES,
   ciExcerpt,
   MAX_FAILED_CHECKS,
   prNumberFromUrl,

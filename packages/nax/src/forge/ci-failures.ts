@@ -32,10 +32,43 @@ export interface FailedCheck {
   readonly failedStep?: string;
   /** The steps CI skipped after the failed step, in job order. */
   readonly skippedSteps?: readonly string[];
+  /** The forge job id a re-run targets: the Actions job id (GitHub) or the job id (GitLab). */
+  readonly jobId?: string;
+  /** Present when a check of the same name passed on another pipeline or check suite for the same commit. */
+  readonly passedOnSameHead?: { readonly url?: string };
+}
+
+/** The same-head facts of one failed check, left out of the check when absent. */
+type CheckFacts = Pick<FailedCheck, "jobId" | "passedOnSameHead">;
+
+/** A check of the same commit that passed, as the same-head fact needs it. */
+interface PassedCheck {
+  readonly name?: string;
+  readonly url?: string;
 }
 
 /** How many failed checks one read returns. */
 export const MAX_FAILED_CHECKS = 5;
+/** How many sibling pipelines of the head commit one GitLab read looks at for a passing job. */
+export const CI_SAME_HEAD_SIBLING_PIPELINES = 3;
+
+/** A forge URL, when the reply carries a non-empty one. */
+function forgeUrl(url: string | undefined): string | undefined {
+  return url === undefined || url.length === 0 ? undefined : url;
+}
+
+/**
+ * The same-head fact of a check named `name`: `{ url }` when a passing check of
+ * that name is among `passed`, `{}` when that check carries no URL, and null
+ * when no check of that non-empty name passed.
+ */
+function sameHeadPass(passed: readonly PassedCheck[], name: string | undefined): { url?: string } | null {
+  if (name === undefined || name.length === 0) return null;
+  const match = passed.find((check) => check.name === name);
+  if (match === undefined) return null;
+  return match.url === undefined ? {} : { url: match.url };
+}
+
 /** How many log lines one excerpt keeps. */
 export const CI_EXCERPT_LINES = 200;
 /** The pull-request number in a forge URL: `/pull/<n>` (GitHub) or `/merge_requests/<n>` (GitLab). */
@@ -242,8 +275,28 @@ async function readSteps(run: GithubCheckRun, ref: PrRef, deps: ForgeDeps, cwd: 
 async function toFailedCheck(run: GithubCheckRun, ref: PrRef, deps: ForgeDeps, cwd: string): Promise<FailedCheck> {
   const log = await readExcerpt(run, ref, deps, cwd);
   const steps = await readSteps(run, ref, deps, cwd);
-  const url = run.html_url && run.html_url.length > 0 ? run.html_url : undefined;
+  const url = forgeUrl(run.html_url);
   return { name: run.name ?? "", ...(url === undefined ? {} : { url }), ...log, ...steps };
+}
+
+/**
+ * The re-run facts of one failed check run: the Actions job id a re-run targets
+ * and whether a check of the same name passed on the same commit.
+ */
+function githubCheckFacts(run: GithubCheckRun, passed: readonly PassedCheck[]): CheckFacts {
+  const jobId = actionsJobId(run);
+  const pass = sameHeadPass(passed, run.name);
+  return {
+    ...(jobId === undefined ? {} : { jobId }),
+    ...(pass === null ? {} : { passedOnSameHead: pass }),
+  };
+}
+
+/** The checks of a reply that passed, as the same-head fact needs them. */
+function githubPassedChecks(runs: readonly GithubCheckRun[]): PassedCheck[] {
+  return runs
+    .filter((run) => run.conclusion === "success")
+    .map((run) => ({ name: run.name, url: forgeUrl(run.html_url) }));
 }
 
 /** The failed checks of one GitHub commit, in reply order. */
@@ -256,8 +309,12 @@ async function readGithubFailedChecks(
   const endpoint = `repos/${ref.repo}/commits/${headSha}/check-runs?per_page=100&filter=latest`;
   const context = { ref, headSha };
   const reply = await readCiListing(["gh", "api", "--hostname", ref.host, endpoint], deps, cwd, context);
-  const failed = parseCheckRuns(reply, context).filter(isFailedCheckRun).slice(0, MAX_FAILED_CHECKS);
-  return Promise.all(failed.map((run) => toFailedCheck(run, ref, deps, cwd)));
+  const runs = parseCheckRuns(reply, context);
+  const passed = githubPassedChecks(runs);
+  const failed = runs.filter(isFailedCheckRun).slice(0, MAX_FAILED_CHECKS);
+  return Promise.all(
+    failed.map(async (run) => ({ ...(await toFailedCheck(run, ref, deps, cwd)), ...githubCheckFacts(run, passed) })),
+  );
 }
 
 /** One GitLab pipeline, as the pipelines API reports it. */
@@ -313,9 +370,90 @@ function hasJobId(job: GitlabJob): job is GitlabJob & { readonly id: number } {
   return typeof job.id === "number";
 }
 
+/** A pipeline whose jobs can be read: only a pipeline with an id has them. */
+function hasPipelineId(pipeline: GitlabPipeline): pipeline is GitlabPipeline & { readonly id: number } {
+  return typeof pipeline.id === "number";
+}
+
 /** The pipeline of the requested head, when the merge request has one. */
 function findPipeline(pipelines: readonly GitlabPipeline[], headSha: string): GitlabPipeline | null {
   return pipelines.find((pipeline) => pipeline.sha === headSha) ?? null;
+}
+
+/**
+ * The other pipelines of the head commit, in reply order, at most
+ * `CI_SAME_HEAD_SIBLING_PIPELINES` of them. A pipeline without a numeric id
+ * cannot be read, so it is skipped and does not use up one of the slots.
+ */
+function siblingPipelines(
+  pipelines: readonly GitlabPipeline[],
+  headSha: string,
+  head: GitlabPipeline,
+): (GitlabPipeline & { readonly id: number })[] {
+  return pipelines
+    .filter((pipeline) => pipeline !== head && pipeline.sha === headSha)
+    .filter(hasPipelineId)
+    .slice(0, CI_SAME_HEAD_SIBLING_PIPELINES);
+}
+
+/**
+ * A best-effort listing: the array a reply carries, or null when the call fails
+ * or the reply is unparseable or not an array.
+ */
+async function readListingQuietly(cmd: string[], deps: ForgeDeps, cwd: string): Promise<unknown[] | null> {
+  try {
+    const result = await deps.run(cmd, { cwd });
+    if (result.exitCode !== 0) return null;
+    const reply: unknown = JSON.parse(result.stdout);
+    return Array.isArray(reply) ? reply : null;
+  } catch {
+    // A sibling read is extra evidence: an unreadable reply contributes no
+    // fact, and must not fail the read of the head's failed checks.
+    return null;
+  }
+}
+
+/** What a read of the sibling pipelines' success jobs needs. */
+interface SiblingRead {
+  readonly siblings: readonly (GitlabPipeline & { readonly id: number })[];
+  readonly project: string;
+  readonly ref: PrRef;
+  readonly deps: ForgeDeps;
+  readonly cwd: string;
+}
+
+/** The success jobs of the sibling pipelines, in reply order; a read that fails contributes none. */
+async function readSiblingSuccessJobs(read: SiblingRead): Promise<PassedCheck[]> {
+  const replies = await Promise.all(
+    read.siblings.map((sibling) =>
+      readListingQuietly(
+        [
+          "glab",
+          "api",
+          "--hostname",
+          read.ref.host,
+          `projects/${read.project}/pipelines/${sibling.id}/jobs?scope[]=success&per_page=100`,
+        ],
+        read.deps,
+        read.cwd,
+      ),
+    ),
+  );
+  return replies.flatMap((reply) =>
+    (reply ?? [])
+      .map(toGitlabJob)
+      .filter((job): job is GitlabJob => job !== null)
+      .map((job) => ({ name: job.name, url: forgeUrl(job.web_url) })),
+  );
+}
+
+/**
+ * The re-run facts of one failed job: the job id a re-run targets and whether a
+ * job of the same name passed on another pipeline of the same commit.
+ */
+function gitlabCheckFacts(job: GitlabJob & { readonly id: number }, passed: readonly PassedCheck[]): CheckFacts {
+  const pass = sameHeadPass(passed, job.name);
+  return { jobId: String(job.id), ...(pass === null ? {} : { passedOnSameHead: pass }) };
 }
 
 /** One failed GitLab job, with its bounded excerpt. */
@@ -326,7 +464,7 @@ async function toGitlabFailedCheck(
   cwd: string,
 ): Promise<FailedCheck> {
   const log = logExcerpt(await readJobLog(ref, String(job.id), deps, cwd));
-  const url = job.web_url && job.web_url.length > 0 ? job.web_url : undefined;
+  const url = forgeUrl(job.web_url);
   return { name: job.name ?? "", ...(url === undefined ? {} : { url }), ...log };
 }
 
@@ -335,7 +473,9 @@ async function toGitlabFailedCheck(
  *
  * The merge request's pipelines are read first, and the first one whose sha is
  * the head is the pipeline of this commit. A merge request without a pipeline
- * for the head has no failed check to report.
+ * for the head has no failed check to report. When that pipeline has failed
+ * jobs, the success jobs of the commit's other pipelines are read afterwards, so
+ * a check that passed elsewhere on the same commit can say so.
  */
 async function readGitlabFailedChecks(
   ref: PrRef,
@@ -351,7 +491,8 @@ async function readGitlabFailedChecks(
     cwd,
     context,
   );
-  const pipeline = findPipeline(parsePipelines(pipelinesReply, context), headSha);
+  const pipelines = parsePipelines(pipelinesReply, context);
+  const pipeline = findPipeline(pipelines, headSha);
   // A pipeline without a numeric id cannot be read: the jobs call needs it. The reply is malformed,
   // so it fails like every other malformed reply instead of reading as "no pipeline for this head".
   if (!pipeline) return [];
@@ -372,7 +513,22 @@ async function readGitlabFailedChecks(
     .filter((job) => !job.allow_failure)
     .filter(hasJobId)
     .slice(0, MAX_FAILED_CHECKS);
-  return Promise.all(jobs.map((job) => toGitlabFailedCheck(job, ref, deps, cwd)));
+  const passed =
+    jobs.length === 0
+      ? []
+      : await readSiblingSuccessJobs({
+          siblings: siblingPipelines(pipelines, headSha, pipeline),
+          project,
+          ref,
+          deps,
+          cwd,
+        });
+  return Promise.all(
+    jobs.map(async (job) => ({
+      ...(await toGitlabFailedCheck(job, ref, deps, cwd)),
+      ...gitlabCheckFacts(job, passed),
+    })),
+  );
 }
 
 /**
