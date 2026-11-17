@@ -115,7 +115,9 @@ if (import.meta.main) {
         view.unmount();
         server.stop();
       }
-      return Response.json({ ...fixture.state(), ticks, rows: process.stdout.rows });
+      // `rows`/`columns` are what the screen under test measures: a resize case waits for the
+      // app to have seen the pane's new size, not just for tmux to report it.
+      return Response.json({ ...fixture.state(), ticks, rows: process.stdout.rows, columns: process.stdout.columns });
     },
   });
 }

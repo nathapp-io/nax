@@ -5,6 +5,13 @@ import { cleanupTempDir, makeTempDir, waitForAsyncCondition as until } from "@te
 
 const TMUX = Bun.which("tmux");
 const FIXTURE = join(import.meta.dir, "../../../fixtures/chat-pty/host.ts");
+/**
+ * How long a resize case waits for the screen to settle. The mount repaints
+ * `RESIZE_REPAINT_MS` after the last resize, and a loaded runner can draw the widened frame
+ * well after the narrowed one, so the helper's eight-second default is not enough headroom for
+ * a comparison that has to hold once and for all.
+ */
+const SETTLE_MS = 20_000;
 
 function tmux(socket: string, ...args: string[]): string {
   const result = Bun.spawnSync([TMUX ?? "tmux", "-S", socket, ...args], {
@@ -160,6 +167,35 @@ describe("source renderChat physical resize", () => {
             (frame) => frame.includes("Writing"),
           );
         }
+        // US-001 AC-21: with the turn running, a chat pane narrowed to 50 columns and then
+        // widened again draws the frame the never-resized reference pane still shows, at the
+        // 80 columns tmux reports. tmux may not re-wrap the alternate screen when it narrows,
+        // so this case guards the width path; `ink-incremental-render.test.tsx` is the proof
+        // that a repaint writes every row. It runs while no draft is queued, so the compared
+        // frame holds no pending preview rows — those are the queue's own resize-reactive
+        // projection, and this case is about the frame the mount repaints.
+        const agreed = () =>
+          until(
+            async () => ({ chat: await capture(), reference: await capture(true) }),
+            (frame) => frame.chat === frame.reference,
+            // A settled frame, not a race: the mount repaints RESIZE_REPAINT_MS after the last
+            // resize, and a loaded runner may draw the widened frame after the narrowed one.
+            SETTLE_MS,
+          );
+        const paneWidth = async () => tmux(socket, "display-message", "-p", "-t", "chat:0", "#{pane_width}").trimEnd();
+        /** The size the screen under test has measured — not just what tmux reports. */
+        const appColumns = async (): Promise<unknown> => JSON.parse(await call()).columns;
+        const running = await agreed();
+        expect(running.chat).toBe(running.reference);
+        tmux(socket, "resize-window", "-t", "chat:0", "-x", "50", "-y", "24");
+        expect(await until(paneWidth, (value) => value === "50")).toBe("50");
+        expect(await until(appColumns, (value) => value === 50)).toBe(50);
+        // The narrowed frame is drawn before the widening lands: two resizes, not one.
+        expect(await until(capture, (frame) => frame !== running.chat, SETTLE_MS)).not.toBe(running.chat);
+        tmux(socket, "resize-window", "-t", "chat:0", "-x", "80", "-y", "24");
+        expect(await until(paneWidth, (value) => value === "80")).toBe("80");
+        expect(await until(appColumns, (value) => value === 80)).toBe(80);
+        expect((await agreed()).chat).toBe(running.chat);
         const addPending = async () => {
           const count = scenario === "steers" ? 17 : 4;
           for (let i = 0; i < count; i++) {
@@ -206,16 +242,6 @@ describe("source renderChat physical resize", () => {
           }
         };
         await resizeAndAssert();
-        // US-001 AC-21: a chat pane narrowed and then widened again draws the frame the
-        // never-resized reference pane still shows, at the 80 columns tmux reports. tmux may
-        // not re-wrap the alternate screen when it narrows, so this case guards the width
-        // path; `ink-incremental-render.test.tsx` is the proof that a repaint writes every row.
-        const paneWidth = async () => tmux(socket, "display-message", "-p", "-t", "chat:0", "#{pane_width}").trimEnd();
-        tmux(socket, "resize-window", "-t", "chat:0", "-x", "50", "-y", "24");
-        expect(await until(paneWidth, (value) => value === "50")).toBe("50");
-        tmux(socket, "resize-window", "-t", "chat:0", "-x", "80", "-y", "24");
-        expect(await until(paneWidth, (value) => value === "80")).toBe("80");
-        expect(await until(current, (frame) => frame === expected)).toBe(expected);
         for (let i = 0; i < 4; i++) {
           await call("/bytes");
           await call("/tick", true);
