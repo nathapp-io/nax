@@ -164,6 +164,10 @@ describe("acpSessionOptions", () => {
     expect("approvalTimeoutMs" in options).toBe(false);
   });
 
+  test("#2962: an ACP chat session has no turn deadline", async () => {
+    expect((await acpSessionOptions(input())).turnTimeoutSeconds).toBe("none");
+  });
+
   test("AC-10: workdir equals the input cwd", async () => {
     expect((await acpSessionOptions(input({ cwd: "/x/y" }))).workdir).toBe("/x/y");
   });

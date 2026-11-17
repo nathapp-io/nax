@@ -190,6 +190,10 @@ describe("openChatSession", () => {
       expect.objectContaining({ profile: "full", workdir: request.cwd, approvalTimeoutMs: 42_000 }),
     );
   });
+  test("#2962: a native chat session has no turn deadline", async () => {
+    await open();
+    expect(deps.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ turnTimeoutSeconds: "none" }));
+  });
   test("AC-10 includes repository rule index and forwards rule overrides", async () => {
     await Bun.write(
       join(dir, ".nax/rules/error-handling.md"),

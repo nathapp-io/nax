@@ -4,6 +4,7 @@ import { _agentSessionDeps } from "./agent-session-deps.ts";
 import type { ClaimedTurn, LiveTurn, TurnRunContext } from "./agent-session-turn.ts";
 import type { CommandRunResult, SessionEvent, SessionEventBody } from "./agent-session-types.ts";
 import type { OpenedBackend } from "./session-backend.ts";
+import { armTurnDeadline } from "./turn-timeout.ts";
 
 interface CommandHooks {
   onStart(live: LiveTurn): void;
@@ -37,10 +38,7 @@ export function claimCommand(options: {
   const abort = (code: string, reason: string): void =>
     controller.abort(new NaxError(reason, code, { stage: "agent-session" }));
   const result = Promise.resolve().then(async () => {
-    const timer = _agentSessionDeps.setTimeout(
-      () => abort("AGENT_SESSION_TURN_TIMEOUT", "turn deadline"),
-      ctx.turnTimeoutSeconds * 1000,
-    );
+    const disarm = armTurnDeadline(ctx.turnTimeoutSeconds, () => abort("AGENT_SESSION_TURN_TIMEOUT", "turn deadline"));
     try {
       hooks.onStart({ turnId, signal: controller.signal, emit });
       emit({ type: "tool_call", name: "Bash", input: displayToolInput({ command }), callId });
@@ -48,7 +46,7 @@ export function claimCommand(options: {
       emit({ type: "tool_result", callId, isError: outcome.isError, preview: toolResultPreview(outcome.content) });
       return outcome;
     } finally {
-      _agentSessionDeps.clearTimeout(timer);
+      disarm();
       hooks.onSettle();
     }
   });

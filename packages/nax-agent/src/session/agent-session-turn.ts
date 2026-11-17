@@ -12,13 +12,20 @@ import { redactSecrets } from "#src/internal/redact";
 import type { TranscriptStore } from "#src/native/session/transcript-types";
 import { _agentSessionDeps } from "./agent-session-deps.ts";
 import { AgentSessionError } from "./agent-session-errors.ts";
-import type { CostSource, SessionEvent, SessionEventBody, TurnEndStatus } from "./agent-session-types.ts";
+import type {
+  CostSource,
+  SessionEvent,
+  SessionEventBody,
+  TurnEndStatus,
+  TurnTimeoutSeconds,
+} from "./agent-session-types.ts";
 import type { SendInput } from "./image-input.ts";
 import type { TurnContribution } from "./session-backend.ts";
 import { createSessionEventChannel } from "./session-event-channel.ts";
 import { type AgentSessionAdapter, type SessionHandle, SessionTurnError, type TurnResult } from "./session-types.ts";
 import type { SteerChannel } from "./steer-channel.ts";
 import { readTurnSpend } from "./turn-spend.ts";
+import { armTurnDeadline } from "./turn-timeout.ts";
 
 /** The ask_human budget per turn: nax's agent.maxInteractionTurns default. */
 export const ASK_HUMAN_BUDGET = 10;
@@ -37,7 +44,7 @@ export interface TurnRunContext {
   readonly store: TranscriptStore;
   /** The backend's per-turn contribution, read at each sendTurn. */
   readonly turnOpts: () => TurnContribution;
-  readonly turnTimeoutSeconds: number;
+  readonly turnTimeoutSeconds: TurnTimeoutSeconds;
   readonly metadata: Readonly<Record<string, string>>;
 }
 
@@ -254,15 +261,14 @@ export function claimTurn(ctx: TurnRunContext, message: string, hooks: ClaimTurn
   function start(): void {
     if (state !== "claimed") return;
     state = "running";
-    const timer = _agentSessionDeps.setTimeout(
-      () => controller.abort(abortReason(TIMED_OUT, "turn deadline")),
-      ctx.turnTimeoutSeconds * 1000,
+    const disarm = armTurnDeadline(ctx.turnTimeoutSeconds, () =>
+      controller.abort(abortReason(TIMED_OUT, "turn deadline")),
     );
     hooks.onStart(live);
     void runTurn(ctx, live, { message, images: hooks.images }, hooks.steers)
       .catch((err: unknown) => fromError(err, controller.signal))
       .then((end) => {
-        _agentSessionDeps.clearTimeout(timer);
+        disarm();
         settle(end);
       });
   }

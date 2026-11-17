@@ -78,11 +78,18 @@ export interface CreateAgentSessionOptions {
   readonly transcriptStore: TranscriptStore;
   /** How long an approval or question waits. Default 600000; 30000..3600000. */
   readonly approvalTimeoutMs?: number;
-  /** Per-turn wall clock. Default 3600; 1..86400. */
-  readonly turnTimeoutSeconds?: number;
+  /**
+   * Per-turn wall clock. Default 3600; 1..86400. `"none"` opens the session with no turn
+   * deadline at all (neither the facade's timer nor the backend's own): an interactive
+   * embedder whose user stops a turn by hand (nax chat) sets it (#2962).
+   */
+  readonly turnTimeoutSeconds?: TurnTimeoutSeconds;
   /** Copied onto every event. */
   readonly metadata?: Readonly<Record<string, string>>;
 }
+
+/** A turn's wall-clock budget in seconds, or `"none"` for a turn with no deadline. */
+export type TurnTimeoutSeconds = number | "none";
 
 export type TurnEndStatus = "completed" | "cancelled" | "timed_out" | "interrupted" | "errored";
 

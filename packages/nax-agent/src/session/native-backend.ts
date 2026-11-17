@@ -16,6 +16,7 @@ import type { TurnRetryConfig } from "#src/native/session/turn-retry";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import { type ResolvedProviderTools, resolveProviderTools } from "#src/tools/provider-advertise";
 import { AgentSessionError } from "./agent-session-errors.ts";
+import type { TurnTimeoutSeconds } from "./agent-session-types.ts";
 import {
   type NativeBackendOptions,
   nativeProfileRules,
@@ -41,6 +42,18 @@ const SESSION_TRANSPORT_RETRY: TurnRetryConfig = {
   maxAttempts: 3,
   baseDelayMs: 2000,
 };
+
+/**
+ * The native open's turn budget. `"none"` opens with no turn deadline (#2962): `timeoutSeconds`
+ * is required by the type and only labels the turn's events then, and `noTurnDeadline` is what
+ * the native session reads.
+ */
+function nativeTurnTimeout(seconds: TurnTimeoutSeconds): {
+  readonly timeoutSeconds: number;
+  readonly noTurnDeadline?: true;
+} {
+  return seconds === "none" ? { timeoutSeconds: 0, noTurnDeadline: true } : { timeoutSeconds: seconds };
+}
 
 function createAdapter(raw: NativeBackendOptions): NativeSessionAdapter {
   const overrides = raw.catalogOverrides ?? [];
@@ -167,7 +180,7 @@ async function openNative(resolved: ResolvedNativeOptions, ctx: BackendOpenConte
     ...(support.providerInstructions !== undefined ? { providerInstructions: support.providerInstructions } : {}),
     resolvedPermissions: { mode: "default", toolGrants: grants, bashApproval },
     modelDef: { provider: resolved.provider, model: raw.model },
-    timeoutSeconds: ctx.turnTimeoutSeconds,
+    ...nativeTurnTimeout(ctx.turnTimeoutSeconds),
     transcriptStore: ctx.transcriptStore,
     retainOnClose: true,
     resume: ctx.resume !== undefined,

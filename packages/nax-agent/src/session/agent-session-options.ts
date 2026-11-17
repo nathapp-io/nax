@@ -10,7 +10,7 @@ import { z } from "zod";
 import { ASK_HUMAN_TOOL_NAME } from "#src/native/session/ask-human";
 import { RESERVED_TOOL_NAMES } from "#src/tools/registry";
 import { AgentSessionError } from "./agent-session-errors.ts";
-import type { CreateAgentSessionOptions, EmbedderTool } from "./agent-session-types.ts";
+import type { CreateAgentSessionOptions, EmbedderTool, TurnTimeoutSeconds } from "./agent-session-types.ts";
 import type { SessionBackend } from "./session-backend.ts";
 
 export const DEFAULT_APPROVAL_TIMEOUT_MS = 600_000;
@@ -24,7 +24,7 @@ export interface ResolvedAgentSessionOptions {
   /** The caller's object, unchanged (tool objects keep their `this`). */
   readonly raw: CreateAgentSessionOptions;
   readonly approvalTimeoutMs: number;
-  readonly turnTimeoutSeconds: number;
+  readonly turnTimeoutSeconds: TurnTimeoutSeconds;
   readonly metadata: Readonly<Record<string, string>>;
   readonly tools: readonly EmbedderTool[];
 }
@@ -69,7 +69,7 @@ const OptionsSchema = z.strictObject({
   transcriptStore: z.custom(hasMethods(STORE_METHODS), `must implement ${STORE_METHODS.join(", ")}`),
   approvalTimeoutMs: z.number().int().min(30_000).max(3_600_000).optional(),
   metadata: z.record(z.string(), z.string()).optional(),
-  turnTimeoutSeconds: z.number().int().min(1).max(86_400).optional(),
+  turnTimeoutSeconds: z.union([z.number().int().min(1).max(86_400), z.literal("none")]).optional(),
 });
 
 function invalid(message: string, context: Record<string, unknown> = {}): AgentSessionError {

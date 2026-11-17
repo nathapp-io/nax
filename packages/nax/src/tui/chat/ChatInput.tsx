@@ -263,13 +263,16 @@ function splitRow(text: string, columns: number): readonly string[] {
 
 /** The rows the placeholder or the owner's hint draws when the editor is empty. */
 function emptyRows(options: RowOptions): readonly TextRow[] {
-  if (options.busy) return [{ text: "", marker: true }];
+  const focused = options.active === true;
+  // A running turn shows no placeholder, but typing still lands (the line is queued), so a
+  // focused busy input draws its cursor cell right after the marker (#2963). The row stays
+  // one row either way, so `inputRows` measures the same height.
+  if (options.busy) return [{ text: "", marker: true, ...(focused ? { cursor: 0 } : {}) }];
   const hint = sanitizeText(options.hint ?? PLACEHOLDER);
   // The inverse cell sits on the placeholder's first character rather than in a cell of its
   // own, so focus costs no column: the hint wraps to the same rows and `inputRows` measures
-  // the same height whether or not the input has focus. An inactive or busy input inverts
-  // nothing — there is nowhere to type.
-  const focused = options.active === true;
+  // the same height whether or not the input has focus. An inactive input inverts nothing —
+  // there is nowhere to type.
   return splitRow(hint, layoutColumns(options)).map((text, index) => ({
     text,
     marker: index === 0,
