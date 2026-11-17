@@ -3,7 +3,7 @@
   "feature": "ci-repair-same-head-flake",
   "branchName": "feat/ci-repair-same-head-flake",
   "createdAt": "2026-11-17T13:12:13.437Z",
-  "updatedAt": "2026-11-17T13:32:30.606Z",
+  "updatedAt": "2026-11-17T13:49:36.597Z",
   "userStories": [
     {
       "id": "US-001",
@@ -105,14 +105,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "A new immutable asynchronous decision state must compose with terminal classification, starved recovery, error replay, lag windows, deadlines and aborts without changing no-option behavior."
+        "reasoning": "A new immutable asynchronous decision state must compose with terminal classification, starved recovery, error replay, lag windows, deadlines and aborts without changing no-option behavior.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/workflow/ci-wait.ts",
@@ -129,7 +132,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fc0b5afd57ed08d1ccbe20d4bc96e8599955a576"
     },
     {
       "id": "US-003",
