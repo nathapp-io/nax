@@ -3,7 +3,7 @@
   "feature": "chat-layout-overflow",
   "branchName": "feat/chat-layout-overflow",
   "createdAt": "2026-11-17T02:19:19.422Z",
-  "updatedAt": "2026-11-17T03:13:29.829Z",
+  "updatedAt": "2026-11-17T03:39:13.466Z",
   "userStories": [
     {
       "id": "US-001",
@@ -93,14 +93,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Introduces a pure allocation abstraction spanning measured surfaces, degradation priorities, coordinates and a shared projection; no permission or host execution decisions are modified."
+        "reasoning": "Introduces a pure allocation abstraction spanning measured surfaces, degradation priorities, coordinates and a shared projection; no permission or host execution decisions are modified.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/bottom-region.ts",
@@ -117,7 +120,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b5cb38246ebb3637610e4b22bcf8d86ae1bfaf9a"
     },
     {
       "id": "US-003",
