@@ -1,19 +1,30 @@
 import { afterEach, expect, test } from "bun:test";
-import { makeAdviceDecision, makeFeatureContext, withWarnSpy } from "@test/helpers";
+import { assertDefined, makeAdviceDecision, makeFeatureContext, withWarnSpy } from "@test/helpers";
+import type { PrRef } from "@/forge";
+import { _ciFailuresDeps } from "@/workflow/ci-failures";
 import { _ciWaitDeps, waitForChecks } from "@/workflow/ci-wait";
 import { _featureDeps } from "@/workflow/feature-deps";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { publish } from "@/workflow/finalize";
 import { _workflowDeps } from "@/workflow/step-context";
 
-const saved = { feature: { ..._featureDeps }, workflow: { ..._workflowDeps }, ci: { ..._ciWaitDeps } };
+const saved = {
+  feature: { ..._featureDeps },
+  workflow: { ..._workflowDeps },
+  ci: { ..._ciWaitDeps },
+  failures: { ..._ciFailuresDeps },
+};
 afterEach(() => {
   Object.assign(_featureDeps, saved.feature);
   Object.assign(_workflowDeps, saved.workflow);
   Object.assign(_ciWaitDeps, saved.ci);
+  Object.assign(_ciFailuresDeps, saved.failures);
 });
 
-function wire(head: string | Error = "aaa") {
+/** The draft PR the forged step returns: the default carries a URL, as a real forge does; `null` is no PR. */
+type Draft = { url: string } | null;
+
+function wire(head: string | Error = "aaa", draft: Draft = { url: "https://gh/pr/1" }) {
   const gitCalls: { args: string[]; cwd: string }[] = [];
   const order: string[] = [];
   _workflowDeps.git = async (args, cwd) => {
@@ -33,13 +44,13 @@ function wire(head: string | Error = "aaa") {
     order.push("push");
     return { committed: false, pushed: true };
   };
-  _featureDeps.openDraftFinishPr = async () => ({ url: "https://gh/pr/1" });
+  _featureDeps.openDraftFinishPr = async () => draft;
   let keepDraft: boolean | undefined;
   _featureDeps.openOrPromotePr = async (args) => {
     keepDraft = args.keepDraft;
     return { status: "already-ready", url: "https://gh/pr/1" };
   };
-  const waits: unknown[] = [];
+  const waits: Parameters<typeof _featureDeps.waitForChecks>[2][] = [];
   _featureDeps.waitForChecks = async (_forge, _ref, opts) => {
     waits.push(opts);
     return { outcome: "green", detail: "all passed" };
@@ -74,10 +85,22 @@ test("AC-9/15/16: publish waits for pushed HEAD with configured timeout, cadence
     workflow: { ...base.workflow, timeouts: { ...base.workflow.timeouts, ciWaitMs: 1234, ciPollMs: 56 } },
   };
   await publish(fc, observed.input);
-  // US-003: the run's own publish opts into re-running starved jobs; every other option is unchanged.
-  expect(observed.waits).toEqual([
-    { cwd: "/project", timeoutMs: 1234, pollMs: 56, signal: fc.runSignal, expectedSha: "aaa", rerunStarved: true },
-  ]);
+  // US-003: the run's own publish opts into re-running starved jobs and, for a draft PR with a URL,
+  // hands the wait the same-head re-run; every other option is passed exactly as before.
+  const wait = observed.waits[0];
+  assertDefined(wait, "the CI wait options");
+  const { sameHeadRerun, ...rest } = wait;
+  assertDefined(sameHeadRerun, "the same-head option");
+  expect(rest).toEqual({
+    cwd: "/project",
+    timeoutMs: 1234,
+    pollMs: 56,
+    signal: fc.runSignal,
+    expectedSha: "aaa",
+    rerunStarved: true,
+  });
+  expect(typeof sameHeadRerun.read).toBe("function");
+  expect(typeof sameHeadRerun.rerun).toBe("function");
   expect(observed.gitCalls).toContainEqual({ args: ["rev-parse", "HEAD"], cwd: "/project" });
   expect(observed.order).toEqual(["push", "head"]);
 });
@@ -142,4 +165,110 @@ test("AC-20: real CI mismatch timeout keeps publish draft after the advisor was 
   expect(result.reasons.join(" ")).toContain("checks report bbb but HEAD is aaa");
   expect(observed.keepDraft()).toBe(true);
   expect(observed.asked()).toBe(1);
+});
+
+const GH_REF: PrRef = { forge: "github", host: "github.com", repo: "o/r", number: 9 };
+const GH_URL = "https://github.com/o/r/pull/9";
+
+/** The same-head option the wait received; fails the test rather than reading through an optional. */
+function sameHeadOf(observed: ReturnType<typeof wire>) {
+  const wait = observed.waits[0];
+  assertDefined(wait, "the CI wait options");
+  const option = wait.sameHeadRerun;
+  assertDefined(option, "the same-head option");
+  return option;
+}
+
+// US-003: only the workflow's own publish opts into the same-head re-run, and only when it has both
+// a draft PR URL and the HEAD it pushed — the PR the checks belong to and the commit they ran on.
+test("AC-8: a pr-mode publish with a draft URL and a read HEAD passes the same-head option", async () => {
+  const observed = wire("aaa", { url: GH_URL });
+  await publish(makeFeatureContext(), observed.input);
+  const option = sameHeadOf(observed);
+  expect(typeof option.read).toBe("function");
+  expect(typeof option.rerun).toBe("function");
+  // Every option that existed before is still passed, with nothing added beside the new one.
+  const wait = observed.waits[0];
+  assertDefined(wait, "the CI wait options");
+  const { sameHeadRerun: _option, ...rest } = wait;
+  expect(Object.keys(rest).sort()).toEqual(["cwd", "expectedSha", "pollMs", "rerunStarved", "timeoutMs"]);
+  expect(rest).toMatchObject({ cwd: "/repo", expectedSha: "aaa", rerunStarved: true });
+});
+
+test("AC-9: the option's read resolves PR 9 and reads the failed checks of head aaa", async () => {
+  const observed = wire("aaa", { url: GH_URL });
+  const numbers: number[] = [];
+  const heads: string[] = [];
+  _ciFailuresDeps.resolvePrRef = async (number) => {
+    numbers.push(number);
+    return GH_REF;
+  };
+  _ciFailuresDeps.readFailedChecks = async (_ref, head) => {
+    heads.push(head);
+    return [];
+  };
+  await publish(makeFeatureContext(), observed.input);
+  await expect(sameHeadOf(observed).read()).resolves.toEqual([]);
+  expect(numbers).toEqual([9]);
+  expect(heads).toEqual(["aaa"]);
+});
+
+test("AC-10: a draft PR the forge returned no URL for passes no same-head option", async () => {
+  const observed = wire("aaa", null);
+  await publish(makeFeatureContext(), observed.input);
+  expect(observed.waits).toHaveLength(1);
+  expect(observed.waits[0]).not.toHaveProperty("sameHeadRerun");
+  // Control: the same publish with a URL does carry the option, so the absence is the missing URL.
+  const withUrl = wire("aaa", { url: GH_URL });
+  await publish(makeFeatureContext(), withUrl.input);
+  expect(withUrl.waits[0]).toHaveProperty("sameHeadRerun");
+});
+
+test("AC-11: push mode passes no same-head option (the caller owns that PR)", async () => {
+  const base = makeFeatureContext();
+  const observed = wire("aaa", { url: GH_URL });
+  const pushed = await publish({ ...base, workflow: { ...base.workflow, publish: "push" as const } }, observed.input);
+  expect(pushed.ci).toBe("green");
+  expect(observed.waits).toHaveLength(1);
+  expect(observed.waits[0]).not.toHaveProperty("sameHeadRerun");
+  // Control: the same draft URL in pr mode does carry it, so the absence is the mode's doing.
+  const pr = wire("aaa", { url: GH_URL });
+  await publish(base, pr.input);
+  expect(pr.waits[0]).toHaveProperty("sameHeadRerun");
+});
+
+test("AC-12: an unreadable HEAD passes no same-head option, even with a draft URL", async () => {
+  const observed = wire(new Error("HEAD unavailable"), { url: GH_URL });
+  await publish(makeFeatureContext(), observed.input);
+  expect(observed.waits).toHaveLength(1);
+  expect(observed.waits[0]).not.toHaveProperty("sameHeadRerun");
+  // Control: the same URL with a readable HEAD does carry it, so the absence is the failed read.
+  const read = wire("aaa", { url: GH_URL });
+  await publish(makeFeatureContext(), read.input);
+  expect(read.waits[0]).toHaveProperty("sameHeadRerun");
+});
+
+// US-003: what the wait re-ran is this publish's fact, so it reaches the outcome the step records.
+test("AC-13: a wait that re-ran a check reports it as the publish outcome's ciReruns", async () => {
+  const observed = wire();
+  _featureDeps.waitForChecks = async (_forge, _ref, opts) => {
+    observed.waits.push(opts);
+    return { outcome: "green", detail: "all checks passed", sameHeadReruns: ["test"] };
+  };
+  const result = await publish(makeFeatureContext(), observed.input);
+  expect(result).toMatchObject({ outcome: "ready", ci: "green", ciReruns: ["test"] });
+});
+
+test("AC-14: a wait that re-ran nothing leaves the ciReruns key absent", async () => {
+  const observed = wire();
+  const result = await publish(makeFeatureContext(), observed.input);
+  expect("ciReruns" in result).toBe(false);
+  // Control: the same publish whose wait did re-run carries the key, so its absence means "nothing
+  // re-ran" rather than "the field is never written".
+  const reran = wire();
+  _featureDeps.waitForChecks = async (_forge, _ref, opts) => {
+    reran.waits.push(opts);
+    return { outcome: "green", detail: "all checks passed", sameHeadReruns: ["test"] };
+  };
+  expect(await publish(makeFeatureContext(), reran.input)).toHaveProperty("ciReruns", ["test"]);
 });
