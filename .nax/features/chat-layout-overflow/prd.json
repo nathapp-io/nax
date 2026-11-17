@@ -3,7 +3,7 @@
   "feature": "chat-layout-overflow",
   "branchName": "feat/chat-layout-overflow",
   "createdAt": "2026-11-17T02:19:19.422Z",
-  "updatedAt": "2026-11-17T03:39:13.466Z",
+  "updatedAt": "2026-11-17T04:08:34.700Z",
   "userStories": [
     {
       "id": "US-001",
@@ -166,14 +166,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "expert",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Cross-cutting React composition and state-lifetime changes must prevent frame overflow while preserving drafts, queues, overlay selection and viewport memory across zero-height/diagnostic transitions."
+        "reasoning": "Cross-cutting React composition and state-lifetime changes must prevent frame overflow while preserving drafts, queues, overlay selection and viewport memory across zero-height/diagnostic transitions.",
+        "initialComplexity": "expert",
+        "modelTier": "powerful",
+        "initialModelTier": "powerful"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/ChatApp.tsx",
@@ -190,7 +193,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0d043046e420647d4ba30e53354b269c2d8d5200"
     },
     {
       "id": "US-004",
