@@ -8,10 +8,14 @@
  */
 import { TOOL_RESULT_PREVIEW_BYTES } from "@nathapp/nax-agent";
 import { GENERAL_AGENT_NAME } from "@/chat";
+import { formatDuration } from "./duration";
 import type { ToolChild, TranscriptEntry } from "./transcript-model";
 
 /** One tool call in the transcript; the only entry kind a card renders. */
 type ToolEntry = Extract<TranscriptEntry, { kind: "tool" }>;
+
+/** Milliseconds one second of a measured span stands for; `secondsBetween` yields seconds. */
+const MILLIS_PER_SECOND = 1000;
 
 /** One summary line, with the tone the layout paints it in. */
 export interface CardLine {
@@ -285,9 +289,8 @@ export function secondsBetween(startedAt: string, endedAt: string | undefined): 
  * layout advertises them through `hiddenLines`), expanded it lists them after the summary.
  */
 function agentSummary(entry: ToolEntry, expanded: boolean): Capped<CardLine> {
-  const done = muted(
-    `${DONE} (${entry.children.length} tool uses · ${secondsBetween(entry.startedAt, entry.endedAt)}s)`,
-  );
+  const span = formatDuration(secondsBetween(entry.startedAt, entry.endedAt) * MILLIS_PER_SECOND);
+  const done = muted(`${DONE} (${entry.children.length} tool uses · ${span})`);
   if (!expanded) return { shown: [done], hidden: entry.children.length };
   return { shown: [done, ...entry.children.map((item) => muted(childLine(item)))], hidden: 0 };
 }

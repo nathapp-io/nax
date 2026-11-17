@@ -9,6 +9,8 @@ const STARTED_AT_MS = Date.parse(STARTED_AT);
 const TWELVE_SECONDS = 12_000;
 const FIT_WIDTH = 40;
 const NARROW_WIDTH = 12;
+/** The 6,379 seconds a long tool call takes: the duration the story closes (#2974). */
+const LONG_ELAPSED_MS = 6_379_000;
 
 /** A thinking turn since `STARTED_AT`; every case here varies one thing from it. */
 const THINKING: TurnStatus = { ...IDLE_STATUS, running: true, phase: "thinking", startedAt: STARTED_AT };
@@ -56,6 +58,19 @@ describe("workingLine with a width", () => {
     const status: TurnStatus = { ...THINKING, startedAt: "2026-11-11T00:00:10Z" };
     const text = textOf(workingLine(status, Date.parse("2026-11-11T00:00:00Z"), GLYPHS, undefined, FIT_WIDTH));
     expect(text).toContain("(0s)");
+  });
+});
+
+describe("workingLine with a long turn", () => {
+  test("US-002 AC-11 states 6,379 seconds as hours, minutes and seconds in the full row", () => {
+    const text = textOf(workingLine(THINKING, STARTED_AT_MS + LONG_ELAPSED_MS, GLYPHS));
+    expect(text).toContain("(1h 46m 19s · ");
+  });
+
+  test("US-002 AC-12 keeps the whole h/m/s duration in the compact row at width 40", () => {
+    const line = workingLine(THINKING, STARTED_AT_MS + LONG_ELAPSED_MS, GLYPHS, undefined, FIT_WIDTH);
+    expect(textOf(line).endsWith("(1h 46m 19s)")).toBe(true);
+    expect(spansWidth(line ?? [])).toBeLessThanOrEqual(FIT_WIDTH);
   });
 });
 

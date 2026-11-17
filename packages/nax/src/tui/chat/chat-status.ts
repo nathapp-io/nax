@@ -13,6 +13,7 @@
 import { parseModelSpec, type SessionEvent } from "@nathapp/nax-agent";
 import { acpModelLabel, type ChatHostState, isChatAcpModel, sessionTitleText } from "@/chat";
 import { contextSpan, formatTokens } from "./context-span";
+import { formatDuration } from "./duration";
 import { type FooterJob, type FooterTask, formatJobStrip } from "./job-strip";
 import { resolveWidth, singleRow } from "./layout-lines";
 import { displayWidth, type Span, type StyledLine } from "./styled-line";
@@ -320,7 +321,6 @@ export const WORKING_TICK_MS = 250;
 
 /** Milliseconds one spinner frame stands for. */
 const SPINNER_FRAME_MS = 120;
-const MILLIS_PER_SECOND = 1000;
 /** What the working line marks the turn's input and output tokens with. */
 const UP_ARROW = "↑";
 const DOWN_ARROW = "↓";
@@ -379,7 +379,7 @@ function workingTokens(status: TurnStatus): string {
 
 /** The measurement behind the verb: the seconds, and — with the room for it — the tokens and the way out. */
 function workingDetail(status: TurnStatus, elapsed: number, escHint?: string): string {
-  const seconds = `${Math.floor(elapsed / MILLIS_PER_SECOND)}s`;
+  const seconds = formatDuration(elapsed);
   const rest = escHint === undefined ? "" : `${SEPARATOR}${workingTokens(status)}${SEPARATOR}${escHint}`;
   return ` (${seconds}${rest})`;
 }

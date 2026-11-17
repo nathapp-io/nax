@@ -212,6 +212,16 @@ describe("turnStatsText", () => {
   test("states a rate over one decimal so the row keeps its column width", () => {
     expect(turnStatsText({ rate: 50, outputTokens: 100, elapsedMs: 2_000 })).toBe("50.0 tok/s · 100 out · 2s");
   });
+
+  test("US-002 AC-13 states a 5,229-second turn as hours, minutes and seconds", () => {
+    expect(turnStatsText({ rate: 32.1, outputTokens: 36_000, elapsedMs: 5_229_000 })).toBe(
+      "32.1 tok/s · 36.0k out · 1h 27m 09s",
+    );
+  });
+
+  test("US-002 AC-14 keeps a sub-minute turn's elapsed time as whole seconds", () => {
+    expect(turnStatsText({ rate: undefined, outputTokens: 1_300, elapsedMs: 14_000 })).toBe("1.3k out · 14s");
+  });
 });
 
 describe("turnStatsEntry", () => {
