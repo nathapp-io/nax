@@ -710,7 +710,7 @@ test("US003 AC-15 ChatApp forwards wheel events to its transcript viewport", asy
   const before = ui.rows().slice(3, -4);
   const older = "  row-38";
   expect(before).not.toContain(older);
-  act(() => mouse.emit("wheelUp"));
+  act(() => mouse.emit("wheelUp", { x: 1, y: 4 }));
   expect(ui.rows().slice(3, -4)).not.toEqual(before);
   expect(ui.rows()).toContain(older);
 });

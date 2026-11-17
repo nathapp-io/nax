@@ -239,13 +239,14 @@ export function TranscriptViewport({
         return;
       }
       if (event.kind !== "wheelUp" && event.kind !== "wheelDown") return;
+      if (event.x < 1 || event.y <= latestTop.current || event.y > latestTop.current + rows) return;
       const action: ViewportAction = { type: event.kind };
       setMemory((previous) => ({
         ...previous,
         state: reduceViewport(previous.state, action, previous.total, previous.height),
       }));
     });
-  }, [active, mouse]);
+  }, [active, mouse, rows]);
   useInput(
     (_input, key) => {
       const action = viewportAction(key);

@@ -15,6 +15,7 @@ export { makeAgentRegistry } from "./agent-registry";
 export { makeAgentResult } from "./agent-result";
 export { assertDefined, firstCall } from "./assert-defined";
 export { assertCaughtInstanceOf, assertNaxError } from "./assert-nax-error";
+export { waitForAsyncCondition } from "./async-condition";
 export { makeBotFixDeps, makeBotFixDraftEnv, makeBotFixEnv } from "./bot-fix";
 export { makeBotReviewDeps } from "./bot-review";
 export { makeMockCallContext } from "./call-context";

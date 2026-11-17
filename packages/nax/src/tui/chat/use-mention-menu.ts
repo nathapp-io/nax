@@ -281,7 +281,14 @@ export function useMentionMenu(options: MentionMenuOptions): MentionMenuControll
     view: draw(),
     // A key the picker has already taken keeps the claim for the rest of the batch, so the
     // input does not also submit the line that key wrote.
-    ownsNavigation: () => live.current.acted || visible(claim()) || latest.current.slashOwns(),
+    ownsNavigation: () => {
+      const current = latest.current;
+      if (!current.active || current.blocked) return false;
+      const found = claim();
+      const rows = current.allocatedRows(desiredRows(found?.matches.length ?? 1), live.current.editor);
+      if (rows <= 0) return false;
+      return (!current.suppressed && live.current.acted) || visible(found) || current.slashOwns();
+    },
     sawEditor: (editor) => {
       live.current.editor = editor;
     },

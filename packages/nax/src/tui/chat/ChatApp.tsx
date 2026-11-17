@@ -414,7 +414,6 @@ export function ChatApp({
     blocked: bottomBlocked(ask, picker.model),
   });
   const workingShown = status.running;
-  // Desired menu demand is independent of terminal height; only the final allocation projects it.
   function menuShown(): boolean {
     return menu.open && frame.regions.menus.rows > 0;
   }
@@ -470,7 +469,6 @@ export function ChatApp({
   const mentionView = { ...mention.view, rows: Math.min(mention.view.rows, regions.menus.rows) };
   const previewLines = pendingPreviewLines({ steering, queued, budget: regions.previews.rows, columns: size.columns });
   const inputBudget = Math.max(1, regions.surface.rows - INPUT_RULE_ROWS);
-  /** True while the picker's rows (or its diagnostic line) are drawn under the input. */
   const mentionShown = mentionView.rows > 0;
   if (menu.reopen) {
     slashKeys.sawDismissal(undefined);
@@ -1306,6 +1304,8 @@ export function ChatApp({
     blocked: !targets.footer || surfaceShown(bottomBlocked(ask, picker.model), menuShown(), mentionShown),
     footer,
     size,
+    region: regions.footer,
+    canControl: keys.canControl,
     open: picker.open,
     note: (text) => append({ kind: "notice", text }),
     showOutput: (entry) => void picker.showOutput(entry),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FRAME_SLACK_ROWS, footerStripHit, JOBS_KEY } from "@/tui/chat/use-jobs-opener";
+import { footerStripHit, JOBS_KEY } from "@/tui/chat/use-jobs-opener";
 
 const GEOMETRY = { x: 61, y: 23, footerRow: 23, columns: 80, rightWidth: 20, stripWidth: 7 };
 
@@ -24,8 +24,7 @@ describe("footerStripHit", () => {
 });
 
 describe("constants", () => {
-  test("the opener key and frame slack are the documented values", () => {
+  test("the opener key remains Ctrl-G; slack belongs only to the allocator", () => {
     expect(JOBS_KEY).toBe("g");
-    expect(FRAME_SLACK_ROWS).toBe(1);
   });
 });

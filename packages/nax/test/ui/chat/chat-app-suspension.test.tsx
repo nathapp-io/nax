@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { SessionEvent } from "@nathapp/nax-agent";
 import { assertDefined, fakeTimers, makeFakeClock } from "@test/helpers";
 import { cleanup, render } from "ink-testing-library";
@@ -7,7 +7,9 @@ import { _askControllerDeps } from "@/chat/ask-controller";
 import { _chatAppDeps } from "@/tui/chat/ChatApp";
 import { TranscriptViewport } from "@/tui/chat/TranscriptViewport";
 import { resolveChatTheme } from "@/tui/chat/theme";
+import { _imageAttachDeps } from "@/tui/chat/use-image-attach";
 import { APPROVAL, COMPLETED, frameHarness, QUESTION } from "./frame-harness";
+import { fakeMouse } from "./mouse";
 
 const theme = resolveChatTheme({ env: {}, colorLevel: 0 });
 const savedIndex = _chatAppDeps.mentionFileIndex;
@@ -17,7 +19,223 @@ afterEach(() => {
   _chatAppDeps.mentionFileIndex = savedIndex;
 });
 
+async function prepareSurface(ui: ReturnType<typeof frameHarness>, surface: string) {
+  await ui.resize(24);
+  if (surface === "running") {
+    await ui.start();
+    await ui.submit("oldest queued");
+  }
+  if (surface === "picker") {
+    await ui.submit("/model");
+    ui.type("model");
+  } else if (surface === "slash") ui.type("/");
+  else if (surface === "mention") ui.type("@file");
+  else ui.type("preserved");
+  if (surface === "question") ui.ask(QUESTION);
+  if (surface === "approval") ui.ask(APPROVAL);
+  if (surface === "choice")
+    await ui.settleAfter(() => {
+      void ui.host.asks.requestHostChoice({
+        tool: "Deploy",
+        summary: "target",
+        reason: "choose",
+        choices: [
+          { id: "one", label: "one" },
+          { id: "two", label: "two" },
+        ],
+        fallback: "one",
+      });
+    });
+}
+
 describe("ChatApp state-preserving suspension", () => {
+  test.each([
+    ["idle", ["x", "\r"]],
+    ["idle", ["\x13"]],
+    ["running", ["x", "\r"]],
+    ["running", ["\x13"]],
+    ["question", ["x", "\r"]],
+    ["approval", ["a"]],
+    ["approval", ["\x1b[B", "\r"]],
+    ["choice", ["2"]],
+    ["picker", ["b", "\x1b[B", "\x1b[C", "\r"]],
+    ["slash", ["\x1b[B", "\t"]],
+    ["mention", ["\x1b[B", "\t"]],
+    ["slash", ["\x1b[B", "\r"]],
+    ["mention", ["\x1b[B", "\r"]],
+    ["slash", ["\x1b"]],
+    ["mention", ["\x1b"]],
+    ["idle", ["\x0f"]],
+    ["idle", ["\x02"]],
+    ["idle", ["\x14"]],
+    ["idle", ["\x1b[Z"]],
+    ["idle", ["\x1b", "\x1b"]],
+    ["idle", ["\x16"]],
+    ["idle", ["\x07"]],
+    ["running", ["\x0f"]],
+    ["running", ["\x02"]],
+    ["running", ["\x14"]],
+    ["running", ["\x1b[Z"]],
+    ["running", ["\x1b", "\x1b"]],
+    ["running", ["\x16"]],
+    ["running", ["\x07"]],
+  ] as const)("US-004 AC-8..18 AC-22 isolated %s controls %j freeze and restore", async (surface, controls) => {
+    _chatAppDeps.mentionFileIndex = () => ({
+      get: async () => ({
+        git: true,
+        rows: [
+          { path: "file-a.ts", folder: false },
+          { path: "file-b.ts", folder: false },
+        ],
+      }),
+    });
+    // Three independent sessions: hidden-only, hidden-and-restored, and never-shrunk.
+    const run = async (mode: "hidden" | "restored" | "visible") => {
+      const clipboard = spyOn(_imageAttachDeps, "readClipboard").mockResolvedValue({ kind: "none" });
+      const mouse = fakeMouse();
+      const ui = frameHarness({ mouse: mouse.events });
+      const resolve = spyOn(ui.host.asks, "resolve");
+      const answer = spyOn(ui.host.asks, "answerQuestion");
+      const choice = spyOn(ui.host.asks, "resolveChoice");
+      const steer = mock(ui.host.steer);
+      ui.host.steer = steer;
+      await prepareSurface(ui, surface);
+      await ui.settle();
+      const before = ui.rows();
+      const count = () => ({
+        steers: steer.mock.calls.length,
+        resolves: resolve.mock.calls.length,
+        answers: answer.mock.calls.length,
+        choices: choice.mock.calls.length,
+        clipboard: clipboard.mock.calls.length,
+        switches: ui.switchTo.mock.calls.length,
+      });
+      const sends = spyOn(ui.host, "send");
+      const cancels = spyOn(ui.host, "cancel");
+      const snapshot = () => ({ ...count(), sends: sends.mock.calls.length, cancels: cancels.mock.calls.length });
+      const effects = snapshot();
+      if (mode !== "visible") {
+        await ui.resize(2);
+        for (const key of controls) ui.press(key);
+        for (const kind of ["press", "drag", "release", "wheelUp", "wheelDown"] as const)
+          act(() => mouse.emit(kind, { button: "left", x: 1, y: 4 }));
+        await ui.settle();
+        expect(snapshot()).toEqual(effects);
+        await ui.resize(24);
+        expect(ui.rows()).toEqual(before);
+      }
+      if (mode !== "hidden") {
+        for (const key of controls) ui.press(key);
+        await ui.settle();
+      }
+      const result = {
+        rows: ui.rows(),
+        effects: snapshot(),
+        pending: ui.host.asks.pending().map((ask) => ask.type),
+        decisions: resolve.mock.calls.map((call) => call.slice(1)),
+        answers: answer.mock.calls.map((call) => call.slice(1)),
+        choices: choice.mock.calls.map((call) => call.slice(1)),
+      };
+      ui.ui.unmount();
+      mock.restore();
+      return result;
+    };
+    await run("hidden");
+    expect(await run("restored")).toEqual(await run("visible"));
+  });
+
+  test.each([false, true])("US-004 AC-19..21 diagnostic Ctrl-C consults confirmation, allow=%s", async (allow) => {
+    const ui = frameHarness();
+    const confirm = mock(async () => allow);
+    Object.assign(ui.host, { confirmBeforeClose: confirm });
+    await ui.resize(2);
+    ui.press("\x03");
+    await ui.settle();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(ui.host.close).toHaveBeenCalledTimes(allow ? 1 : 0);
+  });
+
+  test.each(["input", "picker"] as const)(
+    "US-004 AC-6 AC-7 ask takes keys over %s without stealing viewport shortcuts",
+    async (underlay) => {
+      const ui = frameHarness();
+      await ui.resize(24);
+      await ui.start();
+      ui.emit({ type: "text_delta", text: Array.from({ length: 200 }, (_, i) => `row ${i}`).join("\n"), round: 1 });
+      ui.emit(COMPLETED);
+      await ui.finish();
+      if (underlay === "picker") await ui.submit("/model");
+      else ui.type("underlying draft");
+      ui.ask(QUESTION);
+      const answer = spyOn(ui.host.asks, "answerQuestion");
+      ui.type("visible answer");
+      ui.press("\x1b[5~");
+      expect(ui.rows().join("\n")).toContain("Scroll to bottom");
+      ui.press("\r");
+      await ui.settle();
+      expect(answer).toHaveBeenCalledWith("q1", "visible answer");
+      expect(ui.host.send).toHaveBeenCalledTimes(1);
+      expect(ui.switchTo).not.toHaveBeenCalled();
+      if (underlay === "input") expect(ui.rows().join("\n")).toContain("> underlying draft");
+      else {
+        expect(ui.rows()).toContain("Switch model");
+        expect(ui.rows()).toContain("type to filter");
+      }
+    },
+  );
+
+  test("US-004 AC-7 picker query and choose cannot edit or submit the hidden input", async () => {
+    const ui = frameHarness();
+    await ui.resize(24);
+    await ui.submit("/model");
+    ui.type("model-b");
+    ui.press("\x1b[B");
+    ui.press("\r");
+    await ui.settle();
+    expect(ui.switchTo).toHaveBeenCalledTimes(1);
+    expect(ui.switchTo).toHaveBeenCalledWith({ model: "model-b" });
+    expect(ui.host.send).not.toHaveBeenCalled();
+    expect(ui.rows().join("\n")).not.toContain("> model-b");
+  });
+
+  test("US-004 AC-20 diagnostic close confirmation ask stays unanswerable until expanded", async () => {
+    const ui = frameHarness();
+    Object.assign(ui.host, {
+      confirmBeforeClose: async () => (await ui.host.asks.requestHostQuestion({ text: "Close this chat?" })) === "yes",
+    });
+    const answer = spyOn(ui.host.asks, "answerQuestion");
+    await ui.resize(2);
+    ui.press("\x03");
+    await ui.settle();
+    expect(ui.host.asks.pending()).toHaveLength(1);
+    ui.type("yes");
+    ui.press("\r");
+    expect(answer).not.toHaveBeenCalled();
+    expect(ui.host.close).not.toHaveBeenCalled();
+    await ui.resize(24);
+    expect(ui.rows().join("\n")).toContain("Close this chat?");
+    ui.type("yes");
+    ui.press("\r");
+    await ui.settle();
+    expect(answer).toHaveBeenCalledTimes(1);
+    expect(ui.host.close).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([false, true])("US-004 AC-20 AC-21 armed running Ctrl-C confirmation allow=%s", async (allow) => {
+    const ui = frameHarness();
+    const confirm = mock(async () => allow);
+    Object.assign(ui.host, { confirmBeforeClose: confirm });
+    await ui.resize(24);
+    await ui.start();
+    await ui.resize(2);
+    ui.press("\x03");
+    expect(ui.host.cancel).toHaveBeenCalledTimes(1);
+    ui.press("\x03");
+    await ui.settle();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(ui.host.close).toHaveBeenCalledTimes(allow ? 1 : 0);
+  });
+
   test.each([false, true])("AC-17 input draft and history survive diagnostic busy=%s", async (busy) => {
     const ui = frameHarness();
     await ui.resize(24);
