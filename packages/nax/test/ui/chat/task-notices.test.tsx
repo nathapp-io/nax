@@ -554,4 +554,31 @@ describe("a task notice steer the turn did not take", () => {
     expect(ui.send.mock.calls.map(([text]) => text)).toEqual(["hello", expect.stringContaining(id)]);
     await ui.finishTurn(1);
   });
+
+  test("a refused steer leaves a marked output read able to retire the notice", async () => {
+    const steer = mock<NonNullable<ChatHost["steer"]>>(() => ({ status: "unsupported" }));
+    const ui = mount(false, undefined, steer);
+    await ui.submit("hello");
+    const id = await ui.endTask();
+    expect(steer).toHaveBeenCalledTimes(1);
+    // The agent reads the ended task through nax-tasks__output, still inside that turn.
+    const read = ui.tasks.output(id, undefined, { markSeen: true });
+    await ui.settle();
+    await read;
+    expect(ui.tasks.peekNotice()).toBeUndefined();
+    await ui.finishTurn(0);
+    // Nothing is left to deliver, so the ended turn starts no notice turn of its own.
+    expect(ui.send.mock.calls.map(([text]) => text)).toEqual(["hello"]);
+    expect(ui.take).not.toHaveBeenCalled();
+  });
+});
+
+describe("a task notice the guard is holding", () => {
+  test("a marked output read retires a held notice", async () => {
+    const ui = mount(false, 0);
+    const id = await ui.endTask();
+    expect(ui.rows().some((row) => row.includes(taskNoticeHeldLine(0)))).toBe(true);
+    await ui.tasks.output(id, undefined, { markSeen: true });
+    expect(ui.tasks.peekNotice()).toBeUndefined();
+  });
 });

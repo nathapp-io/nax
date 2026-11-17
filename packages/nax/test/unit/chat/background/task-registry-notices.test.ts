@@ -329,6 +329,26 @@ describe("background task output seen handling (US-001)", () => {
     expect(f.tasks.peekNotice()).toBe(snapshot);
     expect(f.tasks.takeNotice()).toBe(snapshot);
   });
+  test("a released snapshot no longer protects a marked read", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    expect(f.tasks.peekNotice()).toContain(a.id);
+    // A caller that peeked and delivered nothing drops the pin, so the read retires the task.
+    f.tasks.releaseNotice();
+    expect(await f.tasks.output(a.id, undefined, { markSeen: true })).toBe("");
+    expect(f.tasks.peekNotice()).toBeUndefined();
+  });
+  test("a released snapshot consumes nothing", async () => {
+    const f = fixture();
+    const a = f.adopt();
+    await a.finish();
+    const snapshot = f.tasks.peekNotice();
+    f.tasks.releaseNotice();
+    expect(f.tasks.peekNotice()).toBe(snapshot);
+    expect(f.tasks.takeNotice()).toBe(snapshot);
+    expect(f.tasks.peekNotice()).toBeUndefined();
+  });
   test("US-001 AC-10 a failed read rejects typed and keeps the notice", async () => {
     const f = fixture();
     const a = f.adopt();

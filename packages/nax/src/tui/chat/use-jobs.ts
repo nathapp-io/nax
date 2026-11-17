@@ -69,11 +69,11 @@ function settleSteer(run: SteerRun, notice: string, applied: Promise<boolean>): 
   void applied
     .then((taken) => {
       if (taken) noteSteeredNotice(run, notice);
-      else run.refused.current = notice;
+      else keepNotice(run, notice);
     })
     .catch((error: unknown) => {
       getLogger()?.warn("chat", STEER_RETAINED, { error: errorMessage(error) });
-      run.refused.current = notice;
+      keepNotice(run, notice);
     })
     .finally(() => {
       run.pending.current = false;
@@ -85,6 +85,9 @@ function settleSteer(run: SteerRun, notice: string, applied: Promise<boolean>): 
 function keepNotice(run: SteerRun, notice: string): void {
   run.pending.current = false;
   run.refused.current = notice;
+  // Nothing was delivered from the snapshot the probe pinned: drop it, so a read of the task
+  // through `nax-tasks__output` still retires the notice instead of being refused by it.
+  run.tasks?.releaseNotice();
 }
 
 /**
@@ -110,7 +113,12 @@ function useTaskNoticeSteer(options: SteerOptions): void {
     // A notice turn of the idle path's own, or a steer already waiting, owns the head.
     if (host.steer === undefined || pending.current || inFlight.current) return;
     const notice = tasks?.peekNotice();
-    if (notice === undefined || notice === refused.current) return;
+    if (notice === undefined) return;
+    if (notice === refused.current) {
+      // The peek pinned a snapshot this render delivers nothing from; the notice stays queued.
+      tasks?.releaseNotice();
+      return;
+    }
     pending.current = true;
     try {
       const result = host.steer(notice);
@@ -137,9 +145,13 @@ interface HeldNoticeInput {
 
 /** Announce once that the guard is holding an ended task's notice (#2816), so the chat says why. */
 function announceHeldTaskNotice(input: HeldNoticeInput): void {
-  // Any chosen source was a delivery, not a hold; a pending steer holds its notice itself.
-  if (input.source !== undefined || input.held.current || input.heldBySteer) return;
-  if (input.tasks?.peekNotice() === undefined) return;
+  // Any chosen source was a delivery, not a hold; a pending steer holds its own snapshot.
+  if (input.source !== undefined || input.heldBySteer) return;
+  // An existence check, not a delivery: release the snapshot the peek pinned, so a read of
+  // the held task through `nax-tasks__output` still retires its notice.
+  const queued = input.tasks?.peekNotice() !== undefined;
+  input.tasks?.releaseNotice();
+  if (!queued || input.held.current) return;
   input.held.current = true;
   input.note(taskNoticeHeldLine(input.limit));
 }
@@ -235,6 +247,9 @@ export function useJobs(
         getLogger()?.warn("chat", "Background notice delivery failed; notice retained", { error: errorMessage(error) });
       } finally {
         inFlight.current = false;
+        // A delivery that did not happen consumed nothing: drop the snapshot its peek pinned,
+        // so a read of its tasks still retires their notice instead of being refused by it.
+        if (!delivered && source === tasks) tasks?.releaseNotice();
         // Drain the next head even when the turn's final render preceded this continuation.
         // A declined delivery waits for another render, never a busy retry loop.
         if (delivered && mounted.current) refresh((revision) => revision + 1);
