@@ -3,7 +3,7 @@
   "feature": "chat-publish-held-drafts",
   "branchName": "feat/chat-publish-held-drafts",
   "createdAt": "2026-11-17T10:21:20.271Z",
-  "updatedAt": "2026-11-17T10:56:00.436Z",
+  "updatedAt": "2026-11-17T11:10:23.576Z",
   "userStories": [
     {
       "id": "US-001",
@@ -225,14 +225,17 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Adds a cross-module terminal outcome contract, asynchronous verdict loading and fail-soft enrichment, a shared formatter, and event-driven persisted chain termination while preserving child-status authority."
+        "reasoning": "Adds a cross-module terminal outcome contract, asynchronous verdict loading and fail-soft enrichment, a shared formatter, and event-driven persisted chain termination while preserving child-status authority.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/job-outcome.ts",
@@ -256,7 +259,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "fe7d4c12d82ea834f4efa170af9b4fc70bede0c8"
     },
     {
       "id": "US-004",
