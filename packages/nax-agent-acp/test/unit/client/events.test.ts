@@ -275,3 +275,18 @@ test.each([
   collector.onUpdate({ sessionUpdate: "usage_update", used, size });
   expect(events).toEqual([]);
 });
+
+test.each([false, true])("context stays live with text buffering=%s", (buffered) => {
+  const { events, collector } = setup(buffered ? [SECRET] : []);
+  collector.onUpdate(say("All good"));
+  collector.onUpdate({ sessionUpdate: "usage_update", used: 42_000, size: 200_000 });
+  expect(events.map((event) => event.type)).toEqual(buffered ? ["context_usage"] : ["text_delta", "context_usage"]);
+  collector.settle({ stopReason: "end_turn" });
+  expect(events.filter((event) => event.type === "text_delta")).toEqual([
+    { type: "text_delta", round: 0, text: "All good" },
+  ]);
+  expect(events.filter((event) => event.type === "context_usage")).toEqual([
+    { type: "context_usage", used: 42_000, size: 200_000 },
+  ]);
+  expect(events.at(-1)?.type).toBe("usage");
+});
