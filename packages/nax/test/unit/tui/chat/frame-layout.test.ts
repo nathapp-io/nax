@@ -24,6 +24,8 @@ import { pendingPreviewLines, type SteeringRow } from "@/tui/chat/message-queue"
 const INPUT_MINIMUM = 3;
 /** A frame drawing a single pending item: nothing left to hide behind a summary row. */
 const ONE_PENDING = 1;
+/** The columns every projection in these cases is drawn into. */
+const COLUMNS = 80;
 /** The heights every bound is checked at. */
 const HEIGHTS = [2, 3, 4, 5, 8, 9, 10, 12, 24, 40] as const;
 
@@ -63,7 +65,7 @@ function steersOf(count: number): readonly SteeringRow[] {
 /** The rows a pending projection draws for `count` queued messages at `budget` rows. */
 function queuedPreviews(count: number, budget?: number): number {
   const queued = Array.from({ length: count }, (_unused, index) => `q${index + 1}`);
-  return pendingPreviewLines({ queued, ...(budget === undefined ? {} : { budget }) }).length;
+  return pendingPreviewLines({ queued, columns: COLUMNS, ...(budget === undefined ? {} : { budget }) }).length;
 }
 
 /** One surface the frame can be allocated for, and the options that put it there. */
@@ -85,7 +87,7 @@ const SURFACES: readonly SurfaceCase[] = [
     name: "mixed pending items",
     frame: (rows) =>
       frame(rows, {
-        previews: pendingPreviewLines({ steering: steersOf(3), queued: ["q1", "q2"] }).length,
+        previews: pendingPreviewLines({ steering: steersOf(3), queued: ["q1", "q2"], columns: COLUMNS }).length,
         working: true,
       }),
   },

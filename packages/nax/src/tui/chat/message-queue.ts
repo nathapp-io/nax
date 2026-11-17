@@ -177,10 +177,12 @@ export interface PendingPreviewInput {
    */
   readonly budget?: number;
   /**
-   * The columns each row is drawn into. A row longer than them is cut, because a preview is
-   * one physical row: an over-long one would wrap into a second row nobody allocated.
+   * The columns each projection row is drawn into. Required: a preview is one physical row,
+   * so a row longer than the width it is drawn at wraps into a row nobody allocated. A width
+   * below the layout's supported minimum — or not a number at all — is treated as that
+   * minimum, which is the same floor every other chat row is measured at.
    */
-  readonly columns?: number;
+  readonly columns: number;
 }
 
 /**
@@ -216,8 +218,7 @@ function overflowed(items: readonly string[], budget: number): readonly string[]
 }
 
 /** One projection row, cut to the columns it is drawn into so it stays one physical row. */
-function fittedRow(row: string, columns: number | undefined): string {
-  if (columns === undefined) return row;
+function fittedRow(row: string, columns: number): string {
   return cutSpans([{ text: row }], resolveWidth(columns))
     .map((span) => span.text)
     .join("");

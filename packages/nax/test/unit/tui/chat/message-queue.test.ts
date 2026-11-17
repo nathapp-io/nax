@@ -20,7 +20,7 @@ import {
   steeringRowLines,
   takeQueued,
 } from "@/tui/chat/message-queue";
-import { displayWidth } from "@/tui/chat/styled-line";
+import { displayWidth, MIN_LAYOUT_WIDTH } from "@/tui/chat/styled-line";
 
 describe("takeQueued", () => {
   test("AC-1 takes the oldest message and leaves the rest in order", () => {
@@ -149,6 +149,9 @@ describe("queueRowLines", () => {
 });
 
 describe("pendingPreviewLines", () => {
+  /** The columns these projections are drawn into: a full 80-column screen. */
+  const WIDTH = 80;
+
   /** `count` pending steers, each naming its own arrival position. */
   function steersOf(count: number): readonly SteeringRow[] {
     return Array.from({ length: count }, (_unused, index) => ({ steerId: `s${index + 1}`, text: `s${index + 1}` }));
@@ -161,7 +164,7 @@ describe("pendingPreviewLines", () => {
 
   /** The previews a projection of `count` pending items shows at `budget` rows. */
   function projected(count: number, budget: number): readonly string[] {
-    return pendingPreviewLines({ queued: queueOf(count), budget });
+    return pendingPreviewLines({ queued: queueOf(count), budget, columns: WIDTH });
   }
 
   /** Every pending item's own row, in the spec's group order: steers first, then the queue. */
@@ -185,18 +188,18 @@ describe("pendingPreviewLines", () => {
   });
 
   test("AC-16 shows every item it can fit, steers in arrival order then queued oldest first", () => {
-    const rows = pendingPreviewLines({ steering: steersOf(2), queued: queueOf(2), budget: 4 });
+    const rows = pendingPreviewLines({ steering: steersOf(2), queued: queueOf(2), budget: 4, columns: WIDTH });
     expect(rows).toEqual(allItems(2, 2));
     expect(rows).toEqual(["steering · s1", "steering · s2", "queued · q1", "queued · q2"]);
   });
 
   test("AC-16 shows no summary row when everything fits, whatever the budget", () => {
     expect(projected(4, 4)).toEqual(["queued · q1", "queued · q2", "queued · q3", "queued · q4"]);
-    expect(pendingPreviewLines({ steering: steersOf(2), queued: queueOf(2) })).toEqual(allItems(2, 2));
+    expect(pendingPreviewLines({ steering: steersOf(2), queued: queueOf(2), columns: WIDTH })).toEqual(allItems(2, 2));
   });
 
   test("AC-17 counts the hidden items across both groups on the final row", () => {
-    expect(pendingPreviewLines({ steering: steersOf(3), queued: queueOf(2), budget: 3 })).toEqual([
+    expect(pendingPreviewLines({ steering: steersOf(3), queued: queueOf(2), budget: 3, columns: WIDTH })).toEqual([
       "steering · s1",
       "steering · s2",
       "+3 pending",
@@ -204,27 +207,29 @@ describe("pendingPreviewLines", () => {
   });
 
   test("AC-18 with one whole row for more than one item, draws only the combined summary", () => {
-    expect(pendingPreviewLines({ steering: steersOf(1), queued: queueOf(1), budget: 1 })).toEqual(["+2 pending"]);
+    expect(pendingPreviewLines({ steering: steersOf(1), queued: queueOf(1), budget: 1, columns: WIDTH })).toEqual([
+      "+2 pending",
+    ]);
     expect(projected(17, 1)).toEqual(["+17 pending"]);
   });
 
   test("AC-19 with one row for exactly one item, draws that item's labelled preview", () => {
-    expect(pendingPreviewLines({ steering: steersOf(1), budget: 1 })).toEqual(["steering · s1"]);
+    expect(pendingPreviewLines({ steering: steersOf(1), budget: 1, columns: WIDTH })).toEqual(["steering · s1"]);
     expect(projected(1, 1)).toEqual(["queued · q1"]);
   });
 
   test("AC-20 draws nothing at all for a zero-row budget", () => {
-    expect(pendingPreviewLines({ steering: steersOf(3), queued: queueOf(2), budget: 0 })).toEqual([]);
+    expect(pendingPreviewLines({ steering: steersOf(3), queued: queueOf(2), budget: 0, columns: WIDTH })).toEqual([]);
   });
 
   test("AC-20 draws nothing when nothing is pending, whatever the budget", () => {
-    expect(pendingPreviewLines({ steering: [], queued: [], budget: 4 })).toEqual([]);
+    expect(pendingPreviewLines({ steering: [], queued: [], budget: 4, columns: WIDTH })).toEqual([]);
   });
 
   test("AC-21 flattens line breaks and strips escapes so each item stays one row", () => {
-    expect(pendingPreviewLines({ steering: [{ steerId: "s1", text: "\u001b[2Jone\ntwo" }], budget: 4 })).toEqual([
-      "steering · one two",
-    ]);
+    expect(
+      pendingPreviewLines({ steering: [{ steerId: "s1", text: "\u001b[2Jone\ntwo" }], budget: 4, columns: WIDTH }),
+    ).toEqual(["steering · one two"]);
   });
 
   test("AC-21 cuts a projection to the columns it is drawn into", () => {
@@ -232,10 +237,23 @@ describe("pendingPreviewLines", () => {
     expect(displayWidth(row ?? "")).toBe(20);
   });
 
+  test("AC-21 draws a width below the supported minimum at that minimum", () => {
+    // A terminal that reports nothing usable is drawn at the layout's own floor, still cut.
+    for (const columns of [0, 4, Number.NaN]) {
+      const rows = pendingPreviewLines({ queued: ["x".repeat(200)], budget: 4, columns });
+      expect({ columns, widths: rows.map(displayWidth) }).toEqual({ columns, widths: [MIN_LAYOUT_WIDTH] });
+    }
+  });
+
+  test("AC-21 fits a long preview inside the width the caller gave", () => {
+    const rows = pendingPreviewLines({ steering: [{ steerId: "s1", text: "y".repeat(200) }], budget: 4, columns: 40 });
+    expect(rows.map(displayWidth)).toEqual([40]);
+  });
+
   test("AC-22 leaves the stored messages, the order and the steering rows untouched", () => {
     const steering: readonly SteeringRow[] = steersOf(3);
     const queued: MessageQueue = queueOf(17);
-    pendingPreviewLines({ steering, queued, budget: 4 });
+    pendingPreviewLines({ steering, queued, budget: 4, columns: WIDTH });
     expect(steering).toEqual(steersOf(3));
     expect(queued).toEqual(queueOf(17));
     expect(steering.map((row) => row.steerId)).toEqual(["s1", "s2", "s3"]);
