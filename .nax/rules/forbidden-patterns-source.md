@@ -8,19 +8,6 @@ appliesTo:
   - "packages/nax/src/**/*.ts"
   - "packages/nax/bin/*.ts"
   - "packages/nax-agent/src/**/*.ts"
-stages:
-  - "context"
-  - "execution"
-  - "tdd-implementer"
-  - "rectify"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "no-test"
-  - "batch"
-  - "review"
-  - "review-semantic"
-  - "review-adversarial"
 ---
 
 # Forbidden Patterns

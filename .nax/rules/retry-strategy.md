@@ -9,15 +9,6 @@ appliesTo:
   - "packages/nax/src/operations/**/*.ts"
   - "packages/nax/src/config/schemas-review.ts"
   - "packages/nax-agent/src/native/**/*.ts"
-stages:
-  - "execution"
-  - "tdd-implementer"
-  - "rectify"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "no-test"
-  - "batch"
 ---
 
 # Retry Strategy

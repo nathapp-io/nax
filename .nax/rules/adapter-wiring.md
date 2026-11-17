@@ -20,17 +20,6 @@ appliesTo:
   - "packages/nax-agent/src/infra/**/*.ts"
   - "packages/nax-agent/src/cost/**/*.ts"
   - "packages/nax-agent/src/coding-tools/**/*.ts"
-stages:
-  - "context"
-  - "execution"
-  - "tdd-implementer"
-  - "rectify"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "no-test"
-  - "batch"
-  - "review-adversarial"
 ---
 
 # Adapter Wiring

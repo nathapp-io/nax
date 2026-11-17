@@ -7,29 +7,6 @@ paths:
 appliesTo:
   - "packages/nax/test/**/*.test.ts"
   - "packages/nax-agent/test/**/*.test.ts"
-stages:
-  - "context"
-  - "execution"
-  - "tdd-test-writer"
-  - "tdd-verifier"
-  - "rectify"
-  - "review"
-  - "review-semantic"
-  - "review-adversarial"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "no-test"
-  - "batch"
-  - "queue-check"
-  - "routing"
-  - "constitution"
-  - "prompt"
-  - "optimizer"
-  - "completion"
-  - "acceptance-setup"
-  - "regression"
-  - "decompose"
 ---
 # Test Architecture
 

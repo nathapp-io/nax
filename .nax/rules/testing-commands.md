@@ -7,28 +7,6 @@ paths:
 appliesTo:
   - "packages/nax/test/**/*.test.ts"
   - "packages/nax-agent/test/**/*.test.ts"
-stages:
-  - "context"
-  - "execution"
-  - "tdd-test-writer"
-  - "tdd-implementer"
-  - "tdd-verifier"
-  - "verify"
-  - "rectify"
-  - "autofix"
-  - "single-session"
-  - "tdd-simple"
-  - "no-test"
-  - "batch"
-  - "queue-check"
-  - "routing"
-  - "constitution"
-  - "prompt"
-  - "optimizer"
-  - "completion"
-  - "acceptance-setup"
-  - "regression"
-  - "decompose"
 ---
 
 # Testing Commands — Mandatory `timeout` Wrapper
