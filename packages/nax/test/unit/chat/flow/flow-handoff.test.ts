@@ -8,7 +8,7 @@
  * disk, a remote or a koda server.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { assertDefined, withDepsRestore } from "@test/helpers";
 import type { HostApprovalCard } from "@/chat/ask-controller";
 import {
@@ -22,6 +22,8 @@ import {
   type FlowRepoReady,
   type KodaFlowConnection,
 } from "@/chat/flow";
+import type { ChainAdmission, ChatChains } from "@/chat/jobs";
+import type { ChatChain } from "@/chat/jobs/chain-types";
 import { NaxError } from "@/errors";
 import type { HandoffMark } from "@/workflow/handoff-mark";
 import type { HandoffRecordFile } from "@/workflow/handoff-record";
@@ -184,6 +186,169 @@ beforeEach(() => {
       return await reply(card);
     },
   };
+});
+
+function observeChain(admission: ChainAdmission, chain?: ChatChain) {
+  const admit = mock<ChatChains["admit"]>(() => admission);
+  const stepEnded = mock(() => {});
+  const stop = mock(() => undefined);
+  const chains = {
+    admit,
+    stepEnded,
+    stop,
+    active: () => chain,
+    summary: () =>
+      chain ? { ...chain, next: 2, spent: 0, steps: chain.steps.map((step, i) => ({ ...step, step: i + 1 })) } : null,
+    activate: async () => {
+      throw new Error("unexpected activation");
+    },
+    started: () => {},
+    startFailed: () => {},
+    isActive: () => chain !== undefined,
+    recordCheck: () => ({ ok: true }),
+    dispose: () => {},
+  } satisfies ChatChains;
+  options = { ...options, chains };
+  return { admit, stepEnded, stop };
+}
+
+const AUTO = { kind: "auto", chainId: "chain-12345678", step: 2, approvedAt: AT.toISOString() } as const;
+const ACTIVE: ChatChain = {
+  schemaVersion: 1,
+  id: AUTO.chainId,
+  sessionId: "chat-1",
+  cwd: REPO_ROOT,
+  approvedAt: AUTO.approvedAt,
+  state: "active",
+  steps: [
+    { kind: "run", argv: [], target: FEATURE },
+    { kind: "handoff", argv: [], target: FEATURE },
+  ],
+};
+
+describe("nax-flow__send — chain handoff", () => {
+  test("US-008 AC-10 ends the admitted step exactly once on an unclassified throw", async () => {
+    const { stepEnded } = observeChain(AUTO);
+    _flowProviderDeps.createKodaFlow = async () => {
+      throw new Error("boom");
+    };
+
+    const result = await send(handoffInput);
+
+    expect(result).toEqual({ isError: true, content: "[chat] flow send failed: boom" });
+    expect(stepEnded).toHaveBeenCalledTimes(1);
+    expect(stepEnded).toHaveBeenCalledWith(
+      AUTO.chainId,
+      AUTO.step,
+      "failed",
+      expect.stringContaining("flow send failed: boom"),
+    );
+  });
+
+  test("US-008 AC-11 asks for a direct card without ending or stopping an idle chain", async () => {
+    const { admit, stepEnded, stop } = observeChain({ kind: "card" });
+
+    expect((await send(handoffInput)).isError).not.toBe(true);
+    expect(admit).toHaveBeenCalledTimes(1);
+    expect(approveCalls).toHaveLength(1);
+    expect(stepEnded).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  test("US-008 AC-14 ends failed but marks an unknown outcome after pushing", async () => {
+    const { stepEnded } = observeChain(AUTO);
+    _flowProviderDeps.createKodaFlow = async () => {
+      throw kodaError("MEMORY_KODA_TIMEOUT", "timed out");
+    };
+    const result = await send(handoffInput);
+
+    expect(result).toEqual({
+      isError: true,
+      content: `[chat] koda could not be reached: timed out; branch ${BRANCH} stays pushed and the create's outcome is unknown — check koda for the flow before retrying, because a retry can create a duplicate`,
+    });
+    expect(pushCalls).toHaveLength(1);
+    expect(markCalls).toEqual([
+      {
+        runDir: workflowRunDir(REPO_ROOT, FEATURE, NEWEST_RUN_ID),
+        mark: { schemaVersion: 1, at: AT.toISOString(), outcomeUnknown: true },
+      },
+    ]);
+    expect(stepEnded).toHaveBeenCalledTimes(1);
+    expect(stepEnded).toHaveBeenCalledWith(AUTO.chainId, AUTO.step, "failed", result.content);
+  });
+
+  test.each(["cancelled", "branch moved"])(
+    "US-008 AC-15 ends failed when %s before push without marking",
+    async (caseName) => {
+      const { stepEnded } = observeChain(AUTO);
+      const cancelled = caseName === "cancelled";
+      if (!cancelled) _flowProviderDeps.headSha = async () => OTHER_SHA;
+      const result = await send(handoffInput, cancelled ? AbortSignal.abort() : undefined);
+
+      expect(result).toEqual({ isError: true, content: cancelled ? CANCELLED_NOTHING_PUSHED : BRANCH_CHANGED });
+      expect(pushCalls).toHaveLength(0);
+      expect(kodaCalls).toHaveLength(0);
+      expect(markCalls).toHaveLength(0);
+      expect(stepEnded).toHaveBeenCalledTimes(1);
+      expect(stepEnded).toHaveBeenCalledWith(AUTO.chainId, AUTO.step, "failed", result.content);
+    },
+  );
+
+  test.each(["created", "held"])("US-008 AC-16 ends succeeded if writing the %s mark fails", async (kind) => {
+    const { stepEnded } = observeChain(AUTO);
+    if (kind === "held") _flowProviderDeps.createKodaFlow = async () => ({ kind: "held", requestId: "rq1" });
+    _flowHandoffDeps.writeHandoffMark = async () => {
+      throw new Error("EACCES");
+    };
+    const result = await send(handoffInput);
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toContain(kind === "held" ? "request rq1" : '"flow":"fl1"');
+    expect(result.content).toContain(
+      "; the local handoff mark could not be written (EACCES), so nothing stops a local publish of f1",
+    );
+    expect(stepEnded).toHaveBeenCalledTimes(1);
+    expect(stepEnded).toHaveBeenCalledWith(AUTO.chainId, AUTO.step, "succeeded", result.content);
+  });
+
+  test.each(["parse", "repo", "branch", "mark"])(
+    "stops a matching next handoff on a %s refusal before admission",
+    async (stage) => {
+      const { admit, stepEnded, stop } = observeChain(AUTO, ACTIVE);
+      if (stage === "repo") _flowProviderDeps.readFlowRepoState = async () => ({ ok: false, message: "[chat] dirty" });
+      if (stage === "branch") _flowProviderDeps.readFlowRepoState = async () => ready("not a valid branch");
+      if (stage === "mark")
+        _flowHandoffDeps.readNewestHandoffMark = async () => ({
+          mark: { schemaVersion: 1, at: AT.toISOString(), requestId: "rq1" },
+          path: "/r/handoff.json",
+        });
+      const result = await send(stage === "parse" ? { ...handoffInput, costCapUsd: 0 } : handoffInput);
+
+      expect(result.isError).toBe(true);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(stop).toHaveBeenCalledWith(result.content.replace(/^\[chat\] /, ""));
+      expect(admit).not.toHaveBeenCalled();
+      expect(stepEnded).not.toHaveBeenCalled();
+      expect(approveCalls).toHaveLength(0);
+    },
+  );
+
+  test("does not stop an unrelated next handoff on a refusal", async () => {
+    const { admit, stop } = observeChain(AUTO, ACTIVE);
+    const result = await send({ ...handoffInput, handoff: { feature: "f2" }, costCapUsd: 0 });
+    expect(result.isError).toBe(true);
+    expect(admit).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  test("spec sends still ask for a card without consulting chain admission", async () => {
+    const { admit, stepEnded, stop } = observeChain(AUTO, ACTIVE);
+    expect((await send(specInput)).isError).not.toBe(true);
+    expect(approveCalls).toHaveLength(1);
+    expect(admit).not.toHaveBeenCalled();
+    expect(stepEnded).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
 });
 
 describe("nax-flow__send — the handoff form before the card", () => {

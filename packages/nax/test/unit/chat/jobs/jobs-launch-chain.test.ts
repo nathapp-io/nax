@@ -50,6 +50,7 @@ beforeEach(async () => {
     isActive: mock(() => true),
     started: mock(() => {}),
     startFailed: mock(() => {}),
+    stepEnded: mock(() => {}),
     stop: mock(() => undefined),
     active: () => undefined,
     activate: async () => {

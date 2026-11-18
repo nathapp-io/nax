@@ -246,7 +246,7 @@ export function buildJobsInstructions(options?: { readonly answerAsks?: boolean 
     "When a run ends with every story passed but no PR (its workflow outcome is local-only or pushed), `nax-jobs__publish` publishes it: it reruns only the publish step, then use the PR it reports for `nax-jobs__bot_review`.",
     "When the nax project is in a folder inside this chat's folder (for example repos/nax), pass repo with that folder's path; the chat stays where it is.",
     '`nax-jobs__chain` proposes a full run: an ordered list of billed steps on one approval card. Only the user\'s yes on that card approves it; a chat message such as "go ahead" does not.',
-    "While a chain is active, call each step's launch tool with exactly the approved arguments, one step at a time, after the previous step succeeded; a different call stops the chain and shows a normal card.",
+    "While a chain is active, call each step's launch tool with exactly the approved arguments, one step at a time, after the previous step succeeded; a different call stops the chain and shows a normal card. A handoff step's launch tool is `nax-flow__send` with `handoff: { feature }` and exactly the approved roles and cost cap.",
     "Before a step that names a check, run that check yourself and record its verdict with `nax-jobs__chain_check`; stop the chain with `nax-jobs__chain_stop` when the user asks.",
   ];
   if (options?.answerAsks === true) {

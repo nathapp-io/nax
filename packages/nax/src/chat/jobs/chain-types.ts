@@ -20,6 +20,12 @@ export interface ChainCheck {
   readonly at: string;
 }
 
+export interface ChainStepEnd {
+  readonly state: "succeeded" | "failed";
+  readonly note: string;
+  readonly at: string;
+}
+
 export interface ChainStep {
   readonly kind: ChainStepKind;
   /** Exact argv; a PR-less bot step holds CHAIN_PR_PLACEHOLDER at prIndex. */
@@ -32,6 +38,8 @@ export interface ChainStep {
   readonly check?: ChainCheck;
   /** Set once the step's job started. */
   readonly jobId?: string;
+  /** Terminal outcome of a handoff, which has no job. */
+  readonly ended?: ChainStepEnd;
 }
 
 /** Machine-local audit record, not a restart/resume contract. */

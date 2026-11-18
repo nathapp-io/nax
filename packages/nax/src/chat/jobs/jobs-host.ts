@@ -26,15 +26,19 @@ interface HostJobsOptions {
 export const _jobsHostDeps = { createJobsProvider };
 
 /** The jobs provider, then the flow provider when a koda connection exists. */
-function hostProviders(options: HostJobsOptions, provider: ToolProvider): readonly ToolProvider[] {
-  const connection = kodaFlowConnection(options.config);
+function hostProviders(
+  options: HostJobsOptions,
+  provider: ToolProvider,
+  flowOptions: { readonly connection: ReturnType<typeof kodaFlowConnection>; readonly chains: ChatChains },
+): readonly ToolProvider[] {
+  const { connection, chains } = flowOptions;
   if (connection === undefined) return [provider];
-  // The card goes to the controller itself, never to the jobs provider's mode-aware wrapper:
-  // pushing a branch and creating a flow in koda is outward-facing, so the user is asked in
-  // every chat mode, full included.
+  // When a card is needed, ask directly rather than through the jobs provider's mode-aware
+  // wrapper: an outward-facing flow send without chain approval needs a card even in full mode.
   const flow = createFlowProvider({
     repoRoot: options.repoRoot,
     connection,
+    chains,
     approve: (card) => options.asks.requestHostApproval(card),
   });
   return [provider, flow];
@@ -70,8 +74,10 @@ export function createHostJobs(options: HostJobsOptions): {
     if (options.mode() !== "full") return options.asks.requestHostApproval(card);
     return Promise.resolve(card.signal?.aborted ? "deny" : "allow");
   };
+  const connection = kodaFlowConnection(options.config);
   const provider = _jobsHostDeps.createJobsProvider({
     ...options,
+    handoffAvailable: connection !== undefined,
     jobs,
     chains,
     runAsks,
@@ -92,7 +98,7 @@ export function createHostJobs(options: HostJobsOptions): {
     jobs,
     chains,
     provider,
-    providers: hostProviders(options, provider),
+    providers: hostProviders(options, provider, { connection, chains }),
     runAsks,
     guard: createJobWriteGuard(jobs, options.repoRoot),
     close,

@@ -16,6 +16,7 @@ import { errorMessage } from "@nathapp/nax-agent/internal";
 import { NaxError } from "@/errors";
 import { kodaStatusOf } from "@/memory";
 import type { HostApprovalCard } from "../ask-controller";
+import type { ChatChains } from "../jobs";
 import type { KodaFlowConnection } from "./flow-connection";
 import { _flowProviderDeps } from "./flow-deps";
 import type { FlowCreateBody, FlowCreateOutcome, FlowHandoffCreateBody } from "./flow-koda";
@@ -67,6 +68,7 @@ export interface FlowSendTarget {
  * target, so the handoff send shares one options type with the provider.
  */
 export interface FlowProviderOptions extends FlowSendTarget {
+  readonly chains?: ChatChains;
   /** Puts the card in front of the user; the host's `requestHostApproval` in practice. */
   readonly approve: (card: HostApprovalCard) => Promise<"allow" | "deny">;
 }
@@ -134,6 +136,11 @@ export function cardedRepoLine(state: FlowRepoReady): string {
 /** A failed run: one `[chat]` line, never a throw. */
 export function failure(content: string): ToolResult {
   return { isError: true, content };
+}
+
+/** An unclassified throw is reported the same way by either form of send. */
+export function sendFailure(error: unknown): ToolResult {
+  return failure(`[chat] flow send failed: ${errorMessage(error)}`);
 }
 
 /** A request that broke a rule: every error listed, nothing pushed. */

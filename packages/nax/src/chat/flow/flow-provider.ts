@@ -1,24 +1,19 @@
 /**
  * flow-provider.ts — the `nax-flow__send` tool and its card.
  *
- * One tool, one card, one outward push. `send` checks the request, koda's branch
- * rules and the repository before it asks the user; on allow it re-checks the
- * commit, pushes the branch and creates the flow in koda. Every failure is a
- * `[chat]` tool result — nothing throws out of the tool.
+ * One tool, one outward push. `send` checks the request, koda's branch rules and
+ * the repository before approval; on allow it re-checks the commit, pushes the
+ * branch and creates the flow in koda. Failures return `[chat]` tool results.
  *
- * The card is asked through the `approve` function the host supplies rather than
- * a mode-dependent wrapper: pushing a branch and creating a record in another
- * system is outward-facing, so the user is asked in every chat mode.
- *
- * The request has two forms: the spec form here, and the handoff form the run routes
- * to `flow-handoff.ts` before any parse. Everything either form does after its card
- * lives in `flow-send-steps.ts`.
+ * The spec form and unadmitted handoffs ask through the host's `approve` in
+ * every chat mode. An exact handoff in an approved chain uses its chain approval.
+ * The handoff form routes to `flow-handoff.ts` before any parse; the post-approval
+ * steps shared by both forms live in `flow-send-steps.ts`.
  *
  * Every collaborator is behind `_flowProviderDeps`, so a test drives each arm
  * without a repository, a remote or a koda server.
  */
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
-import { errorMessage } from "@nathapp/nax-agent/internal";
 import { buildFlowInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
 import { _flowProviderDeps } from "./flow-deps";
@@ -42,6 +37,7 @@ import {
   type FlowProviderOptions,
   failure,
   inputFailure,
+  sendFailure,
   TOOL_NAME,
 } from "./flow-send-steps";
 
@@ -224,8 +220,8 @@ function sendTool(options: FlowProviderOptions): ProviderTool {
   return {
     localName: "send",
     description:
-      "Hand a settled set of feature specs to koda as a flow: asks the user for explicit approval, then pushes " +
-      "the current branch and creates the flow in koda.",
+      "Send feature specs or hand off a finished feature to koda. Uses matching chain approval for a handoff " +
+      "or asks for explicit approval, then pushes the current branch and creates the flow in koda.",
     inputSchema: FLOW_SEND_INPUT_SCHEMA,
     // The push and the create both settle their own outcome after an Esc, so the
     // transcript gets "nothing was pushed" or "the branch is pushed, check koda"
@@ -238,7 +234,7 @@ function sendTool(options: FlowProviderOptions): ProviderTool {
         const route = isHandoffRequest(input) ? sendFlowHandoff : send;
         return await route(input, ctx.signal, options);
       } catch (error) {
-        return failure(`[chat] flow send failed: ${errorMessage(error)}`);
+        return sendFailure(error);
       }
     },
   };

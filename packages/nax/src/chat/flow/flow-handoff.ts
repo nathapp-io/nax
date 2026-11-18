@@ -8,7 +8,7 @@
  * every check koda would apply to it is applied here first, before anything is pushed.
  *
  * The order is the design's: parse, read the repository, check the branch, collect the
- * record, refuse a feature already handed over, ask the user, then run the same
+ * record, refuse a feature already handed over, use chain approval or ask the user, then run the same
  * post-allow sequence the spec form runs, and finally mark the run with what koda
  * answered. The mark is what stops a second local publisher (US-004).
  *
@@ -24,8 +24,10 @@ import { collectHandoffRecord, type HandoffRecordFile, type HandoffRecordRead } 
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { workflowFeatureDir, workflowRunDir } from "../../workflow/paths";
 import type { HostApprovalCard } from "../ask-controller";
+import type { ChainAdmission, ChatChains } from "../jobs";
 import { _flowProviderDeps } from "./flow-deps";
-import { type FlowHandoffInput, parseFlowHandoffInput } from "./flow-handoff-input";
+import { type FlowHandoffInput, handoffStepArgv, parseFlowHandoffInput } from "./flow-handoff-input";
+import { isRecord } from "./flow-input";
 import type { FlowHandoffCreateBody } from "./flow-koda";
 import { checkFlowBranch, type FlowRepoReady } from "./flow-repo";
 import {
@@ -39,6 +41,7 @@ import {
   flowLink,
   inputFailure,
   type PostAllowResult,
+  sendFailure,
   TOOL_NAME,
 } from "./flow-send-steps";
 
@@ -95,18 +98,18 @@ function cardReason(state: FlowRepoReady, input: FlowHandoffInput, record: reado
   ].join("\n");
 }
 
-/** The one card a handoff shows, in every chat mode. */
+/** A handoff without matching chain approval still shows a card in every chat mode. */
 function approvalCard(
-  state: FlowRepoReady,
+  { state, collected }: HandoffReady,
   input: FlowHandoffInput,
-  record: readonly HandoffRecordFile[],
-  signal?: AbortSignal,
+  { signal, note }: { readonly signal?: AbortSignal; readonly note?: string },
 ): HostApprovalCard {
+  const reason = cardReason(state, input, collected.record);
   return {
     tool: TOOL_NAME,
     summary: `hand ${input.feature} over to koda`,
     command: `git push --set-upstream origin ${state.branch}`,
-    reason: cardReason(state, input, record),
+    reason: note === undefined ? reason : `${reason}\n${note}`,
     signal,
   };
 }
@@ -199,31 +202,75 @@ async function markRun(runDir: string, mark: HandoffMark, feature: string, resul
   }
 }
 
-/**
- * Run the handoff send: the local checks, the card, the shared post-allow sequence and
- * the mark.
- *
- * @param request - The tool input as the model produced it
- * @param signal - The turn's cancellation, which the card is closed by
- * @param options - The repository, the koda connection and the approval ask
- * @returns The `[chat]` result the tool reports
- */
+/** A pre-admission refusal stops only a chain waiting for this feature's handoff. */
+function refusedHandoff(result: ToolResult, feature: unknown, chains?: ChatChains): ToolResult {
+  if (!chains || typeof feature !== "string") return result;
+  const active = chains.active();
+  if (!active) return result;
+  const next = chains.summary()?.next;
+  const step = next === undefined ? undefined : active.steps[next - 1];
+  if (step?.kind === "handoff" && step.target === feature) chains.stop(result.content.replace(/^\[chat\] /, ""));
+  return result;
+}
+
+async function sendApprovedHandoff(
+  call: {
+    readonly input: FlowHandoffInput;
+    readonly ready: HandoffReady;
+    readonly signal?: AbortSignal;
+    readonly auto?: Extract<ChainAdmission, { kind: "auto" }>;
+  },
+  options: FlowProviderOptions,
+): Promise<ToolResult> {
+  const {
+    input,
+    ready: { state, collected },
+    signal,
+    auto,
+  } = call;
+  let result: ToolResult | undefined;
+  let succeeded = false;
+  try {
+    const allow = { state, specPaths: [], body: createBody(state, input, collected.record), signal };
+    const post = await afterAllow(allow, options);
+    const mark = markOf(post, _flowHandoffDeps.now().toISOString(), options.connection.url);
+    const runDir = workflowRunDir(options.repoRoot, input.feature, collected.newestRunId);
+    result = mark === undefined ? post.result : await markRun(runDir, mark, input.feature, post.result);
+    succeeded = post.created !== undefined;
+    return result;
+  } catch (error) {
+    result = sendFailure(error);
+    return result;
+  } finally {
+    if (auto !== undefined) {
+      options.chains?.stepEnded(
+        auto.chainId,
+        auto.step,
+        succeeded ? "succeeded" : "failed",
+        result?.content ?? "flow send failed",
+      );
+    }
+  }
+}
+
+/** Run the local checks, use the chain approval or a direct card, then send and mark the handoff. */
 export async function sendFlowHandoff(
   request: Record<string, unknown>,
   signal: AbortSignal | undefined,
   options: FlowProviderOptions,
 ): Promise<ToolResult> {
   const parsed = parseFlowHandoffInput(request);
-  if ("errors" in parsed) return inputFailure(parsed.errors);
+  if ("errors" in parsed) {
+    const feature = isRecord(request.handoff) ? request.handoff.feature : undefined;
+    return refusedHandoff(inputFailure(parsed.errors), feature, options.chains);
+  }
   const ready = await preflight(parsed, options.repoRoot);
-  if (!ready.ok) return ready.result;
-  const { state, collected } = ready;
-  const decision = await options.approve(approvalCard(state, parsed, collected.record, signal));
+  if (!ready.ok) return refusedHandoff(ready.result, parsed.feature, options.chains);
+
+  const admission = options.chains?.admit({ kind: "handoff", argv: handoffStepArgv(parsed) });
+  if (admission?.kind === "auto")
+    return sendApprovedHandoff({ input: parsed, ready, signal, auto: admission }, options);
+  const decision = await options.approve(approvalCard(ready, parsed, { signal, note: admission?.note }));
   if (decision === "deny") return failure(DECLINED_MESSAGE);
-  const allow = { state, specPaths: [], body: createBody(state, parsed, collected.record), signal };
-  const post = await afterAllow(allow, options);
-  const mark = markOf(post, _flowHandoffDeps.now().toISOString(), options.connection.url);
-  if (mark === undefined) return post.result;
-  const runDir = workflowRunDir(options.repoRoot, parsed.feature, collected.newestRunId);
-  return await markRun(runDir, mark, parsed.feature, post.result);
+  return sendApprovedHandoff({ input: parsed, ready, signal }, options);
 }

@@ -169,6 +169,21 @@ const ABSENT_KODA: { why: string; koda: KodaBlock }[] = [
 ];
 
 describe("createHostJobs providers", () => {
+  test("US-008 AC-12 passes handoffAvailable for exactly the configs with a koda connection", async () => {
+    const factory = spyOn(_jobsHostDeps, "createJobsProvider");
+    try {
+      await compose(() => "guarded");
+      for (const { koda } of ABSENT_KODA) await compose(() => "guarded", koda);
+      await compose(() => "guarded", KODA);
+      expect(factory.mock.calls.map(([opts]) => opts.handoffAvailable)).toEqual([
+        false,
+        ...ABSENT_KODA.map(() => false),
+        true,
+      ]);
+    } finally {
+      factory.mockRestore();
+    }
+  });
   test("AC-5 with a koda connection offers nax-jobs then nax-flow", async () => {
     const f = await compose(() => "guarded", KODA);
     expect(providerIds(f.composed)).toEqual(["nax-jobs", "nax-flow"]);
