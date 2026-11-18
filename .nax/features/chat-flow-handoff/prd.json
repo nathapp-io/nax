@@ -3,7 +3,7 @@
   "feature": "chat-flow-handoff",
   "branchName": "feat/chat-flow-handoff",
   "createdAt": "2026-11-18T02:53:13.468Z",
-  "updatedAt": "2026-11-18T04:47:29.788Z",
+  "updatedAt": "2026-11-18T05:05:17.882Z",
   "userStories": [
     {
       "id": "US-001",
@@ -409,14 +409,17 @@
         "US-001",
         "US-005"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds a chain-only step with repo-aware constraints and a card that authorizes the external send's reviewer, supervisor and cost cap."
+        "reasoning": "Adds a chain-only step with repo-aware constraints and a card that authorizes the external send's reviewer, supervisor and cost cap.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/jobs/chain-tools.ts",
@@ -441,7 +444,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "83aeeb12e04ba4d34ac84b6a0656e4580450bcd9"
     },
     {
       "id": "US-008",
