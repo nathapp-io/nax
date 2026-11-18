@@ -54,6 +54,7 @@ const LEDGER_FILE = "ledger.md";
 const RECORD_FILES = [RESULT_FILE, LEDGER_FILE] as const;
 const NO_FINISHED_RUN = "no finished workflow run for this feature; run nax run first";
 const NEWEST_TIE = "two workflow runs share the newest result.json time, so the newest run is ambiguous";
+const RESULTS_CHANGED = "workflow results changed during collection; try the handoff again";
 /**
  * How much of a record file is held at a time. The cap bounds what is sent; this bounds what is read,
  * so a run record of any size is counted and refused without being loaded whole.
@@ -198,7 +199,9 @@ async function linkedDirRefusal(anchor: string, path: string): Promise<string | 
  * both read as "no run there"; a link in place of a run, and anything else the filesystem refuses, are
  * refused: following one would send files from outside the feature's own tree.
  */
-async function listRunDirs(featureWorkflowDir: string): Promise<RunListing> {
+async function listRunDirs(featureWorkflowDir: string, anchorDir: string): Promise<RunListing> {
+  const linked = await linkedDirRefusal(anchorDir, featureWorkflowDir);
+  if (linked !== undefined) return { ok: false, reason: linked };
   const runs: RunDir[] = [];
   for (const runId of await readdirOrEmpty(featureWorkflowDir)) {
     const runDir = join(featureWorkflowDir, runId);
@@ -337,6 +340,16 @@ function newestTie(runs: readonly RunDir[]): boolean {
   return runs.filter((run) => Math.trunc(run.mtimeMs) === newest).length > 1;
 }
 
+function sameRunListing(before: readonly RunDir[], after: readonly RunDir[]): boolean {
+  return (
+    before.length === after.length &&
+    before.every((run, index) => {
+      const current = after[index];
+      return run.runId === current.runId && run.mtimeMs === current.mtimeMs;
+    })
+  );
+}
+
 /**
  * The files of every run that has a result.json, newest run first (US-002).
  *
@@ -349,9 +362,7 @@ export async function readHandoffRecordFiles(
   featureWorkflowDir: string,
   anchorDir: string = featureWorkflowDir,
 ): Promise<HandoffRecordRead> {
-  const linked = await linkedDirRefusal(anchorDir, featureWorkflowDir);
-  if (linked !== undefined) return refusal(linked);
-  const listing = await listRunDirs(featureWorkflowDir);
+  const listing = await listRunDirs(featureWorkflowDir, anchorDir);
   if (!listing.ok) return refusal(listing.reason);
   const { runs } = listing;
   if (runs.length === 0) return refusal(NO_FINISHED_RUN);
@@ -364,6 +375,10 @@ export async function readHandoffRecordFiles(
   if (built.bytes > HANDOFF_RECORD_MAX_BYTES) {
     return refusal(`the run record is ${built.bytes} bytes; koda accepts at most ${HANDOFF_RECORD_MAX_BYTES}`);
   }
+  // Per-file checks cannot see a result that appeared while we were reading the listed files.
+  const current = await listRunDirs(featureWorkflowDir, anchorDir);
+  if (!current.ok) return refusal(current.reason);
+  if (!sameRunListing(runs, current.runs)) return refusal(RESULTS_CHANGED);
   return { ok: true, record: built.record, newestRunId: runs[0].runId };
 }
 

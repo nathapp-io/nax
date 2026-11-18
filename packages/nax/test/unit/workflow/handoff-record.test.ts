@@ -174,6 +174,32 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
+  test.each(["tie", "reordered", "missing"])("refuses a result that becomes %s after its read", async (change) => {
+    await withTempDir(async (dir) => {
+      await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+      const newest = await makeRun(dir, "r2", {
+        result: resultJson("r2"),
+        resultMtimeMs: 2000,
+        ledger: ledgerMd("r2"),
+      });
+      const resultPath = join(newest, "result.json");
+      const ledgerPath = join(newest, "ledger.md");
+      const open = _handoffRecordDeps.open;
+      _handoffRecordDeps.open = async (path, ...args) => {
+        if (path === ledgerPath) {
+          if (change === "missing") await unlink(resultPath);
+          else {
+            const time = change === "tie" ? 1 : 0.5;
+            await utimes(resultPath, time, time);
+          }
+        }
+        return open(path, ...args);
+      };
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toContain("workflow results changed during collection");
+    });
+  });
+
   test("a run without a ledger.md sends only its result.json", async () => {
     await withTempDir(async (dir) => {
       await makeRun(dir, "r1", { result: resultJson("r1") });

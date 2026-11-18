@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { _fileLockDeps } from "@nathapp/nax-agent/internal";
 import { assertDefined, cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
@@ -29,12 +29,13 @@ import {
   type KodaFlowConnection,
 } from "@/chat/flow";
 import { type HandoffMark, readNewestHandoffMark } from "@/workflow/handoff-mark";
-import type { HandoffRecordFile } from "@/workflow/handoff-record";
+import { _handoffRecordDeps, collectHandoffRecord, type HandoffRecordFile } from "@/workflow/handoff-record";
 import { workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
 
 withDepsRestore(_flowProviderDeps);
 withDepsRestore(_flowHandoffDeps);
 withDepsRestore(_fileLockDeps);
+withDepsRestore(_handoffRecordDeps);
 
 let repoRoot: string;
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -47,6 +48,10 @@ const AT = new Date("2026-11-18T09:30:00.000Z");
 const FEATURE = "f1";
 /** The newest run the collected record came from, which is the run the mark belongs to. */
 const NEWEST_RUN_ID = "r2";
+const FINISHED_RESULT = JSON.stringify({
+  schemaVersion: 1,
+  featureWorkflow: { step: "done", outcome: "local-only", head: SHA },
+});
 
 const connection: KodaFlowConnection = {
   url: "https://koda.example/api",
@@ -129,7 +134,7 @@ beforeEach(async () => {
   repoRoot = makeTempDir("nax-handoff-recheck-");
   const runDir = workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID);
   await mkdir(runDir, { recursive: true });
-  await Bun.write(join(runDir, "result.json"), '{"step":"done"}');
+  await Bun.write(join(runDir, "result.json"), FINISHED_RESULT);
   approveCalls = [];
   pushCalls = [];
   kodaCalls = [];
@@ -213,6 +218,38 @@ describe("nax-flow__send — the record is re-checked after approval", () => {
     expect(markCalls).toHaveLength(0);
   });
 
+  test("refuses a result that appears during post-approval collection, without transferring or marking", async () => {
+    const older = join(workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID), "result.json");
+    const newRunDir = workflowRunDir(repoRoot, FEATURE, "r3");
+    const newer = join(newRunDir, "result.json");
+    await mkdir(newRunDir);
+    await utimes(older, 1, 1);
+    _handoffRecordDeps.git = async () => ({
+      stdout: JSON.stringify({ branchName: BRANCH, userStories: [] }),
+      stderr: "",
+      exitCode: 0,
+    });
+    _flowHandoffDeps.collectHandoffRecord = collectHandoffRecord;
+    allowAfter(() => {
+      const open = _handoffRecordDeps.open;
+      _handoffRecordDeps.open = async (path, flags, mode) => {
+        if (path === older) {
+          // The listing has already omitted r3; the listed result itself will not change.
+          await Bun.write(newer, FINISHED_RESULT);
+          await utimes(newer, 2, 2);
+        }
+        return open(path, flags, mode);
+      };
+    });
+
+    const result = await send(handoffInput);
+
+    expect(approveCalls).toHaveLength(1);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("workflow results changed during collection");
+    expectNoTransfer();
+  });
+
   test("refuses a record whose text changed while the card was open", async () => {
     allowAfter(() => {
       _flowHandoffDeps.collectHandoffRecord = async () => ({
@@ -262,7 +299,7 @@ describe("nax-flow__send — the mark is read again at the push boundary", () =>
   });
 });
 
-/** Model an approved publisher in a separate Bun process, paused just before it writes its mark. */
+/** Run a real approved handoff in a separate Bun process, paused inside its mark writer. */
 async function withOtherPublisher(
   assertWhileHeld: (holder: {
     readonly lockPath: string;
@@ -271,25 +308,35 @@ async function withOtherPublisher(
     readonly finish: () => Promise<void>;
   }) => Promise<void>,
 ): Promise<void> {
-  const runDir = workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID);
   const lockPath = join(workflowFeatureDir(repoRoot, FEATURE), ".handoff.lock");
   const child = Bun.spawn(
     [
       process.execPath,
       "-e",
       `
-      import { withFileLock } from "@nathapp/nax-agent/internal";
-      import { writeHandoffMark } from "@/workflow/handoff-mark";
-      const [lockPath, runDir, at] = process.argv.slice(1);
-      await withFileLock(lockPath, async () => {
+      import { _flowHandoffDeps, _flowProviderDeps } from "@/chat/flow";
+      import { sendFlowHandoff } from "@/chat/flow/flow-handoff";
+      import { _handoffRecordDeps } from "@/workflow/handoff-record";
+      const { repoRoot, state, pushUrl, request, connection } = JSON.parse(process.argv[1]);
+      _flowProviderDeps.readFlowRepoState = async () => state;
+      _flowProviderDeps.readFlowPushUrl = async () => ({ ok: true, url: pushUrl });
+      _flowProviderDeps.headSha = async () => state.sha;
+      _flowProviderDeps.isDirty = async () => false;
+      _flowProviderDeps.commitAndPush = async () => ({ committed: false, pushed: true });
+      _flowProviderDeps.createKodaFlow = async () => ({ kind: "held", requestId: "held-by-child" });
+      _handoffRecordDeps.git = async () => ({
+        stdout: JSON.stringify({ branchName: state.branch, userStories: [] }), stderr: "", exitCode: 0,
+      });
+      const write = _flowHandoffDeps.writeHandoffMark;
+      _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
         console.log("ready");
         await new Response(Bun.stdin.stream()).text();
-        await writeHandoffMark(runDir, { schemaVersion: 1, at, requestId: "held-by-child" });
-      }, { lockName: "handoff", errorPrefix: "[chat]" });
+        await write(runDir, mark);
+      };
+      const result = await sendFlowHandoff(request, undefined, { repoRoot, connection, approve: async () => "allow" });
+      if (result.isError) throw new Error(result.content);
     `,
-      lockPath,
-      runDir,
-      AT.toISOString(),
+      JSON.stringify({ repoRoot, state: ready(), pushUrl: PUSH_URL, request: handoffInput, connection }),
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "inherit" },
   );
@@ -334,10 +381,13 @@ describe("nax-flow__send — cross-process handoff lock", () => {
   test("an approved send waits for the other publisher's mark before rechecking", async () => {
     await withOtherPublisher(async ({ contended, finish }) => {
       const pending = send(handoffInput);
-      expect(await waitingOrFinished(contended, pending)).toBe("waiting");
-      expect(collectCalls).toHaveLength(1); // Only preflight has run.
+      const beforeMark = await waitingOrFinished(contended, pending);
+      const collectionsBeforeMark = collectCalls.length;
       await finish();
       const result = await pending;
+
+      expect(beforeMark).toBe("waiting");
+      expect(collectionsBeforeMark).toBe(1); // Only preflight has run.
       expect(result.isError).toBe(true);
       expect(result.content).toContain("was handed off to koda (approval request held-by-child)");
       expectNoTransfer();
