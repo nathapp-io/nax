@@ -8,6 +8,7 @@
  * `result.json` and its mtime alone. Because it belongs to the newest run, a later `nax run` that writes
  * a newer `result.json` leaves the old mark behind on an older run, and the feature is publishable again.
  */
+import { rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { runDirsNewestFirst } from "./result";
 
@@ -56,8 +57,40 @@ function isAbsentOrString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
 }
 
+/** The mark's own writes, stubbed in tests: nothing else in the run directory may be touched. */
+export const _handoffMarkDeps = { rename, unlink };
+
+/** Temporary siblings are named `<mark>.tmp-<uuid>`: unique per call, so two writers never share one. */
+const TMP_INFIX = ".tmp-";
+
+/** No two writes may share a temporary name: one rename would publish the file the other is writing. */
+const tempSibling = (path: string): string => `${path}${TMP_INFIX}${crypto.randomUUID()}`;
+
+/** Best-effort removal of this call's temporary file; the write's own error is the one to report. */
+async function discard(path: string): Promise<void> {
+  try {
+    await _handoffMarkDeps.unlink(path);
+  } catch {
+    // already gone, or the rename published it
+  }
+}
+
+/**
+ * Writes the mark by completing a temporary sibling and renaming it over `handoff.json`, so a publish
+ * check that reads while a handoff is marking the run sees either the previous complete mark or the new
+ * one. A half-written file would read as "no mark" and let a local publish race koda. A failed write
+ * removes its own sibling instead of leaving it in the run directory.
+ */
 export async function writeHandoffMark(runDir: string, mark: HandoffMark): Promise<void> {
-  await Bun.write(join(runDir, HANDOFF_MARK_FILE), `${JSON.stringify(mark, null, 2)}\n`);
+  const path = join(runDir, HANDOFF_MARK_FILE);
+  const tmp = tempSibling(path);
+  try {
+    await Bun.write(tmp, `${JSON.stringify(mark, null, 2)}\n`);
+    await _handoffMarkDeps.rename(tmp, path);
+  } catch (err) {
+    await discard(tmp);
+    throw err;
+  }
 }
 
 /** The mark's parsed text, or null when the file is absent, unreadable or not a mark. */

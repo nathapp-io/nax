@@ -3,11 +3,12 @@
  * the record koda receives and it disappears from the newest run as soon as a later run writes its own
  * record. These cases cover the writer, the newest-run reader and the one sentence every refusal uses.
  */
-import { describe, expect, test } from "bun:test";
-import { mkdir, stat, utimes } from "node:fs/promises";
+import { describe, expect, mock, test } from "bun:test";
+import { mkdir, readdir, stat, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import {
+  _handoffMarkDeps,
   HANDOFF_MARK_FILE,
   type HandoffMark,
   handoffMarkRefusal,
@@ -58,6 +59,47 @@ describe("writeHandoffMark (US-004)", () => {
       await utimes(resultPath, before, before);
       await writeHandoffMark(dir, FLOW_MARK);
       expect((await stat(resultPath)).mtimeMs).toBe(before * 1000);
+    });
+  });
+
+  /**
+   * F1: a publish check can read the mark while a later handoff overwrites it. A reader must see the
+   * previous complete mark or the new one — never a half-written file, which reads as "no mark" and lets
+   * a local publish race koda. Replacing the file by rename is what gives that, and it is observable: a
+   * rewritten mark lands on a new inode, while an in-place overwrite keeps the old one.
+   */
+  test("F1 replaces handoff.json by rename instead of overwriting it in place", async () => {
+    await withTempDir(async (dir) => {
+      await writeHandoffMark(dir, FLOW_MARK);
+      const markPath = join(dir, HANDOFF_MARK_FILE);
+      const first = await stat(markPath);
+      const next: HandoffMark = { ...FLOW_MARK, at: "2026-11-18T01:00:00.000Z", flowId: "fl2" };
+      await writeHandoffMark(dir, next);
+      const second = await stat(markPath);
+      expect(second.ino).not.toBe(first.ino);
+      expect(await Bun.file(markPath).json()).toEqual(next);
+      // The completed sibling was renamed over the mark, so this run directory holds no temporary file.
+      expect((await readdir(dir)).sort()).toEqual([HANDOFF_MARK_FILE]);
+    });
+  });
+
+  test("F1 a failed rename leaves the previous mark readable and removes its temporary sibling", async () => {
+    await withTempDir(async (dir) => {
+      await writeHandoffMark(dir, FLOW_MARK);
+      const realRename = _handoffMarkDeps.rename;
+      const rename = mock<typeof _handoffMarkDeps.rename>(async () => {
+        throw new Error("EACCES: permission denied, rename");
+      });
+      _handoffMarkDeps.rename = rename;
+      try {
+        await expect(writeHandoffMark(dir, { ...FLOW_MARK, at: "2026-11-18T01:00:00.000Z" })).rejects.toThrow("EACCES");
+      } finally {
+        _handoffMarkDeps.rename = realRename;
+      }
+      expect(rename).toHaveBeenCalledTimes(1);
+      // The mark that was there still is, and the sibling that never published is gone.
+      expect(await Bun.file(join(dir, HANDOFF_MARK_FILE)).json()).toEqual(FLOW_MARK);
+      expect((await readdir(dir)).sort()).toEqual([HANDOFF_MARK_FILE]);
     });
   });
 });
