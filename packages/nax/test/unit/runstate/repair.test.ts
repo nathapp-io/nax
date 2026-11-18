@@ -15,7 +15,14 @@ import { runStateWrite } from "@/runstate/store";
 import { gitWithTimeout } from "@/utils/git";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
-import { newStoryRecord, readResult, upsertStoryRecord, withLockedFeatureResult } from "@/workflow/result";
+import {
+  newStoryRecord,
+  readResult,
+  upsertFeatureRecord,
+  upsertStoryRecord,
+  withLockedFeatureResult,
+  writePreflightTokens,
+} from "@/workflow/result";
 
 withDepsRestore(_fileLockDeps);
 
@@ -119,6 +126,49 @@ describe("repairRunState (#2497)", () => {
     expect(await repairRunState(ctx)).toMatchObject([{ path, restored: true }]);
     expect(await Bun.file(path).text()).toBe('{"runId":"r1"}');
   });
+
+  test.each(["missing", "modified"] as const)(
+    "a queued checkpoint write preserves stories and preflight totals after repair defers (%s)",
+    async (damage) => {
+      const runDir = workflowRunDir(dir, "f", "r1");
+      const header = { runId: "r1", feature: "f" };
+      const story = newStoryRecord("US-001", 5, "t");
+      const preflightTokensByRole = { advisor: { inputTokens: 20, outputTokens: 10, costUsd: 0.01, calls: 1 } };
+      await writePreflightTokens(runDir, header, preflightTokensByRole);
+      await upsertStoryRecord(runDir, header, story);
+      const path = join(runDir, "result.json");
+
+      const waiting = Promise.withResolvers<string>();
+      const sleep = _fileLockDeps.sleep;
+      _fileLockDeps.sleep = (ms, signal) => {
+        waiting.resolve("waiting");
+        return sleep(ms, signal);
+      };
+      const record = newFeatureRecord({ now: "t", seed: "s", minors: [] });
+      let write: Promise<void> | undefined;
+      try {
+        await withFileLock(
+          handoffLockPath(workflowFeatureDir(dir, "f")),
+          async () => {
+            if (damage === "missing") rmSync(path);
+            else await Bun.write(path, JSON.stringify({ schemaVersion: 1, ...header, stories: {} }));
+            expect(await repairRunState(ctx)).toMatchObject([{ path, damage: [damage], restored: false }]);
+            write = upsertFeatureRecord(runDir, header, record);
+            expect(await Promise.race([waiting.promise, write.then(() => "written")])).toBe("waiting");
+          },
+          { lockName: "handoff", errorPrefix: "[test]" },
+        );
+      } finally {
+        await write;
+      }
+      expect(await readResult(runDir)).toMatchObject({
+        stories: { [story.storyId]: story },
+        preflightTokensByRole,
+        featureWorkflow: record,
+      });
+      expect(await repairRunState({ trigger: "run-end", workdir: dir })).toEqual([]);
+    },
+  );
 
   test("a turn repair inside the publisher's own lock restores the checkpoint before its next write", async () => {
     // A publish-only run holds the handoff lock across its workflow, CI-repair turns included. A repair

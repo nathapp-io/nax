@@ -3,9 +3,9 @@
  * Written atomically (tmp + rename) after every phase change.
  */
 import { mkdir, readdir, rename, stat } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { withFileLock } from "@nathapp/nax-agent/internal";
-import { runStateWrite } from "@/runstate/store";
+import { activeKeepers, runStateWrite } from "@/runstate/store";
 import { runAsHandoffLockHolder } from "./handoff-lock-owner";
 import { buildVerdict } from "./open-items";
 import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "./paths";
@@ -72,15 +72,37 @@ export function newStoryRecord(storyId: string, maxRounds: number, now: string):
   };
 }
 
-export async function readResult(runDir: string): Promise<WorkflowResultFile | null> {
-  const file = Bun.file(join(runDir, RESULT_FILE));
-  if (!(await file.exists())) return null;
+function parseResult(text: string): WorkflowResultFile | null {
   try {
-    const parsed = (await file.json()) as WorkflowResultFile;
+    const parsed = JSON.parse(text) as WorkflowResultFile;
     return parsed?.schemaVersion === 1 && typeof parsed.stories === "object" ? parsed : null;
   } catch {
     return null;
   }
+}
+
+export async function readResult(runDir: string): Promise<WorkflowResultFile | null> {
+  const file = Bun.file(join(runDir, RESULT_FILE));
+  if (!(await file.exists())) return null;
+  try {
+    return parseResult(await file.text());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Under the handoff lock, merge from the checkpoint nax last recorded for this exact path.
+ * Turn repair can defer while another process holds the lock, leaving damaged bytes on disk.
+ */
+function readResultForUpdate(runDir: string): Promise<WorkflowResultFile | null> {
+  const path = resolve(runDir, RESULT_FILE);
+  for (const keeper of activeKeepers()) {
+    const kept = keeper.get(path);
+    const parsed = kept && parseResult(kept.content);
+    if (parsed) return Promise.resolve(parsed);
+  }
+  return readResult(runDir);
 }
 
 export async function upsertStoryRecord(
@@ -89,7 +111,7 @@ export async function upsertStoryRecord(
   record: WorkflowStoryRecord,
 ): Promise<void> {
   await withResultLock(runDir, async () => {
-    const current = await readResult(runDir);
+    const current = await readResultForUpdate(runDir);
     await writeResult(runDir, {
       schemaVersion: 1,
       runId: header.runId,
@@ -112,7 +134,7 @@ export async function writePreflightTokens(
   byRole: Readonly<Record<string, RoleTokens>>,
 ): Promise<void> {
   await withResultLock(runDir, async () => {
-    const current = await readResult(runDir);
+    const current = await readResultForUpdate(runDir);
     await writeResult(runDir, {
       schemaVersion: 1,
       runId: header.runId,
@@ -210,7 +232,7 @@ export async function upsertFeatureRecord(
 }
 
 async function writeFeatureRecord(runDir: string, header: ResultHeader, record: WorkflowFeatureRecord): Promise<void> {
-  const current = await readResult(runDir);
+  const current = await readResultForUpdate(runDir);
   const filled = record.storyStates ? record : { ...record, storyStates: storyStatesFrom(current?.stories ?? {}) };
   const verdict = buildVerdict(filled);
   await writeResult(runDir, {
