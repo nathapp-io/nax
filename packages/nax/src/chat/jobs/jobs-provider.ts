@@ -1,5 +1,5 @@
 import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent";
-import { type ChatWorkflowConfig, listProfiles } from "@/config";
+import { type ChatWorkflowConfig, listProfiles, WORKFLOW_PUBLISH_MODES } from "@/config";
 import { buildJobsInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
 import type { ChatChains } from "./chain-controller";
@@ -38,6 +38,16 @@ export const PROFILES_SCHEMA = {
     "Config profiles for this job, applied in order. Omit it to use chat.workflow's profiles for this step when configured, else the profile the PRD was planned with (run) or the default config; pass it only to override. nax-jobs__list returns the available names.",
 } as const;
 const profiles = PROFILES_SCHEMA;
+/**
+ * US-001: the run's own publish depth. Built from the config schema's mode list, so the tool
+ * cannot offer a mode `loadConfig` would refuse.
+ */
+export const PUBLISH_SCHEMA = {
+  type: "string",
+  enum: [...WORKFLOW_PUBLISH_MODES],
+  description:
+    "Override workflow.publish for this run: pr opens a PR, push only pushes the branch, none leaves the run local. Omit it to use the configured workflow.publish.",
+} as const;
 const repo = { type: "string" };
 const schemas = {
   plan: { feature: { type: "string" }, spec: { type: "string" }, profiles, repo },
@@ -45,6 +55,7 @@ const schemas = {
     feature: { type: "string" },
     profiles,
     maxCost: { type: "number" },
+    publish: PUBLISH_SCHEMA,
     repo,
   },
   publish: { feature: { type: "string" }, profiles, repo },

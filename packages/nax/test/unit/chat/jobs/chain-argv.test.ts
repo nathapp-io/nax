@@ -45,7 +45,8 @@ describe("parseChainStepInput", () => {
   test("defines exactly the launch schema fields", () => {
     expect(CHAIN_STEP_FIELDS).toEqual({
       plan: ["feature", "spec", "profiles", "repo"],
-      run: ["feature", "profiles", "maxCost", "repo"],
+      // US-001: a chain `run` step carries the run's own --publish mode.
+      run: ["feature", "profiles", "maxCost", "repo", "publish"],
       publish: ["feature", "profiles", "repo"],
       bot_review: ["pr", "profiles", "model", "decisions", "repo"],
       bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
@@ -53,6 +54,12 @@ describe("parseChainStepInput", () => {
   });
 });
 describe("buildChainStepArgv", () => {
+  test("US-001 AC-15 a chain run step forwards its publish mode as the last tokens", () => {
+    const input = parseChainStepInput("run", { feature: "f1", publish: "none" });
+    if ("error" in input) throw new Error(`expected a parsed run step, got ${input.error}`);
+
+    expect(buildChainStepArgv(input, ctx).slice(-2)).toEqual(["--publish", "none"]);
+  });
   test("AC-10 a publish step runs nax run --publish-only for its feature", () => {
     expect(buildChainStepArgv({ kind: "publish", feature: "f1", profiles: ["p"] }, ctx)).toEqual([
       ...ctx.naxEntry,

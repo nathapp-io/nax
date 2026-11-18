@@ -4,7 +4,12 @@ import { assertDefined, cleanupTempDir, makePRD, makeStory, makeTempDir } from "
 import type { HostApprovalCard } from "@/chat/ask-controller";
 import type { ChatJobs, StartJobRequest } from "@/chat/jobs/job-runner";
 import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
-import { createJobsProvider, type JobsProviderOptions, PROFILES_SCHEMA } from "@/chat/jobs/jobs-provider";
+import {
+  createJobsProvider,
+  type JobsProviderOptions,
+  PROFILES_SCHEMA,
+  PUBLISH_SCHEMA,
+} from "@/chat/jobs/jobs-provider";
 import { _workflowDefaultsDeps } from "@/chat/jobs/workflow-defaults";
 import { type ChatWorkflowConfig, featureDir } from "@/config";
 import { newFeatureRecord } from "@/workflow/feature-record";
@@ -107,7 +112,7 @@ describe("createJobsProvider", () => {
   });
   test.each([
     ["plan", { feature: { type: "string" }, spec: { type: "string" } }, "feature"],
-    ["run", { feature: { type: "string" }, maxCost: { type: "number" } }, "feature"],
+    ["run", { feature: { type: "string" }, maxCost: { type: "number" }, publish: PUBLISH_SCHEMA }, "feature"],
     ["publish", { feature: { type: "string" } }, "feature"],
     ["bot_review", { pr: { type: "integer" }, model: { type: "string" }, decisions: { type: "string" } }, "pr"],
     [

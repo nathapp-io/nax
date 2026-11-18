@@ -121,6 +121,16 @@ describe("buildJobArgv", () => {
       "/r",
     ]);
   });
+  test("US-001 AC-13 a run's publish mode follows the --max-cost arguments", () => {
+    const argv = buildJobArgv({ kind: "run", feature: "f1", profiles: [], maxCost: 5, publish: "none" }, ctx);
+
+    expect(argv.slice(-4)).toEqual(["--max-cost", "5", "--publish", "none"]);
+  });
+  test("US-001 AC-14 a run without a publish mode passes no --publish token", () => {
+    const argv = buildJobArgv({ kind: "run", feature: "f1", profiles: [] }, ctx);
+
+    expect(argv).not.toContain("--publish");
+  });
 });
 
 const invalid: [string, ChatJobKind, Record<string, unknown>, string][] = [
@@ -175,6 +185,22 @@ describe("parseJobInput", () => {
   });
   test("AC-7 defaults profiles", () => {
     expect(parseJobInput("run", { feature: "f1" })).toEqual({ kind: "run", feature: "f1", profiles: [] });
+  });
+  test("US-001 AC-10 keeps a valid publish mode on a run", () => {
+    expect(parseJobInput("run", { feature: "f1", profiles: [], publish: "none" })).toEqual({
+      kind: "run",
+      feature: "f1",
+      profiles: [],
+      publish: "none",
+    });
+  });
+  test("US-001 AC-11 refuses a publish value that names no mode", () => {
+    expect(parseJobInput("run", { feature: "f1", profiles: [], publish: "draft" })).toEqual({
+      error: '[chat] publish must be one of "pr", "push", "none"',
+    });
+  });
+  test("US-001 AC-12 omits publish when the run names none", () => {
+    expect(parseJobInput("run", { feature: "f1", profiles: [] })).not.toHaveProperty("publish");
   });
   test("AC-9 preserves feature validation message", () => {
     let message = "";
