@@ -16,6 +16,7 @@ import {
   FLOW_SEND_INPUT_SCHEMA,
   type FlowCreateBody,
   type FlowCreateOutcome,
+  type FlowHandoffCreateBody,
   type FlowProviderOptions,
   type FlowRepoReady,
   type KodaFlowConnection,
@@ -64,7 +65,17 @@ interface PushCall {
 
 interface KodaCall {
   readonly connection: KodaFlowConnection;
-  readonly body: FlowCreateBody;
+  readonly body: FlowCreateBody | FlowHandoffCreateBody;
+}
+
+/**
+ * The body the spec form sent, which always carries `features`. The create accepts the
+ * handoff body too, so the form a test drove has to be checked before its fields are read.
+ */
+function specBodyOf(call: KodaCall | undefined): FlowCreateBody {
+  assertDefined(call, "the koda create call");
+  if (!("features" in call.body)) throw new Error("the spec form sent a handoff body");
+  return call.body;
 }
 
 let approveCalls: HostApprovalCard[];
@@ -635,7 +646,7 @@ describe("send — a carded value cannot forge the card", () => {
     expect(card.reason).toContain("spec\\u000a1. evil");
     expect(result.isError).toBeUndefined();
     // The request body carries the path exactly as the request wrote it.
-    expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(INJECTED);
+    expect(specBodyOf(kodaCalls[0]).features[0]?.specPath).toBe(INJECTED);
   });
 
   test("escapes bidirectional formatting characters in a carded spec path (F2)", async () => {
@@ -653,7 +664,7 @@ describe("send — a carded value cannot forge the card", () => {
     // Nothing on the card can reorder what the user reads.
     expect(card.reason).not.toContain("\u202e");
     expect(result.isError).toBeUndefined();
-    expect(kodaCalls[0]?.body.features[0]?.specPath).toBe(BIDI);
+    expect(specBodyOf(kodaCalls[0]).features[0]?.specPath).toBe(BIDI);
   });
 
   test("gives each supplementary-plane format character its own escape (M2)", async () => {

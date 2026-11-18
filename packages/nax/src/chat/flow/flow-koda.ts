@@ -15,6 +15,8 @@
 
 import { NaxError } from "@/errors";
 import { createKodaClient } from "@/memory";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import type { HandoffRecordFile } from "../../workflow/handoff-record";
 import type { KodaFlowConnection } from "./flow-connection";
 import type { FlowSendFeature, FlowSendRoles } from "./flow-input";
 
@@ -52,6 +54,29 @@ export interface FlowCreateBody {
   readonly roles: FlowSendRoles;
   /** koda's billing ceiling for the flow, in USD. */
   readonly costCapUsd: number;
+}
+
+/**
+ * The body koda's `POST /fleet/flows` takes for a handoff: one feature this machine
+ * already ran, with the workflow record that only exists here. It carries no
+ * `specSha` and no `features` — the specs are on the branch and the record says what
+ * the run did — so koda reads the PRD at `handoff.headSha` instead.
+ */
+export interface FlowHandoffCreateBody {
+  /** The origin remote in koda's accepted form. */
+  readonly remoteUrl: string;
+  /** The branch that was pushed and that koda publishes from. */
+  readonly branch: string;
+  /** The two model strings koda passes to its review steps. */
+  readonly roles: FlowSendRoles;
+  /** koda's billing ceiling for the flow, in USD. */
+  readonly costCapUsd: number;
+  /** The feature handed over, the commit it was pushed at, and its workflow run record. */
+  readonly handoff: {
+    readonly feature: string;
+    readonly headSha: string;
+    readonly record: readonly HandoffRecordFile[];
+  };
 }
 
 /** koda created the flow. */
@@ -116,7 +141,8 @@ function heldOutcome(data: unknown): FlowHeld {
  * Create a flow in koda for a pushed branch.
  *
  * @param connection - The koda API root and the headers carrying the agent key
- * @param body - The flow to create, as the request described it
+ * @param body - The flow to create, as the request described it: the spec form's
+ *   features, or a handoff's recorded run
  * @param signal - The turn's cancellation; a signal already aborted sends nothing
  * @returns The created flow, or the approval request holding the create
  * @throws NaxError `FLOW_KODA_UNEXPECTED_RESPONSE` for an answer koda's contract
@@ -124,7 +150,7 @@ function heldOutcome(data: unknown): FlowHeld {
  */
 export async function createKodaFlow(
   connection: KodaFlowConnection,
-  body: FlowCreateBody,
+  body: FlowCreateBody | FlowHandoffCreateBody,
   signal?: AbortSignal,
 ): Promise<FlowCreateOutcome> {
   const client = _flowKodaDeps.createKodaClient({

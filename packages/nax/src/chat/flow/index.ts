@@ -1,5 +1,6 @@
 /** The flow module: what a `nax chat` flow send needs before it touches git or koda. */
 export { type KodaFlowConnection, kodaFlowConnection } from "./flow-connection";
+export { _flowHandoffDeps, sendFlowHandoff } from "./flow-handoff";
 export {
   type FlowHandoffInput,
   type FlowHandoffParseResult,
@@ -26,6 +27,7 @@ export {
   type FlowCreateBody,
   type FlowCreated,
   type FlowCreateOutcome,
+  type FlowHandoffCreateBody,
   type FlowHeld,
 } from "./flow-koda";
 export {

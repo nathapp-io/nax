@@ -21,6 +21,7 @@ import {
   FLOW_SEND_INPUT_SCHEMA,
   type FlowCreateBody,
   type FlowCreateOutcome,
+  type FlowHandoffCreateBody,
   type FlowProviderOptions,
   type FlowRepoReady,
   type KodaFlowConnection,
@@ -66,7 +67,11 @@ const CANCELLED_NOTHING_PUSHED = "[chat] the turn was cancelled; nothing was pus
 let approveCalls: HostApprovalCard[];
 let pushCalls: number;
 /** Every `createKodaFlow` call: its connection, its body and its third argument. */
-let kodaCalls: { connection: KodaFlowConnection; body: FlowCreateBody; signal: AbortSignal | undefined }[];
+let kodaCalls: {
+  connection: KodaFlowConnection;
+  body: FlowCreateBody | FlowHandoffCreateBody;
+  signal: AbortSignal | undefined;
+}[];
 let options: FlowProviderOptions;
 
 /** A repository state a flow may be sent from. */
