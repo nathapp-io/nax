@@ -22,10 +22,9 @@
  * - The holder's pid is stored in the lock file. A waiter that loses the
  *   create race reads the pid; a PROVEN-dead holder (ESRCH) means the lock
  *   is abandoned and may be reclaimed.
- * - Content that cannot be parsed (e.g. the creator crashed between the
- *   create and the pid write) is respected until it ages past
- *   `EMPTY_LOCK_EVICT_AGE_MS` — a live holder writes its pid within the
- *   same tick as the create, so old unparseable content proves abandonment.
+ * - An empty regular file (e.g. the creator crashed between the create and
+ *   the pid write) is respected until it ages past `EMPTY_LOCK_EVICT_AGE_MS`.
+ *   Special files, symlinks and invalid PID data are refused, not reclaimed.
  *   Inconclusive liveness fails closed: the waiter times out and throws
  *   rather than entering over a possible holder.
  *
@@ -63,16 +62,21 @@
  * concurrently. This self-heals once old-version processes exit.
  */
 
-import { readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { type FileHandle, open, unlink, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { NaxError } from "#src/infra/index";
 import { isProcessAlive } from "./process-alive.ts";
 
 const DEFAULT_RETRY_MS = 10;
 const DEFAULT_TIMEOUT_MS = 5_000;
+const LOCK_READ_FLAGS = constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW;
+// The on-disk format is a positive signed 32-bit PID and a newline.
+const MAX_PID = 2_147_483_647;
+const MAX_PID_BYTES = String(MAX_PID).length + 1;
 /**
  * A live holder writes its pid within the same tick as the create, so
- * unparseable content older than this bound proves the creator died
+ * an empty lock older than this bound proves the creator died
  * between creating the file and writing its pid (crash, kill -9).
  */
 const EMPTY_LOCK_EVICT_AGE_MS = 10_000;
@@ -99,8 +103,7 @@ export interface FileLockOptions {
 
 export const _fileLockDeps = {
   writeFile,
-  readFile,
-  stat,
+  open,
   unlink,
   now: () => Date.now(),
   sleep: (ms: number, signal?: AbortSignal) => delay(ms, undefined, { signal }),
@@ -124,45 +127,72 @@ async function tryCreateExclusive(path: string): Promise<boolean> {
   }
 }
 
-async function readHolderPid(path: string): Promise<number | null> {
-  // ENOENT/EACCES on read and empty/garbage content are deliberately
-  // conflated: both mean "no judgable holder", and both fall to the
-  // age-based reclamation bound (BUG-25 conservative rule).
-  const raw = await _fileLockDeps.readFile(path, "utf8").catch(() => null);
-  if (raw === null) return null;
-  const pid = Number.parseInt(raw.trim(), 10);
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
+function invalidLock(path: string, cause?: unknown): NaxError {
+  return new NaxError(
+    `[file-lock] Expected a regular lock file with valid PID metadata: ${path}`,
+    "FILE_LOCK_INVALID",
+    {
+      stage: "file-lock",
+      lockPath: path,
+      cause,
+    },
+  );
 }
 
-async function ageMs(path: string): Promise<number | null> {
-  const stats = await _fileLockDeps.stat(path).catch(() => null);
-  return stats ? _fileLockDeps.now() - stats.mtimeMs : null;
+async function openLock(path: string): Promise<FileHandle | undefined> {
+  try {
+    // A FIFO must not block the open while the waiter has no way to check its deadline or signal.
+    return await _fileLockDeps.open(path, LOCK_READ_FLAGS);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return undefined; // The holder may have just released the lock.
+    if (code === "ELOOP" || code === "ENXIO") throw invalidLock(path, error);
+    throw error;
+  }
 }
 
-/**
- * Judge whether the lock at `path` is provably abandoned: its holder pid is
- * dead, or its content is unparseable and older than the empty-lock bound.
- * Returns the observed pid (null when unparseable) so the reclamation step
- * can detect a changed file before unlinking.
- */
-async function judgeAbandoned(path: string): Promise<{ abandoned: boolean; observedPid: number | null }> {
-  const pid = await readHolderPid(path);
-  if (pid !== null) return { abandoned: !_fileLockDeps.isPidAlive(pid), observedPid: pid };
-  const age = await ageMs(path);
-  return { abandoned: age !== null && age >= EMPTY_LOCK_EVICT_AGE_MS, observedPid: null };
+function parseLockPid(raw: string, path: string): number {
+  const digits = raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+  const pid = Number(digits);
+  if (!Number.isInteger(pid) || pid < 1 || pid > MAX_PID || String(pid) !== digits) throw invalidLock(path);
+  return pid;
+}
+
+async function readLockMetadata(path: string): Promise<{ pid: number | null; ageMs: number } | undefined> {
+  const handle = await openLock(path);
+  if (handle === undefined) return undefined;
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile() || stats.size > MAX_PID_BYTES) throw invalidLock(path);
+    const buffer = Buffer.alloc(MAX_PID_BYTES + 1); // Extra byte detects growth after stat.
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead > MAX_PID_BYTES) throw invalidLock(path);
+    const pid = bytesRead === 0 ? null : parseLockPid(buffer.toString("utf8", 0, bytesRead), path);
+    return { pid, ageMs: _fileLockDeps.now() - stats.mtimeMs };
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Return the observed PID (null for an empty lock) only if the lock is provably abandoned. */
+async function abandonedPid(path: string): Promise<number | null | undefined> {
+  const lock = await readLockMetadata(path);
+  if (lock === undefined) return undefined;
+  if (lock.pid !== null) return _fileLockDeps.isPidAlive(lock.pid) ? undefined : lock.pid;
+  return lock.ageMs >= EMPTY_LOCK_EVICT_AGE_MS ? null : undefined;
 }
 
 /**
  * Elect one gravedigger via the claim file's exclusive create. A fresh
  * claim held by someone else means reclamation is already in progress —
  * back off. An aged claim proves its gravedigger died mid-reclaim and is
- * stolen (age-based, so no content check is needed: a live gravedigger
+ * stolen (age-based, without checking the PID's liveness: a live gravedigger
  * releases within microseconds).
  */
 async function tryClaim(claimPath: string): Promise<boolean> {
   if (await tryCreateExclusive(claimPath)) return true;
-  const age = await ageMs(claimPath);
-  if (age === null || age < CLAIM_MAX_AGE_MS) return false;
+  const claim = await readLockMetadata(claimPath);
+  if (claim === undefined || claim.ageMs < CLAIM_MAX_AGE_MS) return false;
   await unlinkQuiet(claimPath);
   return tryCreateExclusive(claimPath);
 }
@@ -175,14 +205,7 @@ async function tryClaim(claimPath: string): Promise<boolean> {
  * and present during this verification.
  */
 async function reclaimIfStillAbandoned(path: string, observedPid: number | null): Promise<void> {
-  const pid = await readHolderPid(path);
-  if (pid !== null) {
-    if (pid === observedPid && !_fileLockDeps.isPidAlive(pid)) await unlinkQuiet(path);
-    return;
-  }
-  if (observedPid !== null) return;
-  const age = await ageMs(path);
-  if (age !== null && age >= EMPTY_LOCK_EVICT_AGE_MS) await unlinkQuiet(path);
+  if ((await abandonedPid(path)) === observedPid) await unlinkQuiet(path);
 }
 
 async function acquire(lockPath: string, options: FileLockOptions): Promise<() => Promise<void>> {
@@ -197,8 +220,8 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<() =
     }
     signal?.throwIfAborted();
     if (_fileLockDeps.now() >= deadline) break;
-    const { abandoned, observedPid } = await judgeAbandoned(lockPath);
-    if (abandoned && (await tryClaim(claimPath))) {
+    const observedPid = await abandonedPid(lockPath);
+    if (observedPid !== undefined && (await tryClaim(claimPath))) {
       try {
         await reclaimIfStillAbandoned(lockPath, observedPid);
       } finally {

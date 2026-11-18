@@ -8,11 +8,11 @@
  *   one write silently lost).
  * - BUG-10: a lock whose holder pid is still alive is never stolen, no
  *   matter how old; a proven-dead holder is reclaimed.
- * - BUG-25: unparseable lock content is respected until it ages out.
+ * - BUG-25: an empty lock is respected until it ages out.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { utimes } from "node:fs/promises";
+import { lstat, symlink, utimes } from "node:fs/promises";
 import { _fileLockDeps, withFileLock } from "#src/internal/file-lock";
 import { cleanupTempDir, makeTempDir } from "#test/helpers/index";
 
@@ -130,6 +130,114 @@ describe("withFileLock — mutual exclusion", () => {
   }, 10_000);
 });
 
+describe("withFileLock — cancellation", () => {
+  test("releases a lock acquired just as the caller aborts, without running the operation", async () => {
+    const { dir, lockPath } = makeLockDir();
+    const controller = new AbortController();
+    const reason = new Error("cancelled during exclusive create");
+    const operation = mock(async () => "ran");
+    const writeFile = _fileLockDeps.writeFile;
+    _fileLockDeps.writeFile = async (...args) => {
+      await writeFile(...args);
+      controller.abort(reason);
+    };
+
+    try {
+      const first = withFileLock(lockPath, operation, { ...PATH_LOCK_OPTS, signal: controller.signal });
+      await expect(first).rejects.toBe(reason);
+      expect(operation).not.toHaveBeenCalled();
+      expect(await Bun.file(lockPath).exists()).toBe(false);
+
+      expect(await withFileLock(lockPath, operation, { ...PATH_LOCK_OPTS, timeoutMs: 100 })).toBe("ran");
+      expect(operation).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+const mkfifo = Bun.which("mkfifo");
+
+describe("withFileLock — invalid lock paths", () => {
+  test.skipIf(mkfifo === null)("refuses a FIFO without waiting for a writer or reclaiming it", async () => {
+    const { dir, lockPath } = makeLockDir();
+    try {
+      expect(Bun.spawnSync([mkfifo ?? "mkfifo", lockPath]).exitCode).toBe(0);
+      const aged = new Date(Date.now() - 20_000);
+      await utimes(lockPath, aged, aged);
+
+      // Isolate the call so a blocking FIFO read cannot hang the test runner on regression.
+      const child = Bun.spawnSync({
+        cmd: [
+          process.execPath,
+          "-e",
+          `
+          import { withFileLock } from "#src/internal/file-lock";
+          try {
+            await withFileLock(process.argv[1], async () => {}, {
+              lockName: "path", errorPrefix: "[path-lock]", timeoutMs: 100,
+            });
+            throw new Error("acquired the FIFO lock");
+          } catch (error) {
+            if (error.code !== "FILE_LOCK_INVALID") throw error;
+          }
+          `,
+          lockPath,
+        ],
+        timeout: 2_000,
+        killSignal: "SIGKILL",
+      });
+      expect({ exitCode: child.exitCode, stderr: child.stderr.toString() }).toEqual({ exitCode: 0, stderr: "" });
+      expect((await lstat(lockPath)).isFIFO()).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test.each([".lock", ".lock.claim"])("does not reclaim a symlink at %s", async (suffix) => {
+    const { dir, target, lockPath } = makeLockDir();
+    const linkedPath = `${target}${suffix}`;
+    try {
+      if (linkedPath !== lockPath) await Bun.write(lockPath, "424242\n");
+      await Bun.write(target, "424242\n");
+      const aged = new Date(Date.now() - 20_000);
+      await utimes(target, aged, aged);
+      await symlink(target, linkedPath);
+      _fileLockDeps.isPidAlive = () => false;
+      const operation = mock(async () => {});
+
+      const pending = withFileLock(lockPath, operation, PATH_LOCK_OPTS);
+      await expect(pending).rejects.toMatchObject({ code: "FILE_LOCK_INVALID" });
+      expect(operation).not.toHaveBeenCalled();
+      expect((await lstat(linkedPath)).isSymbolicLink()).toBe(true);
+      expect(await Bun.file(target).text()).toBe("424242\n");
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  test.each([
+    { kind: "oversized", content: `424242\n${" ".repeat(256)}` },
+    { kind: "non-numeric", content: "424242junk" },
+    { kind: "out-of-range", content: "2147483648\n" },
+  ])("refuses $kind PID metadata even if it starts with a dead PID", async ({ content }) => {
+    const { dir, lockPath } = makeLockDir();
+    try {
+      await Bun.write(lockPath, content);
+      _fileLockDeps.isPidAlive = () => false;
+      const operation = mock(async () => {});
+
+      await expect(withFileLock(lockPath, operation, PATH_LOCK_OPTS)).rejects.toMatchObject({
+        code: "FILE_LOCK_INVALID",
+      });
+      expect(operation).not.toHaveBeenCalled();
+      expect(await Bun.file(lockPath).text()).toBe(content);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
 describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
   test("reclaims a lock whose holder pid is proven dead", async () => {
     const { dir, lockPath } = makeLockDir();
@@ -162,20 +270,16 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     await Bun.write(lockPath, "424242\n");
     Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
 
-    const realReadFile = _fileLockDeps.readFile;
+    const open = _fileLockDeps.open;
     let lockReads = 0;
-    const gatedReadFile = async (path: string, encoding: BufferEncoding) => {
-      if (path === lockPath) {
-        lockReads++;
-        if (lockReads === 2) {
-          // Between our observation (read 1) and the claim-holder's
-          // re-verify (read 2), a new live holder took over the lock.
-          await Bun.write(lockPath, "7777\n");
-        }
+    _fileLockDeps.open = async (path, ...args) => {
+      if (path === lockPath && ++lockReads === 2) {
+        // Between our observation (read 1) and the claim-holder's
+        // re-verify (read 2), a new live holder took over the lock.
+        await Bun.write(lockPath, "7777\n");
       }
-      return realReadFile(path, encoding);
+      return open(path, ...args);
     };
-    Object.assign(_fileLockDeps, { readFile: gatedReadFile });
 
     const timedOut = withFileLock(lockPath, async () => {}, { ...PATH_LOCK_OPTS, timeoutMs: 150, retryMs: 10 });
     await expect(timedOut).rejects.toThrow(/Timed out acquiring path lock/);
