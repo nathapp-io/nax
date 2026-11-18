@@ -3,7 +3,7 @@
   "feature": "chat-read-images-bundle",
   "branchName": "feat/chat-read-images-bundle",
   "createdAt": "2026-11-18T14:29:05.689Z",
-  "updatedAt": "2026-11-18T15:10:17.684Z",
+  "updatedAt": "2026-11-18T15:29:54.663Z",
   "userStories": [
     {
       "id": "US-001",
@@ -204,14 +204,17 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "Adds bounded binary filesystem I/O behind a credential-sensitive Read path, a public export, and runtime integration; strict test isolation is required."
+        "reasoning": "Adds bounded binary filesystem I/O behind a credential-sensitive Read path, a public export, and runtime integration; strict test isolation is required.",
+        "initialComplexity": "complex",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/chat/images/image-sniff.ts",
@@ -245,7 +248,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f60fa441ffb71150fe5093e89ccaab065dd853ec"
     },
     {
       "id": "US-005",
