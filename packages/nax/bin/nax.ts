@@ -282,15 +282,17 @@ program
     new Option("--no-resume", "Alias for --fresh: never auto-resume from a prior checkpoint").default("__UNSET__"),
   )
   .action(async (options) => {
+    // US-001: a --publish value that names no mode is refused before bake-off, --schedule or any
+    // other preflight can answer first, so the refusal is the last thing printed. A run whose
+    // publish mode is wrong would otherwise reach a bake-off confirmation prompt or a schedule
+    // error before it is told the mode is invalid.
+    refuseInvalidPublishOverride(options);
     const workdir = resolveRunWorkdir(options);
     const { chatAsksDir } = parseRunPreconditionFlags(options);
     await validateBakeoffPreflight(options, workdir);
     const scheduleGate = resolveRunScheduleAndPlanFlags(options);
 
     const { logLevel, formatterMode } = resolveRunLogMode(options);
-    // US-001: a --publish value that names no mode is refused before the config layer can
-    // build an override from it, so nothing loads, trusts, plans or starts.
-    refuseInvalidPublishOverride(options);
     const { naxDir, cliOverrides } = await resolveRunProjectContext(workdir, options);
 
     // BUG-15: loadConfig can reject on a corrupt/invalid config (SEC-5 strict

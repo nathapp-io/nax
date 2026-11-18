@@ -2,7 +2,12 @@
 import type { ProviderTool, ToolResult } from "@nathapp/nax-agent";
 import { errorMessage } from "@nathapp/nax-agent/internal";
 import type { WorkflowPublishMode } from "@/config";
-import { type FlowHandoffInput, handoffStepArgv, parseFlowHandoffInput } from "../flow/flow-handoff-input";
+import {
+  type FlowHandoffInput,
+  formatHandoffCostCap,
+  handoffStepArgv,
+  parseFlowHandoffInput,
+} from "../flow/flow-handoff-input";
 import { resolveTargetRepo } from "../target-repo";
 import {
   buildChainStepArgv,
@@ -27,7 +32,6 @@ const HANDOFF_CHECK_REFUSAL = "a handoff step takes no checkBefore";
 const HANDOFF_BILLING_NOTE = "koda asks for its own approval before anything billed starts";
 /** The argv flags that carry the roles and the cap, as `handoffStepArgv` spells them. */
 const HANDOFF_ARGV_FLAGS = ["--reviewer", "--supervisor", "--cost-cap"] as const;
-const HANDOFF_COST_CAP_DECIMALS = 2;
 
 type Options = JobsProviderOptions & { readonly chains: ChatChains };
 type InputError = { readonly error: string };
@@ -301,7 +305,7 @@ function argvValue(argv: readonly string[], flag: string): string {
  */
 function handoffDetail(argv: readonly string[]): string {
   const [reviewer, supervisor, cap] = HANDOFF_ARGV_FLAGS.map((flag) => argvValue(argv, flag));
-  return `reviewer ${reviewer}, supervisor ${supervisor}, cost cap $${Number(cap).toFixed(HANDOFF_COST_CAP_DECIMALS)}`;
+  return `reviewer ${reviewer}, supervisor ${supervisor}, cost cap $${formatHandoffCostCap(Number(cap))}`;
 }
 
 function stepReason(step: ChainStep, index: number): string {
@@ -398,6 +402,9 @@ export function createChainTools(options: JobsProviderOptions & { readonly chain
           summary: `full run of ${proposal.steps.length} steps: ${proposal.steps.map(stepLabel).join(" → ")}`,
           reason: await chainReason(proposal, options),
           command: proposal.steps.map((step) => step.argv.join(" ")).join("\n"),
+          // A handoff pushes a branch and uploads the run record before koda bills anything,
+          // so a chain carrying one is carded even in full mode.
+          ...(proposal.steps.some((step) => step.kind === "handoff") ? { requiresHostApproval: true as const } : {}),
           signal: ctx.signal,
         });
         if (decision === "deny") return failure("[chat] the user declined the chain; propose steps one at a time");

@@ -311,7 +311,7 @@ describe("nax-flow__send — chain handoff", () => {
     expect(stepEnded).toHaveBeenCalledWith(AUTO.chainId, AUTO.step, "succeeded", result.content);
   });
 
-  test.each(["parse", "repo", "branch", "mark"])(
+  test.each(["parse", "repo", "branch", "mark", "throw"])(
     "stops a matching next handoff on a %s refusal before admission",
     async (stage) => {
       const { admit, stepEnded, stop } = observeChain(AUTO, ACTIVE);
@@ -322,9 +322,16 @@ describe("nax-flow__send — chain handoff", () => {
           mark: { schemaVersion: 1, at: AT.toISOString(), requestId: "rq1" },
           path: "/r/handoff.json",
         });
+      // A thrown local check is a refusal the chain must see too, not an escape past it.
+      if (stage === "throw") {
+        _flowHandoffDeps.collectHandoffRecord = async () => {
+          throw new Error("ELOOP");
+        };
+      }
       const result = await send(stage === "parse" ? { ...handoffInput, costCapUsd: 0 } : handoffInput);
 
       expect(result.isError).toBe(true);
+      if (stage === "throw") expect(result.content).toBe("[chat] flow send failed: ELOOP");
       expect(stop).toHaveBeenCalledTimes(1);
       expect(stop).toHaveBeenCalledWith(result.content.replace(/^\[chat\] /, ""));
       expect(admit).not.toHaveBeenCalled();
@@ -332,6 +339,22 @@ describe("nax-flow__send — chain handoff", () => {
       expect(approveCalls).toHaveLength(0);
     },
   );
+
+  test("stops a matching next handoff on a request carrying both forms", async () => {
+    const { admit, stepEnded, stop } = observeChain(AUTO, ACTIVE);
+
+    const result = await send({ ...handoffInput, features: [] });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe(
+      "[chat] the flow request is invalid:\n- exactly one of features or handoff is required",
+    );
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledWith(result.content.replace(/^\[chat\] /, ""));
+    expect(admit).not.toHaveBeenCalled();
+    expect(stepEnded).not.toHaveBeenCalled();
+    expect(pushCalls).toHaveLength(0);
+  });
 
   test("does not stop an unrelated next handoff on a refusal", async () => {
     const { admit, stop } = observeChain(AUTO, ACTIVE);
@@ -372,7 +395,11 @@ describe("nax-flow__send — the handoff form before the card", () => {
 
     await send(handoffInput);
 
-    expect(collectCalls).toEqual([{ repoRoot: REPO_ROOT, feature: FEATURE, head: OTHER_SHA, branch: "feat/handoff" }]);
+    // The pre-check and the post-approval re-check read the same record, at the carded head and branch.
+    expect(collectCalls).toHaveLength(2);
+    expect(collectCalls).toEqual(
+      collectCalls.map(() => ({ repoRoot: REPO_ROOT, feature: FEATURE, head: OTHER_SHA, branch: "feat/handoff" })),
+    );
     // The repository read resolves no spec paths: a handoff sends none.
     expect(repoReads[0]).toEqual([]);
   });
@@ -401,7 +428,8 @@ describe("nax-flow__send — the handoff form before the card", () => {
 
     await send(handoffInput);
 
-    expect(dirs).toEqual([workflowFeatureDir(REPO_ROOT, FEATURE)]);
+    // Once before the card and once again before the push, both on the feature's own run directory.
+    expect(dirs).toEqual([workflowFeatureDir(REPO_ROOT, FEATURE), workflowFeatureDir(REPO_ROOT, FEATURE)]);
   });
 });
 
@@ -624,6 +652,83 @@ describe("nax-flow__send — the mark a handoff leaves", () => {
     expect(result.content.split("\n")[0]).toBe(
       '{"flow":"fl1","state":"PENDING","url":"https://koda.example/flows/fl1"}',
     );
+  });
+});
+
+describe("nax-flow__send — the record is re-checked after approval", () => {
+  const MARK = { schemaVersion: 1, at: "T", flowId: "fl9", url: "https://koda/flows/fl9" } as const;
+
+  /** Answer the card by changing what is on disk, then allowing it. */
+  function allowAfter(change: () => void): void {
+    reply = async () => {
+      change();
+      return "allow";
+    };
+  }
+
+  test("refuses a mark that appeared while the card was open, pushing nothing (AC-3)", async () => {
+    allowAfter(() => {
+      _flowHandoffDeps.readNewestHandoffMark = async () => ({ mark: MARK, path: "/r/handoff.json" });
+    });
+
+    const result = await send(handoffInput);
+
+    expect(result.isError).toBe(true);
+    expect(result.content.startsWith("[chat] f1 was handed off to koda (flow fl9")).toBe(true);
+    expect(result.content).toContain("/r/handoff.json");
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+    expect(markCalls).toHaveLength(0);
+  });
+
+  test("refuses a newer run at the same commit, so no mark lands on a run the guards do not read", async () => {
+    allowAfter(() => {
+      _flowHandoffDeps.collectHandoffRecord = async () => ({
+        ok: true,
+        record: [{ runId: "r3", file: "result.json", mtimeMs: 3, content: '{"step":"done"}' }],
+        newestRunId: "r3",
+      });
+    });
+
+    const result = await send(handoffInput);
+
+    expect(result).toEqual({
+      isError: true,
+      content: "[chat] the run record changed while the card was open; nothing was pushed",
+    });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
+    expect(markCalls).toHaveLength(0);
+  });
+
+  test("refuses a record whose text changed while the card was open", async () => {
+    allowAfter(() => {
+      _flowHandoffDeps.collectHandoffRecord = async () => ({
+        ok: true,
+        record: record.map((entry) =>
+          entry.file === "ledger.md" ? { ...entry, content: "edited while the card was open" } : entry,
+        ),
+        newestRunId: NEWEST_RUN_ID,
+      });
+    });
+
+    const result = await send(handoffInput);
+
+    expect(result.content).toBe("[chat] the run record changed while the card was open; nothing was pushed");
+    expect(pushCalls).toHaveLength(0);
+    expect(markCalls).toHaveLength(0);
+  });
+
+  test("refuses a record the re-check can no longer read", async () => {
+    allowAfter(() => {
+      _flowHandoffDeps.collectHandoffRecord = async () => ({ ok: false, reason: "the run moved" });
+    });
+
+    const result = await send(handoffInput);
+
+    expect(result).toEqual({ isError: true, content: "[chat] cannot hand off f1: the run moved" });
+    expect(pushCalls).toHaveLength(0);
+    expect(kodaCalls).toHaveLength(0);
   });
 });
 

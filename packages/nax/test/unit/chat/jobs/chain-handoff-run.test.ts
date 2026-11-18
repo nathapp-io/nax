@@ -249,7 +249,7 @@ describe("createHostJobs handoff", () => {
     assertDefined(provider, "flow provider");
     const send = (await provider.tools(repoRoot)).find(({ localName }) => localName === "send");
     assertDefined(send, "send tool");
-    return { host, approve, create, send: (raw = CALL) => send.run(raw, context()) };
+    return { host, approve, create, send: (raw: Record<string, unknown> = CALL) => send.run(raw, context()) };
   }
 
   function context() {
@@ -332,6 +332,34 @@ describe("createHostJobs handoff", () => {
     expect(create).not.toHaveBeenCalled();
     expect(_flowProviderDeps.commitAndPush).not.toHaveBeenCalled();
     expect(host.chains.summary()).toMatchObject({ state: "stopped", stopReason: "cannot hand off f1: R" });
+  });
+
+  test("AC-9 stops on a local check that throws for the next handoff, instead of waiting", async () => {
+    const { host, approve, create, send } = await approvedChain();
+    _flowHandoffDeps.collectHandoffRecord = async () => {
+      throw new Error("ELOOP");
+    };
+
+    expect(await send()).toEqual({ isError: true, content: "[chat] flow send failed: ELOOP" });
+    expect(approve).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(_flowProviderDeps.commitAndPush).not.toHaveBeenCalled();
+    expect(host.chains.summary()).toMatchObject({ state: "stopped", stopReason: "flow send failed: ELOOP" });
+  });
+
+  test("AC-9 stops on a request carrying both forms, keeping the mixed-form refusal text", async () => {
+    const { host, create, send } = await approvedChain();
+    const refusal = "[chat] the flow request is invalid:\n- exactly one of features or handoff is required";
+
+    expect(await send({ ...CALL, features: [{ feature: "f1", specPath: ".nax/features/f1/spec.md" }] })).toEqual({
+      isError: true,
+      content: refusal,
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(host.chains.summary()).toMatchObject({
+      state: "stopped",
+      stopReason: "the flow request is invalid:\n- exactly one of features or handoff is required",
+    });
   });
 
   test("an off-card handoff asks for approval with the admission's note", async () => {

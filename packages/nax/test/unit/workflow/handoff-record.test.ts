@@ -202,6 +202,52 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
+  test("a record read in chunks is the file's whole text, character for character", async () => {
+    await withTempDir(async (dir) => {
+      // 200 KiB spans four chunk reads, so a chunk boundary falls inside the text.
+      const result = `${"a".repeat(200 * 1024 - 4)}\u{1F389}`;
+      await makeRun(dir, "r1", { result, ledger: ledgerMd("r1") });
+
+      const record = expectOk(await readHandoffRecordFiles(dir)).record;
+
+      expect(record[0]?.content).toBe(result);
+    });
+  });
+
+  test("a surrogate pair split across a chunk boundary is not read as an unpaired surrogate", async () => {
+    await withTempDir(async (dir) => {
+      // The emoji's four bytes straddle the 65536-byte chunk boundary: byte 65535 is its first byte.
+      const result = `${"a".repeat(65535)}\u{1F389}${"b".repeat(10)}`;
+      await makeRun(dir, "r1", { result });
+
+      const record = expectOk(await readHandoffRecordFiles(dir)).record;
+
+      expect(record[0]?.content).toBe(result);
+    });
+  });
+
+  test("an oversized record is counted exactly without being buffered, and refused", async () => {
+    await withTempDir(async (dir) => {
+      // 8 MiB, far past the cap and far past one chunk: the count is still exact.
+      const oversized = "a".repeat(8 * 1024 * 1024);
+      await makeRun(dir, "r1", { result: oversized });
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toBe(
+        "the run record is 8388608 bytes; koda accepts at most 524288",
+      );
+    });
+  });
+
+  test("a NUL past the byte cap still wins, because the text rule is checked first", async () => {
+    await withTempDir(async (dir) => {
+      await makeRun(dir, "r1", { result: "a".repeat(600 * 1024), ledger: "line\n\u0000\n" });
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toBe(
+        "ledger.md of run r1 holds a NUL or unpaired surrogate character, which koda refuses",
+      );
+    });
+  });
+
   test("21 finished runs are refused, naming the count koda accepts", async () => {
     await withTempDir(async (dir) => {
       for (let i = 1; i <= 21; i++) {
@@ -267,16 +313,70 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
-  test("a run whose result.json cannot be stat'ed is not silently skipped", async () => {
+  test("a run whose result.json is a link is refused, not skipped", async () => {
     await withTempDir(async (dir) => {
       await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
-      // A symlink loop is an unreadable run that stays deterministic as root: stat answers ELOOP, not ENOENT.
       const broken = join(dir, "r2");
       await mkdir(broken, { recursive: true });
       await symlink("result.json", join(broken, "result.json"));
 
-      // The unreadable run must surface, not vanish: an accepted record for r1 alone would misreport the newest run.
-      await expect(readHandoffRecordFiles(dir)).rejects.toThrow("ELOOP");
+      // The linked run must surface, not vanish: an accepted record for r1 alone would misreport the newest run.
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toBe(
+        "result.json of run r2 is a link or a special file, not a regular file the handoff can read",
+      );
+    });
+  });
+
+  test("a linked ledger.md is refused instead of uploading the text it points at", async () => {
+    await withTempDir(async (dir) => {
+      const outside = join(dir, "outside-secret.txt");
+      await Bun.write(outside, "SECRET-FROM-OUTSIDE-THE-WORKFLOW-TREE\n");
+      const runDir = await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+      await symlink(outside, join(runDir, "ledger.md"));
+
+      const read = await readHandoffRecordFiles(dir);
+
+      expect(expectRefusal(read)).toBe(
+        "ledger.md of run r1 is a link or a special file, not a regular file the handoff can read",
+      );
+      expect(JSON.stringify(read)).not.toContain("SECRET-FROM-OUTSIDE");
+    });
+  });
+
+  test("a linked result.json inside a real run dir is refused the same way", async () => {
+    await withTempDir(async (dir) => {
+      const outside = join(dir, "outside-result.json");
+      await Bun.write(outside, resultJson("r9"));
+      const runDir = await makeRun(dir, "r1", { ledger: ledgerMd("r1") });
+      await symlink(outside, join(runDir, "result.json"));
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toBe(
+        "result.json of run r1 is a link or a special file, not a regular file the handoff can read",
+      );
+    });
+  });
+
+  test("a run directory that is a link to another tree is refused", async () => {
+    await withTempDir(async (dir) => {
+      await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+      const elsewhere = join(dir, "elsewhere");
+      await makeRun(elsewhere, "r2", { result: resultJson("r2"), resultMtimeMs: 9000 });
+      await symlink(join(elsewhere, "r2"), join(dir, "r2"));
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toBe(
+        "the workflow run r2 is a link, not a run directory of this feature; the handoff reads only the feature's own runs",
+      );
+    });
+  });
+
+  test("a directory in place of a record file is refused, not read", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await makeRun(dir, "r1", { result: resultJson("r1") });
+      await mkdir(join(runDir, "ledger.md"), { recursive: true });
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toBe(
+        "ledger.md of run r1 is a link or a special file, not a regular file the handoff can read",
+      );
     });
   });
 

@@ -17,13 +17,14 @@ import type { ProviderTool, ToolProvider, ToolResult } from "@nathapp/nax-agent"
 import { buildFlowInstructions } from "@/prompts";
 import type { HostApprovalCard } from "../ask-controller";
 import { _flowProviderDeps } from "./flow-deps";
-import { sendFlowHandoff } from "./flow-handoff";
+import { refusedHandoff, sendFlowHandoff } from "./flow-handoff";
 import {
   FLOW_COST_CAP_DECIMALS,
   FLOW_MAX_COST_CAP_USD,
   FLOW_MAX_FEATURES,
   type FlowSendFeature,
   type FlowSendInput,
+  isRecord,
   parseFlowSendInput,
 } from "./flow-input";
 import type { FlowCreateBody } from "./flow-koda";
@@ -205,7 +206,12 @@ async function send(
   options: FlowProviderOptions,
 ): Promise<ToolResult> {
   const parsed = parseFlowSendInput(request);
-  if ("errors" in parsed) return inputFailure(parsed.errors);
+  if ("errors" in parsed) {
+    // A body carrying both forms is refused here, but it still names the feature a waiting chain
+    // is holding for: that chain stops on the refusal instead of waiting for a step that never ran.
+    const feature = isRecord(request.handoff) ? request.handoff.feature : undefined;
+    return refusedHandoff(inputFailure(parsed.errors), feature, options.chains);
+  }
   const state = await _flowProviderDeps.readFlowRepoState(options.repoRoot, specPathsOf(parsed));
   if (!state.ok) return failure(state.message);
   const branch = checkFlowBranch(state.branch, parsed.features);

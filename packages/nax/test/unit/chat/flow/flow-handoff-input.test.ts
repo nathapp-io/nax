@@ -8,7 +8,14 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type FlowHandoffInput, handoffStepArgv, parseFlowHandoffInput, parseFlowSendInput } from "@/chat/flow";
+import {
+  FLOW_FEATURE_NAME_RE,
+  type FlowHandoffInput,
+  formatHandoffCostCap,
+  handoffStepArgv,
+  parseFlowHandoffInput,
+  parseFlowSendInput,
+} from "@/chat/flow";
 
 const SPEC_PATH = ".nax/features/f1/spec.md";
 
@@ -77,6 +84,21 @@ describe("parseFlowHandoffInput", () => {
     for (const feature of ["-f1", "f 1", `a${"b".repeat(128)}`]) {
       expect(singleError({ ...validRaw(), handoff: { feature } })).toContain("handoff.feature");
     }
+  });
+
+  test("refuses a name the workflow helpers cannot turn into a feature directory (AC-2)", () => {
+    // koda's wire charset accepts both; `featureDir` does not, so a handoff for either would pass
+    // approval and then find no record to send.
+    for (const feature of ["a..b", "a".repeat(65)]) {
+      expect(FLOW_FEATURE_NAME_RE.test(feature)).toBe(true);
+      const error = singleError({ ...validRaw(), handoff: { feature } });
+      expect(error).toContain("handoff.feature");
+      expect(error).toContain("is not a usable feature name");
+    }
+  });
+
+  test("accepts the longest name a feature directory holds", () => {
+    expect(inputOf({ ...validRaw(), handoff: { feature: "a".repeat(64) } }).feature).toBe("a".repeat(64));
   });
 
   test("returns the spec form's own cost-cap error for 1.23456 (AC-3)", () => {
@@ -149,5 +171,24 @@ describe("handoffStepArgv", () => {
     const argv = handoffStepArgv({ feature: "f1", roles: { reviewer: "r", supervisor: "s" }, costCapUsd: 0.0001 });
 
     expect(argv[argv.length - 1]).toBe("0.0001");
+  });
+});
+
+describe("formatHandoffCostCap (AC-11)", () => {
+  test.each([
+    [5, "5.00"],
+    [5.5, "5.50"],
+    [5.25, "5.25"],
+    [0.0001, "0.0001"],
+    [5.004, "5.004"],
+    [5.0005, "5.0005"],
+  ])("prints %p as the request authorizes it", (cap, expected) => {
+    expect(formatHandoffCostCap(cap)).toBe(expected);
+  });
+
+  test("never rounds a cap the parser accepts, so the card and the request agree", () => {
+    for (const cap of [5.001, 5.004, 5.0001, 12.3456]) {
+      expect(formatHandoffCostCap(cap)).toBe(String(cap));
+    }
   });
 });

@@ -179,6 +179,20 @@ describe("createChainTools handoff card", () => {
     );
   });
 
+  test("AC-11 prints a cap with more than two decimals exactly, never rounded to cents", async () => {
+    const tool = (await createJobsProvider(options).tools(root)).find((entry) => entry.localName === "chain");
+    assertDefined(tool, "chain tool registered");
+    await tool.run(
+      { steps: [runNone, handoff({ costCapUsd: 5.004 })] },
+      { root, resolvedPaths: [], maxBytes: 300_000, maxFileBytes: 300_000 },
+    );
+    const request = approve.mock.calls[0]?.[0];
+    assertDefined(request, "approval card");
+    expect(String(request.reason).split("\n")).toContain(
+      "2. hand f1 to koda (reviewer r, supervisor s, cost cap $5.004) — starts after: step 1 succeeded",
+    );
+  });
+
   test("AC-12 says koda asks for its own approval before billing", async () => {
     expect((await card()).split("\n")).toContain(approval);
   });

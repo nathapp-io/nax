@@ -12,6 +12,7 @@
  * Like the spec form, this collects every violation instead of stopping at the
  * first, so one round of retries fixes a request with several mistakes.
  */
+import { featureIdInvalidReason } from "@/config";
 import {
   type Collected,
   collectCostCap,
@@ -50,13 +51,22 @@ export interface FlowHandoffInput {
 /** The parsed handoff, or every rule it broke. */
 export type FlowHandoffParseResult = FlowHandoffInput | { readonly errors: string[] };
 
-/** The feature's name: the charset koda accepts, named as the handoff's own field. */
+/**
+ * The feature's name: the charset koda accepts, then the rules its run directory obeys.
+ *
+ * koda's wire charset is the wider of the two — it allows `a..b` and names longer than the
+ * 64 characters a feature directory holds — so a handoff that checked only the wire rules
+ * would pass approval and then fail in `featureDir`, unable to find the record it promised
+ * to send. The second rule is `featureDir`'s own, reported here as a field error.
+ */
 function handoffFeatureErrors(value: unknown): string[] {
   const where = "handoff.feature";
   if (typeof value !== "string") return [`${where} must be a string`];
-  return FLOW_FEATURE_NAME_RE.test(value)
-    ? []
-    : [`${where} ${quoted(value)} must match ${FLOW_FEATURE_NAME_RE.source}`];
+  if (!FLOW_FEATURE_NAME_RE.test(value)) {
+    return [`${where} ${quoted(value)} must match ${FLOW_FEATURE_NAME_RE.source}`];
+  }
+  const unusable = featureIdInvalidReason(value);
+  return unusable === undefined ? [] : [`${where} ${quoted(value)} is not a usable feature name: ${unusable}`];
 }
 
 /** The `handoff` object: its declared keys, then the feature name. */
@@ -105,4 +115,23 @@ export function handoffStepArgv(input: FlowHandoffInput): readonly string[] {
     COST_CAP_FLAG,
     String(input.costCapUsd),
   ];
+}
+
+/** The most decimals a whole-cent amount carries: `5`, `5.1` and `5.25` are all whole cents. */
+const WHOLE_CENT_DECIMALS = 2;
+
+/**
+ * The cap as a handoff card prints it, exactly as the request authorizes it.
+ *
+ * `toFixed(2)` rounds, so a card for `5.004` would read `$5.00` while the request sends
+ * `5.004` — the user would approve a cap they were not shown. A whole-cent amount keeps two
+ * decimals (`$5.00`, `$5.10`); any other cap the parser accepts keeps every significant
+ * digit (`$5.004`). Both handoff cards print the cap through here, so they cannot drift.
+ *
+ * @param costCapUsd - A cap `collectCostCap` accepted, or the argv token it was read back from
+ */
+export function formatHandoffCostCap(costCapUsd: number): string {
+  const written = String(costCapUsd);
+  const decimals = written.includes(".") ? written.length - written.indexOf(".") - 1 : 0;
+  return decimals <= WHOLE_CENT_DECIMALS ? costCapUsd.toFixed(WHOLE_CENT_DECIMALS) : written;
 }

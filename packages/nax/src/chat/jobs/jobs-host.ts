@@ -70,9 +70,12 @@ export function createHostJobs(options: HostJobsOptions): {
   });
   const runAsks = createRunAsks({ ...options, jobs, chains });
   // Full mode skips the card for every nax-jobs approval (launch, chain, cancel); guarded keeps it.
+  // A card that says it needs a real answer — a chain carrying a handoff — is asked in full mode too.
   const approve: ChatAskController["requestHostApproval"] = (card) => {
-    if (options.mode() !== "full") return options.asks.requestHostApproval(card);
-    return Promise.resolve(card.signal?.aborted ? "deny" : "allow");
+    if (card.requiresHostApproval !== true && options.mode() === "full") {
+      return Promise.resolve(card.signal?.aborted ? "deny" : "allow");
+    }
+    return options.asks.requestHostApproval(card);
   };
   const connection = kodaFlowConnection(options.config);
   const provider = _jobsHostDeps.createJobsProvider({

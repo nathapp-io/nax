@@ -9,9 +9,15 @@
  * feature record that ended without a PR at the pushed HEAD, and the `prd.json` committed at that HEAD
  * must name the branch and hold no pending story. Both halves stop at the first failing check, so a
  * refusal names the one thing the user has to fix.
+ *
+ * Nothing here follows a link: a run is a real directory under the feature's workflow dir, a record file
+ * is a regular file, and each file is read through the same handle its metadata came from — so the text
+ * the approval card counts as the feature's own record is the text that is there, and a link to a file
+ * outside the tree is refused rather than uploaded under `ledger.md`. Files are streamed in chunks, so
+ * an oversized run is counted and refused without ever being held in memory whole.
  */
-import type { Stats } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { constants, type Stats } from "node:fs";
+import { type FileHandle, lstat, open, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { featureDir } from "@/config";
 import { type PRD, pendingStoryIds } from "@/prd";
@@ -38,8 +44,18 @@ export type HandoffRecordRead =
   | { readonly ok: false; readonly reason: string };
 
 const RESULT_FILE = "result.json";
+const LEDGER_FILE = "ledger.md";
+/** The record files of one run, in the order the handoff sends them. */
+const RECORD_FILES = [RESULT_FILE, LEDGER_FILE] as const;
 const NO_FINISHED_RUN = "no finished workflow run for this feature; run nax run first";
 const NEWEST_TIE = "two workflow runs share the newest result.json time, so the newest run is ambiguous";
+/**
+ * How much of a record file is held at a time. The cap bounds what is sent; this bounds what is read,
+ * so a run record of any size is counted and refused without being loaded whole.
+ */
+const RECORD_CHUNK_BYTES = 65536;
+/** Read-only, and never through a link: a record file is opened as a plain file or not at all. */
+const RECORD_FILE_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW;
 
 /** A run directory that has a result.json, with the stat mtime the ordering uses. */
 interface RunDir {
@@ -47,6 +63,29 @@ interface RunDir {
   readonly runDir: string;
   readonly mtimeMs: number;
 }
+
+/** The runs a handoff may read, or the refusal for a run directory it must not read through. */
+type RunListing =
+  | { readonly ok: true; readonly runs: readonly RunDir[] }
+  | { readonly ok: false; readonly reason: string };
+
+/** One record file as its own verified handle reported it. */
+type FileRead =
+  | {
+      readonly ok: true;
+      /** The handle's mtime, truncated — the integer koda compares. */
+      readonly mtimeMs: number;
+      /** The file's exact byte length, which the record's total counts even past the cap. */
+      readonly bytes: number;
+      /** True while no chunk of the text held a NUL or an unpaired surrogate. */
+      readonly storable: boolean;
+      /** The text, kept only while the whole record may still fit koda's cap. */
+      readonly text?: string;
+    }
+  /** The path holds nothing: the run does not send that entry. */
+  | { readonly ok: false; readonly absent: true }
+  /** The path holds a link or a special file, which no handoff may read. */
+  | { readonly ok: false; readonly absent: false };
 
 /** errno codes that mean "there is no such path" — the only stat failures a run listing reads as absence. */
 const MISSING_PATH_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
@@ -63,13 +102,14 @@ function errnoCode(error: unknown): string | undefined {
 }
 
 /**
- * The file's stat, or undefined when there is no such path. Every other failure — an unreadable run
- * directory, a symlink loop — propagates, so a run the handoff cannot read never drops out of the record
- * and leaves an older run posing as the newest.
+ * The path's own stat, or undefined when there is no such path. `lstat` does not follow a link, so a
+ * link answers as a link instead of as whatever it points at. Every other failure — an unreadable run
+ * directory, a link loop in a path component — propagates, so a run the handoff cannot read never drops
+ * out of the record and leaves an older run posing as the newest.
  */
-async function statOrUndefined(path: string): Promise<Stats | undefined> {
+async function lstatOrUndefined(path: string): Promise<Stats | undefined> {
   try {
-    return await stat(path);
+    return await lstat(path);
   } catch (err) {
     const code = errnoCode(err);
     if (code !== undefined && MISSING_PATH_CODES.has(code)) return undefined;
@@ -91,49 +131,124 @@ async function readdirOrEmpty(path: string): Promise<string[]> {
   }
 }
 
+/** A record file that is a link or a special file, which the handoff refuses to send. */
+function notPlainFileReason(runId: string, file: HandoffRecordFile["file"]): string {
+  return `${file} of run ${runId} is a link or a special file, not a regular file the handoff can read`;
+}
+
+/** A run that is not a real directory of this feature, so its files are not this feature's record. */
+function linkedRunReason(runId: string): string {
+  return `the workflow run ${runId} is a link, not a run directory of this feature; the handoff reads only the feature's own runs`;
+}
+
 /**
  * Every run directory under `featureWorkflowDir` that holds a result.json, newest result.json first — the
  * order `runDirsNewestFirst` uses. A workflow dir that does not exist and a stray file in place of a run
- * both read as "no run there"; anything else the filesystem refuses is a failure the caller must see.
+ * both read as "no run there"; a link in place of a run, and anything else the filesystem refuses, are
+ * refused: following one would send files from outside the feature's own tree.
  */
-async function listRunDirs(featureWorkflowDir: string): Promise<RunDir[]> {
+async function listRunDirs(featureWorkflowDir: string): Promise<RunListing> {
   const runs: RunDir[] = [];
   for (const runId of await readdirOrEmpty(featureWorkflowDir)) {
     const runDir = join(featureWorkflowDir, runId);
-    const stats = await statOrUndefined(join(runDir, RESULT_FILE));
-    if (stats === undefined) continue;
-    runs.push({ runId, runDir, mtimeMs: stats.mtimeMs });
+    const runStats = await lstatOrUndefined(runDir);
+    if (runStats === undefined) continue;
+    if (runStats.isSymbolicLink()) return { ok: false, reason: linkedRunReason(runId) };
+    if (!runStats.isDirectory()) continue;
+    const resultStats = await lstatOrUndefined(join(runDir, RESULT_FILE));
+    if (resultStats === undefined) continue;
+    if (!resultStats.isFile()) return { ok: false, reason: notPlainFileReason(runId, RESULT_FILE) };
+    runs.push({ runId, runDir, mtimeMs: resultStats.mtimeMs });
   }
-  return runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return { ok: true, runs: runs.sort((a, b) => b.mtimeMs - a.mtimeMs) };
 }
 
-/** One file of a run, or undefined when the run does not hold it. */
-async function fileEntry(
-  run: RunDir,
-  path: string,
-  file: HandoffRecordFile["file"],
-): Promise<HandoffRecordFile | undefined> {
-  const stats = await statOrUndefined(path);
-  if (stats === undefined) return undefined;
-  // A read failure is not "no file": it would silently send a record the handoff was meant to complete.
-  return { runId: run.runId, file, mtimeMs: Math.trunc(stats.mtimeMs), content: await Bun.file(path).text() };
+/** The file's handle, or why it cannot be read: no such file, or a link that `O_NOFOLLOW` refused. */
+async function openPlainFile(path: string): Promise<FileHandle | FileRead> {
+  try {
+    return await open(path, RECORD_FILE_FLAGS);
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code !== undefined && MISSING_PATH_CODES.has(code)) return { ok: false, absent: true };
+    // ELOOP: the path became a link after the listing checked it. A link is never read through.
+    if (code === "ELOOP") return { ok: false, absent: false };
+    throw err;
+  }
 }
 
-/** A run's files in send order: result.json, then ledger.md when the run has one. */
-async function runEntries(run: RunDir): Promise<HandoffRecordFile[]> {
-  const entries = [await fileEntry(run, join(run.runDir, RESULT_FILE), RESULT_FILE)];
-  entries.push(await fileEntry(run, ledgerFilePath(run.runDir), "ledger.md"));
-  return entries.filter((entry) => entry !== undefined);
+/**
+ * One open record file, read a chunk at a time: every byte is counted, and at most the remaining budget
+ * is kept. Each decoded chunk is checked for the text koda refuses; `TextDecoder` with `stream: true`
+ * holds an incomplete character back, so a chunk never ends inside a surrogate pair.
+ */
+async function readChunks(handle: FileHandle, mtimeMs: number, budget: number): Promise<FileRead> {
+  const decoder = new TextDecoder();
+  const buffer = Buffer.alloc(RECORD_CHUNK_BYTES);
+  const kept: string[] = [];
+  let bytes = 0;
+  let keeping = true;
+  let storable = true;
+  for (;;) {
+    const chunk = await handle.read(buffer, 0, RECORD_CHUNK_BYTES, bytes);
+    if (chunk.bytesRead === 0) break;
+    bytes += chunk.bytesRead;
+    const piece = decoder.decode(buffer.subarray(0, chunk.bytesRead), { stream: true });
+    storable &&= isStorableRecordText(piece);
+    if (keeping && bytes > budget) keeping = false;
+    if (keeping) kept.push(piece);
+  }
+  // An incomplete trailing sequence decodes to the replacement character, which is storable.
+  const tail = decoder.decode();
+  storable &&= isStorableRecordText(tail);
+  if (keeping) kept.push(tail);
+  return { ok: true, mtimeMs, bytes, storable, ...(keeping ? { text: kept.join("") } : {}) };
 }
 
-/** The first entry whose text koda would refuse, or undefined when every one is storable. */
-function unstorableEntry(record: readonly HandoffRecordFile[]): HandoffRecordFile | undefined {
-  return record.find((entry) => !isStorableRecordText(entry.content));
+/**
+ * One record file, read through the handle its metadata came from: no link is followed, a directory or
+ * special file is refused, and only the bytes `budget` still allows are kept.
+ */
+async function readRecordFile(path: string, budget: number): Promise<FileRead> {
+  const opened = await openPlainFile(path);
+  if ("ok" in opened) return opened;
+  try {
+    const stats = await opened.stat();
+    if (!stats.isFile()) return { ok: false, absent: false };
+    return await readChunks(opened, Math.trunc(stats.mtimeMs), budget);
+  } finally {
+    await opened.close();
+  }
 }
 
-/** The UTF-8 size of everything the handoff would send, which is what koda's cap measures. */
-function recordBytes(record: readonly HandoffRecordFile[]): number {
-  return record.reduce((total, entry) => total + Buffer.byteLength(entry.content, "utf8"), 0);
+/** Every entry of the runs' record, in send order, or the first refusal the files produce. */
+type RecordBuild =
+  | { readonly ok: true; readonly record: readonly HandoffRecordFile[]; readonly bytes: number }
+  | { readonly ok: false; readonly reason: string };
+
+async function buildRecord(runs: readonly RunDir[]): Promise<RecordBuild> {
+  const record: HandoffRecordFile[] = [];
+  let bytes = 0;
+  for (const run of runs) {
+    for (const file of RECORD_FILES) {
+      const path = file === RESULT_FILE ? join(run.runDir, RESULT_FILE) : ledgerFilePath(run.runDir);
+      const read = await readRecordFile(path, HANDOFF_RECORD_MAX_BYTES - bytes);
+      if (!read.ok) {
+        // A missing file is not part of the record; a link or a special file is refused, never read.
+        if (read.absent) continue;
+        return { ok: false, reason: notPlainFileReason(run.runId, file) };
+      }
+      if (!read.storable) {
+        return {
+          ok: false,
+          reason: `${file} of run ${run.runId} holds a NUL or unpaired surrogate character, which koda refuses`,
+        };
+      }
+      bytes += read.bytes;
+      // The text is kept only while the record may still fit, so an absent one is over the cap, below.
+      if (read.text !== undefined) record.push({ runId: run.runId, file, mtimeMs: read.mtimeMs, content: read.text });
+    }
+  }
+  return { ok: true, record, bytes };
 }
 
 /** koda orders runs by the truncated integer mtime, so two runs sharing the newest one cannot be ordered. */
@@ -144,25 +259,20 @@ function newestTie(runs: readonly RunDir[]): boolean {
 
 /** The files of every run that has a result.json, newest run first (US-002). */
 export async function readHandoffRecordFiles(featureWorkflowDir: string): Promise<HandoffRecordRead> {
-  const runs = await listRunDirs(featureWorkflowDir);
+  const listing = await listRunDirs(featureWorkflowDir);
+  if (!listing.ok) return refusal(listing.reason);
+  const { runs } = listing;
   if (runs.length === 0) return refusal(NO_FINISHED_RUN);
   if (runs.length > HANDOFF_MAX_RUNS) {
     return refusal(`the feature has ${runs.length} workflow runs; koda accepts at most ${HANDOFF_MAX_RUNS}`);
   }
   if (newestTie(runs)) return refusal(NEWEST_TIE);
-  const record: HandoffRecordFile[] = [];
-  for (const run of runs) record.push(...(await runEntries(run)));
-  const unstorable = unstorableEntry(record);
-  if (unstorable !== undefined) {
-    return refusal(
-      `${unstorable.file} of run ${unstorable.runId} holds a NUL or unpaired surrogate character, which koda refuses`,
-    );
+  const built = await buildRecord(runs);
+  if (!built.ok) return refusal(built.reason);
+  if (built.bytes > HANDOFF_RECORD_MAX_BYTES) {
+    return refusal(`the run record is ${built.bytes} bytes; koda accepts at most ${HANDOFF_RECORD_MAX_BYTES}`);
   }
-  const bytes = recordBytes(record);
-  if (bytes > HANDOFF_RECORD_MAX_BYTES) {
-    return refusal(`the run record is ${bytes} bytes; koda accepts at most ${HANDOFF_RECORD_MAX_BYTES}`);
-  }
-  return { ok: true, record, newestRunId: runs[0].runId };
+  return { ok: true, record: built.record, newestRunId: runs[0].runId };
 }
 
 /** What the feature-record and PRD preflights read the record against (US-003). */

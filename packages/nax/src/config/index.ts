@@ -27,6 +27,7 @@ export { parseDeclaredStallDetection } from "./package-layer";
 export { isWithinDirectory, MAX_DIRECTORY_DEPTH, validateDirectory, validateFilePath } from "./path-security";
 export {
   featureDir,
+  featureIdInvalidReason,
   featuresDir,
   findProjectDir,
   globalConfigDir,

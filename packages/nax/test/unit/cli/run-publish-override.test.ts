@@ -138,4 +138,22 @@ describe("nax run --publish at the process boundary (US-001)", () => {
     },
     CLI_PROCESS_TIMEOUT_MS,
   );
+
+  test.each([
+    ["a bad --schedule", ["--schedule", "bad"], "Invalid --schedule"],
+    ["--plan without --from", ["--plan"], "--plan requires --from"],
+  ])(
+    "AC-9 refuses an invalid --publish before %s is reported",
+    async (_name, otherFlags, laterError) => {
+      const { code, stderr } = await spawnNax(
+        ["run", "-f", "f1", "-d", projectDir, "--publish", "draft", ...otherFlags],
+        tempDir,
+      );
+
+      expect(code).toBe(1);
+      expect(stderr).toContain('nax run --publish must be one of pr, push, none (got "draft")');
+      expect(stderr).not.toContain(laterError);
+    },
+    CLI_PROCESS_TIMEOUT_MS,
+  );
 });

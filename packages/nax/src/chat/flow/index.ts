@@ -4,6 +4,7 @@ export { _flowHandoffDeps, sendFlowHandoff } from "./flow-handoff";
 export {
   type FlowHandoffInput,
   type FlowHandoffParseResult,
+  formatHandoffCostCap,
   handoffStepArgv,
   parseFlowHandoffInput,
 } from "./flow-handoff-input";
