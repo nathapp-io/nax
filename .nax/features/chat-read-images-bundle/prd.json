@@ -1,0 +1,427 @@
+{
+  "project": "nax-monorepo",
+  "feature": "chat-read-images-bundle",
+  "branchName": "feat/chat-read-images-bundle",
+  "createdAt": "2026-11-18T14:29:05.689Z",
+  "updatedAt": "2026-11-18T14:29:05.689Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Map tool-result images to the model wire format",
+      "description": "**Goal** — Allow nax-ai to send images in tool results to vision models and represent them as notes for text-only models.\n\n**Motivation** — pi-ai 1.5.0 (the version nax-ai pins) already accepts `ImageContent` in a `toolResult` message (`ToolResultMessage.content: (TextContent | ImageContent)[]`), and its OpenAI completions, OpenAI responses and Google providers already route tool-result images on vision models; nax's own types drop the image at every seam before it gets there.\n\n**Approach** — The `tool-result` variant of `ConversationMessage` (`packages/nax-ai/src/protocols/types.ts`) gains `readonly images?: readonly ImageAttachment[]`, the type user messages already use. `toPiMessages` (`packages/nax-ai/src/protocols/pi-client.ts`, reached through `toPiContext(req, model)`, which the module exports and tests import by path) maps a tool result with a non-empty `images` list to pi-ai content `[{ type: \"text\", text: content }, ...images.map(({ data, mimeType }) => ({ type: \"image\", data, mimeType }))]` when `model.input` includes `\"image\"`. When the model does not accept image input, the images are left out and one note line per image is appended to the text: `[image not shown: this model does not accept image input (image/png 1280x720)]`, or `(image/png)` when width or height is absent. Only `type`, `data` and `mimeType` reach the wire; `width`, `height` and `source` never do. A result with no images, or `images: []`, maps exactly as today. This is the one place nax decides vision support for a tool-result image, so a session that switches to a text-only model mid-conversation degrades the same way. Preserve `isError` and map images even when a directly supplied protocol result has `isError: true`. Extend `packages/nax-ai/test/protocols/pi-client-images.test.ts` for the tool-result cases. Every mapping fixture includes an earlier assistant tool call whose ID matches the result; keep the existing orphan-result error unchanged.\n\n**Scope** — In: protocol type, wire mapping, and mapping tests for tool-result images. Out: native runtime and request plumbing (US-002), persistence (US-003), image detection (US-004), and run/hop plumbing (US-007). User-image mapping and provider implementations are unchanged. ACP stays unchanged.\n\n**Interface**\n```typescript\n{ role: \"tool-result\"; toolCallId: string; content: string; isError?: boolean; readonly images?: readonly ImageAttachment[] }\n```",
+      "acceptanceCriteria": [
+        "When toPiContext receives a model with input [\"text\", \"image\"], an assistant tool call \"c1\" named \"Read\", and its tool-result with content \"shot\" and images [PNG A (data \"AAAA\", 2x2), JPEG B (data \"BBBB\")], then the pi toolResult content equals [{ type: \"text\", text: \"shot\" }, { type: \"image\", data: \"AAAA\", mimeType: \"image/png\" }, { type: \"image\", data: \"BBBB\", mimeType: \"image/jpeg\" }].",
+        "When toPiContext maps a tool result for a vision model and the source attachment carries width, height and source, then each pi toolResult image part has exactly the keys type, data and mimeType.",
+        "When toPiContext receives a model with input [\"text\"], an assistant Read tool call \"c1\", and its tool result with content \"shot\" and PNG A (data \"AAAA\", 2x2), then the entire pi toolResult content equals the single part [{ type: \"text\", text: \"shot\\n[image not shown: this model does not accept image input (image/png 2x2)]\" }].",
+        "When toPiContext maps a tool result with a JPEG attachment lacking width and height for a text-only model, then the appended note line equals `[image not shown: this model does not accept image input (image/jpeg)]`.",
+        "When toPiContext maps a tool result with content \"shot\" and images [PNG A (2x2), JPEG B (no dimensions)] for a text-only model, then its pi toolResult content is one text part containing exactly `shot\\n[image not shown: this model does not accept image input (image/png 2x2)]\\n[image not shown: this model does not accept image input (image/jpeg)]`, preserving image order with one note per line after the original content.",
+        "When toPiContext maps a tool result with content \"shot\" and no images key for a vision model, then the pi toolResult content equals [{ type: \"text\", text: \"shot\" }].",
+        "When toPiContext maps a tool result with content \"shot\" and images: [] for a vision model, then the pi toolResult content equals [{ type: \"text\", text: \"shot\" }].",
+        "When toPiContext maps a tool result with isError: true and one image for a vision model, then the pi toolResult has isError: true and the image part after the text."
+      ],
+      "tags": [
+        "feature",
+        "api",
+        "vision"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One additive protocol field and a localized mapping with existing Vitest fixtures and no dependency change."
+      },
+      "contextFiles": [
+        "packages/nax-ai/src/protocols/types.ts",
+        "packages/nax-ai/src/protocols/pi-client.ts",
+        "packages/nax-ai/test/protocols/pi-client-images.test.ts",
+        "packages/nax-ai/test/protocols/pi-client.test.ts"
+      ],
+      "workdir": "packages/nax-ai",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-002",
+      "title": "Carry native tool-result images through the turn loop",
+      "description": "**Goal** — Carry successful tool-result images through native execution into model requests and account for them in request capping and compaction.\n\n**Motivation** — Asked to check a screenshot, a vision-capable model answered that no tool feeds an image into its input and fell back to computing pixel statistics with Bash.\n\n**Approach** — Each seam that today copies only `content` carries `images` too:\n\n- `ToolResult` (`tools/registry.ts`) gains `readonly images?: readonly ImageAttachment[]`.\n- `CodingToolOutcome`'s `ok` / `error` arm (`tools/runtime.ts`) gains `readonly images?: readonly ImageAttachment[]`. `callTool`'s success path puts `result.images` on the outcome when `kind` is `\"ok\"` and the list is non-empty, on both the immediate and the `deferModelTruncation` return. An `\"error\"` outcome never carries images. `runtime.ts` is 599 lines against the 600-line source cap, and `runTool` is baselined at complexity 24 in `packages/nax-agent/scripts/baselines/complexity-baseline.json` (strict limit 20): the story moves the outcome assembly into a helper module and puts the images conditional there, so neither the file nor `runTool` grows; if the extraction lowers `runTool`'s score, the baseline entry is lowered to match.\n- `AdapterInteractionResponse` (`session/interaction-handler.ts`) gains `images?: readonly ImageAttachment[]`; `answerFor` (`session/session-interaction.ts`) copies a non-empty `outcome.images`.\n- In `turn-tool-batch.ts` the `after_tool` event still shapes `content` only (its patch whitelist stays `[\"content\", \"isError\"]`); the images ride beside it: `buildToolResult` gains `images?` and spreads it in only when non-empty, the same absent-stays-absent rule `isError` follows. `ToolResultMessage` and the second `tool-result` arm of `TranscriptMessage` (`native/session/compaction.ts`) gain `readonly images?: readonly ImageAttachment[]`. The error path (`catch`) builds its result without images.\n- `capRequestImages` (`native/session/image-context.ts`) counts tool-result images with user images in one newest-first pass against `MAX_REQUEST_IMAGES` and `MAX_REQUEST_IMAGE_BASE64_CHARS`; a dropped tool-result image becomes the note `[image from an earlier turn dropped from context: <mimeType>]` appended to that tool result's content, as for a user image.\n- `imagesAsNotes` turns tool-result images into `[image: <mimeType> <w>x<h>]` lines appended to the tool result's content, as it does for user images.\n- `estimateTokens` (`compaction.ts`) counts a tool result's images with the same per-image estimate it uses for a user message, through one `imageTokens(images)` helper both arms call (it scores 14 today; copying the loop would push it near the limit).\n- `capRequestImages` scores 17 against the strict limit of 20: its per-message keep/drop step moves into a helper shared by the user and tool-result arms. Every new helper scores 20 or less, and no new complexity-baseline entry is created for `image-context.ts` or `compaction.ts`.\n\nEmbedder tools (`runEmbedderTool`) keep answering `{ answer: result.content }`. Extract outcome assembly into the existing `packages/nax-agent/src/tools/runtime-calltool.ts` helper module; keep imports of runtime types type-only so the helper does not introduce a cycle. `BuildToolResultArgs` is declared with `ToolResultMessage` in `native/session/tool-result.ts`; copy the successful answer's image list separately from the plugin patch without changing which `isError` patches are allowed. Add cases to the existing `test/unit/tools/runtime.test.ts`, `test/unit/native/session/turn-tool-batch.test.ts`, `image-context.test.ts` and `image-compaction.test.ts` suites, and add `test/unit/native/session-adapter-tool-images.test.ts`. Use the handler/runtime composition from `test/unit/native/session-adapter-abort-reasons.test.ts`, not its abort-only model stub: grant tool T under the fixture policy, advertise it in `sendTurn`, capture the second model request, and end its response without another tool call. If `runTool` improves, lower only its entry in the agent complexity baseline.\n\n**Scope** — In: native result, outcome, response, transcript message and request shaping seams, runtime helper extraction, and unit and two-round-trip integration coverage; preserve text audit and plugin semantics. Out: protocol mapping (US-001), sidecar persistence (US-003), actually producing images in Read (US-004), and the separate run/hop handler (US-007). Images from tools other than `Read` (Bash output, MCP tool results, embedder tools): only `Read` produces tool-result images. Showing tool-result images in the chat TUI transcript: the Read card shows the result's text line only. ACP stays unchanged.\n\n**Interface**\n```typescript\n// ToolResult, CodingToolOutcome's ok/error arm, ToolResultMessage, BuildToolResultArgs, and TranscriptMessage's second tool-result arm\nreadonly images?: readonly ImageAttachment[]\n// AdapterInteractionResponse\nimages?: readonly ImageAttachment[]\nfunction buildToolResult(args: BuildToolResultArgs): ToolResultMessage\n```",
+      "acceptanceCriteria": [
+        "When runtime.callTool runs a registered tool returning { content: \"x\", images: [PNG A] }, then it resolves to an outcome matching { kind: \"ok\", content: \"x\", images: [PNG A] }.",
+        "When runtime.callTool runs a registered tool returning { content: \"x\", images: [PNG A] } with call context { deferModelTruncation: true }, then it resolves to an outcome carrying images equal to [PNG A] and a callable finalizeAudit field.",
+        "When runtime.callTool runs a tool returning { content: \"bad\", isError: true, images: [PNG A] }, then it resolves to a kind: \"error\" outcome with no images key.",
+        "When runtime.callTool runs a tool returning { content: \"x\", images: [] }, then its outcome has no images key.",
+        "When buildToolResult receives { toolCallId: \"c1\", content: \"x\", images: [PNG A] }, then the message has images equal to [PNG A].",
+        "When buildToolResult receives { toolCallId: \"c1\", content: \"x\" } or the same args with images: [], then the message has no images key in either case.",
+        "Given NativeSessionAdapter.sendTurn with the production createSessionInteractionHandler over createCodingToolRuntime({ extraTools: [T] }) as in session-adapter-abort-reasons.test.ts, and a stub model that calls T first and ends on the second response, when T returns { content: \"x\", images: [PNG A] }, then the second request's tool-result for the call has images equal to [PNG A].",
+        "Given that same native turn composition and T's image result, when an after_tool handler patches content to \"y\", then the second request's tool-result matches { content: \"y\", images: [PNG A] }.",
+        "Given that same native turn composition, when T throws, then the second request's tool-result for T has no images key.",
+        "When capRequestImages receives [user with 15 images, tool-result with 10 images], then it returns the two messages with all 10 tool-result images, the newest 10 user images, and exactly five [image from an earlier turn dropped from context: image/png] lines appended to user content.",
+        "When capRequestImages receives [tool-result with 15 images, user with 10 images], then it returns the two messages with all 10 user images, the newest 10 tool-result images, and exactly five [image from an earlier turn dropped from context: image/png] lines appended to tool-result content.",
+        "When capRequestImages receives user and tool-result attachments whose combined base64 length exceeds MAX_REQUEST_IMAGE_BASE64_CHARS, then the combined base64 length of all kept images is at or below MAX_REQUEST_IMAGE_BASE64_CHARS.",
+        "When capRequestImages receives messages including tool-result images and their combined totals fit both request limits, then it returns the same array instance.",
+        "When imagesAsNotes receives a tool result with content \"x\" and a 640x480 PNG, then it returns that message with no images key and content equal to x\n[image: image/png 640x480].",
+        "When estimateTokens receives a tool result with 400 characters of content and one image without dimensions, then it returns the estimate for the same result without the image plus IMAGE_TOKEN_ESTIMATE."
+      ],
+      "tags": [
+        "feature",
+        "vision",
+        "session",
+        "runtime"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Crosses policy-sensitive tool execution and native session request seams, including error handling and audit timing; strict test isolation applies."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/tools/runtime.ts",
+        "packages/nax-agent/src/session/session-interaction.ts",
+        "packages/nax-agent/src/native/session/turn-tool-batch.ts",
+        "packages/nax-agent/src/native/session/image-context.ts",
+        "packages/nax-agent/test/unit/native/session-adapter-abort-reasons.test.ts",
+        "packages/nax-agent/src/native/session/compaction.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/test/unit/native/session-adapter-tool-images.test.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/scripts/baselines/complexity-baseline.json",
+          "reason": "the `runTool` entry for the tool runtime module is baselined at 24; if moving the outcome assembly into a helper lowers its score, the entry is lowered to the new score (an improved function keeps no slack), and no other entry changes."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-003",
+      "title": "Persist tool-result images in transcript sidecars",
+      "description": "**Goal** — Preserve native tool-result images across transcript saves and loads using the existing content-addressed sidecar.\n\n**Motivation** — The image-attachments work (#2758, #2759) lets the user attach images to a user message; nothing lets the agent read one itself.\n\n**Approach** — `splitTranscriptImages` and `rehydrateTranscriptImages` (`native/session/transcript-images.ts`) visit `tool-result` messages as well as `user` messages: a tool result's images are published to the same `<file>.images/` sidecar by content hash and stored as refs, the document is written with `schemaVersion: 2`, and loading rehydrates them inline. A document whose only images are on tool results is still split. A tool-result image whose sidecar file is missing is dropped on load and the same numbered line user messages get, `[image missing #<n>]`, is appended to that tool result's content, numbered by the existing `notedSlots` / `slotOf` logic; the tool-result stored arm goes through the same rehydrate loop as the user arm. `rehydrateTranscriptImages` scores exactly 20 (the strict limit) and has no baseline entry, so the per-message hydrate body (building `images`, the `notedSlots` / `slotOf` marker) moves into a helper scoring 20 or less, leaving `rehydrateTranscriptImages` no higher than today; no baseline entry is created for `transcript-images.ts`. A document with no images on any message is written unchanged, as today. Reuse `transcriptImagesPath` and the existing safe read/publish functions; the store must still publish JSON only after sidecar success. Extend `test/unit/native/session/transcript-images-write.test.ts` and `transcript-images-read.test.ts` including a store round trip.\n\n**Scope** — In: the private stored representation and the native transcript store's existing save/load path for tool results. Out: native execution, image caps and compaction (US-002), file detection (US-004), provider mapping (US-001). Reading a transcript that has tool-result images with a build older than this feature: such a build passes the stored tool-result image refs through without `data`; the schema version stays 2. Showing tool-result images in the chat TUI transcript is out of scope.\n\n**Interface**\n```typescript\n// StoredMessage tool-result arm\nimages?: readonly StoredImage[]\nfunction splitTranscriptImages(path: string, doc: TranscriptDoc): Promise<unknown>\nfunction rehydrateTranscriptImages(path: string, value: object): Promise<TranscriptDoc>\n```",
+      "acceptanceCriteria": [
+        "When splitTranscriptImages(path, doc) receives a document whose only image is a PNG on a tool-result, then it publishes the image under transcriptImagesPath(path) and returns a schemaVersion: 2 stored document with one image ref and no data on that tool result's stored image.",
+        "When rehydrateTranscriptImages(path, stored) loads that stored document, then the tool-result images equal the original [PNG A], including data.",
+        "When the same PNG bytes occur on a user message and a tool-result message, then splitTranscriptImages writes the image to the sidecar once.",
+        "When rehydrateTranscriptImages loads a document whose tool-result image file was deleted, then that tool result has no images key and its content ends with the line [image missing #1].",
+        "When splitTranscriptImages receives a document where no message carries images, then it returns the document unchanged, without adding schemaVersion: 2.",
+        "When a transcript whose tool result carries a PNG is saved and loaded through the transcript store, then the loaded tool-result message has the same images."
+      ],
+      "tags": [
+        "feature",
+        "vision",
+        "session",
+        "persistence"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Extends an established persistence pattern while touching session storage and its filesystem trust boundary."
+      },
+      "contextFiles": [
+        "packages/nax-agent/src/native/session/transcript-images.ts",
+        "packages/nax-agent/src/native/session/transcript-store.ts",
+        "packages/nax-agent/test/unit/native/session/transcript-images-write.test.ts",
+        "packages/nax-agent/test/unit/native/session/transcript-images-read.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When a tool result already has a trailing [image missing #1] marker and its first remaining sidecar image is missing on a later load, then the newly appended marker is [image missing #2]."
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-004",
+      "title": "Return image files from Read and clarify Bash wake behavior",
+      "description": "**Goal** — Have native Read emit supported image attachments and have the background-enabled Bash description tell the agent that task completion wakes it.\n\n**Motivation** — The Bash tool already says `a notice arrives when the command ends`, but not that the notice wakes the agent, so it waited by hand.\n\n**Approach** —\n\n- New `packages/nax-agent/src/session/image-sniff.ts` holds `sniffImage`, `SniffedImage` and `ImageFormat` exactly as `packages/nax/src/chat/images/image-sniff.ts` defines them today (moved, not rewritten), exported from the `@nathapp/nax-agent` root beside the `image-input` constants.\n- `Read` checks the file's leading bytes before its text path. When they match an image signature it returns an image result instead of text; any other file is read exactly as today. The decision is by bytes, never by file name. `readPrefix` decodes UTF-8 and cannot carry image bytes, so `packages/nax-agent/src/internal/bounded-io.ts` gains `readBytesPrefix(path, maxBytes): Promise<{ bytes: Uint8Array; size: number }>`: the same non-blocking open and regular-file check as `readPrefix` (a FIFO or a directory fails with `READ_NOT_REGULAR_FILE` as today), at most `maxBytes` bytes read, and `size` taken from the open handle's `stat`. The module's header comment, which says both helpers return up to `maxBytes + 1` bytes, is updated to describe `readBytesPrefix`, which returns at most `maxBytes`. The image branch lives in a new `packages/nax-agent/src/tools/read-image.ts` as `readImageResult(target, input, hasOffset, hasLimit): Promise<ToolResult | undefined>`, which never throws: a header or file read error (including `READ_NOT_REGULAR_FILE`) is returned as an `isError` result carrying the error's message. `readTool.run` scores 19 against the strict cognitive-complexity limit of 20, so its single call (`const image = await readImageResult(...); if (image !== undefined) return image;`) sits outside its `try`, after the credential refusal and after `parseRange` (an unsupported range alias such as `start_line` is still rejected first, image or not), and before the text branches; `readImageResult` itself stays at or under 20. Procedure: read a header of `IMAGE_HEADER_BYTES` (65,536) with `readBytesPrefix` and run `sniffImage` on it; no match means the text path. On a match, refuse when `size` is over 3,932,160; otherwise read the whole file (`readBytesPrefix(path, size)`) and run `sniffImage` on all of it for the dimensions. The image branch does not apply `ctx.maxFileBytes` (2,000,000 by default) or `readCeiling`; the image limit replaces them. Dimensions are kept only when both width and height are positive integers. An image result:\n  - content `[image: <mimeType> <w>x<h>, <n> bytes]`, where `<n>` is the length of the whole-file read (the bytes that are base64-encoded), (`[image: <mimeType>, <n> bytes]` when the header gives no size, or a width or height that is not a positive integer, in which case the image entry has no `width` or `height`), `images: [{ mimeType, data: <base64 of the whole file>, width?, height?, source: <the path as given> }]`, not an error;\n  - a file larger than `(MAX_IMAGE_BASE64_CHARS / 4) * 3` bytes (3,932,160) is an error with content `image too large to view: <n> bytes (limit 3932160)` and no images;\n  - `offset` or `limit` on an image is an error with content `offset/limit apply to text files; \"<path>\" is an <mimeType> image`.\n  - The credential read refusal still runs first, unchanged.\n- `Read`'s description gains the sentence `PNG, JPEG, GIF and WebP files are returned as images.`, inserted immediately before its closing `Output is capped at ...` sentence, so it still starts with `Read a UTF-8 text file from the repository.` and still ends with `Output is capped at 1000 lines or 40000 bytes.`\n- `withBackgroundSentence` (`tools/bash-background.ts`) appends `Set \"runInBackground\": true to return at once with a task id; when the command ends, a notice wakes you with its result, so there is no need to wait or poll.` in place of today's sentence.\n\nMove the sniffer test cases into `test/unit/session/image-sniff.test.ts`, without deleting the old nax files in this story. Add `test/unit/tools/read-image.test.ts` and update the pinned sentence constant in `test/unit/tools/bash-background.test.ts`, leaving those assertions otherwise unchanged. Regenerate `packages/nax-agent/api/nax-agent.api.txt` with `bun run api:update` from the agent package: only `ImageFormat`, `SniffedImage` and `sniffImage` are newly named on `.`.\n\n**Scope** — In: named sniffer exports and API snapshot, bounded image reading on the policy-resolved target, Bash tool description, and corresponding tests in nax-agent. Out: the nax import switch and old copy's removal (US-008), transport/capping (US-001 and US-002), sidecars (US-003), and chat wake policy (US-005). ACP sessions are unchanged. Images from tools other than `Read` (Bash output, MCP tool results, embedder tools): only `Read` produces tool-result images. Showing tool-result images in the chat TUI transcript: the Read card shows the result's text line only. Resizing or re-encoding an image that is over the size limit: it is refused with an error, not shrunk. PDF, SVG, BMP, TIFF and HEIC files: only PNG, JPEG, GIF and WebP are images to `Read`; other files take the text path as today. The Linux srt placeholder files (`.zshrc`, `.profile`, ...): tracked as #2986. The `nax-finish` skill's wording about background commands: changed in the nax-toolkit-skills repo, not in this feature.\n\n**Interface**\n```typescript\nexport type ImageFormat = \"png\" | \"jpeg\" | \"gif\" | \"webp\";\nexport interface SniffedImage {\n  readonly format: ImageFormat;\n  readonly mimeType: string; // \"image/png\" | \"image/jpeg\" | \"image/gif\" | \"image/webp\"\n  readonly width?: number;\n  readonly height?: number;\n}\nexport function sniffImage(bytes: Uint8Array): SniffedImage | undefined\nreadBytesPrefix(path, maxBytes): Promise<{ bytes: Uint8Array; size: number }>\nreadImageResult(target, input, hasOffset, hasLimit): Promise<ToolResult | undefined>\nfunction withBackgroundSentence(description: string, port?: BackgroundCommandPort): string\n```",
+      "acceptanceCriteria": [
+        "When sniffImage imported from @nathapp/nax-agent receives the bytes of a 100x50 PNG, then it returns { format: \"png\", mimeType: \"image/png\", width: 100, height: 50 }.",
+        "When sniffImage receives a GIF89a header carrying dimensions, then it returns format \"gif\" with the header's width and height.",
+        "When sniffImage receives a JPEG whose first frame marker is SOF0, then it returns format \"jpeg\" with the frame's width and height.",
+        "When sniffImage receives a VP8X WebP header, then it returns format \"webp\" with the header's width and height.",
+        "When sniffImage receives the bytes of the text hello, then it returns undefined.",
+        "When readTool.run reads a 100x50 PNG at shot.png without offset or limit, then it returns a result with no isError, content [image: image/png 100x50, <file size> bytes], and one image whose mimeType is image/png, width is 100, height is 50, source is shot.png, and data is the base64 of the file's bytes.",
+        "When readTool.run reads a JPEG, then the image entry's mimeType is image/jpeg.",
+        "When readTool.run reads a PNG stored as data.bin, then it returns an image result.",
+        "When readTool.run reads notes.png containing exactly the UTF-8 text `hello` without offset or limit, then it returns the unchanged text result `{ content: \"[1 lines]\\nhello\", truncated: false }` with no images key.",
+        "When readTool.run reads a GIF whose header is too short to hold its size, then it returns content [image: image/gif, <file size> bytes] and an image entry with no width or height.",
+        "When readTool.run reads a 3,932,161-byte file starting with the PNG signature, then it returns { isError: true, content: \"image too large to view: 3932161 bytes (limit 3932160)\" } with no images key.",
+        "When readTool.run reads a file of exactly 3,932,160 bytes starting with the PNG signature, then it returns an image result.",
+        "When readTool.run reads the PNG shot.png with offset: 1, then it returns isError: true with content exactly `offset/limit apply to text files; \"shot.png\" is an image/png image`.",
+        "When readTool.run reads the PNG shot.png with limit: 10, then it returns isError: true with content exactly `offset/limit apply to text files; \"shot.png\" is an image/png image`.",
+        "When readTool.run reads a PNG with start_line: 1, then it returns the existing unsupported-argument error naming start_line, not the image error.",
+        "When readTool.run receives a directory, then the header read yields `{ isError: true, content: '\"<resolved path>\" is not a regular file' }`, preserving the existing READ_NOT_REGULAR_FILE message rather than exposing the exception.",
+        "When readTool.run receives a FIFO, then the non-blocking header read yields `{ isError: true, content: '\"<resolved path>\" is not a regular file' }`, preserving the existing READ_NOT_REGULAR_FILE message.",
+        "When readTool.description is read, then it contains `PNG, JPEG, GIF and WebP files are returned as images.` immediately before the closing `Output is capped at 1000 lines or 40000 bytes.` sentence, preserving that ending and the opening `Read a UTF-8 text file from the repository.`.",
+        "When readTool.run reads a PNG whose header declares width 0, then it returns content [image: image/png, <file size> bytes] and an image entry with no width or height.",
+        "When readTool.run reads a 2,500,000-byte PNG with ctx.maxFileBytes set to 2,000,000, then it returns an image result.",
+        "When readBytesPrefix(path, 10) reads a 100-byte file, then it resolves to `{ bytes: <the first 10 raw bytes>, size: 100 }`, and when it receives a directory path it rejects with an exception whose code is `READ_NOT_REGULAR_FILE`.",
+        "When runtime.callTool(\"Read\", { path: \"shot.png\" }) reads a PNG in the policy root, then it resolves to a kind: \"ok\" outcome with one image whose mimeType is image/png.",
+        "When withBackgroundSentence(\"Run a command.\", port) is called with a background port, then it returns exactly: Run a command. Set \"runInBackground\": true to return at once with a task id; when the command ends, a notice wakes you with its result, so there is no need to wait or poll.",
+        "When withBackgroundSentence(\"Run a command.\", undefined) is called, then it returns Run a command."
+      ],
+      "tags": [
+        "feature",
+        "vision",
+        "tools",
+        "security"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Adds bounded binary filesystem I/O behind a credential-sensitive Read path, a public export, and runtime integration; strict test isolation is required."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/images/image-sniff.ts",
+        "packages/nax/test/unit/chat/images/image-sniff.test.ts",
+        "packages/nax-agent/src/internal/bounded-io.ts",
+        "packages/nax-agent/src/tools/read.ts",
+        "packages/nax-agent/src/tools/bash-background.ts",
+        "packages/nax-agent/src/index.ts"
+      ],
+      "expectedFiles": [
+        "packages/nax-agent/src/tools/read-image.ts",
+        "packages/nax-agent/src/session/image-sniff.ts",
+        "packages/nax-agent/test/unit/session/image-sniff.test.ts",
+        "packages/nax-agent/test/unit/tools/read-image.test.ts"
+      ],
+      "suggestedCriteria": [
+        "When Read is asked for an image at a protected credential path, then it returns the existing credential refusal with no images key.",
+        "When Read receives a WebP or GIF file with valid magic bytes and positive integer dimensions, then the image it returns has the corresponding MIME type and dimensions."
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax-agent/api/nax-agent.api.txt",
+          "reason": "the names-only public snapshot of the `.` entry gains `ImageFormat`, `SniffedImage` and `sniffImage`; regenerated with `bun run api:update` from the nax-agent package directory. `ToolResult`, `CodingToolOutcome` and `AdapterInteractionResponse` appear by name only, so their new fields change nothing else."
+        },
+        {
+          "path": "packages/nax-agent/test/unit/tools/bash-background.test.ts",
+          "reason": "the expected sentence constant at line 66 pins `a notice arrives when the command ends.`; it becomes `Set \"runInBackground\": true to return at once with a task id; when the command ends, a notice wakes you with its result, so there is no need to wait or poll.`, and the assertions that use it are otherwise unchanged."
+        }
+      ],
+      "workdir": "packages/nax-agent",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-005",
+      "title": "Default chat task auto-wake to unlimited",
+      "description": "**Goal** — Deliver ended background-task notices without a consecutive-turn cap by default while retaining explicit positive caps.\n\n**Motivation** — An agent working through a chain of background tasks the user approved stops at the fourth.\n\n**Approach** — `chatTaskNoticeTurns` keeps its schema range (integer 0–100) and changes its default from 3 to 0 in `InteractionConfigSchema` (`config/schemas-infra.ts`) and in the `interaction` default object (`config/schemas.ts`). `MAX_CONSECUTIVE_TASK_NOTICE_TURNS` becomes 0. In `useJobs`, a limit of 0 never holds a task notice; a positive limit holds as today. This bypasses only the consecutive task-turn cap: a pending steer still owns its notice, and ordinary idle, in-flight, and notice-priority rules still apply. `taskNoticeHeldLine(limit)` keeps only its `auto-wake paused after <limit> task turns in a row` form; the `auto-wake is off` form is removed, because no setting turns auto-wake off any more. The field description becomes `Ended background-task notices that may wake the chat agent in a row before the user sends a message (0 = no limit)`. Update the comment in `config/runtime-types.ts` to `(default: 0 = no limit)` and update the default assertion in `test/unit/chat/chat-host.test.ts` and both defaults in `test/unit/config/schemas-infra.test.ts`, keeping range assertions unchanged. In `test/ui/chat/task-notices.test.tsx`, mount the three tests around lines 139–184 that rely on 3 with `taskNoticeTurns` 3 explicitly. Repurpose the old zero-as-off and marked-output-read hold tests to mount with a limit of 1 after one task-woken turn and use `taskNoticeHeldLine(1)`. Keep 0 in the AC-23/24 and AC-14 steer cases; check `taskNoticeHeldLine(1)` instead of the vacuous `taskNoticeHeldLine(0)` in the pending-steer case. Cover explicit and omitted unlimited limits, positive holds and resume/reset.\n\n**Scope** — In: chat task-notice schema and host defaults, CLI field description, idle guard and held wording, and their config and TUI regression tests; keep the busy steer and explicit positive-cap paths. Out: changing the Bash tool description (US-004) or changing footer rendering (US-006). A setting that turns chat auto-wake off entirely: `0` now means no limit, and no value means never.\n\n**Interface**\n```typescript\n// Resolved interaction field\nchatTaskNoticeTurns?: number\nexport const MAX_CONSECUTIVE_TASK_NOTICE_TURNS = 0;\nfunction taskNoticeHeldLine(limit: number): string\n```",
+      "acceptanceCriteria": [
+        "When NaxConfigSchema.parse({}) returns config, then interaction.defaults.chatTaskNoticeTurns equals 0.",
+        "When InteractionConfigSchema.parse({ defaults: {} }) returns config, then defaults.chatTaskNoticeTurns equals 0.",
+        "When FIELD_DESCRIPTIONS[\"interaction.defaults.chatTaskNoticeTurns\"] is read, then its exact value is `Ended background-task notices that may wake the chat agent in a row before the user sends a message (0 = no limit)`.",
+        "When MAX_CONSECUTIVE_TASK_NOTICE_TURNS is imported from @/tui/chat/use-jobs, then it equals 0.",
+        "Given a chat mounted with taskNoticeTurns: 0, when a user sends one message and six background tasks end in sequence, each after the previous notice turn finishes, then send is called seven times and no transcript row contains auto-wake paused.",
+        "Given a chat whose host omits taskNoticeTurns, when a user sends one message and six background tasks end in sequence, each after the previous notice turn finishes, then all six notices are delivered the same way: send is called seven times with no auto-wake paused row.",
+        "Given a chat mounted with taskNoticeTurns: 3, when four background tasks end in a chain without an intervening user turn, then three notices are delivered, the fourth is held, and background task ended · auto-wake paused after 3 task turns in a row · send a message to continue is drawn exactly once.",
+        "Given a held notice with taskNoticeTurns: 3, when the user types a message and its turn ends, then the held notice is sent.",
+        "When taskNoticeHeldLine(2) is called, then it returns background task ended · auto-wake paused after 2 task turns in a row · send a message to continue.",
+        "Given taskNoticeTurns: 0, when a task ends while a turn is running, then the notice is steered into that turn and its steered row is drawn, as with a positive limit."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "config",
+        "background-tasks"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Changes defaults and one existing guard without adding a queue or changing the asynchronous delivery and steer mechanisms."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/use-jobs.ts",
+        "packages/nax/src/config/schemas-infra.ts",
+        "packages/nax/src/config/schemas.ts",
+        "packages/nax/src/cli/config-descriptions.ts",
+        "packages/nax/test/ui/chat/task-notices.test.tsx"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/ui/chat/task-notices.test.tsx",
+          "reason": "the three tests at lines 139-155, 156-172 and 173-184 mount without a `taskNoticeTurns` and expect a fourth notice to be held, relying on the old default of 3; they mount with `taskNoticeTurns` 3 explicitly, and their expectations are unchanged. Also: the two tests that mount with `taskNoticeTurns` 0 to mean \"hold every notice\" (\"a taskNoticeTurns of 0 never wakes the agent but still announces the held notice\" at lines 194-199, and \"a marked output read retires a held notice\" at about line 580) now get no limit; each mounts with `taskNoticeTurns` 1 after one task-woken turn so the guard holds, and references to taskNoticeHeldLine(0) in them become taskNoticeHeldLine(1). The steer tests \"AC-23/24\" and \"AC-14\" keep `taskNoticeTurns` 0 and still pass; the vacuous taskNoticeHeldLine(0) check in \"AC-14\" (about line 470) becomes taskNoticeHeldLine(1)."
+        },
+        {
+          "path": "packages/nax/test/unit/chat/chat-host.test.ts",
+          "reason": "`exposes the configured chat task-notice turn limit (#2816)` expects `host.taskNoticeTurns` 3 from the default config; it expects 0."
+        },
+        {
+          "path": "packages/nax/src/config/runtime-types.ts",
+          "reason": "the comment on `chatTaskNoticeTurns` at line 244 says `(default: 3)`; it says `(default: 0 = no limit)`. Comment only."
+        },
+        {
+          "path": "packages/nax/test/unit/config/schemas-infra.test.ts",
+          "reason": "the default assertions at lines 148-149 expect `chatTaskNoticeTurns` 3; they expect 0. The range assertions are unchanged."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-006",
+      "title": "Underline and accent the clickable footer strip",
+      "description": "**Goal** — Make the jobs and tasks strip look clickable without changing its text, width or click target.\n\n**Motivation** — A left click on the strip already opens the lone shell's output or the jobs picker (#2952, `footerStripHit` in `tui/chat/use-jobs-opener.ts`), but the strip is drawn as plain text, the same as the model name beside it.\n\n**Approach** — `Span` (`tui/chat/styled-line.tsx`) gains `readonly underline?: boolean`, and `spanProps` passes it to Ink's `Text` `underline` prop. The strip's span is drawn `{ text, color: \"accent\", underline: true }` in every place it is built: `rightSegments` (`tui/chat/footer-segments.ts`), the summarised replacement in `summarised` (`tui/chat/status-layout.ts`, text `<n> active (ctrl+g)`) and `footerModel` (`tui/chat/chat-status.ts`). The separator after the strip and every other footer span keep their style. The strip's text and width do not change, so `stripWidth` and the click hit-test are unaffected. `sameStyle` and `styleOf` in `tui/chat/wrap.ts` enumerate the style keys; both gain `underline`, so a span that is wrapped, cut or merged keeps it. Extend the existing StyledLineView render test and footer-segments, status-layout and chat-status-tasks suites.\n\n**Scope** — In: span styling, style retention and every form of the strip. Out: changing notice behavior (US-005) or rendering Read images in the TUI transcript. Live views of a running shell, a background shell or a subagent run (a shell details panel, a full subagent chat view): separate work. Existing click geometry and opener behavior stay unchanged.\n\n**Interface**\n```typescript\n// Span\nreadonly underline?: boolean\n// Strip span\n{ text, color: \"accent\", underline: true }\n```",
+      "acceptanceCriteria": [
+        "When StyledLineView renders [{ text: \"1 shell\", underline: true }] and the same line without underline, then it writes the first line with terminal underline style and the second without it.",
+        "When fittedFooterModel receives one running shell task on a wide row, then its right-line span with text 1 shell has color \"accent\" and underline true.",
+        "When fittedFooterModel receives one running agent task, then its 1 agent span has color \"accent\" and underline true.",
+        "When fittedFooterModel fits a wide row with `jobs: [{ kind: \"run\", target: \"demo\" }]` and one shell task, then the `run demo · 1 shell` strip span (unchanged text for a run without progress or cost) has color \"accent\" and underline true.",
+        "When fittedFooterModel fits a wide footer with a `run demo · 1 shell` strip followed by model and cost, then the separator immediately after the strip retains color \"muted\" and has no underline, and neither the model nor the cost span has underline.",
+        "When fittedFooterModel fits the existing `TWO_JOBS_AND_A_TASK` fixture at 60 columns from `footer-fit-pipeline.test.ts`, a row narrow enough to summarize the strip, then its `3 active (ctrl+g)` span has color \"accent\" and underline true.",
+        "When fittedFooterModel receives no jobs and no tasks, then it returns no span with underline true.",
+        "When fittedFooterModel shows the strip for one running shell, then stripWidth equals the display width of 1 shell, unchanged from today.",
+        "When footerModel from @/tui/chat/chat-status receives one running shell, then its right-line 1 shell span has color \"accent\" and underline true."
+      ],
+      "tags": [
+        "feature",
+        "chat",
+        "tui",
+        "ux"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One optional style propagated through five existing rendering and style helpers, without layout or input changes."
+      },
+      "contextFiles": [
+        "packages/nax/src/tui/chat/styled-line.tsx",
+        "packages/nax/src/tui/chat/footer-segments.ts",
+        "packages/nax/src/tui/chat/status-layout.ts",
+        "packages/nax/src/tui/chat/chat-status.ts",
+        "packages/nax/src/tui/chat/wrap.ts"
+      ],
+      "suggestedCriteria": [
+        "When adjoining spans differ only by underline, then wrapping or cutting the line preserves the underline boundary instead of merging it into plain text."
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-007",
+      "title": "Forward native tool-result images in run and hop sessions",
+      "description": "**Goal** — Carry the native coding tool's image list through the interaction handler shared by `nax run` stories and hop sessions.\n\n**Motivation** — The image-attachments work (#2758, #2759) lets the user attach images to a user message; nothing lets the agent read one itself.\n\n**Approach** — `buildRunInteractionHandler` (`packages/nax/src/agents/run-interaction-handler.ts`) maps a `CodingToolOutcome` to `{ answer: outcome.content, finalizeAudit? }`; it also copies a non-empty `outcome.images` onto the response through a helper `imagesField(outcome)` in the same file (`{ images }` when non-empty, `{}` otherwise; scoring 20 or less), so the call site gains only `...imagesField(outcome)`. `onInteraction` is baselined at 52 in `packages/nax/scripts/baselines/complexity-baseline.json`, and the helper keeps it from growing, so a `Read` of an image in a `nax run` story or a hop session reaches the model the same way it does in chat. Add the cases to `packages/nax/test/unit/agents/run-interaction-handler.test.ts`; retain existing audit, error, denied, and non-coding-tool behavior. Make `imagesField` directly importable by its unit test from this module, not from a package barrel. The call site is after the denied-outcome return, and actual error outcomes from the runtime have no images.\n\n**Scope** — In: the non-empty image projection in the run/hop coding-tool response, the same-file helper, and handler regression tests. Out: the chat interaction handler and cap/compaction seams (US-002), producing images in Read (US-004), transcript sidecars (US-003), and vision negotiation (US-001). ACP stays unchanged, and context tools do not gain images.\n\n**Interface**\n```typescript\nfunction buildRunInteractionHandler(options: RunInteractionOptions): InteractionHandler\n// AdapterInteractionResponse addition supplied by US-002\nimages?: readonly ImageAttachment[]\n```\n`imagesField(outcome)` returns `{ images }` when non-empty and `{}` otherwise.",
+      "acceptanceCriteria": [
+        "When the handler from buildRunInteractionHandler receives a coding-tool request whose runtime outcome is { kind: \"ok\", content: \"x\", images: [PNG A] }, then it answers { answer: \"x\", images: [PNG A] }.",
+        "When that handler receives a coding-tool request whose runtime outcome is { kind: \"ok\", content: \"x\" }, then its answer has no images key.",
+        "When imagesField receives { kind: \"ok\", content: \"x\", images: [] }, then it returns {}.",
+        "When the handler from buildRunInteractionHandler receives a coding-tool request whose runtime outcome is { kind: \"error\", content: \"ENOENT\" }, then it answers { answer: \"ENOENT\" }, preserving the existing error-text response without an images or denial marker."
+      ],
+      "tags": [
+        "feature",
+        "vision",
+        "run",
+        "session"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "A small additive mapping in one source file, with strict isolation because it touches the run/hop session interaction seam."
+      },
+      "contextFiles": [
+        "packages/nax/src/agents/run-interaction-handler.ts",
+        "packages/nax/test/unit/agents/run-interaction-handler.test.ts",
+        "packages/nax/src/runtime/session-run-hop.ts",
+        "packages/nax/src/operations/build-hop-callback-hop.ts",
+        "packages/nax-agent/src/session/interaction-handler.ts"
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    },
+    {
+      "id": "US-008",
+      "title": "Use one shared image sniffer in nax",
+      "description": "**Goal** — Switch nax's attachment path to the agent's shared sniffer while keeping the `@/chat` API stable.\n\n**Motivation** — The image-attachments work (#2758, #2759) lets the user attach images to a user message; nothing lets the agent read one itself.\n\n**Approach** — `packages/nax/src/chat/images/index.ts` re-exports `sniffImage`, `SniffedImage` and `ImageFormat` from `@nathapp/nax-agent`; `image-file.ts` imports `sniffImage` from `@nathapp/nax-agent`; `packages/nax/src/chat/images/image-sniff.ts` and its test file are deleted (the test cases moved to nax-agent in US-004). `@/chat`'s exports keep their names, so `use-image-attach.ts` and `mention-expand.ts` are unchanged. Import the `SniffedImage` type from the same package as the function. Deletion-only apart from the two import lines; verified by `bun run typecheck` in `packages/nax`. The two specified PNG cases and the non-image refusal guard describe existing behavior. Use the `@/chat` attachment suite for regression verification; `imageFromBytes` takes `(bytes, source)` and returns `{ image }` or `{ refusal }`.\n\n**Scope** — In: nax import/re-export redirection, removal of the obsolete local implementation and direct-import test, and verification of the existing `@/chat` attachment behavior. Out: changing sniffing or creating its agent export/tests (US-004), changing attachment validation or callers, and changing any model, session or persistence behavior (US-001–US-003 and US-007).\n\n**Interface**\n```typescript\nexport { type ImageFormat, type SniffedImage, sniffImage } from \"@nathapp/nax-agent\";\nfunction sniffImage(bytes: Uint8Array): SniffedImage | undefined\n```",
+      "acceptanceCriteria": [
+        "When sniffImage imported from @/chat receives the bytes of a 100x50 PNG, then it returns { format: \"png\", mimeType: \"image/png\", width: 100, height: 50 }, preserving the existing export behavior.",
+        "When imageFromBytes imported from @/chat receives the bytes of a 100x50 PNG and source \"clipboard\", then it returns the success arm `{ image: ... }` whose image has mimeType image/png, width 100 and height 50, preserving the existing attachment behavior.",
+        "When imageFromBytes imported from @/chat receives the UTF-8 bytes of `hello` and source \"clipboard\", then it returns `{ refusal: \"not a PNG, JPEG, GIF or WebP image\" }`, preserving the existing non-image refusal."
+      ],
+      "tags": [
+        "refactor",
+        "vision",
+        "chat",
+        "compatibility"
+      ],
+      "dependencies": [
+        "US-004"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "no-test",
+        "reasoning": "A small multi-file dependency cleanup crossing the public package boundary, with no algorithm or user-visible behavior change.",
+        "noTestJustification": "This is a structural relocation: the exact sniffer and its direct tests move to nax-agent in US-004, and this story changes only imports/re-exports and removes the duplicate files. The existing @/chat regression assertions and package typecheck verify the migration without new runtime behavior."
+      },
+      "contextFiles": [
+        "packages/nax/src/chat/images/index.ts",
+        "packages/nax/src/chat/images/image-file.ts",
+        "packages/nax/src/chat/images/image-sniff.ts",
+        "packages/nax/test/unit/chat/images/image-file.test.ts",
+        "packages/nax-agent/src/session/image-sniff.ts"
+      ],
+      "modifiedFiles": [
+        {
+          "path": "packages/nax/test/unit/chat/images/image-sniff.test.ts",
+          "reason": "deleted: it imports the nax copy of the sniffer, which this story deletes, and its cases now live in the nax-agent sniffer test that US-004 creates."
+        }
+      ],
+      "workdir": "packages/nax",
+      "workdirSource": "stated"
+    }
+  ],
+  "analysis": "This is an enhancement to the existing TypeScript/Bun workspace, not a new architecture. Preserve the dependency direction nax-ai → nax-agent → nax, Node-compatible source in nax-ai and nax-agent, and no changes to nax-agent-acp. The graph MCP was unavailable, so repository findings were confirmed with targeted text search and direct reads. Sequence: US-001 defines the wire contract for US-002; US-003, US-004 and US-007 then build on US-002; US-008 follows US-004. US-005 and US-006 are independent. Done means a native Read of a supported image flows through chat, run and hop, is bounded and persisted, and reaches a vision model or yields an explanatory note on a text-only model. The bundle also changes the task-wake default, Bash guidance, and the visual affordance of the footer without changing click behavior.\n\nUS-001 — Wire: packages/nax-ai/src/protocols/types.ts:123 already defines shared ImageAttachment and :150 is the text-only tool-result arm. packages/nax-ai/src/protocols/pi-client.ts:143 maps conversation messages, :197 recovers a tool name from an earlier assistant call and rejects orphan results, and :223 exposes toPiContext. Keep the lookup, timestamp and isError behavior; only change tool-result content projection. User images are currently ordered before text and omit empty text; do not reuse that ordering for tool results. pi-ai is pinned to 1.5.0 at packages/nax-ai/package.json:38; the spec relies on its existing provider routing for tool-result image blocks, not a new provider integration. Capability belongs at the current-model boundary so replay after switching models can degrade without changing history. Strip local image metadata at that boundary. The supplied isError-plus-image mapping criterion tests an independently supplied protocol message; it does not authorize an errored native tool to emit images. Extend the Vitest user-image fixture at packages/nax-ai/test/protocols/pi-client-images.test.ts:7 and preserve tool naming/error regressions at packages/nax-ai/test/protocols/pi-client.test.ts:106. These fixtures prove message mapping, not live provider behavior.\n\nUS-002 — Native transport: packages/nax-agent/src/tools/registry.ts:21 defines ToolResult; packages/nax-agent/src/tools/runtime.ts:64 and :439 define the outcome and assemble it after policy execution. The immediate path records audit before returning, while deferred truncation returns an audit callback; preserve both, along with sandbox metadata, policy access checks, error handling and cancellation. The file is 599 lines and runTool's current baseline is 24 (packages/nax-agent/scripts/baselines/complexity-baseline.json:15); reuse the existing extraction module (packages/nax-agent/src/tools/runtime-calltool.ts:1), which deliberately imports runtime types only, and lower the runTool baseline to its new score if it drops. Use the existing type re-export in packages/nax-agent/src/cost/standard-types.ts:9 outside native code. The production chat backend constructs the session interaction handler at packages/nax-agent/src/session/native-backend.ts:160, whose answerFor maps denials, throws for errors and currently projects only successful text and sandbox metadata (packages/nax-agent/src/session/session-interaction.ts:301). Add images at that seam and in packages/nax-agent/src/session/interaction-handler.ts:35. The embedder path in session-interaction.ts:199 remains textual. packages/nax-agent/src/native/session/turn-tool-batch.ts:274 shapes text and finalizes audit before calling the shared builder in packages/nax-agent/src/native/session/tool-result.ts:26; its catch path at :307 must remain image-free. The plugin whitelist in packages/nax-agent/src/native/session/loop-events/registry.ts:68 stays unchanged: images travel beside the patch, not in it. The turn event uses only the text preview (packages/nax-agent/src/native/session/turn-event-emitter.ts:140); no card/event image payload is needed. packages/nax-agent/src/native/session/turn-loop-round-trip.ts:310 consumes the batch; packages/nax-agent/src/native/session/turn-complete-step.ts:168 already caps the wire copy, and packages/nax-agent/src/native/session/turn-compaction-step.ts:123 already hands note-only input to the summarizer. Extend the user-only branches at packages/nax-agent/src/native/session/image-context.ts:5 and :20 and the native transcript arm/estimate in packages/nax-agent/src/native/session/compaction.ts:24 and :57. Use one newest-first budget for both roles (20 images and 20,971,520 base64 characters, packages/nax-agent/src/session/image-input.ts:8), keeping original order for survivors and original array identity when nothing is dropped. Avoid mutating history, leaking base64 into text, or treating image char counts as text tokens; use the existing dimension-based estimate and 1,600 fallback. Existing runtime, turn-tool-batch, image-context and image-compaction suites cover the seams. Use the real handler/runtime composition in packages/nax-agent/test/unit/native/session-adapter-abort-reasons.test.ts:184 as the template for the new two-round-trip integration fixture.\n\nUS-003 — Persistence: packages/nax-agent/src/native/session/transcript-images.ts:32 models only user sidecar refs; :104 preflights MIME types and then publishes images before JSON, and :224 hydrates only user messages. Reuse existing content-addressed publishing and hydration, not a second store or schema. The actual directory is <file>.images/ with .json replaced, as implemented by transcriptImagesPath at :40. Preserve atomic publication, MIME/ref validation and path/symlink/regular-file safeguards at :53, :132 and :158. Share hydration and missing-slot bookkeeping (notedSlots and slotOf at :193 and :209) so repeated save/load after loss keeps original numbering. The existing store calls hydrate at packages/nax-agent/src/native/session/transcript-store.ts:67 and split at :73, so no caller rewrite is needed; extend the transcript-images-write/read suites, including the real store seam (write suite :166). Existing imageless and user-image documents need no migration; only saves with images use schema 2 and no new version is introduced. Downgrade to a build that cannot hydrate tool-result refs is unsupported. Keep current safety regression tests and complexity limits.\n\nUS-004 — Read and Bash: packages/nax-agent/src/tools/read.ts:75 defines the tool text, :99 resolves the policy-provided target, :105 checks credentials before input range parsing (:112), and :116 begins the existing text path. Keep that order; do not open a protected path just to sniff it. packages/nax-agent/src/internal/bounded-io.ts:24 opens non-blocking, checks the opened handle, and uses one overshoot byte for text; the binary reader has a hard cap without the overshoot. The extra header probe also touches non-images, so retain text behavior, normal error messages, and bounded allocation even if the file changes between reads. Report actual bytes encoded, not the first stat size. The existing sniffer at packages/nax/src/chat/images/image-sniff.ts:1 and :85 recognizes by magic bytes and does not decode pixels; copy unchanged into nax-agent in this story, then remove the old copy in US-008 so each package remains buildable between stories. Raw image cap is 3,932,160 derived from MAX_IMAGE_BASE64_CHARS (packages/nax-agent/src/session/image-input.ts:7); it replaces the text read ceiling only for images, not the permission decision. Keep the existing text tests in read-cap.test.ts, the non-regular-file regression in packages/nax-agent/test/unit/tools/buffering-ceilings.test.ts:103 and credential regressions in packages/nax-agent/test/unit/tools/credential-read-deny.test.ts:79. Regenerate the names-only root API after adding the named exports beside image-input at packages/nax-agent/src/index.ts:416. Bash composes its description via withBackgroundSentence at packages/nax-agent/src/tools/bash.ts:400 and packages/nax-agent/src/tools/bash-background.ts:172; change only the sentence for port-enabled backgrounding and the expectation in bash-background.test.ts.\n\nUS-005 — Configuration and behavior: packages/nax/src/config/schemas-infra.ts:117 and packages/nax/src/config/schemas.ts:318 both default to 3; packages/nax/src/chat/chat-host.ts:155 forwards the resolved value. Update both defaults, the fallback at packages/nax/src/tui/chat/use-jobs.ts:16, descriptions at packages/nax/src/cli/config-descriptions.ts:285 and the runtime-types comment at :244. The idle effect in use-jobs.ts:201 prioritizes run asks then jobs then task notices, counts only delivered task turns, and noteUserTurn at :275 resets the counter; the busy steer path is separate. Preserve those rules, queue/dequeue and held-line deduplication. Omitted or explicit 0 becomes unlimited; there is no off-mode migration. Users wanting the previous default cap can set 3 explicitly, and existing positive values remain unchanged. Retarget tests that implicitly used 3, convert old 0-as-off cases to a positive cap after a prior wake, and exercise default/explicit unlimited chains, user reset and busy steering in packages/nax/test/ui/chat/task-notices.test.tsx:139, :194, :369 and :463. Align the schemas-infra and chat-host default tests.\n\nUS-006 — Rendering: packages/nax/src/tui/chat/styled-line.tsx:17 defines the span and :71 translates its style tokens into Ink props. packages/nax/src/tui/chat/wrap.ts:66 and :102 compare and preserve style, including across grapheme fragments. The strip has three constructors: packages/nax/src/tui/chat/footer-segments.ts:73 for wide fitted footers, packages/nax/src/tui/chat/status-layout.ts:50 for the narrow replacement, and packages/nax/src/tui/chat/chat-status.ts:292 for the legacy model. Do not style the separator or other spans. status-layout.ts:63 computes text display width for the hit target; packages/nax/src/tui/chat/use-jobs-opener.ts:41 and :102 use the same geometry. Existing status-layout, footer-segments, chat-status-tasks, wrap and use-jobs-opener tests cover layout and click semantics. packages/nax/test/ui/chat/styled-line.test.tsx:24 provides an Ink render fixture; assert underline under a terminal style configuration that actually emits it. No layout, persisted setting, theme token or mouse migration.\n\nUS-007 — Run/hop: packages/nax/src/agents/run-interaction-handler.ts:60 and :84 implement the alternative native interaction handler used by packages/nax/src/runtime/session-run-hop.ts:162 and packages/nax/src/operations/build-hop-callback-hop.ts:330. Copy the non-empty image list alongside answer and audit callback, retaining denial, error text, cancellation and context-tool behavior. Keep the branch condition in imagesField so onInteraction stays within its current baseline of 52 (packages/nax/scripts/baselines/complexity-baseline.json:21). Extend packages/nax/test/unit/agents/run-interaction-handler.test.ts:23; the two existing consumers need no wiring changes.\n\nUS-008 — Migration to one sniffer: packages/nax/src/chat/images/index.ts:10 and packages/nax/src/chat/images/image-file.ts:2 currently import/re-export the local copy; the public barrel at packages/nax/src/chat/index.ts:99 already exposes the names. packages/nax/src/tui/chat/use-image-attach.ts:32 and packages/nax/src/chat/mentions/mention-expand.ts:13 consume those exports and need no rewiring. Keep the attachment flow's independent size and pixel-edge checks in image-file.ts:36 and move only the sniffer implementation/tests. The import in packages/nax/test/unit/chat/images/image-file.test.ts:3 is already through @/chat and is the regression home for both behavior checks. Delete the nax-local source and direct-import test only after US-004 adds the root export and moves its cases. Verify the migration with the package typecheck as an implementation check, not a behavioral criterion. No version bump, external dependency change, transcript conversion, or consumer import migration is needed.",
+  "outOfScope": [
+    "ACP sessions (Claude Code, Codex, opencode through nax): they read images with their own tools; nothing in `packages/nax-agent-acp` changes.",
+    "Images from tools other than `Read` (Bash output, MCP tool results, embedder tools): only `Read` produces tool-result images.",
+    "Resizing or re-encoding an image that is over the size limit: it is refused with an error, not shrunk.",
+    "PDF, SVG, BMP, TIFF and HEIC files: only PNG, JPEG, GIF and WebP are images to `Read`; other files take the text path as today.",
+    "Showing tool-result images in the chat TUI transcript: the Read card shows the result's text line only.",
+    "A setting that turns chat auto-wake off entirely: `0` now means no limit, and no value means never.",
+    "Live views of a running shell, a background shell or a subagent run (a shell details panel, a full subagent chat view): separate work.",
+    "The Linux srt placeholder files (`.zshrc`, `.profile`, ...): tracked as #2986.",
+    "Reading a transcript that has tool-result images with a build older than this feature: such a build passes the stored tool-result image refs through without `data`; the schema version stays 2.",
+    "The `nax-finish` skill's wording about background commands: changed in the nax-toolkit-skills repo, not in this feature."
+  ],
+  "routingProfile": "native-codex-ds"
+}
