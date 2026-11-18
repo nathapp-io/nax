@@ -180,6 +180,18 @@ describe("footerSegments right", () => {
     expect(rolesOf(right)).toEqual(["strip", "model", "cost"]);
     expect(right[1]?.span.text).toBe("deepseek-v4.1-flash");
   });
+
+  test("AC-4 draws the strip segment in the accent colour, underlined", () => {
+    const { right } = segmentsOf({ jobs: [RUN_JOB] });
+    expect(right[0]?.span).toEqual({ text: "run feat 1/3", color: "accent", underline: true });
+  });
+
+  test("AC-8 marks the strip alone as clickable, never the model or the cost", () => {
+    const { right } = segmentsOf({ jobs: [RUN_JOB], tasks: [{ command: "bun test" }] });
+    expect(right[0]?.span.underline).toBe(true);
+    expect(right.filter((segment) => segment.span.underline === true)).toHaveLength(1);
+    expect(right[0]?.span.color).toBe("accent");
+  });
 });
 
 const COMPAT_SANDBOXES: ReadonlyArray<readonly [string, SandboxState | undefined]> = [

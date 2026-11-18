@@ -97,6 +97,11 @@ describe("mergeSpans", () => {
     const merged = mergeSpans([{ text: "a" }, { text: "" }, { text: "b" }, { text: "c", bold: true }]);
     expect(merged.map((span) => span.text)).toEqual(["ab", "c"]);
   });
+
+  test("merges neighbours that share an underline and keeps it apart from a plain one", () => {
+    const merged = mergeSpans([{ text: "1 ", underline: true }, { text: "shell", underline: true }, { text: " x" }]);
+    expect(merged).toEqual([{ text: "1 shell", underline: true }, { text: " x" }]);
+  });
 });
 
 describe("wrap", () => {
@@ -104,6 +109,19 @@ describe("wrap", () => {
     const lines = wrap(mixedSpans(), WIDTH, [{ text: "  " }]);
     expect(textOf(lines[0]).startsWith("  alpha")).toBe(true);
     expect(textOf(lines[1]).startsWith("  ")).toBe(true);
+  });
+
+  test("carries an underline through a wrap and a cut", () => {
+    const strip: readonly Span[] = [{ text: "3 active (ctrl+g) · $0.42", underline: true, color: "accent" }];
+    const lines = wrap(strip, 10);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      for (const span of line) {
+        if (span.text.trim() === "") continue;
+        expect({ color: span.color, underline: span.underline }).toEqual({ color: "accent", underline: true });
+      }
+    }
+    expect(cutSpans(strip, 8).every((span) => span.underline === true)).toBe(true);
   });
 });
 

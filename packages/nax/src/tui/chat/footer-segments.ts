@@ -19,6 +19,7 @@ import {
   modeSpan,
   sandboxSpan,
   shortModel,
+  stripSpan,
 } from "./chat-status";
 import { contextSpan } from "./context-span";
 import { singleRow } from "./layout-lines";
@@ -72,7 +73,7 @@ function leftSegments(input: FooterInput, glyphs: ChatGlyphs): readonly FooterSe
 
 function rightSegments(input: FooterInput): readonly FooterSegment[] {
   const strip = formatJobStrip(input.jobs ?? [], input.tasks ?? []);
-  const stripSegments: readonly FooterSegment[] = strip === "" ? [] : [{ role: "strip", span: { text: strip } }];
+  const stripSegments: readonly FooterSegment[] = strip === "" ? [] : [{ role: "strip", span: stripSpan(strip) }];
   return [
     ...stripSegments,
     { role: "model", span: { text: shortModel(singleRow(input.state.model)) } },
