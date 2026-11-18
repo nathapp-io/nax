@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { clearNaxIndexFlags, hiddenNaxPaths, type IndexFlagLogger } from "../utils/nax-index-flags";
-import { handoffLockPath } from "../workflow/paths";
+import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "../workflow/paths";
 import { activeKeepers, type KeptFile, type RunStateKeeper, runStateWrite, withPathLock } from "./store";
 
 export type RepairTrigger = "turn" | "pre-commit" | "run-end" | "crash";
@@ -49,19 +49,6 @@ async function restore(f: KeptFile): Promise<void> {
   await rename(tmp, f.path);
 }
 
-async function restoreWithResultLock(f: KeptFile): Promise<void> {
-  if (f.kind !== "workflow-result") return await restore(f);
-  const workflowDir = dirname(dirname(f.path));
-  await mkdir(workflowDir, { recursive: true });
-  // A turn can call repair while publish-only already holds this lock. Never wait here:
-  // report the deferred repair and let the next pass retry it when the lock is free.
-  await withFileLock(handoffLockPath(workflowDir), () => restore(f), {
-    lockName: "handoff",
-    errorPrefix: "[runstate]",
-    timeoutMs: 0,
-  });
-}
-
 function where(ctx: RepairContext): string {
   return [ctx.storyId ?? "_run", ctx.stage, ctx.turn !== undefined ? `turn ${ctx.turn}` : ctx.trigger]
     .filter((p): p is string => p !== undefined)
@@ -74,8 +61,25 @@ async function repairFile(
   ctx: RepairContext,
   cleared: ReadonlySet<string>,
 ): Promise<RepairRecord> {
+  try {
+    if (needsRestore(damage)) await restore(f);
+  } catch (error) {
+    return failedRestore(f, damage, ctx, error);
+  }
+  const restored = !damage.includes("hidden") || cleared.has(f.rel);
   const log = _repairDeps.logger();
-  const data = {
+  const data = repairLogData(f, damage, ctx);
+  if (restored) log?.warn("runstate", `${where(ctx)}: ${f.rel} ${damage.join("+")} by the agent; restored`, data);
+  else log?.warn("runstate", `[FAIL] ${where(ctx)}: could not clear the index flag on ${f.rel}`, data);
+  return { path: f.path, rel: f.rel, damage, restored };
+}
+
+function needsRestore(damage: readonly Damage[]): boolean {
+  return damage.includes("missing") || damage.includes("modified");
+}
+
+function repairLogData(f: KeptFile, damage: Damage[], ctx: RepairContext) {
+  return {
     storyId: ctx.storyId ?? "_run",
     sessionName: ctx.sessionName,
     stage: ctx.stage,
@@ -84,16 +88,14 @@ async function repairFile(
     path: f.rel,
     damage,
   };
-  try {
-    if (damage.includes("missing") || damage.includes("modified")) await restoreWithResultLock(f);
-    const restored = !damage.includes("hidden") || cleared.has(f.rel);
-    if (restored) log?.warn("runstate", `${where(ctx)}: ${f.rel} ${damage.join("+")} by the agent; restored`, data);
-    else log?.warn("runstate", `[FAIL] ${where(ctx)}: could not clear the index flag on ${f.rel}`, data);
-    return { path: f.path, rel: f.rel, damage, restored };
-  } catch (err) {
-    log?.warn("runstate", `[FAIL] ${where(ctx)}: could not restore ${f.rel}`, { ...data, error: errorMessage(err) });
-    return { path: f.path, rel: f.rel, damage, restored: false };
-  }
+}
+
+function failedRestore(f: KeptFile, damage: Damage[], ctx: RepairContext, error: unknown): RepairRecord {
+  _repairDeps.logger()?.warn("runstate", `[FAIL] ${where(ctx)}: could not restore ${f.rel}`, {
+    ...repairLogData(f, damage, ctx),
+    error: errorMessage(error),
+  });
+  return { path: f.path, rel: f.rel, damage, restored: false };
 }
 
 async function noteInLedgers(
@@ -105,6 +107,7 @@ async function noteInLedgers(
   const ledgers = keeper.files().filter((f) => f.root === root && f.kind === "ledger");
   for (const ledger of ledgers) {
     for (const r of records) {
+      if (!r.restored) continue;
       const line = `${ctx.storyId ?? "_run"}: run-state repaired: ${r.rel} (${r.damage.join("+")})\n`;
       await runStateWrite(ledger.path, { append: line }, () => appendFile(ledger.path, line));
     }
@@ -138,6 +141,37 @@ function repairLocked(
   });
 }
 
+async function repairResult(
+  keeper: RunStateKeeper,
+  path: string,
+  state: HiddenState,
+  ctx: RepairContext,
+): Promise<RepairRecord | undefined> {
+  const pending = await withPathLock(path, async () => {
+    const file = keeper.get(path);
+    if (!file || keeper.isInFlight(path)) return undefined;
+    return { file, damage: await damageOf(file, state.hidden) };
+  });
+  if (!pending || pending.damage.length === 0) return undefined;
+  const { file, damage } = pending;
+  if (!needsRestore(damage)) return await repairFile(file, damage, ctx, state.cleared);
+
+  const workflowDir = dirname(dirname(path));
+  try {
+    await mkdir(workflowDir, { recursive: true });
+    // Take the handoff lock before the path lock, as result writers do. Recheck the keeper
+    // and disk after acquiring both. Turn/pre-commit repairs may already be inside a publisher's
+    // lock, so only wait at run-end, before the keeper is discarded; crash repair is time-boxed.
+    return await withFileLock(handoffLockPath(workflowDir), () => repairLocked(keeper, path, state, ctx), {
+      lockName: "handoff",
+      errorPrefix: "[runstate]",
+      timeoutMs: ctx.trigger === "run-end" ? HANDOFF_RESULT_LOCK_WAIT_MS : 0,
+    });
+  } catch (error) {
+    return failedRestore(file, damage, ctx, error);
+  }
+}
+
 async function noteInLedgersSafely(
   keeper: RunStateKeeper,
   root: string,
@@ -160,7 +194,10 @@ async function repairRoot(keeper: RunStateKeeper, root: string, ctx: RepairConte
   const state = await clearHidden(root, files);
   const records: RepairRecord[] = [];
   for (const f of files) {
-    const record = await repairLocked(keeper, f.path, state, ctx);
+    const record =
+      f.kind === "workflow-result"
+        ? await repairResult(keeper, f.path, state, ctx)
+        : await repairLocked(keeper, f.path, state, ctx);
     if (record) records.push(record);
   }
   if (records.length > 0) await noteInLedgersSafely(keeper, root, records, ctx);

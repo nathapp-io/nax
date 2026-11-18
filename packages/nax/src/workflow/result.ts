@@ -7,7 +7,7 @@ import { basename, dirname, join } from "node:path";
 import { withFileLock } from "@nathapp/nax-agent/internal";
 import { runStateWrite } from "@/runstate/store";
 import { buildVerdict } from "./open-items";
-import { handoffLockPath } from "./paths";
+import { HANDOFF_RESULT_LOCK_WAIT_MS, handoffLockPath } from "./paths";
 import type {
   RoleTokens,
   StoryStateItem,
@@ -19,9 +19,6 @@ import type {
 export const _resultDeps = { mkdir, readdir, rename, stat };
 
 const RESULT_FILE = "result.json";
-// Cover a receiver create while waiting for the sender to record its mark. Time out rather than
-// changing which run is newest during a handoff that has not settled.
-const HANDOFF_LOCK_WAIT_MS = 120_000;
 
 type ResultHeader = { readonly runId: string; readonly feature: string };
 
@@ -31,7 +28,7 @@ async function withResultLock<T>(runDir: string, task: () => Promise<T>, signal?
   return await withFileLock(handoffLockPath(featureDir), task, {
     lockName: "handoff",
     errorPrefix: "[workflow]",
-    timeoutMs: HANDOFF_LOCK_WAIT_MS,
+    timeoutMs: HANDOFF_RESULT_LOCK_WAIT_MS,
     signal,
   });
 }

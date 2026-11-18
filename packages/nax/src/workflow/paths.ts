@@ -32,6 +32,8 @@ export function workflowStoryDir(runDir: string, storyId: string): string {
  * take the same lock so they cannot change which run is newest before the handoff records its mark.
  */
 export const HANDOFF_LOCK_FILE = ".handoff.lock";
+// Allow time for a receiver create and the sender's mark write before giving up on a result write.
+export const HANDOFF_RESULT_LOCK_WAIT_MS = 120_000;
 
 export function handoffLockPath(workflowDir: string): string {
   return join(workflowDir, HANDOFF_LOCK_FILE);

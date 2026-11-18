@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withFileLock } from "@nathapp/nax-agent/internal";
-import { cleanupTempDir, makeTempDir } from "@test/helpers";
+import { _fileLockDeps, withFileLock } from "@nathapp/nax-agent/internal";
+import { cleanupTempDir, makeTempDir, withDepsRestore } from "@test/helpers";
 import {
   _repairDeps,
   activateRunState,
@@ -14,6 +14,8 @@ import {
 import { runStateWrite } from "@/runstate/store";
 import { gitWithTimeout } from "@/utils/git";
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
+
+withDepsRestore(_fileLockDeps);
 
 const PRD = ".nax/features/f/prd.json";
 const NAX_PRD = '{"stories":"nax"}';
@@ -114,6 +116,46 @@ describe("repairRunState (#2497)", () => {
     );
     expect(await repairRunState(ctx)).toMatchObject([{ path, restored: true }]);
     expect(await Bun.file(path).text()).toBe('{"runId":"r1"}');
+  });
+
+  test("run-end waits for a live handoff before restoring a missing checkpoint", async () => {
+    const runDir = workflowRunDir(dir, "f", "r1");
+    const path = join(runDir, "result.json");
+    const ledger = join(runDir, "ledger.md");
+    const content = '{"runId":"r1"}';
+    await naxWrite(path, content);
+    await naxWrite(ledger, "# Workflow ledger\n");
+    rmSync(path);
+    const lockPath = handoffLockPath(workflowFeatureDir(dir, "f"));
+    const waiting = Promise.withResolvers<void>();
+    const sleep = _fileLockDeps.sleep;
+    _fileLockDeps.sleep = (ms, signal) => {
+      waiting.resolve();
+      return sleep(ms, signal);
+    };
+
+    let finalRepair: ReturnType<typeof repairRunState> | undefined;
+    try {
+      await withFileLock(
+        lockPath,
+        async () => {
+          expect(await repairRunState(ctx)).toMatchObject([{ path, restored: false }]);
+          finalRepair = repairRunState({ trigger: "run-end", workdir: dir });
+          expect(await Promise.race([waiting.promise.then(() => "waiting"), finalRepair])).toBe("waiting");
+          expect(await Bun.file(ledger).text()).toBe("# Workflow ledger\n");
+          expect(await Bun.file(path).exists()).toBe(false);
+        },
+        { lockName: "handoff", errorPrefix: "[test]" },
+      );
+    } finally {
+      await finalRepair;
+    }
+    expect(await finalRepair).toMatchObject([{ path, damage: ["missing"], restored: true }]);
+    handle?.deactivate();
+    expect(await Bun.file(path).text()).toBe(content);
+    expect(await Bun.file(ledger).text()).toBe(
+      "# Workflow ledger\n_run: run-state repaired: .nax/features/f/workflow/r1/result.json (missing)\n",
+    );
   });
 
   test("a workflow ledger tracked under the root gets one repair line", async () => {
