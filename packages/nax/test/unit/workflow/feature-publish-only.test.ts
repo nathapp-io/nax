@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { _fileLockDeps } from "@nathapp/nax-agent/internal";
 import { pipelineEventBus } from "@/pipeline/event-bus";
-import { runWorkflowFeature } from "@/workflow/feature";
+import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
 import { writeHandoffMark } from "@/workflow/handoff-mark";
 import { handoffLockPath } from "@/workflow/paths";
+import { readResult } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { registerFeatureRunHarness, seedFinished, setup } from "./_feature-run-harness";
 
@@ -14,12 +15,30 @@ describe("runWorkflowFeature --publish-only", () => {
   test.each(["local-only", "pushed"] as const)(
     "#2819 publishOnly resumes a %s prior at publish without rerunning the review",
     async (outcome) => {
-      const { input, envs, featureDir } = setup();
+      const { fc, input, envs, featureDir } = setup();
       await seedFinished(featureDir, input.feature, { outcome });
+      const lock = Bun.file(handoffLockPath(featureDir));
+      _fileLockDeps.sleep = async () => {
+        throw new Error("The publish-only sink must not wait on its own handoff lock");
+      };
+      const runMachine = _featureRunDeps.runFeatureMachine;
+      _featureRunDeps.runFeatureMachine = async (env) => {
+        const record = await runMachine(env);
+        expect(await lock.text()).toBe(`${process.pid}\n`);
+        await env.sink.update(record);
+        expect(await lock.text()).toBe(`${process.pid}\n`);
+        return record;
+      };
+
       const result = await runWorkflowFeature({ ...input, publishOnly: true });
+
       expect(envs).toHaveLength(1);
       expect(envs[0]?.record.step).toBe("publish");
       expect(result?.outcome).toBe("draft");
+      expect(await readResult(fc.runDir)).toMatchObject({
+        runId: fc.runId,
+        featureWorkflow: { step: "done", outcome: "draft", url: "u" },
+      });
     },
   );
 

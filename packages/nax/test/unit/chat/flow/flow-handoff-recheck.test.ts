@@ -28,15 +28,22 @@ import {
   type FlowRepoReady,
   type KodaFlowConnection,
 } from "@/chat/flow";
-import { type HandoffMark, readNewestHandoffMark } from "@/workflow/handoff-mark";
+import { newFeatureRecord } from "@/workflow/feature-record";
+import { type HandoffMark, readNewestHandoffMark, readRunMark } from "@/workflow/handoff-mark";
 import {
   _handoffRecordDeps,
   collectHandoffRecord,
   type HandoffRecordFile,
   handoffResultsMatch,
 } from "@/workflow/handoff-record";
-import { workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
-import { newStoryRecord, readResult, upsertStoryRecord } from "@/workflow/result";
+import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
+import {
+  newStoryRecord,
+  readResult,
+  upsertFeatureRecord,
+  upsertStoryRecord,
+  writePreflightTokens,
+} from "@/workflow/result";
 
 withDepsRestore(_flowProviderDeps);
 withDepsRestore(_flowHandoffDeps);
@@ -349,7 +356,7 @@ async function withOtherPublisher(
     readonly finish: () => Promise<void>;
   }) => Promise<void>,
 ): Promise<void> {
-  const lockPath = join(workflowFeatureDir(repoRoot, FEATURE), ".handoff.lock");
+  const lockPath = handoffLockPath(workflowFeatureDir(repoRoot, FEATURE));
   const child = Bun.spawn(
     [
       process.execPath,
@@ -435,19 +442,41 @@ describe("nax-flow__send — cross-process handoff lock", () => {
     });
   });
 
-  test("a workflow result writer waits until the handoff mark is recorded", async () => {
+  const header = { runId: "r3", feature: FEATURE };
+  const storyRecord = newStoryRecord("US-001", 1, "T");
+  const featureRecord = newFeatureRecord({ now: "T", seed: SHA, minors: [] });
+  const preflightTokensByRole = { reviewer: { inputTokens: 12, outputTokens: 5, costUsd: 0.1, calls: 1 } };
+  test.each([
+    {
+      name: "upsertStoryRecord",
+      write: (runDir: string) => upsertStoryRecord(runDir, header, storyRecord),
+      persisted: { stories: { "US-001": storyRecord } },
+    },
+    {
+      name: "upsertFeatureRecord",
+      write: (runDir: string) => upsertFeatureRecord(runDir, header, featureRecord),
+      persisted: { featureWorkflow: featureRecord },
+    },
+    {
+      name: "writePreflightTokens",
+      write: (runDir: string) => writePreflightTokens(runDir, header, preflightTokensByRole),
+      persisted: { preflightTokensByRole },
+    },
+  ])("$name waits until the handoff mark is recorded", async ({ write, persisted }) => {
     await withOtherPublisher(async ({ contended, finish }) => {
-      const runId = "r3";
-      const runDir = workflowRunDir(repoRoot, FEATURE, runId);
-      const writing = upsertStoryRecord(runDir, { runId, feature: FEATURE }, newStoryRecord("US-001", 1, "T"));
-      const beforeMark = await waitingOrFinished(contended, writing);
-      const resultBeforeMark = await readResult(runDir);
-      await finish();
-      await writing;
-
-      expect(beforeMark).toBe("waiting");
-      expect(resultBeforeMark).toBeNull();
-      expect(await readResult(runDir)).toMatchObject({ runId });
+      const runDir = workflowRunDir(repoRoot, FEATURE, header.runId);
+      const handedOffRun = workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID);
+      const writing = write(runDir);
+      try {
+        expect(await waitingOrFinished(contended, writing)).toBe("waiting");
+        expect(await Bun.file(join(runDir, "result.json")).exists()).toBe(false);
+        expect(await readRunMark(handedOffRun)).toBeNull();
+      } finally {
+        await finish();
+        await writing;
+      }
+      expect(await readRunMark(handedOffRun)).toMatchObject({ mark: { requestId: "held-by-child" } });
+      expect(await readResult(runDir)).toMatchObject({ ...header, ...persisted });
     });
   });
 
