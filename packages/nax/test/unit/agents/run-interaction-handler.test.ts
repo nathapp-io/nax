@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CodingToolOutcome, CodingToolRuntime } from "@nathapp/nax-agent";
 import { makeNaxConfig } from "@test/helpers";
-import { buildRunInteractionHandler, type RunInteractionOptions } from "@/agents/run-interaction-handler";
+import { buildRunInteractionHandler, imagesField, type RunInteractionOptions } from "@/agents/run-interaction-handler";
 import type { AgentRunOptions } from "@/agents/types";
 import type { ToolDescriptor } from "@/context/engine";
 
@@ -24,6 +24,34 @@ describe("buildRunInteractionHandler — coding tools", () => {
     const res = await handler.onInteraction({ kind: "coding-tool", name: "Read", input: { path: "a.ts" } });
     expect(res?.answer).toContain("file body");
     expect(res?.denied).toBeUndefined();
+  });
+
+  test("AC-1: forwards successful coding-tool images on the response", async () => {
+    const image = { mimeType: "image/png", data: "AAAA", width: 1, height: 1, source: "a.png" };
+    const handler = buildRunInteractionHandler(
+      optionsWith(runtimeReturning({ kind: "ok", content: "x", images: [image] })),
+    );
+    const response = await handler.onInteraction({ kind: "coding-tool", name: "Read", input: {} });
+    expect(response).toEqual({ answer: "x", images: [image] });
+  });
+
+  test("AC-2: omits images when a successful outcome has none", async () => {
+    const handler = buildRunInteractionHandler(optionsWith(runtimeReturning({ kind: "ok", content: "x" })));
+    const response = await handler.onInteraction({ kind: "coding-tool", name: "Read", input: {} });
+    expect(response).toEqual({ answer: "x" });
+    expect(response && "images" in response).toBe(false);
+  });
+
+  test("AC-3: imagesField omits an empty image list", () => {
+    expect(imagesField({ kind: "ok", content: "x", images: [] })).toEqual({});
+  });
+
+  test("AC-4: preserves error text without images or a denial marker", async () => {
+    const handler = buildRunInteractionHandler(optionsWith(runtimeReturning({ kind: "error", content: "ENOENT" })));
+    const response = await handler.onInteraction({ kind: "coding-tool", name: "Read", input: {} });
+    expect(response).toEqual({ answer: "ENOENT" });
+    expect(response && "images" in response).toBe(false);
+    expect(response?.denied).toBeUndefined();
   });
 
   test("an error carries no denial marker", async () => {
