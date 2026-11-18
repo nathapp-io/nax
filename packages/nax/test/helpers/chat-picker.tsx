@@ -42,6 +42,8 @@ interface MountOptions {
   /** The host's consecutive task-notice turn limit; absent leaves the screen's default. */
   readonly taskNoticeTurns?: number;
   readonly send?: ChatHost["send"];
+  /** The host's mid-turn input; absent leaves a host that cannot steer (US-003). */
+  readonly steer?: ChatHost["steer"];
   readonly models?: readonly string[];
   readonly effortLevels?: ChatHost["effortLevels"];
   /** The host's recent models, newest first; absent leaves a host with no such list (US-006). */
@@ -91,6 +93,7 @@ export function mount(options: MountOptions = {}) {
     tasks: options.tasks,
     jobs: options.jobs,
     runAsks: options.runAsks,
+    ...(options.steer === undefined ? {} : { steer: options.steer }),
     ...(options.taskNoticeTurns === undefined ? {} : { taskNoticeTurns: options.taskNoticeTurns }),
     cancel: mock(() => {}),
     close: mock(async () => {}),

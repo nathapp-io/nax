@@ -99,6 +99,7 @@ function fakeTasks(rows: BackgroundTask[], read: ChatBackgroundTasks["output"] =
       moveForeground: () => false,
       hasForeground: () => false,
       peekNotice: () => undefined,
+      releaseNotice: () => {},
       takeNotice: () => undefined,
       onChange: (listener) => {
         listeners.add(listener);

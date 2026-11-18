@@ -48,6 +48,8 @@ const FIVE_LINES = "l1\nl2\nl3\nl4\nl5";
 
 /** `AT` plus 38 seconds, so an agent's duration is a whole number of seconds. */
 const AT_PLUS_38S = "2026-10-01T00:00:38.000Z";
+/** `AT` plus 125 seconds: the agent run AC-16 states as `2m 05s`. */
+const AT_PLUS_125S = "2026-10-01T00:02:05.000Z";
 
 /** Ten removed and ten added lines: no common prefix or suffix, so a 20-line diff. */
 const TEN_OLD_LINES = Array.from({ length: 10 }, (_, n) => `old${n}`).join("\n");
@@ -466,6 +468,22 @@ describe("toolCardModel ok summary", () => {
       endedAt: AT_PLUS_38S,
     });
     expect(model.summary.map((line) => line.text)).toEqual(["Done (2 tool uses · 38s)"]);
+  });
+
+  test("US-002 AC-16 states a 125-second agent run as minutes and seconds", () => {
+    const model = okCard({
+      name: "nax-agents__run",
+      input: { agent: "explorer", task: "find x" },
+      children: [
+        child("c1", "Read", { path: "a.ts" }),
+        child("c2", "Bash", { command: "ls" }),
+        child("c3", "Glob", { pattern: "*.ts" }),
+      ],
+      startedAt: AT,
+      endedAt: AT_PLUS_125S,
+    });
+    expect(model.summary).toHaveLength(1);
+    expect(model.summary[0].text.endsWith("(3 tool uses · 2m 05s)")).toBe(true);
   });
 
   test("counts an unparseable duration as no time", () => {

@@ -31,6 +31,7 @@
  * observable.
  */
 
+import { formatDuration } from "./duration";
 import { attachmentLines } from "./layout-attachment";
 import { backgroundLines } from "./layout-background";
 import { imageLines } from "./layout-image";
@@ -93,7 +94,8 @@ const MIN_REPLY_WIDTH = MIN_LAYOUT_WIDTH - GUTTER_WIDTH;
 const USER_MARKER = ">";
 const USER_BAND = "userBand";
 const THOUGHT_FOR = "Thought for";
-const SECONDS_SUFFIX = "s";
+/** Milliseconds one second of a measured span stands for. */
+const MILLIS_PER_SECOND = 1000;
 /** The colour a tool card's bullet takes, by the tone its model reported. */
 const BULLET_COLORS = {
   running: "muted",
@@ -156,7 +158,7 @@ function thoughtHeader(entry: ThinkingEntry, context: LayoutContext): readonly S
   const seconds = secondsBetween(entry.startedAt, entry.endedAt);
   const glyph = context.theme.glyphs.thinking;
   const hint = context.expanded ? HIDE_HINT : SHOW_HINT;
-  const label = `${glyph} ${THOUGHT_FOR} ${seconds}${SECONDS_SUFFIX} ${hint}`;
+  const label = `${glyph} ${THOUGHT_FOR} ${formatDuration(seconds * MILLIS_PER_SECOND)} ${hint}`;
   return wrapText(label, context.width).map(thoughtLine);
 }
 

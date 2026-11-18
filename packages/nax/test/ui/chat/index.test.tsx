@@ -1,122 +1,21 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { PassThrough } from "node:stream";
-import { makeLogger, makeNaxConfig } from "@test/helpers";
-import type { Instance, RenderOptions } from "ink";
-import { isValidElement, type ReactNode } from "react";
-import { type ChatHost, createChatHost, createChatStorage } from "@/chat";
+import { afterEach, describe, expect, test } from "bun:test";
+import { isValidElement } from "react";
 import { _renderChatDeps, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, renderChat } from "@/tui/chat";
 import { createMouseInput, DISABLE_MOUSE, ENABLE_MOUSE } from "@/tui/chat/mouse-input";
 import { POP_TITLE, PUSH_TITLE } from "@/tui/chat/terminal-title";
 import { resolveChatTheme } from "@/tui/chat/theme";
+import {
+  busyOf,
+  chatHost,
+  IDLE_TITLE,
+  MOUNT_WRITES,
+  node,
+  RESTORE_WRITES,
+  restoreDeps,
+  stubScreen,
+} from "./render-chat-harness";
 
-/** The title a TTY mount writes for the host's own project, idle — no turn has started yet. */
-const IDLE_TITLE = "\u001b]0;nax · repo\u0007";
-/** What a TTY mount writes after the first frame: the mouse, then the title it saved. */
-const MOUNT_WRITES = [ENTER_ALT_SCREEN, ENABLE_MOUSE, PUSH_TITLE, IDLE_TITLE];
-/** What a restore adds after the unmount: mouse off, leave the screen, then the title back. */
-const RESTORE_WRITES = [DISABLE_MOUSE, LEAVE_ALT_SCREEN, POP_TITLE];
-
-const originalDeps = { ..._renderChatDeps };
-afterEach(() => {
-  Object.assign(_renderChatDeps, originalDeps);
-  mock.restore();
-});
-
-/** A real host: the renderer is stubbed here, so ChatApp is never mounted against it. */
-function chatHost(paths: { cwd?: string; repoRoot?: string } = {}): ChatHost {
-  const logger = makeLogger();
-  return createChatHost({
-    config: makeNaxConfig(),
-    storage: createChatStorage({ pid: process.pid, now: () => new Date(), logger }),
-    cwd: paths.cwd ?? "/repo",
-    repoRoot: paths.repoRoot ?? "/repo",
-    chain: null,
-    now: () => new Date(),
-    logger,
-  });
-}
-
-/**
- * Replace the screen seams `renderChat` uses: the escape writer, the renderer and the
- * process-exit registration. Nothing here reaches the terminal, so a test can assert
- * the exact byte sequence and the exact number of restore writes.
- */
-function stubScreen(isTTY = true) {
-  const source = Object.assign(new PassThrough(), {
-    isTTY,
-    isRaw: false,
-    setRawMode: () => source,
-    ref: () => source,
-    unref: () => source,
-  });
-  // Borrow the module's typed TTY facades, then detach their real filtering listeners.
-  // The renderer receives a different stream from the injected source (no process.stdin).
-  const fake = createMouseInput(source);
-  fake.dispose();
-  const stdin = fake.stdin;
-  const dispose = mock(() => {});
-  const filtered = createMouseInput(source);
-  filtered.dispose();
-  const mouse = { ...filtered, dispose };
-  const createMouse = mock(() => mouse);
-  _renderChatDeps.stdin = () => stdin;
-  _renderChatDeps.createMouseInput = createMouse;
-  const order: string[] = [];
-  const writes: string[] = [];
-  const exitHandlers = new Set<() => void>();
-  let unmounts = 0;
-  let removals = 0;
-  const instance: Instance = {
-    rerender: () => {},
-    unmount: () => {
-      unmounts += 1;
-      order.push("unmount");
-    },
-    waitUntilExit: async () => {},
-    cleanup: () => {},
-    clear: () => {},
-  };
-  const timers: { cb: () => void; ms: number; cleared: boolean }[] = [];
-  _renderChatDeps.setTimeout = (cb: () => void, ms: number): unknown => {
-    const timer = { cb, ms, cleared: false };
-    timers.push(timer);
-    return timer;
-  };
-  _renderChatDeps.clearTimeout = (handle: unknown): void => {
-    for (const timer of timers) if (timer === handle) timer.cleared = true;
-    order.push("clear");
-  };
-  _renderChatDeps.write = (text: string): void => {
-    writes.push(text);
-    order.push(`write:${text}`);
-  };
-  const renderMock = mock((_node: ReactNode, _options?: NodeJS.WriteStream | RenderOptions): Instance => {
-    order.push("render");
-    return instance;
-  });
-  _renderChatDeps.render = renderMock;
-  _renderChatDeps.onExit = (handler: () => void): (() => void) => {
-    exitHandlers.add(handler);
-    return () => {
-      removals += 1;
-      exitHandlers.delete(handler);
-    };
-  };
-  return {
-    stdin,
-    mouse,
-    dispose,
-    createMouse,
-    order,
-    writes,
-    exitHandlers,
-    timers,
-    instance,
-    renderMock,
-    unmounts: () => unmounts,
-    removals: () => removals,
-  };
-}
+afterEach(restoreDeps);
 
 describe("renderChat alternate screen", () => {
   test("AC-1: enters the alternate screen before the first frame", () => {
@@ -246,23 +145,6 @@ describe("renderChat alternate screen", () => {
 });
 
 describe("renderChat terminal title", () => {
-  /** The props `renderChat` composed for the screen, so a case can reach the ones it passes. */
-  interface ScreenProps {
-    readonly onBusyChange?: (busy: boolean) => void;
-  }
-  function node(screen: ReturnType<typeof stubScreen>): ScreenProps {
-    const element = screen.renderMock.mock.calls[0]?.[0];
-    if (!isValidElement<ScreenProps>(element)) throw new Error("no element");
-    return element.props;
-  }
-
-  /** The busy callback renderChat passed to ChatApp. */
-  function busyOf(screen: ReturnType<typeof stubScreen>): (busy: boolean) => void {
-    const callback = node(screen).onBusyChange;
-    if (callback === undefined) throw new Error("renderChat passed no onBusyChange");
-    return callback;
-  }
-
   test("AC-10: no TTY means no title sequence at all", () => {
     const screen = stubScreen(false);
     const view = renderChat({ host: chatHost() });

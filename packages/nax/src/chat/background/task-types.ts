@@ -59,6 +59,11 @@ export interface ChatBackgroundTasks extends BackgroundCommandPort {
   hasForeground(): boolean;
   /** Stable completion snapshot until takeNotice consumes exactly those tasks. */
   peekNotice(): string | undefined;
+  /**
+   * Drop the snapshot a peek pinned without consuming the tasks it names, for a peek that
+   * delivered nothing: the notice stays queued and a read of those tasks still retires it.
+   */
+  releaseNotice(): void;
   takeNotice(): string | undefined;
   onChange(listener: () => void): () => void;
   list(): readonly BackgroundTask[];

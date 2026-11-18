@@ -22,6 +22,7 @@
  */
 import type { SessionEvent, TurnEndStatus } from "@nathapp/nax-agent";
 import { formatTokens, isSubagentEvent } from "./chat-status";
+import { formatDuration } from "./duration";
 import type { TranscriptEntry } from "./transcript-model";
 
 type EventOf<T extends SessionEvent["type"]> = Extract<SessionEvent, { type: T }>;
@@ -33,7 +34,6 @@ const RATE_SCALE = 10;
 const RATE_DECIMALS = 1;
 const RATE_UNIT = " tok/s";
 const OUT_UNIT = " out";
-const SECONDS_SUFFIX = "s";
 
 /** The round windows open now, by round: the instant each one's first delta arrived. */
 type Windows = Map<number, number>;
@@ -99,12 +99,6 @@ export function decodeRate(events: readonly SessionEvent[]): number | undefined 
   return roundToOne((tokens / measuredMs) * MILLIS_PER_SECOND);
 }
 
-/** The whole seconds an elapsed span floors to; a span that does not measure counts as none. */
-function wholeSeconds(elapsedMs: number): number {
-  if (!Number.isFinite(elapsedMs)) return 0;
-  return Math.max(0, Math.floor(elapsedMs / MILLIS_PER_SECOND));
-}
-
 /** The English month names: a row past today names the month the same way in every locale. */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 const CLOCK_PAD = 2;
@@ -163,7 +157,7 @@ function withEndClock(text: string, input: TurnStatsInput): string {
  */
 export function turnStatsText(input: TurnStatsInput): string {
   const output = formatTokens(input.outputTokens);
-  const spent = `${output}${OUT_UNIT}${SEPARATOR}${wholeSeconds(input.elapsedMs)}${SECONDS_SUFFIX}`;
+  const spent = `${output}${OUT_UNIT}${SEPARATOR}${formatDuration(input.elapsedMs)}`;
   const measured =
     input.rate === undefined ? spent : `${input.rate.toFixed(RATE_DECIMALS)}${RATE_UNIT}${SEPARATOR}${spent}`;
   return withEndClock(measured, input);

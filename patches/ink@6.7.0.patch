@@ -1,8 +1,41 @@
+diff --git a/build/ink.js b/build/ink.js
+index 82f31cccc22fdd81aa656b53d9d20a75095c19be..0881584d6624276bbb0989a0f8a9350624aec26c 100644
+--- a/build/ink.js
++++ b/build/ink.js
+@@ -449,6 +449,15 @@ export default class Ink {
+             this.log.sync(this.lastOutputToRender || this.lastOutput + '\n');
+         }
+     }
++    repaint() {
++        if (this.isUnmounted) {
++            return;
++        }
++        this.log.reset();
++        this.lastOutput = '';
++        this.lastOutputToRender = '';
++        this.onRender();
++    }
+     patchConsole() {
+         if (this.options.debug) {
+             return;
 diff --git a/build/log-update.js b/build/log-update.js
-index 73e297d0185fa4861c33eaa11761d1418588f0c9..324d2d0910beb74898aacc78cc89d1647da20828 100644
+index 73e297d0185fa4861c33eaa11761d1418588f0c9..155a2922d1922c84ec27b05a92995b50959ac497 100644
 --- a/build/log-update.js
 +++ b/build/log-update.js
-@@ -161,7 +161,7 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+@@ -63,6 +63,12 @@ const createStandard = (stream, { showCursor = false } = {}) => {
+         previousCursorPosition = undefined;
+         cursorWasShown = false;
+     };
++    render.reset = () => {
++        previousOutput = '';
++        previousLineCount = 0;
++        previousCursorPosition = undefined;
++        cursorWasShown = false;
++    };
+     render.done = () => {
+         previousOutput = '';
+         previousLineCount = 0;
+@@ -161,7 +167,7 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
              buffer.push(ansiEscapes.eraseLines(previousVisible - visibleCount + extraSlot), ansiEscapes.cursorUp(visibleCount));
          }
          else {
@@ -11,3 +44,45 @@ index 73e297d0185fa4861c33eaa11761d1418588f0c9..324d2d0910beb74898aacc78cc89d164
          }
          for (let i = 0; i < visibleCount; i++) {
              const isLastLine = i === visibleCount - 1;
+@@ -198,6 +204,12 @@ const createIncremental = (stream, { showCursor = false } = {}) => {
+         previousCursorPosition = undefined;
+         cursorWasShown = false;
+     };
++    render.reset = () => {
++        previousOutput = '';
++        previousLines = [];
++        previousCursorPosition = undefined;
++        cursorWasShown = false;
++    };
+     render.done = () => {
+         previousOutput = '';
+         previousLines = [];
+diff --git a/build/render.d.ts b/build/render.d.ts
+index f7f980920c21be5064a64aa1925467eb729c9189..cfb5d1dcf2118c33e4895d196b9f77c71350c636 100644
+--- a/build/render.d.ts
++++ b/build/render.d.ts
+@@ -102,6 +102,10 @@ export type Instance = {
+     Clear output.
+     */
+     clear: () => void;
++    /**
++    Forget the drawn frame and write the whole current frame again.
++    */
++    repaint: () => void;
+ };
+ /**
+ Mount a component and render the output.
+diff --git a/build/render.js b/build/render.js
+index 6526022c509778bf8ebf95af33be29b2626934be..5582c40134d1210e1f9298cf31062d8827bdd8b9 100644
+--- a/build/render.js
++++ b/build/render.js
+@@ -28,6 +28,9 @@ const render = (node, options) => {
+         waitUntilExit: instance.waitUntilExit,
+         cleanup: () => instances.delete(inkOptions.stdout),
+         clear: instance.clear,
++        repaint: () => {
++            instance.repaint();
++        },
+     };
+ };
+ export default render;

@@ -75,6 +75,7 @@ function fakeTasks(rows: readonly BackgroundTask[]): ChatBackgroundTasks {
     moveForeground: () => false,
     hasForeground: () => false,
     peekNotice: () => undefined,
+    releaseNotice: () => {},
     takeNotice: () => undefined,
     onChange: () => () => {},
     list: () => rows,

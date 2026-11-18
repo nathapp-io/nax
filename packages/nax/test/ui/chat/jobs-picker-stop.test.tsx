@@ -91,6 +91,7 @@ function fakeTasks(rows: BackgroundTask[], stopImpl?: StopImpl): TasksFixture {
       moveForeground: () => false,
       hasForeground: () => false,
       peekNotice: () => undefined,
+      releaseNotice: () => {},
       takeNotice: () => undefined,
       onChange: (listener) => {
         listeners.add(listener);

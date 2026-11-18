@@ -162,6 +162,10 @@ class BackgroundTasks implements ChatBackgroundTasks {
     return text;
   }
 
+  releaseNotice(): void {
+    this.notice = undefined;
+  }
+
   stop(id: string): BackgroundTask {
     const entry = this.entries.get(id);
     if (entry?.record.state !== "running") {
@@ -370,7 +374,8 @@ class BackgroundTasks implements ChatBackgroundTasks {
   /** A read of a task that had already ended satisfies the notice that was queued for it. */
   private markSeen(id: string, endedBeforeRead: boolean, options?: TaskOutputOptions): void {
     if (options?.markSeen !== true || !endedBeforeRead) return;
-    // A task in the current snapshot is the notice being delivered right now.
+    // A task in the snapshot is the notice a delivery or an accepted steer is holding right
+    // now; every other peek releases it, so only a notice that was really taken is protected.
     if (this.notice?.ids.includes(id)) return;
     this.unnoticed.delete(id);
   }
