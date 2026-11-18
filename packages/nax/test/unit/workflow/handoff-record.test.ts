@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, stat, utimes } from "node:fs/promises";
+import { mkdir, stat, symlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { withTempDir } from "@test/helpers";
 import type { HandoffRecordFile, HandoffRecordRead } from "@/workflow/handoff-record";
@@ -264,6 +264,41 @@ describe("readHandoffRecordFiles (US-002)", () => {
 
       expect(expectOk(read).newestRunId).toBe("r3");
       expect(expectOk(read).record).toHaveLength(3);
+    });
+  });
+
+  test("a run whose result.json cannot be stat'ed is not silently skipped", async () => {
+    await withTempDir(async (dir) => {
+      await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+      // A symlink loop is an unreadable run that stays deterministic as root: stat answers ELOOP, not ENOENT.
+      const broken = join(dir, "r2");
+      await mkdir(broken, { recursive: true });
+      await symlink("result.json", join(broken, "result.json"));
+
+      // The unreadable run must surface, not vanish: an accepted record for r1 alone would misreport the newest run.
+      await expect(readHandoffRecordFiles(dir)).rejects.toThrow("ELOOP");
+    });
+  });
+
+  test("a stray file under the workflow dir is not a run", async () => {
+    await withTempDir(async (dir) => {
+      await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+      await Bun.write(join(dir, "notes.txt"), "not a run\n");
+
+      const read = await readHandoffRecordFiles(dir);
+
+      expect(expectOk(read).newestRunId).toBe("r1");
+      expect(entryOrder(read)).toEqual(["r1/result.json"]);
+    });
+  });
+
+  test("a workflow dir that cannot be listed surfaces instead of reading as no runs", async () => {
+    await withTempDir(async (dir) => {
+      // A self-referential symlink makes readdir answer ELOOP, not ENOENT — deterministic as root.
+      const loop = join(dir, "workflow-loop");
+      await symlink("workflow-loop", loop);
+
+      await expect(readHandoffRecordFiles(loop)).rejects.toThrow("ELOOP");
     });
   });
 

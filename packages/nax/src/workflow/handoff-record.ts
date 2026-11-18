@@ -5,6 +5,7 @@
  * shape limits (`packages/fleet-protocol/src/index.ts` in koda), so every refusal here repeats a rule
  * koda would apply to the same body.
  */
+import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { ledgerFilePath } from "./ledger";
@@ -38,44 +39,63 @@ interface RunDir {
   readonly mtimeMs: number;
 }
 
+/** errno codes that mean "there is no such path" — the only stat failures a run listing reads as absence. */
+const MISSING_PATH_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
+
 function refusal(reason: string): HandoffRecordRead {
   return { ok: false, reason };
 }
 
-/**
- * Every run directory under `featureWorkflowDir` that holds a result.json, newest result.json first — the
- * order `runDirsNewestFirst` uses. A workflow dir that does not exist and a directory that is not a
- * run both read as `[]`, exactly as that helper does.
- */
-async function listRunDirs(featureWorkflowDir: string): Promise<RunDir[]> {
-  let entries: string[];
-  try {
-    entries = await readdir(featureWorkflowDir);
-  } catch {
-    // No workflow dir yet: the feature has never been run.
-    return [];
-  }
-  const runs: RunDir[] = [];
-  for (const runId of entries) {
-    const runDir = join(featureWorkflowDir, runId);
-    try {
-      const { mtimeMs } = await stat(join(runDir, RESULT_FILE));
-      runs.push({ runId, runDir, mtimeMs });
-    } catch {
-      // Not a run directory, or a run that has not written its result.json yet.
-    }
-  }
-  return runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+/** The errno code of a thrown filesystem error, when it carries one. */
+function errnoCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code: unknown = Reflect.get(error, "code");
+  return typeof code === "string" ? code : undefined;
 }
 
-/** The file's stat mtime, or undefined when the run does not hold that file. */
-async function mtimeMsOf(path: string): Promise<number | undefined> {
+/**
+ * The file's stat, or undefined when there is no such path. Every other failure — an unreadable run
+ * directory, a symlink loop — propagates, so a run the handoff cannot read never drops out of the record
+ * and leaves an older run posing as the newest.
+ */
+async function statOrUndefined(path: string): Promise<Stats | undefined> {
   try {
-    return (await stat(path)).mtimeMs;
-  } catch {
-    // A ledger is optional, and a result.json can be removed between listing and now.
-    return undefined;
+    return await stat(path);
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code !== undefined && MISSING_PATH_CODES.has(code)) return undefined;
+    throw err;
   }
+}
+
+/**
+ * The directory's entries, or `[]` when there is no such directory. Any other failure — a workflow dir
+ * that cannot be read — propagates, for the same reason a failed stat does.
+ */
+async function readdirOrEmpty(path: string): Promise<string[]> {
+  try {
+    return await readdir(path);
+  } catch (err) {
+    const code = errnoCode(err);
+    if (code !== undefined && MISSING_PATH_CODES.has(code)) return [];
+    throw err;
+  }
+}
+
+/**
+ * Every run directory under `featureWorkflowDir` that holds a result.json, newest result.json first — the
+ * order `runDirsNewestFirst` uses. A workflow dir that does not exist and a stray file in place of a run
+ * both read as "no run there"; anything else the filesystem refuses is a failure the caller must see.
+ */
+async function listRunDirs(featureWorkflowDir: string): Promise<RunDir[]> {
+  const runs: RunDir[] = [];
+  for (const runId of await readdirOrEmpty(featureWorkflowDir)) {
+    const runDir = join(featureWorkflowDir, runId);
+    const stats = await statOrUndefined(join(runDir, RESULT_FILE));
+    if (stats === undefined) continue;
+    runs.push({ runId, runDir, mtimeMs: stats.mtimeMs });
+  }
+  return runs.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
 /** One file of a run, or undefined when the run does not hold it. */
@@ -84,10 +104,10 @@ async function fileEntry(
   path: string,
   file: HandoffRecordFile["file"],
 ): Promise<HandoffRecordFile | undefined> {
-  const mtimeMs = await mtimeMsOf(path);
-  if (mtimeMs === undefined) return undefined;
+  const stats = await statOrUndefined(path);
+  if (stats === undefined) return undefined;
   // A read failure is not "no file": it would silently send a record the handoff was meant to complete.
-  return { runId: run.runId, file, mtimeMs: Math.trunc(mtimeMs), content: await Bun.file(path).text() };
+  return { runId: run.runId, file, mtimeMs: Math.trunc(stats.mtimeMs), content: await Bun.file(path).text() };
 }
 
 /** A run's files in send order: result.json, then ledger.md when the run has one. */
