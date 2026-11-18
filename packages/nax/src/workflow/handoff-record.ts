@@ -4,11 +4,20 @@
  * `result.json` and `ledger.md` instead of pointing koda at them. What is sent is bounded by koda's own
  * shape limits (`packages/fleet-protocol/src/index.ts` in koda), so every refusal here repeats a rule
  * koda would apply to the same body.
+ *
+ * US-003 adds the two preflights koda applies after the shape limits: the newest run must be a finished
+ * feature record that ended without a PR at the pushed HEAD, and the `prd.json` committed at that HEAD
+ * must name the branch and hold no pending story. Both halves stop at the first failing check, so a
+ * refusal names the one thing the user has to fix.
  */
 import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { featureDir } from "@/config";
+import { type PRD, pendingStoryIds } from "@/prd";
+import { gitWithTimeout } from "@/utils/git";
 import { ledgerFilePath } from "./ledger";
+import { workflowFeatureDir } from "./paths";
 
 /** One file a handoff sends: the run it belongs to, its name, the mtime koda compares, and its text. */
 export interface HandoffRecordFile {
@@ -154,6 +163,146 @@ export async function readHandoffRecordFiles(featureWorkflowDir: string): Promis
     return refusal(`the run record is ${bytes} bytes; koda accepts at most ${HANDOFF_RECORD_MAX_BYTES}`);
   }
   return { ok: true, record, newestRunId: runs[0].runId };
+}
+
+/** What the feature-record and PRD preflights read the record against (US-003). */
+export interface HandoffRecordInput {
+  readonly repoRoot: string;
+  readonly feature: string;
+  /** The pushed HEAD koda reads the record and the PRD at. */
+  readonly head: string;
+  /** The pushed branch, which the committed `prd.json` must name. */
+  readonly branch: string;
+}
+
+/**
+ * The module's one process. `git` is stubbed in tests, the pattern `_configChangeDeps.git` uses; an
+ * override here is read at call time, never captured.
+ */
+export const _handoffRecordDeps = {
+  git: (args: string[], cwd: string) => gitWithTimeout(args, cwd),
+};
+
+/** The committed file the handoff reads at the pushed HEAD. */
+const PRD_FILE = "prd.json";
+const NOT_A_FINISHED_RECORD = "the newest workflow run's result.json is not a finished feature record";
+const HEAD_MOVED = "HEAD moved since the workflow finished; run nax run so the new commits are reviewed";
+const PRD_NOT_COMMITTED = "prd.json is not committed at HEAD";
+const PRD_NOT_A_PRD = "prd.json at HEAD is not a PRD";
+
+/** A plain JSON object, not an array and not `null`. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Whether the record's outcome says the run ended without a PR, which is the only kind a handoff sends. */
+function isNoPrOutcome(outcome: unknown): boolean {
+  return outcome === "pushed" || outcome === "local-only";
+}
+
+/** Whether the record's outcome says the run already published a PR, which a handoff cannot adopt. */
+function isPublishedOutcome(outcome: unknown): outcome is "ready" | "draft" {
+  return outcome === "ready" || outcome === "draft";
+}
+
+/**
+ * The parsed PRD `pendingStoryIds` can read: an object whose `userStories` entries are all objects and
+ * whose `branchName` is a name. koda's `readHandoffPrd` skips a non-object story instead; nax refuses
+ * one, because `pendingStoryIds` cannot read it and would call a feature with work left finished.
+ */
+function isReadablePrd(parsed: unknown): parsed is PRD {
+  if (!isRecord(parsed) || typeof parsed.branchName !== "string") return false;
+  const stories = parsed.userStories;
+  return Array.isArray(stories) && stories.every(isRecord);
+}
+
+/** The refusal for a PRD with stories still to run — singular for one, naming them in PRD order. */
+function pendingReason(pending: readonly string[]): string {
+  return `${pending.length} ${pending.length === 1 ? "story is" : "stories are"} still pending: ${pending.join(", ")}`;
+}
+
+/**
+ * The reason the newest `result.json` is not a finished no-PR record at `head`, or undefined when it is.
+ * The checks are the Failure Handling table's order: the record's own shape, then the step it stopped at,
+ * then the publication, then HEAD — so a run that already published is diagnosed before a moved HEAD.
+ */
+function unfinishedRecordReason(resultText: string, head: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(resultText);
+  } catch {
+    // A record that does not parse cannot say what the run did.
+    return NOT_A_FINISHED_RECORD;
+  }
+  if (!isRecord(parsed) || parsed.schemaVersion !== 1 || !isRecord(parsed.featureWorkflow)) {
+    return NOT_A_FINISHED_RECORD;
+  }
+  const { step, outcome, head: recordedHead, url } = parsed.featureWorkflow;
+  // A done record with no known outcome never reached a finish, so it is not a finished record at all.
+  if (step === "done" && !isNoPrOutcome(outcome) && !isPublishedOutcome(outcome)) return NOT_A_FINISHED_RECORD;
+  if (step !== "done") return `the workflow stopped at ${String(step)}; run nax run to finish it`;
+  if (isPublishedOutcome(outcome)) {
+    const namedUrl = typeof url === "string" ? ` ${url}` : "";
+    return `the run already published a ${outcome} PR${namedUrl}; a handoff needs a run that ended without a PR (publish "none")`;
+  }
+  if (recordedHead !== head) return HEAD_MOVED;
+  return undefined;
+}
+
+/** The feature's PRD path as git reports it at a commit: repo-relative, from the `featureDir` SSOT. */
+function committedPrdPath(repoRoot: string, feature: string): string {
+  return relative(repoRoot, join(featureDir(repoRoot, feature), PRD_FILE));
+}
+
+/** The reason the PRD committed at the pushed HEAD cannot be handed over, or undefined when it can. */
+async function committedPrdReason(input: HandoffRecordInput): Promise<string | undefined> {
+  const path = committedPrdPath(input.repoRoot, input.feature);
+  let shown: { stdout: string; exitCode: number };
+  try {
+    shown = await _handoffRecordDeps.git(["show", `${input.head}:${path}`], input.repoRoot);
+  } catch {
+    // git could not answer at all. That and a non-zero exit are one answer: the file is not readable
+    // at this head, so the handoff has nothing to send koda.
+    return PRD_NOT_COMMITTED;
+  }
+  // A non-zero exit means the file is not committed at that head.
+  if (shown.exitCode !== 0) return PRD_NOT_COMMITTED;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(shown.stdout);
+  } catch {
+    // The committed file is not JSON, so it is not a PRD.
+    return PRD_NOT_A_PRD;
+  }
+  if (!isReadablePrd(parsed)) return PRD_NOT_A_PRD;
+  if (parsed.branchName !== input.branch) {
+    return `prd.json names branch ${parsed.branchName}, not ${input.branch}`;
+  }
+  const pending = pendingStoryIds(parsed);
+  return pending.length > 0 ? pendingReason(pending) : undefined;
+}
+
+/** The newest run's `result.json` entry, or undefined when the record holds none (it always does). */
+function newestResultEntry(read: Extract<HandoffRecordRead, { ok: true }>): HandoffRecordFile | undefined {
+  return read.record.find((entry) => entry.runId === read.newestRunId && entry.file === RESULT_FILE);
+}
+
+/**
+ * `readHandoffRecordFiles`, then the newest feature record and the PRD at `head` checked against koda's
+ * rules (US-003): a record-file refusal is returned unchanged, and the two preflights stop at the first
+ * failing check. The newest record only — an older one describes code this handoff would not send — and
+ * an accepted read is the record itself, so what is sent is exactly what was checked.
+ */
+export async function collectHandoffRecord(input: HandoffRecordInput): Promise<HandoffRecordRead> {
+  const read = await readHandoffRecordFiles(workflowFeatureDir(input.repoRoot, input.feature));
+  if (!read.ok) return read;
+  const newest = newestResultEntry(read);
+  const recordReason =
+    newest === undefined ? NOT_A_FINISHED_RECORD : unfinishedRecordReason(newest.content, input.head);
+  if (recordReason !== undefined) return refusal(recordReason);
+  const prdReason = await committedPrdReason(input);
+  if (prdReason !== undefined) return refusal(prdReason);
+  return read;
 }
 
 /**
