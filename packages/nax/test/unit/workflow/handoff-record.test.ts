@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, stat, symlink, utimes } from "node:fs/promises";
+import { mkdir, stat, symlink, unlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
-import { withTempDir } from "@test/helpers";
-import type { HandoffRecordFile, HandoffRecordRead } from "@/workflow/handoff-record";
-import { isStorableRecordText, readHandoffRecordFiles } from "@/workflow/handoff-record";
+import { withDepsRestore, withTempDir } from "@test/helpers";
+import {
+  _handoffRecordDeps,
+  type HandoffRecordFile,
+  type HandoffRecordRead,
+  isStorableRecordText,
+  readHandoffRecordFiles,
+} from "@/workflow/handoff-record";
+
+withDepsRestore(_handoffRecordDeps);
 
 const RESULT = '{"schemaVersion":1,"runId":"{run}","stories":{}}\n';
 const LEDGER = "# Workflow ledger \u2014 run: {run}\n_run: done (all stories passed)\n";
@@ -143,6 +150,27 @@ describe("readHandoffRecordFiles (US-002)", () => {
 
       expect(expectOk(read).newestRunId).toBe("r2");
       expect(entryOrder(read)).toEqual(["r2/result.json", "r2/ledger.md", "r1/result.json", "r1/ledger.md"]);
+    });
+  });
+
+  test.each(["tie", "reordered", "missing"])("refuses a listed result that becomes %s before open", async (change) => {
+    await withTempDir(async (dir) => {
+      await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+      const newest = await makeRun(dir, "r2", { result: resultJson("r2"), resultMtimeMs: 2000 });
+      const resultPath = join(newest, "result.json");
+      const open = _handoffRecordDeps.open;
+      _handoffRecordDeps.open = async (path, ...args) => {
+        if (path === resultPath) {
+          if (change === "missing") await unlink(resultPath);
+          else {
+            const time = change === "tie" ? 1 : 0.5;
+            await utimes(resultPath, time, time);
+          }
+        }
+        return open(path, ...args);
+      };
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toContain("result.json of run r2 changed");
     });
   });
 

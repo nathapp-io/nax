@@ -96,10 +96,9 @@ type FileRead =
       /** The text, kept only while the whole record may still fit koda's cap. */
       readonly text?: string;
     }
-  /** The path holds nothing: the run does not send that entry. */
-  | { readonly ok: false; readonly absent: true }
-  /** The path holds a link or a special file, which no handoff may read. */
-  | { readonly ok: false; readonly absent: false };
+  | FileReadFailure;
+
+type FileReadFailure = { readonly ok: false; readonly kind: "absent" | "not-plain" | "changed" };
 
 /** errno codes that mean "there is no such path" — the only stat failures a run listing reads as absence. */
 const MISSING_PATH_CODES: ReadonlySet<string> = new Set(["ENOENT", "ENOTDIR"]);
@@ -220,16 +219,14 @@ async function listRunDirs(featureWorkflowDir: string): Promise<RunListing> {
  * The open is non-blocking, so a FIFO in the file's place answers here instead of waiting for a writer;
  * the handle's own `stat` then refuses it, because it is not a regular file.
  */
-async function openPlainFile(path: string): Promise<FileHandle | FileRead> {
+async function openPlainFile(path: string): Promise<FileHandle | FileReadFailure> {
   try {
-    return await open(path, RECORD_FILE_FLAGS);
+    return await _handoffRecordDeps.open(path, RECORD_FILE_FLAGS);
   } catch (err) {
     const code = errnoCode(err);
-    if (code !== undefined && MISSING_PATH_CODES.has(code)) return { ok: false, absent: true };
-    // ELOOP: the path became a link after the listing checked it. A link is never read through.
-    if (code === "ELOOP") return { ok: false, absent: false };
-    // ENXIO: a socket, which has no bytes of its own to read.
-    if (code === "ENXIO") return { ok: false, absent: false };
+    if (code !== undefined && MISSING_PATH_CODES.has(code)) return { ok: false, kind: "absent" };
+    // ELOOP: the path became a link after the listing checked it. ENXIO: a socket.
+    if (code === "ELOOP" || code === "ENXIO") return { ok: false, kind: "not-plain" };
     throw err;
   }
 }
@@ -271,14 +268,16 @@ async function readChunks(handle: FileHandle, mtimeMs: number, budget: number): 
 
 /**
  * One record file, read through the handle its metadata came from: no link is followed, a directory or
- * special file is refused, and only the bytes `budget` still allows are kept.
+ * special file is refused, and only the bytes `budget` still allows are kept. A listed result's
+ * mtime must still match so the payload preserves the ordering and tie check from the listing.
  */
-async function readRecordFile(path: string, budget: number): Promise<FileRead> {
+async function readRecordFile(path: string, budget: number, listedMtimeMs?: number): Promise<FileRead> {
   const opened = await openPlainFile(path);
   if ("ok" in opened) return opened;
   try {
     const stats = await opened.stat();
-    if (!stats.isFile()) return { ok: false, absent: false };
+    if (!stats.isFile()) return { ok: false, kind: "not-plain" };
+    if (listedMtimeMs !== undefined && stats.mtimeMs !== listedMtimeMs) return { ok: false, kind: "changed" };
     return await readChunks(opened, Math.trunc(stats.mtimeMs), budget);
   } finally {
     await opened.close();
@@ -290,17 +289,33 @@ type RecordBuild =
   | { readonly ok: true; readonly record: readonly HandoffRecordFile[]; readonly bytes: number }
   | { readonly ok: false; readonly reason: string };
 
+function readRunFile(run: RunDir, file: HandoffRecordFile["file"], budget: number): Promise<FileRead> {
+  return file === RESULT_FILE
+    ? readRecordFile(join(run.runDir, RESULT_FILE), budget, run.mtimeMs)
+    : readRecordFile(ledgerFilePath(run.runDir), budget);
+}
+
+function unreadableFileReason(
+  runId: string,
+  file: HandoffRecordFile["file"],
+  read: FileReadFailure,
+): string | undefined {
+  if (read.kind === "not-plain") return notPlainFileReason(runId, file);
+  // Only the ledger is optional once a run is listed.
+  if (read.kind === "absent" && file === LEDGER_FILE) return undefined;
+  return `result.json of run ${runId} changed during collection; try the handoff again`;
+}
+
 async function buildRecord(runs: readonly RunDir[]): Promise<RecordBuild> {
   const record: HandoffRecordFile[] = [];
   let bytes = 0;
   for (const run of runs) {
     for (const file of RECORD_FILES) {
-      const path = file === RESULT_FILE ? join(run.runDir, RESULT_FILE) : ledgerFilePath(run.runDir);
-      const read = await readRecordFile(path, HANDOFF_RECORD_MAX_BYTES - bytes);
+      const read = await readRunFile(run, file, HANDOFF_RECORD_MAX_BYTES - bytes);
       if (!read.ok) {
-        // A missing file is not part of the record; a link or a special file is refused, never read.
-        if (read.absent) continue;
-        return { ok: false, reason: notPlainFileReason(run.runId, file) };
+        const reason = unreadableFileReason(run.runId, file, read);
+        if (reason !== undefined) return { ok: false, reason };
+        continue;
       }
       if (!read.storable) {
         return {
@@ -363,11 +378,11 @@ export interface HandoffRecordInput {
 }
 
 /**
- * The module's one process. `git` is stubbed in tests, the pattern `_configChangeDeps.git` uses; an
- * override here is read at call time, never captured.
+ * The committed PRD read and the record handle open; tests can override them at call time.
  */
 export const _handoffRecordDeps = {
   git: (args: string[], cwd: string) => gitWithTimeout(args, cwd),
+  open,
 };
 
 /** The committed file the handoff reads at the pushed HEAD. */
