@@ -72,6 +72,13 @@ interface RunDir {
   readonly runId: string;
   readonly runDir: string;
   readonly mtimeMs: number;
+  /**
+   * The listed result.json's own identity. `result.json` is replaced atomically, so a run whose
+   * outcome changed under a replacement that keeps the mtime is still a different file, and the
+   * listing must be able to say so.
+   */
+  readonly dev: number;
+  readonly ino: number;
 }
 
 /** The runs a handoff may read, or the refusal for a run directory it must not read through. */
@@ -212,7 +219,7 @@ async function listRunDirs(featureWorkflowDir: string, anchorDir: string): Promi
     const resultStats = await lstatOrUndefined(join(runDir, RESULT_FILE));
     if (resultStats === undefined) continue;
     if (!resultStats.isFile()) return { ok: false, reason: notPlainFileReason(runId, RESULT_FILE) };
-    runs.push({ runId, runDir, mtimeMs: resultStats.mtimeMs });
+    runs.push({ runId, runDir, mtimeMs: resultStats.mtimeMs, dev: resultStats.dev, ino: resultStats.ino });
   }
   return { ok: true, runs: runs.sort((a, b) => b.mtimeMs - a.mtimeMs) };
 }
@@ -271,16 +278,23 @@ async function readChunks(handle: FileHandle, mtimeMs: number, budget: number): 
 
 /**
  * One record file, read through the handle its metadata came from: no link is followed, a directory or
- * special file is refused, and only the bytes `budget` still allows are kept. A listed result's
- * mtime must still match so the payload preserves the ordering and tie check from the listing.
+ * special file is refused, and only the bytes `budget` still allows are kept. A listed result must
+ * still be the same file, at the same mtime, so the payload preserves the ordering and tie check
+ * taken from the listing.
  */
-async function readRecordFile(path: string, budget: number, listedMtimeMs?: number): Promise<FileRead> {
+async function readRecordFile(path: string, budget: number, listed?: RunDir): Promise<FileRead> {
   const opened = await openPlainFile(path);
   if ("ok" in opened) return opened;
   try {
     const stats = await opened.stat();
     if (!stats.isFile()) return { ok: false, kind: "not-plain" };
-    if (listedMtimeMs !== undefined && stats.mtimeMs !== listedMtimeMs) return { ok: false, kind: "changed" };
+    // The handle must be the file the listing read: same identity (an atomic replacement keeps the
+    // mtime) and the same mtime the payload's ordering and tie check were taken from.
+    if (
+      listed !== undefined &&
+      (stats.mtimeMs !== listed.mtimeMs || stats.dev !== listed.dev || stats.ino !== listed.ino)
+    )
+      return { ok: false, kind: "changed" };
     return await readChunks(opened, Math.trunc(stats.mtimeMs), budget);
   } finally {
     await opened.close();
@@ -294,7 +308,7 @@ type RecordBuild =
 
 function readRunFile(run: RunDir, file: HandoffRecordFile["file"], budget: number): Promise<FileRead> {
   return file === RESULT_FILE
-    ? readRecordFile(join(run.runDir, RESULT_FILE), budget, run.mtimeMs)
+    ? readRecordFile(join(run.runDir, RESULT_FILE), budget, run)
     : readRecordFile(ledgerFilePath(run.runDir), budget);
 }
 
@@ -345,7 +359,15 @@ function sameRunListing(before: readonly RunDir[], after: readonly RunDir[]): bo
     before.length === after.length &&
     before.every((run, index) => {
       const current = after[index];
-      return run.runId === current.runId && run.mtimeMs === current.mtimeMs;
+      return (
+        current !== undefined &&
+        run.runId === current.runId &&
+        run.mtimeMs === current.mtimeMs &&
+        // The identity, not just the time: a result.json replaced atomically under a preserved
+        // mtime carries a different outcome and must not be accepted as the one that was read.
+        run.dev === current.dev &&
+        run.ino === current.ino
+      );
     })
   );
 }

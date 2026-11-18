@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, stat, symlink, unlink, utimes } from "node:fs/promises";
+import { mkdir, rename, stat, symlink, unlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { withDepsRestore, withTempDir } from "@test/helpers";
 import {
@@ -35,6 +35,27 @@ interface RunFixture {
 async function writeFile(path: string, text: string, mtimeMs: number | undefined): Promise<void> {
   await Bun.write(path, text);
   if (mtimeMs !== undefined) await utimes(path, mtimeMs / 1000, mtimeMs / 1000);
+}
+
+/**
+ * The atomic replacement `workflow/result.ts` writes, keeping the mtime the listing read: only the
+ * file's own identity says its outcome is not the one the record carries.
+ */
+async function replaceResultKeepingMtime(resultPath: string, text: string): Promise<void> {
+  const replaced = `${resultPath}.replaced`;
+  await writeFile(replaced, text, (await stat(resultPath)).mtimeMs);
+  await rename(replaced, resultPath);
+}
+
+/**
+ * What `change` does to the newest `result.json` once the record has already read it — the state the
+ * final re-listing must notice.
+ */
+async function changeResultAfterRead(change: string, resultPath: string): Promise<void> {
+  if (change === "missing") return await unlink(resultPath);
+  if (change === "replaced") return await replaceResultKeepingMtime(resultPath, resultJson("draft"));
+  const time = change === "tie" ? 1 : 0.5;
+  await utimes(resultPath, time, time);
 }
 
 async function makeRun(workflowDir: string, runId: string, fixture: RunFixture): Promise<string> {
@@ -174,31 +195,30 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
-  test.each(["tie", "reordered", "missing"])("refuses a result that becomes %s after its read", async (change) => {
-    await withTempDir(async (dir) => {
-      await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
-      const newest = await makeRun(dir, "r2", {
-        result: resultJson("r2"),
-        resultMtimeMs: 2000,
-        ledger: ledgerMd("r2"),
-      });
-      const resultPath = join(newest, "result.json");
-      const ledgerPath = join(newest, "ledger.md");
-      const open = _handoffRecordDeps.open;
-      _handoffRecordDeps.open = async (path, ...args) => {
-        if (path === ledgerPath) {
-          if (change === "missing") await unlink(resultPath);
-          else {
-            const time = change === "tie" ? 1 : 0.5;
-            await utimes(resultPath, time, time);
-          }
-        }
-        return open(path, ...args);
-      };
+  test.each(["tie", "reordered", "missing", "replaced"])(
+    "refuses a result that becomes %s after its read",
+    async (change) => {
+      await withTempDir(async (dir) => {
+        await makeRun(dir, "r1", { result: resultJson("r1"), resultMtimeMs: 1000 });
+        const newest = await makeRun(dir, "r2", {
+          result: resultJson("r2"),
+          resultMtimeMs: 2000,
+          ledger: ledgerMd("r2"),
+        });
+        const resultPath = join(newest, "result.json");
+        const ledgerPath = join(newest, "ledger.md");
+        const open = _handoffRecordDeps.open;
+        _handoffRecordDeps.open = async (path, ...args) => {
+          if (path === ledgerPath) await changeResultAfterRead(change, resultPath);
+          return open(path, ...args);
+        };
 
-      expect(expectRefusal(await readHandoffRecordFiles(dir))).toContain("workflow results changed during collection");
-    });
-  });
+        expect(expectRefusal(await readHandoffRecordFiles(dir))).toContain(
+          "workflow results changed during collection",
+        );
+      });
+    },
+  );
 
   test("a run without a ledger.md sends only its result.json", async () => {
     await withTempDir(async (dir) => {
