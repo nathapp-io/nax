@@ -12,8 +12,10 @@
  * steps; a creator paused between them past `EMPTY_LOCK_EVICT_AGE_MS` looked
  * crashed, a waiter evicted it and entered, and the creator resumed into the
  * critical section beside it. `link` fails with EEXIST exactly like an
- * exclusive create. A crash can leave a private `.lock-<uuid>.pid` file
- * behind in the lock directory; nothing reads it.
+ * exclusive create. A crash can leave a private `.lock-<pid>-<uuid>.pid`
+ * file behind in the lock directory; the next acquisition there removes
+ * staged files whose pid is proven dead, so an auto-commit does not keep
+ * finding them.
  *
  * #1731: the previous design created timestamped candidate files and polled
  * until it saw itself as the "oldest live" candidate. That protocol is only
@@ -70,7 +72,7 @@
 
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, link, open, unlink, writeFile } from "node:fs/promises";
+import { type FileHandle, link, open, readdir, unlink, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { NaxError } from "#src/infra/index";
@@ -104,6 +106,7 @@ export interface FileLockOptions {
 export const _fileLockDeps = {
   writeFile,
   link,
+  readdir,
   open,
   unlink,
   now: () => Date.now(),
@@ -115,14 +118,37 @@ function unlinkQuiet(path: string): Promise<void> {
   return _fileLockDeps.unlink(path).catch(() => {});
 }
 
+/** A staged pid file: `.lock-<pid>-<uuid>.pid`, the pid naming the process that may still remove it. */
+const STAGED_PID_FILE = /^\.lock-(\d+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pid$/;
+
+/** The directory prefix of `path`, kept exactly (joining could normalize a symlink followed by `..`). */
+function directoryOf(path: string): string {
+  return path.slice(0, path.length - basename(path).length);
+}
+
+/**
+ * Remove staged pid files left by processes that are proven dead. Best effort: a liveness probe that is
+ * inconclusive reads as alive, and any filesystem failure leaves the files for a later acquisition.
+ */
+async function sweepOrphanedStagedFiles(path: string): Promise<void> {
+  const directory = directoryOf(path);
+  try {
+    for (const name of await _fileLockDeps.readdir(directory || ".")) {
+      const pid = Number(STAGED_PID_FILE.exec(name)?.[1]);
+      if (!Number.isInteger(pid) || pid === process.pid || _fileLockDeps.isPidAlive(pid)) continue;
+      await unlinkQuiet(`${directory}${name}`);
+    }
+  } catch {
+    // An unreadable directory is not this lock's failure; the orphans stay until a later sweep.
+  }
+}
+
 /**
  * Publish a file holding this process's pid at `path`, or report that `path` already exists. The pid
  * is complete before the path exists: see the module doc.
  */
 async function tryCreateExclusive(path: string): Promise<boolean> {
-  // Keep the exact directory prefix (joining could normalize a symlink followed by `..`).
-  const directory = path.slice(0, path.length - basename(path).length);
-  const staged = `${directory}.lock-${randomUUID()}.pid`;
+  const staged = `${directoryOf(path)}.lock-${process.pid}-${randomUUID()}.pid`;
   try {
     await _fileLockDeps.writeFile(staged, `${process.pid}\n`, { flag: "wx" });
   } catch (error) {
@@ -222,6 +248,7 @@ async function acquire(lockPath: string, options: FileLockOptions): Promise<() =
   for (;;) {
     signal?.throwIfAborted();
     if (await tryCreateExclusive(lockPath)) {
+      await sweepOrphanedStagedFiles(lockPath);
       return () => unlinkQuiet(lockPath);
     }
     signal?.throwIfAborted();

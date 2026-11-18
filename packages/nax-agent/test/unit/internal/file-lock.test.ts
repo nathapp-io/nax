@@ -348,6 +348,24 @@ describe("withFileLock — stale lock handling (BUG-10 / BUG-25)", () => {
     }
   });
 
+  test("an acquisition removes staged pid files a dead process left, never a live one's", async () => {
+    // A process that dies between staging and cleanup leaves `.lock-<pid>-<uuid>.pid` beside the
+    // guarded files, where an auto-commit's `git add -A` could pick it up.
+    const { dir, lockPath } = makeLockDir();
+    const dead = `${dir}/.lock-424242-00000000-0000-4000-8000-000000000000.pid`;
+    const live = `${dir}/.lock-7777-00000000-0000-4000-8000-000000000001.pid`;
+    await Bun.write(dead, "424242\n");
+    await Bun.write(live, "7777\n");
+    Object.assign(_fileLockDeps, { isPidAlive: (pid: number) => pid !== 424242 });
+    try {
+      await withFileLock(lockPath, async () => {}, PATH_LOCK_OPTS);
+      expect(await Bun.file(dead).exists()).toBe(false);
+      expect(await Bun.file(live).exists()).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   test("two contending waiters leave an aged claim and its abandoned lock intact", async () => {
     const { dir, lockPath } = makeLockDir();
     const claimPath = `${lockPath}.claim`;
