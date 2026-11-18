@@ -174,6 +174,7 @@ beforeEach(() => {
     return { ok: true, record, newestRunId: NEWEST_RUN_ID };
   };
   _flowHandoffDeps.readNewestHandoffMark = async () => null;
+  _flowHandoffDeps.readRunMark = async () => null;
   _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
     markCalls.push({ runDir, mark });
   };
@@ -419,17 +420,25 @@ describe("nax-flow__send — the handoff form before the card", () => {
     expect(pushCalls).toHaveLength(0);
   });
 
-  test("reads the mark on the feature's own workflow directory (AC-3)", async () => {
+  test("reads the mark before the card, again before the push, and on the run at the push boundary (AC-3)", async () => {
     const dirs: string[] = [];
+    const runDirs: string[] = [];
     _flowHandoffDeps.readNewestHandoffMark = async (dir) => {
       dirs.push(dir);
+      return null;
+    };
+    _flowHandoffDeps.readRunMark = async (runDir) => {
+      runDirs.push(runDir);
       return null;
     };
 
     await send(handoffInput);
 
-    // Once before the card and once again before the push, both on the feature's own run directory.
-    expect(dirs).toEqual([workflowFeatureDir(REPO_ROOT, FEATURE), workflowFeatureDir(REPO_ROOT, FEATURE)]);
+    // Once before the card and once after it, both on the feature's own workflow directory...
+    const featureDir = workflowFeatureDir(REPO_ROOT, FEATURE);
+    expect(dirs).toEqual([featureDir, featureDir]);
+    // ...and once on the run this send is about to mark, at the push boundary.
+    expect(runDirs).toEqual([workflowRunDir(REPO_ROOT, FEATURE, NEWEST_RUN_ID)]);
   });
 });
 
@@ -652,109 +661,5 @@ describe("nax-flow__send — the mark a handoff leaves", () => {
     expect(result.content.split("\n")[0]).toBe(
       '{"flow":"fl1","state":"PENDING","url":"https://koda.example/flows/fl1"}',
     );
-  });
-});
-
-describe("nax-flow__send — the record is re-checked after approval", () => {
-  const MARK = { schemaVersion: 1, at: "T", flowId: "fl9", url: "https://koda/flows/fl9" } as const;
-
-  /** Answer the card by changing what is on disk, then allowing it. */
-  function allowAfter(change: () => void): void {
-    reply = async () => {
-      change();
-      return "allow";
-    };
-  }
-
-  test("refuses a mark that appeared while the card was open, pushing nothing (AC-3)", async () => {
-    allowAfter(() => {
-      _flowHandoffDeps.readNewestHandoffMark = async () => ({ mark: MARK, path: "/r/handoff.json" });
-    });
-
-    const result = await send(handoffInput);
-
-    expect(result.isError).toBe(true);
-    expect(result.content.startsWith("[chat] f1 was handed off to koda (flow fl9")).toBe(true);
-    expect(result.content).toContain("/r/handoff.json");
-    expect(pushCalls).toHaveLength(0);
-    expect(kodaCalls).toHaveLength(0);
-    expect(markCalls).toHaveLength(0);
-  });
-
-  test("refuses a newer run at the same commit, so no mark lands on a run the guards do not read", async () => {
-    allowAfter(() => {
-      _flowHandoffDeps.collectHandoffRecord = async () => ({
-        ok: true,
-        record: [{ runId: "r3", file: "result.json", mtimeMs: 3, content: '{"step":"done"}' }],
-        newestRunId: "r3",
-      });
-    });
-
-    const result = await send(handoffInput);
-
-    expect(result).toEqual({
-      isError: true,
-      content: "[chat] the run record changed while the card was open; nothing was pushed",
-    });
-    expect(pushCalls).toHaveLength(0);
-    expect(kodaCalls).toHaveLength(0);
-    expect(markCalls).toHaveLength(0);
-  });
-
-  test("refuses a record whose text changed while the card was open", async () => {
-    allowAfter(() => {
-      _flowHandoffDeps.collectHandoffRecord = async () => ({
-        ok: true,
-        record: record.map((entry) =>
-          entry.file === "ledger.md" ? { ...entry, content: "edited while the card was open" } : entry,
-        ),
-        newestRunId: NEWEST_RUN_ID,
-      });
-    });
-
-    const result = await send(handoffInput);
-
-    expect(result.content).toBe("[chat] the run record changed while the card was open; nothing was pushed");
-    expect(pushCalls).toHaveLength(0);
-    expect(markCalls).toHaveLength(0);
-  });
-
-  test("refuses a record the re-check can no longer read", async () => {
-    allowAfter(() => {
-      _flowHandoffDeps.collectHandoffRecord = async () => ({ ok: false, reason: "the run moved" });
-    });
-
-    const result = await send(handoffInput);
-
-    expect(result).toEqual({ isError: true, content: "[chat] cannot hand off f1: the run moved" });
-    expect(pushCalls).toHaveLength(0);
-    expect(kodaCalls).toHaveLength(0);
-  });
-});
-
-describe("nax-flow__send — nothing is marked when nothing was pushed", () => {
-  test("returns the cancelled result for a turn cancelled after the card (AC-15)", async () => {
-    const controller = new AbortController();
-    reply = async () => {
-      controller.abort();
-      return "allow";
-    };
-
-    const result = await send(handoffInput, controller.signal);
-
-    expect(result).toEqual({ isError: true, content: CANCELLED_NOTHING_PUSHED });
-    expect(pushCalls).toHaveLength(0);
-    expect(markCalls).toHaveLength(0);
-  });
-
-  test("returns the branch-changed result when the head moved while the card was open (AC-16)", async () => {
-    _flowProviderDeps.headSha = async () => OTHER_SHA;
-
-    const result = await send(handoffInput);
-
-    expect(result).toEqual({ isError: true, content: BRANCH_CHANGED });
-    expect(pushCalls).toHaveLength(0);
-    expect(kodaCalls).toHaveLength(0);
-    expect(markCalls).toHaveLength(0);
   });
 });

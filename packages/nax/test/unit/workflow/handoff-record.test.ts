@@ -56,6 +56,19 @@ function entryOrder(read: HandoffRecordRead): string[] {
   return expectOk(read).record.map((entry) => `${entry.runId}/${entry.file}`);
 }
 
+/**
+ * `mkfifo` is the only way to build the special file the reader must refuse, and it is what makes the
+ * blocking open reproducer: where the tool is missing, that one case is skipped rather than faked.
+ */
+const mkfifo = Bun.which("mkfifo");
+const fifoTest = mkfifo === null ? test.skip : test;
+
+/** Create a FIFO at `path`, as the platform's own tool does. */
+async function makeFifo(path: string): Promise<void> {
+  const created = Bun.spawn([mkfifo ?? "mkfifo", path], { stdout: "ignore", stderr: "pipe" });
+  expect(await created.exited).toBe(0);
+}
+
 describe("isStorableRecordText (US-002)", () => {
   test("refuses text holding a NUL character", () => {
     expect(isStorableRecordText("a\u0000b")).toBe(false);
@@ -226,6 +239,33 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
+  test("a malformed record is counted as the text it decodes to, not as the bytes on disk", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await makeRun(dir, "r1", {});
+      // 175 000 bytes that are not UTF-8 decode to 175 000 replacement characters — 525 000 bytes sent,
+      // which is past koda's cap even though the file itself is not.
+      await Bun.write(join(runDir, "result.json"), Buffer.alloc(175_000, 0xff));
+
+      expect(expectRefusal(await readHandoffRecordFiles(dir))).toBe(
+        "the run record is 525000 bytes; koda accepts at most 524288",
+      );
+    });
+  });
+
+  test("a BOM is not counted against the cap, because the text sent has none", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await makeRun(dir, "r1", {});
+      // Three bytes larger than the cap on disk, and exactly the cap once the BOM decodes away.
+      const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+      await Bun.write(join(runDir, "result.json"), Buffer.concat([bom, Buffer.alloc(524_288, 0x61)]));
+
+      const record = expectOk(await readHandoffRecordFiles(dir)).record;
+
+      expect(record[0]?.content.length).toBe(524_288);
+      expect(record[0]?.content.startsWith("\uFEFF")).toBe(false);
+    });
+  });
+
   test("an oversized record is counted exactly without being buffered, and refused", async () => {
     await withTempDir(async (dir) => {
       // 8 MiB, far past the cap and far past one chunk: the count is still exact.
@@ -369,6 +409,54 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
+  test("a workflow directory that is a link is refused instead of read through", async () => {
+    await withTempDir(async (dir) => {
+      const otherFeature = join(dir, "other-feature");
+      await makeRun(otherFeature, "r1", { result: resultJson("r1"), ledger: ledgerMd("r1") });
+      const workflow = join(dir, "workflow");
+      await symlink(otherFeature, workflow);
+
+      const read = await readHandoffRecordFiles(workflow);
+
+      expect(expectRefusal(read)).toBe(
+        `${workflow} is a link, not a directory of this feature; the handoff reads only the feature's own runs`,
+      );
+      expect(JSON.stringify(read)).not.toContain("Workflow ledger");
+    });
+  });
+
+  test("a parent directory that is a link under the trusted root is refused", async () => {
+    await withTempDir(async (dir) => {
+      const real = join(dir, "real-feature");
+      await makeRun(join(real, "workflow"), "r1", { result: resultJson("r1") });
+      const linked = join(dir, "linked-feature");
+      await symlink(real, linked);
+
+      // The chain from the root the caller trusts is walked, so the linked feature directory is refused.
+      const read = await readHandoffRecordFiles(join(linked, "workflow"), dir);
+
+      expect(expectRefusal(read)).toBe(
+        `${linked} is a link, not a directory of this feature; the handoff reads only the feature's own runs`,
+      );
+    });
+  });
+
+  fifoTest("a FIFO in place of ledger.md is refused instead of blocking the read", async () => {
+    await withTempDir(async (dir) => {
+      const runDir = await makeRun(dir, "r1", { result: resultJson("r1") });
+      await makeFifo(join(runDir, "ledger.md"));
+
+      // A blocking open never answers: the read is raced against a sleep, so the failure is this test's.
+      const raced = await Promise.race([readHandoffRecordFiles(dir), Bun.sleep(3_000).then(() => "blocked" as const)]);
+
+      expect(raced).not.toBe("blocked");
+      if (raced === "blocked") return;
+      expect(expectRefusal(raced)).toBe(
+        "ledger.md of run r1 is a link or a special file, not a regular file the handoff can read",
+      );
+    });
+  });
+
   test("a directory in place of a record file is refused, not read", async () => {
     await withTempDir(async (dir) => {
       const runDir = await makeRun(dir, "r1", { result: resultJson("r1") });
@@ -392,13 +480,13 @@ describe("readHandoffRecordFiles (US-002)", () => {
     });
   });
 
-  test("a workflow dir that cannot be listed surfaces instead of reading as no runs", async () => {
+  test("a path a link loop runs through surfaces instead of reading as no runs", async () => {
     await withTempDir(async (dir) => {
-      // A self-referential symlink makes readdir answer ELOOP, not ENOENT — deterministic as root.
-      const loop = join(dir, "workflow-loop");
-      await symlink("workflow-loop", loop);
+      // A self-referential symlink makes every path below it answer ELOOP, not ENOENT — deterministic as root.
+      const loop = join(dir, "loop");
+      await symlink("loop", loop);
 
-      await expect(readHandoffRecordFiles(loop)).rejects.toThrow("ELOOP");
+      await expect(readHandoffRecordFiles(join(loop, "workflow"))).rejects.toThrow("ELOOP");
     });
   });
 

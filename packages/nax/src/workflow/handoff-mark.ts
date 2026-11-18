@@ -107,16 +107,24 @@ async function readMark(path: string): Promise<HandoffMark | null> {
 }
 
 /**
+ * The mark on one run directory, or null when that run has none or it does not parse. A handoff reads
+ * this on the run it is about to mark, at the push boundary, so a concurrent send that finished first is
+ * seen on the very directory this send would write to.
+ */
+export async function readRunMark(runDir: string): Promise<FoundHandoffMark | null> {
+  const path = join(runDir, HANDOFF_MARK_FILE);
+  const mark = await readMark(path);
+  return mark === null ? null : { mark, path };
+}
+
+/**
  * The mark on the feature's newest run (by `result.json` mtime), or null when that run has none or it
  * does not parse. Only the newest run is read: a mark left on an older run stopped applying the moment a
  * later run wrote its own record, which is what lets a fresh `nax run` publish the feature again.
  */
 export async function readNewestHandoffMark(featureWorkflowDir: string): Promise<FoundHandoffMark | null> {
   const [newest] = await runDirsNewestFirst(featureWorkflowDir);
-  if (newest === undefined) return null;
-  const path = join(newest, HANDOFF_MARK_FILE);
-  const mark = await readMark(path);
-  return mark === null ? null : { mark, path };
+  return newest === undefined ? null : await readRunMark(newest);
 }
 
 /**

@@ -93,6 +93,12 @@ export interface FlowAllowRequest {
   readonly body: FlowCreateBody | FlowHandoffCreateBody;
   /** The turn's cancellation. */
   readonly signal?: AbortSignal;
+  /**
+   * A form's own last check, run at the push boundary inside everything that already serializes the
+   * push: the handoff re-reads its mark here, so a send that finished during the checks above is seen
+   * before anything leaves the machine. Absent for the spec form, whose checks end above.
+   */
+  readonly beforePush?: () => Promise<ToolResult | undefined>;
 }
 
 /** A koda failure its contract classifies: the message, and whether the flow may exist anyway. */
@@ -149,7 +155,7 @@ export function inputFailure(errors: readonly string[]): ToolResult {
 }
 
 /** Whether the turn was cancelled. Read through a call so a check made earlier cannot narrow a later one. */
-function cancelled(signal: AbortSignal | undefined): boolean {
+export function turnCancelled(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
 
@@ -356,16 +362,20 @@ async function createFlow(request: FlowAllowRequest, target: FlowSendTarget): Pr
  */
 export async function afterAllow(request: FlowAllowRequest, target: FlowSendTarget): Promise<PostAllowResult> {
   const { state, signal } = request;
-  if (cancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
+  if (turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
   if (await branchMoved(state, target.repoRoot)) return { result: failure(BRANCH_CHANGED_MESSAGE) };
   const moved = await pushTargetFailure(state, request.specPaths, target.repoRoot);
   if (moved !== undefined) return { result: moved };
   const destination = await pushDestination(state, target.repoRoot);
   if (!destination.ok) return { result: destination.result };
+  // The request's own last check, on the state every check above has by now approved. It runs before
+  // the final cancellation read so a cancelled turn keeps answering with the cancel, whatever it found.
+  const guarded = await request.beforePush?.();
   // The checks above are asynchronous, so the turn can be cancelled while they run —
   // and they are the last thing between the card and the push. Asking once more here
   // is what keeps an already-cancelled turn from pushing and creating a flow.
-  if (cancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
+  if (turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
+  if (guarded !== undefined) return { result: guarded };
   try {
     await _flowProviderDeps.commitAndPush(target.repoRoot, state.branch, FLOW_PUSH_COMMIT_MESSAGE, {
       skipCommit: true,
@@ -375,7 +385,7 @@ export async function afterAllow(request: FlowAllowRequest, target: FlowSendTarg
     });
   } catch (error) {
     // An abort during the push kills git, so the failure is the cancel, not a push error.
-    if (cancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
+    if (turnCancelled(signal)) return { result: failure(CANCELLED_MESSAGE) };
     throw error;
   }
   // The turn's signal goes on to the create: an Esc past the push must cancel the
