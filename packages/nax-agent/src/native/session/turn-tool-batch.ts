@@ -307,7 +307,11 @@ export async function runToolBatch(args: ToolBatchArgs): Promise<ToolBatchResult
       // input a handler rewrote in place — so the result has to be noted
       // against that same input, or the key misses and result-based
       // repetition detection silently stops for rewritten calls.
-      spinBreaker?.noteResult(call.name, input, answerText);
+      // The answer's images ride along: their bytes are part of the result's
+      // identity, and two different screenshots Read from the same path carry
+      // identical text (the label names only the MIME type, the pixels and the
+      // byte count), so a changing image would otherwise read as "no progress".
+      spinBreaker?.noteResult(call.name, input, answerText, answer?.images);
     } catch (err) {
       // A tool failure is data, not a turn failure: the existing pull-tool
       // contract already surfaces a handler throw as status "error". The
