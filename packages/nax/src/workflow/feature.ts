@@ -22,7 +22,7 @@ import {
   newFeatureRecord,
   summariseStories,
 } from "./feature-record";
-import { commitsSince, onlyLedgerChangedSince, readHead } from "./git";
+import { commitsSince, onlyLedgerChangedSince, readCurrentBranch, readHead } from "./git";
 import { handoffMarkRefusal, readNewestHandoffMark } from "./handoff-mark";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
@@ -246,6 +246,21 @@ async function refuseHandedOffFeature(fc: FeatureContext): Promise<void> {
   );
 }
 
+/**
+ * The branch was resolved before the lock wait, and publish pushes and opens the PR for that name while
+ * committing the ledger on whatever is checked out. A checkout switched during the wait at the same
+ * commit passes the HEAD check, so the name is compared again under the lock.
+ */
+async function refuseSwitchedBranch(fc: FeatureContext): Promise<void> {
+  const current = await readCurrentBranch(fc.projectDir);
+  if (current === fc.branch) return;
+  throw new NaxError(
+    `[workflow] --publish-only: the checkout is on "${current || "(detached HEAD)"}", not "${fc.branch}", which this run publishes; check out ${fc.branch} and run again`,
+    "WORKFLOW_PUBLISH_ONLY_REFUSED",
+    { stage: "workflow", feature: fc.feature },
+  );
+}
+
 function publishAborted(fc: FeatureContext, cause: unknown): NaxError {
   return new NaxError("Run aborted during the feature workflow", "WORKFLOW_ABORTED", {
     stage: "workflow",
@@ -265,6 +280,7 @@ async function runPublishOnlyUnderLock(
       fc,
       async (writeResult) => {
         await refuseHandedOffFeature(fc);
+        await refuseSwitchedBranch(fc);
         return await prepareAndRun(fc, input, { meter, writeResult });
       },
       fc.runSignal,
