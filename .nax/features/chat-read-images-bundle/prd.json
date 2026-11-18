@@ -3,7 +3,7 @@
   "feature": "chat-read-images-bundle",
   "branchName": "feat/chat-read-images-bundle",
   "createdAt": "2026-11-18T14:29:05.689Z",
-  "updatedAt": "2026-11-18T15:40:16.323Z",
+  "updatedAt": "2026-11-18T15:51:51.190Z",
   "userStories": [
     {
       "id": "US-001",
@@ -340,14 +340,17 @@
         "ux"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "One optional style propagated through five existing rendering and style helpers, without layout or input changes."
+        "reasoning": "One optional style propagated through five existing rendering and style helpers, without layout or input changes.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced",
+        "initialModelTier": "balanced"
       },
       "contextFiles": [
         "packages/nax/src/tui/chat/styled-line.tsx",
@@ -363,7 +366,8 @@
       "workdirSource": "stated",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "9df3c0e6948a98b5e05d519c474aa6e6f92a3d51"
     },
     {
       "id": "US-007",
