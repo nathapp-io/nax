@@ -13,8 +13,8 @@
  * answered. The mark is what stops a second local publisher (US-004).
  *
  * Approval opens a window the local checks have already closed: the record and the mark are re-read
- * after it, the mark is read once more on the run this send will mark at the push boundary, and the
- * whole mark-to-mark sequence of one feature is serialized across processes. So a handoff that finished
+ * after it, the mark and result listing are checked again at the push boundary, and the whole
+ * mark-to-mark sequence of one feature is serialized across processes and against result writers. So a handoff that finished
  * while this one was waiting is seen before anything is pushed, and a cancelled turn stops waiting.
  *
  * Every collaborator of the record and the mark is behind `_flowHandoffDeps`; the push,
@@ -24,8 +24,14 @@ import type { ToolResult } from "@nathapp/nax-agent";
 import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { handoffMarkRefusal, readNewestHandoffMark, readRunMark, writeHandoffMark } from "../../workflow/handoff-mark";
-// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
-import { collectHandoffRecord, type HandoffRecordFile, type HandoffRecordRead } from "../../workflow/handoff-record";
+// biome-ignore-start lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import {
+  collectHandoffRecord,
+  type HandoffRecordFile,
+  type HandoffRecordRead,
+  handoffResultsMatch,
+} from "../../workflow/handoff-record";
+// biome-ignore-end lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "../../workflow/paths";
 import type { HostApprovalCard } from "../ask-controller";
@@ -69,12 +75,21 @@ type HandoffMark = Parameters<typeof writeHandoffMark>[1];
  */
 export const _flowHandoffDeps: {
   collectHandoffRecord: typeof collectHandoffRecord;
+  handoffResultsMatch: typeof handoffResultsMatch;
   readNewestHandoffMark: typeof readNewestHandoffMark;
   readRunMark: typeof readRunMark;
   writeHandoffMark: typeof writeHandoffMark;
   withFileLock: typeof withFileLock;
   now: () => Date;
-} = { collectHandoffRecord, readNewestHandoffMark, readRunMark, writeHandoffMark, withFileLock, now: () => new Date() };
+} = {
+  collectHandoffRecord,
+  handoffResultsMatch,
+  readNewestHandoffMark,
+  readRunMark,
+  writeHandoffMark,
+  withFileLock,
+  now: () => new Date(),
+};
 
 /** The record the preflights accepted, and the repository state they read it at. */
 interface HandoffReady {
@@ -343,15 +358,20 @@ async function recheck(call: SendCall, options: FlowProviderOptions): Promise<To
 }
 
 /**
- * Read the mark on the verified run at the push boundary, after the asynchronous git checks.
+ * After the asynchronous Git checks, confirm the verified run is still unmarked and newest.
  * A failed read stops the send, but if the turn was cancelled during the read, report the cancel.
  */
-async function handoffMarkGuard(call: SendCall, options: FlowProviderOptions): Promise<ToolResult | undefined> {
+async function handoffPushGuard(call: SendCall, options: FlowProviderOptions): Promise<ToolResult | undefined> {
   const { input, ready, signal } = call;
   const runDir = workflowRunDir(options.repoRoot, input.feature, ready.collected.newestRunId);
   try {
     const found = await _flowHandoffDeps.readRunMark(runDir);
-    return found === null ? undefined : failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
+    if (found !== null) return failure(`[chat] ${handoffMarkRefusal(input.feature, found)}`);
+    const cancelled = cancellationRefusal(signal);
+    if (cancelled !== undefined) return cancelled;
+    const workflowDir = workflowFeatureDir(options.repoRoot, input.feature);
+    const matches = await _flowHandoffDeps.handoffResultsMatch(workflowDir, options.repoRoot, ready.collected);
+    return matches ? undefined : failure(RECORD_CHANGED_MESSAGE);
   } catch (error) {
     if (!turnCancelled(signal)) throw error;
     return failure(CANCELLED_MESSAGE);
@@ -371,7 +391,7 @@ async function handOver(call: SendCall, options: FlowProviderOptions): Promise<C
   try {
     const refused = await recheck(call, options);
     if (refused !== undefined) return { result: refused, created: false };
-    const beforePush = () => handoffMarkGuard(call, options);
+    const beforePush = () => handoffPushGuard(call, options);
     const allow = { state, specPaths: [], body: createBody(state, input, collected.record), signal, beforePush };
     const post = await afterAllow(allow, options);
     const mark = markOf(post, _flowHandoffDeps.now().toISOString(), options.connection.url);

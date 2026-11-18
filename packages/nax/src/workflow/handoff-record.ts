@@ -354,6 +354,24 @@ function newestTie(runs: readonly RunDir[]): boolean {
   return runs.filter((run) => Math.trunc(run.mtimeMs) === newest).length > 1;
 }
 
+/** Check the approved result listing after Git verification without rereading the payload. */
+export async function handoffResultsMatch(
+  featureWorkflowDir: string,
+  anchorDir: string,
+  approved: Extract<HandoffRecordRead, { ok: true }>,
+): Promise<boolean> {
+  const listing = await listRunDirs(featureWorkflowDir, anchorDir);
+  if (!listing.ok || listing.runs[0]?.runId !== approved.newestRunId || newestTie(listing.runs)) return false;
+  const results = approved.record.filter((entry) => entry.file === RESULT_FILE);
+  return (
+    listing.runs.length === results.length &&
+    listing.runs.every((run, index) => {
+      const result = results[index];
+      return result?.runId === run.runId && result.mtimeMs === Math.trunc(run.mtimeMs);
+    })
+  );
+}
+
 function sameRunListing(before: readonly RunDir[], after: readonly RunDir[]): boolean {
   return (
     before.length === after.length &&

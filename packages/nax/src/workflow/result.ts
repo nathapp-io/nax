@@ -3,9 +3,11 @@
  * Written atomically (tmp + rename) after every phase change.
  */
 import { mkdir, readdir, rename, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { withFileLock } from "@nathapp/nax-agent/internal";
 import { runStateWrite } from "@/runstate/store";
 import { buildVerdict } from "./open-items";
+import { handoffLockPath } from "./paths";
 import type {
   RoleTokens,
   StoryStateItem,
@@ -17,6 +19,37 @@ import type {
 export const _resultDeps = { mkdir, readdir, rename, stat };
 
 const RESULT_FILE = "result.json";
+// Cover a receiver create while waiting for the sender to record its mark. Time out rather than
+// changing which run is newest during a handoff that has not settled.
+const HANDOFF_LOCK_WAIT_MS = 120_000;
+
+type ResultHeader = { readonly runId: string; readonly feature: string };
+
+async function withResultLock<T>(runDir: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  const featureDir = dirname(runDir);
+  await _resultDeps.mkdir(featureDir, { recursive: true });
+  return await withFileLock(handoffLockPath(featureDir), task, {
+    lockName: "handoff",
+    errorPrefix: "[workflow]",
+    timeoutMs: HANDOFF_LOCK_WAIT_MS,
+    signal,
+  });
+}
+
+export type LockedFeatureWriter = (record: WorkflowFeatureRecord) => Promise<void>;
+
+/** A publisher holds the lock across its checks, publication and result writes. */
+export function withLockedFeatureResult<T>(
+  target: ResultHeader & { readonly runDir: string },
+  task: (write: LockedFeatureWriter) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return withResultLock(
+    target.runDir,
+    () => task((record) => writeFeatureRecord(target.runDir, target, record)),
+    signal,
+  );
+}
 
 export function newStoryRecord(storyId: string, maxRounds: number, now: string): WorkflowStoryRecord {
   return {
@@ -49,18 +82,20 @@ export async function readResult(runDir: string): Promise<WorkflowResultFile | n
 
 export async function upsertStoryRecord(
   runDir: string,
-  header: { readonly runId: string; readonly feature: string },
+  header: ResultHeader,
   record: WorkflowStoryRecord,
 ): Promise<void> {
-  const current = await readResult(runDir);
-  await writeResult(runDir, {
-    schemaVersion: 1,
-    runId: header.runId,
-    feature: header.feature,
-    stories: { ...(current?.stories ?? {}), [record.storyId]: record },
-    ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
-    ...(current?.verdict ? { verdict: current.verdict } : {}),
-    ...(current?.preflightTokensByRole ? { preflightTokensByRole: current.preflightTokensByRole } : {}),
+  await withResultLock(runDir, async () => {
+    const current = await readResult(runDir);
+    await writeResult(runDir, {
+      schemaVersion: 1,
+      runId: header.runId,
+      feature: header.feature,
+      stories: { ...(current?.stories ?? {}), [record.storyId]: record },
+      ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
+      ...(current?.verdict ? { verdict: current.verdict } : {}),
+      ...(current?.preflightTokensByRole ? { preflightTokensByRole: current.preflightTokensByRole } : {}),
+    });
   });
 }
 
@@ -70,18 +105,20 @@ export async function upsertStoryRecord(
  */
 export async function writePreflightTokens(
   runDir: string,
-  header: { readonly runId: string; readonly feature: string },
+  header: ResultHeader,
   byRole: Readonly<Record<string, RoleTokens>>,
 ): Promise<void> {
-  const current = await readResult(runDir);
-  await writeResult(runDir, {
-    schemaVersion: 1,
-    runId: header.runId,
-    feature: header.feature,
-    stories: current?.stories ?? {},
-    preflightTokensByRole: byRole,
-    ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
-    ...(current?.verdict ? { verdict: current.verdict } : {}),
+  await withResultLock(runDir, async () => {
+    const current = await readResult(runDir);
+    await writeResult(runDir, {
+      schemaVersion: 1,
+      runId: header.runId,
+      feature: header.feature,
+      stories: current?.stories ?? {},
+      preflightTokensByRole: byRole,
+      ...(current?.featureWorkflow ? { featureWorkflow: current.featureWorkflow } : {}),
+      ...(current?.verdict ? { verdict: current.verdict } : {}),
+    });
   });
 }
 
@@ -163,9 +200,13 @@ export function storyStatesFrom(stories: Readonly<Record<string, WorkflowStoryRe
 /** Writes the feature workflow's state into this run's result.json, keeping the story records (P4-R1). */
 export async function upsertFeatureRecord(
   runDir: string,
-  header: { readonly runId: string; readonly feature: string },
+  header: ResultHeader,
   record: WorkflowFeatureRecord,
 ): Promise<void> {
+  await withResultLock(runDir, () => writeFeatureRecord(runDir, header, record));
+}
+
+async function writeFeatureRecord(runDir: string, header: ResultHeader, record: WorkflowFeatureRecord): Promise<void> {
   const current = await readResult(runDir);
   const filled = record.storyStates ? record : { ...record, storyStates: storyStatesFrom(current?.stories ?? {}) };
   const verdict = buildVerdict(filled);

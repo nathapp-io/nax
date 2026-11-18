@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { withFileLock } from "@nathapp/nax-agent/internal";
+import { _fileLockDeps } from "@nathapp/nax-agent/internal";
 import {
   cleanupTempDir,
   makeFeatureContext,
@@ -10,19 +9,23 @@ import {
   makeTestPRD,
   makeTestRuntime,
   makeTestStory,
-  waitForCondition,
+  withDepsRestore,
 } from "@test/helpers";
 import { ledgerPath } from "@/advisor";
 import type { WorkflowStatusBlock } from "@/execution";
 import { addSink, initLogger, type LogEntry, resetLogger } from "@/logger";
+import { pipelineEventBus } from "@/pipeline/event-bus";
 import type { NaxRuntime } from "@/runtime";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
 import { type FeatureEnv, runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
 import { writeHandoffMark } from "@/workflow/handoff-mark";
+import { handoffLockPath } from "@/workflow/paths";
 import { newStoryRecord, readResult, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { toolErrorClaimsHeld, withToolErrorOutcome } from "@/workflow/tool-error-outcome";
+
+withDepsRestore(_fileLockDeps);
 
 const originalRun = { ..._featureRunDeps };
 const originalWf = { ..._workflowDeps };
@@ -37,7 +40,7 @@ afterEach(async () => {
   dirs.length = 0;
 });
 
-function setup(over: { dryRun?: boolean } = {}) {
+function setup(over: { dryRun?: boolean; runSignal?: AbortSignal } = {}) {
   const out = makeTempDir("wf-feat-");
   dirs.push(out);
   const config = makeNaxConfig({ outputDir: out });
@@ -51,6 +54,7 @@ function setup(over: { dryRun?: boolean } = {}) {
     featureDir,
     runDir: join(featureDir, "r-now"),
     runId: "r-now",
+    runSignal: over.runSignal,
   });
   let disposed = 0;
   _featureRunDeps.buildFeatureContext = async () => ({
@@ -456,50 +460,124 @@ describe("runWorkflowFeature", () => {
     expect(envs).toHaveLength(0);
   });
 
-  /**
-   * Release review (f-629abde): the early mark check can pass while an approved handoff sits between
-   * its re-check and its mark write, so the check that decides a publish-only run has to run under
-   * the lock the handoff holds. A publisher that starts first waits for the handoff, and reads the
-   * mark it wrote — it never publishes a feature koda is about to own.
-   */
-  test("a publish-only run waits for a handoff's lock and refuses the mark it finds after", async () => {
-    const { input, envs, featureDir } = setup();
+  /** Start the publisher while another process holds the lock, then mutate state or abort. */
+  async function withWaitingPublisher(
+    setupRun: ReturnType<typeof setup>,
+    check: (waiting: {
+      moveHead: () => void;
+      lockPath: string;
+      release: () => Promise<void>;
+      pending: ReturnType<typeof runWorkflowFeature>;
+      retried: Promise<void>;
+    }) => Promise<void>,
+  ): Promise<void> {
+    const { featureDir, input } = setupRun;
     await seedFinished(featureDir, input.feature, { outcome: "local-only" });
-    const runDir = join(featureDir, "r-old");
-    const lockPath = join(featureDir, ".handoff.lock");
-
-    const gate = Promise.withResolvers<void>();
-    const holder = withFileLock(lockPath, () => gate.promise, {
-      lockName: "handoff",
-      errorPrefix: "[test]",
-      timeoutMs: 5_000,
-    });
-    await waitForCondition(() => existsSync(lockPath), 5_000);
-
-    // `rev-parse HEAD` is read after the early mark check, so seeing it proves the publisher passed
-    // that check with no mark on disk and is now heading for the lock.
-    let heads = 0;
-    const readGit = _workflowDeps.git;
-    _workflowDeps.git = async (args, cwd) => {
-      if (args[0] === "rev-parse") heads++;
-      return readGit(args, cwd);
+    const lockPath = handoffLockPath(featureDir);
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        String.raw`
+        import { withFileLock } from "@nathapp/nax-agent/internal";
+        await withFileLock(process.argv[1], async () => {
+          await Bun.write(Bun.stdout, "ready\n");
+          await new Response(Bun.stdin.stream()).text();
+        }, { lockName: "handoff", errorPrefix: "[test]" });
+      `,
+        lockPath,
+      ],
+      { stdin: "pipe", stdout: "pipe", stderr: "inherit" },
+    );
+    let released = false;
+    const release = async () => {
+      if (!released) {
+        released = true;
+        child.stdin.end();
+      }
+      expect(await child.exited).toBe(0);
     };
+    const contended = Promise.withResolvers<void>();
+    const retried = Promise.withResolvers<void>();
+    const sleep = _fileLockDeps.sleep;
+    let attempts = 0;
+    _fileLockDeps.sleep = (ms, signal) => {
+      (attempts++ === 0 ? contended : retried).resolve();
+      return sleep(ms, signal);
+    };
+    let head = "headX";
+    _workflowDeps.git = async (args) =>
+      args[0] === "rev-parse" ? { stdout: `${head}\n`, exitCode: 0 } : { stdout: "", exitCode: 1 };
+    let pending: ReturnType<typeof runWorkflowFeature> | undefined;
+    try {
+      const reader = child.stdout.getReader();
+      const { value } = await reader.read();
+      reader.releaseLock();
+      expect(new TextDecoder().decode(value).trim()).toBe("ready");
+      pending = runWorkflowFeature({ ...input, publishOnly: true });
+      expect(await Promise.race([contended.promise.then(() => "waiting"), pending])).toBe("waiting");
+      await check({
+        moveHead: () => {
+          head = "headY";
+        },
+        lockPath,
+        release,
+        pending,
+        retried: retried.promise,
+      });
+    } finally {
+      await release();
+      await pending?.catch(() => {});
+    }
+  }
 
-    const published = runWorkflowFeature({ ...input, publishOnly: true });
-    await waitForCondition(() => heads > 0, 5_000);
-
-    // The handoff marks the run while it still holds the lock, then releases it.
-    await writeHandoffMark(runDir, {
-      schemaVersion: 1,
-      at: "T",
-      flowId: "fl1",
-      url: "https://koda/flows/fl1",
+  test("a waiting publisher refuses a handoff mark without emitting workflow:started", async () => {
+    const run = setup();
+    const events: string[] = [];
+    const off = pipelineEventBus.onAll((event) => {
+      events.push(event.type);
     });
-    gate.resolve();
-    await holder;
+    try {
+      await withWaitingPublisher(run, async ({ release, pending }) => {
+        await writeHandoffMark(join(run.featureDir, "r-old"), {
+          schemaVersion: 1,
+          at: "T",
+          flowId: "fl1",
+          url: "https://koda/flows/fl1",
+        });
+        await release();
+        await expect(pending).rejects.toMatchObject({ code: "WORKFLOW_PUBLISH_ONLY_REFUSED" });
+        expect(run.envs).toHaveLength(0);
+        expect(events).not.toContain("workflow:started");
+      });
+    } finally {
+      off();
+    }
+  });
 
-    await expect(published).rejects.toMatchObject({ code: "WORKFLOW_PUBLISH_ONLY_REFUSED" });
-    expect(envs).toHaveLength(0);
+  test("a waiting publisher refuses moved HEAD even when the holder leaves no mark", async () => {
+    const run = setup();
+    await withWaitingPublisher(run, async ({ moveHead, release, pending }) => {
+      moveHead();
+      await release();
+      await expect(pending).rejects.toMatchObject({
+        code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+        message: expect.stringContaining("HEAD moved since the workflow finished"),
+      });
+      expect(run.envs).toHaveLength(0);
+    });
+  });
+
+  test("an aborted publisher stops waiting while the other process still holds the lock", async () => {
+    const controller = new AbortController();
+    const run = setup({ runSignal: controller.signal });
+    await withWaitingPublisher(run, async ({ lockPath, pending, retried }) => {
+      controller.abort();
+      const result = await Promise.race([retried.then(() => "retried"), pending.catch((error) => error)]);
+      expect(result).toMatchObject({ code: "WORKFLOW_ABORTED" });
+      expect(await Bun.file(lockPath).exists()).toBe(true);
+      expect(run.envs).toHaveLength(0);
+    });
   });
 
   /**

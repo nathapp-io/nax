@@ -175,6 +175,7 @@ beforeEach(() => {
   };
   _flowHandoffDeps.readNewestHandoffMark = async () => null;
   _flowHandoffDeps.readRunMark = async () => null;
+  _flowHandoffDeps.handoffResultsMatch = async () => true;
   _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
     markCalls.push({ runDir, mark });
   };

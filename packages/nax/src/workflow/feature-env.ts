@@ -18,7 +18,7 @@ import { appendLedger, type LedgerWriteOptions } from "./ledger";
 import type { LedgerItems } from "./ledger-items";
 import type { PreflightFile } from "./preflight";
 import { runRepoGates } from "./repo-gates";
-import { upsertFeatureRecord } from "./result";
+import { type LockedFeatureWriter, upsertFeatureRecord } from "./result";
 import { workflowStatusBlock } from "./status-block";
 import { _workflowDeps } from "./step-context";
 import { featureModelFor } from "./step-model";
@@ -34,6 +34,7 @@ export interface FeatureEnvInput {
   readonly preflight: { readonly path: string; readonly file: PreflightFile } | null;
   /** Repo-relative spec path, "" when the feature has none. */
   readonly specPath: string;
+  readonly writeResult?: LockedFeatureWriter;
 }
 
 export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput, ctx: FeatureEnvInput): FeatureEnv {
@@ -126,9 +127,10 @@ export function buildFeatureEnv(fc: FeatureContext, input: WorkflowFeatureInput,
     modelFor: featureModelFor(fc),
   };
   const header = { runId: fc.runId, feature: fc.feature };
+  const write = ctx.writeResult ?? ((record) => upsertFeatureRecord(fc.runDir, header, record));
   const sink: FeatureSink = {
     update: (record) =>
-      upsertFeatureRecord(fc.runDir, header, {
+      write({
         ...record,
         tokensByRole: addRoleTokens(ctx.record.tokensByRole, ctx.meter.byRole()),
       }),

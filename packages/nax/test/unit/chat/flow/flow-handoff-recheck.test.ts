@@ -29,8 +29,14 @@ import {
   type KodaFlowConnection,
 } from "@/chat/flow";
 import { type HandoffMark, readNewestHandoffMark } from "@/workflow/handoff-mark";
-import { _handoffRecordDeps, collectHandoffRecord, type HandoffRecordFile } from "@/workflow/handoff-record";
+import {
+  _handoffRecordDeps,
+  collectHandoffRecord,
+  type HandoffRecordFile,
+  handoffResultsMatch,
+} from "@/workflow/handoff-record";
 import { workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
+import { newStoryRecord, readResult, upsertStoryRecord } from "@/workflow/result";
 
 withDepsRestore(_flowProviderDeps);
 withDepsRestore(_flowHandoffDeps);
@@ -159,6 +165,7 @@ beforeEach(async () => {
   };
   _flowHandoffDeps.readNewestHandoffMark = async () => null;
   _flowHandoffDeps.readRunMark = async () => null;
+  _flowHandoffDeps.handoffResultsMatch = async () => true;
   _flowHandoffDeps.writeHandoffMark = async (runDir, mark) => {
     markCalls.push({ runDir, mark });
   };
@@ -284,6 +291,38 @@ describe("nax-flow__send — the record is re-checked after approval", () => {
 describe("nax-flow__send — the mark is read again at the push boundary", () => {
   const MARK: HandoffMark = { schemaVersion: 1, at: "T", flowId: "fl9", url: "https://koda/flows/fl9" };
 
+  test("refuses a newer result that appears during push verification", async () => {
+    await utimes(join(workflowRunDir(repoRoot, FEATURE, NEWEST_RUN_ID), "result.json"), 1, 1);
+    _handoffRecordDeps.git = async () => ({
+      stdout: JSON.stringify({ branchName: BRANCH, userStories: [] }),
+      stderr: "",
+      exitCode: 0,
+    });
+    _flowHandoffDeps.collectHandoffRecord = collectHandoffRecord;
+    _flowHandoffDeps.handoffResultsMatch = handoffResultsMatch;
+    const verifying = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    _flowProviderDeps.readFlowPushUrl = async () => {
+      verifying.resolve();
+      await resume.promise;
+      return { ok: true, url: PUSH_URL };
+    };
+
+    const pending = send(handoffInput);
+    try {
+      await Promise.race([verifying.promise, pending]);
+      const next = workflowRunDir(repoRoot, FEATURE, "r3");
+      await mkdir(next);
+      await Bun.write(join(next, "result.json"), FINISHED_RESULT);
+      await utimes(join(next, "result.json"), 2, 2);
+    } finally {
+      resume.resolve();
+    }
+
+    expect(await pending).toEqual({ isError: true, content: RECORD_CHANGED });
+    expectNoTransfer();
+  });
+
   test("refuses a mark another handoff wrote on the verified run while the checks ran, pushing nothing", async () => {
     // The re-check's own mark read answered nothing; the run has one by the time the push would go.
     _flowHandoffDeps.readRunMark = async (runDir) => ({ mark: MARK, path: `${runDir}/handoff.json` });
@@ -391,6 +430,22 @@ describe("nax-flow__send — cross-process handoff lock", () => {
       expect(result.isError).toBe(true);
       expect(result.content).toContain("was handed off to koda (approval request held-by-child)");
       expectNoTransfer();
+    });
+  });
+
+  test("a workflow result writer waits until the handoff mark is recorded", async () => {
+    await withOtherPublisher(async ({ contended, finish }) => {
+      const runId = "r3";
+      const runDir = workflowRunDir(repoRoot, FEATURE, runId);
+      const writing = upsertStoryRecord(runDir, { runId, feature: FEATURE }, newStoryRecord("US-001", 1, "T"));
+      const beforeMark = await waitingOrFinished(contended, writing);
+      const resultBeforeMark = await readResult(runDir);
+      await finish();
+      await writing;
+
+      expect(beforeMark).toBe("waiting");
+      expect(resultBeforeMark).toBeNull();
+      expect(await readResult(runDir)).toMatchObject({ runId });
     });
   });
 

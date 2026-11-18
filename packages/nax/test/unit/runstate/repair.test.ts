@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { withFileLock } from "@nathapp/nax-agent/internal";
 import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import {
   _repairDeps,
@@ -12,6 +13,7 @@ import {
 } from "@/runstate";
 import { runStateWrite } from "@/runstate/store";
 import { gitWithTimeout } from "@/utils/git";
+import { handoffLockPath, workflowFeatureDir, workflowRunDir } from "@/workflow/paths";
 
 const PRD = ".nax/features/f/prd.json";
 const NAX_PRD = '{"stories":"nax"}';
@@ -95,6 +97,23 @@ describe("repairRunState (#2497)", () => {
     await git("checkout", "--", PRD);
     expect(await repairRunState(ctx)).toEqual([]);
     keeper?.end(join(dir, PRD));
+  });
+
+  test("defers restoring a workflow result until the handoff lock is released", async () => {
+    const path = join(workflowRunDir(dir, "f", "r1"), "result.json");
+    await naxWrite(path, '{"runId":"r1"}');
+    rmSync(path);
+    const lockPath = handoffLockPath(workflowFeatureDir(dir, "f"));
+    await withFileLock(
+      lockPath,
+      async () => {
+        expect(await repairRunState(ctx)).toMatchObject([{ path, damage: ["missing"], restored: false }]);
+        expect(await Bun.file(path).exists()).toBe(false);
+      },
+      { lockName: "handoff", errorPrefix: "[test]" },
+    );
+    expect(await repairRunState(ctx)).toMatchObject([{ path, restored: true }]);
+    expect(await Bun.file(path).text()).toBe('{"runId":"r1"}');
   });
 
   test("a workflow ledger tracked under the root gets one repair line", async () => {

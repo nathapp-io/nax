@@ -28,7 +28,8 @@ export function workflowStoryDir(runDir: string, storyId: string): string {
  * The cross-process ownership lock of a feature's handoff: `<workflow dir>/.handoff.lock`. A handoff
  * holds it from its post-approval recheck through the mark write, and a local publisher holds it from
  * its own mark check through the publication — so a publisher that starts while an approved handoff
- * waits for koda waits too, instead of publishing a feature koda is about to own.
+ * waits for koda waits too, instead of publishing a feature koda is about to own. Result writers
+ * take the same lock so they cannot change which run is newest before the handoff records its mark.
  */
 export const HANDOFF_LOCK_FILE = ".handoff.lock";
 

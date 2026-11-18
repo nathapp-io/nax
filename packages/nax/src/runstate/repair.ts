@@ -1,9 +1,10 @@
 /** Detect and repair agent damage to nax run state (#2497). Never throws. */
 import { appendFile, mkdir, rename } from "node:fs/promises";
 import { dirname } from "node:path";
-import { errorMessage } from "@nathapp/nax-agent/internal";
+import { errorMessage, withFileLock } from "@nathapp/nax-agent/internal";
 import { getSafeLogger } from "../logger";
 import { clearNaxIndexFlags, hiddenNaxPaths, type IndexFlagLogger } from "../utils/nax-index-flags";
+import { handoffLockPath } from "../workflow/paths";
 import { activeKeepers, type KeptFile, type RunStateKeeper, runStateWrite, withPathLock } from "./store";
 
 export type RepairTrigger = "turn" | "pre-commit" | "run-end" | "crash";
@@ -48,6 +49,19 @@ async function restore(f: KeptFile): Promise<void> {
   await rename(tmp, f.path);
 }
 
+async function restoreWithResultLock(f: KeptFile): Promise<void> {
+  if (f.kind !== "workflow-result") return await restore(f);
+  const workflowDir = dirname(dirname(f.path));
+  await mkdir(workflowDir, { recursive: true });
+  // A turn can call repair while publish-only already holds this lock. Never wait here:
+  // report the deferred repair and let the next pass retry it when the lock is free.
+  await withFileLock(handoffLockPath(workflowDir), () => restore(f), {
+    lockName: "handoff",
+    errorPrefix: "[runstate]",
+    timeoutMs: 0,
+  });
+}
+
 function where(ctx: RepairContext): string {
   return [ctx.storyId ?? "_run", ctx.stage, ctx.turn !== undefined ? `turn ${ctx.turn}` : ctx.trigger]
     .filter((p): p is string => p !== undefined)
@@ -71,7 +85,7 @@ async function repairFile(
     damage,
   };
   try {
-    if (damage.includes("missing") || damage.includes("modified")) await restore(f);
+    if (damage.includes("missing") || damage.includes("modified")) await restoreWithResultLock(f);
     const restored = !damage.includes("hidden") || cleared.has(f.rel);
     if (restored) log?.warn("runstate", `${where(ctx)}: ${f.rel} ${damage.join("+")} by the agent; restored`, data);
     else log?.warn("runstate", `[FAIL] ${where(ctx)}: could not clear the index flag on ${f.rel}`, data);
