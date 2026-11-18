@@ -4,7 +4,7 @@ import { getLogger } from "@/logger";
 import { heldItemList, heldItemNoun } from "@/prompts";
 import { resolveStepArgv } from "./chain-argv";
 import { createChainRecord, newChainId, writeChainRecord } from "./chain-store";
-import type { ChainCheck, ChainState, ChainStep, ChatChain } from "./chain-types";
+import type { ChainCheck, ChainState, ChainStep, ChainStepKind, ChatChain } from "./chain-types";
 import type { ChatJobs } from "./job-runner";
 import type { ChatJobKind, ChatJobState, HeldDraft } from "./job-types";
 
@@ -38,7 +38,7 @@ export interface ChainSummary {
   readonly next?: number;
   readonly steps: readonly {
     readonly step: number;
-    readonly kind: ChatJobKind;
+    readonly kind: ChainStepKind;
     readonly argv: readonly string[];
     readonly checkBefore?: string;
     readonly check?: ChainCheck;

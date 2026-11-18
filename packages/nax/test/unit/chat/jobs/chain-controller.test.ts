@@ -3,13 +3,13 @@ import { cleanupTempDir, makeTempDir } from "@test/helpers";
 import { type ChatChains, createChainController } from "@/chat/jobs/chain-controller";
 import { _chainStoreDeps, readChainRecord } from "@/chat/jobs/chain-store";
 import type { ChainStep } from "@/chat/jobs/chain-types";
-import type { ChatJob, ChatJobState, HeldDraft } from "@/chat/jobs/job-types";
+import type { ChatJob, ChatJobKind, ChatJobState, HeldDraft } from "@/chat/jobs/job-types";
 import { NaxError } from "@/errors";
 
 const originalDeps = { ..._chainStoreDeps };
 const approvedAt = "2026-10-28T00:00:00.000Z";
-const first: ChainStep = { kind: "run", argv: ["nax", "run", "f1"], target: "f1" };
-const second: ChainStep = { kind: "run", argv: ["nax", "run", "f2"], target: "f2" };
+const first = { kind: "run", argv: ["nax", "run", "f1"], target: "f1" } satisfies ChainStep;
+const second = { kind: "run", argv: ["nax", "run", "f2"], target: "f2" } satisfies ChainStep;
 let dir: string;
 let chains: ChatChains;
 let jobs: Map<string, ChatJob>;
@@ -68,7 +68,11 @@ async function twoSteps(state?: ChatJobState, checkBefore?: string): Promise<str
   }
   return chain.id;
 }
-async function expectStopped(id: string, reason: string, launch = first): Promise<void> {
+async function expectStopped(
+  id: string,
+  reason: string,
+  launch: { readonly kind: ChatJobKind; readonly argv: readonly string[] } = first,
+): Promise<void> {
   expect(chains.admit(launch)).toEqual({ kind: "card", note: `chain ${id} stopped: ${reason}` });
   expect(chains.active()).toBeUndefined();
   await written(2);
@@ -222,14 +226,19 @@ describe("createChainController", () => {
     await expectStopped(chain.id, "off-card step", { ...first, kind: "plan" });
   });
   test("AC-13 resolves the designated PR placeholder and binds the chain PR", async () => {
-    const step: ChainStep = { kind: "bot_review", argv: ["nax", "bot", "review", "<pr>"], prIndex: 3, target: "" };
+    const step = {
+      kind: "bot_review",
+      argv: ["nax", "bot", "review", "<pr>"],
+      prIndex: 3,
+      target: "",
+    } satisfies ChainStep;
     const chain = await chains.activate({ steps: [step] });
     expect(chains.admit({ ...step, argv: ["nax", "bot", "review", "12"], pr: 12 }).kind).toBe("auto");
     expect(chains.active()?.pr).toBe(12);
     expect(chains.isActive(chain.id)).toBe(true);
   });
   test("AC-14 does not substitute a fixed PR", async () => {
-    const step: ChainStep = { kind: "bot_review", argv: ["nax", "bot", "review", "12"], target: "12" };
+    const step = { kind: "bot_review", argv: ["nax", "bot", "review", "12"], target: "12" } satisfies ChainStep;
     const chain = await chains.activate({ steps: [step] });
     expect(chains.admit({ ...step, argv: ["nax", "bot", "review", "13"], pr: 13 })).toEqual({
       kind: "card",
@@ -330,8 +339,12 @@ describe("createChainController", () => {
 });
 
 describe("US-003 held draft", () => {
-  const publishStep: ChainStep = { kind: "publish", argv: ["nax", "run", "f1", "--publish-only"], target: "f1" };
-  const botReview: ChainStep = { kind: "bot_review", argv: ["nax", "bot", "review", "12"], target: "12" };
+  const publishStep = {
+    kind: "publish",
+    argv: ["nax", "run", "f1", "--publish-only"],
+    target: "f1",
+  } satisfies ChainStep;
+  const botReview = { kind: "bot_review", argv: ["nax", "bot", "review", "12"], target: "12" } satisfies ChainStep;
   const HELD_ONE: HeldDraft = { url: "https://x/pull/7", items: [{ id: "D-1", kind: "advisor" }] };
 
   /**

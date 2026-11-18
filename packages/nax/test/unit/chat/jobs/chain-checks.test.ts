@@ -9,10 +9,15 @@ import { getLogger, initLogger, resetLogger } from "@/logger";
 
 const originalDeps = { ..._chainStoreDeps };
 const now = "2026-10-28T00:00:00.000Z";
-const first: ChainStep = { kind: "run", argv: ["nax", "run", "f1"], target: "f1" };
-const second: ChainStep = { kind: "run", argv: ["nax", "run", "f2"], target: "f2" };
-const review: ChainStep = { kind: "bot_review", argv: ["nax", "bot", "review", "<pr>"], target: "", prIndex: 3 };
-const fix: ChainStep = { kind: "bot_fix", argv: ["nax", "bot", "fix", "<pr>"], target: "", prIndex: 3 };
+const first = { kind: "run", argv: ["nax", "run", "f1"], target: "f1" } satisfies ChainStep;
+const second = { kind: "run", argv: ["nax", "run", "f2"], target: "f2" } satisfies ChainStep;
+const review = {
+  kind: "bot_review",
+  argv: ["nax", "bot", "review", "<pr>"],
+  target: "",
+  prIndex: 3,
+} satisfies ChainStep;
+const fix = { kind: "bot_fix", argv: ["nax", "bot", "fix", "<pr>"], target: "", prIndex: 3 } satisfies ChainStep;
 let dir: string;
 let session: string;
 let chains: ChatChains;
@@ -52,7 +57,8 @@ function succeed(id: string): void {
   });
   chains.started(id, 1, "run-1a2b3c4d");
 }
-function botCall(step: ChainStep, pr: number) {
+/** A bot step's launch: the PR token is the fourth argv entry, whatever PR the step names. */
+function botCall(step: { readonly kind: "bot_review" | "bot_fix"; readonly argv: readonly string[] }, pr: number) {
   return { kind: step.kind, argv: [...step.argv.slice(0, 3), String(pr)], pr };
 }
 beforeEach(() => {

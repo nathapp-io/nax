@@ -24,6 +24,12 @@ export interface JobsProviderOptions {
   readonly jobs: ChatJobs;
   readonly chains?: ChatChains;
   readonly runAsks?: ChatRunAsks;
+  /**
+   * US-007: whether this chat can create a koda flow, i.e. the config has a koda connection.
+   * A chain's `handoff` step is a `nax-flow__send` call, so a proposal that carries one is
+   * refused up front when it could never run. The host supplies it (US-008).
+   */
+  readonly handoffAvailable?: boolean;
   /** `config.chat.workflow`: the defaults every launch takes when its own input names none. */
   readonly workflow?: ChatWorkflowConfig;
   readonly approve: (card: HostApprovalCard) => Promise<"allow" | "deny">;

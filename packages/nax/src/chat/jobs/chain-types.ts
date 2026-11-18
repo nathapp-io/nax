@@ -7,6 +7,13 @@ export const CHAIN_PR_PLACEHOLDER = "<pr>";
 
 export type ChainState = "active" | "completed" | "stopped";
 
+/**
+ * US-007: a chain step is a billed nax job or the handoff that ends the chain. The handoff is
+ * not a job: it starts no process, has no `ChatJob` record and no log, so it stays outside
+ * `ChatJobKind` — job parsing never sees it.
+ */
+export type ChainStepKind = ChatJobKind | "handoff";
+
 export interface ChainCheck {
   readonly passed: boolean;
   readonly note: string;
@@ -14,7 +21,7 @@ export interface ChainCheck {
 }
 
 export interface ChainStep {
-  readonly kind: ChatJobKind;
+  readonly kind: ChainStepKind;
   /** Exact argv; a PR-less bot step holds CHAIN_PR_PLACEHOLDER at prIndex. */
   readonly argv: readonly string[];
   readonly prIndex?: number;

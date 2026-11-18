@@ -50,6 +50,8 @@ describe("parseChainStepInput", () => {
       publish: ["feature", "profiles", "repo"],
       bot_review: ["pr", "profiles", "model", "decisions", "repo"],
       bot_fix: ["pr", "profiles", "model", "trust", "noRereview", "repo"],
+      // US-007: the handoff step's input: the feature, its two role models and koda's cap.
+      handoff: ["feature", "roles", "costCapUsd"],
     });
   });
 });
