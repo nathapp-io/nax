@@ -241,7 +241,7 @@ export interface InteractionConfig {
     timeout: number;
     /** Delay before offering a terminal approval to the interaction chain (default: 60000). */
     chatAskFallbackMs?: number;
-    chatTaskNoticeTurns?: number; // ended-task notices that may wake the chat agent in a row (default: 3)
+    chatTaskNoticeTurns?: number; // ended-task notices that may wake the chat agent in a row (default: 0 = no limit)
     /**
      * Global fallback override. Undefined unless the operator explicitly set it (BUG-48 / D-9) — a
      * schema-level default here would make every trigger's fallback identical, silently overriding each
