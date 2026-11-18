@@ -1,16 +1,30 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ImageAttachment, TranscriptDoc } from "@nathapp/nax-agent";
 import { NaxError } from "#src/infra/index";
 import { createMemoryTranscriptStore } from "#src/native/session/memory-transcript-store";
-import { _transcriptImagesDeps, transcriptImagesPath } from "#src/native/session/transcript-images";
+import {
+  _transcriptImagesDeps,
+  rehydrateTranscriptImages,
+  transcriptImagesPath,
+} from "#src/native/session/transcript-images";
 import { createFileTranscriptStore, transcriptPath } from "#src/native/session/transcript-store";
 import { NativeSessionAdapter } from "#src/native/session-adapter";
 import { assertDefined, cleanupTempDir, installImageClient, makeTempDir } from "#test/helpers/index";
 
 const image: ImageAttachment = { mimeType: "image/png", data: "AAAA", width: 10, height: 20, source: "clipboard" };
 const doc: TranscriptDoc = { savedAt: "t", messages: [{ role: "user", content: "x", images: [image] }] };
+/** A `Read` tool call and the result that carries a PNG, the shape US-003 persists. */
+const toolResult: ImageAttachment = { mimeType: "image/png", data: "BBBB", width: 2, height: 2, source: "tool" };
+const toolResultDoc: TranscriptDoc = {
+  savedAt: "t",
+  messages: [
+    { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "Read", input: { path: "shot.png" } }] },
+    { role: "tool-result", toolCallId: "c1", content: "shot", images: [toolResult] },
+  ],
+};
 let dir: string;
 const realRead = _transcriptImagesDeps.readFile;
 const realOpen = _transcriptImagesDeps.open;
@@ -279,5 +293,48 @@ describe("file transcript image reads", () => {
     const store = createMemoryTranscriptStore();
     await store.save("s", doc);
     expect(await store.load("s")).toEqual(doc);
+  });
+  test("US-003 AC-2: rehydrates a tool-result image inline, data included", async () => {
+    const path = transcriptPath(dir, "s");
+    const folder = transcriptImagesPath(path);
+    const bytes = Buffer.from(toolResult.data, "base64");
+    const ref = createHash("sha256").update(bytes).digest("hex");
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, `${ref}.png`), bytes);
+    const { data: _data, ...metadata } = toolResult;
+    const result = { role: "tool-result", toolCallId: "c1", content: "shot", images: [{ ...metadata, ref }] };
+    const loaded = await rehydrateTranscriptImages(path, {
+      schemaVersion: 2,
+      savedAt: "t",
+      messages: [
+        { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "Read", input: { path: "shot.png" } }] },
+        result,
+      ],
+    });
+    expect(loaded.messages).toEqual(toolResultDoc.messages);
+    const hydrated = loaded.messages.find((message) => message.role === "tool-result");
+    expect(hydrated?.role === "tool-result" ? hydrated.images : undefined).toEqual([toolResult]);
+    expect(hydrated?.role === "tool-result" ? hydrated.images?.[0] : undefined).toHaveProperty("data", "BBBB");
+  });
+  test("US-003 AC-4: a tool-result image whose file was deleted becomes a numbered missing note", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", toolResultDoc);
+    const folder = transcriptImagesPath(transcriptPath(dir, "s"));
+    for (const name of await readdir(folder)) await rm(join(folder, name));
+    const result = (await store.load("s"))?.messages.find((message) => message.role === "tool-result");
+    expect(result).not.toHaveProperty("images");
+    expect(result?.role === "tool-result" ? result.content : undefined).toBe("shot\n[image missing #1]");
+  });
+  test("US-003 AC-6: a tool-result image survives a save and load through the transcript store", async () => {
+    const store = createFileTranscriptStore(dir);
+    await store.save("s", toolResultDoc);
+    // Proves the store published the image to the sidecar rather than inlining it.
+    expect(await readdir(transcriptImagesPath(transcriptPath(dir, "s")))).toEqual([
+      `${createHash("sha256").update(Buffer.from(toolResult.data, "base64")).digest("hex")}.png`,
+    ]);
+    const loaded = await store.load("s");
+    expect(loaded?.messages).toEqual(toolResultDoc.messages);
+    const result = loaded?.messages.find((message) => message.role === "tool-result");
+    expect(result?.role === "tool-result" ? result.images : undefined).toEqual([toolResult]);
   });
 });

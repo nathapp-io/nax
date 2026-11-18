@@ -28,10 +28,14 @@ const extensions: Readonly<Record<string, string>> = {
 };
 
 type UserMessage = Extract<ConversationMessage, { role: "user" }>;
+type ToolResultMessage = Extract<ConversationMessage, { role: "tool-result" }>;
+/** The two conversation arms that can carry images: a user prompt and a tool result. */
+type ImageBearingMessage = UserMessage | ToolResultMessage;
 type StoredImage = Omit<ImageAttachment, "data"> & { readonly ref: string };
-type StoredMessage =
-  | Exclude<ConversationMessage, UserMessage>
-  | (Omit<UserMessage, "images"> & { readonly images?: readonly StoredImage[] });
+type StoredImageMessage =
+  | (Omit<UserMessage, "images"> & { readonly images?: readonly StoredImage[] })
+  | (Omit<ToolResultMessage, "images"> & { readonly images?: readonly StoredImage[] });
+type StoredMessage = Exclude<ConversationMessage, ImageBearingMessage> | StoredImageMessage;
 type StoredDoc = Omit<TranscriptDoc, "schemaVersion" | "messages"> & {
   readonly schemaVersion?: 1 | 2;
   readonly messages: readonly StoredMessage[];
@@ -100,31 +104,40 @@ async function publishImage(folder: string, image: ImageAttachment): Promise<Sto
   return { ...metadata, ref };
 }
 
+/** The images a message carries, for the two arms that can: a user prompt and a tool result. */
+function messageImages(message: ConversationMessage): readonly ImageAttachment[] | undefined {
+  return message.role === "user" || message.role === "tool-result" ? message.images : undefined;
+}
+
 /** Preflight the WHOLE document before even creating the image directory. */
-export async function splitTranscriptImages(path: string, doc: TranscriptDoc): Promise<unknown> {
+function declaresImages(doc: TranscriptDoc): boolean {
   let hasImages = false;
   for (const message of doc.messages) {
-    if (message.role !== "user") continue;
-    for (const image of message.images ?? []) {
+    for (const image of messageImages(message) ?? []) {
       extension(image.mimeType);
       hasImages = true;
     }
   }
-  if (!hasImages) return doc;
+  return hasImages;
+}
+
+/** Store one message's images as refs; a message with none is written as it came in. */
+async function storeMessage(folder: string, message: ConversationMessage): Promise<StoredMessage> {
+  const images = messageImages(message);
+  if (!images?.length) return message as StoredMessage;
+  const stored: StoredImage[] = [];
+  for (const image of images) stored.push(await publishImage(folder, image));
+  return { ...message, images: stored } as StoredMessage;
+}
+
+export async function splitTranscriptImages(path: string, doc: TranscriptDoc): Promise<unknown> {
+  if (!declaresImages(doc)) return doc;
   const folder = transcriptImagesPath(path);
   await _transcriptImagesDeps.mkdir(folder, { recursive: true });
   await assertSafeImageFolder(folder);
   const messages: StoredMessage[] = [];
   // Sequential publication deduplicates repeated images within this save too.
-  for (const message of doc.messages) {
-    if (message.role !== "user" || !message.images?.length) {
-      messages.push(message as StoredMessage);
-      continue;
-    }
-    const images: StoredImage[] = [];
-    for (const image of message.images) images.push(await publishImage(folder, image));
-    messages.push({ ...message, images });
-  }
+  for (const message of doc.messages) messages.push(await storeMessage(folder, message));
   return { ...doc, schemaVersion: 2, messages } satisfies StoredDoc;
 }
 
@@ -220,6 +233,32 @@ function slotOf(index: number, noted: ReadonlySet<number>): number {
   return slot;
 }
 
+/** Rebuild one message's inline images; a missing file becomes its numbered note instead. */
+async function hydrateImages(path: string, message: StoredImageMessage): Promise<ConversationMessage> {
+  const images: ImageAttachment[] = [];
+  let content = message.content;
+  const noted = notedSlots(content);
+  for (const [index, image] of (message.images ?? []).entries()) {
+    const hydrated = await readStoredImage(transcriptImagesPath(path), image);
+    if (hydrated) images.push(hydrated);
+    else {
+      const marker = `[image missing #${slotOf(index, noted)}]`;
+      content = content ? `${content}\n${marker}` : marker;
+    }
+  }
+  const { images: _storedImages, ...text } = message;
+  return { ...text, content, ...(images.length ? { images } : {}) } as ConversationMessage;
+}
+
+/** A message the store never split — or one of the two arms that can hold refs. */
+async function rehydrateMessage(path: string, message: StoredMessage): Promise<ConversationMessage> {
+  if ((message.role !== "user" && message.role !== "tool-result") || !message.images?.length) {
+    return message as ConversationMessage;
+  }
+  if (!Array.isArray(message.images)) throw corruptImageList();
+  return hydrateImages(path, message);
+}
+
 /** Decode the private disk format; callers only ever see inline attachments. */
 export async function rehydrateTranscriptImages(path: string, value: object): Promise<TranscriptDoc> {
   const doc = value as StoredDoc;
@@ -231,25 +270,7 @@ export async function rehydrateTranscriptImages(path: string, value: object): Pr
   if (doc.schemaVersion !== 2) return value as TranscriptDoc;
   const { schemaVersion: _version, ...rest } = doc;
   const messages: ConversationMessage[] = [];
-  for (const message of doc.messages) {
-    if (message.role !== "user" || !message.images?.length) {
-      messages.push(message as ConversationMessage);
-      continue;
-    }
-    if (!Array.isArray(message.images)) throw corruptImageList();
-    const images: ImageAttachment[] = [];
-    let content = message.content;
-    const noted = notedSlots(content);
-    for (const [index, image] of message.images.entries()) {
-      const hydrated = await readStoredImage(transcriptImagesPath(path), image);
-      if (hydrated) images.push(hydrated);
-      else {
-        const marker = `[image missing #${slotOf(index, noted)}]`;
-        content = content ? `${content}\n${marker}` : marker;
-      }
-    }
-    const { images: _storedImages, ...text } = message;
-    messages.push({ ...text, content, ...(images.length ? { images } : {}) });
-  }
+  // User and tool-result arms go through the same hydrate step (US-003).
+  for (const message of doc.messages) messages.push(await rehydrateMessage(path, message));
   return { ...rest, messages };
 }
