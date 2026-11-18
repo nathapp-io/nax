@@ -9,6 +9,8 @@ import { gitWithTimeout, isPublishableBranch } from "@/utils/git";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { loadPriorFeature } from "../../workflow/feature-record";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
+import { handoffMarkRefusal, readNewestHandoffMark } from "../../workflow/handoff-mark";
+// biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { workflowFeatureDir } from "../../workflow/paths";
 // biome-ignore lint/style/noRestrictedImports: workflow barrel closes a runtime cycle.
 import { publishedAtHead } from "../../workflow/publish-only";
@@ -27,6 +29,7 @@ export const _jobsLaunchDeps = {
   exists: (path: string): Promise<boolean> => Bun.file(path).exists(),
   loadPRD,
   loadPriorFeature,
+  readNewestHandoffMark,
   headSha,
 };
 
@@ -335,6 +338,12 @@ async function preparePublish(
   if (pending > 0) {
     return { error: `[chat] ${input.feature} has ${pending} pending stories; finish them with nax-jobs__run first` };
   }
+  // US-004: koda is this feature's publisher once a handoff marked it. `publishedAtHead: true` routes the
+  // refusal through `stopRefusedPublishStep`, so a chain whose next step is this publish stops instead of
+  // waiting for a step that can never start.
+  const handedOff = await _jobsLaunchDeps.readNewestHandoffMark(workflowFeatureDir(options.repoRoot, input.feature));
+  if (handedOff !== null)
+    return { error: `[chat] ${handoffMarkRefusal(input.feature, handedOff)}`, publishedAtHead: true };
   // After the pending-story guard: a feature that is not finished has a more actionable report.
   const refusal = await publishedRefusal(input.feature, options.repoRoot);
   if (refusal !== undefined) return { error: refusal, publishedAtHead: true };

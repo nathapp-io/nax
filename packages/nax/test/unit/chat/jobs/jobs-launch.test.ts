@@ -13,6 +13,7 @@ import {
 import { _workflowDefaultsDeps } from "@/chat/jobs/workflow-defaults";
 import { type ChatWorkflowConfig, featureDir } from "@/config";
 import { newFeatureRecord } from "@/workflow/feature-record";
+import type { FoundHandoffMark } from "@/workflow/handoff-mark";
 import { workflowFeatureDir } from "@/workflow/paths";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
 
@@ -609,5 +610,53 @@ describe("createJobsProvider US-002 publish refusal", () => {
     const result = await launch("publish", { feature: "f1" });
     expect(result.isError).toBe(true);
     expect(result.content).toStartWith("[chat] f1 is already published at HEAD abcdef0");
+  });
+});
+/**
+ * US-004: a feature a chat chain handed to koda already has koda as its publisher, so the local publish
+ * launch refuses it. The read sits after the pending-story guard, whose report is the more actionable one.
+ */
+describe("createJobsProvider US-004 handoff mark refusal", () => {
+  const found: FoundHandoffMark = {
+    mark: { schemaVersion: 1, at: "2026-11-18T00:00:00.000Z", flowId: "fl1", url: "https://koda/flows/fl1" },
+    path: "/r/handoff.json",
+  };
+  const refusal =
+    "f1 was handed off to koda (flow fl1 https://koda/flows/fl1) at 2026-11-18T00:00:00.000Z; koda publishes it. Delete /r/handoff.json to publish it here instead";
+
+  async function allPassedPrd(): Promise<void> {
+    await Bun.write(
+      join(featureDir(options.repoRoot, "f1"), "prd.json"),
+      JSON.stringify(makePRD({ userStories: [makeStory({ id: "US-001", status: "passed", passes: true })] })),
+    );
+  }
+
+  test("AC-10 a marked feature is refused before any card", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => found);
+    expect(await launch("publish", { feature: "f1" })).toEqual({ isError: true, content: `[chat] ${refusal}` });
+    expect(_jobsLaunchDeps.readNewestHandoffMark).toHaveBeenCalledWith(workflowFeatureDir(options.repoRoot, "f1"));
+    expect(approve).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("AC-11 an unmarked feature reaches the published-at-head check and the normal card", async () => {
+    await allPassedPrd();
+    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => null);
+    _jobsLaunchDeps.loadPriorFeature = mock(async () => null);
+    _jobsLaunchDeps.headSha = mock(async () => "abcdef0123");
+    await launch("publish", { feature: "f1" });
+    expect(_jobsLaunchDeps.headSha).toHaveBeenCalledWith(options.repoRoot);
+    expect(card().summary).toBe("nax run f1 --publish-only");
+  });
+
+  test("AC-12 pending stories keep their own refusal and never read the mark", async () => {
+    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => found);
+    expect(await launch("publish", { feature: "f1" })).toEqual({
+      isError: true,
+      content: "[chat] f1 has 3 pending stories; finish them with nax-jobs__run first",
+    });
+    expect(_jobsLaunchDeps.readNewestHandoffMark).not.toHaveBeenCalled();
+    expect(approve).not.toHaveBeenCalled();
   });
 });

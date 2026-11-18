@@ -16,6 +16,7 @@ import type { NaxRuntime } from "@/runtime";
 import { _featureRunDeps, runWorkflowFeature } from "@/workflow/feature";
 import { type FeatureEnv, runFeatureMachine } from "@/workflow/feature-machine";
 import { newFeatureRecord } from "@/workflow/feature-record";
+import { writeHandoffMark } from "@/workflow/handoff-mark";
 import { newStoryRecord, readResult, upsertFeatureRecord, upsertStoryRecord } from "@/workflow/result";
 import { _workflowDeps } from "@/workflow/step-context";
 import { toolErrorClaimsHeld, withToolErrorOutcome } from "@/workflow/tool-error-outcome";
@@ -427,6 +428,27 @@ describe("runWorkflowFeature", () => {
     const { input, envs } = setup();
     await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
       code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+    });
+    expect(envs).toHaveLength(0);
+  });
+
+  /**
+   * US-004: once a chat chain handed the feature to koda, koda is its publisher. The mark sits on the
+   * newest run, whose record would otherwise resume publishing here.
+   */
+  test("US-004 AC-9 publishOnly refuses a feature whose newest run was handed off to koda", async () => {
+    const { input, envs, featureDir } = setup();
+    await seedFinished(featureDir, input.feature, { outcome: "local-only" });
+    const runDir = join(featureDir, "r-old");
+    await writeHandoffMark(runDir, {
+      schemaVersion: 1,
+      at: "T",
+      flowId: "fl1",
+      url: "https://koda/flows/fl1",
+    });
+    await expect(runWorkflowFeature({ ...input, publishOnly: true })).rejects.toMatchObject({
+      code: "WORKFLOW_PUBLISH_ONLY_REFUSED",
+      message: `[workflow] --publish-only: ${input.feature} was handed off to koda (flow fl1 https://koda/flows/fl1) at T; koda publishes it. Delete ${join(runDir, "handoff.json")} to publish it here instead`,
     });
     expect(envs).toHaveLength(0);
   });

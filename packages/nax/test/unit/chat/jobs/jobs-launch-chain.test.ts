@@ -11,6 +11,7 @@ import { _jobsLaunchDeps } from "@/chat/jobs/jobs-launch";
 import { createJobsProvider, type JobsProviderOptions } from "@/chat/jobs/jobs-provider";
 import { featureDir } from "@/config";
 import { newFeatureRecord } from "@/workflow/feature-record";
+import type { FoundHandoffMark } from "@/workflow/handoff-mark";
 import type { WorkflowFeatureRecord } from "@/workflow/types";
 
 const original = { ..._jobsLaunchDeps };
@@ -340,6 +341,37 @@ describe("launchJob publish refusal stops the matching chain step", () => {
     await allPassedPrd();
     expect(await launch("publish", { feature: "f1" })).toMatchObject({ isError: true });
     expect(chains.stop).not.toHaveBeenCalled();
+  });
+
+  /**
+   * US-004: the handoff-mark refusal takes the same route, because a chain whose next step publishes a
+   * feature koda already owns would otherwise wait for a step that can never start.
+   */
+  test("US-004 AC-14 a handoff refusal stops the chain's publish of the same feature in this repo", async () => {
+    await allPassedPrd();
+    const found: FoundHandoffMark = {
+      mark: { schemaVersion: 1, at: "2026-11-18T00:00:00.000Z", flowId: "fl1", url: "https://koda/flows/fl1" },
+      path: "/r/handoff.json",
+    };
+    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => found);
+    const refused =
+      "f1 was handed off to koda (flow fl1 https://koda/flows/fl1) at 2026-11-18T00:00:00.000Z; koda publishes it. Delete /r/handoff.json to publish it here instead";
+    stageChain(
+      [
+        { kind: "run", argv: [], target: "f1" },
+        { kind: "publish", argv: publishArgv(options.repoRoot), target: "f1" },
+      ],
+      2,
+    );
+    expect(await launch("publish", { feature: "f1" })).toEqual({ isError: true, content: `[chat] ${refused}` });
+    expect(chains.stop).toHaveBeenCalledTimes(1);
+    expect(chains.stop).toHaveBeenCalledWith(refused);
+    // The control inside this case: the same feature and chain without a mark stops on the older refusal,
+    // so the words the chain receives above are the mark's, not the published-at-head guard's.
+    chains.stop = mock(() => undefined);
+    _jobsLaunchDeps.readNewestHandoffMark = mock(async () => null);
+    await launch("publish", { feature: "f1" });
+    expect(chains.stop).toHaveBeenCalledWith(publishedAtHead);
   });
 
   test("AC-16 a chain whose next step is a bot review is not stopped", async () => {

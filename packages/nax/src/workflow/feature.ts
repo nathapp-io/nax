@@ -23,6 +23,7 @@ import {
   summariseStories,
 } from "./feature-record";
 import { commitsSince, onlyLedgerChangedSince, readHead } from "./git";
+import { handoffMarkRefusal, readNewestHandoffMark } from "./handoff-mark";
 import { appendLedger, ensureLedger, ledgerText } from "./ledger";
 import { collectLedgerItems } from "./ledger-items";
 import { isTransientDraft, type MovedCommit, publishOnlyStart } from "./publish-only";
@@ -225,12 +226,32 @@ function isFinishedAtHead(
   return prior?.step === "done" && head !== undefined && head !== "" && prior.head === head && done;
 }
 
+/**
+ * US-004: a feature a chat chain handed to koda has koda as its publisher, so this run must not publish
+ * it too. The mark lives on the newest run, so a later `nax run` that writes a newer record leaves it
+ * behind on an older run and the feature is publishable here again — the design's own escape hatch.
+ */
+async function refuseHandedOffFeature(fc: FeatureContext): Promise<void> {
+  const found = await readNewestHandoffMark(fc.featureDir);
+  if (found === null) return;
+  throw new NaxError(
+    `[workflow] --publish-only: ${handoffMarkRefusal(fc.feature, found)}`,
+    "WORKFLOW_PUBLISH_ONLY_REFUSED",
+    {
+      stage: "workflow",
+      feature: fc.feature,
+    },
+  );
+}
+
 async function runInContext(
   fc: FeatureContext,
   input: WorkflowFeatureInput,
   meter: TokenMeter,
 ): Promise<WorkflowFeatureResult> {
   await ensureLedger(fc.runDir, fc.runId, fc.feature);
+  // Before the record is read at all: where a publish-only run would start never overrides the handoff.
+  if (input.publishOnly === true) await refuseHandedOffFeature(fc);
   const stories = summariseStories(fc.prd, await collectStoryRecords(fc.featureDir));
   const prior = await loadPriorFeature(fc.featureDir, fc.runId);
   const head = await currentHead(fc);
